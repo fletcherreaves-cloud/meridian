@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(cd \"/tmp\" && npm create vite@latest meridian-scaffold -- --template react-ts 2>&1)",
+      "Bash(npm install *)",
+      "Bash(npm audit *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}
