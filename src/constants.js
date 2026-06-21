@@ -300,4 +300,48 @@ const sNameC = l => STORE_NAMES[l] || l;
 
 const DOW_BASE = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE };
+// ── Store Knowledge Base — static notes + user-editable overlay ──────────────
+const STORE_KB = {
+  '3708':  {notes:'Ardmore-Broadway. Highest-volume OK location, well-run. May be capacity-constrained by physical plant size. Ryan Thorley operator.',         tags:['high-volume','capacity-limited','well-run']},
+  '5183':  {notes:'Chickasha-So 4th. Longest-tenured GM — runs consistent, predictable operations. Strong operational baseline.',                              tags:['consistent','experienced-gm']},
+  '5985':  {notes:'Durant-US Hwy 70/22. Highest individual volume, very well run. Physical plant capacity may be a ceiling on upside. Reliable benchmark store.',tags:['high-volume','well-run','capacity-limited']},
+  '6178':  {notes:'Chipley-St Rd 77 (FL). Interstate highway location. All FL locations except Freeport are interstate. Touristy/travel demographics.',         tags:['interstate','fl','tourist']},
+  '6838':  {notes:'Defuniak Springs (FL). Interstate, FL panhandle. Seasonal variability likely. Touristy area.',                                              tags:['interstate','fl','tourist','seasonal']},
+  '6972':  {notes:'Ada-Country Club. Consistent, high-traffic location. Fine-tuning management performance. Historically reliable volume — high potential.',    tags:['high-volume','management-development']},
+  '10034': {notes:'Bonifay (FL). Interstate location. Touristy travel demographics. Emerald Arches FL territory.',                                             tags:['interstate','fl','tourist']},
+  '10422': {notes:'Atoka-Mississippi. Untapped potential — volume below what demographics suggest. Management development opportunity.',                        tags:['growth-opportunity']},
+  '10915': {notes:'Seminole-Milt Phillips. Runs well. Consistent, reliable operations.',                                                                       tags:['consistent','well-run']},
+  '11657': {notes:'Purcell. Mid-volume. Recent MAPE spike (11.2% 1W). DI skipped pending stable data window. Monitoring closely.',                             tags:['watch','di-skipped']},
+  '13113': {notes:'Madill-Hwy 70. DI skipped — calibrating with more data. Elevated MAPE; management stability a factor. Worth re-enabling DI.',              tags:['watch','di-skipped']},
+  '18213': {notes:'Lindsay-Wal-Mart. Located in a very old Walmart. New relocation build in progress — transition will affect volume trends.',                  tags:['relocation-pending','walmart-adjacent']},
+  '20475': {notes:'OKC-I240/Sooner. Suburban OKC. Standard suburban traffic patterns.',                                                                        tags:[]},
+  '24471': {notes:'Ardmore-Cooper/12th. Second Ardmore location. Different traffic profile from Ardmore-Broadway.',                                            tags:[]},
+  '29760': {notes:'Duncan-Hwy 81 (Relo). Well-run mid-to-high volume. Model degrading recently (12-14% MAPE). DI skipped — RECOMMEND RE-ENABLING DI.',       tags:['well-run','di-skipped','model-degrading','recalibrate']},
+  '31357': {notes:'Pauls Valley-Ballard Rd. DI skipped — improving trend. Monitoring before re-enabling calibration.',                                         tags:['di-skipped','improving']},
+  '32525': {notes:'Sulphur. Model degrading recently (12-14% MAPE) — recent worse than full historical. RECOMMEND RECALIBRATION.',                             tags:['model-degrading','recalibrate']},
+  '33109': {notes:'Marietta. Near Oklahoma-Texas state line. Traffic includes some interstate and cross-border travelers.',                                     tags:['interstate-adjacent']},
+  '33222': {notes:'Elgin. Located inside a travel stop / gas station. Historical data anomaly (190% full MAPE) — recent improving (8-12%). Treat as improving. Ignore full MAPE figure.', tags:['travel-stop','gas-station','improving','historical-anomaly']},
+  '33704': {notes:'Tecumseh. Suburban store. Better trend recently — improving MAPE.',                                                                          tags:['improving']},
+  '34222': {notes:'Harrah. GM is very metric-aware and runs a good business. Strong operational discipline and data literacy.',                                 tags:['metric-aware-gm','well-run']},
+  '35064': {notes:'Holdenville. GM-in-training with no prior management experience. Intentional, slow growth path for operational improvement. Patient development approach needed.', tags:['gm-in-training','growth-path']},
+  '35242': {notes:'Cottondale (FL). Located inside a Love\'s Travel Stop. Interstate I-10. Emerald Arches FL territory.',                                      tags:['loves-gas-station','interstate','fl']},
+  '37566': {notes:'Mossy Head (FL). Inside Love\'s Travel Stop. Interstate. HISTORICAL ANOMALY: 358% full MAPE from bad early data. Recent MAPE excellent (5-6%). Model working great — ignore full MAPE.', tags:['loves-gas-station','interstate','fl','historical-anomaly','excellent-recent']},
+  '38609': {notes:'Freeport (FL). Touristy — 15 miles from beach. NOT an interstate location (only FL store that isn\'t). Beach proximity creates seasonal patterns. Emerald Arches FL.', tags:['tourist','beach-adjacent','seasonal','fl']},
+  '43380': {notes:'Tishomingo-Main & Refuge. DI skipped — only 157 rows of history, too sparse for reliable calibration. Recent MAPE 15%+. Monitor as data accumulates.', tags:['di-skipped','data-sparse','watch']},
+  '43701': {notes:'Ponce de Leon-Hwy 81/I-10 (FL). Inside Love\'s Travel Stop. Interstate I-10. OPENED 03/13/26 — very new. 0 valid LY rows. DI calibration not viable; needs 6+ months of history first. Tourist/travel demographics.', tags:['loves-gas-station','interstate','fl','new-location','insufficient-history','tourist','ponce']},
+};
+
+const STORE_KB_EDIT_KEY = 'mf_store_kb_edits';
+function getKBEdits() {
+  try { return JSON.parse(localStorage.getItem(STORE_KB_EDIT_KEY)||'{}'); } catch { return {}; }
+}
+function saveKBEdits(edits) {
+  try { localStorage.setItem(STORE_KB_EDIT_KEY, JSON.stringify(edits)); } catch {}
+}
+function getKB(loc) {
+  const base  = STORE_KB[loc] || {notes:'', tags:[]};
+  const edits = getKBEdits();
+  return edits[loc] ? {...base,...edits[loc]} : base;
+}
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB };
