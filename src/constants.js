@@ -264,4 +264,40 @@ async function fetchOpenMeteoWeather(startDate, endDate, onProgress) {
 // ── Weather context helper — used by anomaly detection ───────────────────────
 // Returns a human-readable weather note if conditions were notable on a given day
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS };
+const STORE_NAMES={
+  // MCDOK — Oklahoma (names from LocNameForDisplay)
+  '3708': 'Ardmore-Broadway',
+  '5183': 'Chickasha-So 4th',
+  '5985': 'Durant-US Hwy 70/22',
+  '6972': 'Ada-Country Club',
+  '10422':'Atoka-Mississippi',
+  '10915':'Seminole-Milt Phillips',
+  '11657':'Purcell',
+  '13113':'Madill-Hwy 70',
+  '18213':'Lindsay-Wal-Mart',
+  '20475':'OKC-I240/Sooner',
+  '24471':'Ardmore-Cooper/12th',
+  '29760':'Duncan-Hwy 81',
+  '31357':'Pauls Valley-Ballard Rd',
+  '32525':'Sulphur',
+  '33109':'Marietta',
+  '33222':'Elgin',
+  '33704':'Tecumseh',
+  '34222':'Harrah',
+  '35064':'Holdenville',
+  '43380':'Tishomingo-Main & Refuge',
+  // Emerald Arches — Florida Panhandle
+  '6178': 'Chipley-St Rd 77',
+  '6838': 'Defuniak Springs',
+  '10034':'Bonifay',
+  '35242':'Cottondale',
+  '37566':'Mossy Head',
+  '38609':'Freeport',
+  '43701':'Ponce de Leon-Hwy 81/I-10'
+};
+const sName  = l => l + ' — ' + (STORE_NAMES[l] || l);
+const sNameC = l => STORE_NAMES[l] || l;
+
+const DOW_BASE = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE };

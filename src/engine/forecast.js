@@ -1,5 +1,11 @@
 // @ts-nocheck
+import * as React from 'react';
 import { addD, addDR, dKey, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart } from '../utils/date.js';
+
+const h    = React.createElement;
+const div  = (props, ...c) => h('div',    props, ...c);
+const span = (props, ...c) => h('span',   props, ...c);
+const btn  = (props, ...c) => h('button', props, ...c);
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 
