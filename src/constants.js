@@ -344,4 +344,55 @@ function getKB(loc) {
   return edits[loc] ? {...base,...edits[loc]} : base;
 }
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB };
+
+// Event taxonomy (used by CalendarManager, LifeLenz, EventEntry, etc.)
+const EVENT_TYPES={
+  // ── Specific Weather ─────────────────────────────────────────────────────
+  winter_storm:{label:'Winter Storm',         icon:'❄',   col:'#93c5fd'},
+  snow:         {label:'Snow',                 icon:'🌨',  col:'#bfdbfe'},
+  ice:          {label:'Ice Storm',            icon:'🧊',  col:'#7dd3fc'},
+  tornado:      {label:'Tornado',              icon:'🌪',  col:'#f87171'},
+  t_storm:      {label:'Severe T-Storm',       icon:'⛈',  col:'#818cf8'},
+  sev_weather:  {label:'Severe Weather',       icon:'⚡',  col:'#fbbf24'},
+  high_winds:   {label:'Damaging Winds',       icon:'💨',  col:'#6ee7b7'},
+  flood:        {label:'Flooding',             icon:'🌊',  col:'#60a5fa'},
+  hurricane:    {label:'Hurricane',            icon:'🌀',  col:'#f87171'},
+  weather:      {label:'Weather (General)',    icon:'🌧',  col:'#60a5fa'},
+  // ── Store Events ─────────────────────────────────────────────────────────
+  tech:         {label:'Store Event — Technology',  icon:'💻', col:'#818cf8'},
+  utilities:    {label:'Store Event — Utilities',   icon:'🔌', col:'#f97316'},
+  maintenance:  {label:'Store Event — Maintenance', icon:'🔧', col:'#94a3b8'},
+  power:        {label:'Power Outage',              icon:'💡', col:'#fbbf24'},
+  outage:       {label:'Outage / Issue',            icon:'⚠',  col:'#ef4444'},
+  // ── Community / External ─────────────────────────────────────────────────
+  pub_emergency:{label:'Public Emergency',     icon:'🚨',  col:'#ef4444'},
+  road_closure: {label:'Road Closure',         icon:'🚧',  col:'#f97316'},
+  construction: {label:'Construction',         icon:'🏗',   col:'#a3a3a3'},
+  event:        {label:'Major Local Event',    icon:'🎪',  col:'#a78bfa'},
+  comp:         {label:'Competition',          icon:'🏪',  col:'#f87171'},
+  // ── Operations / Scheduled ───────────────────────────────────────────────
+  promo:        {label:'LTO / Promo',          icon:'🍔',  col:'#10b981'},
+  holiday:      {label:'Holiday',              icon:'🎉',  col:'#f59e0b'},
+  staffing:     {label:'Staffing Issue',       icon:'👥',  col:'#34d399'},
+  cfv:          {label:'CFV (Unannounced)',     icon:'🔍',  col:'#f97316'},
+  ecosure:      {label:'EcoSure Visit',        icon:'🌿',  col:'#22c55e'},
+  rgr:          {label:'RGR (Annual Grade)',   icon:'📋',  col:'#818cf8'},
+  other:        {label:'Other',                icon:'📌',  col:'#94a3b8'},
+  // ── School Calendar (v4.200) ─────────────────────────────────────────────
+  school_start:        {label:'School Year Begins',  icon:'🎒', col:'#34d399'},
+  school_end:          {label:'School Year Ends',    icon:'🏖', col:'#fbbf24'},
+  school_break:        {label:'School Break (Multi-Day)', icon:'📕', col:'#a78bfa'},
+  school_no_school:    {label:'No School Day',       icon:'🏫', col:'#fb923c'},
+  school_early_release:{label:'Early Release Day',   icon:'⏰', col:'#fb923c'},
+};
+
+// Groups for the tag picker UI
+const EVENT_TYPE_GROUPS=[
+  {label:'⛈ Weather',items:['winter_storm','snow','ice','tornado','t_storm','sev_weather','high_winds','flood','hurricane','weather']},
+  {label:'🏪 Store Events',items:['tech','utilities','maintenance','power','outage']},
+  {label:'🚨 Community / External',items:['pub_emergency','road_closure','construction','event','comp']},
+  {label:'📋 Operations',items:['promo','holiday','staffing','cfv','ecosure','rgr','other']},
+  {label:'📚 School Calendar',items:['school_start','school_end','school_break','school_no_school','school_early_release']},
+];
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS };
