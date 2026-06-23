@@ -48,6 +48,9 @@ import {
   OpsBarChart, CompareRadarChart, CompareLineChart,
 } from '../views/store-dash.js';
 
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+const h = React.createElement;
+
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_VERSION    = '4.216';
 const MERIDIAN_BUILD_DATE = '2026-06-19';
