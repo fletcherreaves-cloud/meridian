@@ -4,6 +4,9 @@ import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES 
 import { dKey } from '../utils/date.js';
 
 const h = React.createElement;
+const div    = (p, ...c) => h('div',    p, ...c);
+const span   = (p, ...c) => h('span',  p, ...c);
+const header = (p, ...c) => h('header', p, ...c);
 const { useState: uSt, useEffect: uE, useMemo: uM, useRef: uR, useCallback: uCB } = React;
 
 // ════════════════════════════════════════════════════════════════════════════════

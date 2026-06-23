@@ -17,6 +17,7 @@ const span=(p,...c)=>h('span',p,...c);
 const btn=(p,...c)=>h('button',p,...c);
 const tr=(p,...c)=>h('tr',p,...c);
 const td=(p,...c)=>h('td',p,...c);
+const label=(p,...c)=>h('label',p,...c);
 const th=(p,...c)=>h('th',p,...c);
 const tbl=(p,...c)=>h('table',p,...c);
 const thead=(p,...c)=>h('thead',p,...c);

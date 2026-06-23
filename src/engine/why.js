@@ -4,6 +4,7 @@ import { fetchRow, fetchWx, getForecastWeather, forecastDay } from '../engine/fo
 import { DEFAULT_TARGETS, STORE_NAMES, STORE_COORDS, DOW_BASE } from '../constants.js';
 
 const h = React.createElement;
+const a = (p, ...c) => h('a', p, ...c);
 function crossStoreCheck(loc, ds, missDate, missDir) {
   if(!ds||!ds.loaded||!ds.laborRows) return null;
   const dk = dKey(missDate);

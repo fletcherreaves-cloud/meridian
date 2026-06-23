@@ -13,6 +13,8 @@ const span=(p,...c)=>h('span',p,...c);
 const btn=(p,...c)=>h('button',p,...c);
 const tr=(p,...c)=>h('tr',p,...c);
 const td=(p,...c)=>h('td',p,...c);
+const header=(p,...c)=>h('header',p,...c);
+const table=(p,...c)=>h('table',p,...c);
 const th=(p,...c)=>h('th',p,...c);
 const tbl=(p,...c)=>h('table',p,...c);
 const inp=(p,...c)=>h('input',p,...c);

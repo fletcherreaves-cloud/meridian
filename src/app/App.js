@@ -52,6 +52,7 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
+const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_VERSION    = '4.216';

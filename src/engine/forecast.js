@@ -6,6 +6,7 @@ const h    = React.createElement;
 const div  = (props, ...c) => h('div',    props, ...c);
 const span = (props, ...c) => h('span',   props, ...c);
 const btn  = (props, ...c) => h('button', props, ...c);
+const path = (props, ...c) => h('path',   props, ...c);
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
