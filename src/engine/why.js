@@ -1,4 +1,5 @@
 // @ts-nocheck
+import * as React from 'react';
 import { addD, dKey } from '../utils/date.js';
 import { fetchRow, fetchWx, getForecastWeather, forecastDay } from '../engine/forecast.js';
 import { DEFAULT_TARGETS, STORE_NAMES, STORE_COORDS, DOW_BASE } from '../constants.js';
