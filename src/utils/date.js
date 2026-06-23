@@ -34,4 +34,9 @@ function fmtRng(s,e){if(dKey(s)===dKey(e))return s.toLocaleDateString('en-US',{m
 function nDays(s,e){return Math.round((e-s)/86400000)+1;}
 function rngMode(s,e){const now=sodOf(new Date());if(sodOf(s)>now)return'future';if(eodOf(e)<now)return'past';return'mixed';}
 
-export { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode };
+function dFmt(d,opts){if(!d)return '—';return d.toLocaleDateString('en-US',opts||{month:'short',day:'numeric',year:'numeric'});}
+function dFmtShort(d){return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';}
+function dFmtDow(d){return d?d.toLocaleDateString('en-US',{weekday:'short'}):'—';}
+function thisWeek(){const s=mwStart();const e=new Date(s.getTime()+6*86400000);return{s:sodOf(s),e:eodOf(e),label:'This Week'};}
+
+export { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek };

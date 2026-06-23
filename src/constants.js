@@ -395,4 +395,34 @@ const EVENT_TYPE_GROUPS=[
   {label:'📚 School Calendar',items:['school_start','school_end','school_break','school_no_school','school_early_release']},
 ];
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS };
+const INV_ORG_COORDS={
+  '3708':{lat:34.1741,lng:-97.1452,state:'OK',sup:'Robert Spencer',op:'Ryan Thorley',del:'Wed/Sun'},
+  '5183':{lat:35.0254,lng:-97.9421,state:'OK',sup:'Krystiana Langford',op:'Gary Mornhinweg',del:'Tue/Fri'},
+  '5985':{lat:33.9961,lng:-96.4173,state:'OK',sup:'Ashley Podroza',op:'Rick/Kathy Thorley',del:'Wed/Fri'},
+  '6972':{lat:34.7831,lng:-96.6572,state:'OK',sup:'Robert Spencer',op:'Ryan Thorley',del:'Tue/Fri'},
+  '10422':{lat:34.3755,lng:-96.1332,state:'OK',sup:'Ashley Podroza',op:'Rick/Kathy Thorley',del:'Wed/Sun'},
+  '10915':{lat:35.2121,lng:-96.6791,state:'OK',sup:'Steven Vaughn',op:'Ryan Thorley',del:'Thu/Sun'},
+  '11657':{lat:35.0012,lng:-97.3715,state:'OK',sup:'Amanda Estrada',op:'Gary Mornhinweg',del:'Tue/Fri'},
+  '13113':{lat:34.0853,lng:-96.7724,state:'OK',sup:'Ashley Podroza',op:'Rick/Kathy Thorley',del:'Wed/Sun'},
+  '18213':{lat:34.8431,lng:-97.6185,state:'OK',sup:'Krystiana Langford',op:'Gary Mornhinweg',del:'Tue/Fri'},
+  '20475':{lat:35.3854,lng:-97.4171,state:'OK',sup:'Amanda Estrada',op:'Gary Mornhinweg',del:'Tue/Fri'},
+  '24471':{lat:34.1951,lng:-97.1182,state:'OK',sup:'Robert Spencer',op:'Ryan Thorley',del:'Wed/Sun'},
+  '29760':{lat:34.5291,lng:-97.9654,state:'OK',sup:'Krystiana Langford',op:'Ryan Thorley',del:'Tue/Fri'},
+  '31357':{lat:34.7352,lng:-97.2511,state:'OK',sup:'Amanda Estrada',op:'Ryan Thorley',del:'Tue/Fri'},
+  '32525':{lat:34.5101,lng:-96.9991,state:'OK',sup:'Robert Spencer',op:'Ryan Thorley',del:'Tue/Fri'},
+  '33109':{lat:33.9482,lng:-97.1281,state:'OK',sup:'Ashley Podroza',op:'Rick/Kathy Thorley',del:'Wed/Sun'},
+  '33222':{lat:34.7863,lng:-98.2912,state:'OK',sup:'Krystiana Langford',op:'Ryan Thorley',del:'Tue/Fri'},
+  '33704':{lat:35.2711,lng:-96.9414,state:'OK',sup:'Steven Vaughn',op:'Gary Mornhinweg',del:'Mon/Thu'},
+  '34222':{lat:35.4522,lng:-97.1651,state:'OK',sup:'Steven Vaughn',op:'Gary Mornhinweg',del:'Mon/Thu'},
+  '35064':{lat:35.0801,lng:-96.3921,state:'OK',sup:'Steven Vaughn',op:'Rick/Kathy Thorley',del:'Mon/Thu'},
+  '43380':{lat:34.2382,lng:-96.6624,state:'OK',sup:'Ashley Podroza',op:'Ryan Thorley',del:'Wed/Sun'},
+  '6178':{lat:30.7681,lng:-85.4912,state:'FL',sup:'Brad Denley',op:'Jacob Thorley',del:'Tue/Fri'},
+  '6838':{lat:30.6942,lng:-86.1163,state:'FL',sup:'Brad Denley',op:'Jacob Thorley',del:'Tue/Fri'},
+  '10034':{lat:30.7741,lng:-85.6812,state:'FL',sup:'Brad Denley',op:'Ryan Thorley',del:'Tue/Fri'},
+  '35242':{lat:30.7952,lng:-85.3811,state:'FL',sup:'Brad Denley',op:'Jacob Thorley',del:'Wed/Sun'},
+  '37566':{lat:30.7183,lng:-86.3262,state:'FL',sup:'Brad Denley',op:'Ryan Thorley',del:'Wed/Sun'},
+  '38609':{lat:30.4851,lng:-86.1394,state:'FL',sup:'Brad Denley',op:'Jacob Thorley',del:'Wed/Sun'},
+  '43701':{lat:30.7132,lng:-85.9391,state:'FL',sup:'Brad Denley',op:'Ryan Thorley',del:'Wed/Sun'},
+};
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS };
