@@ -8,6 +8,7 @@ const span = (props, ...c) => h('span',   props, ...c);
 const btn  = (props, ...c) => h('button', props, ...c);
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
+import { TH, grade } from '../utils/fmt.js';
 
 // ── Model assignment cache  (v4.208 — performance) ──────────────────────────
 // getModelAssignment() is called from forecastDay() itself — the single most

@@ -5,6 +5,7 @@ import { dKey, sodOf, addD, eodOf, thisWeek } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, fetchLY, getStoreOrg } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
+import { TH, f$ } from '../utils/fmt.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -15,6 +16,7 @@ const td=(p,...c)=>h('td',p,...c);
 const th=(p,...c)=>h('th',p,...c);
 const tbl=(p,...c)=>h('table',p,...c);
 const inp=(p,...c)=>h('input',p,...c);
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 // Stores finalized projections per store per week.
 // Key: 'mf_locked_projections'

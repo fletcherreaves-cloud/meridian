@@ -3,6 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC } from '../constants.js';
 import { avg6, forecastDay } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
+import { TH, f$, gCol } from '../utils/fmt.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);

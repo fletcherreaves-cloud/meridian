@@ -1,8 +1,10 @@
 // @ts-nocheck
 import { addD, dKey, dowOf } from '../utils/date.js';
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
-import { DEFAULT_MODEL_ASSIGNMENTS, DEF_SETTINGS, MODEL_ASSIGNMENT_KEY, STORE_NAMES } from '../constants.js';
-import { forecastDay, getModelAssignment, saveModelOverride, compute6wk, calcOpsF, getDOWTrend } from '../engine/forecast.js';
+import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, DEF_SETTINGS, MODEL_ASSIGNMENT_KEY, STORE_NAMES } from '../constants.js';
+import { forecastDay, getModelAssignment, saveModelOverride, compute6wk, calcOpsF, getDOWTrend,
+  effectivePlusUp, fetchLY, getStoreOrg, getDOWSpecificTrend, getWxAdj } from '../engine/forecast.js';
+import { TH } from '../utils/fmt.js';
 
 // CALIBRATE STORE — Per-store grid search for optimal forecast params
 // v4.195 rewrite: previously the grid search's evaluation formula was a

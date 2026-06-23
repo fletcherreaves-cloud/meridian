@@ -2,7 +2,8 @@
 import * as React from 'react';
 import { dKey, nDK } from '../utils/date.js';
 import { isHoliday, HOLIDAY_MAP } from '../utils/holidays.js';
-import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, sName, sNameC } from '../constants.js';
+import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, sName, sNameC } from '../constants.js';
+import { TH } from '../utils/fmt.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -1004,4 +1005,130 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
   );
 }
 
-export { CalendarManagerPanel, EventEntryModal, EventRegistryModal };
+
+// ── Recurring Rules + Proactive Calendar Search ─────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// RECURRING EVENTS ENGINE  (v4.200 — Calendar System)
+// ════════════════════════════════════════════════════════════════════════════════
+// Most disruptive non-holiday events repeat annually — school breaks, early-
+// release days, recurring local festivals. Rather than re-tag every instance
+// every year, a recurrence RULE is stored once and expanded into dated
+// instances on demand. Instances are never auto-written to mf_events — they
+// surface as pending confirmations (same review-before-trust principle as the
+// rest of the event system) because school-calendar dates shift slightly
+// year to year and a wrong auto-applied date would silently corrupt
+// calibration rather than just being absent.
+//
+// Storage: localStorage 'mf_recurring_rules' — array of:
+//   {id, label, type (EVENT_TYPES key), locs:[loc,...], month, day,
+//    durationDays, active, source:'manual'|'ai_search', createdAt}
+// ─────────────────────────────────────────────────────────────────────────────
+function loadRecurringRules(){
+  try{ return JSON.parse(localStorage.getItem('mf_recurring_rules')||'[]'); }catch{ return []; }
+}
+function saveRecurringRules(rules){
+  try{ localStorage.setItem('mf_recurring_rules', JSON.stringify(rules)); }catch(e){}
+}
+
+// Expand one rule into a concrete {start,end} date range for a given year.
+function expandRecurringRule(rule, year){
+  if(!rule||rule.month==null||rule.day==null) return null;
+  const start = new Date(year, rule.month-1, rule.day, 12);
+  const dur = Math.max(1, rule.durationDays||1);
+  const end = new Date(start.getTime() + (dur-1)*86400000);
+  return {start, end};
+}
+
+// For every active rule, find instances in [today, today+monthsAhead] that
+// are NOT already present in userEvents for ALL of the rule's target stores
+// — these are the ones needing confirmation. A rule is considered "applied"
+// for a given year+store only if every day in its range is already tagged.
+function getRecurringInstancesNeedingConfirm(rules, userEvents, monthsAhead=14){
+  const out=[];
+  const now=new Date();
+  const horizon=new Date(now.getTime()+monthsAhead*30*86400000);
+  const thisYear=now.getFullYear();
+  (rules||[]).filter(r=>r.active!==false).forEach(rule=>{
+    for(const year of [thisYear, thisYear+1]){
+      const span=expandRecurringRule(rule, year);
+      if(!span) continue;
+      if(span.end<now||span.start>horizon) continue;
+      const missingLocs=(rule.locs||[]).filter(loc=>{
+        let d=new Date(span.start);
+        while(d<=span.end){
+          const dk=dKey(d);
+          if(!(userEvents[loc]&&userEvents[loc][dk])) return true; // at least one day untagged
+          d=new Date(d.getTime()+86400000);
+        }
+        return false;
+      });
+      if(missingLocs.length) out.push({
+        ruleId:rule.id, ruleLabel:rule.label, type:rule.type,
+        start:span.start, end:span.end, locs:missingLocs,
+      });
+    }
+  });
+  return out;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PROACTIVE CALENDAR SEARCH  (v4.200 — Calendar System)
+// ════════════════════════════════════════════════════════════════════════════════
+// Forward-looking sibling of lookupMissEvent (which searches reactively, tied
+// to an already-detected anomaly). This searches BEFORE anything has gone
+// wrong — school district academic calendars and major local events are
+// public, predictable, and findable months in advance. Same model/tool/auth
+// pattern as lookupMissEvent for consistency; output is structured JSON since
+// results need to become calendar entries, not a paragraph for a human to read.
+// Results are NEVER auto-applied — they return as candidates for the pending
+// review queue in CalendarManagerPanel.
+// ─────────────────────────────────────────────────────────────────────────────
+async function searchUpcomingEvents(loc){
+  const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
+  if(!apiKey) throw new Error('No Anthropic API key set. Add one in Settings → AI & Integrations.');
+
+  const coord=STORE_COORDS[loc]||{};
+  const city=coord.city||'';
+  const state=coord.state||'OK';
+  const stateFull = state==='FL'?'Florida':'Oklahoma';
+  const storeName=STORE_NAMES[loc]||loc;
+
+  const prompt='You are a McDonald\'s district analytics assistant building a proactive events calendar.\n\n'+
+'Store: '+storeName+', '+city+', '+stateFull+'\n\n'+
+'Search for information that could affect this restaurant\'s sales over the next 4 months:\n'+
+'1. The academic calendar for the public school district serving '+city+', '+stateFull+' — find early-release days, no-school/teacher in-service days, and the start/end dates of any school breaks (Thanksgiving, winter break, spring break) for the current school year.\n'+
+'2. Any major local events, festivals, concerts, or sports tournaments scheduled in or near '+city+' in the next 120 days that could meaningfully draw or divert foot traffic.\n\n'+
+'Return ONLY a JSON array, no other text, no markdown code fences, no explanation. Each item must follow this exact shape:\n'+
+'{"date":"YYYY-MM-DD","endDate":"YYYY-MM-DD or null","type":"school_early_release|school_no_school|school_break|school_start|school_end|event","label":"short label","confidence":"high|medium|low","sourceNote":"one short sentence on where this came from"}\n\n'+
+'If you find nothing reliable, return an empty array: []';
+
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({
+      model:'claude-haiku-4-5-20251001',
+      max_tokens:2048,
+      tools:[{type:'web_search_20250305',name:'web_search'}],
+      messages:[{role:'user',content:prompt}]
+    })});
+  if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error((err.error&&err.error.message)||'HTTP '+res.status);}
+  const data=await res.json();
+  const text=(data.content||[]).filter(b=>b.type==='text'&&b.text).map(b=>b.text).join('\n');
+
+  // Defensive JSON extraction — model may wrap in prose or code fences despite instructions
+  const first=text.indexOf('['), last=text.lastIndexOf(']');
+  if(first===-1||last===-1||last<first) return [];
+  let parsed;
+  try{ parsed=JSON.parse(text.slice(first,last+1)); }catch(e){ return []; }
+  if(!Array.isArray(parsed)) return [];
+
+  // Validate + normalize each candidate; drop anything malformed rather than
+  // surfacing garbage into the review queue
+  return parsed.filter(c=>c&&c.date&&/^\d{4}-\d{2}-\d{2}$/.test(c.date)&&EVENT_TYPES[c.type]).map(c=>({
+    date:c.date, endDate:(c.endDate&&/^\d{4}-\d{2}-\d{2}$/.test(c.endDate))?c.endDate:null,
+    type:c.type, label:(c.label||EVENT_TYPES[c.type].label).slice(0,90),
+    confidence:['high','medium','low'].includes(c.confidence)?c.confidence:'medium',
+    sourceNote:(c.sourceNote||'').slice(0,180),
+  }));
+}
+
+export { CalendarManagerPanel, EventEntryModal, EventRegistryModal, loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents };
