@@ -382,13 +382,7 @@ function App() {
     setSessionRestoring(false);
   };
 
-  React.useEffect(()=>{
-    (async()=>{
-      const check = await withTimeout(idbQuickSessionCheck(), 5000, {available:false, timedOut:true});
-      if(check.available) await performFullIDBRestore();
-      else if(check.timedOut) console.warn('[IDB] session check timed out — load data via Upload.');
-    })();
-  },[]);
+  React.useEffect(()=>{ performFullIDBRestore(); },[]);
 
   React.useEffect(()=>{
     const existing=userTargets;
