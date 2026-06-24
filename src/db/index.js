@@ -154,18 +154,25 @@ async function idbClearAll() {
 
 async function idbGetCoverage() {
   const cov = {};
-  for (const name of DATA_STORES) {
-    try {
-      const cnt = await db[name].count();
-      if (cnt > 0) {
-        const rows = await db[name].toArray();
-        const dates = rows.map(r => r._d).filter(Boolean).sort();
-        cov[name] = { count: cnt, from: dates[0] || '?', to: dates[dates.length - 1] || '?' };
-      } else {
-        cov[name] = { count: 0 };
-      }
-    } catch (e) { cov[name] = { count: 0, error: true }; }
-  }
+  try {
+    const idb = await getRawIDB();
+    for (const name of DATA_STORES) {
+      try {
+        const rows = await new Promise((resolve, reject) => {
+          const tx  = idb.transaction(name, 'readonly');
+          const req = tx.objectStore(name).getAll();
+          req.onsuccess = e => resolve(e.target.result || []);
+          req.onerror   = e => reject(e.target.error);
+        });
+        if (rows.length > 0) {
+          const dates = rows.map(r => r._d).filter(Boolean).sort();
+          cov[name] = { count: rows.length, from: dates[0] || '?', to: dates[dates.length - 1] || '?' };
+        } else {
+          cov[name] = { count: 0 };
+        }
+      } catch (e) { cov[name] = { count: 0, error: true }; }
+    }
+  } catch (e) {}
   return cov;
 }
 

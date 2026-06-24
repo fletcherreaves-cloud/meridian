@@ -407,7 +407,7 @@ function App() {
     (async()=>{
       // Hard-timeout-bounded — this can NEVER block the app shell, no matter
       // what else might be wrong with IndexedDB underneath it.
-      const check = await withTimeout(idbQuickSessionCheck(), 3000, {available:false, timedOut:true});
+      const check = await withTimeout(idbQuickSessionCheck(), 10000, {available:false, timedOut:true});
       if(check.available) setSessionAvailable(check);
       else if(check.timedOut) console.warn('[IDB] Quick session check timed out — skipping auto-restore prompt. Data can still be loaded via Upload.');
     })();
