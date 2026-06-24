@@ -452,21 +452,13 @@ function App() {
   // 'message' handler violation after every restore or file load.
   // mfIDBSave is still available for the manual Save Session button.
 
-  // ── Startup IDB check: look for a saved session and offer restore ─────────────
+  // ── Startup: clear any old session blob, then let idbQuickSessionCheck handle restore ──
+  // mfIDBLoad() used to read a 123k-row structured-clone blob from IDB — the deserialization
+  // alone took 144 seconds in the message handler, blocking the page on every load.
+  // mfIDBClear() deletes the record without deserializing it (uses IDB delete, not get).
+  // The sessionAvailable banner from idbQuickSessionCheck handles the restore offer instead.
   React.useEffect(() => {
-    mfIDBLoad().then(session => {
-      if (!session || !session.dsRaw) return;
-      const ageDays = session.savedAt
-        ? Math.floor((Date.now() - new Date(session.savedAt)) / 86400000)
-        : 999;
-      if (ageDays > 30) { mfIDBClear(); return; } // stale — clear silently
-      // Clear the blob immediately after reading — structured-clone deserialization
-      // of 123k rows was causing a 126-second IDB message handler violation on
-      // every app load. Data is already in per-store Dexie tables. One-time
-      // migration: show the banner this load, but future loads use the fast path.
-      mfIDBClear();
-      setSessionBanner(session);
-    });
+    mfIDBClear().catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const saveSettings = useCallback((next) => {
     // Accepts plain object only (DI panel now passes plain objects, not functional updates)
