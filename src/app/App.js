@@ -320,7 +320,6 @@ function App() {
   const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
-  const [sessionAvailable, setSessionAvailable] = useState(null); // {count} when a previous session is detected but not yet restored
   const [sessionRestoring, setSessionRestoring] = useState(false);
 
   // Auto-migrate flat targets → v2 on startup
@@ -395,7 +394,6 @@ function App() {
         setTimeout(()=>setLoadMsg(null),6000);
         console.log('[R5] done:', (performance.now()-_t0).toFixed(0)+'ms — '+total+' total rows');
       }
-      setSessionAvailable(null); // restored — clear the banner
     }catch(e){
       console.warn('IDB restore failed:',e);
       alert('Session restore failed: '+e.message+'\n\nYou can still load data fresh via Upload.');
@@ -405,11 +403,9 @@ function App() {
 
   React.useEffect(()=>{
     (async()=>{
-      // Hard-timeout-bounded — this can NEVER block the app shell, no matter
-      // what else might be wrong with IndexedDB underneath it.
       const check = await withTimeout(idbQuickSessionCheck(), 10000, {available:false, timedOut:true});
-      if(check.available) setSessionAvailable(check);
-      else if(check.timedOut) console.warn('[IDB] Quick session check timed out — skipping auto-restore prompt. Data can still be loaded via Upload.');
+      if(check.available) await performFullIDBRestore();
+      else if(check.timedOut) console.warn('[IDB] session check timed out — data can be loaded via Upload.');
     })();
   },[]);
 
@@ -730,24 +726,6 @@ function App() {
   },[]);
 
   return div({style:{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--text)',fontFamily:'var(--sans)',overflow:'hidden'}},
-
-    // ── Session restore banner (v4.215) ──────────────────────────────────
-    // Always visible, independent of view/modal state — restore is now a
-    // deliberate action the user takes, never an automatic process that
-    // could block the app before this very button could be clicked.
-    sessionAvailable&&div({style:{position:'fixed',top:14,left:'50%',transform:'translateX(-50%)',
-      zIndex:9999,display:'flex',alignItems:'center',gap:10,padding:'9px 14px',
-      background:'var(--surf)',border:'.5px solid rgba(245,158,11,.4)',borderRadius:'var(--rl)',
-      boxShadow:'0 8px 28px rgba(0,0,0,.45)'}},
-      span({style:{fontSize:'15px'}},'💾'),
-      span({style:{fontSize:'10.5px',color:'var(--text)'}},
-        'Previous session found — '+sessionAvailable.count.toLocaleString()+' labor rows'),
-      btn({className:'btn btn-sm btn-a',style:{fontSize:'9px',fontWeight:700,padding:'4px 12px'},
-        disabled:sessionRestoring, onClick:performFullIDBRestore},
-        sessionRestoring?'⏳ Restoring…':'Restore Session'),
-      btn({className:'btn btn-sm',style:{fontSize:'9px',color:'var(--text3)'},
-        disabled:sessionRestoring, onClick:()=>setSessionAvailable(null)},'Dismiss')
-    ),
 
     // ── LEFT SIDEBAR ─────────────────────────────────────────────
     h(AppSidebar,{
