@@ -324,35 +324,17 @@ function App() {
 
   // Auto-migrate flat targets → v2 on startup
 
-  // ── Session restore: now opt-in, not automatic  (v4.215) ─────────────────
-  // The previous behavior tried to restore the FULL session — every row of
-  // potentially years of multi-store data — automatically, before the app
-  // shell could become interactive at all. If that process hung for ANY
-  // reason (and across several rounds of fixes, it kept finding new ways
-  // to), there was no way to interact with the app around it — not even to
-  // close a modal that happened to be open. That's the actual design flaw,
-  // not any single bug inside the restore mechanism itself.
-  //
-  // Now: a genuinely lightweight check (count() only, hard-timeout-bounded
-  // so it can NEVER block the shell, regardless of what else might be wrong
-  // with IndexedDB) runs on mount. If a previous session is found, a banner
-  // offers to restore it — a deliberate, visible action the user takes when
-  // ready, not a blocking process they have no control over. The heavy
-  // restore logic is unchanged; it just no longer runs automatically.
   const performFullIDBRestore = async () => {
     setSessionRestoring(true);
+    setLoadMsg('⏳ Loading stored data...');
     try{
-      const _t0=performance.now();
       const {labor,ops,ctrl,fob,audit,peaks,dar,weather} = await loadDsFromIDB();
-      console.log('[R1] loadDsFromIDB:', (performance.now()-_t0).toFixed(0)+'ms');
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
-      console.log('[R2] after yield:', (performance.now()-_t0).toFixed(0)+'ms');
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
         const bIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
         const lastAct={};
         for(const r of labor){if(r.sales>0){if(!lastAct[r.loc]||r.date>lastAct[r.loc])lastAct[r.loc]=r.date;}}
-        console.log('[R3] indices built:', (performance.now()-_t0).toFixed(0)+'ms');
         const restoredDs={
           laborRows:labor, opsRows:ops, ctrlRows:ctrl,
           fobRows:fob, auditRows:audit,
@@ -367,7 +349,6 @@ function App() {
           lastActual:lastAct,
         };
         if(audit.length>0) try{restoredDs.empRisk=analyzeRegisterAudit(audit);}catch(e){}
-        console.log('[R4] setDs:', (performance.now()-_t0).toFixed(0)+'ms');
         setDs(restoredDs);
         try{
           const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
@@ -377,9 +358,7 @@ function App() {
             setUserEvents(_taggedEvents);
           }
         }catch(e){console.warn('Auto-holiday-tag on IDB restore failed:',e);}
-        // v4.216: both of these used to re-read large stores from IndexedDB
-        // a second and third time — coverage from data already in memory,
-        // weather cache from the `weather` array already loaded above.
+        // coverage and wx cache from data already in memory — no second IDB read
         const cov = coverageFromLoadedRows(labor, ops, ctrl, fob, audit, peaks, dar, weather);
         setIdbCoverage(cov);
         (weather||[]).forEach(r=>{if(!r.loc||!r.date)return;
@@ -392,20 +371,22 @@ function App() {
           : '💾 Stored data loaded from IndexedDB';
         setLoadMsg(msg);
         setTimeout(()=>setLoadMsg(null),6000);
-        console.log('[R5] done:', (performance.now()-_t0).toFixed(0)+'ms — '+total+' total rows');
+      } else {
+        setLoadMsg(null);
       }
     }catch(e){
       console.warn('IDB restore failed:',e);
-      alert('Session restore failed: '+e.message+'\n\nYou can still load data fresh via Upload.');
+      setLoadMsg('❌ Auto-restore failed — load data via Upload');
+      setTimeout(()=>setLoadMsg(null),8000);
     }
     setSessionRestoring(false);
   };
 
   React.useEffect(()=>{
     (async()=>{
-      const check = await withTimeout(idbQuickSessionCheck(), 10000, {available:false, timedOut:true});
+      const check = await withTimeout(idbQuickSessionCheck(), 5000, {available:false, timedOut:true});
       if(check.available) await performFullIDBRestore();
-      else if(check.timedOut) console.warn('[IDB] session check timed out — data can be loaded via Upload.');
+      else if(check.timedOut) console.warn('[IDB] session check timed out — load data via Upload.');
     })();
   },[]);
 
