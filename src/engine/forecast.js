@@ -7,6 +7,8 @@ const div  = (props, ...c) => h('div',    props, ...c);
 const span = (props, ...c) => h('span',   props, ...c);
 const btn  = (props, ...c) => h('button', props, ...c);
 const path = (props, ...c) => h('path',   props, ...c);
+const PEAK_SLICES = {'7am-9am':'breakfast','7am - 9am':'breakfast','breakfast':'breakfast','11am-2pm':'lunch','11am - 2pm':'lunch','lunch':'lunch','5pm-7pm':'dinner','5pm - 7pm':'dinner','dinner':'dinner'};
+function normSlice(s){return PEAK_SLICES[s.toLowerCase().trim()]||s.toLowerCase().replace(/\s/g,'');}
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';

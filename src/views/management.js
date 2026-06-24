@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { DEF_SETTINGS, sName, sNameC, STORE_NAMES } from '../constants.js';
-import { InfoIcon } from '../engine/forecast.js';
+import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);

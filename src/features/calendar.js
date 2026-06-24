@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { dKey, nDK } from '../utils/date.js';
 import { isHoliday, HOLIDAY_MAP } from '../utils/holidays.js';
+import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
 

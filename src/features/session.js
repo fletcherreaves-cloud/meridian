@@ -347,4 +347,4 @@ function SessionBanner({session, onRestore, onDismiss}) {
 }
 // ── end session system ──────────────────────────────────────────────────────
 
-export { ErrorBoundary, mfExportSession, mfRestoreSession, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner };
+export { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner };

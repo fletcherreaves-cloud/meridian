@@ -4,6 +4,7 @@ import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS } from '../con
 import { dKey, addD } from '../utils/date.js';
 import { bLocIdx, compute6wk } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
+import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
 import { STORE_STAFF } from '../features/morning-brief.js';
 import { fPct } from '../utils/fmt.js';

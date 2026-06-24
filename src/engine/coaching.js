@@ -2,6 +2,8 @@
 import * as React from 'react';
 import { STORE_NAMES, sName, getKB } from '../constants.js';
 import { runWhyEngineScan } from '../engine/why.js';
+import { compute6wk } from '../engine/forecast.js';
+import { buildBrief, buildStore } from '../engine/pipeline.js';
 import { TH } from '../utils/fmt.js';
 
 const h    = React.createElement;
