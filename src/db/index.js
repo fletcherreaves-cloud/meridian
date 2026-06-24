@@ -57,8 +57,17 @@ async function idbPutRows(storeName, rows) {
 }
 
 async function idbGetAllRows(storeName) {
+  // Bypass Dexie's toArray() to avoid Dexie v4's post-read mutation-tracking
+  // overhead, which runs O(n) background microtasks after large reads and
+  // shows as a 'message' handler violation (~150s for 41k records).
   try {
-    const rows = await db[storeName].toArray();
+    const idb = db.backendDB();
+    const rows = await new Promise((resolve, reject) => {
+      const tx = idb.transaction(storeName, 'readonly');
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror  = e => reject(e.target.error);
+    });
     return rows.map(r => ({
       ...r,
       date: r._d ? new Date(r._d + 'T00:00:00') : null,
@@ -129,8 +138,16 @@ function withTimeout(promise, ms, fallback) {
 }
 
 async function idbQuickSessionCheck() {
+  // Use raw IDB count to avoid triggering Dexie v4's mutation-tracking overhead
   try {
-    const cnt = await db.laborRows.count();
+    await db.open(); // ensure DB is open before accessing backendDB()
+    const idb = db.backendDB();
+    const cnt = await new Promise((resolve, reject) => {
+      const tx = idb.transaction('laborRows', 'readonly');
+      const req = tx.objectStore('laborRows').count();
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
     return cnt > 0 ? { available: true, count: cnt } : { available: false };
   } catch (e) { return { available: false }; }
 }
