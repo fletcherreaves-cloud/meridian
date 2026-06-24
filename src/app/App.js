@@ -460,6 +460,11 @@ function App() {
         ? Math.floor((Date.now() - new Date(session.savedAt)) / 86400000)
         : 999;
       if (ageDays > 30) { mfIDBClear(); return; } // stale — clear silently
+      // Clear the blob immediately after reading — structured-clone deserialization
+      // of 123k rows was causing a 126-second IDB message handler violation on
+      // every app load. Data is already in per-store Dexie tables. One-time
+      // migration: show the banner this load, but future loads use the fast path.
+      mfIDBClear();
       setSessionBanner(session);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
