@@ -625,10 +625,9 @@ function App() {
             const recalib={};
             const locList=currentDS.storeIds||[];
             for(const loc of locList){
-              // Yield before each store so this never blocks the event loop
-              await new Promise(r=>setTimeout(r,0));
               const lRows=(currentDS.laborRows||[]).filter(r=>String(r.loc)===String(loc)&&r.sales>0);
               if(lRows.length<60) continue;
+              await new Promise(r=>setTimeout(r,0)); // yield only when doing real work
               const byDate={};
               lRows.forEach(r=>{byDate[dKey(r.date)]=r.sales;});
               // Lightweight recency-weighted grid search
