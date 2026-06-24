@@ -445,16 +445,12 @@ function App() {
   },[]);
   const saveUserTargets= useCallback((next)=>{setUserTargets(next);try{localStorage.setItem('mf_targets',JSON.stringify(next));}catch{}}, []);
 
-  // ── IndexedDB auto-save: fires whenever ds changes (i.e., after every file load) ──
-  React.useEffect(() => {
-    if (!ds || !ds.loaded) return;
-    const t = setTimeout(() => {
-      mfIDBSave(ds).then(ok => {
-        if (ok) console.log('[McForecast] Session auto-saved to IndexedDB', new Date().toLocaleTimeString());
-      });
-    }, 800); // slight debounce so rapid multi-file drops don't thrash IDB
-    return () => clearTimeout(t);
-  }, [ds]);
+  // mfIDBSave (blob write) removed from auto-save — data already persisted
+  // row-by-row via idbPutRows (Dexie per-store tables), which is the restore
+  // path used by performFullIDBRestore. Writing the entire DS as a single
+  // structured-clone blob (123k rows) was the source of the 146-second
+  // 'message' handler violation after every restore or file load.
+  // mfIDBSave is still available for the manual Save Session button.
 
   // ── Startup IDB check: look for a saved session and offer restore ─────────────
   React.useEffect(() => {
@@ -858,19 +854,9 @@ function App() {
       sessionBanner&&h(SessionBanner,{
         session:sessionBanner,
         onDismiss:()=>setSessionBanner(null),
-        onRestore:async(session)=>{
-          try{
-            const restored=_mfDeserDS(session.dsRaw);
-            if(!restored){alert('Session data could not be restored.');return;}
-            setDs(restored);
-            setSessionBanner(null);
-            setLoadMsg('✓ Session restored · '+( restored.storeIds?.length||0)+' stores · '+(restored.laborRows?.length||0)+' labor rows');
-            setTimeout(()=>setLoadMsg(null),6000);
-          }catch(e){
-            console.error('[McForecast] Session restore error:',e);
-            alert('Session restore failed: '+e.message);
-            setSessionBanner(null);
-          }
+        onRestore:async()=>{
+          setSessionBanner(null);
+          await performFullIDBRestore();
         }
       }),
       view==='command'&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
