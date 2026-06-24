@@ -343,7 +343,13 @@ function App() {
   const performFullIDBRestore = async () => {
     setSessionRestoring(true);
     try{
+      const _t0=performance.now();
       const {labor,ops,ctrl,fob,audit,peaks,dar,weather} = await loadDsFromIDB();
+      console.log('[TIMING] loadDsFromIDB:', (performance.now()-_t0).toFixed(0)+'ms');
+      // Yield to browser before heavy synchronous processing — breaks out of the
+      // IDB message handler task so Chrome doesn't attribute all processing to it.
+      await new Promise(r=>setTimeout(r,0));
+      console.log('[TIMING] after yield:', (performance.now()-_t0).toFixed(0)+'ms');
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
         const bIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
