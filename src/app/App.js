@@ -11,7 +11,7 @@ import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, 
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon } from '../engine/forecast.js';
-import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, idbGetCoverage, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB } from '../db/index.js';
+import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
 import { GMCoachingBrief } from '../engine/coaching.js';
 import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
@@ -343,13 +343,7 @@ function App() {
   const performFullIDBRestore = async () => {
     setSessionRestoring(true);
     try{
-      const _t0=performance.now();
       const {labor,ops,ctrl,fob,audit,peaks,dar,weather} = await loadDsFromIDB();
-      console.log('[TIMING] loadDsFromIDB:', (performance.now()-_t0).toFixed(0)+'ms');
-      // Yield to browser before heavy synchronous processing — breaks out of the
-      // IDB message handler task so Chrome doesn't attribute all processing to it.
-      await new Promise(r=>setTimeout(r,0));
-      console.log('[TIMING] after yield:', (performance.now()-_t0).toFixed(0)+'ms');
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
         const bIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
@@ -553,15 +547,7 @@ function App() {
 
   const rawStores = useMemo(()=>{
     if(!ds) return [];
-    const _t0=performance.now();
-    window._perfStats = {compute6wk:0, buildBrief:0};
-    const result = ds.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,ds,{...settings,targets:mergedTargets}));
-    const _total=(performance.now()-_t0);
-    console.log('[PERF] rawStores (all 27 buildStore calls):', _total.toFixed(1)+'ms',
-      '— compute6wk:', window._perfStats.compute6wk.toFixed(1)+'ms',
-      'buildBrief:', window._perfStats.buildBrief.toFixed(1)+'ms',
-      'other:', (_total-window._perfStats.compute6wk-window._perfStats.buildBrief).toFixed(1)+'ms');
-    return result;
+    return ds.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,ds,{...settings,targets:mergedTargets}));
   },[ds,settings,mergedTargets]);
 
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
@@ -625,12 +611,14 @@ function App() {
         }
         await idbSetMeta('lastFile',{names,ts:Date.now()});
         // Auto-recalibrate AE model params when new data loads
-        // (runs async in background — non-blocking)
+        // (runs async in background — yields between stores to stay non-blocking)
         (async()=>{
           try{
             const recalib={};
             const locList=currentDS.storeIds||[];
             for(const loc of locList){
+              // Yield before each store so this never blocks the event loop
+              await new Promise(r=>setTimeout(r,0));
               const lRows=(currentDS.laborRows||[]).filter(r=>String(r.loc)===String(loc)&&r.sales>0);
               if(lRows.length<60) continue;
               const byDate={};
@@ -648,7 +636,8 @@ function App() {
                     const actual=byDate[evalDates[i]];
                     if(!actual||actual<100) continue;
                     if(isWeatherExtreme(loc,fd,currentDS)) continue; // skip weather outliers
-                    const fcst=forecastAdaptiveDI(currentDS.laborRows,currentDS.laborIdx,loc,fd,{w2,w4,w6,alpha});
+                    // Pass lRows (already filtered to this loc) instead of all 41k laborRows
+                    const fcst=forecastAdaptiveDI(lRows,currentDS.laborIdx,loc,fd,{w2,w4,w6,alpha});
                     if(!fcst) continue;
                     const dayAge=(evalDates.length-1-i);
                     const wt=Math.pow(0.98,dayAge);
@@ -667,7 +656,8 @@ function App() {
             console.log('AE auto-recalibration complete for',Object.keys(recalib).length,'stores');
           }catch(e){console.warn('AE recalibration failed:',e);}
         })();
-        const cov=await idbGetCoverage();
+        // Use in-memory data for coverage — avoids re-reading 123k rows from IDB
+        const cov=coverageFromLoadedRows(currentDS.laborRows,currentDS.opsRows,currentDS.ctrlRows,currentDS.fobRows,currentDS.auditRows,[...(currentDS.peaksSvcRows||[]),...(currentDS.peaksSalesRows||[])],currentDS.darRows,currentDS.weatherRows);
         setIdbCoverage(cov);
         const labCov=cov.laborRows;
         setLoadMsg('✓ Saved · '+names+' · '+(labCov?.count||0).toLocaleString()+' labor rows stored');
