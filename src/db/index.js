@@ -32,6 +32,21 @@ db.version(5).stores({
   weatherRows: '_rk, loc',
   metadata:    '_rk',
 });
+// v6: drop the loc secondary indexes — never used in queries (all filtering is
+// in-memory), and Chrome's IDB engine spends ~142s loading index B-trees on
+// cold open of a 123k-record database.
+db.version(6).stores({
+  laborRows:   '_rk',
+  opsRows:     '_rk',
+  ctrlRows:    '_rk',
+  fobRows:     '_rk',
+  auditRows:   '_rk',
+  peaksRows:   '_rk',
+  darRows:     '_rk',
+  pmixRows:    '_rk',
+  weatherRows: '_rk',
+  metadata:    '_rk',
+});
 
 const DATA_STORES = ['laborRows','opsRows','ctrlRows','fobRows',
                      'auditRows','peaksRows','darRows','pmixRows','weatherRows'];
@@ -56,18 +71,48 @@ async function idbPutRows(storeName, rows) {
 
 // Opens the raw IDBDatabase without going through Dexie — avoids Dexie v4's
 // initialization overhead which blocks the message handler for ~146s on large DBs.
-// Closes gracefully on versionchange so Dexie upgrades can proceed unblocked.
+// Also upgrades from v5→v6 via raw IDB to drop the unused loc secondary indexes,
+// which Chrome's IDB engine was spending ~142s loading from disk on every cold open.
+// Closes gracefully on versionchange so any further Dexie upgrades can proceed.
+const _DB_VERSION = 6;
+const _ALL_STORES = {
+  laborRows:'_rk', opsRows:'_rk', ctrlRows:'_rk', fobRows:'_rk',
+  auditRows:'_rk', peaksRows:'_rk', darRows:'_rk', pmixRows:'_rk',
+  weatherRows:'_rk', metadata:'_rk',
+};
+const _LOC_INDEX_STORES = ['laborRows','opsRows','ctrlRows','fobRows','auditRows','peaksRows','darRows','weatherRows'];
+
 let _rawIDB = null;
 async function getRawIDB() {
   if (_rawIDB) return _rawIDB;
   _rawIDB = await new Promise((resolve, reject) => {
-    const req = indexedDB.open('MeridianDB'); // open at current version, no upgrade
+    const req = indexedDB.open('MeridianDB', _DB_VERSION);
+    req.onupgradeneeded = e => {
+      const idb = e.target.result;
+      const tx  = e.target.transaction;
+      const old = e.oldVersion;
+      if (old === 0) {
+        // Fresh install — create stores so Dexie can write without re-running migrations
+        for (const [name, key] of Object.entries(_ALL_STORES)) {
+          if (!idb.objectStoreNames.contains(name)) idb.createObjectStore(name, {keyPath: key});
+        }
+      } else if (old === 5) {
+        // v5→v6: drop the unused loc secondary indexes
+        for (const name of _LOC_INDEX_STORES) {
+          try {
+            const store = tx.objectStore(name);
+            if ([...store.indexNames].includes('loc')) store.deleteIndex('loc');
+          } catch(_) {}
+        }
+      }
+      // old === 4: stores exist with _rk only, nothing to change
+    };
     req.onsuccess = e => {
       _rawIDB = e.target.result;
       _rawIDB.onversionchange = () => { _rawIDB.close(); _rawIDB = null; };
       resolve(_rawIDB);
     };
-    req.onerror = e => reject(e.target.error);
+    req.onerror = e => { _rawIDB = null; reject(e.target.error); };
   });
   return _rawIDB;
 }
