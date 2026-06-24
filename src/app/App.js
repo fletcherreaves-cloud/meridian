@@ -343,12 +343,17 @@ function App() {
   const performFullIDBRestore = async () => {
     setSessionRestoring(true);
     try{
+      const _t0=performance.now();
       const {labor,ops,ctrl,fob,audit,peaks,dar,weather} = await loadDsFromIDB();
+      console.log('[R1] loadDsFromIDB:', (performance.now()-_t0).toFixed(0)+'ms');
+      await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
+      console.log('[R2] after yield:', (performance.now()-_t0).toFixed(0)+'ms');
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
         const bIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
         const lastAct={};
         for(const r of labor){if(r.sales>0){if(!lastAct[r.loc]||r.date>lastAct[r.loc])lastAct[r.loc]=r.date;}}
+        console.log('[R3] indices built:', (performance.now()-_t0).toFixed(0)+'ms');
         const restoredDs={
           laborRows:labor, opsRows:ops, ctrlRows:ctrl,
           fobRows:fob, auditRows:audit,
@@ -363,6 +368,7 @@ function App() {
           lastActual:lastAct,
         };
         if(audit.length>0) try{restoredDs.empRisk=analyzeRegisterAudit(audit);}catch(e){}
+        console.log('[R4] setDs:', (performance.now()-_t0).toFixed(0)+'ms');
         setDs(restoredDs);
         try{
           const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
@@ -387,7 +393,7 @@ function App() {
           : '💾 Stored data loaded from IndexedDB';
         setLoadMsg(msg);
         setTimeout(()=>setLoadMsg(null),6000);
-        console.log(`IDB restore: ${total} total rows`);
+        console.log('[R5] done:', (performance.now()-_t0).toFixed(0)+'ms — '+total+' total rows');
       }
       setSessionAvailable(null); // restored — clear the banner
     }catch(e){
@@ -614,6 +620,8 @@ function App() {
         // (runs async in background — yields between stores to stay non-blocking)
         (async()=>{
           try{
+            const _aeT0=performance.now();
+            console.log('[AE] recalibration starting');
             const recalib={};
             const locList=currentDS.storeIds||[];
             for(const loc of locList){
@@ -653,7 +661,7 @@ function App() {
             }
             // Store recalibrated params
             try{localStorage.setItem('mf_ae_params',JSON.stringify({params:recalib,ts:Date.now()}));}catch{}
-            console.log('AE auto-recalibration complete for',Object.keys(recalib).length,'stores');
+            console.log('[AE] complete:', Object.keys(recalib).length,'stores in',(performance.now()-_aeT0).toFixed(0)+'ms');
           }catch(e){console.warn('AE recalibration failed:',e);}
         })();
         // Use in-memory data for coverage — avoids re-reading 123k rows from IDB

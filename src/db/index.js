@@ -31,6 +31,8 @@ db.version(5).stores({
   pmixRows:    '_rk',
   weatherRows: '_rk, loc',
   metadata:    '_rk',
+}).upgrade(tx => {
+  console.log('[DB] v4→v5 upgrade running — adding loc indexes to', Object.keys(tx.db.tables).length, 'tables');
 });
 
 const DATA_STORES = ['laborRows','opsRows','ctrlRows','fobRows',
