@@ -772,8 +772,8 @@ function compute6wk(loc,ds,wb){
   const avgSales=sRows.length?sRows.reduce((a,row)=>a+row.sales,0)/sRows.length:0;
   r.depositVsSalesRatio=r.depositAmt>0&&avgSales>0?r.depositAmt/avgSales:null;
   // Dynamic deposit baseline: derive from this store own history (cashless ratio varies by location)
-  const allDep=ds.ctrlRows.filter(row=>row.loc===loc&&row.depositAmt>0);
-  const allSales=ds.laborRows.filter(row=>row.loc===loc&&row.sales>0);
+  const allDep=ctrlL.filter(row=>row.depositAmt>0);
+  const allSales=laborL.filter(row=>row.sales>0);
   let depositBaseline=0.20; // default floor
   if(allDep.length>=7&&allSales.length>=7){
     const sMap={};for(const row of allSales)sMap[dKey(row.date)]=row.sales;
@@ -789,17 +789,18 @@ function compute6wk(loc,ds,wb){
   // T2W trend: last 2 weeks avg sales vs prior 2 weeks avg sales
   const t2wCut = new Date(Date.now()-14*86400000);
   const t4wCut = new Date(Date.now()-28*86400000);
-  const recentRows = ds.laborRows.filter(row=>row.loc===loc&&row.date>=t2wCut&&row.sales>0);
-  const priorRows  = ds.laborRows.filter(row=>row.loc===loc&&row.date>=t4wCut&&row.date<t2wCut&&row.sales>0);
+  const recentRows = laborL.filter(row=>row.date>=t2wCut&&row.sales>0);
+  const priorRows  = laborL.filter(row=>row.date>=t4wCut&&row.date<t2wCut&&row.sales>0);
   const recentAvg  = recentRows.length ? recentRows.reduce((a,row)=>a+row.sales,0)/recentRows.length : 0;
   const priorAvg   = priorRows.length  ? priorRows.reduce((a,row)=>a+row.sales,0)/priorRows.length   : 0;
   r.t2w = (recentRows.length>=3 && priorRows.length>=3 && priorAvg>100)
     ? +((recentAvg - priorAvg) / priorAvg).toFixed(4) : null;
   // avgCheck and weeklySales for AI Insights
-  const checkRows = ds.laborRows.filter(row=>row.loc===loc&&row.date>=new Date(Date.now()-wb*7*86400000)&&row.avgCheck>0);
+  const _wbCut=new Date(Date.now()-wb*7*86400000);
+  const checkRows = laborL.filter(row=>row.date>=_wbCut&&row.avgCheck>0);
   r.avgCheck = checkRows.length ? checkRows.reduce((a,row)=>a+row.avgCheck,0)/checkRows.length : 0;
   // Also try ops rows if labor doesn't have it
-  if(!r.avgCheck){const oChk=ds.opsRows.filter(row=>row.loc===loc&&row.date>=new Date(Date.now()-wb*7*86400000)&&row.avgCheck>0);r.avgCheck=oChk.length?oChk.reduce((a,row)=>a+row.avgCheck,0)/oChk.length:0;}
+  if(!r.avgCheck){const oChk=opsL.filter(row=>row.date>=_wbCut&&row.avgCheck>0);r.avgCheck=oChk.length?oChk.reduce((a,row)=>a+row.avgCheck,0)/oChk.length:0;}
   r.weeklySales = sRows.length ? sRows.reduce((a,row)=>a+row.sales,0)/Math.max(1,Math.ceil(sRows.length/7)) : 0;
   return r;
 }
