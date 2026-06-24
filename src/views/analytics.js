@@ -11,6 +11,7 @@ import { EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbGetCoverage, idbPutRows } from '../db/index.js';
+import { ExportDropdown, StoreCard } from './store-dash.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -6934,4 +6935,4 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
   );
 }
 
-export { AIInsightsTab, MetricCorrelationExplorer, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager };
+export { AIInsightsTab, MetricCorrelationExplorer, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ModelHealthBadge };

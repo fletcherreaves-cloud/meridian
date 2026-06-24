@@ -5,7 +5,9 @@ import { addD, dKey, sodOf, eodOf, fmtDI } from '../utils/date.js';
 import { forecastDay, forecastRange, effectivePlusUp, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
-import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice } from './store-dash.js';
+import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable } from './store-dash.js';
+import { AIInsightsTab, ModelHealthBadge } from './analytics.js';
+import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 
 const h=React.createElement;

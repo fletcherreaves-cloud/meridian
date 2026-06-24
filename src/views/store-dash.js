@@ -7,6 +7,7 @@ import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, ge
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { idbPutRows } from '../db/index.js';
+import { ModelHealthBadge } from './analytics.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol } from '../utils/fmt.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
