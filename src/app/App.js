@@ -452,14 +452,11 @@ function App() {
   // 'message' handler violation after every restore or file load.
   // mfIDBSave is still available for the manual Save Session button.
 
-  // ── Startup: clear any old session blob, then let idbQuickSessionCheck handle restore ──
-  // mfIDBLoad() used to read a 123k-row structured-clone blob from IDB — the deserialization
-  // alone took 144 seconds in the message handler, blocking the page on every load.
-  // mfIDBClear() deletes the record without deserializing it (uses IDB delete, not get).
-  // The sessionAvailable banner from idbQuickSessionCheck handles the restore offer instead.
-  React.useEffect(() => {
-    mfIDBClear().catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Old mfIDBLoad/mfIDBClear startup removed — both reading AND deleting the
+  // 123k-row session blob from McForecastSession IDB caused 143-second violations
+  // (read triggers structured-clone deserialization; delete triggers IDB compaction).
+  // The sessionAvailable banner from idbQuickSessionCheck handles restore instead.
+  // The old McForecastSession database remains in place but is never touched.
   const saveSettings = useCallback((next) => {
     // Accepts plain object only (DI panel now passes plain objects, not functional updates)
     setSettings(next);
