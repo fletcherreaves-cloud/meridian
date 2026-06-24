@@ -1753,4 +1753,4 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose}) {
   );
 }
 
-export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel };
+export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor };

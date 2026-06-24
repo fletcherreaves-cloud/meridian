@@ -1771,4 +1771,4 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   );
 }
 
-export { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow };
+export { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief };
