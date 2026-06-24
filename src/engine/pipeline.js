@@ -7,7 +7,7 @@ import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
 import { STORE_STAFF } from '../features/morning-brief.js';
-import { fPct } from '../utils/fmt.js';
+import { fPct, f$ } from '../utils/fmt.js';
 import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets } from '../parsers/index.js';
 
 function buildDS(workbooks){
