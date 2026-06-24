@@ -331,6 +331,7 @@ function parseOpsData(wb,sheet,defaultDateOverride){
     const r=raw[i];if(!r)continue;
     const loc=String(r[C.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
     const dt=C.date>=0?parseXLDate(r[C.date]):_summaryDate;if(!dt)continue;const kv=r[C.kvsu];
+    let kvsu=0;
     if(typeof kv==='number')kvsu=kv>1?kv/100:kv;
     else if(kv){const s=String(kv).replace('%','').replace("'",'').trim();kvsu=parseFloat(s)>1?parseFloat(s)/100:parseFloat(s)||0;}
     rows.push({loc,date:dt,oepe:parseFloat(r[C.oepe])||0,park:parsePct(r[C.park]),
