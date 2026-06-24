@@ -31,8 +31,6 @@ db.version(5).stores({
   pmixRows:    '_rk',
   weatherRows: '_rk, loc',
   metadata:    '_rk',
-}).upgrade(tx => {
-  console.log('[DB] v4→v5 upgrade running — adding loc indexes to', Object.keys(tx.db.tables).length, 'tables');
 });
 
 const DATA_STORES = ['laborRows','opsRows','ctrlRows','fobRows',
@@ -56,12 +54,27 @@ async function idbPutRows(storeName, rows) {
   } catch (e) { console.warn('IDB put failed:', e); }
 }
 
+// Opens the raw IDBDatabase without going through Dexie — avoids Dexie v4's
+// initialization overhead which blocks the message handler for ~146s on large DBs.
+// Closes gracefully on versionchange so Dexie upgrades can proceed unblocked.
+let _rawIDB = null;
+async function getRawIDB() {
+  if (_rawIDB) return _rawIDB;
+  _rawIDB = await new Promise((resolve, reject) => {
+    const req = indexedDB.open('MeridianDB'); // open at current version, no upgrade
+    req.onsuccess = e => {
+      _rawIDB = e.target.result;
+      _rawIDB.onversionchange = () => { _rawIDB.close(); _rawIDB = null; };
+      resolve(_rawIDB);
+    };
+    req.onerror = e => reject(e.target.error);
+  });
+  return _rawIDB;
+}
+
 async function idbGetAllRows(storeName) {
-  // Bypass Dexie's toArray() to avoid Dexie v4's post-read mutation-tracking
-  // overhead, which runs O(n) background microtasks after large reads and
-  // shows as a 'message' handler violation (~150s for 41k records).
   try {
-    const idb = db.backendDB();
+    const idb = await getRawIDB();
     const rows = await new Promise((resolve, reject) => {
       const tx = idb.transaction(storeName, 'readonly');
       const req = tx.objectStore(storeName).getAll();
@@ -138,10 +151,8 @@ function withTimeout(promise, ms, fallback) {
 }
 
 async function idbQuickSessionCheck() {
-  // Use raw IDB count to avoid triggering Dexie v4's mutation-tracking overhead
   try {
-    await db.open(); // ensure DB is open before accessing backendDB()
-    const idb = db.backendDB();
+    const idb = await getRawIDB();
     const cnt = await new Promise((resolve, reject) => {
       const tx = idb.transaction('laborRows', 'readonly');
       const req = tx.objectStore('laborRows').count();
