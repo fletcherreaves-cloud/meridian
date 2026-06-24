@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
+import { DEFAULT_TARGETS, STORE_NAMES, sNameC } from '../constants.js';
 import { fetchLY, getStoreOrg, avg6 } from '../engine/forecast.js';
 
 const h=React.createElement;

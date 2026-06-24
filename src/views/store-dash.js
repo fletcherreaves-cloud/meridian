@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB } from '../constants.js';
+import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { idbPutRows } from '../db/index.js';

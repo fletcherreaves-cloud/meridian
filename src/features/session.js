@@ -3,6 +3,7 @@ import * as React from 'react';
 import { dKey } from '../utils/date.js';
 import { bLocIdx } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
+import { DEF_SETTINGS } from '../constants.js';
 
 // ErrorBoundary React class component
 class ErrorBoundary extends React.Component {
