@@ -2,7 +2,7 @@
 import * as XLSX from 'xlsx';
 import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS } from '../constants.js';
 import { dKey, addD } from '../utils/date.js';
-import { bLocIdx, compute6wk } from '../engine/forecast.js';
+import { bLocIdx, compute6wk, locRows } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
