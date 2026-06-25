@@ -83,21 +83,21 @@ const _ALL_STORES = {
 const _LOC_INDEX_STORES = ['laborRows','opsRows','ctrlRows','fobRows','auditRows','peaksRows','darRows','weatherRows'];
 
 let _rawIDB = null;
-async function getRawIDB() {
-  if (_rawIDB) return _rawIDB;
-  _rawIDB = await new Promise((resolve, reject) => {
+let _rawIDBPromise = null; // cached so concurrent callers share one open() request
+function getRawIDB() {
+  if (_rawIDB) return Promise.resolve(_rawIDB);
+  if (_rawIDBPromise) return _rawIDBPromise;
+  _rawIDBPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open('MeridianDB', _DB_VERSION);
     req.onupgradeneeded = e => {
       const idb = e.target.result;
       const tx  = e.target.transaction;
       const old = e.oldVersion;
       if (old === 0) {
-        // Fresh install — create stores so Dexie can write without re-running migrations
         for (const [name, key] of Object.entries(_ALL_STORES)) {
           if (!idb.objectStoreNames.contains(name)) idb.createObjectStore(name, {keyPath: key});
         }
       } else if (old === 5) {
-        // v5→v6: drop the unused loc secondary indexes
         for (const name of _LOC_INDEX_STORES) {
           try {
             const store = tx.objectStore(name);
@@ -105,16 +105,15 @@ async function getRawIDB() {
           } catch(_) {}
         }
       }
-      // old === 4: stores exist with _rk only, nothing to change
     };
     req.onsuccess = e => {
       _rawIDB = e.target.result;
-      _rawIDB.onversionchange = () => { _rawIDB.close(); _rawIDB = null; };
+      _rawIDB.onversionchange = () => { _rawIDB.close(); _rawIDB = null; _rawIDBPromise = null; };
       resolve(_rawIDB);
     };
-    req.onerror = e => { _rawIDB = null; reject(e.target.error); };
+    req.onerror = e => { _rawIDB = null; _rawIDBPromise = null; reject(e.target.error); };
   });
-  return _rawIDB;
+  return _rawIDBPromise;
 }
 
 async function idbGetAllRows(storeName) {

@@ -574,6 +574,7 @@ function App() {
     (async()=>{
       try{
         const ds=currentDS;
+        setLoadMsg('💾 Saving to database...');
         if(ds.laborRows?.length) await idbPutRows('laborRows',ds.laborRows);
         if(ds.opsRows?.length)   await idbPutRows('opsRows',ds.opsRows);
         if(ds.ctrlRows?.length)  await idbPutRows('ctrlRows',ds.ctrlRows);
@@ -639,9 +640,13 @@ function App() {
         setIdbCoverage(cov);
         const labCov=cov.laborRows;
         setLoadMsg('✓ Saved · '+names+' · '+(labCov?.count||0).toLocaleString()+' labor rows stored');
-      }catch(e){ console.warn('IDB persist error:',e); }
+        setTimeout(()=>setLoadMsg(null),6000);
+      }catch(e){
+        console.warn('IDB persist error:',e);
+        setLoadMsg('❌ Database save failed — data is loaded but will not persist after refresh');
+        setTimeout(()=>setLoadMsg(null),10000);
+      }
     })();
-    setTimeout(()=>setLoadMsg(null),6000);
   },[]);
 
   // Drag-drop
