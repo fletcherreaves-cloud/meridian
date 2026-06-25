@@ -11,7 +11,7 @@ import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, 
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon } from '../engine/forecast.js';
-import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB } from '../db/index.js';
+import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, idbSaveBlob } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
 import { GMCoachingBrief } from '../engine/coaching.js';
 import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
@@ -328,7 +328,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,weather} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -340,7 +340,7 @@ function App() {
           fobRows:fob, auditRows:audit,
           peaksSvcRows:peaks.filter(r=>r._peakSvc===true||r.svcType), peaksSalesRows:peaks.filter(r=>r._peakSvc===false&&!r.svcType),
           darRows:dar,
-          pmixData:{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:{},
+          pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:{},
           targets:{}, loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
@@ -575,18 +575,9 @@ function App() {
       try{
         const ds=currentDS;
         setLoadMsg('💾 Saving to database...');
-        if(ds.laborRows?.length) await idbPutRows('laborRows',ds.laborRows);
-        if(ds.opsRows?.length)   await idbPutRows('opsRows',ds.opsRows);
-        if(ds.ctrlRows?.length)  await idbPutRows('ctrlRows',ds.ctrlRows);
-        if(ds.fobRows?.length)   await idbPutRows('fobRows',ds.fobRows);
-        if(ds.auditRows?.length) await idbPutRows('auditRows',ds.auditRows);
-        const _peaksAll=[...(ds.peaksSvcRows||[]),...(ds.peaksSalesRows||[])];
-        if(_peaksAll.length) await idbPutRows('peaksRows',_peaksAll.map(r=>({...r,_peakSvc:!!(r.svcType||r.service)})));
-        if(ds.darRows?.length)   await idbPutRows('darRows',ds.darRows);
-        if(ds.pmixData&&Object.keys(ds.pmixData).length){
-          const pmixSerial=Object.entries(ds.pmixData).map(([k,v])=>({_rk:'pmix:'+k,_d:'0000-00-00',loc:'pmix',filename:k,...(typeof v==='object'?v:{})}));
-          await idbPutRows('pmixRows',pmixSerial);
-        }
+        // Single JSON blob write — structured clone of a string is O(n) memcopy,
+        // vs 143s of per-field deserialization when writing 41k individual IDB objects.
+        await idbSaveBlob(ds);
         await idbSetMeta('lastFile',{names,ts:Date.now()});
         // Auto-recalibrate AE model params when new data loads
         // (runs async in background — yields between stores to stay non-blocking)

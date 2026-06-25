@@ -227,28 +227,92 @@ async function idbQuickSessionCheck() {
   } catch (e) { return { available: false }; }
 }
 
+// ── Blob storage ──────────────────────────────────────────────────────────
+// Stores the entire dataset as a single JSON string in metadata._snapshot.
+// Structured clone of a plain string is a memcopy (~50ms for 40MB) vs the
+// 143-second per-field deserialization Chrome does for 41k complex IDB objects.
+// JSON.parse of the resulting string takes ~500ms — total load < 1 second.
+
+async function idbSaveBlob(ds) {
+  if (!ds) return;
+  try {
+    const idb = await getRawIDB();
+    const strip = r => { const { date, ...rest } = r; return rest; };
+    const data = {
+      v: 1,
+      labor:   (ds.laborRows   || []).map(strip),
+      ops:     (ds.opsRows     || []).map(strip),
+      ctrl:    (ds.ctrlRows    || []).map(strip),
+      fob:     (ds.fobRows     || []).map(strip),
+      audit:   (ds.auditRows   || []).map(strip),
+      peaks:   [...(ds.peaksSvcRows||[]),...(ds.peaksSalesRows||[])].map(strip),
+      dar:     (ds.darRows     || []).map(strip),
+      pmix:    ds.pmixData || {},
+    };
+    const json = JSON.stringify(data);
+    await new Promise((resolve, reject) => {
+      const tx = idb.transaction('metadata', 'readwrite');
+      tx.objectStore('metadata').put({ _rk: '_snapshot', value: json });
+      tx.oncomplete = () => resolve();
+      tx.onerror = e => reject(e.target.error);
+    });
+  } catch(e) { console.warn('IDB blob save failed:', e); }
+}
+
+async function idbLoadBlob() {
+  try {
+    const idb = await getRawIDB();
+    const rec = await new Promise((resolve, reject) => {
+      const tx = idb.transaction('metadata', 'readonly');
+      const req = tx.objectStore('metadata').get('_snapshot');
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+    if (!rec?.value) return null;
+    const data = JSON.parse(rec.value);
+    if (!data || data.v !== 1) return null;
+    const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
+    return {
+      labor: (data.labor||[]).map(toRow), ops:  (data.ops||[]).map(toRow),
+      ctrl:  (data.ctrl||[]).map(toRow),  fob:  (data.fob||[]).map(toRow),
+      audit: (data.audit||[]).map(toRow), peaks:(data.peaks||[]).map(toRow),
+      dar:   (data.dar||[]).map(toRow),   pmix: data.pmix||{},
+    };
+  } catch(e) { return null; }
+}
+
 async function loadDsFromIDB() {
-  const [labor, ops, ctrl, fob, audit, peaks, dar, weather] = await Promise.all([
-    idbGetAllRows('laborRows'),
-    idbGetAllRows('opsRows'),
-    idbGetAllRows('ctrlRows'),
-    idbGetAllRows('fobRows'),
-    idbGetAllRows('auditRows'),
-    idbGetAllRows('peaksRows'),
-    idbGetAllRows('darRows'),
-    idbGetAllRows('weatherRows'),
-  ]);
-  const wxRows = weather.map(r => ({
+  // Weather is small and updated independently — always read fresh via cursor
+  const weatherRaw = await idbGetAllRows('weatherRows');
+  const weather = weatherRaw.map(r => ({
     ...r,
-    date: r.date instanceof Date ? r.date
-        : typeof r.date === 'string' ? new Date(r.date)
-        : typeof r.date === 'number' ? new Date(r.date) : r.date,
+    date: r._d ? new Date(r._d + 'T00:00:00') : r.date ? new Date(r.date) : null,
   }));
-  return { labor, ops, ctrl, fob, audit, peaks, dar, weather: wxRows };
+
+  // Fast path: single JSON string read from metadata (~500ms total)
+  const blob = await idbLoadBlob();
+  if (blob && blob.labor.length > 0) {
+    return { labor:blob.labor, ops:blob.ops, ctrl:blob.ctrl, fob:blob.fob,
+             audit:blob.audit, peaks:blob.peaks, dar:blob.dar, weather, pmix:blob.pmix };
+  }
+
+  // No blob yet — fall back to cursor reads (first run before any file upload)
+  const [labor, ops, ctrl, fob, audit, peaks, dar] = await Promise.all([
+    idbGetAllRows('laborRows'), idbGetAllRows('opsRows'), idbGetAllRows('ctrlRows'),
+    idbGetAllRows('fobRows'),   idbGetAllRows('auditRows'), idbGetAllRows('peaksRows'),
+    idbGetAllRows('darRows'),
+  ]);
+  // Auto-save blob so subsequent loads use the fast path — fire and forget
+  if (labor.length > 0) {
+    idbSaveBlob({ laborRows:labor, opsRows:ops, ctrlRows:ctrl, fobRows:fob,
+                   auditRows:audit, peaksSvcRows:peaks, peaksSalesRows:[], darRows:dar,
+                   pmixData:{} }).catch(()=>{});
+  }
+  return { labor, ops, ctrl, fob, audit, peaks, dar, weather, pmix: {} };
 }
 
 export {
   idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta,
   idbClearAll, idbGetCoverage, coverageFromLoadedRows, withTimeout,
-  idbQuickSessionCheck, loadDsFromIDB,
+  idbQuickSessionCheck, loadDsFromIDB, idbSaveBlob,
 };
