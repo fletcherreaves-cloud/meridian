@@ -602,20 +602,21 @@ function App() {
               await new Promise(r=>setTimeout(r,0)); // yield only when doing real work
               const byDate={};
               lRows.forEach(r=>{byDate[dKey(r.date)]=r.sales;});
-              // Lightweight recency-weighted grid search
-              const evalDates=Object.keys(byDate).sort().slice(-90);
+              // Recency-weighted grid search — last 52 dates, 18 combinations
+              // Yields between every alpha to keep the UI responsive (<300ms blocks)
+              const evalDates=Object.keys(byDate).sort().slice(-52);
               let bestWMAPE=999,bestP=AE_DI_PARAMS[loc]||{w2:0.4,w4:0.35,w6:0.25,alpha:0.20};
-              for(const w2 of [0.6,0.5,0.4,0.33])for(const w4 of [0.3,0.25,0.33]){
+              for(const w2 of [0.6,0.4,0.33])for(const w4 of [0.3,0.25]){
                 const w6=Math.round((1-w2-w4)*100)/100;
                 if(w6<0.05) continue;
-                for(const alpha of [0.15,0.20,0.25,0.30,0.35]){
+                for(const alpha of [0.15,0.25,0.35]){
+                  await new Promise(r=>setTimeout(r,0)); // yield — keep UI responsive
                   const errs=[],wts=[];
                   for(let i=20;i<evalDates.length;i++){
                     const fd=new Date(evalDates[i]+'T00:00:00');
                     const actual=byDate[evalDates[i]];
                     if(!actual||actual<100) continue;
-                    if(isWeatherExtreme(loc,fd,currentDS)) continue; // skip weather outliers
-                    // Pass lRows (already filtered to this loc) instead of all 41k laborRows
+                    if(isWeatherExtreme(loc,fd,currentDS)) continue;
                     const fcst=forecastAdaptiveDI(lRows,currentDS.laborIdx,loc,fd,{w2,w4,w6,alpha});
                     if(!fcst) continue;
                     const dayAge=(evalDates.length-1-i);
