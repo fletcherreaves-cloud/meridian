@@ -1,6 +1,17 @@
 // @ts-nocheck
 import Dexie from 'dexie';
 
+// ── DIAGNOSTIC: intercept every indexedDB.open() call ────────────────────
+// Logs a stack trace to the console whenever MeridianDB (or any IDB) is
+// opened. Remove after root cause of 119s 'message' violation is found.
+if (typeof window !== 'undefined' && window.indexedDB) {
+  const _origIDBOpen = window.indexedDB.open.bind(window.indexedDB);
+  window.indexedDB.open = function(name, version) {
+    console.error(`🔴 indexedDB.open("${name}", ${version}) called`, new Error().stack);
+    return _origIDBOpen(name, version);
+  };
+}
+
 // ── MeridianDB — main operational data store ─────────────────────────────
 // Migrated from hand-built IndexedDB at v4. Dexie handles connection sharing,
 // schema migration, and transaction management automatically.
