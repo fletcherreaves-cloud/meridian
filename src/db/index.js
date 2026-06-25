@@ -260,6 +260,7 @@ async function opfsSave(ds) {
       peaks:   [...(ds.peaksSvcRows||[]),...(ds.peaksSalesRows||[])].map(strip),
       dar:     (ds.darRows     || []).map(strip),
       pmix:    ds.pmixData || {},
+      weather: (ds.weatherRows || []).map(strip),
     };
     const json = JSON.stringify(data);
     const root = await navigator.storage.getDirectory();
@@ -280,10 +281,11 @@ async function opfsLoad() {
     if (!data || data.v !== 2) return null;
     const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
     return {
-      labor: (data.labor||[]).map(toRow), ops:  (data.ops||[]).map(toRow),
-      ctrl:  (data.ctrl||[]).map(toRow),  fob:  (data.fob||[]).map(toRow),
-      audit: (data.audit||[]).map(toRow), peaks:(data.peaks||[]).map(toRow),
-      dar:   (data.dar||[]).map(toRow),   pmix: data.pmix||{},
+      labor:   (data.labor  ||[]).map(toRow), ops:   (data.ops   ||[]).map(toRow),
+      ctrl:    (data.ctrl   ||[]).map(toRow), fob:   (data.fob   ||[]).map(toRow),
+      audit:   (data.audit  ||[]).map(toRow), peaks: (data.peaks ||[]).map(toRow),
+      dar:     (data.dar    ||[]).map(toRow), pmix:  data.pmix||{},
+      weather: (data.weather||[]).map(toRow),
     };
   } catch(e) {
     if (e.name !== 'NotFoundError') console.warn('OPFS load failed:', e);
@@ -316,32 +318,41 @@ async function _idbBlobMigrate() {
 }
 
 async function loadDsFromIDB() {
-  // Weather is small and updated independently — always read fresh via cursor
+  // ── OPFS check MUST come first — before any IDB access. ──────────────────
+  // Opening MeridianDB for even a tiny weatherRows read forces Chrome to load
+  // B-tree indexes for all 10 stores (including 41k-row tables), causing the
+  // 128-second violation. If OPFS has data, skip every IDB call entirely.
+
+  const opfs = await opfsLoad();
+  if (opfs && opfs.labor.length > 0) {
+    return {
+      labor:opfs.labor, ops:opfs.ops,   ctrl:opfs.ctrl, fob:opfs.fob,
+      audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar,
+      weather: opfs.weather || [],
+      pmix:opfs.pmix,
+    };
+  }
+
+  // ── Migration / cold start: IDB reads (runs once, never again) ───────────
+  // Read weather here since OPFS wasn't available.
   const weatherRaw = await idbGetAllRows('weatherRows');
   const weather = weatherRaw.map(r => ({
     ...r,
     date: r._d ? new Date(r._d + 'T00:00:00') : r.date ? new Date(r.date) : null,
   }));
 
-  // Fast path: OPFS native file read — no IDB IPC, no 'message' handler, no violations
-  const opfs = await opfsLoad();
-  if (opfs && opfs.labor.length > 0) {
-    return { labor:opfs.labor, ops:opfs.ops, ctrl:opfs.ctrl, fob:opfs.fob,
-             audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar, weather, pmix:opfs.pmix };
-  }
-
-  // Migration: IDB blob from previous session (saves to OPFS for next time)
+  // Try IDB blob written by the previous blob-storage session
   const blob = await _idbBlobMigrate();
   if (blob && blob.labor.length > 0) {
     opfsSave({ laborRows:blob.labor, opsRows:blob.ops, ctrlRows:blob.ctrl,
                 fobRows:blob.fob, auditRows:blob.audit, peaksSvcRows:blob.peaks,
-                peaksSalesRows:[], darRows:blob.dar, pmixData:blob.pmix||{} }).catch(()=>{});
+                peaksSalesRows:[], darRows:blob.dar, pmixData:blob.pmix||{},
+                weatherRows:weather }).catch(()=>{});
     return { labor:blob.labor, ops:blob.ops, ctrl:blob.ctrl, fob:blob.fob,
              audit:blob.audit, peaks:blob.peaks, dar:blob.dar, weather, pmix:blob.pmix||{} };
   }
 
-  // Slow path: cursor reads — first ever run, or after storage was cleared.
-  // This runs once, saves to OPFS, then is never needed again.
+  // Full cursor reads — absolute first run or after storage clear.
   const [labor, ops, ctrl, fob, audit, peaks, dar] = await Promise.all([
     idbGetAllRows('laborRows'), idbGetAllRows('opsRows'), idbGetAllRows('ctrlRows'),
     idbGetAllRows('fobRows'),   idbGetAllRows('auditRows'), idbGetAllRows('peaksRows'),
@@ -350,7 +361,7 @@ async function loadDsFromIDB() {
   if (labor.length > 0) {
     opfsSave({ laborRows:labor, opsRows:ops, ctrlRows:ctrl, fobRows:fob,
                 auditRows:audit, peaksSvcRows:peaks, peaksSalesRows:[], darRows:dar,
-                pmixData:{} }).catch(()=>{});
+                pmixData:{}, weatherRows:weather }).catch(()=>{});
   }
   return { labor, ops, ctrl, fob, audit, peaks, dar, weather, pmix: {} };
 }
