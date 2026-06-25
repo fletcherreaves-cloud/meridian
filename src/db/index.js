@@ -69,12 +69,10 @@ async function idbPutRows(storeName, rows) {
   } catch (e) { console.warn('IDB put failed:', e); }
 }
 
-// Opens the raw IDBDatabase without going through Dexie — avoids Dexie v4's
-// initialization overhead which blocks the message handler for ~146s on large DBs.
-// Also upgrades from v5→v6 via raw IDB to drop the unused loc secondary indexes,
-// which Chrome's IDB engine was spending ~142s loading from disk on every cold open.
-// Closes gracefully on versionchange so any further Dexie upgrades can proceed.
-const _DB_VERSION = 6;
+// Raw IDB reader — bypasses Dexie's open() overhead for reads.
+// IMPORTANT: Dexie multiplies its version numbers by 10 internally.
+// db.version(6) → IDB version 60. Must match or reads throw VersionError.
+const _DB_VERSION = 60; // = Dexie version 6 × 10
 const _ALL_STORES = {
   laborRows:'_rk', opsRows:'_rk', ctrlRows:'_rk', fobRows:'_rk',
   auditRows:'_rk', peaksRows:'_rk', darRows:'_rk', pmixRows:'_rk',
@@ -83,7 +81,7 @@ const _ALL_STORES = {
 const _LOC_INDEX_STORES = ['laborRows','opsRows','ctrlRows','fobRows','auditRows','peaksRows','darRows','weatherRows'];
 
 let _rawIDB = null;
-let _rawIDBPromise = null; // cached so concurrent callers share one open() request
+let _rawIDBPromise = null;
 function getRawIDB() {
   if (_rawIDB) return Promise.resolve(_rawIDB);
   if (_rawIDBPromise) return _rawIDBPromise;
@@ -94,10 +92,12 @@ function getRawIDB() {
       const tx  = e.target.transaction;
       const old = e.oldVersion;
       if (old === 0) {
+        // Fresh install — create all stores
         for (const [name, key] of Object.entries(_ALL_STORES)) {
           if (!idb.objectStoreNames.contains(name)) idb.createObjectStore(name, {keyPath: key});
         }
-      } else if (old === 5) {
+      } else if (old === 50) {
+        // IDB 50 = Dexie v5 — drop the unused loc secondary indexes
         for (const name of _LOC_INDEX_STORES) {
           try {
             const store = tx.objectStore(name);
@@ -105,6 +105,7 @@ function getRawIDB() {
           } catch(_) {}
         }
       }
+      // old 40 (Dexie v4) or old 60 (already current): no schema changes needed
     };
     req.onsuccess = e => {
       _rawIDB = e.target.result;
