@@ -121,15 +121,21 @@ async function idbGetAllRows(storeName) {
   try {
     const idb = await getRawIDB();
     const rows = await new Promise((resolve, reject) => {
+      const all = [];
       const tx = idb.transaction(storeName, 'readonly');
-      const req = tx.objectStore(storeName).getAll();
-      req.onsuccess = e => resolve(e.target.result || []);
-      req.onerror  = e => reject(e.target.error);
+      // openCursor instead of getAll — getAll() deserializes all rows in one
+      // synchronous 'message' handler which blocks the JS thread for 145s on
+      // 41k-row stores. Cursor fires one tiny callback per row, no violations.
+      const req = tx.objectStore(storeName).openCursor();
+      req.onsuccess = e => {
+        const cursor = e.target.result;
+        if (cursor) { all.push(cursor.value); cursor.continue(); }
+        else resolve(all);
+      };
+      req.onerror = e => reject(e.target.error);
+      tx.onerror  = e => reject(e.target.error);
     });
-    return rows.map(r => ({
-      ...r,
-      date: r._d ? new Date(r._d + 'T00:00:00') : null,
-    }));
+    return rows.map(r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null }));
   } catch (e) { console.warn('IDB get failed:', e); return []; }
 }
 
@@ -156,22 +162,28 @@ async function idbGetCoverage() {
   const cov = {};
   try {
     const idb = await getRawIDB();
-    for (const name of DATA_STORES) {
-      try {
-        const rows = await new Promise((resolve, reject) => {
+    await Promise.all(DATA_STORES.map(name =>
+      new Promise(resolve => {
+        try {
+          let count = 0; let minD = null; let maxD = null;
           const tx  = idb.transaction(name, 'readonly');
-          const req = tx.objectStore(name).getAll();
-          req.onsuccess = e => resolve(e.target.result || []);
-          req.onerror   = e => reject(e.target.error);
-        });
-        if (rows.length > 0) {
-          const dates = rows.map(r => r._d).filter(Boolean).sort();
-          cov[name] = { count: rows.length, from: dates[0] || '?', to: dates[dates.length - 1] || '?' };
-        } else {
-          cov[name] = { count: 0 };
-        }
-      } catch (e) { cov[name] = { count: 0, error: true }; }
-    }
+          const req = tx.objectStore(name).openCursor();
+          req.onsuccess = e => {
+            const cursor = e.target.result;
+            if (cursor) {
+              count++;
+              const d = cursor.value._d;
+              if (d) { if (!minD || d < minD) minD = d; if (!maxD || d > maxD) maxD = d; }
+              cursor.continue();
+            } else {
+              cov[name] = count > 0 ? { count, from: minD || '?', to: maxD || '?' } : { count: 0 };
+              resolve();
+            }
+          };
+          req.onerror = () => { cov[name] = { count: 0, error: true }; resolve(); };
+        } catch(e) { cov[name] = { count: 0, error: true }; resolve(); }
+      })
+    ));
   } catch (e) {}
   return cov;
 }
