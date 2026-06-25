@@ -6,7 +6,6 @@ import { buildHolidays } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
-import { idbPutRows } from '../db/index.js';
 import { ModelHealthBadge } from './analytics.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol } from '../utils/fmt.js';
 
@@ -51,8 +50,6 @@ async function fetchForecastWeather(loc) {
         source:'forecast'
       };
       _wxCache[key] = _fwEntry;
-      // Persist to IDB — forecast weather survives page reload
-      idbPutRows('weatherRows',[{_rk:key,loc,date:new Date(dateStr+'T12:00:00'),..._fwEntry}]).catch(()=>{});
     });
   } catch(e) { console.warn('Weather fetch failed for '+loc+':', e.message); }
 }

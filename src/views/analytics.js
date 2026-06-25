@@ -10,7 +10,7 @@ import { computeEventFactors } from '../utils/events.js';
 import { EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
-import { idbClearAll, idbPutRows, opfsClear } from '../db/index.js';
+import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard } from './store-dash.js';
 
 const h=React.createElement;
@@ -865,6 +865,9 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
             });
             if(rows.length>0){
               await idbPutRows('weatherRows',rows);
+              // Also persist to OPFS so weather survives next reload (OPFS is
+              // the primary read path; IDB writes alone are ignored on reload)
+              opfsSave({...(ds||{}), weatherRows:rows}).catch(()=>{});
               const wDates=rows.map(r=>r._d||'').filter(Boolean).sort();
               setCov(c=>({...c,weatherRows:{count:rows.length,from:wDates[0]||'?',to:wDates[wDates.length-1]||'?'}}));
               setWxMsg('✓ '+rows.length.toLocaleString()+' weather records stored — all 27 stores · 2022–present');
