@@ -17,6 +17,8 @@
 
 self.onmessage = async ({ data }) => {
   if (data.cmd !== 'load') return;
+  const t0 = performance.now();
+  console.log('[opfs-worker] load started');
   try {
     const root = await navigator.storage.getDirectory();
 
@@ -24,29 +26,37 @@ self.onmessage = async ({ data }) => {
     try {
       fh = await root.getFileHandle('meridian-data.json');
     } catch(e) {
+      console.log('[opfs-worker] file not found:', e.name);
       self.postMessage({ cmd: 'load', ok: false, notFound: true });
       return;
     }
 
     // Primary path: FileSystemSyncAccessHandle — direct OS read, no IPC on data path
     try {
+      const t1 = performance.now();
       const sh  = await fh.createSyncAccessHandle();
-      const buf = new ArrayBuffer(sh.getSize());
+      const size = sh.getSize();
+      console.log(`[opfs-worker] sync handle opened (${Math.round(performance.now()-t1)}ms), size=${size}`);
+      const buf = new ArrayBuffer(size);
+      const t2 = performance.now();
       sh.read(buf, { at: 0 });
       sh.close();
-      self.postMessage({ cmd: 'load', ok: true, buf }, [buf]); // Transfer = zero-copy
+      console.log(`[opfs-worker] sync read done: ${Math.round(performance.now()-t2)}ms, total=${Math.round(performance.now()-t0)}ms`);
+      self.postMessage({ cmd: 'load', ok: true, buf, path: 'sync' }, [buf]);
       return;
     } catch(syncErr) {
-      // Sync handle unavailable (exclusive lock held by another tab)
-      // Fall back to async read — still in Worker so main thread stays free
+      console.warn('[opfs-worker] sync handle failed, falling back:', syncErr.name, syncErr.message);
     }
 
     // Fallback: async arrayBuffer() — Worker thread blocks, main thread stays free
+    const t3 = performance.now();
     const file = await fh.getFile();
     const buf  = await file.arrayBuffer();
-    self.postMessage({ cmd: 'load', ok: true, buf }, [buf]);
+    console.log(`[opfs-worker] async arrayBuffer done: ${Math.round(performance.now()-t3)}ms, total=${Math.round(performance.now()-t0)}ms`);
+    self.postMessage({ cmd: 'load', ok: true, buf, path: 'async' }, [buf]);
 
   } catch(e) {
+    console.error('[opfs-worker] error:', e);
     self.postMessage({ cmd: 'load', ok: false, err: String(e) });
   }
 };
