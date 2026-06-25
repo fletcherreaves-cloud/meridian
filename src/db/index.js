@@ -227,19 +227,31 @@ async function idbQuickSessionCheck() {
   } catch (e) { return { available: false }; }
 }
 
-// ── Blob storage ──────────────────────────────────────────────────────────
-// Stores the entire dataset as a single JSON string in metadata._snapshot.
-// Structured clone of a plain string is a memcopy (~50ms for 40MB) vs the
-// 143-second per-field deserialization Chrome does for 41k complex IDB objects.
-// JSON.parse of the resulting string takes ~500ms — total load < 1 second.
+// ── OPFS storage ──────────────────────────────────────────────────────────
+// Origin Private File System: native OS file I/O, zero IDB IPC involvement.
+//
+// WHY THIS WORKS where IDB didn't:
+//   IDB sends data across a process boundary via Chrome's structured-clone
+//   IPC. The tab's 'message' event handler deserializes it synchronously —
+//   any large payload = 120-143s browser freeze (the violation we've seen).
+//
+//   OPFS file.text() returns a Promise backed by the OS file system. The
+//   main thread is IDLE while the file reads (non-blocking I/O). No
+//   'message' event fires. No violation possible, regardless of file size.
+//
+// MIGRATION PATH (first load after this change):
+//   No OPFS file exists yet → falls back to IDB cursor reads (one final
+//   slow load) → auto-saves to OPFS in the background. Every load after
+//   that uses OPFS and takes < 2 seconds.
 
-async function idbSaveBlob(ds) {
+const OPFS_FILE = 'meridian-data.json';
+
+async function opfsSave(ds) {
   if (!ds) return;
   try {
-    const idb = await getRawIDB();
     const strip = r => { const { date, ...rest } = r; return rest; };
     const data = {
-      v: 1,
+      v: 2,
       labor:   (ds.laborRows   || []).map(strip),
       ops:     (ds.opsRows     || []).map(strip),
       ctrl:    (ds.ctrlRows    || []).map(strip),
@@ -250,16 +262,38 @@ async function idbSaveBlob(ds) {
       pmix:    ds.pmixData || {},
     };
     const json = JSON.stringify(data);
-    await new Promise((resolve, reject) => {
-      const tx = idb.transaction('metadata', 'readwrite');
-      tx.objectStore('metadata').put({ _rk: '_snapshot', value: json });
-      tx.oncomplete = () => resolve();
-      tx.onerror = e => reject(e.target.error);
-    });
-  } catch(e) { console.warn('IDB blob save failed:', e); }
+    const root = await navigator.storage.getDirectory();
+    const fh   = await root.getFileHandle(OPFS_FILE, { create: true });
+    const wr   = await fh.createWritable();
+    await wr.write(json);
+    await wr.close();
+  } catch(e) { console.warn('OPFS save failed:', e); }
 }
 
-async function idbLoadBlob() {
+async function opfsLoad() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fh   = await root.getFileHandle(OPFS_FILE);
+    const file = await fh.getFile();
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data || data.v !== 2) return null;
+    const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
+    return {
+      labor: (data.labor||[]).map(toRow), ops:  (data.ops||[]).map(toRow),
+      ctrl:  (data.ctrl||[]).map(toRow),  fob:  (data.fob||[]).map(toRow),
+      audit: (data.audit||[]).map(toRow), peaks:(data.peaks||[]).map(toRow),
+      dar:   (data.dar||[]).map(toRow),   pmix: data.pmix||{},
+    };
+  } catch(e) {
+    if (e.name !== 'NotFoundError') console.warn('OPFS load failed:', e);
+    return null;
+  }
+}
+
+// IDB blob reader kept only as a one-time migration bridge — reads the
+// snapshot written by the previous session's idbSaveBlob (if it succeeded).
+async function _idbBlobMigrate() {
   try {
     const idb = await getRawIDB();
     const rec = await new Promise((resolve, reject) => {
@@ -289,24 +323,34 @@ async function loadDsFromIDB() {
     date: r._d ? new Date(r._d + 'T00:00:00') : r.date ? new Date(r.date) : null,
   }));
 
-  // Fast path: single JSON string read from metadata (~500ms total)
-  const blob = await idbLoadBlob();
-  if (blob && blob.labor.length > 0) {
-    return { labor:blob.labor, ops:blob.ops, ctrl:blob.ctrl, fob:blob.fob,
-             audit:blob.audit, peaks:blob.peaks, dar:blob.dar, weather, pmix:blob.pmix };
+  // Fast path: OPFS native file read — no IDB IPC, no 'message' handler, no violations
+  const opfs = await opfsLoad();
+  if (opfs && opfs.labor.length > 0) {
+    return { labor:opfs.labor, ops:opfs.ops, ctrl:opfs.ctrl, fob:opfs.fob,
+             audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar, weather, pmix:opfs.pmix };
   }
 
-  // No blob yet — fall back to cursor reads (first run before any file upload)
+  // Migration: IDB blob from previous session (saves to OPFS for next time)
+  const blob = await _idbBlobMigrate();
+  if (blob && blob.labor.length > 0) {
+    opfsSave({ laborRows:blob.labor, opsRows:blob.ops, ctrlRows:blob.ctrl,
+                fobRows:blob.fob, auditRows:blob.audit, peaksSvcRows:blob.peaks,
+                peaksSalesRows:[], darRows:blob.dar, pmixData:blob.pmix||{} }).catch(()=>{});
+    return { labor:blob.labor, ops:blob.ops, ctrl:blob.ctrl, fob:blob.fob,
+             audit:blob.audit, peaks:blob.peaks, dar:blob.dar, weather, pmix:blob.pmix||{} };
+  }
+
+  // Slow path: cursor reads — first ever run, or after storage was cleared.
+  // This runs once, saves to OPFS, then is never needed again.
   const [labor, ops, ctrl, fob, audit, peaks, dar] = await Promise.all([
     idbGetAllRows('laborRows'), idbGetAllRows('opsRows'), idbGetAllRows('ctrlRows'),
     idbGetAllRows('fobRows'),   idbGetAllRows('auditRows'), idbGetAllRows('peaksRows'),
     idbGetAllRows('darRows'),
   ]);
-  // Auto-save blob so subsequent loads use the fast path — fire and forget
   if (labor.length > 0) {
-    idbSaveBlob({ laborRows:labor, opsRows:ops, ctrlRows:ctrl, fobRows:fob,
-                   auditRows:audit, peaksSvcRows:peaks, peaksSalesRows:[], darRows:dar,
-                   pmixData:{} }).catch(()=>{});
+    opfsSave({ laborRows:labor, opsRows:ops, ctrlRows:ctrl, fobRows:fob,
+                auditRows:audit, peaksSvcRows:peaks, peaksSalesRows:[], darRows:dar,
+                pmixData:{} }).catch(()=>{});
   }
   return { labor, ops, ctrl, fob, audit, peaks, dar, weather, pmix: {} };
 }
@@ -314,5 +358,5 @@ async function loadDsFromIDB() {
 export {
   idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta,
   idbClearAll, idbGetCoverage, coverageFromLoadedRows, withTimeout,
-  idbQuickSessionCheck, loadDsFromIDB, idbSaveBlob,
+  idbQuickSessionCheck, loadDsFromIDB, opfsSave,
 };
