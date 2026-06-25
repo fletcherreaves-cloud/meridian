@@ -355,8 +355,17 @@ async function loadDsFromIDB() {
   return { labor, ops, ctrl, fob, audit, peaks, dar, weather, pmix: {} };
 }
 
+async function opfsClear() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(OPFS_FILE);
+  } catch(e) {
+    if (e.name !== 'NotFoundError') console.warn('OPFS clear failed:', e);
+  }
+}
+
 export {
   idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta,
   idbClearAll, idbGetCoverage, coverageFromLoadedRows, withTimeout,
-  idbQuickSessionCheck, loadDsFromIDB, opfsSave,
+  idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear,
 };

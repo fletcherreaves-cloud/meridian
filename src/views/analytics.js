@@ -10,7 +10,7 @@ import { computeEventFactors } from '../utils/events.js';
 import { EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
-import { idbClearAll, idbGetCoverage, idbPutRows } from '../db/index.js';
+import { idbClearAll, idbPutRows, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard } from './store-dash.js';
 
 const h=React.createElement;
@@ -765,16 +765,11 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
   const [wxFetching,setWxFetching] = uSt(false);
   const [wxMsg,     setWxMsg]      = uSt('');
   const [status, setStatus]= uSt('');
-  const [loading,setLoading]=uSt(false);
 
   uE(()=>{
-    (async()=>{
-      setLoading(true);
-      const c = await idbGetCoverage();
-      setCov(c);
-      setLoading(false);
-    })();
-  },[]);
+    // Use coverage already computed from loaded rows — no IDB read needed
+    if(idbCoverage && Object.keys(idbCoverage).length>0) setCov(idbCoverage);
+  },[idbCoverage]);
 
   const STORE_LABELS = {
     laborRows:'Labor Analysis',opsRows:'Operations Report',
@@ -786,11 +781,11 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
   const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0);
 
   const handleClear = async()=>{
-    if(!confirm('Clear ALL stored data from IndexedDB? Your loaded files will still work, but the app will require re-uploading data on next launch.')) return;
+    if(!confirm('Clear ALL stored data? The app will require re-uploading files on next launch.')) return;
     setStatus('Clearing…');
-    await idbClearAll();
-    const fresh = await idbGetCoverage();
-    setCov(fresh);
+    await Promise.all([idbClearAll(), opfsClear()]);
+    const zeroCov = Object.fromEntries(Object.keys(STORE_LABELS).map(k=>[k,{count:0}]));
+    setCov(zeroCov);
     setStatus('✓ All stored data cleared');
   };
 
@@ -806,13 +801,12 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
         span({style:{fontSize:'18px'}},'🗄'),
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Data Manager'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'IndexedDB persistent storage · '+totalRows.toLocaleString()+' total rows stored · data survives browser refresh')
+          div({style:{fontSize:'9px',color:'var(--text3)'}},'Local file storage (OPFS) · '+totalRows.toLocaleString()+' total rows stored · data survives browser refresh')
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       div({style:{padding:'16px',overflowY:'auto'}},
-        loading&&div({style:{color:'var(--text3)',textAlign:'center',padding:20}},'Loading coverage…'),
-        !loading&&div(null,
+        div(null,
           // Coverage table
           h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px',marginBottom:14}},
             h('thead',null,h('tr',null,
@@ -871,8 +865,8 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
             });
             if(rows.length>0){
               await idbPutRows('weatherRows',rows);
-              const fresh=await idbGetCoverage();
-              setIdbCoverage(fresh);
+              const wDates=rows.map(r=>r._d||'').filter(Boolean).sort();
+              setCov(c=>({...c,weatherRows:{count:rows.length,from:wDates[0]||'?',to:wDates[wDates.length-1]||'?'}}));
               setWxMsg('✓ '+rows.length.toLocaleString()+' weather records stored — all 27 stores · 2022–present');
             } else {
               setWxMsg('⚠ No weather data returned — check internet connection');
