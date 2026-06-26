@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian Forecasting Reference — MCDOK | Emerald Arches</title>
+<style>
+  :root {
+    --gold: #DA9200;
+    --red: #C8102E;
+    --dark: #1a1a1a;
+    --mid: #333;
+    --light: #f7f7f7;
+    --border: #ddd;
+    --code-bg: #f0f0f0;
+    --accent: #0057b7;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Georgia', serif;
+    font-size: 10.5pt;
+    line-height: 1.65;
+    color: #1a1a1a;
+    background: #fff;
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ── Cover Page ── */
+  .cover {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    border-bottom: 4px solid var(--red);
+    page-break-after: always;
+    padding: 60px 0;
+  }
+  .cover-logo {
+    font-size: 52pt;
+    margin-bottom: 16px;
+  }
+  .cover-title {
+    font-size: 24pt;
+    font-weight: bold;
+    color: var(--red);
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+  }
+  .cover-subtitle {
+    font-size: 12pt;
+    color: #555;
+    font-style: italic;
+    margin-bottom: 32px;
+  }
+  .cover-meta {
+    font-size: 9pt;
+    color: #777;
+    line-height: 2;
+    font-family: 'Courier New', monospace;
+  }
+  .cover-stripe {
+    display: flex;
+    gap: 0;
+    margin: 32px 0;
+    width: 100%;
+    max-width: 400px;
+  }
+  .cover-stripe div {
+    height: 8px;
+    flex: 1;
+  }
+  .cover-stripe .s1 { background: var(--red); }
+  .cover-stripe .s2 { background: var(--gold); }
+  .cover-stripe .s3 { background: var(--dark); }
+
+  /* ── TOC ── */
+  .toc-page {
+    page-break-after: always;
+    padding: 48px 0 32px;
+  }
+  .toc-title {
+    font-size: 16pt;
+    font-weight: bold;
+    color: var(--red);
+    border-bottom: 2px solid var(--red);
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+  }
+  .toc-section {
+    font-size: 10pt;
+    font-weight: bold;
+    color: var(--mid);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin: 16px 0 6px;
+    font-family: sans-serif;
+  }
+  .toc-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 3px 0 3px 12px;
+    font-size: 10pt;
+    border-bottom: 1px dotted #ccc;
+  }
+  .toc-entry:hover { background: #f9f9f9; }
+  .toc-pg {
+    font-size: 9pt;
+    color: #888;
+    font-family: 'Courier New', monospace;
+    flex-shrink: 0;
+    margin-left: 8px;
+  }
+
+  /* ── Sections ── */
+  .section {
+    padding: 36px 0 24px;
+    border-bottom: 1px solid #eee;
+  }
+  .section:last-child { border-bottom: none; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--gold);
+  }
+  .section-num {
+    background: var(--red);
+    color: white;
+    font-family: sans-serif;
+    font-size: 9pt;
+    font-weight: bold;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .section-title {
+    font-size: 15pt;
+    font-weight: bold;
+    color: var(--dark);
+    letter-spacing: -0.3px;
+  }
+  .section-subtitle {
+    font-size: 9pt;
+    color: #888;
+    font-family: sans-serif;
+    margin-top: 2px;
+  }
+
+  h3 {
+    font-size: 11pt;
+    font-weight: bold;
+    color: var(--red);
+    margin: 20px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: sans-serif;
+  }
+  h4 {
+    font-size: 10pt;
+    font-weight: bold;
+    color: var(--dark);
+    margin: 14px 0 6px;
+    font-family: sans-serif;
+  }
+  p { margin-bottom: 10px; }
+  ul, ol { margin: 8px 0 10px 20px; }
+  li { margin-bottom: 4px; }
+
+  /* ── Formula Blocks ── */
+  .formula {
+    background: #1a1a1a;
+    color: #e8e8e8;
+    font-family: 'Courier New', monospace;
+    font-size: 9pt;
+    padding: 16px 20px;
+    border-radius: 4px;
+    margin: 12px 0;
+    line-height: 1.8;
+    border-left: 4px solid var(--gold);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .formula .comment {
+    color: #888;
+    font-style: italic;
+  }
+  .formula .highlight {
+    color: var(--gold);
+    font-weight: bold;
+  }
+
+  code {
+    background: var(--code-bg);
+    font-family: 'Courier New', monospace;
+    font-size: 9pt;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 9.5pt;
+    font-family: sans-serif;
+  }
+  thead tr {
+    background: var(--dark);
+    color: white;
+  }
+  thead th {
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: bold;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+  tbody tr:hover { background: #f0f0f0; }
+  tbody td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #eee;
+    vertical-align: top;
+  }
+  .td-code { font-family: 'Courier New', monospace; font-size: 9pt; }
+  .td-num { text-align: right; font-family: 'Courier New', monospace; }
+  .td-green { color: #1a7a1a; font-weight: bold; }
+  .td-yellow { color: #8a6000; font-weight: bold; }
+  .td-red { color: #b00; font-weight: bold; }
+
+  /* ── Callout Boxes ── */
+  .callout {
+    border-left: 4px solid var(--gold);
+    background: #fffbf0;
+    padding: 12px 16px;
+    margin: 14px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 9.5pt;
+    font-family: sans-serif;
+  }
+  .callout.info {
+    border-color: var(--accent);
+    background: #f0f5ff;
+  }
+  .callout.warn {
+    border-color: #b00;
+    background: #fff5f5;
+  }
+  .callout strong { display: block; margin-bottom: 4px; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  /* ── Signal Weight Grid ── */
+  .weight-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .weight-card {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .weight-card-header {
+    background: var(--mid);
+    color: white;
+    font-family: sans-serif;
+    font-size: 8.5pt;
+    font-weight: bold;
+    padding: 6px 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .weight-card-body {
+    padding: 8px 12px;
+    font-size: 9pt;
+    font-family: sans-serif;
+  }
+  .weight-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    border-bottom: 1px dotted #ddd;
+  }
+  .weight-row:last-child { border-bottom: none; }
+  .weight-bar {
+    height: 6px;
+    background: var(--gold);
+    border-radius: 3px;
+    display: inline-block;
+    margin-right: 8px;
+  }
+  .weight-num { font-weight: bold; color: var(--red); font-family: 'Courier New', monospace; }
+
+  /* ── Model Health Visual ── */
+  .health-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .health-card {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+    text-align: center;
+  }
+  .health-card-header {
+    background: var(--dark);
+    color: white;
+    font-size: 8pt;
+    font-family: sans-serif;
+    font-weight: bold;
+    padding: 5px 4px;
+  }
+  .health-card-pts {
+    font-size: 18pt;
+    font-weight: bold;
+    color: var(--red);
+    padding: 6px 0 2px;
+    font-family: sans-serif;
+  }
+  .health-card-label {
+    font-size: 7.5pt;
+    color: #888;
+    font-family: sans-serif;
+    padding-bottom: 6px;
+  }
+
+  /* ── Print ── */
+  @media print {
+    body { max-width: 100%; padding: 0; }
+    .cover { min-height: auto; padding: 80px 40px; }
+    .section { page-break-inside: avoid; }
+    h3 { page-break-after: avoid; }
+    table { page-break-inside: avoid; }
+    .formula { page-break-inside: avoid; }
+    .callout { page-break-inside: avoid; }
+
+    @page {
+      margin: 18mm 16mm 18mm 16mm;
+      size: letter;
+    }
+    @page :first { margin-top: 0; }
+  }
+
+  /* ── Footer/Header ── */
+  .doc-footer {
+    text-align: center;
+    font-size: 8pt;
+    color: #aaa;
+    font-family: sans-serif;
+    padding: 32px 0 24px;
+    border-top: 1px solid #eee;
+    margin-top: 40px;
+  }
+
+  .badge {
+    display: inline-block;
+    background: var(--dark);
+    color: white;
+    font-family: sans-serif;
+    font-size: 7.5pt;
+    font-weight: bold;
+    padding: 2px 7px;
+    border-radius: 10px;
+    letter-spacing: 0.3px;
+    margin-right: 4px;
+  }
+  .badge.gold { background: var(--gold); color: #000; }
+  .badge.red { background: var(--red); }
+  .badge.green { background: #1a7a1a; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ COVER ══ -->
+<div class="cover">
+  <div class="cover-logo">🍟</div>
+  <div class="cover-title">Meridian Forecasting Reference</div>
+  <div class="cover-subtitle">Complete technical documentation of all forecasting calculations</div>
+  <div class="cover-stripe">
+    <div class="s1"></div><div class="s2"></div><div class="s3"></div>
+  </div>
+  <div class="cover-meta">
+    MCDOK | Emerald Arches District<br>
+    Prepared by Meridian v4.210+<br>
+    Fletcher Reaves, District Manager<br>
+    Reference Date: June 2026
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TOC ══ -->
+<div class="toc-page">
+  <div class="toc-title">Table of Contents</div>
+
+  <div class="toc-section">Forecast Models</div>
+  <div class="toc-entry"><span>1. Core Forecast Formula (DOW / DI Model)</span><span class="toc-pg">§1</span></div>
+  <div class="toc-entry"><span>2. Model Types Overview</span><span class="toc-pg">§2</span></div>
+  <div class="toc-entry"><span>3. EWMA DOW — Exponentially Weighted Moving Average</span><span class="toc-pg">§3</span></div>
+  <div class="toc-entry"><span>4. Adaptive Ensemble (AE) — 5-Signal Blend</span><span class="toc-pg">§4</span></div>
+  <div class="toc-entry"><span>5. Adaptive DI — Calibrated Multi-Window EWMA</span><span class="toc-pg">§5</span></div>
+  <div class="toc-entry"><span>6. Multi-Model Engine (Composite, Trend, Momentum, Regression)</span><span class="toc-pg">§6</span></div>
+
+  <div class="toc-section">Adjustment Layers</div>
+  <div class="toc-entry"><span>7. Last Year Lookup — LY Priority Chain</span><span class="toc-pg">§7</span></div>
+  <div class="toc-entry"><span>8. Trend Windows (t2 / t4 / t6)</span><span class="toc-pg">§8</span></div>
+  <div class="toc-entry"><span>9. Holiday Correction</span><span class="toc-pg">§9</span></div>
+  <div class="toc-entry"><span>10. Ops Factor (OEPE, TPPH, Staffing)</span><span class="toc-pg">§10</span></div>
+  <div class="toc-entry"><span>11. Weather Adjustment — Empirical Calibration</span><span class="toc-pg">§11</span></div>
+  <div class="toc-entry"><span>12. Event Registry</span><span class="toc-pg">§12</span></div>
+  <div class="toc-entry"><span>13. Plus-Up System</span><span class="toc-pg">§13</span></div>
+  <div class="toc-entry"><span>14. Guest Count Cross-Check</span><span class="toc-pg">§14</span></div>
+  <div class="toc-entry"><span>15. New Store Ramp Model</span><span class="toc-pg">§15</span></div>
+  <div class="toc-entry"><span>16. Daypart Engine (Breakfast / Lunch / Dinner)</span><span class="toc-pg">§16</span></div>
+
+  <div class="toc-section">Calibration &amp; Accuracy</div>
+  <div class="toc-entry"><span>17. Dialed-In Calibration — Grid Search</span><span class="toc-pg">§17</span></div>
+  <div class="toc-entry"><span>18. Model Health Score (0–100)</span><span class="toc-pg">§18</span></div>
+  <div class="toc-entry"><span>19. MAPE — Mean Absolute Percentage Error</span><span class="toc-pg">§19</span></div>
+  <div class="toc-entry"><span>20. MAPE Drift Detection</span><span class="toc-pg">§20</span></div>
+  <div class="toc-entry"><span>21. Confidence Intervals (σ)</span><span class="toc-pg">§21</span></div>
+  <div class="toc-entry"><span>22. LifeLenz Bridge — WFM Bias Correction</span><span class="toc-pg">§22</span></div>
+
+  <div class="toc-section">Appendix</div>
+  <div class="toc-entry"><span>A. Store Knowledge Base — All 27 Locations</span><span class="toc-pg">§A</span></div>
+  <div class="toc-entry"><span>B. Default Model Assignments Summary</span><span class="toc-pg">§B</span></div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 1 ══ -->
+<div class="section" id="s1">
+  <div class="section-header">
+    <div class="section-num">1</div>
+    <div>
+      <div class="section-title">Core Forecast Formula</div>
+      <div class="section-subtitle">DOW Model &amp; Dialed-In Model — the primary calculation for most stores</div>
+    </div>
+  </div>
+
+  <h3>Final Expression</h3>
+  <div class="formula"><span class="highlight">forecast</span> = lyAdjH × opsFactor × (1 + wAdj) × (1 + trendFactor) × (1 + eventFactor) × (1 + plusUp)</div>
+
+  <p>This formula runs inside <code>forecastDay()</code> for every store × date combination. Each factor is computed independently and is described in its own section below.</p>
+
+  <h3>Complete Calculation Flow</h3>
+  <table>
+    <thead><tr><th>#</th><th>Variable</th><th>Description</th><th>See Section</th></tr></thead>
+    <tbody>
+      <tr><td class="td-num">1</td><td class="td-code">lyRaw</td><td>Actual sales from same DOW ~52 weeks ago</td><td>§7</td></tr>
+      <tr><td class="td-num">2</td><td class="td-code">lyAdj</td><td>LY blended with district avg when lyW &lt; 1.0 (DI calibration)</td><td>§17</td></tr>
+      <tr><td class="td-num">3</td><td class="td-code">lyAdjH</td><td>lyAdj × holidayLyAdj (corrects for holiday alignment)</td><td>§9</td></tr>
+      <tr><td class="td-num">4</td><td class="td-code">trendFactor</td><td>Clamped YOY trend blend (±15% max)</td><td>§8</td></tr>
+      <tr><td class="td-num">5</td><td class="td-code">opsFactor</td><td>OEPE / TPPH / staffing adjustment</td><td>§10</td></tr>
+      <tr><td class="td-num">6</td><td class="td-code">wAdj</td><td>Weather impact adjustment (empirical or sliders)</td><td>§11</td></tr>
+      <tr><td class="td-num">7</td><td class="td-code">eventFactor</td><td>Learned historical event impact</td><td>§12</td></tr>
+      <tr><td class="td-num">8</td><td class="td-code">plusUp</td><td>Manual percentage adjustment</td><td>§13</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <strong>When Core Formula Does NOT Run</strong>
+    When a store is assigned the <strong>AE</strong> (Adaptive Ensemble) or <strong>EWMA</strong> model, those models short-circuit before the Core Formula executes. The Core Formula runs for <strong>DOW</strong> and <strong>DI</strong> model assignments only.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 2 ══ -->
+<div class="section" id="s2">
+  <div class="section-header">
+    <div class="section-num">2</div>
+    <div>
+      <div class="section-title">Model Types Overview</div>
+      <div class="section-subtitle">Four codes — assigned per store per horizon in Model Assignments</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Code</th><th>Name</th><th>Uses Core Formula?</th><th>Best For</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="badge">DOW</span></td>
+        <td>Day-of-Week Baseline</td>
+        <td>Yes — with default weights</td>
+        <td>Stable stores, starting point</td>
+      </tr>
+      <tr>
+        <td><span class="badge gold">DI</span></td>
+        <td>Dialed-In</td>
+        <td>Yes — with calibrated weights</td>
+        <td>Stores where DOW MAPE &gt; 8%, 50+ data points</td>
+      </tr>
+      <tr>
+        <td><span class="badge red">AE</span></td>
+        <td>Adaptive Ensemble</td>
+        <td>No — own 5-signal pipeline</td>
+        <td>District-validated 9.29% MAPE; trending stores</td>
+      </tr>
+      <tr>
+        <td><span class="badge green">EWMA</span></td>
+        <td>Exponential Moving Avg</td>
+        <td>No — single-signal</td>
+        <td>Rapid operational change, unreliable LY</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>Each store has a <strong>weekly</strong> model assignment and a <strong>monthly</strong> model assignment, managed in the <em>Model Assignments</em> panel. Assignments are derived from backtest results and persist in localStorage. The <code>forceModel</code> parameter (used by Forecast Accuracy Report) can bypass the assignment without mutating storage.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 3 ══ -->
+<div class="section" id="s3">
+  <div class="section-header">
+    <div class="section-num">3</div>
+    <div>
+      <div class="section-title">EWMA DOW</div>
+      <div class="section-subtitle">Exponentially Weighted Moving Average — same day-of-week</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="highlight">forecast</span> = Σ( α × (1−α)^i × S_i ) / Σ( α × (1−α)^i )
+
+where:
+  S_i  = actual sales i weeks ago on the same day-of-week
+  i    = 0 (most recent), 1, 2, ... up to 13 (oldest, 14 weeks max)
+  α    = 0.25 (standalone) | 0.22 (AE weekday) | 0.30 (AE weekend)</pre></div>
+
+  <h3>Decay Weight Table (α = 0.25)</h3>
+  <table>
+    <thead><tr><th>Weeks Ago</th><th>Weight</th><th>Cumulative %</th></tr></thead>
+    <tbody>
+      <tr><td>Most recent (i=0)</td><td class="td-num">0.2500</td><td class="td-num td-green">25.0%</td></tr>
+      <tr><td>1 week (i=1)</td><td class="td-num">0.1875</td><td class="td-num">43.8%</td></tr>
+      <tr><td>2 weeks (i=2)</td><td class="td-num">0.1406</td><td class="td-num">57.9%</td></tr>
+      <tr><td>3 weeks (i=3)</td><td class="td-num">0.1055</td><td class="td-num">68.4%</td></tr>
+      <tr><td>4 weeks (i=4)</td><td class="td-num">0.0791</td><td class="td-num">76.3%</td></tr>
+      <tr><td>5 weeks (i=5)</td><td class="td-num">0.0593</td><td class="td-num">82.2%</td></tr>
+      <tr><td>6 weeks (i=6)</td><td class="td-num">0.0445</td><td class="td-num">86.7%</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Minimum required:</strong> 3 same-DOW data points. If fewer exist, EWMA returns null and the caller falls back to the LY model.</p>
+
+  <div class="callout">
+    <strong>Responds 2–3× faster than a simple rolling average</strong>
+    A 6-week simple average weights all weeks equally at 16.7%. EWMA with α=0.25 gives the most recent week 25% weight — nearly double — and the most recent 5 weeks account for 82% of the result. This makes EWMA ideal for stores in transition where the oldest data is misleading.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 4 ══ -->
+<div class="section" id="s4">
+  <div class="section-header">
+    <div class="section-num">4</div>
+    <div>
+      <div class="section-title">Adaptive Ensemble (AE)</div>
+      <div class="section-subtitle">5-signal blend — district avg 9.29% MAPE vs LifeLenz 9.51% (Sep 2025 – May 2026)</div>
+    </div>
+  </div>
+
+  <h3>The Five Signals</h3>
+
+  <h4>Signal 1 — EWMA DOW</h4>
+  <div class="formula">ewmaSignal = forecastEWMA(loc, date, α)
+  α = 0.22 on weekdays | 0.30 on weekends</div>
+
+  <h4>Signal 2 — LY Adjusted</h4>
+  <div class="formula"><span class="comment"># Find actual LY value (±3 day search for DOW match)</span>
+lyVal = sales[date − 364 ± 3 days, same DOW]
+
+<span class="comment"># Compute YOY adjustment from recent 90 days vs same 90-day window last year</span>
+adj   = avg(sales last 90d) / avg(sales 364d−274d ago) − 1
+adj   = clamp(adj, −0.20, +0.20)
+
+<span class="highlight">lySignal</span> = lyVal × (1 + adj)</div>
+
+  <h4>Signal 3 — Short-term Momentum</h4>
+  <div class="formula">factor = avg(last 14d same-DOW actuals) / avg(14d–28d same-DOW actuals)
+factor = clamp(factor, 0.85, 1.15)
+
+<span class="highlight">momentumSignal</span> = ewmaSignal × factor   <span class="comment"># requires ewmaSignal ≠ null</span></div>
+
+  <h4>Signal 4 — Monthly Seasonality</h4>
+  <div class="formula">thisMon  = avg sales for this month, same DOW (requires ≥ 4 data points)
+allTime  = avg sales for all-time, same DOW
+
+factor = clamp(thisMon / allTime, 0.80, 1.20)
+
+<span class="highlight">seasonalSignal</span> = ewmaSignal × factor</div>
+
+  <h4>Signal 5 — Adaptive DI</h4>
+  <p>Per-store calibrated EWMA blend across 14d/28d/42d windows. See §5 for full detail.</p>
+
+  <h3>Blend Weights</h3>
+
+  <div class="weight-grid">
+    <div class="weight-card">
+      <div class="weight-card-header">Oklahoma Stores — Weekday</div>
+      <div class="weight-card-body">
+        <div class="weight-row"><span>EWMA DOW</span><span><div class="weight-bar" style="width:35px"></div><span class="weight-num">0.35</span></span></div>
+        <div class="weight-row"><span>LY Adjusted</span><span><div class="weight-bar" style="width:27px"></div><span class="weight-num">0.27</span></span></div>
+        <div class="weight-row"><span>Momentum</span><span><div class="weight-bar" style="width:13px"></div><span class="weight-num">0.13</span></span></div>
+        <div class="weight-row"><span>Seasonality</span><span><div class="weight-bar" style="width:12px"></div><span class="weight-num">0.12</span></span></div>
+        <div class="weight-row"><span>Adaptive DI</span><span><div class="weight-bar" style="width:13px"></div><span class="weight-num">0.13</span></span></div>
+      </div>
+    </div>
+    <div class="weight-card">
+      <div class="weight-card-header">Oklahoma Stores — Weekend</div>
+      <div class="weight-card-body">
+        <div class="weight-row"><span>EWMA DOW</span><span><div class="weight-bar" style="width:22px"></div><span class="weight-num">0.22</span></span></div>
+        <div class="weight-row"><span>LY Adjusted</span><span><div class="weight-bar" style="width:45px"></div><span class="weight-num">0.45</span></span></div>
+        <div class="weight-row"><span>Momentum</span><span><div class="weight-bar" style="width:8px"></div><span class="weight-num">0.08</span></span></div>
+        <div class="weight-row"><span>Seasonality</span><span><div class="weight-bar" style="width:10px"></div><span class="weight-num">0.10</span></span></div>
+        <div class="weight-row"><span>Adaptive DI</span><span><div class="weight-bar" style="width:15px"></div><span class="weight-num">0.15</span></span></div>
+      </div>
+    </div>
+    <div class="weight-card">
+      <div class="weight-card-header">FL Interstate — Weekday</div>
+      <div class="weight-card-body">
+        <div class="weight-row"><span>EWMA DOW</span><span><div class="weight-bar" style="width:20px"></div><span class="weight-num">0.20</span></span></div>
+        <div class="weight-row"><span>LY Adjusted</span><span><div class="weight-bar" style="width:50px"></div><span class="weight-num">0.50</span></span></div>
+        <div class="weight-row"><span>Momentum</span><span><div class="weight-bar" style="width:10px"></div><span class="weight-num">0.10</span></span></div>
+        <div class="weight-row"><span>Seasonality</span><span><div class="weight-bar" style="width:10px"></div><span class="weight-num">0.10</span></span></div>
+        <div class="weight-row"><span>Adaptive DI</span><span><div class="weight-bar" style="width:10px"></div><span class="weight-num">0.10</span></span></div>
+      </div>
+    </div>
+    <div class="weight-card">
+      <div class="weight-card-header">FL Interstate — Weekend</div>
+      <div class="weight-card-body">
+        <div class="weight-row"><span>EWMA DOW</span><span><div class="weight-bar" style="width:15px"></div><span class="weight-num">0.15</span></span></div>
+        <div class="weight-row"><span>LY Adjusted</span><span><div class="weight-bar" style="width:55px"></div><span class="weight-num">0.55</span></span></div>
+        <div class="weight-row"><span>Momentum</span><span><div class="weight-bar" style="width:5px"></div><span class="weight-num">0.05</span></span></div>
+        <div class="weight-row"><span>Seasonality</span><span><div class="weight-bar" style="width:10px"></div><span class="weight-num">0.10</span></span></div>
+        <div class="weight-row"><span>Adaptive DI</span><span><div class="weight-bar" style="width:15px"></div><span class="weight-num">0.15</span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <p><em>FL Interstate stores: 6178, 6838, 10034, 35242, 37566, 38609. Higher LY weight captures the dominant annual highway traffic cycle on these locations.</em></p>
+
+  <div class="callout">
+    <strong>Weight Renormalization</strong>
+    If any signal lacks sufficient data (e.g. fewer than 3 same-DOW points for EWMA, no LY match for LY Adjusted), that signal is excluded. The remaining weights are renormalized to sum to 1.0 before computing the blend. A minimum of 2 valid signals is required; otherwise AE returns null and the caller falls back to EWMA or LY.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 5 ══ -->
+<div class="section" id="s5">
+  <div class="section-header">
+    <div class="section-num">5</div>
+    <div>
+      <div class="section-title">Adaptive DI</div>
+      <div class="section-subtitle">Per-store calibrated blend of 14d / 28d / 42d EWMA windows — Signal 5 inside AE</div>
+    </div>
+  </div>
+
+  <div class="formula">EWMA(14d) = exponential average of same-DOW actuals within last 14 days, using alpha
+EWMA(28d) = exponential average of same-DOW actuals within last 28 days, using alpha
+EWMA(42d) = exponential average of same-DOW actuals within last 42 days, using alpha
+
+<span class="highlight">AdaptiveDI</span> = (w2 × EWMA(14d) + w4 × EWMA(28d) + w6 × EWMA(42d)) / (w2 + w4 + w6)
+            <span class="comment"># renormalized over available windows only</span></div>
+
+  <table>
+    <thead><tr><th>Parameter</th><th>Role</th><th>Default</th><th>Range</th></tr></thead>
+    <tbody>
+      <tr><td class="td-code">w2</td><td>Weight on 14-day EWMA window</td><td class="td-num">0.40</td><td>calibrated per store</td></tr>
+      <tr><td class="td-code">w4</td><td>Weight on 28-day EWMA window</td><td class="td-num">0.35</td><td>calibrated per store</td></tr>
+      <tr><td class="td-code">w6</td><td>Weight on 42-day EWMA window</td><td class="td-num">0.25</td><td>calibrated per store</td></tr>
+      <tr><td class="td-code">alpha</td><td>EWMA decay factor within each window</td><td class="td-num">0.20</td><td>calibrated per store</td></tr>
+    </tbody>
+  </table>
+
+  <p>Per-store <code>{w2, w4, w6, alpha}</code> values are stored in the AE params table (<code>mf_ae_params</code> in localStorage) and updated on recalibration. A store with high w2 responds quickly to recent changes; high w6 relies on longer-term stability.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 6 ══ -->
+<div class="section" id="s6">
+  <div class="section-header">
+    <div class="section-num">6</div>
+    <div>
+      <div class="section-title">Multi-Model Engine</div>
+      <div class="section-subtitle">Four independent models run in parallel for backtest and comparison views</div>
+    </div>
+  </div>
+
+  <p>The <code>forecastModels()</code> function runs four models simultaneously. Used by Forecast Accuracy Report, DI Compare, and model selection backtesting.</p>
+
+  <table>
+    <thead><tr><th>Key</th><th>Name</th><th>Method</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="td-code">m1</td>
+        <td>Composite</td>
+        <td>Core Forecast Formula with current model assignment (DOW/DI/AE/EWMA)</td>
+      </tr>
+      <tr>
+        <td class="td-code">m2</td>
+        <td>Trend-Only</td>
+        <td><code>lyAdj × (1 + wTrend) × (1 + plusUp)</code> — no ops factor, no weather</td>
+      </tr>
+      <tr>
+        <td class="td-code">m3</td>
+        <td>Momentum</td>
+        <td>Exponential decay on 8 most-recent same-DOW actuals: <code>Σ(e^{−0.3i} × S_i) / Σ(e^{−0.3i})</code></td>
+      </tr>
+      <tr>
+        <td class="td-code">m4</td>
+        <td>Regression</td>
+        <td>OLS linear regression on 12 most-recent same-DOW actuals; projects next value on trendline</td>
+      </tr>
+      <tr>
+        <td class="td-code">ens</td>
+        <td>Ensemble</td>
+        <td>Equal-weight average of all available model forecasts</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4>Momentum Model Detail</h4>
+  <div class="formula">recent = last 8 same-DOW actuals, sorted newest-first
+
+<span class="highlight">momentum</span> = Σ( e^{−0.3×i} × sales[i] ) / Σ( e^{−0.3×i} )   for i = 0..7</div>
+
+  <h4>Regression Model Detail</h4>
+  <div class="formula">pts = last 12 same-DOW actuals, sorted oldest-first
+xs = [0, 1, 2, ..., n−1]
+ys = [sales_0, sales_1, ..., sales_{n-1}]
+
+slope     = Σ((x − x̄)(y − ȳ)) / Σ((x − x̄)²)
+intercept = ȳ − slope × x̄
+
+<span class="highlight">regression</span> = (intercept + slope × n) × (1 + plusUp)   <span class="comment"># projects at point n</span></div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 7 ══ -->
+<div class="section" id="s7">
+  <div class="section-header">
+    <div class="section-num">7</div>
+    <div>
+      <div class="section-title">Last Year Lookup (lyRaw)</div>
+      <div class="section-subtitle">Priority chain — skips holidays and tagged events automatically</div>
+    </div>
+  </div>
+
+  <div class="formula">Priority offsets (days back from forecast date):
+  −364  <span class="comment"># exact 52 weeks (same DOW guaranteed if year-length ≡ 0 mod 7)</span>
+  −357  <span class="comment"># 51 weeks</span>
+  −371  <span class="comment"># 53 weeks</span>
+  −378  <span class="comment"># 54 weeks</span>
+  −350  <span class="comment"># 50 weeks</span>
+  −385  <span class="comment"># 55 weeks</span>
+  −343  <span class="comment"># 49 weeks</span>
+
+For each candidate:
+  1. Must be same day-of-week as forecast date
+  2. Must NOT be a holiday (auto-excluded)
+  3. Must NOT be a user-tagged event for this store
+  4. Must have actual sales > 0
+
+<span class="highlight">lyRaw</span> = first candidate meeting all conditions (or 0 if none found)</div>
+
+  <div class="callout warn">
+    <strong>No Blending, No Dampening</strong>
+    Meridian does NOT blend multiple LY candidates or apply outlier dampening. Each lyRaw value is a real historical sales day the user can verify. Synthetic blended values were removed (v4.x) because they broke user trust — the displayed LY didn't match any actual day in the data.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 8 ══ -->
+<div class="section" id="s8">
+  <div class="section-header">
+    <div class="section-num">8</div>
+    <div>
+      <div class="section-title">Trend Windows (t2 / t4 / t6)</div>
+      <div class="section-subtitle">YOY growth by recency band, blended into a single trendFactor</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="comment"># Three recency bands — each measures YOY growth for same DOW in that week range</span>
+t2 = avg YOY growth in weeks 1–2 back from latest actual, same DOW only
+t4 = avg YOY growth in weeks 3–4 back from latest actual, same DOW only
+t6 = avg YOY growth in weeks 5–6 back from latest actual, same DOW only
+
+<span class="comment"># YOY growth for each data point</span>
+point_i = (sales[week i] − sales[week i − 52 weeks]) / sales[week i − 52 weeks]
+
+<span class="comment"># Global trend (weighted blend)</span>
+<span class="highlight">globalTrend</span> = t2 × tw.t2 + t4 × tw.t4 + t6 × tw.t6
+<span class="comment">             (default: t2×0.50 + t4×0.30 + t6×0.20)</span>
+
+<span class="comment"># DOW-specific trend (this weekday's YOY over last N weeks)</span>
+<span class="highlight">dowSpecific</span> = avg YOY for THIS specific DOW over last weeksBack (6) weeks
+
+<span class="comment"># Blend: 65% global + 35% DOW-specific (when dowSpecific ≥ 3 data points)</span>
+<span class="highlight">blendedTrend</span> = globalTrend × 0.65 + dowSpecific × 0.35
+
+<span class="comment"># Apply alpha compression and clamp to ±15%</span>
+<span class="highlight">trendFactor</span> = clamp(blendedTrend × 0.30, −0.15, +0.15)</div>
+
+  <table>
+    <thead><tr><th>Model</th><th>t2 weight</th><th>t4 weight</th><th>t6 weight</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>DOW Default</td><td class="td-num">0.50</td><td class="td-num">0.30</td><td class="td-num">0.20</td><td>Favor recent</td></tr>
+      <tr><td>DI Calibrated</td><td class="td-num">varies</td><td class="td-num">varies</td><td class="td-num">varies</td><td>Grid-searched per store</td></tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 9 ══ -->
+<div class="section" id="s9">
+  <div class="section-header">
+    <div class="section-num">9</div>
+    <div>
+      <div class="section-title">Holiday Correction</div>
+      <div class="section-subtitle">Adjusts when holiday alignment differs between forecast date and its LY baseline</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="comment"># Determine if forecast date and LY date (−364 days) are holidays</span>
+todayIsHoliday = isHoliday(date)          <span class="comment"># from built-in holiday table</span>
+ly364IsHoliday = isHoliday(date − 364)   <span class="comment"># excluded from lyRaw lookup?</span>
+
+<span class="highlight">holidayLyAdj</span> =
+  if same holiday both sides          → 1.0    <span class="comment"># no adjustment needed</span>
+  if today is holiday, LY was not     → getHolidayAdj(date, loc, history)   <span class="comment"># reduces LY (expect lower)</span>
+  if LY was holiday, today is not     → 1 / max(0.30, getHolidayAdj(LY))   <span class="comment"># LY understates normal volume</span>
+  if neither is a holiday             → 1.0
+
+<span class="highlight">lyAdjH</span> = lyAdj × holidayLyAdj</div>
+
+  <p><code>getHolidayAdj()</code> returns a per-holiday impact multiplier derived from the district's historical actuals vs the non-holiday DOW baseline. Holidays in the built-in table include: Christmas Eve/Day, Thanksgiving (Wed/Thu/Fri), Independence Day, New Year's Eve/Day, Labor Day, Memorial Day, and others.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 10 ══ -->
+<div class="section" id="s10">
+  <div class="section-header">
+    <div class="section-num">10</div>
+    <div>
+      <div class="section-title">Ops Factor</div>
+      <div class="section-subtitle">Adjusts forecast based on 6-week rolling operational performance</div>
+    </div>
+  </div>
+
+  <div class="formula">p = compute6wk(loc, ds, weeksBack)     <span class="comment"># 6-week rolling averages of all ops metrics</span>
+t = targets for this store
+om = opsMults settings
+
+rawOpsF = 1.0
+
+<span class="comment"># OEPE adjustments (vs target or store historical avg when opsNorm enabled)</span>
+if p.oepe > effOepe + 20     rawOpsF × = (1 + om.oepeSeverePenalty / 100)
+elif p.oepe > effOepe        rawOpsF × = (1 + om.oepePenalty / 100)
+else                         rawOpsF × = (1 + om.oepeBonus / 100)
+
+<span class="comment"># KVST (Kitchen Valid Service Time)</span>
+if p.kvst > t.tKvst          rawOpsF × = (1 + om.kvstPenalty / 100)
+
+<span class="comment"># KVSU (Kitchen Valid Service Uptime)</span>
+if p.kvsu < t.tKvsu          rawOpsF × = (1 + om.kvsuPenalty / 100)
+
+<span class="comment"># Parking %</span>
+if p.park > t.tPark          rawOpsF × = (1 + om.parkPenalty / 100)
+
+<span class="comment"># TPPH</span>
+if p.tpph < effTpph          rawOpsF × = (1 + om.tpphPenalty / 100)
+else                         rawOpsF × = (1 + om.tpphBonus / 100)
+
+<span class="comment"># Act vs Need (staffing alignment)</span>
+if p.actVsNeed < −30         rawOpsF × = (1 + om.shortStaffPenalty / 100)
+elif p.actVsNeed > +15       rawOpsF × = (1 + om.readyStaffBonus / 100)
+
+rawOpsF = max(om.opsFactorFloor / 100, rawOpsF)
+
+<span class="highlight">opsFactor</span> = 1 + (rawOpsF − 1) × calOpsMult   <span class="comment"># calOpsMult from DI calibration (0.0–1.5)</span></div>
+
+  <div class="callout">
+    <strong>Ops Normalization Mode</strong>
+    When "Ops Normalization" is enabled in settings, <code>effOepe</code> and <code>effTpph</code> are drawn from the store's own 6-week rolling historical average instead of its targets. This prevents penalizing stores that consistently operate at a different baseline from their target while still rewarding genuine improvement.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 11 ══ -->
+<div class="section" id="s11">
+  <div class="section-header">
+    <div class="section-num">11</div>
+    <div>
+      <div class="section-title">Weather Adjustment</div>
+      <div class="section-subtitle">Empirical per-store calibration via linear regression of historical sales vs weather</div>
+    </div>
+  </div>
+
+  <h3>Mode 1 — Empirical (Preferred)</h3>
+  <div class="formula"><span class="comment"># Per-store linear regression: sales deviation from DOW baseline vs weather intensity</span>
+baseline[dow] = avg sales on non-rainy days for this DOW   <span class="comment"># clean baseline</span>
+dev = (actual_sales − baseline[dow]) / baseline[dow]
+
+<span class="comment"># Regression: y = slope × x for each weather variable</span>
+rainCoef  = OLS slope of (rain_inches, dev) pairs where rain > 0.1"
+hotCoef   = OLS slope of ((tmax−95)/10, dev) pairs where tmax > 95°F
+coldCoef  = OLS slope of ((35−tmax)/35, dev) pairs where tmax < 35°F
+windCoef  = OLS slope of ((wmax−25)/25, dev) pairs where wmax > 25 mph
+
+<span class="comment"># Clamp coefficients to plausible range</span>
+rainCoef  = clamp(rainCoef,  −0.15, +0.02)
+hotCoef   = clamp(hotCoef,   −0.10, +0.01)
+coldCoef  = clamp(coldCoef,  −0.08, +0.01)
+windCoef  = clamp(windCoef,  −0.05, +0.01)
+
+<span class="comment"># Apply to forecast date's weather</span>
+<span class="highlight">wAdj</span> = rainCoef × min(rain, 3)
+      + hotCoef  × (tmax − 95) / 10    <span class="comment"># only if tmax > 95</span>
+      + coldCoef × (35 − tmax) / 35    <span class="comment"># only if tmax < 35</span>
+      + windCoef × (wmax − 25) / 25    <span class="comment"># only if wmax > 25</span>
+
+wAdj = clamp(wAdj, −0.15, +0.03)      <span class="comment"># final clamp</span></div>
+
+  <h3>Mode 2 — Settings Sliders (Fallback)</h3>
+  <p>When empirical calibration is disabled or fewer than 4 samples exist per variable, weather adjustment uses user-configured percentage sliders from Settings (hotDay, coldDay, niceDay, lightRain, heavyRain, highWind, veryHighWind). Final result clamped at max −10% / +3%.</p>
+
+  <h3>Forecast Weather Fetch</h3>
+  <p>Future weather is fetched from <strong>Open-Meteo</strong> (no API key required) per store coordinates. Rate-limit handling: 1.1-second inter-store delay + progressive retry backoff on HTTP 429: 0s → 15s → 30s → 60s → 120s (5 attempts max).</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 12 ══ -->
+<div class="section" id="s12">
+  <div class="section-header">
+    <div class="section-num">12</div>
+    <div>
+      <div class="section-title">Event Registry</div>
+      <div class="section-subtitle">Historical event impacts learned from tagged dates and applied to future forecasts</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="comment"># Impact learning (run once per ds load, per store)</span>
+impact[loc][eventType] = avg[ (actual − baselineForecast) / baselineForecast ]
+                          over all historical days tagged with eventType at loc
+
+<span class="comment"># Application to future forecast</span>
+evTag    = userEvents[loc][date]       <span class="comment"># may have multiple tags</span>
+impacts  = [impact[loc][tag.type] for each tag on this date]
+
+<span class="highlight">eventFactor</span> = avg(impacts)   if any non-zero impacts exist, else 0</div>
+
+  <table>
+    <thead><tr><th>Category</th><th>Types</th></tr></thead>
+    <tbody>
+      <tr><td>Weather</td><td>Winter Storm, Snow, Ice, Tornado, Severe T-Storm, Flooding, Hurricane, High Winds, General Weather</td></tr>
+      <tr><td>Store Events</td><td>Technology, Utilities, Maintenance, Power Outage, Outage/Issue</td></tr>
+      <tr><td>Community</td><td>Public Emergency, Road Closure, Construction, Major Local Event, Competition</td></tr>
+      <tr><td>Operations</td><td>LTO/Promo, Holiday, Staffing Issue, CFV, EcoSure, RGR, Other</td></tr>
+      <tr><td>School Calendar</td><td>School Year Begins/Ends, School Break, No School Day, Early Release</td></tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 13 ══ -->
+<div class="section" id="s13">
+  <div class="section-header">
+    <div class="section-num">13</div>
+    <div>
+      <div class="section-title">Plus-Up</div>
+      <div class="section-subtitle">Manual percentage applied after all model calculations</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="comment"># Priority chain — highest wins</span>
+<span class="highlight">plusUp</span> =
+  if plusUpByStore[loc] defined          → use store-level value
+  elif any patch p contains loc
+       and plusUpByPatch[p] defined      → use patch-level value
+  else                                   → use global plusUp setting
+
+<span class="comment"># Application (always the last multiplicative step)</span>
+forecast = priorResult × (1 + plusUp / 100)</div>
+
+  <p><strong>Applied in:</strong> Core Formula (DOW/DI), Trend-Only (m2), Momentum (m3), Regression (m4). <strong>Not applied in:</strong> AE model (which uses its own signal blend directly).</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 14 ══ -->
+<div class="section" id="s14">
+  <div class="section-header">
+    <div class="section-num">14</div>
+    <div>
+      <div class="section-title">Guest Count Cross-Check</div>
+      <div class="section-subtitle">Validates sales forecast against an independent GC-based projection</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="comment"># GC forecast (same LY priority chain as sales)</span>
+gcLY      = historical GC for same DOW ~52 weeks ago
+gcTrend   = blended DOW trend from GC history (same t2/t4/t6 structure)
+gcForecast = round(gcLY × (1 + gcTrend))
+
+<span class="comment"># Implied average check from the sales forecast</span>
+impliedCheck = salesForecast / gcForecast
+
+<span class="comment"># Store's actual recent check norm (6-week rolling)</span>
+normCheck = avg(sales / gc) over last 42 days with paired data
+
+<span class="comment"># Divergence</span>
+<span class="highlight">deviation</span> = (impliedCheck − normCheck) / normCheck
+
+<span class="comment"># Flags</span>
+flag = 'alert' if |deviation| > 0.20
+     = 'watch'  if |deviation| > 0.10
+     = null     otherwise</div>
+
+  <p><strong>Minimum requirements:</strong> 5 recent rows with both sales and GC, normCheck &gt; $0.50, gcLY &gt; 0.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 15 ══ -->
+<div class="section" id="s15">
+  <div class="section-header">
+    <div class="section-num">15</div>
+    <div>
+      <div class="section-title">New Store Ramp Model</div>
+      <div class="section-subtitle">Replaces LY lookup for stores with fewer than 400 days of history</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Store Age</th><th>Method</th><th>Lookback</th></tr></thead>
+    <tbody>
+      <tr><td>&lt; 3 days of data</td><td>District DOW average × 65%</td><td>Last 42d, district-wide (excluding this store)</td></tr>
+      <tr><td>3–13 days</td><td>Own rolling average</td><td>All available same-DOW actuals</td></tr>
+      <tr><td>14–41 days</td><td>Own rolling average</td><td>Last 14 days, same DOW</td></tr>
+      <tr><td>42–97 days</td><td>Own rolling average</td><td>Last 28 days, same DOW</td></tr>
+      <tr><td>98–399 days</td><td>Own rolling average</td><td>Last 42 days, same DOW</td></tr>
+      <tr><td>≥ 400 days</td><td>Standard LY model</td><td>52-week priority chain</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <strong>Ponce de Leon — Store 43701</strong>
+    Opened 03/13/2026. As of Jun 2026 (~14 weeks), it is in the 28-day lookback window. Dialed-In calibration should not be run until approximately September 2026 (26+ weeks of history). Use AE or EWMA model assignment in the interim.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 16 ══ -->
+<div class="section" id="s16">
+  <div class="section-header">
+    <div class="section-num">16</div>
+    <div>
+      <div class="section-title">Daypart Engine</div>
+      <div class="section-subtitle">Breakfast / Lunch / Dinner — requires 3 Peaks data</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="comment"># For each daypart in {breakfast (7–9AM), lunch (11AM–2PM), dinner (5–7PM)}</span>
+
+lyAnchor = avg net sales, same DOW, same daypart, from last year
+           (falls back to oldest available if no LY data)
+
+<span class="comment"># Trend computation per daypart</span>
+recent  = avg daypart sales, last 14 days, same DOW
+mid     = avg daypart sales, 14d–42d ago, same DOW
+
+t2 = (recent − lyAnchor) / lyAnchor
+t6 = (mid    − lyAnchor) / lyAnchor
+
+trend = t2 × tw.t2 + t6 × (tw.t4 + tw.t6)
+        <span class="comment"># default: t2×0.50 + t6×0.50</span>
+
+<span class="highlight">daypartForecast</span> = lyAnchor × (1 + trend) × (1 + plusUp)</div>
+
+  <p>Minimum 3 same-DOW same-daypart rows required per daypart. Runs only on future dates. Also reports average OEPE and parking % for each daypart from <code>peaksSvcRows</code>.</p>
+
+  <table>
+    <thead><tr><th>Daypart</th><th>Time Window</th><th>Recognized File Headers</th></tr></thead>
+    <tbody>
+      <tr><td>Breakfast</td><td>7:00–9:00 AM</td><td>"7am-9am", "7am - 9am", "breakfast"</td></tr>
+      <tr><td>Lunch</td><td>11:00 AM–2:00 PM</td><td>"11am-2pm", "11am - 2pm", "lunch"</td></tr>
+      <tr><td>Dinner</td><td>5:00–7:00 PM</td><td>"5pm-7pm", "5pm - 7pm", "dinner"</td></tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 17 ══ -->
+<div class="section" id="s17">
+  <div class="section-header">
+    <div class="section-num">17</div>
+    <div>
+      <div class="section-title">Dialed-In Calibration</div>
+      <div class="section-subtitle">Grid search over ~21,500 parameter combinations to minimize MAPE per store</div>
+    </div>
+  </div>
+
+  <h3>The 5 Parameters</h3>
+  <table>
+    <thead><tr><th>Parameter</th><th>Range</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td class="td-code">lyW</td><td>0.50 – 1.00</td><td>LY weight vs district DOW average (lower = less trust in store's own prior year)</td></tr>
+      <tr><td class="td-code">t2</td><td>0.10 – 0.80</td><td>Weight on 2-week YOY trend (higher = faster response to recent changes)</td></tr>
+      <tr><td class="td-code">t4</td><td>0.05 – 0.60</td><td>Weight on 4-week YOY trend</td></tr>
+      <tr><td class="td-code">t6</td><td>0.05 – 0.60</td><td>Weight on 6-week YOY trend (higher = more stable, slower to adapt)</td></tr>
+      <tr><td class="td-code">opsMult</td><td>0.00 – 1.50</td><td>Ops influence multiplier (0 = ignore ops, 1.5 = amplify ops signal)</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Constraint:</strong> <code>t2 + t4 + t6 ≤ 0.95</code> (preserves some global trend influence in all combinations). ~21,500 valid combinations after constraint enforcement.</p>
+
+  <h3>Evaluation Method</h3>
+  <div class="formula"><span class="comment"># For each parameter combination {lyW, t2, t4, t6, opsMult}:</span>
+Run forecastDay() on last 42 days of actuals for this store
+using COMPLETE pipeline (holiday adj + trend + ops + weather + event + plusUp)
+
+mape = avg |actual − forecast| / actual × 100
+
+<span class="highlight">best_params</span> = combination with lowest mape over the evaluation window</div>
+
+  <div class="callout info">
+    <strong>Fixed in v4.195</strong>
+    Prior to v4.195, the grid search used a simplified standalone formula that omitted holiday adjustments, event factors, and the full trend pipeline. This meant the "best" combination found was not actually best against real forecasts. The grid search now runs the identical <code>forecastDay()</code> pipeline the live model uses, ensuring calibrated params generalize correctly.
+  </div>
+
+  <h3>When to Recalibrate</h3>
+  <ul>
+    <li>Any settings change (targets, ops multipliers, weather settings)</li>
+    <li>After significant operational changes at a store (new GM, remodel, hours change)</li>
+    <li>After &gt; 42 days since last calibration run</li>
+    <li>When MAPE drift status is "recalibrate" (§20)</li>
+  </ul>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 18 ══ -->
+<div class="section" id="s18">
+  <div class="section-header">
+    <div class="section-num">18</div>
+    <div>
+      <div class="section-title">Model Health Score</div>
+      <div class="section-subtitle">0–100 composite — four components measuring calibration, freshness, accuracy, and history</div>
+    </div>
+  </div>
+
+  <div class="health-grid">
+    <div class="health-card"><div class="health-card-header">Calibration</div><div class="health-card-pts">30</div><div class="health-card-label">pts max</div></div>
+    <div class="health-card"><div class="health-card-header">Data Freshness</div><div class="health-card-pts">25</div><div class="health-card-label">pts max</div></div>
+    <div class="health-card"><div class="health-card-header">MAPE Accuracy</div><div class="health-card-pts">25</div><div class="health-card-label">pts max</div></div>
+    <div class="health-card"><div class="health-card-header">Sample Size</div><div class="health-card-pts">20</div><div class="health-card-label">pts max</div></div>
+  </div>
+
+  <h3>Calibration Status (30 pts)</h3>
+  <table>
+    <thead><tr><th>Condition</th><th class="td-num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Calibrated ≤ 7 days ago, settings unchanged</td><td class="td-num td-green">30</td></tr>
+      <tr><td>Calibrated 8–21 days ago</td><td class="td-num">22</td></tr>
+      <tr><td>Calibrated 22–42 days ago</td><td class="td-num">15</td></tr>
+      <tr><td>Calibrated &gt; 42 days ago</td><td class="td-num">6</td></tr>
+      <tr><td>Not calibrated</td><td class="td-num td-red">0</td></tr>
+      <tr><td>Settings changed since calibration (penalty)</td><td class="td-num td-red">−10</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Data Freshness (25 pts)</h3>
+  <table>
+    <thead><tr><th>Days Since Last Actual</th><th class="td-num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>&lt; 3 days</td><td class="td-num td-green">25</td></tr>
+      <tr><td>3–6 days</td><td class="td-num">20</td></tr>
+      <tr><td>7–13 days</td><td class="td-num">12</td></tr>
+      <tr><td>14–29 days</td><td class="td-num td-yellow">5</td></tr>
+      <tr><td>≥ 30 days or no data</td><td class="td-num td-red">0</td></tr>
+    </tbody>
+  </table>
+
+  <h3>MAPE Accuracy (25 pts)</h3>
+  <p>Uses best available short-window MAPE: 6W preferred, then 4W, then full-period.</p>
+  <table>
+    <thead><tr><th>MAPE</th><th class="td-num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>&lt; 5%</td><td class="td-num td-green">25</td></tr>
+      <tr><td>5–8%</td><td class="td-num">20</td></tr>
+      <tr><td>8–12%</td><td class="td-num">13</td></tr>
+      <tr><td>12–18%</td><td class="td-num td-yellow">6</td></tr>
+      <tr><td>&gt; 18%</td><td class="td-num td-red">0</td></tr>
+      <tr><td>+ Drift penalty (2W MAPE &gt; 6W + 5%)</td><td class="td-num td-red">−8</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Sample Size (20 pts)</h3>
+  <table>
+    <thead><tr><th>Data Points</th><th class="td-num">Points</th></tr></thead>
+    <tbody>
+      <tr><td>≥ 300</td><td class="td-num td-green">20</td></tr>
+      <tr><td>150–299</td><td class="td-num">15</td></tr>
+      <tr><td>60–149</td><td class="td-num">10</td></tr>
+      <tr><td>20–59</td><td class="td-num td-yellow">4</td></tr>
+      <tr><td>&lt; 20</td><td class="td-num td-red">0</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>Score Range</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td class="td-green">≥ 75</td><td class="td-green">🟢 Trusted</td><td>Schedule confidently against projections</td></tr>
+      <tr><td class="td-yellow">50–74</td><td class="td-yellow">🟡 Fair</td><td>Usable; review before locking</td></tr>
+      <tr><td class="td-red">&lt; 50</td><td class="td-red">🔴 Needs Attention</td><td>Do not rely without manual review</td></tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 19 ══ -->
+<div class="section" id="s19">
+  <div class="section-header">
+    <div class="section-num">19</div>
+    <div>
+      <div class="section-title">MAPE — Mean Absolute Percentage Error</div>
+      <div class="section-subtitle">Primary forecast accuracy metric — lower is better</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="highlight">MAPE</span> = ( 1/n ) × Σ | (actual_i − forecast_i) / actual_i | × 100</div>
+
+  <table>
+    <thead><tr><th>MAPE</th><th>Rating</th><th>Guidance</th></tr></thead>
+    <tbody>
+      <tr><td>&lt; 5%</td><td class="td-green">Excellent</td><td>Schedule aggressively to model — high confidence</td></tr>
+      <tr><td>5–10%</td><td class="td-green">Good</td><td>Reliable for planning; add small buffer for scheduling</td></tr>
+      <tr><td>10–15%</td><td class="td-yellow">Fair</td><td>Review model before locking. Check for anomalies or events.</td></tr>
+      <tr><td>15–25%</td><td class="td-red">Poor</td><td>Use as starting point only; manual review required</td></tr>
+      <tr><td>&gt; 25%</td><td class="td-red">Do Not Trust</td><td>Structural model failure — insufficient or erratic data</td></tr>
+    </tbody>
+  </table>
+
+  <p>Meridian reports MAPE at four windows: <strong>6W, 4W, 2W, and 1W</strong>. The 6W window is the primary reference for scheduling decisions. Comparing 2W vs 6W reveals drift (see §20).</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 20 ══ -->
+<div class="section" id="s20">
+  <div class="section-header">
+    <div class="section-num">20</div>
+    <div>
+      <div class="section-title">MAPE Drift Detection</div>
+      <div class="section-subtitle">Early warning that a model is getting worse relative to its longer-term baseline</div>
+    </div>
+  </div>
+
+  <div class="formula">mape2w = avg |actual − forecast| / actual × 100   over last 14 days
+mape6w = avg |actual − forecast| / actual × 100   over last 42 days
+
+<span class="highlight">drift</span> = |mape2w − mape6w|
+
+status = 'ok'          if drift &lt; 2.0
+       = 'warn'        if 2.0 ≤ drift &lt; 5.0
+       = 'recalibrate' if drift ≥ 5.0</div>
+
+  <table>
+    <thead><tr><th>Status</th><th>Drift</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td class="td-green">OK</td><td>&lt; 2%</td><td>No action</td></tr>
+      <tr><td class="td-yellow">Warn</td><td>2–5%</td><td>Monitor; consider recalibrating</td></tr>
+      <tr><td class="td-red">Recalibrate</td><td>≥ 5%</td><td>Run Dialed-In now — model is degrading</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Common causes:</strong> new GM, competitor opening, remodel, operational hours change, seasonal shift not in LY. Usually resolves in 4–6 weeks as the change stabilizes, but recalibrating immediately locks the new baseline.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 21 ══ -->
+<div class="section" id="s21">
+  <div class="section-header">
+    <div class="section-num">21</div>
+    <div>
+      <div class="section-title">Confidence Intervals (σ)</div>
+      <div class="section-subtitle">Statistical uncertainty bands from the last 8 weeks of forecast errors</div>
+    </div>
+  </div>
+
+  <div class="formula"><span class="comment"># Collect percentage errors over last 8 weeks (min 7 data points, |error| ≤ 40% only)</span>
+errors = [(actual_i − forecast_i) / actual_i  for each day in last 8 weeks]
+
+mean = avg(errors)
+<span class="highlight">σ</span>    = sqrt( Σ(error_i − mean)² / n )
+
+<span class="comment"># Confidence bands (±1σ ≈ 68% of outcomes)</span>
+lower = forecast × (1 − σ)
+upper = forecast × (1 + σ)</div>
+
+  <table>
+    <thead><tr><th>σ Value</th><th>Interpretation</th></tr></thead>
+    <tbody>
+      <tr><td>&lt; 5%</td><td class="td-green">Tight — schedule confidently</td></tr>
+      <tr><td>5–10%</td><td>Moderate — add small scheduling buffer</td></tr>
+      <tr><td>10–15%</td><td class="td-yellow">Wide — review before committing schedule</td></tr>
+      <tr><td>&gt; 15%</td><td class="td-red">Very wide — use manual judgment</td></tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 22 ══ -->
+<div class="section" id="s22">
+  <div class="section-header">
+    <div class="section-num">22</div>
+    <div>
+      <div class="section-title">LifeLenz Bridge</div>
+      <div class="section-subtitle">WFM bias detection and adjusted projections for the schedule lock workflow</div>
+    </div>
+  </div>
+
+  <h3>Historical Bias</h3>
+  <div class="formula"><span class="comment"># For each store, analyze last 12 weeks of days where projSales > 0</span>
+<span class="comment"># (requires Labor Analysis loaded with "Projected Sales" / "WFM Projected Sales" column)</span>
+
+biasPct = avg[ (actual − lfzProjection) / actual ] × 100
+
+<span class="comment"># Positive = LifeLenz under-forecasted (actual > projection)</span>
+<span class="comment"># Negative = LifeLenz over-forecasted (actual < projection)</span>
+
+<span class="comment"># Also computed per day-of-week:</span>
+dowBias[d] = avg[ (actual − lfzProjection) / actual ]  for rows with date.getDay() = d</div>
+
+  <h3>Forward Adjustment (14 days)</h3>
+  <div class="formula"><span class="comment"># For each of the next 14 days:</span>
+
+<span class="comment"># Option A: Direct row exists in Labor Analysis for this date</span>
+adjustedProjection = projSales × (1 − biasPct / 100)
+source = 'direct'
+
+<span class="comment"># Option B: No direct row — apply DOW bias to Meridian forecast</span>
+dowStat   = dowBias[date.getDay()]
+adjustedProjection = meridianForecast × (1 + dowStat / 100)
+source = 'pattern'</div>
+
+  <p>The adjusted projection is the number to type into LifeLenz before schedule locks to produce a correctly calibrated labor schedule.</p>
+
+  <h3>Accuracy Comparison</h3>
+  <table>
+    <thead><tr><th>Metric</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>LifeLenz MAPE</td><td>Computed from Labor Analysis projSales vs actual sales (same evaluation window)</td></tr>
+      <tr><td>Meridian MAPE</td><td>From validated AE weekly MAPE in DEFAULT_MODEL_ASSIGNMENTS</td></tr>
+      <tr><td>Win Rate per DOW</td><td>% of historical days where |actual − meridianForecast| &lt; |actual − lfzProjection|</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <strong>District Validation — Sep 2025 – May 2026</strong>
+    Meridian Adaptive Ensemble: 9.29% district average MAPE<br>
+    LifeLenz WFM projections: 9.51% district average MAPE<br>
+    Meridian wins 16 of 27 stores head-to-head on the same evaluation window.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ APPENDIX A ══ -->
+<div class="section" id="sa">
+  <div class="section-header">
+    <div class="section-num">A</div>
+    <div>
+      <div class="section-title">Store Knowledge Base</div>
+      <div class="section-subtitle">All 27 locations — operational notes and model flags</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Store #</th><th>Name</th><th>State</th><th>Tags / Notes</th></tr></thead>
+    <tbody>
+      <tr><td class="td-code">3708</td><td>Ardmore-Broadway</td><td>OK</td><td>Highest-volume OK location. May be capacity-constrained by physical plant. Ryan Thorley operator. <span class="badge green">high-volume</span></td></tr>
+      <tr><td class="td-code">5183</td><td>Chickasha-So 4th</td><td>OK</td><td>Longest-tenured GM — consistent, predictable operations. Strong baseline. <span class="badge green">consistent</span></td></tr>
+      <tr><td class="td-code">5985</td><td>Durant-US Hwy 70/22</td><td>OK</td><td>Highest individual volume, very well run. Reliable benchmark store. <span class="badge green">high-volume</span></td></tr>
+      <tr><td class="td-code">6178</td><td>Chipley-St Rd 77</td><td>FL</td><td>Interstate highway location. Touristy/travel demographics. <span class="badge">interstate</span></td></tr>
+      <tr><td class="td-code">6838</td><td>Defuniak Springs</td><td>FL</td><td>Interstate, FL panhandle. Seasonal variability. <span class="badge">interstate</span> <span class="badge gold">seasonal</span></td></tr>
+      <tr><td class="td-code">6972</td><td>Ada-Country Club</td><td>OK</td><td>Consistent, high-traffic. Fine-tuning management performance. High potential. <span class="badge green">high-volume</span></td></tr>
+      <tr><td class="td-code">10034</td><td>Bonifay</td><td>FL</td><td>Interstate location. Travel demographics. <span class="badge">interstate</span></td></tr>
+      <tr><td class="td-code">10422</td><td>Atoka-Mississippi</td><td>OK</td><td>Untapped potential — volume below demographic expectations. Management development. <span class="badge gold">growth-opportunity</span></td></tr>
+      <tr><td class="td-code">10915</td><td>Seminole-Milt Phillips</td><td>OK</td><td>Runs well. Consistent, reliable operations. <span class="badge green">well-run</span></td></tr>
+      <tr><td class="td-code">11657</td><td>Purcell</td><td>OK</td><td>Recent MAPE spike (11.2% 1W). DI skipped pending stable data window. <span class="badge red">watch</span></td></tr>
+      <tr><td class="td-code">13113</td><td>Madill-Hwy 70</td><td>OK</td><td>DI skipped — calibrating with more data. Elevated MAPE; management stability a factor. <span class="badge red">watch</span></td></tr>
+      <tr><td class="td-code">18213</td><td>Lindsay-Wal-Mart</td><td>OK</td><td>Located in very old Walmart. New relocation build in progress — volume trends will shift. <span class="badge gold">relocation-pending</span></td></tr>
+      <tr><td class="td-code">20475</td><td>OKC-I240/Sooner</td><td>OK</td><td>Suburban OKC. Standard suburban traffic patterns.</td></tr>
+      <tr><td class="td-code">24471</td><td>Ardmore-Cooper/12th</td><td>OK</td><td>Second Ardmore location. Different traffic profile from Ardmore-Broadway.</td></tr>
+      <tr><td class="td-code">29760</td><td>Duncan-Hwy 81 (Relo)</td><td>OK</td><td>Well-run mid-to-high volume. Model degrading recently (12-14% MAPE). <strong>RECOMMEND RE-ENABLING DI.</strong> <span class="badge red">recalibrate</span></td></tr>
+      <tr><td class="td-code">31357</td><td>Pauls Valley-Ballard Rd</td><td>OK</td><td>DI skipped — improving trend. Monitoring before re-enabling calibration. <span class="badge gold">improving</span></td></tr>
+      <tr><td class="td-code">32525</td><td>Sulphur</td><td>OK</td><td>Model degrading (12-14% MAPE). Recent worse than historical. <strong>RECOMMEND RECALIBRATION.</strong> <span class="badge red">recalibrate</span></td></tr>
+      <tr><td class="td-code">33109</td><td>Marietta</td><td>OK</td><td>Near OK-TX state line. Some interstate and cross-border traffic.</td></tr>
+      <tr><td class="td-code">33222</td><td>Elgin</td><td>OK</td><td>Inside travel stop/gas station. Full-period MAPE 190% (historical anomaly) — recent 8-12% and improving. <strong>Ignore full MAPE.</strong> <span class="badge gold">improving</span></td></tr>
+      <tr><td class="td-code">33704</td><td>Tecumseh</td><td>OK</td><td>Suburban. Better trend recently — improving MAPE. <span class="badge gold">improving</span></td></tr>
+      <tr><td class="td-code">34222</td><td>Harrah</td><td>OK</td><td>GM is very metric-aware. Strong operational discipline and data literacy. <span class="badge green">well-run</span></td></tr>
+      <tr><td class="td-code">35064</td><td>Holdenville</td><td>OK</td><td>GM-in-training with no prior management experience. Intentional slow growth path. Patient development approach. <span class="badge gold">gm-in-training</span></td></tr>
+      <tr><td class="td-code">35242</td><td>Cottondale</td><td>FL</td><td>Inside Love's Travel Stop. Interstate I-10. <span class="badge">interstate</span></td></tr>
+      <tr><td class="td-code">37566</td><td>Mossy Head</td><td>FL</td><td>Inside Love's Travel Stop. Interstate. Full MAPE 358% (bad early data) — recent 5-6% excellent. <strong>Model working great. Ignore full MAPE.</strong> <span class="badge green">excellent-recent</span></td></tr>
+      <tr><td class="td-code">38609</td><td>Freeport</td><td>FL</td><td>Touristy — 15 miles from beach. NOT an interstate location. Beach proximity creates seasonal patterns. <span class="badge gold">seasonal</span></td></tr>
+      <tr><td class="td-code">43380</td><td>Tishomingo</td><td>OK</td><td>Only 157 rows of history — too sparse for DI calibration. Recent MAPE 15%+. Monitor as data accumulates. <span class="badge red">data-sparse</span></td></tr>
+      <tr><td class="td-code">43701</td><td>Ponce de Leon-Hwy 81/I-10</td><td>FL</td><td>Inside Love's Travel Stop. Interstate I-10. <strong>OPENED 03/13/2026.</strong> 0 valid LY rows. DI calibration not viable until Sep 2026+. Use AE/EWMA. <span class="badge red">new-location</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ APPENDIX B ══ -->
+<div class="section" id="sb">
+  <div class="section-header">
+    <div class="section-num">B</div>
+    <div>
+      <div class="section-title">Model Assignment Guidance</div>
+      <div class="section-subtitle">Recommended model per store based on current status (June 2026)</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Condition</th><th>Recommended Model</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Stable store, 50+ data points, MAPE &lt; 8%</td><td><span class="badge">DOW</span></td><td>Default works well, no calibration overhead</td></tr>
+      <tr><td>Stable store, 50+ data points, MAPE 8-15%</td><td><span class="badge gold">DI</span></td><td>Grid search will find better t2/t4/t6 weights</td></tr>
+      <tr><td>Trending store or recent operational change</td><td><span class="badge red">AE</span></td><td>5-signal blend handles change better than pure LY</td></tr>
+      <tr><td>Rapid change, unreliable LY</td><td><span class="badge green">EWMA</span></td><td>Ignores LY entirely, responds to recent trajectory</td></tr>
+      <tr><td>New store &lt; 26 weeks old</td><td><span class="badge green">EWMA</span> or <span class="badge red">AE</span></td><td>Insufficient LY; ramp model auto-applies</td></tr>
+      <tr><td>Historical anomaly (Elgin, Mossy Head)</td><td><span class="badge red">AE</span></td><td>AE's LY Adjusted signal self-corrects with recent trend</td></tr>
+      <tr><td>FL Interstate (6178, 6838, 10034, 35242, 37566)</td><td><span class="badge red">AE</span></td><td>AE uses higher LY weight for highway traffic dominance</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <strong>Stores Flagged for Attention — June 2026</strong>
+    <ul style="margin-top:8px">
+      <li><strong>29760 Duncan-Hwy 81</strong> — Re-enable DI (MAPE 12-14%, was skipped)</li>
+      <li><strong>32525 Sulphur</strong> — Recalibrate (MAPE degrading to 12-14%)</li>
+      <li><strong>11657 Purcell</strong> — Monitor; DI skip pending MAPE stabilization</li>
+      <li><strong>13113 Madill</strong> — Monitor; management stability factor</li>
+      <li><strong>43380 Tishomingo</strong> — Monitor; only 157 rows, MAPE 15%+</li>
+      <li><strong>43701 Ponce de Leon</strong> — Opened 03/13/26. No DI until Sep 2026</li>
+    </ul>
+  </div>
+</div>
+
+
+<div class="doc-footer">
+  Meridian Forecasting Reference &nbsp;·&nbsp; MCDOK | Emerald Arches District &nbsp;·&nbsp; June 2026<br>
+  Generated from Meridian v4.210+ source — <code>src/engine/forecast.js</code><br>
+  Confidential — District Manager Internal Reference
+</div>
+
+</body>
+</html>
