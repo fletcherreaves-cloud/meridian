@@ -231,32 +231,43 @@ async function fetchOpenMeteoWeather(startDate, endDate, onProgress) {
     const loc = locs[i];
     const {lat,lon,tz} = STORE_COORDS[loc];
     if(onProgress) onProgress(i+1, locs.length, STORE_NAMES[loc]||loc);
-    try{
-      const url=`https://archive-api.open-meteo.com/v1/archive`+
-        `?latitude=${lat}&longitude=${lon}`+
-        `&start_date=${s}&end_date=${e}`+
-        `&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,`+
-        `precipitation_sum,wind_speed_10m_max`+
-        `&temperature_unit=fahrenheit&timezone=${encodeURIComponent(tz)}`;
-      const res = await fetch(url);
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      const data = await res.json();
-      const {time,temperature_2m_max:tmax,temperature_2m_min:tmin,
-             temperature_2m_mean:tavg,precipitation_sum:rain,
-             wind_speed_10m_max:wspd} = data.daily;
-      for(let j=0;j<time.length;j++){
-        rows.push({
-          _rk:`${loc}_${time[j]}`,
-          loc, date:new Date(time[j]+'T00:00:00'),
-          tmax:tmax[j], tmin:tmin[j], tavg:tavg[j],
-          rain:rain[j]||0, wspd:wspd[j]||0,
-          source:'open-meteo',
-        });
+    const url=`https://archive-api.open-meteo.com/v1/archive`+
+      `?latitude=${lat}&longitude=${lon}`+
+      `&start_date=${s}&end_date=${e}`+
+      `&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,`+
+      `precipitation_sum,wind_speed_10m_max`+
+      `&temperature_unit=fahrenheit&timezone=${encodeURIComponent(tz)}`;
+    const RETRY_DELAYS=[0,15000,30000,60000,120000]; // 0, 15s, 30s, 60s, 2min
+    let fetched = false;
+    for(let attempt=0; attempt<RETRY_DELAYS.length && !fetched; attempt++){
+      try{
+        if(RETRY_DELAYS[attempt]) await new Promise(r=>setTimeout(r,RETRY_DELAYS[attempt]));
+        const res = await fetch(url);
+        if(res.status===429){
+          console.warn(`Weather 429 for ${loc}, attempt ${attempt+1}/${RETRY_DELAYS.length} — backing off ${(RETRY_DELAYS[attempt+1]||0)/1000}s`);
+          continue;
+        }
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const data = await res.json();
+        const {time,temperature_2m_max:tmax,temperature_2m_min:tmin,
+               temperature_2m_mean:tavg,precipitation_sum:rain,
+               wind_speed_10m_max:wspd} = data.daily;
+        for(let j=0;j<time.length;j++){
+          rows.push({
+            _rk:`${loc}_${time[j]}`,
+            loc, date:new Date(time[j]+'T00:00:00'),
+            tmax:tmax[j], tmin:tmin[j], tavg:tavg[j],
+            rain:rain[j]||0, wspd:wspd[j]||0,
+            source:'open-meteo',
+          });
+        }
+        fetched = true;
+      }catch(err){
+        console.warn(`Weather fetch failed for ${loc}:`,err);
+        break;
       }
-      await new Promise(r=>setTimeout(r,1100)); // 1 req/sec rate limit
-    }catch(err){
-      console.warn(`Weather fetch failed for ${loc}:`,err);
     }
+    await new Promise(r=>setTimeout(r,1100)); // 1 req/sec rate limit — must run even on failure
   }
   return rows;
 }
