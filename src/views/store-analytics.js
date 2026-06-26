@@ -798,12 +798,10 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
                     (data.trend>=0?'+':'')+fPct(data.trend))
                 )
               ))
-            ):(()=>{
-              const locStr2=String(store.loc||'').trim();
-              const peaksLoaded=ds&&ds.peaksSvcRows&&ds.peaksSvcRows.some(r=>String(r.loc||'').trim()===locStr2);
-              return div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'14px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:'var(--text3)',fontSize:'11px',textAlign:'center',gap:4}},
-                peaksLoaded?'📊 Daypart sales data not found in this 3 Peaks export — need 3+ recent and 3+ older rows per daypart':'Load 3 Peaks data to unlock daypart erosion analysis');
-            })()),
+            ):div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'14px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:'var(--text3)',fontSize:'11px',textAlign:'center',gap:4}},
+              (ds&&ds.peaksSvcRows&&ds.peaksSvcRows.some(r=>String(r.loc||'').trim()===String(store.loc||'').trim()))
+                ?'📊 Daypart sales data not found in this 3 Peaks export — need 3+ recent and 3+ older rows per daypart'
+                :'Load 3 Peaks data to unlock daypart erosion analysis'),
 
             // Parked % Optimization card
             opData.parkOpt&&div({style:{background:'rgba(129,140,248,.06)',border:'.5px solid rgba(129,140,248,.2)',borderRadius:'var(--r)',padding:'12px 14px'}},

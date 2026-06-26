@@ -3938,18 +3938,28 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
             const mc=mapeColor(r.mape);
             return tr({key:loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
               td({style:{padding:'5px 8px',fontWeight:600,maxWidth:180,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},STORE_NAMES[loc]||loc),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:mc}},
-                r.mape.toFixed(2)+'%',
-                // recentOnly detection indicator (v4.195) — only renders for
-                // stores flagged recentOnly in DEFAULT_MODEL_ASSIGNMENTS
-                // (Elgin, Mossy Head, Tishomingo, Ponce de Leon). Lets
-                // Fletcher directly verify the auto-detected clean-data
-                // boundary rather than only trusting the resulting MAPE.
-                r.recentOnlyFlag && (r.windowApplied
-                  ? h('span',{title:'Recency window applied: bad early-data period auto-detected, calibration restricted to data starting '+r.windowStart+' (detected clean data beginning '+r.cleanDataDetected+'). Protects against the documented historical data anomaly for this store.',
-                      style:{marginLeft:5,fontSize:'9px',cursor:'help',color:'#818cf8'}},'📅')
-                  : h('span',{title:'This store is flagged as having a historical data anomaly, but auto-detection could not confidently find a clean-data boundary — no restriction was applied. Full MAPE may be inflated by bad early data; check 6W/4W/2W/1W instead.',
-                      style:{marginLeft:5,fontSize:'9px',cursor:'help',color:'#f59e0b'}},'⚠'))
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
+                  color: (r.recentOnlyFlag&&r.mape>25&&r.mape6w!=null) ? mapeColor(r.mape6w) : mc}},
+                // recentOnly stores with inflated full-period MAPE: show 6W as primary
+                (r.recentOnlyFlag&&r.mape>25&&r.mape6w!=null)
+                  ? span(null,
+                      r.mape6w.toFixed(1)+'% ',
+                      h('span',{style:{fontSize:'8px',color:'var(--text3)',fontWeight:400}},'(6W — use this)'),
+                      h('span',{title:'Historical data anomaly: all-time MAPE '+r.mape.toFixed(0)+'% is contaminated by bad early data ('+
+                        (loc==='33222'?'Jan 2026 OK snow storm closure / travel stop opening anomaly':
+                         loc==='37566'?'Jun 2025 opening anomaly at Love\'s Travel Stop':
+                         'opening/anomaly period')+
+                        '). Use 6W/4W/2W MAPE for scheduling decisions. Re-run calibration with events tagged to correct full-period MAPE.',
+                        style:{marginLeft:4,fontSize:'9px',cursor:'help',color:'#f59e0b'}},'⚠ anomaly')
+                    )
+                  : span(null,
+                      r.mape.toFixed(2)+'%',
+                      r.recentOnlyFlag && (r.windowApplied
+                        ? h('span',{title:'Recency window applied — data before '+r.windowStart+' excluded from calibration.',
+                            style:{marginLeft:5,fontSize:'9px',cursor:'help',color:'#818cf8'}},'📅')
+                        : h('span',{title:'Historical anomaly flag set but no clean boundary found — full MAPE may be inflated. Check 6W/4W/2W columns.',
+                            style:{marginLeft:5,fontSize:'9px',cursor:'help',color:'#f59e0b'}},'⚠'))
+                    )
               ),
               // Trend sparkline: 6W→4W→2W→1W direction
               td({style:{padding:'5px 8px',textAlign:'center',fontSize:'11px'},
@@ -6740,35 +6750,26 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
       const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
       const di=settings.dialedIn&&settings.dialedIn[loc];
 
-      // weeklyIsDI (v4.195 fix): this report is genuinely week-scoped (Prev/
-      // Next navigate by week), so 'weekly' is the correct horizon to check
-      // — but most stores' weekly assignment is 'ae', not 'di' (confirmed via
-      // DEFAULT_MODEL_ASSIGNMENTS). forecastDay's weekly call short-circuits
-      // to AE regardless of whether settings.dialedIn is present or stripped,
-      // so fcDI and fcBase were IDENTICAL for every such store — this report
-      // has been silently comparing AE-vs-AE for nearly every location,
-      // always showing 0% improvement / "Consider recalibrating" regardless
-      // of whether DI calibration is actually good. Detect this upfront and
-      // report it honestly (N/A) instead of running a comparison that can't
-      // possibly show a difference.
-      const weeklyAssignment = getModelAssignment(loc,'weekly',settings);
-      const weeklyIsDI = (weeklyAssignment&&weeklyAssignment.model)==='di';
-
-      if(!weeklyIsDI){
+      // v4.220: compare forceModel='di' vs forceModel='dow' for any store with
+      // DI calibration, regardless of current model assignment. Previously this
+      // checked weeklyIsDI but all district stores use AE weekly so every row
+      // showed N/A. Forcing both models bypasses the assignment and directly
+      // compares Dialed-In DOW vs uncalibrated DOW — which is the useful question.
+      if(!di||di.mape==null){
         results[loc]={days:[],mapeDI:null,mapeBase:null,improvement:null,
           wkFcDI:0,wkFcBase:0,wkAct:0,wkLY:0,
-          hasDI:!!(di&&di.mape!=null),
+          hasDI:false,
           notApplicable:true,
-          notApplicableReason:'Weekly model assignment is '+(MODEL_CODE_LABELS[weeklyAssignment&&weeklyAssignment.model]||(weeklyAssignment&&weeklyAssignment.model)||'dow')+', not Dialed-In — no weekly comparison to make',
-          verdict:'N/A — not DI weekly'};
+          notApplicableReason:'No Dialed-In calibration data for this store — run Dialed-In Calibration first',
+          verdict:'N/A — not calibrated'};
         continue;
       }
 
-      // Settings WITHOUT Dialed-In: use DEF_SETTINGS calibration values
+      // Settings WITHOUT Dialed-In params (for the base DOW forecast)
       const settingsBase={...settings,
-        dialedIn:{...settings.dialedIn,[loc]:null}, // remove this store calibration
+        dialedIn:{...settings.dialedIn,[loc]:null},
       };
-      // Settings WITH Dialed-In
+      // Settings WITH Dialed-In params
       const settingsDI={...settings};
 
       const days=[]; let diMapeSum=0,baseMapeSum=0,cnt=0;
@@ -6777,8 +6778,8 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
         const actRow=(ds.laborRows||[]).find(r=>r.loc===loc&&dKey(r.date)===dKey(date));
         if(!actRow||!actRow.sales||actRow.sales<=0) continue;
 
-        const fcDI=forecastDay(loc,date,ds,{...settingsDI,_userEvents:userEvents||{}},null,t);
-        const fcBase=forecastDay(loc,date,ds,{...settingsBase,_userEvents:userEvents||{}},null,t);
+        const fcDI=forecastDay(loc,date,ds,{...settingsDI,_userEvents:userEvents||{}},null,t,null,'di');
+        const fcBase=forecastDay(loc,date,ds,{...settingsBase,_userEvents:userEvents||{}},null,t,null,'dow');
 
         const errDI=Math.abs(fcDI.forecast-actRow.sales)/actRow.sales*100;
         const errBase=Math.abs(fcBase.forecast-actRow.sales)/actRow.sales*100;
@@ -6894,9 +6895,9 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
     div({style:{flex:1,overflowY:'auto',padding:'16px 20px'}},
       !report&&!computing&&div({style:{textAlign:'center',padding:60}},
         div({style:{fontSize:'32px',marginBottom:12}},'⚡'),
-        div({style:{fontWeight:600,marginBottom:6}},'Compare forecast accuracy with and without Dialed-In'),
-        div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:20,maxWidth:440,margin:'0 auto 20px'}},
-          'This report runs the AI forecast for the selected week two ways: once with your Dialed-In calibration parameters, and once with the default settings. Shows which stores benefit most from calibration — and any where the default might actually be better.'),
+        div({style:{fontWeight:600,marginBottom:6}},'Compare Dialed-In DOW vs Default DOW for all calibrated stores'),
+        div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:20,maxWidth:480,margin:'0 auto 20px'}},
+          'Forces model=DI (with your calibrated lyW/t2/t4/t6/opsMult) vs model=DOW (uncalibrated defaults) for the selected week — regardless of current model assignments. Shows whether calibration is beating the baseline, and by how much.'),
         btn({className:'btn btn-a',style:{padding:'10px 24px',fontSize:'12px'},
           onClick:runComparison},'▶ Run Comparison — '+fmtWk(weekStart))
       ),
@@ -6932,14 +6933,9 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
           background:'var(--surf2)',borderRadius:'var(--r)',marginBottom:12,
           display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}},
           span({style:{fontWeight:600}},'Reading this report:'),
-          span(null,'DI MAPE = accuracy with Dialed-In · Default = without calibration · Improvement = how many points better Dialed-In is · Green improvement = Dialed-In is helping')
+          span(null,'DI MAPE = accuracy forcing Dialed-In DOW · Default MAPE = accuracy forcing uncalibrated DOW · Improvement = how many MAPE points better DI is · Green = calibration is helping · Both forced regardless of current model assignment')
         ),
-        // No-DI-weekly banner (v4.195) — this report is genuinely week-scoped,
-        // so it correctly checks each store's WEEKLY model assignment. If
-        // none of the visible stores are DI-assigned weekly (their DI
-        // calibration applies at monthly/yearly instead — see Model
-        // Assignments), every row below will show N/A. This banner explains
-        // why upfront instead of leaving 27 empty-looking rows unexplained.
+        // N/A banner — shows when stores lack calibration data.
         (()=>{
           const naCount=report.allLocs.filter(l=>report.results[l]&&report.results[l].notApplicable).length;
           if(naCount===0) return null;
@@ -6947,8 +6943,8 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
             background:'rgba(96,165,250,.08)',border:'.5px solid rgba(96,165,250,.3)',
             borderRadius:'var(--r)',color:'var(--text2)'}},
             naCount===report.allLocs.length
-              ? '⊘ No stores currently use Dialed-In at the weekly horizon — every store below shows N/A. Most Dialed-In calibration in this district applies at the monthly or yearly horizon instead (see 🎯 Model Assignments). This report specifically compares the WEEKLY forecast, so it has nothing to compare here.'
-              : naCount+' of '+report.allLocs.length+' stores below show N/A — their weekly model assignment isn\'t Dialed-In (see 🎯 Model Assignments), so there\'s no weekly DI-vs-Default comparison to make for them.'
+              ? '⊘ No stores have Dialed-In calibration data — run Dialed-In Calibration for your stores first, then re-run this comparison.'
+              : naCount+' of '+report.allLocs.length+' stores show N/A — no DI calibration data found. Run Dialed-In Calibration to generate comparison data.'
           );
         })(),
         // Group tables
