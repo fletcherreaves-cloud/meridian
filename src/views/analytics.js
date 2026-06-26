@@ -11,7 +11,7 @@ import { EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
-import { ExportDropdown, StoreCard } from './store-dash.js';
+import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
