@@ -349,14 +349,12 @@ function App() {
           lastActual:lastAct,
         };
         if(audit.length>0) try{restoredDs.empRisk=analyzeRegisterAudit(audit);}catch(e){}
-        setDs(restoredDs);
+        // Compute non-React side-effects synchronously before the transition
+        let _taggedEvents=null,_autoTaggedCount=0;
         try{
           const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
-          const {events:_taggedEvents,tagged:_autoTaggedCount}=autoTagHolidays(restoredDs.laborRows,_existingEvents);
-          if(_autoTaggedCount>0){
-            localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
-            setUserEvents(_taggedEvents);
-          }
+          ({events:_taggedEvents,tagged:_autoTaggedCount}=autoTagHolidays(restoredDs.laborRows,_existingEvents));
+          if(_autoTaggedCount>0) localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
         }catch(e){console.warn('Auto-holiday-tag on IDB restore failed:',e);}
         // coverage and wx cache from data already in memory — no second IDB read
         const cov = coverageFromLoadedRows(labor, ops, ctrl, fob, audit, peaks, dar, weather);
@@ -371,6 +369,12 @@ function App() {
           : '💾 Stored data loaded from IndexedDB';
         setLoadMsg(msg);
         setTimeout(()=>setLoadMsg(null),6000);
+        // Wrap expensive render in startTransition — React 18 time-slices into
+        // 5ms chunks so no single message handler exceeds the violation threshold.
+        React.startTransition(()=>{
+          setDs(restoredDs);
+          if(_autoTaggedCount>0) setUserEvents(_taggedEvents);
+        });
       } else {
         setLoadMsg(null);
       }
@@ -554,20 +558,15 @@ function App() {
         setLoadMsg('⚠ Error reading '+file.name);
       }
     }
-    setDs(currentDS);
-    // Re-sync userEvents from localStorage (v4.195) — autoTagHolidays runs
-    // synchronously inside the parsing pipeline (mergeDS → buildDS) and
-    // writes any newly-tagged holidays directly to localStorage, since it's
-    // a plain function with no access to React's setUserEvents callback.
-    // Without this re-sync, the in-memory userEvents state would silently
-    // diverge from what's actually persisted until a manual page reload —
-    // meaning calibration calls made later in THIS session (which read
-    // userEvents from React state, not localStorage directly) could still
-    // miss the auto-tagged holidays from the load that just happened.
-    try{
-      const _refreshedEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
-      setUserEvents(_refreshedEvents);
-    }catch(e){console.warn('userEvents re-sync after load failed:',e);}
+    // Re-sync userEvents from localStorage before the transition — autoTagHolidays
+    // runs inside mergeDS and writes directly to localStorage; read it back now
+    // so the transition render gets the correct events on first pass.
+    let _uploadEvents=null;
+    try{_uploadEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');}catch(e){console.warn('userEvents re-sync after load failed:',e);}
+    React.startTransition(()=>{
+      setDs(currentDS);
+      if(_uploadEvents) setUserEvents(_uploadEvents);
+    });
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
     setLoadMsg('✓ '+names+' loaded · '+currentDS.storeIds.length+' stores');
     // ── Persist to IndexedDB (survives refresh) ──────────────────────────
