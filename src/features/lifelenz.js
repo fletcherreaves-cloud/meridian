@@ -461,12 +461,22 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
   const [districtProg, setDistrictProg] = uSt(null);
 
   const runSingle = (loc) => {
-    setScanning(true); setCopied(false);
+    setScanning(true); setCopied(false); setScanResult(null);
     setTimeout(()=>{
-      setScanResult(runLifeLenzBridgeScan(loc, ds, settings, userEvents, 14));
-      setScanning(false);
+      try{
+        const result = runLifeLenzBridgeScan(loc, ds, settings, userEvents, 14);
+        setScanResult(result);
+      }catch(e){
+        console.error('[LifeLenz Bridge] scan failed:',e);
+        setScanResult({loc, biasStats:null, dowAttribution:null, days:[], error:String(e)});
+      }finally{
+        setScanning(false);
+      }
     },10);
   };
+
+  // Auto-run on first open
+  React.useEffect(()=>{ if(ds&&ds.loaded&&selLoc&&!scanResult) runSingle(selLoc); },[]);
 
   const runDistrict = async () => {
     setDistrictRunning(true);
@@ -562,7 +572,17 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
             div({style:{fontSize:36,marginBottom:10}},'🌉'),
             div(null,'Select a store and run the scan. Compares Meridian\'s forecast against LifeLenz\'s own projection for the next 14 days.')),
 
-          scanResult&&React.createElement(React.Fragment,null,
+          scanResult&&scanResult.error&&div({style:{padding:'16px',background:'rgba(239,68,68,.08)',
+            border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',color:'#f87171',fontSize:'10px'}},
+            '⚠ Scan error: '+scanResult.error),
+
+          scanResult&&!scanResult.error&&!scanResult.biasStats&&!scanResult.days?.length&&div({style:{
+            color:'var(--text3)',textAlign:'center',padding:'30px 20px',fontSize:'10px',lineHeight:1.7}},
+            div({style:{fontSize:28,marginBottom:8}},'📊'),
+            div({style:{fontWeight:700,color:'var(--text)',marginBottom:4}},'No Adjustment Data Available'),
+            div(null,'The Labor Analysis file must include a "Projected Sales" or "WFM Projected Sales" column to compute LifeLenz adjustments. Load that file first, then re-run.')),
+
+          scanResult&&!scanResult.error&&(scanResult.biasStats||scanResult.days?.length>0)&&React.createElement(React.Fragment,null,
             // Evidence summary
             scanResult.biasStats&&div({style:{marginBottom:14,padding:'10px 12px',background:'var(--surf2)',
               border:'.5px solid var(--bdr)',borderRadius:'var(--r)'}},

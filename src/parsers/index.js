@@ -243,7 +243,8 @@ function parseLaborData(wb,sheet,defaultDateOverride){
     :null;
   const C={loc:fc(h,'Loc','Store'),date:_dateColIdx,
     sales:fc(h,'Product Sales'),allNetSales:fc(h,'All Net Sales'),
-    proj:findCol(h,'Projected Sales'),gc:fc(h,'STW GC','GC'),actualGC:findCol(h,'Actual GC'),
+    proj:findCol(h,'WFM Projected Sales','Projected Sales','Proj Sales','Sales Projection','Projected Net Sales','Forecasted Sales','Forecast Sales','Proj. Sales'),
+    gc:fc(h,'STW GC','GC'),actualGC:findCol(h,'Actual GC'),
     opp:fc(h,'Opportunity Cost %'),oppD:fc(h,'Opportunity Cost $'),
     avgChk:fc(h,'Average Check'),
     tpph:findCol(h,'TPPH'),spph:findCol(h,'SPPH'),avn:fc(h,'Act vs Need'),
@@ -265,7 +266,7 @@ function parseLaborData(wb,sheet,defaultDateOverride){
     kioskSales:findCol(h,'Kiosk All Net Sales'),kioskGC:findCol(h,'Kiosk GC'),kioskAvgChk:findCol(h,'Kiosk Average Check'),kioskPctTotal:findCol(h,'Kiosk % of Total Sales'),
     eatInSales:findCol(h,'Eat in Sales'),eatInGC:findCol(h,'Eat in GC'),
     inStoreSales:findCol(h,'In-Store All Net Sales'),inStoreGC:findCol(h,'In-Store GC'),inStorePctTotal:findCol(h,'In-Store % of Total Sales'),
-    fcSales:findCol(h,'FC All Net Sales'),fcGC:findCol(h,'FC GC'),fcPctTotal:findCol(h,'FC % of Total Sales')}; 
+    fcSales:findCol(h,'FC All Net Sales'),fcGC:findCol(h,'FC GC'),fcPctTotal:findCol(h,'FC % of Total Sales')};
   const rows=[];
   for(let i=hi+1;i<raw.length;i++){
     const r=raw[i];if(!r)continue;
