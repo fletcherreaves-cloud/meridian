@@ -608,6 +608,11 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   };
   const activeLocs = getActiveLocs();
 
+  // Must be declared before computeWeek so it's in scope for the dep array.
+  const _activeHorizon = projPeriod==='week' ? 'weekly'
+    : projPeriod==='month' ? 'monthly'
+    : (weekDays.length<=14 ? 'weekly' : 'monthly');
+
   // ── Compute week for all active locs ──────────────────
   const computeWeek = React.useCallback(async()=>{
     if(!ds||!ds.loaded) return;
@@ -678,9 +683,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   // Now: Week view + Custom ranges of 14 days or fewer use 'weekly'; Month
   // view + Custom ranges over 14 days use 'monthly'. No 'yearly' UI exists
   // yet in Projection Workspace, so that assignment still has no consumer here.
-  const _activeHorizon = projPeriod==='week' ? 'weekly'
-    : projPeriod==='month' ? 'monthly'
-    : (weekDays.length<=14 ? 'weekly' : 'monthly'); // custom range, sized by day count
+  // (_activeHorizon is declared above computeWeek so it's available in deps.)
 
   const _fcstCache = React.useMemo(()=>{
     const cache=new Map();
