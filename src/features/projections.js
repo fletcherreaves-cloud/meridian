@@ -27,6 +27,10 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 const PROJ_STORE_KEY = 'mf_locked_projections';
 const PROJ_LOG_KEY   = 'mf_projection_log';
 
+// Module-level weekData cache — survives modal close/reopen so projections
+// don't recompute from scratch every time the workspace is opened.
+const _weekDataCache = { key: null, data: {} };
+
 function loadLockedProjections() {
   try { return JSON.parse(localStorage.getItem(PROJ_STORE_KEY)||'{}'); } catch { return {}; }
 }
@@ -607,7 +611,15 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   // ── Compute week for all active locs ──────────────────
   const computeWeek = React.useCallback(async()=>{
     if(!ds||!ds.loaded) return;
+    // Cache key excludes lockedProjections — overrides are read live via getAmt/fcstAmt.
+    const cacheKey=[ds.laborRows?.length,weekStart,projPeriod,weekDays.length,_activeHorizon].join('|');
+    if(_weekDataCache.key===cacheKey && Object.keys(_weekDataCache.data).length>0){
+      setWeekData(_weekDataCache.data);
+      return;
+    }
     setLoading(true);
+    // Compute event factors once for all stores — was called 27× inside the loop.
+    const _eventFactors=settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{};
     const newData={};
     for(const loc of ALL_LOCS){
       setLoadingLoc(STORE_NAMES[loc]||loc);
@@ -618,23 +630,23 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
         // when not in week view, despite this function's legacy name. Use the
         // same _activeHorizon the cache uses so weekData and the cache never
         // disagree about which model assignment produced a given day's number.
-        const r=forecastDay(loc,d,ds,{...settings,
-            _userEvents:userEvents||{},
-            _eventFactors:settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{}
-          },null,t,_activeHorizon);
-        const key=loc+'_'+dKey(d);
-        const ov=lockedProjections&&lockedProjections[key];
-        rows.push({...r,date:d,loc,
-          overrideAmt:ov?ov.amt:null,
-          overrideMode:ov?ov.mode:'auto'});
+        const r=forecastDay(loc,d,ds,{...settings,_userEvents:userEvents||{},_eventFactors},null,t,_activeHorizon);
+        rows.push({...r,date:d,loc,overrideAmt:null,overrideMode:'auto'});
       }
       newData[loc]=rows;
       await new Promise(res=>setTimeout(res,0));
     }
+    _weekDataCache.key=cacheKey;
+    _weekDataCache.data=newData;
     setWeekData(newData);
     setLoadingLoc(null);
     setLoading(false);
-  },[ds,settings,weekStart,lockedProjections,projPeriod,weekDays.length]);
+  },[ds,settings,weekStart,projPeriod,weekDays.length,_activeHorizon]);
+
+  const refreshWeek = React.useCallback(()=>{
+    _weekDataCache.key=null; // bust cache so next computeWeek run recomputes
+    computeWeek();
+  },[computeWeek]);
 
   React.useEffect(()=>{computeWeek();},[computeWeek]);
 
@@ -1313,7 +1325,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   // ── Pre-Forecast Brief preflight ───────────────────────────────────────
   if(showPFBrief) return h(PreForecastBrief,{
     stores,ds,settings,userEvents,weekStart,projPeriod,lockedProjections,
-    onRun:()=>{setShowPFBrief(false);computeWeek();},
+    onRun:()=>{setShowPFBrief(false);refreshWeek();},
     onClose:()=>setShowPFBrief(false)
   });
 
@@ -1509,7 +1521,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
               loading?('⏳ '+loadingLoc+'…'):'📋 Brief & Refresh'),
             btn({className:'btn btn-sm',style:{marginLeft:4,fontSize:'9px',opacity:.7},
               title:'Refresh projections without showing the Pre-Forecast Brief',
-              onClick:computeWeek,disabled:loading},'↻ Quick Refresh'),
+              onClick:refreshWeek,disabled:loading},'↻ Quick Refresh'),
             btn({className:'btn btn-sm btn-a',style:{marginLeft:4},
               title:'Review model health + projected totals, then lock all stores — opens confirmation dialog',
               onClick:lockAllStores},'🔒 Lock All'),
