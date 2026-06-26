@@ -1,9 +1,9 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, fetchOpenMeteoWeather } from '../constants.js';
 import { dKey, addD, mwStart, dowOf, dFmt } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
-import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow } from '../engine/forecast.js';
+import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
@@ -878,7 +878,12 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
           setWxFetching(false);
         }
       },'🌤 Fetch All Weather'),
-      wxFetching&&div({style:{fontSize:'11px',color:'var(--text3)',padding:'6px 0',fontStyle:'italic'}},wxMsg),
+      wxFetching&&div({style:{fontSize:'11px',color:'var(--text3)',padding:'6px 0',fontStyle:'italic'}},
+        span({style:{marginRight:6}},'⏳'),wxMsg),
+      !wxFetching&&wxMsg&&div({style:{fontSize:'11px',padding:'6px 8px',borderRadius:6,marginTop:4,
+        background:wxMsg.startsWith('✓')?'rgba(16,185,129,.1)':'rgba(248,113,113,.1)',
+        color:wxMsg.startsWith('✓')?'#10b981':'#f87171',border:'.5px solid '+(wxMsg.startsWith('✓')?'rgba(16,185,129,.25)':'rgba(248,113,113,.25)')}},
+        wxMsg),
             btn({className:'btn btn-sm btn-a',onClick:onClose},'Close')
           )
         )
@@ -5467,20 +5472,102 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const tFmt=v=>v!=null?Math.round(v)+'s':'—';
 
   // ── Weekly trend (last 6 completed weeks, for Projections sparkline) ─
-  // ── Memoized CI + Drift (Enhancement 3+4) ─────────────────────────────────
-  const ciAndDrift=React.useMemo(()=>{
-    if(!ds||!ds.loaded||!stores||!stores.length) return null;
-    try{
-      const nextWeekStart=mwStart();
-      const sigmas=stores.map(s=>{try{return computeStoreSigma(s.loc,ds,{...settings,_userEvents:userEvents||{}},6)||0.07;}catch{return 0.07;}});
-      const avgSigma=sigmas.reduce((a,b)=>a+b,0)/sigmas.length||0.07;
-      const dayFcs=stores.map(s=>{try{const r=forecastDay(s.loc,nextWeekStart,ds,settings);return r&&!r.noLYData?(r.forecast||0):0;}catch{return 0;}});
-      const weekFcTotal=dayFcs.reduce((a,b)=>a+b,0)*7;
-      const ciLow=weekFcTotal>0?Math.round(weekFcTotal*(1-1.645*avgSigma)):0;
-      const ciHigh=weekFcTotal>0?Math.round(weekFcTotal*(1+1.645*avgSigma)):0;
-      const driftStores=stores.map(s=>{try{const d=computeMAPEDrift(s.loc,ds,{...settings,_userEvents:userEvents||{}});return d&&d.status!=='ok'&&d.drift>=2?{s,d}:null;}catch{return null;}}).filter(Boolean);
-      return{ciLow,ciHigh,driftStores,avgSigma};
-    }catch(e){return null;}
+  // ── Deferred CI + Drift (Enhancement 3+4) ────────────────────────────────
+  // Computed asynchronously after initial render to avoid blocking the page
+  // load with 2,000+ forecastDay calls. Yields to the event loop between each
+  // store so no single macrotask exceeds ~150ms.
+  const [ciAndDrift,setCiAndDrift]=React.useState(null);
+  React.useEffect(()=>{
+    if(!ds||!ds.loaded||!stores||!stores.length){setCiAndDrift(null);return;}
+    let cancelled=false;
+    const Y=()=>new Promise(r=>setTimeout(r,0)); // yield helper
+    const run=async()=>{
+      try{
+        const nextWeekStart=mwStart();
+        const cfg={...settings,_userEvents:userEvents||{}};
+
+        // computeStoreSigma inlined with per-row yields (every 5 forecastDay calls)
+        // prevents any single macrotask from exceeding ~40ms
+        const sigmas=[];
+        for(const s of stores){
+          const loc=s.loc;
+          const anchor=ds.lastActual&&ds.lastActual[loc]?ds.lastActual[loc]:new Date();
+          const cutoff=addD(anchor,-42);
+          const _locLab=locRows(ds.laborByLoc,ds.laborRows,loc);
+          const rows=_locLab.filter(r=>r.date>=cutoff&&r.date<=anchor&&r.sales>0);
+          if(rows.length<7){sigmas.push(0.07);await Y();continue;}
+          const errs=[];
+          for(let i=0;i<rows.length;i++){
+            if(i>0&&i%5===0){await Y();if(cancelled)return;}
+            try{
+              const fc=forecastDay(loc,rows[i].date,ds,cfg,null,null);
+              if(fc&&!fc.isFuture&&fc.actual&&fc.actual>0){
+                const e=(fc.actual-fc.forecast)/fc.actual;
+                if(Math.abs(e)<0.40) errs.push(e);
+              }
+            }catch{}
+          }
+          if(errs.length>=5){
+            const mean=errs.reduce((a,b)=>a+b,0)/errs.length;
+            sigmas.push(+Math.sqrt(errs.reduce((a,b)=>a+(b-mean)**2,0)/errs.length).toFixed(4));
+          }else sigmas.push(0.07);
+          await Y();
+        }
+        if(cancelled)return;
+
+        const avgSigma=sigmas.reduce((a,b)=>a+b,0)/sigmas.length||0.07;
+
+        // forecastDay for next week projection — yield between stores
+        const dayFcs=[];
+        for(const s of stores){
+          try{const r=forecastDay(s.loc,nextWeekStart,ds,settings);dayFcs.push(r&&!r.noLYData?(r.forecast||0):0);}catch{dayFcs.push(0);}
+          await Y();
+        }
+        if(cancelled)return;
+
+        const weekFcTotal=dayFcs.reduce((a,b)=>a+b,0)*7;
+        const ciLow=weekFcTotal>0?Math.round(weekFcTotal*(1-1.645*avgSigma)):0;
+        const ciHigh=weekFcTotal>0?Math.round(weekFcTotal*(1+1.645*avgSigma)):0;
+
+        // computeMAPEDrift inlined with per-row yields
+        const driftStores=[];
+        for(const s of stores){
+          const loc=s.loc;
+          const anchor=ds.lastActual&&ds.lastActual[loc]?ds.lastActual[loc]:new Date();
+          const cut2=addD(anchor,-14),cut6=addD(anchor,-42);
+          const _locLab=locRows(ds.laborByLoc,ds.laborRows,loc);
+          const rows6=_locLab.filter(r=>r.date>=cut6&&r.date<=anchor&&r.sales>0);
+          if(rows6.length<7){await Y();continue;}
+          const rows2=rows6.filter(r=>r.date>=cut2);
+          const errOf=async(rowsToProcess)=>{
+            const errs=[];
+            for(let i=0;i<rowsToProcess.length;i++){
+              if(i>0&&i%5===0){await Y();if(cancelled)return null;}
+              try{
+                const fc=forecastDay(loc,rowsToProcess[i].date,ds,cfg,null,null);
+                if(!fc||fc.isFuture||!fc.actual||fc.actual<=0||!fc.forecast) continue;
+                errs.push(Math.abs(fc.actual-fc.forecast)/fc.actual*100);
+              }catch{}
+            }
+            return errs;
+          };
+          const err6=await errOf(rows6);if(err6===null||cancelled)return;
+          if(!err6.length){await Y();continue;}
+          const err2=await errOf(rows2);if(err2===null||cancelled)return;
+          const mape6=err6.reduce((a,b)=>a+b,0)/err6.length;
+          const mape2=err2.length?err2.reduce((a,b)=>a+b,0)/err2.length:mape6;
+          const drift=Math.abs(mape2-mape6);
+          const d={mape2w:+mape2.toFixed(1),mape6w:+mape6.toFixed(1),drift:+drift.toFixed(1),
+            status:drift>=5?'recalibrate':drift>=2?'warn':'ok'};
+          if(d.status!=='ok'&&d.drift>=2) driftStores.push({s,d});
+          await Y();
+        }
+        if(cancelled)return;
+        setCiAndDrift({ciLow,ciHigh,driftStores,avgSigma});
+      }catch(e){if(!cancelled)setCiAndDrift(null);}
+    };
+    run();
+    return()=>{cancelled=true;};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[ds&&ds.laborRows&&ds.laborRows.length,stores&&stores.length]);
 
@@ -5557,6 +5644,35 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── No data state ─────────────────────────────────────────────
   const noData=!ds?.loaded||!ds.laborRows?.length;
+
+  // ── District weekly projections — memoized so 189 forecastDay calls only fire
+  // when ds/stores/settings/userEvents actually change, not on every render
+  // (opening Data Manager, state updates, etc. previously re-ran all 189 calls).
+  const weekProjections=React.useMemo(()=>{
+    if(!ds||!ds.loaded||!stores||!stores.length)return null;
+    const _today=new Date();
+    const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
+    const ws=new Date(_today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
+    const weekDays=Array.from({length:7},(_,i)=>addD(new Date(ws.getFullYear(),ws.getMonth(),ws.getDate(),12),i));
+    const wsKey=dKey(new Date(ws.getFullYear(),ws.getMonth(),ws.getDate(),12));
+    // computeEventFactors called ONCE here — not 189× inside the loop
+    const _eventFactors=settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{};
+    const cfg={...settings,_userEvents:userEvents||{},_eventFactors};
+    const _allLocs=(stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
+    const storeProjs=_allLocs.map(loc=>{
+      const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+      const rowDays=weekDays.map(d=>{
+        const r=forecastDay(loc,d,ds,cfg,null,t);
+        return{fc:r.forecast||0,act:r.actual||0,ly:r.lyAdj||0};
+      });
+      const wkTotal=rowDays.reduce((a,r)=>a+r.fc,0);
+      const lyTotal=rowDays.reduce((a,r)=>a+r.ly,0);
+      const actualTotal=rowDays.reduce((a,r)=>a+r.act,0);
+      const vsLY=lyTotal>0?((wkTotal-lyTotal)/lyTotal*100).toFixed(1):null;
+      return{loc,name:STORE_NAMES[String(loc)]||loc,wkTotal,lyTotal,actualTotal,vsLY,org:orgOf(loc),rowDays};
+    }).sort((a,b)=>b.wkTotal-a.wkTotal);
+    return{storeProjs,weekDays,wsKey};
+  },[ds?.laborRows?.length,stores,settings,userEvents]);
 
   // ── RENDER ────────────────────────────────────────────────────
   return div({style:{display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'}},
@@ -6483,28 +6599,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       ), // end grid
 
       // ── DISTRICT PROJECTIONS MINI TABLE ────────────────────────
-      !noData&&(()=>{
-        // Compute weekly projections for all stores inline
-        const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
-        const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
-        const weekDays=Array.from({length:7},(_,i)=>addD(new Date(ws.getFullYear(),ws.getMonth(),ws.getDate(),12),i));
-        const wsKey=dKey(new Date(ws.getFullYear(),ws.getMonth(),ws.getDate(),12));
+      !noData&&weekProjections&&(()=>{
+        // weekProjections useMemo computed the projections above — no forecastDay calls here
+        const {storeProjs,weekDays,wsKey}=weekProjections;
         const lp=lockedProjections||{};
         const DOWabbr=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-        const storeProjs=allLocs.map(loc=>{
-          const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
-          let wkTotal=0,lyTotal=0;
-          weekDays.forEach(d=>{
-            const r=forecastDay(loc,d,ds,{...settings,
-            _userEvents:userEvents||{},
-            _eventFactors:settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{}
-          },null,t);
-            wkTotal+=(r.forecast||0);lyTotal+=(r.lyAdj||0);
-          });
-          const isLocked=!!(lp[loc+'_'+wsKey]);
-          const vsLY=lyTotal>0?((wkTotal-lyTotal)/lyTotal*100).toFixed(1):null;
-          return{loc,name:STORE_NAMES[String(loc)]||loc,wkTotal,lyTotal,vsLY,isLocked,org:orgOf(loc),actualTotal:0};
-        }).sort((a,b)=>b.wkTotal-a.wkTotal);
         const distTotal=storeProjs.reduce((a,s)=>a+s.wkTotal,0);
         const distLY=storeProjs.reduce((a,s)=>a+s.lyTotal,0);
         const distVsLY=distLY>0?((distTotal-distLY)/distLY*100).toFixed(1):null;
@@ -6551,18 +6650,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               ),
               h('tbody',null,
                 storeProjs.map((sp,si)=>{
-                  const t=(ds.targets&&ds.targets[sp.loc])||DEFAULT_TARGETS[sp.loc]||{};
-                  const rowDays=weekDays.map(d=>{
-                    const r=forecastDay(sp.loc,d,ds,{...settings,_userEvents:userEvents||{}},null,t);
-                    return {fc:r.forecast||0, act:r.actual||0, ly:r.lyAdj||0};
-                  });
-                  const actualTotal=rowDays.reduce((a,r)=>a+r.act,0);
+                  const isLocked=!!(lp[sp.loc+'_'+wsKey]);
+                  const rowDays=sp.rowDays;
+                  const actualTotal=sp.actualTotal;
                   const hasActuals=actualTotal>0;
-                  // vs LY: compare only the days we have actuals for — not the full week LY
-                  // This gives honest YOY for completed days only
                   const lyForActualDays=rowDays.reduce((a,r)=>a+(r.act>0?r.ly:0),0);
                   const vsLYAct=lyForActualDays>0&&hasActuals?((actualTotal-lyForActualDays)/lyForActualDays*100).toFixed(1):null;
-                  // Acc%: |actual − projected| / actual for completed days only
                   const projForActualDays=rowDays.reduce((a,r)=>a+(r.act>0?r.fc:0),0);
                   const accPct=hasActuals&&projForActualDays>0?(Math.abs(actualTotal-projForActualDays)/actualTotal*100).toFixed(1):null;
                   const accClr=accPct==null?'var(--text3)':parseFloat(accPct)<5?'#10b981':parseFloat(accPct)<10?'#f59e0b':'#f87171';
@@ -6593,7 +6686,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       fontSize:'9px',color:accClr}},
                       accPct!=null?accPct+'%':'—'),
                     h('td',{style:{textAlign:'center',padding:'4px 6px',fontSize:'10px'}},
-                      sp.isLocked?'🔒':'⬜')
+                      isLocked?'🔒':'⬜')
                   );
                 }),
                 // District total row

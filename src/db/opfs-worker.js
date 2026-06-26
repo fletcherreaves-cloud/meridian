@@ -17,8 +17,6 @@
 
 self.onmessage = async ({ data }) => {
   if (data.cmd !== 'load') return;
-  const t0 = performance.now();
-  console.log('[opfs-worker] load started');
   try {
     const root = await navigator.storage.getDirectory();
 
@@ -26,22 +24,17 @@ self.onmessage = async ({ data }) => {
     try {
       fh = await root.getFileHandle('meridian-data.json');
     } catch(e) {
-      console.log('[opfs-worker] file not found:', e.name);
       self.postMessage({ cmd: 'load', ok: false, notFound: true });
       return;
     }
 
     // Primary path: FileSystemSyncAccessHandle — direct OS read, no IPC on data path
     try {
-      const t1 = performance.now();
       const sh  = await fh.createSyncAccessHandle();
       const size = sh.getSize();
-      console.log(`[opfs-worker] sync handle opened (${Math.round(performance.now()-t1)}ms), size=${size}`);
       const buf = new ArrayBuffer(size);
-      const t2 = performance.now();
       sh.read(buf, { at: 0 });
       sh.close();
-      console.log(`[opfs-worker] sync read done: ${Math.round(performance.now()-t2)}ms, total=${Math.round(performance.now()-t0)}ms`);
       self.postMessage({ cmd: 'load', ok: true, buf, path: 'sync' }, [buf]);
       return;
     } catch(syncErr) {
@@ -49,10 +42,8 @@ self.onmessage = async ({ data }) => {
     }
 
     // Fallback: async arrayBuffer() — Worker thread blocks, main thread stays free
-    const t3 = performance.now();
     const file = await fh.getFile();
     const buf  = await file.arrayBuffer();
-    console.log(`[opfs-worker] async arrayBuffer done: ${Math.round(performance.now()-t3)}ms, total=${Math.round(performance.now()-t0)}ms`);
     self.postMessage({ cmd: 'load', ok: true, buf, path: 'async' }, [buf]);
 
   } catch(e) {

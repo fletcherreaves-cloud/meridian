@@ -1,17 +1,6 @@
 // @ts-nocheck
 import Dexie from 'dexie';
 
-// ── DIAGNOSTIC: intercept every indexedDB.open() call ────────────────────
-// Logs a stack trace to the console whenever MeridianDB (or any IDB) is
-// opened. Remove after root cause of 119s 'message' violation is found.
-if (typeof window !== 'undefined' && window.indexedDB) {
-  const _origIDBOpen = window.indexedDB.open.bind(window.indexedDB);
-  window.indexedDB.open = function(name, version) {
-    console.error(`🔴 indexedDB.open("${name}", ${version}) called`, new Error().stack);
-    return _origIDBOpen(name, version);
-  };
-}
-
 // ── MeridianDB — main operational data store ─────────────────────────────
 // Migrated from hand-built IndexedDB at v4. Dexie handles connection sharing,
 // schema migration, and transaction management automatically.
@@ -200,9 +189,15 @@ async function idbGetCoverage() {
 }
 
 function coverageFromLoadedRows(labor, ops, ctrl, fob, audit, peaks, dar, weather) {
+  const toDateStr = r => {
+    if (r._d) return r._d;
+    const d = r.date instanceof Date ? r.date : (r.date ? new Date(r.date) : null);
+    if (!d || isNaN(d)) return null;
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  };
   const calc = (rows) => {
     if (!rows || !rows.length) return { count: 0 };
-    const dates = rows.map(r => r._d).filter(Boolean).sort();
+    const dates = rows.map(toDateStr).filter(Boolean).sort();
     return { count: rows.length, from: dates[0] || '?', to: dates[dates.length - 1] || '?' };
   };
   return {
@@ -278,7 +273,13 @@ function _ensureOpfsWorker() {
 async function opfsSave(ds) {
   if (!ds) return;
   try {
-    const strip = r => { const { date, ...rest } = r; return rest; };
+    const strip = r => {
+      const { date, ...rest } = r;
+      if (!date) return rest;
+      const d = date instanceof Date ? date : new Date(date);
+      const _d = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      return { ...rest, _d };
+    };
     const data = {
       v: 2,
       labor:   (ds.laborRows   || []).map(strip),
@@ -373,6 +374,15 @@ async function loadDsFromIDB() {
 
   const opfs = await opfsLoad();
   if (opfs && opfs.labor.length > 0) {
+    // Sanity-check: OPFS data written before v4.x had strip() that removed date
+    // without writing _d, leaving all dates null. Detect and discard corrupt snapshots
+    // so the user gets a clean prompt to re-upload instead of a silent "999 days old" UI.
+    const hasValidDates = opfs.labor.some(r => r.date instanceof Date && !isNaN(r.date.getTime()));
+    if (!hasValidDates) {
+      console.warn('[loadDsFromIDB] OPFS snapshot has no valid dates (pre-fix format) — clearing and requesting re-upload');
+      try { const root = await navigator.storage.getDirectory(); await root.removeEntry(OPFS_FILE); } catch {}
+      return { labor:[], ops:[], ctrl:[], fob:[], audit:[], peaks:[], dar:[], weather:[], pmix:{} };
+    }
     return {
       labor:opfs.labor, ops:opfs.ops,   ctrl:opfs.ctrl, fob:opfs.fob,
       audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar,

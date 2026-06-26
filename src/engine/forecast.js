@@ -54,7 +54,8 @@ function computeMAPEDrift(loc, ds, settings) {
   if(!ds||!ds.laborRows) return null;
   const anchor=ds.lastActual&&ds.lastActual[loc]?ds.lastActual[loc]:new Date();
   const cut2=addD(anchor,-14), cut6=addD(anchor,-42);
-  const rows6=ds.laborRows.filter(r=>r.loc===loc&&r.date>=cut6&&r.date<=anchor&&r.sales>0);
+  const _locLab=locRows(ds.laborByLoc,ds.laborRows,loc);
+  const rows6=_locLab.filter(r=>r.date>=cut6&&r.date<=anchor&&r.sales>0);
   if(rows6.length<7) return null;
   const rows2=rows6.filter(r=>r.date>=cut2);
   const errOf=rows=>rows.map(r=>{
@@ -77,7 +78,8 @@ function computeStoreSigma(loc, ds, settings, weeks=8) {
   if(!ds||!ds.laborRows) return null;
   const anchor=ds.lastActual&&ds.lastActual[loc]?ds.lastActual[loc]:new Date();
   const cutoff=addD(anchor,-weeks*7);
-  const rows=ds.laborRows.filter(r=>r.loc===loc&&r.date>=cutoff&&r.date<=anchor&&r.sales>0);
+  const _locLab=locRows(ds.laborByLoc,ds.laborRows,loc);
+  const rows=_locLab.filter(r=>r.date>=cutoff&&r.date<=anchor&&r.sales>0);
   if(rows.length<7) return null;
   const errors=rows.map(r=>{
     const fc=forecastDay(loc,r.date,ds,settings,null,null);
@@ -437,7 +439,7 @@ function gcCrossCheck(loc,date,ds,settings,salesForecast){
 }
 
 function storeAgeDays(laborRows, loc) {
-  const rows = laborRows.filter(r=>r.loc===loc&&r.sales>0);
+  const rows = laborRows.filter(r=>r.loc===loc&&r.sales>0&&r.date);
   if(!rows.length) return 0;
   const first = rows.reduce((a,r)=>r.date<a?r.date:a, rows[0].date);
   return Math.round((Date.now()-first.getTime())/864e5);
@@ -695,7 +697,8 @@ function modelHealthScore(loc, ds, settings) {
       msg:cp===30?'Current and matched':dsc>30?'Stale ('+dsc+'d) — re-run Dialed-In':'Settings changed — re-run recommended'});
   }
   // 2. DATA FRESHNESS (25 pts)
-  const rows=(ds&&ds.laborRows||[]).filter(r=>r.loc===loc&&r.sales>0);
+  const _locLab=locRows(ds&&ds.laborByLoc,(ds&&ds.laborRows)||[],loc);
+  const rows=_locLab.filter(r=>r.sales>0);
   const lastDt=rows.length?Math.max(...rows.map(r=>r.date instanceof Date?r.date.getTime():new Date(r.date).getTime())):0;
   const daysOld=lastDt?Math.floor((today-lastDt)/864e5):999;
   const fp=daysOld<3?25:daysOld<7?20:daysOld<14?12:daysOld<30?5:0;
@@ -1087,18 +1090,22 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   const _assignedModel = _assignment.model||'dow';
   const _diSkip=forceModel ? false : (settings.dialedInSkipped||[]).includes(loc);
   const _hasDI = !_diSkip&&settings.dialedInEnabled&&settings.dialedIn&&settings.dialedIn[loc];
+  // Pre-filter to this store's rows once — AE/EWMA internally scan laborRows for
+  // the matching loc on every call; using the per-store slice is identical math
+  // but ~80× faster (1,539 rows vs 123k rows per call × hundreds of calls).
+  const _locLaborRows = locRows(ds.laborByLoc, ds.laborRows, loc);
   // Route new models: Adaptive Ensemble and EWMA short-circuit here
   if(_assignedModel==='ae'){
-    const _aeFcst=forecastAdaptiveEnsemble(ds.laborRows,ds.laborIdx,loc,date);
+    const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date);
     if(_aeFcst&&_aeFcst>0){
-      const _aeAct=(()=>{const rr=(ds.laborRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
+      const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
       return{date,loc,forecast:Math.round(_aeFcst),ly:0,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:0,varPct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:!lyRaw,modelUsed:'ae'};
     }
   }
   if(_assignedModel==='ewma'){
-    const _ewmaFcst=forecastEWMA(ds.laborRows,ds.laborIdx,loc,date);
+    const _ewmaFcst=forecastEWMA(_locLaborRows,ds.laborIdx,loc,date);
     if(_ewmaFcst&&_ewmaFcst>0){
-      const _ewmaAct=(()=>{const rr=(ds.laborRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
+      const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
       return{date,loc,forecast:Math.round(_ewmaFcst),ly:0,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:0,varPct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:false,modelUsed:'ewma'};
     }
   }
@@ -1152,8 +1159,8 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   // If LY was a holiday but today is not, adjust LY down
   const holidayLyAdj = (()=>{
     if(holidayInfo&&lyHolidayInfo&&holidayInfo.label===lyHolidayInfo.label) return 1; // same holiday, use LY as-is
-    if(holidayInfo&&!lyHolidayInfo) return getHolidayAdj(date,loc,ds&&ds.laborRows); // today is holiday, LY was not → expect lower
-    if(!holidayInfo&&lyHolidayInfo) return 1/Math.max(0.3,getHolidayAdj(addD(date,-364),loc,ds&&ds.laborRows)); // LY was holiday, today not → LY underestimates
+    if(holidayInfo&&!lyHolidayInfo) return getHolidayAdj(date,loc,_locLaborRows); // today is holiday, LY was not → expect lower
+    if(!holidayInfo&&lyHolidayInfo) return 1/Math.max(0.3,getHolidayAdj(addD(date,-364),loc,_locLaborRows)); // LY was holiday, today not → LY underestimates
     return 1;
   })();
   const lyAdjH = lyAdj * holidayLyAdj;

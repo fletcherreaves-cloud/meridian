@@ -599,9 +599,9 @@ function App() {
                 const w6=Math.round((1-w2-w4)*100)/100;
                 if(w6<0.05) continue;
                 for(const alpha of [0.15,0.25,0.35]){
-                  await new Promise(r=>setTimeout(r,0)); // yield — keep UI responsive
                   const errs=[],wts=[];
                   for(let i=20;i<evalDates.length;i++){
+                    if(i>20&&(i-20)%5===0) await new Promise(r=>setTimeout(r,0)); // yield every 5 dates
                     const fd=new Date(evalDates[i]+'T00:00:00');
                     const actual=byDate[evalDates[i]];
                     if(!actual||actual<100) continue;
