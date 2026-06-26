@@ -407,7 +407,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
     ? gcCrossCheck(loc,r.date,ds,settings,r.forecast) : null;
   const hasWxData = wxR&&(wxR.tmax>0||wxR.rain>0||wxR.wmax>0);
   const gc  = v => v>=0?'#4ade80':'#f87171';
-  const laborCol = laborColor(r.labor, tgt.tLabor, settings);
+  const laborCol = (()=>{if(!r.labor||!tgt.tLabor)return{color:'#94a3b8',arrow:'',label:'—'};const d=r.labor-tgt.tLabor;const a=Math.abs(d);const grn=(settings?.laborGreenPct??0.5)/100;const yel=(settings?.laborYellowPct??1.5)/100;const arrow=d>0.001?' ▲':d<-0.001?' ▼':'';if(a<=grn)return{color:'#10b981',arrow,label:'On Target'};if(a<=yel)return{color:'#f59e0b',arrow,label:d>0?'Slightly High':'Slightly Low'};return{color:'#ef4444',arrow,label:d>0?'Over Target':'Under Target'};})();
 
   return tr({className:r.isFuture?'fut':''},
     // ── Date cell with tagger ──
@@ -1713,7 +1713,7 @@ function StoreCard({store, onSelect}) {
         ['Ctrl',ctrlScore+'/100',ctrlScore>=80?'#10b981':ctrlScore>=65?'#f59e0b':'#ef4444'],
         ['OEPE',p.oepe>0?Math.round(p.oepe)+'s':'—',p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8'],
         ['TPPH',p.tpph>0?p.tpph.toFixed(2):'—',p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8'],
-        ['Labor',p.laborPct>0?fP(p.laborPct,1):'—',laborColor(p.laborPct,t.tLabor,{laborGreenPct:.5,laborYellowPct:2}).color],
+        ['Labor',p.laborPct>0?fP(p.laborPct,1):'—',(()=>{if(!p.laborPct||!t.tLabor)return'#94a3b8';const d=p.laborPct-t.tLabor;const a=Math.abs(d);return a<=.005?'#10b981':a<=.02?'#f59e0b':'#ef4444';})()],
         ['T2W',trend!=null?fPct(trend):'—',trend!=null?(trend>=0?'#10b981':'#ef4444'):'#94a3b8'],
       ].map(([l,v,c],i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:2}},
         span({style:{color:'var(--text3)'}},l),
