@@ -1621,7 +1621,11 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                               )
                             : div({style:{width:'100%',height:'100%',background:'rgba(245,158,11,.30)'}})
                       ),
-                      div({style:{fontSize:7,color:w.statusColor,marginTop:2,whiteSpace:'nowrap',
+                      w.effTotal>0&&div({style:{fontSize:8,fontFamily:'var(--mono)',fontWeight:600,
+                        color:'var(--text2)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',
+                        textOverflow:'ellipsis'}},
+                        f$(Math.round(w.effTotal))),
+                      div({style:{fontSize:7,color:w.statusColor,marginTop:1,whiteSpace:'nowrap',
                         overflow:'hidden',textOverflow:'ellipsis'}},w.status)
                     )
                   )
