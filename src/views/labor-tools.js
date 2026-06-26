@@ -210,21 +210,21 @@ function DARDaypartPanel({stores, ds, settings, onClose}) {
                  textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',
                  borderBottom:'.5px solid var(--bdr)',textAlign:i>0?'right':'left'}},(l)))
             )),
-            h('tbody',null,...data.hourData.map((h,i)=>{
-              const throughput=h.oepe?Math.round(3600/(h.oepe+35)):null;
-              const isPeakGC=data.peakGCHour&&h.hour===data.peakGCHour.hour;
-              const isPeakOepe=data.peakOepeHour&&h.hour===data.peakOepeHour.hour;
+            h('tbody',null,...data.hourData.map((hr,i)=>{
+              const throughput=hr.oepe?Math.round(3600/(hr.oepe+35)):null;
+              const isPeakGC=data.peakGCHour&&hr.hour===data.peakGCHour.hour;
+              const isPeakOepe=data.peakOepeHour&&hr.hour===data.peakOepeHour.hour;
               return h('tr',{key:i,style:{
                 background:isPeakGC?'rgba(52,211,153,.08)':isPeakOepe?'rgba(239,68,68,.06)':
                   i%2?'rgba(255,255,255,.015)':'transparent',
                 borderBottom:'.5px solid rgba(255,255,255,.04)'}},
-                td({style:{padding:'5px 8px',fontWeight:600,color:'var(--text2)'}},h.label),
+                td({style:{padding:'5px 8px',fontWeight:600,color:'var(--text2)'}},hr.label),
                 td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',
-                  color:oepeCol(h.oepe||0),fontWeight:700}},h.oepe?Math.round(h.oepe)+'s':'—'),
+                  color:oepeCol(hr.oepe||0),fontWeight:700}},hr.oepe?Math.round(hr.oepe)+'s':'—'),
                 td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',
-                  color:'#34d399'}},h.gc?Math.round(h.gc):'—'),
+                  color:'#34d399'}},hr.gc?Math.round(hr.gc):'—'),
                 td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',
-                  color:'var(--amber)'}},h.sales?'$'+Math.round(h.sales):'—'),
+                  color:'var(--amber)'}},hr.sales?'$'+Math.round(hr.sales):'—'),
                 td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',
                   color:'var(--text3)'}},throughput?throughput+'/hr':'—'),
                 td({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',color:'var(--text3)'}},
