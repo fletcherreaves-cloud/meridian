@@ -187,8 +187,11 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 
   // ── API call (established app pattern: localStorage key, no server) ────────
   const callClaude = async (prompt) => {
+    const apiKey = (()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
+    if(!apiKey) throw new Error('No Anthropic API key set. Add one in Settings → AI & Integrations.');
     const resp = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body: JSON.stringify({model:'claude-sonnet-4-6', max_tokens:1000, messages:[{role:'user',content:prompt}]})
     });
     const json = await resp.json();
