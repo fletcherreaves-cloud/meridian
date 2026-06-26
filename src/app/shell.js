@@ -201,6 +201,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // ── STORE OPERATIONS ───────────────────────────────────────
       navLabel('STORE OPERATIONS'),
       navItem('Store KB',           '📍', ()=>onOpenModal('store-kb'),     false),
+      navItem('Forecast Reference', '📐', ()=>onOpenModal('fcst-ref'),     false),
       navItem('District View',      '⊞', ()=>{setView('district');}, view==='district'),
       navItem('Loc Intelligence',   '📊', ()=>onOpenModal('loc-intel'),    false),
       navItem('Inventory',          '📦', ()=>onOpenModal('inventory'),    false),

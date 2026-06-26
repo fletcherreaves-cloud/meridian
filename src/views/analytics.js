@@ -383,8 +383,8 @@ function MetricCorrelationExplorer({stores, ds, settings, onClose}) {
         div(null,
           // Scale legend
           div({style:{display:'flex',justifyContent:'space-between',padding:'0 16px',marginBottom:4,fontSize:'7.5px',color:'var(--text3)'}},
-            span('← Negative correlation (metric ↑ → outcome ↓)'),
-            span('Positive correlation (metric ↑ → outcome ↑) →')
+            span(null,'← Negative correlation (metric ↑ → outcome ↓)'),
+            span(null,'Positive correlation (metric ↑ → outcome ↑) →')
           ),
           // Column headers
           h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
@@ -463,13 +463,13 @@ function StoreOnePager({stores, ds, settings, onClose}) {
   const data = React.useMemo(()=>{
     const cutoff = period==='mtd'
       ? new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      : addDR(new Date(), -(periodDays[period]||28));
+      : addD(new Date(), -(periodDays[period]||28));
     const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.sales>0);
     const oR = (ds.opsRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff);
     const cR = (ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff);
     const lyR= (ds.laborRows||[]).filter(r=>{
       const ly=new Date(r.date); ly.setFullYear(ly.getFullYear()-1);
-      return String(r.loc)===selLoc&&r.date>=addDR(cutoff,-364)&&r.date<addDR(new Date(),-364)&&r.sales>0;
+      return String(r.loc)===selLoc&&r.date>=addD(cutoff,-364)&&r.date<addD(new Date(),-364)&&r.sales>0;
     });
 
     const avg=(arr,f)=>{const v=arr.map(r=>r[f]).filter(v=>v!=null&&v>0);return v.length?v.reduce((a,b)=>a+b)/v.length:null;};

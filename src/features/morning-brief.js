@@ -437,7 +437,7 @@ function StoreBriefCard({store, expanded, setExpanded}){
         )
       ),
       h('div',{style:{fontSize:'10px',color:'var(--text3,#6b7280)',marginTop:'10px',display:'flex',gap:'10px',flexWrap:'wrap'}},
-        h('span',null,'Data: '+([store.hasLabor&&'Labor',store.hasCtrl&&'Controls',store.hasPeaks&&'3 Peaks'].filter(Boolean).join(' · ')||'None loaded')+(!store.hasPeaks?' · (need 3 Peaks covering '+briefDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+')':'')),
+        h('span',null,'Data: '+([store.hasLabor&&'Labor',store.hasCtrl&&'Controls',store.hasPeaks&&'3 Peaks'].filter(Boolean).join(' · ')||'None loaded')+(!store.hasPeaks?' · (load 3 Peaks for service data)':'')),
       )
     )
   );
