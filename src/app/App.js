@@ -58,9 +58,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.228';
+const MERIDIAN_VERSION    = '4.229';
 const MERIDIAN_BUILD_DATE = '2026-06-27';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.229', date:'2026-06-27', changes:[
+    'Performance Reviews: 4 demo reviews pre-loaded — Ronald McDonald (GM/3708, Exceeds Expectations ~94%), Grimace (GM/29760, Needs Improvement ~33%), Hamburglar (AM/5985, Meets Expectations ~73%), Mayor McCheese (AS/6178 Chipley FL Emerald Arches, Below Expectations ~52%). Load via "📚 Demo Reviews" button in the review list toolbar. Data persists in localStorage alongside real reviews.',
+  ]},
   {version:'4.228', date:'2026-06-27', changes:[
     'Performance Reviews: org auto-detection — stores auto-assign to McDOK (Oklahoma) or Emerald Arches (Florida) based on existing store mapping, shown in review editor header.',
     'Performance Reviews: logo upload — Customize → Logos tab stores one PNG/JPG per org in browser storage; logos embed in Print/PDF output header automatically.',

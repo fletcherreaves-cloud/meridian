@@ -1215,6 +1215,13 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
   const [filterHalf, setFilterHalf] = useState('all');
   const [showNew, setShowNew]       = useState(false);
 
+  const loadDemos = () => {
+    fetch('/meridian/populate-demo-reviews.js')
+      .then(r => r.text())
+      .then(code => { eval(code); onNew(); })
+      .catch(e => alert('Could not load demo reviews: ' + e.message));
+  };
+
   const list = Object.values(reviews);
   const years = [...new Set(list.map(r=>r.year))].sort((a,b)=>b-a);
 
@@ -1256,6 +1263,7 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
         opt({value:'H2'},'H2 (End of Year)')
       ),
       div({style:{flex:1}}),
+      GhostBtn({onClick:loadDemos,style:{fontSize:11,opacity:.75}},'📚 Demo Reviews'),
       PrimaryBtn({onClick:()=>setShowNew(true)},'+ New Review')
     ),
     // New review form
