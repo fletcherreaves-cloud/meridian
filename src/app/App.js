@@ -27,6 +27,7 @@ import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligen
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
+import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt.js';
@@ -57,9 +58,15 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.223';
+const MERIDIAN_VERSION    = '4.225';
 const MERIDIAN_BUILD_DATE = '2026-06-27';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.225', date:'2026-06-27', changes:[
+    'Record Day Intelligence: new panel (nav: Performance → Record Day Intel) that scans all uploaded data to surface all-time records per store — best day, week, and month sales plus best OEPE. Shows district-level champion stats, a chronological "recent record breakers" table (configurable 30/60/90/180-day window) with previous record comparison, a sortable all-time records grid by store, and a district top-15 days leaderboard.',
+  ]},
+  {version:'4.224', date:'2026-06-27', changes:[
+    'Performance Reviews Phase 2: Dev Plan tab with narrative fields + structured action items; Print/PDF export via window.open()/print(); Wage section in Summary tab fully wired and editable.',
+  ]},
   {version:'4.223', date:'2026-06-27', changes:[
     'Performance Reviews: full salaried management performance review system — GM, AM, AS, and OM reviews with 70/30 metrics/behavioral split, auto-populate KPIs from uploaded data, behavioral competency ratings (1-4) per quarter, quarterly/half-year score rollup, and Customize panel for editing scoring thresholds, category/metric weights, and all behavioral competency text per role. Accessible via Performance Reviews in the nav under Performance.',
   ]},
@@ -356,6 +363,7 @@ function App() {
   const [showFOB,             setShowFOB]             = useState(false);
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
   const [showPerfReviews,     setShowPerfReviews]     = useState(false);
+  const [showRecordDay,       setShowRecordDay]       = useState(false);
   const [showOperatorSummary, setShowOperatorSummary] = useState(false);
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
@@ -711,7 +719,7 @@ function App() {
     showMorningBrief||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -731,7 +739,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -794,6 +802,7 @@ function App() {
         if(modal==='pmix')                 setShowPMix(true);
         if(modal==='data-manager')         setShowDataManager(true);
         if(modal==='perf-reviews')         setShowPerfReviews(true);
+        if(modal==='record-day')           setShowRecordDay(true);
         if(modal==='lfz-gap')              setShowLFZGap(true);
         if(modal==='perf-calc')           setShowPerfCalc(true);
         if(modal==='corr-explorer')       setShowCorrExplorer(true);
@@ -890,6 +899,7 @@ function App() {
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
     showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,onClose:()=>setShowPerfReviews(false)}),
+    showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showInsights &&h(AIInsightsLog,{stores,settings,onClose:()=>setShowInsights(false)}),
