@@ -31,7 +31,7 @@ function fDate(dk) {
 function fDateShort(dk) {
   if (!dk) return '—';
   const d = new Date(dk + 'T00:00:00');
-  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 }
 function fWeekLabel(wdk) {
   if (!wdk) return '—';
