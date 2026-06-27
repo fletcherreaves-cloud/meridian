@@ -57,6 +57,10 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const [pendingItems, setPendingItems] = uSt([]); // ai-search + rule-confirm candidates
   const [pendingChecks, setPendingChecks] = uSt({}); // {itemKey: {locs:[...], dismissed:bool}}
   const [searching, setSearching] = uSt(false);
+  const [showImport, setShowImport] = uSt(false);
+  const [importCode, setImportCode] = uSt('');
+  const [importPreview, setImportPreview] = uSt(null);
+  const [importError, setImportError] = uSt('');
   const [searchProg, setSearchProg] = uSt(null); // {done,total,storeName} for batch search
   const cancelSearchRef = uR(false);
 
@@ -192,6 +196,26 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   };
   const cancelBatchSearch = () => { cancelSearchRef.current=true; setSearching(false); setSearchProg(null); };
 
+  // ── Share code import ───────────────────────────────────────────────────────
+  const handleDecode = () => {
+    if(!importCode.trim()){ setImportError('Paste a share code first.'); return; }
+    const data = decodeShareCode(importCode);
+    if(!data){ setImportError('Invalid code — make sure you copied the whole thing without extra spaces.'); setImportPreview(null); return; }
+    setImportPreview(data);
+    setImportError('');
+  };
+  const approveImport = () => {
+    if(!importPreview) return;
+    const key='import_'+(importPreview.ts||importPreview.start)+'_'+importPreview.start+'_'+importPreview.type;
+    const sourceNote='Submitted by: '+(importPreview.from||'Unknown submitter')+(importPreview.notes?'\n\n'+importPreview.notes:'');
+    const newItem={source:'share_code',key,date:importPreview.start,endDate:importPreview.end||null,
+      type:importPreview.type,label:importPreview.label,confidence:null,
+      sourceNote,suggestedLocs:importPreview.locs||[]};
+    setPendingItems(prev=>[...prev.filter(p=>p.key!==key),newItem]);
+    setShowImport(false); setImportCode(''); setImportPreview(null); setImportError('');
+    setTab('pending');
+  };
+
   // ── Recurring rule form ─────────────────────────────────────────────────────
   const newRuleDraft = () => ({id:'rule_'+Date.now(), label:'', type:'school_break',
     locs:[], month:11, day:25, durationDays:5, active:true, source:'manual', createdAt:new Date().toISOString()});
@@ -248,7 +272,88 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               border:'.5px solid '+(tab===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer',fontWeight:(id==='pending'&&pendingItems.length)?700:400},
               onClick:()=>setTab(id)},l))
         ),
+        btn({className:'btn btn-sm',
+          style:{fontSize:'9px',background:'rgba(96,165,250,.08)',borderColor:'rgba(96,165,250,.3)',color:'#93c5fd'},
+          title:'Import an event submitted by a GM or store manager via share code',
+          onClick:()=>{setShowImport(true);setImportCode('');setImportPreview(null);setImportError('');}},
+          '📥 Import'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
+      ),
+
+      // Import modal
+      showImport&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:500,
+        display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
+        div({style:{background:'var(--surf)',border:'.5px solid var(--bdr2)',borderRadius:'var(--rl)',
+          width:'100%',maxWidth:560,boxShadow:'0 20px 60px rgba(0,0,0,.6)',overflow:'hidden'}},
+          div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',
+            display:'flex',alignItems:'center',gap:10}},
+            span({style:{fontSize:'18px'}},'📥'),
+            div({style:{flex:1}},
+              div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},'Import Event Submission'),
+              div({style:{fontSize:'9px',color:'var(--text3)'}},'Paste a share code from a GM or store manager below')
+            ),
+            btn({className:'btn btn-sm',style:{color:'var(--text3)'},
+              onClick:()=>{setShowImport(false);setImportCode('');setImportPreview(null);setImportError('');}
+            },'✕')
+          ),
+          div({style:{padding:'16px'}},
+            // Paste area
+            !importPreview&&div(null,
+              div({style:{fontSize:'10px',color:'var(--text2)',marginBottom:8,lineHeight:1.6}},
+                'The GM submits an event using the ',
+                h('strong',null,'Meridian Event Submission Form'),
+                ', which generates a compact share code. Paste that code below to import it into the pending review queue.'),
+              h('textarea',{
+                value:importCode,
+                onChange:e=>setImportCode(e.target.value),
+                placeholder:'Paste share code here...',
+                rows:4,
+                style:{width:'100%',padding:'8px 10px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
+                  borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',fontFamily:'var(--mono)',
+                  resize:'vertical',boxSizing:'border-box'}}),
+              importError&&div({style:{marginTop:8,padding:'6px 10px',background:'rgba(239,68,68,.08)',
+                border:'.5px solid rgba(239,68,68,.2)',borderRadius:'var(--r)',
+                fontSize:'10px',color:'#f87171'}},importError),
+              div({style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:12}},
+                btn({className:'btn btn-sm',onClick:()=>{setShowImport(false);setImportCode('');setImportError('');}},
+                  'Cancel'),
+                btn({className:'btn btn-sm btn-a',onClick:handleDecode},'Decode & Preview →')
+              )
+            ),
+            // Preview
+            importPreview&&div(null,
+              div({style:{background:'rgba(52,211,153,.05)',border:'.5px solid rgba(52,211,153,.2)',
+                borderRadius:'var(--r)',padding:'12px 14px',marginBottom:12}},
+                div({style:{fontSize:'10px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.6px',
+                  color:'#34d399',marginBottom:10}},'✓ Decoded — Preview'),
+                ...([
+                  ['Submitted by', importPreview.from||'Not provided'],
+                  ['Store(s)', (importPreview.locs||[]).map(l=>STORE_NAMES[l]||l).join(', ')||'None selected'],
+                  ['Event type', (EVENT_TYPES[importPreview.type]||{}).label||importPreview.type],
+                  ['Label', importPreview.label],
+                  ['Date(s)', importPreview.start+(importPreview.end&&importPreview.end!==importPreview.start?' → '+importPreview.end:'')],
+                  importPreview.notes&&['Notes', importPreview.notes],
+                ].filter(Boolean).map(([l,v])=>
+                  div({key:l,style:{display:'flex',gap:8,marginBottom:5,fontSize:'11px',alignItems:'flex-start'}},
+                    div({style:{color:'var(--text3)',minWidth:90,flexShrink:0}}),
+                    div({style:{fontWeight:600,color:'var(--text2)',minWidth:90,flexShrink:0}},l+':'),
+                    div({style:{color:'var(--text)',lineHeight:1.5}},v)
+                  )
+                )),
+                div({style:{marginTop:8,padding:'6px 10px',background:'rgba(245,158,11,.07)',
+                  border:'.5px solid rgba(245,158,11,.15)',borderRadius:'var(--r)',
+                  fontSize:'9px',color:'var(--text3)'}},
+                  '⚠ This event will be added to your Pending Review queue. Nothing is saved to the calendar until you approve it there.')
+              ),
+              div({style:{display:'flex',gap:8,justifyContent:'flex-end'}},
+                btn({className:'btn btn-sm',onClick:()=>{setImportPreview(null);setImportCode('');}},
+                  '← Back'),
+                btn({className:'btn btn-sm btn-a',onClick:approveImport},
+                  '✓ Add to Pending Review')
+              )
+            )
+          )
+        )
       ),
 
       // ════════ GRID TAB ════════
@@ -1024,6 +1129,22 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
 //   {id, label, type (EVENT_TYPES key), locs:[loc,...], month, day,
 //    durationDays, active, source:'manual'|'ai_search', createdAt}
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Share Code encode/decode ──────────────────────────────────────────────────
+// Payload: {v,from,locs:[],start,end,type,label,notes,ts}
+// btoa/atob with full UTF-8 support so store names with apostrophes encode fine.
+function encodeShareCode(payload){
+  try{ return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+  catch(e){ return null; }
+}
+function decodeShareCode(raw){
+  try{
+    const padded=(raw.trim().replace(/-/g,'+').replace(/_/g,'/')+'===').slice(0,raw.trim().length+((4-raw.trim().length%4)%4));
+    const data=JSON.parse(decodeURIComponent(escape(atob(padded))));
+    if(!data.v||!Array.isArray(data.locs)||!data.start||!data.type||!data.label) return null;
+    return data;
+  }catch(e){ return null; }
+}
+
 function loadRecurringRules(){
   try{ return JSON.parse(localStorage.getItem('mf_recurring_rules')||'[]'); }catch{ return []; }
 }
@@ -1132,4 +1253,4 @@ async function searchUpcomingEvents(loc){
   }));
 }
 
-export { CalendarManagerPanel, EventEntryModal, EventRegistryModal, loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents };
+export { CalendarManagerPanel, EventEntryModal, EventRegistryModal, loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents, encodeShareCode, decodeShareCode };

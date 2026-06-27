@@ -291,6 +291,7 @@ async function opfsSave(ds) {
       dar:     (ds.darRows     || []).map(strip),
       pmix:    ds.pmixData || {},
       weather: (ds.weatherRows || []).map(strip),
+      records: ds.records || {},
     };
     const json = JSON.stringify(data);
     const root = await navigator.storage.getDirectory();
@@ -322,6 +323,19 @@ function opfsLoad() {
           const raw = JSON.parse(new TextDecoder().decode(buf));
           if (!raw || raw.v !== 2) { resolve(null); return; }
           const toRow = r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : null });
+          const restoreRecs = recs => {
+            if (!recs || typeof recs !== 'object') return {};
+            const out = {};
+            for (const loc in recs) {
+              out[loc] = {};
+              for (const k in recs[loc]) {
+                const v = recs[loc][k];
+                out[loc][k] = (v && typeof v === 'object' && typeof v.date === 'string')
+                  ? { ...v, date: new Date(v.date) } : v;
+              }
+            }
+            return out;
+          };
           resolve({
             labor:   (raw.labor  ||[]).map(toRow),
             ops:     (raw.ops    ||[]).map(toRow),
@@ -332,6 +346,7 @@ function opfsLoad() {
             dar:     (raw.dar    ||[]).map(toRow),
             pmix:    raw.pmix || {},
             weather: (raw.weather||[]).map(toRow),
+            records: restoreRecs(raw.records),
           });
         } catch { resolve(null); }
       }, 0);
@@ -381,13 +396,14 @@ async function loadDsFromIDB() {
     if (!hasValidDates) {
       console.warn('[loadDsFromIDB] OPFS snapshot has no valid dates (pre-fix format) — clearing and requesting re-upload');
       try { const root = await navigator.storage.getDirectory(); await root.removeEntry(OPFS_FILE); } catch {}
-      return { labor:[], ops:[], ctrl:[], fob:[], audit:[], peaks:[], dar:[], weather:[], pmix:{} };
+      return { labor:[], ops:[], ctrl:[], fob:[], audit:[], peaks:[], dar:[], weather:[], pmix:{}, records:{} };
     }
     return {
       labor:opfs.labor, ops:opfs.ops,   ctrl:opfs.ctrl, fob:opfs.fob,
       audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar,
       weather: opfs.weather || [],
       pmix:opfs.pmix,
+      records: opfs.records || {},
     };
   }
 
@@ -407,7 +423,7 @@ async function loadDsFromIDB() {
                 peaksSalesRows:[], darRows:blob.dar, pmixData:blob.pmix||{},
                 weatherRows:weather }).catch(()=>{});
     return { labor:blob.labor, ops:blob.ops, ctrl:blob.ctrl, fob:blob.fob,
-             audit:blob.audit, peaks:blob.peaks, dar:blob.dar, weather, pmix:blob.pmix||{} };
+             audit:blob.audit, peaks:blob.peaks, dar:blob.dar, weather, pmix:blob.pmix||{}, records:{} };
   }
 
   // Full cursor reads — absolute first run or after storage clear.
@@ -421,7 +437,7 @@ async function loadDsFromIDB() {
                 auditRows:audit, peaksSvcRows:peaks, peaksSalesRows:[], darRows:dar,
                 pmixData:{}, weatherRows:weather }).catch(()=>{});
   }
-  return { labor, ops, ctrl, fob, audit, peaks, dar, weather, pmix: {} };
+  return { labor, ops, ctrl, fob, audit, peaks, dar, weather, pmix: {}, records: {} };
 }
 
 async function opfsClear() {

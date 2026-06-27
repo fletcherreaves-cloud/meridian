@@ -340,16 +340,16 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
 
     // ── Ops snapshot: last 2 weeks metrics ──────────────────────────────
     const cut2w=addD(now,-14);
-    const recentOps=ds.opsRows.filter(r=>locs.includes(r.loc)&&r.date>=cut2w&&r.oepeWoP>0);
-    const avgOEPE=recentOps.length?recentOps.reduce((a,r)=>a+r.oepeWoP,0)/recentOps.length:null;
-    const recentCtrl=ds.ctrlRows.filter(r=>locs.includes(r.loc)&&r.date>=cut2w&&r.tpph>0);
+    const recentOps=(ds.opsRows||[]).filter(r=>locs.includes(String(r.loc))&&r.date>=cut2w&&r.oepe>0);
+    const avgOEPE=recentOps.length?recentOps.reduce((a,r)=>a+r.oepe,0)/recentOps.length:null;
+    const recentCtrl=(ds.ctrlRows||[]).filter(r=>locs.includes(String(r.loc))&&r.date>=cut2w&&r.tpph>0);
     const avgTPPH=recentCtrl.length?recentCtrl.reduce((a,r)=>a+r.tpph,0)/recentCtrl.length:null;
     const avgLaborPct=recentCtrl.length?recentCtrl.reduce((a,r)=>a+r.laborPct,0)/recentCtrl.length:null;
 
     // ── Model confidence: DI calibration status ─────────────────────────
-    const dialedIn=(()=>{try{return JSON.parse(localStorage.getItem('mf_di_calibration')||'{}');}catch{return {};}})();
-    const calibrated=locs.filter(l=>dialedIn[l]).length;
-    const avgMAPE6w=locs.filter(l=>dialedIn[l]&&dialedIn[l].mape6w!=null).map(l=>dialedIn[l].mape6w);
+    const dialedIn=settings.dialedIn||{};
+    const calibrated=locs.filter(l=>dialedIn[l]&&(dialedIn[l].mape!=null||dialedIn[l].mape6w!=null)).length;
+    const avgMAPE6w=locs.map(l=>{const d=dialedIn[l];return d?(d.mape6w??d.mape4w??d.mape):null;}).filter(v=>v!=null);
     const distMAPE=avgMAPE6w.length?avgMAPE6w.reduce((a,b)=>a+b,0)/avgMAPE6w.length:null;
 
     // ── Projection preview (1-day sample per store) ────────────────────
@@ -407,24 +407,36 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
   const{trendWeeks,avgVsLY,trendDir,calEvents,lyRisks,avgOEPE,avgTPPH,avgLaborPct,calibrated,totalLocs,distMAPE,weekFcEst,wsDate}=brief;
   const trendCol=avgVsLY==null?'var(--text3)':avgVsLY>0.02?'#10b981':avgVsLY<-0.02?'#f87171':'#f59e0b';
   const trendIcon=trendDir==='improving'?'📈':trendDir==='declining'?'📉':'→';
-  const sectionCard=(icon,title,col,children)=>div({style:{background:'var(--mid)',border:'.5px solid var(--bdr)',borderRadius:8,padding:'12px 14px',marginBottom:10,borderLeft:'3px solid '+(col||'var(--bdr)')}},
-    div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:col||'var(--text3)',marginBottom:6,display:'flex',gap:6,alignItems:'center'}},icon,' ',title),
+  const sectionCard=(icon,title,col,children)=>div({style:{
+    background:'var(--surf2)',border:'.5px solid var(--bdr2)',
+    borderLeft:'3px solid '+(col||'var(--bdr)'),
+    borderRadius:8,padding:'14px 16px',marginBottom:12}},
+    div({style:{fontSize:'10px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',
+      color:col||'var(--text3)',marginBottom:8,display:'flex',gap:6,alignItems:'center'}},
+      span({style:{fontSize:'13px'}},icon),
+      span(null,title)),
     children);
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',flexDirection:'column',overflowY:'auto'}},
-    div({style:{maxWidth:760,width:'100%',margin:'0 auto',padding:'24px 16px 40px'}},
-      // Header
-      div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18}},
-        div(null,
-          div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.8px',color:'var(--gold)',marginBottom:4}},'📋 Pre-Forecast Brief'),
-          div({style:{fontSize:'18px',fontWeight:800,color:'var(--text)'}},'Projection Preflight Analysis'),
-          div({style:{fontSize:'10px',color:'var(--text3)',marginTop:3}},
+  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:450,
+    display:'flex',alignItems:'flex-start',justifyContent:'center',overflowY:'auto',padding:'20px 16px 40px'}},
+    div({style:{width:'100%',maxWidth:820,background:'var(--surf)',borderRadius:12,
+      border:'.5px solid var(--bdr2)',boxShadow:'0 24px 64px rgba(0,0,0,.6)',
+      display:'flex',flexDirection:'column',overflow:'hidden'}},
+      // Sticky header
+      div({style:{position:'sticky',top:0,zIndex:10,background:'var(--surf2)',
+        borderBottom:'1.5px solid var(--bdr2)',padding:'12px 18px',
+        display:'flex',alignItems:'center',gap:12}},
+        div({style:{fontSize:'20px'}},'📋'),
+        div({style:{flex:1}},
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--gold)',letterSpacing:'-.2px'}},'Projection Preflight Analysis'),
+          div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
             'Week starting '+(wsDate.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}))+
             ' · '+totalLocs+' locations · '+new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}))),
-        div({style:{display:'flex',gap:8,alignItems:'center'}},
-          btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'Cancel'),
-          btn({className:'btn btn-a',style:{padding:'7px 18px',fontWeight:700},onClick:handleRun},'▶ Run Projections →'))
+        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕ Cancel'),
+        btn({className:'btn btn-a',style:{padding:'7px 18px',fontWeight:700},onClick:handleRun},'▶ Run Projections →')
       ),
+      // Scrollable body
+      div({style:{padding:'18px 20px 24px',overflowY:'auto'}},
 
       // ── Sales Trend ─────────────────────────────────────────────────────
       sectionCard(trendIcon,'Sales Trend — Last 4 Weeks',trendCol,
@@ -468,7 +480,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
         div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
           [['OEPE',avgOEPE?Math.round(avgOEPE)+'s':'—','Target ≤150s',avgOEPE&&avgOEPE>170?'#f59e0b':avgOEPE&&avgOEPE>150?'#f97316':'#10b981'],
            ['TPPH',avgTPPH?avgTPPH.toFixed(2):'—','Target ≥5.0',avgTPPH&&avgTPPH<4.5?'#f59e0b':'#10b981'],
-           ['Labor %',avgLaborPct?'$'+avgLaborPct.toFixed(1)+'%':'—','Target ~22%',null],
+           ['Labor %',avgLaborPct?(avgLaborPct*100).toFixed(1)+'%':'—','Target ~22%',avgLaborPct?(avgLaborPct>0.28?'#f87171':avgLaborPct>0.25?'#f59e0b':'#10b981'):null],
            ['DI Calibrated',calibrated+'/'+totalLocs,'stores','#a5b4fc'],
            ['Model MAPE',distMAPE?distMAPE.toFixed(1)+'%':'—','6-week avg',distMAPE&&distMAPE<8?'#10b981':distMAPE&&distMAPE<12?'#f59e0b':'#f87171']
           ].map(([l,v,sub,col],i)=>div({key:i,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'8px 12px',minWidth:100}},
@@ -504,18 +516,19 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
               apiKey?'Click "Generate Summary" for an AI-powered executive brief of this projection period.':'Add API key in Settings to enable AI summary.')
       ),
 
-      // ── Footer actions ─────────────────────────────────────────────────
-      div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',
-        borderTop:'.5px solid var(--bdr)',paddingTop:14,marginTop:4}},
-        div({style:{fontSize:'9px',color:'var(--text3)'}},
-          'This analysis is saved as a moment-in-time snapshot with your projection.'),
-        div({style:{display:'flex',gap:8}},
-          btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'← Back'),
-          btn({className:'btn btn-a',style:{padding:'8px 24px',fontWeight:800,fontSize:'11px'},onClick:handleRun},
-            '▶ Run Projections →'))
-      )
-    )
-  );
+        // ── Footer actions ───────────────────────────────────────────────
+        div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',
+          borderTop:'.5px solid var(--bdr)',paddingTop:14,marginTop:4}},
+          div({style:{fontSize:'9px',color:'var(--text3)'}},
+            'This analysis is saved as a moment-in-time snapshot with your projection.'),
+          div({style:{display:'flex',gap:8}},
+            btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'← Back'),
+            btn({className:'btn btn-a',style:{padding:'8px 24px',fontWeight:800,fontSize:'11px'},onClick:handleRun},
+              '▶ Run Projections →'))
+        )
+      ) // end body
+    )   // end panel
+  );   // end overlay
 }
 
 // PROJECTION WORKSPACE — Enterprise One-Stop Projection Hub

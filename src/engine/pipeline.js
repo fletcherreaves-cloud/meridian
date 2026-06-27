@@ -244,6 +244,18 @@ function buildStore(loc,ds,settings){
   }
   const os=computeOpsScore(p,t,sc);
   const cs=computeCtrlScore(p,sc);
+  // Velocity: delta between the last 2 weeks (p2) vs the prior 2 weeks (implied by p4).
+  // p4 = 4-week avg. Prior 2 weeks = (p4*4 - p2*2) / 2 → simplifies to (2*p4 - p2).
+  // velocity = p2 - (2*p4 - p2) = 2*(p2 - p4). Divide by 2 so magnitude ≈ actual delta.
+  const _vd = (a,b) => (a>0&&b>0) ? +(a-b).toFixed(4) : null;
+  const vel = (ds&&ds.loaded&&p2&&p4) ? {
+    oepe:    _vd(p2.oepe,    p4.oepe),
+    tpph:    _vd(p2.tpph,    p4.tpph),
+    laborPct:_vd(p2.laborPct,p4.laborPct),
+    cashOS:  _vd(Math.abs(p2.cashOSPct||0), Math.abs(p4.cashOSPct||0)),
+    opsScore:+(computeOpsScore(p2,t,sc)-computeOpsScore(p4,t,sc)).toFixed(0),
+    ctrlScore:+(computeCtrlScore(p2,sc)-computeCtrlScore(p4,sc)).toFixed(0),
+  } : null;
   const cut4=new Date(Date.now()-28*86400000);
   const now4=new Date(Date.now());
   let pSales=0,pLY=0;
@@ -262,6 +274,28 @@ function buildStore(loc,ds,settings){
   const _bft0=performance.now();
   const findings=buildBrief(p,t,os,cs,pSales,pLY,ds,loc);
   if(window._perfStats) window._perfStats.buildBrief += (performance.now()-_bft0);
+
+  // ── PREDICTIVE OEPE ALERT ──────────────────────────────────────────────────
+  // Fires when OEPE is currently within target but velocity shows it getting worse.
+  // vel.oepe > 0 means the 2-week avg is higher than the 4-week avg (deteriorating).
+  if(vel&&vel.oepe!=null&&vel.oepe>2&&t.tOepe>0&&p.oepe>0&&p.oepe<=t.tOepe){
+    const gap = t.tOepe - p.oepe;           // seconds under target (positive = within target)
+    const ratePerWeek = vel.oepe / 2;       // vel.oepe is per 2-week delta → convert to per week
+    const weeksToBreachEst = gap / ratePerWeek;
+    if(weeksToBreachEst < 8 && weeksToBreachEst > 0) {
+      findings.push({t:'watch',m:'TREND ALERT — OEPE TRAJECTORY: Currently '+Math.round(p.oepe)+'s ('+Math.round(gap)+'s under target) but worsening at '+vel.oepe.toFixed(1)+'s per 2-week period. At this rate, store is on track to breach the '+Math.round(t.tOepe)+'s target in ~'+Math.round(weeksToBreachEst)+' week'+(weeksToBreachEst>=2?'s':'')+'. Address window crew alignment and pull-time execution before this becomes a flag.'});
+    }
+  }
+  // Predictive labor drift alert
+  if(vel&&vel.laborPct!=null&&vel.laborPct>0.005&&t.tLabor>0&&p.laborPct>0&&p.laborPct<=t.tLabor){
+    const gap = t.tLabor - p.laborPct;
+    const ratePerWeek = vel.laborPct / 2;
+    const weeksToBreachEst = gap / ratePerWeek;
+    if(weeksToBreachEst < 8 && weeksToBreachEst > 0) {
+      findings.push({t:'watch',m:'TREND ALERT — LABOR TRAJECTORY: Currently '+(p.laborPct*100).toFixed(1)+'% (under the '+(t.tLabor*100).toFixed(1)+'% target) but trending higher at '+((vel.laborPct||0)*100).toFixed(1)+'pp per 2 weeks. Projected to exceed target in ~'+Math.round(weeksToBreachEst)+' week'+(weeksToBreachEst>=2?'s':'')+'. Review scheduling trends before it becomes a finding.'});
+    }
+  }
+
   const hasCrit=findings.some(f=>f.t==='crit');
   const concern=hasCrit?(Math.abs(p.cashOSPct||0)>.005?'Cash O/S >0.5%':(p.tRedAPct||(t.tRedAPct||0)*1.5)>0&&(p.tRedAPct||0)>(t.tRedAPct||0)*1.5?'T-Red After elevated':(p.otHrs||0)>5?'OT >5 hrs/day':'Multiple flags'):((p.oepe||0)>t.tOepe+15&&t.tOepe>0)?'OEPE over target':((p.laborPct||0)>t.tLabor+.02&&t.tLabor>0)?'Labor% over target':null;
   const strength=!hasCrit?(cs>=90?'Controls: Elite':os>=90?'Ops: Elite':cs>=80?'Controls: Strong':os>=80?'Ops: Strong':null):null;
@@ -272,7 +306,7 @@ function buildStore(loc,ds,settings){
   for(const[op,locs] of Object.entries((settings.operators||DEF_SETTINGS.operators))){
     if(locs.includes(loc)){operator=op.replace(' (EA)','');break;}
   }
-  return{loc,name,t,p,p2,p4,opsScore:os,ctrlScore:cs,pSales,pLY,findings,hasCrit,concern,strength,
+  return{loc,name,t,p,p2,p4,vel,opsScore:os,ctrlScore:cs,pSales,pLY,findings,hasCrit,concern,strength,
     city:sc2.city||'',state:sc2.state||'',addr:sc2.addr||'',org:sc2.org||'MCDOK',
     gm:staff.gm||'',gmEmail:staff.gmEmail||'',
     sup:staff.sup||'',supEmail:staff.supEmail||'',
@@ -370,14 +404,29 @@ function mergeDS(existing, wb, type, filename) {
   } catch(e){console.warn('mergeDS parse error:',type,filename,e);}
   console.log('[McForecast] After parse - Labor:', ds.laborRows.length, 'Ops:', ds.opsRows.length, 'Ctrl:', ds.ctrlRows.length, '3Peaks:', (ds.peaksSvcRows||[]).length, 'Audit:', (ds.auditRows||[]).length);
   // Deduplication: for each (loc, date) key, keep only the LAST row added.
-  // This ensures the Operations Report (which should be loaded as the most current file)
-  // takes precedence over older separate files for the same dates.
+  // Channel-field rescue: when removing an earlier row, preserve any non-zero
+  // channel sales/pct fields into the surviving row. This handles the case where
+  // an Operations Report (channel-rich) is loaded first, then a Labor Analysis
+  // (channel-empty) is loaded for the same dates — without rescue, the Labor
+  // Analysis row wins and channel data is silently lost.
+  const CH_FIELDS = ['bfSales','bfGC','bfAvgChk','bfPctTotal',
+    'delivSales','delivGC','delivAvgChk','delivPctTotal',
+    'mopSales','mopGC','mopAvgChk','mopPctTotal',
+    'kioskSales','kioskGC','kioskAvgChk','kioskPctTotal',
+    'eatInSales','eatInGC','inStoreSales','inStoreGC','inStorePctTotal',
+    'fcSales','fcGC','fcPctTotal'];
   function dedup(rows){
     const seen={};
     for(let i=rows.length-1;i>=0;i--){
       const r=rows[i];if(!r.loc||!r.date)continue;
       const k=r.loc+'_'+dKey(r.date);
-      if(!seen[k])seen[k]=true;else rows.splice(i,1);
+      if(!seen[k]){seen[k]=i;}
+      else{
+        // Rescue non-zero channel fields from the row being discarded into the kept row
+        const kept=rows[seen[k]];
+        for(const f of CH_FIELDS){if((r[f]||0)!==0&&!(kept[f]||0))kept[f]=r[f];}
+        rows.splice(i,1);
+      }
     }
     return rows;
   }

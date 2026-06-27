@@ -373,6 +373,48 @@ input,select{font-family:var(--sans);color:var(--text)}
 .wx-temp{font-size:9px;font-weight:600;font-family:var(--mono)}
 .wx-rain{font-size:9px;color:#93c5fd;font-family:var(--mono)}
 
+/* ── Mobile responsive ── */
+@media (max-width: 768px) {
+  html, body { font-size: 14px; }
+  /* Touch-friendly buttons */
+  .btn { min-height: 36px; font-size: 12px; }
+  .btn-sm { min-height: 32px; padding: 5px 10px; font-size: 11px; }
+  /* Settings panel: full-width */
+  .set-panel { width: 100vw !important; }
+  /* Anomaly panel: full-width */
+  .anom-panel { max-width: 100vw !important; border-radius: 0 !important; }
+  /* Store grid: 2 columns on phone */
+  .grid { grid-template-columns: 1fr 1fr !important; gap: 6px !important; padding: 8px !important; }
+  /* KPI grid: allow smaller cards */
+  .kgrid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) !important; }
+  /* Tabs: scrollable */
+  .tabs { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .tab { padding: 9px 10px !important; font-size: 11px !important; flex-shrink: 0; }
+  /* Scorecard table */
+  .sc-tbl th, .sc-tbl td { padding: 4px 6px !important; font-size: 10px !important; }
+  /* Org grid */
+  .org-grid { grid-template-columns: 1fr !important; }
+  /* Chart row: stack vertically */
+  .chart-row { grid-template-columns: 1fr !important; }
+  /* District bar */
+  .dbar { flex-direction: column; align-items: flex-start !important; }
+  .dbar-r { flex-wrap: wrap; gap: 8px; }
+  /* Topbar padding */
+  .hdr { padding: 0 8px !important; }
+  /* Date picker popup */
+  .drp-popup { right: -60px; min-width: 260px; }
+  .drp-presets { gap: 3px; }
+  .drp-pre { font-size: 9px; padding: 3px 6px; }
+  /* hband: 2 cols on mobile */
+  .hband { grid-template-columns: 1fr 1fr !important; }
+  .hp { padding: 8px 10px !important; }
+  .hpn { font-size: 18px !important; }
+  /* Load screen */
+  .load-card { padding: 20px 16px; }
+  /* Store name ellipsis */
+  .cname { font-size: 11px !important; }
+}
+
 /* ── Print layout ── */
 .print-hdr{display:none}
 @media print{

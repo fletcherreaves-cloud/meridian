@@ -1334,6 +1334,9 @@ function PeaksTab({ds, loc, tgt, settings}) {
         )
       )
     ),
+    hasPeaks&&div({style:{margin:'0 0 10px',padding:'8px 12px',background:'rgba(96,165,250,.06)',border:'.5px solid rgba(96,165,250,.2)',borderRadius:'var(--r)',fontSize:'9px',color:'#60a5fa'}},
+      '💡 ',span({style:{fontWeight:700}},'3 Peaks × Labor Gap'),' — cross-references peak-hour OEPE against same-day labor % to reveal understaffed high-OEPE days. Available in the ',span({style:{fontWeight:700}},'Shift Analysis'),' tab → scroll past "Peak Daypart Performance."'
+    ),
     hasPeaks&&h(AITabInsight,{
       label:'AI Analysis — 3 Peaks',
       buildPrompt:()=>{
@@ -1682,17 +1685,28 @@ aside::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px;}
 
 // DISTRICT GRID (SECTION 13a)
 function StoreCard({store, onSelect}) {
-  const {p, t, opsScore, ctrlScore, name, loc, city} = store;
+  const {p, t, opsScore, ctrlScore, name, loc, city, vel} = store;
   const combined = Math.round(opsScore*0.6+ctrlScore*0.4);
   const trend = p.t2w!=null?p.t2w:null;
   const healthColor = combined>=80?'#10b981':combined>=65?'#f59e0b':'#ef4444';
   const hasRecords = store.hasRecords;
+
+  // lowerBetter=true means negative delta is improvement (OEPE, labor)
+  const velBadge = (delta, lowerBetter, fmt) => {
+    if(delta==null||Math.abs(delta)<0.0001) return null;
+    const improving = lowerBetter ? delta<0 : delta>0;
+    const col = improving ? 'rgba(16,185,129,.75)' : 'rgba(248,113,113,.75)';
+    const arrow = improving ? '↑' : '↓';
+    return span({style:{fontSize:'8px',color:col,marginLeft:3,fontWeight:700,fontFamily:'var(--mono)'}},
+      arrow+(fmt?fmt(Math.abs(delta)):Math.abs(delta).toFixed(1)));
+  };
+
   return div({className:'store-card',onClick:()=>onSelect(store),
     style:{borderLeft:'3px solid '+(store.org==='Emerald Arches'?'var(--ea-accent)':'var(--mcdok-accent)')}},
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}},
       div(null,
         div({style:{display:'flex',alignItems:'center',gap:4}},
-          div({style:{fontWeight:700,fontSize:'13px'}},(name.length>26?name.replace(/-/g,'\u2011').slice(0,25)+'\u2026':name)),
+          div({style:{fontWeight:700,fontSize:'13px'}},(name.length>26?name.replace(/-/g,'‑').slice(0,25)+'…':name)),
           hasRecords&&span({style:{fontSize:'9px',cursor:'default'},title:'This store has records data loaded'},'🏆')
         ),
         div({style:{fontSize:'9px',color:'var(--text3)'}},
@@ -1700,7 +1714,15 @@ function StoreCard({store, onSelect}) {
         store.gm&&div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},'GM: '+store.gm)
       ),
       div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3}},
-        div({style:{fontFamily:'var(--mono)',fontSize:'20px',fontWeight:700,color:healthColor}},combined),
+        div({style:{display:'flex',alignItems:'center',gap:3}},
+          div({style:{fontFamily:'var(--mono)',fontSize:'20px',fontWeight:700,color:healthColor}},combined),
+          vel&&vel.opsScore!=null&&Math.abs(vel.opsScore)>=2&&span({style:{
+            fontSize:'9px',fontWeight:700,
+            color:vel.opsScore>0?'#10b981':'#f87171',
+            background:vel.opsScore>0?'rgba(16,185,129,.12)':'rgba(248,113,113,.12)',
+            borderRadius:3,padding:'1px 4px'}},
+            (vel.opsScore>0?'↑+':'↓')+Math.round(Math.abs(vel.opsScore)))
+        ),
         store.org&&store.org!=='MCDOK'&&span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',
           borderRadius:3,background:'rgba(167,139,250,.15)',color:'#a78bfa',
           border:'.5px solid rgba(167,139,250,.3)'}},store.org),
@@ -1709,18 +1731,20 @@ function StoreCard({store, onSelect}) {
     ),
     div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'3px 6px',fontSize:'10px',marginBottom:6}},
       ...[
-        ['Ops',opsScore+'/100',opsScore>=80?'#10b981':opsScore>=65?'#f59e0b':'#ef4444'],
-        ['Ctrl',ctrlScore+'/100',ctrlScore>=80?'#10b981':ctrlScore>=65?'#f59e0b':'#ef4444'],
-        ['OEPE',p.oepe>0?Math.round(p.oepe)+'s':'—',p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8'],
-        ['TPPH',p.tpph>0?p.tpph.toFixed(2):'—',p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8'],
-        ['Labor',p.laborPct>0?fP(p.laborPct,1):'—',(()=>{if(!p.laborPct||!t.tLabor)return'#94a3b8';const d=p.laborPct-t.tLabor;const a=Math.abs(d);return a<=.005?'#10b981':a<=.02?'#f59e0b':'#ef4444';})()],
-        ['T2W',trend!=null?fPct(trend):'—',trend!=null?(trend>=0?'#10b981':'#ef4444'):'#94a3b8'],
-      ].map(([l,v,c],i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:2}},
+        {l:'Ops',  v:opsScore+'/100',  c:opsScore>=80?'#10b981':opsScore>=65?'#f59e0b':'#ef4444',  vb:vel&&velBadge(vel.opsScore,false,v=>Math.round(v)+'pt')},
+        {l:'Ctrl', v:ctrlScore+'/100', c:ctrlScore>=80?'#10b981':ctrlScore>=65?'#f59e0b':'#ef4444', vb:vel&&velBadge(vel.ctrlScore,false,v=>Math.round(v)+'pt')},
+        {l:'OEPE', v:p.oepe>0?Math.round(p.oepe)+'s':'—',  c:p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8',  vb:vel&&p.oepe>0&&velBadge(vel.oepe,true,v=>Math.round(v)+'s')},
+        {l:'TPPH', v:p.tpph>0?p.tpph.toFixed(2):'—',       c:p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8',  vb:vel&&p.tpph>0&&velBadge(vel.tpph,false,v=>v.toFixed(2))},
+        {l:'Labor',v:p.laborPct>0?fP(p.laborPct,1):'—',    c:(()=>{if(!p.laborPct||!t.tLabor)return'#94a3b8';const d=p.laborPct-t.tLabor;const a=Math.abs(d);return a<=.005?'#10b981':a<=.02?'#f59e0b':'#ef4444';})(), vb:vel&&p.laborPct>0&&velBadge(vel.laborPct,true,v=>(v*100).toFixed(1)+'pp')},
+        {l:'T2W',  v:trend!=null?fPct(trend):'—',            c:trend!=null?(trend>=0?'#10b981':'#ef4444'):'#94a3b8',                    vb:null},
+      ].map(({l,v,c,vb},i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:2}},
         span({style:{color:'var(--text3)'}},l),
-        span({style:{fontFamily:'var(--mono)',color:c,fontWeight:600}},v)
+        div({style:{display:'flex',alignItems:'center'}},
+          span({style:{fontFamily:'var(--mono)',color:c,fontWeight:600}},v),
+          vb||null)
       ))
     ),
-    // Show top critical issue (not raw count) — clickable to go to store
+        // Show top critical issue (not raw count) — clickable to go to store
     (()=>{
       const crits=store.findings.filter(f=>f.t==='crit');
       const warns=store.findings.filter(f=>f.t==='warn');
@@ -1748,6 +1772,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [showUpload, setShowUpload] = useState(!ds||!ds.loaded);
+  const [showCohorts, setShowCohorts] = useState(false);
 
   const sorted = useMemo(()=>{
     let s=[...stores];
@@ -1760,10 +1785,35 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
       if(sort==='tpph') return (b.p.tpph||0)-(a.p.tpph||0);
       if(sort==='labor') return (a.p.laborPct||0)-(b.p.laborPct||0);
       if(sort==='t2w') return (b.p.t2w||0)-(a.p.t2w||0);
+      if(sort==='vel') return ((b.vel&&b.vel.opsScore)||0)-((a.vel&&a.vel.opsScore)||0);
       return 0;
     });
     return s;
   },[stores,sort,filter,search]);
+
+  // Most improved / most declining (need vel data)
+  const velStores = useMemo(()=>{
+    const vs = stores.filter(s=>s.vel&&s.vel.opsScore!=null);
+    if(vs.length<3) return null;
+    const sorted2 = [...vs].sort((a,b)=>b.vel.opsScore-a.vel.opsScore);
+    return {top:sorted2.slice(0,3), bottom:sorted2.slice(-3).reverse()};
+  },[stores]);
+
+  // Volume cohort grouping — bucket stores into High/Mid/Low by avg daily sales
+  const cohorts = useMemo(()=>{
+    const s = stores.filter(st=>/^\d+$/.test(st.loc)&&st.pSales>0);
+    if(s.length<4) return null;
+    const byVol = [...s].sort((a,b)=>b.pSales-a.pSales);
+    const n = byVol.length;
+    const hiCut = Math.ceil(n/3), midCut = Math.ceil(2*n/3);
+    const hi = byVol.slice(0,hiCut), mid = byVol.slice(hiCut,midCut), lo = byVol.slice(midCut);
+    const tierScore = t => t.length ? Math.round(t.reduce((a,s)=>a+(s.opsScore*0.6+s.ctrlScore*0.4),0)/t.length) : 0;
+    return [
+      {id:'hi',  label:'High Volume',  col:'#60a5fa', stores:hi,  avgScore:tierScore(hi)},
+      {id:'mid', label:'Mid Volume',   col:'#34d399', stores:mid, avgScore:tierScore(mid)},
+      {id:'lo',  label:'Low Volume',   col:'#a78bfa', stores:lo,  avgScore:tierScore(lo)},
+    ].filter(t=>t.stores.length);
+  },[stores]);
 
   const distScore = stores.length?Math.round(stores.reduce((a,s)=>a+(s.opsScore*0.6+s.ctrlScore*0.4),0)/stores.length):0;
   const critCount = stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='crit').length,0);
@@ -1796,15 +1846,64 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
 
     // Sort/filter toolbar
     div({style:{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}},
-      ['score','oepe','tpph','labor','t2w'].map(s=>btn({key:s,className:'sbtn'+(sort===s?' on':''),onClick:()=>setSort(s),style:{fontSize:'10px'}},
-        {score:'Score',oepe:'OEPE',tpph:'TPPH',labor:'Labor',t2w:'Trend'}[s])),
+      ['score','oepe','tpph','labor','t2w','vel'].map(s=>btn({key:s,className:'sbtn'+(sort===s?' on':''),onClick:()=>setSort(s),style:{fontSize:'10px'}},
+        {score:'Score',oepe:'OEPE',tpph:'TPPH',labor:'Labor',t2w:'Trend',vel:'Velocity'}[s])),
       span({style:{borderLeft:'.5px solid var(--bdr)',margin:'0 2px'}}),
       ['all','crit','watch'].map(f=>btn({key:f,className:'sbtn'+(filter===f?' on':''),onClick:()=>setFilter(f),style:{fontSize:'10px'}},
         {all:'All',crit:'⚠ Critical',watch:'Watch'}[f])),
       inp({className:'srch',placeholder:'Search store…',value:search,onChange:e=>setSearch(e.target.value),style:{marginLeft:'auto',width:120}})
     ),
 
-    // Store cards grid
+    // Velocity spotlight (most improved / most declining)
+    velStores&&sort==='vel'&&div({style:{marginBottom:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+      div({style:{background:'rgba(16,185,129,.06)',border:'.5px solid rgba(16,185,129,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
+        div({style:{fontSize:'10px',fontWeight:700,color:'#10b981',marginBottom:6}},'↑ Most Improved (2w vs 4w)'),
+        velStores.top.map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<2?'.5px solid rgba(255,255,255,.05)':'none'}},
+          div({style:{color:'var(--text2)',cursor:'pointer'},onClick:()=>onSelectStore(s)},s.name.slice(0,22)),
+          div({style:{fontFamily:'var(--mono)',color:'#10b981',fontWeight:700}},'+'+Math.round(s.vel.opsScore)+'pt')
+        ))
+      ),
+      div({style:{background:'rgba(248,113,113,.06)',border:'.5px solid rgba(248,113,113,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
+        div({style:{fontSize:'10px',fontWeight:700,color:'#f87171',marginBottom:6}},'↓ Most Declining (2w vs 4w)'),
+        velStores.bottom.map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<2?'.5px solid rgba(255,255,255,.05)':'none'}},
+          div({style:{color:'var(--text2)',cursor:'pointer'},onClick:()=>onSelectStore(s)},s.name.slice(0,22)),
+          div({style:{fontFamily:'var(--mono)',color:'#f87171',fontWeight:700}},Math.round(s.vel.opsScore)+'pt')
+        ))
+      )
+    ),
+
+    // Cohort toggle button (only show if we have volume data)
+    cohorts&&div({style:{marginBottom:10}},
+      btn({className:'sbtn'+(showCohorts?' on':''),onClick:()=>setShowCohorts(v=>!v),style:{fontSize:'10px'}},
+        showCohorts?'✕ Exit Cohort View':'👥 Peer Cohorts')
+    ),
+
+    // Cohort view — grouped by volume tier
+    (showCohorts&&cohorts)?div(null,
+      div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:10}},'Stores grouped into volume tiers by 28-day sales. In-tier rank uses combined score.'),
+      cohorts.map(tier=>div({key:tier.id,style:{marginBottom:16}},
+        div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+          div({style:{flex:1,height:'.5px',background:tier.col+'44'}}),
+          div({style:{fontSize:'10px',fontWeight:700,color:tier.col,padding:'2px 10px',background:tier.col+'15',borderRadius:12,border:'.5px solid '+tier.col+'44',flexShrink:0}},
+            tier.label+' · '+tier.stores.length+' stores · avg '+tier.avgScore+'/100'),
+          div({style:{flex:1,height:'.5px',background:tier.col+'44'}})
+        ),
+        div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:8}},
+          [...tier.stores].sort((a,b)=>(b.opsScore*0.6+b.ctrlScore*0.4)-(a.opsScore*0.6+a.ctrlScore*0.4))
+            .map((s,i)=>div({key:s.loc,style:{position:'relative'}},
+              div({style:{position:'absolute',top:6,right:6,zIndex:2,fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,
+                padding:'1px 6px',borderRadius:3,
+                background:i===0?tier.col+'33':i<3?'rgba(255,255,255,.08)':'rgba(255,255,255,.04)',
+                color:i===0?tier.col:i<3?'var(--text2)':'var(--text3)',
+                border:'.5px solid '+(i===0?tier.col+'55':'rgba(255,255,255,.1)')
+              }},['#1','#2','#3'][i]||(i===tier.stores.length-1?'↓last':'#'+(i+1))),
+              h(StoreCard,{store:s,onSelect:onSelectStore})
+            ))
+        )
+      ))
+    ):
+
+    // Normal store cards grid
     div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:8}},
       sorted.map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore}))
     )

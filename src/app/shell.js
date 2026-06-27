@@ -89,7 +89,22 @@ function DatePicker({value, onChange}) {
 function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg}) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
-  const w = collapsed ? 48 : 220;
+  const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+
+  React.useEffect(()=>{
+    const check=()=>setIsMobile(window.innerWidth<768);
+    window.addEventListener('resize',check);
+    return ()=>window.removeEventListener('resize',check);
+  },[]);
+  React.useEffect(()=>{
+    const toggle=()=>setMobileOpen(o=>!o);
+    window.addEventListener('mf:toggleNav',toggle);
+    return ()=>window.removeEventListener('mf:toggleNav',toggle);
+  },[]);
+  const closeMobile=()=>{if(isMobile)setMobileOpen(false);};
+
+  const w = isMobile ? 260 : (collapsed ? 48 : 220);
 
   const navItemSub = (label, icon, onClick, active, badge) =>
     div({style:{display:'flex',alignItems:'center',gap:collapsed?0:8,
@@ -100,7 +115,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       transition:'all .15s',justifyContent:collapsed?'center':'flex-start',
       position:'relative',fontSize:'11px',fontWeight:active?600:400,
       borderLeft:collapsed?'none':'1.5px solid var(--bdr)'},
-      onClick, title:collapsed?label:undefined,
+      onClick:(...a)=>{onClick(...a);closeMobile();}, title:collapsed?label:undefined,
       onMouseEnter:e=>{e.currentTarget.style.background=active?'var(--adim)':'rgba(255,255,255,.04)';},
       onMouseLeave:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
       collapsed?null:span({style:{width:8,height:8,borderRadius:'50%',flexShrink:0,
@@ -117,7 +132,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       color:active?'var(--amber)':'var(--text2)',
       transition:'all .15s',justifyContent:collapsed?'center':'flex-start',
       position:'relative',fontSize:'12px',fontWeight:active?600:400},
-      onClick, title:collapsed?label:undefined,
+      onClick:(...a)=>{onClick(...a);closeMobile();}, title:collapsed?label:undefined,
       onMouseEnter:e=>{e.currentTarget.style.background=active?'var(--adim)':'var(--surf2)';},
       onMouseLeave:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
       span({style:{fontSize:14,flexShrink:0}},icon),
@@ -134,9 +149,16 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   // Needs Attention badge count
   const needsCount = (stores||[]).filter(s=>s.findings&&s.findings.some(f=>f.t==='crit')).length;
 
-  return div({style:{width:w,minWidth:w,height:'100%',background:'var(--surf)',
-    borderRight:'.5px solid var(--bdr)',display:'flex',flexDirection:'column',
-    transition:'width .2s ease',flexShrink:0,overflowX:'hidden',zIndex:10}},
+  const sideStyle=isMobile
+    ?{position:'fixed',top:0,left:mobileOpen?0:'-270px',height:'100%',width:w,zIndex:300,
+      background:'var(--surf)',borderRight:'.5px solid var(--bdr)',
+      display:'flex',flexDirection:'column',transition:'left .25s ease',overflowX:'hidden'}
+    :{width:w,minWidth:w,height:'100%',background:'var(--surf)',
+      borderRight:'.5px solid var(--bdr)',display:'flex',flexDirection:'column',
+      transition:'width .2s ease',flexShrink:0,overflowX:'hidden',zIndex:10};
+  return h(React.Fragment,null,
+    isMobile&&mobileOpen&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:299},onClick:()=>setMobileOpen(false)}),
+    div({style:sideStyle},
 
     // ── Logo & collapse toggle ──────────────────────────────────
     div({style:{display:'flex',alignItems:'center',gap:8,padding:collapsed?'14px 0':'14px 12px',
@@ -194,6 +216,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       navItem('Rankings',           '⇈', ()=>onOpenModal('ranking'),       false),
       navItem('Targets',            '◉', ()=>onOpenModal('unified-targets'),false),
       navItem('Priority Brief',      '🎯', ()=>onOpenModal('priority-brief'),  false),
+      navItem('Perf Reviews',       '📋', ()=>onOpenModal('perf-reviews'),   false),
       navItem('Labor Analytics',    '👷', ()=>onOpenModal('labor-analytics'),false),
       navItem('FOB Analysis',       '🥗', ()=>onOpenModal('fob-analysis'),  false),
       navItem('Operator Summary',   '👔', ()=>onOpenModal('operator-summary'),false),
@@ -212,11 +235,13 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       navLabel('TOOLS'),
       navItem('Performance Calculator','🧮',()=>onOpenModal('perf-calc'),  false),
       navItem('Metric Correlations', '🔗',()=>onOpenModal('corr-explorer'),false),
+      navItem('District Lens',       '🌐',()=>onOpenModal('district-lens'),false),
       navItem('Compare',             '⇄', ()=>onOpenModal('compare'),      false),
       navItem('Store One-Pager',     '📄', ()=>onOpenModal('one-pager'),   false),
       navItem('GM Coaching Letters', '👨‍💼',()=>onOpenModal('gm-brief'),    false),
       navItem('Calendar Manager',    '📅', ()=>onOpenModal('calendar-manager'), false),
       navItem('Why Engine',          '🔬', ()=>onOpenModal('why-engine'),       false),
+      navItem('Channel Intel',       '📊', ()=>onOpenModal('channel-intel'),    false),
       navItem('LifeLenz Bridge',     '🌉', ()=>onOpenModal('lifelenz-bridge'),  false),
       navItem('DAR Daypart',         '⏱', ()=>onOpenModal('dar-daypart'),  false),
       navItem('Product Mix',         '🍔', ()=>onOpenModal('pmix'),        false),
@@ -246,7 +271,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
           (ds.laborRows&&ds.laborRows.length>0?Math.floor(ds.laborRows.length/1000)+'K rows':'no data'))
       )
     )
-  );
+  ));
 }
 
 // ── App Topbar (slim contextual header) ─────────────────────────────
@@ -254,6 +279,12 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
                     onOpenModal, onLoadFiles, onSaveSession, loadMsg, setView,
                     sessionBanner, onClearSession}) {
   const today = new Date();
+  const [isMb, setIsMb] = React.useState(()=>window.innerWidth<768);
+  React.useEffect(()=>{
+    const check=()=>setIsMb(window.innerWidth<768);
+    window.addEventListener('resize',check);
+    return ()=>window.removeEventListener('resize',check);
+  },[]);
 
   // View title
   const viewTitle = view==='command'?'Command Center':
@@ -270,18 +301,22 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
   },[settings.weekStartDay]);
 
   return div({style:{height:44,background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
-    display:'flex',alignItems:'center',padding:'0 16px',gap:12,flexShrink:0}},
+    display:'flex',alignItems:'center',padding:'0 8px',gap:isMb?4:12,flexShrink:0}},
+
+    // Hamburger (mobile only)
+    isMb&&btn({className:'btn btn-sm',style:{fontSize:'16px',padding:'3px 9px',flexShrink:0},
+      onClick:()=>window.dispatchEvent(new CustomEvent('mf:toggleNav'))},'☰'),
 
     // Left: title + period
     div({style:{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}},
       div({style:{fontSize:'13px',fontWeight:700,color:'var(--amber)',
-        whiteSpace:'nowrap',letterSpacing:'-.2px'}},viewTitle),
-      div({style:{display:'flex',alignItems:'center',gap:4,fontSize:'10px',color:'var(--text3)'}},'·'),
-      div({style:{fontSize:'10px',color:'var(--text3)',fontFamily:'var(--mono)',
+        whiteSpace:'nowrap',letterSpacing:'-.2px',overflow:'hidden',textOverflow:'ellipsis'}},viewTitle),
+      !isMb&&div({style:{display:'flex',alignItems:'center',gap:4,fontSize:'10px',color:'var(--text3)'}},'·'),
+      !isMb&&div({style:{fontSize:'10px',color:'var(--text3)',fontFamily:'var(--mono)',
         whiteSpace:'nowrap'}},
         'Week of '+wStart.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
       ),
-      ds&&ds.loaded&&div({style:{display:'flex',alignItems:'center',gap:4,
+      !isMb&&ds&&ds.loaded&&div({style:{display:'flex',alignItems:'center',gap:4,
         background:'rgba(16,185,129,.08)',border:'.5px solid rgba(16,185,129,.2)',
         borderRadius:10,padding:'1px 7px'}},
         div({style:{width:5,height:5,borderRadius:'50%',background:'#10b981',
@@ -289,7 +324,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
         span({style:{fontSize:'8px',color:'#10b981',fontWeight:600,fontFamily:'var(--mono)'}},'LIVE')
       ),
       // Session age indicator — shows how fresh the auto-saved data is
-      (()=>{
+      !isMb&&(()=>{
         // Read the IDB session age from sessionBanner if available, else check last file load
         const ageDays = sessionBanner?.savedAt
           ? Math.floor((Date.now()-new Date(sessionBanner.savedAt))/86400000)
@@ -310,15 +345,15 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
     ),
 
     // Right: actions
-    div({style:{display:'flex',alignItems:'center',gap:2}},
+    div({style:{display:'flex',alignItems:'center',gap:2,flexShrink:0}},
       // Pre-Forecast Brief quick-access
-      ds&&ds.loaded&&btn({className:'btn btn-sm',
+      !isMb&&ds&&ds.loaded&&btn({className:'btn btn-sm',
         style:{fontSize:'9px',color:'var(--gold)',borderColor:'rgba(245,188,0,.3)',
           background:'rgba(245,188,0,.06)',marginRight:4},
         title:'Open Pre-Forecast Brief — analysis of the upcoming projection period',
         onClick:()=>onOpenModal&&onOpenModal('proj-brief')},'📋 Pre-Brief'),
       // Scope filter — OK / FL / All
-      div({style:{display:'flex',gap:1,marginRight:4}},
+      !isMb&&div({style:{display:'flex',gap:1,marginRight:4}},
         ...[['all','All'],['ok','OK'],['fl','FL']].map(([s,l])=>
           btn({key:s,className:'btn btn-sm',
             style:{fontSize:'9px',padding:'2px 7px',
@@ -340,14 +375,14 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           padding:'4px 8px',fontSize:'9px',color:'var(--text2)',whiteSpace:'nowrap',
           zIndex:50}},loadMsg)
       ),
-      btn({className:'btn btn-sm',title:'Save session to file',style:{fontSize:'10px'},
+      !isMb&&btn({className:'btn btn-sm',title:'Save session to file',style:{fontSize:'10px'},
         onClick:onSaveSession},'💾'),
       btn({className:'btn btn-sm',style:{fontSize:'10px'},
         onClick:()=>onOpenModal('settings')},'⚙'),
-      btn({className:'btn btn-sm',style:{fontSize:'10px'},
+      !isMb&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
         onClick:()=>onOpenModal('help')},'?'),
       // Dark mode toggle
-      btn({className:'btn btn-sm',style:{fontSize:'10px'},
+      !isMb&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
         title:'Toggle light/dark mode',
         onClick:()=>{
           const next=settings.colorMode==='dark'?'light':'dark';

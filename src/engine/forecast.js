@@ -1042,6 +1042,40 @@ const KB_ARTICLES = {
   },
 };
 
+// Minimal markdown-to-React-nodes renderer (mirrors store-dash.js version; kept here to avoid circular import)
+function mdToNodes(text){
+  if(!text) return [];
+  const lines=text.split('\n');
+  const nodes=[];
+  let inList=false, listItems=[];
+  const flushList=()=>{
+    if(listItems.length){
+      nodes.push(h('ul',{style:{margin:'4px 0 8px 0',paddingLeft:18}},
+        listItems.map((li,i)=>h('li',{key:i,style:{fontSize:'10px',color:'var(--text)',lineHeight:1.6,marginBottom:2}},inlineFmt(li)))));
+      listItems=[]; inList=false;
+    }
+  };
+  const inlineFmt=(s)=>{
+    const parts=s.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((p,i)=>p.startsWith('**')&&p.endsWith('**')?h('strong',{key:i,style:{color:'var(--text)',fontWeight:700}},p.slice(2,-2)):p);
+  };
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i], trimmed=line.trim();
+    if(!trimmed){flushList();if(nodes.length)nodes.push(h('div',{key:'sp'+i,style:{height:4}}));continue;}
+    if(/^#\s/.test(trimmed)){flushList();nodes.push(h('div',{key:i,style:{fontSize:'13px',fontWeight:800,color:'var(--amber)',marginBottom:6,marginTop:10,borderBottom:'.5px solid var(--bdr)',paddingBottom:4}},trimmed.replace(/^#+\s*/,'')));continue;}
+    if(/^##\s/.test(trimmed)){flushList();nodes.push(h('div',{key:i,style:{fontSize:'11px',fontWeight:700,color:'var(--text)',marginBottom:4,marginTop:10}},trimmed.replace(/^#+\s*/,'')));continue;}
+    if(/^###\s/.test(trimmed)){flushList();nodes.push(h('div',{key:i,style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:3,marginTop:8,letterSpacing:'.3px',textTransform:'uppercase'}},trimmed.replace(/^#+\s*/,'')));continue;}
+    if(/^[-*]\s/.test(trimmed)){inList=true;listItems.push(trimmed.replace(/^[-*]\s/,''));continue;}
+    if(/^\d+\.\s/.test(trimmed)){inList=true;listItems.push(trimmed.replace(/^\d+\.\s/,''));continue;}
+    if(/^---+$/.test(trimmed)){flushList();nodes.push(h('div',{key:i,style:{height:1,background:'var(--bdr)',margin:'8px 0'}}));continue;}
+    if(/^\*\*.*\*\*:?$/.test(trimmed)){flushList();nodes.push(h('div',{key:i,style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginTop:8,marginBottom:2}},trimmed.replace(/\*\*/g,'')));continue;}
+    flushList();
+    nodes.push(h('p',{key:i,style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.7,margin:'0 0 4px 0'}},inlineFmt(trimmed)));
+  }
+  flushList();
+  return nodes;
+}
+
 // InfoIcon — click to open knowledge base article
 
 function KnowledgeBasePanel({onClose}) {
@@ -1215,14 +1249,22 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date);
     if(_aeFcst&&_aeFcst>0){
       const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
-      return{date,loc,forecast:Math.round(_aeFcst),ly:0,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:0,varPct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:!lyRaw,modelUsed:'ae'};
+      const _aeORow=fetchRow(ds.opsIdx,loc,date);const _aeCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
+      const _aeIsFuture=date>sodOf(new Date());
+      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:0,varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
+        oepe:_aeORow?(_aeORow.oepe||0):0,tpph:_aeCtrlRow?(_aeCtrlRow.tpph||0):0,labor:_aeCtrlRow?(_aeCtrlRow.laborPct||0):0,
+        actualGC:_aeAct>0?(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].gc||0:0;})():0,forecastGC:0,lyGC:0,
+        noLYData:!lyRaw,modelUsed:'ae'};
     }
   }
   if(_assignedModel==='ewma'){
     const _ewmaFcst=forecastEWMA(_locLaborRows,ds.laborIdx,loc,date);
     if(_ewmaFcst&&_ewmaFcst>0){
       const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
-      return{date,loc,forecast:Math.round(_ewmaFcst),ly:0,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:0,varPct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:false,modelUsed:'ewma'};
+      const _ewmaORow=fetchRow(ds.opsIdx,loc,date);const _ewmaCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
+      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:0,varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
+        oepe:_ewmaORow?(_ewmaORow.oepe||0):0,tpph:_ewmaCtrlRow?(_ewmaCtrlRow.tpph||0):0,labor:_ewmaCtrlRow?(_ewmaCtrlRow.laborPct||0):0,
+        actualGC:0,forecastGC:0,lyGC:0,noLYData:false,modelUsed:'ewma'};
     }
   }
   const cal = (_assignedModel==='di'&&_hasDI) ? settings.dialedIn[loc] : null;

@@ -24,8 +24,9 @@ import { computeSmartTargets, SmartTargetPanel } from '../features/smart-targets
 import { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor } from '../views/labor-tools.js';
 import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief } from '../features/projections.js';
 import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard } from '../views/store-analytics.js';
-import { AIInsightsTab, MetricCorrelationExplorer, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager } from '../views/analytics.js';
+import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
+import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt.js';
@@ -56,9 +57,47 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.216';
-const MERIDIAN_BUILD_DATE = '2026-06-19';
+const MERIDIAN_VERSION    = '4.223';
+const MERIDIAN_BUILD_DATE = '2026-06-27';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.223', date:'2026-06-27', changes:[
+    'Performance Reviews: full salaried management performance review system — GM, AM, AS, and OM reviews with 70/30 metrics/behavioral split, auto-populate KPIs from uploaded data, behavioral competency ratings (1-4) per quarter, quarterly/half-year score rollup, and Customize panel for editing scoring thresholds, category/metric weights, and all behavioral competency text per role. Accessible via Performance Reviews in the nav under Performance.',
+  ]},
+  {version:'4.222', date:'2026-06-27', changes:[
+    'Channel Intelligence root cause fix: dedup merge now rescues channel sales/pct fields (bfSales, mopSales, kioskSales, delivSales, and their GC/AvgChk/PctTotal counterparts) from discarded rows into the surviving row. This fixes the case where a Labor Analysis file loaded after an Operations Report would silently overwrite the richer channel data with zeros for the same dates, causing Breakfast/MOP/Kiosk/Delivery to show 0% in Channel Intelligence and the DOW Heat-Map even though the Operations Report was present.',
+  ]},
+  {version:'4.221', date:'2026-06-27', changes:[
+    'Location Overview Tab: redesigned as Hybrid Intelligence Panel — Context Strip (KB notes + tags + recent calendar events), Metric Vitals (5 traffic-light KPI tiles: OEPE, Labor%, TPPH, Cash O/S, Ops Score with color-coded status), Priority Findings (top 4 risk/watch items in 2-column grid), Predictive Alerts (trend alerts inline), and Charts Section (collapsed by default with ▼ Show Charts toggle)',
+  ]},
+  {version:'4.220', date:'2026-06-27', changes:[
+    'Channel Intelligence: fixed non-DT channel data (Breakfast, MOP, Kiosk, Delivery) not displaying — added fallback to per-store % fields (bfPctTotal, mopPctTotal, etc.) when dollar-amount columns are not populated in the Operations Report Sales sheet',
+    'Channel Intelligence diagnostic: warning banner now lists the exact column names Meridian looks for in the Operations Report, so column name mismatches can be identified and reported',
+    'DOW Channel Heat-Map (Shift Analysis): applied same pctKey fallback so Breakfast/MOP/Kiosk/Delivery rows now appear in the heatmap when pctTotal data is available',
+    'Shift Analysis guide strip: DOW Ops Metrics, OEPE Revenue Opportunity, 3 Peaks × Labor Gap, and Competitive Impact buttons now scroll to their respective sections on click (previously display-only)',
+    'FOB Root-Cause Priority Matrix: swapped display order — Location (store name) now appears before Component label, matching natural priority-coaching order',
+    'Base Food KPI card: removed "Theoretical cost — for reference only" label; now shows ▲/✓ vs-target comparison when tFOBBase target is available, or "No target set" when not',
+    'Base Food target column: added more fallback patterns to column name matching (Base Food %, Base Food%, BaseFoodPct, Base Food Target)',
+    'Channel column fallbacks: expanded patterns for Breakfast (BF Sales), MOP (MOB Sales, Mobile All Net Sales), Kiosk (KSK Sales, SOK Net Sales), Delivery (3PD All Net Sales, 3rd Party Net Sales)',
+    'Print / PDF: added 🖨 Print button to Revenue Intelligence Engine, FOB Analysis, and Channel Intelligence panels',
+    'Store KB: replaced free-text tag field with clickable Quick Tags organized into Performance / Management / Location / Physical / Context groups — single-click to toggle, auto-updates tag list',
+    'Competitive Impact: replaced empty state (null/blank) with explanatory message directing user to Calendar to tag competition events',
+  ]},
+  {version:'4.219', date:'2026-06-27', changes:[
+    'Fixed 3 Peaks × Labor Gap showing nothing — root cause: r.date.toISOString() called on ISO string after IDB round-trip (strings don\'t have .toISOString()). Added _toD()/_toDK() helpers; laborByDate is now built once outside the per-slice loop instead of rebuilt 3 times',
+    'Fixed case where all OEPE readings are above target (was returning null for every slice, hiding the section) — now compares worst-half vs best-half OEPE days with a label explaining the split',
+    'Fixed DOW Heat-Map .getDay() calls on laborRows — same date-type safety fix applied to the DOW data builder (r.date.getDay() → _toD(r.date).getDay())',
+    'Fixed Competitive Impact runtime error: r.date.toISOString() on string dates in the DOW average and row-lookup code — replaced with _toDK() helper',
+    'Fixed Weekly Narrative "Unable to generate narrative" — was reading settings.anthropicKey (undefined) instead of localStorage.getItem("mf_anthropic_key")',
+    'Fixed FOB Root-Cause Matrix showing rollup rows (fobPct sep:true, pLFoodPct isTotal:true) — added !c.sep&&!c.isTotal filter; Base Food excluded via actionable:false',
+    'Fixed District Lens Opportunity Store/Dist Average all showing — computeMetricAverages was comparing r.date (Date) against a string cutDate; fixed to compare Date objects',
+    'Fixed District View blank screen — showCohorts&&cohorts?A:B parsed as showCohorts&&(cohorts?A:B); added parentheses to fix operator precedence',
+    'Fixed mdToNodes is not defined crash in forecast.js InfoIcon — circular dependency prevented import from store-dash.js; defined mdToNodes inline in forecast.js',
+    'Fixed (userEvents||[]).filter is not a function — userEvents is {[loc]:{[dk]:event}} object, not array; flattened with nested Object.entries loops; fixed e.date → e.evDate',
+    'Weekly Narrative: added error message propagation — if API returns {error:{...}}, shows error message instead of falling through to "Unable to generate narrative"',
+    'Added Predictive Alerts callout at top of Overview tab when TREND ALERT findings exist',
+    'Added feature guide strip at top of Shift Analysis tab with DOW Heat-Map / OEPE Opportunity / 3 Peaks / Competitive Impact status pills',
+    'Added 3 Peaks × Labor Gap cross-reference note in PeaksTab linking users to the Shift Analysis section',
+  ]},
   {version:'4.216', date:'2026-06-19', changes:[
     'Fixed the triple-redundant read found while reviewing the restore path: performFullIDBRestore() was reading the same large stores from IndexedDB up to 3 times — once in loadDsFromIDB(), again in idbGetCoverage() just for date ranges, a third time for the weather cache bridge',
     'Added coverageFromLoadedRows() — computes the identical coverage stats from data already in memory, zero additional IndexedDB reads. Weather cache now reuses the already-loaded weather array directly',
@@ -268,6 +307,7 @@ function App() {
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
   const [showPerfCalc,    setShowPerfCalc]    = useState(false);
   const [showCorrExplorer,setShowCorrExplorer]= useState(false);
+  const [showDistrictLens,setShowDistrictLens]= useState(false);
   const [showModelAssign, setShowModelAssign] = useState(false);
   const [showOnePager,    setShowOnePager]    = useState(false);
   const [showGMBrief,     setShowGMBrief]     = useState(false);
@@ -279,6 +319,7 @@ function App() {
   const [showEvents, setShowEvents]    = useState(false);
   const [showCalendarManager, setShowCalendarManager] = useState(false);
   const [showWhyEngine, setShowWhyEngine] = useState(false);
+  const [showChannelIntel, setShowChannelIntel] = useState(false);
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
   const [showCompare, setShowCompare]  = useState(false);
   const [showInsights,setShowInsights] = useState(false);
@@ -314,6 +355,7 @@ function App() {
   const [showInventory,    setShowInventory]    = useState(false);
   const [showFOB,             setShowFOB]             = useState(false);
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
+  const [showPerfReviews,     setShowPerfReviews]     = useState(false);
   const [showOperatorSummary, setShowOperatorSummary] = useState(false);
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
@@ -329,7 +371,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -339,9 +381,9 @@ function App() {
         const restoredDs={
           laborRows:labor, opsRows:ops, ctrlRows:ctrl,
           fobRows:fob, auditRows:audit,
-          peaksSvcRows:peaks.filter(r=>r._peakSvc===true||r.svcType), peaksSalesRows:peaks.filter(r=>r._peakSvc===false&&!r.svcType),
+          peaksSvcRows:peaks.filter(r=>r._peakSvc===true||(r._peakSvc==null&&r.oepe!==undefined)), peaksSalesRows:peaks.filter(r=>r._peakSvc===false||(r._peakSvc==null&&r.netSales!==undefined)),
           darRows:dar,
-          pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:{},
+          pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           targets:{}, loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
@@ -669,7 +711,7 @@ function App() {
     showMorningBrief||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -689,7 +731,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -746,13 +788,16 @@ function App() {
         if(modal==='gm-brief')             setShowGMBrief(true);
         if(modal==='calendar-manager')     setShowCalendarManager(true);
         if(modal==='why-engine')           setShowWhyEngine(true);
+        if(modal==='channel-intel')        setShowChannelIntel(true);
         if(modal==='lifelenz-bridge')      setShowLifeLenzBridge(true);
         if(modal==='dar-daypart')          setShowDARDaypart(true);
         if(modal==='pmix')                 setShowPMix(true);
         if(modal==='data-manager')         setShowDataManager(true);
+        if(modal==='perf-reviews')         setShowPerfReviews(true);
         if(modal==='lfz-gap')              setShowLFZGap(true);
         if(modal==='perf-calc')           setShowPerfCalc(true);
         if(modal==='corr-explorer')       setShowCorrExplorer(true);
+        if(modal==='district-lens')       setShowDistrictLens(true);
         if(modal==='unified-targets')     setShowUnifiedTargets(true);
         if(modal==='fcst-accuracy')   setShowFcstAccuracy(true);
         if(modal==='attention') setShowAttention(true);
@@ -832,6 +877,7 @@ function App() {
     showUnifiedTargets&&h(UnifiedTargetsPanel,{stores,ds,settings,onClose:()=>setShowUnifiedTargets(false)}),
     showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
     showCorrExplorer&&h(MetricCorrelationExplorer,{stores,ds,settings,onClose:()=>setShowCorrExplorer(false)}),
+    showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
     showModelAssign&&h(ModelAssignmentPanel,{stores,ds,settings,userEvents,onClose:()=>setShowModelAssign(false)}),
     showOnePager&&h(StoreOnePager,{stores,ds,settings,onClose:()=>setShowOnePager(false)}),
     showGMBrief&&h(GMCoachingBrief,{stores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
@@ -842,6 +888,8 @@ function App() {
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
     showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowCalendarManager(false)}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
+    showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
+    showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,onClose:()=>setShowPerfReviews(false)}),
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showInsights &&h(AIInsightsLog,{stores,settings,onClose:()=>setShowInsights(false)}),
@@ -954,30 +1002,36 @@ function App() {
         div({style:{overflowY:'auto',padding:'16px 20px',fontSize:'11px',lineHeight:1.7}},
           ...[
             {day:'DAILY (Every day you open the app)',color:'#10b981',items:[
-              {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report and Register Audit. The Data Status panel on the Home screen shows how old your current data is. Red = needs immediate refresh. Target: data no older than 3 days.'},
-              {t:'2. Check the Home Command Center',d:'Review Signals Feed for any red/yellow alerts. Check the Projection Pulse to see next-7-day district forecast vs LY. Click any store showing red to investigate.'},
-              {t:'3. Review Needs Attention',d:'The ⚠ button in the toolbar shows any stores with active alerts (integrity issues, scheduling problems, critical metrics). Address red items first.'},
-              {t:'4. Spot-check a store',d:'Click any store in the district grid to open its dashboard. Review OEPE, TPPH, Labor%, and Cash O/S against targets. The Model Health Score tells you whether you can trust its forecast.'},
+              {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report (Sales + Service + Controls + FOB sheets) and Register Audit. Drag files onto the Data Manager or use the Load button. Target: data no older than 3 days. Also load Labor Analysis for Shift Analysis features.'},
+              {t:'2. Check the Home Command Center',d:'Review At-a-Glance signal cards for district-level flags. Check the Projection Pulse for next-7-day forecast vs LY. Click any store showing red to open its dashboard.'},
+              {t:'3. Review Priority Brief',d:'Click 🎯 Priority Brief for a tiered AI summary — Critical / Watch / Performance stores with specific coaching directives. Use this as your morning standup guide.'},
+              {t:'4. Spot-check a store',d:'Click any store in the district grid → Store Dashboard. Review the Overview tab for OEPE, Labor%, TPPH, Cash O/S. Go to Shift Analysis for day-of-week patterns and channel mix. Open Intelligence Brief for AI-generated coaching letter.'},
             ]},
             {day:'WEEKLY (Every Wednesday — start of work week)',color:'#f59e0b',items:[
-              {t:'1. Lock the weekly projection',d:'Open Projections (📋 button). The workspace shows all 27 stores with AI-generated forecasts. Review any stores with high MAPE (the ±% next to store name). Double-click any cell to override if you have specific knowledge. Lock all rows when satisfied. Deadline: 10 days before week start.'},
-              {t:'2. Run Projection vs Actuals report',d:'Click 📊 Proj vs Act and run a 2-4 week backtest. This shows how accurate the prior week AI forecasts were vs actual results. Click any cell to see day-by-day breakdown. Look for stores that are consistently missing — those need recalibration.'},
-              {t:'3. Check Dialed-In for drifting stores',d:'Go to any store dashboard → Dialed-In. Look for the ⚠ drift warning. Stores with 2W MAPE significantly worse than 6W MAPE are drifting. Run ↺ Recalibrate on those stores.'},
-              {t:'4. Generate Intelligence Brief',d:'Click 🧠 Brief from a store or from the district view. For your Monday morning review, run a District brief to get a plain-English summary of where things stand and what needs attention.'},
+              {t:'1. Lock the weekly projection',d:'Open Projections (📋 button). Review all 27 stores with AI-generated forecasts. Check MAPE ±% next to store name — high MAPE = less reliable forecast. Double-click any cell to override. Lock rows when satisfied. Deadline: 10 days before week start.'},
+              {t:'2. Run Projection vs Actuals report',d:'📊 Proj vs Act — 2–4 week backtest shows how accurate prior forecasts were. Stores consistently missing by >5% need recalibration in Dialed-In.'},
+              {t:'3. Check Dialed-In for drifting stores',d:'Any store dashboard → Dialed-In. ⚠ drift warning = 2W MAPE significantly worse than 6W MAPE. Run ↺ Recalibrate on drifting stores. Run Calibrate All monthly.'},
+              {t:'4. Review FOB Analysis',d:'Open FOB Analysis from the toolbar. Root-Cause Priority Matrix shows the highest-dollar coaching opportunities ranked by store + component. Focus on the top 3 items first.'},
+              {t:'5. Generate Intelligence Briefs',d:'From any store: Intelligence Brief tab → Generate. For your weekly district review, use GM Coaching Letters to generate store-specific letters for each manager.'},
             ]},
             {day:'MONTHLY (By the 15th of prior month)',color:'#f87171',items:[
-              {t:'1. Lock the monthly projection',d:'Open Projections → set Period to Month. Review all stores monthly totals. The system shows weekly sub-totals within the month. Approve all stores. Deadline: 15th of the prior month.'},
-              {t:'2. Run full backtest and recalibrate all stores',d:'Dialed-In panel → Calibrate All. This updates the model for every store using the latest 6+ weeks of actual data. Run this monthly to keep the model sharp. Takes about 10-15 seconds for all 27 stores.'},
-              {t:'3. Review model health for all stores',d:'Check the Home Command Center Model Health grid. Any stores in yellow or red should have their Dialed-In re-run. Target: 20+ stores green before committing monthly projections.'},
-              {t:'4. Intelligence Brief — Operator roll-ups',d:'Generate a brief for each operator (Ryan, Gary, Rick/Kathy, Jacob). These are the right reports to share with each operator at the monthly review meeting.'},
+              {t:'1. Lock the monthly projection',d:'Open Projections → set Period to Month. Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
+              {t:'2. Calibrate all forecast models',d:'Dialed-In panel → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all 27 stores.'},
+              {t:'3. Review Channel Intelligence',d:'Open Channel Intel from the toolbar. Review Breakfast, MOP, Kiosk, and Delivery mix per store vs district average. Stores with unusually low digital mix may be missing sales opportunities.'},
+              {t:'4. Revenue Intelligence Engine review',d:'Open Revenue Intel from toolbar. District OEPE opportunity shows total monthly revenue gain if all stores hit target. Use this for operator-level discussions about service speed impact.'},
+              {t:'5. Operator roll-up briefs',d:'Generate Intelligence Briefs for each operator (Ryan, Gary, Rick/Kathy, Jacob) using the store groups or patch filter. Share with operators at monthly review meeting.'},
             ]},
-            {day:'ANNUAL (1 month before year start)',color:'#818cf8',items:[
-              {t:'1. Lock the annual projection',d:'This is a district-level aggregate based on monthly projections. Work week by week through the full year using the monthly projection workflow. Deadline: approximately December 1 for the following year.'},
-              {t:'2. Review and update targets',d:'Go to Settings → Targets and review each store OEPE, TPPH, Labor%, and growth targets. Annual target reviews should reflect changes in store capacity, staffing, or business mix.'},
-              {t:'3. Reset and recalibrate all models',d:'After updating targets, run Calibrate All in Dialed-In. New targets change the ops factor calculations, so a fresh calibration ensures the model adapts.'},
+            {day:'KEY FEATURES — Quick Reference',color:'#818cf8',items:[
+              {t:'Store KB (📍)',d:'Per-store operational notes and context tags. Use Quick Tags (single click) for common factors: GM in Training, Capacity Limited, Tourist Area, New Location, etc. Tags inform AI analysis, anomaly thresholds, and forecast warnings.'},
+              {t:'Shift Analysis tab',d:'Day-of-week ops metrics, channel mix heatmap, OEPE Revenue Opportunity, 3 Peaks × Labor Gap, and Competitive Impact. Click the nav pills at the top of the tab to scroll to each section. Load a 3 Peaks file to unlock peak-hour labor cross-reference.'},
+              {t:'Why Engine',d:'Explains WHY a metric moved. Select a store and metric, and the engine correlates the move against weather, labor, promo, DOW, and competitive signals. Surfaces the most likely root cause with confidence score.'},
+              {t:'Channel Intelligence',d:'Requires Operations Report (Sales sheet) to be loaded. Shows DT, Breakfast, MOP, Kiosk, and Delivery as % of total sales per store. Click a channel to see per-store ranking. Date range: 7/14/28/60 days.'},
+              {t:'FOB Analysis',d:'Food Over Base analysis with Root-Cause Priority Matrix. Ranked by dollar impact per (store, component) — location appears first, then component. Expand any row for per-store breakdown. Use Print button for PDF export.'},
+              {t:'Competitive Impact',d:'Tag competition events in the Calendar (competitor opening, promotion, closure) using the Competition event type. Shift Analysis → Competitive Impact then shows sales impact vs DOW baseline for those dates.'},
             ]},
             {day:'AS NEEDED — Automation Candidates',color:'#94a3b8',items:[
-              {t:'Auto-actions currently handled',d:'• Data loading: manual (drag-drop weekly) · • Calibration: auto when 10+ new points · • Signals: refresh on load · • Deadline alerts: live calculated'},
+              {t:'Auto-actions currently handled',d:'• Data loading: manual (drag-drop weekly) · • Calibration: auto when 10+ new points · • Signals: refresh on load · • Deadline alerts: live calculated · • Session restore: opt-in banner on return visit'},
+              {t:'Data freshness targets',d:'Operations Report: weekly minimum, daily for active projection periods · Labor Analysis: with every Operations Report · Register Audit: weekly · 3 Peaks: monthly · OpsTargets: when targets change'},
               {t:'Future automation candidates',d:'• Weekly brief email Wednesdays · • Auto-lock reminder Sundays (T-10 days) · • Monthly alert on the 10th · • MAPE alert when accuracy drops >3 points week-over-week'},
             ]},
           ].map((section,si)=>div({key:si,style:{marginBottom:20}},

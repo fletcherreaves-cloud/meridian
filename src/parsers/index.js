@@ -260,10 +260,10 @@ function parseLaborData(wb,sheet,defaultDateOverride){
     // ── Channel Sales (from Operations Report Sales sheet) ──
     salesVsLYPct:findCol(h,'All Net Sales +/- %'),
     dtSales:findCol(h,'DT Sales'),dtGC:findCol(h,'DT GC'),dtAvgChk:findCol(h,'DT Average Check'),dtPctTotal:findCol(h,'DT % of Total Sales'),
-    bfSales:findCol(h,'Breakfast All Net Sales'),bfGC:findCol(h,'Breakfast GC'),bfAvgChk:findCol(h,'Breakfast Average Check'),bfPctTotal:findCol(h,'Breakfast % of Total Sales'),
-    delivSales:findCol(h,'McDelivery Net Sales'),delivGC:findCol(h,'McDelivery GC'),delivAvgChk:findCol(h,'McDelivery Average Check'),delivPctTotal:findCol(h,'McDelivery % of Total Sales'),
-    mopSales:findCol(h,'MOP Sales'),mopGC:findCol(h,'MOP GCs'),mopAvgChk:findCol(h,'MOP Average Check ','MOP Average Check'),mopPctTotal:findCol(h,'MOP Sales %'),
-    kioskSales:findCol(h,'Kiosk All Net Sales'),kioskGC:findCol(h,'Kiosk GC'),kioskAvgChk:findCol(h,'Kiosk Average Check'),kioskPctTotal:findCol(h,'Kiosk % of Total Sales'),
+    bfSales:fc(h,'Breakfast All Net Sales','BF All Net Sales','Breakfast Net Sales','BF Net Sales','Breakfast Sales','BF Sales','Breakfast All Sales','Breakfast Total Sales'),bfGC:fc(h,'Breakfast GC','BF GC'),bfAvgChk:fc(h,'Breakfast Average Check','BF Average Check'),bfPctTotal:fc(h,'Breakfast % of Total Sales','BF % of Total Sales','Breakfast %','BF %'),
+    delivSales:fc(h,'McDelivery Net Sales','Delivery Net Sales','Delivery All Net Sales','McDelivery Sales','Delivery Sales','3PD Net Sales','3rd Party Delivery Net Sales','3PD Sales','3PD All Net Sales','3rd Party Net Sales','McDelivery All Net Sales','Delivery Total Sales'),delivGC:fc(h,'McDelivery GC','Delivery GC'),delivAvgChk:fc(h,'McDelivery Average Check','Delivery Average Check'),delivPctTotal:fc(h,'McDelivery % of Total Sales','Delivery % of Total Sales','McDelivery %'),
+    mopSales:fc(h,'MOP Sales','MOP Net Sales','Mobile Order and Pay Net Sales','Mobile Order Sales','Mobile Order & Pay Net Sales','MOB Sales','MOB Net Sales','Mobile All Net Sales','MOP All Net Sales','App Sales','Mobile App Sales'),mopGC:fc(h,'MOP GCs','MOP GC','MOB GC'),mopAvgChk:fc(h,'MOP Average Check','Mobile Order Average Check','MOB Average Check'),mopPctTotal:fc(h,'MOP Sales %','MOP % of Total Sales','MOP %','MOB %'),
+    kioskSales:fc(h,'Kiosk All Net Sales','Kiosk Net Sales','Kiosk Sales','KSK Net Sales','KSK Sales','KSK All Net Sales','Self Order Kiosk Net Sales','Self-Order Kiosk Net Sales','SOK Net Sales','SOK Sales'),kioskGC:fc(h,'Kiosk GC','KSK GC'),kioskAvgChk:fc(h,'Kiosk Average Check','KSK Average Check'),kioskPctTotal:fc(h,'Kiosk % of Total Sales','Kiosk %','KSK %'),
     eatInSales:findCol(h,'Eat in Sales'),eatInGC:findCol(h,'Eat in GC'),
     inStoreSales:findCol(h,'In-Store All Net Sales'),inStoreGC:findCol(h,'In-Store GC'),inStorePctTotal:findCol(h,'In-Store % of Total Sales'),
     fcSales:findCol(h,'FC All Net Sales'),fcGC:findCol(h,'FC GC'),fcPctTotal:findCol(h,'FC % of Total Sales')};
@@ -502,7 +502,7 @@ function parseTargets(wb,sheet){
     cashOSPct:   fc(h,'Cash Over/ Short %','Cash Over/Short %'),
     cashOSAmt:   fc(h,'Cash Over/ Short $','Cash Over/Short $'),
     // FOB targets
-    fobBase:     findCol(h,'Base Food\n%'),
+    fobBase:     fc(h,'Base Food\n%','Base Food %','Base Food%','Base Food Pct','BaseFoodPct','Base Food Target','Base Food'),
     fobCompWaste:findCol(h,'Comp Waste %'),
     fobRawWaste: fc(h,'Raw Waste %','Raw Waste'),
     fobCondiment:fc(h,'Condiment\n%','Condiment %','Condiment'),
@@ -612,7 +612,7 @@ function parse3PeaksService(wb, sheet) {
     const loc=lastLoc;if(!loc||!/^\d+$/.test(loc))continue;
     const dt=parseXLDate(r[C.date]);if(!dt)continue;
     const slice=String(r[C.slice]||'').trim();if(!slice)continue;
-    rows.push({loc,date:dt,slice,
+    rows.push({loc,date:dt,slice,_peakSvc:true,
       oepe:parseFloat(r[C.oepe])||0,r2p:parseFloat(r[C.r2p])||0,
       avgCTP:parseFloat(r[C.avgCTP])||0,kvst:parseFloat(r[C.kvst])||0,
       kvsu:parsePct(r[C.kvsu]),dtGC:parseFloat(r[C.dtGC])||0,
@@ -641,7 +641,7 @@ function parse3PeaksSales(wb, sheet) {
     const loc=lastLoc;if(!loc||!/^\d+$/.test(loc))continue;
     const dt=parseXLDate(r[C.date]);if(!dt)continue;
     const slice=String(r[C.slice]||'').trim();if(!slice)continue;
-    rows.push({loc,date:dt,slice,
+    rows.push({loc,date:dt,slice,_peakSvc:false,
       netSales:parseFloat(r[C.netSales])||0,prodSales:parseFloat(r[C.prodSales])||0,
       gc:parseFloat(r[C.gc])||0,avgCheck:parseFloat(r[C.avgCheck])||0,
       tpph:parseFloat(r[C.tpph])||0,spph:parseFloat(r[C.spph])||0});

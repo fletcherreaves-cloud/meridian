@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS } from '../constants.js';
+import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB } from '../constants.js';
 import { addD, dKey, sodOf, eodOf, fmtDI } from '../utils/date.js';
 import { forecastDay, forecastRange, effectivePlusUp, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
@@ -174,7 +174,11 @@ function AnomalyPanel({ds, stores, userEvents, initFilter, onSelectStore, onClos
 }
 
 // SHIFT ANALYSIS TAB
-function ShiftAnalysisTab({store, ds, settings}) {
+// Safe date helpers — r.date may be a Date object OR an ISO string after IDB round-trip
+const _toD = d => d instanceof Date ? d : new Date((d||'')+'T12:00:00Z');
+const _toDK = d => d instanceof Date ? d.toISOString().slice(0,10) : String(d||'').slice(0,10);
+
+function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const {p, t, loc} = store;
   const wb = settings.weeksBack||6;
   const cut = new Date(Date.now()-wb*7*86400000);
@@ -185,19 +189,27 @@ function ShiftAnalysisTab({store, ds, settings}) {
   const cAvg=(f)=>ctrlRows.length?ctrlRows.reduce((a,r)=>a+(r[f]||0),0)/ctrlRows.filter(r=>r[f]>0).length||0:0;
   const hasPeaks  = ds&&ds.peaksSvcRows&&ds.peaksSvcRows.some(r=>String(r.loc||'').trim()===locStr);
   const peaksData = hasPeaks ? analyzePeaks(ds.peaksSvcRows,ds.peaksSalesRows,loc,wb) : null;
-  const dayDates  = laborRows.filter(r=>{const d=r.date.getDay();return d>=1&&d<=5;});
-  const wkndDates = laborRows.filter(r=>{const d=r.date.getDay();return d===0||d===6;});
+  const dayDates  = laborRows.filter(r=>{const d=_toD(r.date).getDay();return d>=1&&d<=5;});
+  const wkndDates = laborRows.filter(r=>{const d=_toD(r.date).getDay();return d===0||d===6;});
   const avgDay    = dayDates.length  ? dayDates.reduce((a,r)=>a+r.sales,0)/dayDates.length  : 0;
   const avgWknd   = wkndDates.length ? wkndDates.reduce((a,r)=>a+r.sales,0)/wkndDates.length: 0;
 
   const dowData = [0,1,2,3,4,5,6].map(d=>{
-    const lR=laborRows.filter(r=>r.date.getDay()===d);
-    const oR=opsRows.filter(r=>r.date.getDay()===d);
+    const lR=laborRows.filter(r=>_toD(r.date).getDay()===d);
+    const oR=opsRows.filter(r=>_toD(r.date).getDay()===d);
     const oAvg=(f)=>oR.length?oR.reduce((a,r)=>a+(r[f]||0),0)/oR.length:0;
     const lAvg=(f)=>lR.length?lR.reduce((a,r)=>a+(r[f]||0),0)/lR.length:0;
+    const lSum=(f)=>lR.reduce((a,r)=>a+(r[f]||0),0);
+    const totSales=lSum('sales');
     return{dow:DOW_BASE[d],n:lR.length,sales:lR.length?lR.reduce((a,r)=>a+r.sales,0)/lR.length:0,
       oepe:oAvg('oepe'),kvst:oAvg('kvst'),park:oAvg('park'),r2p:oAvg('r2p'),
-      tpph:cAvg('tpph')||lAvg('tpph')||oAvg('tpph'),kvsu:oAvg('kvsu'),labor:cAvg('laborPct')||lAvg('laborPct'),ot:cAvg('otHrs')||lAvg('otHrs')};
+      tpph:cAvg('tpph')||lAvg('tpph')||oAvg('tpph'),kvsu:oAvg('kvsu'),labor:cAvg('laborPct')||lAvg('laborPct'),ot:cAvg('otHrs')||lAvg('otHrs'),
+      dtPct:   totSales>0&&lSum('dtSales')>0   ? lSum('dtSales')/totSales   : (lR.length?lR.reduce((a,r)=>a+(r.dtPctTotal||0),0)/lR.length:0),
+      bfPct:   totSales>0&&lSum('bfSales')>0   ? lSum('bfSales')/totSales   : (lR.length?lR.reduce((a,r)=>a+(r.bfPctTotal||0),0)/lR.length:0),
+      mopPct:  totSales>0&&lSum('mopSales')>0  ? lSum('mopSales')/totSales  : (lR.length?lR.reduce((a,r)=>a+(r.mopPctTotal||0),0)/lR.length:0),
+      kioskPct:totSales>0&&lSum('kioskSales')>0? lSum('kioskSales')/totSales: (lR.length?lR.reduce((a,r)=>a+(r.kioskPctTotal||0),0)/lR.length:0),
+      delivPct:totSales>0&&lSum('delivSales')>0? lSum('delivSales')/totSales: (lR.length?lR.reduce((a,r)=>a+(r.delivPctTotal||0),0)/lR.length:0),
+    };
   });
   const maxSales = Math.max(...dowData.map(d=>d.sales),1);
   const best  = dowData.reduce((b,d)=>d.sales>b.sales?d:b,dowData[0]);
@@ -226,11 +238,55 @@ function ShiftAnalysisTab({store, ds, settings}) {
     );
   };
 
+  // Inline OEPE revenue opportunity callout
+  const oepeOpp = (()=>{
+    if(!p.oepe||!t.tOepe||p.oepe<=t.tOepe) return null;
+    const ro = computeRevenueOpportunity(store, ds, settings);
+    return ro.oepe||null;
+  })();
+
   return div(null,
-    div({style:{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap'}},
+    div({style:{display:'flex',alignItems:'center',gap:10,marginBottom:8,flexWrap:'wrap'}},
     div({style:{fontSize:'13px',fontWeight:700}},'⏱ Shift Analysis'),
     div({style:{fontSize:'10px',color:'var(--text3)',background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'2px 8px'}},
       'Last '+wb+' weeks · '+new Date(Date.now()-wb*7*86400000).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – Today · Avg per day of week'
+    )
+  ),
+  div({style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12,fontSize:'8.5px'}},
+    ...[
+      {icon:'📅',label:'DOW Ops Metrics & Channel Heat-Map',id:'sa-dow'},
+      {icon:'⚡',label:'OEPE Revenue Opportunity',dim:!oepeOpp,id:'sa-oepe'},
+      {icon:'📊',label:'3 Peaks × Labor Gap',dim:!hasPeaks,id:'sa-peaks'},
+      {icon:'🏪',label:'Competitive Impact',dim:!userEvents||Object.keys(userEvents||{}).length===0,id:'sa-comp'},
+    ].map((f,i)=>div({key:i,
+      onClick:()=>{const el=document.getElementById(f.id);if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});},
+      style:{padding:'2px 8px',borderRadius:3,border:'.5px solid var(--bdr)',
+      background:f.dim?'transparent':'rgba(255,255,255,.03)',
+      color:f.dim?'var(--text3)':'var(--text2)',opacity:f.dim?.5:1,
+      cursor:'pointer',userSelect:'none'}},
+      f.icon+' '+f.label))
+  ),
+
+  // OEPE revenue opportunity — shown only when store is above target
+  oepeOpp&&div({id:'sa-oepe',style:{marginBottom:14,background:'rgba(245,158,11,.06)',border:'.5px solid rgba(245,158,11,.25)',borderRadius:'var(--r)',padding:'10px 14px'}},
+    div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap'}},
+      div(null,
+        div({style:{fontSize:'10px',fontWeight:700,color:'#f59e0b',marginBottom:4}},'💡 OEPE Revenue Opportunity'),
+        div({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.5}},
+          'Current OEPE is '+Math.round(p.oepe)+'s — '+Math.round(oepeOpp.gapSec)+'s above the '+Math.round(t.tOepe)+'s target. ',
+          'Closing this gap adds ~'+oepeOpp.addlCarsPerHour.toFixed(1)+' cars/hr in peak windows.'
+        )
+      ),
+      div({style:{display:'flex',gap:8,flexShrink:0}},
+        [
+          {l:'Daily Opp.',v:'$'+Math.round(oepeOpp.dailyOpportunity)},
+          {l:'Monthly',   v:'$'+Math.round(oepeOpp.monthlyOpportunity).toLocaleString()},
+          {l:'Per Second',v:'$'+oepeOpp.valuePerSecond.toFixed(2)+'/s'},
+        ].map(({l,v},i)=>div({key:i,style:{textAlign:'center',minWidth:70,background:'rgba(245,158,11,.08)',borderRadius:6,padding:'6px 10px'}},
+          div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},l),
+          div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:700,color:'#f59e0b'}},v)
+        ))
+      )
     )
   ),
     laborRows.length>0&&div({style:{marginBottom:14}},
@@ -262,7 +318,7 @@ function ShiftAnalysisTab({store, ds, settings}) {
         })
       )
     ),
-    div({style:{marginBottom:14}},
+    div({id:'sa-dow',style:{marginBottom:14}},
       div({style:{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:8}},'Ops Metrics by Day of Week'),
       div({style:{overflowX:'auto'}},
         tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px',tableLayout:'fixed'}},
@@ -304,6 +360,51 @@ function ShiftAnalysisTab({store, ds, settings}) {
         span({style:{marginLeft:'auto'}},'▲ Best day  ▼ Lowest day')
       )
     ),
+
+    // Channel Mix by Day of Week heat-map
+    laborRows.length>0&&dowData.some(d=>d.dtPct>0||d.mopPct>0||d.kioskPct>0)&&(()=>{
+      const CH=[
+        {key:'dtPct',   label:'Drive-Thru', col:'#60a5fa'},
+        {key:'bfPct',   label:'Breakfast',  col:'#fbbf24'},
+        {key:'mopPct',  label:'MOP',        col:'#a78bfa'},
+        {key:'kioskPct',label:'Kiosk',      col:'#f87171'},
+        {key:'delivPct',label:'Delivery',   col:'#34d399'},
+      ].filter(ch=>dowData.some(d=>d[ch.key]>0.005));
+      if(!CH.length) return null;
+      // Find best/worst day per channel for callout
+      const bestDay=(key)=>dowData.filter(d=>d[key]>0).reduce((b,d)=>d[key]>b[key]?d:b,dowData.find(d=>d[key]>0)||dowData[0]);
+      return div({style:{marginBottom:14}},
+        div({style:{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:8}},
+          'Channel Mix by Day of Week'),
+        div({style:{display:'flex',flexDirection:'column',gap:5}},
+          CH.map(ch=>{
+            const vals=dowData.map(d=>d[ch.key]);
+            const maxV=Math.max(...vals,0.001);
+            const bd=bestDay(ch.key);
+            return div({key:ch.key,style:{display:'flex',alignItems:'center',gap:6}},
+              div({style:{width:70,fontSize:'9px',color:ch.col,fontWeight:600,flexShrink:0}},ch.label),
+              div({style:{flex:1,display:'flex',gap:3}},
+                dowData.map((d,i)=>{
+                  const isWknd=i===0||i===6;
+                  const intensity=maxV>0?d[ch.key]/maxV:0;
+                  const bg=ch.col+(Math.round(intensity*200).toString(16).padStart(2,'0'));
+                  return div({key:i,style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}},
+                    div({style:{width:'100%',height:20,background:bg,borderRadius:3,position:'relative',
+                      border:d===bd?'.5px solid '+ch.col:'none'},
+                      title:d.dow+': '+(d[ch.key]*100).toFixed(1)+'%'}),
+                    div({style:{fontSize:'8px',color:isWknd?'#f59e0b':'var(--text3)',fontWeight:isWknd?600:400}},d.dow.slice(0,2))
+                  );
+                })
+              ),
+              div({style:{width:38,textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',color:ch.col,flexShrink:0}},
+                bd&&bd[ch.key]>0?(bd[ch.key]*100).toFixed(0)+'%':'—')
+            );
+          })
+        ),
+        div({style:{fontSize:'8px',color:'var(--text3)',marginTop:4}},'Color intensity = relative share within channel. Right column = peak day %.')
+      );
+    })(),
+
     div({style:{marginBottom:12}},
       div({style:{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:8}},
         'Peak Daypart Performance'+(hasPeaks?' (3 Peaks Data)':' — Load 3 Peaks file to unlock')
@@ -315,6 +416,127 @@ function ShiftAnalysisTab({store, ds, settings}) {
         'Load a 3 Peaks YYYY-MM-DD to YYYY-MM-DD.xlsx file to unlock Breakfast / Lunch / Dinner performance breakdown.'
       )
     ),
+
+    // 3 Peaks × Labor Gap — cross-reference peak OEPE with same-day labor deployment
+    hasPeaks&&(()=>{
+      const sliceInfo={breakfast:{l:'Breakfast',col:'#f59e0b'},lunch:{l:'Lunch',col:'#10b981'},dinner:{l:'Dinner',col:'#818cf8'}};
+      // Build laborByDate once outside the slice loop — _toDK handles both Date objects and ISO strings
+      const laborByDate={};
+      laborRows.forEach(r=>{laborByDate[_toDK(r.date)]=r;});
+      const avgLaborOn=(rows)=>{
+        const matched=rows.map(r=>laborByDate[_toDK(r.date)]).filter(Boolean);
+        return matched.length?matched.reduce((a,r)=>a+(r.laborPct||0),0)/matched.length:null;
+      };
+
+      const sliceGaps = ['breakfast','lunch','dinner'].map(sl=>{
+        const svcRows=ds.peaksSvcRows.filter(r=>String(r.loc||'').trim()===locStr&&normSlice(r.slice)===sl&&r.oepe>0);
+        if(svcRows.length<3) return null;
+        const avgOepe=svcRows.reduce((a,r)=>a+r.oepe,0)/svcRows.length;
+        const tOepe=t.tOepe||avgOepe; // if no target, use own average as baseline
+        const highOepe=svcRows.filter(r=>r.oepe>tOepe);
+        const okOepe  =svcRows.filter(r=>r.oepe<=tOepe);
+        // If all above target, compare top-half vs bottom-half by OEPE
+        const _high = highOepe.length ? highOepe : svcRows.slice(Math.floor(svcRows.length/2));
+        const _ok   = okOepe.length   ? okOepe   : svcRows.slice(0,Math.floor(svcRows.length/2));
+        const allAbove = !okOepe.length;
+        const highL=avgLaborOn(_high), okL=avgLaborOn(_ok);
+        if(highL==null||okL==null) return null;
+        const gap=highL-okL;
+        return {sl, ...sliceInfo[sl], avgOepe, tOepe, allAbove, n:svcRows.length,
+          highL, okL, gap,
+          finding: Math.abs(gap)<0.005?'neutral':gap<-0.01?'understaffed':gap>0.02?'staffing not the issue':'marginal'
+        };
+      }).filter(Boolean);
+
+      if(!sliceGaps.length) return null;
+      return div({id:'sa-peaks',style:{marginBottom:14,background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'12px 14px'}},
+        div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',letterSpacing:'.4px',textTransform:'uppercase',marginBottom:10}},'3 Peaks × Labor Gap'),
+        div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:8}},'Compares labor % on high-OEPE days vs on-target days. A negative gap means the store was understaffed on slow-service peaks.'),
+        div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
+          sliceGaps.map(sg=>{
+            const findingCol={understaffed:'#f87171',neutral:'#94a3b8','staffing not the issue':'#60a5fa',marginal:'#f59e0b'}[sg.finding]||'#94a3b8';
+            const findingLabel={understaffed:'⚠ Understaffed',neutral:'✓ No gap','staffing not the issue':'ℹ Not labor-driven',marginal:'◉ Watch'}[sg.finding]||'—';
+            return div({key:sg.sl,style:{flex:1,minWidth:130,background:'rgba(255,255,255,.03)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'8px 10px'}},
+              div({style:{fontSize:'10px',fontWeight:700,color:sg.col,marginBottom:6}},sg.l),
+              sg.allAbove&&div({style:{fontSize:'8px',color:'#f59e0b',marginBottom:4}},'All days above target — comparing worst vs best half'),
+              div({style:{display:'flex',justifyContent:'space-between',fontSize:'10px',marginBottom:3}},
+                span({style:{color:'var(--text3)'}},'High-OEPE days labor'),
+                span({style:{fontFamily:'var(--mono)',color:'#f87171'}},fP(sg.highL,1))
+              ),
+              div({style:{display:'flex',justifyContent:'space-between',fontSize:'10px',marginBottom:6}},
+                span({style:{color:'var(--text3)'}},(sg.allAbove?'Best-OEPE days labor':'On-target days labor')),
+                span({style:{fontFamily:'var(--mono)',color:'#10b981'}},fP(sg.okL,1))
+              ),
+              div({style:{fontSize:'9px',fontWeight:700,color:findingCol,padding:'2px 6px',background:findingCol+'15',borderRadius:3}},
+                findingLabel+' ('+fP(Math.abs(sg.gap),1)+' diff)')
+            );
+          })
+        )
+      );
+    })(),
+
+    // Competitive Intelligence Impact Analysis
+    (()=>{
+      if(!userEvents||!laborRows.length) return null;
+      const COMP_KEYS=['comp','comp_new','comp_promo','comp_closure','comp_pricing','comp_media'];
+      // userEvents is {[loc]:{[dk]:eventObj}} — flatten to array for this store
+      const evtArr=[];
+      Object.entries(userEvents||{}).forEach(([loc2,dkMap])=>{
+        if(String(loc2)!==String(loc)) return;
+        Object.entries(dkMap||{}).forEach(([dk,ev])=>{
+          if(ev) evtArr.push({...ev, loc:loc2, evDate:new Date(dk+'T12:00:00Z')});
+        });
+      });
+      const compEvts=evtArr.filter(e=>{
+        const tags=e.tags||[];
+        return COMP_KEYS.includes(e.type)||tags.some(t=>COMP_KEYS.includes(t.type));
+      });
+      if(!compEvts.length) return div({id:'sa-comp',style:{marginBottom:14,background:'rgba(148,163,184,.04)',border:'.5px solid rgba(148,163,184,.15)',borderRadius:'var(--r)',padding:'12px 14px'}},
+        div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',marginBottom:4}},'🏪 Competitive Intelligence'),
+        div({style:{fontSize:'9px',color:'var(--text3)',lineHeight:1.6}},
+          'No competition events tagged for this store. To enable impact analysis, open the ',
+          span({style:{fontWeight:700,color:'var(--text2)'}},'Calendar'),
+          ' tab, find a date when a competitor opened, ran a promotion, or closed, and tag it with a ',
+          span({style:{fontWeight:700,color:'var(--text2)'}},'Competition'),
+          ' event type. Meridian will then compare your sales on those days vs. your DOW average to measure the impact.'
+        )
+      );
+      // For each competition event, find the same-day sales and compare to DOW avg
+      const allSalesByDow={};
+      laborRows.forEach(r=>{const d=_toD(r.date).getDay();if(!allSalesByDow[d])allSalesByDow[d]=[];if(r.sales>0)allSalesByDow[d].push(r.sales);});
+      const dowAvg=d=>{const v=allSalesByDow[d]||[];return v.length?v.reduce((a,b)=>a+b)/v.length:0;};
+      const impacts=compEvts.map(e=>{
+        const evDate=e.evDate;
+        const row=laborRows.find(r=>_toDK(r.date)===_toDK(evDate)&&r.sales>0);
+        if(!row) return null;
+        const avg=dowAvg(evDate.getDay());
+        const impact=avg>0?(row.sales-avg)/avg:null;
+        return{...e,sales:row.sales,avg,impact,evDate};
+      }).filter(Boolean);
+      if(!impacts.length) return null;
+      const avgImpact=impacts.reduce((a,e)=>a+(e.impact||0),0)/impacts.length;
+      const colPkg=['comp_closure'].includes(impacts[0]?.type)?'positive':'negative';
+      return div({id:'sa-comp',style:{marginBottom:14,background:'rgba(248,113,113,.04)',border:'.5px solid rgba(248,113,113,.2)',borderRadius:'var(--r)',padding:'12px 14px'}},
+        div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'#f87171'}},'🏪 Competitive Intelligence'),
+          div({style:{fontSize:'9px',fontFamily:'var(--mono)',color:avgImpact>=0?'#10b981':'#f87171',fontWeight:700}},
+            'Avg impact: '+(avgImpact>=0?'+':'')+((avgImpact||0)*100).toFixed(1)+'%')
+        ),
+        div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:6}},impacts.length+' tagged competition event'+(impacts.length>1?'s':'')+' vs DOW baseline:'),
+        impacts.slice(0,5).map((e,i)=>{
+          const typeLabel=(EVENT_TYPES&&EVENT_TYPES[e.type])||{label:e.type||'Competition',icon:'🏪'};
+          const impCol=e.impact!=null?(e.type==='comp_closure'?(e.impact>=0?'#10b981':'#94a3b8'):(e.impact>=0?'#94a3b8':'#f87171')):'var(--text3)';
+          return div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 0',borderBottom:i<Math.min(4,impacts.length-1)?'.5px solid rgba(255,255,255,.04)':'none'}},
+            div({style:{fontSize:'10px',flexShrink:0}},typeLabel.icon),
+            div({style:{flex:1,fontSize:'9px',color:'var(--text2)'}},
+              e.evDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · '+typeLabel.label+(e.note?' · '+e.note.slice(0,30):'')),
+            div({style:{fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,color:impCol,flexShrink:0}},
+              e.impact!=null?((e.impact>=0?'+':'')+((e.impact||0)*100).toFixed(1)+'% vs avg'):'—')
+          );
+        })
+      );
+    })(),
+
     h(AITabInsight,{
       label:'AI Labor & Shift Analysis',
       buildPrompt:()=>{
@@ -720,7 +942,10 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
           div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},
             'OEPE dollar value · Unrealized revenue · Daypart erosion · Competitive pressure signals · Multi-model projections')
         ),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
+        div({style:{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}},
+          btn({onClick:()=>window.print(),className:'btn btn-sm',style:{fontSize:'9px'},title:'Print / Save as PDF'},'🖨 Print / PDF'),
+          btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
+        )
       ),
 
       div({style:{overflowY:'auto',flex:1}},
@@ -1273,6 +1498,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
   const [wkLoading, setWkLoading] = useState(false);
   const [wkProgress, setWkProgress]= useState(0);
   const [opsChartType, setOpsChartType]= useState('radar');
+  const [showCharts, setShowCharts]   = useState(false);
   const {p, t} = store;
 
   useEffect(()=>{
@@ -1430,18 +1656,162 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     ),
     // Tab content
     tab==='overview'&&div(null,
-      div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}},
-        div({className:'chart-box'},
-          div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}},
-            div({className:'chart-title',style:{margin:0}},'Ops Performance'),
-            div({style:{display:'flex',gap:3}},
-              [['radar','⬡'],['bar','▬']].map(([k,l])=>btn({key:k,className:'sbtn'+(opsChartType===k?' on':''),onClick:()=>setOpsChartType(k),style:{fontSize:'9px',padding:'1px 5px'}},l))
+
+      // ── Context Strip: KB note + recent events ──────────────────
+      (()=>{
+        const kb = getKB(store.loc);
+        const kbNote = kb.notes && kb.notes.trim();
+        const kbTags = kb.tags && kb.tags.length ? kb.tags : [];
+        const evMap  = (userEvents && userEvents[store.loc]) || {};
+        const today  = new Date().toISOString().slice(0,10);
+        const recentEvs = Object.entries(evMap)
+          .map(([dk,ev])=>({dk,...ev}))
+          .filter(ev=>ev.dk<=today)
+          .sort((a,b)=>b.dk.localeCompare(a.dk))
+          .slice(0,4);
+        if(!kbNote && !kbTags.length && !recentEvs.length) return null;
+        return div({style:{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}},
+          (kbNote||kbTags.length>0)&&div({style:{flex:'2 1 260px',background:'rgba(251,191,36,.05)',
+            border:'.5px solid rgba(251,191,36,.2)',borderRadius:'var(--r)',padding:'8px 12px'}},
+            div({style:{fontSize:'8.5px',color:'var(--amber)',fontWeight:700,letterSpacing:'.5px',marginBottom:kbNote?5:3}},'📝 STORE CONTEXT'),
+            kbNote&&div({style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.6,marginBottom:kbTags.length?6:0}},kbNote),
+            kbTags.length>0&&div({style:{display:'flex',gap:4,flexWrap:'wrap'}},
+              kbTags.map((tg,i)=>div({key:i,style:{fontSize:'8px',padding:'1px 7px',borderRadius:10,
+                background:'rgba(251,191,36,.12)',border:'.5px solid rgba(251,191,36,.3)',color:'var(--amber)'}},tg))
             )
           ),
-          opsChartType==='radar'?h(OpsRadar,{perf:p,tgt:t}):h(OpsBarChart,{perf:p,tgt:t})
+          recentEvs.length>0&&div({style:{flex:'1 1 180px',background:'rgba(165,180,252,.05)',
+            border:'.5px solid rgba(165,180,252,.2)',borderRadius:'var(--r)',padding:'8px 12px'}},
+            div({style:{fontSize:'8.5px',color:'#a5b4fc',fontWeight:700,letterSpacing:'.5px',marginBottom:6}},'📅 RECENT EVENTS'),
+            recentEvs.map((ev,i)=>{
+              const evDef = EVENT_TYPES[ev.type]||{icon:'•',label:ev.type||'Event'};
+              return div({key:i,style:{display:'flex',gap:7,fontSize:'9px',alignItems:'flex-start',
+                borderTop:i>0?'.5px solid rgba(255,255,255,.06)':'none',paddingTop:i>0?5:0,marginTop:i>0?5:0}},
+                div({style:{fontSize:'12px',flexShrink:0}},evDef.icon),
+                div({style:{flex:1,minWidth:0}},
+                  div({style:{color:'var(--text3)',fontSize:'8px'}},ev.dk.slice(5).replace('-','/')),
+                  div({style:{color:'var(--text2)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},evDef.label+(ev.note?' · '+ev.note:''))
+                )
+              );
+            })
+          )
+        );
+      })(),
+
+      // ── Metric Vitals: 5 traffic-light KPI tiles ────────────────
+      div({style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6,marginBottom:10}},
+        [
+          {icon:'⚡',l:'OEPE',
+           v:p.oepe>0?Math.round(p.oepe)+'s':'—',
+           ok:p.oepe>0&&t.tOepe>0&&p.oepe<=t.tOepe,
+           warn:p.oepe>0&&t.tOepe>0&&p.oepe<=t.tOepe*1.05,
+           bad:p.oepe>0&&t.tOepe>0&&p.oepe>t.tOepe*1.05,
+           detail:'target '+(t.tOepe||'—')+'s · 6-wk avg'},
+          {icon:'👷',l:'Labor %',
+           v:p.laborPct>0?fP(p.laborPct,1):'—',
+           ok:p.laborPct>0&&t.tLabor>0&&p.laborPct<=t.tLabor*1.01,
+           warn:p.laborPct>0&&t.tLabor>0&&p.laborPct<=t.tLabor*1.03,
+           bad:p.laborPct>0&&t.tLabor>0&&p.laborPct>t.tLabor*1.03,
+           detail:'target '+(t.tLabor?(t.tLabor*100).toFixed(1)+'%':'—')+' · 6-wk avg'},
+          {icon:'🧾',l:'TPPH',
+           v:p.tpph>0?p.tpph.toFixed(2):'—',
+           ok:p.tpph>0&&t.tTpph>0&&p.tpph>=t.tTpph,
+           warn:p.tpph>0&&t.tTpph>0&&p.tpph>=t.tTpph*.97,
+           bad:p.tpph>0&&t.tTpph>0&&p.tpph<t.tTpph*.97,
+           detail:'target '+(t.tTpph||'—')+' · 6-wk avg'},
+          {icon:'💵',l:'Cash O/S',
+           v:(p.cashOSPct||0)===0?'—':(p.cashOSPct>=0?'+':'')+((p.cashOSPct||0)*100).toFixed(3)+'%',
+           ok:Math.abs(p.cashOSPct||0)<.001,
+           warn:Math.abs(p.cashOSPct||0)<.003,
+           bad:Math.abs(p.cashOSPct||0)>=.003,
+           detail:'target <0.10% · 6-wk avg'},
+          {icon:'📊',l:'Ops Score',
+           v:store.opsScore+'/100',
+           ok:store.opsScore>=80,
+           warn:store.opsScore>=65,
+           bad:store.opsScore<65,
+           detail:'operations health'},
+        ].map((m,i)=>{
+          const col = m.ok?'#10b981':m.bad?'#ef4444':'#f59e0b';
+          const bg  = m.ok?'rgba(16,185,129,.06)':m.bad?'rgba(239,68,68,.06)':'rgba(245,158,11,.06)';
+          const bdr = m.ok?'rgba(16,185,129,.2)':m.bad?'rgba(239,68,68,.2)':'rgba(245,158,11,.2)';
+          const dot = m.ok?'●':m.bad?'●':'◑';
+          return div({key:i,style:{background:bg,border:'.5px solid '+bdr,borderRadius:'var(--r)',
+            padding:'10px 12px',display:'flex',flexDirection:'column',gap:3}},
+            div({style:{display:'flex',alignItems:'center',gap:4,marginBottom:2}},
+              span({style:{fontSize:'13px'}},m.icon),
+              div({style:{fontSize:'8px',color:'var(--text3)',fontWeight:600,letterSpacing:'.4px',flex:1}},m.l),
+              span({style:{fontSize:'9px',color:col}},dot)
+            ),
+            div({style:{fontFamily:'var(--mono)',fontSize:'19px',fontWeight:800,color:col,lineHeight:1,letterSpacing:'-1px'}},m.v),
+            div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2}},m.detail)
+          );
+        })
+      ),
+
+      // ── Priority Findings ────────────────────────────────────────
+      (()=>{
+        const trendAlerts=(store.findings||[]).filter(f=>f.t==='watch'&&f.m&&f.m.startsWith('TREND ALERT'));
+        const findings=(store.findings||[]).filter(f=>f.t==='risk'||f.t==='watch').slice(0,4);
+        return div({style:{marginBottom:10}},
+          trendAlerts.length>0&&div({style:{marginBottom:8,background:'rgba(251,191,36,.06)',
+            border:'.5px solid rgba(251,191,36,.25)',borderRadius:'var(--r)',padding:'8px 12px'}},
+            div({style:{fontSize:'8.5px',fontWeight:700,color:'#fbbf24',letterSpacing:'.5px',marginBottom:4}},'⚡ PREDICTIVE ALERTS'),
+            trendAlerts.map((f,i)=>div({key:i,style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.5,
+              marginTop:i>0?5:0,borderTop:i>0?'.5px solid rgba(255,255,255,.06)':'none',paddingTop:i>0?5:0}},f.m))
+          ),
+          findings.length===0
+            ? div({style:{fontSize:'9px',color:'#10b981',textAlign:'center',padding:'12px',
+                background:'rgba(16,185,129,.05)',border:'.5px solid rgba(16,185,129,.15)',borderRadius:'var(--r)'}},
+                '✓ No critical findings for this location')
+            : div(null,
+                div({style:{fontSize:'8.5px',fontWeight:700,color:'var(--text3)',letterSpacing:'.5px',marginBottom:5}},'TOP FINDINGS'),
+                div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}},
+                  findings.map((f,i)=>{
+                    const isRisk=f.t==='risk';
+                    const col=isRisk?'#f87171':'#fbbf24';
+                    const bg =isRisk?'rgba(239,68,68,.05)':'rgba(251,191,36,.05)';
+                    const bdr=isRisk?'rgba(239,68,68,.18)':'rgba(251,191,36,.18)';
+                    return div({key:i,style:{display:'flex',gap:8,background:bg,
+                      border:'.5px solid '+bdr,borderRadius:'var(--r)',padding:'8px 10px'}},
+                      div({style:{fontSize:'13px',flexShrink:0,lineHeight:1,paddingTop:1}},isRisk?'⚠':'◉'),
+                      div({style:{flex:1,minWidth:0}},
+                        div({style:{fontSize:'8px',color:col,fontWeight:700,textTransform:'uppercase',
+                          letterSpacing:'.5px',marginBottom:2}},isRisk?'Risk':'Watch'),
+                        div({style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.5}},f.m)
+                      )
+                    );
+                  })
+                )
+              )
+        );
+      })(),
+
+      // ── Charts (collapsed by default) ───────────────────────────
+      div(null,
+        div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+          btn({onClick:()=>setShowCharts(c=>!c),
+            style:{fontSize:'9px',color:'var(--text3)',background:'transparent',
+              border:'.5px solid var(--bdr)',borderRadius:3,padding:'3px 10px',cursor:'pointer'}},
+            (showCharts?'▲ Hide Charts':'▼ Show Charts')),
+          !showCharts&&div({style:{fontSize:'9px',color:'var(--text3)'}},
+            'Ops Performance · Sales Trend · 6-Week Trend')
         ),
-        div({className:'chart-box'},div({className:'chart-title'},'Sales Trend'),h(SalesChart,{dayRows:wk,tgt:t})),
-        div({className:'chart-box',style:{gridColumn:'1/-1'}},div({className:'chart-title'},'6-Week Performance — T2W & T6W Trend'),h(TrendChart,{dayRows:wk}))
+        showCharts&&div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+          div({className:'chart-box'},
+            div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}},
+              div({className:'chart-title',style:{margin:0}},'Ops Performance'),
+              div({style:{display:'flex',gap:3}},
+                [['radar','⬡'],['bar','▬']].map(([k,l])=>btn({key:k,className:'sbtn'+(opsChartType===k?' on':''),
+                  onClick:()=>setOpsChartType(k),style:{fontSize:'9px',padding:'1px 5px'}},l))
+              )
+            ),
+            opsChartType==='radar'?h(OpsRadar,{perf:p,tgt:t}):h(OpsBarChart,{perf:p,tgt:t})
+          ),
+          div({className:'chart-box'},div({className:'chart-title'},'Sales Trend'),h(SalesChart,{dayRows:wk,tgt:t})),
+          div({className:'chart-box',style:{gridColumn:'1/-1'}},
+            div({className:'chart-title'},'6-Week Performance — T2W & T6W Trend'),h(TrendChart,{dayRows:wk}))
+        )
       )
     ),
 
@@ -1541,11 +1911,11 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
         );
       })(),
 
-      // Operator Performance Summary
+      // Supervisor Performance Summary
       settings.supervisorGroups&&Object.keys(settings.supervisorGroups||{}).length>0&&(()=>{
         const groups=settings.supervisorGroups||{};
         return div({style:{marginBottom:12}},
-          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'👔 Operator Performance Summary'),
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'👔 Supervisor Performance Summary'),
           div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
             Object.entries(groups).map(([name,locs])=>{
               const groupStores=(allStores||[]).filter(s=>locs.includes(s.loc));
@@ -1573,6 +1943,89 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             })
           )
         );
+      })(),
+
+      // Operator Performance Summary
+      (()=>{
+        const opGroups={};
+        (allStores||[]).forEach(s=>{
+          const op=(INV_ORG_COORDS[s.loc]||{}).op;
+          if(!op) return;
+          if(!opGroups[op]) opGroups[op]=[];
+          opGroups[op].push(s);
+        });
+        if(!Object.keys(opGroups).length) return null;
+        const renderGroupCard=(name,groupStores,accent)=>{
+          const totalSales=groupStores.reduce((a,s)=>a+(s.pSales||0),0);
+          const avgOps=groupStores.reduce((a,s)=>a+(s.opsScore||0),0)/groupStores.length;
+          const trends=groupStores.filter(s=>s.p&&s.p.t2w!=null);
+          const avgTrend=trends.length?trends.reduce((a,s)=>a+s.p.t2w,0)/trends.length:null;
+          return div({key:name,
+            style:{flex:'1 1 200px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
+              borderLeft:accent?'3px solid '+accent:'',borderRadius:'var(--rl)',padding:'12px 14px'}},
+            div({style:{fontSize:'11px',fontWeight:700,marginBottom:8}},name),
+            div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
+              [{l:'Stores',v:groupStores.length,c:'var(--text)'},
+               {l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
+               {l:'Ops Score',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'#f59e0b':'#f87171'},
+               {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(1)+'%'):'—',
+                c:avgTrend!=null?(avgTrend>=0?'#10b981':'#f87171'):'var(--text3)'}
+              ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
+                div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
+                div({style:{fontFamily:'var(--mono)',fontWeight:700,color:k.c,fontSize:'12px'}},k.v)
+              ))
+            )
+          );
+        };
+        return div({style:{marginBottom:12}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'🏢 Operator Performance Summary'),
+          div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
+            Object.entries(opGroups).map(([name,stores])=>renderGroupCard(name,stores,null))
+          )
+        );
+      })(),
+
+      // Oklahoma & Florida Org Sections
+      (()=>{
+        const okStores=(allStores||[]).filter(s=>(INV_ORG_COORDS[s.loc]||{}).state!=='FL');
+        const flStores=(allStores||[]).filter(s=>(INV_ORG_COORDS[s.loc]||{}).state==='FL');
+        if(!okStores.length&&!flStores.length) return null;
+        const orgCard=(label,emoji,stores,accent)=>{
+          if(!stores.length) return null;
+          const totalSales=stores.reduce((a,s)=>a+(s.pSales||0),0);
+          const avgOps=stores.reduce((a,s)=>a+(s.opsScore||0),0)/stores.length;
+          const trends=stores.filter(s=>s.p&&s.p.t2w!=null);
+          const avgTrend=trends.length?trends.reduce((a,s)=>a+s.p.t2w,0)/trends.length:null;
+          const topStore=stores.slice().sort((a,b)=>(b.pSales||0)-(a.pSales||0))[0];
+          return div({style:{flex:'1 1 280px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
+              borderTop:'3px solid '+accent,borderRadius:'var(--rl)',padding:'14px 16px'}},
+            div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
+              div({style:{fontSize:'18px'}},emoji),
+              div(null,
+                div({style:{fontSize:'12px',fontWeight:700}},label),
+                div({style:{fontSize:'10px',color:'var(--text3)'}},stores.length+' store'+(stores.length!==1?'s':''))
+              )
+            ),
+            div({style:{display:'flex',gap:12,flexWrap:'wrap',marginBottom:8}},
+              [{l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
+               {l:'Avg Ops',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'#f59e0b':'#f87171'},
+               {l:'Avg T2W',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(1)+'%'):'—',
+                c:avgTrend!=null?(avgTrend>=0?'#10b981':'#f87171'):'var(--text3)'},
+               {l:'Top Store',v:topStore?(STORE_NAMES[topStore.loc]||topStore.loc).split('-').pop().trim():'—',c:'var(--text2)'}
+              ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
+                div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
+                div({style:{fontFamily:'var(--mono)',fontWeight:700,color:k.c,fontSize:'11px'}},k.v)
+              ))
+            )
+          );
+        };
+        return div({style:{marginBottom:12}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'🗺️ Organization Breakdown'),
+          div({style:{display:'flex',gap:8,flexWrap:'wrap'}},
+            orgCard('MCDOK — Oklahoma','🤠',okStores,'#FFC72C'),
+            orgCard('Emerald Arches — Florida','🌴',flStores,'#10b981')
+          )
+        );
       })()
     ),
     tab==='forecast'   && h(ForecastTable,{weekDays:wk,tgt:t,ds,loc:store.loc,settings,store,userEvents,lockedProjections}),
@@ -1595,7 +2048,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
         })
       ),
     tab==='action'     && h(ActionPlanTab,{store,ds,settings,dateRange}),
-    tab==='shift'      && h(ShiftAnalysisTab,{store,ds,settings}),
+    tab==='shift'      && h(ShiftAnalysisTab,{store,ds,settings,userEvents}),
     tab==='peaks'      && h(PeaksTab,{ds,loc:store.loc,tgt:t,settings}),
     tab==='register'   && h(RegisterAuditTab,{ds,loc:store.loc}),
     tab==='records'    && h(StoreRecordsTab,{ds,loc:store.loc,name:store.name}),

@@ -479,8 +479,8 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
         div({style:{fontSize:'14px',fontWeight:700,color:'var(--amber)'}},'🔄 Running Model Assignment Backtest…'),
         div({style:{width:'100%',maxWidth:480}},
           div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
-            span(`Store ${btProg.storesDone} of ${btProg.storesTotal}`),
-            span(btProg.storesDone && btProg.storesTotal
+            span(null,`Store ${btProg.storesDone} of ${btProg.storesTotal}`),
+            span(null,btProg.storesDone && btProg.storesTotal
               ? Math.round(btProg.storesDone/btProg.storesTotal*100)+'%' : '—')
           ),
           div({style:{height:6,background:'var(--surf)',borderRadius:99,overflow:'hidden'}},
@@ -567,7 +567,15 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
             h('th',{style:{...thS,borderLeft:'.5px solid rgba(255,255,255,.07)'}},'🗓 Monthly Lock\n15th prior month'),
             h('th',{style:{...thS,borderLeft:'.5px solid rgba(255,255,255,.07)'}},'📆 Yearly Plan\n~Dec 1')
           )),
-          h('tbody',null,...visLocs.flatMap((loc,ri)=>{
+          h('tbody',null,
+            !visLocs.length&&h('tr',null,h('td',{colSpan:4,style:{padding:'28px 14px',textAlign:'center',color:'var(--text3)',fontSize:'9px'}},
+              filter==='ewma'
+                ? '📈 No stores are currently assigned EWMA. The backtest tested EWMA for all stores but AE or DOW won everywhere. To manually assign EWMA to a store, select "All" filter, then click the EWMA button in any store\'s row.'
+                : filter==='override'
+                  ? 'No manual overrides set. Click the model buttons on any store row to override.'
+                  : 'No stores match this filter.'
+            )),
+            ...visLocs.flatMap((loc,ri)=>{
             const def = DEFAULT_MODEL_ASSIGNMENTS[loc]||{};
             const isOvrAny = !!ovr[loc];
             return [
@@ -602,7 +610,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
                       marginBottom:3,maxWidth:160,margin:'0 auto'}},
                       (ref||'—').slice(0,54)+(ref.length>54?'…':'')),
                     div({style:{display:'flex',gap:3,justifyContent:'center',flexWrap:'wrap'}},
-                      ...(['di','ly','dow'].filter(opt=>opt!==m).map(opt=>
+                      ...(['ae','ewma','di','ly','dow'].filter(opt=>opt!==m).map(opt=>
                         btn({key:opt,style:{fontSize:'7px',padding:'1px 5px',borderRadius:4,
                           background:'rgba(255,255,255,.05)',border:'.5px solid rgba(255,255,255,.1)',
                           color:'var(--text3)',cursor:'pointer'},onClick:()=>handleOvr(loc,hz.id,opt)},
@@ -738,46 +746,107 @@ function StoreKBEditor({onClose}) {
               saved&&span({style:{fontSize:'9px',color:'#10b981',fontWeight:700}},'✓ Saved!'),
               btn({className:'btn btn-sm btn-a',style:{fontWeight:700,padding:'4px 14px'},onClick:saveDraft},'💾 Save')
             ),
+            // Quick Tags — pre-defined operational factors
+            div(null,
+              div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:6}},
+                'Operational Factors — click to toggle'),
+              (()=>{
+                const QUICK_TAGS=[
+                  {group:'Performance',items:[
+                    {tag:'well-run',label:'✓ Well-Run',col:'#10b981'},
+                    {tag:'high-volume',label:'↑ High Volume',col:'#60a5fa'},
+                    {tag:'improving',label:'↗ Improving',col:'#34d399'},
+                    {tag:'model-degrading',label:'⚠ Model Degrading',col:'#f87171'},
+                  ]},
+                  {group:'Management',items:[
+                    {tag:'gm-in-training',label:'🎓 GM in Training',col:'#f59e0b'},
+                    {tag:'new-gm',label:'👤 New GM (<6mo)',col:'#f59e0b'},
+                    {tag:'fl',label:'⭐ FL Store',col:'#60a5fa'},
+                    {tag:'high-turnover',label:'🔄 High Turnover',col:'#f87171'},
+                  ]},
+                  {group:'Location',items:[
+                    {tag:'tourist',label:'🏖 Tourist Area',col:'#a78bfa'},
+                    {tag:'interstate',label:'🛣 Interstate',col:'#a78bfa'},
+                    {tag:'seasonal',label:'❄ Seasonal Variance',col:'#a78bfa'},
+                    {tag:'school-zone',label:'🏫 School Zone',col:'#a78bfa'},
+                  ]},
+                  {group:'Physical',items:[
+                    {tag:'capacity-limited',label:'⚡ Capacity Limited',col:'#f59e0b'},
+                    {tag:'single-lane',label:'🚗 Single DT Lane',col:'#f59e0b'},
+                    {tag:'new-location',label:'🆕 New/Ramp-Up',col:'#f59e0b'},
+                    {tag:'remodel',label:'🔨 Post-Remodel',col:'#f59e0b'},
+                  ]},
+                  {group:'Context',items:[
+                    {tag:'loves-gas-station',label:'⛽ Gas Station',col:'#64748b'},
+                    {tag:'historical-anomaly',label:'📈 Historical Anomaly',col:'#64748b'},
+                    {tag:'di-skipped',label:'⏭ DI Skipped',col:'#64748b'},
+                    {tag:'insufficient-data',label:'📊 Insuf. Data',col:'#64748b'},
+                  ]},
+                ];
+                const activeTags=new Set(draft.tags.split(',').map(t=>t.trim()).filter(Boolean));
+                const toggleTag=(tag)=>{
+                  const next=new Set(activeTags);
+                  if(next.has(tag)) next.delete(tag); else next.add(tag);
+                  setDraft(d=>({...d,tags:[...next].join(', ')}));
+                };
+                return div(null,
+                  QUICK_TAGS.map(grp=>div({key:grp.group,style:{marginBottom:6}},
+                    div({style:{fontSize:'7px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginBottom:3}},grp.group),
+                    div({style:{display:'flex',gap:4,flexWrap:'wrap'}},
+                      grp.items.map(item=>{
+                        const on=activeTags.has(item.tag);
+                        return btn({key:item.tag,onClick:()=>toggleTag(item.tag),
+                          style:{fontSize:'8px',padding:'3px 8px',borderRadius:99,cursor:'pointer',border:'none',
+                            background:on?item.col+'30':'rgba(255,255,255,.06)',
+                            color:on?item.col:'var(--text3)',
+                            outline:on?'1px solid '+item.col+'80':'1px solid transparent',
+                            transition:'all .15s'}},item.label);
+                      })
+                    )
+                  ))
+                );
+              })()
+            ),
             // Notes field
             div(null,
               div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},
-                'Operational Notes'),
-              h('textarea',{value:draft.notes,rows:6,
+                'Additional Context'),
+              h('textarea',{value:draft.notes,rows:5,
                 onChange:e=>setDraft(d=>({...d,notes:e.target.value})),
-                placeholder:'Describe the location\'s operational context, management situation, traffic patterns, unique factors…',
+                placeholder:'Describe the location\'s specific situation, recent changes, management context, equipment issues, local competition, or any factors that explain unusual performance…',
                 style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',
                   borderRadius:'var(--r)',color:'var(--text)',fontSize:'10px',
                   padding:'7px 10px',resize:'vertical',lineHeight:1.6,boxSizing:'border-box'}})
             ),
-            // Tags field
-            div(null,
-              div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},
-                'Tags (comma-separated)'),
-              h('input',{type:'text',value:draft.tags,
-                onChange:e=>setDraft(d=>({...d,tags:e.target.value})),
-                placeholder:'e.g. well-run, high-volume, fl, interstate, tourist, seasonal, gm-in-training',
-                style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',
-                  borderRadius:'var(--r)',color:'var(--text)',fontSize:'10px',
-                  padding:'6px 10px',boxSizing:'border-box'}}),
-              div({style:{marginTop:4,fontSize:'7.5px',color:'var(--text3)'}},'Tags drive automated analysis behavior. Recognized: tourist, seasonal, fl, interstate, loves-gas-station, new-location, gm-in-training, well-run, high-volume, capacity-limited, model-degrading, improving, di-skipped, historical-anomaly')
-            ),
-            // Current tag pills
-            draft.tags.split(',').map(t=>t.trim()).filter(Boolean).length>0&&
-            div({style:{display:'flex',gap:4,flexWrap:'wrap'}},
-              draft.tags.split(',').map(t=>t.trim()).filter(Boolean).map((t,i)=>
-                span({key:i,style:{fontSize:'8px',padding:'2px 8px',borderRadius:99,
-                  background:'rgba(255,255,255,.08)',color:tagCol(t),border:'.5px solid rgba(255,255,255,.12)'}},t)
-              )
-            ),
+            // Custom tags (any tags not in quick list)
+            (()=>{
+              const activeTags=draft.tags.split(',').map(t=>t.trim()).filter(Boolean);
+              const KNOWN_TAGS=new Set(['well-run','high-volume','improving','model-degrading','gm-in-training','new-gm','fl','high-turnover','tourist','interstate','seasonal','school-zone','capacity-limited','single-lane','new-location','remodel','loves-gas-station','historical-anomaly','di-skipped','insufficient-data']);
+              const customTags=activeTags.filter(t=>!KNOWN_TAGS.has(t));
+              return div(null,
+                div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},'Custom Tags'),
+                h('input',{type:'text',
+                  value:customTags.join(', '),
+                  onChange:e=>{
+                    const quickTags=activeTags.filter(t=>KNOWN_TAGS.has(t));
+                    const newCustom=e.target.value.split(',').map(t=>t.trim()).filter(Boolean);
+                    setDraft(d=>({...d,tags:[...quickTags,...newCustom].join(', ')}));
+                  },
+                  placeholder:'Additional tags (comma-separated)…',
+                  style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',
+                    borderRadius:'var(--r)',color:'var(--text)',fontSize:'10px',
+                    padding:'6px 10px',boxSizing:'border-box'}})
+              );
+            })(),
             // How this info is used
-            div({style:{marginTop:4,padding:'8px 10px',background:'rgba(255,255,255,.03)',
+            div({style:{padding:'8px 10px',background:'rgba(255,255,255,.03)',
               borderRadius:'var(--r)',border:'.5px solid var(--bdr)',fontSize:'8.5px',color:'var(--text3)',lineHeight:1.7}},
               span({style:{fontWeight:700,color:'var(--text)'}},'How this is used: '),
-              '📊 Ops Analysis — note shown on every anomaly for this store. ',
-              '🔍 Anomaly Scanner — seasonal/tourist tags raise anomaly thresholds for expected variance. ',
-              '🎯 DI Calibration — new-location flags prevent calibration warnings. ',
+              '📊 Ops Analysis — note shown on every anomaly. ',
+              '🔍 Anomaly Scanner — seasonal/tourist tags raise thresholds. ',
+              '🎯 DI Calibration — new-location prevents calibration warnings. ',
               '📋 Pre-Forecast Brief — management context informs AI commentary. ',
-              '📊 Backtest — historical-anomaly tag notes that full MAPE is unreliable.'
+              '⭐ FL stores — highlighted in District View.'
             )
           )
         )
