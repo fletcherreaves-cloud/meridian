@@ -58,9 +58,15 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.229';
+const MERIDIAN_VERSION    = '4.230';
 const MERIDIAN_BUILD_DATE = '2026-06-27';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.230', date:'2026-06-27', changes:[
+    'Performance Reviews — Competencies: each item now has an active/inactive toggle (checkbox). Inactive items are hidden from the rating UI and excluded from behavioral scoring, but keep their index so existing ratings stay intact. Also supports custom behavioral categories: use "+ Category" in Customize → Competencies to add your own categories (editable label, deletable).',
+    'Performance Reviews — Weights: metric rows now show "Active" instead of "Scored" with a clearer label. Delete button (×) per metric removes it from scoring calculations (KPI data is preserved). Deactivating via checkbox excludes from scoring without removing the metric.',
+    'Performance Reviews — Rating Thresholds: "Current Meaning" column now shows actual values with direction context (e.g. "4 ≥+5% · 3 ≥0% · 2 ≥-5% · 1 else") instead of generic t1/t2/t3 placeholders. Updated header explains what raising/lowering each threshold boundary does in plain English.',
+    'Behavioral scoring engine updated to respect active/inactive competency flags and include custom categories in calculations.',
+  ]},
   {version:'4.229', date:'2026-06-27', changes:[
     'Performance Reviews: 4 demo reviews pre-loaded — Ronald McDonald (GM/3708, Exceeds Expectations ~94%), Grimace (GM/29760, Needs Improvement ~33%), Hamburglar (AM/5985, Meets Expectations ~73%), Mayor McCheese (AS/6178 Chipley FL Emerald Arches, Below Expectations ~52%). Load via "📚 Demo Reviews" button in the review list toolbar. Data persists in localStorage alongside real reviews.',
   ]},

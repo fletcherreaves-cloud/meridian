@@ -35,6 +35,8 @@ function getOrgLabel(org) { return ORG_LABELS[org] || 'MFR'; }
 function getOrgFull(org)  { return ORG_FULL[org]   || 'Murphy Family Restaurants'; }
 function getOrgLogo(org)  { try{return localStorage.getItem('mf_logo_'+org)||null;}catch{return null;} }
 function clearOrgLogo(org){ try{localStorage.removeItem('mf_logo_'+org);}catch{} }
+// Normalize competency items — stored as strings (legacy) or {text,active} objects
+const normItem = item => typeof item === 'string' ? {text:item, active:true} : (item || {text:'', active:true});
 
 // ── Shared UI helpers ──────────────────────────────────────────────────────────
 function Row(p,...c)  { return div({style:{display:'flex',alignItems:'center',gap:8,...(p?.style||{})}},...c); }
@@ -402,23 +404,35 @@ function WeightsSection({local, set}) {
     // Metric weights per category
     ...Object.entries(local.metrics).map(([cat, mets]) =>
       div({style:{marginBottom:20},key:cat},
-        div({style:{fontWeight:700,fontSize:12,marginBottom:8,color:TEXT}},`${CAT_LABELS[cat]||cat} — Metric Weights`),
-        div({style:{display:'grid',gridTemplateColumns:'240px 80px 60px 1fr',gap:'6px 12px',alignItems:'center',fontSize:11}},
-          span({style:{color:TEXT3,fontWeight:700}},'Metric'), span({style:{color:TEXT3,fontWeight:700}},'Weight'),
-          span({style:{color:TEXT3,fontWeight:700}},'Scored'), span(null),
+        Row({style:{marginBottom:8,alignItems:'baseline',gap:8}},
+          div({style:{fontWeight:700,fontSize:12,color:TEXT}},`${CAT_LABELS[cat]||cat} — Metric Weights`),
+          span({style:{fontSize:10,color:TEXT3}},'(uncheck Active to exclude a metric from scoring this period)')
+        ),
+        div({style:{display:'grid',gridTemplateColumns:'240px 80px 70px 1fr 28px',gap:'6px 12px',alignItems:'center',fontSize:11}},
+          span({style:{color:TEXT3,fontWeight:700}},'Metric'),
+          span({style:{color:TEXT3,fontWeight:700}},'Weight'),
+          span({style:{color:TEXT3,fontWeight:700,title:'Uncheck to exclude from scoring for this review period'}},'Active'),
+          span(null),
+          span(null),
           ...mets.flatMap((m,i)=>[
-            lbl(null, m.label),
+            lbl({style:{color:m.scored?TEXT:TEXT3}}, m.label),
             Row({style:{gap:4}},
               NumInput({value:Math.round(m.weight*100), onChange:v=>set(`metrics.${cat}.${i}.weight`,(v||0)/100), style:{width:55}}),
               span({style:{color:TEXT3}},'%')
             ),
             inp({type:'checkbox',checked:m.scored, onChange:e=>set(`metrics.${cat}.${i}.scored`,e.target.checked)}),
-            m.note ? span({style:{color:TEXT3,fontSize:10}},m.note) : span(null)
+            m.note ? span({style:{color:TEXT3,fontSize:10}},m.note) : span(null),
+            btn({onClick:()=>{
+              if(!confirm(`Remove "${m.label}" from ${CAT_LABELS[cat]||cat} metrics? This only affects scoring — review data is kept.`)) return;
+              const next = mets.filter((_,j)=>j!==i);
+              set(`metrics.${cat}`, next);
+            }, style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:14,padding:'0 4px',lineHeight:1}},'×'),
           ]),
           span(null),
           span({style:{fontSize:10,color:
             Math.abs(mets.reduce((a,m)=>a+m.weight,0)-1)<0.01?'#10b981':'#ef4444'}},
-            `Total: ${Math.round(mets.reduce((a,m)=>a+m.weight,0)*100)}%`)
+            `Total: ${Math.round(mets.reduce((a,m)=>a+m.weight,0)*100)}%`),
+          span(null), span(null)
         )
       )
     )
@@ -426,15 +440,23 @@ function WeightsSection({local, set}) {
 }
 
 function ThresholdsSection({local, set}) {
-  const dirLabel = (m) => m.better==='higher'
-    ? `4 if ≥t1 · 3 if ≥t2 · 2 if ≥t3 · else 1`
-    : `4 if ≤t1 · 3 if ≤t2 · 2 if ≤t3 · else 1`;
+  const explain = (m) => {
+    const [t1, t2, t3] = m.t;
+    const p = m.unit === 'pct';
+    const f = v => p ? `${v>=0?'+':''}${Math.round(v*100)}%` : `${v>=0?'+':''}${v}`;
+    if (m.better === 'higher')
+      return `4 ≥${f(t1)} · 3 ≥${f(t2)} · 2 ≥${f(t3)} · 1 else  (raise T1 → Exceeds harder; lower T3 → more reach Needs Imp)`;
+    return `4 ≤${f(t1)} · 3 ≤${f(t2)} · 2 ≤${f(t3)} · 1 else  (lower T1 → Exceeds harder; raise T3 → more reach Needs Imp)`;
+  };
   return div(null,
-    div({style:{fontSize:11,color:TEXT3,marginBottom:16,padding:'8px 12px',background:S2,borderRadius:R,border:`1px solid ${BDR}`}},
-      span({style:{fontWeight:700}},'How thresholds work: '),
-      'For "pct" unit, thresholds are % deviation from target (0.05 = 5%). ',
-      'For "abs" unit, thresholds are in raw units (seconds, count, etc.).',
-      ' Deviation = actual − target (pct: divided by |target|).'
+    div({style:{fontSize:11,color:TEXT3,marginBottom:16,padding:'10px 14px',background:S2,borderRadius:R,border:`1px solid ${BDR}`,lineHeight:1.7}},
+      div(null,span({style:{fontWeight:700}},'deviation = actual − target'),
+        m.unit==='pct'?' divided by |target|':'',
+        ' · For "pct" metrics, thresholds are fractions (0.05 = 5%). For "abs" metrics, thresholds are in raw units (seconds, dollars, count).'),
+      div({style:{marginTop:4}},
+        span({style:{fontWeight:700}},'Changing a threshold: '),
+        'T1 sets the Exceeds boundary, T2 sets On Target, T3 sets Below. ',
+        'Positive threshold = actual must exceed target by that margin. Negative = actual can fall below target by that margin and still earn that rating.')
     ),
     ...Object.entries(local.metrics).map(([cat, mets]) =>
       div({style:{marginBottom:24},key:cat},
@@ -448,7 +470,7 @@ function ThresholdsSection({local, set}) {
           span({style:{color:'#10b981',fontWeight:700}},'T1 (→4)'),
           span({style:{color:'#3b82f6',fontWeight:700}},'T2 (→3)'),
           span({style:{color:'#f59e0b',fontWeight:700}},'T3 (→2)'),
-          span({style:{color:TEXT3,fontWeight:700}},'Logic'),
+          span({style:{color:TEXT3,fontWeight:700}},'Current Meaning (dev from target)'),
           ...mets.flatMap((m,i)=>[
             span(null,m.label),
             span({style:{color:TEXT3}},m.better==='higher'?'▲':'▼'),
@@ -456,7 +478,7 @@ function ThresholdsSection({local, set}) {
             NumInput({value:m.t[0], onChange:v=>set(`metrics.${cat}.${i}.t.0`,v??m.t[0]), style:{width:70}}),
             NumInput({value:m.t[1], onChange:v=>set(`metrics.${cat}.${i}.t.1`,v??m.t[1]), style:{width:70}}),
             NumInput({value:m.t[2], onChange:v=>set(`metrics.${cat}.${i}.t.2`,v??m.t[2]), style:{width:70}}),
-            span({style:{color:TEXT3,fontSize:10}},dirLabel(m)),
+            span({style:{color:TEXT3,fontSize:10}},explain(m)),
           ])
         )
       )
@@ -465,46 +487,100 @@ function ThresholdsSection({local, set}) {
 }
 
 function CompetenciesSection({local, set, custRole, setCustRole, custCat, setCustCat}) {
-  const comp = local.competencies[custRole]?.[custCat] || [];
-  const setItem = (i, val) => set(`competencies.${custRole}.${custCat}.${i}`, val);
-  const addItem = () => set(`competencies.${custRole}.${custCat}.${comp.length}`, 'New competency item');
-  const removeItem = (i) => {
-    const next = comp.filter((_,j)=>j!==i);
-    // rebuild as full array assignment
-    setItem(-1, null); // trigger re-render trick via direct array rebuild
-    // Actually set the whole array:
-    set(`competencies.${custRole}.${custCat}`, next);
+  const extras = local.extraCategories || [];
+  const rawComp = local.competencies[custRole]?.[custCat] || [];
+  const comp = rawComp.map(normItem);
+
+  const setComp = (next) => set(`competencies.${custRole}.${custCat}`, next);
+  const setItemText   = (i, text)   => setComp(comp.map((it,j)=>j===i?{...it,text}:it));
+  const setItemActive = (i, active) => setComp(comp.map((it,j)=>j===i?{...it,active}:it));
+  const removeItem    = (i) => setComp(comp.filter((_,j)=>j!==i));
+  const addItem       = () => setComp([...comp, {text:'New competency item', active:true}]);
+
+  const addCategory = () => {
+    const label = prompt('New category name:');
+    if (!label) return;
+    const key = 'cat_' + label.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,20) + '_' + Date.now().toString(36);
+    set('extraCategories', [...extras, {key, label}]);
+    setCustCat(key);
+  };
+  const renameCategory = (idx) => {
+    const label = prompt('Rename category:', extras[idx].label);
+    if (!label) return;
+    set('extraCategories', extras.map((c,j)=>j===idx?{...c,label}:c));
+  };
+  const deleteCategory = (idx) => {
+    if (!confirm(`Delete category "${extras[idx].label}"? Competency items in this category will also be removed.`)) return;
+    const key = extras[idx].key;
+    set('extraCategories', extras.filter((_,j)=>j!==idx));
+    if (custCat === key) setCustCat('rgr');
   };
 
-  const allCats = [...CAT_KEYS,'admin'];
+  const builtinCats = [...CAT_KEYS,'admin'];
+  const catLabel = (key) => {
+    const ex = extras.find(c=>c.key===key);
+    if (ex) return ex.label;
+    return CAT_LABELS[key]||key;
+  };
 
   return div(null,
-    // Role + category selector
-    Row({style:{gap:8,marginBottom:16,flexWrap:'wrap'}},
+    // Role selector
+    Row({style:{gap:6,marginBottom:12,flexWrap:'wrap'}},
       ...ROLE_KEYS.map(r =>
         btn({onClick:()=>setCustRole(r),key:r,
           style:{padding:'5px 12px',border:`1px solid ${custRole===r?AMBER:BDR}`,borderRadius:R,
             background:custRole===r?`${AMBER}20`:'transparent',color:custRole===r?AMBER:TEXT2,
             fontSize:11,fontWeight:custRole===r?700:400,cursor:'pointer'}},
-          ROLE_LABELS[r]||r)),
-      span({style:{width:1,alignSelf:'stretch',background:BDR}}),
-      ...allCats.map(c =>
+          ROLE_LABELS[r]||r))
+    ),
+    // Category selector — built-in + extra + add button
+    div({style:{display:'flex',gap:4,marginBottom:16,flexWrap:'wrap',alignItems:'center'}},
+      ...builtinCats.map(c =>
         btn({onClick:()=>setCustCat(c),key:c,
           style:{padding:'4px 10px',border:`1px solid ${custCat===c?AMBER:BDR}`,borderRadius:R,
             background:custCat===c?`${AMBER}20`:'transparent',color:custCat===c?AMBER:TEXT2,
             fontSize:11,cursor:'pointer'}},
-          CAT_LABELS[c]||c))
+          catLabel(c))),
+      extras.length > 0 && span({style:{width:1,height:20,background:BDR,alignSelf:'center'}}),
+      ...extras.map((ec, idx) =>
+        div({key:ec.key, style:{display:'flex',alignItems:'center',gap:0}},
+          btn({onClick:()=>setCustCat(ec.key),
+            style:{padding:'4px 10px',border:`1px solid ${custCat===ec.key?AMBER:BDR}`,borderRadius:'4px 0 0 4px',
+              background:custCat===ec.key?`${AMBER}20`:'transparent',color:custCat===ec.key?AMBER:TEXT2,
+              fontSize:11,cursor:'pointer'}},
+            ec.label),
+          btn({onClick:()=>renameCategory(idx),title:'Rename',
+            style:{padding:'4px 5px',border:`1px solid ${BDR}`,borderLeft:'none',background:'transparent',
+              color:TEXT3,fontSize:10,cursor:'pointer'}},
+            '✎'),
+          btn({onClick:()=>deleteCategory(idx),title:'Delete category',
+            style:{padding:'4px 5px',border:`1px solid ${BDR}`,borderLeft:'none',borderRadius:'0 4px 4px 0',background:'transparent',
+              color:'#ef4444',fontSize:11,cursor:'pointer'}},
+            '×')
+        )
+      ),
+      btn({onClick:addCategory,
+        style:{padding:'4px 10px',border:`1px dashed ${BDR}`,borderRadius:R,
+          background:'transparent',color:TEXT3,fontSize:11,cursor:'pointer'}},
+        '+ Category')
     ),
+    // Help note
+    div({style:{fontSize:10,color:TEXT3,marginBottom:10}},
+      'Uncheck the toggle to mark an item inactive — it will be hidden from the review and excluded from behavioral scoring. Inactive items keep their index so existing ratings are preserved.'),
     // Item list
     div({style:{display:'flex',flexDirection:'column',gap:6}},
       ...comp.map((item, i) =>
-        div({key:i,style:{display:'flex',gap:8,alignItems:'flex-start'}},
-          span({style:{color:TEXT3,fontSize:11,minWidth:20,paddingTop:6}},`${i+1}.`),
-          ta({value:item,rows:2,
-            onChange:e=>setItem(i,e.target.value),
+        div({key:i,style:{display:'flex',gap:8,alignItems:'flex-start',opacity:item.active?1:0.45}},
+          div({style:{paddingTop:6,display:'flex',flexDirection:'column',alignItems:'center',gap:3}},
+            span({style:{color:TEXT3,fontSize:10,minWidth:20,textAlign:'center'}},`${i+1}`),
+            inp({type:'checkbox',checked:item.active,title:item.active?'Active — click to deactivate':'Inactive — click to reactivate',
+              onChange:e=>setItemActive(i,e.target.checked),style:{cursor:'pointer'}})
+          ),
+          ta({value:item.text,rows:2,
+            onChange:e=>setItemText(i,e.target.value),
             style:{flex:1,padding:'5px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
-              borderRadius:4,color:TEXT,fontSize:12,resize:'vertical',fontFamily:'var(--sans)'}}),
-          btn({onClick:()=>removeItem(i),
+              borderRadius:4,color:item.active?TEXT:TEXT3,fontSize:12,resize:'vertical',fontFamily:'var(--sans)'}}),
+          btn({onClick:()=>{if(confirm('Remove this item? Any existing ratings for it will become misaligned — only delete items added by mistake.'))removeItem(i);},
             style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:14,paddingTop:4}},
             '×')
         )
@@ -731,8 +807,10 @@ function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
 // ── Behavioral Ratings Tab ─────────────────────────────────────────────────────
 function BehavTab({review, cfg, qKeys, bCat, setBCat, setRating, setComment}) {
   const comp     = cfg.competencies[review.role]||{};
-  const allCats  = [...CAT_KEYS,'admin'];
-  const catItems = comp[bCat]||[];
+  const extras   = cfg.extraCategories || [];
+  const allCats  = [...CAT_KEYS, ...extras.map(c=>c.key), 'admin'];
+  const catLabel = (key) => { const ex=extras.find(c=>c.key===key); return ex?ex.label:CAT_LABELS[key]||key; };
+  const catItems = (comp[bCat]||[]).map(normItem);
 
   return div({style:{padding:16}},
     // Category selector
@@ -742,7 +820,7 @@ function BehavTab({review, cfg, qKeys, bCat, setBCat, setRating, setComment}) {
           style:{padding:'5px 12px',border:`1px solid ${bCat===cat?AMBER:BDR}`,borderRadius:R,
             background:bCat===cat?`${AMBER}20`:'transparent',color:bCat===cat?AMBER:TEXT2,
             fontSize:11,cursor:'pointer',fontWeight:bCat===cat?700:400}},
-          CAT_LABELS[cat]||cat))
+          catLabel(cat)))
     ),
     // Scale legend
     div({style:{display:'flex',gap:8,marginBottom:12,fontSize:10,color:TEXT3}},
@@ -756,24 +834,27 @@ function BehavTab({review, cfg, qKeys, bCat, setBCat, setRating, setComment}) {
       span({style:{paddingLeft:8}},'Competency'),
       ...qKeys.map(q => span({key:q,style:{textAlign:'center'}},qLabel(q)))
     ),
-    // Competency rows
-    ...catItems.map((item, i) =>
-      div({key:i,style:{display:'grid',
+    // Competency rows — skip inactive items but preserve indices
+    ...catItems.map((item, i) => {
+      if (!item.active) return null;
+      return div({key:i,style:{display:'grid',
         gridTemplateColumns:`1fr ${'115px '.repeat(qKeys.length)}`,
         gap:0,borderBottom:`1px solid ${BDR}`,padding:'6px 0',alignItems:'center'}},
-        span({style:{fontSize:12,color:TEXT,paddingLeft:8,lineHeight:1.4}},`${i+1}. ${item}`),
+        span({style:{fontSize:12,color:TEXT,paddingLeft:8,lineHeight:1.4}},`${i+1}. ${item.text}`),
         ...qKeys.map(q => {
           const rats = review.behavioralRatings?.[q]?.[bCat];
           const val  = rats?.[i] ?? null;
           return div({key:q,style:{display:'flex',justifyContent:'center'}},
             RatingButtons({value:val, onChange:v=>setRating(q,bCat,i,v)}));
         })
-      )
-    ),
+      );
+    }),
+    catItems.filter(it=>!it.active).length > 0 && div({style:{padding:'6px 8px',fontSize:10,color:TEXT3,fontStyle:'italic'}},
+      `${catItems.filter(it=>!it.active).length} inactive item(s) hidden — toggle in Customize → Competencies`),
     // Comments per quarter
     div({style:{marginTop:20}},
       div({style:{fontWeight:700,fontSize:12,color:TEXT,marginBottom:10}},
-        `${CAT_LABELS[bCat]||bCat} — Comments`),
+        `${catLabel(bCat)} — Comments`),
       div({style:{display:'grid',gridTemplateColumns:'1fr '.repeat(qKeys.length),gap:12}},
         ...qKeys.map(q => {
           const periodKey = q;
@@ -928,15 +1009,23 @@ function printReview(review, cfg, orgLabel, orgLogo) {
     </tr>`).join('');
 
   const compRows = (catKey) => {
-    const items = cfg.competencies[review.role]?.[catKey]||[];
-    if (!items.length) return '<tr><td colspan="5" style="color:#9ca3af">No items</td></tr>';
+    const rawItems = cfg.competencies[review.role]?.[catKey]||[];
+    const items = rawItems.map(normItem);
+    const active = items.filter(it=>it.active);
+    if (!active.length) return '<tr><td colspan="5" style="color:#9ca3af">No items</td></tr>';
     return items.map((item,i)=>{
+      if (!item.active) return '';
       const qRatings = qKeys.map(q=>{
         const r = review.behavioralRatings?.[q]?.[catKey]?.[i];
         return r!=null?`<td style="text-align:center;font-weight:700;color:${rCol(r)}">${r}</td>`:'<td style="text-align:center;color:#9ca3af">—</td>';
       }).join('');
-      return `<tr><td>${i+1}. ${item}</td>${qRatings}</tr>`;
+      return `<tr><td>${i+1}. ${item.text}</td>${qRatings}</tr>`;
     }).join('');
+  };
+
+  const printCatLabel = (key) => {
+    const ex=(cfg.extraCategories||[]).find(c=>c.key===key);
+    return ex?ex.label:CAT_LABELS[key]||key;
   };
 
   const wageSection = half==='H2'?`
@@ -951,8 +1040,9 @@ function printReview(review, cfg, orgLabel, orgLogo) {
     </tr></table>
     ${review.wage?.notes?`<p><strong>Notes:</strong> ${review.wage.notes}</p>`:''}`:''
 
-  const allCatSections = [...Object.keys(cfg.categoryWeights),'admin'].map(cat=>`
-    <h3>${CAT_LABELS[cat]||cat}</h3>
+  const extraKeys = (cfg.extraCategories||[]).map(c=>c.key);
+  const allCatSections = [...Object.keys(cfg.categoryWeights), ...extraKeys, 'admin'].map(cat=>`
+    <h3>${printCatLabel(cat)}</h3>
     <table>
       <tr><th>Competency</th>${qKeys.map(q=>`<th style="text-align:center">${qLabel(q)}</th>`).join('')}</tr>
       ${compRows(cat)}

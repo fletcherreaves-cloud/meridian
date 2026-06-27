@@ -243,6 +243,8 @@ export const DEFAULT_REVIEW_CONFIG = {
       ],
     },
   },
+  // Custom behavioral-only categories added by the user
+  extraCategories: [],  // [{key, label}]
 };
 
 // ── Config helpers ─────────────────────────────────────────────────────────────
@@ -250,7 +252,8 @@ export function getReviewConfig() {
   try {
     const s = JSON.parse(localStorage.getItem(REVIEW_CONFIG_KEY) || 'null');
     if (!s || s.version !== DEFAULT_REVIEW_CONFIG.version) return deepCopy(DEFAULT_REVIEW_CONFIG);
-    return s;
+    // Merge top-level defaults so new fields (e.g. extraCategories) survive old saved configs
+    return { ...deepCopy(DEFAULT_REVIEW_CONFIG), ...s };
   } catch { return deepCopy(DEFAULT_REVIEW_CONFIG); }
 }
 export function saveReviewConfig(cfg) {
@@ -305,8 +308,10 @@ export function blankReview(name, role, loc, year, half, cfg) {
   for (let m = mStart; m <= mEnd; m++) months[m] = blankMonthKPIs(year, m);
   const makeRatings = () => {
     const out = {};
-    const comp = (cfg || DEFAULT_REVIEW_CONFIG).competencies[role] || {};
-    for (const cat of [...CAT_KEYS, 'admin']) out[cat] = (comp[cat] || []).map(() => null);
+    const _cfg = cfg || DEFAULT_REVIEW_CONFIG;
+    const comp = _cfg.competencies[role] || {};
+    const extras = (_cfg.extraCategories || []).map(c => c.key);
+    for (const cat of [...CAT_KEYS, ...extras, 'admin']) out[cat] = (comp[cat] || []).map(() => null);
     return out;
   };
   const qKeys = half === 'H1' ? ['q1','q2'] : ['q3','q4'];
@@ -393,7 +398,14 @@ export function computeScores(review, cfg) {
 
   function behavScore(qKey) {
     const rats = review.behavioralRatings?.[qKey] || {};
-    const allRatings = [...CAT_KEYS,'admin'].flatMap(cat => rats[cat]||[]).filter(x=>x!=null);
+    const extras = (cfg.extraCategories || []).map(c => c.key);
+    const allRatings = [...CAT_KEYS, ...extras, 'admin'].flatMap(cat => {
+      const items = cfg?.competencies?.[review.role]?.[cat] || [];
+      return (rats[cat] || []).filter((_, i) => {
+        const item = items[i];
+        return typeof item === 'string' || item == null || item.active !== false;
+      });
+    }).filter(x => x != null);
     return allRatings.length ? allRatings.reduce((a,b)=>a+b,0)/allRatings.length : null;
   }
 
