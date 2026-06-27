@@ -58,9 +58,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.225';
+const MERIDIAN_VERSION    = '4.226';
 const MERIDIAN_BUILD_DATE = '2026-06-27';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.226', date:'2026-06-27', changes:[
+    'Record Day Intelligence expanded: added Guest Count records (day/week/month), Day-of-Week records for sales and GC (best Monday ever, best Tuesday ever, etc.), KVS and R2P speed records alongside OEPE, Breakfast sales records, and Average Check records. Records now accumulate across uploads via localStorage — all-time bests persist even when uploading different date windows. New 6-tab UI: Overview (district heroes), Recent Breaks (filterable by type + window), Sales & Volume, Speed of Service, Day of Week (DOW selector + ranked leaderboard), Top Days. Reset button clears the saved all-time record history.',
+  ]},
   {version:'4.225', date:'2026-06-27', changes:[
     'Record Day Intelligence: new panel (nav: Performance → Record Day Intel) that scans all uploaded data to surface all-time records per store — best day, week, and month sales plus best OEPE. Shows district-level champion stats, a chronological "recent record breakers" table (configurable 30/60/90/180-day window) with previous record comparison, a sortable all-time records grid by store, and a district top-15 days leaderboard.',
   ]},
