@@ -37,7 +37,7 @@ function Tag({label,color='var(--amber)'}) {
 }
 function ScorePill({score,size='sm'}) {
   if (score==null) return span({style:{color:TEXT3,fontSize:10}},'—');
-  const col = score>=3.5?'#10b981':score>=2.5?'#3b82f6':score>=1.5?'#f59e0b':'#ef4444';
+  const col = score>=3.5?'#16a34a':score>=2.5?'#22c55e':score>=1.5?'#f87171':'#dc2626';
   const bg  = col+'22';
   const fs  = size==='lg' ? 18 : 13;
   return span({style:{fontWeight:700,fontSize:fs,color:col,background:bg,
@@ -53,11 +53,11 @@ function CloseBtn({onClick}) {
     cursor:'pointer',padding:'4px 8px',borderRadius:R,lineHeight:1},
     onMouseEnter:e=>e.currentTarget.style.color=TEXT, onMouseLeave:e=>e.currentTarget.style.color=TEXT3},'×');
 }
-function GhostBtn({onClick,children,style={}}) {
+function GhostBtn({onClick,style={}}, children) {
   return btn({onClick,style:{background:'none',border:`1px solid ${BDR}`,color:TEXT2,
     borderRadius:R,padding:'5px 12px',fontSize:12,cursor:'pointer',...style}},children);
 }
-function PrimaryBtn({onClick,children,style={}}) {
+function PrimaryBtn({onClick,style={}}, children) {
   return btn({onClick,style:{background:AMBER,color:'#000',border:'none',
     borderRadius:R,padding:'5px 12px',fontSize:12,fontWeight:700,cursor:'pointer',...style}},children);
 }
@@ -376,6 +376,14 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
           `${ROLE_LABELS[review.role]||review.role} · ${review.loc||'All Stores'} · ${review.half} ${review.year}`)
       ),
       dirty&&span({style:{fontSize:11,color:AMBER}},'Unsaved changes'),
+      scores.half?.overall!=null && (() => {
+        const s = scores.half.overall;
+        const col = ratingColor(Math.round(s));
+        return span({style:{fontSize:11,fontWeight:700,color:col,
+          background:col+'22',border:`1px solid ${col}44`,borderRadius:R,
+          padding:'3px 8px',whiteSpace:'nowrap'}},
+          `${Math.round((s/4)*100)}% overall`);
+      })(),
       GhostBtn({onClick:()=>printReview(review,cfg),style:{fontSize:11}},'Print / PDF'),
       PrimaryBtn({onClick:doSave,style:{minWidth:80}},'Save'),
     ),
@@ -530,7 +538,7 @@ function BehavTab({review, cfg, qKeys, bCat, setBCat, setRating, setComment}) {
         Row({style:{gap:4},key:r}, RatingDot({r,size:8}), span(null,`${r} = ${RATING_LABELS[r]||r}`)))),
     // Header: competency | Q1 | Q2 | (Q3 | Q4)
     div({style:{display:'grid',
-      gridTemplateColumns:`1fr ${'80px '.repeat(qKeys.length)}`,
+      gridTemplateColumns:`1fr ${'115px '.repeat(qKeys.length)}`,
       gap:0,borderBottom:`2px solid ${BDR}`,paddingBottom:6,marginBottom:4,
       fontSize:10,fontWeight:700,color:TEXT3,textTransform:'uppercase',letterSpacing:'.4px'}},
       span({style:{paddingLeft:8}},'Competency'),
@@ -539,7 +547,7 @@ function BehavTab({review, cfg, qKeys, bCat, setBCat, setRating, setComment}) {
     // Competency rows
     ...catItems.map((item, i) =>
       div({key:i,style:{display:'grid',
-        gridTemplateColumns:`1fr ${'80px '.repeat(qKeys.length)}`,
+        gridTemplateColumns:`1fr ${'115px '.repeat(qKeys.length)}`,
         gap:0,borderBottom:`1px solid ${BDR}`,padding:'6px 0',alignItems:'center'}},
         span({style:{fontSize:12,color:TEXT,paddingLeft:8,lineHeight:1.4}},`${i+1}. ${item}`),
         ...qKeys.map(q => {
@@ -842,9 +850,17 @@ function printReview(review, cfg) {
 }
 
 // ── Summary Tab ────────────────────────────────────────────────────────────────
+function overallLabel(s) {
+  if (s==null) return '';
+  return s>=3.5?'Exceeds Expectations':s>=2.5?'Meets Expectations':s>=1.5?'Below Expectations':'Needs Improvement';
+}
+
 function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
   const half = review.half;
   const halfLabel = half==='H1' ? 'Mid-Year' : 'End of Year';
+  const halfScore = scores.half?.overall;
+  const halfPct   = halfScore!=null ? Math.round((halfScore/4)*100) : null;
+  const heroCol   = halfScore!=null ? ratingColor(Math.round(halfScore)) : 'var(--txt3)';
 
   const ScoreCard = ({label,ms,bs,overall,highlight}) =>
     div({style:{padding:'12px 16px',background:S2,borderRadius:R,border:`1px solid ${highlight?AMBER:BDR}`,
@@ -867,13 +883,49 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
     );
 
   return div({style:{padding:16}},
+    // ── Overall score hero ──────────────────────────────────────────
+    div({style:{
+      display:'flex',alignItems:'center',gap:24,padding:'18px 20px',
+      background:S2,borderRadius:R,border:`2px solid ${heroCol}33`,
+      marginBottom:16,
+    }},
+      div({style:{
+        fontSize:56,fontWeight:800,color:heroCol,lineHeight:1,
+        fontFamily:'var(--mono)',letterSpacing:-1,
+      }}, halfPct!=null ? `${halfPct}%` : '—'),
+      div({style:{flex:1}},
+        div({style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:2}},
+          `${halfLabel} Overall Score`),
+        div({style:{fontSize:13,color:heroCol,fontWeight:600,marginBottom:8}},
+          halfScore!=null ? overallLabel(halfScore) : 'No data yet'),
+        div({style:{display:'flex',alignItems:'center',gap:12,fontSize:11,color:TEXT3}},
+          span(null, `Results Achieved (70%): `),
+          span({style:{fontWeight:700,color:scores.half?.metrics!=null?ratingColor(Math.round(scores.half.metrics)):'var(--txt3)'}},
+            scores.half?.metrics!=null ? `${Math.round((scores.half.metrics/4)*100)}%` : '—'),
+          span(null, ' · '),
+          span(null, `Behavioral (30%): `),
+          span({style:{fontWeight:700,color:scores.half?.behavioral!=null?ratingColor(Math.round(scores.half.behavioral)):'var(--txt3)'}},
+            scores.half?.behavioral!=null ? `${Math.round((scores.half.behavioral/4)*100)}%` : '—'),
+        ),
+        halfPct!=null && div({style:{marginTop:8,height:6,borderRadius:3,background:'var(--bdr)',overflow:'hidden'}},
+          div({style:{height:'100%',width:`${halfPct}%`,borderRadius:3,background:heroCol,transition:'width .6s'}})),
+      ),
+      div({style:{textAlign:'right',fontSize:11,color:TEXT3}},
+        div(null, 'Raw score'),
+        div({style:{fontSize:20,fontWeight:700,color:heroCol,fontFamily:'var(--mono)'}},
+          halfScore!=null ? `${halfScore.toFixed(2)} / 4.00` : '—'),
+        div({style:{marginTop:4}},
+          ...[4,3,2,1].map(r =>
+            span({key:r,style:{display:'inline-block',width:8,height:8,borderRadius:'50%',
+              background:ratingColor(r),margin:'0 2px',
+              opacity: halfScore!=null&&Math.round(halfScore)===r ? 1 : .25}})))
+      ),
+    ),
     div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}},
       ...qKeys.map(q => {
         const s = scores[q]||{};
         return h(ScoreCard,{key:q,label:qLabel(q)+' Summary',ms:s.metrics,bs:s.behavioral,overall:s.overall});
       }),
-      h(ScoreCard,{label:halfLabel+' Overall',ms:scores.half?.metrics,bs:scores.half?.behavioral,
-        overall:scores.half?.overall,highlight:true})
     ),
     // Rating scale reference
     div({style:{padding:'10px 14px',background:S2,borderRadius:R,border:`1px solid ${BDR}`,marginBottom:16}},
