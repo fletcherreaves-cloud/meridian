@@ -442,4 +442,8 @@ const INV_ORG_COORDS={
   '43701':{lat:30.7132,lng:-85.9391,state:'FL',sup:'Brad Denley',op:'Ryan Thorley',del:'Wed/Sun'},
 };
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather };
+// Florida stores belong to Emerald Arches; all Oklahoma stores are McDOK
+const _FL_STORES = new Set(['6178','6838','10034','35242','37566','38609','43701']);
+function getStoreOrg(loc) { return _FL_STORES.has(String(loc)) ? 'emerald' : 'mcdok'; }
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg };

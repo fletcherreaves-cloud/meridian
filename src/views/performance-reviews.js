@@ -7,7 +7,7 @@ import {
   RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS,
 } from '../engine/review-engine.js';
-import { STORE_NAMES, sName } from '../constants.js';
+import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -27,6 +27,14 @@ const TEXT   = 'var(--text)';
 const TEXT2  = 'var(--text2)';
 const TEXT3  = 'var(--text3)';
 const R      = 'var(--r)';
+
+// ── Org / Logo helpers ─────────────────────────────────────────────────────────
+const ORG_LABELS = { mcdok:'McDOK', emerald:'Emerald Arches' };
+const ORG_FULL   = { mcdok:'McDOK — Thorley/Mornhinweg Families', emerald:'Emerald Arches' };
+function getOrgLabel(org) { return ORG_LABELS[org] || 'MFR'; }
+function getOrgFull(org)  { return ORG_FULL[org]   || 'Murphy Family Restaurants'; }
+function getOrgLogo(org)  { try{return localStorage.getItem('mf_logo_'+org)||null;}catch{return null;} }
+function clearOrgLogo(org){ try{localStorage.removeItem('mf_logo_'+org);}catch{} }
 
 // ── Shared UI helpers ──────────────────────────────────────────────────────────
 function Row(p,...c)  { return div({style:{display:'flex',alignItems:'center',gap:8,...(p?.style||{})}},...c); }
@@ -96,6 +104,202 @@ function NumInput({value, onChange, placeholder, style={}, disabled}) {
       appearance:'textfield',...style}});
 }
 
+// ── Help Guide Modal ──────────────────────────────────────────────────────────
+function HelpGuideModal({onClose}) {
+  const [section, setSection] = useState('overview');
+  const sections = [
+    {key:'overview',    label:'Overview'},
+    {key:'scoring',     label:'Scoring'},
+    {key:'metrics',     label:'KPI Sources'},
+    {key:'behavioral',  label:'Behavioral'},
+  ];
+  const HS = (t) => div({style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:6,marginTop:16,
+    paddingBottom:4,borderBottom:`1px solid ${BDR}`}},t);
+  const P  = (t) => div({style:{fontSize:12,color:TEXT2,lineHeight:1.6,marginBottom:8}},t);
+  const SRC= (label,src) => div({style:{display:'grid',gridTemplateColumns:'180px 1fr',gap:8,
+    padding:'6px 0',borderBottom:`1px solid ${BDR}`,fontSize:11}},
+    span({style:{color:TEXT,fontWeight:600}},label),
+    span({style:{color:TEXT3}},src));
+
+  const content = {
+    overview: div(null,
+      HS('What is the Performance Review System?'),
+      P('A structured semi-annual review system for salaried management (GM, AM, AS, OM). Reviews are split into H1 (Mid-Year, Q1+Q2) and H2 (End of Year, Q3+Q4).'),
+      HS('Rating Scale'),
+      div({style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12}},
+        ...[4,3,2,1].map(r => div({style:{padding:'10px',borderRadius:R,background:ratingBg(r),
+          border:`1px solid ${ratingColor(r)}44`,textAlign:'center'}},
+          div({style:{fontSize:20,fontWeight:800,color:ratingColor(r),fontFamily:'var(--mono)'}},''+r),
+          div({style:{fontSize:11,fontWeight:700,color:ratingColor(r),marginTop:2}},RATING_LABELS[r])))),
+      HS('Review Status Flow'),
+      P('Draft → In Progress → Submitted → Final. Update status from the review card. Final reviews are locked from accidental edits.'),
+      HS('Auto-fill vs Manual Entry'),
+      P('Click "Auto-fill from Uploaded Data" in the KPI Results tab to populate OEPE, R2P, KVS, Sales vs Target, Labor %, and FOB % from uploaded Operations and Labor files. All other metrics must be entered manually each quarter.')
+    ),
+    scoring: div(null,
+      HS('Overall Score Formula'),
+      P('Overall = (Results Achieved × 70%) + (Behavioral × 30%)'),
+      div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}},
+        div({style:{padding:12,background:S2,borderRadius:R,border:`1px solid ${BDR}`}},
+          div({style:{fontWeight:700,fontSize:12,color:AMBER,marginBottom:8}},'Results Achieved — 70%'),
+          P('Average of four category scores, each weighted:'),
+          ...[
+            ['Running Great Restaurants','32.5%'],
+            ['Sales Drivers','10.0%'],
+            ['Profitability','32.5%'],
+            ['People Staffing & Retention','25.0%'],
+          ].map(([l,w])=>div({style:{display:'flex',justifyContent:'space-between',fontSize:11,
+            color:TEXT2,padding:'3px 0',borderBottom:`1px solid ${BDR}`}},span(null,l),span({style:{fontWeight:700}},w)))
+        ),
+        div({style:{padding:12,background:S2,borderRadius:R,border:`1px solid ${BDR}`}},
+          div({style:{fontWeight:700,fontSize:12,color:AMBER,marginBottom:8}},'Behavioral — 30%'),
+          P('Competency ratings (1–4) averaged across all items and quarters.'),
+          P('Five categories: RGR, Sales, Profit, People, Admin. Item count varies by role (GM has 6+4+5+14+6 = 35 items).')
+        )
+      ),
+      HS('Metric Rating Logic'),
+      P('Each metric is compared against its target:'),
+      div({style:{fontSize:11,color:TEXT2,lineHeight:1.8}},
+        div(null,'• "Higher is better" metric: 4 if ≥ T1, 3 if ≥ T2, 2 if ≥ T3, else 1'),
+        div(null,'• "Lower is better" metric: 4 if ≤ T1, 3 if ≤ T2, 2 if ≤ T3, else 1'),
+        div(null,'• "Pct" unit: thresholds are % deviation from target (0.05 = 5%)'),
+        div(null,'• "Abs" unit: thresholds are in raw units (seconds, count, $)')
+      ),
+      HS('Score Display'),
+      P('Scores are shown on a 1.00–4.00 scale. The percentage display is score÷4×100. Example: 3.25 → 81%.')
+    ),
+    metrics: div(null,
+      HS('Auto-Populated from Uploaded Data'),
+      SRC('OEPE (Peaks, sec)',      'QSRSoft → Reports → Shift → Operations Report (ops data upload)'),
+      SRC('KVS Time (sec)',         'QSRSoft → Reports → Shift → Operations Report (ops data upload)'),
+      SRC('R2P Front Counter (sec)','QSRSoft → Reports → Shift → Operations Report (ops data upload)'),
+      SRC('Sales vs. Target',       'QSRSoft → Reports → Shift → Operations Report → Product Sales'),
+      SRC('Labor %',                'QSRSoft → Operations Report → Controls → Crew Labor %'),
+      SRC('Food Over Base % (FOB)', 'QSRSoft → Operations Report → FOB Section → FOB %'),
+      HS('Manual Entry Required'),
+      SRC('Voice OSAT',             'SMG → Reports & Analytics → Full Scale → Overall Satisfaction → 5-star % column'),
+      SRC('EPB2B',                  'SMG → same report → Experienced a Problem (Yes) → 1-rating %'),
+      SRC('Delivery Wait (sec)',     'QSRSoft → Reports → Sales → McDelivery 3PO → Restaurant Time'),
+      SRC('Digital App GC/R/D',     'QSRSoft → Reports → Digital → Digital App → Digital App GC/R/D'),
+      SRC('Delivery GC/R/D',        'QSRSoft → Dashboard → Digital Snapshot → McDelivery row → G/R/D column'),
+      SRC('Op Supplies ($)',         'QSR C&I → Purchases → Ops Supplies column total'),
+      SRC('Complaint Contacts/100K', 'Contact tracking system (manual)'),
+      SRC('FS Audits by Restaurant', 'QSRSoft SimpleThink → Forms → Completed Forms → filter by manager name'),
+      SRC('FS Audits by Supervisor', 'QSRSoft SimpleThink → Forms → Completed Forms → filter by supervisor name'),
+      SRC('FS EcoSure',             'Refer to actual EcoSure visit reports (check email)'),
+      SRC('FS Completion T-60',     'Squaddle or Jolt app'),
+      SRC('Digital Execute as Designed','Pace Portal → Select Location'),
+      SRC('Shift Certified Managers','Altametrics → eHR → Active/LOA Employees → count Cert. Swing Mgr'),
+      SRC('Shift Verifications by GM','QSRSoft shift verification records (manual)'),
+      SRC('Headcount (EOM)',        'Last emailed headcount report from Val each month'),
+      SRC('0-90 Day Crew Turnover', 'QSRSoft → Reports → People → Turnover → 3-Month Turnover row'),
+      SRC('Retention Program Exec.','Select Y/N based on observed execution (manual)'),
+    ),
+    behavioral: div(null,
+      HS('How Behavioral Ratings Work'),
+      P('Each competency item is rated 1–4 for each quarter (Q1, Q2 for H1; Q3, Q4 for H2). Ratings are averaged across items within each category, then weighted equally across categories.'),
+      P('For H1 reviews: rate each item for Q1 and Q2 separately. The average of Q1 and Q2 becomes the H1 behavioral score.'),
+      HS('Rating Guidelines'),
+      div({style:{display:'flex',flexDirection:'column',gap:6}},
+        ...[
+          [4,'#16a34a','Exceeds Expectations','Consistently exceeds the standard. Model behavior — others should emulate this.'],
+          [3,'#22c55e','On Target / Meets','Meets expectations consistently. Solid, reliable performance at standard.'],
+          [2,'#f87171','Below Target','Below expectations. Improvement needed; specific coaching underway.'],
+          [1,'#dc2626','Needs Improvement','Significantly below expectations. Active performance plan required.'],
+        ].map(([r,col,lbl,desc])=>div({style:{display:'grid',gridTemplateColumns:'32px 120px 1fr',
+          gap:8,padding:8,background:ratingBg(r),borderRadius:R,border:`1px solid ${col}33`,
+          alignItems:'start'}},
+          div({style:{fontWeight:800,fontSize:16,color:col,fontFamily:'var(--mono)',textAlign:'center'}},''+r),
+          div({style:{fontWeight:700,fontSize:11,color:col}},lbl),
+          div({style:{fontSize:11,color:TEXT2}},desc)))
+      ),
+      HS('Competency Categories'),
+      P('Competency items are organized into 5 categories. Item counts vary by role. GM: RGR(6), Sales(4), Profit(5), People(14), Admin(6) = 35 total items. Customize items in Customize → Competencies.')
+    ),
+  };
+
+  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,
+    display:'flex',alignItems:'center',justifyContent:'center'}},
+    div({style:{width:'min(820px,96vw)',height:'88vh',background:'var(--surf)',
+      borderRadius:R,display:'flex',flexDirection:'column',overflow:'hidden',
+      boxShadow:'0 20px 60px rgba(0,0,0,.5)',border:`1px solid ${BDR}`}},
+      div({style:{display:'flex',alignItems:'center',padding:'12px 20px',
+        borderBottom:`1px solid ${BDR}`,flexShrink:0}},
+        span({style:{fontSize:15,marginRight:8}},'📖'),
+        div({style:{flex:1,fontWeight:700,fontSize:14,color:TEXT}},'Performance Review — Methodology & User Guide'),
+        CloseBtn({onClick:onClose})
+      ),
+      div({style:{display:'flex',borderBottom:`1px solid ${BDR}`,flexShrink:0}},
+        ...sections.map(s => btn({onClick:()=>setSection(s.key),
+          style:{padding:'8px 16px',border:'none',borderBottom:`2px solid ${section===s.key?AMBER:'transparent'}`,
+            background:'none',color:section===s.key?AMBER:TEXT2,fontSize:12,
+            fontWeight:section===s.key?700:400,cursor:'pointer'}},s.label))
+      ),
+      div({style:{flex:1,overflowY:'auto',padding:'16px 20px'}}, content[section]||null)
+    )
+  );
+}
+
+// ── Org Logo Upload UI ────────────────────────────────────────────────────────
+function OrgLogoUploader({org, label, logo, onUpload, onClear}) {
+  const [hov, setHov] = useState(false);
+  const pick = () => {
+    const fi = document.createElement('input');
+    fi.type='file'; fi.accept='image/*';
+    fi.onchange = e => { if(e.target.files[0]) onUpload(e.target.files[0]); };
+    fi.click();
+  };
+  return div({style:{border:`1px solid ${BDR}`,borderRadius:R,padding:16,display:'flex',
+    flexDirection:'column',gap:10}},
+    div({style:{fontWeight:700,fontSize:12,color:TEXT}},label),
+    logo
+      ? div({style:{display:'flex',flexDirection:'column',gap:8,alignItems:'flex-start'}},
+          h('img',{src:logo,alt:label,style:{maxWidth:200,maxHeight:80,objectFit:'contain',
+            borderRadius:4,border:`1px solid ${BDR}`,padding:4,background:'white'}}),
+          Row({style:{gap:8}},
+            GhostBtn({onClick:pick,style:{fontSize:11}},'Replace'),
+            btn({onClick:onClear,style:{background:'none',border:`1px solid #ef444444`,color:'#ef4444',
+              borderRadius:R,padding:'4px 10px',fontSize:11,cursor:'pointer'}},'Remove')
+          ))
+      : div({style:{border:`2px dashed ${BDR}`,borderRadius:R,padding:'24px 16px',
+          textAlign:'center',cursor:'pointer',color:TEXT3,fontSize:12,
+          background:hov?S2:'transparent',transition:'background .15s'},
+          onMouseEnter:()=>setHov(true),onMouseLeave:()=>setHov(false),onClick:pick},
+          div({style:{fontSize:26,marginBottom:6}},'🖼'),
+          div({style:{fontWeight:600,color:TEXT2}},'Click to upload logo'),
+          div({style:{fontSize:10,marginTop:4,color:TEXT3}},'PNG or JPG recommended · Will appear in print/PDF output'))
+  );
+}
+
+function LogosSection() {
+  const [logos, setLogos] = useState({
+    mcdok:   getOrgLogo('mcdok'),
+    emerald: getOrgLogo('emerald'),
+  });
+  const handleUpload = (org, file) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const b64 = e.target.result;
+      try { localStorage.setItem('mf_logo_'+org, b64); } catch {}
+      setLogos(prev => ({...prev, [org]: b64}));
+    };
+    reader.readAsDataURL(file);
+  };
+  const handleClear = (org) => { clearOrgLogo(org); setLogos(prev=>({...prev,[org]:null})); };
+
+  return div({style:{padding:4}},
+    div({style:{fontSize:11,color:TEXT3,marginBottom:16,padding:'8px 12px',
+      background:S2,borderRadius:R,border:`1px solid ${BDR}`}},
+      'Logos appear in the printed/PDF review header. Store logos here once — they persist across reviews.'),
+    div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}},
+      OrgLogoUploader({org:'mcdok', label:'McDOK — Oklahoma', logo:logos.mcdok,
+        onUpload:f=>handleUpload('mcdok',f), onClear:()=>handleClear('mcdok')}),
+      OrgLogoUploader({org:'emerald', label:'Emerald Arches — Florida', logo:logos.emerald,
+        onUpload:f=>handleUpload('emerald',f), onClear:()=>handleClear('emerald')}),
+    )
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CUSTOMIZE PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -129,6 +333,7 @@ function CustomizePanel({cfg, onSave, onReset}) {
     {key:'weights', label:'Weights'},
     {key:'thresholds', label:'Rating Thresholds'},
     {key:'competencies', label:'Competencies'},
+    {key:'logos', label:'Logos'},
   ];
 
   return div({style:{display:'flex',flexDirection:'column',height:'100%'}},
@@ -150,6 +355,7 @@ function CustomizePanel({cfg, onSave, onReset}) {
       section==='weights'   && h(WeightsSection, {local, set}),
       section==='thresholds'&& h(ThresholdsSection, {local, set}),
       section==='competencies' && h(CompetenciesSection, {local, set, custRole, setCustRole, custCat, setCustCat}),
+      section==='logos' && h(LogosSection, {}),
     )
   );
 }
@@ -321,6 +527,9 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
   const [bCat, setBCat]       = useState('rgr');
   const [autoFilling, setAutoFilling] = useState(false);
   const [dirty, setDirty]     = useState(false);
+  const reviewOrg  = getStoreOrg(initReview.loc);
+  const orgLogo    = getOrgLogo(reviewOrg);
+  const orgLabel   = getOrgLabel(reviewOrg);
 
   const mths  = halfMonths(review.half);
   const qKeys = halfQKeys(review.half);
@@ -384,7 +593,10 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
           padding:'3px 8px',whiteSpace:'nowrap'}},
           `${Math.round((s/4)*100)}% overall`);
       })(),
-      GhostBtn({onClick:()=>printReview(review,cfg),style:{fontSize:11}},'Print / PDF'),
+      orgLogo
+        ? h('img',{src:orgLogo,alt:orgLabel,style:{height:30,objectFit:'contain',opacity:.9}})
+        : span({style:{fontSize:10,color:TEXT3,padding:'3px 8px',border:`1px solid ${BDR}`,borderRadius:R}},orgLabel),
+      GhostBtn({onClick:()=>printReview(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Print / PDF'),
       PrimaryBtn({onClick:doSave,style:{minWidth:80}},'Save'),
     ),
     // Tab bar
@@ -683,7 +895,8 @@ function DevPlanTab({review, setDevPlan, update}) {
 }
 
 // ── Print / PDF export ─────────────────────────────────────────────────────────
-function printReview(review, cfg) {
+function printReview(review, cfg, orgLabel, orgLogo) {
+  if (!orgLabel) orgLabel = getOrgLabel(getStoreOrg(review.loc));
   const scores = computeScores(review, cfg);
   const half   = review.half;
   const qKeys  = halfQKeys(half);
@@ -771,10 +984,13 @@ function printReview(review, cfg) {
     @media print{body{padding:10px}@page{margin:.5in}}
   </style></head><body>
   <div class="header-block">
-    <div>
-      <div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#9ca3af;text-transform:uppercase;margin-bottom:4px">Murphy Family Restaurants · Salaried Management Performance Review</div>
-      <h1>${review.name}</h1>
-      <div class="meta">${ROLE_LABELS[review.role]||review.role} · ${review.loc?`Store ${review.loc}`:'All Stores'} · ${halfLabel} ${review.year}</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      ${orgLogo?`<img src="${orgLogo}" alt="${orgLabel}" style="height:52px;object-fit:contain;flex-shrink:0">`:''}
+      <div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#9ca3af;text-transform:uppercase;margin-bottom:4px">${orgLabel} · Salaried Management Performance Review</div>
+        <h1>${review.name}</h1>
+        <div class="meta">${ROLE_LABELS[review.role]||review.role} · ${review.loc?`Store ${review.loc}`:'All Stores'} · ${halfLabel} ${review.year}</div>
+      </div>
     </div>
     <div style="text-align:right;font-size:10px;color:#6b7280">
       <div>Review Date: ${today}</div>
@@ -1143,6 +1359,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose}) {
   const [cfg, setCfg]       = useState(() => getReviewConfig());
   const [reviews, setReviews] = useState(() => getReviews());
   const [editing, setEditing] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const refresh = () => setReviews(getReviews());
 
@@ -1162,6 +1379,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose}) {
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:200,
     display:'flex',alignItems:'center',justifyContent:'center'}},
+    showHelp && h(HelpGuideModal, {onClose:()=>setShowHelp(false)}),
     div({style:{width:'min(1200px,97vw)',height:'92vh',background:'var(--surf)',
       borderRadius:R,display:'flex',flexDirection:'column',overflow:'hidden',
       boxShadow:'0 20px 60px rgba(0,0,0,.4)',border:`1px solid ${BDR}`}},
@@ -1172,6 +1390,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose}) {
         div({style:{flex:1}},
           div({style:{fontWeight:700,fontSize:15,color:TEXT}},'Performance Reviews'),
           div({style:{fontSize:11,color:TEXT3}},'Salaried Management · GM · AM · AS · OM')),
+        GhostBtn({onClick:()=>setShowHelp(true),style:{fontSize:11,marginRight:8}},'? Help'),
         CloseBtn({onClick:onClose})
       ),
       // Tab bar
