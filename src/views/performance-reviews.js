@@ -1,3 +1,5 @@
+// @ts-nocheck
+import * as React from 'react';
 import {
   DEFAULT_REVIEW_CONFIG, getReviewConfig, saveReviewConfig, resetReviewConfig,
   getReviews, upsertReview, deleteReview, blankReview, autoPopulateKPIs,
@@ -338,9 +340,10 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
     setDirty(true);
   }, []);
 
-  const setMonthKPI = (month, field, val) => update(`kpis.months.${month}.${field}`, val);
-  const setRating   = (qKey, cat, idx, val) => update(`behavioralRatings.${qKey}.${cat}.${idx}`, val);
-  const setComment  = (period, cat, val) => update(`comments.${period}.${cat}`, val);
+  const setMonthKPI  = (month, field, val) => update(`kpis.months.${month}.${field}`, val);
+  const setRating    = (qKey, cat, idx, val) => update(`behavioralRatings.${qKey}.${cat}.${idx}`, val);
+  const setComment   = (period, cat, val) => update(`comments.${period}.${cat}`, val);
+  const setDevPlan   = (next) => { setReview(prev=>({...prev,devPlan:next})); setDirty(true); };
 
   const doAutoFill = () => {
     setAutoFilling(true);
@@ -355,8 +358,9 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
   const scores = useMemo(() => computeScores(review, cfg), [review, cfg]);
 
   const tabs = [
-    {key:'kpi',  label:'KPI Results'},
-    {key:'behav',label:'Behavioral Ratings'},
+    {key:'kpi',    label:'KPI Results'},
+    {key:'behav',  label:'Behavioral Ratings'},
+    {key:'devplan',label:'Dev Plan'},
     {key:'summary',label:'Summary & Scores'},
   ];
 
@@ -372,15 +376,17 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
           `${ROLE_LABELS[review.role]||review.role} · ${review.loc||'All Stores'} · ${review.half} ${review.year}`)
       ),
       dirty&&span({style:{fontSize:11,color:AMBER}},'Unsaved changes'),
+      GhostBtn({onClick:()=>printReview(review,cfg),style:{fontSize:11}},'Print / PDF'),
       PrimaryBtn({onClick:doSave,style:{minWidth:80}},'Save'),
     ),
     // Tab bar
     TabBar({tabs, active:tab, onSelect:setTab}),
     // Content
     div({style:{flex:1,overflowY:'auto'}},
-      tab==='kpi'    && h(KPITab,    {review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds}),
-      tab==='behav'  && h(BehavTab,  {review, cfg, qKeys, bCat, setBCat, setRating, setComment}),
-      tab==='summary'&& h(SummaryTab,{review, cfg, scores, qKeys, mths}),
+      tab==='kpi'     && h(KPITab,     {review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds}),
+      tab==='behav'   && h(BehavTab,   {review, cfg, qKeys, bCat, setBCat, setRating, setComment}),
+      tab==='devplan' && h(DevPlanTab, {review, setDevPlan, update}),
+      tab==='summary' && h(SummaryTab, {review, cfg, scores, qKeys, mths, update}),
     )
   );
 }
@@ -566,8 +572,277 @@ function BehavTab({review, cfg, qKeys, bCat, setBCat, setRating, setComment}) {
   );
 }
 
+// ── Dev Plan Tab ───────────────────────────────────────────────────────────────
+function DevPlanTab({review, setDevPlan, update}) {
+  const plan = review.devPlan || [];
+  const half = review.half;
+
+  const addItem = () => setDevPlan([...plan, {
+    id: Date.now().toString(),
+    area:'', action:'', targetDate:'', status:'open',
+    period: half==='H1'?'midYear':'eoy', notes:'',
+  }]);
+
+  const setField = (i, field, val) =>
+    setDevPlan(plan.map((item,j) => j===i ? {...item,[field]:val} : item));
+
+  const remove = (i) => setDevPlan(plan.filter((_,j)=>j!==i));
+
+  const STATUS_OPTS = ['open','in-progress','complete'];
+  const STATUS_COLOR = {open:AMBER,'in-progress':'#3b82f6',complete:'#10b981'};
+
+  const fieldStyle = {padding:'5px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
+    borderRadius:4,color:TEXT,fontSize:12,width:'100%',boxSizing:'border-box'};
+
+  return div({style:{padding:16}},
+    // Summary narrative fields
+    div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:20}},
+      div(null,
+        div({style:{fontSize:11,fontWeight:700,color:TEXT3,marginBottom:4}},
+          half==='H1'?'MID-YEAR DEVELOPMENT SUMMARY':'END OF YEAR SUMMARY'),
+        ta({rows:4,value:review.comments?.[half==='H1'?'midYear':'eoy']?.summary||'',
+          placeholder:'Overall performance summary and development focus...',
+          onChange:e=>update(`comments.${half==='H1'?'midYear':'eoy'}.summary`,e.target.value),
+          style:{...fieldStyle,resize:'vertical'}})
+      ),
+      div(null,
+        div({style:{fontSize:11,fontWeight:700,color:TEXT3,marginBottom:4}},
+          half==='H1'?'MID-YEAR DEV PLAN NARRATIVE':'EOY ACHIEVEMENTS / NEXT YEAR'),
+        ta({rows:4,value:review.comments?.[half==='H1'?'midYear':'eoy']?.[half==='H1'?'devPlan':'achievements']||'',
+          placeholder:half==='H1'?'Development plan narrative for second half...':'Key achievements and focus areas for next year...',
+          onChange:e=>update(`comments.${half==='H1'?'midYear':'eoy'}.${half==='H1'?'devPlan':'achievements'}`,e.target.value),
+          style:{...fieldStyle,resize:'vertical'}})
+      )
+    ),
+    // Action items header
+    div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+      div({style:{fontWeight:700,fontSize:13,color:TEXT}},'Development Action Items'),
+      PrimaryBtn({onClick:addItem,style:{fontSize:11}},'+ Add Item')
+    ),
+    // Column headers
+    plan.length>0&&div({style:{display:'grid',
+      gridTemplateColumns:'180px 1fr 120px 110px 32px',
+      gap:8,padding:'4px 0',fontSize:10,fontWeight:700,color:TEXT3,textTransform:'uppercase',letterSpacing:'.4px',
+      borderBottom:`1px solid ${BDR}`,marginBottom:4}},
+      span(null,'Focus Area'),span(null,'Action / Plan'),
+      span(null,'Target Date'),span(null,'Status'),span(null)
+    ),
+    // Items
+    plan.length===0
+      ? div({style:{padding:'32px 0',textAlign:'center',color:TEXT3}},
+          div({style:{fontSize:20,marginBottom:6}},'📝'),
+          div({style:{fontSize:12}},'No development items yet. Click "+ Add Item" to begin.'))
+      : div({style:{display:'flex',flexDirection:'column',gap:6}},
+          ...plan.map((item,i) =>
+            div({key:item.id||i,style:{display:'grid',
+              gridTemplateColumns:'180px 1fr 120px 110px 32px',
+              gap:8,alignItems:'flex-start',padding:'8px 0',
+              borderBottom:`1px solid ${BDR}`}},
+              // Focus area
+              inp({type:'text',value:item.area,placeholder:'e.g. OEPE, Staffing...',
+                onChange:e=>setField(i,'area',e.target.value),
+                style:fieldStyle}),
+              // Action
+              ta({rows:2,value:item.action,placeholder:'Specific action or development plan...',
+                onChange:e=>setField(i,'action',e.target.value),
+                style:{...fieldStyle,resize:'vertical'}}),
+              // Target date
+              inp({type:'date',value:item.targetDate||'',
+                onChange:e=>setField(i,'targetDate',e.target.value),
+                style:fieldStyle}),
+              // Status
+              sel({value:item.status,onChange:e=>setField(i,'status',e.target.value),
+                style:{...fieldStyle,color:STATUS_COLOR[item.status]||TEXT,fontWeight:600}},
+                ...STATUS_OPTS.map(s=>opt({value:s,key:s},
+                  s==='in-progress'?'In Progress':s.charAt(0).toUpperCase()+s.slice(1)))),
+              // Remove
+              btn({onClick:()=>remove(i),
+                style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',
+                  fontSize:16,padding:'2px',lineHeight:1,alignSelf:'center'}},'×')
+            )
+          )
+        ),
+    // Notes field at bottom
+    plan.length>0&&div({style:{marginTop:16}},
+      div({style:{fontSize:11,fontWeight:700,color:TEXT3,marginBottom:4}},'GENERAL NOTES / FOLLOW-UP'),
+      ta({rows:3,
+        value:half==='H1'?(review.comments?.midYear?.devPlan||''):(review.comments?.eoy?.nextYear||''),
+        placeholder:'Additional notes, follow-up items, or context for the next review period...',
+        onChange:e=>update(half==='H1'?'comments.midYear.devPlan':'comments.eoy.nextYear',e.target.value),
+        style:{...fieldStyle,resize:'vertical'}})
+    )
+  );
+}
+
+// ── Print / PDF export ─────────────────────────────────────────────────────────
+function printReview(review, cfg) {
+  const scores = computeScores(review, cfg);
+  const half   = review.half;
+  const qKeys  = halfQKeys(half);
+  const mths   = halfMonths(half);
+  const halfLabel = half==='H1'?'Mid-Year':'End of Year';
+  const today  = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  const rLabel = r => r===4?'Exceeds':r===3?'On Target':r===2?'Below':'Needs Improvement';
+  const rCol   = r => r===4?'#10b981':r===3?'#2563eb':r===2?'#d97706':'#dc2626';
+
+  const scoreRow = (label, s) => {
+    if (!s) return '';
+    const o = s.overall;
+    const col = o!=null?rCol(Math.round(o)):'#6b7280';
+    return `<tr><td>${label}</td>
+      <td style="text-align:center">${s.metrics!=null?s.metrics.toFixed(2):'—'}</td>
+      <td style="text-align:center">${s.behavioral!=null?s.behavioral.toFixed(2):'—'}</td>
+      <td style="text-align:center;font-weight:700;color:${col}">${o!=null?o.toFixed(2):'—'}</td>
+      <td style="text-align:center;color:${col};font-weight:600">${o!=null?rLabel(Math.round(o)):'—'}</td></tr>`;
+  };
+
+  const devRows = (review.devPlan||[]).map(item=>`
+    <tr>
+      <td>${item.area||'—'}</td>
+      <td>${item.action||'—'}</td>
+      <td style="text-align:center">${item.targetDate||'—'}</td>
+      <td style="text-align:center;font-weight:600;color:${item.status==='complete'?'#10b981':item.status==='in-progress'?'#2563eb':'#d97706'}">
+        ${item.status==='in-progress'?'In Progress':item.status?item.status.charAt(0).toUpperCase()+item.status.slice(1):'Open'}</td>
+    </tr>`).join('');
+
+  const compRows = (catKey) => {
+    const items = cfg.competencies[review.role]?.[catKey]||[];
+    if (!items.length) return '<tr><td colspan="5" style="color:#9ca3af">No items</td></tr>';
+    return items.map((item,i)=>{
+      const qRatings = qKeys.map(q=>{
+        const r = review.behavioralRatings?.[q]?.[catKey]?.[i];
+        return r!=null?`<td style="text-align:center;font-weight:700;color:${rCol(r)}">${r}</td>`:'<td style="text-align:center;color:#9ca3af">—</td>';
+      }).join('');
+      return `<tr><td>${i+1}. ${item}</td>${qRatings}</tr>`;
+    }).join('');
+  };
+
+  const wageSection = half==='H2'?`
+    <h2>Wage Review</h2>
+    <table><tr>
+      <th>Current Rate</th><th>Recommended Increase</th><th>Approved Rate</th><th>Effective Date</th>
+    </tr><tr>
+      <td>$${review.wage?.current||'—'}</td>
+      <td>$${review.wage?.recommended||'—'}</td>
+      <td>$${review.wage?.approved||'—'}</td>
+      <td>${review.wage?.effectiveDate||'—'}</td>
+    </tr></table>
+    ${review.wage?.notes?`<p><strong>Notes:</strong> ${review.wage.notes}</p>`:''}`:''
+
+  const allCatSections = [...Object.keys(cfg.categoryWeights),'admin'].map(cat=>`
+    <h3>${CAT_LABELS[cat]||cat}</h3>
+    <table>
+      <tr><th>Competency</th>${qKeys.map(q=>`<th style="text-align:center">${qLabel(q)}</th>`).join('')}</tr>
+      ${compRows(cat)}
+    </table>
+    ${qKeys.map(q=>{
+      const c=review.comments?.[q]?.[cat];
+      return c?`<p><em>${qLabel(q)} Comments:</em> ${c}</p>`:'';
+    }).join('')}
+  `).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>${review.name} — ${halfLabel} ${review.year} Performance Review</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:20px;max-width:900px;margin:0 auto}
+    h1{font-size:18px;font-weight:700;margin-bottom:4px}
+    h2{font-size:14px;font-weight:700;margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid #111}
+    h3{font-size:12px;font-weight:700;margin:12px 0 6px;color:#374151}
+    table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:11px}
+    th{background:#f3f4f6;padding:5px 8px;text-align:left;border:1px solid #d1d5db;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+    td{padding:5px 8px;border:1px solid #e5e7eb;vertical-align:top}
+    tr:nth-child(even) td{background:#fafafa}
+    .header-block{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #111}
+    .meta{font-size:11px;color:#6b7280;margin-top:4px}
+    .score-pill{display:inline-block;padding:2px 8px;border-radius:4px;font-weight:700}
+    .sig-block{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}
+    .sig-line{border-top:1px solid #111;margin-top:40px;padding-top:4px;font-size:10px;color:#6b7280}
+    .narrative{background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:10px;margin:8px 0;font-size:11px;min-height:40px;white-space:pre-wrap}
+    @media print{body{padding:10px}@page{margin:.5in}}
+  </style></head><body>
+  <div class="header-block">
+    <div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#9ca3af;text-transform:uppercase;margin-bottom:4px">Murphy Family Restaurants · Salaried Management Performance Review</div>
+      <h1>${review.name}</h1>
+      <div class="meta">${ROLE_LABELS[review.role]||review.role} · ${review.loc?`Store ${review.loc}`:'All Stores'} · ${halfLabel} ${review.year}</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#6b7280">
+      <div>Review Date: ${today}</div>
+      <div>Status: ${(review.status||'Draft').toUpperCase()}</div>
+    </div>
+  </div>
+
+  <h2>Overall Scores</h2>
+  <table>
+    <tr><th>Period</th><th style="text-align:center">Metrics (70%)</th><th style="text-align:center">Behavioral (30%)</th><th style="text-align:center">Overall</th><th style="text-align:center">Rating</th></tr>
+    ${qKeys.map(q=>scoreRow(qLabel(q),scores[q])).join('')}
+    ${scoreRow(halfLabel+' Total',scores.half)}
+  </table>
+  <p style="font-size:10px;color:#6b7280;margin-bottom:16px">Rating Scale: 4 = Exceeds · 3 = On Target · 2 = Below · 1 = Needs Improvement</p>
+
+  <h2>KPI Results Summary</h2>
+  ${Object.entries(cfg.categoryWeights).map(([cat,cw])=>{
+    const metrics = (cfg.metrics[cat]||[]).filter(m=>m.scored);
+    if(!metrics.length) return '';
+    return `<h3>${cw.label||cat} (${Math.round(cw.weight*100)}% category weight)</h3>
+    <table>
+      <tr><th>Metric</th>${qKeys.map(q=>`<th style="text-align:center">${qLabel(q)} Avg</th>`).join('')}</tr>
+      ${metrics.map(m=>{
+        const qRatings = qKeys.map(q=>{
+          const qMts = qMonths(q).filter(mn=>mths.includes(mn));
+          const rats = qMts.map(mn=>{
+            const mo=(review.kpis?.months||{})[mn]||{};
+            return rateMetric(mo[m.key],mo[m.key+'Tgt'],m);
+          }).filter(r=>r!=null);
+          const avg = rats.length?rats.reduce((a,b)=>a+b,0)/rats.length:null;
+          return avg!=null
+            ?`<td style="text-align:center;font-weight:700;color:${rCol(Math.round(avg))}">${avg.toFixed(1)}</td>`
+            :'<td style="text-align:center;color:#9ca3af">—</td>';
+        }).join('');
+        return `<tr><td>${m.label}</td>${qRatings}</tr>`;
+      }).join('')}
+    </table>`;
+  }).join('')}
+
+  <h2>Behavioral Ratings</h2>
+  ${allCatSections}
+
+  <h2>Development Plan</h2>
+  ${review.devPlan?.length?`
+  <table>
+    <tr><th>Focus Area</th><th>Action / Plan</th><th style="text-align:center">Target Date</th><th style="text-align:center">Status</th></tr>
+    ${devRows}
+  </table>`:'<p style="color:#9ca3af">No development items recorded.</p>'}
+
+  ${review.comments?.midYear?.summary?`<h3>Mid-Year Summary</h3><div class="narrative">${review.comments.midYear.summary}</div>`:''}
+  ${review.comments?.midYear?.devPlan?`<h3>Mid-Year Development Plan</h3><div class="narrative">${review.comments.midYear.devPlan}</div>`:''}
+  ${review.comments?.eoy?.summary?`<h3>End of Year Summary</h3><div class="narrative">${review.comments.eoy.summary}</div>`:''}
+  ${review.comments?.eoy?.achievements?`<h3>Achievements</h3><div class="narrative">${review.comments.eoy.achievements}</div>`:''}
+  ${review.comments?.eoy?.nextYear?`<h3>Focus for Next Year</h3><div class="narrative">${review.comments.eoy.nextYear}</div>`:''}
+
+  ${wageSection}
+
+  <div class="sig-block">
+    <div>
+      <div class="sig-line">Manager Signature &amp; Date</div>
+    </div>
+    <div>
+      <div class="sig-line">Supervisor Signature &amp; Date</div>
+    </div>
+  </div>
+  </body></html>`;
+
+  const w = window.open('','_blank','width=960,height=800');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(()=>w.print(), 400);
+}
+
 // ── Summary Tab ────────────────────────────────────────────────────────────────
-function SummaryTab({review, cfg, scores, qKeys, mths}) {
+function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
   const half = review.half;
   const halfLabel = half==='H1' ? 'Mid-Year' : 'End of Year';
 
@@ -636,23 +911,26 @@ function SummaryTab({review, cfg, scores, qKeys, mths}) {
     // Wage section (EOY only)
     half==='H2'&&div({style:{marginTop:20,padding:'14px 16px',background:S2,borderRadius:R,
       border:`1px solid ${BDR}`}},
-      div({style:{fontWeight:700,fontSize:12,color:TEXT,marginBottom:12}},'Wage Review'),
-      div({style:{display:'grid',gridTemplateColumns:'160px 1fr',gap:'8px 16px',fontSize:12,alignItems:'center'}},...[
-        ['Current Rate ($)', 'wage.current'],
-        ['Recommended Increase ($)', 'wage.recommended'],
-        ['Approved Rate ($)', 'wage.approved'],
-        ['Effective Date', 'wage.effectiveDate'],
-      ].flatMap(([label, key]) => [
+      div({style:{fontWeight:700,fontSize:12,color:TEXT,marginBottom:4}},'Wage Review'),
+      div({style:{fontSize:11,color:TEXT3,marginBottom:12}},'Annual wage decisions are made at End of Year.'),
+      div({style:{display:'grid',gridTemplateColumns:'180px 1fr',gap:'8px 16px',fontSize:12,alignItems:'center'}},...[
+        ['Current Rate ($/hr)',       'current',      'number'],
+        ['Recommended Increase ($/hr)','recommended', 'number'],
+        ['Approved New Rate ($/hr)',  'approved',     'number'],
+        ['Effective Date',            'effectiveDate','date'],
+      ].flatMap(([label, field, type]) => [
         lbl({style:{color:TEXT2}},label),
-        key==='wage.effectiveDate'
-          ? inp({type:'date',value:review.wage?.effectiveDate||'',
-              onChange:()=>{/* handled in editor */},
+        type==='date'
+          ? inp({type:'date',value:review.wage?.[field]||'',
+              onChange:e=>update(`wage.${field}`,e.target.value),
               style:{padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
                 borderRadius:4,color:TEXT,fontSize:12}})
-          : NumInput({value:review[key.split('.')[0]]?.[key.split('.')[1]], onChange:()=>{}})
+          : NumInput({value:review.wage?.[field], onChange:v=>update(`wage.${field}`,v),
+              style:{width:100}})
       ]),
         lbl({style:{color:TEXT2,alignSelf:'flex-start'}},'Notes'),
-        ta({rows:2,value:review.wage?.notes||'',onChange:()=>{},
+        ta({rows:2,value:review.wage?.notes||'',
+          onChange:e=>update('wage.notes',e.target.value),
           style:{padding:'5px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
             borderRadius:4,color:TEXT,fontSize:12,resize:'vertical',fontFamily:'var(--sans)'}})
       )

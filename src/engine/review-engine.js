@@ -326,6 +326,7 @@ export function blankReview(name, role, loc, year, half, cfg) {
       midYear:{ summary:'', devPlan:'' },
       eoy:{ summary:'', achievements:'', nextYear:'' },
     },
+    devPlan: [],
     wage:{ current:null, recommended:null, approved:null, effectiveDate:'', notes:'' },
     createdAt: new Date().toISOString().slice(0,10),
     updatedAt: new Date().toISOString().slice(0,10),
