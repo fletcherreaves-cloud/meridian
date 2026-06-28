@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import './meridian.css';
 import { ErrorBoundary } from './features/session.js';
 import App from './app/App.js';
+import { AuthGate } from './components/AuthGate.js';
 
 window._cdnError = function(name) {
   var msg = '<div style="padding:30px;font-family:monospace;background:#090e18;color:#e2e8f0;min-height:100vh">'
@@ -24,7 +25,11 @@ window._cdnError = function(name) {
 
 try {
   createRoot(document.getElementById('root')).render(
-    React.createElement(ErrorBoundary, null, React.createElement(App))
+    React.createElement(ErrorBoundary, null,
+      React.createElement(AuthGate, null,
+        React.createElement(App)
+      )
+    )
   );
 } catch(e) {
   document.getElementById('root').innerHTML =

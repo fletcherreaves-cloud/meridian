@@ -27,6 +27,9 @@ import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligen
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
+import { supabase } from '../lib/supabase.js';
+import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase } from '../engine/review-engine.js';
+import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { LocationIntelligence } from '../features/location-intel.js';
@@ -58,9 +61,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.230';
+const MERIDIAN_VERSION    = '4.231';
 const MERIDIAN_BUILD_DATE = '2026-06-27';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.231', date:'2026-06-27', changes:[
+    'Supabase integration (Stack A): added @supabase/supabase-js, AuthGate login screen (magic-link email), Supabase sync layer in review-engine.js, and Sign Out button in topbar. App runs in local-only mode when env vars are absent — no behavior change until Supabase is configured. Schema and RLS policies in supabase/schema.sql.',
+  ]},
   {version:'4.230', date:'2026-06-27', changes:[
     'Performance Reviews — Competencies: each item now has an active/inactive toggle (checkbox). Inactive items are hidden from the rating UI and excluded from behavioral scoring, but keep their index so existing ratings stay intact. Also supports custom behavioral categories: use "+ Category" in Customize → Competencies to add your own categories (editable label, deletable).',
     'Performance Reviews — Weights: metric rows now show "Active" instead of "Scored" with a clearer label. Delete button (×) per metric removes it from scoring calculations (KPI data is preserved). Deactivating via checkbox excludes from scoring without removing the metric.',
@@ -455,6 +461,16 @@ function App() {
   };
 
   React.useEffect(()=>{ performFullIDBRestore(); },[]);
+
+  // ── Supabase: register client + sync on mount ──────────────────────────────
+  React.useEffect(()=>{
+    if (!supabase) return;
+    setSupabaseClient(supabase);
+    // Pull reviews and config from the database into localStorage on first load.
+    // localStorage stays as the read source so no UI components need to change.
+    syncReviewsFromSupabase(supabase).catch(()=>{});
+    syncConfigFromSupabase(supabase).catch(()=>{});
+  },[]);
 
   React.useEffect(()=>{
     const existing=userTargets;

@@ -263,7 +263,7 @@ export function resetReviewConfig() {
   try { localStorage.removeItem(REVIEW_CONFIG_KEY); } catch {}
 }
 
-// ── Review CRUD ────────────────────────────────────────────────────────────────
+// ── Review CRUD (localStorage) ────────────────────────────────────────────────
 export function getReviews() {
   try { return JSON.parse(localStorage.getItem(PERF_REVIEWS_KEY) || '{}'); } catch { return {}; }
 }
@@ -278,12 +278,88 @@ export function upsertReview(review) {
   const id = review.id || reviewId(review.name, review.year, review.half);
   reviews[id] = { ...review, id, updatedAt: new Date().toISOString().slice(0,10) };
   saveReviews(reviews);
+  // Fire-and-forget Supabase push if a client has been registered
+  if (_sb) _pushReview(_sb, reviews[id]);
   return id;
 }
 export function deleteReview(id) {
   const reviews = getReviews();
   delete reviews[id];
   saveReviews(reviews);
+  if (_sb) _deleteReview(_sb, id);
+}
+
+// ── Supabase sync ─────────────────────────────────────────────────────────────
+// Call setSupabaseClient(supabaseClient) once on app mount (from App.js).
+// After that, upsertReview / deleteReview / saveReviewConfig automatically
+// mirror writes to the database. syncFromSupabase() pulls the server state
+// into localStorage on login.
+
+let _sb = null;
+export function setSupabaseClient(client) { _sb = client; }
+
+async function _pushReview(sb, review) {
+  try {
+    const { error } = await sb.from('reviews').upsert({
+      id:            review.id,
+      data:          review,
+      reviewee_name: review.name,
+      reviewee_loc:  review.loc,
+      review_year:   review.year,
+      review_half:   review.half,
+      status:        review.status || 'draft',
+      org:           review.org || null,
+      updated_at:    new Date().toISOString(),
+    });
+    if (error) console.error('Meridian: Supabase review push error', error.message);
+  } catch (e) {
+    console.error('Meridian: Supabase review push failed', e);
+  }
+}
+
+async function _deleteReview(sb, id) {
+  try {
+    const { error } = await sb.from('reviews').delete().eq('id', id);
+    if (error) console.error('Meridian: Supabase review delete error', error.message);
+  } catch (e) {
+    console.error('Meridian: Supabase review delete failed', e);
+  }
+}
+
+// Pull all reviews the current user can access into localStorage.
+// Called once after login.
+export async function syncReviewsFromSupabase(sb) {
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('reviews').select('id, data');
+    if (error) { console.error('Meridian: Supabase sync error', error.message); return; }
+    if (!data?.length) return;
+    const merged = { ...getReviews() };
+    data.forEach(row => { if (row.data) merged[row.id] = row.data; });
+    saveReviews(merged);
+  } catch (e) {
+    console.error('Meridian: Supabase sync failed', e);
+  }
+}
+
+// Pull org config from Supabase and merge it into localStorage.
+export async function syncConfigFromSupabase(sb, key = 'review_config') {
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('org_config').select('data').eq('key', key).maybeSingle();
+    if (error || !data) return;
+    try { localStorage.setItem(REVIEW_CONFIG_KEY, JSON.stringify(data.data)); } catch {}
+  } catch {}
+}
+
+// Push current org config to Supabase.
+export async function pushConfigToSupabase(sb, cfg, key = 'review_config') {
+  if (!sb) return;
+  try {
+    await sb.from('org_config').upsert({ key, data: cfg, updated_at: new Date().toISOString() });
+  } catch (e) {
+    console.error('Meridian: config push failed', e);
+  }
 }
 
 // ── Blank review builder ───────────────────────────────────────────────────────
