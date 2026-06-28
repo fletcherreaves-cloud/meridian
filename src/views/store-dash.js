@@ -2441,6 +2441,7 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
   // Get data rows for selected location, last 4 weeks
   const cutoff = React.useMemo(()=>addDR(new Date(),-28),[]);
   const locRows = uM(()=>{
+    if (!ds) return {cR:[], lR:[], oR:[]};
     const locs = selLoc==='all'?Object.keys(STORE_NAMES):[selLoc];
     const filt=(arr)=>(arr||[]).filter(r=>locs.includes(String(r.loc))&&r.date>=cutoff);
     return{cR:filt(ds.ctrlRows), lR:filt(ds.laborRows), oR:filt(ds.opsRows)};
@@ -2448,6 +2449,7 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
 
   // Smart targets: best-quartile from ALL available data per loc
   const smartT = uM(()=>{
+    if (!ds) return {};
     const locs = selLoc==='all'?Object.keys(STORE_NAMES):[selLoc];
     const cAll=(ds.ctrlRows||[]).filter(r=>locs.includes(String(r.loc)));
     const lAll=(ds.laborRows||[]).filter(r=>locs.includes(String(r.loc))&&r.sales>0);
