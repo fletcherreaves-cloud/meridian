@@ -80,79 +80,74 @@ create table if not exists public.staff_assignments (
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- All policies use get_my_role() — a SECURITY DEFINER function that reads
+-- profiles WITHOUT triggering RLS, preventing infinite recursion.
+
+-- ── SECURITY DEFINER helper (run before any policies) ─────────────────────────
+create or replace function public.get_my_role()
+returns text language sql security definer stable as $$
+  select role from public.profiles where id = auth.uid();
+$$;
 
 -- ── profiles RLS ──────────────────────────────────────────────────────────────
 alter table public.profiles enable row level security;
 
--- Users can read their own profile
+drop policy if exists "profiles: own read"  on public.profiles;
+drop policy if exists "profiles: admin all" on public.profiles;
+
 create policy "profiles: own read" on public.profiles
   for select using (auth.uid() = id);
 
--- Admins can read and modify all profiles
 create policy "profiles: admin all" on public.profiles
-  for all using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-  );
+  for all using (get_my_role() = 'admin');
 
 -- ── org_config RLS ────────────────────────────────────────────────────────────
 alter table public.org_config enable row level security;
 
--- All authenticated users can read config
+drop policy if exists "config: authenticated read"     on public.org_config;
+drop policy if exists "config: admin/supervisor write" on public.org_config;
+
 create policy "config: authenticated read" on public.org_config
   for select using (auth.uid() is not null);
 
--- Admins and supervisors can update config
 create policy "config: admin/supervisor write" on public.org_config
-  for all using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('admin', 'supervisor')
-    )
-  );
+  for all using (get_my_role() in ('admin', 'supervisor'));
 
 -- ── reviews RLS ───────────────────────────────────────────────────────────────
 alter table public.reviews enable row level security;
 
--- Admins see everything
-create policy "reviews: admin all" on public.reviews
-  for all using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-  );
+drop policy if exists "reviews: admin all"            on public.reviews;
+drop policy if exists "reviews: supervisor read"      on public.reviews;
+drop policy if exists "reviews: manager read own locs" on public.reviews;
+drop policy if exists "reviews: authenticated write"  on public.reviews;
+drop policy if exists "reviews: authenticated update" on public.reviews;
+drop policy if exists "reviews: admin delete"         on public.reviews;
 
--- Supervisors see reviews for their accessible_locs (null = all)
+create policy "reviews: admin all" on public.reviews
+  for all using (get_my_role() = 'admin');
+
 create policy "reviews: supervisor read" on public.reviews
   for select using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.role = 'supervisor'
-        and (p.accessible_locs is null or reviewee_loc = any(p.accessible_locs))
+    get_my_role() = 'supervisor' and (
+      (select accessible_locs from public.profiles where id = auth.uid()) is null
+      or reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid()))
     )
   );
 
--- Managers see reviews for their own accessible_locs only
 create policy "reviews: manager read own locs" on public.reviews
   for select using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid()
-        and p.role = 'manager'
-        and reviewee_loc = any(p.accessible_locs)
-    )
+    get_my_role() = 'manager' and
+    reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid()))
   );
 
--- Any authenticated user can insert/update reviews (RLS on read handles visibility)
 create policy "reviews: authenticated write" on public.reviews
   for insert with check (auth.uid() is not null);
 
 create policy "reviews: authenticated update" on public.reviews
   for update using (auth.uid() is not null);
 
--- Only admins can delete reviews
 create policy "reviews: admin delete" on public.reviews
-  for delete using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-  );
+  for delete using (get_my_role() = 'admin');
 
 -- ── staff_assignments RLS ─────────────────────────────────────────────────────
 alter table public.staff_assignments enable row level security;
