@@ -8,13 +8,16 @@ import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
 import { STORE_STAFF } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
-import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets } from '../parsers/index.js';
+import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions } from '../parsers/index.js';
 
 function buildDS(workbooks){
   const ds={laborRows:[],opsRows:[],ctrlRows:[],weatherRows:[],inventoryRows:[],
     peaksSvcRows:[],peaksSalesRows:[],auditRows:[],fobRows:[],trendsRows:[],
     darRows:[],   // Daily Activity Report — hourly OEPE/GC/Sales per store
     pmixData:{},  // Product Mix — item-level sales aggregated by family group
+    glimpseRows:[],  // QSRSoft Daily Glimpse — daily per-store snapshot
+    cashRows:[],     // QSRSoft Cash Sheet — daily cash controls + 3PO delivery platform mix
+    exceptionRows:[], // QSRSoft Labor Exceptions — per-store compliance exception counts
     records:{},targets:{},loaded:false,
     laborIdx:{},opsIdx:{},ctrlIdx:{},weatherIdx:{},storeIds:[],lastActual:{},
     laborByLoc:{},opsByLoc:{},ctrlByLoc:{},darByLoc:{}};
@@ -324,18 +327,21 @@ function mergeDS(existing, wb, type, filename) {
   // Clone existing DS arrays (shallow) and add new parsed rows
   const ds = {
     ...existing,
-    laborRows:    [...existing.laborRows],
-    opsRows:      [...existing.opsRows],
-    ctrlRows:     [...existing.ctrlRows],
-    weatherRows:  [...existing.weatherRows],
-    peaksSvcRows: [...(existing.peaksSvcRows||[])],
+    laborRows:     [...existing.laborRows],
+    opsRows:       [...existing.opsRows],
+    ctrlRows:      [...existing.ctrlRows],
+    weatherRows:   [...existing.weatherRows],
+    peaksSvcRows:  [...(existing.peaksSvcRows||[])],
     peaksSalesRows:[...(existing.peaksSalesRows||[])],
-    auditRows:    [...(existing.auditRows||[])],
-    fobRows:      [...(existing.fobRows||[])],
-    trendsRows:   [...(existing.trendsRows||[])],
-    inventoryRows:[...(existing.inventoryRows||[])],
-    targets:      {...existing.targets},
-    records:      {...existing.records},
+    auditRows:     [...(existing.auditRows||[])],
+    fobRows:       [...(existing.fobRows||[])],
+    trendsRows:    [...(existing.trendsRows||[])],
+    inventoryRows: [...(existing.inventoryRows||[])],
+    glimpseRows:   [...(existing.glimpseRows||[])],
+    cashRows:      [...(existing.cashRows||[])],
+    exceptionRows: [...(existing.exceptionRows||[])],
+    targets:       {...existing.targets},
+    records:       {...existing.records},
   };
   try {
     console.log('[McForecast] Parsing file type:', type, '| Sheets:', wb.SheetNames.join(', '));
@@ -362,6 +368,15 @@ function mergeDS(existing, wb, type, filename) {
     }
     else if(type==='shiftmgr'){if(!ds.shiftRows)ds.shiftRows=[];ds.shiftRows.push(...parseShiftMgr(wb));}
     else if(type==='records')Object.assign(ds.records,parseRecords(wb));
+    // ── QSRSoft email report types ──────────────────────────────────────────
+    else if(type==='sales-ledger')ds.laborRows.push(...parseSalesLedger(wb));
+    else if(type==='daily-glimpse'){
+      const _dm=(filename||'').match(/(\d{4}-\d{2}-\d{2})/);
+      const _dh=_dm?new Date(_dm[1]+'T12:00:00'):new Date();
+      ds.glimpseRows.push(...parseDailyGlimpse(wb,_dh));
+    }
+    else if(type==='cash-sheet')ds.cashRows.push(...parseCashSheet(wb));
+    else if(type==='labor-exceptions')ds.exceptionRows.push(...parseLaborExceptions(wb));
     else if(type==='ops_report'||type==='combined'){
       // Operations Report: Sales + Service + Controls + FOB sheets.
       // All sheets are period-summary format (no Business Date column).

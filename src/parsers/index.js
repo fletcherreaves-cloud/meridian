@@ -195,6 +195,11 @@ function detectType(filename, wb){
   if(fn.includes('control')||fn.includes('cash'))return{type:'ctrl',label:'ControlsData (fuzzy)',dr,confidence:'medium'};
   if(fn.includes('labor'))return{type:'labor',label:'Labor (fuzzy)',dr,confidence:'medium'};
   if(fn.includes('weather')||fn.includes('mesonet'))return{type:'weather',label:'WeatherData (fuzzy)',dr,confidence:'medium'};
+  // \u2500\u2500 QSRSoft email report types \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  if(fn.includes('sales ledger'))       return{type:'sales-ledger',      label:'QSRSoft Sales Ledger',       dr,confidence:'high'};
+  if(fn.includes('daily glimpse'))      return{type:'daily-glimpse',     label:'QSRSoft Daily Glimpse',      dr,confidence:'high'};
+  if(fn.includes('cash sheet'))         return{type:'cash-sheet',        label:'QSRSoft Cash Sheet',         dr,confidence:'high'};
+  if(fn.includes('labor exception'))    return{type:'labor-exceptions',  label:'QSRSoft Labor Exceptions',   dr,confidence:'high'};
   // Inventory Summary and Usage (paper/food/condiment)
   if(fn.includes('inventory summary')&&fn.includes('usage'))return{type:'inventory',label:'Inventory Summary & Usage',confidence:'high',loc:(()=>{const m=filename.match(/^(\d{4,6})\s*[-\u2013]/);return m?m[1]:null;})()};
   // Projections file: detected by filename before sniff
@@ -1019,4 +1024,284 @@ function autoDetectSheets(wb){
   };
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets };
+
+// ── QSRSoft: Sales Ledger ────────────────────────────────────────────────────
+// Daily per-store channel sales with LY comparisons.
+// Column layout mirrors Labor Analysis (parseLaborData already reads these),
+// so route to parseLaborData — labor fields (actHrs etc.) will be 0.
+// The LY and YOY columns are parsed here and stored on salesLYPct / salesLY.
+function parseSalesLedger(wb){
+  // Find sheet: "Sales Ledger" or "Sales" or first sheet
+  const sn=wb.SheetNames.find(s=>s.toLowerCase().includes('sales ledger'))
+          ||wb.SheetNames.find(s=>s.toLowerCase()==='sales'||s.toLowerCase().startsWith('sales '))
+          ||wb.SheetNames[0];
+  const raw=parseRaw(wb,sn),hi=autoHdrRow(raw),h=raw[hi]||[];
+  const C={
+    loc:   fc(h,'Loc','Location'),
+    date:  fc(h,'Date','Business Date'),
+    allNetSales: fc(h,'All Net Sales'),
+    allNetSalesLY: findCol(h,'All Net Sales LY'),
+    salesVsLYPct: findCol(h,'All Net Sales +/- %','All Net Sales YOY %'),
+    gc:    fc(h,'STW GC','GC'),
+    avgCheck: fc(h,'Average Check','Avg Check'),
+    dtSales:  findCol(h,'DT Sales'),
+    dtGC:     findCol(h,'DT GC'),
+    dtAvgChk: findCol(h,'DT Average Check'),
+    dtPctTotal: findCol(h,'DT % of Total Sales'),
+    bfSales: fc(h,'Breakfast Net Sales','Breakfast All Net Sales','BF Net Sales'),
+    bfGC:    fc(h,'Breakfast GC','BF GC'),
+    bfAvgChk:fc(h,'Breakfast Average Check','BF Average Check'),
+    bfPctTotal:fc(h,'Breakfast % of Total Sales','BF % of Total Sales','Breakfast %'),
+    delivSales: fc(h,'McDelivery Net Sales','McDelivery All Net Sales','Delivery Net Sales'),
+    delivGC:    fc(h,'McDelivery GC','Delivery GC'),
+    delivAvgChk:fc(h,'McDelivery Average Check','Delivery Average Check'),
+    delivPctTotal:fc(h,'McDelivery % of Total Sales','Delivery % of Total Sales'),
+    mopSales: fc(h,'MOP Sales','MOP Net Sales','Mobile Order and Pay Net Sales'),
+    mopGC:    fc(h,'MOP GC','MOP GCs'),
+    mopAvgChk:fc(h,'MOP Average Check'),
+    mopPctTotal:fc(h,'MOP Sales %','MOP % of Total Sales','MOP %'),
+    kioskSales: fc(h,'Kiosk All Net Sales','Kiosk Net Sales'),
+    kioskGC:    fc(h,'Kiosk GC'),
+    kioskAvgChk:fc(h,'Kiosk Average Check'),
+    kioskPctTotal:fc(h,'Kiosk % of Total Sales','Kiosk %'),
+    fcSales: findCol(h,'FC All Net Sales'),
+    fcGC:    findCol(h,'FC GC'),
+    fcPctTotal:findCol(h,'FC % of Total Sales'),
+    inStoreSales: findCol(h,'In-Store All Net Sales'),
+    inStoreGC:    findCol(h,'In-Store GC'),
+    inStorePctTotal:findCol(h,'In-Store % of Total Sales'),
+    eatInSales: findCol(h,'Eat in Sales'),
+    eatInGC:    findCol(h,'Eat in GC'),
+  };
+  const rows=[];
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i];if(!r)continue;
+    const loc=String(r[C.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
+    const dt=C.date>=0?parseXLDate(r[C.date]):null;if(!dt)continue;
+    rows.push({loc,date:dt,
+      sales:parseFloat(r[C.allNetSales])||0,
+      allNetSales:parseFloat(r[C.allNetSales])||0,
+      allNetSalesLY:C.allNetSalesLY>=0?parseFloat(r[C.allNetSalesLY])||0:0,
+      salesVsLYPct:C.salesVsLYPct>=0?parsePct(r[C.salesVsLYPct]):null,
+      gc:parseFloat(r[C.gc])||0,
+      avgCheck:parseFloat(r[C.avgCheck])||0,
+      dtSales:parseFloat(r[C.dtSales])||0,dtGC:parseFloat(r[C.dtGC])||0,
+      dtAvgChk:parseFloat(r[C.dtAvgChk])||0,dtPctTotal:parsePct(r[C.dtPctTotal]),
+      bfSales:parseFloat(r[C.bfSales])||0,bfGC:parseFloat(r[C.bfGC])||0,
+      bfAvgChk:parseFloat(r[C.bfAvgChk])||0,bfPctTotal:parsePct(r[C.bfPctTotal]),
+      delivSales:parseFloat(r[C.delivSales])||0,delivGC:parseFloat(r[C.delivGC])||0,
+      delivAvgChk:parseFloat(r[C.delivAvgChk])||0,delivPctTotal:parsePct(r[C.delivPctTotal]),
+      mopSales:parseFloat(r[C.mopSales])||0,mopGC:parseFloat(r[C.mopGC])||0,
+      mopAvgChk:parseFloat(r[C.mopAvgChk])||0,mopPctTotal:parsePct(r[C.mopPctTotal]),
+      kioskSales:parseFloat(r[C.kioskSales])||0,kioskGC:parseFloat(r[C.kioskGC])||0,
+      kioskAvgChk:parseFloat(r[C.kioskAvgChk])||0,kioskPctTotal:parsePct(r[C.kioskPctTotal]),
+      fcSales:parseFloat(r[C.fcSales])||0,fcGC:parseFloat(r[C.fcGC])||0,
+      fcPctTotal:parsePct(r[C.fcPctTotal]),
+      inStoreSales:parseFloat(r[C.inStoreSales])||0,inStoreGC:parseFloat(r[C.inStoreGC])||0,
+      inStorePctTotal:parsePct(r[C.inStorePctTotal]),
+      eatInSales:parseFloat(r[C.eatInSales])||0,eatInGC:parseFloat(r[C.eatInGC])||0,
+      // Labor fields stub — Sales Ledger has no labor data
+      laborPct:0,actHrs:0,otHrs:0,tpph:0,spph:0,
+    });
+  }
+  return rows;
+}
+
+
+// ── QSRSoft: Daily Glimpse ───────────────────────────────────────────────────
+// Single-day per-store snapshot: sales, controls, OEPE, digital, daypart counts.
+// Has a 2-row header: row 0 = section groupings, row 1 = column names with 'Loc'.
+// autoHdrRow finds row 1 automatically.
+function parseDailyGlimpse(wb, dateHint){
+  const sn=wb.SheetNames.find(s=>s.toLowerCase().includes('glimpse'))
+          ||wb.SheetNames.find(s=>s.toLowerCase().includes('daily'))
+          ||wb.SheetNames[0];
+  const raw=parseRaw(wb,sn);
+  // autoHdrRow scans first 5 rows for one containing 'loc' — finds row 1 (row 0 is section labels)
+  const hi=autoHdrRow(raw,6),h=raw[hi]||[];
+  const C={
+    loc:    fc(h,'Loc','Location'),
+    allNetSales: fc(h,'All Net Sales'),
+    salesVsPrior: findCol(h,'Sales +/-'),
+    salesVsPriorMtd: findCol(h,'Sales +/- MTD'),
+    salesVsPriorPct: findCol(h,'All Net Sales +/- %','+/- %'),
+    dtSales: fc(h,'DT Sales','DT Net Sales'),
+    dtGC:    fc(h,'DT GC','DT Guest Count'),
+    dtAvgCheck: fc(h,'DT Average Check','DT Avg Check'),
+    stwGC:   fc(h,'STW GC','Total GC'),
+    avgCheck:fc(h,'Average Check','Avg Check'),
+    laborPct: findCol(h,'Punch Labor %','Punched Labor %'),
+    laborPctMtd: findCol(h,'Punch Labor % MTD'),
+    promoAmt: fc(h,'Promo Amt','Promo Amount'),
+    promoPct: fc(h,'Promo Pct','Promo %','Promo Percent'),
+    posOverCnt: fc(h,'POS Overrings Cnt','POS Overring Count','POS Overrings Count'),
+    posOverAmt: fc(h,'POS Overrings Amt','POS Overring Amount','POS Overrings Amount'),
+    cashOS:    fc(h,'Cash Over/Short $','Cash Over Short $','Cash O/S $'),
+    cashOSPct: fc(h,'Cash Over/Short %','Cash Over Short %','Cash O/S %'),
+    tRedVoidCnt:    fc(h,'T Red After: Voided','T-Red After Voided','Voided Cnt','T Red Voided'),
+    tRedDeletedCnt: fc(h,'T Red After: Deleted','T-Red After Deleted','Deleted Cnt','T Red Deleted'),
+    oepe:     fc(h,'OEPE W/O Parked','OEPE Without Parked','OEPE W/o Parked'),
+    oepeFull: fc(h,'OEPE W/ Parked','OEPE With Parked','OEPE w/ Parked'),
+    parkedPct:fc(h,'Parked %','DT Parked %'),
+    brkCarCnt:fc(h,'Brk 7am-9am','Brk 7am','Breakfast 7am'),
+    luCarCnt: fc(h,'Lu 11am-2pm','Lu 11am','Lunch 11am'),
+    dnCarCnt: fc(h,'Dn 5pm-7pm','Dn 5pm','Dinner 5pm'),
+    digitalPctSales:    fc(h,'Total Digital % of Sales'),
+    digitalPctSalesMtd: findCol(h,'Total Digital % of Sales MTD'),
+    appPctSales:        fc(h,'Digital App Percent of Sales','App % of Sales'),
+  };
+  const rows=[];
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i];if(!r)continue;
+    const loc=String(r[C.loc]||'').trim();
+    if(!loc||!/^\d+$/.test(loc))continue;
+    rows.push({loc,date:dateHint||new Date(),
+      allNetSales:parseFloat(r[C.allNetSales])||0,
+      salesVsPrior:parseFloat(r[C.salesVsPrior])||0,
+      salesVsPriorPct:parsePct(r[C.salesVsPriorPct]),
+      dtSales:parseFloat(r[C.dtSales])||0,
+      dtGC:parseFloat(r[C.dtGC])||0,
+      dtAvgCheck:parseFloat(r[C.dtAvgCheck])||0,
+      gc:parseFloat(r[C.stwGC])||0,
+      avgCheck:parseFloat(r[C.avgCheck])||0,
+      laborPct:parsePct(r[C.laborPct]),
+      promoAmt:parseFloat(r[C.promoAmt])||0,
+      promoPct:parsePct(r[C.promoPct]),
+      posOverCnt:parseFloat(r[C.posOverCnt])||0,
+      posOverAmt:parseFloat(r[C.posOverAmt])||0,
+      cashOS:parseFloat(r[C.cashOS])||0,
+      cashOSPct:parsePct(r[C.cashOSPct]),
+      tRedVoidCnt:parseFloat(r[C.tRedVoidCnt])||0,
+      tRedDeletedCnt:parseFloat(r[C.tRedDeletedCnt])||0,
+      oepe:parseFloat(r[C.oepe])||0,
+      oepeFull:parseFloat(r[C.oepeFull])||0,
+      parkedPct:parsePct(r[C.parkedPct]),
+      brkCarCnt:parseFloat(r[C.brkCarCnt])||0,
+      luCarCnt:parseFloat(r[C.luCarCnt])||0,
+      dnCarCnt:parseFloat(r[C.dnCarCnt])||0,
+      digitalPctSales:parsePct(r[C.digitalPctSales]),
+      appPctSales:parsePct(r[C.appPctSales]),
+    });
+  }
+  return rows;
+}
+
+
+// ── QSRSoft: Cash Sheet ──────────────────────────────────────────────────────
+// Daily per-store cash management + 3PO delivery platform breakdown.
+// Subtotal rows ("Total 3708", "Grand Total") are filtered by loc pattern.
+function parseCashSheet(wb){
+  const sn=wb.SheetNames.find(s=>s.toLowerCase().includes('cash'))
+          ||wb.SheetNames[0];
+  const raw=parseRaw(wb,sn),hi=autoHdrRow(raw),h=raw[hi]||[];
+  const C={
+    loc:   fc(h,'Loc','Location'),
+    date:  fc(h,'Date','Business Date'),
+    allNetSales: fc(h,'All Net Sales','Net Sales'),
+    gc:    fc(h,'STW GC','GC','Guest Count'),
+    avgCheck:fc(h,'Average Check','Avg Check'),
+    // 3PO platforms (each individually)
+    doorDashSales: findCol(h,'DoorDash Net Sales','DoorDash Sales'),
+    doorDashGC:    findCol(h,'DoorDash GC','DoorDash Guest'),
+    uberEatsSales: findCol(h,'UberEats Net Sales','Uber Eats Net Sales','UberEats Sales'),
+    uberEatsGC:    findCol(h,'UberEats GC','Uber Eats GC','UberEats Guest'),
+    grubhubSales:  findCol(h,'Grubhub Net Sales','GrubHub Net Sales','Grubhub Sales'),
+    grubhubGC:     findCol(h,'Grubhub GC','GrubHub GC','Grubhub Guest'),
+    total3poSales: fc(h,'Total 3rd Party Net Sales','Total 3PO Net Sales','Total Third Party Net Sales'),
+    total3poGC:    fc(h,'Total 3rd Party GC','Total 3PO GC'),
+    // Digital channels
+    mopEatIn:    fc(h,'MOP Eat-in','MOP Eatin','MOP Eat in'),
+    mopTakeout:  fc(h,'MOP Takeout','MOP Take Out'),
+    kioskEatIn:  fc(h,'Kiosk Eat-in','Kiosk Eatin','Kiosk Eat in'),
+    kioskTakeout:fc(h,'Kiosk Takeout','Kiosk Take Out'),
+    // Cash O/S
+    cashOS:    fc(h,'Cash Over Short $','Cash Over/Short $','Cash O/S $'),
+    cashOSPct: fc(h,'Cash Over Short %','Cash Over/Short %','Cash O/S %'),
+    // Refunds
+    cashRefCnt:     fc(h,'Cash Refund Count','Cash Refund Cnt'),
+    cashRefAmt:     fc(h,'Cash Refund Amt','Cash Refund Amount'),
+    cashlessRefCnt: fc(h,'Cashless Refund Count','Cashless Refund Cnt'),
+    cashlessRefAmt: fc(h,'Cashless Refund Amt','Cashless Refund Amount'),
+    // POS
+    posOverCnt: fc(h,'POS Overring Count','POS Overrings Cnt','POS Overring Cnt'),
+    posOverAmt: fc(h,'POS Overring Amt','POS Overrings Amt','POS Overring Amount'),
+    // T-Reds
+    tRedVoidCnt:    fc(h,'T-Red After: Void Count','T Red After Void','T Red Voided Cnt'),
+    tRedDeletedCnt: fc(h,'T-Red After: Deleted Count','T Red After Deleted','T Red Deleted Cnt'),
+  };
+  const rows=[];
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i];if(!r)continue;
+    const loc=String(r[C.loc]||'').trim();
+    // Filter subtotal rows: "Total 3708", "Grand Total", blank
+    if(!loc||!/^\d+$/.test(loc))continue;
+    const dt=C.date>=0?parseXLDate(r[C.date]):null;if(!dt)continue;
+    rows.push({loc,date:dt,
+      allNetSales:parseFloat(r[C.allNetSales])||0,
+      gc:parseFloat(r[C.gc])||0,
+      avgCheck:parseFloat(r[C.avgCheck])||0,
+      doorDashSales:C.doorDashSales>=0?parseFloat(r[C.doorDashSales])||0:0,
+      doorDashGC:C.doorDashGC>=0?parseFloat(r[C.doorDashGC])||0:0,
+      uberEatsSales:C.uberEatsSales>=0?parseFloat(r[C.uberEatsSales])||0:0,
+      uberEatsGC:C.uberEatsGC>=0?parseFloat(r[C.uberEatsGC])||0:0,
+      grubhubSales:C.grubhubSales>=0?parseFloat(r[C.grubhubSales])||0:0,
+      grubhubGC:C.grubhubGC>=0?parseFloat(r[C.grubhubGC])||0:0,
+      total3poSales:parseFloat(r[C.total3poSales])||0,
+      total3poGC:parseFloat(r[C.total3poGC])||0,
+      mopEatIn:parseFloat(r[C.mopEatIn])||0,
+      mopTakeout:parseFloat(r[C.mopTakeout])||0,
+      kioskEatIn:parseFloat(r[C.kioskEatIn])||0,
+      kioskTakeout:parseFloat(r[C.kioskTakeout])||0,
+      cashOS:parseFloat(r[C.cashOS])||0,
+      cashOSPct:parsePct(r[C.cashOSPct]),
+      cashRefCnt:parseFloat(r[C.cashRefCnt])||0,
+      cashRefAmt:parseFloat(r[C.cashRefAmt])||0,
+      cashlessRefCnt:parseFloat(r[C.cashlessRefCnt])||0,
+      cashlessRefAmt:parseFloat(r[C.cashlessRefAmt])||0,
+      posOverCnt:parseFloat(r[C.posOverCnt])||0,
+      posOverAmt:parseFloat(r[C.posOverAmt])||0,
+      tRedVoidCnt:parseFloat(r[C.tRedVoidCnt])||0,
+      tRedDeletedCnt:parseFloat(r[C.tRedDeletedCnt])||0,
+    });
+  }
+  return rows;
+}
+
+
+// ── QSRSoft: Labor Exceptions ────────────────────────────────────────────────
+// 3-sheet workbook: summary by store, summary by exception type, detail by employee.
+// Detail sheet has PII (employee names, GEID, ages) — stored but not surfaced in UI by default.
+function parseLaborExceptions(wb){
+  const rows=[];
+  // Sheet 1: Summary by location
+  const sumLocSn=wb.SheetNames.find(s=>s.toLowerCase().includes('location')||s.toLowerCase().includes('store')||s.toLowerCase().includes('summary'))
+               ||wb.SheetNames[0];
+  const rawLoc=parseRaw(wb,sumLocSn),hiL=autoHdrRow(rawLoc),hL=rawLoc[hiL]||[];
+  const CL={
+    loc:    fc(hL,'Loc','Location','Store'),
+    date:   fc(hL,'Date','Period'),
+    total:  findCol(hL,'Total Exceptions','Total Exc','Exception Count','Exceptions'),
+    missed: findCol(hL,'Missed Break','Missed Breaks'),
+    early:  findCol(hL,'Early Out','Early Punch Out'),
+    late:   findCol(hL,'Late In','Late Punch In'),
+    ot:     findCol(hL,'Overtime','OT Exceptions'),
+    minors: findCol(hL,'Minors','Minor'),
+  };
+  for(let i=hiL+1;i<rawLoc.length;i++){
+    const r=rawLoc[i];if(!r)continue;
+    const loc=String(r[CL.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
+    const dt=CL.date>=0?parseXLDate(r[CL.date]):new Date();
+    rows.push({loc,date:dt||new Date(),
+      totalExceptions:parseFloat(r[CL.total])||0,
+      missedBreaks:CL.missed>=0?parseFloat(r[CL.missed])||0:0,
+      earlyOut:CL.early>=0?parseFloat(r[CL.early])||0:0,
+      lateIn:CL.late>=0?parseFloat(r[CL.late])||0:0,
+      otExceptions:CL.ot>=0?parseFloat(r[CL.ot])||0:0,
+      minorExceptions:CL.minors>=0?parseFloat(r[CL.minors])||0:0,
+      _sheet:'summary',
+    });
+  }
+  return rows;
+}
+
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions };

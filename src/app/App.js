@@ -63,7 +63,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.239';
+const MERIDIAN_VERSION    = '4.240';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
   {version:'4.237', date:'2026-06-28', changes:[
@@ -427,7 +427,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -440,6 +440,7 @@ function App() {
           peaksSvcRows:peaks.filter(r=>r._peakSvc===true||(r._peakSvc==null&&r.oepe!==undefined)), peaksSalesRows:peaks.filter(r=>r._peakSvc===false||(r._peakSvc==null&&r.netSales!==undefined)),
           darRows:dar,
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
+          glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
           targets:{}, loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
