@@ -61,9 +61,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.232';
+const MERIDIAN_VERSION    = '4.233';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.233', date:'2026-06-28', changes:[
+    'Removed all hardcoded "Murphy Family Restaurants" / "MFR" references from the codebase. Competency text now uses generic org language. Login screen subtitle is now dynamic — set your organization name in Customize → Organization. The org name persists in localStorage and appears on the login screen and in print headers.',
+  ]},
   {version:'4.232', date:'2026-06-28', changes:[
     'Performance Reviews — Score Breakdown panel added to Summary tab. Expand "SCORE BREAKDOWN" to see the full step-by-step math: each scored metric\'s avg rating, weight, and contribution to its category score; category scores weighted into the Metrics total; Behavioral quarterly averages; and the final formula (Metrics×70% + Behavioral×30% = Overall). Each metric below Exceeds shows exactly how many avg rating points are needed for the next level and the resulting impact on the overall score.',
   ]},

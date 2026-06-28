@@ -157,7 +157,10 @@ export function AuthGate({ children }) {
           }
         }, 'Meridian'),
         div({ style: { fontSize: 11, color: TEXT3, textTransform: 'uppercase', letterSpacing: '.6px' } },
-          'Murphy Family Restaurants · Operations Intelligence')
+          (() => { try { return localStorage.getItem('mf_org_name') || ''; } catch { return ''; } })()
+            ? [localStorage.getItem('mf_org_name'), ' · Operations Intelligence'].join('')
+            : 'Operations Intelligence'
+        )
       ),
       // Form or sent state
       sent

@@ -31,8 +31,8 @@ const R      = 'var(--r)';
 // ── Org / Logo helpers ─────────────────────────────────────────────────────────
 const ORG_LABELS = { mcdok:'McDOK', emerald:'Emerald Arches' };
 const ORG_FULL   = { mcdok:'McDOK — Thorley/Mornhinweg Families', emerald:'Emerald Arches' };
-function getOrgLabel(org) { return ORG_LABELS[org] || 'MFR'; }
-function getOrgFull(org)  { return ORG_FULL[org]   || 'Murphy Family Restaurants'; }
+function getOrgLabel(org) { return ORG_LABELS[org] || 'ORG'; }
+function getOrgFull(org)  { try{return ORG_FULL[org]||localStorage.getItem('mf_org_name')||'The Organization';}catch{return 'The Organization';} }
 function getOrgLogo(org)  { try{return localStorage.getItem('mf_logo_'+org)||null;}catch{return null;} }
 function clearOrgLogo(org){ try{localStorage.removeItem('mf_logo_'+org);}catch{} }
 // Normalize competency items — stored as strings (legacy) or {text,active} objects
@@ -273,6 +273,40 @@ function OrgLogoUploader({org, label, logo, onUpload, onClear}) {
   );
 }
 
+function OrgSection() {
+  const [orgName, setOrgName] = useState(() => { try{return localStorage.getItem('mf_org_name')||'';}catch{return '';} });
+  const [saved, setSaved] = useState(false);
+
+  const save = () => {
+    try { localStorage.setItem('mf_org_name', orgName.trim()); } catch {}
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return div({style:{padding:4}},
+    h(SectionHead, {title:'Organization Name', right: null}),
+    div({style:{fontSize:11,color:TEXT3,marginBottom:16,padding:'8px 12px',
+      background:S2,borderRadius:R,border:`1px solid ${BDR}`}},
+      'This name appears on the login screen and in printed review headers. Set it once per deployment.'),
+    div({style:{display:'flex',gap:10,alignItems:'center',marginBottom:8}}),
+    lbl({style:{fontSize:11,color:TEXT2,display:'block',marginBottom:6}}, 'Organization Name'),
+    div({style:{display:'flex',gap:8,alignItems:'center'}}),
+    inp({
+      type:'text',
+      value: orgName,
+      onChange: e => setOrgName(e.target.value),
+      placeholder: 'e.g. Murphy Family Restaurants',
+      style:{
+        flex:1, padding:'6px 10px', background:'var(--surf)', border:`1px solid ${BDR}`,
+        borderRadius:R, color:TEXT, fontSize:12, width:'100%', maxWidth:360,
+      },
+    }),
+    div({style:{marginTop:12,display:'flex',gap:8,alignItems:'center'}}),
+    PrimaryBtn({onClick:save, style:{marginTop:12}}, saved ? 'Saved!' : 'Save'),
+    saved && span({style:{fontSize:11,color:'#10b981',marginTop:12,marginLeft:8}}, 'Saved — takes effect on next page load')
+  );
+}
+
 function LogosSection() {
   const [logos, setLogos] = useState({
     mcdok:   getOrgLogo('mcdok'),
@@ -332,6 +366,7 @@ function CustomizePanel({cfg, onSave, onReset}) {
   };
 
   const sections = [
+    {key:'org',    label:'Organization'},
     {key:'weights', label:'Weights'},
     {key:'thresholds', label:'Rating Thresholds'},
     {key:'competencies', label:'Competencies'},
@@ -354,6 +389,7 @@ function CustomizePanel({cfg, onSave, onReset}) {
       saved&&span({style:{color:'#10b981',fontSize:11}},'Settings saved')),
     // Content
     div({style:{flex:1,overflowY:'auto',padding:16}},
+      section==='org'        && h(OrgSection, {}),
       section==='weights'   && h(WeightsSection, {local, set}),
       section==='thresholds'&& h(ThresholdsSection, {local, set}),
       section==='competencies' && h(CompetenciesSection, {local, set, custRole, setCustRole, custCat, setCustCat}),
