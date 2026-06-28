@@ -63,7 +63,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.238';
+const MERIDIAN_VERSION    = '4.239';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
   {version:'4.237', date:'2026-06-28', changes:[
@@ -417,6 +417,8 @@ function App() {
   const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
+  const [isDragging, setIsDragging]    = useState(false);
+  const dragCounter                    = useRef(0);
   const [sessionRestoring, setSessionRestoring] = useState(false);
 
   // Auto-migrate flat targets → v2 on startup
@@ -752,13 +754,60 @@ function App() {
     })();
   },[]);
 
-  // Drag-drop
+  // Drag-drop — with visual overlay while a file is held over the window
   useEffect(()=>{
-    const prevent=(e)=>{e.preventDefault();e.stopPropagation();};
-    const drop=(e)=>{e.preventDefault();e.stopPropagation();const files=e.dataTransfer&&e.dataTransfer.files;if(files&&files.length)handleFiles(files);};
-    document.addEventListener('dragover',prevent);document.addEventListener('drop',drop);
-    return()=>{document.removeEventListener('dragover',prevent);document.removeEventListener('drop',drop);};
+    const prevent   = (e)=>{e.preventDefault();e.stopPropagation();};
+    const onEnter   = (e)=>{e.preventDefault();dragCounter.current++;setIsDragging(true);};
+    const onLeave   = (e)=>{e.preventDefault();dragCounter.current--;if(dragCounter.current<=0){dragCounter.current=0;setIsDragging(false);}};
+    const onDrop    = (e)=>{
+      e.preventDefault();e.stopPropagation();
+      dragCounter.current=0;setIsDragging(false);
+      const files=e.dataTransfer&&e.dataTransfer.files;
+      if(files&&files.length)handleFiles(files);
+    };
+    document.addEventListener('dragover',prevent);
+    document.addEventListener('dragenter',onEnter);
+    document.addEventListener('dragleave',onLeave);
+    document.addEventListener('drop',onDrop);
+    return()=>{
+      document.removeEventListener('dragover',prevent);
+      document.removeEventListener('dragenter',onEnter);
+      document.removeEventListener('dragleave',onLeave);
+      document.removeEventListener('drop',onDrop);
+    };
   },[handleFiles]);
+
+  // Web Share Target — pick up files stashed by the service worker after a mobile share
+  useEffect(()=>{
+    if(!('caches' in window)) return;
+    caches.open('mf-share-v1').then(async cache=>{
+      const keys=await cache.keys();
+      if(!keys.length) return;
+      const files=await Promise.all(keys.map(async req=>{
+        const resp=await cache.match(req);
+        if(!resp) return null;
+        const blob=await resp.blob();
+        const name=resp.headers.get('X-File-Name')||'shared-file.xlsx';
+        return new File([blob],name,{type:blob.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      }));
+      await Promise.all(keys.map(k=>cache.delete(k)));
+      const valid=files.filter(Boolean);
+      if(valid.length) handleFiles(valid);
+    }).catch(()=>{});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  // Keyboard shortcuts — Cmd/Ctrl+U opens the file upload picker
+  useEffect(()=>{
+    const onKey=(e)=>{
+      if((e.metaKey||e.ctrlKey)&&e.key==='u'){
+        e.preventDefault();
+        document.getElementById('file-input-main')?.click();
+      }
+    };
+    document.addEventListener('keydown',onKey);
+    return()=>document.removeEventListener('keydown',onKey);
+  },[]);
 
   // Permission helper — used by AppSidebar, AppTopbar, and modal gates
   const perm = (key) => hasPermission(userRole, key, orgRoles);
@@ -812,6 +861,25 @@ function App() {
   },[]);
 
   return div({style:{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--text)',fontFamily:'var(--sans)',overflow:'hidden'}},
+
+    // ── Drag-drop overlay ─────────────────────────────────────────
+    isDragging&&div({style:{
+      position:'fixed',inset:0,zIndex:2000,
+      background:'rgba(245,188,0,.06)',
+      border:'2px dashed rgba(245,188,0,.5)',
+      display:'flex',alignItems:'center',justifyContent:'center',
+      pointerEvents:'none',
+    }},
+      div({style:{
+        background:'var(--surf)',border:'1px solid rgba(245,188,0,.3)',
+        borderRadius:16,padding:'28px 48px',textAlign:'center',
+        boxShadow:'0 20px 60px rgba(0,0,0,.5)',
+      }},
+        div({style:{fontSize:40,marginBottom:12}},'📂'),
+        div({style:{fontSize:18,fontWeight:700,color:'var(--amber)',marginBottom:6}},'Drop to load files'),
+        div({style:{fontSize:11,color:'var(--text3)'}},'Operations Report · Labor · Lifelenz · CSV')
+      )
+    ),
 
     // ── LEFT SIDEBAR ─────────────────────────────────────────────
     h(AppSidebar,{

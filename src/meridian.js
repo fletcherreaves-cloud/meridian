@@ -23,6 +23,14 @@ window._cdnError = function(name) {
   window._cdnFailed = true;
 };
 
+// Register service worker for PWA installability and Web Share Target
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/meridian/sw.js', { scope: '/meridian/' })
+      .catch(err => console.warn('[Meridian] SW registration failed:', err));
+  });
+}
+
 try {
   createRoot(document.getElementById('root')).render(
     React.createElement(ErrorBoundary, null,
