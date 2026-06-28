@@ -1847,7 +1847,7 @@ function NewReviewForm({stores, cfg, onCancel, onCreate}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
-export function PerformanceReviewsPanel({stores, ds, settings, onClose}) {
+export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole='admin'}) {
   const [tab, setTab]       = useState('reviews');
   const [cfg, setCfg]       = useState(() => getReviewConfig());
   const [reviews, setReviews] = useState(() => getReviews());
@@ -1901,7 +1901,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose}) {
             ? h(ReviewEditor,{review:editing, cfg, ds, stores,
                 onSave:handleSaveReview,
                 onBack:()=>{refresh();setEditing(null);},
-                userRole:'admin',
+                userRole,
                 onTransition:handleTransition})
             : h(ReviewList,{reviews, cfg, stores,
                 onOpen:setEditing,

@@ -279,7 +279,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
 // ── App Topbar (slim contextual header) ─────────────────────────────
 function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChange, locScope, onScopeChange,
                     onOpenModal, onLoadFiles, onSaveSession, loadMsg, setView,
-                    sessionBanner, onClearSession}) {
+                    sessionBanner, onClearSession, userRole, onOpenAdmin}) {
   const today = new Date();
   const [isMb, setIsMb] = React.useState(()=>window.innerWidth<768);
   React.useEffect(()=>{
@@ -390,6 +390,10 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           const next=settings.colorMode==='dark'?'light':'dark';
           document.documentElement.setAttribute('data-mode',next);
         }},settings.colorMode==='dark'?'☀':'🌙'),
+      // Admin panel (only for admins)
+      userRole==='admin'&&onOpenAdmin&&btn({className:'btn btn-sm',
+        title:'User Management',style:{fontSize:'10px'},
+        onClick:onOpenAdmin},'👤'),
       // Sign out (only renders when Supabase auth is active)
       h(SignOutBtn, {style:{fontSize:'9px',padding:'3px 8px'}})
     )

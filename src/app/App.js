@@ -27,6 +27,7 @@ import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligen
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
+import { AdminPanel } from '../views/admin.js';
 import { supabase } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase } from '../engine/review-engine.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -61,9 +62,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.235';
+const MERIDIAN_VERSION    = '4.236';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.236', date:'2026-06-28', changes:[
+    'Admin Panel (👤 button in topbar): in-app user management for admins — view all users, change roles (Admin/Supervisor/Manager), assign accessible store codes per user, and invite new users via magic-link email. No SQL Editor required. Role is fetched from the Supabase profile on login and threads through to the performance review approval workflow (only admins see Approve/Return buttons).',
+  ]},
   {version:'4.235', date:'2026-06-28', changes:[
     'Performance Reviews — Approval Workflow: reviews now have a status lifecycle: Draft → Submitted for Review → Approved (or Returned for Revision). Each review shows a color-coded status badge in the list and in the editor header. Action buttons appear contextually: "Submit for Review" on a Draft, "Approve" and "Return for Revision" for admins reviewing a Submitted review, and "Reopen" on an Approved review. Returning a review prompts for a reason note shown inline. Submitted and Approved reviews are read-only (Save is disabled). Status filter added to review list toolbar. Full status history is stored on each review and synced to Supabase.',
   ]},
@@ -399,6 +403,8 @@ function App() {
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
   const [showPerfReviews,     setShowPerfReviews]     = useState(false);
   const [showRecordDay,       setShowRecordDay]       = useState(false);
+  const [showAdminPanel,      setShowAdminPanel]      = useState(false);
+  const [userRole,            setUserRole]            = useState('admin');
   const [showOperatorSummary, setShowOperatorSummary] = useState(false);
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
@@ -478,10 +484,15 @@ function App() {
   React.useEffect(()=>{
     if (!supabase) return;
     setSupabaseClient(supabase);
-    // Pull reviews and config from the database into localStorage on first load.
-    // localStorage stays as the read source so no UI components need to change.
     syncReviewsFromSupabase(supabase).catch(()=>{});
     syncConfigFromSupabase(supabase).catch(()=>{});
+    // Fetch the logged-in user's role from their Supabase profile
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+        .then(({ data }) => { if (data?.role) setUserRole(data.role); })
+        .catch(() => {});
+    });
   },[]);
 
   React.useEffect(()=>{
@@ -764,7 +775,7 @@ function App() {
     showMorningBrief||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -784,7 +795,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -871,6 +882,8 @@ function App() {
         onSaveSession: handleSaveSession,
         sessionBanner,
         onClearSession: handleClearSession,
+        userRole,
+        onOpenAdmin: () => setShowAdminPanel(true),
         onOpenModal: (modal) => {
           if(modal==='settings')   setShowSettings(true);
           if(modal==='help')       setShowHelp(true);
@@ -943,8 +956,9 @@ function App() {
     showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowCalendarManager(false)}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
-    showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,onClose:()=>setShowPerfReviews(false)}),
+    showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,onClose:()=>setShowPerfReviews(false)}),
     showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
+    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false)}),
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showInsights &&h(AIInsightsLog,{stores,settings,onClose:()=>setShowInsights(false)}),
