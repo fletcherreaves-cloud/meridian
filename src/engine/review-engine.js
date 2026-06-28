@@ -663,3 +663,29 @@ export function halfMonths(half) { return half==='H1' ? H1_MONTHS : H2_MONTHS; }
 export function halfQKeys(half)  { return half==='H1' ? ['q1','q2'] : ['q3','q4']; }
 export function qLabel(q) { return {q1:'Q1',q2:'Q2',q3:'Q3',q4:'Q4'}[q]||q; }
 export function qMonths(q) { return {q1:[1,2,3],q2:[4,5,6],q3:[7,8,9],q4:[10,11,12]}[q]||[]; }
+
+// ── Review Status Workflow ─────────────────────────────────────────────────────
+export const REVIEW_STATUSES = {
+  draft:     { label: 'Draft',                 color: '#64748b' },
+  submitted: { label: 'Submitted for Review',  color: '#f59e0b' },
+  approved:  { label: 'Approved',              color: '#16a34a' },
+  returned:  { label: 'Returned for Revision', color: '#ef4444' },
+};
+
+export function transitionReview(id, newStatus, notes = '') {
+  const reviews = getReviews();
+  const review = reviews[id];
+  if (!review) return null;
+  const updated = {
+    ...review,
+    status: newStatus,
+    updatedAt: new Date().toISOString().slice(0, 10),
+    statusHistory: [
+      ...(review.statusHistory || []),
+      { from: review.status || 'draft', to: newStatus, notes, at: new Date().toISOString() },
+    ],
+    statusNotes: notes || '',
+  };
+  upsertReview(updated);
+  return updated;
+}

@@ -4,6 +4,7 @@ import {
   DEFAULT_REVIEW_CONFIG, getReviewConfig, saveReviewConfig, resetReviewConfig,
   getReviews, upsertReview, deleteReview, blankReview, autoPopulateKPIs,
   rateMetric, ratingColor, ratingBg, computeScores, computeScoreBreakdown,
+  transitionReview, REVIEW_STATUSES,
   RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS,
 } from '../engine/review-engine.js';
@@ -632,13 +633,15 @@ function CompetenciesSection({local, set, custRole, setCustRole, custCat, setCus
 // ═══════════════════════════════════════════════════════════════════════════════
 // REVIEW EDITOR
 // ═══════════════════════════════════════════════════════════════════════════════
-function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
-  const [review, setReview]   = useState(() => JSON.parse(JSON.stringify(initReview)));
-  const [tab, setTab]         = useState('kpi');
-  const [kpiCat, setKpiCat]   = useState('rgr');
-  const [bCat, setBCat]       = useState('rgr');
+function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='admin', onTransition}) {
+  const [review, setReview]       = useState(() => JSON.parse(JSON.stringify(initReview)));
+  const [tab, setTab]             = useState('kpi');
+  const [kpiCat, setKpiCat]       = useState('rgr');
+  const [bCat, setBCat]           = useState('rgr');
   const [autoFilling, setAutoFilling] = useState(false);
-  const [dirty, setDirty]     = useState(false);
+  const [dirty, setDirty]         = useState(false);
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnNotes, setReturnNotes]       = useState('');
   const reviewOrg  = getStoreOrg(initReview.loc);
   const orgLogo    = getOrgLogo(reviewOrg);
   const orgLabel   = getOrgLabel(reviewOrg);
@@ -674,7 +677,20 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
     setTimeout(()=>setAutoFilling(false), 800);
   };
 
-  const doSave = () => { onSave(review); setDirty(false); };
+  const status     = review.status || 'draft';
+  const isReadOnly = status === 'submitted' || status === 'approved';
+
+  const doSave = () => { if (isReadOnly) return; onSave(review); setDirty(false); };
+
+  const doTransition = (newStatus, notes='') => {
+    if (onTransition) onTransition(review.id, newStatus, notes);
+    // Optimistically update local state
+    setReview(prev => ({
+      ...prev, status: newStatus, statusNotes: notes || prev.statusNotes || '',
+      statusHistory: [...(prev.statusHistory||[]),
+        {from:prev.status||'draft',to:newStatus,notes,at:new Date().toISOString()}],
+    }));
+  };
 
   const scores = useMemo(() => computeScores(review, cfg), [review, cfg]);
 
@@ -709,7 +725,59 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack}) {
         ? h('img',{src:orgLogo,alt:orgLabel,style:{height:30,objectFit:'contain',opacity:.9}})
         : span({style:{fontSize:10,color:TEXT3,padding:'3px 8px',border:`1px solid ${BDR}`,borderRadius:R}},orgLabel),
       GhostBtn({onClick:()=>printReview(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Print / PDF'),
-      PrimaryBtn({onClick:doSave,style:{minWidth:80}},'Save'),
+      PrimaryBtn({onClick:doSave,disabled:isReadOnly,
+        style:{minWidth:80,opacity:isReadOnly?0.45:1,cursor:isReadOnly?'not-allowed':'pointer'}},
+        'Save'),
+    ),
+    // Status action bar
+    div({style:{display:'flex',alignItems:'center',gap:10,padding:'7px 16px',
+      borderBottom:`1px solid ${BDR}`,background:S2,flexWrap:'wrap'}},
+      h(StatusBadge,{status}),
+      status==='returned'&&review.statusNotes&&
+        span({style:{fontSize:11,color:'#ef4444',fontStyle:'italic'}},
+          `"${review.statusNotes}"`),
+      isReadOnly&&span({style:{fontSize:11,color:TEXT3}},
+        status==='submitted'?'Read-only while under review':'Approved — use Reopen to edit'),
+      div({style:{flex:1}}),
+      // Draft: submit
+      status==='draft'&&PrimaryBtn({
+        onClick:()=>doTransition('submitted'),
+        style:{fontSize:11,padding:'4px 12px'}},
+        'Submit for Review'),
+      // Returned: resubmit
+      status==='returned'&&PrimaryBtn({
+        onClick:()=>doTransition('submitted'),
+        style:{fontSize:11,padding:'4px 12px',background:'#f59e0b',color:'#000'}},
+        'Resubmit for Review'),
+      // Submitted: admin approve/return
+      status==='submitted'&&userRole==='admin'&&h(React.Fragment,null,
+        PrimaryBtn({onClick:()=>doTransition('approved'),
+          style:{fontSize:11,padding:'4px 12px',background:'#16a34a'}},
+          'Approve'),
+        GhostBtn({onClick:()=>{setShowReturnForm(v=>!v);setReturnNotes('');},
+          style:{fontSize:11,padding:'4px 12px',color:'#ef4444',borderColor:'#ef444455'}},
+          'Return for Revision'),
+      ),
+      // Approved: admin reopen
+      status==='approved'&&userRole==='admin'&&
+        GhostBtn({onClick:()=>doTransition('draft'),style:{fontSize:11,padding:'4px 12px'}},
+          'Reopen'),
+    ),
+    // Return notes inline form
+    showReturnForm&&div({style:{display:'flex',alignItems:'flex-start',gap:8,
+      padding:'10px 16px',borderBottom:`1px solid ${BDR}`,background:'#1c0a0a'}},
+      ta({value:returnNotes,rows:2,placeholder:'Reason for returning (shown to reviewer)…',
+        onChange:e=>setReturnNotes(e.target.value),
+        style:{flex:1,padding:'6px 10px',background:'var(--surf)',
+          border:'1px solid #ef4444',borderRadius:R,color:TEXT,fontSize:12,
+          resize:'none',fontFamily:'var(--sans)'}}),
+      div({style:{display:'flex',flexDirection:'column',gap:6}},
+        PrimaryBtn({style:{background:'#ef4444',fontSize:11,padding:'4px 12px'},
+          onClick:()=>{doTransition('returned',returnNotes);setShowReturnForm(false);setReturnNotes('');}},
+          'Confirm'),
+        GhostBtn({onClick:()=>{setShowReturnForm(false);setReturnNotes('');},style:{fontSize:11,padding:'4px 12px'}},
+          'Cancel')
+      )
     ),
     // Tab bar
     TabBar({tabs, active:tab, onSelect:setTab}),
@@ -1609,11 +1677,21 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // REVIEW LIST
 // ═══════════════════════════════════════════════════════════════════════════════
+function StatusBadge({status}) {
+  const cfg = REVIEW_STATUSES[status] || REVIEW_STATUSES.draft;
+  return span({style:{
+    fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,
+    background:cfg.color+'22',border:`1px solid ${cfg.color}55`,
+    color:cfg.color,whiteSpace:'nowrap',
+  }}, cfg.label);
+}
+
 function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
-  const [filterRole, setFilterRole] = useState('all');
-  const [filterYear, setFilterYear] = useState('all');
-  const [filterHalf, setFilterHalf] = useState('all');
-  const [showNew, setShowNew]       = useState(false);
+  const [filterRole, setFilterRole]     = useState('all');
+  const [filterYear, setFilterYear]     = useState('all');
+  const [filterHalf, setFilterHalf]     = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [showNew, setShowNew]           = useState(false);
 
   const loadDemos = () => {
     fetch('/meridian/populate-demo-reviews.js')
@@ -1628,7 +1706,8 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
   const filtered = list.filter(r =>
     (filterRole==='all'||r.role===filterRole) &&
     (filterYear==='all'||r.year===parseInt(filterYear)) &&
-    (filterHalf==='all'||r.half===filterHalf)
+    (filterHalf==='all'||r.half===filterHalf) &&
+    (filterStatus==='all'||(r.status||'draft')===filterStatus)
   ).sort((a,b)=>b.updatedAt?.localeCompare(a.updatedAt)||0);
 
   const getScore = (r) => {
@@ -1661,6 +1740,13 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
         opt({value:'all'},'H1 & H2'),
         opt({value:'H1'},'H1 (Mid-Year)'),
         opt({value:'H2'},'H2 (End of Year)')
+      ),
+      // Status filter
+      sel({value:filterStatus,onChange:e=>setFilterStatus(e.target.value),
+        style:{padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
+          borderRadius:R,color:TEXT,fontSize:12}},
+        opt({value:'all'},'All Statuses'),
+        ...Object.entries(REVIEW_STATUSES).map(([k,v])=>opt({value:k,key:k},v.label))
       ),
       div({style:{flex:1}}),
       GhostBtn({onClick:loadDemos,style:{fontSize:11,opacity:.75}},'📚 Demo Reviews'),
@@ -1697,8 +1783,7 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
                 span({style:{fontSize:11,color:TEXT2}},r.loc||'—'),
                 span({style:{fontSize:11,color:TEXT3}},`${r.half} ${r.year}`),
                 div(null,ScorePill({score})),
-                Tag({label:r.status||'draft',
-                  color:r.status==='final'?'#10b981':r.status==='submitted'?'#3b82f6':AMBER}),
+                h(StatusBadge,{status:r.status||'draft'}),
                 btn({onClick:e=>{e.stopPropagation();
                   if(confirm(`Delete review for ${r.name}?`)){deleteReview(r.id);onNew();}},
                   style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',
@@ -1780,6 +1865,12 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose}) {
     setEditing(rv => rv ? {...rv,...r,updatedAt:new Date().toISOString().slice(0,10)} : rv);
   };
 
+  const handleTransition = (id, newStatus, notes) => {
+    const updated = transitionReview(id, newStatus, notes);
+    if (updated) setEditing(updated);
+    refresh();
+  };
+
   const tabs = [
     {key:'reviews', label:`Reviews (${Object.keys(reviews).length})`},
     {key:'customize', label:'Customize'},
@@ -1809,7 +1900,9 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose}) {
           editing
             ? h(ReviewEditor,{review:editing, cfg, ds, stores,
                 onSave:handleSaveReview,
-                onBack:()=>{refresh();setEditing(null);}})
+                onBack:()=>{refresh();setEditing(null);},
+                userRole:'admin',
+                onTransition:handleTransition})
             : h(ReviewList,{reviews, cfg, stores,
                 onOpen:setEditing,
                 onNew:refresh,

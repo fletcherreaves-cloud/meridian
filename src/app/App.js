@@ -61,9 +61,15 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.233';
+const MERIDIAN_VERSION    = '4.235';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.235', date:'2026-06-28', changes:[
+    'Performance Reviews — Approval Workflow: reviews now have a status lifecycle: Draft → Submitted for Review → Approved (or Returned for Revision). Each review shows a color-coded status badge in the list and in the editor header. Action buttons appear contextually: "Submit for Review" on a Draft, "Approve" and "Return for Revision" for admins reviewing a Submitted review, and "Reopen" on an Approved review. Returning a review prompts for a reason note shown inline. Submitted and Approved reviews are read-only (Save is disabled). Status filter added to review list toolbar. Full status history is stored on each review and synced to Supabase.',
+  ]},
+  {version:'4.234', date:'2026-06-28', changes:[
+    'Performance Reviews — Score Breakdown: click any metric ▶ row to expand a full month-by-month table (Actual · Target · Deviation · Rating) for the half period. Gap hint shows how many avg rating points are needed to reach the next level and the resulting impact on the overall score. Monthly data uses all 6 half-months, showing nulls where data was not entered.',
+  ]},
   {version:'4.233', date:'2026-06-28', changes:[
     'Removed all hardcoded "Murphy Family Restaurants" / "MFR" references from the codebase. Competency text now uses generic org language. Login screen subtitle is now dynamic — set your organization name in Customize → Organization. The org name persists in localStorage and appears on the login screen and in print headers.',
   ]},
