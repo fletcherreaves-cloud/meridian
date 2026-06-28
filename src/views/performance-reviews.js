@@ -9,6 +9,7 @@ import {
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
+import { hasPermission, getOrgRoles } from '../engine/permissions.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -633,7 +634,7 @@ function CompetenciesSection({local, set, custRole, setCustRole, custCat, setCus
 // ═══════════════════════════════════════════════════════════════════════════════
 // REVIEW EDITOR
 // ═══════════════════════════════════════════════════════════════════════════════
-function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='admin', onTransition}) {
+function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='admin', orgRoles, onTransition}) {
   const [review, setReview]       = useState(() => JSON.parse(JSON.stringify(initReview)));
   const [tab, setTab]             = useState('kpi');
   const [kpiCat, setKpiCat]       = useState('rgr');
@@ -749,8 +750,8 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
         onClick:()=>doTransition('submitted'),
         style:{fontSize:11,padding:'4px 12px',background:'#f59e0b',color:'#000'}},
         'Resubmit for Review'),
-      // Submitted: admin approve/return
-      status==='submitted'&&userRole==='admin'&&h(React.Fragment,null,
+      // Submitted: approve/return (permission-gated)
+      status==='submitted'&&hasPermission(userRole,'reviews.approve',orgRoles||getOrgRoles())&&h(React.Fragment,null,
         PrimaryBtn({onClick:()=>doTransition('approved'),
           style:{fontSize:11,padding:'4px 12px',background:'#16a34a'}},
           'Approve'),
@@ -758,8 +759,8 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
           style:{fontSize:11,padding:'4px 12px',color:'#ef4444',borderColor:'#ef444455'}},
           'Return for Revision'),
       ),
-      // Approved: admin reopen
-      status==='approved'&&userRole==='admin'&&
+      // Approved: reopen (same permission gate)
+      status==='approved'&&hasPermission(userRole,'reviews.approve',orgRoles||getOrgRoles())&&
         GhostBtn({onClick:()=>doTransition('draft'),style:{fontSize:11,padding:'4px 12px'}},
           'Reopen'),
     ),
@@ -1847,7 +1848,7 @@ function NewReviewForm({stores, cfg, onCancel, onCreate}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
-export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole='admin'}) {
+export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole='admin', orgRoles}) {
   const [tab, setTab]       = useState('reviews');
   const [cfg, setCfg]       = useState(() => getReviewConfig());
   const [reviews, setReviews] = useState(() => getReviews());
@@ -1901,7 +1902,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
             ? h(ReviewEditor,{review:editing, cfg, ds, stores,
                 onSave:handleSaveReview,
                 onBack:()=>{refresh();setEditing(null);},
-                userRole,
+                userRole, orgRoles,
                 onTransition:handleTransition})
             : h(ReviewList,{reviews, cfg, stores,
                 onOpen:setEditing,

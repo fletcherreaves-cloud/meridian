@@ -30,6 +30,7 @@ import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
 import { AdminPanel } from '../views/admin.js';
 import { supabase } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase } from '../engine/review-engine.js';
+import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
@@ -62,9 +63,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.236';
+const MERIDIAN_VERSION    = '4.237';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.237', date:'2026-06-28', changes:[
+    'Permission Engine (permissions.js): roles are now fully configurable — create custom roles with any name and level, toggle individual permissions per role, stored in Supabase org_config and synced on login. Admin Panel adds a "Roles & Permissions" tab with an accordion editor (click any role to see and toggle its 19 permission checkboxes grouped by area). Level-1 roles bypass all permission checks. Review Approve/Return/Reopen buttons now gate on the reviews.approve permission (on by default for Area Supervisor, off for Manager). Admin Panel button in topbar gates on users.manage.all permission.',
+  ]},
   {version:'4.236', date:'2026-06-28', changes:[
     'Admin Panel (👤 button in topbar): in-app user management for admins — view all users, change roles (Admin/Supervisor/Manager), assign accessible store codes per user, and invite new users via magic-link email. No SQL Editor required. Role is fetched from the Supabase profile on login and threads through to the performance review approval workflow (only admins see Approve/Return buttons).',
   ]},
@@ -405,6 +409,7 @@ function App() {
   const [showRecordDay,       setShowRecordDay]       = useState(false);
   const [showAdminPanel,      setShowAdminPanel]      = useState(false);
   const [userRole,            setUserRole]            = useState('admin');
+  const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
   const [showOperatorSummary, setShowOperatorSummary] = useState(false);
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
@@ -486,6 +491,8 @@ function App() {
     setSupabaseClient(supabase);
     syncReviewsFromSupabase(supabase).catch(()=>{});
     syncConfigFromSupabase(supabase).catch(()=>{});
+    // Sync org roles (role definitions + permissions) from Supabase
+    syncOrgRolesFromSupabase(supabase).then(roles => { if (roles) setOrgRoles(roles); }).catch(()=>{});
     // Fetch the logged-in user's role from their Supabase profile
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -883,7 +890,7 @@ function App() {
         sessionBanner,
         onClearSession: handleClearSession,
         userRole,
-        onOpenAdmin: () => setShowAdminPanel(true),
+        onOpenAdmin: hasPermission(userRole,'users.manage.all',orgRoles) ? () => setShowAdminPanel(true) : null,
         onOpenModal: (modal) => {
           if(modal==='settings')   setShowSettings(true);
           if(modal==='help')       setShowHelp(true);
@@ -956,9 +963,9 @@ function App() {
     showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowCalendarManager(false)}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
-    showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,onClose:()=>setShowPerfReviews(false)}),
+    showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,onClose:()=>setShowPerfReviews(false)}),
     showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
-    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false)}),
+    showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showInsights &&h(AIInsightsLog,{stores,settings,onClose:()=>setShowInsights(false)}),
