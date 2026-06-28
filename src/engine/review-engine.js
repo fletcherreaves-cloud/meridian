@@ -527,14 +527,17 @@ export function computeScoreBreakdown(review, cfg) {
     let catWS = 0, catWT = 0;
 
     const metricRows = scoredMetrics.map(m => {
-      const monthlyData = halfMoArr.map(mo => {
+      // Include ALL half months (with nulls for missing) so the UI can show a complete table
+      const monthlyData = halfMonthNums.map(n => {
+        const mo = months[n];
+        if (!mo) return { month: n, actual: null, target: null, dev: null, rating: null };
         const actual = mo[m.key] ?? null;
         const target = mo[m.key + 'Tgt'] ?? null;
         const rating = rateMetric(actual, target, m);
         let dev = null;
         if (actual != null && target != null && !(m.unit === 'pct' && target === 0))
           dev = m.unit === 'pct' ? (actual - target) / Math.abs(target) : (actual - target);
-        return { actual, target, dev, rating };
+        return { month: n, actual, target, dev, rating };
       });
 
       const ratedData = monthlyData.filter(d => d.rating != null);

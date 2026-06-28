@@ -1195,7 +1195,30 @@ function printReview(review, cfg, orgLabel, orgLogo) {
 // ── Score Breakdown Panel ──────────────────────────────────────────────────────
 function ScoreBreakdownPanel({review, cfg}) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(new Set());
   const bd = useMemo(() => computeScoreBreakdown(review, cfg), [review, cfg]);
+
+  const toggleMetric = (key) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const fmtDev = (dev, unit) => {
+    if (dev == null) return '—';
+    const sign = dev >= 0 ? '+' : '';
+    return unit === 'pct'
+      ? `${sign}${(dev * 100).toFixed(1)}%`
+      : `${sign}${dev.toFixed(1)}`;
+  };
+
+  const fmtVal = (v) => {
+    if (v == null) return '—';
+    if (Math.abs(v) >= 10000) return v.toLocaleString('en-US', {maximumFractionDigits:0});
+    if (Math.abs(v) >= 100)   return v.toFixed(0);
+    if (Math.abs(v) >= 1)     return v.toFixed(1);
+    return (v * 100).toFixed(1) + '%';
+  };
 
   const hasData = bd.metricsScore != null || bd.behavioralScore != null;
   if (!hasData) return null;
@@ -1268,47 +1291,111 @@ function ScoreBreakdownPanel({review, cfg}) {
             ),
 
             // Metric rows
-            ...cat.metrics.map((m, i) =>
-              div({key:m.key, style:{
+            ...cat.metrics.map((m, i) => {
+              const mKey = `${cat.key}-${m.key}`;
+              const isOpen = expanded.has(mKey);
+              return div({key:m.key, style:{
                 borderBottom: i < cat.metrics.length - 1 ? `1px solid ${BDR}33` : 'none',
                 background: i%2===0 ? 'transparent' : 'rgba(255,255,255,.02)',
               }},
-                div({style:{
-                  display:'grid', gridTemplateColumns:'1fr 58px 52px 68px',
-                  padding:'6px 10px', alignItems:'center', fontSize:11,
-                }},
+                // Summary row (clickable)
+                div({
+                  onClick: () => toggleMetric(mKey),
+                  style:{
+                    display:'grid', gridTemplateColumns:'1fr 58px 52px 68px',
+                    padding:'6px 10px', alignItems:'center', fontSize:11,
+                    cursor:'pointer',
+                  },
+                },
                   div(null,
-                    div({style:{color:TEXT2}}, m.label),
-                    m.ratedCount < m.totalMonths && m.ratedCount > 0 &&
-                      span({style:{fontSize:9,color:TEXT3}},
-                        ` ${m.ratedCount}/${m.totalMonths} months rated`)
+                    div({style:{color:TEXT2,display:'flex',alignItems:'center',gap:4}},
+                      span({style:{fontSize:9,color:TEXT3,fontFamily:'var(--mono)'}}, isOpen ? '▼' : '▶'),
+                      m.label
+                    ),
+                    m.ratedCount > 0 && m.ratedCount < m.totalMonths &&
+                      span({style:{fontSize:9,color:TEXT3,marginLeft:13}},
+                        `${m.ratedCount}/${m.totalMonths} months rated`)
                   ),
                   div({style:{textAlign:'center'}},
                     m.avgRating != null
-                      ? span({style:{
-                          fontWeight:700, fontSize:12, ...mono,
-                          color: ratingColor(Math.round(m.avgRating)),
-                        }}, m.avgRating.toFixed(2))
+                      ? span({style:{fontWeight:700,fontSize:12,...mono,color:ratingColor(Math.round(m.avgRating))}},
+                          m.avgRating.toFixed(2))
                       : span({style:{color:TEXT3}}, '—')
                   ),
-                  div({style:{textAlign:'center', color:TEXT3, fontSize:10}},
-                    `${Math.round(m.weight*100)}%`
+                  div({style:{textAlign:'center',color:TEXT3,fontSize:10}},
+                    `${Math.round(m.weight*100)}%`),
+                  div({style:{textAlign:'right',color:TEXT2,...mono,fontSize:11}},
+                    m.contribution != null ? m.contribution.toFixed(3) : '—')
+                ),
+
+                // Monthly detail (expanded)
+                isOpen && div({style:{
+                  margin:'0 10px 8px 22px',
+                  border:`1px solid ${BDR}`,
+                  borderRadius:R, overflow:'hidden', fontSize:10,
+                }},
+                  // Monthly header
+                  div({style:{
+                    display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 80px',
+                    padding:'4px 8px', background:'rgba(255,255,255,.05)',
+                    borderBottom:`1px solid ${BDR}`,
+                    color:TEXT3, fontWeight:700, fontSize:9,
+                  }},
+                    span(null,'Month'),
+                    span({style:{textAlign:'right'}},'Actual'),
+                    span({style:{textAlign:'right'}},'Target'),
+                    span({style:{textAlign:'right'}},'Deviation'),
+                    span({style:{textAlign:'center'}},'Rating')
                   ),
-                  div({style:{textAlign:'right', color:TEXT2, ...mono, fontSize:11}},
-                    m.contribution != null ? m.contribution.toFixed(3) : '—'
+                  // One row per month
+                  ...m.monthlyData.map((d, mi) =>
+                    div({key:mi, style:{
+                      display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 80px',
+                      padding:'4px 8px',
+                      background: mi%2===0?'transparent':'rgba(255,255,255,.02)',
+                      borderBottom: mi < m.monthlyData.length-1 ? `1px solid ${BDR}22` : 'none',
+                      alignItems:'center',
+                    }},
+                      span({style:{color:TEXT3,...mono}}, MONTH_NAMES[(d.month||mi+1)-1]),
+                      span({style:{textAlign:'right',color:TEXT2,...mono}}, fmtVal(d.actual)),
+                      span({style:{textAlign:'right',color:TEXT3,...mono}}, fmtVal(d.target)),
+                      span({style:{
+                        textAlign:'right',...mono,
+                        color: d.dev==null?TEXT3 : d.rating===4?'#16a34a':d.rating===3?'#22c55e':d.rating===2?'#f87171':'#dc2626',
+                      }}, fmtDev(d.dev, m.unit)),
+                      span({style:{textAlign:'center'}},
+                        d.rating != null
+                          ? span({style:{
+                              fontWeight:700, color:ratingColor(d.rating),
+                              background:ratingBg(d.rating),
+                              padding:'1px 6px', borderRadius:4,...mono,
+                            }}, `${d.rating} · ${RATING_LABELS[d.rating]}`)
+                          : span({style:{color:TEXT3}}, '— no data')
+                      )
+                    )
+                  ),
+                  // Monthly avg footer
+                  m.avgRating != null && div({style:{
+                    display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 80px',
+                    padding:'4px 8px', borderTop:`1px solid ${BDR}`,
+                    background:'rgba(255,255,255,.05)', fontWeight:700, fontSize:9,
+                  }},
+                    span({style:{color:TEXT3,gridColumn:'1/4'}},'6-month avg'),
+                    span({style:{textAlign:'right',...mono,gridColumn:'4/5'}}),
+                    span({style:{textAlign:'center',gridColumn:'5/6'}},
+                      span({style:{color:ratingColor(Math.round(m.avgRating)),...mono}},
+                        `avg ${m.avgRating.toFixed(2)}`))
                   )
                 ),
+
                 // "What would change this" hint
                 m.nextRating != null && m.gapToNext != null &&
-                  div({style:{
-                    padding:'2px 10px 5px 10px',
-                    fontSize:9, color:'#f59e0b',
-                  }},
-                    `↑ avg rating needs +${m.gapToNext.toFixed(2)} pts for ${RATING_LABELS[m.nextRating]} · `,
-                    `would add +${(m.gapToNext * m.impactPerPoint).toFixed(3)} to overall`
+                  div({style:{padding:'1px 10px 5px 22px',fontSize:9,color:'#f59e0b'}},
+                    `↑ needs +${m.gapToNext.toFixed(2)} avg pts for ${RATING_LABELS[m.nextRating]} · `,
+                    `adds +${(m.gapToNext * m.impactPerPoint).toFixed(3)} to overall`
                   )
-              )
-            ),
+              );
+            }),
 
             // Category subtotal
             div({style:{
