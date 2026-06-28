@@ -103,7 +103,8 @@ export function AuthGate({ children }) {
   const [sentTo, setSentTo]   = useState('');
 
   useEffect(() => {
-    if (!supabase) { setLoading(false); return; }
+    // Skip auth on localhost — dev environment always passes through
+    if (!supabase || window.location.hostname === 'localhost') { setLoading(false); return; }
 
     // Check for an existing session (also handles magic-link redirect tokens in URL)
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -178,7 +179,7 @@ export function AuthGate({ children }) {
 
 // Sign-out button — drop this anywhere in the nav
 export function SignOutBtn({ style = {} }) {
-  if (!supabase) return null;
+  if (!supabase || window.location.hostname === 'localhost') return null;
   const signOut = async () => {
     await supabase.auth.signOut();
     // Clear local review cache so another user doesn't see stale data
