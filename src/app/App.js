@@ -63,7 +63,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.237';
+const MERIDIAN_VERSION    = '4.238';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
   {version:'4.237', date:'2026-06-28', changes:[
@@ -760,6 +760,9 @@ function App() {
     return()=>{document.removeEventListener('dragover',prevent);document.removeEventListener('drop',drop);};
   },[handleFiles]);
 
+  // Permission helper — used by AppSidebar, AppTopbar, and modal gates
+  const perm = (key) => hasPermission(userRole, key, orgRoles);
+
   // Render
   // ── anyModalOpen  (v4.212 — performance) ────────────────────────────────
   // AtAGlance (and any other background view) was rendering — and fully
@@ -816,63 +819,65 @@ function App() {
       selStore,
       stores, ds, settings,
       loadMsg,
+      perm,
       onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
       onSaveSession: handleSaveSession,
       onRestoreSession: handleRestoreSession,
       onOpenModal: (modal) => {
         if(modal==='ranking'||modal.startsWith('ranking:')){
+          if(!perm('analytics.store')) return;
           setShowRanking(true);
           setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');
         }
-        if(modal==='aiscan')    setShowAIScan(p=>!p);
-        if(modal==='revintel')  setShowRevIntel(true);
-        if(modal==='compare')   setShowCompare(true);
-        if(modal==='proj')      setShowProj(true);
-        if(modal==='proj-brief') setShowProjBriefSA(true);
-        if(modal==='dialedin')  setShowDialedIn(true);
-        if(modal==='pvsa')      setShowPVSA(true);
-        if(modal==='dicompare') setShowDICompare(true);
-        if(modal==='report')    setShowReport(true);
-        if(modal==='morning-brief') setShowMorningBrief(true);
-        if(modal==='about') setShowAbout(true);
-        if(modal==='brief')     {
+        if(modal==='aiscan')         perm('analytics.ai')&&setShowAIScan(p=>!p);
+        if(modal==='why-engine')     perm('analytics.ai')&&setShowWhyEngine(true);
+        if(modal==='labor-analytics') perm('analytics.labor')&&setShowLaborAnalytics(true);
+        if(modal==='morning-brief')  perm('analytics.brief')&&setShowMorningBrief(true);
+        if(modal==='brief')          perm('analytics.brief')&&(()=>{
           if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
           else setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null});
           setShowBrief(true);
-        }
-        if(modal==='targets')   setShowTargets(true);
-        if(modal==='events')    setShowEvents(true);
-        if(modal==='settings')  setShowSettings(true);
-        if(modal==='help')      setShowHelp(true);
-        if(modal==='kb')        setShowKB(true);
-        if(modal==='smart-targets') setShowSmartTargets(true);
-        if(modal==='loc-intel')     setShowLocIntel(true);
-        if(modal==='inventory')     setShowInventory(true);
-        if(modal==='fob-analysis')        setShowFOB(true);
-        if(modal==='labor-analytics')     setShowLaborAnalytics(true);
-        if(modal==='operator-summary')    setShowOperatorSummary(true);
-        if(modal==='priority-brief')      setShowPriorityBrief(true);
-        if(modal==='store-kb')            setShowStoreKB(true);
-        if(modal==='fcst-ref')            setShowFcstRef(true);
-        if(modal==='model-assign')        setShowModelAssign(true);
-        if(modal==='one-pager')            setShowOnePager(true);
-        if(modal==='gm-brief')             setShowGMBrief(true);
-        if(modal==='calendar-manager')     setShowCalendarManager(true);
-        if(modal==='why-engine')           setShowWhyEngine(true);
-        if(modal==='channel-intel')        setShowChannelIntel(true);
-        if(modal==='lifelenz-bridge')      setShowLifeLenzBridge(true);
-        if(modal==='dar-daypart')          setShowDARDaypart(true);
-        if(modal==='pmix')                 setShowPMix(true);
-        if(modal==='data-manager')         setShowDataManager(true);
-        if(modal==='perf-reviews')         setShowPerfReviews(true);
-        if(modal==='record-day')           setShowRecordDay(true);
-        if(modal==='lfz-gap')              setShowLFZGap(true);
-        if(modal==='perf-calc')           setShowPerfCalc(true);
-        if(modal==='corr-explorer')       setShowCorrExplorer(true);
-        if(modal==='district-lens')       setShowDistrictLens(true);
-        if(modal==='unified-targets')     setShowUnifiedTargets(true);
-        if(modal==='fcst-accuracy')   setShowFcstAccuracy(true);
-        if(modal==='attention') setShowAttention(true);
+        })();
+        if(modal==='priority-brief') perm('analytics.brief')&&setShowPriorityBrief(true);
+        if(modal==='operator-summary') perm('analytics.district')&&setShowOperatorSummary(true);
+        if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
+        if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
+        if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
+        if(modal==='perf-reviews')   perm('reviews.view')&&setShowPerfReviews(true);
+        if(modal==='proj')           perm('analytics.forecasting')&&setShowProj(true);
+        if(modal==='proj-brief')     perm('analytics.forecasting')&&setShowProjBriefSA(true);
+        if(modal==='dialedin')       perm('analytics.forecasting')&&setShowDialedIn(true);
+        if(modal==='pvsa')           perm('analytics.forecasting')&&setShowPVSA(true);
+        if(modal==='dicompare')      perm('analytics.forecasting')&&setShowDICompare(true);
+        if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
+        if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
+        if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
+        if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
+        if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&setShowLifeLenzBridge(true);
+        if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
+        if(modal==='compare')        perm('analytics.store')&&setShowCompare(true);
+        if(modal==='report')         setShowReport(true);
+        if(modal==='about')          setShowAbout(true);
+        if(modal==='targets')        setShowTargets(true);
+        if(modal==='events')         setShowEvents(true);
+        if(modal==='help')           setShowHelp(true);
+        if(modal==='kb')             setShowKB(true);
+        if(modal==='smart-targets')  setShowSmartTargets(true);
+        if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
+        if(modal==='inventory')      perm('analytics.store')&&setShowInventory(true);
+        if(modal==='fob-analysis')   perm('analytics.store')&&setShowFOB(true);
+        if(modal==='store-kb')       perm('analytics.store')&&setShowStoreKB(true);
+        if(modal==='one-pager')      perm('analytics.store')&&setShowOnePager(true);
+        if(modal==='gm-brief')       perm('analytics.store')&&setShowGMBrief(true);
+        if(modal==='calendar-manager') perm('analytics.dashboard')&&setShowCalendarManager(true);
+        if(modal==='channel-intel')  perm('analytics.store')&&setShowChannelIntel(true);
+        if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
+        if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
+        if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
+        if(modal==='perf-calc')      perm('analytics.store')&&setShowPerfCalc(true);
+        if(modal==='corr-explorer')  perm('analytics.store')&&setShowCorrExplorer(true);
+        if(modal==='unified-targets') perm('analytics.store')&&setShowUnifiedTargets(true);
+        if(modal==='attention')      setShowAttention(true);
       }
     }),
 
@@ -885,12 +890,13 @@ function App() {
         dateRange, onDateChange: setDateRange,
         locScope, onScopeChange: setLocScope,
         loadMsg,
+        perm,
         onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
         onSaveSession: handleSaveSession,
         sessionBanner,
         onClearSession: handleClearSession,
         userRole,
-        onOpenAdmin: hasPermission(userRole,'users.manage.all',orgRoles) ? () => setShowAdminPanel(true) : null,
+        onOpenAdmin: perm('users.manage.all') ? () => setShowAdminPanel(true) : null,
         onOpenModal: (modal) => {
           if(modal==='settings')   setShowSettings(true);
           if(modal==='help')       setShowHelp(true);

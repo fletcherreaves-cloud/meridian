@@ -87,7 +87,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg}) {
+function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm}) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
@@ -150,6 +150,10 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   // Needs Attention badge count
   const needsCount = (stores||[]).filter(s=>s.findings&&s.findings.some(f=>f.t==='crit')).length;
 
+  // Permission helpers — pi is a permission-gated navItem
+  const can = perm || (() => true);
+  const pi  = (permKey, ...args) => (!permKey || can(permKey)) ? navItem(...args) : null;
+
   const sideStyle=isMobile
     ?{position:'fixed',top:0,left:mobileOpen?0:'-270px',height:'100%',width:w,zIndex:300,
       background:'var(--surf)',borderRight:'.5px solid var(--bdr)',
@@ -190,71 +194,62 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       navLabel('DAILY'),
       navItem('Command Center',     '⌂', ()=>setView('command'),  view==='command'),
       navItem('⚠ Needs Attention',  '🔴', ()=>onOpenModal('attention'), false, needsCount),
-      navItem('Anomaly Scanner',    '🔍', ()=>onOpenModal('aiscan'), false),
-      navItem('Projections',        '▦', ()=>onOpenModal('proj'),       false),
-      // Fixed v4.195: this was wired to onOpenModal('report') (Date-Range
-      // Comprehensive Report) — a pre-existing mislabel unrelated to the
-      // redesign, found via UI testing. Now correctly opens the actual
-      // Projection Workflow, same destination as 'Projections' above.
-      navItem('Projection Workflow','🔒', ()=>onOpenModal('proj'),       false),
-      navItem('Proj vs Actuals',    '◑', ()=>onOpenModal('pvsa'),       false),
-      // Re-added v4.195: previously only reachable via the mislabeled
-      // 'Projection Workflow' item above (now correctly fixed to open the
-      // actual Projection Workflow). Without this, the Date-Range
-      // Comprehensive Report — a real, working feature — would have had
-      // zero nav entry point.
-      navItem('Date-Range Report',  '📅', ()=>onOpenModal('report'),     false),
-      navItem('Events & Tags',      '◷', ()=>onOpenModal('events'),     false),
+      pi('analytics.ai',          'Anomaly Scanner',    '🔍', ()=>onOpenModal('aiscan'),  false),
+      pi('analytics.forecasting', 'Projections',        '▦',  ()=>onOpenModal('proj'),    false),
+      pi('analytics.forecasting', 'Projection Workflow','🔒', ()=>onOpenModal('proj'),    false),
+      pi('analytics.forecasting', 'Proj vs Actuals',    '◑',  ()=>onOpenModal('pvsa'),    false),
+      navItem('Date-Range Report',  '📅', ()=>onOpenModal('report'),  false),
+      navItem('Events & Tags',      '◷', ()=>onOpenModal('events'),  false),
       // ── PLANNING & FORECAST ────────────────────────────────────
-      navLabel('PLANNING & FORECAST'),
-      navItem('Model Assignments',  '🎯', ()=>onOpenModal('model-assign'),  false),
-      navItem('Dialed-In Calibration','◎',()=>onOpenModal('dialedin'),     false),
-      navItem('Forecast Accuracy',  '🎯', ()=>onOpenModal('fcst-accuracy'), false),
-      navItem('Lifelenz Gap Report','📊', ()=>onOpenModal('lfz-gap'),       false),
-      navItem('DI Compare',         '⚡', ()=>onOpenModal('dicompare'),     false),
+      can('analytics.forecasting') && navLabel('PLANNING & FORECAST'),
+      pi('analytics.forecasting', 'Model Assignments',     '🎯', ()=>onOpenModal('model-assign'),  false),
+      pi('analytics.forecasting', 'Dialed-In Calibration','◎',  ()=>onOpenModal('dialedin'),      false),
+      pi('analytics.forecasting', 'Forecast Accuracy',     '🎯', ()=>onOpenModal('fcst-accuracy'), false),
+      pi('analytics.forecasting', 'Lifelenz Gap Report',   '📊', ()=>onOpenModal('lfz-gap'),       false),
+      pi('analytics.forecasting', 'DI Compare',            '⚡', ()=>onOpenModal('dicompare'),     false),
       // ── PERFORMANCE ────────────────────────────────────────────
       navLabel('PERFORMANCE'),
-      navItem('Rankings',           '⇈', ()=>onOpenModal('ranking'),       false),
-      navItem('Targets',            '◉', ()=>onOpenModal('unified-targets'),false),
-      navItem('Priority Brief',      '🎯', ()=>onOpenModal('priority-brief'),  false),
-      navItem('Perf Reviews',       '📋', ()=>onOpenModal('perf-reviews'),   false),
-      navItem('Record Day Intel',   '🏆', ()=>onOpenModal('record-day'),     false),
-      navItem('Labor Analytics',    '👷', ()=>onOpenModal('labor-analytics'),false),
-      navItem('FOB Analysis',       '🥗', ()=>onOpenModal('fob-analysis'),  false),
-      navItem('Operator Summary',   '👔', ()=>onOpenModal('operator-summary'),false),
-      navItem('Revenue Intel',      '◈', ()=>onOpenModal('revintel'),      false),
+      pi('analytics.store',    'Rankings',         '⇈', ()=>onOpenModal('ranking'),          false),
+      pi('analytics.store',    'Targets',          '◉', ()=>onOpenModal('unified-targets'),  false),
+      pi('analytics.brief',    'Priority Brief',   '🎯', ()=>onOpenModal('priority-brief'),  false),
+      pi('reviews.view',       'Perf Reviews',     '📋', ()=>onOpenModal('perf-reviews'),    false),
+      pi('analytics.store',    'Record Day Intel', '🏆', ()=>onOpenModal('record-day'),      false),
+      pi('analytics.labor',    'Labor Analytics',  '👷', ()=>onOpenModal('labor-analytics'), false),
+      pi('analytics.store',    'FOB Analysis',     '🥗', ()=>onOpenModal('fob-analysis'),    false),
+      pi('analytics.district', 'Operator Summary', '👔', ()=>onOpenModal('operator-summary'),false),
+      pi('analytics.store',    'Revenue Intel',    '◈', ()=>onOpenModal('revintel'),        false),
       // ── STORE OPERATIONS ───────────────────────────────────────
-      navLabel('STORE OPERATIONS'),
-      navItem('Store KB',           '📍', ()=>onOpenModal('store-kb'),     false),
-      navItem('Forecast Reference', '📐', ()=>onOpenModal('fcst-ref'),     false),
-      navItem('District View',      '⊞', ()=>{setView('district');}, view==='district'),
-      navItem('Loc Intelligence',   '📊', ()=>onOpenModal('loc-intel'),    false),
-      navItem('Inventory',          '📦', ()=>onOpenModal('inventory'),    false),
-      navItem('Intelligence Brief', '🧠', ()=>onOpenModal('brief'),        false),
-      navItem('Morning Brief',      '☀️', ()=>onOpenModal('morning-brief'), false),
-      navItem('About / Changelog','ℹ️', ()=>onOpenModal('about'),          false),
+      can('analytics.store') && navLabel('STORE OPERATIONS'),
+      pi('analytics.store',       'Store KB',           '📍', ()=>onOpenModal('store-kb'),      false),
+      pi('analytics.forecasting', 'Forecast Reference', '📐', ()=>onOpenModal('fcst-ref'),      false),
+      pi('analytics.district',    'District View',      '⊞', ()=>{setView('district');}, view==='district'),
+      pi('analytics.store',       'Loc Intelligence',   '📊', ()=>onOpenModal('loc-intel'),     false),
+      pi('analytics.store',       'Inventory',          '📦', ()=>onOpenModal('inventory'),     false),
+      pi('analytics.brief',       'Intelligence Brief', '🧠', ()=>onOpenModal('brief'),         false),
+      pi('analytics.brief',       'Morning Brief',      '☀️', ()=>onOpenModal('morning-brief'), false),
+      navItem('About / Changelog','ℹ️', ()=>onOpenModal('about'), false),
       // ── TOOLS ──────────────────────────────────────────────────
-      navLabel('TOOLS'),
-      navItem('Performance Calculator','🧮',()=>onOpenModal('perf-calc'),  false),
-      navItem('Metric Correlations', '🔗',()=>onOpenModal('corr-explorer'),false),
-      navItem('District Lens',       '🌐',()=>onOpenModal('district-lens'),false),
-      navItem('Compare',             '⇄', ()=>onOpenModal('compare'),      false),
-      navItem('Store One-Pager',     '📄', ()=>onOpenModal('one-pager'),   false),
-      navItem('GM Coaching Letters', '👨‍💼',()=>onOpenModal('gm-brief'),    false),
-      navItem('Calendar Manager',    '📅', ()=>onOpenModal('calendar-manager'), false),
-      navItem('Why Engine',          '🔬', ()=>onOpenModal('why-engine'),       false),
-      navItem('Channel Intel',       '📊', ()=>onOpenModal('channel-intel'),    false),
-      navItem('LifeLenz Bridge',     '🌉', ()=>onOpenModal('lifelenz-bridge'),  false),
-      navItem('DAR Daypart',         '⏱', ()=>onOpenModal('dar-daypart'),  false),
-      navItem('Product Mix',         '🍔', ()=>onOpenModal('pmix'),        false),
+      can('analytics.store') && navLabel('TOOLS'),
+      pi('analytics.store',       'Performance Calculator','🧮',()=>onOpenModal('perf-calc'),        false),
+      pi('analytics.store',       'Metric Correlations',   '🔗',()=>onOpenModal('corr-explorer'),    false),
+      pi('analytics.district',    'District Lens',         '🌐',()=>onOpenModal('district-lens'),    false),
+      pi('analytics.store',       'Compare',               '⇄', ()=>onOpenModal('compare'),          false),
+      pi('analytics.store',       'Store One-Pager',       '📄', ()=>onOpenModal('one-pager'),       false),
+      pi('analytics.store',       'GM Coaching Letters',   '👨‍💼',()=>onOpenModal('gm-brief'),       false),
+      pi('analytics.dashboard',   'Calendar Manager',      '📅', ()=>onOpenModal('calendar-manager'),false),
+      pi('analytics.ai',          'Why Engine',            '🔬', ()=>onOpenModal('why-engine'),      false),
+      pi('analytics.store',       'Channel Intel',         '📊', ()=>onOpenModal('channel-intel'),   false),
+      pi('analytics.forecasting', 'LifeLenz Bridge',       '🌉', ()=>onOpenModal('lifelenz-bridge'), false),
+      pi('analytics.store',       'DAR Daypart',           '⏱', ()=>onOpenModal('dar-daypart'),     false),
+      pi('analytics.store',       'Product Mix',           '🍔', ()=>onOpenModal('pmix'),            false),
       // ── ADMIN ──────────────────────────────────────────────────
       navLabel('ADMIN'),
-      navItem('Settings',            '⚙', ()=>onOpenModal('settings'),    false),
-      navItem('Knowledge Base',      '📖', ()=>onOpenModal('kb'),          false),
-      navItem('Data Manager',         '🗄', ()=>onOpenModal('data-manager'), false),
-      navItem('Save Session',        '💾', ()=>onSaveSession&&onSaveSession(), false),
-      navItem('Restore Session',     '📂', ()=>onRestoreSession&&onRestoreSession(), false),
-      navItem('Help',                '?',  ()=>onOpenModal('help'),        false),
+      pi('settings.view', 'Settings',      '⚙', ()=>onOpenModal('settings'),             false),
+      navItem('Knowledge Base', '📖', ()=>onOpenModal('kb'), false),
+      pi('data.upload',   'Data Manager',  '🗄', ()=>onOpenModal('data-manager'),         false),
+      navItem('Save Session',    '💾', ()=>onSaveSession&&onSaveSession(),    false),
+      navItem('Restore Session', '📂', ()=>onRestoreSession&&onRestoreSession(), false),
+      navItem('Help',            '?',  ()=>onOpenModal('help'),                false),
     ),
 
     // ── Footer status ───────────────────────────────────────────
@@ -279,7 +274,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
 // ── App Topbar (slim contextual header) ─────────────────────────────
 function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChange, locScope, onScopeChange,
                     onOpenModal, onLoadFiles, onSaveSession, loadMsg, setView,
-                    sessionBanner, onClearSession, userRole, onOpenAdmin}) {
+                    sessionBanner, onClearSession, userRole, onOpenAdmin, perm}) {
   const today = new Date();
   const [isMb, setIsMb] = React.useState(()=>window.innerWidth<768);
   React.useEffect(()=>{
@@ -368,8 +363,8 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       ),
       // Date range picker — controls all views
       h(DatePicker,{value:dateRange,onChange:onDateChange}),
-      // Load files
-      div({style:{position:'relative'}},
+      // Load files — hidden for roles without data.upload
+      (!perm||perm('data.upload'))&&div({style:{position:'relative'}},
         btn({className:'btn btn-sm',style:{fontSize:'10px'},
           onClick:onLoadFiles},'↑ Load'),
         loadMsg&&div({style:{position:'absolute',top:'calc(100% + 4px)',right:0,
@@ -379,7 +374,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       ),
       !isMb&&btn({className:'btn btn-sm',title:'Save session to file',style:{fontSize:'10px'},
         onClick:onSaveSession},'💾'),
-      btn({className:'btn btn-sm',style:{fontSize:'10px'},
+      (!perm||perm('settings.view'))&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
         onClick:()=>onOpenModal('settings')},'⚙'),
       !isMb&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
         onClick:()=>onOpenModal('help')},'?'),
@@ -390,8 +385,8 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           const next=settings.colorMode==='dark'?'light':'dark';
           document.documentElement.setAttribute('data-mode',next);
         }},settings.colorMode==='dark'?'☀':'🌙'),
-      // Admin panel (only for admins)
-      userRole==='admin'&&onOpenAdmin&&btn({className:'btn btn-sm',
+      // Admin panel — visibility controlled by App.js (onOpenAdmin is null if not permitted)
+      onOpenAdmin&&btn({className:'btn btn-sm',
         title:'User Management',style:{fontSize:'10px'},
         onClick:onOpenAdmin},'👤'),
       // Sign out (only renders when Supabase auth is active)

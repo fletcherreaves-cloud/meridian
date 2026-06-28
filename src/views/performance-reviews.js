@@ -1872,9 +1872,10 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
     refresh();
   };
 
+  const canCustomize = hasPermission(userRole, 'reviews.customize', orgRoles || getOrgRoles());
   const tabs = [
     {key:'reviews', label:`Reviews (${Object.keys(reviews).length})`},
-    {key:'customize', label:'Customize'},
+    ...(canCustomize ? [{key:'customize', label:'Customize'}] : []),
   ];
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:200,
