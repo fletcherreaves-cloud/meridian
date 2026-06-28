@@ -508,6 +508,91 @@ export function computeScores(review, cfg) {
   return out;
 }
 
+// Returns a full step-by-step breakdown of how scores are computed for the review's half period.
+// Used by ScoreBreakdownPanel to show transparent, verifiable math to the reviewer.
+export function computeScoreBreakdown(review, cfg) {
+  const months = review.kpis?.months || {};
+  const half = review.half;
+  const halfMonthNums = half === 'H1' ? [1,2,3,4,5,6] : [7,8,9,10,11,12];
+  const qMap = half === 'H1' ? {q1:[1,2,3],q2:[4,5,6]} : {q3:[7,8,9],q4:[10,11,12]};
+  const halfMoArr = halfMonthNums.map(n => months[n]).filter(Boolean);
+
+  const mw = cfg.overall?.metrics ?? 0.70;
+  const bw = cfg.overall?.behavioral ?? 0.30;
+
+  let metricsWS = 0, metricsWT = 0;
+  const categories = Object.entries(cfg.categoryWeights).map(([catKey, cw]) => {
+    const scoredMetrics = (cfg.metrics[catKey] || []).filter(m => m.scored);
+    const catTotalWeight = scoredMetrics.reduce((s, m) => s + m.weight, 0) || 1;
+    let catWS = 0, catWT = 0;
+
+    const metricRows = scoredMetrics.map(m => {
+      const monthlyData = halfMoArr.map(mo => {
+        const actual = mo[m.key] ?? null;
+        const target = mo[m.key + 'Tgt'] ?? null;
+        const rating = rateMetric(actual, target, m);
+        let dev = null;
+        if (actual != null && target != null && !(m.unit === 'pct' && target === 0))
+          dev = m.unit === 'pct' ? (actual - target) / Math.abs(target) : (actual - target);
+        return { actual, target, dev, rating };
+      });
+
+      const ratedData = monthlyData.filter(d => d.rating != null);
+      const avgRating = ratedData.length
+        ? ratedData.reduce((a, b) => a + b.rating, 0) / ratedData.length : null;
+      const contribution = avgRating != null ? avgRating * m.weight : null;
+      if (avgRating != null) { catWS += avgRating * m.weight; catWT += m.weight; }
+
+      // Impact of +1 full rating point on this metric → overall score change
+      const impactPerPoint = (m.weight / catTotalWeight) * cw.weight * mw;
+
+      let nextRating = null, gapToNext = null;
+      if (avgRating != null && avgRating < 4) {
+        nextRating = Math.min(4, Math.ceil(avgRating + 0.0001));
+        gapToNext = nextRating - avgRating;
+      }
+
+      return {
+        key: m.key, label: m.label, weight: m.weight, unit: m.unit, better: m.better,
+        monthlyData, avgRating, contribution,
+        ratedCount: ratedData.length, totalMonths: halfMoArr.length,
+        impactPerPoint, nextRating, gapToNext,
+      };
+    });
+
+    const categoryScore = catWT > 0 ? catWS / catWT : null;
+    const categoryContrib = categoryScore != null ? categoryScore * cw.weight : null;
+    if (categoryScore != null) { metricsWS += categoryScore * cw.weight; metricsWT += cw.weight; }
+
+    return { key: catKey, label: cw.label || catKey, categoryWeight: cw.weight, metrics: metricRows, categoryScore, categoryContrib };
+  });
+
+  const metricsScore = metricsWT > 0 ? metricsWS / metricsWT : null;
+
+  // Behavioral per-quarter scores
+  const behavQScores = {};
+  for (const qKey of Object.keys(qMap)) {
+    const rats = review.behavioralRatings?.[qKey] || {};
+    const extras = (cfg.extraCategories || []).map(c => c.key);
+    const allRatings = [...CAT_KEYS, ...extras, 'admin'].flatMap(cat => {
+      const items = cfg?.competencies?.[review.role]?.[cat] || [];
+      return (rats[cat] || []).filter((_, i) => {
+        const item = items[i];
+        return typeof item === 'string' || item == null || item.active !== false;
+      });
+    }).filter(x => x != null);
+    behavQScores[qKey] = allRatings.length
+      ? allRatings.reduce((a, b) => a + b, 0) / allRatings.length : null;
+  }
+
+  const bVals = Object.values(behavQScores).filter(x => x != null);
+  const behavioralScore = bVals.length ? bVals.reduce((a, b) => a + b, 0) / bVals.length : null;
+  const overall = metricsScore != null && behavioralScore != null
+    ? metricsScore * mw + behavioralScore * bw : null;
+
+  return { categories, metricsScore, behavQScores, behavioralScore, overall, mw, bw, qKeys: Object.keys(qMap) };
+}
+
 // ── Auto-populate KPIs from ds ─────────────────────────────────────────────────
 export function autoPopulateKPIs(review, ds) {
   if (!ds?.loaded) return review;

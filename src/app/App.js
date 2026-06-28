@@ -61,9 +61,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.231';
-const MERIDIAN_BUILD_DATE = '2026-06-27';
+const MERIDIAN_VERSION    = '4.232';
+const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.232', date:'2026-06-28', changes:[
+    'Performance Reviews — Score Breakdown panel added to Summary tab. Expand "SCORE BREAKDOWN" to see the full step-by-step math: each scored metric\'s avg rating, weight, and contribution to its category score; category scores weighted into the Metrics total; Behavioral quarterly averages; and the final formula (Metrics×70% + Behavioral×30% = Overall). Each metric below Exceeds shows exactly how many avg rating points are needed for the next level and the resulting impact on the overall score.',
+  ]},
   {version:'4.231', date:'2026-06-27', changes:[
     'Supabase integration (Stack A): added @supabase/supabase-js, AuthGate login screen (magic-link email), Supabase sync layer in review-engine.js, and Sign Out button in topbar. App runs in local-only mode when env vars are absent — no behavior change until Supabase is configured. Schema and RLS policies in supabase/schema.sql.',
   ]},

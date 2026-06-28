@@ -3,7 +3,7 @@ import * as React from 'react';
 import {
   DEFAULT_REVIEW_CONFIG, getReviewConfig, saveReviewConfig, resetReviewConfig,
   getReviews, upsertReview, deleteReview, blankReview, autoPopulateKPIs,
-  rateMetric, ratingColor, ratingBg, computeScores,
+  rateMetric, ratingColor, ratingBg, computeScores, computeScoreBreakdown,
   RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS,
 } from '../engine/review-engine.js';
@@ -1156,6 +1156,191 @@ function printReview(review, cfg, orgLabel, orgLogo) {
 }
 
 // ── Summary Tab ────────────────────────────────────────────────────────────────
+// ── Score Breakdown Panel ──────────────────────────────────────────────────────
+function ScoreBreakdownPanel({review, cfg}) {
+  const [open, setOpen] = useState(false);
+  const bd = useMemo(() => computeScoreBreakdown(review, cfg), [review, cfg]);
+
+  const hasData = bd.metricsScore != null || bd.behavioralScore != null;
+  if (!hasData) return null;
+
+  const mono = {fontFamily:'var(--mono)'};
+
+  return div({style:{marginTop:16}},
+    // Toggle header
+    div({
+      onClick: () => setOpen(o => !o),
+      style:{
+        display:'flex', alignItems:'center', justifyContent:'space-between',
+        padding:'9px 14px',
+        background: open ? S2 : 'var(--surf)',
+        borderRadius: open ? `${R} ${R} 0 0` : R,
+        border:`1px solid ${BDR}`,
+        cursor:'pointer', userSelect:'none',
+      },
+    },
+      span({style:{fontSize:11,fontWeight:700,color:TEXT,letterSpacing:'.4px'}},
+        'SCORE BREAKDOWN'),
+      span({style:{fontSize:10,color:TEXT3}}, open ? '▲ Hide' : '▼ Show — how this score is calculated')
+    ),
+
+    open && div({style:{
+      padding:16, background:S2,
+      borderRadius:`0 0 ${R} ${R}`,
+      border:`1px solid ${BDR}`, borderTop:'none',
+    }},
+
+      // Formula banner
+      div({style:{
+        padding:'8px 12px', background:'var(--surf)', borderRadius:R,
+        border:`1px solid ${BDR}`, marginBottom:16,
+        fontSize:11, color:TEXT2, ...mono,
+      }},
+        `Overall Score  =  (Metrics × ${Math.round(bd.mw*100)}%)  +  (Behavioral × ${Math.round(bd.bw*100)}%)`
+      ),
+
+      // Category sections
+      ...bd.categories.map(cat =>
+        div({key: cat.key, style:{marginBottom:14}},
+
+          // Category header
+          div({style:{
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            padding:'6px 10px',
+            background:'var(--surf)', borderRadius:`${R} ${R} 0 0`,
+            border:`1px solid ${BDR}`, borderBottom:'none',
+          }},
+            span({style:{fontSize:11,fontWeight:700,color:AMBER}}, cat.label),
+            span({style:{fontSize:10,color:TEXT3}}, `${Math.round(cat.categoryWeight*100)}% of Metrics`)
+          ),
+
+          // Metrics table
+          div({style:{border:`1px solid ${BDR}`, borderRadius:`0 0 ${R} ${R}`, overflow:'hidden'}},
+
+            // Column headers
+            div({style:{
+              display:'grid', gridTemplateColumns:'1fr 58px 52px 68px',
+              padding:'4px 10px',
+              background:'rgba(255,255,255,.03)',
+              borderBottom:`1px solid ${BDR}`,
+              fontSize:10, color:TEXT3, fontWeight:700,
+            }},
+              span(null,'Metric'),
+              span({style:{textAlign:'center'}},'Avg Rtg'),
+              span({style:{textAlign:'center'}},'Wt'),
+              span({style:{textAlign:'right'}},'Contrib')
+            ),
+
+            // Metric rows
+            ...cat.metrics.map((m, i) =>
+              div({key:m.key, style:{
+                borderBottom: i < cat.metrics.length - 1 ? `1px solid ${BDR}33` : 'none',
+                background: i%2===0 ? 'transparent' : 'rgba(255,255,255,.02)',
+              }},
+                div({style:{
+                  display:'grid', gridTemplateColumns:'1fr 58px 52px 68px',
+                  padding:'6px 10px', alignItems:'center', fontSize:11,
+                }},
+                  div(null,
+                    div({style:{color:TEXT2}}, m.label),
+                    m.ratedCount < m.totalMonths && m.ratedCount > 0 &&
+                      span({style:{fontSize:9,color:TEXT3}},
+                        ` ${m.ratedCount}/${m.totalMonths} months rated`)
+                  ),
+                  div({style:{textAlign:'center'}},
+                    m.avgRating != null
+                      ? span({style:{
+                          fontWeight:700, fontSize:12, ...mono,
+                          color: ratingColor(Math.round(m.avgRating)),
+                        }}, m.avgRating.toFixed(2))
+                      : span({style:{color:TEXT3}}, '—')
+                  ),
+                  div({style:{textAlign:'center', color:TEXT3, fontSize:10}},
+                    `${Math.round(m.weight*100)}%`
+                  ),
+                  div({style:{textAlign:'right', color:TEXT2, ...mono, fontSize:11}},
+                    m.contribution != null ? m.contribution.toFixed(3) : '—'
+                  )
+                ),
+                // "What would change this" hint
+                m.nextRating != null && m.gapToNext != null &&
+                  div({style:{
+                    padding:'2px 10px 5px 10px',
+                    fontSize:9, color:'#f59e0b',
+                  }},
+                    `↑ avg rating needs +${m.gapToNext.toFixed(2)} pts for ${RATING_LABELS[m.nextRating]} · `,
+                    `would add +${(m.gapToNext * m.impactPerPoint).toFixed(3)} to overall`
+                  )
+              )
+            ),
+
+            // Category subtotal
+            div({style:{
+              display:'grid', gridTemplateColumns:'1fr 58px 52px 68px',
+              padding:'7px 10px',
+              background:'rgba(255,255,255,.05)',
+              borderTop:`1px solid ${BDR}`,
+              fontSize:11, fontWeight:700,
+            }},
+              span({style:{color:TEXT2}}, `Category Score`),
+              span({style:{textAlign:'center'}},
+                cat.categoryScore != null
+                  ? span({style:{...mono, color:ratingColor(Math.round(cat.categoryScore))}},
+                      cat.categoryScore.toFixed(2))
+                  : span({style:{color:TEXT3}}, '—')
+              ),
+              span({style:{textAlign:'center', color:TEXT3, fontSize:10}},
+                `×${Math.round(cat.categoryWeight*100)}%`),
+              span({style:{textAlign:'right', ...mono, color: cat.categoryContrib != null ? AMBER : TEXT3}},
+                cat.categoryContrib != null ? `${cat.categoryContrib.toFixed(3)}` : '—'
+              )
+            )
+          )
+        )
+      ),
+
+      // Final formula
+      div({style:{
+        padding:'12px 14px',
+        background:'var(--surf)',
+        borderRadius:R,
+        border:`1px solid ${AMBER}44`,
+        marginTop:4, ...mono, fontSize:11,
+      }},
+        div({style:{display:'flex',justifyContent:'space-between',color:TEXT2,marginBottom:3}},
+          span(null, `Metrics Score × ${Math.round(bd.mw*100)}%`),
+          span(null,
+            bd.metricsScore != null
+              ? `${bd.metricsScore.toFixed(3)} × ${Math.round(bd.mw*100)}% = ${(bd.metricsScore*bd.mw).toFixed(3)}`
+              : '—')
+        ),
+        // Per-quarter behavioral detail
+        ...bd.qKeys.map(q =>
+          div({key:q, style:{display:'flex',justifyContent:'space-between',fontSize:9,color:TEXT3,marginBottom:1}},
+            span(null, `  ${qLabel(q)} Behavioral avg`),
+            span(null, bd.behavQScores[q] != null ? bd.behavQScores[q].toFixed(2) : '—')
+          )
+        ),
+        div({style:{display:'flex',justifyContent:'space-between',color:TEXT2,marginBottom:3}},
+          span(null, `Behavioral Score × ${Math.round(bd.bw*100)}%`),
+          span(null,
+            bd.behavioralScore != null
+              ? `${bd.behavioralScore.toFixed(3)} × ${Math.round(bd.bw*100)}% = ${(bd.behavioralScore*bd.bw).toFixed(3)}`
+              : '—')
+        ),
+        div({style:{borderTop:`1px solid ${BDR}`,margin:'8px 0'}}),
+        div({style:{display:'flex',justifyContent:'space-between',fontSize:13,fontWeight:700}},
+          span({style:{color:TEXT}}, 'Overall Score'),
+          span({style:{color: bd.overall!=null ? ratingColor(Math.round(bd.overall)) : TEXT3}},
+            bd.overall != null
+              ? `${(bd.metricsScore*bd.mw).toFixed(3)} + ${(bd.behavioralScore*bd.bw).toFixed(3)} = ${bd.overall.toFixed(3)} / 4.000`
+              : '—')
+        )
+      )
+    )
+  );
+}
+
 function overallLabel(s) {
   if (s==null) return '';
   return s>=3.5?'Exceeds Expectations':s>=2.5?'Meets Expectations':s>=1.5?'Below Expectations':'Needs Improvement';
@@ -1266,6 +1451,8 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
         })
       ]).flat(),
     ),
+    // Score breakdown (transparent math)
+    h(ScoreBreakdownPanel, {review, cfg}),
     // Wage section (EOY only)
     half==='H2'&&div({style:{marginTop:20,padding:'14px 16px',background:S2,borderRadius:R,
       border:`1px solid ${BDR}`}},
