@@ -179,6 +179,58 @@ create index if not exists reviews_org_idx  on public.reviews (org);
 create index if not exists assign_profile_idx on public.staff_assignments (profile_id, start_date);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- QSRSoft EMAIL INGEST PIPELINE (v4.240+)
+-- Run this block after the main schema above.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- ── Storage bucket for raw Excel report files ─────────────────────────────────
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'qsr-reports',
+  'qsr-reports',
+  false,   -- private: requires auth
+  52428800, -- 50 MB max per file
+  array[
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'application/octet-stream'
+  ]
+) on conflict (id) do nothing;
+
+-- Authenticated users can read files from this bucket
+create policy "qsr-reports: authenticated read"
+  on storage.objects for select
+  using (bucket_id = 'qsr-reports' and auth.uid() is not null);
+
+-- ── pending_reports — tracks files waiting to be parsed by Meridian ───────────
+create table if not exists public.pending_reports (
+  id           uuid default gen_random_uuid() primary key,
+  filename     text not null,
+  storage_path text not null unique,  -- YYYY-MM-DD/filename.xlsx
+  report_type  text,                  -- 'sales-ledger' | 'labor' | 'cash-sheet' | etc.
+  source       text default 'email',  -- 'email' | 'manual'
+  uploaded_at  timestamptz default now(),
+  processed    boolean default false,
+  processed_at timestamptz,
+  org          text
+);
+
+alter table public.pending_reports enable row level security;
+
+-- Any authenticated user can see pending reports
+create policy "pending_reports: authenticated read" on public.pending_reports
+  for select using (auth.uid() is not null);
+
+-- Any authenticated user can mark reports processed (update only)
+create policy "pending_reports: authenticated update" on public.pending_reports
+  for update using (auth.uid() is not null);
+
+-- Service role only for insert (Edge Function uses service key, bypasses RLS)
+
+create index if not exists pending_reports_processed_idx
+  on public.pending_reports (processed, uploaded_at desc);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- After creating your first user account, promote it to admin:

@@ -503,6 +503,46 @@ function App() {
         .then(({ data }) => { if (data?.role) setUserRole(data.role); })
         .catch(() => {});
     });
+    // ── Auto-ingest pending QSRSoft reports ───────────────────────────────────
+    // Check for files uploaded by the Gmail poller (pending_reports table).
+    // Download each unprocessed file from Storage, parse with existing parsers,
+    // merge into the DS, then mark as processed.
+    (async()=>{
+      try{
+        const {data:pending,error}=await supabase
+          .from('pending_reports')
+          .select('id,filename,storage_path,report_type')
+          .eq('processed',false)
+          .order('uploaded_at',{ascending:true})
+          .limit(50);
+        if(error||!pending?.length) return;
+        console.log(`[Meridian] ${pending.length} pending QSRSoft report(s) found`);
+        const filesToProcess=[];
+        for(const rec of pending){
+          try{
+            const {data:blob,error:dlErr}=await supabase.storage
+              .from('qsr-reports')
+              .download(rec.storage_path);
+            if(dlErr||!blob) continue;
+            const arr=await blob.arrayBuffer();
+            const file=new File([arr],rec.filename,{
+              type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            file._pendingId=rec.id;
+            filesToProcess.push(file);
+          }catch(e){console.warn('[Meridian] Failed to download',rec.filename,e);}
+        }
+        if(!filesToProcess.length) return;
+        // Reuse existing handleFiles — parses, merges, saves to OPFS
+        await handleFiles(filesToProcess);
+        // Mark all as processed
+        const ids=pending.map(r=>r.id);
+        await supabase.from('pending_reports')
+          .update({processed:true,processed_at:new Date().toISOString()})
+          .in('id',ids);
+        console.log(`[Meridian] ✓ Auto-ingested ${filesToProcess.length} QSRSoft report(s)`);
+      }catch(e){console.warn('[Meridian] Pending report check failed:',e);}
+    })();
   },[]);
 
   React.useEffect(()=>{
