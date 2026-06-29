@@ -27,6 +27,7 @@ import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligen
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
+import { DeliveryMixPanel } from '../views/delivery-mix.js';
 import { AdminPanel } from '../views/admin.js';
 import { supabase } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase } from '../engine/review-engine.js';
@@ -63,7 +64,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.240';
+const MERIDIAN_VERSION    = '4.242';
 const MERIDIAN_BUILD_DATE = '2026-06-28';
 const MERIDIAN_CHANGELOG  = [
   {version:'4.237', date:'2026-06-28', changes:[
@@ -408,6 +409,7 @@ function App() {
   const [showPerfReviews,     setShowPerfReviews]     = useState(false);
   const [showRecordDay,       setShowRecordDay]       = useState(false);
   const [showAdminPanel,      setShowAdminPanel]      = useState(false);
+  const [showDeliveryMix,     setShowDeliveryMix]     = useState(false);
   const [userRole,            setUserRole]            = useState('admin');
   const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
   const [showOperatorSummary, setShowOperatorSummary] = useState(false);
@@ -875,7 +877,7 @@ function App() {
     showMorningBrief||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -895,7 +897,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -941,6 +943,7 @@ function App() {
         if(modal==='aiscan')         perm('analytics.ai')&&setShowAIScan(p=>!p);
         if(modal==='why-engine')     perm('analytics.ai')&&setShowWhyEngine(true);
         if(modal==='labor-analytics') perm('analytics.labor')&&setShowLaborAnalytics(true);
+        if(modal==='delivery-mix')    perm('analytics.store')&&setShowDeliveryMix(true);
         if(modal==='morning-brief')  perm('analytics.brief')&&setShowMorningBrief(true);
         if(modal==='brief')          perm('analytics.brief')&&(()=>{
           if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
@@ -1092,6 +1095,7 @@ function App() {
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
     showFOB&&h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>setShowFOB(false)}),
     showLaborAnalytics&&h(LaborAnalyticsPanel,{stores,ds,settings,onClose:()=>setShowLaborAnalytics(false)}),
+    showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false)}),
