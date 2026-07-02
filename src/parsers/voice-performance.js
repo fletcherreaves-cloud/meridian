@@ -115,21 +115,20 @@ export async function parseVoicePerformancePDF(arrayBuffer, filename = '') {
     }
 
     // ── Store table extraction ──────────────────────────────────────────────────
-    // Store IDs are 5-digit numbers at X < 35
-    const storeIdWords = words.filter(w => /^\d{5}$/.test(w.text) && w.x < 35);
-    if (pg === 1) console.log(`[vp_debug] pg1: period=${period} opId=${operatorId} rtype=${currentReportType} storeIds=${storeIdWords.length} (${storeIdWords.map(w=>w.text).join(',')}) | x<35 words:`, words.filter(w=>w.x<35).map(w=>`"${w.text}"@(${Math.round(w.x)},${Math.round(w.y)})`).slice(0,10));
+    // PDF.js returns store rows as combined items: "#05985 - DURANT-US HWY 70"
+    // at X < 35. Match that pattern to extract loc and locName together.
+    const storeItems = words.filter(w => w.x < 35 && /^#?\d{5}\s*-/.test(w.text));
 
-    for (const sidWord of storeIdWords) {
-      const rowY = sidWord.y;
-      // All words within ±4 Y units of this store row
-      const rowWords = words.filter(w => Math.abs(w.y - rowY) < 4);
+    for (const sidItem of storeItems) {
+      const rowY = sidItem.y;
+      const storeMatch = sidItem.text.match(/^#?(\d{5})\s*-\s*(.+)/);
+      if (!storeMatch) continue;
 
-      // Store name: text between X=35 and X=172, excluding "-"
-      const locName = rowWords
-        .filter(w => w.x >= 35 && w.x < 172 && w.text !== '-')
-        .sort((a, b) => a.x - b.x)
-        .map(w => w.text)
-        .join(' ');
+      const loc     = storeMatch[1];
+      const locName = storeMatch[2].trim();
+
+      // All words within ±4 Y units of this store row (excluding the ID/name item itself)
+      const rowWords = words.filter(w => Math.abs(w.y - rowY) < 4 && w.x >= 35);
 
       // Extract 8 metrics by column X range
       const metrics = {};
@@ -143,7 +142,7 @@ export async function parseVoicePerformancePDF(arrayBuffer, filename = '') {
         report_type:   currentReportType,
         operator_id:   operatorId,
         operator_name: operatorName,
-        loc:           sidWord.text,
+        loc,
         loc_name:      locName || null,
         source_file:   filename,
         ...metrics,
