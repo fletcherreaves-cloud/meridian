@@ -241,7 +241,8 @@ create table if not exists public.pending_reports (
   uploaded_at  timestamptz default now(),
   processed    boolean default false,
   processed_at timestamptz,
-  org          text
+  org          text,
+  file_data    text                   -- base64-encoded file content for cross-device sync
 );
 
 alter table public.pending_reports enable row level security;

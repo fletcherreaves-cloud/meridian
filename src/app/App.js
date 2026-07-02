@@ -612,9 +612,9 @@ function App() {
         console.log(`[Meridian] ✓ Auto-ingested ${filesToProcess.length} QSRSoft report(s)`);
       }catch(e){console.warn('[Meridian] Pending report check failed:',e);}
     })();
-    // ── Cross-device sync — download manual uploads from other devices ─────────
-    // Fetches files uploaded manually on any device in the last 30 days,
-    // skips ones this device has already seen (per localStorage), and parses the rest.
+    // ── Cross-device sync — load manual uploads from other devices ───────────
+    // Reads file_data (base64) directly from pending_reports — no Storage needed.
+    // Skips files this device has already seen (per localStorage).
     (async()=>{
       try{
         if(!supabase) return;
@@ -624,7 +624,7 @@ function App() {
         const cutoff=new Date(Date.now()-30*86400000).toISOString();
         const{data:manualFiles}=await supabase
           .from('pending_reports')
-          .select('id,filename,storage_path,report_type')
+          .select('id,filename,report_type')
           .eq('source','manual')
           .gte('uploaded_at',cutoff)
           .order('uploaded_at',{ascending:true})
@@ -636,18 +636,23 @@ function App() {
         const filesToSync=[];
         for(const rec of toProcess){
           try{
-            const{data:blob,error:dlErr}=await supabase.storage
-              .from('reports')
-              .download(rec.storage_path);
-            if(dlErr||!blob) continue;
-            const arr=await blob.arrayBuffer();
+            // Fetch file_data separately — avoids loading all binary in the listing query
+            const{data:row,error:fetchErr}=await supabase
+              .from('pending_reports')
+              .select('file_data')
+              .eq('id',rec.id)
+              .single();
+            if(fetchErr||!row?.file_data){console.warn('[Meridian] No file_data for',rec.filename);continue;}
+            const binary=atob(row.file_data);
+            const bytes=new Uint8Array(binary.length);
+            for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
             const ext=(rec.filename||'').toLowerCase();
             const mime=ext.endsWith('.csv')?'text/csv':ext.endsWith('.pdf')?'application/pdf'
               :'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            const file=new File([arr],rec.filename,{type:mime});
+            const file=new File([bytes],rec.filename,{type:mime});
             file._manualSyncId=rec.id;
             filesToSync.push(file);
-          }catch(e){console.warn('[Meridian] Failed to download',rec.filename,e);}
+          }catch(e){console.warn('[Meridian] Failed to decode',rec.filename,e);}
         }
         if(!filesToSync.length) return;
         await handleFiles(filesToSync);

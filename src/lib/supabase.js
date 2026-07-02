@@ -18,20 +18,26 @@ export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 export async function uploadReportFile(file, reportType) {
   if (!supabase) return null;
   try {
-    const date = new Date().toISOString().slice(0, 10);
-    const path = `manual/${date}/${file.name}`;
     const ab = await file.arrayBuffer();
-    const { error: upErr } = await supabase.storage
-      .from('reports')
-      .upload(path, ab, { upsert: true });
-    if (upErr) { console.warn('[uploadReportFile] storage:', upErr.message); return null; }
-    const { data, error: prErr } = await supabase.from('pending_reports')
-      .upsert({ filename: file.name, storage_path: path, report_type: reportType, source: 'manual', processed: false },
+    // Encode to base64 in chunks to avoid call stack overflow on large files
+    const bytes = new Uint8Array(ab);
+    const CHUNK = 8192;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)));
+    }
+    const fileData = btoa(binary);
+    const storagePath = `manual/${new Date().toISOString().slice(0, 10)}/${file.name}`;
+    console.log('[uploadReportFile] storing in pending_reports:', file.name, reportType);
+    const { data, error } = await supabase.from('pending_reports')
+      .upsert({ filename: file.name, storage_path: storagePath, report_type: reportType,
+                source: 'manual', processed: false, file_data: fileData },
                { onConflict: 'storage_path' })
-      .select().single();
-    if (prErr) console.warn('[uploadReportFile] pending_reports:', prErr.message);
+      .select('id').single();
+    if (error) { console.error('[uploadReportFile] FAILED:', error.message, error); return null; }
+    console.log('[uploadReportFile] ✓ stored, id:', data?.id);
     return data || null;
-  } catch(e) { console.warn('[uploadReportFile]', e); return null; }
+  } catch(e) { console.error('[uploadReportFile] exception:', e); return null; }
 }
 
 // ── Monthly Targets ───────────────────────────────────────────────────────────
