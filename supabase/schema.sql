@@ -193,7 +193,8 @@ values (
   array[
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-excel',
-    'application/octet-stream'
+    'application/octet-stream',
+    'application/pdf'
   ]
 ) on conflict (id) do nothing;
 
