@@ -33,7 +33,7 @@ import { AdminPanel } from '../views/admin.js';
 import { SMGVoicePanel } from '../views/smg-voice.js';
 import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
-import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveLifeLenzSchedule, loadLifeLenzSchedule } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveLifeLenzSchedule, loadLifeLenzSchedule, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -612,6 +612,49 @@ function App() {
         console.log(`[Meridian] ✓ Auto-ingested ${filesToProcess.length} QSRSoft report(s)`);
       }catch(e){console.warn('[Meridian] Pending report check failed:',e);}
     })();
+    // ── Cross-device sync — download manual uploads from other devices ─────────
+    // Fetches files uploaded manually on any device in the last 30 days,
+    // skips ones this device has already seen (per localStorage), and parses the rest.
+    (async()=>{
+      try{
+        if(!supabase) return;
+        let synced;
+        try{synced=new Set(JSON.parse(localStorage.getItem('mf_synced_report_ids')||'[]'));}
+        catch{synced=new Set();}
+        const cutoff=new Date(Date.now()-30*86400000).toISOString();
+        const{data:manualFiles}=await supabase
+          .from('pending_reports')
+          .select('id,filename,storage_path,report_type')
+          .eq('source','manual')
+          .gte('uploaded_at',cutoff)
+          .order('uploaded_at',{ascending:true})
+          .limit(50);
+        if(!manualFiles?.length) return;
+        const toProcess=manualFiles.filter(f=>!synced.has(f.id));
+        if(!toProcess.length) return;
+        console.log(`[Meridian] ${toProcess.length} manual report(s) to sync from cloud`);
+        const filesToSync=[];
+        for(const rec of toProcess){
+          try{
+            const{data:blob,error:dlErr}=await supabase.storage
+              .from('reports')
+              .download(rec.storage_path);
+            if(dlErr||!blob) continue;
+            const arr=await blob.arrayBuffer();
+            const ext=(rec.filename||'').toLowerCase();
+            const mime=ext.endsWith('.csv')?'text/csv':ext.endsWith('.pdf')?'application/pdf'
+              :'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            const file=new File([arr],rec.filename,{type:mime});
+            file._manualSyncId=rec.id;
+            filesToSync.push(file);
+          }catch(e){console.warn('[Meridian] Failed to download',rec.filename,e);}
+        }
+        if(!filesToSync.length) return;
+        await handleFiles(filesToSync);
+        filesToSync.forEach(f=>_markSynced(f._manualSyncId));
+        console.log(`[Meridian] ✓ Cloud-synced ${filesToSync.length} report(s)`);
+      }catch(e){console.warn('[Meridian] Cross-device sync failed:',e);}
+    })();
     // ── Auto-load monthly targets from Supabase ───────────────────────────────
     // Pulls the most recent month's targets so FOB/food cost targets are
     // available without re-uploading the projections workbook.
@@ -824,6 +867,17 @@ function App() {
   const dsRef = useRef(ds);
   useEffect(()=>{dsRef.current=ds;},[ds]);
 
+  // Track which pending_reports IDs this device has already processed
+  // (prevents re-downloading files this device uploaded or already parsed)
+  const _markSynced = (id) => {
+    if (!id) return;
+    try {
+      const s = new Set(JSON.parse(localStorage.getItem('mf_synced_report_ids') || '[]'));
+      s.add(id);
+      localStorage.setItem('mf_synced_report_ids', JSON.stringify([...s]));
+    } catch {}
+  };
+
   const handleFiles = useCallback(async(files)=>{
     if(!files||!files.length) return;
     const fileArr=Array.from(files);
@@ -844,6 +898,8 @@ function App() {
               console.log(`[Meridian] SMG VOICE: ${smgRows.length} comments from ${file.name}`);
             }
             loaded.push({name:file.name,type:typeInfo});
+            if(supabase&&!file._pendingId&&!file._manualSyncId)
+              uploadReportFile(file,'smg-voice').then(rec=>_markSynced(rec?.id)).catch(()=>{});
           } else {
             console.warn('[Meridian] Unrecognized PDF:',file.name);
           }
@@ -874,6 +930,9 @@ function App() {
           } else {
             currentDS=mergeDS(currentDS,wb,type,file.name);
             loaded.push({name:file.name,type});
+            // Cloud sync — upload raw file so other devices can auto-ingest it
+            if(supabase&&!file._pendingId&&!file._manualSyncId&&type.type!=='unknown')
+              uploadReportFile(file,type.type).then(rec=>_markSynced(rec?.id)).catch(()=>{});
           }
         }
       }catch(e){

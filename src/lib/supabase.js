@@ -11,6 +11,29 @@ if (!URL || !KEY) {
 // supabase is null in local-only mode; all callers must guard with `if (supabase)`
 export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 
+// ── Manual report upload (cross-device sync) ──────────────────────────────────
+// Uploads a raw file to the 'reports' storage bucket and inserts/updates
+// a pending_reports record so other devices can discover and download it.
+// Returns the pending_reports row (with .id) on success, or null on error.
+export async function uploadReportFile(file, reportType) {
+  if (!supabase) return null;
+  try {
+    const date = new Date().toISOString().slice(0, 10);
+    const path = `manual/${date}/${file.name}`;
+    const ab = await file.arrayBuffer();
+    const { error: upErr } = await supabase.storage
+      .from('reports')
+      .upload(path, ab, { upsert: true });
+    if (upErr) { console.warn('[uploadReportFile] storage:', upErr.message); return null; }
+    const { data, error: prErr } = await supabase.from('pending_reports')
+      .upsert({ filename: file.name, storage_path: path, report_type: reportType, source: 'manual', processed: false },
+               { onConflict: 'storage_path' })
+      .select().single();
+    if (prErr) console.warn('[uploadReportFile] pending_reports:', prErr.message);
+    return data || null;
+  } catch(e) { console.warn('[uploadReportFile]', e); return null; }
+}
+
 // ── Monthly Targets ───────────────────────────────────────────────────────────
 // Save parsed monthly targets to Supabase. targets = { loc: {tCrewLabor, ...} }
 // Returns { saved, errors }.

@@ -204,6 +204,33 @@ create policy "qsr-reports: public read"
   on storage.objects for select
   using (bucket_id = 'qsr-reports');
 
+-- ── Storage bucket for manually uploaded files (cross-device sync) ───────────
+-- Receives files uploaded via the Load button on any device.
+-- Other devices discover them via pending_reports and auto-ingest on startup.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'reports',
+  'reports',
+  false,
+  52428800,
+  array[
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-excel.sheet.macroenabled.12',
+    'text/csv',
+    'application/pdf',
+    'application/octet-stream'
+  ]
+) on conflict (id) do nothing;
+
+create policy "reports: public read"
+  on storage.objects for select
+  using (bucket_id = 'reports');
+
+create policy "reports: public insert"
+  on storage.objects for insert
+  with check (bucket_id = 'reports');
+
 -- ── pending_reports — tracks files waiting to be parsed by Meridian ───────────
 create table if not exists public.pending_reports (
   id           uuid default gen_random_uuid() primary key,
