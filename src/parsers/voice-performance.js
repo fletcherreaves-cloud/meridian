@@ -60,8 +60,6 @@ export async function parseVoicePerformancePDF(arrayBuffer, filename = '') {
         y:   pageH - item.transform[5],  // flip to top-down
       }));
 
-    if (pg === 1) console.log('[vp_debug] page1 words sample:', words.slice(0,20).map(w=>`"${w.text}"@(${Math.round(w.x)},${Math.round(w.y)})`));
-
     // ── Header analysis (first 70 Y units) ────────────────────────────────────
     const headerWords = words.filter(w => w.y < 70);
     const headerText  = headerWords.map(w => w.text).join(' ');
@@ -76,30 +74,41 @@ export async function parseVoicePerformancePDF(arrayBuffer, filename = '') {
     }
     // Overflow pages (no report type in header) keep the previous page's type.
 
-    // Extract operator name + ID once (first page that has it)
+    // Extract operator name + ID once.
+    // PDF.js may return "Operator: NAME - ID" as a single text item or split across items.
     if (!operatorId) {
-      const opIdx = headerWords.findIndex(w => w.text === 'Operator:');
-      if (opIdx >= 0) {
-        // Words after "Operator:" on same line: NAME, NAME - ID - ID
-        const opLine = headerWords.filter(w => Math.abs(w.y - headerWords[opIdx].y) < 3 && w.x > headerWords[opIdx].x);
-        const opText = opLine.map(w => w.text).join(' ');
-        // "THORLEY, RICK - 1000015842 - 1000015842"
-        const m = opText.match(/^(.+?)\s+-\s+(\d{10})/);
+      const opItem = headerWords.find(w => /operator:/i.test(w.text));
+      if (opItem) {
+        const m = opItem.text.match(/Operator:\s+(.+?)\s+-\s+(\d{10})/i);
         if (m) { operatorName = m[1].trim(); operatorId = m[2]; }
+      }
+      if (!operatorId) {
+        // Fallback: "Operator:" as a separate token, name/ID in following tokens
+        const opIdx = headerWords.findIndex(w => w.text.trim() === 'Operator:');
+        if (opIdx >= 0) {
+          const opLine = headerWords.filter(w => Math.abs(w.y - headerWords[opIdx].y) < 3 && w.x > headerWords[opIdx].x);
+          const m = opLine.map(w => w.text).join(' ').match(/^(.+?)\s+-\s+(\d{10})/);
+          if (m) { operatorName = m[1].trim(); operatorId = m[2]; }
+        }
       }
     }
 
-    // Extract period once — look for "Jun 2026" pattern in header
+    // Extract period once — handles "Jun 2026" as one item OR as two separate items.
     if (!period) {
-      for (let i = 0; i < headerWords.length - 1; i++) {
-        const mIdx = MONTHS.indexOf(headerWords[i].text.toLowerCase().slice(0, 3));
-        if (mIdx >= 0) {
-          const yearWord = headerWords.find(w =>
-            /^20\d{2}$/.test(w.text) && Math.abs(w.y - headerWords[i].y) < 3 && w.x > headerWords[i].x
-          );
-          if (yearWord) {
-            period = `${yearWord.text}-${String(mIdx + 1).padStart(2, '0')}`;
-            break;
+      for (const w of headerWords) {
+        const m = w.text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(20\d{2})\b/i);
+        if (m) {
+          const mIdx = MONTHS.indexOf(m[1].toLowerCase().slice(0, 3));
+          if (mIdx >= 0) { period = `${m[2]}-${String(mIdx + 1).padStart(2, '0')}`; break; }
+        }
+      }
+      if (!period) {
+        // Fallback: month and year as separate tokens
+        for (let i = 0; i < headerWords.length; i++) {
+          const mIdx = MONTHS.indexOf(headerWords[i].text.toLowerCase().slice(0, 3));
+          if (mIdx >= 0) {
+            const yr = headerWords.find(w => /^20\d{2}$/.test(w.text) && Math.abs(w.y - headerWords[i].y) < 3 && w.x > headerWords[i].x);
+            if (yr) { period = `${yr.text}-${String(mIdx + 1).padStart(2, '0')}`; break; }
           }
         }
       }
