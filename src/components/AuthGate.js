@@ -104,8 +104,8 @@ export function AuthGate({ children }) {
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
-    // On localhost or Netlify preview, bypass auth.
-    if (window.location.hostname === 'localhost' || window.location.hostname.endsWith('.netlify.app')) { setLoading(false); return; }
+    // On localhost only, bypass auth.
+    if (window.location.hostname === 'localhost') { setLoading(false); return; }
 
     // Check for an existing session (also handles magic-link redirect tokens in URL)
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -120,8 +120,8 @@ export function AuthGate({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Local-only mode or bypass domains
-  if (!supabase || window.location.hostname === 'localhost' || window.location.hostname.endsWith('.netlify.app')) return children;
+  // Local-only mode or localhost bypass
+  if (!supabase || window.location.hostname === 'localhost') return children;
 
   // Initial load
   if (loading) return div({
