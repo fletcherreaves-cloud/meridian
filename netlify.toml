@@ -2,6 +2,17 @@
   command = "npm run build"
   publish = "dist"
 
+# Pass static files through before the SPA catch-all
+[[redirects]]
+  from = "/sw.js"
+  to = "/sw.js"
+  status = 200
+
+[[redirects]]
+  from = "/manifest.webmanifest"
+  to = "/manifest.webmanifest"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
