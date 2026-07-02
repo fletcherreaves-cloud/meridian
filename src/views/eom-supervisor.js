@@ -511,7 +511,7 @@ const PRINT_STYLE = `
 `;
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
-export function EOMSupervisorPanel({ ds, settings }) {
+export function EOMSupervisorPanel({ ds, settings, supabase }) {
   // Inject print styles once
   uE(() => {
     const id = 'eom-print-style';
@@ -531,10 +531,19 @@ export function EOMSupervisorPanel({ ds, settings }) {
   const [manual,    setManual]    = uSt(() => loadManual(now.getFullYear(), now.getMonth() + 1));
   const [forPrint,  setForPrint]  = uSt(false);
 
-  // Reload manual data when month changes
+  // Reload manual data when month changes — local first, then merge remote
   uE(() => {
-    setManual(loadManual(selYear, selMonth));
-  }, [selYear, selMonth]);
+    const local = loadManual(selYear, selMonth);
+    setManual(local);
+    if (supabase) {
+      const sbKey = `eom_manual_${selYear}_${selMonth}`;
+      supabase.from('org_config').select('data').eq('key', sbKey).maybeSingle()
+        .then(({ data }) => {
+          if (!data?.data) return;
+          setManual(cur => ({ ...cur, ...data.data }));
+        }).catch(() => {});
+    }
+  }, [selYear, selMonth, supabase]);
 
   // Sync monthly targets month if available
   uE(() => {
@@ -578,9 +587,13 @@ export function EOMSupervisorPanel({ ds, settings }) {
     setManual(prev => {
       const next = { ...prev, [String(loc)]: { ...(prev[String(loc)] || {}), [field]: value } };
       saveManual(selYear, selMonth, next);
+      if (supabase) {
+        const sbKey = `eom_manual_${selYear}_${selMonth}`;
+        supabase.from('org_config').upsert({ key: sbKey, data: next }, { onConflict: 'key' }).catch(() => {});
+      }
       return next;
     });
-  }, [selYear, selMonth]);
+  }, [selYear, selMonth, supabase]);
 
   const monthLabel = `${MONTH_NAMES[selMonth - 1]} ${selYear}`;
   const groupLabel = selGroup === 'all' ? 'All Stores' : selGroup;

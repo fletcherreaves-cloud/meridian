@@ -318,13 +318,166 @@ function FullScalePanel({ fsRows, stores }) {
   );
 }
 
+// ── VOICE Performance Panel ────────────────────────────────────────────────────
+// Displays data parsed from McDonalds_VOICE_Operator_Performance_*.PDF
+// Row shape: { period, report_type, operator_id, operator_name, loc, loc_name,
+//              dt_sat, dt_dissat, ir_sat, ir_sat, ir_dissat, accuracy_b2b,
+//              quality_b2b, fries_b2b, snack_wrap_b2b }
+
+const VP_METRICS = [
+  { key: 'dt_sat',         label: 'DT Overall Sat',   better: 'higher', redBelow: 75, yellowBelow: 85 },
+  { key: 'dt_dissat',      label: 'DT Dissat',        better: 'lower',  redAbove: 15, yellowAbove: 8  },
+  { key: 'ir_sat',         label: 'IRS Sat',          better: 'higher', redBelow: 75, yellowBelow: 85 },
+  { key: 'ir_dissat',      label: 'IRS Dissat',       better: 'lower',  redAbove: 10, yellowAbove: 5  },
+  { key: 'accuracy_b2b',   label: 'Accuracy B2B',     better: 'lower',  redAbove: 8,  yellowAbove: 4  },
+  { key: 'quality_b2b',    label: 'Quality B2B',      better: 'lower',  redAbove: 8,  yellowAbove: 4  },
+  { key: 'fries_b2b',      label: 'Fries B2B',        better: 'lower',  redAbove: 15, yellowAbove: 8  },
+  { key: 'snack_wrap_b2b', label: 'SW Quality B2B',   better: 'lower',  redAbove: 10, yellowAbove: 5  },
+];
+
+function vpColor(val, m) {
+  if (val == null) return 'var(--text3)';
+  if (m.better === 'higher') {
+    return val >= (m.yellowBelow || 85) ? '#10b981' : val >= (m.redBelow || 75) ? '#f59e0b' : '#ef4444';
+  }
+  return val <= (m.yellowAbove || 5) ? '#10b981' : val <= (m.redAbove || 10) ? '#f59e0b' : '#ef4444';
+}
+
+function VoicePerfPanel({ rows, stores }) {
+  const { useState, useMemo } = React;
+
+  // Available periods
+  const periods = useMemo(() => {
+    const seen = new Set();
+    return rows.map(r => r.period).filter(p => { if (seen.has(p)) return false; seen.add(p); return true; }).sort().reverse();
+  }, [rows]);
+
+  const [selPeriod, setSelPeriod]   = useState('');
+  const [selType, setSelType]       = useState('monthly');
+  const [sortMetric, setSortMetric] = useState('dt_sat');
+
+  const activePeriod = selPeriod && periods.includes(selPeriod) ? selPeriod : (periods[0] || '');
+
+  const filtered = useMemo(() =>
+    rows.filter(r => r.period === activePeriod && r.report_type === selType),
+    [rows, activePeriod, selType]
+  );
+
+  const sorted = useMemo(() => {
+    const m = VP_METRICS.find(x => x.key === sortMetric);
+    if (!m) return [...filtered];
+    const dir = m.better === 'higher' ? -1 : 1;
+    return [...filtered].sort((a, b) => {
+      const av = a[sortMetric], bv = b[sortMetric];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return dir * (av - bv);
+    });
+  }, [filtered, sortMetric]);
+
+  const distAvg = useMemo(() => {
+    const out = {};
+    VP_METRICS.forEach(m => {
+      const vals = filtered.map(r => r[m.key]).filter(v => v != null);
+      out[m.key] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    });
+    return out;
+  }, [filtered]);
+
+  const sName = loc => {
+    const s = (stores || []).find(s => String(s.loc) === String(loc));
+    return s ? (s.name || s.loc) : loc;
+  };
+
+  const periodFmt = p => {
+    if (!p) return '';
+    const [y, m] = p.split('-');
+    return new Date(Number(y), Number(m) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  if (!rows.length) return h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } },
+    h('div', { style: { fontSize: 32, marginBottom: 12 } }, '📋'),
+    h('div', { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: 'var(--text)' } }, 'No Performance Reports Loaded'),
+    h('div', { style: { fontSize: 12, lineHeight: 1.6 } },
+      'Monthly VOICE Performance PDFs are auto-ingested from the Gmail poller (SMGMailMgr@whysmg.com).',
+      h('br'), 'Or upload a McDonalds_VOICE_Operator_Performance_*.PDF file manually.'
+    )
+  );
+
+  const thStyle = { padding: '7px 6px', textAlign: 'center', fontSize: 9, fontWeight: 700,
+    color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.3px',
+    borderRight: '1px solid var(--bdr)', borderBottom: '2px solid var(--bdr)', cursor: 'pointer', whiteSpace: 'nowrap' };
+  const tdNum = (val, m) => h('td', {
+    style: { padding: '5px 6px', textAlign: 'center', fontSize: 11, fontWeight: 700,
+      color: vpColor(val, m), background: vpColor(val, m) === 'var(--text3)' ? 'transparent' : vpColor(val, m) + '18',
+      borderRight: '1px solid var(--bdr)' }
+  }, val != null ? val + '%' : '—');
+
+  const TYPE_LABELS = { monthly: 'Monthly', trailing90: 'Trailing 90d', ytd: 'Year-to-Date' };
+
+  return h('div', { style: { display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' } },
+    // Toolbar
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' } }, 'Period:'),
+      ...periods.slice(0, 6).map(p => h('button', { key: p, onClick: () => setSelPeriod(p),
+        style: { padding: '3px 10px', borderRadius: 20, border: '.5px solid var(--bdr)', cursor: 'pointer', fontSize: 10, fontWeight: p === activePeriod ? 700 : 400,
+          background: p === activePeriod ? 'var(--accent)' : 'transparent', color: p === activePeriod ? '#fff' : 'var(--text)' } }, periodFmt(p))
+      ),
+      h('div', { style: { display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
+        Object.entries(TYPE_LABELS).map(([t, label]) =>
+          h('button', { key: t, onClick: () => setSelType(t), style: {
+            padding: '3px 10px', border: 'none', borderRadius: 6, fontSize: 10, fontWeight: selType === t ? 700 : 400, cursor: 'pointer',
+            background: selType === t ? 'var(--accent)' : 'transparent', color: selType === t ? '#fff' : 'var(--text2)' } }, label)
+        )
+      ),
+      h('span', { style: { marginLeft: 'auto', fontSize: 10, color: 'var(--text3)' } }, `${filtered.length} stores · ${activePeriod}`),
+    ),
+    // Table
+    h('div', { style: { overflowY: 'auto', flex: 1, padding: '0 16px 16px' } },
+      !filtered.length
+        ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } }, `No data for ${periodFmt(activePeriod)} — ${TYPE_LABELS[selType]}`)
+        : h('div', { style: { overflowX: 'auto', marginTop: 12 } },
+          h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+            h('thead', null,
+              h('tr', { style: { background: 'var(--surf2)' } },
+                h('th', { style: { ...thStyle, textAlign: 'left', minWidth: 160, cursor: 'default' } }, 'Store'),
+                ...VP_METRICS.map(m => h('th', { key: m.key, style: { ...thStyle, minWidth: 72, color: sortMetric === m.key ? 'var(--accent)' : 'var(--text3)' },
+                  onClick: () => setSortMetric(m.key) },
+                  m.label, h('br'), h('span', { style: { fontSize: 7, fontWeight: 400 } }, m.better === 'higher' ? '↑ higher' : '↓ lower')
+                ))
+              ),
+              h('tr', { style: { background: 'rgba(99,102,241,.08)', borderBottom: '1px solid var(--bdr)' } },
+                h('td', { style: { padding: '5px 10px', fontSize: 11, fontWeight: 700, borderRight: '1px solid var(--bdr)' } }, 'District Average'),
+                ...VP_METRICS.map(m => tdNum(distAvg[m.key], m))
+              )
+            ),
+            h('tbody', null,
+              sorted.map((r, i) => h('tr', { key: r.loc + i, style: { background: i % 2 ? 'rgba(255,255,255,.015)' : 'transparent', borderBottom: '1px solid var(--bdr)' } },
+                h('td', { style: { padding: '5px 10px', borderRight: '1px solid var(--bdr)' } },
+                  h('div', { style: { fontWeight: 600, fontSize: 11 } }, sName(r.loc)),
+                  h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, r.loc + (r.operator_name ? ' · ' + r.operator_name : ''))
+                ),
+                ...VP_METRICS.map(m => tdNum(r[m.key], m))
+              ))
+            )
+          )
+        )
+    )
+  );
+}
+
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export function SMGVoicePanel({ ds, stores, onClose }) {
+export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
   const rows = (ds && ds.smgRows) || [];
   const fsRows = (ds && ds.smgFullscale) || [];
-  // Default to fullscale tab; switch automatically when FullScale data arrives after Supabase load
-  const [tab, setTab] = React.useState('fullscale');
-  React.useEffect(() => { if(fsRows.length > 0) setTab(t => t === 'comments' && rows.length === 0 ? 'fullscale' : t); }, [fsRows.length]);
+  const vpRows = voicePerf || [];
+  // Default to performance tab if available, then fullscale, then comments
+  const [tab, setTab] = React.useState(() => vpRows.length > 0 ? 'performance' : fsRows.length > 0 ? 'fullscale' : 'comments');
+  React.useEffect(() => {
+    if (vpRows.length > 0) setTab(t => t === 'comments' && !rows.length ? 'performance' : t);
+    else if (fsRows.length > 0) setTab(t => t === 'comments' && rows.length === 0 ? 'fullscale' : t);
+  }, [vpRows.length, fsRows.length]);
   const [selLoc, setSelLoc] = React.useState('__all__');
   const [filterLabel, setFilterLabel] = React.useState('__all__');
   const [sortBy, setSortBy] = React.useState('date-desc');
@@ -375,7 +528,7 @@ export function SMGVoicePanel({ ds, stores, onClose }) {
   }, [rows, selLoc, storeMap]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
-  if (!rows.length && !fsRows.length) return h('div', {
+  if (!rows.length && !fsRows.length && !vpRows.length) return h('div', {
     style: { position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
     onClick: e => { if (e.target === e.currentTarget) onClose(); }
   },
@@ -407,7 +560,7 @@ export function SMGVoicePanel({ ds, stores, onClose }) {
             periodLabel && h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 10 } }, periodLabel),
           ),
           h('div', { style: { display: 'flex', gap: 2, marginLeft: 16, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
-            [['fullscale','📊 Scorecard'], ['comments','💬 Comments']].map(([t, label]) =>
+            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments']].map(([t, label]) =>
               h('button', { key: t, onClick: () => setTab(t), style: {
                 padding: '4px 12px', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: tab===t ? 700 : 400,
                 background: tab===t ? 'var(--accent)' : 'transparent',
@@ -428,6 +581,11 @@ export function SMGVoicePanel({ ds, stores, onClose }) {
           ),
           h('button', { onClick: onClose, style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' } }, '✕'),
         ),
+      ),
+
+      // ── Body: Performance tab ────────────────────────────────────────────────
+      tab === 'performance' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
+        h(VoicePerfPanel, { rows: vpRows, stores })
       ),
 
       // ── Body: FullScale tab ──────────────────────────────────────────────────

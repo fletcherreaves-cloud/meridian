@@ -33,7 +33,7 @@ import { AdminPanel } from '../views/admin.js';
 import { SMGVoicePanel } from '../views/smg-voice.js';
 import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
-import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveLifeLenzSchedule, loadLifeLenzSchedule, uploadReportFile } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -69,9 +69,26 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.259';
+const MERIDIAN_VERSION    = '4.263';
 const MERIDIAN_BUILD_DATE = '2026-07-02';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.263', date:'2026-07-02', changes:[
+    'SMG VOICE Performance Reports: full pipeline wired up — Gmail poller detects monthly "Voice Performance Report" emails (SMGMailMgr@whysmg.com), downloads operator PDFs, stores in Supabase. Browser auto-parses PDFs using PDF.js, extracts per-store data (DT Sat, DT Dissat, IR Sat, IR Dissat, Accuracy B2B, Quality B2B, Fries B2B, Snack Wrap B2B) for all 3 report types (Monthly / Trailing 90d / YTD), saves to new smg_voice_performance Supabase table.',
+    'SMG VOICE panel: new Performance tab shows all-store ranking table with color-coded metrics, period selector (6 months), and report type toggle (Monthly / T90 / YTD). Metric columns are clickable to re-sort.',
+  ]},
+  {version:'4.262', date:'2026-07-02', changes:[
+    'Data Manager: Daily Glimpse, Cash Sheet, and Labor Exceptions now show file count and date range after page reload — coverage derived from pending_reports table (same approach as Sales Ledger) instead of session-only in-memory rows.',
+  ]},
+  {version:'4.261', date:'2026-07-02', changes:[
+    'Fixed "Manifest: Syntax error" appearing twice on every load — index.html had stale /meridian/ paths for the manifest, favicon, and apple-touch-icon left over from GitHub Pages era. All three now point to / (Netlify root). Deleted stale root-level manifest.webmanifest with old paths.',
+    'Fixed Supabase 400 error on pending report download — the Gmail poller pipeline was also picking up manually-uploaded reports (source=manual) and trying to download them from Storage, where they don\'t exist (they\'re stored as base64 in file_data). Filter now excludes source=manual; those are correctly handled by the cross-device sync block.',
+  ]},
+  {version:'4.260', date:'2026-07-02', changes:[
+    'Supabase persistence: user target overrides (mf_targets) now sync across devices via org_config key "app_user_targets" — load on login, push on save. EOM Supervisor manual overrides now sync per-month via org_config key "eom_manual_{y}_{m}" — fetched on month change, pushed on every field edit.',
+    'AtAGlance scope fixes: weekly trend sparkline, Sales channel totals, Labor district averages, Service times, Controls percentages, and FOB averages all now correctly aggregate only the stores in the active scope (All / OK / FL) instead of the full unfiltered row set.',
+    'Data Manager: SMG VOICE Comments now shows report date range instead of just a count.',
+    'Performance Reviews: removed dead ORG_FULL/getOrgFull functions with hardcoded operator names — org name set via Customize → Organization.',
+  ]},
   {version:'4.259', date:'2026-07-02', changes:[
     'Nav rename pass: Command Center→Home, Priority Brief→Action Items, Labor Analytics→Labor, FOB Analysis→Food Cost, FOB EOM Check→End of Month, Guest Voice→Voice (SMG), Scheduling Intel→Scheduling, District Summary→Organization Overview, Delivery Mix→3PO Delivery, Morning Brief→Daily Brief, Store KB→Store Notes, Rankings→Rankings and Dashboards, Perf Reviews→Performance Reviews.',
   ]},
@@ -577,6 +594,17 @@ function App() {
           return merged;
         });
       }).catch(()=>{});
+    // Sync user targets from Supabase — remote wins over localStorage for any key it has
+    supabase.from('org_config').select('data').eq('key','app_user_targets').maybeSingle()
+      .then(({data})=>{
+        if(!data?.data) return;
+        const remote=data.data;
+        setUserTargets(cur=>{
+          const merged={...cur,...remote};
+          try{localStorage.setItem('mf_targets',JSON.stringify(merged));}catch{}
+          return merged;
+        });
+      }).catch(()=>{});
     // Fetch the logged-in user's role from their Supabase profile
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -594,6 +622,7 @@ function App() {
           .from('pending_reports')
           .select('id,filename,storage_path,report_type')
           .eq('processed',false)
+          .neq('source','manual')
           .order('uploaded_at',{ascending:true})
           .limit(50);
         if(error||!pending?.length) return;
@@ -624,6 +653,48 @@ function App() {
           .in('id',ids);
         console.log(`[Meridian] ✓ Auto-ingested ${filesToProcess.length} QSRSoft report(s)`);
       }catch(e){console.warn('[Meridian] Pending report check failed:',e);}
+    })();
+    // ── Auto-ingest VOICE Performance PDFs from Gmail poller ─────────────────
+    // Downloads operator performance PDFs from Storage, parses with PDF.js,
+    // saves extracted rows to smg_voice_performance Supabase table.
+    (async()=>{
+      try{
+        if(!supabase) return;
+        const{data:vpPending,error:vpErr}=await supabase
+          .from('pending_reports')
+          .select('id,filename,storage_path')
+          .eq('processed',false)
+          .eq('report_type','voice-performance')
+          .order('uploaded_at',{ascending:true})
+          .limit(20);
+        if(vpErr||!vpPending?.length) return;
+        console.log(`[Meridian] ${vpPending.length} VOICE Performance PDF(s) pending`);
+        const {parseVoicePerformancePDF}=await import('../parsers/voice-performance.js');
+        let totalRows=0;
+        const processedIds=[];
+        for(const rec of vpPending){
+          try{
+            const{data:blob,error:dlErr}=await supabase.storage
+              .from('qsr-reports')
+              .download(rec.storage_path);
+            if(dlErr||!blob){console.warn('[voice_perf] DL failed:',rec.filename);continue;}
+            const arr=await blob.arrayBuffer();
+            const rows=await parseVoicePerformancePDF(arr,rec.filename);
+            if(rows.length){
+              await saveVoicePerf(rows);
+              totalRows+=rows.length;
+              setDs(prev=>prev?{...prev,smgVoicePerf:[...(prev.smgVoicePerf||[]),...rows]}:prev);
+            }
+            processedIds.push(rec.id);
+          }catch(e){console.warn('[voice_perf] parse error:',rec.filename,e);}
+        }
+        if(processedIds.length){
+          await supabase.from('pending_reports')
+            .update({processed:true,processed_at:new Date().toISOString()})
+            .in('id',processedIds);
+        }
+        console.log(`[Meridian] ✓ VOICE Performance: ${totalRows} rows from ${processedIds.length} PDF(s)`);
+      }catch(e){console.warn('[Meridian] VOICE Performance ingest failed:',e);}
     })();
     // ── Cross-device sync — load manual uploads from other devices ───────────
     // Reads file_data (base64) directly from pending_reports — no Storage needed.
@@ -699,6 +770,16 @@ function App() {
         }
       }catch(e){console.warn('[Meridian] SMG FullScale load failed:',e);}
       try{
+        const vpRows = await loadVoicePerf();
+        if(vpRows.length>0){
+          setDs(prev=>{
+            if(!prev) return prev;
+            return {...prev, smgVoicePerf: vpRows};
+          });
+          console.log(`[Meridian] ✓ Loaded ${vpRows.length} VOICE Performance rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] VOICE Performance load failed:',e);}
+      try{
         const lfzRows = await loadLifeLenzSchedule();
         if(lfzRows.length>0){
           setDs(prev=>{
@@ -770,7 +851,7 @@ function App() {
       }
     }catch(e){console.warn('[McForecast] Tag key migration error:',e);}
   },[]);
-  const saveUserTargets= useCallback((next)=>{setUserTargets(next);try{localStorage.setItem('mf_targets',JSON.stringify(next));}catch{}}, []);
+  const saveUserTargets= useCallback((next)=>{setUserTargets(next);try{localStorage.setItem('mf_targets',JSON.stringify(next));}catch{}pushConfigToSupabase(supabase,next,'app_user_targets').catch(()=>{});}, []);
 
   // mfIDBSave (blob write) removed from auto-save — data already persisted
   // row-by-row via idbPutRows (Dexie per-store tables), which is the restore
@@ -1353,7 +1434,7 @@ function App() {
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
     showFOB&&h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>setShowFOB(false)}),
     showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
-    showSMGVoice&&h(SMGVoicePanel,{ds,stores,onClose:()=>setShowSMGVoice(false)}),
+    showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],onClose:()=>setShowSMGVoice(false)}),
     showLaborAnalytics&&h(LaborAnalyticsPanel,{stores,ds,settings,onClose:()=>setShowLaborAnalytics(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showScheduling&&h(SchedulingPanel,{ds,settings,onClose:()=>setShowScheduling(false)}),
@@ -1594,7 +1675,7 @@ function App() {
             h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Monthly P&L variance by store — filter by supervisor, operator, or all')),
           h('button',{onClick:()=>setShowEOMSummary(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
         div({style:{overflowY:'auto',maxHeight:'88vh'}},
-          h(EOMSupervisorPanel,{ds,settings}))
+          h(EOMSupervisorPanel,{ds,settings,supabase}))
       )
     ),
         showAudit&&selStore&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},

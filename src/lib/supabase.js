@@ -181,6 +181,50 @@ export async function loadSmgFullscale({ year, month } = {}) {
   }));
 }
 
+// ── SMG VOICE Performance persistence ────────────────────────────────────────
+// rows: array of { period, report_type, operator_id, operator_name, loc, loc_name,
+//                  dt_sat, dt_dissat, ir_sat, ir_dissat, accuracy_b2b, quality_b2b,
+//                  fries_b2b, snack_wrap_b2b, source_file }
+export async function saveVoicePerf(rows) {
+  if (!supabase || !rows.length) return { saved: 0, errors: [] };
+  const upsert = rows
+    .filter(r => r.period && r.report_type && r.operator_id && r.loc)
+    .map(r => ({
+      period:          r.period,
+      report_type:     r.report_type,
+      operator_id:     r.operator_id,
+      operator_name:   r.operator_name || null,
+      loc:             String(r.loc),
+      loc_name:        r.loc_name || null,
+      dt_sat:          r.dt_sat ?? null,
+      dt_dissat:       r.dt_dissat ?? null,
+      ir_sat:          r.ir_sat ?? null,
+      ir_dissat:       r.ir_dissat ?? null,
+      accuracy_b2b:    r.accuracy_b2b ?? null,
+      quality_b2b:     r.quality_b2b ?? null,
+      fries_b2b:       r.fries_b2b ?? null,
+      snack_wrap_b2b:  r.snack_wrap_b2b ?? null,
+      source_file:     r.source_file || null,
+    }));
+  if (!upsert.length) return { saved: 0, errors: [] };
+  const { error } = await supabase
+    .from('smg_voice_performance')
+    .upsert(upsert, { onConflict: 'period,report_type,operator_id,loc' });
+  if (error) { console.warn('[voice_perf] save error:', error); return { saved: 0, errors: [error.message] }; }
+  console.log(`[voice_perf] saved ${upsert.length} rows`);
+  return { saved: upsert.length, errors: [] };
+}
+
+export async function loadVoicePerf() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('smg_voice_performance')
+    .select('*')
+    .order('period', { ascending: false });
+  if (error || !data) { console.warn('[voice_perf] load error:', error); return []; }
+  return data;
+}
+
 // ── LifeLenz Schedule persistence ────────────────────────────────────────────
 // rows: array of parsed LifeLenz rows (loc, date:Date, fcstSales, schVLH, etc.)
 export async function saveLifeLenzSchedule(rows) {

@@ -25,6 +25,8 @@ function detectReportType(filename: string): string {
   if (fn.includes('operations report')) return 'ops_report';
   // SMG VOICE Customer Comment Report PDFs (filename: eu065119100XXXXXXX.pdf)
   if (/^eu\d{10,}\.pdf$/i.test(filename)) return 'smg-voice';
+  // SMG VOICE Operator Performance Reports (filename: McDonalds_VOICE_Operator_Performance_XXXXXXXXXX.PDF)
+  if (/^mcdonalds_voice_operator_performance_\d+\.pdf$/i.test(filename)) return 'voice-performance';
   return 'unknown';
 }
 

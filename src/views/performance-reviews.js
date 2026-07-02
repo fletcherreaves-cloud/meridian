@@ -32,9 +32,7 @@ const R      = 'var(--r)';
 
 // ── Org / Logo helpers ─────────────────────────────────────────────────────────
 const ORG_LABELS = { mcdok:'McDOK', emerald:'Emerald Arches' };
-const ORG_FULL   = { mcdok:'McDOK — Thorley/Mornhinweg Families', emerald:'Emerald Arches' };
 function getOrgLabel(org) { return ORG_LABELS[org] || 'ORG'; }
-function getOrgFull(org)  { try{return ORG_FULL[org]||localStorage.getItem('mf_org_name')||'The Organization';}catch{return 'The Organization';} }
 function getOrgLogo(org)  { try{return localStorage.getItem('mf_logo_'+org)||null;}catch{return null;} }
 function clearOrgLogo(org){ try{localStorage.removeItem('mf_logo_'+org);}catch{} }
 // Normalize competency items — stored as strings (legacy) or {text,active} objects

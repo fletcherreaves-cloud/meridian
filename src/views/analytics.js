@@ -1358,7 +1358,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     glimpseRows:  calcCov(ds&&ds.glimpseRows||[]),
     cashRows:     calcCov(ds&&ds.cashRows||[]),
     exceptionRows:calcCov(ds&&ds.exceptionRows||[]),
-    smgRows:      (ds&&ds.smgRows||[]).length ? {count:(ds.smgRows||[]).length} : {count:0},
+    smgRows:      (()=>{const sr=ds&&ds.smgRows||[];if(!sr.length)return{count:0};const rs=sr.map(r=>r.reportStart).filter(Boolean);const re=sr.map(r=>r.reportEnd).filter(Boolean);return{count:sr.length,from:rs[0]||'?',to:re[re.length-1]||'?'};})(),
     deliveryRows: (ds&&ds.deliveryRows||[]).length ? {count:(ds.deliveryRows||[]).length,
       from:(ds.deliveryRows||[]).map(r=>r.date?.toISOString?.()?.slice(0,10)||'').filter(Boolean).sort()[0]||'?',
       to:(ds.deliveryRows||[]).map(r=>r.date?.toISOString?.()?.slice(0,10)||'').filter(Boolean).sort().at(-1)||'?'} : {count:0},
@@ -1461,17 +1461,25 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     return dataRow(k, label, c, 'var(--amber)', i%2, badges);
   });
 
-  // Sales Ledger: data flows into laborRows (IDB) — derive coverage from pending_reports files
+  // QSRSoft: derive coverage from pending_reports (survives reload; same approach for all report types)
+  const mkQsrCov = rtype => {
+    const fs = qsrFiles.filter(f=>f.report_type===rtype);
+    const ds = fs.map(f=>(f.filename||'').match(/(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean).sort();
+    return fs.length ? {count:fs.length,from:ds[0]||'?',to:ds[ds.length-1]||'?'} : {count:0};
+  };
   const slFiles = qsrFiles.filter(f=>f.report_type==='sales-ledger');
   const slDates = slFiles.map(f=>(f.filename||'').match(/(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean).sort();
-  const slCov = slFiles.length ? {count:slFiles.length,from:slDates[0]||'?',to:slDates[slDates.length-1]||'?'} : {count:0};
+  const slCov        = slFiles.length ? {count:slFiles.length,from:slDates[0]||'?',to:slDates[slDates.length-1]||'?'} : {count:0};
+  const glimpseCov   = mkQsrCov('daily-glimpse');
+  const cashCov      = mkQsrCov('cash-sheet');
+  const exceptionCov = mkQsrCov('labor-exceptions');
 
   // Pre-build session/pipeline rows
   const qsrPipelineRows = [
-    ['glimpseRows',   'QSRSoft Daily Glimpse',   'daily-glimpse'],
-    ['cashRows',      'QSRSoft Cash Sheet',       'cash-sheet'],
-    ['exceptionRows', 'QSRSoft Labor Exceptions', 'labor-exceptions'],
-  ].map(([k,label,rtype],i)=>dataRow(k, label, sessionCov[k]||{count:0}, 'var(--amber)', i%2, periodBadges(rtype)));
+    ['glimpseRows',   'QSRSoft Daily Glimpse',   'daily-glimpse',    glimpseCov],
+    ['cashRows',      'QSRSoft Cash Sheet',       'cash-sheet',       cashCov],
+    ['exceptionRows', 'QSRSoft Labor Exceptions', 'labor-exceptions', exceptionCov],
+  ].map(([k,label,rtype,fileCov],i)=>dataRow(k, label, fileCov, 'var(--amber)', i%2, periodBadges(rtype)));
 
   // Sales Ledger row — count = files ingested, tooltip explains data merges into Labor Analysis
   const slIdx = qsrPipelineRows.length;
@@ -6185,14 +6193,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       {key:'kioskSales',pctKey:'kioskPctTotal',label:'Kiosk'},
       {key:'eatInSales',pctKey:null,label:'Eat-In'},
     ];
+    const labScoped=labInRange.filter(r=>allLocs.includes(String(r.loc)));
     const chData=channels.map(ch=>{
-      const s=sumOf(labInRange,ch.key);
+      const s=sumOf(labScoped,ch.key);
       const pct=totSales>0&&s>0?s/totSales:null;
       const okA=mktAvg(okLocs,labInRange,ch.key,'sum');
       const flA=mktAvg(flLocs,labInRange,ch.key,'sum');
       return{...ch,sales:s,pct,okAvgPct:null,flAvgPct:null};
     });
-    const salesVsLY=avgOf(labInRange,'salesVsLYPct');
+    const salesVsLY=avgOf(labScoped,'salesVsLYPct');
     const okSalesVsLY=avgOf(labInRange.filter(r=>okLocs.includes(String(r.loc))),'salesVsLYPct');
     const flSalesVsLY=avgOf(labInRange.filter(r=>flLocs.includes(String(r.loc))),'salesVsLYPct');
     const okSales=okLocs.reduce((a,l)=>a+(sumOf(byLoc(l),'allNetSales')||sumOf(byLoc(l),'sales')),0);
@@ -6217,13 +6226,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const cRows=ctrlInRange.length?ctrlInRange:[];
     const lRows=labInRange;
     if(!cRows.length&&!lRows.length)return null;
-    const laborPct=avgOf(cRows,'laborPct')||avgOf(lRows,'laborPct');
-    const tpph=avgOf(cRows,'tpph')||avgOf(lRows,'tpph');
-    const avn=avgOf(cRows,'actVsNeed')||avgOf(lRows,'actVsNeed');
-    const otHrs=sumOf(cRows,'otHrs')||sumOf(lRows,'otHrs');
-    const actHrs=sumOf(cRows,'actHrs')||sumOf(lRows,'actHrs');
-    const crewHrs=sumOf(cRows,'crewHrs');
-    const avgRate=avgOf(cRows,'avgRate')||avgOf(lRows,'avgRate');
+    const cScoped=cRows.filter(r=>allLocs.includes(String(r.loc)));
+    const lScoped=lRows.filter(r=>allLocs.includes(String(r.loc)));
+    const laborPct=avgOf(cScoped,'laborPct')||avgOf(lScoped,'laborPct');
+    const tpph=avgOf(cScoped,'tpph')||avgOf(lScoped,'tpph');
+    const avn=avgOf(cScoped,'actVsNeed')||avgOf(lScoped,'actVsNeed');
+    const otHrs=sumOf(cScoped,'otHrs')||sumOf(lScoped,'otHrs');
+    const actHrs=sumOf(cScoped,'actHrs')||sumOf(lScoped,'actHrs');
+    const crewHrs=sumOf(cScoped,'crewHrs');
+    const avgRate=avgOf(cScoped,'avgRate')||avgOf(lScoped,'avgRate');
     // Market averages — also from Controls sheet
     const okLaborAvg=mktAvg(okLocs,cRows,'laborPct')||mktAvg(okLocs,lRows,'laborPct');
     const flLaborAvg=mktAvg(flLocs,cRows,'laborPct')||mktAvg(flLocs,lRows,'laborPct');
@@ -6240,11 +6251,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // ── Service section ───────────────────────────────────────────
   const serviceSec=React.useMemo(()=>{
     if(!opsInRange.length)return null;
-    const oepe=avgOf(opsInRange,'oepe');
-    const park=avgOf(opsInRange,'park');
-    const kvst=avgOf(opsInRange,'kvst');
-    const kvsu=avgOf(opsInRange,'kvsu');
-    const r2p=avgOf(opsInRange,'r2p');
+    const opsScoped=opsInRange.filter(r=>allLocs.includes(String(r.loc)));
+    const oepe=avgOf(opsScoped,'oepe');
+    const park=avgOf(opsScoped,'park');
+    const kvst=avgOf(opsScoped,'kvst');
+    const kvsu=avgOf(opsScoped,'kvsu');
+    const r2p=avgOf(opsScoped,'r2p');
     return{
       oepe,okOepe:mktAvg(okLocs,opsInRange,'oepe'),flOepe:mktAvg(flLocs,opsInRange,'oepe'),
       park,okPark:mktAvg(okLocs,opsInRange,'park'),flPark:mktAvg(flLocs,opsInRange,'park'),
@@ -6257,8 +6269,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // ── Controls section ─────────────────────────────────────────
   const ctrlSec=React.useMemo(()=>{
     if(!ctrlInRange.length)return null;
-    const a=f=>avgOf(ctrlInRange,f);
-    const s=f=>sumOf(ctrlInRange,f);
+    const ctrlScoped=ctrlInRange.filter(r=>allLocs.includes(String(r.loc)));
+    const a=f=>avgOf(ctrlScoped,f);
+    const s=f=>sumOf(ctrlScoped,f);
     // Field names match exactly what parseCtrlData stores
     return{
       // T-Reds (correct field names)
@@ -6286,12 +6299,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       okPromoPct:mktAvg(okLocs,ctrlInRange,'promoPct'),flPromoPct:mktAvg(flLocs,ctrlInRange,'promoPct'),
       okCashOSPct:mktAvg(okLocs,ctrlInRange,'cashOSPct'),flCashOSPct:mktAvg(flLocs,ctrlInRange,'cashOSPct'),
     };
-  },[ctrlInRange,okLocs,flLocs]);
+  },[ctrlInRange,allLocs,okLocs,flLocs]);
 
   // ── FOB section ───────────────────────────────────────────────
   const fobSec=React.useMemo(()=>{
     if(!fobInRange.length)return null;
-    const a=f=>avgOf(fobInRange,f);
+    const fobScoped=fobInRange.filter(r=>allLocs.includes(String(r.loc)));
+    const a=f=>avgOf(fobScoped,f);
     return{
       fobPct:a('fobPct'),baseFoodPct:a('baseFoodPct'),unexplained:a('unexplained'),
       compWaste:a('compWaste'),rawWaste:a('rawWaste'),condiment:a('condiment'),
@@ -6308,7 +6322,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       okStatVar:mktAvg(okLocs,fobInRange,'statVar'),flStatVar:mktAvg(flLocs,fobInRange,'statVar'),
       okDiscCoupon:mktAvg(okLocs,fobInRange,'discCoupon'),flDiscCoupon:mktAvg(flLocs,fobInRange,'discCoupon'),
     };
-  },[fobInRange,okLocs,flLocs]);
+  },[fobInRange,allLocs,okLocs,flLocs]);
 
   // ── Intelligence Summary (Morning Brief) ─────────────────────────
   const intelSec=React.useMemo(()=>{
@@ -6462,17 +6476,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const result=[];
     for(let w=6;w>=1;w--){
       const ws=getWS(addD(today,-(w*7))),we=addD(new Date(ws),6);we.setHours(23,59,59,999);
-      const wRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=ws&&r.date<=we);
+      const wRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=ws&&r.date<=we&&allLocs.includes(String(r.loc)));
       const sales=wRows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
       if(!sales){result.push({label:'—',sales:0,vsLY:null});continue;}
       const lyWs=addD(new Date(ws),-364),lyWe=addD(new Date(we),-364);
-      const lyRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=lyWs&&r.date<=lyWe);
+      const lyRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=lyWs&&r.date<=lyWe&&allLocs.includes(String(r.loc)));
       const lySales=lyRows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
       result.push({label:ws.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
         sales,lySales,vsLY:lySales>0?(sales-lySales)/lySales:null});
     }
     return result;
-  },[ds?.laborRows?.length]);
+  },[ds?.laborRows?.length,allLocs]);
 
   // ── Leaderboard store rankings ────────────────────────────────────────
   const lbData=React.useMemo(()=>{

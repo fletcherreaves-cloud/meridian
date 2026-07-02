@@ -393,6 +393,45 @@ create policy "lifelenz_schedule: public write" on public.lifelenz_schedule
 create index if not exists lifelenz_schedule_date_idx
   on public.lifelenz_schedule (date desc);
 
+-- ── SMG VOICE Operator Performance (monthly PDF reports) ─────────────────────
+-- One row per store × period × report_type.
+-- Source: McDonalds_VOICE_Operator_Performance_<operatorId>.PDF
+-- Parser: src/parsers/voice-performance.js
+create table if not exists public.smg_voice_performance (
+  id              bigserial primary key,
+  period          text not null,          -- '2026-06'
+  report_type     text not null,          -- 'monthly' | 'trailing90' | 'ytd'
+  operator_id     text not null,          -- '1000015842'
+  operator_name   text,                   -- 'THORLEY, RICK'
+  loc             text not null,          -- '05985'
+  loc_name        text,                   -- 'DURANT-US HWY 70'
+  dt_sat          smallint,               -- Drive Thru Overall Satisfaction %
+  dt_dissat       smallint,               -- Drive Thru Dissatisfaction B2B %
+  ir_sat          smallint,               -- In Restaurant Satisfaction %
+  ir_dissat       smallint,               -- In Restaurant Dissatisfaction B2B %
+  accuracy_b2b    smallint,               -- Accuracy B2B %
+  quality_b2b     smallint,               -- Overall Quality B2B %
+  fries_b2b       smallint,               -- Fries Quality B2B %
+  snack_wrap_b2b  smallint,               -- Snack Wrap Quality B2B % (NULL = N/A)
+  source_file     text,
+  created_at      timestamptz default now(),
+  unique(period, report_type, operator_id, loc)
+);
+
+alter table public.smg_voice_performance enable row level security;
+
+create policy "smg_voice_performance: public read" on public.smg_voice_performance
+  for select using (true);
+
+create policy "smg_voice_performance: public write" on public.smg_voice_performance
+  for all using (true);
+
+create index if not exists smg_voice_perf_period_idx
+  on public.smg_voice_performance (period desc, report_type);
+
+create index if not exists smg_voice_perf_loc_idx
+  on public.smg_voice_performance (loc, period desc);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════

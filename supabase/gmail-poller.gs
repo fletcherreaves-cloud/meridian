@@ -26,6 +26,7 @@ const QSR_SENDERS = [
 function processAllEmails() {
   processQSREmails();
   processSMGVoiceEmails();
+  processVoicePerformanceEmails();
 }
 
 // ── SMG VOICE Customer Comment Report emails (weekly, Monday mornings) ────────
@@ -95,6 +96,78 @@ function processSMGVoiceEmails() {
   }
 
   console.log(`Done. ${filesIngested} SMG VOICE file(s) ingested from ${threads.length} thread(s).`);
+}
+
+// ── SMG VOICE Operator Performance Report emails (monthly, ~2nd of month) ─────
+// Sender: SMGMailMgr@whysmg.com  Subject: "Voice Performance Report"
+// Attachments: McDonalds_VOICE_Operator_Performance_<operatorId>.PDF (one per operator)
+function processVoicePerformanceEmails() {
+  const secret = PropertiesService.getScriptProperties().getProperty('INGEST_SECRET');
+  if (!secret) {
+    console.error('INGEST_SECRET not set in Script Properties. Aborting.');
+    return;
+  }
+
+  const query = `from:SMGMailMgr@whysmg.com subject:"Voice Performance Report" has:attachment -label:${PROCESSED_LABEL}`;
+  const threads = GmailApp.search(query, 0, 20);
+
+  if (!threads.length) {
+    console.log('No unprocessed VOICE Performance emails found.');
+    return;
+  }
+
+  let label = GmailApp.getUserLabelByName(PROCESSED_LABEL);
+  if (!label) label = GmailApp.createLabel(PROCESSED_LABEL);
+
+  let filesIngested = 0;
+
+  for (const thread of threads) {
+    let threadOk = true;
+    console.log('Processing VOICE Performance thread:', thread.getFirstMessageSubject(), '| msgs:', thread.getMessageCount());
+
+    for (const msg of thread.getMessages()) {
+      const attachments = msg.getAttachments({ includeInlineImages: false });
+
+      for (const att of attachments) {
+        const name = att.getName();
+        // Only process operator performance PDFs
+        if (!name.match(/^McDonalds_VOICE_Operator_Performance_\d+\.PDF$/i)) continue;
+
+        try {
+          const response = UrlFetchApp.fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Authorization':   `Bearer ${SUPABASE_ANON_KEY}`,
+              'X-Ingest-Secret': secret,
+              'X-File-Name':     name,
+              'X-Source':        'email',
+              'Content-Type':    'application/pdf',
+            },
+            payload:            att.copyBlob().getBytes(),
+            muteHttpExceptions: true,
+          });
+
+          const code = response.getResponseCode();
+          const body = response.getContentText();
+
+          if (code === 200) {
+            console.log(`✓ Ingested VOICE Performance: ${name} → ${body}`);
+            filesIngested++;
+          } else {
+            console.warn(`✗ Failed [${code}]: ${name} → ${body}`);
+            threadOk = false;
+          }
+        } catch (e) {
+          console.error(`✗ Error sending ${name}:`, e.message);
+          threadOk = false;
+        }
+      }
+    }
+
+    if (threadOk) thread.addLabel(label);
+  }
+
+  console.log(`Done. ${filesIngested} VOICE Performance file(s) ingested from ${threads.length} thread(s).`);
 }
 
 // ── Main function (runs on hourly trigger) ────────────────────────────────────
