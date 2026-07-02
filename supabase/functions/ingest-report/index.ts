@@ -23,6 +23,8 @@ function detectReportType(filename: string): string {
   if (fn.includes('labor exception')) return 'labor-exceptions';
   if (fn.includes('labor analysis'))  return 'labor';
   if (fn.includes('operations report')) return 'ops_report';
+  // SMG VOICE Customer Comment Report PDFs (filename: eu065119100XXXXXXX.pdf)
+  if (/^eu\d{10,}\.pdf$/i.test(filename)) return 'smg-voice';
   return 'unknown';
 }
 
@@ -30,6 +32,7 @@ function contentTypeFromFilename(filename: string): string {
   const lower = filename.toLowerCase();
   if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   if (lower.endsWith('.xls'))  return 'application/vnd.ms-excel';
+  if (lower.endsWith('.pdf'))  return 'application/pdf';
   return 'application/octet-stream';
 }
 

@@ -1779,7 +1779,7 @@ async function parseSMGVoicePDF(file) {
     } else {
       // Check next 1-2 lines for satisfaction label (multi-line comments)
       let combined = afterNSN;
-      for (let j = i + 1; j <= i + 3 && j < allLines.length; j++) {
+      for (let j = i + 1; j <= i + 15 && j < allLines.length; j++) {
         combined += ' ' + allLines[j];
         const sm = combined.match(satRe);
         if (sm) {

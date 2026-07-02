@@ -22,6 +22,81 @@ const QSR_SENDERS = [
   'scheduled-reports@myqsrsoft.com',
 ];
 
+// ── Master trigger function — calls all email processors ─────────────────────
+function processAllEmails() {
+  processQSREmails();
+  processSMGVoiceEmails();
+}
+
+// ── SMG VOICE Customer Comment Report emails (weekly, Monday mornings) ────────
+function processSMGVoiceEmails() {
+  const secret = PropertiesService.getScriptProperties().getProperty('INGEST_SECRET');
+  if (!secret) {
+    console.error('INGEST_SECRET not set in Script Properties. Aborting.');
+    return;
+  }
+
+  const query = `from:SMGMailMgr@whysmg.com subject:"Weekly VOICE Customer Comments" has:attachment -label:${PROCESSED_LABEL}`;
+  const threads = GmailApp.search(query, 0, 20);
+
+  if (!threads.length) {
+    console.log('No unprocessed SMG VOICE emails found.');
+    return;
+  }
+
+  let label = GmailApp.getUserLabelByName(PROCESSED_LABEL);
+  if (!label) label = GmailApp.createLabel(PROCESSED_LABEL);
+
+  let filesIngested = 0;
+
+  for (const thread of threads) {
+    let threadOk = true;
+    console.log('Processing SMG VOICE thread:', thread.getFirstMessageSubject(), '| msgs:', thread.getMessageCount());
+
+    for (const msg of thread.getMessages()) {
+      const attachments = msg.getAttachments({ includeInlineImages: false });
+
+      for (const att of attachments) {
+        const name = att.getName();
+        if (!name.match(/^eu\d+\.pdf$/i)) continue; // only SMG VOICE PDFs
+
+        try {
+          const response = UrlFetchApp.fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Authorization':   `Bearer ${SUPABASE_ANON_KEY}`,
+              'X-Ingest-Secret': secret,
+              'X-File-Name':     name,
+              'X-Source':        'email',
+              'Content-Type':    'application/pdf',
+            },
+            payload:            att.copyBlob().getBytes(),
+            muteHttpExceptions: true,
+          });
+
+          const code = response.getResponseCode();
+          const body = response.getContentText();
+
+          if (code === 200) {
+            console.log(`✓ Ingested SMG VOICE: ${name} → ${body}`);
+            filesIngested++;
+          } else {
+            console.warn(`✗ Failed [${code}]: ${name} → ${body}`);
+            threadOk = false;
+          }
+        } catch (e) {
+          console.error(`✗ Error sending ${name}:`, e.message);
+          threadOk = false;
+        }
+      }
+    }
+
+    if (threadOk) thread.addLabel(label);
+  }
+
+  console.log(`Done. ${filesIngested} SMG VOICE file(s) ingested from ${threads.length} thread(s).`);
+}
+
 // ── Main function (runs on hourly trigger) ────────────────────────────────────
 function processQSREmails() {
   const secret = PropertiesService.getScriptProperties().getProperty('INGEST_SECRET');
@@ -109,16 +184,16 @@ function processQSREmails() {
 function setupTrigger() {
   // Remove any existing triggers for this function first
   ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'processQSREmails')
+    .filter(t => ['processQSREmails','processAllEmails'].includes(t.getHandlerFunction()))
     .forEach(t => ScriptApp.deleteTrigger(t));
 
   // Create new hourly trigger
-  ScriptApp.newTrigger('processQSREmails')
+  ScriptApp.newTrigger('processAllEmails')
     .timeBased()
     .everyHours(1)
     .create();
 
-  console.log('Hourly trigger created for processQSREmails.');
+  console.log('Hourly trigger created for processAllEmails (QSRSoft + SMG VOICE).');
 }
 
 // ── Force-reprocess — strips the processed label and re-runs ─────────────────
