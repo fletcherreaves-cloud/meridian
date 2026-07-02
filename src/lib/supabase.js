@@ -28,14 +28,12 @@ export async function uploadReportFile(file, reportType) {
     }
     const fileData = btoa(binary);
     const storagePath = `manual/${new Date().toISOString().slice(0, 10)}/${file.name}`;
-    console.log('[uploadReportFile] storing in pending_reports:', file.name, reportType);
     const { data, error } = await supabase.from('pending_reports')
       .upsert({ filename: file.name, storage_path: storagePath, report_type: reportType,
                 source: 'manual', processed: false, file_data: fileData },
                { onConflict: 'storage_path' })
       .select('id').single();
-    if (error) { console.error('[uploadReportFile] FAILED:', error.message, error); return null; }
-    console.log('[uploadReportFile] ✓ stored, id:', data?.id);
+    if (error) { console.warn('[uploadReportFile] failed:', error.message); return null; }
     return data || null;
   } catch(e) { console.error('[uploadReportFile] exception:', e); return null; }
 }
