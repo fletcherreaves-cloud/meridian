@@ -197,10 +197,12 @@ values (
   ]
 ) on conflict (id) do nothing;
 
--- Authenticated users can read files from this bucket
-create policy "qsr-reports: authenticated read"
+-- Public read — file contents are CSV business reports (no PII).
+-- Matches the localhost bypass pattern used for pending_reports.
+-- Anyone with the anon key and the exact storage path can download.
+create policy "qsr-reports: public read"
   on storage.objects for select
-  using (bucket_id = 'qsr-reports' and auth.uid() is not null);
+  using (bucket_id = 'qsr-reports');
 
 -- ── pending_reports — tracks files waiting to be parsed by Meridian ───────────
 create table if not exists public.pending_reports (
@@ -217,18 +219,150 @@ create table if not exists public.pending_reports (
 
 alter table public.pending_reports enable row level security;
 
--- Any authenticated user can see pending reports
-create policy "pending_reports: authenticated read" on public.pending_reports
-  for select using (auth.uid() is not null);
+-- Public read — file metadata only, no sensitive data.
+-- Auto-ingest runs before Supabase auth is established on localhost.
+create policy "pending_reports: public read" on public.pending_reports
+  for select using (true);
 
--- Any authenticated user can mark reports processed (update only)
-create policy "pending_reports: authenticated update" on public.pending_reports
-  for update using (auth.uid() is not null);
+-- Public update — auto-ingest marks reports processed before Supabase auth is established on localhost.
+create policy "pending_reports: public update" on public.pending_reports
+  for update using (true);
 
 -- Service role only for insert (Edge Function uses service key, bypasses RLS)
 
 create index if not exists pending_reports_processed_idx
   on public.pending_reports (processed, uploaded_at desc);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- MONTHLY TARGETS (v4.243+)
+-- Per-store targets sent to stores/supervisors each month.
+-- Parsed from the Restaurant Projections XLSM workbook and persisted here
+-- so they survive across sessions without re-uploading the file.
+-- Primary key: (loc, year, month) — one row per store per period.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+create table if not exists public.monthly_targets (
+  loc               text not null,           -- store number, e.g. '3708'
+  year              integer not null,
+  month             integer not null check (month between 1 and 12),
+  -- Sales
+  sales_proj        float,                   -- Sales Projection ($)
+  comp_sales_pct    float,                   -- Comp Sales %
+  -- Labor
+  crew_labor_pct    float,                   -- Crew Labor %
+  bonus_crew_pct    float,                   -- Bonus Crew Labor %
+  tpph_target       float,                   -- TPPH Target
+  -- Food Over Base components
+  base_food_pct     float,                   -- Base Food %
+  disc_coup_pct     float,                   -- Disc Coup %
+  comp_waste_pct    float,                   -- Comp Waste %
+  raw_waste_pct     float,                   -- Raw Waste %
+  condiment_pct     float,                   -- Condiment %
+  emp_food_pct      float,                   -- Emp Food %
+  stat_loss_pct     float,                   -- Stat Loss %
+  unex_diff_pct     float,                   -- Unex Diff %
+  fob_target_pct    float,                   -- FOB Target w/o Disc Coup
+  total_food_cost_pct float,                 -- Total Food Cost %
+  paper_cost_pct    float,                   -- P&L Paper Cost %
+  op_supply_target  float,                   -- Op Supply Target ($)
+  -- Audit
+  updated_at        timestamptz default now(),
+  updated_by        uuid references public.profiles(id),
+  primary key (loc, year, month)
+);
+
+alter table public.monthly_targets enable row level security;
+
+-- Public read — targets are operational data, no PII
+create policy "monthly_targets: public read" on public.monthly_targets
+  for select using (true);
+
+-- Public write — localhost bypass has no auth session; tighten after Vercel auth is live
+create policy "monthly_targets: public write" on public.monthly_targets
+  for all using (true);
+
+create index if not exists monthly_targets_year_month_idx
+  on public.monthly_targets (year, month);
+
+-- ── SMG FullScale Results ──────────────────────────────────────────────────────
+-- Aggregate SMG Voice scores per store per month (from FullScale_Report.xlsx)
+create table if not exists public.smg_fullscale (
+  loc              text not null,
+  year             integer not null,
+  month            integer not null check (month between 1 and 12),
+  report_start     text,                -- e.g. "6/1/2026"
+  report_end       text,                -- e.g. "6/30/2026"
+  -- Overall Satisfaction (1-5 scale, % based)
+  osat_top2        float,               -- % giving 4 or 5 (top-2-box, higher=better)
+  osat_5           float,               -- % giving 5 only (top-1-box)
+  osat_avg         float,               -- weighted average score 1-5
+  -- Best-to-Best benchmarks (higher=better)
+  osat_b2b         float,               -- % meeting Overall Satisfaction B2B standard
+  accuracy_b2b     float,               -- % meeting Accuracy B2B standard
+  -- Problem rates (lower=better)
+  dt_problem       float,               -- % Drive-Thru customers experiencing a problem
+  overall_problem  float,               -- % any customer experiencing a problem
+  updated_at       timestamptz default now(),
+  updated_by       uuid references public.profiles(id),
+  primary key (loc, year, month)
+);
+
+alter table public.smg_fullscale enable row level security;
+
+-- Public read — SMG scores are operational data, no PII
+create policy "smg_fullscale: public read" on public.smg_fullscale
+  for select using (true);
+
+-- Public write — localhost bypass has no auth session; tighten after Vercel auth is live
+create policy "smg_fullscale: public write" on public.smg_fullscale
+  for all using (true);
+
+create index if not exists smg_fullscale_year_month_idx
+  on public.smg_fullscale (year, month);
+
+-- ── LifeLenz Schedule (Labor Analysis Summary) ───────────────────────────────
+-- Daily per-store scheduling rows from LifeLenz Labor Analysis Summary Report.
+-- One row per store per date. Upserted on upload so re-syncing is safe.
+create table if not exists public.lifelenz_schedule (
+  loc             text not null,           -- store number, e.g. '0003708'
+  date            date not null,
+  fcst_sales      float,
+  adj_fcst_sales  float,
+  sales           float,
+  sales_diff      float,
+  fcst_tcs        float,
+  tcs             float,
+  tcs_diff        float,
+  labor_pct       float,
+  proj_vlh        float,
+  sch_vlh         float,
+  need_vlh        float,
+  vlh_diff        float,
+  fix_guide_hrs   float,
+  sch_fix_hrs     float,
+  proj_floor      float,
+  sch_floor       float,
+  need_floor      float,
+  ideal_tot_hrs   float,
+  sal_mgr_hrs     float,
+  crew_hrs        float,
+  tot_hrs_diff    float,
+  tpmh            float,
+  updated_at      timestamptz default now(),
+  primary key (loc, date)
+);
+
+alter table public.lifelenz_schedule enable row level security;
+
+-- Public read/write — schedule data is operational, no PII; matches localhost bypass pattern
+create policy "lifelenz_schedule: public read" on public.lifelenz_schedule
+  for select using (true);
+
+create policy "lifelenz_schedule: public write" on public.lifelenz_schedule
+  for all using (true);
+
+create index if not exists lifelenz_schedule_date_idx
+  on public.lifelenz_schedule (date desc);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)

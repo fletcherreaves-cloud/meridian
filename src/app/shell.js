@@ -87,7 +87,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm}) {
+function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm, betaMode}) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
@@ -152,7 +152,9 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
 
   // Permission helpers — pi is a permission-gated navItem
   const can = perm || (() => true);
-  const pi  = (permKey, ...args) => (!permKey || can(permKey)) ? navItem(...args) : null;
+  // pis = stable (always visible), pi = experimental (hidden when betaMode=true)
+  const pis = (permKey, ...args) => (!permKey || can(permKey)) ? navItem(...args) : null;
+  const pi  = (permKey, ...args) => (!permKey || can(permKey)) && !betaMode ? navItem(...args) : null;
 
   const sideStyle=isMobile
     ?{position:'fixed',top:0,left:mobileOpen?0:'-270px',height:'100%',width:w,zIndex:300,
@@ -192,65 +194,68 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       sectionLabel('Views'),
       // ── DAILY ──────────────────────────────────────────────────
       navLabel('DAILY'),
-      navItem('Command Center',     '⌂', ()=>setView('command'),  view==='command'),
-      navItem('⚠ Needs Attention',  '🔴', ()=>onOpenModal('attention'), false, needsCount),
-      pi('analytics.ai',          'Anomaly Scanner',    '🔍', ()=>onOpenModal('aiscan'),  false),
-      pi('analytics.forecasting', 'Projections',        '▦',  ()=>onOpenModal('proj'),    false),
-      pi('analytics.forecasting', 'Projection Workflow','🔒', ()=>onOpenModal('proj'),    false),
-      pi('analytics.forecasting', 'Proj vs Actuals',    '◑',  ()=>onOpenModal('pvsa'),    false),
-      navItem('Date-Range Report',  '📅', ()=>onOpenModal('report'),  false),
-      navItem('Events & Tags',      '◷', ()=>onOpenModal('events'),  false),
-      // ── PLANNING & FORECAST ────────────────────────────────────
-      can('analytics.forecasting') && navLabel('PLANNING & FORECAST'),
-      pi('analytics.forecasting', 'Model Assignments',     '🎯', ()=>onOpenModal('model-assign'),  false),
-      pi('analytics.forecasting', 'Dialed-In Calibration','◎',  ()=>onOpenModal('dialedin'),      false),
-      pi('analytics.forecasting', 'Forecast Accuracy',     '🎯', ()=>onOpenModal('fcst-accuracy'), false),
-      pi('analytics.forecasting', 'Lifelenz Gap Report',   '📊', ()=>onOpenModal('lfz-gap'),       false),
-      pi('analytics.forecasting', 'DI Compare',            '⚡', ()=>onOpenModal('dicompare'),     false),
+      navItem('Home',              '⌂', ()=>setView('command'),         view==='command'),
+      navItem('Needs Attention',   '🔴', ()=>onOpenModal('attention'),  false, needsCount),
+      navItem('Date-Range Report', '📅', ()=>onOpenModal('report'),     false),
+      navItem('Events & Tags',     '◷', ()=>onOpenModal('events'),     false),
       // ── PERFORMANCE ────────────────────────────────────────────
-      navLabel('PERFORMANCE'),
-      pi('analytics.store',    'Rankings',         '⇈', ()=>onOpenModal('ranking'),          false),
-      pi('analytics.store',    'Targets',          '◉', ()=>onOpenModal('unified-targets'),  false),
-      pi('analytics.brief',    'Priority Brief',   '🎯', ()=>onOpenModal('priority-brief'),  false),
-      pi('reviews.view',       'Perf Reviews',     '📋', ()=>onOpenModal('perf-reviews'),    false),
-      pi('analytics.store',    'Record Day Intel', '🏆', ()=>onOpenModal('record-day'),      false),
-      pi('analytics.labor',    'Labor Analytics',  '👷', ()=>onOpenModal('labor-analytics'), false),
-      pi('analytics.store',    'FOB Analysis',     '🥗', ()=>onOpenModal('fob-analysis'),    false),
-      pi('analytics.district', 'Operator Summary', '👔', ()=>onOpenModal('operator-summary'),false),
-      pi('analytics.store',    'Revenue Intel',    '◈', ()=>onOpenModal('revintel'),        false),
-      // ── STORE OPERATIONS ───────────────────────────────────────
-      can('analytics.store') && navLabel('STORE OPERATIONS'),
-      pi('analytics.store',       'Store KB',           '📍', ()=>onOpenModal('store-kb'),      false),
-      pi('analytics.forecasting', 'Forecast Reference', '📐', ()=>onOpenModal('fcst-ref'),      false),
-      pi('analytics.district',    'District View',      '⊞', ()=>{setView('district');}, view==='district'),
-      pi('analytics.store',       'Loc Intelligence',   '📊', ()=>onOpenModal('loc-intel'),     false),
+      can('analytics.store') && navLabel('PERFORMANCE'),
+      pis('analytics.store',    'Store Rankings',     '⇈', ()=>onOpenModal('ranking'),           false),
+      pis('analytics.store',    'Targets',            '◉', ()=>onOpenModal('unified-targets'),   false),
+      pis('analytics.store',    'Monthly Targets',    '📅', ()=>onOpenModal('monthly-proj'),     false),
+      pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),     false),
+      pis('analytics.labor',    'Labor',              '👷', ()=>onOpenModal('labor-analytics'),  false),
+      pis('analytics.store',    'Food Cost',          '🥗', ()=>onOpenModal('fob-analysis'),     false),
+      pis('analytics.store',    'End of Month',       '📋', ()=>onOpenModal('fob-eom'),          false),
+      pis('analytics.store',    'Guest Voice',        '💬', ()=>onOpenModal('smg-voice'),        false, ds&&ds.smgRows&&ds.smgRows.length?ds.smgRows.length:null),
+      pis('analytics.district', 'Org Overview',       '📊', ()=>onOpenModal('operator-summary'), false),
+      pis('analytics.store',    '3PO Delivery',       '🛵', ()=>onOpenModal('delivery-mix'),     false),
+      pis('analytics.store',    'Scheduling',         '📋', ()=>onOpenModal('scheduling'),        false),
+      pis('analytics.district', 'EOM Supervisor',     '📊', ()=>onOpenModal('eom-summary'),      false),
+      // ── STORE OPS ──────────────────────────────────────────────
+      can('analytics.store') && navLabel('STORE OPS'),
+      pis('analytics.store', 'Store Notes',   '📍', ()=>onOpenModal('store-kb'),      false),
+      pis('analytics.brief', 'Morning Brief', '☀️', ()=>onOpenModal('morning-brief'), false),
+      // ── THE TEST KITCHEN ───────────────────────────────────────
+      !betaMode && navLabel('⚗ TEST KITCHEN'),
+      pi('analytics.forecasting', 'Projections',        '▦',  ()=>onOpenModal('proj'),          false),
+      pi('analytics.forecasting', 'Proj vs Actuals',    '◑',  ()=>onOpenModal('pvsa'),          false),
+      pi('analytics.forecasting', 'Proj Workflow',      '🔒', ()=>onOpenModal('proj'),          false),
+      pi('analytics.forecasting', 'Forecast Models',    '🎯', ()=>onOpenModal('model-assign'),  false),
+      pi('analytics.forecasting', 'DI Calibration',     '◎',  ()=>onOpenModal('dialedin'),      false),
+      pi('analytics.forecasting', 'Forecast Accuracy',  '🎯', ()=>onOpenModal('fcst-accuracy'), false),
+      pi('analytics.forecasting', 'LifeLenz Gap',       '📊', ()=>onOpenModal('lfz-gap'),       false),
+      pi('analytics.forecasting', 'DI Compare',         '⚡', ()=>onOpenModal('dicompare'),     false),
+      pi('analytics.forecasting', 'Fcst Reference',     '📐', ()=>onOpenModal('fcst-ref'),      false),
+      pi('analytics.forecasting', 'LifeLenz Bridge',    '🌉', ()=>onOpenModal('lifelenz-bridge'),false),
+      pi('analytics.ai',          'Anomaly Scan',       '🔍', ()=>onOpenModal('aiscan'),        false),
+      pi('analytics.ai',          'Why Engine',         '🔬', ()=>onOpenModal('why-engine'),    false),
+      pi('analytics.brief',       'Priority Actions',   '🎯', ()=>onOpenModal('priority-brief'),false),
+      pi('analytics.brief',       'Intel Brief',        '🧠', ()=>onOpenModal('brief'),         false),
+      pi('analytics.store',       'Record Days',        '🏆', ()=>onOpenModal('record-day'),    false),
+      pi('analytics.store',       'Revenue',            '◈',  ()=>onOpenModal('revintel'),      false),
+      pi('analytics.store',       'Location Intel',     '📊', ()=>onOpenModal('loc-intel'),     false),
       pi('analytics.store',       'Inventory',          '📦', ()=>onOpenModal('inventory'),     false),
-      pi('analytics.store',       'Delivery Mix',       '🛵', ()=>onOpenModal('delivery-mix'),  false),
-      pi('analytics.brief',       'Intelligence Brief', '🧠', ()=>onOpenModal('brief'),         false),
-      pi('analytics.brief',       'Morning Brief',      '☀️', ()=>onOpenModal('morning-brief'), false),
-      navItem('About / Changelog','ℹ️', ()=>onOpenModal('about'), false),
-      // ── TOOLS ──────────────────────────────────────────────────
-      can('analytics.store') && navLabel('TOOLS'),
-      pi('analytics.store',       'Performance Calculator','🧮',()=>onOpenModal('perf-calc'),        false),
-      pi('analytics.store',       'Metric Correlations',   '🔗',()=>onOpenModal('corr-explorer'),    false),
-      pi('analytics.district',    'District Lens',         '🌐',()=>onOpenModal('district-lens'),    false),
-      pi('analytics.store',       'Compare',               '⇄', ()=>onOpenModal('compare'),          false),
-      pi('analytics.store',       'Store One-Pager',       '📄', ()=>onOpenModal('one-pager'),       false),
-      pi('analytics.store',       'GM Coaching Letters',   '👨‍💼',()=>onOpenModal('gm-brief'),       false),
-      pi('analytics.dashboard',   'Calendar Manager',      '📅', ()=>onOpenModal('calendar-manager'),false),
-      pi('analytics.ai',          'Why Engine',            '🔬', ()=>onOpenModal('why-engine'),      false),
-      pi('analytics.store',       'Channel Intel',         '📊', ()=>onOpenModal('channel-intel'),   false),
-      pi('analytics.forecasting', 'LifeLenz Bridge',       '🌉', ()=>onOpenModal('lifelenz-bridge'), false),
-      pi('analytics.store',       'DAR Daypart',           '⏱', ()=>onOpenModal('dar-daypart'),     false),
-      pi('analytics.store',       'Product Mix',           '🍔', ()=>onOpenModal('pmix'),            false),
+      pi('analytics.store',       'Performance Calc',   '🧮', ()=>onOpenModal('perf-calc'),     false),
+      pi('analytics.store',       'Metric Correlations','🔗', ()=>onOpenModal('corr-explorer'), false),
+      pi('analytics.store',       'Store Compare',      '⇄',  ()=>onOpenModal('compare'),       false),
+      pi('analytics.store',       'Store One-Pager',    '📄', ()=>onOpenModal('one-pager'),     false),
+      pi('analytics.store',       'GM Letters',         '👨‍💼',()=>onOpenModal('gm-brief'),      false),
+      pi('analytics.store',       'Channel Intel',      '📊', ()=>onOpenModal('channel-intel'), false),
+      pi('analytics.store',       'DAR Analysis',       '⏱', ()=>onOpenModal('dar-daypart'),   false),
+      pi('analytics.store',       'Product Mix',        '🍔', ()=>onOpenModal('pmix'),          false),
+      pi('analytics.district',    'District Lens',      '🌐', ()=>onOpenModal('district-lens'), false),
+      pi('analytics.district',    'District View',      '⊞', ()=>{setView('district');},  view==='district'),
+      pi('analytics.dashboard',   'Calendar Manager',   '📅', ()=>onOpenModal('calendar-manager'),false),
       // ── ADMIN ──────────────────────────────────────────────────
       navLabel('ADMIN'),
-      pi('settings.view', 'Settings',      '⚙', ()=>onOpenModal('settings'),             false),
-      navItem('Knowledge Base', '📖', ()=>onOpenModal('kb'), false),
-      pi('data.upload',   'Data Manager',  '🗄', ()=>onOpenModal('data-manager'),         false),
-      navItem('Save Session',    '💾', ()=>onSaveSession&&onSaveSession(),    false),
-      navItem('Restore Session', '📂', ()=>onRestoreSession&&onRestoreSession(), false),
-      navItem('Help',            '?',  ()=>onOpenModal('help'),                false),
+      pis('settings.view', 'Settings',     '⚙', ()=>onOpenModal('settings'),               false),
+      navItem('Changelog',       'ℹ️', ()=>onOpenModal('about'),                false),
+      navItem('Knowledge Base',  '📖', ()=>onOpenModal('kb'),                   false),
+      pis('data.upload',   'Data Manager', '🗄', ()=>onOpenModal('data-manager'),           false),
+      navItem('Save Session',    '💾', ()=>onSaveSession&&onSaveSession(),      false),
+      navItem('Restore Session', '📂', ()=>onRestoreSession&&onRestoreSession(),false),
+      navItem('Help',            '?',  ()=>onOpenModal('help'),                 false),
     ),
 
     // ── Footer status ───────────────────────────────────────────
@@ -275,7 +280,8 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
 // ── App Topbar (slim contextual header) ─────────────────────────────
 function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChange, locScope, onScopeChange,
                     onOpenModal, onLoadFiles, onSaveSession, loadMsg, setView,
-                    sessionBanner, onClearSession, userRole, onOpenAdmin, perm}) {
+                    sessionBanner, onClearSession, userRole, onOpenAdmin, perm,
+                    betaMode, onToggleBeta}) {
   const today = new Date();
   const [isMb, setIsMb] = React.useState(()=>window.innerWidth<768);
   React.useEffect(()=>{
@@ -285,7 +291,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
   },[]);
 
   // View title
-  const viewTitle = view==='command'?'Command Center':
+  const viewTitle = view==='command'?'Home':
     view==='district'?'District Overview':
     view==='org'?'Org Structure':
     view==='store'&&selStore?sNameC(selStore)||'Store Detail':
@@ -390,6 +396,15 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       onOpenAdmin&&btn({className:'btn btn-sm',
         title:'User Management',style:{fontSize:'10px'},
         onClick:onOpenAdmin},'👤'),
+      // Beta mode toggle — admins only (onToggleBeta is null if not permitted)
+      onToggleBeta&&btn({className:'btn btn-sm',
+        title:betaMode?'Test Kitchen hidden — click to show experimental panels':'Test Kitchen visible — click to hide experimental panels',
+        style:{fontSize:'9px',padding:'2px 7px',
+          background:!betaMode?'rgba(168,85,247,.15)':'transparent',
+          color:!betaMode?'#a855f7':'var(--text3)',
+          borderColor:!betaMode?'rgba(168,85,247,.4)':'rgba(255,255,255,.1)',
+          fontWeight:!betaMode?700:400},
+        onClick:onToggleBeta},'⚗'),
       // Sign out (only renders when Supabase auth is active)
       h(SignOutBtn, {style:{fontSize:'9px',padding:'3px 8px'}})
     )

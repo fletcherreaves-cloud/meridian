@@ -1,0 +1,44 @@
+{
+  "name": "Meridian",
+  "short_name": "Meridian",
+  "description": "McDonald's District Analytics Platform",
+  "theme_color": "#f5bc00",
+  "background_color": "#0f1117",
+  "display": "standalone",
+  "orientation": "landscape-primary",
+  "start_url": "/meridian/",
+  "scope": "/meridian/",
+  "icons": [
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "/meridian/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "text/csv",
+            ".xlsx",
+            ".xls",
+            ".csv"
+          ]
+        }
+      ]
+    }
+  }
+}

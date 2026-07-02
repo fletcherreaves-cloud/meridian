@@ -14,8 +14,9 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const INGEST_SECRET        = Deno.env.get('INGEST_SECRET')!;
 
 // Filename → report type (mirrors detectType logic in parsers/index.js)
+// Handles both space-separated ("cash sheet") and underscore-separated ("cash_sheet") names.
 function detectReportType(filename: string): string {
-  const fn = filename.toLowerCase();
+  const fn = filename.toLowerCase().replace(/_/g, ' ');
   if (fn.includes('sales ledger'))    return 'sales-ledger';
   if (fn.includes('daily glimpse'))   return 'daily-glimpse';
   if (fn.includes('cash sheet'))      return 'cash-sheet';
@@ -23,6 +24,13 @@ function detectReportType(filename: string): string {
   if (fn.includes('labor analysis'))  return 'labor';
   if (fn.includes('operations report')) return 'ops_report';
   return 'unknown';
+}
+
+function contentTypeFromFilename(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (lower.endsWith('.xls'))  return 'application/vnd.ms-excel';
+  return 'application/octet-stream';
 }
 
 Deno.serve(async (req: Request) => {
@@ -65,7 +73,7 @@ Deno.serve(async (req: Request) => {
   const { error: uploadError } = await supabase.storage
     .from('qsr-reports')
     .upload(storagePath, bytes, {
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      contentType: contentTypeFromFilename(filename),
       upsert: true,
     });
 

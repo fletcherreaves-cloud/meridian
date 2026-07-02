@@ -12,6 +12,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -209,7 +210,7 @@ const FOB_COMP=[
   {key:'statVar',    tgt:'tStatLoss',   label:'Variance Stat',       icon:'📊', threshold:0.002,  lower:true},
   {key:'unexplained',tgt:'tUnex',       label:'Unexplained',         icon:'❓', threshold:0.0005, lower:true},
   {key:'fobPct',     tgt:'tFOBTarget',  label:'Food Over Base (FOB)',icon:'📈', threshold:0.003,  lower:true, sep:true},
-  {key:'baseFoodPct',tgt:'tFOBBase',    label:'Base Food',           icon:'🥗', threshold:0.005,  lower:true, actionable:false},
+  {key:'baseFoodPct',tgt:'tFOBBase',    label:'Base Food',           icon:'🥗', threshold:0.005,  lower:true},
   {key:'discCoupon', tgt:'tDiscCoupPct',label:'Discounts / Coupons', icon:'🎫', threshold:0.003,  lower:false, note:'Lower is favorable — means more discount activity vs. sales'},
   {key:'pLFoodPct',  tgt:'tFOBTotal',   label:'Total Food Cost',     icon:'💰', threshold:0.005,  lower:true, isTotal:true},
 ];
@@ -1270,24 +1271,68 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 // View and manage persisted IndexedDB data coverage.
 // Shows row counts and date ranges per data type.
 // Allows selective clear or full reset.
-function DataManagerPanel({ds, idbCoverage, onClose}) {
+function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   const {useState:uSt, useEffect:uE} = React;
   const [cov,    setCov]   = uSt(idbCoverage||{});
   const [wxFetching,setWxFetching] = uSt(false);
   const [wxMsg,     setWxMsg]      = uSt('');
   const [status, setStatus]= uSt('');
+  const [qsrFiles, setQsrFiles] = uSt([]);
 
   uE(()=>{
-    // Use coverage already computed from loaded rows — no IDB read needed
     if(idbCoverage && Object.keys(idbCoverage).length>0) setCov(idbCoverage);
   },[idbCoverage]);
 
-  const STORE_LABELS = {
+  uE(()=>{
+    if(!supabase) return;
+    supabase.from('pending_reports')
+      .select('filename,report_type,processed,processed_at')
+      .order('uploaded_at',{ascending:false})
+      .then(({data})=>{ if(data) setQsrFiles(data); });
+  },[]);
+
+  const IDB_LABELS = {
     laborRows:'Labor Analysis',opsRows:'Operations Report',
     ctrlRows:'Controls Data',fobRows:'FOB Report',
     auditRows:'Register Audit',peaksRows:'3 Peaks — Service',
     peaksSalesRows:'3 Peaks — Sales',
     darRows:'Daily Activity Reports',pmixRows:'Product Mix',
+    weatherRows:'Weather Data',
+  };
+
+  // Helper: compute coverage from any row array
+  const calcCov = (rows, dateKey) => {
+    if(!rows||!rows.length) return {count:0};
+    const toStr = r => {
+      const v = dateKey ? r[dateKey] : (r._d||r.date);
+      if(!v) return null;
+      if(typeof v === 'string') return v.slice(0,10);
+      if(v instanceof Date) return v.toISOString().slice(0,10);
+      return null;
+    };
+    const dates = rows.map(toStr).filter(Boolean).sort();
+    return {count:rows.length, from:dates[0]||'?', to:dates[dates.length-1]||'?'};
+  };
+
+  // Staleness: days since latest date in coverage
+  const staleDays = (c) => {
+    if(!c||!c.to||c.to==='?') return null;
+    const last = new Date(c.to+'T00:00:00');
+    if(isNaN(last)) return null;
+    return Math.floor((Date.now()-last.getTime())/86400000);
+  };
+  const stalenessColor = (days) => {
+    if(days===null) return 'var(--text3)';
+    if(days<=3) return '#10b981';
+    if(days<=10) return '#f59e0b';
+    return '#ef4444';
+  };
+  const staleDot = (c) => {
+    const d=staleDays(c);
+    if(d===null) return null;
+    return span({style:{display:'inline-block',width:6,height:6,borderRadius:'50%',
+      background:stalenessColor(d),marginRight:4,flexShrink:0,verticalAlign:'middle',
+      title:d+'d old'}});
   };
 
   // Compute records stats from ds
@@ -1301,27 +1346,172 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
 
   // Build peaks coverage from ds (split svc/sales)
   const peaksCov = React.useMemo(()=>{
-    const calc=(rows)=>{
-      if(!rows||!rows.length) return {count:0};
-      const dates=rows.map(r=>r.date instanceof Date?r.date.toISOString().slice(0,10):null).filter(Boolean).sort();
-      return{count:rows.length,from:dates[0]||'?',to:dates[dates.length-1]||'?'};
-    };
     return{
-      peaksRows:calc(ds&&ds.peaksSvcRows||[]),
-      peaksSalesRows:calc(ds&&ds.peaksSalesRows||[]),
+      peaksRows:calcCov(ds&&ds.peaksSvcRows||[]),
+      peaksSalesRows:calcCov(ds&&ds.peaksSalesRows||[]),
     };
   },[ds&&ds.peaksSvcRows,ds&&ds.peaksSalesRows]);
 
-  const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0)+(recStats.count||0);
+  // Coverage for session/pipeline data sources (not in idbCoverage)
+  const sessionCov = React.useMemo(()=>({
+    schedRows:    calcCov(ds&&ds.schedRows||[]),
+    glimpseRows:  calcCov(ds&&ds.glimpseRows||[]),
+    cashRows:     calcCov(ds&&ds.cashRows||[]),
+    exceptionRows:calcCov(ds&&ds.exceptionRows||[]),
+    smgRows:      (ds&&ds.smgRows||[]).length ? {count:(ds.smgRows||[]).length} : {count:0},
+    deliveryRows: (ds&&ds.deliveryRows||[]).length ? {count:(ds.deliveryRows||[]).length,
+      from:(ds.deliveryRows||[]).map(r=>r.date?.toISOString?.()?.slice(0,10)||'').filter(Boolean).sort()[0]||'?',
+      to:(ds.deliveryRows||[]).map(r=>r.date?.toISOString?.()?.slice(0,10)||'').filter(Boolean).sort().at(-1)||'?'} : {count:0},
+  }),[ds&&ds.schedRows,ds&&ds.glimpseRows,ds&&ds.cashRows,ds&&ds.exceptionRows,ds&&ds.smgRows,ds&&ds.deliveryRows]);
+
+  // QSRSoft pipeline file status — period coverage from pending_reports
+  const qsrStatus = React.useMemo(()=>{
+    const byType={};
+    for(const f of qsrFiles){
+      const type=f.report_type||'unknown';
+      if(!byType[type]) byType[type]={daily:null,weekly:null,monthly:null};
+      const fn=(f.filename||'').toLowerCase();
+      const period=fn.includes('_daily_')?'daily':fn.includes('_weekly_')?'weekly':fn.includes('_monthly_')?'monthly':null;
+      if(period){
+        const dm=fn.match(/(\d{4}-\d{2}-\d{2})/);
+        byType[type][period]=dm?dm[1]:'✓';
+      }
+    }
+    return byType;
+  },[qsrFiles]);
+
+  const periodBadge=(period,date)=>h('span',{key:period,title:date||'',
+    style:{fontSize:'7px',fontWeight:700,padding:'1px 4px',borderRadius:3,
+      marginLeft:2,display:'inline-block',letterSpacing:'.3px',
+      background:date?'rgba(16,185,129,.12)':'rgba(255,255,255,.05)',
+      color:date?'#10b981':'var(--text3)',
+      border:`.5px solid ${date?'rgba(16,185,129,.25)':'rgba(255,255,255,.1)'}`}},
+    period[0].toUpperCase());
+
+  const periodBadges=(reportType)=>{
+    const s=qsrStatus[reportType]||{};
+    return h('span',{style:{display:'inline-flex',gap:2,marginLeft:5,verticalAlign:'middle'}},
+      periodBadge('daily',s.daily),
+      periodBadge('weekly',s.weekly),
+      periodBadge('monthly',s.monthly));
+  };
+
+  // Supabase-backed data — SMG FullScale broken down by period
+  const supabaseCov = React.useMemo(()=>{
+    const fsRows = ds&&ds.smgFullscale||[];
+    const mt = ds&&ds.monthlyTargets||{};
+    const mtLocs = Object.keys(mt).length;
+    const mtPeriod = mtLocs ? Object.values(mt).find(v=>v._year) : null;
+    // Group FullScale by year-month for per-period display
+    const fsByPeriod = {};
+    for(const r of fsRows){
+      const k=`${r.year}-${String(r.month||1).padStart(2,'0')}`;
+      if(!fsByPeriod[k]) fsByPeriod[k]={key:k,count:0,from:r.reportStart,to:r.reportEnd};
+      fsByPeriod[k].count++;
+    }
+    const fsPeriods = Object.values(fsByPeriod).sort((a,b)=>b.key.localeCompare(a.key));
+    return {
+      fsPeriods,
+      smgFullscale: fsRows.length ? {count:fsRows.length} : {count:0},
+      monthlyTargets: mtLocs ? {count:mtLocs, label:mtPeriod?`${mtPeriod._year}-${String(mtPeriod._month).padStart(2,'0')}`:'loaded'} : {count:0},
+    };
+  },[ds&&ds.smgFullscale,ds&&ds.monthlyTargets]);
+
+  const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0)+(recStats.count||0)
+    + Object.values(sessionCov).reduce((a,v)=>a+(v?.count||0),0);
 
   const handleClear = async()=>{
     if(!confirm('Clear ALL stored data? The app will require re-uploading files on next launch.')) return;
     setStatus('Clearing…');
     await Promise.all([idbClearAll(), opfsClear()]);
-    const zeroCov = Object.fromEntries(Object.keys(STORE_LABELS).map(k=>[k,{count:0}]));
+    const zeroCov = Object.fromEntries(Object.keys(IDB_LABELS).map(k=>[k,{count:0}]));
     setCov(zeroCov);
     setStatus('✓ All stored data cleared');
   };
+
+  const sectionHdr = (key, label) => h('tr',{key},h('td',{colSpan:4,
+    style:{padding:'6px 10px 3px',fontSize:'7px',fontWeight:800,textTransform:'uppercase',letterSpacing:'.6px',
+      color:'var(--text3)',borderTop:'.5px solid var(--bdr)',borderBottom:'.5px solid var(--bdr)',
+      background:'rgba(255,255,255,.02)'}},(label)));
+
+  const dataRow = (key, label, c, colorVar, altIdx, badges) => {
+    const hasData = c.count>0;
+    const sd = hasData ? staleDays(c) : null;
+    return h('tr',{key,style:{background:altIdx?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+      h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
+        hasData&&staleDot(c), label, badges||null),
+      h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?(colorVar||'var(--amber)'):'var(--text3)',fontWeight:hasData?700:400}},
+        hasData?c.count.toLocaleString():'—'),
+      h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData&&c.from?c.from:'—'),
+      h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:sd!==null?stalenessColor(sd):'var(--text3)',fontSize:'8px'}},
+        hasData&&c.to?c.to+(sd!==null?' ('+sd+'d)':''):'—')
+    );
+  };
+
+  // Pre-build IDB rows
+  const idbRows = Object.entries(IDB_LABELS).map(([k,label],i)=>{
+    const c=(k==='peaksRows'?peaksCov.peaksRows:k==='peaksSalesRows'?peaksCov.peaksSalesRows:cov[k])||{count:0};
+    const badges = k==='laborRows' ? periodBadges('labor') : null;
+    return dataRow(k, label, c, 'var(--amber)', i%2, badges);
+  });
+
+  // Sales Ledger: data flows into laborRows (IDB) — derive coverage from pending_reports files
+  const slFiles = qsrFiles.filter(f=>f.report_type==='sales-ledger');
+  const slDates = slFiles.map(f=>(f.filename||'').match(/(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean).sort();
+  const slCov = slFiles.length ? {count:slFiles.length,from:slDates[0]||'?',to:slDates[slDates.length-1]||'?'} : {count:0};
+
+  // Pre-build session/pipeline rows
+  const qsrPipelineRows = [
+    ['glimpseRows',   'QSRSoft Daily Glimpse',   'daily-glimpse'],
+    ['cashRows',      'QSRSoft Cash Sheet',       'cash-sheet'],
+    ['exceptionRows', 'QSRSoft Labor Exceptions', 'labor-exceptions'],
+  ].map(([k,label,rtype],i)=>dataRow(k, label, sessionCov[k]||{count:0}, 'var(--amber)', i%2, periodBadges(rtype)));
+
+  // Sales Ledger row — count = files ingested, tooltip explains data merges into Labor Analysis
+  const slIdx = qsrPipelineRows.length;
+  const slHasData = slCov.count > 0;
+  const slRow = h('tr',{key:'sl-row',style:{background:slIdx%2?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+    h('td',{style:{padding:'6px 10px',fontWeight:600,color:slHasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
+      'QSRSoft Sales Ledger', periodBadges('sales-ledger')),
+    h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontWeight:400,fontSize:'8px'}},
+      slHasData?slCov.count+' files':'—'),
+    h('td',{colSpan:2,style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},
+      slHasData?slCov.from+(slCov.from!==slCov.to?' → '+slCov.to:'')+'  →  Labor Analysis':'—')
+  );
+
+  const pipelineRows = [
+    dataRow('schedRows', 'LifeLenz Scheduling', sessionCov.schedRows||{count:0}, 'var(--amber)', 0),
+    slRow,
+    ...qsrPipelineRows,
+    dataRow('smgRows',      'SMG VOICE Comments', sessionCov.smgRows||{count:0},      'var(--amber)', (slIdx+4)%2),
+    dataRow('deliveryRows', '3PD Delivery Mix',   sessionCov.deliveryRows||{count:0}, 'var(--amber)', (slIdx+5)%2),
+  ];
+
+  // Pre-build Supabase rows — SMG FullScale shown per period
+  const cfM = supabaseCov.monthlyTargets||{count:0};
+  const fsPeriods = supabaseCov.fsPeriods||[];
+  const cloudRows = [
+    // SMG FullScale: one sub-row per loaded month
+    ...(fsPeriods.length > 0
+      ? fsPeriods.map((p,i)=>h('tr',{key:'fs-'+p.key,style:{background:i%2?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+          h('td',{style:{padding:'5px 10px 5px 18px',color:'var(--text)',fontSize:'8.5px',display:'flex',alignItems:'center',gap:4}},
+            span({style:{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}),
+            'SMG FullScale — '+new Date(p.key+'-01').toLocaleDateString('en-US',{month:'long',year:'numeric'})),
+          h('td',{style:{padding:'5px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--accent)',fontWeight:700,fontSize:'8.5px'}},p.count+' stores'),
+          h('td',{colSpan:2,style:{padding:'5px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'7.5px'}},p.from&&p.to?p.from+' → '+p.to:'—')
+        ))
+      : [h('tr',{key:'fs-empty',style:{borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+          h('td',{style:{padding:'6px 10px',color:'var(--text3)',fontWeight:600}},'SMG FullScale Scorecard'),
+          h('td',{style:{padding:'6px 10px',textAlign:'right',color:'var(--text3)',fontFamily:'var(--mono)'}},'—'),
+          h('td',{colSpan:2,style:{padding:'6px 10px',textAlign:'right',color:'var(--text3)',fontSize:'8px'}},'No data — upload FullScale .xlsx')
+        )]
+    ),
+    h('tr',{key:'monthlyTargets',style:{background:fsPeriods.length%2===0?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+      h('td',{style:{padding:'6px 10px',fontWeight:600,color:cfM.count?'var(--text)':'var(--text3)'}},'Monthly Targets'),
+      h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:cfM.count?'var(--accent)':'var(--text3)',fontWeight:cfM.count?700:400}},cfM.count?cfM.count+' stores':'—'),
+      h('td',{colSpan:2,style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},cfM.count?cfM.label||'—':'—')
+    ),
+  ];
 
   const colVal = (c,k) => c?.[k] != null ? c[k] : '—';
 
@@ -1349,23 +1539,10 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
                   textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',
                   borderBottom:'.5px solid var(--bdr)',textAlign:i===0?'left':'right'}},(l)))
             )),
-            h('tbody',null,...Object.entries(STORE_LABELS).map(([k,label],i)=>{
-              const c=(k==='peaksRows'?peaksCov.peaksRows:k==='peaksSalesRows'?peaksCov.peaksSalesRows:cov[k])||{count:0};
-              const hasData=c.count>0;
-              return h('tr',{key:k,style:{background:i%2?'rgba(255,255,255,.015)':'transparent',
-                borderBottom:'.5px solid rgba(255,255,255,.04)'}},
-                h('td',{style:{padding:'6px 10px',fontWeight:600,
-                  color:hasData?'var(--text)':'var(--text3)'}},(label)),
-                h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',
-                  color:hasData?'var(--amber)':'var(--text3)',fontWeight:hasData?700:400}},
-                  hasData?c.count.toLocaleString():'—'),
-                h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',
-                  color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
-                h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',
-                  color:'var(--text3)',fontSize:'8px'}},hasData?c.to:'—')
-              );
-            }),
-            h('tr',{key:'records',style:{background:'rgba(255,255,255,.015)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+            h('tbody',null,
+            sectionHdr('hdr-idb','QSRSoft Operations'),
+            ...idbRows,
+            h('tr',{key:'records',style:{borderBottom:'.5px solid rgba(255,255,255,.04)'}},
               h('td',{style:{padding:'6px 10px',fontWeight:600,color:recStats.count>0?'var(--text)':'var(--text3)'}},'Store Records'),
               h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',
                 color:recStats.count>0?'var(--amber)':'var(--text3)',fontWeight:recStats.count>0?700:400}},
@@ -1373,8 +1550,13 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
               h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},
                 recStats.count>0?recStats.stores+' store'+(recStats.stores!==1?'s':''):'—'),
               h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},'—')
-            ))
-          ),
+            ),
+            sectionHdr('hdr-pipeline','Pipeline & Session Data'),
+            ...pipelineRows,
+            sectionHdr('hdr-cloud','Supabase (Cloud-backed)'),
+            ...cloudRows
+          )  // tbody
+          ),  // table
           // Info box
           totalRows>0&&div({style:{padding:'10px 14px',background:'rgba(16,185,129,.07)',
             borderRadius:'var(--r)',border:'.5px solid rgba(16,185,129,.2)',marginBottom:14,
@@ -1390,8 +1572,20 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
           ),
           // Status
           status&&div({style:{marginBottom:10,fontSize:'9px',color:'#10b981'}},(status)),
+          // Staleness legend
+          div({style:{display:'flex',gap:12,marginBottom:12,fontSize:'8px',color:'var(--text3)',alignItems:'center'}},
+            span(null,'Data freshness:'),
+            ...[['#10b981','≤3 days'],['#f59e0b','4–10 days'],['#ef4444','11+ days']].map(([c,l])=>
+              span({style:{display:'flex',alignItems:'center',gap:3}},
+                span({style:{display:'inline-block',width:6,height:6,borderRadius:'50%',background:c}}), l)
+            )
+          ),
           // Actions
-          div({style:{display:'flex',gap:8,justifyContent:'flex-end'}},
+          div({style:{display:'flex',gap:8,justifyContent:'space-between',alignItems:'center',flexWrap:'wrap'}},
+            div({style:{display:'flex',gap:8}}),
+            div({style:{display:'flex',gap:8,alignItems:'center'}},
+            onLoad&&btn({className:'btn btn-sm',style:{background:'rgba(96,165,250,.12)',border:'.5px solid rgba(96,165,250,.3)',color:'#60a5fa',fontSize:'9px'},
+              onClick:()=>{onClose();onLoad();}},'📂 Upload Files'),
             totalRows>0&&btn({className:'btn btn-sm',
               style:{color:'#f87171',border:'.5px solid rgba(248,113,113,.3)',fontSize:'9px'},
               onClick:handleClear},'🗑 Clear All Stored Data'),
@@ -1428,7 +1622,8 @@ function DataManagerPanel({ds, idbCoverage, onClose}) {
         color:wxMsg.startsWith('✓')?'#10b981':'#f87171',border:'.5px solid '+(wxMsg.startsWith('✓')?'rgba(16,185,129,.25)':'rgba(248,113,113,.25)')}},
         wxMsg),
             btn({className:'btn btn-sm btn-a',onClick:onClose},'Close')
-          )
+            )  // inner flex div (actions)
+          )  // actions row
         )
       )
     )
@@ -2099,7 +2294,7 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
 
 
 function FOBAnalysisPanel({stores, ds, settings, onClose}){
-  const allLocs=(stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
+  const allLocs=React.useMemo(()=>(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&DEFAULT_TARGETS[s.loc]).map(s=>s.loc),[stores]);
   const okLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='OK'),[allLocs]);
   const flLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='FL'),[allLocs]);
   const [selLoc,setSelLoc]=React.useState('all');
@@ -2125,12 +2320,12 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   // Auto-select most recent month
   React.useEffect(()=>{if(months.length&&!selMonth)setSelMonth(months[0]);},[months]);
 
-  // Merge all targets
+  // Merge all targets — yearly file (ds.targets) overrides DEFAULT_TARGETS, monthly (ds.monthlyTargets) overrides yearly
   const allTargets=React.useMemo(()=>{
     const t={};
-    allLocs.forEach(loc=>{t[loc]=(settings.targets&&settings.targets[loc])||DEFAULT_TARGETS[loc]||{};});
+    allLocs.forEach(loc=>{t[loc]={...(DEFAULT_TARGETS[loc]||{}),...((ds&&ds.targets&&ds.targets[loc])||{}),...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{})};});
     return t;
-  },[allLocs,settings]);
+  },[allLocs,ds]);
 
   const metrics=React.useMemo(()=>{
     // For OK/FL market filters, pre-filter fobRows to active locs then pass 'all'
@@ -7901,4 +8096,523 @@ function ChannelIntelligencePanel({stores, ds, onClose}) {
   );
 }
 
-export { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ModelHealthBadge, ChannelIntelligencePanel };
+// ── Monthly Targets Email Report ──────────────────────────────────────────────
+// Computes per-store actuals from loaded ds for a given year/month.
+// Returns { byLoc, minDate, maxDate, days } where byLoc[loc] = {sales,crewLaborPct,fobBasePct,fobTotalPct,tpph}
+function computeMonthActuals(ds, year, month) {
+  const labor = {}, fob = {};
+  const dates = new Set();
+
+  // Aggregate labor rows
+  (ds&&ds.laborRows||[]).forEach(r => {
+    if (!r.date || !r.loc) return;
+    const d = r.date instanceof Date ? r.date : new Date(r.date);
+    if (d.getFullYear() !== year || d.getMonth()+1 !== month) return;
+    dates.add(d.toISOString().slice(0,10));
+    const k = String(r.loc);
+    if (!labor[k]) labor[k] = {sales:0, laborDol:0, tpphNum:0, tpphDen:0};
+    const s = r.sales||0;
+    labor[k].sales += s;
+    labor[k].laborDol += (r.laborPct||0) * s;
+    if (r.tpph > 0) { labor[k].tpphNum += r.tpph * s; labor[k].tpphDen += s; }
+  });
+
+  // Aggregate FOB rows
+  (ds&&ds.fobRows||[]).forEach(r => {
+    if (!r.date || !r.loc) return;
+    const d = r.date instanceof Date ? r.date : new Date(r.date);
+    if (d.getFullYear() !== year || d.getMonth()+1 !== month) return;
+    const k = String(r.loc);
+    if (!fob[k]) fob[k] = {sales:0, baseFoodDol:0, totalFoodDol:0};
+    const s = r.sales||0;
+    fob[k].sales += s;
+    fob[k].baseFoodDol += (r.baseFoodPct||0) * s;
+    fob[k].totalFoodDol += (r.pLFoodPct||0) * s;
+  });
+
+  const allLocs = new Set([...Object.keys(labor), ...Object.keys(fob)]);
+  const byLoc = {};
+  allLocs.forEach(loc => {
+    const lb = labor[loc]||{};
+    const fb = fob[loc]||{};
+    const sales = lb.sales||fb.sales||0;
+    byLoc[loc] = {
+      sales,
+      crewLaborPct: lb.sales > 0 ? lb.laborDol / lb.sales : null,
+      tpph:         lb.tpphDen > 0 ? lb.tpphNum / lb.tpphDen : null,
+      fobBasePct:   fb.sales > 0 ? fb.baseFoodDol / fb.sales : null,
+      fobTotalPct:  fb.sales > 0 ? fb.totalFoodDol / fb.sales : null,
+    };
+  });
+
+  const sortedDates = [...dates].sort();
+  return { byLoc, minDate:sortedDates[0]||null, maxDate:sortedDates[sortedDates.length-1]||null, days:sortedDates.length };
+}
+
+// Rolls up a list of stores' actuals and targets into group-level weighted averages.
+function rollupGroup(locs, mt, actuals) {
+  let tSales=0, aSales=0;
+  let tCrewLaborDol=0, tBonusDol=0, tFobBaseDol=0, tFobTotalDol=0, tTpphNum=0, tTpphDen=0;
+  let aCrewLaborDol=0, aFobBaseDol=0, aFobTotalDol=0, aTpphNum=0, aTpphDen=0;
+
+  locs.forEach(loc => {
+    const t = mt[loc]||{};
+    const a = (actuals&&actuals.byLoc&&actuals.byLoc[loc])||{};
+    const ts = t.tProdSales||0;
+    const as = a.sales||0;
+    tSales += ts;
+    aSales += as;
+    if (ts > 0) {
+      tCrewLaborDol += (t.tCrewLabor||0) * ts;
+      tBonusDol     += (t.tBonusLabor||0) * ts;
+      tFobBaseDol   += (t.tFOBBase||0) * ts;
+      tFobTotalDol  += (t.tFOBTotal||0) * ts;
+      if (t.tTpph > 0) { tTpphNum += t.tTpph * ts; tTpphDen += ts; }
+    }
+    if (as > 0) {
+      aCrewLaborDol += (a.crewLaborPct||0) * as;
+      aFobBaseDol   += (a.fobBasePct||0) * as;
+      aFobTotalDol  += (a.fobTotalPct||0) * as;
+      if (a.tpph > 0) { aTpphNum += a.tpph * as; aTpphDen += as; }
+    }
+  });
+
+  return {
+    tSales, aSales,
+    tCrewLabor:  tSales > 0 ? tCrewLaborDol / tSales : null,
+    tBonusLabor: tSales > 0 ? tBonusDol / tSales : null,
+    tFobBase:    tSales > 0 ? tFobBaseDol / tSales : null,
+    tFobTotal:   tSales > 0 ? tFobTotalDol / tSales : null,
+    tTpph:       tTpphDen > 0 ? tTpphNum / tTpphDen : null,
+    aCrewLabor:  aSales > 0 ? aCrewLaborDol / aSales : null,
+    aFobBase:    aSales > 0 ? aFobBaseDol / aSales : null,
+    aFobTotal:   aSales > 0 ? aFobTotalDol / aSales : null,
+    aTpph:       aTpphDen > 0 ? aTpphNum / aTpphDen : null,
+  };
+}
+
+function buildEmailReportHTML(mt, ds, settings, selPeriod) {
+  const year = selPeriod?.year || new Date().getFullYear();
+  const month = selPeriod?.month || (new Date().getMonth()+1);
+  const periodName = new Date(year, month-1, 1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const actuals = computeMonthActuals(ds, year, month);
+
+  // Build data-coverage note
+  let coverageNote = '';
+  if (actuals.days > 0) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const thruDate = actuals.maxDate
+      ? new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})
+      : '';
+    coverageNote = `Actuals: ${actuals.days} of ${daysInMonth} days (through ${thruDate})`;
+  } else {
+    coverageNote = 'Actuals: no session data loaded for this period';
+  }
+
+  const hasActuals = actuals.days > 0;
+
+  const ops = settings.operators || {};
+  const knownLocs = new Set(Object.keys(mt).filter(l=>l!=='__period'));
+
+  // Group stores by operator — intersect with what's in mt
+  const groups = Object.entries(ops).map(([opName, locs]) => ({
+    opName,
+    locs: locs.map(String).filter(l => knownLocs.has(l)),
+  })).filter(g => g.locs.length > 0);
+
+  // Any stores in mt not assigned to an operator group
+  const assignedLocs = new Set(groups.flatMap(g => g.locs));
+  const unassigned = [...knownLocs].filter(l => !assignedLocs.has(l));
+  if (unassigned.length > 0) groups.push({ opName: 'Other', locs: unassigned });
+
+  const f$ = v => v != null ? '$'+(v/1000).toFixed(0)+'K' : '—';
+  const fpct = v => v != null ? (v*100).toFixed(2)+'%' : '—';
+  const fdelta = (a, t) => {
+    if (a == null || t == null) return '—';
+    const d = a - t;
+    const sign = d >= 0 ? '+' : '';
+    return sign + (d*100).toFixed(2)+'pp';
+  };
+  const deltaColor = (a, t, lowerBetter=false) => {
+    if (a == null || t == null) return '#94a3b8';
+    const better = lowerBetter ? a <= t : a >= t;
+    const within = Math.abs(a - t) <= 0.005;
+    if (within) return '#f59e0b';
+    return better ? '#10b981' : '#ef4444';
+  };
+
+  const thStyle = 'background:#1e293b;color:#94a3b8;font-size:10px;font-weight:700;padding:5px 8px;text-align:center;border-right:1px solid #334155;';
+  const thLStyle = thStyle + 'text-align:left;';
+  const tdStyle = 'font-size:11px;padding:4px 8px;border-right:1px solid #1e293b;border-bottom:1px solid #1e293b;';
+  const tdRStyle = tdStyle + 'text-align:right;font-family:monospace;';
+  const rollStyle = 'background:#0f172a;font-weight:700;';
+
+  let groupsHTML = '';
+  let districtLocs = [];
+
+  groups.forEach(({opName, locs}) => {
+    districtLocs = districtLocs.concat(locs);
+    const rollup = rollupGroup(locs, mt, actuals);
+
+    const storeRows = locs.map(loc => {
+      const t = mt[loc]||{};
+      const a = (actuals.byLoc&&actuals.byLoc[loc])||{};
+      const hasSales = a.sales > 0;
+      const stName = (settings.storeNames&&settings.storeNames[loc]) || '#'+loc;
+
+      const tSalesMTD = t.tProdSales
+        ? t.tProdSales * (actuals.days / new Date(year, month, 0).getDate())
+        : null;
+
+      return `<tr>
+        <td style="${tdStyle}white-space:nowrap">${stName} <span style="color:#64748b;font-size:9px">(${loc})</span></td>
+        <td style="${tdRStyle}">${f$(t.tProdSales)}</td>
+        ${hasActuals ? `<td style="${tdRStyle}color:${hasSales?'#e2e8f0':'#475569'}">${hasSales?f$(a.sales):'—'}</td>` : ''}
+        <td style="${tdRStyle}">${fpct(t.tCrewLabor)}</td>
+        ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(a.crewLaborPct,t.tCrewLabor,true)}">${fdelta(a.crewLaborPct,t.tCrewLabor)}</td>` : ''}
+        <td style="${tdRStyle}">${fpct(t.tFOBBase)}</td>
+        ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(a.fobBasePct,t.tFOBBase,true)}">${fdelta(a.fobBasePct,t.tFOBBase)}</td>` : ''}
+        <td style="${tdRStyle}">${fpct(t.tFOBTotal)}</td>
+        ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(a.fobTotalPct,t.tFOBTotal,true)}">${fdelta(a.fobTotalPct,t.tFOBTotal)}</td>` : ''}
+        <td style="${tdRStyle}">${t.tTpph ? t.tTpph.toFixed(2) : '—'}</td>
+        ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(a.tpph,t.tTpph,false)}">${a.tpph!=null&&t.tTpph?((a.tpph-t.tTpph)>=0?'+':'')+((a.tpph-t.tTpph).toFixed(2)):'—'}</td>` : ''}
+      </tr>`;
+    }).join('');
+
+    const rollupRow = `<tr style="${rollStyle}">
+      <td style="${tdStyle}font-weight:700;color:#f59e0b">GROUP TOTAL — ${opName}</td>
+      <td style="${tdRStyle}color:#f59e0b">${f$(rollup.tSales)}</td>
+      ${hasActuals ? `<td style="${tdRStyle}color:#60a5fa">${rollup.aSales>0?f$(rollup.aSales):'—'}</td>` : ''}
+      <td style="${tdRStyle}color:#f59e0b">${fpct(rollup.tCrewLabor)}</td>
+      ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(rollup.aCrewLabor,rollup.tCrewLabor,true)}">${fdelta(rollup.aCrewLabor,rollup.tCrewLabor)}</td>` : ''}
+      <td style="${tdRStyle}color:#f59e0b">${fpct(rollup.tFobBase)}</td>
+      ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(rollup.aFobBase,rollup.tFobBase,true)}">${fdelta(rollup.aFobBase,rollup.tFobBase)}</td>` : ''}
+      <td style="${tdRStyle}color:#f59e0b">${fpct(rollup.tFobTotal)}</td>
+      ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(rollup.aFobTotal,rollup.tFobTotal,true)}">${fdelta(rollup.aFobTotal,rollup.tFobTotal)}</td>` : ''}
+      <td style="${tdRStyle}color:#f59e0b">${rollup.tTpph!=null?rollup.tTpph.toFixed(2):'—'}</td>
+      ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(rollup.aTpph,rollup.tTpph,false)}">${rollup.aTpph!=null&&rollup.tTpph!=null?((rollup.aTpph-rollup.tTpph>=0)?'+':'')+((rollup.aTpph-rollup.tTpph).toFixed(2)):'—'}</td>` : ''}
+    </tr>`;
+
+    const colspanSales = hasActuals ? 2 : 1;
+    const colspanPct   = hasActuals ? 2 : 1;
+
+    groupsHTML += `
+    <tr style="background:#1e293b">
+      <td colspan="100%" style="padding:8px 12px;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.5px;text-transform:uppercase">
+        ${opName}
+      </td>
+    </tr>
+    ${storeRows}
+    ${rollupRow}
+    <tr><td colspan="100%" style="height:8px;background:#0f172a"></td></tr>`;
+  });
+
+  // District total
+  const distRollup = rollupGroup(districtLocs, mt, actuals);
+  const districtRow = `<tr style="background:#172554;font-weight:800">
+    <td style="${tdStyle}font-weight:800;color:#93c5fd;font-size:12px">DISTRICT TOTAL</td>
+    <td style="${tdRStyle}color:#93c5fd;font-size:12px">${f$(distRollup.tSales)}</td>
+    ${hasActuals ? `<td style="${tdRStyle}color:#60a5fa;font-size:12px">${distRollup.aSales>0?f$(distRollup.aSales):'—'}</td>` : ''}
+    <td style="${tdRStyle}color:#93c5fd">${fpct(distRollup.tCrewLabor)}</td>
+    ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(distRollup.aCrewLabor,distRollup.tCrewLabor,true)}">${fdelta(distRollup.aCrewLabor,distRollup.tCrewLabor)}</td>` : ''}
+    <td style="${tdRStyle}color:#93c5fd">${fpct(distRollup.tFobBase)}</td>
+    ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(distRollup.aFobBase,distRollup.tFobBase,true)}">${fdelta(distRollup.aFobBase,distRollup.tFobBase)}</td>` : ''}
+    <td style="${tdRStyle}color:#93c5fd">${fpct(distRollup.tFobTotal)}</td>
+    ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(distRollup.aFobTotal,distRollup.tFobTotal,true)}">${fdelta(distRollup.aFobTotal,distRollup.tFobTotal)}</td>` : ''}
+    <td style="${tdRStyle}color:#93c5fd">${distRollup.tTpph!=null?distRollup.tTpph.toFixed(2):'—'}</td>
+    ${hasActuals ? `<td style="${tdRStyle}color:${deltaColor(distRollup.aTpph,distRollup.tTpph,false)}">${distRollup.aTpph!=null&&distRollup.tTpph!=null?((distRollup.aTpph-distRollup.tTpph>=0)?'+':'')+(distRollup.aTpph-distRollup.tTpph).toFixed(2):'—'}</td>` : ''}
+  </tr>`;
+
+  const hdrCols = hasActuals
+    ? `<th style="${thLStyle}min-width:160px">Store</th>
+       <th colspan="2" style="${thStyle}min-width:100px">Sales $</th>
+       <th colspan="2" style="${thStyle}">Crew Labor %</th>
+       <th colspan="2" style="${thStyle}">Base Food %</th>
+       <th colspan="2" style="${thStyle}">Total Food %</th>
+       <th colspan="2" style="${thStyle}">TPPH</th>`
+    : `<th style="${thLStyle}min-width:160px">Store</th>
+       <th style="${thStyle}">Sales $</th>
+       <th style="${thStyle}">Crew Labor %</th>
+       <th style="${thStyle}">Base Food %</th>
+       <th style="${thStyle}">Total Food %</th>
+       <th style="${thStyle}">TPPH</th>`;
+
+  const subHdrCols = hasActuals
+    ? `<tr style="background:#0f172a">
+        <th style="${thStyle}"></th>
+        <th style="${thStyle}color:#60a5fa">Target</th><th style="${thStyle}color:#34d399">Actual MTD</th>
+        <th style="${thStyle}color:#60a5fa">Target</th><th style="${thStyle}color:#e2e8f0">vs Tgt</th>
+        <th style="${thStyle}color:#60a5fa">Target</th><th style="${thStyle}color:#e2e8f0">vs Tgt</th>
+        <th style="${thStyle}color:#60a5fa">Target</th><th style="${thStyle}color:#e2e8f0">vs Tgt</th>
+        <th style="${thStyle}color:#60a5fa">Target</th><th style="${thStyle}color:#e2e8f0">vs Tgt</th>
+      </tr>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>${periodName} Monthly Targets — Meridian</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;background:#0a0f1e;color:#e2e8f0;margin:0;padding:20px;}
+  h1{font-size:18px;color:#f8fafc;margin:0 0 4px}
+  .sub{font-size:12px;color:#64748b;margin-bottom:16px}
+  table{border-collapse:collapse;width:100%;margin-bottom:24px}
+  @media print{body{background:#fff;color:#000}th{background:#e2e8f0!important;color:#000!important}td{border-color:#cbd5e1!important}}
+</style>
+</head><body>
+<h1>📊 ${periodName} — Monthly Targets Report</h1>
+<div class="sub">Generated by Meridian · ${new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})} · ${coverageNote}</div>
+<table>
+  <thead>
+    <tr>${hdrCols}</tr>
+    ${subHdrCols}
+  </thead>
+  <tbody>
+    ${groupsHTML}
+    ${districtRow}
+  </tbody>
+</table>
+<div style="font-size:10px;color:#475569;margin-top:8px">
+  All % targets are weighted by projected store sales (tProdSales). Actuals weighted by actual sales for the period.
+  Variance shown as percentage-point difference vs target. Green = at/above target (or at/below for cost metrics).
+</div>
+</body></html>`;
+}
+
+// ── Monthly Projections Panel ─────────────────────────────────────────────────
+const PROJ_FIELDS = [
+  {g:'Sales & Labor', key:'tProdSales',   l:'Sales $',    fmt:v=>v!=null?'$'+(v/1000).toFixed(0)+'K':'—', dollar:true},
+  {g:'Sales & Labor', key:'tCrewLabor',   l:'Crew Labor', fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
+  {g:'Sales & Labor', key:'tBonusLabor',  l:'Bonus Cr',   fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
+  {g:'Sales & Labor', key:'tTpph',        l:'TPPH',       fmt:v=>v!=null?v.toFixed(2):'—'},
+  {g:'Food Cost',     key:'tFOBBase',     l:'Base Food',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tDiscCoupPct', l:'Disc Coup',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tCompWaste',   l:'Comp Wst',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tRawWaste',    l:'Raw Wst',    fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tCondiment',   l:'Condmt',     fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tEmpFood',     l:'Emp Food',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tStatLoss',    l:'Stat Loss',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tUnex',        l:'Unex Diff',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tFOBTarget',   l:'FOB Tgt',    fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Food Cost',     key:'tFOBTotal',    l:'Total Food', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Other Costs',   key:'tPaperCost',   l:'Paper',      fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Other Costs',   key:'tOpSupply',    l:'Op Supply',  fmt:v=>v!=null?'$'+(v||0).toLocaleString():'—', dollar:true},
+];
+
+function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
+  const {useState, useEffect, useMemo} = React;
+  const [periods,      setPeriods]      = useState([]);
+  const [selPeriod,    setSelPeriod]    = useState(null); // {year, month} or null = use ds
+  const [fetchedMt,    setFetchedMt]    = useState(null); // loaded when selPeriod set
+  const [loading,      setLoading]      = useState(false);
+  const [myStoresOnly, setMyStoresOnly] = useState(true);
+  const [manualOpen,   setManualOpen]   = useState(false);
+  const [manualYear,   setManualYear]   = useState(new Date().getFullYear());
+  const [manualMonth,  setManualMonth]  = useState(new Date().getMonth()+1);
+
+  // Load available periods on mount
+  useEffect(()=>{
+    listMonthlyTargetPeriods().then(p=>{
+      setPeriods(p||[]);
+      // Determine the current period — try Supabase-loaded metadata first,
+      // then fall back to the parse-time metadata (set when files are dragged in)
+      const base = ds&&ds.monthlyTargets||{};
+      const locs0 = Object.keys(base).filter(l=>l!=='__period');
+      const first = locs0.length ? base[locs0[0]] : null;
+      if(first&&first._year&&first._month){
+        setSelPeriod({year:first._year,month:first._month});
+      } else if(ds&&ds.monthlyTargetsMeta&&ds.monthlyTargetsMeta.year){
+        setSelPeriod({year:ds.monthlyTargetsMeta.year,month:ds.monthlyTargetsMeta.month});
+      } else if(p&&p.length>0){
+        setSelPeriod({year:p[0].year,month:p[0].month});
+      }
+    });
+  },[]);
+
+  // Load when period selection changes away from current ds period
+  useEffect(()=>{
+    if(!selPeriod) return;
+    const base = ds&&ds.monthlyTargets||{};
+    const locs0 = Object.keys(base).filter(l=>l!=='__period');
+    const first0 = locs0.length ? base[locs0[0]] : null;
+    if(first0&&first0._year===selPeriod.year&&first0._month===selPeriod.month){
+      setFetchedMt(null); // use ds data
+      return;
+    }
+    setLoading(true);
+    loadMonthlyTargets(selPeriod.year, selPeriod.month).then(mt=>{
+      setFetchedMt(mt||{});
+      setLoading(false);
+    });
+  },[selPeriod]);
+
+  // fetchedMt is null when no Supabase fetch has run, or {} (empty) when the fetch
+  // returned nothing. An empty object is truthy, so check key count before using it.
+  const mt = (fetchedMt && Object.keys(fetchedMt).length > 0)
+    ? fetchedMt
+    : (ds&&ds.monthlyTargets) || {};
+  const knownLocs = useMemo(()=>new Set((stores||[]).map(s=>String(s.loc))),[stores]);
+  const locs = useMemo(()=>{
+    const all = Object.keys(mt).filter(l=>l!=='__period').sort((a,b)=>+a-+b);
+    return myStoresOnly ? all.filter(l=>knownLocs.has(String(l))) : all;
+  },[mt, myStoresOnly, knownLocs]);
+
+  const storeName = loc => {
+    const s = (stores||[]).find(st=>String(st.loc)===String(loc));
+    return s ? s.name.slice(0,22) : '#'+loc;
+  };
+
+  // Build column group spans
+  const groups = [];
+  PROJ_FIELDS.forEach(f=>{
+    const last = groups[groups.length-1];
+    if(last&&last.g===f.g) last.count++;
+    else groups.push({g:f.g,count:1});
+  });
+
+  const periodLabel = selPeriod
+    ? new Date(selPeriod.year, selPeriod.month-1, 1).toLocaleDateString('en-US',{month:'long',year:'numeric'})
+    : 'No data';
+
+  const thS = {padding:'5px 8px',fontSize:10,fontWeight:600,color:'var(--text3)',
+    background:'var(--surf)',borderBottom:'1px solid var(--bdr)',whiteSpace:'nowrap',textAlign:'center'};
+  const tdS = {padding:'4px 8px',fontSize:11,borderBottom:'1px solid var(--bdr)',whiteSpace:'nowrap'};
+
+  // Build group header cells
+  const groupCells = groups.map(g=>h('th',{key:g.g,colSpan:g.count,
+    style:{...thS,color:'var(--accent)',borderRight:'1px solid var(--bdr)'}}, g.g));
+
+  // Build field header cells
+  const fieldCells = PROJ_FIELDS.map(f=>h('th',{key:f.key,style:{...thS,minWidth:64}},f.l));
+
+  // Build store row elements
+  const storeRowEls = locs.map(loc=>{
+    const t = mt[loc]||{};
+    const dataCells = PROJ_FIELDS.map(f=>{
+      const v = t[f.key];
+      const formatted = f.fmt(v);
+      return h('td',{key:f.key,style:{...tdS,textAlign:'right',
+        fontFamily:'var(--mono)',color:v==null?'var(--text3)':'var(--text)'}}, formatted);
+    });
+    return h('tr',{key:loc},
+      h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
+        background:'var(--surf2)',fontWeight:500,borderRight:'1px solid var(--bdr)',minWidth:170}},
+        storeName(loc)+' ('+loc+')'
+      ),
+      ...dataCells
+    );
+  });
+
+  // Period selector options
+  const periodOpts = periods.map(p=>{
+    const label2 = new Date(p.year,p.month-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});
+    const v = p.year+'-'+String(p.month).padStart(2,'0');
+    return h('option',{key:v,value:v},label2);
+  });
+
+  const selVal = selPeriod ? selPeriod.year+'-'+String(selPeriod.month).padStart(2,'0') : '';
+
+  const MONTH_NAMES=['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+
+  const loadManualPeriod = () => {
+    setSelPeriod({year:manualYear,month:manualMonth});
+    setManualOpen(false);
+  };
+
+  return div({style:{position:'fixed',inset:0,zIndex:300,background:'var(--bg)',
+    display:'flex',flexDirection:'column',overflow:'hidden'}},
+
+    // Header
+    div({style:{display:'flex',alignItems:'center',gap:8,padding:'12px 20px',
+      borderBottom:'1px solid var(--bdr)',flexShrink:0,flexWrap:'wrap'}},
+      div({style:{fontSize:16,fontWeight:700,color:'var(--text)'}},'📊 Monthly Projections'),
+      locs.length>0&&span({style:{fontSize:11,color:'var(--text3)',marginLeft:4}},
+        locs.length+' stores'),
+      div({style:{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}),
+      btn({onClick:()=>setMyStoresOnly(v=>!v),style:{
+        padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
+        background:myStoresOnly?'var(--accent)':'var(--surf)',
+        color:myStoresOnly?'#fff':'var(--text2)',
+        border:myStoresOnly?'1px solid var(--accent)':'1px solid var(--bdr)'}},
+        myStoresOnly?'My Stores':'All Stores'),
+      // Period selector — show dropdown when Supabase has saved periods, else show current label
+      periods.length>0
+        ? sel({
+            value: selVal,
+            onChange: e=>{
+              const [y,m] = e.target.value.split('-');
+              setSelPeriod({year:+y,month:+m});
+            },
+            style:{fontSize:11,padding:'4px 8px',background:'var(--surf)',
+              border:'1px solid var(--bdr)',borderRadius:4,color:'var(--text)'}},
+            ...periodOpts
+          )
+        : span({style:{fontSize:12,color:'var(--text2)',fontWeight:600}},periodLabel),
+      // Manual period picker toggle — lets user load any month from Supabase
+      btn({
+        onClick:()=>setManualOpen(v=>!v),
+        title:'Load a specific month',
+        style:{padding:'4px 8px',fontSize:11,borderRadius:4,cursor:'pointer',
+          background:manualOpen?'var(--amber)':'var(--surf)',
+          color:manualOpen?'#000':'var(--text3)',
+          border:'1px solid var(--bdr)'}},
+        '📅'),
+      manualOpen&&div({style:{display:'flex',alignItems:'center',gap:6,
+        padding:'4px 8px',background:'var(--surf2)',borderRadius:4,
+        border:'1px solid var(--bdr)'}},
+        sel({value:manualMonth,onChange:e=>setManualMonth(+e.target.value),
+          style:{fontSize:11,padding:'2px 4px',background:'var(--surf)',
+            border:'1px solid var(--bdr)',borderRadius:3,color:'var(--text)'}},
+          ...MONTH_NAMES.map((mn,i)=>h('option',{key:i+1,value:i+1},mn))
+        ),
+        h('input',{type:'number',value:manualYear,min:2020,max:2099,
+          onChange:e=>setManualYear(+e.target.value),
+          style:{width:60,fontSize:11,padding:'2px 4px',background:'var(--surf)',
+            border:'1px solid var(--bdr)',borderRadius:3,color:'var(--text)',textAlign:'center'}}),
+        btn({onClick:loadManualPeriod,style:{
+          padding:'2px 8px',fontSize:11,borderRadius:3,cursor:'pointer',
+          background:'var(--accent)',color:'#fff',border:'none'}},
+          'Load')
+      ),
+      loading&&span({style:{fontSize:11,color:'var(--text3)'}},'Loading…'),
+      locs.length>0&&btn({
+        onClick:()=>{
+          const html = buildEmailReportHTML(mt, ds, settings||{}, selPeriod);
+          const w = window.open('','_blank','width=1100,height=750,scrollbars=yes');
+          if(w){
+            w.document.write(html);
+            w.document.close();
+          }
+        },
+        title:'Open group-by-operator targets report — print or paste into email',
+        style:{padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
+          background:'rgba(96,165,250,.12)',color:'#60a5fa',
+          border:'1px solid rgba(96,165,250,.3)'}},
+        '📧 Group Report'),
+      btn({onClick:onClose,style:{marginLeft:4,padding:'4px 12px',background:'var(--surf)',
+        border:'1px solid var(--bdr)',borderRadius:4,color:'var(--text)',cursor:'pointer',fontSize:12}},'✕ Close')
+    ),
+
+    // Table
+    locs.length===0
+      ? div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
+          color:'var(--text3)',fontSize:14}},
+          'No monthly target data loaded. Upload a QSRSoft Monthly Targets report to get started.')
+      : div({style:{flex:1,overflow:'auto'}},
+          tbl({style:{borderCollapse:'collapse',width:'max-content',minWidth:'100%'}},
+            thead(null,
+              h('tr',null,
+                h('th',{rowSpan:2,style:{...thS,position:'sticky',left:0,zIndex:3,
+                  background:'var(--surf)',textAlign:'left',minWidth:170,
+                  borderRight:'1px solid var(--bdr)'}}, 'Store'),
+                ...groupCells
+              ),
+              h('tr',null,...fieldCells)
+            ),
+            tbody(null,...storeRowEls)
+          )
+        )
+  );
+}
+
+export { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ModelHealthBadge, ChannelIntelligencePanel, MonthlyProjectionsPanel };

@@ -2410,13 +2410,15 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
     {id:'crewlbr', cat:'labor', l:'Crew Labor %',        offKey:'tCrewLabor',unit:'%', lowerBetter:true,  tol:.02, dataFn:(cR,lR,oR)=>avgN(lR,'crewLaborPct')},
     {id:'actvsNd', cat:'labor', l:'Act vs Need (hrs)',   offKey:null,       unit:'hr',  lowerBetter:false, tol:2,   dataFn:(cR,lR,oR)=>avgN(lR,'actVsNeed')},
     // FOB
-    {id:'fob',     cat:'fob',   l:'FOB %',               offKey:'tFOBBase', unit:'%',   lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'fobPct')},
-    {id:'compW',   cat:'fob',   l:'Comp Waste %',         offKey:null,       unit:'%',   lowerBetter:true,  tol:.001,dataFn:(cR,lR,oR)=>avgN(cR,'compWastePct')},
-    {id:'rawW',    cat:'fob',   l:'Raw Waste %',           offKey:null,       unit:'%',   lowerBetter:true,  tol:.002,dataFn:(cR,lR,oR)=>avgN(cR,'rawWastePct')},
-    {id:'cond',    cat:'fob',   l:'Condiment %',           offKey:null,       unit:'%',   lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'condPct')},
-    {id:'empMl',   cat:'fob',   l:'Emp Meal %',            offKey:null,       unit:'%',   lowerBetter:true,  tol:.002,dataFn:(cR,lR,oR)=>avgN(cR,'empMealPct')},
-    {id:'statV',   cat:'fob',   l:'Stat Var %',            offKey:null,       unit:'%',   lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'statVarPct')},
-    {id:'disc',    cat:'fob',   l:'Disc/Coupon %',         offKey:null,       unit:'%',   lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'discPct')},
+    {id:'baseFd',  cat:'fob',   l:'Base Food %',           offKey:'tFOBBase',  unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'baseFoodPct')},
+    {id:'fob',     cat:'fob',   l:'FOB (Over Base) %',     offKey:'tFOBTarget',unit:'%',  lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'fobPct')},
+    {id:'fobTot',  cat:'fob',   l:'Total Food Cost %',     offKey:'tFOBTotal', unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'pLFoodPct')},
+    {id:'compW',   cat:'fob',   l:'Comp Waste %',          offKey:'tCompWaste',unit:'%',  lowerBetter:true,  tol:.001,dataFn:(cR,lR,oR)=>avgN(cR,'compWastePct')},
+    {id:'rawW',    cat:'fob',   l:'Raw Waste %',            offKey:'tRawWaste', unit:'%',  lowerBetter:true,  tol:.002,dataFn:(cR,lR,oR)=>avgN(cR,'rawWastePct')},
+    {id:'cond',    cat:'fob',   l:'Condiment %',            offKey:'tCondiment',unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'condPct')},
+    {id:'empMl',   cat:'fob',   l:'Emp Meal %',             offKey:'tEmpFood',  unit:'%',  lowerBetter:true,  tol:.002,dataFn:(cR,lR,oR)=>avgN(cR,'empMealPct')},
+    {id:'statV',   cat:'fob',   l:'Stat Var %',             offKey:'tStatLoss', unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'statVarPct')},
+    {id:'disc',    cat:'fob',   l:'Disc/Coupon %',          offKey:null,        unit:'%',  lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'discPct')},
     // POS Controls
     {id:'cashOS',  cat:'pos',   l:'Cash O/S %',            offKey:null,       unit:'%',   lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'cashOSPct')},
     {id:'tRedB',   cat:'pos',   l:'T-Red Before %',        offKey:null,       unit:'%',   lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'tRedBPct')},
@@ -2462,6 +2464,8 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
       tpph:  bqAvg(lAll,'tpph',true)||bqAvg(cAll,'tpph',true),
       labor: bqAvg(cAll,'laborPct',false)||bqAvg(lAll,'laborPct',false),
       fob:   bqAvg(cAll,'fobPct',false),
+      baseFd:bqAvg(cAll,'baseFoodPct',false),
+      fobTot:bqAvg(cAll,'pLFoodPct',false),
       cashOS:bqAvg(cAll,'cashOSPct',false),
       tRedB: bqAvg(cAll,'tRedBPct',false),
       gc:    bqAvg(lAll,'gc',true),
@@ -2469,26 +2473,27 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
     };
   },[ds,selLoc]);
 
-  // Official targets — from DEFAULT_TARGETS for single store, org avg for 'all'
+  // Official targets — yearly (ds.targets) then monthly (ds.monthlyTargets) override DEFAULT_TARGETS
+  const mergedT = loc => ({...(DEFAULT_TARGETS[loc]||{}), ...((ds&&ds.targets&&ds.targets[loc])||{}), ...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{})});
   const officialT = uM(()=>{
     if(selLoc==='all'){
       const locs=Object.keys(DEFAULT_TARGETS);
       const agg={};
-      for(const key of ['tOepe','tPark','tKvst','tR2p','tTpph','tLabor','tCrewLabor','tFOBBase']){
-        const vals=locs.map(l=>DEFAULT_TARGETS[l][key]).filter(v=>v!=null&&v>0);
+      for(const key of ['tOepe','tPark','tKvst','tR2p','tTpph','tLabor','tCrewLabor','tFOBBase','tFOBTarget','tFOBTotal','tCompWaste','tRawWaste','tCondiment','tEmpFood','tStatLoss']){
+        const vals=locs.map(l=>mergedT(l)[key]).filter(v=>v!=null&&v>0);
         agg[key]=vals.length?vals.reduce((a,b)=>a+b)/vals.length:null;
       }
       return agg;
     }
-    return DEFAULT_TARGETS[selLoc]||{};
-  },[selLoc]);
+    return mergedT(selLoc);
+  },[selLoc,ds]);
 
-  const smartKeyMap = {oepe:'oepe',park:'park',kvst:'kvst',r2p:'r2p',tpph:'tpph',labor:'labor',crewlbr:'labor',fob:'fob',cashOS:'cashOS',tRedB:'tRedB',gc:'gc',avgChk:'avgChk'};
+  const smartKeyMap = {oepe:'oepe',park:'park',kvst:'kvst',r2p:'r2p',tpph:'tpph',labor:'labor',crewlbr:'labor',baseFd:'baseFd',fob:'fob',fobTot:'fobTot',cashOS:'cashOS',tRedB:'tRedB',gc:'gc',avgChk:'avgChk'};
 
   const fmtVal = (v,m)=>{
     if(v==null) return '—';
     if(m.unit==='s') return Math.round(v)+'s';
-    if(m.unit==='%') return (v*100).toFixed(1)+'%';
+    if(m.unit==='%') return (v*100).toFixed(2)+'%';
     if(m.unit==='$') return '$'+v.toFixed(2);
     return v.toFixed(1);
   };
@@ -2571,7 +2576,7 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
             const sIcon   = statusIcon(cur,offVal,m);
             const gap     = cur!=null&&offVal!=null ? (m.lowerBetter?(cur-offVal):-(cur-offVal)) : null;
             const gapStr  = gap!=null?(m.unit==='s'?(gap>0?'+':'')+Math.round(gap)+'s':
-              m.unit==='%'?(gap>0?'+':'')+((gap*100).toFixed(1))+'%':
+              m.unit==='%'?(gap>0?'+':'')+((gap*100).toFixed(2))+'%':
               (gap>0?'+':'')+gap.toFixed(1)):null;
             return tr({key:m.id,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
               background:i%2?'rgba(255,255,255,.015)':'transparent'}},

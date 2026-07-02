@@ -9,7 +9,7 @@ const ReactDOM = { createRoot }
 
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS } from '../constants.js';
+import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
@@ -24,12 +24,16 @@ import { computeSmartTargets, SmartTargetPanel } from '../features/smart-targets
 import { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor } from '../views/labor-tools.js';
 import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief } from '../features/projections.js';
 import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard } from '../views/store-analytics.js';
-import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel } from '../views/analytics.js';
+import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
 import { DeliveryMixPanel } from '../views/delivery-mix.js';
+import { SchedulingPanel } from '../views/scheduling.js';
 import { AdminPanel } from '../views/admin.js';
-import { supabase } from '../lib/supabase.js';
+import { SMGVoicePanel } from '../views/smg-voice.js';
+import { FOBEOMPanel } from '../views/fob-eom.js';
+import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
+import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveLifeLenzSchedule, loadLifeLenzSchedule } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -41,7 +45,8 @@ import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance,
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
-import { detectType } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor } from '../parsers/index.js';
+import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 import {
   fetchForecastWeather,
   ymKey, loadTargetsV2, saveTargetsV2, getMonthTargets, getTargetsForDate, setMonthTargets,
@@ -64,9 +69,62 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.242';
-const MERIDIAN_BUILD_DATE = '2026-06-28';
+const MERIDIAN_VERSION    = '4.259';
+const MERIDIAN_BUILD_DATE = '2026-07-02';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.259', date:'2026-07-02', changes:[
+    'Nav rename pass: Command Center→Home, Priority Brief→Action Items, Labor Analytics→Labor, FOB Analysis→Food Cost, FOB EOM Check→End of Month, Guest Voice→Voice (SMG), Scheduling Intel→Scheduling, District Summary→Organization Overview, Delivery Mix→3PO Delivery, Morning Brief→Daily Brief, Store KB→Store Notes, Rankings→Rankings and Dashboards, Perf Reviews→Performance Reviews.',
+  ]},
+  {version:'4.258', date:'2026-07-01', changes:[
+    'detectType now recognises QSRSoft underscore-separated filenames (labor_analysis_daily, sales_ledger_daily, cash_sheet_extract_daily, daily_glimpse_daily, labor_exceptions_daily). Previously sales_ledger and daily_glimpse were undetected, cash_sheet fell through to the wrong type (ctrl), and labor_analysis was caught only by a fuzzy low-confidence match.',
+  ]},
+  {version:'4.257', date:'2026-07-01', changes:[
+    'EOM Summary: OT Hours and OT $ now auto-populated from Operations Report period-summary row (manual entry still overrides). projLaborPct now checks tCrewLabor OR tLabor — fixes blank Crew Labor projection when monthly targets were loaded from Supabase (which stored tCrewLabor, not tLabor). Monthly targets + meta now persisted to OPFS alongside row data — survive refresh without Supabase round-trip.',
+  ]},
+  {version:'4.256', date:'2026-07-01', changes:[
+    'EOM Summary data wiring fixes: actSales and actLaborPct now pulled from laborRows (Operations Report Sales sheet) when not present in FOB rows — uses the row with highest sales (period-summary totals >> single-day totals) as the monthly figure. Cash auto-population rounded to 2 decimal places (no more -363.560000000). EditCell initial value displays with 2 decimal places instead of raw float string.',
+  ]},
+  {version:'4.255', date:'2026-07-01', changes:[
+    'Operations Report date parsing hardened: now accepts single-date filenames (was requiring 2+ dates — silently ignored "Operations Report 2026-06-30.xlsx" style names), handles MM/DD/YYYY and MM-DD-YYYY filename formats, adds month-name fallback ("June 2026 Operations Report" → uses last day of June), and validates all extracted dates before using them. Fixes bug where June 30 rows were being assigned June 29 as their date.',
+  ]},
+  {version:'4.254', date:'2026-07-01', changes:[
+    'EOM Supervisor Summary (nav: EOM Summary): new panel that recreates the monthly supervisor patch summary in-app. Auto-populates Net Sales, Total Food Cost %, Food Over Base %, and Crew Labor % from uploaded FOB reports and Monthly Projections (tProdSales, tFOBTotal, tFOBTarget, tLabor, tOpSupply). DEFAULT_TARGETS used as fallback for sales/labor targets when QSRSoft monthly file not loaded. Yellow editable cells for Op Supplies actual, Cash +/−, OT Hours, OT Dollar, labor Transfers and Unclocked Labor — saved to localStorage per month. Filter by Supervisor, Operator, or All Stores. Patch rollup (sales-weighted %) shown at top. Printable (landscape, no chrome). Variance $ amounts calculated as (actual% − proj%) × actual sales. Total shaded boxes = FC$ + FOB$ + Labor New Total$ + OT$.',
+  ]},
+  {version:'4.253', date:'2026-07-01', changes:[
+    'Morning Brief: food cost and SMG OSAT signals added. Brief now shows Base Food % and OSAT in each store\'s metric grid (when FOB/SMG data is loaded). Two new correlation rules — FOOD_COST_HIGH (flags ≥33% red, ≥30% amber) and SMG_OSAT_LOW (flags <65% red, <72% amber) — with full detail and coaching action. Data source coverage pills in panel header show which data types are loaded (Labor / Controls / 3 Peaks / Food Cost / SMG OSAT). Data source line in expanded store card lists FOB month and SMG month when available.',
+  ]},
+  {version:'4.252', date:'2026-07-01', changes:[
+    'Data Manager: staleness indicators — colored dot and "Xd" age suffix on each row (green ≤3d, amber ≤10d, red 11+d). SMG FullScale shown as individual per-period rows (June 2026 · 12 stores, etc.). Delivery Mix coverage row added. Weather Data row added. Upload Files shortcut button closes the panel and opens the file picker. Staleness legend at the bottom.',
+  ]},
+  {version:'4.251', date:'2026-07-01', changes:[
+    'Operator Summary: now driven by settings.operators / settings.supervisorGroups instead of hardcoded INV_ORG_COORDS. FOB food cost columns (Base Food % and Total Food %, sales-weighted rollup) shown when FOB data is loaded. Focus Group dropdown filters to a single operator. Sort, Group, and Focus controls collapsed to two rows.',
+  ]},
+  {version:'4.250', date:'2026-07-01', changes:[
+    'Guest Voice FullScale: fixed three bugs — (1) parser now searches all workbook sheets for the data sheet instead of blindly taking SheetNames[0]; (2) auto-detects OSAT % column instead of hardcoded index; (3) fixed stale selPeriod and tab initialization so scores show immediately after Supabase load without requiring a manual tab click.',
+  ]},
+  {version:'4.249', date:'2026-07-01', changes:[
+    'Scheduling Intel: Get Data panel now detects missing weeks (last 4) and shows one-click quick-select buttons for each gap — click a missing week pill to pre-fill the date range, then copy the terminal command. Red badge on Get Data button shows the count of missing weeks at a glance.',
+  ]},
+  {version:'4.248', date:'2026-07-01', changes:[
+    'Scheduling Intel: panel-level week navigator — prev/next arrows, week pills (up to 8 most recent), date picker jump, data-loaded badge. All tabs (Opportunity, District, Store) now respect the single selected week. OpportunityReport hides its own week picker when panel controls selection.',
+  ]},
+  {version:'4.247', date:'2026-07-01', changes:[
+    'Monthly Targets: 📧 Group Report button opens print/email-ready HTML — one section per operator group with stores, weighted rollup row, and district total. Columns: Sales target vs MTD actual, Crew Labor %, Base Food %, Total Food %, TPPH — each with target and vs-target delta. Data coverage note shows days loaded and through-date.',
+    'Guest Voice: SMG FullScale filename detector now matches "Full Scale Report" (with space) in addition to fullscale/full_scale; sheet-name fallback added (Small Graph sheet = FullScale workbook). Run smg_fullscale Supabase table SQL, then re-upload FullScale file.',
+  ]},
+  {version:'4.246', date:'2026-07-01', changes:[
+    'Beta Mode: admins can click "β" in the topbar to collapse the nav to stable-only panels (Rankings, Targets, Monthly Targets, Perf Reviews, Labor Analytics, FOB Analysis, FOB EOM Check, Guest Voice, District Summary, Store KB, Delivery Mix, Scheduling Intel, Morning Brief, Settings, Data Manager). Experimental/forecasting panels are hidden. Toggle persists in localStorage.',
+    'SMG VOICE thresholds: configurable via ⚙ Thresholds button — standard, yellow band, per-metric. Color bands (green/yellow/red) applied to all table values.',
+    'FOB tolerances: configurable via ⚙ Tolerances button — green = at/under target, yellow = within 0.25% over, red = beyond. Yellow band is customizable.',
+  ]},
+  {version:'4.245', date:'2026-06-30', changes:[
+    'Monthly Projections period switching: flexible filename parsing now detects month/year from underscored names, year-first formats, and numeric patterns (April_2026, 2026-April, 04-2026, etc.) so all uploaded months save correctly to Supabase',
+    'Monthly Projections panel: period dropdown now shows for any number of saved periods (was >1 only); manual 📅 picker lets you load any year/month from Supabase regardless of what is in the dropdown',
+  ]},
+  {version:'4.244', date:'2026-06-30', changes:[
+    'Performance Review KPI inputs: OSAT, EPB2B, Labor %, turnover, retention, and food safety pct fields now accept 0–100 values (e.g. type "87.5" for 87.5% OSAT) — auto-fill and storage remain in 0–1 decimal format',
+    'Monthly Projections panel (nav: Monthly Targets) — view QSRSoft-uploaded monthly targets for all stores; period selector shows all available Supabase periods; 16 target columns grouped by Sales & Labor, Food Cost, and Other Costs',
+  ]},
   {version:'4.237', date:'2026-06-28', changes:[
     'Permission Engine (permissions.js): roles are now fully configurable — create custom roles with any name and level, toggle individual permissions per role, stored in Supabase org_config and synced on login. Admin Panel adds a "Roles & Permissions" tab with an accordion editor (click any role to see and toggle its 19 permission checkboxes grouped by area). Level-1 roles bypass all permission checks. Review Approve/Return/Reopen buttons now gate on the reviews.approve permission (on by default for Area Supervisor, off for Manager). Admin Panel button in topbar gates on users.manage.all permission.',
   ]},
@@ -386,10 +444,12 @@ function App() {
   const [showAudit,    setShowAudit]   = useState(false);
   const [showBrief,    setShowBrief]   = useState(false);
   const [showMorningBrief, setShowMorningBrief] = useState(false); // Morning Brief panel
+  const [showEOMSummary,   setShowEOMSummary]   = useState(false); // EOM Supervisor Summary
   const [showAbout, setShowAbout] = useState(false); // About/Changelog modal
   const [showPVSA,     setShowPVSA]    = useState(false);
   const [showDICompare,setShowDICompare]= useState(false);
   const [showHelp,     setShowHelp]    = useState(false);
+  const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
   const [briefScope,   setBriefScope]  = useState({scope:'district',label:'District'});
   const [lockedProjections, setLockedProjections] = useState(()=>{
     try{return JSON.parse(localStorage.getItem('mf_locked_projections')||'{}');}catch{return {};}
@@ -405,14 +465,20 @@ function App() {
   const [showLocIntel,     setShowLocIntel]     = useState(false);
   const [showInventory,    setShowInventory]    = useState(false);
   const [showFOB,             setShowFOB]             = useState(false);
+  const [showFOBEOM,          setShowFOBEOM]          = useState(false);
+  const [showSMGVoice,        setShowSMGVoice]        = useState(false);
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
   const [showPerfReviews,     setShowPerfReviews]     = useState(false);
   const [showRecordDay,       setShowRecordDay]       = useState(false);
   const [showAdminPanel,      setShowAdminPanel]      = useState(false);
   const [showDeliveryMix,     setShowDeliveryMix]     = useState(false);
+  const [showScheduling,      setShowScheduling]      = useState(false);
   const [userRole,            setUserRole]            = useState('admin');
   const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
-  const [showOperatorSummary, setShowOperatorSummary] = useState(false);
+  const [betaMode,            setBetaMode]            = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_beta_mode')||'false');}catch{return false;}});
+  const toggleBetaMode = React.useCallback(()=>setBetaMode(v=>{const nv=!v;try{localStorage.setItem('mf_beta_mode',JSON.stringify(nv));}catch{}return nv;}),[]);
+  const [showOperatorSummary,   setShowOperatorSummary]   = useState(false);
+  const [showMonthlyProj,       setShowMonthlyProj]       = useState(false);
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   const [showFcstRef,         setShowFcstRef]         = useState(false);
@@ -429,7 +495,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -443,7 +509,7 @@ function App() {
           darRows:dar,
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
-          targets:{}, loaded:labor.length>0,
+          targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
           weatherIdx:{}, wxByDate:{},
@@ -527,9 +593,10 @@ function App() {
               .download(rec.storage_path);
             if(dlErr||!blob) continue;
             const arr=await blob.arrayBuffer();
-            const file=new File([arr],rec.filename,{
-              type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            });
+            const mimeType=rec.filename.toLowerCase().endsWith('.csv')
+              ?'text/csv'
+              :'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            const file=new File([arr],rec.filename,{type:mimeType});
             file._pendingId=rec.id;
             filesToProcess.push(file);
           }catch(e){console.warn('[Meridian] Failed to download',rec.filename,e);}
@@ -545,6 +612,65 @@ function App() {
         console.log(`[Meridian] ✓ Auto-ingested ${filesToProcess.length} QSRSoft report(s)`);
       }catch(e){console.warn('[Meridian] Pending report check failed:',e);}
     })();
+    // ── Auto-load monthly targets from Supabase ───────────────────────────────
+    // Pulls the most recent month's targets so FOB/food cost targets are
+    // available without re-uploading the projections workbook.
+    (async()=>{
+      try{
+        const mt = await loadMonthlyTargets(null, null);
+        if(Object.keys(mt).length > 0){
+          setDs(prev => {
+            if(!prev) return prev;
+            const next = { ...prev, monthlyTargets: { ...mt, ...prev.monthlyTargets } };
+            return next;
+          });
+          console.log(`[Meridian] ✓ Loaded monthly targets for ${Object.values(mt)[0]?._year}-${Object.values(mt)[0]?._month} (${Object.keys(mt).length} stores)`);
+        }
+      }catch(e){console.warn('[Meridian] Monthly targets load failed:',e);}
+      try{
+        const fsRows = await loadSmgFullscale();
+        if(fsRows.length>0){
+          setDs(prev=>{
+            if(!prev) return prev;
+            return {...prev, smgFullscale: fsRows};
+          });
+          console.log(`[Meridian] ✓ Loaded ${fsRows.length} SMG FullScale records from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] SMG FullScale load failed:',e);}
+      try{
+        const lfzRows = await loadLifeLenzSchedule();
+        if(lfzRows.length>0){
+          setDs(prev=>{
+            if(!prev) return prev;
+            return {...prev, schedRows: lfzRows};
+          });
+          console.log(`[Meridian] ✓ Loaded ${lfzRows.length} LifeLenz schedule rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);}
+    })();
+  },[]);
+
+  // ── Auto-fetch weather on load if empty or stale (>1 day) ────────────────
+  // Reads IDB directly (no ds dependency) — runs once 5s after mount so the
+  // initial IDB restore has time to complete first.
+  React.useEffect(()=>{
+    const timer = setTimeout(async ()=>{
+      if(!navigator.onLine) return;
+      const today = new Date().toISOString().slice(0,10);
+      const oneDayAgo = new Date(Date.now()-86400000).toISOString().slice(0,10);
+      const wxRows = await idbGetAllRows('weatherRows').catch(()=>[]);
+      const lastDate = wxRows.length
+        ? wxRows.map(r=>r._d||'').filter(Boolean).sort().at(-1)
+        : null;
+      if(lastDate && lastDate >= oneDayAgo) return; // still fresh
+      console.log('[Meridian] Weather auto-fetch — last date:', lastDate||'none');
+      const newRows = await fetchOpenMeteoWeather('2022-01-01', today, ()=>{}).catch(()=>[]);
+      if(!newRows.length) return;
+      await idbPutRows('weatherRows', newRows).catch(()=>{});
+      setDs(prev=>prev?{...prev,weatherRows:newRows}:prev);
+      console.log(`[Meridian] ✓ Weather auto-fetched: ${newRows.length} records`);
+    }, 5000);
+    return ()=>clearTimeout(timer);
   },[]);
 
   React.useEffect(()=>{
@@ -679,8 +805,8 @@ function App() {
     const v2=loadTargetsV2();
     const v2cur=v2[curYm]||{};
     locs.forEach(loc=>{
-      // Priority: v2 monthly override > user flat override > ds.targets > DEFAULT_TARGETS
-      merged[loc]={...DEFAULT_TARGETS[loc],...(ds&&ds.targets[loc]||{}),...(userTargets[loc]||{}),...(v2cur[loc]||{})};
+      // Priority: v2 monthly override > user flat override > monthly projections targets > yearly targets > DEFAULT_TARGETS
+      merged[loc]={...DEFAULT_TARGETS[loc],...(ds&&ds.targets&&ds.targets[loc]||{}),...(ds&&ds.monthlyTargets&&ds.monthlyTargets[loc]||{}),...(userTargets[loc]||{}),...(v2cur[loc]||{})};
     });
     return merged;
   },[ds,userTargets]);
@@ -707,11 +833,49 @@ function App() {
     for(const file of fileArr){
       try{
         setLoadMsg('⏳ Parsing '+file.name+'…');
-        const ab=await file.arrayBuffer();
-        const wb=XLSX.read(ab,{type:'array'});
-        const type=detectType(file.name,wb);
-        currentDS=mergeDS(currentDS,wb,type,file.name);
-        loaded.push({name:file.name,type});
+        const isPDF=file.name.toLowerCase().endsWith('.pdf');
+        if(isPDF){
+          // PDF files — route to specialized parsers (no XLSX)
+          const typeInfo=detectType(file.name,null);
+          if(typeInfo.type==='smg-voice'){
+            const smgRows=await parseSMGVoicePDF(file);
+            if(smgRows.length>0){
+              currentDS={...currentDS,smgRows:[...(currentDS.smgRows||[]),...smgRows]};
+              console.log(`[Meridian] SMG VOICE: ${smgRows.length} comments from ${file.name}`);
+            }
+            loaded.push({name:file.name,type:typeInfo});
+          } else {
+            console.warn('[Meridian] Unrecognized PDF:',file.name);
+          }
+        } else {
+          const ab=await file.arrayBuffer();
+          const _isCSV=file.name.toLowerCase().endsWith('.csv');
+          const wb=_isCSV
+            ?XLSX.read(new TextDecoder().decode(new Uint8Array(ab)),{type:'string',raw:true})
+            :XLSX.read(new Uint8Array(ab),{type:'array'});
+          const type=detectType(file.name,wb);
+          // SMG FullScale gets its own path — stores to DB and ds.smgFullscale
+          if(type.type==='smg-fullscale'){
+            const fsRows=parseSMGFullScale(wb);
+            if(fsRows.length>0){
+              currentDS={...currentDS,smgFullscale:[...(currentDS.smgFullscale||[]),...fsRows]};
+              console.log(`[Meridian] SMG FullScale: ${fsRows.length} stores from ${file.name}`);
+              saveSmgFullscale(fsRows).catch(e=>console.warn('[smg_fullscale] save error:',e));
+            }
+            loaded.push({name:file.name,type});
+          } else if(type.type==='ll-labor'){
+            const lfzRows=parseLifeLenzLabor(wb);
+            if(lfzRows.length>0){
+              currentDS={...currentDS,schedRows:[...(currentDS.schedRows||[]),...lfzRows]};
+              console.log(`[Meridian] LifeLenz: ${lfzRows.length} rows from ${file.name}`);
+              saveLifeLenzSchedule(lfzRows).catch(e=>console.warn('[lifelenz_schedule] save error:',e));
+            }
+            loaded.push({name:file.name,type});
+          } else {
+            currentDS=mergeDS(currentDS,wb,type,file.name);
+            loaded.push({name:file.name,type});
+          }
+        }
       }catch(e){
         console.error('File parse error:',file.name,e);
         setLoadMsg('⚠ Error reading '+file.name);
@@ -874,10 +1038,10 @@ function App() {
     showDICompare||showDataManager||showDev||showDialedIn||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
-    showMorningBrief||showOnePager||showOperatorSummary||showPMix||showPVSA||
+    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -893,11 +1057,11 @@ function App() {
       setShowFOB(false);setShowFcstAccuracy(false);setShowGMBrief(false);setShowHelp(false);
       setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
-      setShowModelAssign(false);setShowMorningBrief(false);setShowOnePager(false);
+      setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -931,6 +1095,7 @@ function App() {
       stores, ds, settings,
       loadMsg,
       perm,
+      betaMode,
       onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
       onSaveSession: handleSaveSession,
       onRestoreSession: handleRestoreSession,
@@ -944,14 +1109,17 @@ function App() {
         if(modal==='why-engine')     perm('analytics.ai')&&setShowWhyEngine(true);
         if(modal==='labor-analytics') perm('analytics.labor')&&setShowLaborAnalytics(true);
         if(modal==='delivery-mix')    perm('analytics.store')&&setShowDeliveryMix(true);
+        if(modal==='scheduling')      perm('analytics.store')&&setShowScheduling(true);
         if(modal==='morning-brief')  perm('analytics.brief')&&setShowMorningBrief(true);
+        if(modal==='eom-summary')    perm('analytics.district')&&setShowEOMSummary(true);
         if(modal==='brief')          perm('analytics.brief')&&(()=>{
           if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
           else setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null});
           setShowBrief(true);
         })();
         if(modal==='priority-brief') perm('analytics.brief')&&setShowPriorityBrief(true);
-        if(modal==='operator-summary') perm('analytics.district')&&setShowOperatorSummary(true);
+        if(modal==='operator-summary')  perm('analytics.district')&&setShowOperatorSummary(true);
+        if(modal==='monthly-proj')      perm('analytics.store')&&setShowMonthlyProj(true);
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
@@ -978,6 +1146,8 @@ function App() {
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
         if(modal==='inventory')      perm('analytics.store')&&setShowInventory(true);
         if(modal==='fob-analysis')   perm('analytics.store')&&setShowFOB(true);
+        if(modal==='fob-eom')        perm('analytics.store')&&setShowFOBEOM(true);
+        if(modal==='smg-voice')      perm('analytics.store')&&setShowSMGVoice(true);
         if(modal==='store-kb')       perm('analytics.store')&&setShowStoreKB(true);
         if(modal==='one-pager')      perm('analytics.store')&&setShowOnePager(true);
         if(modal==='gm-brief')       perm('analytics.store')&&setShowGMBrief(true);
@@ -1009,6 +1179,8 @@ function App() {
         onClearSession: handleClearSession,
         userRole,
         onOpenAdmin: perm('users.manage.all') ? () => setShowAdminPanel(true) : null,
+        betaMode,
+        onToggleBeta: perm('users.manage.all') ? toggleBetaMode : null,
         onOpenModal: (modal) => {
           if(modal==='settings')   setShowSettings(true);
           if(modal==='help')       setShowHelp(true);
@@ -1075,6 +1247,7 @@ function App() {
     showGMBrief&&h(GMCoachingBrief,{stores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
     showDARDaypart&&h(DARDaypartPanel,{stores,ds,settings,onClose:()=>setShowDARDaypart(false)}),
     showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false)}),
+    showMonthlyProj&&h(MonthlyProjectionsPanel,{ds,stores,settings,onClose:()=>setShowMonthlyProj(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
@@ -1094,8 +1267,11 @@ function App() {
     showLocIntel&&h(LocationIntelligence,{allStores:stores,ds,settings,scope:'district',onClose:()=>setShowLocIntel(false)}),
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
     showFOB&&h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>setShowFOB(false)}),
+    showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
+    showSMGVoice&&h(SMGVoicePanel,{ds,stores,onClose:()=>setShowSMGVoice(false)}),
     showLaborAnalytics&&h(LaborAnalyticsPanel,{stores,ds,settings,onClose:()=>setShowLaborAnalytics(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
+    showScheduling&&h(SchedulingPanel,{ds,settings,onClose:()=>setShowScheduling(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false)}),
@@ -1188,8 +1364,13 @@ function App() {
         width:'100%',maxWidth:800,maxHeight:'94vh',display:'flex',flexDirection:'column'}},
         // Help header
         div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
-          display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
+          display:'flex',alignItems:'center',gap:10,flexShrink:0}},
           div({style:{fontSize:'16px',fontWeight:800}},'📖 Meridian — Workflow Guide'),
+          btn({
+            onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
+            style:{marginLeft:'auto',padding:'5px 12px',fontSize:11,fontWeight:700,
+              background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
+          },'▶ Start Tour'),
           btn({onClick:()=>setShowHelp(false),style:{background:'none',border:'none',
             color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
         ),
@@ -1320,6 +1501,17 @@ function App() {
           h(MorningBriefPanel,{ds,settings}))
       )
     ),
+        showEOMSummary&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
+      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1140,position:'relative'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
+          h('div',null,
+            h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800,letterSpacing:'-.02em'}},'📊 EOM Supervisor Summary'),
+            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Monthly P&L variance by store — filter by supervisor, operator, or all')),
+          h('button',{onClick:()=>setShowEOMSummary(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
+        div({style:{overflowY:'auto',maxHeight:'88vh'}},
+          h(EOMSupervisorPanel,{ds,settings}))
+      )
+    ),
         showAudit&&selStore&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:980,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
         h(ForecastAudit,{
@@ -1333,7 +1525,9 @@ function App() {
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:1100,margin:'0 auto',maxHeight:'90vh',display:'flex',flexDirection:'column'}},
         h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
       )
-    )
+    ),
+    // ── First-run tutorial overlay (zIndex 500 — above everything) ──────────
+    showTutorial&&h(TutorialOverlay,{onClose:()=>setShowTutorial(false)})
   );
 }
 

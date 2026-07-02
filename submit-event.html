@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Submit a Calendar Event — Meridian</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #1C1A17; --surf: #252018; --surf2: #2D2820;
+    --bdr: #3D3528; --amber: #FFC72C; --text: #F5F0E8;
+    --text2: #C9BFA8; --text3: #8A7E6A; --green: #10b981;
+    --red: #ef4444; --r: 8px; --rl: 12px;
+    --sans: -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'SF Mono', 'Courier New', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans);
+    font-size: 14px; min-height: 100vh; padding: 20px 16px 60px; line-height: 1.5; }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+  .logo-m { width: 36px; height: 36px; border-radius: var(--r); background: var(--amber);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 900; color: #000; flex-shrink: 0; }
+  .logo-txt h1 { font-size: 16px; font-weight: 700; color: var(--amber); }
+  .logo-txt p { font-size: 11px; color: var(--text3); margin-top: 1px; }
+  .card { background: var(--surf); border: .5px solid var(--bdr);
+    border-radius: var(--rl); padding: 20px; margin-bottom: 16px; }
+  .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .7px; color: var(--text3); margin-bottom: 16px; }
+  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--text2);
+    font-weight: 600; margin-bottom: 6px; }
+  label span { font-weight: 400; color: var(--text3); }
+  input[type=text], input[type=date], select, textarea {
+    width: 100%; padding: 10px 12px; background: var(--surf2);
+    border: .5px solid var(--bdr); border-radius: var(--r);
+    color: var(--text); font-size: 14px; font-family: var(--sans);
+    appearance: none; -webkit-appearance: none; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--amber); }
+  textarea { resize: vertical; min-height: 80px; }
+  .store-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .store-check { display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; background: var(--surf2); border: .5px solid var(--bdr);
+    border-radius: var(--r); cursor: pointer; transition: border-color .15s; }
+  .store-check.selected { border-color: rgba(255,199,44,.5); background: rgba(255,199,44,.06); }
+  .store-check input[type=checkbox] { width: 16px; height: 16px;
+    accent-color: var(--amber); cursor: pointer; flex-shrink: 0; }
+  .store-check label { font-size: 11px; color: var(--text2); cursor: pointer;
+    margin: 0; font-weight: 400; line-height: 1.3; }
+  .store-check.selected label { color: var(--amber); font-weight: 600; }
+  .group-hdr { font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--text3); margin: 12px 0 6px;
+    padding-bottom: 4px; border-bottom: .5px solid var(--bdr); }
+  .row { display: flex; gap: 10px; }
+  .row .field { flex: 1; }
+  .btn { display: block; width: 100%; padding: 14px; border-radius: var(--r);
+    border: none; font-family: var(--sans); font-size: 15px; font-weight: 700;
+    cursor: pointer; text-align: center; }
+  .btn-primary { background: var(--amber); color: #000; }
+  .btn-primary:hover { opacity: .9; }
+  .btn-secondary { background: var(--surf2); border: .5px solid var(--bdr);
+    color: var(--text2); margin-top: 8px; font-size: 13px; padding: 10px; }
+  .result-box { background: var(--surf2); border: .5px solid rgba(16,185,129,.35);
+    border-radius: var(--rl); padding: 20px; margin-top: 20px; display: none; }
+  .result-box.show { display: block; }
+  .result-title { font-size: 13px; font-weight: 700; color: var(--green); margin-bottom: 4px; }
+  .result-sub { font-size: 11px; color: var(--text3); margin-bottom: 16px; line-height: 1.6; }
+  .code-area { font-family: var(--mono); font-size: 11px; word-break: break-all;
+    background: var(--bg); border: .5px solid var(--bdr); border-radius: var(--r);
+    padding: 12px; color: var(--amber); line-height: 1.6; user-select: all;
+    cursor: text; margin-bottom: 12px; min-height: 80px; }
+  .copy-btn { display: block; width: 100%; padding: 12px; border-radius: var(--r);
+    border: .5px solid rgba(16,185,129,.4); background: rgba(16,185,129,.08);
+    color: var(--green); font-size: 14px; font-weight: 700; cursor: pointer;
+    font-family: var(--sans); text-align: center; }
+  .copy-btn:active { opacity: .8; }
+  .how-to { font-size: 12px; color: var(--text3); line-height: 1.7; margin-top: 14px;
+    padding: 12px; background: rgba(255,255,255,.03); border-radius: var(--r);
+    border: .5px solid var(--bdr); }
+  .how-to strong { color: var(--text2); }
+  .err { color: var(--red); font-size: 12px; margin-top: 6px; display: none; }
+  .err.show { display: block; }
+  .req { color: var(--red); margin-left: 2px; }
+  .sel-all { font-size: 11px; color: var(--amber); cursor: pointer;
+    text-decoration: underline; margin-bottom: 8px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="logo">
+    <div class="logo-m">M</div>
+    <div class="logo-txt">
+      <h1>Meridian</h1>
+      <p>Calendar Event Submission</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">About You</div>
+    <div class="field">
+      <label>Your Name <span>(so the district manager knows who submitted this)</span></label>
+      <input type="text" id="fromName" placeholder="First Last" autocomplete="name">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Event Details</div>
+
+    <div class="field">
+      <label>Event Type <span class="req">*</span></label>
+      <select id="eventType">
+        <option value="">— select type —</option>
+        <optgroup label="School">
+          <option value="school_break">School Break / No School</option>
+          <option value="school_early_release">Early Release Day</option>
+          <option value="school_start">First Day of School</option>
+          <option value="school_end">Last Day of School</option>
+          <option value="school_no_school">No School Day</option>
+        </optgroup>
+        <optgroup label="Community Events">
+          <option value="event">Local Event / Festival</option>
+          <option value="sporting_event">Sporting Event</option>
+          <option value="construction">Road / Construction Impact</option>
+        </optgroup>
+        <optgroup label="Business">
+          <option value="holiday">Holiday</option>
+          <option value="promotion">Promotion / Deal</option>
+          <option value="weather">Severe Weather</option>
+          <option value="other">Other</option>
+        </optgroup>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Event Label <span class="req">*</span> <span>(short name, e.g. "Spring Break", "County Fair")</span></label>
+      <input type="text" id="label" placeholder="Short event name" maxlength="80">
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label>Start Date <span class="req">*</span></label>
+        <input type="date" id="startDate">
+      </div>
+      <div class="field">
+        <label>End Date <span>(leave blank if single day)</span></label>
+        <input type="date" id="endDate">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Notes <span>(anything the DM should know — expected traffic impact, source, context)</span></label>
+      <textarea id="notes" placeholder="e.g. Fireworks at the city park nearby — expect a big evening rush. School district website confirmed these dates."></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Which Store(s) Does This Affect?</div>
+    <span class="sel-all" onclick="selectAll()">Select all</span> / <span class="sel-all" onclick="clearAll()">Clear all</span>
+
+    <div class="group-hdr">Oklahoma — MCDOK</div>
+    <div class="store-grid" id="ok-stores"></div>
+
+    <div class="group-hdr" style="margin-top:16px">Florida Panhandle — Emerald Arches</div>
+    <div class="store-grid" id="fl-stores"></div>
+  </div>
+
+  <p class="err" id="formErr">Please fill in all required fields and select at least one store.</p>
+  <button class="btn btn-primary" onclick="generate()">Generate Share Code</button>
+
+  <div class="result-box" id="result">
+    <div class="result-title">✓ Share Code Generated</div>
+    <p class="result-sub">
+      Copy the code below and send it to your district manager via text, email, or Teams.
+      They will paste it into <strong>Meridian → Calendar Manager → 📥 Import</strong>.
+    </p>
+    <div class="code-area" id="shareCode"></div>
+    <button class="copy-btn" id="copyBtn" onclick="copyCode()">📋 Copy Code</button>
+    <div class="how-to">
+      <strong>What to do next:</strong><br>
+      1. Tap "Copy Code" above<br>
+      2. Text or email it to your district manager<br>
+      3. They review and approve it before it affects any forecasts<br><br>
+      <strong>Want to submit another?</strong> Scroll up and fill in the form again.
+    </div>
+  </div>
+
+</div>
+
+<script>
+const OK_STORES = {
+  '3708': 'Ardmore-Broadway',
+  '5183': 'Chickasha-So 4th',
+  '5985': 'Durant-US Hwy 70/22',
+  '6972': 'Ada-Country Club',
+  '10422': 'Atoka-Mississippi',
+  '10915': 'Seminole-Milt Phillips',
+  '11657': 'Purcell',
+  '13113': 'Madill-Hwy 70',
+  '18213': 'Lindsay-Wal-Mart',
+  '20475': 'OKC-I240/Sooner',
+  '24471': 'Ardmore-Cooper/12th',
+  '29760': 'Duncan-Hwy 81',
+  '31357': 'Pauls Valley-Ballard Rd',
+  '32525': 'Sulphur',
+  '33109': 'Marietta',
+  '33222': 'Elgin',
+  '33704': 'Tecumseh',
+  '34222': 'Harrah',
+  '35064': 'Holdenville',
+  '43380': 'Tishomingo-Main & Refuge'
+};
+const FL_STORES = {
+  '6178': 'Chipley-St Rd 77',
+  '6838': 'Defuniak Springs',
+  '10034': 'Bonifay',
+  '35242': 'Cottondale',
+  '37566': 'Mossy Head',
+  '38609': 'Freeport',
+  '43701': 'Ponce de Leon-Hwy 81/I-10'
+};
+
+function buildStoreGrid(containerId, storeObj) {
+  const el = document.getElementById(containerId);
+  Object.entries(storeObj).forEach(([id, name]) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'store-check';
+    wrap.dataset.id = id;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.id = 'loc_'+id; cb.value = id;
+    cb.onchange = () => wrap.classList.toggle('selected', cb.checked);
+    const lbl = document.createElement('label');
+    lbl.htmlFor = 'loc_'+id; lbl.textContent = name;
+    wrap.appendChild(cb); wrap.appendChild(lbl);
+    wrap.onclick = e => { if(e.target !== cb) cb.click(); };
+    el.appendChild(wrap);
+  });
+}
+
+buildStoreGrid('ok-stores', OK_STORES);
+buildStoreGrid('fl-stores', FL_STORES);
+
+function selectAll() {
+  document.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.checked = true; cb.closest('.store-check').classList.add('selected');
+  });
+}
+function clearAll() {
+  document.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.checked = false; cb.closest('.store-check').classList.remove('selected');
+  });
+}
+
+function encodeShareCode(payload) {
+  try {
+    return btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch(e) { return null; }
+}
+
+function generate() {
+  const errEl = document.getElementById('formErr');
+  errEl.classList.remove('show');
+
+  const from    = document.getElementById('fromName').value.trim();
+  const type    = document.getElementById('eventType').value;
+  const label   = document.getElementById('label').value.trim();
+  const start   = document.getElementById('startDate').value;
+  const end     = document.getElementById('endDate').value;
+  const notes   = document.getElementById('notes').value.trim();
+  const locs    = [...document.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+
+  if(!type || !label || !start || !locs.length) {
+    errEl.textContent = 'Please fill in Event Type, Label, Start Date, and select at least one store.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  const payload = {
+    v: 1,
+    from: from || 'Unknown',
+    locs,
+    start,
+    end: end || null,
+    type,
+    label,
+    notes: notes || null,
+    ts: new Date().toISOString()
+  };
+
+  const code = encodeShareCode(payload);
+  if(!code) {
+    errEl.textContent = 'Something went wrong generating the code. Try again.';
+    errEl.classList.add('show');
+    return;
+  }
+
+  document.getElementById('shareCode').textContent = code;
+  document.getElementById('copyBtn').textContent = '📋 Copy Code';
+  document.getElementById('result').classList.add('show');
+  document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function copyCode() {
+  const code = document.getElementById('shareCode').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = '📋 Copy Code'; }, 2500);
+  }).catch(() => {
+    // Fallback: select the text
+    const el = document.getElementById('shareCode');
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('copy');
+  });
+}
+
+// Set default start date to today
+document.getElementById('startDate').value = new Date().toISOString().slice(0,10);
+</script>
+</body>
+</html>

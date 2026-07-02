@@ -28,16 +28,16 @@ export const DEFAULT_REVIEW_CONFIG = {
   metrics: {
     rgr: [
       { key:'oepe',       label:'OEPE (Peaks, sec)',          weight:0.20, better:'lower',  unit:'abs', scored:true,  t:[-5,5,10],         src:'auto', field:'oepe',       note:'Target = store OEPE target (sec)' },
-      { key:'osat',       label:'Voice OSAT',                 weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'Target = store-specific' },
-      { key:'epb2b',      label:'EPB2B (Pace Portal, %)',     weight:0.10, better:'lower',  unit:'pct', scored:true,  t:[-0.02,0.02,0.04], src:'manual',                    note:'Lower EPB2B = better' },
+      { key:'osat',       label:'Voice OSAT',                 weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',              pctInput:true, note:'Target = store-specific' },
+      { key:'epb2b',      label:'EPB2B (Pace Portal, %)',     weight:0.10, better:'lower',  unit:'pct', scored:true,  t:[-0.02,0.02,0.04], src:'manual',              pctInput:true, note:'Lower EPB2B = better' },
       { key:'r2p',        label:'R2P Front Counter (sec)',    weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-5,5,10],         src:'auto', field:'r2p',        note:'Target = store R2P target (sec)' },
       { key:'delivWait',  label:'Delivery Wait (sec)',        weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-30,0,120],       src:'manual',                    note:'Target = 240 sec (4 min)' },
       { key:'kvs',        label:'KVS Time (sec)',             weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-3,3,6],          src:'auto', field:'kvst',       note:'Target = store KVS target (sec)' },
-      { key:'secondSide', label:'2nd Side Healthy Usage (%)', weight:0.05, better:'higher', unit:'pct', scored:false, t:[0.05,-0.05,-0.10],src:'manual',                    note:'Not scored — reference only' },
+      { key:'secondSide', label:'2nd Side Healthy Usage (%)', weight:0.05, better:'higher', unit:'pct', scored:false, t:[0.05,-0.05,-0.10],src:'manual',              pctInput:true, note:'Not scored — reference only' },
       { key:'complaints', label:'Complaint Contacts/100K',    weight:0.05, better:'lower',  unit:'abs', scored:true,  t:[-2,2,4],          src:'manual',                    note:'Absolute count vs target' },
-      { key:'fsAudits',   label:'FS Audits Completed',        weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'% of target audits completed' },
-      { key:'fsEcoSure',  label:'Food Safety EcoSure (%)',    weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'% score vs target' },
-      { key:'fsTablet',   label:'FS Completion T-60 (%)',     weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'Tablet completion %' },
+      { key:'fsAudits',   label:'FS Audits Completed',        weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% of target audits completed' },
+      { key:'fsEcoSure',  label:'Food Safety EcoSure (%)',    weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% score vs target' },
+      { key:'fsTablet',   label:'FS Completion T-60 (%)',     weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'Tablet completion %' },
     ],
     sales: [
       { key:'salesVsTgt', label:'Sales vs. Monthly Target',   weight:0.70, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'sales', tgtField:'salesTgt', note:'Auto from Labor Analysis' },
@@ -46,7 +46,7 @@ export const DEFAULT_REVIEW_CONFIG = {
     ],
     profit: [
       { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', note:'Auto from FOB report' },
-      { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', note:'Auto from Labor Analysis' },
+      { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', pctInput:true, note:'Auto from Labor Analysis' },
       { key:'opSupplies', label:'Op Supplies vs Budget ($)',  weight:0.15, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual',                    note:'$ vs budget target' },
       { key:'totalProfit',label:'Total Profit vs Target ($)', weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'$ vs target' },
     ],
@@ -54,8 +54,8 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'shiftCert',  label:'# Shift Certified Managers', weight:0.25, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'Count vs target' },
       { key:'shiftVerif', label:'# Shift Verifications by GM',weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'Count vs target' },
       { key:'headcount',  label:'Total Headcount vs Target',  weight:0.30, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'EOM headcount vs target' },
-      { key:'turnover90', label:'0-90 Day Crew Turnover (%)', weight:0.20, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual',                    note:'Lower turnover % = better' },
-      { key:'retention',  label:'Execution of Retention Prg.',weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'% completion vs target' },
+      { key:'turnover90', label:'0-90 Day Crew Turnover (%)', weight:0.20, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual',              pctInput:true, note:'Lower turnover % = better' },
+      { key:'retention',  label:'Execution of Retention Prg.',weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% completion vs target' },
     ],
   },
   // Behavioral competency items per role per category (editable in Customize panel)
@@ -622,11 +622,21 @@ export function autoPopulateKPIs(review, ds) {
   const opsM   = byMonth(ds.opsRows);
   const fobM   = byMonth(ds.fobRows);
 
+  // SMG FullScale: index by month for this store
+  // osatTop2 = Top-2-Box (4+5 stars combined), stored as decimal 0-1
+  // Source guide says "5-star % column" — swap osatTop2 for osat5 if needed
+  const smgFSByMonth = {};
+  for (const r of (ds.smgFullscale||[])) {
+    if (String(r.loc) !== String(loc)) continue;
+    smgFSByMonth[r.month] = r;
+  }
+
   for (const [mn, mo] of Object.entries(months)) {
     const m = parseInt(mn);
     const lr = laborM[m]||[];
     const or = opsM[m]||[];
     const fr = fobM[m]||[];
+    const sr = smgFSByMonth[m];
 
     if (lr.length) {
       const s  = sum(lr,'sales');
@@ -647,6 +657,10 @@ export function autoPopulateKPIs(review, ds) {
     if (fr.length) {
       const fd = sum(fr,'fobDollar');
       if (fd!=null) mo.foodOB = fd;
+    }
+    if (sr) {
+      // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
+      if (sr.osat5 != null) mo.osat = sr.osat5;
     }
   }
 

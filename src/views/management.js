@@ -12,6 +12,188 @@ const sel=(p,...c)=>h('select',p,...c);
 const opt=(p,...c)=>h('option',p,...c);
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
+// ── Developer Dashboard ───────────────────────────────────────────────────────
+const DEV_LINKS_KEY = 'mf_dev_links_v1';
+const DEV_LINK_DEFAULTS = {
+  supabaseUrl:       '',
+  supabaseAnonKey:   '',
+  netlifyUrl:        '',
+  githubRepo:        '',
+  appsScriptUrl:     '',
+  netlifyAdminUrl:   'https://app.netlify.com',
+};
+
+function DevDashboard({settings, onUpdate}) {
+  const [links, setLinks] = useState(() => {
+    try { return { ...DEV_LINK_DEFAULTS, ...JSON.parse(localStorage.getItem(DEV_LINKS_KEY)||'{}') }; }
+    catch { return { ...DEV_LINK_DEFAULTS }; }
+  });
+  const [sbStatus, setSbStatus] = useState(null); // null|'checking'|'ok'|'error'
+  const [sbMsg,    setSbMsg]    = useState('');
+  const [lsSize,   setLsSize]   = useState(null);
+  const [copied,   setCopied]   = useState('');
+
+  useEffect(() => {
+    // Measure localStorage usage
+    try {
+      let bytes = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        bytes += (localStorage.getItem(k)||'').length * 2;
+      }
+      setLsSize((bytes/1024).toFixed(1));
+    } catch {}
+  }, []);
+
+  const saveLinks = (next) => {
+    setLinks(next);
+    try { localStorage.setItem(DEV_LINKS_KEY, JSON.stringify(next)); } catch {}
+  };
+
+  const linkInp = (label, key, placeholder, isKey=false) =>
+    div({style:{marginBottom:10}},
+      div({style:{fontSize:'10px',fontWeight:600,color:'var(--text2)',marginBottom:3}}, label),
+      div({style:{display:'flex',gap:4}},
+        inp({
+          type: isKey ? 'password' : 'text',
+          value: links[key]||'',
+          placeholder,
+          onChange: e => saveLinks({...links, [key]: e.target.value}),
+          style:{flex:1,background:'var(--surf2)',border:'.5px solid var(--bdr)',
+            borderRadius:3,padding:'5px 8px',fontSize:11,color:'var(--text)',
+            fontFamily: isKey ? 'var(--mono)' : 'inherit'}
+        }),
+        links[key] && !isKey && h('a', {
+          href: links[key].startsWith('http') ? links[key] : 'https://'+links[key],
+          target:'_blank', rel:'noopener',
+          style:{padding:'4px 8px',background:'var(--surf2)',border:'.5px solid var(--bdr)',
+            borderRadius:3,fontSize:11,color:'var(--accent)',textDecoration:'none',
+            display:'flex',alignItems:'center'}
+        }, '↗')
+      )
+    );
+
+  const checkSupabase = async () => {
+    setSbStatus('checking'); setSbMsg('');
+    const url = links.supabaseUrl || (()=>{try{return JSON.parse(localStorage.getItem('mf_supabase')||'{}').url;}catch{return '';}})();
+    if (!url) { setSbStatus('error'); setSbMsg('No Supabase URL configured'); return; }
+    try {
+      const res = await fetch(url+'/rest/v1/', { headers:{ apikey: links.supabaseAnonKey||'' }, signal: AbortSignal.timeout(5000) });
+      if (res.ok || res.status===400 || res.status===401) {
+        setSbStatus('ok'); setSbMsg('Reachable ('+res.status+')');
+      } else {
+        setSbStatus('error'); setSbMsg('HTTP '+res.status);
+      }
+    } catch(e) { setSbStatus('error'); setSbMsg(e.message); }
+  };
+
+  const statusDot = (st) => {
+    const col = st==='ok'?'#10b981':st==='error'?'#ef4444':st==='checking'?'#f59e0b':'#475569';
+    return div({style:{width:8,height:8,borderRadius:'50%',background:col,flexShrink:0}});
+  };
+
+  const card = (children) => div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
+    borderRadius:6,padding:'12px 14px',marginBottom:12}}, children);
+
+  const sectionHead = (label) => div({style:{fontSize:'9px',fontWeight:700,letterSpacing:'.7px',
+    textTransform:'uppercase',color:'var(--text3)',marginBottom:8}}, label);
+
+  // Get version from window (set by App.js via global)
+  const version = (typeof window !== 'undefined' && window.__MERIDIAN_VERSION__) || '—';
+
+  return div({style:{display:'flex',flexDirection:'column',gap:0,padding:'2px 0'}},
+
+    // ── Status bar
+    card(
+      div(null,
+        sectionHead('System Status'),
+        div({style:{display:'flex',gap:16,flexWrap:'wrap'}},
+          div({style:{display:'flex',alignItems:'center',gap:6}},
+            statusDot(sbStatus==='ok'?'ok':sbStatus==='error'?'error':sbStatus==='checking'?'checking':null),
+            span({style:{fontSize:11,color:'var(--text2)'}},'Supabase'),
+            sbMsg&&span({style:{fontSize:10,color:'var(--text3)'}}, sbMsg),
+            btn({onClick:checkSupabase,style:{fontSize:9,padding:'2px 6px',marginLeft:4,
+              background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:3,cursor:'pointer',color:'var(--text3)'}},
+              sbStatus==='checking'?'…':'Ping')
+          ),
+          div({style:{display:'flex',alignItems:'center',gap:6}},
+            statusDot('ok'),
+            span({style:{fontSize:11,color:'var(--text2)'}},'LocalStorage'),
+            span({style:{fontSize:10,color:'var(--text3)'}}, lsSize ? lsSize+'KB used' : '…')
+          ),
+          div({style:{display:'flex',alignItems:'center',gap:6}},
+            statusDot(navigator.onLine?'ok':'error'),
+            span({style:{fontSize:11,color:'var(--text2)'}},'Network'),
+            span({style:{fontSize:10,color:'var(--text3)'}}, navigator.onLine?'Online':'Offline')
+          )
+        )
+      )
+    ),
+
+    // ── Quick links
+    card(
+      div(null,
+        sectionHead('Quick Links'),
+        div({style:{display:'flex',flexWrap:'wrap',gap:6}},
+          ...[
+            ['Supabase Dashboard', links.supabaseUrl ? links.supabaseUrl.replace('.supabase.co','.supabase.co/project/default') : 'https://supabase.com/dashboard'],
+            ['Netlify Admin', links.netlifyAdminUrl||'https://app.netlify.com'],
+            ['GitHub Repo', links.githubRepo||null],
+            ['Apps Script', links.appsScriptUrl||null],
+          ].filter(([,u])=>u).map(([label, url]) =>
+            h('a', {key:label, href:url, target:'_blank', rel:'noopener',
+              style:{fontSize:10,padding:'4px 10px',background:'var(--surf)',
+                border:'.5px solid var(--bdr)',borderRadius:20,color:'var(--accent)',
+                textDecoration:'none',fontWeight:600}}, label)
+          )
+        )
+      )
+    ),
+
+    // ── Config fields
+    card(
+      div(null,
+        sectionHead('Infrastructure Config'),
+        linkInp('Supabase Project URL', 'supabaseUrl', 'https://xxxx.supabase.co'),
+        linkInp('Supabase Anon Key', 'supabaseAnonKey', 'eyJhbGci…', true),
+        linkInp('Netlify Site URL', 'netlifyUrl', 'https://your-site.netlify.app'),
+        linkInp('GitHub Repo URL', 'githubRepo', 'https://github.com/org/repo'),
+        linkInp('Apps Script Webhook URL', 'appsScriptUrl', 'https://script.google.com/macros/s/…/exec'),
+      )
+    ),
+
+    // ── Settings data tools
+    card(
+      div(null,
+        sectionHead('Settings Data'),
+        div({style:{display:'flex',gap:6,flexWrap:'wrap'}},
+          btn({className:'btn',style:{fontSize:11,padding:'5px 10px'},
+            onClick:()=>{try{localStorage.setItem('mf_settings',JSON.stringify(settings));
+              alert('Settings saved to browser storage.');}catch(e){alert('Failed: '+e.message);}}},
+            '💾 Save to Browser'),
+          btn({className:'btn',style:{fontSize:11,padding:'5px 10px'},
+            onClick:()=>{
+              navigator.clipboard&&navigator.clipboard.writeText(JSON.stringify(settings,null,2))
+                .then(()=>{setCopied('settings');setTimeout(()=>setCopied(''),2000);});
+            }},
+            copied==='settings'?'✓ Copied!':'📤 Export JSON'),
+          btn({className:'btn',style:{fontSize:11,padding:'5px 10px'},
+            onClick:()=>{const s=prompt('Paste settings JSON:');
+              if(s)try{onUpdate(JSON.parse(s));alert('Imported!');}catch(e){alert('Invalid JSON');}}},
+            '📋 Import JSON'),
+          btn({className:'btn',style:{fontSize:11,padding:'5px 10px',color:'#ef4444',borderColor:'rgba(239,68,68,.3)'},
+            onClick:()=>{if(confirm('Reset ALL settings to factory defaults?'))onUpdate(DEF_SETTINGS);}},
+            '↺ Reset Defaults')
+        )
+      )
+    ),
+
+    // ── Version / build info
+    div({style:{fontSize:9,color:'var(--text3)',textAlign:'center',paddingTop:4}},
+      'Meridian · Built on Vite + React · Supabase · Netlify')
+  );
+}
+
 function Settings({settings, onUpdate, onClose}) {
   const S=settings;
   const [activeSection, setActiveSection] = useState('identity');
@@ -259,12 +441,7 @@ function Settings({settings, onUpdate, onClose}) {
             )
           )
         ),
-        activeSection==='dev'&&div({style:{display:'flex',flexDirection:'column',gap:6,marginTop:8}},
-          btn({className:'btn',style:{width:'100%',padding:'8px',fontSize:'12px'},onClick:()=>{try{localStorage.setItem('mf_settings',JSON.stringify(settings));alert('Saved!');}catch(e){alert('Failed: '+e.message);}}},'💾 Save to Browser'),
-          btn({className:'btn btn-a',style:{width:'100%',padding:'8px',fontSize:'12px'},onClick:()=>{navigator.clipboard&&navigator.clipboard.writeText(JSON.stringify(settings,null,2)).then(()=>alert('Copied!'));}},'📤 Export JSON'),
-          btn({className:'btn',style:{width:'100%',padding:'8px',fontSize:'12px'},onClick:()=>{const s=prompt('Paste settings JSON:');if(s)try{onUpdate(JSON.parse(s));alert('Imported!');}catch(e){alert('Invalid JSON');}}},'📋 Import JSON'),
-          btn({className:'btn btn-red',style:{width:'100%',padding:'8px',fontSize:'12px'},onClick:()=>{if(confirm('Reset to defaults?'))onUpdate(DEF_SETTINGS);}},'↺ Reset to Defaults')
-        )
+        activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate})
       )// close content div
     )// close flex row (sidebar+content)
   )// close inner panel

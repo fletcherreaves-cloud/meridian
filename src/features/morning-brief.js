@@ -180,6 +180,38 @@ const MORNING_RULES = [
         action:`Reconcile drawer counts and identify the shift(s) with variance. Cross-reference with drawer opens and T-Red activity.`};
       return null;
     }},
+
+  { id:'FOOD_COST_HIGH', name:'Food Cost Variance', category:'controls', icon:'🥩',
+    evaluate(d){
+      const raw = d.baseFoodPct;
+      if(raw==null) return null;
+      const pct = raw>1?raw:raw*100; // normalize to %
+      if(pct>=33) return {severity:'RED',
+        headline:`Base Food Cost ${pct.toFixed(1)}% — significantly above standard`,
+        detail:`Base food cost above 33% indicates a serious variance from the McDonald's food cost model. Primary culprits: over-portioning, waste/spoilage, donation mis-recording, or food theft. This needs a waste log audit and portion observation before assuming supply-price movements are the cause.`,
+        action:`Pull waste log for the period covered by this report. Conduct a portion audit on highest-cost items (beef, chicken). Verify donation log accuracy. Cross-reference with delivery invoices for any pricing anomalies.`};
+      if(pct>=30) return {severity:'AMBER',
+        headline:`Base Food Cost ${pct.toFixed(1)}% — above target, monitor closely`,
+        detail:`Food cost is trending above the 30% target. Could be early waste or portioning drift. Worth verifying before it becomes a larger variance.`,
+        action:`Review waste log trends. Spot-check portions on primary proteins during next visit.`};
+      return null;
+    }},
+
+  { id:'SMG_OSAT_LOW', name:'Guest Satisfaction (OSAT)', category:'service', icon:'⭐',
+    evaluate(d){
+      const raw = d.smgOsat;
+      if(raw==null) return null;
+      const pct = raw>1?raw:raw*100; // normalize to %
+      if(pct<65) return {severity:'RED',
+        headline:`OSAT Top-2 ${pct.toFixed(0)}% (${d.smgMonth||'recent'}) — below standard`,
+        detail:`OSAT below 65% is a leading indicator of guest experience failure. At this level, a meaningful portion of customers are actively dissatisfied — not just neutral. This correlates strongly with drive-through speed issues, service inconsistency, and staff attitude problems.`,
+        action:`Pull SMG verbatim comments for this period. Identify the top recurring themes. Address directly in crew training and next 1:1 with the store manager. Review paired OEPE and service metrics for the same period.`};
+      if(pct<72) return {severity:'AMBER',
+        headline:`OSAT Top-2 ${pct.toFixed(0)}% (${d.smgMonth||'recent'}) — below comfort zone`,
+        detail:`OSAT below 72% warrants attention. While not at a critical threshold, this is below where the district should be operating and typically reflects service inconsistencies that compound over time.`,
+        action:`Review SMG verbatim comments. Coach store manager on the top 1-2 service themes. Confirm speed improvement initiatives are in place if OEPE is also elevated.`};
+      return null;
+    }},
 ];
 
 // ── Compute 8-week rolling norms per store ───────────────────────────────────
@@ -229,14 +261,23 @@ function assembleBriefStoreData(loc, targetDate, ds){
   const expGC = (norms.gcSalesRatio && labor?.sales) ? labor.sales*norms.gcSalesRatio : null;
   const gcVsExp = (expGC && labor?.gc) ? ((labor.gc-expGC)/expGC*100) : null;
 
+  // FOB: most recent entry for this store within 35 days (monthly cadence)
+  const fobSorted = (ds.fobRows||[])
+    .filter(r=>String(r.loc)===locStr && r.date && Math.abs(r.date-targetDate)<35*86400000)
+    .sort((a,b)=>Math.abs(a.date-targetDate)-Math.abs(b.date-targetDate));
+  const fob = fobSorted[0]||null;
+
+  // SMG FullScale: most recent month's score for this store
+  const smgFs = (ds.smgFullscale||[])
+    .filter(r=>String(r.loc)===locStr)
+    .sort((a,b)=>b.year!==a.year?b.year-a.year:b.month-a.month)[0]||null;
+
   return {
     loc, name: sNameC(loc),
     supervisor: LOC_SUPERVISOR[locStr]||'Unknown',
     hasData: !!(labor||ctrl||peaks.length),
     // Labor fields
     sales:      labor?.sales>0 ? labor.sales : null,
-    // projSales: prefer Lifelenz daily projection from Labor Analysis;
-    // fall back to operator monthly projection ÷ 30 from DEFAULT_TARGETS
     projSales: (()=>{
       if(labor?.projSales>0) return labor.projSales;
       const tgt = typeof DEFAULT_TARGETS!=='undefined' ? DEFAULT_TARGETS[locStr] : null;
@@ -266,10 +307,19 @@ function assembleBriefStoreData(loc, targetDate, ds){
     kvstNorm: norms.kvstNorm,
     // Daypart data
     periods: peaks.map(r=>({period: r.date instanceof Date ? r.date.getHours() : 12, oepe:r.oepe, kvst:r.kvst})),
+    // FOB / Food Cost (monthly cadence)
+    baseFoodPct: fob?.baseFoodPct||null,
+    totFoodPct:  fob?.pLFoodPct||null,
+    fobMonth:    fob ? `${fob.date?.toLocaleDateString('en-US',{month:'short',year:'numeric'})||''}` : null,
+    // SMG FullScale (most recent month)
+    smgOsat:     smgFs?.osatTop2||null,
+    smgMonth:    smgFs ? new Date(smgFs.year,smgFs.month-1).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : null,
     // Data coverage
     hasLabor: !!labor,
     hasCtrl:  !!ctrl,
     hasPeaks: peaks.length > 0,
+    hasFOB:   !!fob,
+    hasSMG:   !!smgFs,
   };
 }
 
@@ -329,7 +379,8 @@ function StoreBriefCard({store, expanded, setExpanded}){
   const isOpen = expanded === store.loc;
   const {severity, flags, name, supervisor, hasData,
          sales, projSales, gc, oepe, oepeNorm, drawerOpens,
-         actVsNeed, tpph, laborPct, kvst, dtPark} = store;
+         actVsNeed, tpph, laborPct, kvst, dtPark,
+         baseFoodPct, totFoodPct, fobMonth, smgOsat, smgMonth} = store;
   const c = SCOLOR[severity], bg = SBG[severity], bdr = SBDR[severity];
 
   return h('div',{
@@ -429,6 +480,18 @@ function StoreBriefCard({store, expanded, setExpanded}){
           ['Labor%', laborPct!=null?((laborPct>1?laborPct:laborPct*100).toFixed(1))+'%':'—'],
           ['Drawer Opens',drawerOpens!=null?drawerOpens.toFixed(0):'—',
             drawerOpens!=null?(drawerOpens<5?'#10b981':drawerOpens<10?'#f59e0b':'#ef4444'):null],
+          ...(baseFoodPct!=null?[
+            ['Base Food%', ((baseFoodPct>1?baseFoodPct:baseFoodPct*100).toFixed(1))+'%'+(fobMonth?' '+fobMonth:''),
+              (()=>{const p=baseFoodPct>1?baseFoodPct:baseFoodPct*100;return p>=33?'#ef4444':p>=30?'#f59e0b':'#10b981';})()],
+          ]:[]),
+          ...(totFoodPct!=null?[
+            ['Tot Food%', ((totFoodPct>1?totFoodPct:totFoodPct*100).toFixed(1))+'%',
+              (()=>{const p=totFoodPct>1?totFoodPct:totFoodPct*100;return p>=35?'#ef4444':p>=32?'#f59e0b':'#10b981';})()],
+          ]:[]),
+          ...(smgOsat!=null?[
+            ['OSAT'+(smgMonth?' '+smgMonth:''), ((smgOsat>1?smgOsat:smgOsat*100).toFixed(0))+'%',
+              (()=>{const p=smgOsat>1?smgOsat:smgOsat*100;return p<65?'#ef4444':p<72?'#f59e0b':'#10b981';})()],
+          ]:[]),
         ].map(([lbl,val,clr])=>
           h('div',{style:{background:'rgba(255,255,255,.04)',borderRadius:'6px',padding:'8px 10px',textAlign:'center'}},
             h('div',{style:{fontFamily:'monospace',fontSize:'13px',fontWeight:700,color:clr||'var(--text,#111827)'}},val),
@@ -437,7 +500,15 @@ function StoreBriefCard({store, expanded, setExpanded}){
         )
       ),
       h('div',{style:{fontSize:'10px',color:'var(--text3,#6b7280)',marginTop:'10px',display:'flex',gap:'10px',flexWrap:'wrap'}},
-        h('span',null,'Data: '+([store.hasLabor&&'Labor',store.hasCtrl&&'Controls',store.hasPeaks&&'3 Peaks'].filter(Boolean).join(' · ')||'None loaded')+(!store.hasPeaks?' · (load 3 Peaks for service data)':'')),
+        h('span',null,'Data: '+([
+          store.hasLabor&&'Labor',
+          store.hasCtrl&&'Controls',
+          store.hasPeaks&&'3 Peaks',
+          store.hasFOB&&('Food Cost'+(fobMonth?' ('+fobMonth+')':'')),
+          store.hasSMG&&('SMG OSAT'+(smgMonth?' ('+smgMonth+')':'')),
+        ].filter(Boolean).join(' · ')||'None loaded')+
+        (!store.hasPeaks?' · (load 3 Peaks for service data)':'')+
+        (!store.hasFOB?' · (upload FOB for food cost)':'')),
       )
     )
   );
@@ -467,6 +538,18 @@ function MorningBriefPanel({ds, settings}){
   const {red,amber,green,noData,totalFlags} = brief.summary;
   const supervisors = [...new Set(Object.keys(SUPERVISOR_PATCHES))];
 
+  // Data source coverage pills
+  const dsCoverage = uM(()=>{
+    const sources = [
+      {key:'Labor',      loaded:!!(ds.laborRows?.length),     count:ds.laborRows?.length},
+      {key:'Controls',   loaded:!!(ds.ctrlRows?.length),      count:ds.ctrlRows?.length},
+      {key:'3 Peaks',    loaded:!!(ds.peaksSvcRows?.length),  count:ds.peaksSvcRows?.length},
+      {key:'Food Cost',  loaded:!!(ds.fobRows?.length),       count:ds.fobRows?.length},
+      {key:'SMG OSAT',   loaded:!!(ds.smgFullscale?.length),  count:ds.smgFullscale?.length},
+    ];
+    return sources;
+  },[ds]);
+
   return h('div',{style:{padding:'16px',maxWidth:'860px',margin:'0 auto'}},
 
     // ── Header ──────────────────────────────────────────────────────────────
@@ -478,6 +561,16 @@ function MorningBriefPanel({ds, settings}){
           h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'3px'}},
             totalFlags+' flag'+(totalFlags!==1?'s':'')+' across '+brief.stores.filter(s=>s.hasData).length+' stores with data · '+(noData>0?noData+' stores no data · ':'')+
             'Generated '+new Date().toLocaleTimeString()),
+          h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginTop:'8px'}},
+            dsCoverage.map(src=>
+              h('span',{key:src.key,style:{
+                fontSize:'10px',fontWeight:600,padding:'2px 8px',borderRadius:'99px',
+                background:src.loaded?'rgba(16,185,129,.12)':'rgba(255,255,255,.05)',
+                border:`1px solid ${src.loaded?'rgba(16,185,129,.3)':'rgba(255,255,255,.1)'}`,
+                color:src.loaded?'#10b981':'#4a6080'}},
+                (src.loaded?'✓ ':'○ ')+src.key+(src.loaded&&src.count?' ('+src.count+')':''))
+            )
+          ),
         ),
         h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
           h('input',{type:'date',
@@ -564,6 +657,8 @@ function exportBriefHTML(brief){
       ['Act vs Need',s.actVsNeed!=null?(s.actVsNeed>=0?'+':'')+s.actVsNeed.toFixed(1):'—'],
       ['D.Opens',    s.drawerOpens!=null?s.drawerOpens.toFixed(0):'—'],
       ['Labor%',     s.laborPct!=null?((s.laborPct>1?s.laborPct:s.laborPct*100).toFixed(1))+'%':'—'],
+      ...(s.baseFoodPct!=null?[['Base Food%',((s.baseFoodPct>1?s.baseFoodPct:s.baseFoodPct*100).toFixed(1))+'%']]:[] ),
+      ...(s.smgOsat!=null?[['OSAT',((s.smgOsat>1?s.smgOsat:s.smgOsat*100).toFixed(0))+'%']]:[] ),
     ].map(([l,v])=>`<div class="metric"><div class="metric-val">${v}</div><div class="metric-lbl">${l}</div></div>`).join('');
     return `<div class="store-card sev-${s.severity.toLowerCase()}">
       <div class="store-hdr">

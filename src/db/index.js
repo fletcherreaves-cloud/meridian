@@ -318,6 +318,8 @@ async function opfsSave(ds) {
       glimpse: (ds.glimpseRows || []).map(strip),
       cash:    (ds.cashRows    || []).map(strip),
       exceptions:(ds.exceptionRows||[]).map(strip),
+      monthlyTargets:     ds.monthlyTargets     || {},
+      monthlyTargetsMeta: ds.monthlyTargetsMeta || null,
     };
     const json = JSON.stringify(data);
     const root = await navigator.storage.getDirectory();
@@ -376,6 +378,8 @@ function opfsLoad() {
             glimpse:    (raw.glimpse   ||[]).map(toRow),
             cash:       (raw.cash      ||[]).map(toRow),
             exceptions: (raw.exceptions||[]).map(toRow),
+            monthlyTargets:     raw.monthlyTargets     || {},
+            monthlyTargetsMeta: raw.monthlyTargetsMeta || null,
           });
         } catch { resolve(null); }
       }, 0);
@@ -436,6 +440,8 @@ async function loadDsFromIDB() {
       glimpse:    opfs.glimpse    || [],
       cash:       opfs.cash       || [],
       exceptions: opfs.exceptions || [],
+      monthlyTargets:     opfs.monthlyTargets     || {},
+      monthlyTargetsMeta: opfs.monthlyTargetsMeta || null,
     };
   }
 

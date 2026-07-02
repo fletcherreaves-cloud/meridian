@@ -297,7 +297,7 @@ function OrgSection() {
       type:'text',
       value: orgName,
       onChange: e => setOrgName(e.target.value),
-      placeholder: 'e.g. Murphy Family Restaurants',
+      placeholder: 'e.g. Your Organization Name',
       style:{
         flex:1, padding:'6px 10px', background:'var(--surf)', border:`1px solid ${BDR}`,
         borderRadius:R, color:TEXT, fontSize:12, width:'100%', maxWidth:360,
@@ -489,7 +489,7 @@ function ThresholdsSection({local, set}) {
   return div(null,
     div({style:{fontSize:11,color:TEXT3,marginBottom:16,padding:'10px 14px',background:S2,borderRadius:R,border:`1px solid ${BDR}`,lineHeight:1.7}},
       div(null,span({style:{fontWeight:700}},'deviation = actual − target'),
-        m.unit==='pct'?' divided by |target|':'',
+        ' (pct metrics: ÷ |target|)',
         ' · For "pct" metrics, thresholds are fractions (0.05 = 5%). For "abs" metrics, thresholds are in raw units (seconds, dollars, count).'),
       div({style:{marginTop:4}},
         span({style:{fontWeight:700}},'Changing a threshold: '),
@@ -643,12 +643,14 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
   const [dirty, setDirty]         = useState(false);
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [returnNotes, setReturnNotes]       = useState('');
+  const [checkMonth, setCheckMonth]         = useState(null);
   const reviewOrg  = getStoreOrg(initReview.loc);
   const orgLogo    = getOrgLogo(reviewOrg);
   const orgLabel   = getOrgLabel(reviewOrg);
 
   const mths  = halfMonths(review.half);
   const qKeys = halfQKeys(review.half);
+  const activeCheckMonth = checkMonth || mths[mths.length-1];
 
   const update = useCallback((path, val) => {
     setReview(prev => {
@@ -725,6 +727,15 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
       orgLogo
         ? h('img',{src:orgLogo,alt:orgLabel,style:{height:30,objectFit:'contain',opacity:.9}})
         : span({style:{fontSize:10,color:TEXT3,padding:'3px 8px',border:`1px solid ${BDR}`,borderRadius:R}},orgLabel),
+      div({style:{display:'flex',gap:4,alignItems:'center'}},
+        sel({value:activeCheckMonth,onChange:e=>setCheckMonth(+e.target.value),
+          style:{fontSize:10,padding:'3px 6px',background:'var(--surf)',border:`1px solid ${BDR}`,
+            borderRadius:R,color:TEXT,cursor:'pointer'}},
+          ...mths.map(mn=>h('option',{value:mn,key:mn},MONTH_NAMES[mn-1]))
+        ),
+        GhostBtn({onClick:()=>printCheckpoint(review,cfg,activeCheckMonth,orgLabel,orgLogo),
+          style:{fontSize:11}},'1:1 Checkpoint')
+      ),
       GhostBtn({onClick:()=>printReview(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Print / PDF'),
       PrimaryBtn({onClick:doSave,disabled:isReadOnly,
         style:{minWidth:80,opacity:isReadOnly?0.45:1,cursor:isReadOnly?'not-allowed':'pointer'}},
@@ -878,14 +889,15 @@ function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
           const target = mo[m.key+'Tgt'];
           const rating = rateMetric(actual, target, m);
           const bg = rating ? ratingBg(rating) : 'transparent';
+          const sc = m.pctInput ? 100 : 1;
           return div({key:mn,style:{width:COL_W,minWidth:COL_W,borderRight:`1px solid ${BDR}`,
             background:bg,display:'flex',flexDirection:'column',gap:2,padding:'4px 2px',alignItems:'center'}},
-            NumInput({value:actual,
-              onChange:v=>setMonthKPI(mn,m.key,v),
-              placeholder:'Act',style:{width:COL_W-10,background:bg||'var(--surf)'}}),
-            NumInput({value:target,
-              onChange:v=>setMonthKPI(mn,m.key+'Tgt',v),
-              placeholder:'Tgt',style:{width:COL_W-10,fontSize:10,color:TEXT3,background:'transparent',
+            NumInput({value:actual!=null?actual*sc:null,
+              onChange:v=>setMonthKPI(mn,m.key,v!=null?v/sc:null),
+              placeholder:m.pctInput?'Act %':'Act',style:{width:COL_W-10,background:bg||'var(--surf)'}}),
+            NumInput({value:target!=null?target*sc:null,
+              onChange:v=>setMonthKPI(mn,m.key+'Tgt',v!=null?v/sc:null),
+              placeholder:m.pctInput?'Tgt %':'Tgt',style:{width:COL_W-10,fontSize:10,color:TEXT3,background:'transparent',
                 border:`1px dashed ${BDR}`}}),
             rating!=null&&span({style:{fontSize:9,color:ratingColor(rating),fontWeight:700}},
               RATING_LABELS[rating]?.slice(0,3)||rating)
@@ -1078,6 +1090,129 @@ function DevPlanTab({review, setDevPlan, update}) {
         style:{...fieldStyle,resize:'vertical'}})
     )
   );
+}
+
+// ── Monthly 1:1 Checkpoint print ──────────────────────────────────────────────
+function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
+  if (!month) return;
+  const mo = review.kpis?.months?.[month] || {};
+  const monthName = MONTH_NAMES[month-1];
+  const today = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  const rLabel = r => r===4?'Exceeds':r===3?'On Target':r===2?'Below':r===1?'Needs Improvement':'—';
+  const rCol   = r => r===4?'#10b981':r===3?'#2563eb':r===2?'#d97706':'#dc2626';
+
+  const fmtVal = (v, unit) => {
+    if (v==null) return '—';
+    if (unit==='pct') return (v*100).toFixed(1)+'%';
+    return Math.abs(v)>=100 ? Math.round(v)+'': v.toFixed(1);
+  };
+
+  const fmtDev = (actual, target, unit) => {
+    if (actual==null||target==null) return '—';
+    const dev = unit==='pct' ? (actual-target)/Math.abs(target||1) : actual-target;
+    const sign = dev>=0?'+':'';
+    return unit==='pct' ? `${sign}${(dev*100).toFixed(1)}%` : `${sign}${dev.toFixed(1)}`;
+  };
+
+  const catSections = CAT_KEYS.map(catKey => {
+    const cw = cfg.categoryWeights[catKey];
+    const metrics = (cfg.metrics[catKey]||[]).filter(m=>m.scored);
+    if (!metrics.length) return '';
+    const rows = metrics.map(m => {
+      const actual = mo[m.key];
+      const target = mo[m.key+'Tgt'];
+      const r = rateMetric(actual, target, m);
+      const col = r ? rCol(r) : '#9ca3af';
+      return `<tr>
+        <td>${m.label}</td>
+        <td style="text-align:center">${fmtVal(actual,m.unit)}</td>
+        <td style="text-align:center;color:#6b7280">${fmtVal(target,m.unit)}</td>
+        <td style="text-align:center">${fmtDev(actual,target,m.unit)}</td>
+        <td style="text-align:center;font-weight:700;color:${col}">${r?rLabel(r):'—'}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <h3>${cw?.label||catKey}</h3>
+      <table>
+        <tr><th>Metric</th><th style="text-align:center">Actual</th><th style="text-align:center">Target</th><th style="text-align:center">vs. Target</th><th style="text-align:center">Rating</th></tr>
+        ${rows}
+      </table>`;
+  }).join('');
+
+  const lines = n => Array(n).fill('<div class="line"></div>').join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>${review.name} — ${monthName} ${review.year} 1:1 Checkpoint</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:20px;max-width:800px;margin:0 auto}
+    h1{font-size:16px;font-weight:700;margin-bottom:2px}
+    h2{font-size:13px;font-weight:700;margin:14px 0 6px;padding-bottom:3px;border-bottom:2px solid #111}
+    h3{font-size:10px;font-weight:700;margin:8px 0 4px;color:#374151;text-transform:uppercase;letter-spacing:.3px}
+    table{width:100%;border-collapse:collapse;margin-bottom:6px;font-size:10px}
+    th{background:#f3f4f6;padding:4px 6px;text-align:left;border:1px solid #d1d5db;font-size:9px;text-transform:uppercase;letter-spacing:.3px}
+    td{padding:4px 6px;border:1px solid #e5e7eb;vertical-align:top}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #111}
+    .label{font-size:9px;font-weight:700;color:#6b7280;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px}
+    .line{border-bottom:1px solid #d1d5db;height:22px;margin-bottom:2px}
+    .section{margin-bottom:10px}
+    .sig-block{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:16px;padding-top:12px;border-top:2px solid #111}
+    .sig-line{border-top:1px solid #111;margin-top:32px;padding-top:3px;font-size:9px;color:#6b7280}
+    .ack{background:#f0fdf4;border:1px solid #86efac;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:10px}
+    @media print{body{padding:8px}@page{margin:.5in;size:letter}}
+  </style></head><body>
+
+  <div class="hdr">
+    <div>
+      <div class="label">Monthly Performance Checkpoint — 1:1 Meeting</div>
+      <h1>${review.name}</h1>
+      <div style="font-size:11px;color:#374151;margin-top:2px">${review.role} · Store ${review.loc||'—'} · ${monthName} ${review.year}</div>
+      <div style="font-size:9px;color:#6b7280;margin-top:2px">Prepared: ${today}</div>
+    </div>
+    <div style="text-align:right">
+      ${orgLogo?`<img src="${orgLogo}" style="height:28px;object-fit:contain;display:block;margin-bottom:3px">`:''}
+      <span style="font-size:10px;color:#6b7280">${orgLabel||''}</span>
+    </div>
+  </div>
+
+  <h2>KPI Results — ${monthName} ${review.year}</h2>
+  ${catSections}
+
+  <h2>1:1 Discussion Notes</h2>
+  <div class="section">
+    <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:4px">What's going well?</div>
+    ${lines(3)}
+  </div>
+  <div class="section">
+    <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:4px">What needs attention / improvement?</div>
+    ${lines(3)}
+  </div>
+  <div class="section">
+    <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:4px">Commitments &amp; action items from this conversation</div>
+    ${lines(4)}
+  </div>
+  <div class="section">
+    <div style="font-size:10px;font-weight:700;color:#374151;margin-bottom:4px">Next check-in date / follow-up</div>
+    ${lines(1)}
+  </div>
+
+  <div class="ack">
+    <strong>Acknowledgment of Receipt:</strong> By signing below, <em>${review.name}</em> confirms this monthly performance checkpoint was received and discussed in a 1:1 meeting with their supervisor. A copy is retained in the performance file.
+  </div>
+
+  <div class="sig-block">
+    <div><div class="sig-line">${review.name} — Signature &amp; Date</div></div>
+    <div><div class="sig-line">Supervisor — Signature &amp; Date</div></div>
+  </div>
+
+  </body></html>`;
+
+  const w = window.open('','_blank','width=900,height=800');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(()=>w.print(), 400);
 }
 
 // ── Print / PDF export ─────────────────────────────────────────────────────────
@@ -1695,7 +1830,7 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
   const [showNew, setShowNew]           = useState(false);
 
   const loadDemos = () => {
-    fetch('/meridian/populate-demo-reviews.js')
+    fetch('/populate-demo-reviews.js')
       .then(r => r.text())
       .then(code => { eval(code); onNew(); })
       .catch(e => alert('Could not load demo reviews: ' + e.message));

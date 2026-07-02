@@ -43,6 +43,8 @@ function fcx(h,...names){for(const n of names){const s=n.toLowerCase();for(let i
 function autoHdrRow(raw,max=5){for(let i=0;i<Math.min(max,raw.length);i++){const r=raw[i];if(r&&r.some(c=>c&&String(c).toLowerCase().trim()==='loc'))return i;}return 0;}
 function parseRaw(wb,sheet){const ws=wb.Sheets[sheet]||wb.Sheets[wb.SheetNames[0]];if(!ws)return[];return XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});}
 function parsePct(v){if(v===null||v===undefined||v==='')return 0;if(typeof v==='number')return Math.abs(v)>1.5?v/100:v;const s=String(v).replace('%','').trim();const n=parseFloat(s);return isNaN(n)?0:(Math.abs(n)>1.5?n/100:n);}
+// Strip $ and , from QSRSoft CSV monetary strings before parseFloat
+function parseNum(v){if(v===null||v===undefined||v==='')return 0;return parseFloat(String(v).replace(/[$,]/g,''))||0;}
 
 // Date helpers
 
@@ -158,6 +160,12 @@ function detectType(filename, wb){
   const ext=filename.split('.').pop().toLowerCase();
   const dm=filename.match(/(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/i);
   const dr=dm?{from:dm[1],to:dm[2]}:null;
+  // SMG VOICE Customer Comment Report (PDF filename pattern: eu065119100...)
+  if(ext==='pdf'&&/^eu\d{10,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
+  if(ext==='pdf'&&(fn.includes('voice')||fn.includes('comment report')||fn.includes('customer comment')))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
+  if(ext==='xlsx'&&(fn.includes('fullscale')||fn.includes('full_scale')||fn.includes('full scale')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
+  // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph" sheet
+  if(ext==='xlsx'&&wb&&wb.SheetNames&&wb.SheetNames.some(s=>s.toLowerCase().includes('small graph')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
   // Mesonet: all-digit filename
   if(/^\d+$/.test(fn)&&(ext==='csv'||ext==='txt'))return{type:'weather',label:'WeatherData (Mesonet)',dr,confidence:'high'};
   // Combined Meridian workbook
@@ -178,8 +186,11 @@ function detectType(filename, wb){
   if(fn.includes('daily activity report')||fn.includes('daily_activity'))return{type:'dar',label:'Daily Activity Report (Hourly)',dr,confidence:'high'};
   // ── Product Mix ──
   if(fn.includes('product mix')||fn.includes('product_mix')||fn.includes('pmix'))return{type:'pmix',label:'Product Mix',dr,confidence:'high'};
+  // LifeLenz Labor Analysis Summary Report (must come before generic 'labor analysis' match)
+  // Matches both space-separated and underscore-separated filenames from the sync script
+  if(fn.includes('labor analysis summary report')||fn.includes('labor_analysis_summary_report'))return{type:'ll-labor',label:'LifeLenz Labor Analysis',dr,confidence:'high'};
   // Labor Analysis
-  if(fn.startsWith('labor analysis')||fn.includes('labor analysis'))return{type:'labor',label:'Labor Analysis',dr,confidence:'high'};
+  if(fn.startsWith('labor analysis')||fn.includes('labor analysis')||fn.includes('labor_analysis'))return{type:'labor',label:'Labor Analysis',dr,confidence:'high'};
   // Service → OpsData
   // Service → OpsData (QSRSoft sheet/file naming)
   if(fn.startsWith('service ')||fn==='service')return{type:'ops',label:'OpsData (Service)',dr,confidence:'high'};
@@ -189,17 +200,17 @@ function detectType(filename, wb){
   if(fn.startsWith('controls ')||fn==='controls')return{type:'ctrl',label:'ControlsData (Controls)',dr,confidence:'high'};
   // OpsTargets
   if(fn.includes('target'))return{type:'targets',label:'OpsTargets',dr,confidence:'high'};
+  // ── QSRSoft email report types (must come before fuzzy matches) ─────────────
+  if(fn.includes('sales ledger')||fn.includes('sales_ledger'))            return{type:'sales-ledger',      label:'QSRSoft Sales Ledger',       dr,confidence:'high'};
+  if(fn.includes('daily glimpse')||fn.includes('daily_glimpse'))          return{type:'daily-glimpse',     label:'QSRSoft Daily Glimpse',      dr,confidence:'high'};
+  if(fn.includes('cash sheet')||fn.includes('cash_sheet'))                return{type:'cash-sheet',        label:'QSRSoft Cash Sheet',         dr,confidence:'high'};
+  if(fn.includes('labor exception')||fn.includes('labor_exception'))      return{type:'labor-exceptions',  label:'QSRSoft Labor Exceptions',   dr,confidence:'high'};
   // Fuzzy filename matches
   if(fn.includes('opsdata')||fn.includes('ops data'))return{type:'ops',label:'OpsData (fuzzy)',dr,confidence:'medium'};
   if(fn.includes('service')||fn.includes('oepe')||fn.includes('speed'))return{type:'ops',label:'OpsData (fuzzy)',dr,confidence:'medium'};
   if(fn.includes('control')||fn.includes('cash'))return{type:'ctrl',label:'ControlsData (fuzzy)',dr,confidence:'medium'};
   if(fn.includes('labor'))return{type:'labor',label:'Labor (fuzzy)',dr,confidence:'medium'};
   if(fn.includes('weather')||fn.includes('mesonet'))return{type:'weather',label:'WeatherData (fuzzy)',dr,confidence:'medium'};
-  // \u2500\u2500 QSRSoft email report types \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-  if(fn.includes('sales ledger'))       return{type:'sales-ledger',      label:'QSRSoft Sales Ledger',       dr,confidence:'high'};
-  if(fn.includes('daily glimpse'))      return{type:'daily-glimpse',     label:'QSRSoft Daily Glimpse',      dr,confidence:'high'};
-  if(fn.includes('cash sheet'))         return{type:'cash-sheet',        label:'QSRSoft Cash Sheet',         dr,confidence:'high'};
-  if(fn.includes('labor exception'))    return{type:'labor-exceptions',  label:'QSRSoft Labor Exceptions',   dr,confidence:'high'};
   // Inventory Summary and Usage (paper/food/condiment)
   if(fn.includes('inventory summary')&&fn.includes('usage'))return{type:'inventory',label:'Inventory Summary & Usage',confidence:'high',loc:(()=>{const m=filename.match(/^(\d{4,6})\s*[-\u2013]/);return m?m[1]:null;})()};
   // Projections file: detected by filename before sniff
@@ -277,34 +288,34 @@ function parseLaborData(wb,sheet,defaultDateOverride){
     const r=raw[i];if(!r)continue;
     const loc=String(r[C.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
     const dt=C.date>=0?parseXLDate(r[C.date]):_summaryDate;if(!dt)continue;
-    const flrNeed=parseFloat(r[C.flrNeed])||0;
-    const flrSch=parseFloat(r[C.flrSch])||0;
+    const flrNeed=parseNum(r[C.flrNeed]);
+    const flrSch=parseNum(r[C.flrSch]);
     const laborPctVal=parsePct(r[C.labor])||parsePct(r[C.crewLaborPct])||parsePct(r[C.totalLaborPct]);
     rows.push({loc,date:dt,
-      sales:parseFloat(r[C.sales])||parseFloat(r[C.allNetSales])||0,
-      allNetSales:parseFloat(r[C.allNetSales])||0,
-      projSales:parseFloat(r[C.proj])||0,
-      gc:parseFloat(r[C.gc])||0,actualGC:parseFloat(r[C.actualGC])||0,
-      oppCostPct:parsePct(r[C.opp]),oppCostDollar:parseFloat(r[C.oppD])||0,
-      avgCheck:parseFloat(r[C.avgChk])||0,tpph:parseFloat(r[C.tpph])||0,spph:parseFloat(r[C.spph])||0,
-      actVsNeed:parseFloat(r[C.avn])||0,laborPct:laborPctVal,
-      otHrs:parseFloat(r[C.otHrs])||0,otDollar:parseFloat(r[C.otD])||0,
-      actHrs:parseFloat(r[C.actHrs])||0,avgRate:parseFloat(r[C.avgRate])||0,
-      salaryMgrHrs:parseFloat(r[C.salMgr])||0,
-      fixedContractHrs:parseFloat(r[C.fixCon])||0,fixedSchedHrs:parseFloat(r[C.fixSch])||0,
-      variableNeeded:parseFloat(r[C.varNeed])||0,
+      sales:parseNum(r[C.sales])||parseNum(r[C.allNetSales]),
+      allNetSales:parseNum(r[C.allNetSales]),
+      projSales:parseNum(r[C.proj]),
+      gc:parseNum(r[C.gc]),actualGC:parseNum(r[C.actualGC]),
+      oppCostPct:parsePct(r[C.opp]),oppCostDollar:parseNum(r[C.oppD]),
+      avgCheck:parseNum(r[C.avgChk]),tpph:parseNum(r[C.tpph]),spph:parseNum(r[C.spph]),
+      actVsNeed:parseNum(r[C.avn]),laborPct:laborPctVal,
+      otHrs:parseNum(r[C.otHrs]),otDollar:parseNum(r[C.otD]),
+      actHrs:parseNum(r[C.actHrs]),avgRate:parseNum(r[C.avgRate]),
+      salaryMgrHrs:parseNum(r[C.salMgr]),
+      fixedContractHrs:parseNum(r[C.fixCon]),fixedSchedHrs:parseNum(r[C.fixSch]),
+      variableNeeded:parseNum(r[C.varNeed]),
       floorMgmtNeeded:flrNeed,floorHrsSched:flrSch,
       floorCompliance:flrNeed>0?flrSch/flrNeed:null,
       // Channel sales breakdown
-      salesVsLYPct:parseFloat(r[C.salesVsLYPct])||null,
-      dtSales:parseFloat(r[C.dtSales])||0,dtGC:parseFloat(r[C.dtGC])||0,dtAvgChk:parseFloat(r[C.dtAvgChk])||0,dtPctTotal:parsePct(r[C.dtPctTotal]),
-      bfSales:parseFloat(r[C.bfSales])||0,bfGC:parseFloat(r[C.bfGC])||0,bfAvgChk:parseFloat(r[C.bfAvgChk])||0,bfPctTotal:parsePct(r[C.bfPctTotal]),
-      delivSales:parseFloat(r[C.delivSales])||0,delivGC:parseFloat(r[C.delivGC])||0,delivAvgChk:parseFloat(r[C.delivAvgChk])||0,delivPctTotal:parsePct(r[C.delivPctTotal]),
-      mopSales:parseFloat(r[C.mopSales])||0,mopGC:parseFloat(r[C.mopGC])||0,mopAvgChk:parseFloat(r[C.mopAvgChk])||0,mopPctTotal:parsePct(r[C.mopPctTotal]),
-      kioskSales:parseFloat(r[C.kioskSales])||0,kioskGC:parseFloat(r[C.kioskGC])||0,kioskAvgChk:parseFloat(r[C.kioskAvgChk])||0,kioskPctTotal:parsePct(r[C.kioskPctTotal]),
-      eatInSales:parseFloat(r[C.eatInSales])||0,eatInGC:parseFloat(r[C.eatInGC])||0,
-      inStoreSales:parseFloat(r[C.inStoreSales])||0,inStoreGC:parseFloat(r[C.inStoreGC])||0,inStorePctTotal:parsePct(r[C.inStorePctTotal]),
-      fcSales:parseFloat(r[C.fcSales])||0,fcGC:parseFloat(r[C.fcGC])||0,fcPctTotal:parsePct(r[C.fcPctTotal])});
+      salesVsLYPct:parseNum(r[C.salesVsLYPct])||null,
+      dtSales:parseNum(r[C.dtSales]),dtGC:parseNum(r[C.dtGC]),dtAvgChk:parseNum(r[C.dtAvgChk]),dtPctTotal:parsePct(r[C.dtPctTotal]),
+      bfSales:parseNum(r[C.bfSales]),bfGC:parseNum(r[C.bfGC]),bfAvgChk:parseNum(r[C.bfAvgChk]),bfPctTotal:parsePct(r[C.bfPctTotal]),
+      delivSales:parseNum(r[C.delivSales]),delivGC:parseNum(r[C.delivGC]),delivAvgChk:parseNum(r[C.delivAvgChk]),delivPctTotal:parsePct(r[C.delivPctTotal]),
+      mopSales:parseNum(r[C.mopSales]),mopGC:parseNum(r[C.mopGC]),mopAvgChk:parseNum(r[C.mopAvgChk]),mopPctTotal:parsePct(r[C.mopPctTotal]),
+      kioskSales:parseNum(r[C.kioskSales]),kioskGC:parseNum(r[C.kioskGC]),kioskAvgChk:parseNum(r[C.kioskAvgChk]),kioskPctTotal:parsePct(r[C.kioskPctTotal]),
+      eatInSales:parseNum(r[C.eatInSales]),eatInGC:parseNum(r[C.eatInGC]),
+      inStoreSales:parseNum(r[C.inStoreSales]),inStoreGC:parseNum(r[C.inStoreGC]),inStorePctTotal:parsePct(r[C.inStorePctTotal]),
+      fcSales:parseNum(r[C.fcSales]),fcGC:parseNum(r[C.fcGC]),fcPctTotal:parsePct(r[C.fcPctTotal])});
   }
   return rows;
 }
@@ -465,9 +476,12 @@ function parseWeatherData(wb,sheet){
 
 function parseTargets(wb,sheet){
   sheet=sheet||'OpsTargets';
-  const raw=parseRaw(wb,sheet),hi=autoHdrRow(raw),h=raw[hi]||[];
+  const raw=parseRaw(wb,sheet);
+  // targets files may use 'Restaurant' or 'Loc' as the store column — autoHdrRow only finds 'loc'
+  const hi=(()=>{for(let i=0;i<Math.min(6,raw.length);i++){const r=raw[i]||[];if(r.some(c=>c&&/^(loc|store|restaurant|index)$/i.test(String(c).trim())))return i;}return autoHdrRow(raw);})();
+  const h=raw[hi]||[];
   const C={
-    loc:         fc(h,'Loc','Store'),
+    loc:         fc(h,'Loc','Store','Restaurant'),
     // Service targets
     oepe:        findCol(h,'Target OEPE'),
     tpph:        fc(h,'TPPH\nTarget','Target TPPH'),
@@ -530,7 +544,11 @@ function parseTargets(wb,sheet){
   const targets={};
   for(let i=hi+1;i<raw.length;i++){
     const r=raw[i];if(!r)continue;
-    const loc=String(r[C.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
+    const rawLoc=String(r[C.loc]||'').trim();
+    // Support plain "3708" and "3708 - ARDMORE-BROADWAY" (Restaurant column format)
+    const locM=rawLoc.match(/^(\d+)/);
+    const loc=locM?locM[1]:'';
+    if(!loc)continue;
     targets[loc]={
       // Service / Operations
       tOepe:       parseFloat(r[C.oepe])||140,
@@ -588,6 +606,122 @@ function parseTargets(wb,sheet){
       tManRefAmt:  parseFloat(r[C.manRefAmt])||0,
     };
   }
+  console.log(`[Targets] hdrRow=${hi} locCol=${C.loc} fobBaseCol=${C.fobBase} parsed=${Object.keys(targets).length} stores`, Object.keys(targets).slice(0,3).map(l=>({loc:l,tFOBBase:targets[l].tFOBBase,tLabor:targets[l].tLabor})));
+  return targets;
+}
+
+// ── MONTHLY TARGETS PARSER ─────────────────────────────────────────────────
+// Reads monthly projections file (Table 1 (2) sheet) — per-store food cost,
+// labor, TPPH, and FOB component targets. Monthly values take priority over yearly.
+function parseMonthlyTargets(wb){
+  // Try 'Table 1 (2)' first, fall back to first sheet
+  const sheetName=wb.SheetNames.includes('Table 1 (2)')?'Table 1 (2)':wb.SheetNames[0];
+  const raw=parseRaw(wb,sheetName);
+  // Header row: contains 'restaurant' AND ('base food' or 'fob target')
+  let hi=-1;
+  for(let i=0;i<Math.min(5,raw.length);i++){
+    const joined=(raw[i]||[]).map(c=>String(c||'').toLowerCase()).join(' ');
+    if(joined.includes('restaurant')&&(joined.includes('base food')||joined.includes('fob target'))){hi=i;break;}
+  }
+  if(hi<0){console.log('[MonthlyTargets] header row not found');return {};}
+  const h=raw[hi]||[];
+  const C={
+    loc:        fc(h,'Restaurant'),
+    crewLabor:  fc(h,'Crew Labor %'),
+    bonusLabor: fc(h,'Bonus Crew Labor%','Bonus Crew Labor'),
+    tpph:       fc(h,'TPPH\nTarget','TPPH Target','TPPH\r\nTarget'),
+    labor:      fc(h,'Combined Labor %'),
+    fobBase:    fc(h,'Base Food\n%','Base Food %','Base Food\r\n%'),
+    discCoup:   fc(h,'Disc Coup %'),
+    compWaste:  fc(h,'Comp Waste %'),
+    rawWaste:   fc(h,'Raw Waste %'),
+    condiment:  fc(h,'Condiment\n%','Condiment %','Condiment\r\n%'),
+    empFood:    fc(h,'Emp Food\n%','Emp Food %','Emp Meal %','Emp Food\r\n%'),
+    statLoss:   fc(h,'Stat Loss\n%','Stat Loss %','Stat Loss\r\n%'),
+    unex:       fc(h,'Unex Diff\n%','Unex Diff %','Unex Diff\r\n%'),
+    fobTarget:  fc(h,'FOB Target w/o Disc Coup','FOB Target'),
+    fobTotal:   fc(h,'Total Food Cost\n%','Total Food Cost %','Total Food Cost\r\n%'),
+    fobBonus:   fc(h,'Bonus Food Over Base Target','Bonus Food'),
+    paperCost:  fc(h,'P &. L Paper Cost %','P & L Paper Cost %','Paper Cost %'),
+    opSupply:   fc(h,'Op Supply Target'),
+    salesProj:  fc(h,'Sales Projection'),
+  };
+  const targets={};
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i]; if(!r)continue;
+    const rawLoc=String(r[C.loc]||'').trim();
+    const m=rawLoc.match(/^(\d{4,6})/); if(!m)continue;
+    const loc=m[1];
+    const t={};
+    if(C.crewLabor>=0&&parsePct(r[C.crewLabor]))  t.tCrewLabor=parsePct(r[C.crewLabor]);
+    if(C.bonusLabor>=0&&parsePct(r[C.bonusLabor])) t.tBonusLabor=parsePct(r[C.bonusLabor]);
+    if(C.tpph>=0&&parseFloat(r[C.tpph]))           t.tTpph=parseFloat(r[C.tpph]);
+    if(C.labor>=0&&parsePct(r[C.labor]))            t.tLabor=parsePct(r[C.labor]);
+    if(C.fobBase>=0&&parsePct(r[C.fobBase]))        t.tFOBBase=parsePct(r[C.fobBase]);
+    if(C.discCoup>=0&&parsePct(r[C.discCoup]))      t.tDiscCoupPct=parsePct(r[C.discCoup]);
+    if(C.compWaste>=0&&parsePct(r[C.compWaste]))    t.tCompWaste=parsePct(r[C.compWaste]);
+    if(C.rawWaste>=0&&parsePct(r[C.rawWaste]))      t.tRawWaste=parsePct(r[C.rawWaste]);
+    if(C.condiment>=0&&parsePct(r[C.condiment]))    t.tCondiment=parsePct(r[C.condiment]);
+    if(C.empFood>=0&&parsePct(r[C.empFood]))        t.tEmpFood=parsePct(r[C.empFood]);
+    if(C.statLoss>=0&&parsePct(r[C.statLoss]))      t.tStatLoss=parsePct(r[C.statLoss]);
+    if(C.unex>=0)                                   t.tUnex=parsePct(r[C.unex]);
+    if(C.fobTarget>=0&&parsePct(r[C.fobTarget]))    t.tFOBTarget=parsePct(r[C.fobTarget]);
+    if(C.fobTotal>=0&&parsePct(r[C.fobTotal]))      t.tFOBTotal=parsePct(r[C.fobTotal]);
+    if(C.fobBonus>=0&&parsePct(r[C.fobBonus]))      t.tFOBBonusBase=parsePct(r[C.fobBonus]);
+    if(C.paperCost>=0&&parsePct(r[C.paperCost]))    t.tPaperCost=parsePct(r[C.paperCost]);
+    if(C.opSupply>=0&&parseFloat(r[C.opSupply]))    t.tOpSupply=parseFloat(r[C.opSupply]);
+    if(C.salesProj>=0&&parseFloat(r[C.salesProj]))  t.tProdSales=parseFloat(r[C.salesProj]);
+    if(Object.keys(t).length>0) targets[loc]=t;
+  }
+  console.log(`[MonthlyTargets] sheet='${sheetName}' hdr=${hi} loc=${C.loc} fobBase=${C.fobBase} parsed=${Object.keys(targets).length} stores`,Object.keys(targets).slice(0,2).map(l=>({loc:l,tFOBBase:targets[l].tFOBBase,tFOBTarget:targets[l].tFOBTarget,tLabor:targets[l].tLabor})));
+  return targets;
+}
+
+// ── YEARLY TARGETS PARSER ──────────────────────────────────────────────────
+// Reads MCDOK yearly targets file (Table 1 sheet) — OEPE/Park/KVS/R2P/Labor/TPPH.
+// Yearly values are the baseline; monthly targets override when available.
+function parseYearlyTargets(wb){
+  const sheetName=wb.SheetNames.includes('Table 1')?'Table 1':wb.SheetNames[0];
+  const raw=parseRaw(wb,sheetName);
+  // Header row: contains 'OEPE' and 'Park'
+  let hi=-1;
+  for(let i=0;i<Math.min(6,raw.length);i++){
+    const joined=(raw[i]||[]).map(c=>String(c||'').toLowerCase()).join(' ');
+    if(joined.includes('oepe')&&joined.includes('park')){hi=i;break;}
+  }
+  if(hi<0){console.log('[YearlyTargets] header row not found');return {};}
+  const h=raw[hi]||[];
+  // First 'Restaurant' column is the loc; all others are repeated for layout
+  const locCol=h.findIndex(c=>String(c||'').toLowerCase().trim()==='restaurant');
+  const C={
+    loc:    locCol,
+    oepe:   fc(h,'OEPE\nPACE','OEPE PACE','OEPE\r\nPACE'),
+    park:   fc(h,'Park %'),
+    kvst:   fc(h,'KVS\nPACE','KVS PACE','KVS\r\nPACE'),
+    kvsu:   fc(h,'Healthy Use 2nd\nSide','Healthy Use','KVS Usage','Healthy Use 2nd\r\nSide'),
+    r2p:    fc(h,'FC R2P PACE','R2P PACE','R2P'),
+    tpph:   fc(h,'TPPH'),
+    labor:  fc(h,'Labor'),
+    fobT:   fc(h,'Food Over Base','FOB'),
+  };
+  const targets={};
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i]; if(!r)continue;
+    const rawLoc=String(r[C.loc]||'').trim();
+    const m=rawLoc.match(/^(\d{4,6})/); if(!m)continue;
+    const loc=m[1];
+    const t={};
+    if(C.oepe>=0&&parseFloat(r[C.oepe]))  t.tOepe=parseFloat(r[C.oepe]);
+    if(C.park>=0&&parsePct(r[C.park]))    t.tPark=parsePct(r[C.park]);
+    if(C.kvst>=0&&parseFloat(r[C.kvst]))  t.tKvst=parseFloat(r[C.kvst]);
+    if(C.kvsu>=0&&parsePct(r[C.kvsu]))    t.tKvsu=parsePct(r[C.kvsu]);
+    if(C.r2p>=0&&parseFloat(r[C.r2p]))    t.tR2p=parseFloat(r[C.r2p]);
+    if(C.tpph>=0&&parseFloat(r[C.tpph]))  t.tTpph=parseFloat(r[C.tpph]);
+    if(C.labor>=0&&parsePct(r[C.labor]))  t.tLabor=parsePct(r[C.labor]);
+    if(C.fobT>=0&&parsePct(r[C.fobT]))    t.tFOBTarget=parsePct(r[C.fobT]);
+    if(Object.keys(t).length>0) targets[loc]=t;
+  }
+  console.log(`[YearlyTargets] sheet='${sheetName}' hdr=${hi} parsed=${Object.keys(targets).length} stores`,Object.keys(targets).slice(0,2).map(l=>({loc:l,...targets[l]})));
   return targets;
 }
 
@@ -1030,12 +1164,15 @@ function autoDetectSheets(wb){
 // Column layout mirrors Labor Analysis (parseLaborData already reads these),
 // so route to parseLaborData — labor fields (actHrs etc.) will be 0.
 // The LY and YOY columns are parsed here and stored on salesLYPct / salesLY.
-function parseSalesLedger(wb){
+function parseSalesLedger(wb, filename){
   // Find sheet: "Sales Ledger" or "Sales" or first sheet
   const sn=wb.SheetNames.find(s=>s.toLowerCase().includes('sales ledger'))
           ||wb.SheetNames.find(s=>s.toLowerCase()==='sales'||s.toLowerCase().startsWith('sales '))
           ||wb.SheetNames[0];
   const raw=parseRaw(wb,sn),hi=autoHdrRow(raw),h=raw[hi]||[];
+  // QSRSoft CSV has no Date column — extract from filename (e.g. sales_ledger_daily_2026-06-30.csv)
+  const _dm=(filename||'').match(/(\d{4}-\d{2}-\d{2})/);
+  const _dateHint=_dm?new Date(_dm[1]+'T12:00:00'):new Date();
   const C={
     loc:   fc(h,'Loc','Location'),
     date:  fc(h,'Date','Business Date'),
@@ -1077,29 +1214,29 @@ function parseSalesLedger(wb){
   for(let i=hi+1;i<raw.length;i++){
     const r=raw[i];if(!r)continue;
     const loc=String(r[C.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
-    const dt=C.date>=0?parseXLDate(r[C.date]):null;if(!dt)continue;
+    const dt=C.date>=0?parseXLDate(r[C.date]):_dateHint;if(!dt)continue;
     rows.push({loc,date:dt,
-      sales:parseFloat(r[C.allNetSales])||0,
-      allNetSales:parseFloat(r[C.allNetSales])||0,
-      allNetSalesLY:C.allNetSalesLY>=0?parseFloat(r[C.allNetSalesLY])||0:0,
+      sales:parseNum(r[C.allNetSales]),
+      allNetSales:parseNum(r[C.allNetSales]),
+      allNetSalesLY:C.allNetSalesLY>=0?parseNum(r[C.allNetSalesLY]):0,
       salesVsLYPct:C.salesVsLYPct>=0?parsePct(r[C.salesVsLYPct]):null,
-      gc:parseFloat(r[C.gc])||0,
-      avgCheck:parseFloat(r[C.avgCheck])||0,
-      dtSales:parseFloat(r[C.dtSales])||0,dtGC:parseFloat(r[C.dtGC])||0,
-      dtAvgChk:parseFloat(r[C.dtAvgChk])||0,dtPctTotal:parsePct(r[C.dtPctTotal]),
-      bfSales:parseFloat(r[C.bfSales])||0,bfGC:parseFloat(r[C.bfGC])||0,
-      bfAvgChk:parseFloat(r[C.bfAvgChk])||0,bfPctTotal:parsePct(r[C.bfPctTotal]),
-      delivSales:parseFloat(r[C.delivSales])||0,delivGC:parseFloat(r[C.delivGC])||0,
-      delivAvgChk:parseFloat(r[C.delivAvgChk])||0,delivPctTotal:parsePct(r[C.delivPctTotal]),
-      mopSales:parseFloat(r[C.mopSales])||0,mopGC:parseFloat(r[C.mopGC])||0,
-      mopAvgChk:parseFloat(r[C.mopAvgChk])||0,mopPctTotal:parsePct(r[C.mopPctTotal]),
-      kioskSales:parseFloat(r[C.kioskSales])||0,kioskGC:parseFloat(r[C.kioskGC])||0,
-      kioskAvgChk:parseFloat(r[C.kioskAvgChk])||0,kioskPctTotal:parsePct(r[C.kioskPctTotal]),
-      fcSales:parseFloat(r[C.fcSales])||0,fcGC:parseFloat(r[C.fcGC])||0,
+      gc:parseNum(r[C.gc]),
+      avgCheck:parseNum(r[C.avgCheck]),
+      dtSales:parseNum(r[C.dtSales]),dtGC:parseNum(r[C.dtGC]),
+      dtAvgChk:parseNum(r[C.dtAvgChk]),dtPctTotal:parsePct(r[C.dtPctTotal]),
+      bfSales:parseNum(r[C.bfSales]),bfGC:parseNum(r[C.bfGC]),
+      bfAvgChk:parseNum(r[C.bfAvgChk]),bfPctTotal:parsePct(r[C.bfPctTotal]),
+      delivSales:parseNum(r[C.delivSales]),delivGC:parseNum(r[C.delivGC]),
+      delivAvgChk:parseNum(r[C.delivAvgChk]),delivPctTotal:parsePct(r[C.delivPctTotal]),
+      mopSales:parseNum(r[C.mopSales]),mopGC:parseNum(r[C.mopGC]),
+      mopAvgChk:parseNum(r[C.mopAvgChk]),mopPctTotal:parsePct(r[C.mopPctTotal]),
+      kioskSales:parseNum(r[C.kioskSales]),kioskGC:parseNum(r[C.kioskGC]),
+      kioskAvgChk:parseNum(r[C.kioskAvgChk]),kioskPctTotal:parsePct(r[C.kioskPctTotal]),
+      fcSales:parseNum(r[C.fcSales]),fcGC:parseNum(r[C.fcGC]),
       fcPctTotal:parsePct(r[C.fcPctTotal]),
-      inStoreSales:parseFloat(r[C.inStoreSales])||0,inStoreGC:parseFloat(r[C.inStoreGC])||0,
+      inStoreSales:parseNum(r[C.inStoreSales]),inStoreGC:parseNum(r[C.inStoreGC]),
       inStorePctTotal:parsePct(r[C.inStorePctTotal]),
-      eatInSales:parseFloat(r[C.eatInSales])||0,eatInGC:parseFloat(r[C.eatInGC])||0,
+      eatInSales:parseNum(r[C.eatInSales]),eatInGC:parseNum(r[C.eatInGC]),
       // Labor fields stub — Sales Ledger has no labor data
       laborPct:0,actHrs:0,otHrs:0,tpph:0,spph:0,
     });
@@ -1156,29 +1293,29 @@ function parseDailyGlimpse(wb, dateHint){
     const loc=String(r[C.loc]||'').trim();
     if(!loc||!/^\d+$/.test(loc))continue;
     rows.push({loc,date:dateHint||new Date(),
-      allNetSales:parseFloat(r[C.allNetSales])||0,
-      salesVsPrior:parseFloat(r[C.salesVsPrior])||0,
+      allNetSales:parseNum(r[C.allNetSales]),
+      salesVsPrior:parseNum(r[C.salesVsPrior]),
       salesVsPriorPct:parsePct(r[C.salesVsPriorPct]),
-      dtSales:parseFloat(r[C.dtSales])||0,
-      dtGC:parseFloat(r[C.dtGC])||0,
-      dtAvgCheck:parseFloat(r[C.dtAvgCheck])||0,
-      gc:parseFloat(r[C.stwGC])||0,
-      avgCheck:parseFloat(r[C.avgCheck])||0,
+      dtSales:parseNum(r[C.dtSales]),
+      dtGC:parseNum(r[C.dtGC]),
+      dtAvgCheck:parseNum(r[C.dtAvgCheck]),
+      gc:parseNum(r[C.stwGC]),
+      avgCheck:parseNum(r[C.avgCheck]),
       laborPct:parsePct(r[C.laborPct]),
-      promoAmt:parseFloat(r[C.promoAmt])||0,
+      promoAmt:parseNum(r[C.promoAmt]),
       promoPct:parsePct(r[C.promoPct]),
-      posOverCnt:parseFloat(r[C.posOverCnt])||0,
-      posOverAmt:parseFloat(r[C.posOverAmt])||0,
-      cashOS:parseFloat(r[C.cashOS])||0,
+      posOverCnt:parseNum(r[C.posOverCnt]),
+      posOverAmt:parseNum(r[C.posOverAmt]),
+      cashOS:parseNum(r[C.cashOS]),
       cashOSPct:parsePct(r[C.cashOSPct]),
-      tRedVoidCnt:parseFloat(r[C.tRedVoidCnt])||0,
-      tRedDeletedCnt:parseFloat(r[C.tRedDeletedCnt])||0,
-      oepe:parseFloat(r[C.oepe])||0,
-      oepeFull:parseFloat(r[C.oepeFull])||0,
+      tRedVoidCnt:parseNum(r[C.tRedVoidCnt]),
+      tRedDeletedCnt:parseNum(r[C.tRedDeletedCnt]),
+      oepe:parseNum(r[C.oepe]),
+      oepeFull:parseNum(r[C.oepeFull]),
       parkedPct:parsePct(r[C.parkedPct]),
-      brkCarCnt:parseFloat(r[C.brkCarCnt])||0,
-      luCarCnt:parseFloat(r[C.luCarCnt])||0,
-      dnCarCnt:parseFloat(r[C.dnCarCnt])||0,
+      brkCarCnt:parseNum(r[C.brkCarCnt]),
+      luCarCnt:parseNum(r[C.luCarCnt]),
+      dnCarCnt:parseNum(r[C.dnCarCnt]),
       digitalPctSales:parsePct(r[C.digitalPctSales]),
       appPctSales:parsePct(r[C.appPctSales]),
     });
@@ -1190,32 +1327,35 @@ function parseDailyGlimpse(wb, dateHint){
 // ── QSRSoft: Cash Sheet ──────────────────────────────────────────────────────
 // Daily per-store cash management + 3PO delivery platform breakdown.
 // Subtotal rows ("Total 3708", "Grand Total") are filtered by loc pattern.
-function parseCashSheet(wb){
+function parseCashSheet(wb, filename){
   const sn=wb.SheetNames.find(s=>s.toLowerCase().includes('cash'))
           ||wb.SheetNames[0];
   const raw=parseRaw(wb,sn),hi=autoHdrRow(raw),h=raw[hi]||[];
+  // QSRSoft CSV has no Date column — extract from filename (e.g. cash_sheet_daily_2026-06-30.csv)
+  const _dm=(filename||'').match(/(\d{4}-\d{2}-\d{2})/);
+  const _dateHint=_dm?new Date(_dm[1]+'T12:00:00'):new Date();
   const C={
     loc:   fc(h,'Loc','Location'),
     date:  fc(h,'Date','Business Date'),
-    allNetSales: fc(h,'All Net Sales','Net Sales'),
+    allNetSales: fc(h,'Net Sales','All Net Sales'),
     gc:    fc(h,'STW GC','GC','Guest Count'),
     avgCheck:fc(h,'Average Check','Avg Check'),
-    // 3PO platforms (each individually)
-    doorDashSales: findCol(h,'DoorDash Net Sales','DoorDash Sales'),
-    doorDashGC:    findCol(h,'DoorDash GC','DoorDash Guest'),
-    uberEatsSales: findCol(h,'UberEats Net Sales','Uber Eats Net Sales','UberEats Sales'),
-    uberEatsGC:    findCol(h,'UberEats GC','Uber Eats GC','UberEats Guest'),
-    grubhubSales:  findCol(h,'Grubhub Net Sales','GrubHub Net Sales','Grubhub Sales'),
-    grubhubGC:     findCol(h,'Grubhub GC','GrubHub GC','Grubhub Guest'),
-    total3poSales: fc(h,'Total 3rd Party Net Sales','Total 3PO Net Sales','Total Third Party Net Sales'),
-    total3poGC:    fc(h,'Total 3rd Party GC','Total 3PO GC'),
+    // 3PO platforms — actual QSRSoft CSV column names
+    doorDashSales: findCol(h,'DoorDash Delivery Amt','DoorDash Net Sales','DoorDash Sales'),
+    doorDashGC:    findCol(h,'DoorDash Delivery Qty','DoorDash GC','DoorDash Guest'),
+    uberEatsSales: findCol(h,'UberEats Delivery Amt','UberEats Delivery Amt Total','UberEats Net Sales','Uber Eats Net Sales','UberEats Sales'),
+    uberEatsGC:    findCol(h,'UberEats Delivery Qty','UberEats Delivery Qty Total','UberEats GC','Uber Eats GC','UberEats Guest'),
+    grubhubSales:  findCol(h,'GrubHub Delivery Amt','GrubHub Delivery Amt Total','Grubhub Net Sales','GrubHub Net Sales','Grubhub Sales'),
+    grubhubGC:     findCol(h,'GrubHub Delivery Qty','GrubHub Delivery Qty Total','Grubhub GC','GrubHub GC','Grubhub Guest'),
+    total3poSales: fc(h,'Delivery Total Amt','3PO Delivery Gross Amt','Delivery Amt Total','Total 3rd Party Net Sales','Total 3PO Net Sales'),
+    total3poGC:    fc(h,'Delivery Total Qty','3PO Delivery Gross Qty','Total 3rd Party GC','Total 3PO GC'),
     // Digital channels
-    mopEatIn:    fc(h,'MOP Eat-in','MOP Eatin','MOP Eat in'),
-    mopTakeout:  fc(h,'MOP Takeout','MOP Take Out'),
-    kioskEatIn:  fc(h,'Kiosk Eat-in','Kiosk Eatin','Kiosk Eat in'),
-    kioskTakeout:fc(h,'Kiosk Takeout','Kiosk Take Out'),
+    mopEatIn:    fc(h,'MOP Eatin Amt','MOP Eat-in','MOP Eatin','MOP Eat in'),
+    mopTakeout:  fc(h,'MOP Takeout Amt','MOP Takeout','MOP Take Out'),
+    kioskEatIn:  fc(h,'Kiosk Eat-In Amt','Kiosk Eat-in','Kiosk Eatin','Kiosk Eat in'),
+    kioskTakeout:fc(h,'Kiosk Takeout Amt','Kiosk Takeout','Kiosk Take Out'),
     // Cash O/S
-    cashOS:    fc(h,'Cash Over Short $','Cash Over/Short $','Cash O/S $'),
+    cashOS:    fc(h,'Cash Over/Short','Cash Over Short $','Cash O/S $'),
     cashOSPct: fc(h,'Cash Over Short %','Cash Over/Short %','Cash O/S %'),
     // Refunds
     cashRefCnt:     fc(h,'Cash Refund Count','Cash Refund Cnt'),
@@ -1235,33 +1375,33 @@ function parseCashSheet(wb){
     const loc=String(r[C.loc]||'').trim();
     // Filter subtotal rows: "Total 3708", "Grand Total", blank
     if(!loc||!/^\d+$/.test(loc))continue;
-    const dt=C.date>=0?parseXLDate(r[C.date]):null;if(!dt)continue;
+    const dt=C.date>=0?parseXLDate(r[C.date]):_dateHint;if(!dt)continue;
     rows.push({loc,date:dt,
-      allNetSales:parseFloat(r[C.allNetSales])||0,
-      gc:parseFloat(r[C.gc])||0,
-      avgCheck:parseFloat(r[C.avgCheck])||0,
-      doorDashSales:C.doorDashSales>=0?parseFloat(r[C.doorDashSales])||0:0,
-      doorDashGC:C.doorDashGC>=0?parseFloat(r[C.doorDashGC])||0:0,
-      uberEatsSales:C.uberEatsSales>=0?parseFloat(r[C.uberEatsSales])||0:0,
-      uberEatsGC:C.uberEatsGC>=0?parseFloat(r[C.uberEatsGC])||0:0,
-      grubhubSales:C.grubhubSales>=0?parseFloat(r[C.grubhubSales])||0:0,
-      grubhubGC:C.grubhubGC>=0?parseFloat(r[C.grubhubGC])||0:0,
-      total3poSales:parseFloat(r[C.total3poSales])||0,
-      total3poGC:parseFloat(r[C.total3poGC])||0,
-      mopEatIn:parseFloat(r[C.mopEatIn])||0,
-      mopTakeout:parseFloat(r[C.mopTakeout])||0,
-      kioskEatIn:parseFloat(r[C.kioskEatIn])||0,
-      kioskTakeout:parseFloat(r[C.kioskTakeout])||0,
-      cashOS:parseFloat(r[C.cashOS])||0,
+      allNetSales:parseNum(r[C.allNetSales]),
+      gc:parseNum(r[C.gc]),
+      avgCheck:parseNum(r[C.avgCheck]),
+      doorDashSales:parseNum(r[C.doorDashSales]),
+      doorDashGC:parseNum(r[C.doorDashGC]),
+      uberEatsSales:parseNum(r[C.uberEatsSales]),
+      uberEatsGC:parseNum(r[C.uberEatsGC]),
+      grubhubSales:parseNum(r[C.grubhubSales]),
+      grubhubGC:parseNum(r[C.grubhubGC]),
+      total3poSales:parseNum(r[C.total3poSales]),
+      total3poGC:parseNum(r[C.total3poGC]),
+      mopEatIn:parseNum(r[C.mopEatIn]),
+      mopTakeout:parseNum(r[C.mopTakeout]),
+      kioskEatIn:parseNum(r[C.kioskEatIn]),
+      kioskTakeout:parseNum(r[C.kioskTakeout]),
+      cashOS:parseNum(r[C.cashOS]),
       cashOSPct:parsePct(r[C.cashOSPct]),
-      cashRefCnt:parseFloat(r[C.cashRefCnt])||0,
-      cashRefAmt:parseFloat(r[C.cashRefAmt])||0,
-      cashlessRefCnt:parseFloat(r[C.cashlessRefCnt])||0,
-      cashlessRefAmt:parseFloat(r[C.cashlessRefAmt])||0,
-      posOverCnt:parseFloat(r[C.posOverCnt])||0,
-      posOverAmt:parseFloat(r[C.posOverAmt])||0,
-      tRedVoidCnt:parseFloat(r[C.tRedVoidCnt])||0,
-      tRedDeletedCnt:parseFloat(r[C.tRedDeletedCnt])||0,
+      cashRefCnt:parseNum(r[C.cashRefCnt]),
+      cashRefAmt:parseNum(r[C.cashRefAmt]),
+      cashlessRefCnt:parseNum(r[C.cashlessRefCnt]),
+      cashlessRefAmt:parseNum(r[C.cashlessRefAmt]),
+      posOverCnt:parseNum(r[C.posOverCnt]),
+      posOverAmt:parseNum(r[C.posOverAmt]),
+      tRedVoidCnt:parseNum(r[C.tRedVoidCnt]),
+      tRedDeletedCnt:parseNum(r[C.tRedDeletedCnt]),
     });
   }
   return rows;
@@ -1271,15 +1411,17 @@ function parseCashSheet(wb){
 // ── QSRSoft: Labor Exceptions ────────────────────────────────────────────────
 // 3-sheet workbook: summary by store, summary by exception type, detail by employee.
 // Detail sheet has PII (employee names, GEID, ages) — stored but not surfaced in UI by default.
-function parseLaborExceptions(wb){
+function parseLaborExceptions(wb, filename){
   const rows=[];
+  const _dm=(filename||'').match(/(\d{4}-\d{2}-\d{2})/);
+  const _dateHint=_dm?new Date(_dm[1]+'T12:00:00'):new Date();
   // Sheet 1: Summary by location
   const sumLocSn=wb.SheetNames.find(s=>s.toLowerCase().includes('location')||s.toLowerCase().includes('store')||s.toLowerCase().includes('summary'))
                ||wb.SheetNames[0];
   const rawLoc=parseRaw(wb,sumLocSn),hiL=autoHdrRow(rawLoc),hL=rawLoc[hiL]||[];
   const CL={
-    loc:    fc(hL,'Loc','Location','Store'),
-    date:   fc(hL,'Date','Period'),
+    loc:    fc(hL,'Loc','Location','Store','Business Unit','Restaurant','Str #','Store #','Store Number','Restaurant Number'),
+    date:   fc(hL,'Date','Period','Business Date','Week Ending','Period End','Period Start'),
     total:  findCol(hL,'Total Exceptions','Total Exc','Exception Count','Exceptions'),
     missed: findCol(hL,'Missed Break','Missed Breaks'),
     early:  findCol(hL,'Early Out','Early Punch Out'),
@@ -1289,19 +1431,373 @@ function parseLaborExceptions(wb){
   };
   for(let i=hiL+1;i<rawLoc.length;i++){
     const r=rawLoc[i];if(!r)continue;
-    const loc=String(r[CL.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
-    const dt=CL.date>=0?parseXLDate(r[CL.date]):new Date();
-    rows.push({loc,date:dt||new Date(),
-      totalExceptions:parseFloat(r[CL.total])||0,
-      missedBreaks:CL.missed>=0?parseFloat(r[CL.missed])||0:0,
-      earlyOut:CL.early>=0?parseFloat(r[CL.early])||0:0,
-      lateIn:CL.late>=0?parseFloat(r[CL.late])||0:0,
-      otExceptions:CL.ot>=0?parseFloat(r[CL.ot])||0:0,
-      minorExceptions:CL.minors>=0?parseFloat(r[CL.minors])||0:0,
+    const rawLoc2=String(r[CL.loc]||'').trim();
+    const loc=rawLoc2.replace(/[^0-9]/g,'');if(!loc)continue;
+    const dt=CL.date>=0?parseXLDate(r[CL.date]):_dateHint;
+    rows.push({loc,date:dt||_dateHint,
+      totalExceptions:parseNum(r[CL.total]),
+      missedBreaks:CL.missed>=0?parseNum(r[CL.missed]):0,
+      earlyOut:CL.early>=0?parseNum(r[CL.early]):0,
+      lateIn:CL.late>=0?parseNum(r[CL.late]):0,
+      otExceptions:CL.ot>=0?parseNum(r[CL.ot]):0,
+      minorExceptions:CL.minors>=0?parseNum(r[CL.minors]):0,
       _sheet:'summary',
     });
   }
   return rows;
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions };
+// ── LifeLenz: Labor Analysis Summary Report ──────────────────────────────────
+// Single-store daily scheduling data: VLH, Fixed Hours, Floor Hours, TPMH.
+// Two CSV variants:
+//   Old: row[0] = ["","","","","Store","0005985"], dates MM/DD/YYYY
+//   New: row[0] = ["","","","","","Store","33109"], extra MAPE col, dates M/D/YY
+function parseLifeLenzLabor(wb) {
+  const raw = parseRaw(wb, wb.SheetNames[0]);
+  if(!raw || raw.length < 3) return [];
+  // Find store number by scanning row 0 for the cell after "Store" label,
+  // or any all-digit cell in row 0. XLSX may parse unquoted '0003708' as 3708.
+  let rawLoc = '';
+  const r0 = raw[0] || [];
+  for(let i = 0; i < r0.length; i++) {
+    const v = String(r0[i]||'').trim();
+    if(v.toLowerCase() === 'store' && i+1 < r0.length) {
+      rawLoc = String(r0[i+1]||'').trim(); break;
+    }
+  }
+  if(!rawLoc) rawLoc = r0.map(c=>String(c||'').trim()).find(v=>/^\d+$/.test(v))||'';
+  if(!rawLoc || !/^\d+$/.test(rawLoc)) return [];
+  const loc = rawLoc.padStart(7, '0');
+  const h = raw[1] || [];
+  // Column index helpers — LifeLenz headers have periods/spaces
+  const C = {
+    date:        0,
+    fcstSales:   findCol(h,'Fcst.$','Fcst. $','Forecast Sales'),
+    adjFcstSales:findCol(h,'Adj. Fcst.$','Adj.Fcst.$'),
+    sales:       findCol(h,'Sales'),
+    salesDiff:   findCol(h,'Sales +/-'),
+    fcstTCs:     findCol(h,'Fcst. TCs','Fcst.TCs'),
+    adjTCs:      findCol(h,'Adj. TCs.','Adj.TCs.','Adj. TCs'),
+    tcs:         findCol(h,'TCs'),
+    tcsDiff:     findCol(h,'TCs +/-'),
+    laborPct:    findCol(h,'Labor %'),
+    projVLH:     findCol(h,'Proj. VLH','Proj.VLH'),
+    schVLH:      findCol(h,'Sch. VLH','Sch.VLH'),
+    needVLH:     findCol(h,'Need. VLH','Need.VLH'),
+    vlh:         findCol(h,'VLH'),
+    vlhDiff:     findCol(h,'VLH +/-'),
+    fixGuideHrs: findCol(h,'Fix.Guide.Hrs','Fix. Guide Hrs'),
+    schFixHrs:   findCol(h,'Sch.Fix.Hrs.','Sch.Fix.Hrs','Sch. Fix. Hrs'),
+    projFloor:   findCol(h,'Proj.Floor','Proj. Floor'),
+    schFloor:    findCol(h,'Sch.Floor','Sch. Floor'),
+    needFloor:   findCol(h,'Need.Floor','Need. Floor'),
+    idealTotHrs: findCol(h,'Ideal Tot.Hrs','Ideal Tot. Hrs'),
+    salMgrHrs:   findCol(h,'Sal.Mgr.Hrs','Sal. Mgr. Hrs'),
+    crewHrs:     findCol(h,'Crew Hrs','Crew Hours'),
+    totHrsDiff:  findCol(h,'Total Hrs +/-'),
+    tpmh:        findCol(h,'TPMH'),
+  };
+  // vlh col may collide with prefix of other cols — find the exact 'VLH' col
+  if(C.vlh < 0) C.vlh = h.findIndex(v => String(v||'').trim() === 'VLH');
+  const rows = [];
+  for(let i = 2; i < raw.length; i++) {
+    const r = raw[i];
+    if(!r || !r[0]) continue;
+    // XLSX may parse '06/21/2026' from CSV as a numeric date serial — use parseXLDate to handle all forms.
+    // Also handle LifeLenz's 2-digit-year format: M/D/YY (e.g. "4/29/26")
+    let dt = parseXLDate(r[0]);
+    if(!dt || isNaN(dt.getTime())) {
+      const mdy = String(r[0]).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+      if(mdy) {
+        const yr = +mdy[3] < 50 ? 2000 + +mdy[3] : 1900 + +mdy[3];
+        dt = new Date(yr, +mdy[1]-1, +mdy[2], 12, 0, 0);
+      }
+    }
+    if(!dt || isNaN(dt.getTime())) continue;
+    const schVLH    = parseFloat(r[C.schVLH]) || 0;
+    const needVLH   = parseFloat(r[C.needVLH]) || 0;
+    const crewHrs   = parseFloat(r[C.crewHrs]) || 0;
+    const idealTot  = parseFloat(r[C.idealTotHrs]) || 0;
+    const schFix    = parseFloat(r[C.schFixHrs]) || 0;
+    rows.push({ loc, date: dt,
+      fcstSales:    parseFloat(r[C.fcstSales])    || 0,
+      adjFcstSales: parseFloat(r[C.adjFcstSales]) || 0,
+      sales:        parseFloat(r[C.sales])         || 0,
+      salesDiff:    parseFloat(r[C.salesDiff])     || 0,
+      fcstTCs:      parseFloat(r[C.fcstTCs])       || 0,
+      tcs:          parseFloat(r[C.tcs])            || 0,
+      tcsDiff:      parseFloat(r[C.tcsDiff])        || 0,
+      laborPct:     parseFloat(r[C.laborPct])       || 0,
+      projVLH:      parseFloat(r[C.projVLH])        || 0,
+      schVLH, needVLH,
+      vlhDiff:      parseFloat(r[C.vlhDiff])        || 0,
+      fixGuideHrs:  parseFloat(r[C.fixGuideHrs])    || 0,
+      schFixHrs:    schFix,
+      projFloor:    parseFloat(r[C.projFloor])      || 0,
+      schFloor:     parseFloat(r[C.schFloor])       || 0,
+      needFloor:    parseFloat(r[C.needFloor])      || 0,
+      idealTotHrs:  idealTot,
+      salMgrHrs:    parseFloat(r[C.salMgrHrs])      || 0,
+      crewHrs,
+      totHrsDiff:   parseFloat(r[C.totHrsDiff])     || 0,
+      tpmh:         parseFloat(r[C.tpmh])            || 0,
+      // Derived: scheduled crew vs ideal (ideal = VLH need + floor need)
+      schVsIdealDiff: crewHrs > 0 && idealTot > 0 ? crewHrs - (idealTot + schFix) : 0,
+      schVLHOverNeed: schVLH > 0 && needVLH > 0 ? schVLH - needVLH : 0,
+    });
+  }
+  return rows;
+}
+
+// ── SMG VOICE Customer Comment Report (PDF) ──────────────────────────────────
+// Parses the VOICE platform PDF into per-store, per-comment rows.
+// Uses pdfjs-dist loaded lazily so it only ships when PDF files are dropped.
+// Returns: [{ loc, storeName, reportStart, reportEnd, commentDate, visitDate,
+//             nsn, text, satisfactionLabel, score }]
+// ── SMG FullScale Report (Excel) ──────────────────────────────────────────────
+// Structure: 1 sheet "Small Graph", 5 rows per store (ratings 5→1)
+// Key 0-indexed column positions:
+//   col 0  = store name ("03708 - ARDMORE-BROADWAY") in first row of each block
+//   col 1  = OSAT rating label ('5','4','3','2','1')
+//   col 22 = OSAT pct for that rating
+//   col 44 = Overall Sat B2B pct (row0=negative, row1=positive/met-B2B)
+//   col 66 = Accuracy B2B pct
+//   col 88 = DT Problem pct (row0=problem rate, row1=no-problem rate)
+//   col 110= Overall Problem pct
+function parseSMGFullScale(wb) {
+  // ── Find the sheet that contains store-number rows ─────────────────────────
+  // FullScale workbooks have multiple sheets (Small Graph, Large Graph, Data, etc.)
+  // Try every sheet and use the one with the most store matches.
+  const STORE_PAT = /^(\d{3,6})\s*[-–]\s*(.+)/;
+  const DATE_PAT  = /(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/;
+
+  let bestRows = [], bestCount = 0;
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    if (!ws) continue;
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
+    const matches = rows.filter(r => r && typeof r[0] === 'string' && STORE_PAT.test(r[0])).length;
+    if (matches > bestCount) { bestCount = matches; bestRows = rows; }
+  }
+
+  if (!bestRows.length) {
+    console.warn('[parseSMGFullScale] No store rows found in any sheet. SheetNames:', wb.SheetNames);
+    return [];
+  }
+
+  // ── Extract report date range (search all rows, not just row 1) ────────────
+  let reportStart = null, reportEnd = null, year = null, month = null;
+  for (const row of bestRows.slice(0, 10)) {
+    if (!row) continue;
+    for (const cell of row) {
+      if (typeof cell !== 'string') continue;
+      const m = cell.match(DATE_PAT);
+      if (m) {
+        reportStart = m[1]; reportEnd = m[2];
+        const parts = m[2].split('/').map(Number);
+        month = parts[0]; year = parts[2];
+        break;
+      }
+    }
+    if (year) break;
+  }
+  // Fallback: infer from current date if title not found
+  if (!year) {
+    const now = new Date();
+    year  = now.getFullYear();
+    month = now.getMonth() + 1;
+    console.warn('[parseSMGFullScale] Could not parse date from report title; using current month:', year, month);
+  }
+
+  // ── Auto-detect metric columns by scanning the first complete 5-row block ──
+  // Look for the first store block and find columns that have numeric % values.
+  // SMG FullScale rows: col 0 = store/rating label, col 1 = rating (1-5),
+  // then groups of columns for each question metric.
+  // The OSAT % column is the first numeric column after the rating in the OSAT section.
+  let osatCol = 22, b2bCol = 44, accCol = 66, dtCol = 88, overallCol = 110; // defaults
+
+  const firstStoreIdx = bestRows.findIndex(r => r && typeof r[0] === 'string' && STORE_PAT.test(r[0]));
+  if (firstStoreIdx >= 0) {
+    const block = bestRows.slice(firstStoreIdx, firstStoreIdx + 5);
+    const byRat = {};
+    for (const brow of block) {
+      if (!brow) continue;
+      const r = parseInt(String(brow[1]||''));
+      if (!isNaN(r) && r >= 1 && r <= 5) byRat[r] = brow;
+    }
+    // Find first column after col 2 where rating-5 row has a number (that's OSAT pct for 5★)
+    const r5 = byRat[5] || [];
+    for (let c = 2; c < r5.length; c++) {
+      if (typeof r5[c] === 'number' && r5[c] > 0 && r5[c] <= 1) {
+        osatCol = c;
+        // Guess other columns at regular intervals from first numeric col
+        const step = Math.round((r5.length - c) / 5) || 22;
+        b2bCol     = c + step;
+        accCol     = c + step * 2;
+        dtCol      = c + step * 3;
+        overallCol = c + step * 4;
+        console.log(`[parseSMGFullScale] Auto-detected columns: osat=${c}, step=${step}, b2b=${b2bCol}, acc=${accCol}, dt=${dtCol}, overall=${overallCol}`);
+        break;
+      }
+    }
+  }
+
+  const result = [];
+  let i = 0;
+  while (i < bestRows.length) {
+    const row = bestRows[i];
+    if (!row || typeof row[0] !== 'string') { i++; continue; }
+    const storeM = row[0].match(STORE_PAT);
+    if (!storeM) { i++; continue; }
+
+    const loc = String(parseInt(storeM[1], 10));
+    const storeName = storeM[2].trim();
+
+    const block = bestRows.slice(i, i + 5);
+    const byRating = {};
+    for (const brow of block) {
+      if (!brow) continue;
+      const r = parseInt(String(brow[1]||''));
+      if (!isNaN(r) && r >= 1 && r <= 5) byRating[r] = brow;
+    }
+
+    const numPct = (brow, col) => {
+      const v = brow?.[col];
+      return typeof v === 'number' ? v : null;
+    };
+
+    const osat5 = numPct(byRating[5], osatCol) || 0;
+    const osat4 = numPct(byRating[4], osatCol) || 0;
+    const osat3 = numPct(byRating[3], osatCol) || 0;
+    const osat2 = numPct(byRating[2], osatCol) || 0;
+    const osat1 = numPct(byRating[1], osatCol) || 0;
+    const osatTop2 = osat5 + osat4;
+    const osatAvg  = (5*osat5 + 4*osat4 + 3*osat3 + 2*osat2 + 1*osat1) || null;
+
+    result.push({
+      loc, storeName, reportStart, reportEnd, year, month,
+      osatTop2:        osatTop2 || null,
+      osat5:           osat5    || null,
+      osatAvg,
+      osatB2B:         numPct(byRating[4], b2bCol),
+      accuracyB2B:     numPct(byRating[4], accCol),
+      dtProblem:       numPct(byRating[5], dtCol),
+      overallProblem:  numPct(byRating[5], overallCol),
+    });
+
+    i += 5;
+  }
+
+  console.log(`[parseSMGFullScale] Parsed ${result.length} stores for ${year}-${month}`);
+  return result;
+}
+
+async function parseSMGVoicePDF(file) {
+  const pdfjsLib = await import('pdfjs-dist');
+  // pdfjs needs a worker; use the bundled legacy worker via URL
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url
+    ).toString();
+  }
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  // Extract all text items page by page, preserving y-position for row reconstruction
+  const allLines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    // Group items by approximate y-coordinate (within 3px = same line)
+    const lineMap = new Map();
+    for (const item of content.items) {
+      const y = Math.round(item.transform[5] / 3) * 3;
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y).push({ x: item.transform[4], str: item.str });
+    }
+    // Sort lines top-to-bottom (higher y = higher on page in PDF coords)
+    const sorted = [...lineMap.entries()].sort((a, b) => b[0] - a[0]);
+    for (const [, items] of sorted) {
+      const text = items.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').trim();
+      if (text) allLines.push(text);
+    }
+  }
+
+  // Parse report header: "6/22/2026 - 6/28/2026"
+  let reportStart = null, reportEnd = null;
+  const dateRangeM = allLines.find(l => /\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4}/.test(l));
+  if (dateRangeM) {
+    const parts = dateRangeM.match(/(\d{1,2}\/\d{1,2}\/\d{4})/g);
+    if (parts) { reportStart = parts[0]; reportEnd = parts[1] || parts[0]; }
+  }
+
+  // Parse store sections: line matching "NNNNN - STORE NAME" (all-caps after dash)
+  const rows = [];
+  let currentLoc = null, currentStoreName = null;
+  const SCORE_MAP = { 'highly satisfied': 5, 'satisfied': 4, 'neutral': 3, 'dissatisfied': 2, 'highly dissatisfied': 1 };
+  // Date pattern M/D/YYYY or MM/DD/YYYY
+  const DATE_RE = /^(\d{1,2}\/\d{1,2}\/\d{4})/;
+  // NSN pattern (5-6 digit number)
+  const NSN_RE = /^(\d{5,6})$/;
+
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i];
+    // Store section header: e.g. "05985 - DURANT-US HWY 70"
+    const storeM = line.match(/^(\d{4,6})\s*-\s*([A-Z][A-Z0-9 ,.'&/-]+)$/);
+    if (storeM && line === line.toUpperCase().replace(/[^A-Z0-9\s,.'&/-]/g, '').trim() || /^\d{4,6} - /.test(line)) {
+      const locM2 = line.match(/^(\d{4,6})/);
+      if (locM2) { currentLoc = locM2[1]; currentStoreName = line.slice(locM2[0].length).replace(/^\s*-\s*/, '').trim(); }
+      continue;
+    }
+    if (!currentLoc) continue;
+    // Comment row: starts with a date
+    if (!DATE_RE.test(line)) continue;
+    const commentDateM = line.match(DATE_RE);
+    if (!commentDateM) continue;
+    const commentDate = commentDateM[1];
+    const rest = line.slice(commentDate.length).trim();
+    // Next date = visitDate
+    const visitDateM = rest.match(DATE_RE);
+    if (!visitDateM) continue;
+    const visitDate = visitDateM[1];
+    const afterDates = rest.slice(visitDateM[0].length).trim();
+    // NSN (5-6 digits)
+    const nsnM = afterDates.match(/^(\d{5,6})\s*/);
+    const nsn = nsnM ? nsnM[1] : currentLoc;
+    const afterNSN = nsnM ? afterDates.slice(nsnM[0].length) : afterDates;
+    // Satisfaction label and score — look for known phrases at end of line or next lines
+    let satisfactionLabel = '', score = null;
+    const satRe = /(highly satisfied|satisfied|neutral|dissatisfied|highly dissatisfied)/i;
+    const satM = afterNSN.match(satRe);
+    let commentText = afterNSN;
+    if (satM) {
+      satisfactionLabel = satM[1];
+      score = SCORE_MAP[satisfactionLabel.toLowerCase()] || null;
+      commentText = afterNSN.slice(0, satM.index).trim();
+      // Numeric score may follow: "5.0000000"
+      const numM = afterNSN.slice(satM.index + satM[0].length).match(/([\d.]+)/);
+      if (numM) score = parseFloat(numM[1]);
+    } else {
+      // Check next 1-2 lines for satisfaction label (multi-line comments)
+      let combined = afterNSN;
+      for (let j = i + 1; j <= i + 3 && j < allLines.length; j++) {
+        combined += ' ' + allLines[j];
+        const sm = combined.match(satRe);
+        if (sm) {
+          satisfactionLabel = sm[1];
+          score = SCORE_MAP[satisfactionLabel.toLowerCase()] || null;
+          commentText = combined.slice(0, sm.index).trim();
+          const numM2 = combined.slice(sm.index + sm[0].length).match(/([\d.]+)/);
+          if (numM2) score = parseFloat(numM2[1]);
+          i = j; // skip consumed lines
+          break;
+        }
+      }
+      if (!satisfactionLabel) continue; // skip rows without satisfaction label
+    }
+    rows.push({ loc: currentLoc, storeName: currentStoreName, reportStart, reportEnd,
+      commentDate, visitDate, nsn, text: commentText, satisfactionLabel, score });
+  }
+  return rows;
+}
+
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale };

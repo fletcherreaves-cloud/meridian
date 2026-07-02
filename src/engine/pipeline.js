@@ -8,7 +8,8 @@ import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
 import { STORE_STAFF } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
-import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions } from '../parsers/index.js';
+import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor } from '../parsers/index.js';
+import { saveMonthlyTargets } from '../lib/supabase.js';
 
 function buildDS(workbooks){
   const ds={laborRows:[],opsRows:[],ctrlRows:[],weatherRows:[],inventoryRows:[],
@@ -18,7 +19,9 @@ function buildDS(workbooks){
     glimpseRows:[],  // QSRSoft Daily Glimpse — daily per-store snapshot
     cashRows:[],     // QSRSoft Cash Sheet — daily cash controls + 3PO delivery platform mix
     exceptionRows:[], // QSRSoft Labor Exceptions — per-store compliance exception counts
-    records:{},targets:{},loaded:false,
+    schedRows:[],    // LifeLenz Labor Analysis Summary — daily VLH/Fixed/Floor/TPMH per store
+    smgRows:[],      // SMG VOICE Customer Comment Reports — per-comment rows with satisfaction scores
+    records:{},targets:{},monthlyTargets:{},monthlyTargetsMeta:null,loaded:false,
     laborIdx:{},opsIdx:{},ctrlIdx:{},weatherIdx:{},storeIds:[],lastActual:{},
     laborByLoc:{},opsByLoc:{},ctrlByLoc:{},darByLoc:{}};
   for(const{wb,type}of workbooks){
@@ -340,8 +343,11 @@ function mergeDS(existing, wb, type, filename) {
     glimpseRows:   [...(existing.glimpseRows||[])],
     cashRows:      [...(existing.cashRows||[])],
     exceptionRows: [...(existing.exceptionRows||[])],
-    targets:       {...existing.targets},
-    records:       {...existing.records},
+    schedRows:     [...(existing.schedRows||[])],
+    smgRows:       [...(existing.smgRows||[])],
+    targets:         {...existing.targets},
+    monthlyTargets:  {...(existing.monthlyTargets||{})},
+    records:         {...existing.records},
   };
   try {
     console.log('[McForecast] Parsing file type:', type, '| Sheets:', wb.SheetNames.join(', '));
@@ -350,10 +356,54 @@ function mergeDS(existing, wb, type, filename) {
     else if(type==='ops') ds.opsRows.push(...parseOpsData(wb));
     else if(type==='ctrl')ds.ctrlRows.push(...parseCtrlData(wb));
     else if(type==='weather')ds.weatherRows.push(...parseWeatherData(wb));
-    else if(type==='targets')Object.assign(ds.targets,parseTargets(wb));
+    else if(type==='targets'){
+      // Try yearly format first (OEPE/Park/KVS/R2P); fall back to generic parseTargets
+      const yearly=parseYearlyTargets(wb);
+      if(Object.keys(yearly).length>0) Object.assign(ds.targets,yearly);
+      else Object.assign(ds.targets,parseTargets(wb));
+    }
     else if(type==='peaks'){ds.peaksSvcRows.push(...parse3PeaksService(wb));ds.peaksSalesRows.push(...parse3PeaksSales(wb));}
     else if(type==='register')ds.auditRows.push(...parseRegisterAudit(wb));
     else if(type==='trends')ds.trendsRows.push(...parseTrends(wb));
+    else if(type==='projections'){
+      // Extract projections for sales/labor planning AND monthly targets for FOB/food cost
+      const pRows=parseProjectionsFile(wb,filename||'');
+      applyProjectionsToTargets(pRows,filename||'projections');
+      if(!ds.projRows)ds.projRows=[];
+      ds.projRows.push(...pRows);
+      const mtTargets=parseMonthlyTargets(wb);
+      Object.assign(ds.monthlyTargets,mtTargets);
+      // Extract year/month from filename — handles various QSRSoft naming patterns:
+      //   "July 2026 - Restaurant Projections"   month-space-year
+      //   "Restaurant_Projections_April_2026"    underscores, month then year
+      //   "2026 April Restaurant Projections"    year first
+      //   "Projections-06-2026"                  numeric MM-YYYY
+      const MONTHS={january:1,february:2,march:3,april:4,may:5,june:6,
+                    july:7,august:8,september:9,october:10,november:11,december:12};
+      const MNAMES='january|february|march|april|may|june|july|august|september|october|november|december';
+      const fn2=(filename||'').replace(/_/g,' ');
+      let mtYear=0,mtMonth=0,mtLabel='';
+      let mtM2=fn2.match(new RegExp('('+MNAMES+')[\\s,.-]+(\\d{4})','i'));
+      if(mtM2){mtYear=parseInt(mtM2[2]);mtMonth=MONTHS[mtM2[1].toLowerCase()];mtLabel=mtM2[0];}
+      if(!mtYear){
+        mtM2=fn2.match(new RegExp('(\\d{4})[\\s,.-]+('+MNAMES+')','i'));
+        if(mtM2){mtYear=parseInt(mtM2[1]);mtMonth=MONTHS[mtM2[2].toLowerCase()];mtLabel=mtM2[0];}
+      }
+      if(!mtYear){
+        // Numeric: MM-YYYY or YYYY-MM
+        mtM2=fn2.match(/(\d{2})[-\/](\d{4})/);
+        if(mtM2&&+mtM2[1]>=1&&+mtM2[1]<=12){mtYear=parseInt(mtM2[2]);mtMonth=parseInt(mtM2[1]);mtLabel=mtM2[0];}
+        if(!mtYear){mtM2=fn2.match(/(\d{4})[-\/](\d{2})/);
+          if(mtM2&&+mtM2[2]>=1&&+mtM2[2]<=12){mtYear=parseInt(mtM2[1]);mtMonth=parseInt(mtM2[2]);mtLabel=mtM2[0];}}
+      }
+      if(mtYear&&mtMonth&&Object.keys(mtTargets).length>0){
+        ds.monthlyTargetsMeta={year:mtYear,month:mtMonth,label:mtLabel,storeCount:Object.keys(mtTargets).length};
+        console.log('[pipeline] monthly targets: '+mtLabel+' → '+mtYear+'-'+mtMonth+' ('+Object.keys(mtTargets).length+' stores)');
+        saveMonthlyTargets(mtTargets,mtYear,mtMonth).catch(e=>console.warn('[pipeline] monthly targets save failed:',e));
+      } else {
+        console.warn('[pipeline] monthly targets: could not detect year/month from filename:',filename);
+      }
+    }
     else if(type==='inventory'){const ir=parseInventoryData(wb,filename||'');if(ir.length)ds.inventoryRows.push(...ir);}
     else if(type==='dar'){
       const dm=(filename||'').match(/(\d{8})/);
@@ -369,37 +419,60 @@ function mergeDS(existing, wb, type, filename) {
     else if(type==='shiftmgr'){if(!ds.shiftRows)ds.shiftRows=[];ds.shiftRows.push(...parseShiftMgr(wb));}
     else if(type==='records')Object.assign(ds.records,parseRecords(wb));
     // ── QSRSoft email report types ──────────────────────────────────────────
-    else if(type==='sales-ledger')ds.laborRows.push(...parseSalesLedger(wb));
+    else if(type==='sales-ledger')ds.laborRows.push(...parseSalesLedger(wb,filename));
     else if(type==='daily-glimpse'){
       const _dm=(filename||'').match(/(\d{4}-\d{2}-\d{2})/);
       const _dh=_dm?new Date(_dm[1]+'T12:00:00'):new Date();
       ds.glimpseRows.push(...parseDailyGlimpse(wb,_dh));
     }
-    else if(type==='cash-sheet')ds.cashRows.push(...parseCashSheet(wb));
-    else if(type==='labor-exceptions')ds.exceptionRows.push(...parseLaborExceptions(wb));
+    else if(type==='cash-sheet')ds.cashRows.push(...parseCashSheet(wb,filename));
+    else if(type==='labor-exceptions')ds.exceptionRows.push(...parseLaborExceptions(wb,filename));
+    else if(type==='ll-labor'){if(!ds.schedRows)ds.schedRows=[];ds.schedRows.push(...parseLifeLenzLabor(wb));}
     else if(type==='ops_report'||type==='combined'){
       // Operations Report: Sales + Service + Controls + FOB sheets.
       // All sheets are period-summary format (no Business Date column).
       // Extract period date from filename (most reliable — never truncated like sheet names).
       // Handles YYYYMMDD, YYYY-MM-DD, and sheet-name fallback for any filename format.
       const _fn=String(filename||'');
+      const _fmt8=s=>s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
+      const _tryD=s=>{const d=new Date(s+'T12:00:00');return isNaN(d)?null:d;};
       const _fnD8=_fn.match(/(\d{8})/g)||[];
       const _fnDash=_fn.match(/(\d{4}-\d{2}-\d{2})/g)||[];
+      // Also handle MM/DD/YYYY or MM-DD-YYYY filename formats (common in QSRSoft)
+      const _fnMDY=(_fn.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g)||[])
+        .map(m=>{const p=m.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);return p?`${p[3]}-${String(p[1]).padStart(2,'0')}-${String(p[2]).padStart(2,'0')}`:null;})
+        .filter(Boolean);
       let _toDate,_fromDate;
-      if(_fnD8.length>=2){
-        const fmt=s=>s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);
-        _fromDate=new Date(fmt(_fnD8[0])+'T12:00:00');
-        _toDate=new Date(fmt(_fnD8[_fnD8.length-1])+'T12:00:00');
-      } else if(_fnDash.length>=2){
-        _fromDate=new Date(_fnDash[0]+'T12:00:00');
-        _toDate=new Date(_fnDash[_fnDash.length-1]+'T12:00:00');
-      } else {
-        // Fallback: collect all complete YYYY-MM-DD dates from sheet names
-        const _shDates=[...(new Set((wb.SheetNames||[]).flatMap(s=>(s.match(/(\d{4}-\d{2}-\d{2})/g)||[]))))].sort();
-        _fromDate=_shDates.length?new Date(_shDates[0]+'T12:00:00'):null;
-        _toDate=_shDates.length?new Date(_shDates[_shDates.length-1]+'T12:00:00'):new Date();
+      // Accept even a single date in filename (was >=2 — missed filenames with just an end date)
+      if(_fnD8.length>=1){
+        _fromDate=_tryD(_fmt8(_fnD8[0]));
+        _toDate=_tryD(_fmt8(_fnD8[_fnD8.length-1]));
       }
-      console.log('[McForecast] Ops Report date range:',_fromDate?.toDateString(),'→',_toDate?.toDateString(),'| from file:',_fn.slice(-40));
+      if(!_toDate&&_fnDash.length>=1){
+        _fromDate=_fromDate||_tryD(_fnDash[0]);
+        _toDate=_tryD(_fnDash[_fnDash.length-1]);
+      }
+      if(!_toDate&&_fnMDY.length>=1){
+        _fromDate=_fromDate||_tryD(_fnMDY[0]);
+        _toDate=_tryD(_fnMDY[_fnMDY.length-1]);
+      }
+      if(!_toDate){
+        // Month-name fallback: "June 2026 Operations Report" → June 30, 2026
+        const _MONTHS={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+        const _mM=_fn.toLowerCase().match(/(january|february|march|april|may|june|july|august|september|october|november|december)[^\d]*(\d{4})/);
+        if(_mM){
+          const _mo=_MONTHS[_mM[1]],_yr=parseInt(_mM[2]);
+          _toDate=new Date(_yr,_mo,0,12,0,0); // day 0 of next month = last day of this month
+          _fromDate=new Date(_yr,_mo-1,1,12,0,0);
+        }
+      }
+      if(!_toDate){
+        // Fallback: collect all YYYY-MM-DD dates from sheet names
+        const _shDates=[...(new Set((wb.SheetNames||[]).flatMap(s=>(s.match(/(\d{4}-\d{2}-\d{2})/g)||[]))))].sort();
+        _fromDate=_shDates.length?_tryD(_shDates[0]):null;
+        _toDate=_shDates.length?_tryD(_shDates[_shDates.length-1]):new Date();
+      }
+      console.log('[McForecast] Ops Report date range:',_fromDate?.toDateString(),'→',_toDate?.toDateString(),'| from file:',_fn.slice(-50));
       try{ds.laborRows.push(...parseLaborData(wb,null,_toDate));}
       catch(e){console.warn('[McForecast] Sales sheet parse error:',e.message);}
       try{ds.opsRows.push(...parseOpsData(wb,null,_toDate));}
@@ -435,10 +508,10 @@ function mergeDS(existing, wb, type, filename) {
     for(let i=rows.length-1;i>=0;i--){
       const r=rows[i];if(!r.loc||!r.date)continue;
       const k=r.loc+'_'+dKey(r.date);
-      if(!seen[k]){seen[k]=i;}
+      if(!seen[k]){seen[k]=r;}  // store object ref, not index — splice shifts indices
       else{
         // Rescue non-zero channel fields from the row being discarded into the kept row
-        const kept=rows[seen[k]];
+        const kept=seen[k];
         for(const f of CH_FIELDS){if((r[f]||0)!==0&&!(kept[f]||0))kept[f]=r[f];}
         rows.splice(i,1);
       }

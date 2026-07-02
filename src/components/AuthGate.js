@@ -103,8 +103,9 @@ export function AuthGate({ children }) {
   const [sentTo, setSentTo]   = useState('');
 
   useEffect(() => {
-    // Skip auth on localhost — dev environment always passes through
-    if (!supabase || window.location.hostname === 'localhost') { setLoading(false); return; }
+    if (!supabase) { setLoading(false); return; }
+    // On localhost or Netlify preview, bypass auth.
+    if (window.location.hostname === 'localhost' || window.location.hostname.endsWith('.netlify.app')) { setLoading(false); return; }
 
     // Check for an existing session (also handles magic-link redirect tokens in URL)
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -119,8 +120,8 @@ export function AuthGate({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Local-only mode — no Supabase configured
-  if (!supabase) return children;
+  // Local-only mode or bypass domains
+  if (!supabase || window.location.hostname === 'localhost' || window.location.hostname.endsWith('.netlify.app')) return children;
 
   // Initial load
   if (loading) return div({
@@ -179,7 +180,7 @@ export function AuthGate({ children }) {
 
 // Sign-out button — drop this anywhere in the nav
 export function SignOutBtn({ style = {} }) {
-  if (!supabase || window.location.hostname === 'localhost') return null;
+  if (!supabase) return null;
   const signOut = async () => {
     await supabase.auth.signOut();
     // Clear local review cache so another user doesn't see stale data
