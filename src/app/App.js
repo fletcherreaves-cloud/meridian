@@ -1008,7 +1008,7 @@ function App() {
             const vpRows=await parseVoicePerformancePDF(arr,file.name);
             if(vpRows.length>0){
               await saveVoicePerf(vpRows);
-              setDs(prev=>prev?{...prev,smgVoicePerf:[...(prev.smgVoicePerf||[]),...vpRows]}:prev);
+              currentDS={...currentDS,smgVoicePerf:[...(currentDS.smgVoicePerf||[]),...vpRows]};
               console.log(`[Meridian] VOICE Performance: ${vpRows.length} rows from ${file.name}`);
             }
             loaded.push({name:file.name,type:typeInfo});
