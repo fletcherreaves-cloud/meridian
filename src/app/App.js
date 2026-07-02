@@ -69,9 +69,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.264';
+const MERIDIAN_VERSION    = '4.265';
 const MERIDIAN_BUILD_DATE = '2026-07-02';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.265', date:'2026-07-02', changes:[
+    'Remove debug logging from SMG VOICE Performance PDF upload pipeline.',
+  ]},
   {version:'4.264', date:'2026-07-02', changes:[
     'Fix: VOICE Performance PDFs dropped/loaded manually now parse and display immediately — previously fell through to "Unrecognized PDF" because only smg-voice type was handled in the PDF upload path.',
   ]},
@@ -1001,7 +1004,6 @@ function App() {
         if(isPDF){
           // PDF files — route to specialized parsers (no XLSX)
           const typeInfo=detectType(file.name,null);
-          console.log('[pdf_upload] file:',file.name,'→ type:',typeInfo.type);
           if(typeInfo.type==='voice-performance'){
             const {parseVoicePerformancePDF}=await import('../parsers/voice-performance.js');
             const arr=await file.arrayBuffer();
