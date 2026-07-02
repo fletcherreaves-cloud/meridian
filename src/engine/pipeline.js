@@ -397,11 +397,21 @@ function mergeDS(existing, wb, type, filename) {
           if(mtM2&&+mtM2[2]>=1&&+mtM2[2]<=12){mtYear=parseInt(mtM2[1]);mtMonth=parseInt(mtM2[2]);mtLabel=mtM2[0];}}
       }
       if(mtYear&&mtMonth&&Object.keys(mtTargets).length>0){
+        // Stamp _year/_month on each parsed entry so Data Manager label is correct
+        // without a Supabase round-trip.
+        for(const loc of Object.keys(ds.monthlyTargets)){
+          if(!ds.monthlyTargets[loc]._year){
+            ds.monthlyTargets[loc]._year=mtYear;
+            ds.monthlyTargets[loc]._month=mtMonth;
+          }
+        }
         ds.monthlyTargetsMeta={year:mtYear,month:mtMonth,label:mtLabel,storeCount:Object.keys(mtTargets).length};
         console.log('[pipeline] monthly targets: '+mtLabel+' → '+mtYear+'-'+mtMonth+' ('+Object.keys(mtTargets).length+' stores)');
-        saveMonthlyTargets(mtTargets,mtYear,mtMonth).catch(e=>console.warn('[pipeline] monthly targets save failed:',e));
+        saveMonthlyTargets(mtTargets,mtYear,mtMonth).then(r=>{
+          if(r&&r.errors&&r.errors.length) console.error('[pipeline] monthly targets Supabase save failed:',r.errors);
+        }).catch(e=>console.error('[pipeline] monthly targets save exception:',e));
       } else {
-        console.warn('[pipeline] monthly targets: could not detect year/month from filename:',filename);
+        console.warn('[pipeline] monthly targets: could not detect year/month from filename:',filename,'— targets saved locally only');
       }
     }
     else if(type==='inventory'){const ir=parseInventoryData(wb,filename||'');if(ir.length)ds.inventoryRows.push(...ir);}

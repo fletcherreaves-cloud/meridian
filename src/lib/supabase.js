@@ -66,7 +66,14 @@ export async function saveMonthlyTargets(targets, year, month) {
   const { error } = await supabase
     .from('monthly_targets')
     .upsert(rows, { onConflict: 'loc,year,month' });
-  if (error) { console.warn('[monthly_targets] save error:', error); return { saved: 0, errors: [error.message] }; }
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01') {
+      console.error('[monthly_targets] Table does not exist in Supabase. Run the monthly_targets block from schema.sql in your Supabase SQL editor.');
+    } else {
+      console.error('[monthly_targets] save error:', error.message, error);
+    }
+    return { saved: 0, errors: [error.message] };
+  }
   console.log(`[monthly_targets] saved ${rows.length} stores for ${year}-${month}`);
   return { saved: rows.length, errors: [] };
 }

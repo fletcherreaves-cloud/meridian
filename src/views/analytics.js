@@ -1402,6 +1402,12 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     const mt = ds&&ds.monthlyTargets||{};
     const mtLocs = Object.keys(mt).length;
     const mtPeriod = mtLocs ? Object.values(mt).find(v=>v._year) : null;
+    // Fall back to monthlyTargetsMeta for the period label (set by pipeline on upload,
+    // even when Supabase isn't available to stamp _year/_month via the load path).
+    const mtMeta = ds&&ds.monthlyTargetsMeta;
+    const mtLabel = mtPeriod
+      ? `${mtPeriod._year}-${String(mtPeriod._month).padStart(2,'0')}`
+      : mtMeta ? `${mtMeta.year}-${String(mtMeta.month).padStart(2,'0')}` : 'loaded';
     // Group FullScale by year-month for per-period display
     const fsByPeriod = {};
     for(const r of fsRows){
@@ -1413,9 +1419,9 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     return {
       fsPeriods,
       smgFullscale: fsRows.length ? {count:fsRows.length} : {count:0},
-      monthlyTargets: mtLocs ? {count:mtLocs, label:mtPeriod?`${mtPeriod._year}-${String(mtPeriod._month).padStart(2,'0')}`:'loaded'} : {count:0},
+      monthlyTargets: mtLocs ? {count:mtLocs, label:mtLabel} : {count:0},
     };
-  },[ds&&ds.smgFullscale,ds&&ds.monthlyTargets]);
+  },[ds&&ds.smgFullscale,ds&&ds.monthlyTargets,ds&&ds.monthlyTargetsMeta]);
 
   const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0)+(recStats.count||0)
     + Object.values(sessionCov).reduce((a,v)=>a+(v?.count||0),0);
