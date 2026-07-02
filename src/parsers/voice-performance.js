@@ -117,6 +117,7 @@ export async function parseVoicePerformancePDF(arrayBuffer, filename = '') {
     // ── Store table extraction ──────────────────────────────────────────────────
     // Store IDs are 5-digit numbers at X < 35
     const storeIdWords = words.filter(w => /^\d{5}$/.test(w.text) && w.x < 35);
+    if (pg === 1) console.log(`[vp_debug] pg1: period=${period} opId=${operatorId} rtype=${currentReportType} storeIds=${storeIdWords.length} (${storeIdWords.map(w=>w.text).join(',')}) | x<35 words:`, words.filter(w=>w.x<35).map(w=>`"${w.text}"@(${Math.round(w.x)},${Math.round(w.y)})`).slice(0,10));
 
     for (const sidWord of storeIdWords) {
       const rowY = sidWord.y;
