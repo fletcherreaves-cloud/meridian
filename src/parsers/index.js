@@ -160,6 +160,8 @@ function detectType(filename, wb){
   const ext=filename.split('.').pop().toLowerCase();
   const dm=filename.match(/(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/i);
   const dr=dm?{from:dm[1],to:dm[2]}:null;
+  // SMG VOICE Operator Performance Report — must come before the generic 'voice' check below
+  if(ext==='pdf'&&/^mcdonalds_voice_operator_performance_\d+/i.test(fn))return{type:'voice-performance',label:'SMG VOICE Performance Report',dr,confidence:'high'};
   // SMG VOICE Customer Comment Report (PDF filename pattern: eu065119100...)
   if(ext==='pdf'&&/^eu\d{10,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
   if(ext==='pdf'&&(fn.includes('voice')||fn.includes('comment report')||fn.includes('customer comment')))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
