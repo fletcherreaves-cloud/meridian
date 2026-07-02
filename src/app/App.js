@@ -34,7 +34,7 @@ import { SMGVoicePanel } from '../views/smg-voice.js';
 import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveLifeLenzSchedule, loadLifeLenzSchedule, uploadReportFile } from '../lib/supabase.js';
-import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase } from '../engine/review-engine.js';
+import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
@@ -564,6 +564,19 @@ function App() {
     syncConfigFromSupabase(supabase).catch(()=>{});
     // Sync org roles (role definitions + permissions) from Supabase
     syncOrgRolesFromSupabase(supabase).then(roles => { if (roles) setOrgRoles(roles); }).catch(()=>{});
+    // Sync app settings from Supabase — Supabase wins over localStorage for any key it has
+    supabase.from('org_config').select('data').eq('key','app_settings').maybeSingle()
+      .then(({data})=>{
+        if(!data?.data) return;
+        const remote=data.data;
+        setSettings(cur=>{
+          const merged={...DEF_SETTINGS,...cur,...remote};
+          merged.operators={...DEF_SETTINGS.operators,...(cur.operators||{}),...(remote.operators||{})};
+          merged.supervisorGroups={...DEF_SETTINGS.supervisorGroups,...(cur.supervisorGroups||{}),...(remote.supervisorGroups||{})};
+          try{localStorage.setItem('mf_settings',JSON.stringify(merged));}catch{}
+          return merged;
+        });
+      }).catch(()=>{});
     // Fetch the logged-in user's role from their Supabase profile
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -776,6 +789,7 @@ function App() {
     setSettings(next);
     try { localStorage.setItem('mf_settings', JSON.stringify(next)); } catch {}
     if(next.weekStartDay !== undefined) setWeekStartDay(next.weekStartDay);
+    pushConfigToSupabase(supabase, next, 'app_settings').catch(()=>{});
   }, []);
 
   // Session Save / Restore handlers
