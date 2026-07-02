@@ -60,6 +60,8 @@ export async function parseVoicePerformancePDF(arrayBuffer, filename = '') {
         y:   pageH - item.transform[5],  // flip to top-down
       }));
 
+    if (pg === 1) console.log('[vp_debug] page1 words sample:', words.slice(0,20).map(w=>`"${w.text}"@(${Math.round(w.x)},${Math.round(w.y)})`));
+
     // ── Header analysis (first 70 Y units) ────────────────────────────────────
     const headerWords = words.filter(w => w.y < 70);
     const headerText  = headerWords.map(w => w.text).join(' ');
