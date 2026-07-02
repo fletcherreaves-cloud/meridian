@@ -1586,9 +1586,6 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
             div({style:{display:'flex',gap:8,alignItems:'center'}},
             onLoad&&btn({className:'btn btn-sm',style:{background:'rgba(96,165,250,.12)',border:'.5px solid rgba(96,165,250,.3)',color:'#60a5fa',fontSize:'9px'},
               onClick:()=>{onClose();onLoad();}},'📂 Upload Files'),
-            totalRows>0&&btn({className:'btn btn-sm',
-              style:{color:'#f87171',border:'.5px solid rgba(248,113,113,.3)',fontSize:'9px'},
-              onClick:handleClear},'🗑 Clear All Stored Data'),
       !wxFetching&&btn({style:{background:'rgba(96,165,250,.1)',border:'1px solid rgba(96,165,250,.25)',color:'#60a5fa',padding:'8px 14px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:600},
         onClick:async()=>{
           if(!navigator.onLine&&!window.location.href.startsWith('file://')){

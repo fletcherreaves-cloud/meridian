@@ -194,7 +194,7 @@ function DevDashboard({settings, onUpdate}) {
   );
 }
 
-function Settings({settings, onUpdate, onClose}) {
+function Settings({settings, onUpdate, onClose, userRole, onClearAll}) {
   const S=settings;
   const [activeSection, setActiveSection] = useState('identity');
   const set=(path,val)=>{const keys=path.split('.');const next=JSON.parse(JSON.stringify(S));let cur=next;keys.slice(0,-1).forEach(k=>{if(!cur[k])cur[k]={};cur=cur[k];});cur[keys[keys.length-1]]=val;onUpdate(next);};
@@ -213,8 +213,9 @@ function Settings({settings, onUpdate, onClose}) {
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
               ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['supervisors','🗂 Patches'],
-              ['ai','🤖 AI'],['dev','🛠 Dev']
-          ].map(([k,l])=>div({key:k,
+              ['ai','🤖 AI'],['dev','🛠 Dev'],
+              ...(userRole==='admin'?[['data','🗄 Data']]:[])]
+          .map(([k,l])=>div({key:k,
             onClick:()=>setActiveSection(k),
             style:{padding:'8px 14px',fontSize:'10px',fontWeight:activeSection===k?700:400,
               color:activeSection===k?'var(--amber)':'var(--text2)',
@@ -441,7 +442,24 @@ function Settings({settings, onUpdate, onClose}) {
             )
           )
         ),
-        activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate})
+        activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate}),
+
+        activeSection==='data'&&div({className:'set-sec'},
+          div({className:'set-sec-t'},'🗄 Data Management'),
+          div({className:'set-note'},'Admin-only. These actions affect data stored on this device.'),
+          div({style:{background:'rgba(239,68,68,.06)',border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'12px 14px',marginTop:12}},
+            div({style:{fontWeight:700,fontSize:'11px',color:'#f87171',marginBottom:6}},'Clear All Stored Data'),
+            div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:10,lineHeight:1.5}},'Removes all uploaded report data from this device (IndexedDB + OPFS). Data in Supabase — Monthly Targets, SMG FullScale, Performance Reviews — is not affected. You will need to re-upload files on next launch.'),
+            btn({
+              className:'btn btn-sm',
+              style:{color:'#f87171',border:'.5px solid rgba(239,68,68,.3)',background:'rgba(239,68,68,.06)',fontWeight:700},
+              onClick:()=>{
+                const confirmed=window.prompt('Type DELETE (all caps) to confirm clearing all stored report data:');
+                if(confirmed==='DELETE') onClearAll&&onClearAll();
+              }
+            },'🗑 Clear All Stored Data')
+          )
+        )
       )// close content div
     )// close flex row (sidebar+content)
   )// close inner panel

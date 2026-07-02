@@ -11,7 +11,7 @@ import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, 
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon } from '../engine/forecast.js';
-import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave } from '../db/index.js';
+import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
 import { GMCoachingBrief } from '../engine/coaching.js';
 import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
@@ -795,6 +795,13 @@ function App() {
     setTimeout(()=>setLoadMsg(null),3000);
   },[]);
 
+  const handleClearAll = useCallback(async()=>{
+    await Promise.all([idbClearAll(), opfsClear()]);
+    setDs(null);
+    setLoadMsg('✓ All stored data cleared — reload files to restore');
+    setTimeout(()=>setLoadMsg(null),6000);
+  },[]);
+
   // Initialize weekStartDay from persisted settings
   React.useEffect(()=>{setWeekStartDay(settings.weekStartDay!==undefined?settings.weekStartDay:3);},[]);
 
@@ -1299,7 +1306,7 @@ function App() {
     )  // close right panel flex-col
 
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
-    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false)}),
+    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll}),
     showRanking  &&h(RankingView,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,onSelectStore:s=>{goStore(s);setShowRanking(false);},onClose:()=>setShowRanking(false)}),
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
     showUnifiedTargets&&h(UnifiedTargetsPanel,{stores,ds,settings,onClose:()=>setShowUnifiedTargets(false)}),
