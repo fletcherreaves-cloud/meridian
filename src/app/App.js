@@ -69,9 +69,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.263';
+const MERIDIAN_VERSION    = '4.264';
 const MERIDIAN_BUILD_DATE = '2026-07-02';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.264', date:'2026-07-02', changes:[
+    'Fix: VOICE Performance PDFs dropped/loaded manually now parse and display immediately — previously fell through to "Unrecognized PDF" because only smg-voice type was handled in the PDF upload path.',
+  ]},
   {version:'4.263', date:'2026-07-02', changes:[
     'SMG VOICE Performance Reports: full pipeline wired up — Gmail poller detects monthly "Voice Performance Report" emails (SMGMailMgr@whysmg.com), downloads operator PDFs, stores in Supabase. Browser auto-parses PDFs using PDF.js, extracts per-store data (DT Sat, DT Dissat, IR Sat, IR Dissat, Accuracy B2B, Quality B2B, Fries B2B, Snack Wrap B2B) for all 3 report types (Monthly / Trailing 90d / YTD), saves to new smg_voice_performance Supabase table.',
     'SMG VOICE panel: new Performance tab shows all-store ranking table with color-coded metrics, period selector (6 months), and report type toggle (Monthly / T90 / YTD). Metric columns are clickable to re-sort.',
@@ -1007,6 +1010,16 @@ function App() {
             loaded.push({name:file.name,type:typeInfo});
             if(supabase&&!file._pendingId&&!file._manualSyncId)
               uploadReportFile(file,'smg-voice').then(rec=>_markSynced(rec?.id)).catch(()=>{});
+          } else if(/^mcdonalds_voice_operator_performance_\d+\.pdf$/i.test(file.name)){
+            const {parseVoicePerformancePDF}=await import('../parsers/voice-performance.js');
+            const arr=await file.arrayBuffer();
+            const vpRows=await parseVoicePerformancePDF(arr,file.name);
+            if(vpRows.length>0){
+              await saveVoicePerf(vpRows);
+              setDs(prev=>prev?{...prev,smgVoicePerf:[...(prev.smgVoicePerf||[]),...vpRows]}:prev);
+              console.log(`[Meridian] VOICE Performance: ${vpRows.length} rows from ${file.name}`);
+            }
+            loaded.push({name:file.name,type:{type:'voice-performance',confidence:1}});
           } else {
             console.warn('[Meridian] Unrecognized PDF:',file.name);
           }
