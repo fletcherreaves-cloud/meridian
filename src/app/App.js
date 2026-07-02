@@ -1001,16 +1001,8 @@ function App() {
         if(isPDF){
           // PDF files — route to specialized parsers (no XLSX)
           const typeInfo=detectType(file.name,null);
-          if(typeInfo.type==='smg-voice'){
-            const smgRows=await parseSMGVoicePDF(file);
-            if(smgRows.length>0){
-              currentDS={...currentDS,smgRows:[...(currentDS.smgRows||[]),...smgRows]};
-              console.log(`[Meridian] SMG VOICE: ${smgRows.length} comments from ${file.name}`);
-            }
-            loaded.push({name:file.name,type:typeInfo});
-            if(supabase&&!file._pendingId&&!file._manualSyncId)
-              uploadReportFile(file,'smg-voice').then(rec=>_markSynced(rec?.id)).catch(()=>{});
-          } else if(/^mcdonalds_voice_operator_performance_\d+\.pdf$/i.test(file.name)){
+          console.log('[pdf_upload] file:',file.name,'→ type:',typeInfo.type);
+          if(typeInfo.type==='voice-performance'){
             const {parseVoicePerformancePDF}=await import('../parsers/voice-performance.js');
             const arr=await file.arrayBuffer();
             const vpRows=await parseVoicePerformancePDF(arr,file.name);
@@ -1019,7 +1011,16 @@ function App() {
               setDs(prev=>prev?{...prev,smgVoicePerf:[...(prev.smgVoicePerf||[]),...vpRows]}:prev);
               console.log(`[Meridian] VOICE Performance: ${vpRows.length} rows from ${file.name}`);
             }
-            loaded.push({name:file.name,type:{type:'voice-performance',confidence:1}});
+            loaded.push({name:file.name,type:typeInfo});
+          } else if(typeInfo.type==='smg-voice'){
+            const smgRows=await parseSMGVoicePDF(file);
+            if(smgRows.length>0){
+              currentDS={...currentDS,smgRows:[...(currentDS.smgRows||[]),...smgRows]};
+              console.log(`[Meridian] SMG VOICE: ${smgRows.length} comments from ${file.name}`);
+            }
+            loaded.push({name:file.name,type:typeInfo});
+            if(supabase&&!file._pendingId&&!file._manualSyncId)
+              uploadReportFile(file,'smg-voice').then(rec=>_markSynced(rec?.id)).catch(()=>{});
           } else {
             console.warn('[Meridian] Unrecognized PDF:',file.name);
           }
