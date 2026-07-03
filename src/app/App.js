@@ -33,6 +33,8 @@ import { AdminPanel } from '../views/admin.js';
 import { SMGVoicePanel } from '../views/smg-voice.js';
 import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
+import { SignalsPanel } from '../views/signals.js';
+import { computeInsights } from '../engine/insights.js';
 import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
@@ -69,9 +71,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.269';
-const MERIDIAN_BUILD_DATE = '2026-07-02';
+const MERIDIAN_VERSION    = '4.270';
+const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.270', date:'2026-07-03', changes:[
+    'Signals: new cross-metric correlation engine. Automatically detects statistical relationships between scheduling gaps, labor, OEPE, OSAT, OT, exceptions, food cost, and DT mix. Signals panel shows r value, strength, direction, and data readiness. Reruns on every upload.',
+  ]},
   {version:'4.269', date:'2026-07-02', changes:[
     'DI Calibration persistence: labor rows now saved to Supabase on every upload and merged back on startup — history survives browser cache clears and accumulates across devices. Requires the labor_rows table (run schema.sql block in Supabase SQL editor).',
   ]},
@@ -520,6 +525,8 @@ function App() {
   const [showOperatorSummary,   setShowOperatorSummary]   = useState(false);
   const [showMonthlyProj,       setShowMonthlyProj]       = useState(false);
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
+  const [showSignals,         setShowSignals]         = useState(false);
+  const [signals,             setSignals]             = useState([]);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   const [showFcstRef,         setShowFcstRef]         = useState(false);
   const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
@@ -1110,6 +1117,7 @@ function App() {
       setDs(currentDS);
       if(_uploadEvents) setUserEvents(_uploadEvents);
     });
+    try { setSignals(computeInsights(currentDS)); } catch(e) { console.warn('[insights] error:', e); }
     // Persist new labor rows to Supabase for DI calibration history
     if(supabase){
       const newLaborRows=(currentDS.laborRows||[]).filter(r=>{
@@ -1269,7 +1277,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -1289,7 +1297,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -1387,6 +1395,7 @@ function App() {
         if(modal==='perf-calc')      perm('analytics.store')&&setShowPerfCalc(true);
         if(modal==='corr-explorer')  perm('analytics.store')&&setShowCorrExplorer(true);
         if(modal==='unified-targets') perm('analytics.store')&&setShowUnifiedTargets(true);
+        if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
         if(modal==='attention')      setShowAttention(true);
       }
     }),
@@ -1500,6 +1509,15 @@ function App() {
     showLaborAnalytics&&h(LaborAnalyticsPanel,{stores,ds,settings,onClose:()=>setShowLaborAnalytics(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showScheduling&&h(SchedulingPanel,{ds,settings,onClose:()=>setShowScheduling(false)}),
+    showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
+      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
+        span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em'}},'📡 Signals'),
+        h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
+      ),
+      div({style:{flex:1,overflowY:'auto'}},
+        h(SignalsPanel,{ds,signals}),
+      ),
+    ),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false)}),

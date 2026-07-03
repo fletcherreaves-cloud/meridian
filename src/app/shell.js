@@ -211,6 +211,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.district', 'Org Overview',       '📊', ()=>onOpenModal('operator-summary'), false),
       pis('analytics.store',    '3PO Delivery',       '🛵', ()=>onOpenModal('delivery-mix'),     false),
       pis('analytics.store',    'Scheduling',         '📋', ()=>onOpenModal('scheduling'),        false),
+      pis('analytics.store',    'Signals',            '📡', ()=>onOpenModal('signals'),            false),
       pis('analytics.district', 'EOM Supervisor',     '📊', ()=>onOpenModal('eom-summary'),      false),
       // ── STORE OPS ──────────────────────────────────────────────
       can('analytics.store') && navLabel('STORE OPS'),
