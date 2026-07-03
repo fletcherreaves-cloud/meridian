@@ -71,9 +71,13 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.271';
+const MERIDIAN_VERSION    = '4.272';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.272', date:'2026-07-03', changes:[
+    'EOM Supervisor: actSales and Crew Labor % now use Operations Report (Labor Analysis rows) as primary source — daily rows summed for the month — with FOB as fallback only. Fixes inflated single-day values from FOB partial data.',
+    'EOM Supervisor: rate-based projections (labor %, food cost %, FOB %, op supply) now display even when loaded monthly targets are for a different month (e.g. July targets loaded while viewing June) — rates are month-agnostic. Sales $ projections still require a matching period.',
+  ]},
   {version:'4.271', date:'2026-07-03', changes:[
     'EOM Supervisor: fix actSales to use fobRow.sales (correct field name — prodSales/netSales were wrong); fix OT Hours and OT $ to sum all daily labor rows for the month instead of using peak-day values; fix Crew Labor % to use sales-weighted average from monthly rows when FOB does not supply it.',
     'Weather: fix persistence on reload — OPFS path now falls back to IDB when weather missing from OPFS blob (common after weather fetch predates next file upload); auto-fetch now also saves to OPFS and updates idbCoverage so Data Manager shows fresh dates immediately; removed manual Fetch All Weather button (auto-fetch handles it).',

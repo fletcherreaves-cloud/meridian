@@ -61,15 +61,19 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
   // then monthlyTargetsMeta (set when a file is dragged in).
   const mtYear  = mt._year  || meta?.year;
   const mtMonth = mt._month || meta?.month;
-  const mtOK    = !mtYear || (mtYear === selYear && mtMonth === selMonth);
+  // mtOK_sales: sales $ projections require targets for the exact same month.
+  // mtOK_rates: rate targets (labor %, food cost %) are month-agnostic — use any loaded targets.
+  const mtOK_sales  = !mtYear || (mtYear === selYear && mtMonth === selMonth);
+  const mtOK_rates  = !!mtYear;
+  const mtOK        = mtOK_sales; // kept for hasMonthlyTargets below
 
-  // Projections — from monthly targets (if matching month) or DEFAULT_TARGETS fallback
+  // Projections — from monthly targets or DEFAULT_TARGETS fallback
   // tLabor = generic labor %, tCrewLabor = crew-only — check both (Supabase loads tCrewLabor)
-  const projSales    = (mtOK && mt.tProdSales)                          || tgt.tJuneProj       || null;
-  const projFCPct    = (mtOK && mt.tFOBTotal)                           || null;
-  const projFOBPct   = (mtOK && mt.tFOBTarget)                          || null;
-  const projLaborPct = (mtOK && (mt.tCrewLabor || mt.tLabor))           || tgt.tJuneLaborPct   || null;
-  const projOpSup    = (mtOK && mt.tOpSupply)                           || null;
+  const projSales    = (mtOK_sales && mt.tProdSales)                     || tgt.tJuneProj       || null;
+  const projFCPct    = (mtOK_rates && mt.tFOBTotal)                      || null;
+  const projFOBPct   = (mtOK_rates && mt.tFOBTarget)                     || null;
+  const projLaborPct = (mtOK_rates && (mt.tCrewLabor || mt.tLabor))      || tgt.tJuneLaborPct   || null;
+  const projOpSup    = (mtOK_rates && mt.tOpSupply)                      || null;
 
   // Actuals from FOB rows (monthly report, one row per store per period)
   const fobRow = (ds.fobRows || []).find(r =>
@@ -97,12 +101,13 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
   const _lbrSales = _lbrValid.reduce((s, r) => s + r.sales, 0);
   const monthlyLaborPct  = _lbrSales > 0 ? _lbrWt / _lbrSales : null;
 
-  // FOB report: fobRow.sales is the correct field (parser uses `sales` not `netSales`/`prodSales`).
-  const actSales    = (fobRow?.sales > 0 ? fobRow.sales : null)
-                      || (monthlySales > 0 ? monthlySales : null);
+  // Sales and labor % come from Operations Report (laborRows) — daily rows summed for the month.
+  // FOB report is fallback for sales/labor only; primary for food cost metrics (actFCPct, actFOBPct).
+  const actSales    = (monthlySales > 0 ? monthlySales : null)
+                      || (fobRow?.sales > 0 ? fobRow.sales : null);
   const actFCPct    = fobRow?.pLFoodPct  || null; // Total Food Cost % actual
   const actFOBPct   = fobRow?.fobPct     || null; // Food Over Base % actual
-  const actLaborPct = (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || monthlyLaborPct || null;
+  const actLaborPct = monthlyLaborPct || (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || null;
 
   // Cash: sum from ctrlRows for the month
   const cashFromCtrl = (() => {
