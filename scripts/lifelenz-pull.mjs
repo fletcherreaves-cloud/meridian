@@ -54,48 +54,122 @@ function chunkDateRange(start, end, maxDays = 21) {
 
 // ── Step 1a: Try direct REST login (no browser needed) ───────────────────
 async function getAuthTokenDirect() {
-  // Humanforce/LifeLenz REST login — actual login domain is admin.lifelenz.com/us01
-  const AUTH_BASE = 'https://admin.lifelenz.com/us01';
+  // All endpoints returned 405 (Method Not Allowed) on bare JSON POST.
+  // This is a Rails/Devise app — requires CSRF token from the login page first,
+  // then form-encoded POST with the session cookie.
+  const LOGIN_URL = 'https://admin.lifelenz.com/us01/auth/login';
   const u = process.env.LIFELENZ_USERNAME;
   const p = process.env.LIFELENZ_PASSWORD;
-  const candidates = [
-    { url: `${AUTH_BASE}/auth/login`,          body: { username: u, password: p } },
-    { url: `${AUTH_BASE}/api/v1/sessions`,     body: { username: u, password: p } },
-    { url: `${AUTH_BASE}/api/auth/sessions`,   body: { username: u, password: p } },
-    { url: `${AUTH_BASE}/users/sign_in`,       body: { user: { login: u, password: p } } },
-    { url: `${AUTH_BASE}/api/v1/auth/token`,   body: { username: u, password: p } },
-  ];
 
-  for (const { url, body } of candidates) {
-    try {
-      console.log('[auth-direct] trying', url);
-      const resp = await fetch(url, {
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
+
+  try {
+    // Step 1: GET the login page to capture CSRF token + session cookie
+    console.log('[auth-direct] GET', LOGIN_URL);
+    const pageResp = await fetch(LOGIN_URL, {
+      headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' },
+      redirect: 'follow',
+    });
+    console.log('[auth-direct] GET →', pageResp.status, '| url:', pageResp.url);
+
+    const html = await pageResp.text();
+    if (DEBUG) console.log('[auth-direct] page HTML (500):', html.slice(0, 500));
+
+    // Extract CSRF token (Rails authenticity_token)
+    const csrfMatch = html.match(/name=["']authenticity_token["'][^>]*value=["']([^"']+)["']/)
+                   || html.match(/value=["']([^"']+)["'][^>]*name=["']authenticity_token["']/);
+    const csrfToken = csrfMatch?.[1];
+    console.log('[auth-direct] csrf token:', csrfToken ? `found (${csrfToken.length} chars)` : 'NOT FOUND');
+    if (DEBUG && !csrfToken) console.log('[auth-direct] HTML snippet for debugging:', html.slice(0, 2000));
+
+    // Collect session cookies from GET response
+    const rawCookies = [];
+    pageResp.headers.forEach((val, key) => {
+      if (key.toLowerCase() === 'set-cookie') rawCookies.push(val.split(';')[0]);
+    });
+    const cookieStr = rawCookies.join('; ');
+    console.log('[auth-direct] cookies from GET:', rawCookies.length, 'cookies');
+
+    // Step 2: POST credentials — try multiple field name conventions
+    const fieldCombos = [
+      { 'user[email]': u,    'user[password]': p },
+      { 'user[login]': u,    'user[password]': p },
+      { 'user[username]': u, 'user[password]': p },
+      { email: u,            password: p },
+      { username: u,         password: p },
+      { login: u,            password: p },
+    ];
+
+    for (const fields of fieldCombos) {
+      const body = new URLSearchParams({ ...fields, commit: 'Sign in' });
+      if (csrfToken) body.set('authenticity_token', csrfToken);
+
+      console.log('[auth-direct] POST with fields:', Object.keys(fields).join(', '));
+      const postResp = await fetch(LOGIN_URL, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': UA,
+          'Accept': 'text/html,application/xhtml+xml,application/json',
+          'Referer': LOGIN_URL,
+          ...(cookieStr ? { 'Cookie': cookieStr } : {}),
         },
-        body: JSON.stringify(body),
+        body: body.toString(),
+        redirect: 'manual', // catch the redirect to extract token
       });
 
-      console.log('[auth-direct]', url, '→', resp.status);
+      console.log('[auth-direct] POST →', postResp.status, '| location:', postResp.headers.get('location') || '(none)');
 
-      // Check response header first
-      const headerToken = resp.headers.get('x-auth-token') || resp.headers.get('X-Auth-Token');
-      if (headerToken) { console.log('[auth-direct] got token from header'); return headerToken; }
+      // Check for X-Auth-Token in response headers
+      const headerToken = postResp.headers.get('x-auth-token') || postResp.headers.get('X-Auth-Token');
+      if (headerToken) { console.log('[auth-direct] got token from POST header'); return headerToken; }
 
-      if (resp.ok) {
-        const data = await resp.json().catch(() => null);
-        if (DEBUG) console.log('[auth-direct] response body:', JSON.stringify(data)?.slice(0, 300));
-        const token = data?.token || data?.authToken || data?.auth_token || data?.accessToken ||
-                      data?.access_token || data?.sessionToken || data?.data?.token ||
-                      data?.result?.token || data?.user?.token;
-        if (token) { console.log('[auth-direct] got token from body'); return token; }
+      // Check cookies set by POST response
+      const postCookies = [];
+      postResp.headers.forEach((val, key) => {
+        if (key.toLowerCase() === 'set-cookie') postCookies.push(val);
+      });
+      const authCookie = postCookies.find(c =>
+        /auth.token|x.auth|session|_session|user.token/i.test(c.split(';')[0])
+      );
+      if (authCookie) {
+        const tokenVal = authCookie.split(';')[0].split('=').slice(1).join('=');
+        console.log('[auth-direct] got token from POST cookie');
+        return tokenVal;
       }
-    } catch (e) {
-      console.log('[auth-direct] error on', url, ':', e.message);
+
+      if (DEBUG) {
+        console.log('[auth-direct] POST cookies:', postCookies.slice(0, 3));
+        if (postResp.ok || postResp.status === 302) {
+          const body = await postResp.text().catch(() => '');
+          console.log('[auth-direct] POST body (300):', body.slice(0, 300));
+        }
+      }
+
+      // 302 redirect to non-login page = success; grab token from subsequent API call
+      if (postResp.status === 302 || postResp.status === 301) {
+        const loc = postResp.headers.get('location') || '';
+        if (!loc.includes('login')) {
+          console.log('[auth-direct] login redirect detected → making API call to capture token');
+          // Use all cookies (GET + POST) and make an API call to capture X-Auth-Token
+          const allCookies = [...rawCookies, ...postCookies.map(c => c.split(';')[0])].join('; ');
+          const apiResp = await fetch(`${BASE}/workforce/business/${BUSINESS_ID}/schedules`, {
+            headers: { 'Cookie': allCookies, 'User-Agent': UA, 'Accept': 'application/json' },
+          });
+          const apiToken = apiResp.headers.get('x-auth-token');
+          if (apiToken) { console.log('[auth-direct] captured token from API call after login'); return apiToken; }
+          console.log('[auth-direct] API call after redirect →', apiResp.status);
+        }
+      }
+
+      // 200 with error page = wrong credentials or CSRF issue
+      if (postResp.status === 200) {
+        console.log('[auth-direct] 200 response (likely login failed or CSRF issue) — trying next field combo');
+        if (!csrfToken) break; // no point trying all combos without CSRF
+      }
     }
+  } catch (e) {
+    console.log('[auth-direct] error:', e.message);
   }
   return null;
 }
