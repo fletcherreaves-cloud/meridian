@@ -1274,8 +1274,6 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   const {useState:uSt, useEffect:uE} = React;
   const [cov,    setCov]   = uSt(idbCoverage||{});
-  const [wxFetching,setWxFetching] = uSt(false);
-  const [wxMsg,     setWxMsg]      = uSt('');
   const [status, setStatus]= uSt('');
   const [qsrFiles, setQsrFiles] = uSt([]);
 
@@ -1454,9 +1452,10 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     );
   };
 
-  // Pre-build IDB rows
+  // Pre-build IDB rows — weather uses live ds.weatherRows so it reflects auto-fetch immediately
+  const liveWxCov = React.useMemo(()=>calcCov(ds&&ds.weatherRows||[]),[ds&&ds.weatherRows]);
   const idbRows = Object.entries(IDB_LABELS).map(([k,label],i)=>{
-    const c=(k==='peaksRows'?peaksCov.peaksRows:k==='peaksSalesRows'?peaksCov.peaksSalesRows:cov[k])||{count:0};
+    const c=(k==='weatherRows'?liveWxCov:k==='peaksRows'?peaksCov.peaksRows:k==='peaksSalesRows'?peaksCov.peaksSalesRows:cov[k])||{count:0};
     const badges = k==='laborRows' ? periodBadges('labor') : null;
     return dataRow(k, label, c, 'var(--amber)', i%2, badges);
   });
@@ -1600,38 +1599,8 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
             div({style:{display:'flex',gap:8,alignItems:'center'}},
             onLoad&&btn({className:'btn btn-sm',style:{background:'rgba(96,165,250,.12)',border:'.5px solid rgba(96,165,250,.3)',color:'#60a5fa',fontSize:'9px'},
               onClick:()=>{onClose();onLoad();}},'📂 Upload Files'),
-      !wxFetching&&btn({style:{background:'rgba(96,165,250,.1)',border:'1px solid rgba(96,165,250,.25)',color:'#60a5fa',padding:'8px 14px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:600},
-        onClick:async()=>{
-          if(!navigator.onLine&&!window.location.href.startsWith('file://')){
-            setWxMsg('Internet connection required for weather fetch.'); return;
-          }
-          setWxFetching(true); setWxMsg('Starting weather fetch for 27 stores…');
-          try{
-            const endD=new Date().toISOString().slice(0,10);
-            const rows=await fetchOpenMeteoWeather('2022-01-01',endD,(done,total,name)=>{
-              setWxMsg('Fetching weather '+done+'/'+total+' — '+name);
-            });
-            if(rows.length>0){
-              await idbPutRows('weatherRows',rows);
-              // Also persist to OPFS so weather survives next reload (OPFS is
-              // the primary read path; IDB writes alone are ignored on reload)
-              opfsSave({...(ds||{}), weatherRows:rows}).catch(()=>{});
-              const wDates=rows.map(r=>r._d||'').filter(Boolean).sort();
-              setCov(c=>({...c,weatherRows:{count:rows.length,from:wDates[0]||'?',to:wDates[wDates.length-1]||'?'}}));
-              setWxMsg('✓ '+rows.length.toLocaleString()+' weather records stored — all 27 stores · 2022–present');
-            } else {
-              setWxMsg('⚠ No weather data returned — check internet connection');
-            }
-          }catch(e){setWxMsg('⚠ Weather fetch error: '+e.message);}
-          setWxFetching(false);
-        }
-      },'🌤 Fetch All Weather'),
-      wxFetching&&div({style:{fontSize:'11px',color:'var(--text3)',padding:'6px 0',fontStyle:'italic'}},
-        span({style:{marginRight:6}},'⏳'),wxMsg),
-      !wxFetching&&wxMsg&&div({style:{fontSize:'11px',padding:'6px 8px',borderRadius:6,marginTop:4,
-        background:wxMsg.startsWith('✓')?'rgba(16,185,129,.1)':'rgba(248,113,113,.1)',
-        color:wxMsg.startsWith('✓')?'#10b981':'#f87171',border:'.5px solid '+(wxMsg.startsWith('✓')?'rgba(16,185,129,.25)':'rgba(248,113,113,.25)')}},
-        wxMsg),
+      div({style:{fontSize:'10px',color:'var(--text3)',padding:'4px 6px',fontStyle:'italic'}},
+        '🌤 Weather auto-downloads in background on startup'),
             btn({className:'btn btn-sm btn-a',onClick:onClose},'Close')
             )  // inner flex div (actions)
           )  // actions row

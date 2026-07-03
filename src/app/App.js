@@ -71,9 +71,13 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.270';
+const MERIDIAN_VERSION    = '4.271';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.271', date:'2026-07-03', changes:[
+    'EOM Supervisor: fix actSales to use fobRow.sales (correct field name — prodSales/netSales were wrong); fix OT Hours and OT $ to sum all daily labor rows for the month instead of using peak-day values; fix Crew Labor % to use sales-weighted average from monthly rows when FOB does not supply it.',
+    'Weather: fix persistence on reload — OPFS path now falls back to IDB when weather missing from OPFS blob (common after weather fetch predates next file upload); auto-fetch now also saves to OPFS and updates idbCoverage so Data Manager shows fresh dates immediately; removed manual Fetch All Weather button (auto-fetch handles it).',
+  ]},
   {version:'4.270', date:'2026-07-03', changes:[
     'Signals: new cross-metric correlation engine. Automatically detects statistical relationships between scheduling gaps, labor, OEPE, OSAT, OT, exceptions, food cost, and DT mix. Signals panel shows r value, strength, direction, and data readiness. Reruns on every upload.',
   ]},
@@ -843,8 +847,8 @@ function App() {
   },[]);
 
   // ── Auto-fetch weather on load if empty or stale (>1 day) ────────────────
-  // Reads IDB directly (no ds dependency) — runs once 5s after mount so the
-  // initial IDB restore has time to complete first.
+  // Runs once 5s after mount so the initial IDB restore has time to complete.
+  // Saves to IDB + OPFS + updates idbCoverage so Data Manager shows fresh dates.
   React.useEffect(()=>{
     const timer = setTimeout(async ()=>{
       if(!navigator.onLine) return;
@@ -859,7 +863,17 @@ function App() {
       const newRows = await fetchOpenMeteoWeather('2022-01-01', today, ()=>{}).catch(()=>[]);
       if(!newRows.length) return;
       await idbPutRows('weatherRows', newRows).catch(()=>{});
-      setDs(prev=>prev?{...prev,weatherRows:newRows}:prev);
+      const wDates = newRows.map(r=>r._d||'').filter(Boolean).sort();
+      setDs(prev=>{
+        if(!prev) return prev;
+        const updated={...prev, weatherRows:newRows};
+        opfsSave(updated).catch(()=>{});  // persist to OPFS so it survives reload
+        return updated;
+      });
+      setIdbCoverage(prev=>({
+        ...(prev||{}),
+        weatherRows:{count:newRows.length, from:wDates[0]||'?', to:wDates[wDates.length-1]||'?'},
+      }));
       console.log(`[Meridian] ✓ Weather auto-fetched: ${newRows.length} records`);
     }, 5000);
     return ()=>clearTimeout(timer);

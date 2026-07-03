@@ -79,23 +79,30 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
     r.date.getMonth() + 1 === selMonth
   );
 
-  // Labor rows for this store/month — period-summary Ops Report gives one row with
-  // full-month totals (prodSales >> any single daily row), so take the max-sales row.
+  // Labor rows for this store/month — daily rows from Labor Analysis upload.
   const monthLaborRows = (ds.laborRows || []).filter(r =>
     String(r.loc) === locStr &&
     r.date instanceof Date &&
     r.date.getFullYear() === selYear &&
     r.date.getMonth() + 1 === selMonth
   );
-  const summaryLabRow = monthLaborRows.reduce(
-    (best, r) => (!best || (r.sales||0) > (best.sales||0)) ? r : best, null
-  );
 
-  const actSales    = fobRow?.prodSales || fobRow?.netSales
-                      || summaryLabRow?.sales || summaryLabRow?.allNetSales || null;
+  // Monthly aggregates — sum daily rows for accurate period totals.
+  const monthlySales     = monthLaborRows.reduce((s, r) => s + (r.sales||0), 0);
+  const monthlyOtHrs     = monthLaborRows.reduce((s, r) => s + (r.otHrs||0), 0);
+  const monthlyOtDollar  = monthLaborRows.reduce((s, r) => s + (r.otDollar||0), 0);
+  // Sales-weighted labor % from daily rows (only rows with both values)
+  const _lbrValid = monthLaborRows.filter(r => (r.laborPct||0) > 0 && (r.sales||0) > 0);
+  const _lbrWt    = _lbrValid.reduce((s, r) => s + r.laborPct * r.sales, 0);
+  const _lbrSales = _lbrValid.reduce((s, r) => s + r.sales, 0);
+  const monthlyLaborPct  = _lbrSales > 0 ? _lbrWt / _lbrSales : null;
+
+  // FOB report: fobRow.sales is the correct field (parser uses `sales` not `netSales`/`prodSales`).
+  const actSales    = (fobRow?.sales > 0 ? fobRow.sales : null)
+                      || (monthlySales > 0 ? monthlySales : null);
   const actFCPct    = fobRow?.pLFoodPct  || null; // Total Food Cost % actual
   const actFOBPct   = fobRow?.fobPct     || null; // Food Over Base % actual
-  const actLaborPct = fobRow?.laborPct   || summaryLabRow?.laborPct || null; // Crew Labor %
+  const actLaborPct = (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || monthlyLaborPct || null;
 
   // Cash: sum from ctrlRows for the month
   const cashFromCtrl = (() => {
@@ -115,9 +122,9 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
   const m            = manual[locStr] || {};
   const actOpSup     = m.actOpSup     != null ? +m.actOpSup     : null;
   const actCash      = m.actCash      != null ? +m.actCash      : cashFromCtrl;
-  // OT Hours and OT $ — manual override first, then auto from Operations Report period-summary row
-  const otHours      = m.otHours      != null ? +m.otHours      : (summaryLabRow?.otHrs    || null);
-  const otDollar     = m.otDollar     != null ? +m.otDollar     : (summaryLabRow?.otDollar  || null);
+  // OT Hours and OT $ — manual override first, then sum of all daily labor rows for the month
+  const otHours      = m.otHours      != null ? +m.otHours      : (monthlyOtHrs    > 0 ? monthlyOtHrs    : null);
+  const otDollar     = m.otDollar     != null ? +m.otDollar     : (monthlyOtDollar > 0 ? monthlyOtDollar : null);
   const laborXfers   = m.laborXfers   != null ? +m.laborXfers   : null;
   const laborUnclk   = m.laborUnclk   != null ? +m.laborUnclk   : null;
   const projOpSupMan = m.projOpSup    != null ? +m.projOpSup    : projOpSup;

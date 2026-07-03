@@ -431,10 +431,21 @@ async function loadDsFromIDB() {
       try { const root = await navigator.storage.getDirectory(); await root.removeEntry(OPFS_FILE); } catch {}
       return { labor:[], ops:[], ctrl:[], fob:[], audit:[], peaks:[], dar:[], weather:[], pmix:{}, records:{} };
     }
+    // Weather may have been fetched after the last OPFS save — fall back to IDB if OPFS has none
+    let weather = opfs.weather || [];
+    if (!weather.length) {
+      try {
+        const wxRaw = await idbGetAllRows('weatherRows');
+        if (wxRaw.length) {
+          weather = wxRaw.map(r => ({ ...r, date: r._d ? new Date(r._d + 'T00:00:00') : (r.date || null) }));
+          console.log('[loadDsFromIDB] Merged ' + weather.length + ' weather rows from IDB into OPFS snapshot');
+        }
+      } catch (e) { console.warn('[loadDsFromIDB] IDB weather fallback failed:', e); }
+    }
     return {
       labor:opfs.labor, ops:opfs.ops,   ctrl:opfs.ctrl, fob:opfs.fob,
       audit:opfs.audit, peaks:opfs.peaks, dar:opfs.dar,
-      weather:    opfs.weather    || [],
+      weather,
       pmix:       opfs.pmix,
       records:    opfs.records    || {},
       glimpse:    opfs.glimpse    || [],
