@@ -180,6 +180,8 @@ export function SignalsPanel({ ds, signals }) {
   const confirmedCount = (signals || []).filter(s => s.confirmed).length;
   const plausibleCount = (signals || []).filter(s => !s.confirmed && Math.abs(s.r || 0) >= 0.30).length;
 
+  const hasData = (ds?.laborRows?.length || 0) >= 30 || (ds?.fobRows?.length || 0) >= 5;
+
   return h('div', { style: { padding: '16px', maxWidth: '900px', margin: '0 auto' } },
 
     // Header
@@ -207,13 +209,24 @@ export function SignalsPanel({ ds, signals }) {
     // Data readiness
     h(DataReadiness, { ds }),
 
-    // No signals state
+    // Empty state — two variants: no data loaded vs data loaded but no patterns yet
     (!signals || signals.length === 0) && h('div', {
-      style: { textAlign: 'center', padding: '48px', color: muted, fontSize: '14px', border: '1px dashed rgba(255,255,255,.1)', borderRadius: '8px' }
+      style: { textAlign: 'center', padding: '48px', color: muted, fontSize: '13px', border: '1px dashed rgba(255,255,255,.1)', borderRadius: '8px' }
     },
-      h('div', { style: { fontSize: '24px', marginBottom: '10px' } }, '📡'),
-      h('div', { style: { fontWeight: 700, marginBottom: '6px', color: 'var(--text,#111827)' } }, 'No signals yet'),
-      'Upload Labor Analysis, Operations Reports, and FOB data to start detecting patterns.',
+      h('div', { style: { fontSize: '28px', marginBottom: '12px' } }, hasData ? '🔍' : '📡'),
+      h('div', { style: { fontWeight: 700, marginBottom: '8px', fontSize: '14px', color: 'var(--text,#111827)' } },
+        hasData ? 'No patterns detected yet' : 'No data loaded'
+      ),
+      hasData
+        ? h('div', { style: { lineHeight: 1.7, maxWidth: '480px', margin: '0 auto' } },
+            'Data is loaded but no statistical patterns crossed the threshold yet. ',
+            h('strong', null, 'Re-upload your files'), ' to trigger recomputation, or load additional months of history — more data increases signal confidence. ',
+            h('br', null),
+            h('span', { style: { fontSize: '11px', marginTop: '8px', display: 'block', color: muted } },
+              'Check DevTools console for [signals] lines to see which correlations are being computed.'
+            )
+          )
+        : 'Upload Labor Analysis, Operations Reports, and FOB data to start detecting patterns.',
     ),
 
     // Signal cards

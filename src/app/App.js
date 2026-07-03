@@ -71,9 +71,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.278';
+const MERIDIAN_VERSION    = '4.279';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.279', date:'2026-07-03', changes:[
+    'Signals: smarter empty state — when data is loaded but no patterns found, shows "No patterns detected yet" with recompute hint instead of the misleading "Upload data" prompt.',
+  ]},
   {version:'4.278', date:'2026-07-03', changes:[
     'Signals: fix loc format mismatch — LifeLenz parser was padding store numbers to 7 digits ("0003708") while all other parsers use short format ("3708"), causing all cross-dataset joins to find zero pairs. Fixed parser + added normLoc() to join helpers for robustness against existing Supabase data.',
     'Signals: added console logging showing pairs/r per signal to aid diagnostics.',
