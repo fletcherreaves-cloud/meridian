@@ -935,7 +935,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
     const _avg =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _avgZ=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _sum =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0):0;};
-    const rangeDays=Math.max(1,Math.round((range.e.getTime()-range.s.getTime())/86400000)+1);
+    const rangeDays=Math.max(1,Math.floor((range.e.getTime()-range.s.getTime())/86400000)+1);
     const lyS=addDx(range.s,-364), lyE=addDx(range.e,-364);
 
     return opGroups.map(g=>{
@@ -1258,7 +1258,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose}) {
       // ── Period length from date range (calendar days the user selected) ──────
       // Using rangeDays for "days" ensures "2 Wk" always shows 14, "4 Wk" shows 28, etc.
       // regardless of how many rows happen to be in the loaded data files.
-      const rangeDays = Math.max(1, Math.round((range.e.getTime()-range.s.getTime())/86400000)+1);
+      const rangeDays = Math.max(1, Math.floor((range.e.getTime()-range.s.getTime())/86400000)+1);
       // Day count for display = calendar days in range
       const days       = rangeDays;
       const totalSales = _sum(lRows,'sales');

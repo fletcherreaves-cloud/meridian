@@ -56,7 +56,12 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
   const mt     = ds.monthlyTargets?.[locStr] || {};
   const tgt    = DEFAULT_TARGETS[locStr] || {};
   const meta   = ds.monthlyTargetsMeta;
-  const mtOK   = !meta || (meta.year === selYear && meta.month === selMonth);
+  // mtOK: true when targets period matches the EOM period being viewed.
+  // Priority: row-level _year/_month stamps (set by Supabase load and pipeline.js) first,
+  // then monthlyTargetsMeta (set when a file is dragged in).
+  const mtYear  = mt._year  || meta?.year;
+  const mtMonth = mt._month || meta?.month;
+  const mtOK    = !mtYear || (mtYear === selYear && mtMonth === selMonth);
 
   // Projections — from monthly targets (if matching month) or DEFAULT_TARGETS fallback
   // tLabor = generic labor %, tCrewLabor = crew-only — check both (Supabase loads tCrewLabor)
@@ -328,7 +333,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           h('td', { style: C.td }, pctStr(projFCPct)),
           h('td', { style: C.td }, pctStr(projFOBPct)),
           h('td', { style: C.td }, pctStr(projLaborPct)),
-          h('td', { style: C.td }, '—'),
+          h('td', { style: C.td }, '0'),
           h('td', { style: C.td }, projOpSup != null ? '$' + Math.round(projOpSup).toLocaleString() : '—'),
           h('td', { style: { ...C.td, borderRight: 'none' } }, '—'),
         ),

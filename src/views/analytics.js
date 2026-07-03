@@ -4623,8 +4623,8 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
       let cal=null;
       const rowCount=(ds.laborRows||[]).filter(r=>r.loc===loc&&r.sales>0).length;
       try{cal=await calibrateStore(loc,ds,{...settings,_userEvents:userEvents},(done,total)=>setComboProgress(Math.round(done/total*100)));}catch(err){
-        console.warn('Calibration error for',loc,err);
-        log.push({loc,status:'error',detail:err.message||'unknown error',rows:rowCount});
+        console.error('[DI] Calibration error for',loc,err);
+        log.push({loc,status:'error',detail:(err.message||'unknown error')+(err.stack?' — '+err.stack.split('\n')[1]?.trim():''),rows:rowCount});
         setStoreLog([...log]);
         continue;
       }
@@ -8397,7 +8397,7 @@ function buildEmailReportHTML(mt, ds, settings, selPeriod) {
 
 // ── Monthly Projections Panel ─────────────────────────────────────────────────
 const PROJ_FIELDS = [
-  {g:'Sales & Labor', key:'tProdSales',   l:'Sales $',    fmt:v=>v!=null?'$'+(v/1000).toFixed(0)+'K':'—', dollar:true},
+  {g:'Sales & Labor', key:'tProdSales',   l:'Sales $',    fmt:v=>v!=null?v.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}):'—', dollar:true},
   {g:'Sales & Labor', key:'tCrewLabor',   l:'Crew Labor', fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
   {g:'Sales & Labor', key:'tBonusLabor',  l:'Bonus Cr',   fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
   {g:'Sales & Labor', key:'tTpph',        l:'TPPH',       fmt:v=>v!=null?v.toFixed(2):'—'},
@@ -8462,11 +8462,10 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
     });
   },[selPeriod]);
 
-  // fetchedMt is null when no Supabase fetch has run, or {} (empty) when the fetch
-  // returned nothing. An empty object is truthy, so check key count before using it.
-  const mt = (fetchedMt && Object.keys(fetchedMt).length > 0)
-    ? fetchedMt
-    : (ds&&ds.monthlyTargets) || {};
+  // fetchedMt===null means "use ds data" (initial state, or period matches ds).
+  // fetchedMt==={}  means "Supabase returned nothing for this period" — show empty,
+  // NOT a fallback to ds data which may be a different month.
+  const mt = fetchedMt !== null ? fetchedMt : (ds&&ds.monthlyTargets) || {};
   const knownLocs = useMemo(()=>new Set((stores||[]).map(s=>String(s.loc))),[stores]);
   const locs = useMemo(()=>{
     const all = Object.keys(mt).filter(l=>l!=='__period').sort((a,b)=>+a-+b);
