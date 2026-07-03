@@ -34,6 +34,7 @@ import { SMGVoicePanel } from '../views/smg-voice.js';
 import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { SignalsPanel } from '../views/signals.js';
+import { SagePanel } from '../views/sage.js';
 import { computeInsights } from '../engine/insights.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
@@ -71,9 +72,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.280';
+const MERIDIAN_VERSION    = '4.281';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.281', date:'2026-07-03', changes:[
+    'SAGE AI Assistant: Claude Opus 4.8-powered advisor with access to all Meridian data. Chat with SAGE about district performance, store trends, labor opportunities, food cost, and correlation signals. Opens via 🧠 SAGE in the sidebar. Requires ANTHROPIC_API_KEY set in Supabase Edge Function secrets and deployment of the sage-chat Edge Function.',
+  ]},
   {version:'4.279', date:'2026-07-03', changes:[
     'Signals: smarter empty state — when data is loaded but no patterns found, shows "No patterns detected yet" with recompute hint instead of the misleading "Upload data" prompt.',
   ]},
@@ -556,6 +560,7 @@ function App() {
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showSignals,         setShowSignals]         = useState(false);
   const [signals,             setSignals]             = useState([]);
+  const [showSage,            setShowSage]            = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   const [showFcstRef,         setShowFcstRef]         = useState(false);
   const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
@@ -1323,7 +1328,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -1343,7 +1348,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -1442,6 +1447,7 @@ function App() {
         if(modal==='corr-explorer')  perm('analytics.store')&&setShowCorrExplorer(true);
         if(modal==='unified-targets') perm('analytics.store')&&setShowUnifiedTargets(true);
         if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
+        if(modal==='sage')           setShowSage(true);
         if(modal==='attention')      setShowAttention(true);
       }
     }),
@@ -1562,6 +1568,15 @@ function App() {
       ),
       div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
         h(SignalsPanel,{ds,signals}),
+      ),
+    ),
+    showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
+      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
+        span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em',color:'var(--text)'}},'🧠 SAGE'),
+        h('button',{onClick:()=>setShowSage(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
+      ),
+      div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
+        h(SagePanel,{ds,signals}),
       ),
     ),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),

@@ -212,6 +212,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.store',    '3PO Delivery',       '🛵', ()=>onOpenModal('delivery-mix'),     false),
       pis('analytics.store',    'Scheduling',         '📋', ()=>onOpenModal('scheduling'),        false),
       pis('analytics.store',    'Signals',            '📡', ()=>onOpenModal('signals'),            false),
+      navItem('SAGE',               '🧠', ()=>onOpenModal('sage'),             false),
       pis('analytics.district', 'EOM Supervisor',     '📊', ()=>onOpenModal('eom-summary'),      false),
       // ── STORE OPS ──────────────────────────────────────────────
       can('analytics.store') && navLabel('STORE OPS'),
