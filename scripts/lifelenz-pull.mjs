@@ -54,12 +54,16 @@ function chunkDateRange(start, end, maxDays = 21) {
 
 // ── Step 1a: Try direct REST login (no browser needed) ───────────────────
 async function getAuthTokenDirect() {
-  // Humanforce/LifeLenz REST login — returns X-Auth-Token in response header or body
+  // Humanforce/LifeLenz REST login — actual login domain is admin.lifelenz.com/us01
+  const AUTH_BASE = 'https://admin.lifelenz.com/us01';
+  const u = process.env.LIFELENZ_USERNAME;
+  const p = process.env.LIFELENZ_PASSWORD;
   const candidates = [
-    { url: `${BASE}/workforce/user/sessions`, body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
-    { url: `${BASE}/workforce/user/login`,    body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
-    { url: `${BASE}/api/auth/sessions`,       body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
-    { url: `${BASE}/api/v1/auth/login`,       body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
+    { url: `${AUTH_BASE}/auth/login`,          body: { username: u, password: p } },
+    { url: `${AUTH_BASE}/api/v1/sessions`,     body: { username: u, password: p } },
+    { url: `${AUTH_BASE}/api/auth/sessions`,   body: { username: u, password: p } },
+    { url: `${AUTH_BASE}/users/sign_in`,       body: { user: { login: u, password: p } } },
+    { url: `${AUTH_BASE}/api/v1/auth/token`,   body: { username: u, password: p } },
   ];
 
   for (const { url, body } of candidates) {
@@ -142,8 +146,9 @@ async function getAuthToken() {
   try { mkdirSync(screenshotDir, { recursive: true }); } catch {}
 
   try {
-    console.log('[auth] navigating to', BASE + '/login');
-    await page.goto(BASE + '/login', { waitUntil: 'networkidle', timeout: 45000 });
+    const LOGIN_URL = 'https://admin.lifelenz.com/us01/auth/login';
+    console.log('[auth] navigating to', LOGIN_URL);
+    await page.goto(LOGIN_URL, { waitUntil: 'networkidle', timeout: 45000 });
     console.log('[auth] page title:', await page.title(), '| url:', page.url());
     // Dump visible text so we can diagnose blank pages
     const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '(empty)');
@@ -185,8 +190,11 @@ async function getAuthToken() {
     await page.screenshot({ path: `${screenshotDir}/02-filled.png` });
     await page.click(subSel);
 
-    // Wait for redirect away from login page
-    await page.waitForFunction(() => !window.location.pathname.includes('/login'), { timeout: 20000 });
+    // Wait for redirect away from login page (either path changes or domain changes to us01-connect)
+    await page.waitForFunction(
+      () => !window.location.href.includes('admin.lifelenz.com') || !window.location.pathname.includes('/login'),
+      { timeout: 20000 }
+    );
     console.log('[auth] logged in, current URL:', page.url());
     await page.screenshot({ path: `${screenshotDir}/03-post-login.png` });
 
