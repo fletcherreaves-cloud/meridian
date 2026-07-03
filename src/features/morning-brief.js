@@ -759,6 +759,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 
 window.onerror = function(msg, src, line, col, err) {
+  // React 19 calls reportError() for all errors, including those caught by ErrorBoundary.
+  // Skip those — the ErrorBoundary already shows a recovery UI for them.
+  if (msg && String(msg).indexOf('Minified React error') !== -1) return false;
   document.getElementById('root').innerHTML =
     '<div style="padding:40px;font-family:monospace;background:#090e18;color:#e2e8f0;min-height:100vh">' +
     '<div style="color:#f59e0b;font-size:18px;font-weight:700;margin-bottom:16px">⚠ McForecast — Script Error</div>' +
