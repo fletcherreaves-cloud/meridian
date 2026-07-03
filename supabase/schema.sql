@@ -432,6 +432,39 @@ create index if not exists smg_voice_perf_period_idx
 create index if not exists smg_voice_perf_loc_idx
   on public.smg_voice_performance (loc, period desc);
 
+-- ── Labor Analysis Rows (daily per-store data for forecasting / DI calibration) ──
+-- Each row = one store's daily metrics from a QSRSoft Labor Analysis report.
+-- Persisted here so history accumulates across browser cache clears and devices.
+-- unique(loc, report_date) deduplicates re-uploads automatically.
+-- Run `select count(*), min(report_date), max(report_date) from labor_rows;`
+-- to verify coverage after upload.
+create table if not exists public.labor_rows (
+  id          bigserial primary key,
+  loc         text not null,          -- store number, e.g. '3708'
+  report_date date not null,          -- calendar date of the labor row
+  sales       float,                  -- net sales ($)
+  labor_pct   float,                  -- crew labor % (decimal, e.g. 0.2142)
+  tpph        float,                  -- transactions per person-hour
+  ot_hrs      float,                  -- overtime hours
+  ot_dollar   float,                  -- overtime dollars
+  uploaded_at timestamptz default now(),
+  unique(loc, report_date)
+);
+
+alter table public.labor_rows enable row level security;
+
+create policy "labor_rows: public read" on public.labor_rows
+  for select using (true);
+
+create policy "labor_rows: public write" on public.labor_rows
+  for all using (true);
+
+create index if not exists labor_rows_loc_date_idx
+  on public.labor_rows (loc, report_date desc);
+
+create index if not exists labor_rows_date_idx
+  on public.labor_rows (report_date desc);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════

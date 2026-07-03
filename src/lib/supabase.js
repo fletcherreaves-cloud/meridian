@@ -314,6 +314,55 @@ export async function loadLifeLenzSchedule({ daysBack = 90, daysFwd = 30 } = {})
   }));
 }
 
+// Save labor rows to Supabase for cross-device persistence and DI calibration history
+export async function saveLaborRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const valid = rows.filter(r => r.loc && r.date && (r.sales > 0));
+  if (!valid.length) return { saved: 0, errors: [] };
+  const upsert = valid.map(r => ({
+    loc:         String(r.loc),
+    report_date: r.date instanceof Date
+      ? r.date.toISOString().slice(0, 10)
+      : String(r.date).slice(0, 10),
+    sales:       r.sales       ?? null,
+    labor_pct:   r.laborPct    ?? null,
+    tpph:        r.tpph        ?? null,
+    ot_hrs:      r.otHrs       ?? null,
+    ot_dollar:   r.otDollar    ?? null,
+  }));
+  const CHUNK = 500;
+  let saved = 0;
+  const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase
+      .from('labor_rows')
+      .upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,report_date' });
+    if (error) { console.warn('[labor_rows] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  console.log(`[labor_rows] saved ${saved} rows`);
+  return { saved, errors };
+}
+
+// Load all labor rows from Supabase (for DI calibration history accumulation)
+export async function loadLaborRows() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('labor_rows')
+    .select('*')
+    .order('report_date', { ascending: true });
+  if (error || !data) { console.warn('[labor_rows] load error:', error); return []; }
+  return data.map(r => ({
+    loc:      r.loc,
+    date:     new Date(r.report_date + 'T00:00:00'),
+    sales:    r.sales,
+    laborPct: r.labor_pct,
+    tpph:     r.tpph,
+    otHrs:    r.ot_hrs,
+    otDollar: r.ot_dollar,
+  }));
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client

@@ -33,7 +33,7 @@ import { AdminPanel } from '../views/admin.js';
 import { SMGVoicePanel } from '../views/smg-voice.js';
 import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
-import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, uploadReportFile } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -69,9 +69,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.268';
+const MERIDIAN_VERSION    = '4.269';
 const MERIDIAN_BUILD_DATE = '2026-07-02';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.269', date:'2026-07-02', changes:[
+    'DI Calibration persistence: labor rows now saved to Supabase on every upload and merged back on startup — history survives browser cache clears and accumulates across devices. Requires the labor_rows table (run schema.sql block in Supabase SQL editor).',
+  ]},
   {version:'4.268', date:'2026-07-02', changes:[
     'Monthly Targets: add 📋 Patch Sheet — vertical-layout group report matching the Excel patch sheet format. Metric rows × columns of (Next Month Target | Action Items | Current Month Actual | vs Projection | Opportunity $). Pick Supervisors or Operators, choose the group, opens printable HTML with group rollup first then individual stores.',
   ]},
@@ -597,6 +600,26 @@ function App() {
   React.useEffect(()=>{
     if (!supabase) return;
     setSupabaseClient(supabase);
+    // Merge labor rows from Supabase so DI calibration history persists across cache clears and devices
+    loadLaborRows().then(sbRows=>{
+      if(!sbRows?.length) return;
+      const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
+      setDs(prev=>{
+        const existing=new Set((prev.laborRows||[]).map(r=>r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10))));
+        const fresh=sbRows.filter(r=>{
+          const k=r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+          return !existing.has(k);
+        });
+        if(!fresh.length) return prev;
+        const merged=[...(prev.laborRows||[]),...fresh].sort((a,b)=>{
+          const da=a.date instanceof Date?a.date:new Date(a.date+'T00:00:00');
+          const db=b.date instanceof Date?b.date:new Date(b.date+'T00:00:00');
+          return da-db;
+        });
+        console.log(`[labor_rows] merged ${fresh.length} rows from Supabase`);
+        return {...prev, laborRows:merged, laborIdx:_mkIdx(merged), laborByLoc:bLocIdx(merged), storeIds:[...new Set(merged.map(r=>r.loc))].sort()};
+      });
+    }).catch(()=>{});
     syncReviewsFromSupabase(supabase).catch(()=>{});
     syncConfigFromSupabase(supabase).catch(()=>{});
     // Sync org roles (role definitions + permissions) from Supabase
@@ -1011,6 +1034,7 @@ function App() {
     setLoadMsg('⏳ Reading '+fileArr.length+' file'+(fileArr.length>1?'s…':'…'));
     let currentDS=dsRef.current||buildDS([]);
     const loaded=[];
+    const _prevLaborKeys=new Set((currentDS.laborRows||[]).map(r=>r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10))));
     for(const file of fileArr){
       try{
         setLoadMsg('⏳ Parsing '+file.name+'…');
@@ -1086,6 +1110,14 @@ function App() {
       setDs(currentDS);
       if(_uploadEvents) setUserEvents(_uploadEvents);
     });
+    // Persist new labor rows to Supabase for DI calibration history
+    if(supabase){
+      const newLaborRows=(currentDS.laborRows||[]).filter(r=>{
+        const k=r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+        return !_prevLaborKeys.has(k);
+      });
+      if(newLaborRows.length>0) saveLaborRows(newLaborRows).catch(e=>console.warn('[labor_rows] save error:',e));
+    }
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
     setLoadMsg('✓ '+names+' loaded · '+currentDS.storeIds.length+' stores');
     // ── Persist to IndexedDB (survives refresh) ──────────────────────────
