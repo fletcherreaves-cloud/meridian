@@ -35,7 +35,7 @@ import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { SignalsPanel } from '../views/signals.js';
 import { computeInsights } from '../engine/insights.js';
-import { supabase, loadMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, uploadReportFile } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -71,9 +71,13 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.273';
+const MERIDIAN_VERSION    = '4.274';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.274', date:'2026-07-03', changes:[
+    'Monthly Targets: startup now loads ALL available periods from Supabase (not just the most recent month) into ds.allMonthlyTargets — persisted in OPFS so available immediately on reload. EOM Supervisor reads the correct period\'s targets directly from this index on every month change.',
+    'EOM Supervisor: removed per-period Supabase round-trip on month change; period lookup is instant from allMonthlyTargets.',
+  ]},
   {version:'4.273', date:'2026-07-03', changes:[
     'EOM Supervisor: fetch period-specific monthly targets from Supabase when EOM month changes — June targets load for June view even when July is the most recently loaded. All projections are strictly month-specific with no DEFAULT_TARGETS fallback.',
     'EOM Supervisor: actSales uses sum of Labor Analysis daily rows (Operations Report) as primary; FOB fallback only. actLaborPct likewise. Crew Labor % is sales-weighted average of daily rows.',
@@ -554,7 +558,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,allMonthlyTargets:_opfsAllTargets,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -568,7 +572,7 @@ function App() {
           darRows:dar,
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
-          targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
+          targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
           weatherIdx:{}, wxByDate:{},
@@ -806,19 +810,25 @@ function App() {
         console.log(`[Meridian] ✓ Cloud-synced ${filesToSync.length} report(s)`);
       }catch(e){console.warn('[Meridian] Cross-device sync failed:',e);}
     })();
-    // ── Auto-load monthly targets from Supabase ───────────────────────────────
-    // Pulls the most recent month's targets so FOB/food cost targets are
-    // available without re-uploading the projections workbook.
+    // ── Auto-load ALL monthly targets from Supabase ───────────────────────────
+    // Loads every available period so EOM can look up any month without
+    // additional Supabase calls.
     (async()=>{
       try{
-        const mt = await loadMonthlyTargets(null, null);
-        if(Object.keys(mt).length > 0){
+        const all = await loadAllMonthlyTargets();
+        const periods = Object.keys(all);
+        if(periods.length > 0){
+          // Also derive the most recent month for backward-compat monthlyTargets field
+          const latestKey = periods.sort().reverse()[0];
           setDs(prev => {
             if(!prev) return prev;
-            const next = { ...prev, monthlyTargets: { ...mt, ...prev.monthlyTargets } };
-            return next;
+            return {
+              ...prev,
+              allMonthlyTargets: all,
+              monthlyTargets: { ...(all[latestKey]||{}), ...prev.monthlyTargets },
+            };
           });
-          console.log(`[Meridian] ✓ Loaded monthly targets for ${Object.values(mt)[0]?._year}-${Object.values(mt)[0]?._month} (${Object.keys(mt).length} stores)`);
+          console.log(`[Meridian] ✓ Loaded monthly targets for ${periods.join(', ')} (${Object.values(all[latestKey]||{}).length} stores/period)`);
         }
       }catch(e){console.warn('[Meridian] Monthly targets load failed:',e);}
       try{

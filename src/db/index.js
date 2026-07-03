@@ -320,6 +320,7 @@ async function opfsSave(ds) {
       exceptions:(ds.exceptionRows||[]).map(strip),
       monthlyTargets:     ds.monthlyTargets     || {},
       monthlyTargetsMeta: ds.monthlyTargetsMeta || null,
+      allMonthlyTargets:  ds.allMonthlyTargets  || {},
       smgVoicePerf: ds.smgVoicePerf || [],
     };
     const json = JSON.stringify(data);
@@ -454,6 +455,7 @@ async function loadDsFromIDB() {
       exceptions: opfs.exceptions || [],
       monthlyTargets:     opfs.monthlyTargets     || {},
       monthlyTargetsMeta: opfs.monthlyTargetsMeta || null,
+      allMonthlyTargets:  opfs.allMonthlyTargets  || {},
       smgVoicePerf: opfs.smgVoicePerf || [],
     };
   }

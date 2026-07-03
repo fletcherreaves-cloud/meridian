@@ -405,6 +405,10 @@ function mergeDS(existing, wb, type, filename) {
             ds.monthlyTargets[loc]._month=mtMonth;
           }
         }
+        // Merge into allMonthlyTargets so EOM can look up any period without extra Supabase calls.
+        const periodKey=`${mtYear}-${mtMonth}`;
+        if(!ds.allMonthlyTargets) ds.allMonthlyTargets={};
+        ds.allMonthlyTargets[periodKey]={...ds.allMonthlyTargets[periodKey],...ds.monthlyTargets};
         ds.monthlyTargetsMeta={year:mtYear,month:mtMonth,label:mtLabel,storeCount:Object.keys(mtTargets).length};
         console.log('[pipeline] monthly targets: '+mtLabel+' → '+mtYear+'-'+mtMonth+' ('+Object.keys(mtTargets).length+' stores)');
         saveMonthlyTargets(mtTargets,mtYear,mtMonth).then(r=>{

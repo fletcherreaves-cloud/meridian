@@ -117,6 +117,44 @@ export async function loadMonthlyTargets(year, month) {
   return result;
 }
 
+// Load ALL monthly targets for all available periods.
+// Returns { "2026-6": { loc: { tProdSales, tCrewLabor, ... } }, "2026-7": { ... } }
+export async function loadAllMonthlyTargets() {
+  if (!supabase) return {};
+  const { data, error } = await supabase
+    .from('monthly_targets')
+    .select('*')
+    .order('year', { ascending: false })
+    .order('month', { ascending: false });
+  if (error || !data) { console.warn('[monthly_targets] loadAll error:', error); return {}; }
+  const result = {};
+  for (const r of data) {
+    const key = `${r.year}-${r.month}`;
+    if (!result[key]) result[key] = {};
+    result[key][r.loc] = {
+      tProdSales:   r.sales_proj,
+      tCrewLabor:   r.crew_labor_pct,
+      tBonusLabor:  r.bonus_crew_pct,
+      tTpph:        r.tpph_target,
+      tFOBBase:     r.base_food_pct,
+      tDiscCoupPct: r.disc_coup_pct,
+      tCompWaste:   r.comp_waste_pct,
+      tRawWaste:    r.raw_waste_pct,
+      tCondiment:   r.condiment_pct,
+      tEmpFood:     r.emp_food_pct,
+      tStatLoss:    r.stat_loss_pct,
+      tUnex:        r.unex_diff_pct,
+      tFOBTarget:   r.fob_target_pct,
+      tFOBTotal:    r.total_food_cost_pct,
+      tPaperCost:   r.paper_cost_pct,
+      tOpSupply:    r.op_supply_target,
+      _year: r.year,
+      _month: r.month,
+    };
+  }
+  return result;
+}
+
 // List all available (year, month) combinations in monthly_targets.
 export async function listMonthlyTargetPeriods() {
   if (!supabase) return [];
