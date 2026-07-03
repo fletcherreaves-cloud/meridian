@@ -71,12 +71,16 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.272';
+const MERIDIAN_VERSION    = '4.273';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.273', date:'2026-07-03', changes:[
+    'EOM Supervisor: fetch period-specific monthly targets from Supabase when EOM month changes — June targets load for June view even when July is the most recently loaded. All projections are strictly month-specific with no DEFAULT_TARGETS fallback.',
+    'EOM Supervisor: actSales uses sum of Labor Analysis daily rows (Operations Report) as primary; FOB fallback only. actLaborPct likewise. Crew Labor % is sales-weighted average of daily rows.',
+    'Guest Voice: smgVoicePerf data now persisted in OPFS blob — survives reload without waiting for async Supabase load.',
+  ]},
   {version:'4.272', date:'2026-07-03', changes:[
     'EOM Supervisor: actSales and Crew Labor % now use Operations Report (Labor Analysis rows) as primary source — daily rows summed for the month — with FOB as fallback only. Fixes inflated single-day values from FOB partial data.',
-    'EOM Supervisor: rate-based projections (labor %, food cost %, FOB %, op supply) now display even when loaded monthly targets are for a different month (e.g. July targets loaded while viewing June) — rates are month-agnostic. Sales $ projections still require a matching period.',
   ]},
   {version:'4.271', date:'2026-07-03', changes:[
     'EOM Supervisor: fix actSales to use fobRow.sales (correct field name — prodSales/netSales were wrong); fix OT Hours and OT $ to sum all daily labor rows for the month instead of using peak-day values; fix Crew Labor % to use sales-weighted average from monthly rows when FOB does not supply it.',
@@ -550,7 +554,7 @@ function App() {
     setSessionRestoring(true);
     setLoadMsg('⏳ Loading stored data...');
     try{
-      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta} = await loadDsFromIDB();
+      const {labor,ops,ctrl,fob,audit,peaks,dar,weather,pmix,records,glimpse,cash,exceptions,monthlyTargets:_opfsTargets,monthlyTargetsMeta:_opfsTargetsMeta,smgVoicePerf:_opfsVoicePerf} = await loadDsFromIDB();
       await new Promise(r=>setTimeout(r,0)); // yield — break IDB message-handler chain
       const total = labor.length+ops.length+ctrl.length;
       if(total>0){
@@ -564,7 +568,7 @@ function App() {
           darRows:dar,
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
-          targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, loaded:labor.length>0,
+          targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
           weatherIdx:{}, wxByDate:{},

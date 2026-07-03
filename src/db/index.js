@@ -320,6 +320,7 @@ async function opfsSave(ds) {
       exceptions:(ds.exceptionRows||[]).map(strip),
       monthlyTargets:     ds.monthlyTargets     || {},
       monthlyTargetsMeta: ds.monthlyTargetsMeta || null,
+      smgVoicePerf: ds.smgVoicePerf || [],
     };
     const json = JSON.stringify(data);
     const root = await navigator.storage.getDirectory();
@@ -453,6 +454,7 @@ async function loadDsFromIDB() {
       exceptions: opfs.exceptions || [],
       monthlyTargets:     opfs.monthlyTargets     || {},
       monthlyTargetsMeta: opfs.monthlyTargetsMeta || null,
+      smgVoicePerf: opfs.smgVoicePerf || [],
     };
   }
 

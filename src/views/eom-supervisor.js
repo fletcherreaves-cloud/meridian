@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sNameC, DEFAULT_TARGETS, DEF_SETTINGS } from '../constants.js';
+import { STORE_NAMES, sNameC, DEF_SETTINGS } from '../constants.js';
+import { loadMonthlyTargets } from '../lib/supabase.js';
 
 const h = React.createElement;
 const { useState: uSt, useEffect: uE, useMemo: uM, useCallback: uCB, useRef: uR } = React;
@@ -54,26 +55,20 @@ function saveManual(year, month, data) {
 function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
   const locStr = String(loc);
   const mt     = ds.monthlyTargets?.[locStr] || {};
-  const tgt    = DEFAULT_TARGETS[locStr] || {};
   const meta   = ds.monthlyTargetsMeta;
-  // mtOK: true when targets period matches the EOM period being viewed.
-  // Priority: row-level _year/_month stamps (set by Supabase load and pipeline.js) first,
-  // then monthlyTargetsMeta (set when a file is dragged in).
+  // mtOK: targets period must match the EOM period being viewed — all projections are period-specific.
+  // Priority: row-level _year/_month stamps (set by Supabase load) first, then meta (file drag-in).
   const mtYear  = mt._year  || meta?.year;
   const mtMonth = mt._month || meta?.month;
-  // mtOK_sales: sales $ projections require targets for the exact same month.
-  // mtOK_rates: rate targets (labor %, food cost %) are month-agnostic — use any loaded targets.
-  const mtOK_sales  = !mtYear || (mtYear === selYear && mtMonth === selMonth);
-  const mtOK_rates  = !!mtYear;
-  const mtOK        = mtOK_sales; // kept for hasMonthlyTargets below
+  const mtOK    = !mtYear || (mtYear === selYear && mtMonth === selMonth);
 
-  // Projections — from monthly targets or DEFAULT_TARGETS fallback
-  // tLabor = generic labor %, tCrewLabor = crew-only — check both (Supabase loads tCrewLabor)
-  const projSales    = (mtOK_sales && mt.tProdSales)                     || tgt.tJuneProj       || null;
-  const projFCPct    = (mtOK_rates && mt.tFOBTotal)                      || null;
-  const projFOBPct   = (mtOK_rates && mt.tFOBTarget)                     || null;
-  const projLaborPct = (mtOK_rates && (mt.tCrewLabor || mt.tLabor))      || tgt.tJuneLaborPct   || null;
-  const projOpSup    = (mtOK_rates && mt.tOpSupply)                      || null;
+  // Projections — from monthly targets only. No defaults: projections are intentionally blank
+  // when targets for this specific period haven't been loaded.
+  const projSales    = (mtOK && mt.tProdSales)               || null;
+  const projFCPct    = (mtOK && mt.tFOBTotal)                || null;
+  const projFOBPct   = (mtOK && mt.tFOBTarget)               || null;
+  const projLaborPct = (mtOK && (mt.tCrewLabor || mt.tLabor)) || null;
+  const projOpSup    = (mtOK && mt.tOpSupply)                || null;
 
   // Actuals from FOB rows (monthly report, one row per store per period)
   const fobRow = (ds.fobRows || []).find(r =>
@@ -547,6 +542,26 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
   const [expanded,  setExpanded]  = uSt(null);
   const [manual,    setManual]    = uSt(() => loadManual(now.getFullYear(), now.getMonth() + 1));
   const [forPrint,  setForPrint]  = uSt(false);
+  const [eomPeriodTargets, setEomPeriodTargets] = uSt({});
+
+  // Fetch monthly targets for the selected EOM period from Supabase.
+  // This ensures June targets are used when viewing June even if July targets are loaded globally.
+  uE(() => {
+    setEomPeriodTargets({});
+    loadMonthlyTargets(selYear, selMonth)
+      .then(mt => { if (Object.keys(mt).length > 0) setEomPeriodTargets(mt); })
+      .catch(() => {});
+  }, [selYear, selMonth]);
+
+  // Build a ds scoped to the selected EOM period using period-specific targets.
+  const eomDs = uM(() => {
+    const hasPeriod = Object.keys(eomPeriodTargets).length > 0;
+    return {
+      ...ds,
+      monthlyTargets: hasPeriod ? eomPeriodTargets : ds.monthlyTargets,
+      monthlyTargetsMeta: hasPeriod ? { year: selYear, month: selMonth } : ds.monthlyTargetsMeta,
+    };
+  }, [ds, eomPeriodTargets, selYear, selMonth]);
 
   // Reload manual data when month changes — local first, then merge remote
   uE(() => {
@@ -590,11 +605,11 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
     return g ? g.locs : allLocs;
   }, [groupType, selGroup, supGroups, opGroups, allLocs]);
 
-  // Compute per-store EOM data
+  // Compute per-store EOM data using period-specific targets
   const storeData = uM(() =>
-    targetLocs.map(loc => computeStoreEOM(loc, ds, manual, selYear, selMonth))
+    targetLocs.map(loc => computeStoreEOM(loc, eomDs, manual, selYear, selMonth))
               .filter(s => s.hasTargets || s.hasFOB)
-  , [targetLocs, ds, manual, selYear, selMonth]);
+  , [targetLocs, eomDs, manual, selYear, selMonth]);
 
   // Rollup
   const rollup = uM(() => computeRollup(storeData), [storeData]);
