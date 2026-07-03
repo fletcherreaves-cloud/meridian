@@ -71,9 +71,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.274';
+const MERIDIAN_VERSION    = '4.275';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.275', date:'2026-07-03', changes:[
+    'Signals: now computed on OPFS restore (startup) in addition to file upload — panel shows data immediately after hard refresh without needing to re-upload files.',
+  ]},
   {version:'4.274', date:'2026-07-03', changes:[
     'Monthly Targets: startup now loads ALL available periods from Supabase (not just the most recent month) into ds.allMonthlyTargets — persisted in OPFS so available immediately on reload. EOM Supervisor reads the correct period\'s targets directly from this index on every month change.',
     'EOM Supervisor: removed per-period Supabase round-trip on month change; period lookup is instant from allMonthlyTargets.',
@@ -605,6 +608,7 @@ function App() {
         React.startTransition(()=>{
           setDs(restoredDs);
           if(_autoTaggedCount>0) setUserEvents(_taggedEvents);
+          try { setSignals(computeInsights(restoredDs)); } catch(e) { console.warn('[insights] restore compute failed:', e); }
         });
       } else {
         setLoadMsg(null);
