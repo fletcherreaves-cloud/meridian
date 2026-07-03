@@ -1469,7 +1469,7 @@ function parseLifeLenzLabor(wb) {
   }
   if(!rawLoc) rawLoc = r0.map(c=>String(c||'').trim()).find(v=>/^\d+$/.test(v))||'';
   if(!rawLoc || !/^\d+$/.test(rawLoc)) return [];
-  const loc = rawLoc.padStart(7, '0');
+  const loc = String(parseInt(rawLoc, 10)); // short format e.g. '3708' to match STORE_NAMES
   const h = raw[1] || [];
   // Column index helpers — LifeLenz headers have periods/spaces
   const C = {

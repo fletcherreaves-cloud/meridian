@@ -40,17 +40,23 @@ function _mKey(d) {
 
 // ── Data join helpers ─────────────────────────────────────────────────────────
 
+// Normalize loc to short unpadded format ('0003708' → '3708') so all parsers join correctly
+function normLoc(loc) {
+  const n = parseInt(String(loc || '').replace(/\D/g, ''), 10);
+  return isNaN(n) ? String(loc || '') : String(n);
+}
+
 // Join two row arrays on loc + date (daily granularity)
 function joinDaily(aRows, aField, bRows, bField) {
   const idx = {};
   for (const r of bRows) {
     if (!r.loc || !r.date) continue;
-    idx[r.loc + '_' + _dKey(r.date)] = r;
+    idx[normLoc(r.loc) + '_' + _dKey(r.date)] = r;
   }
   const pairs = [];
   for (const r of aRows) {
     if (!r.loc || !r.date) continue;
-    const m = idx[r.loc + '_' + _dKey(r.date)];
+    const m = idx[normLoc(r.loc) + '_' + _dKey(r.date)];
     if (!m) continue;
     const x = r[aField], y = m[bField];
     if (x != null && !isNaN(x) && x !== 0 && y != null && !isNaN(y) && y !== 0)
@@ -64,12 +70,12 @@ function joinMonthly(aRows, aFn, bRows, bFn) {
   const idx = {};
   for (const r of bRows) {
     if (!r.loc || !r.date) continue;
-    idx[r.loc + '_' + _mKey(r.date)] = r;
+    idx[normLoc(r.loc) + '_' + _mKey(r.date)] = r;
   }
   const pairs = [];
   for (const r of aRows) {
     if (!r.loc || !r.date) continue;
-    const m = idx[r.loc + '_' + _mKey(r.date)];
+    const m = idx[normLoc(r.loc) + '_' + _mKey(r.date)];
     if (!m) continue;
     const x = aFn(r), y = bFn(m);
     if (x != null && !isNaN(x) && x !== 0 && y != null && !isNaN(y) && y !== 0)
@@ -300,7 +306,12 @@ export function computeInsights(ds) {
   for (const fn of runners) {
     try {
       const sig = fn(ds);
-      if (sig) results.push(sig);
+      if (sig) {
+        results.push(sig);
+        console.log(`[signals] ${sig.id}: r=${sig.r?.toFixed(3)} n=${sig.n} strength=${sig.strength}`);
+      } else {
+        console.log(`[signals] ${fn.name}: null (insufficient data or no matching pairs)`);
+      }
     } catch (e) {
       console.warn('[insights]', fn.name, e);
     }
