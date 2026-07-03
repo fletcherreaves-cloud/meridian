@@ -69,9 +69,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.267';
+const MERIDIAN_VERSION    = '4.268';
 const MERIDIAN_BUILD_DATE = '2026-07-02';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.268', date:'2026-07-02', changes:[
+    'Monthly Targets: add 📋 Patch Sheet — vertical-layout group report matching the Excel patch sheet format. Metric rows × columns of (Next Month Target | Action Items | Current Month Actual | vs Projection | Opportunity $). Pick Supervisors or Operators, choose the group, opens printable HTML with group rollup first then individual stores.',
+  ]},
   {version:'4.267', date:'2026-07-02', changes:[
     'Monthly Targets: add Flat / Operators / Supervisors group view toggle — grouped mode shows each operator or supervisor section with individual stores, a GROUP TOTAL rollup row (sales-weighted averages), and a DISTRICT TOTAL at the bottom.',
   ]},

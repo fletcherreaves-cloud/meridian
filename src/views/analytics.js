@@ -8441,6 +8441,178 @@ function rollupProj(groupLocs, mt) {
   return result;
 }
 
+// Generates a printable vertical-layout HTML report for one supervisor/operator group.
+// Layout mirrors the Excel "patch sheet": metric rows × columns of
+//   Next Month Target | Action Items | Current Month Actual | vs Curr Projection | Opportunity $
+// Group rollup appears first, then individual store sections below.
+function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, nextPeriod, currPeriod, asOfDate, storeMap) {
+  const nextLabel = nextPeriod
+    ? new Date(nextPeriod.year, nextPeriod.month-1, 1).toLocaleDateString('en-US',{month:'long',year:'numeric'})
+    : 'Target';
+  const currLabel = currPeriod
+    ? new Date(currPeriod.year, currPeriod.month-1, 1).toLocaleDateString('en-US',{month:'long',year:'numeric'})
+    : 'Current';
+
+  const METRICS = [
+    {key:'tProdSales',   label:'Sales Projection',       type:'sales',  lowerBetter:false},
+    {key:'tCrewLabor',   label:'Crew Labor %',           type:'pct',    lowerBetter:true},
+    {key:'tBonusLabor',  label:'Bonus Crew Labor %',     type:'pct',    lowerBetter:true},
+    {key:'tTpph',        label:'TPPH Target',            type:'tpph',   lowerBetter:false},
+    {key:'tFOBBase',     label:'Base Food %',            type:'pct',    lowerBetter:true},
+    {key:'tDiscCoupPct', label:'Disc Coup %',            type:'pct',    lowerBetter:true},
+    {key:'tCompWaste',   label:'Comp Waste %',           type:'pct',    lowerBetter:true},
+    {key:'tRawWaste',    label:'Raw Waste %',            type:'pct',    lowerBetter:true},
+    {key:'tCondiment',   label:'Condiment %',            type:'pct',    lowerBetter:true},
+    {key:'tEmpFood',     label:'Emp Food %',             type:'pct',    lowerBetter:true},
+    {key:'tStatLoss',    label:'Stat Loss %',            type:'pct',    lowerBetter:true},
+    {key:'tUnex',        label:'Unex Diff %',            type:'pct',    lowerBetter:false},
+    {key:'tFOBTarget',   label:'Food Over Base Target',  type:'pct',    lowerBetter:true},
+    {key:'tFOBTotal',    label:'Total Food Cost %',      type:'pct',    lowerBetter:true},
+    {key:'tPaperCost',   label:'P & L Paper Cost %',     type:'pct',    lowerBetter:true},
+    {key:'tOpSupply',    label:'Op Supply Target',       type:'dollar', lowerBetter:true},
+  ];
+
+  // Maps target keys to corresponding keys in the actuals object (from computeMonthActuals)
+  const ACTUAL_KEY = {
+    tProdSales: 'sales',
+    tCrewLabor: 'crewLaborPct',
+    tTpph:      'tpph',
+    tFOBBase:   'fobBasePct',
+    tFOBTotal:  'fobTotalPct',
+  };
+
+  const f$ = v => v==null?'—':'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fpct = v => v==null?'—':(v*100).toFixed(2)+'%';
+  const fVal = (m, v) => {
+    if(v==null) return '—';
+    if(m.type==='sales'||m.type==='dollar') return f$(v);
+    if(m.type==='pct') return fpct(v);
+    if(m.type==='tpph') return v.toFixed(2);
+    return '—';
+  };
+
+  // Opportunity $: how far actual is from the current-month projection
+  const getOpp = (m, actual, targetCurr, actualSales) => {
+    if(actual==null||targetCurr==null) return null;
+    if(m.key==='tProdSales') return actual - targetCurr; // negative = below target
+    if(m.type==='pct') return (targetCurr - actual) * (actualSales||0); // positive = saving
+    if(m.type==='tpph') return actual - targetCurr;
+    if(m.type==='dollar') return targetCurr - actual; // positive = under budget
+    return null;
+  };
+
+  const fOpp = (m, opp) => {
+    if(opp==null) return '—';
+    if(m.key==='tProdSales') return (opp>=0?'+':'-')+f$(Math.abs(opp))+(opp<0?' To Target':' Above');
+    if(m.type==='pct'||m.type==='dollar') return (opp>=0?'+':'-')+f$(Math.abs(opp));
+    if(m.type==='tpph') return (opp>=0?'+':'')+opp.toFixed(2);
+    return '—';
+  };
+
+  const oppColor = (m, opp) => {
+    if(opp==null) return '#94a3b8';
+    if(m.key==='tProdSales') return opp>=0?'#10b981':'#ef4444';
+    const good = m.lowerBetter ? opp>0 : opp>0;
+    return opp>0?'#10b981':opp<0?'#ef4444':'#f59e0b';
+  };
+
+  // Sales-weighted rollup of actual metrics for a set of locs
+  const rollActuals = (locs) => {
+    let s=0,ld=0,tN=0,tD=0,fbd=0,ftd=0;
+    locs.forEach(loc=>{
+      const a=actuals?.byLoc?.[String(loc)]||{};
+      const as=a.sales||0; s+=as;
+      ld+=(a.crewLaborPct||0)*as;
+      if(a.tpph>0){tN+=a.tpph*as;tD+=as;}
+      fbd+=(a.fobBasePct||0)*as;
+      ftd+=(a.fobTotalPct||0)*as;
+    });
+    return {sales:s, crewLaborPct:s>0?ld/s:null, tpph:tD>0?tN/tD:null, fobBasePct:s>0?fbd/s:null, fobTotalPct:s>0?ftd/s:null};
+  };
+
+  // CSS
+  const thS = 'background:#1e293b;color:#60a5fa;font-weight:700;font-size:11px;padding:7px 10px;text-align:center;border:1px solid #334155;white-space:nowrap;';
+  const tdLbl = 'background:#0f172a;color:#94a3b8;font-size:10px;font-weight:600;padding:5px 10px;text-align:left;border:1px solid #1e293b;min-width:160px;';
+  const tdV = 'font-size:11px;padding:5px 10px;border:1px solid #1e293b;text-align:right;font-family:monospace;white-space:nowrap;';
+  const tdNote = 'font-size:11px;padding:5px 10px;border:1px solid #1e293b;text-align:left;color:#334155;min-width:100px;';
+
+  const buildSection = (name, isGroup, ntargets, ctargets, aData) => {
+    const aSales = aData?.sales||0;
+    const rowBg = k =>
+      ['tCrewLabor','tBonusLabor','tTpph'].includes(k)   ? 'background:#1a2533;' :
+      ['tFOBBase','tDiscCoupPct','tCompWaste','tRawWaste','tCondiment','tEmpFood','tStatLoss','tUnex','tFOBTarget','tFOBTotal'].includes(k) ? 'background:#1a2030;' :
+      ['tPaperCost','tOpSupply'].includes(k)              ? 'background:#1a2528;' : '';
+
+    const rows = METRICS.map(m => {
+      const vN = ntargets?.[m.key]??null;
+      const vC = ctargets?.[m.key]??null;
+      const aKey = ACTUAL_KEY[m.key];
+      const vA = aKey?(aData?.[aKey]??null):null;
+      const opp = getOpp(m, vA, vC, aSales);
+      const oc = oppColor(m, opp);
+      return `<tr style="${rowBg(m.key)}">
+        <td style="${tdLbl}">${m.label}</td>
+        <td style="${tdV}color:#60a5fa">${fVal(m,vN)}</td>
+        <td style="${tdNote}"></td>
+        <td style="${tdV}color:${vA!=null?'#e2e8f0':'#475569'}">${fVal(m,vA)}</td>
+        <td style="${tdV}color:#94a3b8">${fVal(m,vC)}</td>
+        <td style="${tdV}color:${oc};font-weight:700">${fOpp(m,opp)}</td>
+      </tr>`;
+    }).join('');
+
+    const hdrS = isGroup
+      ? 'background:#172554;padding:9px 12px;font-weight:800;font-size:13px;color:#93c5fd;border:1px solid #1e3a8a;letter-spacing:.3px;'
+      : 'background:#1e293b;padding:7px 12px;font-weight:700;font-size:11px;color:#cbd5e1;border:1px solid #334155;text-transform:uppercase;letter-spacing:.4px;';
+
+    return `<tr><td colspan="6" style="${hdrS}">${name}</td></tr>${rows}<tr><td colspan="6" style="height:8px;background:#0a0f1e;border:none"></td></tr>`;
+  };
+
+  const grpNT = rollupProj(groupLocs, mt_next||{});
+  const grpCT = mt_curr ? rollupProj(groupLocs, mt_curr) : null;
+  const grpA  = rollActuals(groupLocs);
+
+  let body = buildSection(`GROUP TOTAL — ${groupName}`, true, grpNT, grpCT, grpA);
+
+  groupLocs.forEach(loc => {
+    const nm = storeMap?.[String(loc)] ? `${storeMap[String(loc)]} (#${loc})` : `Store #${loc}`;
+    body += buildSection(nm, false, mt_next?.[loc]||null, mt_curr?.[loc]||null, actuals?.byLoc?.[String(loc)]||null);
+  });
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>${groupName} — ${nextLabel} Restaurant Projections</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:Arial,Helvetica,sans-serif;background:#0a0f1e;color:#e2e8f0;margin:0;padding:20px;max-width:940px}
+  h1{font-size:22px;margin:0 0 3px;color:#f8fafc}
+  .sub{font-size:11px;color:#64748b;margin-bottom:18px}
+  table{border-collapse:collapse;width:100%}
+  @media print{
+    body{background:#fff;color:#000;padding:10px;max-width:none}
+    *{color:#000!important;background:#fff!important;border-color:#ccc!important}
+    tr{page-break-inside:avoid}
+  }
+</style>
+</head><body>
+<h1>🍟 ${groupName}</h1>
+<div class="sub">${nextLabel} Restaurant Projections &nbsp;·&nbsp; Current Month: ${currLabel} &nbsp;·&nbsp; Results as of ${asOfDate} &nbsp;·&nbsp; Generated by Meridian</div>
+<table>
+  <thead>
+    <tr>
+      <th style="${thS}text-align:left;min-width:160px">Metric</th>
+      <th style="${thS}min-width:130px">${nextLabel}<br><span style="font-weight:400;font-size:9px;color:#94a3b8">Target</span></th>
+      <th style="${thS}min-width:110px">Action Items</th>
+      <th style="${thS}min-width:120px">${currLabel}<br><span style="font-weight:400;font-size:9px;color:#94a3b8">Actual</span></th>
+      <th style="${thS}min-width:120px">vs. ${currLabel}<br><span style="font-weight:400;font-size:9px;color:#94a3b8">Projection</span></th>
+      <th style="${thS}min-width:110px">Opportunity&nbsp;$</th>
+    </tr>
+  </thead>
+  <tbody>${body}</tbody>
+</table>
+<div style="font-size:9px;color:#475569;margin-top:10px">Opportunity $ = (${currLabel} Projection − Actual) × Actual Sales for % metrics. Green = favorable vs projection, Red = unfavorable. Sales shows actual vs monthly target. Metrics without actuals data show — in the Actual column.</div>
+</body></html>`;
+}
+
 function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
@@ -8452,6 +8624,10 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
   const [manualYear,   setManualYear]   = useState(new Date().getFullYear());
   const [manualMonth,  setManualMonth]  = useState(new Date().getMonth()+1);
   const [groupView,    setGroupView]    = useState('flat'); // 'flat' | 'operator' | 'supervisor'
+  const [sheetOpen,    setSheetOpen]    = useState(false);
+  const [sheetType,    setSheetType]    = useState('supervisor'); // 'operator' | 'supervisor'
+  const [sheetGroup,   setSheetGroup]   = useState('');
+  const [sheetLoading, setSheetLoading] = useState(false);
 
   // Load available periods on mount
   useEffect(()=>{
@@ -8624,6 +8800,32 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
     setManualOpen(false);
   };
 
+  // Build and open a per-group vertical-layout "patch sheet" report
+  const openGroupSheet = async () => {
+    if(!sheetGroup||sheetLoading) return;
+    setSheetLoading(true);
+    // "Current month" = the month before the loaded target period
+    const sp = selPeriod||{year:new Date().getFullYear(),month:new Date().getMonth()+1};
+    const prevPeriod = sp.month===1
+      ? {year:sp.year-1, month:12}
+      : {year:sp.year,   month:sp.month-1};
+    const mt_curr = await loadMonthlyTargets(prevPeriod.year, prevPeriod.month).catch(()=>null)||{};
+    const actuals  = computeMonthActuals(ds, prevPeriod.year, prevPeriod.month);
+    const asOfDate = actuals.maxDate
+      ? new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'})
+      : 'No actuals loaded';
+    const groupMap = sheetType==='operator'
+      ? (settings?.operators||{})
+      : (settings?.supervisorGroups||{});
+    const groupLocs = (groupMap[sheetGroup]||[]).map(String).filter(l=>locs.includes(l));
+    const storeMap  = Object.fromEntries((stores||[]).map(s=>[String(s.loc),s.name]));
+    const html = buildGroupSheetHTML(sheetGroup, groupLocs, mt, mt_curr, actuals, sp, prevPeriod, asOfDate, storeMap);
+    const w = window.open('','_blank','width=1000,height=780,scrollbars=yes');
+    if(w){w.document.write(html);w.document.close();}
+    setSheetLoading(false);
+    setSheetOpen(false);
+  };
+
   return div({style:{position:'fixed',inset:0,zIndex:300,background:'var(--bg)',
     display:'flex',flexDirection:'column',overflow:'hidden'}},
 
@@ -8703,6 +8905,43 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
           background:'rgba(96,165,250,.12)',color:'#60a5fa',
           border:'1px solid rgba(96,165,250,.3)'}},
         '📧 Group Report'),
+      // ── Patch Sheet button + inline group selector ─────────────────────────
+      locs.length>0&&btn({
+        onClick:()=>setSheetOpen(v=>!v),
+        title:'Generate a vertical patch-sheet report (next month targets vs current month actuals)',
+        style:{padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
+          background:sheetOpen?'rgba(16,185,129,.2)':'rgba(16,185,129,.08)',
+          color:'#10b981',border:'1px solid rgba(16,185,129,.3)'}},
+        '📋 Patch Sheet'),
+      sheetOpen&&div({style:{display:'flex',alignItems:'center',gap:6,
+        padding:'4px 8px',background:'var(--surf2)',borderRadius:4,
+        border:'1px solid var(--bdr)',flexWrap:'wrap'}},
+        div({style:{display:'flex',gap:3}},
+          ...([['supervisor','Supervisors'],['operator','Operators']].map(
+            ([t,label])=>btn({key:t,onClick:()=>{setSheetType(t);setSheetGroup('');},style:{
+              padding:'2px 7px',fontSize:11,borderRadius:3,cursor:'pointer',
+              background:sheetType===t?'rgba(16,185,129,.2)':'var(--surf)',
+              color:sheetType===t?'#10b981':'var(--text3)',
+              border:sheetType===t?'1px solid rgba(16,185,129,.4)':'1px solid var(--bdr)'}},label)
+          ))
+        ),
+        sel({
+          value:sheetGroup,
+          onChange:e=>setSheetGroup(e.target.value),
+          style:{fontSize:11,padding:'2px 6px',background:'var(--surf)',
+            border:'1px solid var(--bdr)',borderRadius:3,color:'var(--text)',minWidth:120}},
+          h('option',{value:''},'— Pick group —'),
+          ...Object.keys(sheetType==='operator'?(settings?.operators||{}):(settings?.supervisorGroups||{}))
+            .map(name=>h('option',{key:name,value:name},name))
+        ),
+        btn({
+          onClick:openGroupSheet,
+          disabled:!sheetGroup||sheetLoading,
+          style:{padding:'2px 10px',fontSize:11,borderRadius:3,cursor:sheetGroup?'pointer':'default',
+            background:sheetGroup?'#10b981':'var(--surf)',
+            color:sheetGroup?'#fff':'var(--text3)',border:'none'}},
+          sheetLoading?'Loading…':'Open Report')
+      ),
       btn({onClick:onClose,style:{marginLeft:4,padding:'4px 12px',background:'var(--surf)',
         border:'1px solid var(--bdr)',borderRadius:4,color:'var(--text)',cursor:'pointer',fontSize:12}},'✕ Close')
     ),
