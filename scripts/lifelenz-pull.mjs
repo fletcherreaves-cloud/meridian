@@ -4,10 +4,12 @@
 // the session token, then calls the LifeLenz API directly for all stores.
 //
 // Required env vars:
-//   LIFELENZ_USERNAME         — login email
-//   LIFELENZ_PASSWORD         — login password
 //   VITE_SUPABASE_URL         — Supabase project URL
 //   SUPABASE_SERVICE_ROLE_KEY — service role key (bypasses RLS for server upserts)
+//
+// Auth — provide ONE of:
+//   LIFELENZ_TOKEN    — pre-captured X-Auth-Token (fastest; skip browser entirely)
+//   LIFELENZ_USERNAME + LIFELENZ_PASSWORD — login credentials (for Playwright fallback)
 //
 // Optional:
 //   LIFELENZ_DAYS_BACK  — days of history to pull (default: 30)
@@ -594,8 +596,23 @@ async function main() {
   const end   = new Date(); end.setDate(end.getDate() + DAYS_FWD);
   console.log(`[lifelenz-pull] date range: ${toISO(start)} → ${toISO(end)}`);
 
-  // 1. Auth — try direct REST first, fall back to Playwright
-  let token = await getAuthTokenDirect();
+  // 1. Auth — use pre-captured token if available, otherwise try REST then Playwright
+  let token = process.env.LIFELENZ_TOKEN || null;
+  if (token) {
+    console.log('[auth] using LIFELENZ_TOKEN from env (skipping browser login)');
+    // Quick sanity-check the token works
+    const check = await fetch(`${BASE}/workforce/business/${BUSINESS_ID}/schedules`, {
+      headers: { 'X-Auth-Token': token, 'Accept': 'application/json' },
+    });
+    console.log('[auth] token validation →', check.status);
+    if (!check.ok) {
+      console.warn('[auth] LIFELENZ_TOKEN rejected (expired?), falling back to login flow');
+      token = null;
+    }
+  }
+  if (!token) {
+    token = await getAuthTokenDirect();
+  }
   if (!token) {
     console.log('[auth] direct REST login failed, falling back to Playwright browser…');
     token = await getAuthToken();

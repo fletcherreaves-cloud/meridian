@@ -37,6 +37,7 @@ jobs:
       - name: Run LifeLenz sync
         run: node scripts/lifelenz-pull.mjs
         env:
+          LIFELENZ_TOKEN:            ${{ secrets.LIFELENZ_TOKEN }}
           LIFELENZ_USERNAME:         ${{ secrets.LIFELENZ_USERNAME }}
           LIFELENZ_PASSWORD:         ${{ secrets.LIFELENZ_PASSWORD }}
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
