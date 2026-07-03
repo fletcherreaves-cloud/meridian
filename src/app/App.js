@@ -71,7 +71,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.279';
+const MERIDIAN_VERSION    = '4.280';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
   {version:'4.279', date:'2026-07-03', changes:[
@@ -1560,7 +1560,7 @@ function App() {
         span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em'}},'📡 Signals'),
         h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
       ),
-      div({style:{flex:1,overflowY:'auto'}},
+      div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
         h(SignalsPanel,{ds,signals}),
       ),
     ),
