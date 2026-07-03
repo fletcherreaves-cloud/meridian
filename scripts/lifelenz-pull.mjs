@@ -80,22 +80,53 @@ async function getAuthToken() {
     } catch { /* ignore */ }
   });
 
+  const screenshotDir = 'screenshots';
+  const { mkdirSync } = await import('fs');
+  try { mkdirSync(screenshotDir, { recursive: true }); } catch {}
+
   try {
+    console.log('[auth] navigating to', BASE + '/login');
     await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    console.log('[auth] page title:', await page.title(), '| url:', page.url());
+    await page.screenshot({ path: `${screenshotDir}/01-login-page.png` });
 
-    // Fill login form — selectors cover common LifeLenz/Humanforce patterns
-    const userSel = 'input[name="username"], input[name="email"], input[type="email"], #username, #email';
-    const passSel = 'input[name="password"], input[type="password"], #password';
-    const subSel  = 'button[type="submit"], input[type="submit"], .btn-primary, .login-btn, [data-test="login-btn"]';
+    // Fill login form — broad selector list covering LifeLenz / Humanforce variants
+    const userSel = [
+      'input[name="username"]', 'input[name="email"]', 'input[type="email"]',
+      '#username', '#email', 'input[name="loginName"]', 'input[name="login"]',
+      'input[name="user"]', 'input[name="UserName"]', 'input[name="EmailAddress"]',
+      'input[autocomplete="username"]', 'input[autocomplete="email"]',
+      'input[placeholder*="email" i]', 'input[placeholder*="username" i]',
+      'input[placeholder*="user name" i]',
+    ].join(', ');
+    const passSel = 'input[name="password"], input[type="password"], #password, input[autocomplete="current-password"]';
+    const subSel  = 'button[type="submit"], input[type="submit"], .btn-primary, .login-btn, [data-test="login-btn"], button:has-text("Login"), button:has-text("Sign in"), button:has-text("Log in")';
 
-    await page.waitForSelector(userSel, { timeout: 15000 });
+    // Wait up to 20s — some SSO pages are slow
+    try {
+      await page.waitForSelector(userSel, { timeout: 20000 });
+    } catch (e) {
+      // Log all visible inputs to help diagnose selector mismatches
+      const inputs = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('input')).map(el => ({
+          type: el.type, name: el.name, id: el.id, placeholder: el.placeholder,
+          autocomplete: el.getAttribute('autocomplete'), visible: el.offsetParent !== null,
+        }))
+      );
+      console.error('[auth] username selector not found. Visible inputs:', JSON.stringify(inputs, null, 2));
+      await page.screenshot({ path: `${screenshotDir}/login-selector-fail.png` });
+      throw e;
+    }
+
     await page.fill(userSel, process.env.LIFELENZ_USERNAME);
     await page.fill(passSel, process.env.LIFELENZ_PASSWORD);
+    await page.screenshot({ path: `${screenshotDir}/02-filled.png` });
     await page.click(subSel);
 
     // Wait for redirect away from login page
     await page.waitForFunction(() => !window.location.pathname.includes('/login'), { timeout: 20000 });
     console.log('[auth] logged in, current URL:', page.url());
+    await page.screenshot({ path: `${screenshotDir}/03-post-login.png` });
 
     // Trigger an API call so we can capture the token from the request headers
     // Navigate to any data page that fires an API request
