@@ -52,7 +52,51 @@ function chunkDateRange(start, end, maxDays = 21) {
   return chunks;
 }
 
-// ── Step 1: Playwright login → capture auth token ─────────────────────────
+// ── Step 1a: Try direct REST login (no browser needed) ───────────────────
+async function getAuthTokenDirect() {
+  // Humanforce/LifeLenz REST login — returns X-Auth-Token in response header or body
+  const candidates = [
+    { url: `${BASE}/workforce/user/sessions`, body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
+    { url: `${BASE}/workforce/user/login`,    body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
+    { url: `${BASE}/api/auth/sessions`,       body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
+    { url: `${BASE}/api/v1/auth/login`,       body: { username: process.env.LIFELENZ_USERNAME, password: process.env.LIFELENZ_PASSWORD } },
+  ];
+
+  for (const { url, body } of candidates) {
+    try {
+      console.log('[auth-direct] trying', url);
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36',
+        },
+        body: JSON.stringify(body),
+      });
+
+      console.log('[auth-direct]', url, '→', resp.status);
+
+      // Check response header first
+      const headerToken = resp.headers.get('x-auth-token') || resp.headers.get('X-Auth-Token');
+      if (headerToken) { console.log('[auth-direct] got token from header'); return headerToken; }
+
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (DEBUG) console.log('[auth-direct] response body:', JSON.stringify(data)?.slice(0, 300));
+        const token = data?.token || data?.authToken || data?.auth_token || data?.accessToken ||
+                      data?.access_token || data?.sessionToken || data?.data?.token ||
+                      data?.result?.token || data?.user?.token;
+        if (token) { console.log('[auth-direct] got token from body'); return token; }
+      }
+    } catch (e) {
+      console.log('[auth-direct] error on', url, ':', e.message);
+    }
+  }
+  return null;
+}
+
+// ── Step 1b: Playwright browser login (fallback) ──────────────────────────
 async function getAuthToken() {
   console.log('[auth] launching headless browser…');
   const browser = await chromium.launch({
@@ -435,8 +479,12 @@ async function main() {
   const end   = new Date(); end.setDate(end.getDate() + DAYS_FWD);
   console.log(`[lifelenz-pull] date range: ${toISO(start)} → ${toISO(end)}`);
 
-  // 1. Auth
-  const token = await getAuthToken();
+  // 1. Auth — try direct REST first, fall back to Playwright
+  let token = await getAuthTokenDirect();
+  if (!token) {
+    console.log('[auth] direct REST login failed, falling back to Playwright browser…');
+    token = await getAuthToken();
+  }
 
   // 2. Discover schedules
   let schedules;
