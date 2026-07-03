@@ -1,9 +1,9 @@
-// Meridian Service Worker — v4.239
+// Meridian Service Worker — v4.276
 // Handles Web Share Target API so files can be shared directly from
 // QSRSoft (or any app) to Meridian on mobile without opening a file picker.
 // Stashes shared files in Cache API; App.js picks them up on next render.
 
-const SHARE_CACHE = 'mf-share-v1';
+const SHARE_CACHE = 'mf-share-v4276';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));

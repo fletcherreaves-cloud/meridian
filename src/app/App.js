@@ -71,9 +71,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.275';
+const MERIDIAN_VERSION    = '4.276';
 const MERIDIAN_BUILD_DATE = '2026-07-03';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.276', date:'2026-07-03', changes:[
+    'Service Worker: bumped cache name to mf-share-v4276 — forces all browsers to install the new SW and drop stale JS bundles (fixes Signals nav item not appearing for users on old SW).',
+  ]},
   {version:'4.275', date:'2026-07-03', changes:[
     'Signals: now computed on OPFS restore (startup) in addition to file upload — panel shows data immediately after hard refresh without needing to re-upload files.',
   ]},
