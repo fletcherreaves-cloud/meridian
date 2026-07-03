@@ -8415,6 +8415,32 @@ const PROJ_FIELDS = [
   {g:'Other Costs',   key:'tOpSupply',    l:'Op Supply',  fmt:v=>v!=null?'$'+(v||0).toLocaleString():'—', dollar:true},
 ];
 
+// Sales-weighted rollup of PROJ_FIELDS targets for a group of stores.
+// tProdSales is summed; tOpSupply is summed (dollar, not ratio); all others are
+// weighted by each store's tProdSales so group totals reflect scale correctly.
+function rollupProj(groupLocs, mt) {
+  let tSales = 0;
+  const wt = {};
+  let opSupplySum = null;
+  PROJ_FIELDS.forEach(f => { if(f.key!=='tProdSales'&&f.key!=='tOpSupply') wt[f.key]=0; });
+  groupLocs.forEach(loc => {
+    const t = mt[loc]||{};
+    const s = t.tProdSales||0;
+    tSales += s;
+    if(t.tOpSupply!=null) opSupplySum=(opSupplySum||0)+t.tOpSupply;
+    PROJ_FIELDS.forEach(f => {
+      if(f.key==='tProdSales'||f.key==='tOpSupply') return;
+      if(s>0&&t[f.key]!=null) wt[f.key]+=t[f.key]*s;
+    });
+  });
+  const result = {tProdSales:tSales, tOpSupply:opSupplySum};
+  PROJ_FIELDS.forEach(f => {
+    if(f.key==='tProdSales'||f.key==='tOpSupply') return;
+    result[f.key] = tSales>0 ? wt[f.key]/tSales : null;
+  });
+  return result;
+}
+
 function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
@@ -8425,6 +8451,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
   const [manualOpen,   setManualOpen]   = useState(false);
   const [manualYear,   setManualYear]   = useState(new Date().getFullYear());
   const [manualMonth,  setManualMonth]  = useState(new Date().getMonth()+1);
+  const [groupView,    setGroupView]    = useState('flat'); // 'flat' | 'operator' | 'supervisor'
 
   // Load available periods on mount
   useEffect(()=>{
@@ -8518,6 +8545,68 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
     );
   });
 
+  // Grouped view rows — computed when groupView !== 'flat'
+  let groupedRows = null;
+  if(groupView!=='flat') {
+    const groupMap = groupView==='operator'
+      ? (settings?.operators||{})
+      : (settings?.supervisorGroups||{});
+    const locsSet = new Set(locs);
+    const distLocs = [];
+    const gRows = [];
+    Object.entries(groupMap).forEach(([gName, gStores]) => {
+      const gLocs = gStores.map(String).filter(l=>locsSet.has(l));
+      if(!gLocs.length) return;
+      distLocs.push(...gLocs);
+      const rollup = rollupProj(gLocs, mt);
+      gRows.push(h('tr',{key:'gh_'+gName},
+        h('td',{colSpan:PROJ_FIELDS.length+1,style:{
+          ...tdS,background:'rgba(96,165,250,.06)',fontWeight:700,color:'var(--accent)',
+          textTransform:'uppercase',letterSpacing:'.6px',fontSize:10,
+          padding:'8px 12px',borderBottom:'2px solid rgba(96,165,250,.18)'
+        }},gName)
+      ));
+      gLocs.forEach(loc=>{
+        const t=mt[loc]||{};
+        gRows.push(h('tr',{key:loc},
+          h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
+            background:'var(--surf2)',fontWeight:500,
+            borderRight:'1px solid var(--bdr)',minWidth:170}},
+            storeName(loc)+' ('+loc+')'
+          ),
+          ...PROJ_FIELDS.map(f=>h('td',{key:f.key,style:{
+            ...tdS,textAlign:'right',fontFamily:'var(--mono)',
+            color:t[f.key]==null?'var(--text3)':'var(--text)'}},f.fmt(t[f.key])))
+        ));
+      });
+      gRows.push(h('tr',{key:'rollup_'+gName},
+        h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
+          background:'var(--surf)',fontWeight:700,color:'var(--amber)',
+          borderRight:'1px solid var(--bdr)',minWidth:170}},'GROUP TOTAL'),
+        ...PROJ_FIELDS.map(f=>h('td',{key:f.key,style:{
+          ...tdS,textAlign:'right',fontFamily:'var(--mono)',
+          fontWeight:700,color:'var(--amber)',background:'var(--surf)'
+        }},f.fmt(rollup[f.key])))
+      ));
+      gRows.push(h('tr',{key:'sp_'+gName},
+        h('td',{colSpan:PROJ_FIELDS.length+1,style:{height:10,background:'var(--bg)'}})
+      ));
+    });
+    if(distLocs.length>0){
+      const dr=rollupProj(distLocs,mt);
+      gRows.push(h('tr',{key:'dist_total'},
+        h('td',{style:{...tdS,position:'sticky',left:0,zIndex:2,
+          background:'#172554',fontWeight:800,color:'#93c5fd',
+          borderRight:'1px solid var(--bdr)',minWidth:170,fontSize:12}},'DISTRICT TOTAL'),
+        ...PROJ_FIELDS.map(f=>h('td',{key:f.key,style:{
+          ...tdS,textAlign:'right',fontFamily:'var(--mono)',
+          fontWeight:800,color:'#93c5fd',background:'#172554'
+        }},f.fmt(dr[f.key])))
+      ));
+    }
+    groupedRows = gRows;
+  }
+
   // Period selector options
   const periodOpts = periods.map(p=>{
     const label2 = new Date(p.year,p.month-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});
@@ -8545,6 +8634,15 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
       locs.length>0&&span({style:{fontSize:11,color:'var(--text3)',marginLeft:4}},
         locs.length+' stores'),
       div({style:{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}),
+      div({style:{display:'flex',gap:3}},
+        ...([['flat','Flat'],['operator','Operators'],['supervisor','Supervisors']].map(
+          ([mode,label])=>btn({key:mode,onClick:()=>setGroupView(mode),style:{
+            padding:'3px 8px',fontSize:11,borderRadius:4,cursor:'pointer',
+            background:groupView===mode?'rgba(96,165,250,.15)':'var(--surf)',
+            color:groupView===mode?'var(--accent)':'var(--text3)',
+            border:groupView===mode?'1px solid rgba(96,165,250,.4)':'1px solid var(--bdr)'}},label)
+        ))
+      ),
       btn({onClick:()=>setMyStoresOnly(v=>!v),style:{
         padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',
         background:myStoresOnly?'var(--accent)':'var(--surf)',
@@ -8625,7 +8723,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
               ),
               h('tr',null,...fieldCells)
             ),
-            tbody(null,...storeRowEls)
+            tbody(null,...(groupView==='flat' ? storeRowEls : (groupedRows||[])))
           )
         )
   );

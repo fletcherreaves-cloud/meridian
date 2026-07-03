@@ -69,9 +69,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.266';
+const MERIDIAN_VERSION    = '4.267';
 const MERIDIAN_BUILD_DATE = '2026-07-02';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.267', date:'2026-07-02', changes:[
+    'Monthly Targets: add Flat / Operators / Supervisors group view toggle — grouped mode shows each operator or supervisor section with individual stores, a GROUP TOTAL rollup row (sales-weighted averages), and a DISTRICT TOTAL at the bottom.',
+  ]},
   {version:'4.266', date:'2026-07-02', changes:[
     'Labor Analytics: fix Days column showing +1 extra day (Math.round → Math.floor on range end-time fraction).',
     'Monthly Targets: Sales column now shows full dollar amount ($xxx,xxx.xx) instead of abbreviated $xxxK.',
