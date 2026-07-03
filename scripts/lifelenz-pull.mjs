@@ -211,12 +211,31 @@ async function getAuthToken() {
   const { mkdirSync } = await import('fs');
   try { mkdirSync(screenshotDir, { recursive: true }); } catch {}
 
+  // Capture auth code from redirect back to admin.lifelenz.com
+  let authCode = null;
+  let codeVerifier = null;
+  page.on('request', req => {
+    const url = req.url();
+    if (url.includes('admin.lifelenz.com') && url.includes('code=')) {
+      const code = new URL(url).searchParams.get('code');
+      if (code) { authCode = code; console.log('[auth] captured auth code from redirect'); }
+    }
+  });
+
   try {
-    const LOGIN_URL = 'https://admin.lifelenz.com/us01/auth/login';
-    console.log('[auth] navigating to', LOGIN_URL);
-    await page.goto(LOGIN_URL, { waitUntil: 'networkidle', timeout: 45000 });
+    // Go directly to IDM (backend identity server — not Cloudflare protected like admin.lifelenz.com)
+    const CLIENT_ID   = '63acf6b91f6c301188a20e18';
+    const REDIRECT_URI = 'https://admin.lifelenz.com/us01/auth/callback';
+    const IDM_AUTH_URL = 'https://idm.lifelenz.com/connect/authorize?' + new URLSearchParams({
+      client_id:     CLIENT_ID,
+      redirect_uri:  REDIRECT_URI,
+      response_type: 'code',
+      scope:         'openid profile email offline_access',
+      state:         'meridian-sync',
+    });
+    console.log('[auth] navigating to IDM authorize:', IDM_AUTH_URL);
+    await page.goto(IDM_AUTH_URL, { waitUntil: 'networkidle', timeout: 45000 });
     console.log('[auth] page title:', await page.title(), '| url:', page.url());
-    // Dump visible text so we can diagnose blank pages
     const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '(empty)');
     console.log('[auth] body preview:', bodyText);
     await page.screenshot({ path: `${screenshotDir}/01-login-page.png`, fullPage: true });
@@ -256,12 +275,34 @@ async function getAuthToken() {
     await page.screenshot({ path: `${screenshotDir}/02-filled.png` });
     await page.click(subSel);
 
-    // Wait for redirect away from login page (either path changes or domain changes to us01-connect)
+    // Wait for redirect back to admin.lifelenz.com (OAuth callback) or away from login
     await page.waitForFunction(
-      () => !window.location.href.includes('admin.lifelenz.com') || !window.location.pathname.includes('/login'),
+      () => window.location.href.includes('admin.lifelenz.com') ||
+            !window.location.href.includes('idm.lifelenz.com'),
       { timeout: 20000 }
     );
-    console.log('[auth] logged in, current URL:', page.url());
+    console.log('[auth] redirected, current URL:', page.url());
+
+    // Exchange auth code for tokens if captured
+    if (authCode && !authToken) {
+      console.log('[auth] exchanging auth code for tokens…');
+      const tokenResp = await fetch('https://idm.lifelenz.com/connect/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type:   'authorization_code',
+          code:         authCode,
+          client_id:    '63acf6b91f6c301188a20e18',
+          redirect_uri: 'https://admin.lifelenz.com/us01/auth/callback',
+        }).toString(),
+      });
+      console.log('[auth] token exchange →', tokenResp.status);
+      if (tokenResp.ok) {
+        const tokens = await tokenResp.json().catch(() => null);
+        if (DEBUG) console.log('[auth] tokens:', JSON.stringify(tokens)?.slice(0, 200));
+        if (tokens?.access_token) authToken = tokens.access_token;
+      }
+    }
     await page.screenshot({ path: `${screenshotDir}/03-post-login.png` });
 
     // Trigger an API call so we can capture the token from the request headers
