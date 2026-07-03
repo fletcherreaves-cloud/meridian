@@ -54,123 +54,115 @@ function chunkDateRange(start, end, maxDays = 21) {
 
 // ── Step 1a: Try direct REST login (no browser needed) ───────────────────
 async function getAuthTokenDirect() {
-  // All endpoints returned 405 (Method Not Allowed) on bare JSON POST.
-  // This is a Rails/Devise app — requires CSRF token from the login page first,
-  // then form-encoded POST with the session cookie.
-  const LOGIN_URL = 'https://admin.lifelenz.com/us01/auth/login';
+  // Login page is a Next.js SPA that delegates to idm.lifelenz.com (OAuth2/OIDC).
+  // Try OIDC discovery first, then known token endpoint patterns.
+  const IDM_BASE = 'https://idm.lifelenz.com';
   const u = process.env.LIFELENZ_USERNAME;
   const p = process.env.LIFELENZ_PASSWORD;
 
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 
+  // Step 1: OIDC discovery — find the token endpoint
+  let tokenEndpoint = `${IDM_BASE}/connect/token`; // standard OIDC default
   try {
-    // Step 1: GET the login page to capture CSRF token + session cookie
-    console.log('[auth-direct] GET', LOGIN_URL);
-    const pageResp = await fetch(LOGIN_URL, {
-      headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' },
-      redirect: 'follow',
+    const discovery = await fetch(`${IDM_BASE}/.well-known/openid-configuration`, {
+      headers: { 'User-Agent': UA, 'Accept': 'application/json' },
     });
-    console.log('[auth-direct] GET →', pageResp.status, '| url:', pageResp.url);
-
-    const html = await pageResp.text();
-    if (DEBUG) console.log('[auth-direct] page HTML (500):', html.slice(0, 500));
-
-    // Extract CSRF token (Rails authenticity_token)
-    const csrfMatch = html.match(/name=["']authenticity_token["'][^>]*value=["']([^"']+)["']/)
-                   || html.match(/value=["']([^"']+)["'][^>]*name=["']authenticity_token["']/);
-    const csrfToken = csrfMatch?.[1];
-    console.log('[auth-direct] csrf token:', csrfToken ? `found (${csrfToken.length} chars)` : 'NOT FOUND');
-    if (DEBUG && !csrfToken) console.log('[auth-direct] HTML snippet for debugging:', html.slice(0, 2000));
-
-    // Collect session cookies from GET response
-    const rawCookies = [];
-    pageResp.headers.forEach((val, key) => {
-      if (key.toLowerCase() === 'set-cookie') rawCookies.push(val.split(';')[0]);
-    });
-    const cookieStr = rawCookies.join('; ');
-    console.log('[auth-direct] cookies from GET:', rawCookies.length, 'cookies');
-
-    // Step 2: POST credentials — try multiple field name conventions
-    const fieldCombos = [
-      { 'user[email]': u,    'user[password]': p },
-      { 'user[login]': u,    'user[password]': p },
-      { 'user[username]': u, 'user[password]': p },
-      { email: u,            password: p },
-      { username: u,         password: p },
-      { login: u,            password: p },
-    ];
-
-    for (const fields of fieldCombos) {
-      const body = new URLSearchParams({ ...fields, commit: 'Sign in' });
-      if (csrfToken) body.set('authenticity_token', csrfToken);
-
-      console.log('[auth-direct] POST with fields:', Object.keys(fields).join(', '));
-      const postResp = await fetch(LOGIN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': UA,
-          'Accept': 'text/html,application/xhtml+xml,application/json',
-          'Referer': LOGIN_URL,
-          ...(cookieStr ? { 'Cookie': cookieStr } : {}),
-        },
-        body: body.toString(),
-        redirect: 'manual', // catch the redirect to extract token
-      });
-
-      console.log('[auth-direct] POST →', postResp.status, '| location:', postResp.headers.get('location') || '(none)');
-
-      // Check for X-Auth-Token in response headers
-      const headerToken = postResp.headers.get('x-auth-token') || postResp.headers.get('X-Auth-Token');
-      if (headerToken) { console.log('[auth-direct] got token from POST header'); return headerToken; }
-
-      // Check cookies set by POST response
-      const postCookies = [];
-      postResp.headers.forEach((val, key) => {
-        if (key.toLowerCase() === 'set-cookie') postCookies.push(val);
-      });
-      const authCookie = postCookies.find(c =>
-        /auth.token|x.auth|session|_session|user.token/i.test(c.split(';')[0])
-      );
-      if (authCookie) {
-        const tokenVal = authCookie.split(';')[0].split('=').slice(1).join('=');
-        console.log('[auth-direct] got token from POST cookie');
-        return tokenVal;
-      }
-
-      if (DEBUG) {
-        console.log('[auth-direct] POST cookies:', postCookies.slice(0, 3));
-        if (postResp.ok || postResp.status === 302) {
-          const body = await postResp.text().catch(() => '');
-          console.log('[auth-direct] POST body (300):', body.slice(0, 300));
-        }
-      }
-
-      // 302 redirect to non-login page = success; grab token from subsequent API call
-      if (postResp.status === 302 || postResp.status === 301) {
-        const loc = postResp.headers.get('location') || '';
-        if (!loc.includes('login')) {
-          console.log('[auth-direct] login redirect detected → making API call to capture token');
-          // Use all cookies (GET + POST) and make an API call to capture X-Auth-Token
-          const allCookies = [...rawCookies, ...postCookies.map(c => c.split(';')[0])].join('; ');
-          const apiResp = await fetch(`${BASE}/workforce/business/${BUSINESS_ID}/schedules`, {
-            headers: { 'Cookie': allCookies, 'User-Agent': UA, 'Accept': 'application/json' },
-          });
-          const apiToken = apiResp.headers.get('x-auth-token');
-          if (apiToken) { console.log('[auth-direct] captured token from API call after login'); return apiToken; }
-          console.log('[auth-direct] API call after redirect →', apiResp.status);
-        }
-      }
-
-      // 200 with error page = wrong credentials or CSRF issue
-      if (postResp.status === 200) {
-        console.log('[auth-direct] 200 response (likely login failed or CSRF issue) — trying next field combo');
-        if (!csrfToken) break; // no point trying all combos without CSRF
-      }
+    console.log('[auth-direct] OIDC discovery →', discovery.status);
+    if (discovery.ok) {
+      const cfg = await discovery.json();
+      console.log('[auth-direct] OIDC config:', JSON.stringify(cfg).slice(0, 400));
+      if (cfg.token_endpoint) tokenEndpoint = cfg.token_endpoint;
     }
   } catch (e) {
-    console.log('[auth-direct] error:', e.message);
+    console.log('[auth-direct] discovery error:', e.message);
   }
+
+  // Step 2: Try OAuth2 Resource Owner Password Credentials flow
+  // Also try the login page config to extract the actual client_id
+  let clientId = 'lifelenz-workforce';  // common default; will be overridden if found in page config
+  try {
+    const loginPage = await fetch('https://admin.lifelenz.com/us01/auth/login', {
+      headers: { 'User-Agent': UA },
+    });
+    const html = await loginPage.text();
+    // Extract client_id from the embedded Next.js config JSON
+    const cidMatch = html.match(/"clientId"\s*:\s*"([^"]+)"/)
+                  || html.match(/"client_id"\s*:\s*"([^"]+)"/);
+    if (cidMatch) { clientId = cidMatch[1]; console.log('[auth-direct] clientId from page:', clientId); }
+    // Log the idm servers config block
+    const idmMatch = html.match(/"idm"\s*:\s*(\{[^}]+\})/);
+    if (idmMatch) console.log('[auth-direct] idm config:', idmMatch[1]);
+  } catch (e) {
+    console.log('[auth-direct] page config extraction error:', e.message);
+  }
+
+  console.log('[auth-direct] token endpoint:', tokenEndpoint, '| clientId:', clientId);
+
+  // Try ROPC with several scope/client_id combos
+  const attempts = [
+    { grant_type: 'password', username: u, password: p, client_id: clientId, scope: 'openid profile email' },
+    { grant_type: 'password', username: u, password: p, client_id: 'workforce-web', scope: 'openid profile' },
+    { grant_type: 'password', username: u, password: p, client_id: 'lifelenz-admin', scope: 'openid profile' },
+    { grant_type: 'password', username: u, password: p, client_id: 'web', scope: 'openid profile' },
+    // Also try the connect API directly with JSON
+    null,
+  ];
+
+  for (const attempt of attempts) {
+    if (!attempt) {
+      // JSON POST fallback to IDM auth endpoint
+      for (const path of ['/api/auth/login', '/auth/login', '/api/v1/login', '/api/users/sign_in']) {
+        try {
+          const r = await fetch(`${IDM_BASE}${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'User-Agent': UA, 'Accept': 'application/json' },
+            body: JSON.stringify({ username: u, password: p, email: u }),
+          });
+          console.log('[auth-direct] IDM JSON', path, '→', r.status);
+          if (r.ok) {
+            const data = await r.json().catch(() => null);
+            if (DEBUG) console.log('[auth-direct] IDM JSON body:', JSON.stringify(data)?.slice(0, 300));
+            const tok = data?.access_token || data?.token || data?.authToken || data?.id_token;
+            if (tok) { console.log('[auth-direct] got token from IDM JSON'); return tok; }
+          }
+        } catch (e) { console.log('[auth-direct] IDM JSON error:', e.message); }
+      }
+      continue;
+    }
+
+    try {
+      const body = new URLSearchParams(attempt);
+      const r = await fetch(tokenEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA, 'Accept': 'application/json' },
+        body: body.toString(),
+      });
+      console.log('[auth-direct] ROPC', tokenEndpoint, 'client_id=' + attempt.client_id, '→', r.status);
+      if (r.ok) {
+        const data = await r.json().catch(() => null);
+        if (DEBUG) console.log('[auth-direct] ROPC body:', JSON.stringify(data)?.slice(0, 300));
+        // OIDC returns access_token; LifeLenz API needs X-Auth-Token — try both
+        const tok = data?.access_token || data?.id_token;
+        if (tok) {
+          // Try using the access_token as X-Auth-Token against the workforce API
+          const apiResp = await fetch(`${BASE}/workforce/business/${BUSINESS_ID}/schedules`, {
+            headers: { 'X-Auth-Token': tok, 'Authorization': `Bearer ${tok}`, 'Accept': 'application/json' },
+          });
+          console.log('[auth-direct] workforce API with OIDC token →', apiResp.status);
+          if (apiResp.ok) return tok;
+          const apiToken = apiResp.headers.get('x-auth-token');
+          if (apiToken) { console.log('[auth-direct] workforce API returned new token'); return apiToken; }
+        }
+      } else if (DEBUG) {
+        const errBody = await r.text().catch(() => '');
+        console.log('[auth-direct] ROPC error body:', errBody.slice(0, 200));
+      }
+    } catch (e) {
+      console.log('[auth-direct] ROPC error:', e.message);
+    }
+  }
+
   return null;
 }
 
