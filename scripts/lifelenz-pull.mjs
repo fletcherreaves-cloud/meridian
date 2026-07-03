@@ -55,9 +55,22 @@ function chunkDateRange(start, end, maxDays = 21) {
 // ── Step 1: Playwright login → capture auth token ─────────────────────────
 async function getAuthToken() {
   console.log('[auth] launching headless browser…');
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
-  const page    = await context.newPage();
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+    ],
+  });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    viewport: { width: 1280, height: 800 },
+  });
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  });
+  const page = await context.newPage();
 
   let authToken = null;
 
@@ -86,9 +99,12 @@ async function getAuthToken() {
 
   try {
     console.log('[auth] navigating to', BASE + '/login');
-    await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(BASE + '/login', { waitUntil: 'networkidle', timeout: 45000 });
     console.log('[auth] page title:', await page.title(), '| url:', page.url());
-    await page.screenshot({ path: `${screenshotDir}/01-login-page.png` });
+    // Dump visible text so we can diagnose blank pages
+    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '(empty)');
+    console.log('[auth] body preview:', bodyText);
+    await page.screenshot({ path: `${screenshotDir}/01-login-page.png`, fullPage: true });
 
     // Fill login form — broad selector list covering LifeLenz / Humanforce variants
     const userSel = [
@@ -113,8 +129,10 @@ async function getAuthToken() {
           autocomplete: el.getAttribute('autocomplete'), visible: el.offsetParent !== null,
         }))
       );
+      const pageHTML = await page.content().catch(() => '(could not get HTML)');
       console.error('[auth] username selector not found. Visible inputs:', JSON.stringify(inputs, null, 2));
-      await page.screenshot({ path: `${screenshotDir}/login-selector-fail.png` });
+      console.error('[auth] page HTML (first 2000 chars):', pageHTML.slice(0, 2000));
+      await page.screenshot({ path: `${screenshotDir}/login-selector-fail.png`, fullPage: true });
       throw e;
     }
 
