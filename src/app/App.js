@@ -72,7 +72,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.306';
+const MERIDIAN_VERSION    = '4.307';
 const MERIDIAN_BUILD_DATE = '2026-07-04';
 const MERIDIAN_CHANGELOG  = [
   {version:'4.306', date:'2026-07-04', changes:[
@@ -1637,7 +1637,7 @@ function App() {
     ),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
-    showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false)}),
+    showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
     showFcstRef&&h('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:400,display:'flex',flexDirection:'column',padding:'20px'},onClick:e=>{if(e.target===e.currentTarget)setShowFcstRef(false);}},
       h('div',{style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',display:'flex',flexDirection:'column',flex:1,maxWidth:1100,margin:'0 auto',width:'100%',overflow:'hidden'}},
         h('div',{style:{display:'flex',alignItems:'center',gap:12,padding:'12px 18px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},

@@ -787,7 +787,13 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
   const [tab,          setTab]          = useState('recount');
   const [fobSettings,  setFobSettings]  = useState(() => loadFobSettings());
   const [showFobSet,   setShowFobSet]   = useState(false);
-  const [selClasses,   setSelClasses]   = useState(new Set());
+  const [selClasses,   setSelClasses]   = useState(() => {
+    try { const s=JSON.parse(localStorage.getItem('mf_eom_classes')||'[]'); return new Set(Array.isArray(s)?s:[]); } catch { return new Set(); }
+  });
+  const updateSelClasses = (next) => {
+    setSelClasses(next);
+    try { localStorage.setItem('mf_eom_classes', JSON.stringify([...next])); } catch {}
+  };
 
   // Route each uploaded file to the right store bucket by parsing store# from filename
   const onLoad = useCallback((type, data, name, err)=>{
@@ -869,7 +875,12 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
         ),
         div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},'Identify count accuracy issues before EOM close · Food & Condiment items only')
       ),
-      hasData&&h(PrintReport,{analysis,storeName:'Store '+selStore,period,selClasses}),
+      hasData&&div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:2}},
+        h(PrintReport,{analysis,storeName:'Store '+selStore,period,selClasses}),
+        selClasses.size>0&&span({style:{fontSize:'8px',color:'var(--accent)',letterSpacing:'.3px',opacity:.8}},
+          'Printing: '+[...selClasses].sort().join(', ')+' only'
+        )
+      ),
       btn({onClick:()=>setShowFobSet(v=>!v),title:'Edit FOB tolerances',
         style:{padding:'4px 10px',fontSize:'11px',border:'.5px solid var(--bdr)',borderRadius:4,
           background:showFobSet?'var(--amber)':'transparent',color:showFobSet?'#000':'var(--text3)',cursor:'pointer'}},
@@ -888,8 +899,8 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
 
     // Class filter row — only shown when data has multiple classes
     anyLoaded&&allClasses.length>1&&div({style:{display:'flex',gap:4,alignItems:'center',padding:'5px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',flexShrink:0,flexWrap:'wrap'}},
-      span({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginRight:4,whiteSpace:'nowrap'}},'Class:'),
-      btn({onClick:()=>setSelClasses(new Set()),
+      span({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginRight:4,whiteSpace:'nowrap'}},'Class Filter (view & print):'),
+      btn({onClick:()=>updateSelClasses(new Set()),
         style:{padding:'2px 9px',borderRadius:20,fontSize:'9px',cursor:'pointer',whiteSpace:'nowrap',
           background:!selClasses.size?'rgba(245,188,0,.18)':'transparent',
           color:!selClasses.size?'var(--amber)':'var(--text3)',
@@ -898,7 +909,7 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
       ...allClasses.map(cls=>{
         const active=selClasses.has(cls);
         return btn({key:cls,
-          onClick:()=>setSelClasses(prev=>{const n=new Set(prev);active?n.delete(cls):n.add(cls);return n;}),
+          onClick:()=>updateSelClasses((prev=>{const n=new Set(prev);active?n.delete(cls):n.add(cls);return n;})(selClasses)),
           style:{padding:'2px 9px',borderRadius:20,fontSize:'9px',cursor:'pointer',whiteSpace:'nowrap',
             background:active?'rgba(96,165,250,.15)':'transparent',
             color:active?'var(--accent)':'var(--text3)',
