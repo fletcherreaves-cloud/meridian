@@ -72,9 +72,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.303';
+const MERIDIAN_VERSION    = '4.304';
 const MERIDIAN_BUILD_DATE = '2026-07-04';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.304', date:'2026-07-04', changes:[
+    'Data Manager: added "FOB EOM Troubleshooter (per-store)" section listing the 6 QSRSoft inventory files needed per store (Contributors, On Hand, Summary, Variance Stat, Total P&L, History). Added EOM Supervisor auto-population callout showing which standard Meridian data types feed it (FOB Report → food cost, Operations Report → sales/labor, Controls → cash, Monthly Targets → projections).',
+  ]},
   {version:'4.303', date:'2026-07-04', changes:[
     'EOM Supervisor: class filter picker — multi-select pill row (All / Food / Paper / Condiment / etc.) filters all four tabs and the printed report by QSRSoft inventory class. Appears only when loaded data has more than one class. Printed report header shows the active class filter.',
   ]},

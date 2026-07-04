@@ -1499,6 +1499,24 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     dataRow('deliveryRows', '3PD Delivery Mix',   sessionCov.deliveryRows||{count:0}, 'var(--amber)', (slIdx+4)%2),
   ];
 
+  // EOM Troubleshooter file types (per-store, session-only — not persisted to ds)
+  const EON_FILES = [
+    {key:'contributors', label:'FOB Contributors',   hint:'*_Contributors_*.xlsx',          optional:false},
+    {key:'onhand',       label:'On Hand Inventory',  hint:'*_On Hand Inventory_*.xlsx',     optional:false},
+    {key:'summary',      label:'Inventory Summary',  hint:'*_Inventory Summary_*.xlsx',     optional:false},
+    {key:'variance',     label:'Variance Stat',      hint:'*_Variance Stat_*.xlsx',         optional:false},
+    {key:'pl',           label:'Total P&L Cost',     hint:'*_Total PL Cost_*.xlsx',         optional:false},
+    {key:'history',      label:'Inventory History',  hint:'*_Inventory History_*.xlsx',     optional:true},
+  ];
+  const eomFileRows = EON_FILES.map((f,i)=>h('tr',{key:'eom-'+f.key,
+    style:{background:i%2?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+    h('td',{style:{padding:'5px 10px',fontWeight:600,color:f.optional?'var(--text3)':'var(--text)',fontSize:'8.5px'}},
+      f.label,
+      f.optional&&span({style:{marginLeft:4,fontSize:'7px',color:'var(--text3)',fontWeight:400}},'(optional)')),
+    h('td',{style:{padding:'5px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'7.5px'}},'session'),
+    h('td',{colSpan:2,style:{padding:'5px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'7.5px',opacity:.7}},f.hint)
+  ));
+
   // Pre-build Supabase rows — SMG FullScale shown per period
   const cfM = supabaseCov.monthlyTargets||{count:0};
   const fsPeriods = supabaseCov.fsPeriods||[];
@@ -1578,7 +1596,9 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
             sectionHdr('hdr-pipeline','Pipeline & Session Data'),
             ...pipelineRows,
             sectionHdr('hdr-cloud','Supabase (Cloud-backed)'),
-            ...cloudRows
+            ...cloudRows,
+            sectionHdr('hdr-eom','FOB EOM Troubleshooter (per-store, session only)'),
+            ...eomFileRows
           )  // tbody
           ),  // table
           // Info box
@@ -1593,6 +1613,14 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
             fontSize:'9px',color:'var(--amber)',lineHeight:1.7}},
             '⚠ No data stored yet. Load your Excel files — Meridian will persist them automatically. ',
             'Next time you open the app, the data will already be there.'
+          ),
+          // EOM Supervisor auto-population note
+          div({style:{padding:'9px 14px',background:'rgba(96,165,250,.06)',
+            borderRadius:'var(--r)',border:'.5px solid rgba(96,165,250,.15)',marginBottom:10,
+            fontSize:'8.5px',color:'var(--text3)',lineHeight:1.8}},
+            span({style:{fontWeight:700,color:'var(--accent)',marginRight:4}},'EOM Supervisor auto-populates from:'),
+            span(null,'FOB Report → food cost actuals · Operations Report → sales & labor actuals · Controls → cash · Monthly Targets → projections. '),
+            span({style:{opacity:.7}},'FOB EOM Troubleshooter uses the 6 per-store QSRSoft inventory files listed above (re-upload each month — not persisted).')
           ),
           // Status
           status&&div({style:{marginBottom:10,fontSize:'9px',color:'#10b981'}},(status)),
