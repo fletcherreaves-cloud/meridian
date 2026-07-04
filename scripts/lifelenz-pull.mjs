@@ -374,12 +374,11 @@ async function getStoreSchedules(token) {
   const base = `${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`;
 
   let all = [];
-  let pageNum = 1;
+  let nextUrl = base; // start with no query params — API rejects page[] params
 
-  while (true) {
-    const url = `${base}?page[number]=${pageNum}&page[size]=100`;
-    const resp = await fetch(url, { headers });
-    console.log(`[schedules] REST page ${pageNum} →`, resp.status);
+  while (nextUrl) {
+    const resp = await fetch(nextUrl, { headers });
+    console.log(`[schedules] REST →`, resp.status, nextUrl === base ? '' : '(next page)');
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
       throw new Error(`[schedules] REST schedules ${resp.status}: ${body.slice(0, 200)}`);
@@ -388,11 +387,10 @@ async function getStoreSchedules(token) {
     const data = await resp.json();
     const records = data?.data || [];
     all = all.concat(records);
-    if (DEBUG) console.log(`[schedules] page ${pageNum}: ${records.length} records, total so far: ${all.length}`);
+    if (DEBUG) console.log(`[schedules] batch: ${records.length} records, total so far: ${all.length}`);
 
-    // JSON:API pagination: stop when fewer than page[size] records returned
-    if (records.length < 100) break;
-    pageNum++;
+    // Follow JSON:API links.next if present
+    nextUrl = data?.links?.next || null;
   }
 
   console.log(`[schedules] ${all.length} total schedules from REST`);
