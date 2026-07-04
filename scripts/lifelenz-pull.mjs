@@ -386,7 +386,7 @@ async function getStoreSchedules(token) {
   let page = 0;
 
   do {
-    const resp = await fetch(`${BASE}/graphql?GetPdfReportsBusinessOfficeLocations`, {
+    const resp = await fetch(`${BASE}/manager/graphql?GetPdfReportsBusinessOfficeLocations`, {
       method: 'POST',
       headers: gqlHeaders,
       body: JSON.stringify({
