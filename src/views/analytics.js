@@ -5878,7 +5878,7 @@ function ModelHealthBadge({loc, settings, ds, showDetail}) {
       div({style:{display:'flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:10,
         background:health.gradeColor+'22',border:'.5px solid '+health.gradeColor+'66'}},
         div({style:{width:6,height:6,borderRadius:'50%',background:health.gradeColor,flexShrink:0}}),
-        span({style:{fontWeight:700,fontSize:'9px',color:health.gradeColor}},health.total),
+        health.total!=null&&span({style:{fontWeight:700,fontSize:'9px',color:health.gradeColor}},health.total),
         span({style:{fontSize:'8px',color:health.gradeColor}},' '+health.gradeLabel)
       ),
       showDetail&&span({style:{fontSize:'8px',color:'var(--text3)',marginLeft:2}},open?'▲':'▼')
@@ -6086,7 +6086,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // ── Model health ───────────────────────────────────────────────
   const hlth=React.useMemo(()=>{
     let g=0,y=0,r=0;
-    allLocs.forEach(loc=>{const h=modelHealthScore(loc,ds,settings);if(h.score>=75)g++;else if(h.score>=50)y++;else r++;});
+    allLocs.forEach(loc=>{const h=modelHealthScore(loc,ds,settings);if(h.score==null)return;if(h.score>=75)g++;else if(h.score>=50)y++;else r++;});
     return{green:g,yellow:y,red:r};
   },[allLocs,ds?.laborRows?.length,settings?.dialedIn]);
 

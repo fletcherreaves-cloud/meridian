@@ -681,6 +681,17 @@ function getWxAdj(wIdx,loc,date,ws,empirical,ds){
 }
 // MODEL HEALTH SCORE — 0 to 100 per store
 function modelHealthScore(loc, ds, settings) {
+  // New/ramp stores (recentOnly flag + no DI calibration yet) are exempt from
+  // health scoring — they cannot satisfy calibration or MAPE requirements by
+  // design. Return a neutral "Not applicable" grade so they don't pollute
+  // district health dashboards.
+  const _masgn = DEFAULT_MODEL_ASSIGNMENTS[loc];
+  if(_masgn&&_masgn.recentOnly&&!(settings.dialedIn&&settings.dialedIn[loc])){
+    return{score:null,grade:{label:'New Store',color:'#64748b',emoji:'🔵'},
+      reasons:[{cat:'Status',pts:null,max:null,msg:'New/ramp-up store — DI calibration not yet applicable'}],
+      statement:'New or recently opened store. Health scoring not applicable until calibration window (typically 6 months of history).',
+      samples:0,dataDaysOld:999,newStore:true};
+  }
   const di = settings.dialedIn&&settings.dialedIn[loc];
   const today = Date.now();
   let score = 0;
@@ -1543,6 +1554,13 @@ function getDIRecommendation(r) {
 // Tells you instantly: "Can I trust this forecast?"
 // Green ≥75 = Trust it   Yellow 50-74 = Use with judgment   Red <50 = Needs work
 function computeModelHealth(loc, settings, ds) {
+  const _masgn2 = DEFAULT_MODEL_ASSIGNMENTS[loc];
+  if(_masgn2&&_masgn2.recentOnly&&!(settings.dialedIn&&settings.dialedIn[loc])){
+    return{total:null,grade:'blue',gradeLabel:'New Store',gradeColor:'#64748b',
+      components:{cal:null,fresh:null,mape:null,sample:null},
+      notes:{cal:'New/ramp-up store',fresh:'',mape:'',sample:''},
+      statement:'New or recently opened store — calibration not yet applicable.',newStore:true};
+  }
   const cal = settings.dialedIn && settings.dialedIn[loc];
   const dataRows = (ds && ds.laborRows || []).filter(r => r.loc === loc && r.sales > 0);
 

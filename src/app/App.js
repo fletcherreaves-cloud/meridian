@@ -72,7 +72,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.307';
+const MERIDIAN_VERSION    = '4.308';
 const MERIDIAN_BUILD_DATE = '2026-07-04';
 const MERIDIAN_CHANGELOG  = [
   {version:'4.306', date:'2026-07-04', changes:[
