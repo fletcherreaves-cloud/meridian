@@ -350,27 +350,79 @@ async function getAuthToken() {
   return authToken;
 }
 
+// ── Common headers for all us01-connect.lifelenz.com API calls ───────────
+// Captured from DevTools: these headers are required alongside X-Auth-Token.
+function apiHeaders(token, scheduleId = null) {
+  const h = {
+    'X-Auth-Token':      token,
+    'X-Business-Id':     BUSINESS_ID,
+    'X-Lifelenz-Device': 'webadmin',
+    'Accept':            'application/json',
+    'Content-Type':      'application/json',
+  };
+  if (scheduleId) h['X-Schedule-Id'] = scheduleId;
+  return h;
+}
+
 // ── Step 2: Discover active store schedules ───────────────────────────────
 async function getStoreSchedules(token) {
-  const url = `${BASE}/workforce/business/${BUSINESS_ID}/schedules`;
-  const resp = await fetch(url, {
-    headers: { 'X-Auth-Token': token, 'Accept': 'application/json' },
-  });
+  // Confirmed base path from DevTools:
+  // /api/admin/report/businesses/{id}/schedules/{scheduleId}/labor_analysis_actuals_report
+  // Try REST candidate paths for the schedule list (GraphQL is used in-browser,
+  // but the report download path reveals the REST base).
+  const candidates = [
+    `${BASE}/api/admin/report/businesses/${BUSINESS_ID}/schedules`,
+    `${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`,
+    `${BASE}/api/v1/businesses/${BUSINESS_ID}/schedules`,
+    `${BASE}/api/businesses/${BUSINESS_ID}/schedules`,
+  ];
 
-  if (!resp.ok) {
-    throw new Error(`[schedules] HTTP ${resp.status} from ${url}`);
+  let data = null;
+  for (const url of candidates) {
+    try {
+      const resp = await fetch(url, { headers: apiHeaders(token) });
+      console.log('[schedules] trying:', url, '→', resp.status);
+      if (resp.ok) {
+        data = await resp.json();
+        if (DEBUG) console.log('[schedules] raw:', JSON.stringify(data).slice(0, 500));
+        break;
+      }
+    } catch (e) {
+      console.log('[schedules] REST error:', e.message);
+    }
   }
 
-  const data = await resp.json();
-  if (DEBUG) console.log('[schedules] raw:', JSON.stringify(data).slice(0, 500));
+  if (!data) {
+    // GraphQL fallback — the browser uses graphql?GetPdfReportsBusinessOfficials
+    // to list available schedules. Try a simple query.
+    try {
+      const gqlResp = await fetch(`${BASE}/graphql?GetSchedules`, {
+        method: 'POST',
+        headers: { ...apiHeaders(token), 'Accept': 'application/json' },
+        body: JSON.stringify({
+          operationName: 'GetSchedules',
+          query: `query GetSchedules($businessId: ID!) {
+            schedules(businessId: $businessId) { id name scheduleName }
+          }`,
+          variables: { businessId: BUSINESS_ID },
+        }),
+      });
+      console.log('[schedules] GraphQL GetSchedules →', gqlResp.status);
+      if (gqlResp.ok) {
+        const gql = await gqlResp.json();
+        if (DEBUG) console.log('[schedules] GraphQL raw:', JSON.stringify(gql).slice(0, 500));
+        data = gql?.data?.schedules;
+      }
+    } catch (e) {
+      console.log('[schedules] GraphQL error:', e.message);
+    }
+  }
 
-  // LifeLenz returns an array of schedule objects.
-  // Filter to store schedules only (exclude group/dept schedules that HTTP 422 on reports).
-  // Store schedules have their store number in the name.
+  if (!data) throw new Error('[schedules] all discovery attempts failed — check logs above');
+
   const all = Array.isArray(data) ? data : (data.schedules || data.data || []);
   const stores = all.filter(s => {
     const name = String(s.name || s.scheduleName || '');
-    // Keep if name contains a 7-digit store number (e.g. 0003708) or 4-digit (3708)
     return /\b\d{4,7}\b/.test(name);
   });
 
@@ -381,40 +433,36 @@ async function getStoreSchedules(token) {
 // ── Step 3: Download Labor Analysis report for one store + date range ──────
 // Returns parsed rows array, or [] on error.
 async function fetchReportChunk(token, scheduleId, startDate, endDate) {
-  // Try common LifeLenz report endpoints (different API versions)
-  const endpoints = [
-    `${BASE}/workforce/business/${BUSINESS_ID}/schedules/${scheduleId}/reports/labour-analysis-summary?startDate=${toISO(startDate)}&endDate=${toISO(endDate)}&format=csv`,
-    `${BASE}/workforce/business/${BUSINESS_ID}/schedules/${scheduleId}/reports/labor-analysis-summary?startDate=${toISO(startDate)}&endDate=${toISO(endDate)}&format=csv`,
-    `${BASE}/workforce/v1/business/${BUSINESS_ID}/schedules/${scheduleId}/reports?type=LABOUR_ANALYSIS_SUMMARY&startDate=${toISO(startDate)}&endDate=${toISO(endDate)}&format=csv`,
-    `${BASE}/api/v1/schedule/${scheduleId}/report/labor-analysis?start=${toISO(startDate)}&end=${toISO(endDate)}&format=csv`,
-  ];
+  // Confirmed working URL from DevTools (Status 200, Content-Type: text/csv):
+  // /api/admin/report/businesses/{id}/schedules/{scheduleId}/labor_analysis_actuals_report
+  // Parameters: start_date, end_date, type=csv
+  const confirmedUrl = `${BASE}/api/admin/report/businesses/${BUSINESS_ID}/schedules/${scheduleId}/labor_analysis_actuals_report?start_date=${toISO(startDate)}&end_date=${toISO(endDate)}&type=csv`;
 
   let csvText = null;
-  for (const url of endpoints) {
-    try {
-      const resp = await fetch(url, {
-        headers: { 'X-Auth-Token': token, 'Accept': 'text/csv, application/json' },
-      });
-      if (resp.status === 422 || resp.status === 404) break; // schedule doesn't support this
-      if (!resp.ok) continue;
-
+  try {
+    const resp = await fetch(confirmedUrl, {
+      headers: {
+        ...apiHeaders(token, scheduleId),
+        'X-Page-Module': 'reports-pdf',
+        'Accept': 'text/csv, */*',
+      },
+    });
+    console.log('[report] confirmed endpoint →', resp.status, scheduleId);
+    if (resp.ok) {
       const ct = resp.headers.get('content-type') || '';
       if (ct.includes('json')) {
-        // Async/staging response — poll until ready
         const job = await resp.json();
         if (DEBUG) console.log('[report] async job response:', JSON.stringify(job).slice(0, 300));
         csvText = await pollForReport(token, job, scheduleId, startDate, endDate);
-        if (csvText) break;
       } else {
         csvText = await resp.text();
-        if (csvText && csvText.length > 50) break;
       }
-    } catch (e) {
-      if (DEBUG) console.warn('[report] endpoint error:', url, e.message);
     }
+  } catch (e) {
+    console.warn('[report] confirmed endpoint error:', e.message);
   }
 
-  return csvText ? parseCSV(csvText) : [];
+  return csvText && csvText.length > 50 ? parseCSV(csvText) : [];
 }
 
 // Poll for async report completion
@@ -424,7 +472,7 @@ async function pollForReport(token, job, scheduleId, startDate, endDate, maxAtte
 
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise(r => setTimeout(r, 3000));
-    const pollUrl = `${BASE}/workforce/business/${BUSINESS_ID}/schedules/${scheduleId}/reports/${reportId}`;
+    const pollUrl = `${BASE}/api/admin/report/businesses/${BUSINESS_ID}/schedules/${scheduleId}/reports/${reportId}`;
     const resp = await fetch(pollUrl, { headers: { 'X-Auth-Token': token } });
     if (!resp.ok) continue;
     const ct = resp.headers.get('content-type') || '';
