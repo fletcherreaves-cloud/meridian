@@ -364,69 +364,57 @@ function apiHeaders(token, scheduleId = null) {
   return h;
 }
 
-// ── Step 2: Discover active store schedules ───────────────────────────────
+// ── Step 2: Discover active store schedules via confirmed GraphQL query ───
+// Query confirmed from browser DevTools — GetPdfReportsBusinessOfficeLocations
+// returns all managed office locations (stores) for the business.
+// Response: { data: { businessOfficeLocations: { edges: [{ node: { id, officeName } }], pageInfo } } }
+//
+// NOTE: node.id is the OFFICE LOCATION id. The report download URL uses a
+// "scheduleId" which may or may not equal the location id. We try the location
+// id first — if the report returns 404 we'll know to investigate further.
 async function getStoreSchedules(token) {
-  // Confirmed base path from DevTools:
-  // /api/admin/report/businesses/{id}/schedules/{scheduleId}/labor_analysis_actuals_report
-  // Try REST candidate paths for the schedule list (GraphQL is used in-browser,
-  // but the report download path reveals the REST base).
-  const candidates = [
-    `${BASE}/api/admin/report/businesses/${BUSINESS_ID}/schedules`,
-    `${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`,
-    `${BASE}/api/v1/businesses/${BUSINESS_ID}/schedules`,
-    `${BASE}/api/businesses/${BUSINESS_ID}/schedules`,
-  ];
-
-  let data = null;
-  for (const url of candidates) {
-    try {
-      const resp = await fetch(url, { headers: apiHeaders(token) });
-      console.log('[schedules] trying:', url, '→', resp.status);
-      if (resp.ok) {
-        data = await resp.json();
-        if (DEBUG) console.log('[schedules] raw:', JSON.stringify(data).slice(0, 500));
-        break;
-      }
-    } catch (e) {
-      console.log('[schedules] REST error:', e.message);
+  const gqlHeaders = { ...apiHeaders(token), 'Accept': 'application/json' };
+  const GQL_QUERY = `query GetPdfReportsBusinessOfficeLocations($businessId: ID!, $managedLocationsOnly: Boolean!, $after: String) {
+    businessOfficeLocations(businessId: $businessId, managedLocationsOnly: $managedLocationsOnly, after: $after) {
+      edges { node { id officeName } }
+      pageInfo { endCursor hasNextPage }
     }
-  }
+  }`;
 
-  if (!data) {
-    // GraphQL fallback — the browser uses graphql?GetPdfReportsBusinessOfficials
-    // to list available schedules. Try a simple query.
-    try {
-      const gqlResp = await fetch(`${BASE}/graphql?GetSchedules`, {
-        method: 'POST',
-        headers: { ...apiHeaders(token), 'Accept': 'application/json' },
-        body: JSON.stringify({
-          operationName: 'GetSchedules',
-          query: `query GetSchedules($businessId: ID!) {
-            schedules(businessId: $businessId) { id name scheduleName }
-          }`,
-          variables: { businessId: BUSINESS_ID },
-        }),
-      });
-      console.log('[schedules] GraphQL GetSchedules →', gqlResp.status);
-      if (gqlResp.ok) {
-        const gql = await gqlResp.json();
-        if (DEBUG) console.log('[schedules] GraphQL raw:', JSON.stringify(gql).slice(0, 500));
-        data = gql?.data?.schedules;
-      }
-    } catch (e) {
-      console.log('[schedules] GraphQL error:', e.message);
-    }
-  }
+  let edges = [];
+  let after = null;
+  let page = 0;
 
-  if (!data) throw new Error('[schedules] all discovery attempts failed — check logs above');
+  do {
+    const resp = await fetch(`${BASE}/graphql?GetPdfReportsBusinessOfficeLocations`, {
+      method: 'POST',
+      headers: gqlHeaders,
+      body: JSON.stringify({
+        operationName: 'GetPdfReportsBusinessOfficeLocations',
+        query: GQL_QUERY,
+        variables: { businessId: BUSINESS_ID, managedLocationsOnly: true, after },
+      }),
+    });
+    console.log(`[schedules] GraphQL page ${++page} →`, resp.status);
+    if (!resp.ok) throw new Error(`[schedules] GraphQL ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
 
-  const all = Array.isArray(data) ? data : (data.schedules || data.data || []);
-  const stores = all.filter(s => {
-    const name = String(s.name || s.scheduleName || '');
-    return /\b\d{4,7}\b/.test(name);
-  });
+    const gql = await resp.json();
+    if (gql.errors) console.warn('[schedules] GQL errors:', JSON.stringify(gql.errors).slice(0, 300));
+    if (DEBUG) console.log('[schedules] GQL raw:', JSON.stringify(gql).slice(0, 600));
 
-  console.log(`[schedules] found ${all.length} total, ${stores.length} store schedules`);
+    const conn = gql?.data?.businessOfficeLocations;
+    edges = edges.concat(conn?.edges || []);
+    after = conn?.pageInfo?.hasNextPage ? conn.pageInfo.endCursor : null;
+  } while (after);
+
+  console.log(`[schedules] found ${edges.length} office locations`);
+
+  const stores = edges
+    .map(({ node }) => ({ id: node.id, name: node.officeName }))
+    .filter(s => /\b\d{4,7}\b/.test(s.name));
+
+  console.log(`[schedules] ${stores.length} store schedules after filter`);
+  if (DEBUG) stores.forEach(s => console.log(`  [schedules]   ${s.name} → ${s.id}`));
   return stores;
 }
 
