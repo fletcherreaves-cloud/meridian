@@ -375,12 +375,35 @@ function apiHeaders(token, scheduleId = null) {
 // id first — if the report returns 404 we'll know to investigate further.
 async function getStoreSchedules(token) {
   const gqlHeaders = { ...apiHeaders(token), 'Accept': 'application/json' };
-  // Request schedules sub-field alongside location id — the report download
-  // uses a scheduleId that differs from the location id (node.id).
-  // If schedules { id } is a valid field, we get the mapping in one query.
+
+  // Introspect BusinessOfficeLocation to find which field holds the schedule id.
+  // 'schedules' (plural) was rejected. This logs every available field name once.
+  try {
+    const introResp = await fetch(`${BASE}/manager/graphql?IntrospectBusinessOfficeLocation`, {
+      method: 'POST',
+      headers: gqlHeaders,
+      body: JSON.stringify({
+        query: `{ __type(name: "BusinessOfficeLocation") { fields { name type { name kind ofType { name kind } } } } }`,
+      }),
+    });
+    if (introResp.ok) {
+      const intro = await introResp.json();
+      const fields = intro?.data?.__type?.fields;
+      if (fields) {
+        console.log('[schedules] BusinessOfficeLocation fields:', fields.map(f => `${f.name}:${f.type?.name || f.type?.kind}`).join(', '));
+      } else {
+        console.log('[schedules] introspection returned no fields:', JSON.stringify(intro).slice(0, 300));
+      }
+    } else {
+      console.log('[schedules] introspection →', introResp.status);
+    }
+  } catch (e) {
+    console.log('[schedules] introspection error:', e.message);
+  }
+
   const GQL_QUERY = `query GetPdfReportsBusinessOfficeLocations($businessId: ID!, $managedLocationsOnly: Boolean!, $after: String) {
     businessOfficeLocations(businessId: $businessId, managedLocationsOnly: $managedLocationsOnly, after: $after) {
-      edges { node { id officeName schedules { id name } } }
+      edges { node { id officeName } }
       pageInfo { endCursor hasNextPage }
     }
   }`;
@@ -413,19 +436,12 @@ async function getStoreSchedules(token) {
 
   console.log(`[schedules] found ${edges.length} office locations`);
 
-  // Prefer the first schedule's id if the API returned nested schedules;
-  // otherwise fall back to the office location id (which 404s on the report endpoint).
   const stores = edges
-    .map(({ node }) => {
-      const sched = node.schedules?.[0];
-      const scheduleId = sched?.id ?? node.id;
-      if (DEBUG) console.log(`  [schedules] ${node.officeName} locationId=${node.id} scheduleId=${scheduleId} (via ${sched ? 'schedules[]' : 'locationId fallback'})`);
-      return { id: scheduleId, name: node.officeName, locationId: node.id };
-    })
+    .map(({ node }) => ({ id: node.id, name: node.officeName }))
     .filter(s => /\b\d{4,7}\b/.test(s.name));
 
   console.log(`[schedules] ${stores.length} store schedules after filter`);
-  if (!DEBUG) stores.forEach(s => console.log(`  [schedules]   ${s.name} → ${s.id}`));
+  if (DEBUG) stores.forEach(s => console.log(`  [schedules]   ${s.name} → ${s.id}`));
   return stores;
 }
 
