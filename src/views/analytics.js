@@ -8099,19 +8099,38 @@ function ChannelIntelligencePanel({stores, ds, onClose}) {
 function computeMonthActuals(ds, year, month) {
   const labor = {}, fob = {};
   const dates = new Set();
+  const laborCovered = new Set();
 
-  // Aggregate labor rows
+  // Aggregate labor rows (manual uploads)
   (ds&&ds.laborRows||[]).forEach(r => {
     if (!r.date || !r.loc) return;
     const d = r.date instanceof Date ? r.date : new Date(r.date);
     if (d.getFullYear() !== year || d.getMonth()+1 !== month) return;
-    dates.add(d.toISOString().slice(0,10));
+    const dateStr = d.toISOString().slice(0,10);
+    dates.add(dateStr);
+    laborCovered.add(String(r.loc) + '|' + dateStr);
     const k = String(r.loc);
     if (!labor[k]) labor[k] = {sales:0, laborDol:0, tpphNum:0, tpphDen:0};
     const s = r.sales||0;
     labor[k].sales += s;
     labor[k].laborDol += (r.laborPct||0) * s;
     if (r.tpph > 0) { labor[k].tpphNum += r.tpph * s; labor[k].tpphDen += s; }
+  });
+
+  // Supplement with auto-synced LifeLenz schedRows for any loc+date not already
+  // covered by laborRows — prevents double-counting when both are loaded.
+  (ds&&ds.schedRows||[]).forEach(r => {
+    if (!r.date || !r.loc || !r.sales) return;
+    const d = r.date instanceof Date ? r.date : new Date(r.date);
+    if (d.getFullYear() !== year || d.getMonth()+1 !== month) return;
+    const dateStr = d.toISOString().slice(0,10);
+    if (laborCovered.has(String(r.loc) + '|' + dateStr)) return;
+    dates.add(dateStr);
+    const k = String(r.loc);
+    if (!labor[k]) labor[k] = {sales:0, laborDol:0, tpphNum:0, tpphDen:0};
+    const s = r.sales||0;
+    labor[k].sales += s;
+    labor[k].laborDol += (r.laborPct||0) * s;
   });
 
   // Aggregate FOB rows

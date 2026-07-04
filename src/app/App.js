@@ -72,9 +72,13 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.281';
-const MERIDIAN_BUILD_DATE = '2026-07-03';
+const MERIDIAN_VERSION    = '4.302';
+const MERIDIAN_BUILD_DATE = '2026-07-04';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.302', date:'2026-07-04', changes:[
+    'Monthly Projections patch reports: previous month actuals now populate from the auto-synced LifeLenz schedule data (ds.schedRows) when manual labor uploads are absent — computeMonthActuals supplements laborRows with schedRows for any loc+date not already covered, preventing double-counting.',
+    'Supabase persistence for fobRows, opsRows, ctrlRows, darRows: save on upload, load on startup — cloud-first cross-device sync (v4.301 code, version number correction).',
+  ]},
   {version:'4.281', date:'2026-07-03', changes:[
     'SAGE AI Assistant: Claude Opus 4.8-powered advisor with access to all Meridian data. Chat with SAGE about district performance, store trends, labor opportunities, food cost, and correlation signals. Opens via 🧠 SAGE in the sidebar. Requires ANTHROPIC_API_KEY set in Supabase Edge Function secrets and deployment of the sage-chat Edge Function.',
   ]},
