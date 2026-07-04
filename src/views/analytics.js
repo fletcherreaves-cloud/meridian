@@ -1493,11 +1493,10 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   );
 
   const pipelineRows = [
-    dataRow('schedRows', 'LifeLenz Scheduling', sessionCov.schedRows||{count:0}, 'var(--amber)', 0),
     slRow,
     ...qsrPipelineRows,
-    dataRow('smgRows',      'SMG VOICE Comments', sessionCov.smgRows||{count:0},      'var(--amber)', (slIdx+4)%2),
-    dataRow('deliveryRows', '3PD Delivery Mix',   sessionCov.deliveryRows||{count:0}, 'var(--amber)', (slIdx+5)%2),
+    dataRow('smgRows',      'SMG VOICE Comments', sessionCov.smgRows||{count:0},      'var(--amber)', (slIdx+3)%2),
+    dataRow('deliveryRows', '3PD Delivery Mix',   sessionCov.deliveryRows||{count:0}, 'var(--amber)', (slIdx+4)%2),
   ];
 
   // Pre-build Supabase rows — SMG FullScale shown per period
@@ -1524,6 +1523,18 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:cfM.count?'var(--accent)':'var(--text3)',fontWeight:cfM.count?700:400}},cfM.count?cfM.count+' stores':'—'),
       h('td',{colSpan:2,style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},cfM.count?cfM.label||'—':'—')
     ),
+    (()=>{const sc=sessionCov.schedRows||{count:0};const hasData=sc.count>0;const alt=(fsPeriods.length+1)%2===0;
+      return h('tr',{key:'lifelenz-sched',style:{background:alt?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+        h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
+          hasData?staleDot(sc):null,'LifeLenz Schedule'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'var(--accent)':'var(--text3)',fontWeight:hasData?700:400}},
+          hasData?sc.count.toLocaleString()+' rows':'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},
+          hasData?sc.from:'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},
+          hasData?sc.to:'GitHub Actions sync')
+      );
+    })(),
   ];
 
   const colVal = (c,k) => c?.[k] != null ? c[k] : '—';
