@@ -72,9 +72,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.302';
+const MERIDIAN_VERSION    = '4.303';
 const MERIDIAN_BUILD_DATE = '2026-07-04';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.303', date:'2026-07-04', changes:[
+    'EOM Supervisor: class filter picker — multi-select pill row (All / Food / Paper / Condiment / etc.) filters all four tabs and the printed report by QSRSoft inventory class. Appears only when loaded data has more than one class. Printed report header shows the active class filter.',
+  ]},
   {version:'4.302', date:'2026-07-04', changes:[
     'Monthly Projections patch reports: previous month actuals now populate from the auto-synced LifeLenz schedule data (ds.schedRows) when manual labor uploads are absent — computeMonthActuals supplements laborRows with schedRows for any loc+date not already covered, preventing double-counting.',
     'Supabase persistence for fobRows, opsRows, ctrlRows, darRows: save on upload, load on startup — cloud-first cross-device sync (v4.301 code, version number correction).',

@@ -572,13 +572,14 @@ function OperationalIssuesSection({noOH}) {
   );
 }
 
-function PrintReport({analysis, storeName, period}) {
+function PrintReport({analysis, storeName, period, selClasses}) {
   const handlePrint = () => {
     const {fobStatus, fob, totalFC, recountList, countAlerts, complianceIssues, noOH} = analysis;
     const now = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    const classLabel = selClasses&&selClasses.size ? `  [Class: ${[...selClasses].sort().join(', ')}]` : '';
     const lines = [
       `FOB END OF MONTH TROUBLESHOOTER`,
-      `${storeName||'Store'} · ${period} · Generated ${now}`,
+      `${storeName||'Store'} · ${period}${classLabel} · Generated ${now}`,
       ``,
       `═══ FOB STATUS ═══════════════════════════════════════════════════`,
       ...(fobStatus||[]).filter(c=>!c.cat.toLowerCase().includes('base food')).map(c=>`  ${c.cat.padEnd(22)} Actual: ${(c.actPct*100).toFixed(2).padStart(6)}%  Target: ${(c.target*100).toFixed(2).padStart(6)}%  Diff: ${c.diffDol>=0?'+':''}${c.diffDol.toFixed(2)}`),
@@ -786,6 +787,7 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
   const [tab,          setTab]          = useState('recount');
   const [fobSettings,  setFobSettings]  = useState(() => loadFobSettings());
   const [showFobSet,   setShowFobSet]   = useState(false);
+  const [selClasses,   setSelClasses]   = useState(new Set());
 
   // Route each uploaded file to the right store bucket by parsing store# from filename
   const onLoad = useCallback((type, data, name, err)=>{
@@ -803,17 +805,26 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
   // Files for the currently selected store
   const loadedFiles = useMemo(()=>storeData[selStore]||{},[storeData,selStore]);
 
+  const allClasses = useMemo(()=>{
+    const s=new Set();
+    (loadedFiles.onhand||[]).forEach(r=>r.cls&&s.add(r.cls));
+    (loadedFiles.summary||[]).forEach(r=>r.cls&&s.add(r.cls));
+    (loadedFiles.variance||[]).forEach(r=>r.cls&&s.add(r.cls));
+    return [...s].filter(Boolean).sort();
+  },[loadedFiles]);
+
   const analysis = useMemo(()=>{
     const {contributors,onhand,summary,variance,pl} = loadedFiles;
     if (!contributors&&!onhand&&!variance) return null;
+    const byClass = r => !selClasses.size || selClasses.has(r.cls||'');
     return analyzeData({
       contributors: contributors||null,
-      onHand: onhand||null,
-      summary: summary||null,
-      variance: variance||null,
+      onHand:   onhand   ? onhand.filter(byClass)   : null,
+      summary:  summary  ? summary.filter(byClass)  : null,
+      variance: variance ? variance.filter(byClass) : null,
       pl: pl||null,
     });
-  },[loadedFiles]);
+  },[loadedFiles, selClasses]);
 
   // Detect period from any loaded filename
   const period = useMemo(()=>{
@@ -858,7 +869,7 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
         ),
         div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},'Identify count accuracy issues before EOM close · Food & Condiment items only')
       ),
-      hasData&&h(PrintReport,{analysis,storeName:'Store '+selStore,period}),
+      hasData&&h(PrintReport,{analysis,storeName:'Store '+selStore,period,selClasses}),
       btn({onClick:()=>setShowFobSet(v=>!v),title:'Edit FOB tolerances',
         style:{padding:'4px 10px',fontSize:'11px',border:'.5px solid var(--bdr)',borderRadius:4,
           background:showFobSet?'var(--amber)':'transparent',color:showFobSet?'#000':'var(--text3)',cursor:'pointer'}},
@@ -875,6 +886,26 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
     // FOB Status (when data loaded for selected store)
     hasData&&analysis.fobStatus.length>0&&h(FOBStatusBar,{fobStatus:analysis.fobStatus,fobSettings}),
 
+    // Class filter row — only shown when data has multiple classes
+    anyLoaded&&allClasses.length>1&&div({style:{display:'flex',gap:4,alignItems:'center',padding:'5px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',flexShrink:0,flexWrap:'wrap'}},
+      span({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginRight:4,whiteSpace:'nowrap'}},'Class:'),
+      btn({onClick:()=>setSelClasses(new Set()),
+        style:{padding:'2px 9px',borderRadius:20,fontSize:'9px',cursor:'pointer',whiteSpace:'nowrap',
+          background:!selClasses.size?'rgba(245,188,0,.18)':'transparent',
+          color:!selClasses.size?'var(--amber)':'var(--text3)',
+          border:!selClasses.size?'1px solid rgba(245,188,0,.4)':'.5px solid var(--bdr)',
+          fontWeight:!selClasses.size?700:400}},'All ('+allClasses.length+')'),
+      ...allClasses.map(cls=>{
+        const active=selClasses.has(cls);
+        return btn({key:cls,
+          onClick:()=>setSelClasses(prev=>{const n=new Set(prev);active?n.delete(cls):n.add(cls);return n;}),
+          style:{padding:'2px 9px',borderRadius:20,fontSize:'9px',cursor:'pointer',whiteSpace:'nowrap',
+            background:active?'rgba(96,165,250,.15)':'transparent',
+            color:active?'var(--accent)':'var(--text3)',
+            border:active?'1px solid rgba(96,165,250,.4)':'.5px solid var(--bdr)',
+            fontWeight:active?700:400}},cls);
+      })
+    ),
     // Tab bar
     div({style:{display:'flex',gap:0,padding:'0 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,overflowX:'auto',background:'var(--surf)'}},
       ...(anyLoaded?TABS:TABS.filter(t=>t.id==='upload')).map(tabBtn)
