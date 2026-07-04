@@ -376,29 +376,43 @@ function apiHeaders(token, scheduleId = null) {
 async function getStoreSchedules(token) {
   const gqlHeaders = { ...apiHeaders(token), 'Accept': 'application/json' };
 
-  // Introspect BusinessOfficeLocation to find which field holds the schedule id.
-  // 'schedules' (plural) was rejected. This logs every available field name once.
+  // The browser gets schedule IDs via a SECOND request after clicking a store —
+  // not from GetPdfReportsBusinessOfficeLocations (which only returns location data).
+  // Probe REST endpoints and the Query schema to find how to get schedule IDs.
   try {
-    const introResp = await fetch(`${BASE}/manager/graphql?IntrospectBusinessOfficeLocation`, {
+    // 1. Try REST listing of all business schedules
+    for (const ep of [
+      `/api/admin/businesses/${BUSINESS_ID}/schedules`,
+      `/api/admin/report/businesses/${BUSINESS_ID}/schedules`,
+      `/api/admin/businesses/${BUSINESS_ID}/offices`,
+      `/api/admin/businesses/${BUSINESS_ID}/locations`,
+    ]) {
+      const r = await fetch(`${BASE}${ep}`, { headers: apiHeaders(token) });
+      console.log(`[discovery] REST ${ep} → ${r.status}`);
+      if (r.ok) {
+        const d = await r.json().catch(() => null);
+        console.log(`[discovery] REST body:`, JSON.stringify(d).slice(0, 500));
+        break;
+      }
+    }
+
+    // 2. Introspect Query root for any schedule-related fields
+    const introResp = await fetch(`${BASE}/manager/graphql?IntrospectQuery`, {
       method: 'POST',
       headers: gqlHeaders,
       body: JSON.stringify({
-        query: `{ __type(name: "BusinessOfficeLocation") { fields { name type { name kind ofType { name kind } } } } }`,
+        query: `{ __type(name: "Query") { fields { name } } }`,
       }),
     });
     if (introResp.ok) {
       const intro = await introResp.json();
-      const fields = intro?.data?.__type?.fields;
-      if (fields) {
-        console.log('[schedules] BusinessOfficeLocation fields:', fields.map(f => `${f.name}:${f.type?.name || f.type?.kind}`).join(', '));
-      } else {
-        console.log('[schedules] introspection returned no fields:', JSON.stringify(intro).slice(0, 300));
-      }
-    } else {
-      console.log('[schedules] introspection →', introResp.status);
+      const allFields = (intro?.data?.__type?.fields || []).map(f => f.name);
+      const schedFields = allFields.filter(n => /schedule/i.test(n));
+      console.log('[discovery] Query fields with "schedule":', schedFields.join(', ') || '(none)');
+      console.log('[discovery] All Query fields:', allFields.join(', '));
     }
   } catch (e) {
-    console.log('[schedules] introspection error:', e.message);
+    console.log('[discovery] error:', e.message);
   }
 
   const GQL_QUERY = `query GetPdfReportsBusinessOfficeLocations($businessId: ID!, $managedLocationsOnly: Boolean!, $after: String) {
