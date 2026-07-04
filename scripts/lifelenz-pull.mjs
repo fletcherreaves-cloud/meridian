@@ -605,9 +605,11 @@ async function main() {
       headers: { 'X-Auth-Token': token, 'Accept': 'application/json' },
     });
     console.log('[auth] token validation →', check.status);
-    if (!check.ok) {
+    if (check.status === 401 || check.status === 403) {
       console.warn('[auth] LIFELENZ_TOKEN rejected (expired?), falling back to login flow');
       token = null;
+    } else if (!check.ok) {
+      console.log('[auth] token validation non-200 but not auth error — proceeding with token');
     }
   }
   if (!token) {
