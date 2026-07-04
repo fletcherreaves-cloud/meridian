@@ -72,9 +72,15 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.308';
+const MERIDIAN_VERSION    = '4.309';
 const MERIDIAN_BUILD_DATE = '2026-07-04';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.309', date:'2026-07-04', changes:[
+    'Signals: expanded from 11 to 36 correlation signals across 6 domains. New SERVICE signals: Park Rate→OEPE, Park Rate→Sales, DT Mix→OEPE, R2P Pace→Sales, Avg Check→OEPE. New LABOR signals: TPPH→Labor%, Avg Check↔TPPH (speed/ticket tradeoff), Scheduling Gap→OT Hours, Avg Wage Rate→Labor%, Guest Count→Labor% (volume leverage). New FINANCIAL/CONTROLS signals: Discount%→Sales, Drawer Opens→Cash O/S, Manual Refund→Labor%, Waste (Red B)→Food Cost%, POS Overrides→TPPH. New SALES signals: Monthly Sales→Food Cost% (leverage), TPPH→Food Cost%, Avg Check→Daily Sales. New CUSTOMER signals: Park Rate→OSAT, Avg Check→OSAT, Scheduling Gap→OSAT, Discount%→OSAT, Guest Count↔Avg Check (traffic/ticket tradeoff).',
+  ]},
+  {version:'4.308', date:'2026-07-04', changes:[
+    'Signals: New store health exemption — stores with recentOnly flag and no DI calibration return score:null / grade:"New Store" from both modelHealthScore and computeModelHealth. At a Glance counter and red list correctly skip null-score stores.',
+  ]},
   {version:'4.306', date:'2026-07-04', changes:[
     'Nav restructure: 4 named sections (DAILY / PERFORMANCE / OPERATIONS / ANALYTICS) replace the flat list. DAILY adds Daily Brief (was Morning Brief). PERFORMANCE: Org Summary (was Org Overview), Store Scorecard (was Store Rankings). OPERATIONS: Labor Analytics (was Labor). ANALYTICS section graduates Signals, SAGE, Forecast Brief (was Intel Brief), Market Intelligence (was Location Intel), District View, Store One-Pager out of Test Kitchen. STORE OPS section removed. Store Notes moved into Settings sidebar (Settings → Store Notes → Open Editor).',
   ]},
