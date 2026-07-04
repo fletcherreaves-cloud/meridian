@@ -365,97 +365,50 @@ function apiHeaders(token, scheduleId = null) {
   return h;
 }
 
-// ── Step 2: Discover active store schedules via confirmed GraphQL query ───
-// Query confirmed from browser DevTools — GetPdfReportsBusinessOfficeLocations
-// returns all managed office locations (stores) for the business.
-// Response: { data: { businessOfficeLocations: { edges: [{ node: { id, officeName } }], pageInfo } } }
-//
-// NOTE: node.id is the OFFICE LOCATION id. The report download URL uses a
-// "scheduleId" which may or may not equal the location id. We try the location
-// id first — if the report returns 404 we'll know to investigate further.
+// ── Step 2: Discover store schedules via REST /api/admin/businesses/{id}/schedules ──
+// This endpoint returns all schedules in JSON:API format:
+//   { data: [{ id, type: "schedules", attributes: { schedule_name, code, schedule_status, ... } }] }
+// We filter for active schedules whose name contains a 4-7 digit store number.
 async function getStoreSchedules(token) {
-  const gqlHeaders = { ...apiHeaders(token), 'Accept': 'application/json' };
+  const headers = { ...apiHeaders(token), 'Accept': 'application/json' };
+  const base = `${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`;
 
-  // The browser gets schedule IDs via a SECOND request after clicking a store —
-  // not from GetPdfReportsBusinessOfficeLocations (which only returns location data).
-  // Probe REST endpoints and the Query schema to find how to get schedule IDs.
-  try {
-    // 1. Try REST listing of all business schedules
-    for (const ep of [
-      `/api/admin/businesses/${BUSINESS_ID}/schedules`,
-      `/api/admin/report/businesses/${BUSINESS_ID}/schedules`,
-      `/api/admin/businesses/${BUSINESS_ID}/offices`,
-      `/api/admin/businesses/${BUSINESS_ID}/locations`,
-    ]) {
-      const r = await fetch(`${BASE}${ep}`, { headers: apiHeaders(token) });
-      console.log(`[discovery] REST ${ep} → ${r.status}`);
-      if (r.ok) {
-        const d = await r.json().catch(() => null);
-        console.log(`[discovery] REST body:`, JSON.stringify(d).slice(0, 500));
-        break;
-      }
+  let all = [];
+  let pageNum = 1;
+
+  while (true) {
+    const url = `${base}?page[number]=${pageNum}&page[size]=100`;
+    const resp = await fetch(url, { headers });
+    console.log(`[schedules] REST page ${pageNum} →`, resp.status);
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      throw new Error(`[schedules] REST schedules ${resp.status}: ${body.slice(0, 200)}`);
     }
 
-    // 2. Introspect Query root for any schedule-related fields
-    const introResp = await fetch(`${BASE}/manager/graphql?IntrospectQuery`, {
-      method: 'POST',
-      headers: gqlHeaders,
-      body: JSON.stringify({
-        query: `{ __type(name: "Query") { fields { name } } }`,
-      }),
-    });
-    if (introResp.ok) {
-      const intro = await introResp.json();
-      const allFields = (intro?.data?.__type?.fields || []).map(f => f.name);
-      const schedFields = allFields.filter(n => /schedule/i.test(n));
-      console.log('[discovery] Query fields with "schedule":', schedFields.join(', ') || '(none)');
-      console.log('[discovery] All Query fields:', allFields.join(', '));
-    }
-  } catch (e) {
-    console.log('[discovery] error:', e.message);
+    const data = await resp.json();
+    const records = data?.data || [];
+    all = all.concat(records);
+    if (DEBUG) console.log(`[schedules] page ${pageNum}: ${records.length} records, total so far: ${all.length}`);
+
+    // JSON:API pagination: stop when fewer than page[size] records returned
+    if (records.length < 100) break;
+    pageNum++;
   }
 
-  const GQL_QUERY = `query GetPdfReportsBusinessOfficeLocations($businessId: ID!, $managedLocationsOnly: Boolean!, $after: String) {
-    businessOfficeLocations(businessId: $businessId, managedLocationsOnly: $managedLocationsOnly, after: $after) {
-      edges { node { id officeName } }
-      pageInfo { endCursor hasNextPage }
-    }
-  }`;
+  console.log(`[schedules] ${all.length} total schedules from REST`);
 
-  let edges = [];
-  let after = null;
-  let page = 0;
-
-  do {
-    const resp = await fetch(`${BASE}/manager/graphql?GetPdfReportsBusinessOfficeLocations`, {
-      method: 'POST',
-      headers: gqlHeaders,
-      body: JSON.stringify({
-        operationName: 'GetPdfReportsBusinessOfficeLocations',
-        query: GQL_QUERY,
-        variables: { businessId: BUSINESS_ID, managedLocationsOnly: true, after },
-      }),
-    });
-    console.log(`[schedules] GraphQL page ${++page} →`, resp.status);
-    if (!resp.ok) throw new Error(`[schedules] GraphQL ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-
-    const gql = await resp.json();
-    if (gql.errors) console.warn('[schedules] GQL errors:', JSON.stringify(gql.errors).slice(0, 300));
-    if (DEBUG) console.log('[schedules] GQL raw:', JSON.stringify(gql).slice(0, 600));
-
-    const conn = gql?.data?.businessOfficeLocations;
-    edges = edges.concat(conn?.edges || []);
-    after = conn?.pageInfo?.hasNextPage ? conn.pageInfo.endCursor : null;
-  } while (after);
-
-  console.log(`[schedules] found ${edges.length} office locations`);
-
-  const stores = edges
-    .map(({ node }) => ({ id: node.id, name: node.officeName }))
-    .filter(s => /\b\d{4,7}\b/.test(s.name));
+  // Store schedules have a store number (4-7 digits) in schedule_name.
+  // Group/org schedules (e.g. "MCDOK/Emerald Arches") won't match.
+  const stores = all
+    .filter(s => s.attributes?.schedule_status === 'active')
+    .filter(s => /\b\d{4,7}\b/.test(s.attributes?.schedule_name || s.attributes?.code || ''))
+    .map(s => ({
+      id:   s.id,
+      name: s.attributes.schedule_name || s.attributes.code || s.id,
+    }));
 
   console.log(`[schedules] ${stores.length} store schedules after filter`);
-  if (DEBUG) stores.forEach(s => console.log(`  [schedules]   ${s.name} → ${s.id}`));
+  stores.forEach(s => console.log(`  [schedules]   ${s.name} → ${s.id}`));
   return stores;
 }
 
