@@ -357,6 +357,7 @@ function apiHeaders(token, scheduleId = null) {
     'X-Auth-Token':      token,
     'X-Business-Id':     BUSINESS_ID,
     'X-Lifelenz-Device': 'webadmin',
+    'X-Version':         '1.75.21',
     'Accept':            'application/json',
     'Content-Type':      'application/json',
   };
