@@ -41,7 +41,7 @@ function _mKey(d) {
 // ── Data join helpers ─────────────────────────────────────────────────────────
 
 // Normalize loc to short unpadded format ('0003708' → '3708') so all parsers join correctly
-function normLoc(loc) {
+export function normLoc(loc) {
   const n = parseInt(String(loc || '').replace(/\D/g, ''), 10);
   return isNaN(n) ? String(loc || '') : String(n);
 }
@@ -119,7 +119,13 @@ function monthlyOEPESummary(opsRows) {
 
 // ── Signal definitions ────────────────────────────────────────────────────────
 // Each signal returns { id, name, description, r, n, strength, direction,
-//                       expectedDir, confirmed, xLabel, yLabel, pairs[], note? }
+//   expectedDir, confirmed, xLabel, yLabel, pairs[], domain, chain?, note? }
+//
+// domain values: 'service' | 'labor' | 'sales' | 'food_cost' | 'customer'
+// chain: 'scheduling_cascade' marks signals in the scheduling→OEPE→KVS→Sales path
+
+// ── SCHEDULING CASCADE SIGNALS ────────────────────────────────────────────────
+// The key cascade: Under-schedule → OEPE up → KVS suffers → Sales down → GC down
 
 function sig_scheduleGapOEPE(ds) {
   const { schedRows = [], opsRows = [] } = ds;
@@ -140,9 +146,108 @@ function sig_scheduleGapOEPE(ds) {
     xLabel: 'Crew vs Ideal Hrs (negative = under-staffed)',
     yLabel: 'OEPE (sec)',
     pairs,
+    domain: 'service',
+    chain: 'scheduling_cascade',
     note: pairs.length < 20 ? 'Upload more LifeLenz data to strengthen this signal' : null,
   };
 }
+
+function sig_oepeKVS(ds) {
+  const { opsRows = [] } = ds;
+  const valid = opsRows.filter(r => r.oepe > 0 && (r.kvst > 0 || r.kvsu > 0));
+  if (valid.length < 8) return null;
+  const pairs = valid.map(r => ({ x: r.oepe, y: r.kvst || r.kvsu, loc: r.loc, date: r.date }));
+  const r = pearson(pairs);
+  if (r === null) return null;
+  return {
+    id: 'oepe_kvs',
+    name: 'OEPE → KVS Service Time',
+    description: 'Drive-thru total time and kitchen assembly time move together — busy days slow both simultaneously.',
+    r, n: pairs.length, strength: signalStrength(r),
+    direction: r > 0 ? 'positive' : 'negative',
+    expectedDir: 'positive',
+    confirmed: r > 0.30,
+    xLabel: 'OEPE (sec)',
+    yLabel: 'KVS Service Time (sec)',
+    pairs,
+    domain: 'service',
+    chain: 'scheduling_cascade',
+  };
+}
+
+function sig_oepeSales(ds) {
+  const { opsRows = [], schedRows = [] } = ds;
+  if (!opsRows.length || !schedRows.length) return null;
+  const pairs = joinDaily(opsRows, 'oepe', schedRows, 'sales');
+  if (pairs.length < 8) return null;
+  const r = pearson(pairs);
+  if (r === null) return null;
+  return {
+    id: 'oepe_sales',
+    name: 'OEPE → Daily Sales',
+    description: 'Slower drive-thru speed limits throughput and constrains daily sales. Every second of OEPE has a revenue cost.',
+    r, n: pairs.length, strength: signalStrength(r),
+    direction: r < 0 ? 'negative' : 'positive',
+    expectedDir: 'negative',
+    confirmed: r < -0.30,
+    xLabel: 'OEPE (sec)',
+    yLabel: 'Daily Sales ($)',
+    pairs,
+    domain: 'sales',
+    chain: 'scheduling_cascade',
+  };
+}
+
+function sig_kvsServiceSales(ds) {
+  const { opsRows = [], schedRows = [] } = ds;
+  if (!opsRows.length || !schedRows.length) return null;
+  const opsWithKvs = opsRows.filter(r => (r.kvst > 0 || r.kvsu > 0));
+  if (!opsWithKvs.length) return null;
+  const mapped = opsWithKvs.map(r => ({ ...r, _kvs: r.kvst || r.kvsu }));
+  const pairs = joinDaily(mapped, '_kvs', schedRows, 'sales');
+  if (pairs.length < 8) return null;
+  const r = pearson(pairs);
+  if (r === null) return null;
+  return {
+    id: 'kvs_service_sales',
+    name: 'KVS Service Time → Daily Sales',
+    description: 'Faster kitchen assembly unlocks more cars per hour. Slow KVS is a throughput ceiling that shows up in daily sales.',
+    r, n: pairs.length, strength: signalStrength(r),
+    direction: r < 0 ? 'negative' : 'positive',
+    expectedDir: 'negative',
+    confirmed: r < -0.30,
+    xLabel: 'KVS Service Time (sec)',
+    yLabel: 'Daily Sales ($)',
+    pairs,
+    domain: 'service',
+    chain: 'scheduling_cascade',
+  };
+}
+
+function sig_scheduleGapSales(ds) {
+  const { schedRows = [] } = ds;
+  const valid = schedRows.filter(r => r.schVsIdealDiff != null && r.sales > 0);
+  if (valid.length < 8) return null;
+  const pairs = valid.map(r => ({ x: r.schVsIdealDiff, y: r.sales, loc: r.loc, date: r.date }));
+  const r = pearson(pairs);
+  if (r === null) return null;
+  return {
+    id: 'schedule_gap_sales',
+    name: 'Scheduling Gap → Daily Sales',
+    description: 'Under-scheduled shifts constrain sales by slowing service. Positive r = more staff hours directly enables higher sales.',
+    r, n: pairs.length, strength: signalStrength(r),
+    direction: r > 0 ? 'positive' : 'negative',
+    expectedDir: 'positive',
+    confirmed: r > 0.30,
+    xLabel: 'Crew vs Ideal Hrs (negative = under-staffed)',
+    yLabel: 'Daily Sales ($)',
+    pairs,
+    domain: 'sales',
+    chain: 'scheduling_cascade',
+  };
+}
+
+// ── LABOR SIGNALS ─────────────────────────────────────────────────────────────
 
 function sig_laborFoodCost(ds) {
   const { laborRows = [], fobRows = [] } = ds;
@@ -165,55 +270,7 @@ function sig_laborFoodCost(ds) {
     xLabel: 'Crew Labor % (monthly avg)',
     yLabel: 'Base Food Cost %',
     pairs,
-  };
-}
-
-function sig_tpphOSAT(ds) {
-  const { laborRows = [], smgFullscale = [] } = ds;
-  if (!laborRows.length || !smgFullscale.length) return null;
-  const monthly = monthlyLaborSummary(laborRows);
-  const pairs = joinMonthly(
-    monthly, r => r.tpph,
-    smgFullscale, r => r.osatTop2
-  );
-  const r = pearson(pairs);
-  if (r === null) return null;
-  return {
-    id: 'tpph_osat',
-    name: 'TPPH → OSAT Score',
-    description: 'Higher throughput per person hour may correlate with better customer satisfaction. Upload FullScale reports to test.',
-    r, n: pairs.length, strength: signalStrength(r),
-    direction: r > 0 ? 'positive' : 'negative',
-    expectedDir: 'positive',
-    confirmed: r > 0.30,
-    xLabel: 'TPPH (monthly avg)',
-    yLabel: 'OSAT Top 2 Box %',
-    pairs,
-    note: smgFullscale.length < 5 ? 'Upload more SMG FullScale reports for a meaningful sample' : null,
-  };
-}
-
-function sig_oepeOSAT(ds) {
-  const { opsRows = [], smgFullscale = [] } = ds;
-  if (!opsRows.length || !smgFullscale.length) return null;
-  const monthlyOps = monthlyOEPESummary(opsRows);
-  const pairs = joinMonthly(
-    monthlyOps, r => r.oepe,
-    smgFullscale, r => r.osatTop2
-  );
-  const r = pearson(pairs);
-  if (r === null) return null;
-  return {
-    id: 'oepe_osat',
-    name: 'OEPE → OSAT Score',
-    description: 'Slower drive-thru times may reduce customer satisfaction. Negative r confirms the relationship.',
-    r, n: pairs.length, strength: signalStrength(r),
-    direction: r < 0 ? 'negative' : 'positive',
-    expectedDir: 'negative',
-    confirmed: r < -0.30,
-    xLabel: 'Avg OEPE (sec)',
-    yLabel: 'OSAT Top 2 Box %',
-    pairs,
+    domain: 'food_cost',
   };
 }
 
@@ -243,6 +300,7 @@ function sig_otLaborOverage(ds) {
     xLabel: 'Monthly OT Hours',
     yLabel: 'Labor % − Target',
     pairs,
+    domain: 'labor',
   };
 }
 
@@ -263,6 +321,7 @@ function sig_exceptionsOT(ds) {
     xLabel: 'Total Exceptions',
     yLabel: 'OT Hours',
     pairs,
+    domain: 'labor',
     note: !exceptionRows.length ? 'Upload Labor Exceptions reports to activate this signal' : null,
   };
 }
@@ -270,7 +329,6 @@ function sig_exceptionsOT(ds) {
 function sig_dtMixLabor(ds) {
   const { laborRows = [] } = ds;
   if (!laborRows.length) return null;
-  // DT-heavy stores may run different labor profiles
   const valid = laborRows.filter(r => r.dtPctTotal != null && r.dtPctTotal > 0 && r.laborPct > 0 && r.sales > 0);
   if (valid.length < 8) return null;
   const pairs = valid.map(r => ({ x: r.dtPctTotal, y: r.laborPct, loc: r.loc, date: r.date }));
@@ -287,6 +345,60 @@ function sig_dtMixLabor(ds) {
     xLabel: 'DT % of Total Sales',
     yLabel: 'Crew Labor %',
     pairs,
+    domain: 'labor',
+  };
+}
+
+// ── CUSTOMER SIGNALS ──────────────────────────────────────────────────────────
+
+function sig_tpphOSAT(ds) {
+  const { laborRows = [], smgFullscale = [] } = ds;
+  if (!laborRows.length || !smgFullscale.length) return null;
+  const monthly = monthlyLaborSummary(laborRows);
+  const pairs = joinMonthly(
+    monthly, r => r.tpph,
+    smgFullscale, r => r.osatTop2
+  );
+  const r = pearson(pairs);
+  if (r === null) return null;
+  return {
+    id: 'tpph_osat',
+    name: 'TPPH → OSAT Score',
+    description: 'Higher throughput per person hour may correlate with better customer satisfaction. Upload FullScale reports to test.',
+    r, n: pairs.length, strength: signalStrength(r),
+    direction: r > 0 ? 'positive' : 'negative',
+    expectedDir: 'positive',
+    confirmed: r > 0.30,
+    xLabel: 'TPPH (monthly avg)',
+    yLabel: 'OSAT Top 2 Box %',
+    pairs,
+    domain: 'customer',
+    note: smgFullscale.length < 5 ? 'Upload more SMG FullScale reports for a meaningful sample' : null,
+  };
+}
+
+function sig_oepeOSAT(ds) {
+  const { opsRows = [], smgFullscale = [] } = ds;
+  if (!opsRows.length || !smgFullscale.length) return null;
+  const monthlyOps = monthlyOEPESummary(opsRows);
+  const pairs = joinMonthly(
+    monthlyOps, r => r.oepe,
+    smgFullscale, r => r.osatTop2
+  );
+  const r = pearson(pairs);
+  if (r === null) return null;
+  return {
+    id: 'oepe_osat',
+    name: 'OEPE → OSAT Score',
+    description: 'Slower drive-thru times may reduce customer satisfaction. Negative r confirms the relationship.',
+    r, n: pairs.length, strength: signalStrength(r),
+    direction: r < 0 ? 'negative' : 'positive',
+    expectedDir: 'negative',
+    confirmed: r < -0.30,
+    xLabel: 'Avg OEPE (sec)',
+    yLabel: 'OSAT Top 2 Box %',
+    pairs,
+    domain: 'customer',
   };
 }
 
@@ -294,13 +406,20 @@ function sig_dtMixLabor(ds) {
 
 export function computeInsights(ds) {
   const runners = [
+    // Cascade chain (scheduling → service → sales)
     sig_scheduleGapOEPE,
+    sig_oepeKVS,
+    sig_oepeSales,
+    sig_kvsServiceSales,
+    sig_scheduleGapSales,
+    // Labor
     sig_laborFoodCost,
-    sig_tpphOSAT,
-    sig_oepeOSAT,
     sig_otLaborOverage,
     sig_exceptionsOT,
     sig_dtMixLabor,
+    // Customer
+    sig_tpphOSAT,
+    sig_oepeOSAT,
   ];
   const results = [];
   for (const fn of runners) {
@@ -308,7 +427,7 @@ export function computeInsights(ds) {
       const sig = fn(ds);
       if (sig) {
         results.push(sig);
-        console.log(`[signals] ${sig.id}: r=${sig.r?.toFixed(3)} n=${sig.n} strength=${sig.strength}`);
+        console.log(`[signals] ${sig.id}: r=${sig.r?.toFixed(3)} n=${sig.n} strength=${sig.strength} domain=${sig.domain}`);
       } else {
         console.log(`[signals] ${fn.name}: null (insufficient data or no matching pairs)`);
       }
