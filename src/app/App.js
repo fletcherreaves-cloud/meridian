@@ -72,9 +72,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.305';
+const MERIDIAN_VERSION    = '4.306';
 const MERIDIAN_BUILD_DATE = '2026-07-04';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.306', date:'2026-07-04', changes:[
+    'Nav restructure: 4 named sections (DAILY / PERFORMANCE / OPERATIONS / ANALYTICS) replace the flat list. DAILY adds Daily Brief (was Morning Brief). PERFORMANCE: Org Summary (was Org Overview), Store Scorecard (was Store Rankings). OPERATIONS: Labor Analytics (was Labor). ANALYTICS section graduates Signals, SAGE, Forecast Brief (was Intel Brief), Market Intelligence (was Location Intel), District View, Store One-Pager out of Test Kitchen. STORE OPS section removed. Store Notes moved into Settings sidebar (Settings → Store Notes → Open Editor).',
+  ]},
   {version:'4.305', date:'2026-07-04', changes:[
     'Signals: major enhancement — 4 new cascade chain signals (OEPE→KVS, OEPE→Sales, KVS→Sales, ScheduleGap→Sales) completing the scheduling→OEPE→KVS→Sales path. Domain tags on all 11 signals (service/labor/sales/food_cost/customer). Domain filter pills to view signals by category. Per-store selector re-runs correlation engine for a single location. Threshold labels replaced with No Effect / Within Tolerance / Out of Range taxonomy. Cascade chain banner appears when 2+ scheduling cascade signals are confirmed. normLoc() exported from insights.js for reuse.',
   ]},
@@ -1577,7 +1580,7 @@ function App() {
     )  // close right panel flex-col
 
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
-    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll}),
+    showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true)}),
     showRanking  &&h(RankingView,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,onSelectStore:s=>{goStore(s);setShowRanking(false);},onClose:()=>setShowRanking(false)}),
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
     showUnifiedTargets&&h(UnifiedTargetsPanel,{stores,ds,settings,onClose:()=>setShowUnifiedTargets(false)}),

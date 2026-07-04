@@ -194,7 +194,7 @@ function DevDashboard({settings, onUpdate}) {
   );
 }
 
-function Settings({settings, onUpdate, onClose, userRole, onClearAll}) {
+function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStoreNotes}) {
   const S=settings;
   const [activeSection, setActiveSection] = useState('identity');
   const set=(path,val)=>{const keys=path.split('.');const next=JSON.parse(JSON.stringify(S));let cur=next;keys.slice(0,-1).forEach(k=>{if(!cur[k])cur[k]={};cur=cur[k];});cur[keys[keys.length-1]]=val;onUpdate(next);};
@@ -213,7 +213,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll}) {
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
               ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['supervisors','🗂 Patches'],
-              ['ai','🤖 AI'],['dev','🛠 Dev'],
+              ['ai','🤖 AI'],['dev','🛠 Dev'],['store-notes','📍 Store Notes'],
               ...(userRole==='admin'?[['data','🗄 Data']]:[])]
           .map(([k,l])=>div({key:k,
             onClick:()=>setActiveSection(k),
@@ -443,6 +443,18 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll}) {
           )
         ),
         activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate}),
+
+        activeSection==='store-notes'&&div({className:'set-sec'},
+          div({className:'set-sec-t'},'📍 Store Notes'),
+          div({className:'set-note'},'Per-store knowledge base: operational notes, context, tags, and flags for each location. Notes are saved locally and inform SAGE and coaching views.'),
+          div({style:{marginTop:12}},
+            btn({
+              className:'btn btn-sm',
+              style:{fontWeight:600,padding:'8px 18px'},
+              onClick:()=>{ onClose&&onClose(); onOpenStoreNotes&&onOpenStoreNotes(); }
+            },'📍 Open Store Notes Editor')
+          )
+        ),
 
         activeSection==='data'&&div({className:'set-sec'},
           div({className:'set-sec-t'},'🗄 Data Management'),
