@@ -465,6 +465,136 @@ create index if not exists labor_rows_loc_date_idx
 create index if not exists labor_rows_date_idx
   on public.labor_rows (report_date desc);
 
+-- ── FOB / Food Over Base rows ─────────────────────────────────────────────────
+-- Per-period per-store food cost breakdown from QSRSoft Operations Report FOB sheet.
+-- Primary key: (loc, date) — one row per store per reporting period.
+create table if not exists public.fob_rows (
+  loc                  text not null,
+  date                 date not null,
+  sales                float,
+  base_food_pct        float,
+  fob_pct              float,
+  comp_waste           float,
+  raw_waste            float,
+  condiment            float,
+  emp_meal             float,
+  stat_var             float,
+  unexplained          float,
+  disc_coupon          float,
+  pl_food_promo        float,
+  pl_paper_promo       float,
+  pl_paper_pct         float,
+  pl_food_pct          float,
+  labor_pct            float,
+  tpph                 float,
+  sales_vs_ly          float,
+  ops_supplies         float,
+  fob_dollar           float,
+  fob_wo_unexp_pct     float,
+  fob_wo_unexp_dollar  float,
+  pl_food_cost_dollar  float,
+  pl_paper_cost_dollar float,
+  updated_at           timestamptz default now(),
+  primary key (loc, date)
+);
+
+alter table public.fob_rows enable row level security;
+create policy "fob_rows: public read"  on public.fob_rows for select using (true);
+create policy "fob_rows: public write" on public.fob_rows for all    using (true);
+create index if not exists fob_rows_date_idx on public.fob_rows (date desc);
+
+-- ── Operations / Service rows ─────────────────────────────────────────────────
+-- Daily per-store service metrics (OEPE, park, KVS, R2P) from Operations Report.
+-- Primary key: (loc, date).
+create table if not exists public.ops_rows (
+  loc        text not null,
+  date       date not null,
+  oepe       float,
+  park       float,
+  kvst       float,
+  kvsu       float,
+  r2p        float,
+  updated_at timestamptz default now(),
+  primary key (loc, date)
+);
+
+alter table public.ops_rows enable row level security;
+create policy "ops_rows: public read"  on public.ops_rows for select using (true);
+create policy "ops_rows: public write" on public.ops_rows for all    using (true);
+create index if not exists ops_rows_date_idx on public.ops_rows (date desc);
+
+-- ── Controls rows ─────────────────────────────────────────────────────────────
+-- Daily per-store cash/controls metrics from QSRSoft Operations Report Controls sheet.
+-- Primary key: (loc, date).
+create table if not exists public.ctrl_rows (
+  loc              text not null,
+  date             date not null,
+  cash_os_pct      float,
+  cash_os_amt      float,
+  t_red_a_pct      float,
+  t_red_a_cnt      float,
+  t_red_b_pct      float,
+  t_red_b_cnt      float,
+  pos_over_cnt     float,
+  pos_over_amt     float,
+  ot_hrs           float,
+  ot_dollar        float,
+  labor_pct        float,
+  act_vs_need      float,
+  disc_pct         float,
+  disc_amt         float,
+  disc_cnt         float,
+  promo_pct        float,
+  promo_amt        float,
+  promo_cnt        float,
+  cash_ref_cnt     float,
+  cash_ref_amt     float,
+  cashless_ref_cnt float,
+  cashless_ref_amt float,
+  manual_ref_amt   float,
+  drawer_opens     float,
+  tpph             float,
+  spph             float,
+  avg_rate         float,
+  emp_meal_amt     float,
+  mgr_meal_amt     float,
+  act_hrs          float,
+  crew_hrs         float,
+  salary_mgr_hrs   float,
+  petty_amt        float,
+  deposit_amt      float,
+  updated_at       timestamptz default now(),
+  primary key (loc, date)
+);
+
+alter table public.ctrl_rows enable row level security;
+create policy "ctrl_rows: public read"  on public.ctrl_rows for select using (true);
+create policy "ctrl_rows: public write" on public.ctrl_rows for all    using (true);
+create index if not exists ctrl_rows_date_idx on public.ctrl_rows (date desc);
+
+-- ── Daily Activity Report rows ────────────────────────────────────────────────
+-- Hourly per-store service/sales data from the Daily Activity Report (DAR).
+-- Primary key: (loc, date, hour) — multiple rows per store per day.
+create table if not exists public.dar_rows (
+  loc        text not null,
+  date       date not null,
+  hour       text not null,       -- e.g. '10:00 AM'
+  oepe       float,
+  oepe_pk    float,
+  r2p        float,
+  ctp        float,
+  sales      float,
+  gc         float,
+  check_avg  float,
+  updated_at timestamptz default now(),
+  primary key (loc, date, hour)
+);
+
+alter table public.dar_rows enable row level security;
+create policy "dar_rows: public read"  on public.dar_rows for select using (true);
+create policy "dar_rows: public write" on public.dar_rows for all    using (true);
+create index if not exists dar_rows_date_idx on public.dar_rows (date desc);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════

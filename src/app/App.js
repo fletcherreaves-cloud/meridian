@@ -36,7 +36,7 @@ import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SagePanel } from '../views/sage.js';
 import { computeInsights } from '../engine/insights.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, uploadReportFile } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -880,6 +880,36 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${lfzRows.length} LifeLenz schedule rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);}
+      // ── FOB / Ops / Controls / DAR ──────────────────────────────────────────
+      const _mkIdx2=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
+      try{
+        const fobRows=await loadFobRows();
+        if(fobRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,fobRows};});
+          console.log(`[Meridian] ✓ Loaded ${fobRows.length} FOB rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] FOB rows load failed:',e);}
+      try{
+        const opsRows=await loadOpsRows();
+        if(opsRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,opsRows,opsIdx:_mkIdx2(opsRows),opsByLoc:bLocIdx(opsRows)};});
+          console.log(`[Meridian] ✓ Loaded ${opsRows.length} ops rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Ops rows load failed:',e);}
+      try{
+        const ctrlRows=await loadCtrlRows();
+        if(ctrlRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,ctrlRows,ctrlIdx:_mkIdx2(ctrlRows),ctrlByLoc:bLocIdx(ctrlRows)};});
+          console.log(`[Meridian] ✓ Loaded ${ctrlRows.length} ctrl rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Ctrl rows load failed:',e);}
+      try{
+        const darRows=await loadDarRows();
+        if(darRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,darRows,darByLoc:bLocIdx(darRows)};});
+          console.log(`[Meridian] ✓ Loaded ${darRows.length} DAR rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] DAR rows load failed:',e);}
     })();
   },[]);
 
@@ -1092,7 +1122,12 @@ function App() {
     setLoadMsg('⏳ Reading '+fileArr.length+' file'+(fileArr.length>1?'s…':'…'));
     let currentDS=dsRef.current||buildDS([]);
     const loaded=[];
-    const _prevLaborKeys=new Set((currentDS.laborRows||[]).map(r=>r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10))));
+    const _toDs=r=>r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10);
+    const _prevLaborKeys=new Set((currentDS.laborRows||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevFobKeys  =new Set((currentDS.fobRows ||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevOpsKeys  =new Set((currentDS.opsRows  ||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevCtrlKeys =new Set((currentDS.ctrlRows ||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevDarKeys  =new Set((currentDS.darRows  ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
     for(const file of fileArr){
       try{
         setLoadMsg('⏳ Parsing '+file.name+'…');
@@ -1169,13 +1204,18 @@ function App() {
       if(_uploadEvents) setUserEvents(_uploadEvents);
     });
     try { setSignals(computeInsights(currentDS)); } catch(e) { console.warn('[insights] error:', e); }
-    // Persist new labor rows to Supabase for DI calibration history
+    // Persist new rows to Supabase for cross-device sync
     if(supabase){
-      const newLaborRows=(currentDS.laborRows||[]).filter(r=>{
-        const k=r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
-        return !_prevLaborKeys.has(k);
-      });
+      const newLaborRows=(currentDS.laborRows||[]).filter(r=>!_prevLaborKeys.has(r.loc+'|'+_toDs(r)));
+      const newFobRows  =(currentDS.fobRows  ||[]).filter(r=>!_prevFobKeys  .has(r.loc+'|'+_toDs(r)));
+      const newOpsRows  =(currentDS.opsRows  ||[]).filter(r=>!_prevOpsKeys  .has(r.loc+'|'+_toDs(r)));
+      const newCtrlRows =(currentDS.ctrlRows ||[]).filter(r=>!_prevCtrlKeys .has(r.loc+'|'+_toDs(r)));
+      const newDarRows  =(currentDS.darRows  ||[]).filter(r=>!_prevDarKeys  .has(r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
       if(newLaborRows.length>0) saveLaborRows(newLaborRows).catch(e=>console.warn('[labor_rows] save error:',e));
+      if(newFobRows  .length>0) saveFobRows  (newFobRows  ).catch(e=>console.warn('[fob_rows] save error:',e));
+      if(newOpsRows  .length>0) saveOpsRows  (newOpsRows  ).catch(e=>console.warn('[ops_rows] save error:',e));
+      if(newCtrlRows .length>0) saveCtrlRows (newCtrlRows ).catch(e=>console.warn('[ctrl_rows] save error:',e));
+      if(newDarRows  .length>0) saveDarRows  (newDarRows  ).catch(e=>console.warn('[dar_rows] save error:',e));
     }
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
     setLoadMsg('✓ '+names+' loaded · '+currentDS.storeIds.length+' stores');

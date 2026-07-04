@@ -401,6 +401,267 @@ export async function loadLaborRows() {
   }));
 }
 
+// ── FOB / Food Over Base rows ────────────────────────────────────────────────
+export async function saveFobRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:                  String(r.loc),
+    date:                 toDate(r),
+    sales:                r.sales               ?? null,
+    base_food_pct:        r.baseFoodPct         ?? null,
+    fob_pct:              r.fobPct              ?? null,
+    comp_waste:           r.compWaste           ?? null,
+    raw_waste:            r.rawWaste            ?? null,
+    condiment:            r.condiment           ?? null,
+    emp_meal:             r.empMeal             ?? null,
+    stat_var:             r.statVar             ?? null,
+    unexplained:          r.unexplained         ?? null,
+    disc_coupon:          r.discCoupon          ?? null,
+    pl_food_promo:        r.pLFoodPromo         ?? null,
+    pl_paper_promo:       r.pLPaperPromo        ?? null,
+    pl_paper_pct:         r.pLPaperPct          ?? null,
+    pl_food_pct:          r.pLFoodPct           ?? null,
+    labor_pct:            r.laborPct            ?? null,
+    tpph:                 r.tpph                ?? null,
+    sales_vs_ly:          r.salesVsLY           ?? null,
+    ops_supplies:         r.opsSupplies         ?? null,
+    fob_dollar:           r.fobDollar           ?? null,
+    fob_wo_unexp_pct:     r.fobWOUnexpPct       ?? null,
+    fob_wo_unexp_dollar:  r.fobWOUnexpDollar    ?? null,
+    pl_food_cost_dollar:  r.pLFoodCostDollar    ?? null,
+    pl_paper_cost_dollar: r.pLPaperCostDollar   ?? null,
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('fob_rows').upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,date' });
+    if (error) { console.warn('[fob_rows] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  console.log(`[fob_rows] saved ${saved} rows`);
+  return { saved, errors };
+}
+
+export async function loadFobRows() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('fob_rows').select('*').order('date', { ascending: false });
+  if (error || !data) { console.warn('[fob_rows] load error:', error); return []; }
+  return data.map(r => ({
+    loc:                r.loc,
+    date:               new Date(r.date + 'T00:00:00'),
+    sales:              r.sales,
+    baseFoodPct:        r.base_food_pct,
+    fobPct:             r.fob_pct,
+    compWaste:          r.comp_waste,
+    rawWaste:           r.raw_waste,
+    condiment:          r.condiment,
+    empMeal:            r.emp_meal,
+    statVar:            r.stat_var,
+    unexplained:        r.unexplained,
+    discCoupon:         r.disc_coupon,
+    pLFoodPromo:        r.pl_food_promo,
+    pLPaperPromo:       r.pl_paper_promo,
+    pLPaperPct:         r.pl_paper_pct,
+    pLFoodPct:          r.pl_food_pct,
+    laborPct:           r.labor_pct,
+    tpph:               r.tpph,
+    salesVsLY:          r.sales_vs_ly,
+    opsSupplies:        r.ops_supplies,
+    fobDollar:          r.fob_dollar,
+    fobWOUnexpPct:      r.fob_wo_unexp_pct,
+    fobWOUnexpDollar:   r.fob_wo_unexp_dollar,
+    pLFoodCostDollar:   r.pl_food_cost_dollar,
+    pLPaperCostDollar:  r.pl_paper_cost_dollar,
+  }));
+}
+
+// ── Operations / Service rows ────────────────────────────────────────────────
+export async function saveOpsRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:  String(r.loc),
+    date: toDate(r),
+    oepe: r.oepe ?? null,
+    park: r.park ?? null,
+    kvst: r.kvst ?? null,
+    kvsu: r.kvsu ?? null,
+    r2p:  r.r2p  ?? null,
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('ops_rows').upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,date' });
+    if (error) { console.warn('[ops_rows] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  console.log(`[ops_rows] saved ${saved} rows`);
+  return { saved, errors };
+}
+
+export async function loadOpsRows() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('ops_rows').select('*').order('date', { ascending: false });
+  if (error || !data) { console.warn('[ops_rows] load error:', error); return []; }
+  return data.map(r => ({
+    loc:  r.loc,
+    date: new Date(r.date + 'T00:00:00'),
+    oepe: r.oepe,
+    park: r.park,
+    kvst: r.kvst,
+    kvsu: r.kvsu,
+    r2p:  r.r2p,
+  }));
+}
+
+// ── Controls rows ─────────────────────────────────────────────────────────────
+export async function saveCtrlRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:              String(r.loc),
+    date:             toDate(r),
+    cash_os_pct:      r.cashOSPct      ?? null,
+    cash_os_amt:      r.cashOSAmt      ?? null,
+    t_red_a_pct:      r.tRedAPct       ?? null,
+    t_red_a_cnt:      r.tRedACnt       ?? null,
+    t_red_b_pct:      r.tRedBPct       ?? null,
+    t_red_b_cnt:      r.tRedBCnt       ?? null,
+    pos_over_cnt:     r.posOverCnt     ?? null,
+    pos_over_amt:     r.posOverAmt     ?? null,
+    ot_hrs:           r.otHrs          ?? null,
+    ot_dollar:        r.otDollar       ?? null,
+    labor_pct:        r.laborPct       ?? null,
+    act_vs_need:      r.actVsNeed      ?? null,
+    disc_pct:         r.discPct        ?? null,
+    disc_amt:         r.discAmt        ?? null,
+    disc_cnt:         r.discCnt        ?? null,
+    promo_pct:        r.promoPct       ?? null,
+    promo_amt:        r.promoAmt       ?? null,
+    promo_cnt:        r.promoCnt       ?? null,
+    cash_ref_cnt:     r.cashRefCnt     ?? null,
+    cash_ref_amt:     r.cashRefAmt     ?? null,
+    cashless_ref_cnt: r.cashlessRefCnt ?? null,
+    cashless_ref_amt: r.cashlessRefAmt ?? null,
+    manual_ref_amt:   r.manualRefAmt   ?? null,
+    drawer_opens:     r.drawerOpens    ?? null,
+    tpph:             r.tpph           ?? null,
+    spph:             r.spph           ?? null,
+    avg_rate:         r.avgRate        ?? null,
+    emp_meal_amt:     r.empMealAmt     ?? null,
+    mgr_meal_amt:     r.mgrMealAmt     ?? null,
+    act_hrs:          r.actHrs         ?? null,
+    crew_hrs:         r.crewHrs        ?? null,
+    salary_mgr_hrs:   r.salaryMgrHrs   ?? null,
+    petty_amt:        r.pettyAmt       ?? null,
+    deposit_amt:      r.depositAmt     ?? null,
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('ctrl_rows').upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,date' });
+    if (error) { console.warn('[ctrl_rows] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  console.log(`[ctrl_rows] saved ${saved} rows`);
+  return { saved, errors };
+}
+
+export async function loadCtrlRows() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('ctrl_rows').select('*').order('date', { ascending: false });
+  if (error || !data) { console.warn('[ctrl_rows] load error:', error); return []; }
+  return data.map(r => ({
+    loc:            r.loc,
+    date:           new Date(r.date + 'T00:00:00'),
+    cashOSPct:      r.cash_os_pct,
+    cashOSAmt:      r.cash_os_amt,
+    tRedAPct:       r.t_red_a_pct,
+    tRedACnt:       r.t_red_a_cnt,
+    tRedBPct:       r.t_red_b_pct,
+    tRedBCnt:       r.t_red_b_cnt,
+    posOverCnt:     r.pos_over_cnt,
+    posOverAmt:     r.pos_over_amt,
+    otHrs:          r.ot_hrs,
+    otDollar:       r.ot_dollar,
+    laborPct:       r.labor_pct,
+    actVsNeed:      r.act_vs_need,
+    discPct:        r.disc_pct,
+    discAmt:        r.disc_amt,
+    discCnt:        r.disc_cnt,
+    promoPct:       r.promo_pct,
+    promoAmt:       r.promo_amt,
+    promoCnt:       r.promo_cnt,
+    cashRefCnt:     r.cash_ref_cnt,
+    cashRefAmt:     r.cash_ref_amt,
+    cashlessRefCnt: r.cashless_ref_cnt,
+    cashlessRefAmt: r.cashless_ref_amt,
+    manualRefAmt:   r.manual_ref_amt,
+    drawerOpens:    r.drawer_opens,
+    tpph:           r.tpph,
+    spph:           r.spph,
+    avgRate:        r.avg_rate,
+    empMealAmt:     r.emp_meal_amt,
+    mgrMealAmt:     r.mgr_meal_amt,
+    actHrs:         r.act_hrs,
+    crewHrs:        r.crew_hrs,
+    salaryMgrHrs:   r.salary_mgr_hrs,
+    pettyAmt:       r.petty_amt,
+    depositAmt:     r.deposit_amt,
+  }));
+}
+
+// ── Daily Activity Report rows ────────────────────────────────────────────────
+// DAR is hourly per store, so load only a rolling window to keep payloads small.
+export async function saveDarRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:       String(r.loc),
+    date:      toDate(r),
+    hour:      String(r.hour || ''),
+    oepe:      r.oepe    ?? null,
+    oepe_pk:   r.oepePk  ?? null,
+    r2p:       r.r2p     ?? null,
+    ctp:       r.ctp     ?? null,
+    sales:     r.sales   ?? null,
+    gc:        r.gc      ?? null,
+    check_avg: r.check   ?? null,
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('dar_rows').upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,date,hour' });
+    if (error) { console.warn('[dar_rows] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  console.log(`[dar_rows] saved ${saved} rows`);
+  return { saved, errors };
+}
+
+export async function loadDarRows({ daysBack = 90 } = {}) {
+  if (!supabase) return [];
+  const from = new Date(); from.setDate(from.getDate() - daysBack);
+  const { data, error } = await supabase
+    .from('dar_rows').select('*')
+    .gte('date', from.toISOString().slice(0,10))
+    .order('date', { ascending: false });
+  if (error || !data) { console.warn('[dar_rows] load error:', error); return []; }
+  return data.map(r => ({
+    loc:    r.loc,
+    date:   new Date(r.date + 'T00:00:00'),
+    hour:   r.hour,
+    oepe:   r.oepe,
+    oepePk: r.oepe_pk,
+    r2p:    r.r2p,
+    ctp:    r.ctp,
+    sales:  r.sales,
+    gc:     r.gc,
+    check:  r.check_avg,
+  }));
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client
