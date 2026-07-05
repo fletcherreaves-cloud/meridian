@@ -10,7 +10,7 @@ const muted = '#6b7280';
 const grn   = '#10b981';
 
 // ── System prompt builder ─────────────────────────────────────────────────────
-function buildSystemPrompt(ds, signals) {
+function buildSystemPrompt(ds, signals, customSignalDefs) {
   const today = new Date().toISOString().slice(0, 10);
   const storeCount = ds?.storeIds?.length || 0;
   const laborCount = ds?.laborRows?.length || 0;
@@ -32,6 +32,21 @@ function buildSystemPrompt(ds, signals) {
     .map(s => `  • ${s.name}: r=${s.r?.toFixed(2)}`)
     .join('\n');
 
+  // Custom signals promoted to SAGE
+  const promotedCustom = (customSignalDefs || [])
+    .filter(d => d.status !== 'graveyard' && d.promoted_to?.includes('sage') && d.latest_r != null)
+    .map(d => {
+      const dir = d.latest_r > 0 ? 'positive' : 'negative';
+      const strength = Math.abs(d.latest_r) >= 0.50 ? 'strong' : 'moderate';
+      return `  • "${d.name}": r=${d.latest_r.toFixed(2)} (${strength} ${dir} correlation, n=${d.latest_n || '?'}${d.promoted_to?.includes('projections') ? ', influences projections' : ''})`;
+    })
+    .join('\n');
+
+  const graveyardCustom = (customSignalDefs || [])
+    .filter(d => d.status === 'graveyard' && d.latest_r != null)
+    .map(d => `  • "${d.name}": |r|=${Math.abs(d.latest_r).toFixed(2)} — no meaningful relationship (documented null result)`)
+    .join('\n');
+
   return `You are SAGE — Strategic Analytics & Guidance Engine for Meridian BI.
 You advise Fletcher Reaves, a McDonald's operator managing ${storeCount} locations:
   - MCDOK (McDonald's of Oklahoma) — Oklahoma stores
@@ -49,6 +64,8 @@ DATA CURRENTLY LOADED IN MERIDIAN:
   Controls:         ${ds?.ctrlRows?.length || 0} rows
 ${confirmedSigs ? `\nCONFIRMED SIGNALS (statistically meaningful correlations):\n${confirmedSigs}` : ''}
 ${plausibleSigs ? `\nPLAUSIBLE SIGNALS (emerging patterns, need more data):\n${plausibleSigs}` : ''}
+${promotedCustom ? `\nCUSTOM SIGNALS (user-defined, promoted to SAGE intelligence layer):\n${promotedCustom}` : ''}
+${graveyardCustom ? `\nDOCUMENTED NULL RELATIONSHIPS (statistically confirmed no correlation):\n${graveyardCustom}` : ''}
 
 GUIDELINES:
 - Use McDonald's operator terminology: OEPE, TPPH, Labor%, FOB, Base Food%, OSAT, DT%, MOP, Kiosk, 3PO, etc.
@@ -164,7 +181,7 @@ const QUICK_PROMPTS = [
 ];
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-export function SagePanel({ ds, signals }) {
+export function SagePanel({ ds, signals, customSignalDefs }) {
   const [messages, setMessages] = uSt([]);
   const [input, setInput]       = uSt('');
   const [streaming, setStreaming] = uSt(false);
@@ -194,7 +211,7 @@ export function SagePanel({ ds, signals }) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    const systemPrompt = buildSystemPrompt(ds, signals);
+    const systemPrompt = buildSystemPrompt(ds, signals, customSignalDefs);
     let full = '';
 
     try {

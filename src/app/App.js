@@ -1646,7 +1646,7 @@ function App() {
     showGMBrief&&h(GMCoachingBrief,{stores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
     showDARDaypart&&h(DARDaypartPanel,{stores,ds,settings,onClose:()=>setShowDARDaypart(false)}),
     showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false)}),
-    showMonthlyProj&&h(MonthlyProjectionsPanel,{ds,stores,settings,onClose:()=>setShowMonthlyProj(false)}),
+    showMonthlyProj&&h(MonthlyProjectionsPanel,{ds,stores,settings,customSignalDefs,onClose:()=>setShowMonthlyProj(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
@@ -1686,7 +1686,7 @@ function App() {
         h('button',{onClick:()=>setShowSage(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
       ),
       div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
-        h(SagePanel,{ds,signals}),
+        h(SagePanel,{ds,signals,customSignalDefs}),
       ),
     ),
     showFeatureRequests&&h(FeatureRequestsPanel,{ds,settings,onClose:()=>setShowFeatureRequests(false)}),
@@ -1916,7 +1916,7 @@ function App() {
             h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Correlation engine · 9 rules · 27 stores · Sorted by priority')),
           h('button',{onClick:()=>setShowMorningBrief(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
         div({style:{overflowY:'auto',maxHeight:'88vh'}},
-          h(MorningBriefPanel,{ds,settings}))
+          h(MorningBriefPanel,{ds,settings,customSignalDefs}))
       )
     ),
         showEOMSummary&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},

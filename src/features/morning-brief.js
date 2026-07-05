@@ -515,7 +515,7 @@ function StoreBriefCard({store, expanded, setExpanded}){
 }
 
 // ── MorningBriefPanel ────────────────────────────────────────────────────────
-function MorningBriefPanel({ds, settings}){
+function MorningBriefPanel({ds, settings, customSignalDefs}){
   const uSt=React.useState, uM=React.useMemo, uCB=React.useCallback, uE=React.useEffect;
   const [briefDate, setBriefDate] = uSt(()=>getLatestBriefDate(ds));
   const [expanded, setExpanded] = uSt(null);
@@ -607,6 +607,29 @@ function MorningBriefPanel({ds, settings}){
         )
       )
     ),
+
+    // ── Promoted signal watch ────────────────────────────────────────────────
+    (()=>{
+      const promoted = (customSignalDefs||[]).filter(d=>d.status!=='graveyard'&&d.promoted_to?.includes('morning_brief')&&d.latest_r!=null);
+      if(!promoted.length) return null;
+      return h('div',{style:{marginBottom:'14px',padding:'10px 14px',background:'rgba(96,165,250,.05)',border:'1px solid rgba(96,165,250,.2)',borderRadius:'8px'}},
+        h('div',{style:{fontSize:'10px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'#60a5fa',marginBottom:'8px'}},'📡 Signal Watch'),
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+          promoted.map(d=>{
+            const a=Math.abs(d.latest_r);
+            const col=a>=0.50?'#10b981':a>=0.30?'#f59e0b':'#6b7280';
+            const strength=a>=0.70?'Strong':a>=0.50?'Confirmed':a>=0.30?'Moderate':'Weak';
+            return h('div',{key:d.id,style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 10px',background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',borderRadius:'6px',fontSize:'11px'}},
+              h('span',{style:{fontFamily:'monospace',fontWeight:700,color:col,minWidth:42}},(d.latest_r>=0?'+':'')+d.latest_r.toFixed(2)),
+              h('div',null,
+                h('div',{style:{fontWeight:600,color:'var(--text,#f1f5f9)'}},'', d.name),
+                h('div',{style:{fontSize:'10px',color:'#6b7280'}},strength+' · n='+d.latest_n),
+              ),
+            );
+          })
+        ),
+      );
+    })(),
 
     // ── Filters row ──────────────────────────────────────────────────────────
     h('div',{style:{display:'flex',gap:'6px',marginBottom:'14px',flexWrap:'wrap',alignItems:'center'}},

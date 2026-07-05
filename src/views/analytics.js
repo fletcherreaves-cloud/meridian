@@ -8717,7 +8717,7 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
 </body></html>`;
 }
 
-function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
+function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
   const [selPeriod,    setSelPeriod]    = useState(null); // {year, month} or null = use ds
@@ -9049,6 +9049,26 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose}) {
       btn({onClick:onClose,style:{marginLeft:4,padding:'4px 12px',background:'var(--surf)',
         border:'1px solid var(--bdr)',borderRadius:4,color:'var(--text)',cursor:'pointer',fontSize:12}},'✕ Close')
     ),
+
+    // ── Signal influence strip ────────────────────────────────────────────────
+    (()=>{
+      const projSigs = (customSignalDefs||[]).filter(d=>d.status!=='graveyard'&&d.promoted_to?.includes('projections')&&d.latest_r!=null&&Math.abs(d.latest_r)>=0.30);
+      if(!projSigs.length) return null;
+      return div({style:{flexShrink:0,padding:'6px 20px',borderBottom:'1px solid rgba(96,165,250,.2)',
+        background:'rgba(96,165,250,.04)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
+        span({style:{fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'#60a5fa',marginRight:4}},'📡 Signal'),
+        ...projSigs.map(d=>{
+          const a=Math.abs(d.latest_r),dir=d.latest_r>0?'↑':'↓';
+          const col=a>=0.50?'#10b981':'#f59e0b';
+          return span({key:d.id,style:{fontSize:11,padding:'3px 10px',borderRadius:99,
+            background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.1)',
+            display:'inline-flex',alignItems:'center',gap:6}},
+            span({style:{fontFamily:'monospace',fontWeight:700,color:col}},dir+' '+a.toFixed(2)),
+            d.name
+          );
+        })
+      );
+    })(),
 
     // Table
     locs.length===0
