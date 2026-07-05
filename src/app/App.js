@@ -35,6 +35,7 @@ import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SagePanel } from '../views/sage.js';
+import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { computeInsights } from '../engine/insights.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, uploadReportFile } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
@@ -72,9 +73,15 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.314';
+const MERIDIAN_VERSION    = '4.316';
 const MERIDIAN_BUILD_DATE = '2026-07-05';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.316', date:'2026-07-05', changes:[
+    'Feature Requests module: Supabase-backed panel for all users to submit ideas and vote. Pre-seeded with roadmap history (13 items). Dev mode: status changes + notes. Nav: ANALYTICS section.',
+  ]},
+  {version:'4.315', date:'2026-07-05', changes:[
+    'Data Manager: cloud-first header, Supabase section now shows Labor/Ops/Controls/FOB/DAR operational coverage.',
+  ]},
   {version:'4.314', date:'2026-07-05', changes:[
     'Org Summary: renamed from District Summary, group selector updated to Company / Org / Operator / Patch (replaces Operator / Supervisor / Market).',
   ]},
@@ -598,6 +605,7 @@ function App() {
   const [showSignals,         setShowSignals]         = useState(false);
   const [signals,             setSignals]             = useState([]);
   const [showSage,            setShowSage]            = useState(false);
+  const [showFeatureRequests, setShowFeatureRequests] = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   const [showFcstRef,         setShowFcstRef]         = useState(false);
   const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
@@ -1405,7 +1413,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -1524,7 +1532,8 @@ function App() {
         if(modal==='corr-explorer')  perm('analytics.store')&&setShowCorrExplorer(true);
         if(modal==='unified-targets') perm('analytics.store')&&setShowUnifiedTargets(true);
         if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
-        if(modal==='sage')           setShowSage(true);
+        if(modal==='sage')              setShowSage(true);
+        if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='attention')      setShowAttention(true);
       }
     }),
@@ -1656,6 +1665,7 @@ function App() {
         h(SagePanel,{ds,signals}),
       ),
     ),
+    showFeatureRequests&&h(FeatureRequestsPanel,{ds,settings,onClose:()=>setShowFeatureRequests(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),

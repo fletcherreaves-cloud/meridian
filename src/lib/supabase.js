@@ -662,6 +662,52 @@ export async function loadDarRows({ daysBack = 90 } = {}) {
   }));
 }
 
+// ── Feature Requests ──────────────────────────────────────────────────────────
+export async function loadFeatureRequests() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('feature_requests')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error || !data) { console.warn('[feature_requests] load error:', error); return []; }
+  return data;
+}
+
+export async function saveFeatureRequest(req) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('feature_requests')
+    .insert([req])
+    .select()
+    .single();
+  if (error) { console.warn('[feature_requests] save error:', error); return null; }
+  return data;
+}
+
+export async function updateFeatureRequest(id, updates) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('feature_requests')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) { console.warn('[feature_requests] update error:', error); return null; }
+  return data;
+}
+
+export async function voteFeatureRequest(id, currentVotes) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('feature_requests')
+    .update({ votes: (currentVotes || 0) + 1, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) { console.warn('[feature_requests] vote error:', error); return null; }
+  return data;
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client

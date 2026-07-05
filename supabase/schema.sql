@@ -595,6 +595,28 @@ create policy "dar_rows: public read"  on public.dar_rows for select using (true
 create policy "dar_rows: public write" on public.dar_rows for all    using (true);
 create index if not exists dar_rows_date_idx on public.dar_rows (date desc);
 
+-- ── Feature Requests ─────────────────────────────────────────────────────────
+create table if not exists public.feature_requests (
+  id               uuid primary key default gen_random_uuid(),
+  title            text not null,
+  description      text,
+  category         text default 'General',
+  status           text default 'idea',         -- idea | planned | in-progress | completed | declined
+  priority         text default 'medium',        -- low | medium | high
+  submitted_by     text,
+  dev_notes        text,
+  completed_version text,
+  votes            int default 0,
+  is_seed          boolean default false,
+  created_at       timestamptz default now(),
+  updated_at       timestamptz default now()
+);
+
+alter table public.feature_requests enable row level security;
+create policy "feature_requests: public read"  on public.feature_requests for select using (true);
+create policy "feature_requests: public write" on public.feature_requests for all    using (true);
+create index if not exists feature_requests_status_idx on public.feature_requests (status);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════
