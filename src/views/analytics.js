@@ -1572,7 +1572,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:462,
     display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
     div({style:{background:'var(--surf)',border:'.5px solid var(--bdr2)',borderRadius:'var(--rl)',
-      width:'100%',maxWidth:680,display:'flex',flexDirection:'column',
+      width:'100%',maxWidth:680,maxHeight:'calc(100vh - 40px)',display:'flex',flexDirection:'column',
       boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
       div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',
         display:'flex',alignItems:'center',gap:10}},
@@ -1583,7 +1583,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
-      div({style:{padding:'16px',overflowY:'auto'}},
+      div({style:{padding:'16px',overflowY:'auto',flex:1,minHeight:0}},
         div(null,
           // Coverage table
           h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px',marginBottom:14}},
