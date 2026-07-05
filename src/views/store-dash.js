@@ -1688,8 +1688,8 @@ function StoreCard({store, onSelect}) {
   const {p, t, opsScore, ctrlScore, name, loc, vel, pSales, pLY} = store;
   const combined = Math.round(opsScore*0.6+ctrlScore*0.4);
 
-  // FL (Emerald Arches) = blue accent, OK (MCDOK) = gold accent
-  const isFl = store.org === 'Emerald Arches';
+  // FL = blue accent, OK = gold accent; use state field (org defaults to MCDOK for FL stores)
+  const isFl = store.state === 'FL';
   const orgAccent = isFl ? '#1D4ED8' : '#f5bc00';
   const orgLabel  = isFl ? 'FL' : 'OK';
 
