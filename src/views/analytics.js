@@ -1394,19 +1394,16 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       periodBadge('monthly',s.monthly));
   };
 
-  // Supabase-backed data — SMG FullScale broken down by period
+  // Supabase-backed data — SMG FullScale broken down by period + operational tables
   const supabaseCov = React.useMemo(()=>{
     const fsRows = ds&&ds.smgFullscale||[];
     const mt = ds&&ds.monthlyTargets||{};
     const mtLocs = Object.keys(mt).length;
     const mtPeriod = mtLocs ? Object.values(mt).find(v=>v._year) : null;
-    // Fall back to monthlyTargetsMeta for the period label (set by pipeline on upload,
-    // even when Supabase isn't available to stamp _year/_month via the load path).
     const mtMeta = ds&&ds.monthlyTargetsMeta;
     const mtLabel = mtPeriod
       ? `${mtPeriod._year}-${String(mtPeriod._month).padStart(2,'0')}`
       : mtMeta ? `${mtMeta.year}-${String(mtMeta.month).padStart(2,'0')}` : 'loaded';
-    // Group FullScale by year-month for per-period display
     const fsByPeriod = {};
     for(const r of fsRows){
       const k=`${r.year}-${String(r.month||1).padStart(2,'0')}`;
@@ -1418,8 +1415,14 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       fsPeriods,
       smgFullscale: fsRows.length ? {count:fsRows.length} : {count:0},
       monthlyTargets: mtLocs ? {count:mtLocs, label:mtLabel} : {count:0},
+      laborRows:  calcCov(ds&&ds.laborRows||[]),
+      opsRows:    calcCov(ds&&ds.opsRows||[]),
+      ctrlRows:   calcCov(ds&&ds.ctrlRows||[]),
+      fobRows:    calcCov(ds&&ds.fobRows||[]),
+      darRows:    calcCov(ds&&ds.darRows||[]),
     };
-  },[ds&&ds.smgFullscale,ds&&ds.monthlyTargets,ds&&ds.monthlyTargetsMeta]);
+  },[ds&&ds.smgFullscale,ds&&ds.monthlyTargets,ds&&ds.monthlyTargetsMeta,
+     ds&&ds.laborRows,ds&&ds.opsRows,ds&&ds.ctrlRows,ds&&ds.fobRows,ds&&ds.darRows]);
 
   const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0)+(recStats.count||0)
     + Object.values(sessionCov).reduce((a,v)=>a+(v?.count||0),0);
@@ -1520,7 +1523,16 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   // Pre-build Supabase rows — SMG FullScale shown per period
   const cfM = supabaseCov.monthlyTargets||{count:0};
   const fsPeriods = supabaseCov.fsPeriods||[];
+  const cloudOpRows = [
+    ['laborRows','Labor Analysis',     supabaseCov.laborRows],
+    ['opsRows',  'Operations Report',  supabaseCov.opsRows],
+    ['ctrlRows', 'Controls Data',      supabaseCov.ctrlRows],
+    ['fobRows',  'FOB Report',         supabaseCov.fobRows],
+    ['darRows',  'Daily Activity',     supabaseCov.darRows],
+  ].map(([k,label,c],i)=>dataRow(k+'-cloud', label, c||{count:0}, '#60a5fa', i%2));
+
   const cloudRows = [
+    ...cloudOpRows,
     // SMG FullScale: one sub-row per loaded month
     ...(fsPeriods.length > 0
       ? fsPeriods.map((p,i)=>h('tr',{key:'fs-'+p.key,style:{background:i%2?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
@@ -1567,7 +1579,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
         span({style:{fontSize:'18px'}},'🗄'),
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Data Manager'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'Local file storage (OPFS) · '+totalRows.toLocaleString()+' total rows stored · data survives browser refresh')
+          div({style:{fontSize:'9px',color:'var(--text3)'}},'Supabase cloud + OPFS local cache · '+totalRows.toLocaleString()+' total rows · cross-device, upload once')
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
