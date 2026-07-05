@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
@@ -543,6 +544,60 @@ function renderMarkdown(text) {
   return elements;
 }
 
+// ── Markdown → HTML (for PDF print window) ───────────────────────────────────
+function mdToHTML(text) {
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.match(/^\|.+\|$/)) {
+      // collect table block
+      const tLines = [];
+      while (i < lines.length && lines[i].match(/^\|.+\|$/)) { tLines.push(lines[i]); i++; }
+      const dataRows = tLines.filter(l => !l.match(/^\|[\s\-:|]+\|$/));
+      const cells = dataRows.map(r => r.split('|').filter((_,j,a)=>j>0&&j<a.length-1).map(c=>c.trim()));
+      if (cells.length) {
+        const head = cells[0].map(c=>`<th>${c}</th>`).join('');
+        const body = cells.slice(1).map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('');
+        out.push(`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
+      }
+      continue;
+    }
+    if (line.startsWith('## ')) out.push(`<h2>${line.slice(3)}</h2>`);
+    else if (line.startsWith('# ')) out.push(`<h1>${line.slice(2)}</h1>`);
+    else if (line.startsWith('### ')) out.push(`<h3>${line.slice(4)}</h3>`);
+    else if (line.startsWith('---')) out.push('<hr/>');
+    else if (line.startsWith('■ ')) out.push(`<p class="t1"><strong>■</strong> ${line.slice(2)}</p>`);
+    else if (line.startsWith('▲ ')) out.push(`<p class="t2"><strong>▲</strong> ${line.slice(2)}</p>`);
+    else if (line.startsWith('○ ')) out.push(`<p class="t3"><strong>○</strong> ${line.slice(2)}</p>`);
+    else if (line.startsWith('- ')) out.push(`<li>${line.slice(2)}</li>`);
+    else if (/^\d+\.\s/.test(line)) out.push(`<li>${line.replace(/^\d+\.\s/,'')}</li>`);
+    else if (!line.trim()) out.push('<br/>');
+    else out.push(`<p>${line.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code>$1</code>')}</p>`);
+    i++;
+  }
+  return out.join('\n');
+}
+
+// ── Extract markdown tables → array of {header, rows} ────────────────────────
+function extractTables(text) {
+  const tables = [];
+  const lines = text.split('\n');
+  let cur = [];
+  for (const line of lines) {
+    if (line.match(/^\|.+\|$/)) { cur.push(line); }
+    else if (cur.length) { tables.push(cur); cur = []; }
+  }
+  if (cur.length) tables.push(cur);
+  return tables.map(tLines => {
+    const data = tLines
+      .filter(l => !l.match(/^\|[\s\-:|]+\|$/))
+      .map(r => r.split('|').filter((_,j,a)=>j>0&&j<a.length-1).map(c=>c.trim()));
+    return data;
+  }).filter(t => t.length > 1);
+}
+
 // ── Message bubble ────────────────────────────────────────────────────────────
 function MsgBubble({ msg, streaming }) {
   const isUser = msg.role === 'user';
@@ -559,20 +614,46 @@ function MsgBubble({ msg, streaming }) {
     });
   }
 
-  function handleDownload() {
-    const blob = new Blob([msg.content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sage-${new Date().toISOString().slice(0,10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   function handleEmail() {
     const subject = encodeURIComponent('SAGE Analysis');
     const body = encodeURIComponent(msg.content);
     window.open(`mailto:fletcher.reaves@mcreaves.com?subject=${subject}&body=${body}`);
+  }
+
+  function handlePDF() {
+    const date = new Date().toISOString().slice(0,10);
+    const win = window.open('', '_blank', 'width=860,height=700');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>SAGE ${date}</title><style>
+      body{font-family:Arial,sans-serif;font-size:12px;color:#111;max-width:760px;margin:40px auto;line-height:1.7}
+      h1{font-size:20px;margin:20px 0 8px}h2{font-size:15px;border-bottom:2px solid #f5bc00;padding-bottom:4px;margin:18px 0 8px}h3{font-size:13px;margin:14px 0 6px}
+      table{border-collapse:collapse;width:100%;margin:12px 0;font-size:11px}
+      th{background:#f5bc00;color:#111;padding:6px 10px;text-align:left;font-weight:700}
+      td{border:1px solid #ccc;padding:5px 10px}tr:nth-child(even){background:#f9f9f9}
+      hr{border:none;border-top:1px solid #ddd;margin:14px 0}code{background:#f0f0f0;padding:1px 4px;border-radius:3px}
+      .t1{color:#c0392b;margin:4px 0}.t2{color:#d35400;margin:4px 0}.t3{color:#7f8c8d;margin:4px 0}
+      li{margin:3px 0}p{margin:4px 0}
+      @media print{body{margin:20px}}
+    </style></head><body><p style="color:#888;font-size:10px">SAGE Analysis · ${date}</p>${mdToHTML(msg.content)}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 350);
+  }
+
+  function handleExcel() {
+    const date = new Date().toISOString().slice(0,10);
+    const wb = XLSX.utils.book_new();
+    const tables = extractTables(msg.content);
+    if (tables.length) {
+      tables.forEach((rows, i) => {
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, `Table ${i+1}`);
+      });
+    } else {
+      const ws = XLSX.utils.aoa_to_sheet(msg.content.split('\n').map(l => [l]));
+      XLSX.utils.book_append_sheet(wb, ws, 'SAGE Analysis');
+    }
+    XLSX.writeFile(wb, `sage-${date}.xlsx`);
   }
 
   const btnStyle = (active) => ({
@@ -591,7 +672,8 @@ function MsgBubble({ msg, streaming }) {
   },
     h('button', { onClick: handleCopy, style: btnStyle(copied) }, copied ? '✓ Copied' : 'Copy'),
     h('button', { onClick: handleEmail, style: btnStyle(false) }, 'Email'),
-    h('button', { onClick: handleDownload, style: btnStyle(false) }, 'Download'),
+    h('button', { onClick: handlePDF,   style: btnStyle(false) }, 'PDF'),
+    h('button', { onClick: handleExcel, style: btnStyle(false) }, 'Excel'),
   );
 
   return h('div', {
