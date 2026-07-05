@@ -178,9 +178,9 @@ function HelpGuideModal({onClose}) {
       SRC('Sales vs. Target',       'QSRSoft → Reports → Shift → Operations Report → Product Sales'),
       SRC('Labor %',                'QSRSoft → Operations Report → Controls → Crew Labor %'),
       SRC('Food Over Base % (FOB)', 'QSRSoft → Operations Report → FOB Section → FOB %'),
+      SRC('Voice OSAT',             'SMG FullScale upload → Overall Satisfaction → 5-star % (auto-filled per month from uploaded FullScale report)'),
       HS('Manual Entry Required'),
-      SRC('Voice OSAT',             'SMG → Reports & Analytics → Full Scale → Overall Satisfaction → 5-star % column'),
-      SRC('EPB2B',                  'SMG → same report → Experienced a Problem (Yes) → 1-rating %'),
+      SRC('EPB2B',                  'SMG → Reports & Analytics → Full Scale → same report → Experienced a Problem (Yes) → 1-rating %'),
       SRC('Delivery Wait (sec)',     'QSRSoft → Reports → Sales → McDelivery 3PO → Restaurant Time'),
       SRC('Digital App GC/R/D',     'QSRSoft → Reports → Digital → Digital App → Digital App GC/R/D'),
       SRC('Delivery GC/R/D',        'QSRSoft → Dashboard → Digital Snapshot → McDelivery row → G/R/D column'),
@@ -817,8 +817,8 @@ function KPITab({review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAut
         autoFilling?'Filling...' : 'Auto-fill from Uploaded Data'),
       span({style:{fontSize:11,color:TEXT3}},
         ds?.loaded
-          ? 'Fills OEPE, R2P, KVS, Sales vs Target, Labor %, and FOB from your uploaded Operations/Labor reports.'
-          : 'Upload Operations Report and Labor Analysis files to enable auto-fill.')),
+          ? 'Fills OEPE, R2P, KVS, Sales vs Target, Labor %, FOB, and Voice OSAT from your uploaded Operations/Labor/SMG FullScale reports.'
+          : 'Upload Operations Report, Labor Analysis, and SMG FullScale files to enable auto-fill.')),
     // Category tabs
     div({style:{display:'flex',gap:4,marginBottom:16,flexWrap:'wrap'}},
       ...allCats.map(cat => {

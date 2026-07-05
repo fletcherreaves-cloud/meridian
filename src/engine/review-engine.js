@@ -28,7 +28,7 @@ export const DEFAULT_REVIEW_CONFIG = {
   metrics: {
     rgr: [
       { key:'oepe',       label:'OEPE (Peaks, sec)',          weight:0.20, better:'lower',  unit:'abs', scored:true,  t:[-5,5,10],         src:'auto', field:'oepe',       note:'Target = store OEPE target (sec)' },
-      { key:'osat',       label:'Voice OSAT',                 weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',              pctInput:true, note:'Target = store-specific' },
+      { key:'osat',       label:'Voice OSAT',                 weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'osat',  pctInput:true, note:'Auto from SMG FullScale (5★ %)' },
       { key:'epb2b',      label:'EPB2B (Pace Portal, %)',     weight:0.10, better:'lower',  unit:'pct', scored:true,  t:[-0.02,0.02,0.04], src:'manual',              pctInput:true, note:'Lower EPB2B = better' },
       { key:'r2p',        label:'R2P Front Counter (sec)',    weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-5,5,10],         src:'auto', field:'r2p',        note:'Target = store R2P target (sec)' },
       { key:'delivWait',  label:'Delivery Wait (sec)',        weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-30,0,120],       src:'manual',                    note:'Target = 240 sec (4 min)' },
@@ -622,12 +622,12 @@ export function autoPopulateKPIs(review, ds) {
   const opsM   = byMonth(ds.opsRows);
   const fobM   = byMonth(ds.fobRows);
 
-  // SMG FullScale: index by month for this store
-  // osatTop2 = Top-2-Box (4+5 stars combined), stored as decimal 0-1
-  // Source guide says "5-star % column" — swap osatTop2 for osat5 if needed
+  // SMG FullScale: index by year+month for this store to avoid cross-year collision
+  const reviewYear = review.year || new Date().getFullYear();
   const smgFSByMonth = {};
   for (const r of (ds.smgFullscale||[])) {
     if (String(r.loc) !== String(loc)) continue;
+    if (r.year !== reviewYear) continue;
     smgFSByMonth[r.month] = r;
   }
 
