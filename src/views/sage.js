@@ -546,9 +546,53 @@ function renderMarkdown(text) {
 // ── Message bubble ────────────────────────────────────────────────────────────
 function MsgBubble({ msg, streaming }) {
   const isUser = msg.role === 'user';
+  const [copied, setCopied] = uSt(false);
+
   const content = isUser
     ? msg.content
     : h('div', { style: { fontSize: 13 } }, ...renderMarkdown(msg.content));
+
+  function handleCopy() {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function handleDownload() {
+    const blob = new Blob([msg.content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sage-${new Date().toISOString().slice(0,10)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleEmail() {
+    const subject = encodeURIComponent('SAGE Analysis');
+    const body = encodeURIComponent(msg.content);
+    window.open(`mailto:fletcher.reaves@mcreaves.com?subject=${subject}&body=${body}`);
+  }
+
+  const btnStyle = (active) => ({
+    background: 'none',
+    border: `1px solid ${active ? 'rgba(16,185,129,.4)' : 'rgba(255,255,255,.12)'}`,
+    borderRadius: 4,
+    color: active ? grn : muted,
+    fontSize: 11,
+    padding: '2px 9px',
+    cursor: 'pointer',
+    transition: 'color .15s, border-color .15s',
+  });
+
+  const actionBar = !isUser && !streaming && h('div', {
+    style: { display: 'flex', gap: 6, marginTop: 6, paddingLeft: 4 }
+  },
+    h('button', { onClick: handleCopy, style: btnStyle(copied) }, copied ? '✓ Copied' : 'Copy'),
+    h('button', { onClick: handleEmail, style: btnStyle(false) }, 'Email'),
+    h('button', { onClick: handleDownload, style: btnStyle(false) }, 'Download'),
+  );
 
   return h('div', {
     style: { display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', marginBottom: 16 }
@@ -570,6 +614,7 @@ function MsgBubble({ msg, streaming }) {
     h('div', { style: { fontSize: '10px', color: muted, marginTop: 3, paddingLeft: isUser ? 0 : 6, paddingRight: isUser ? 6 : 0 } },
       isUser ? 'You' : (streaming ? 'SAGE · typing…' : 'SAGE'),
     ),
+    actionBar,
   );
 }
 
