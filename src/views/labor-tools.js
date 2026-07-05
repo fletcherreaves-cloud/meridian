@@ -1034,11 +1034,12 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
   },[settings]);
 
   const GROUP_OPTS = [
+    {id:'company',    l:'Company'},
+    {id:'org',        l:'Org'},
     {id:'operator',   l:'Operator'},
-    {id:'supervisor', l:'Supervisor'},
-    {id:'market',     l:'Market'},
+    {id:'patch',      l:'Patch'},
   ];
-  const groupIcon = groupBy==='supervisor' ? '🧑‍💼' : groupBy==='market' ? '📍' : '👔';
+  const groupIcon = groupBy==='patch' ? '🧑‍💼' : groupBy==='org' ? '📍' : groupBy==='company' ? '🏢' : '👔';
 
   const today = new Date();
   const addDx = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
@@ -1061,8 +1062,9 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
     const groups={};
     for(const loc of allLocs){
       const c=INV_ORG_COORDS[loc]||{};
-      const key = groupBy==='supervisor' ? (locToSup[loc]||c.sup||'Unknown')
-                : groupBy==='market'     ? (c.state||'?')
+      const key = groupBy==='company'    ? 'All Stores'
+                : groupBy==='org'        ? (c.state||'?')
+                : groupBy==='patch'      ? (locToSup[loc]||c.sup||'Unknown')
                 : (locToOp[loc]||c.op||'Unknown');
       if(!groups[key]) groups[key]={key,locs:[],state:new Set(),sups:new Set(),ops:new Set()};
       groups[key].locs.push(loc);
@@ -1164,7 +1166,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
       // ── Header ────────────────────────────────────────────────────────────────
       div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)',
         display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
-        div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},groupIcon+' District Summary'),
+        div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},groupIcon+' Org Summary'),
         div({style:{fontSize:'9px',color:'var(--text3)'}},'Sales, labor, food cost & service by '+GROUP_OPTS.find(g=>g.id===groupBy).l.toLowerCase()+' · Expand rows for store detail'),
         div({style:{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}},
           h(ExportDropdown,{
@@ -1284,7 +1286,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
                 div({style:{fontSize:'8.5px',color:'var(--text3)',marginTop:2}},
                   op.storeCount+' stores · '+op.state+
                   (groupBy==='operator'&&op.sups?' · '+op.sups:
-                   groupBy==='supervisor'&&op.ops?' · '+op.ops:''))
+                   groupBy==='patch'&&op.ops?' · '+op.ops:''))
               ),
               div({style:{display:'flex',gap:10,flex:1,flexWrap:'wrap',justifyContent:'flex-end',alignItems:'center'}},
                 ...[

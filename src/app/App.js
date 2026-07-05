@@ -72,9 +72,15 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.312';
+const MERIDIAN_VERSION    = '4.314';
 const MERIDIAN_BUILD_DATE = '2026-07-05';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.314', date:'2026-07-05', changes:[
+    'Org Summary: renamed from District Summary, group selector updated to Company / Org / Operator / Patch (replaces Operator / Supervisor / Market).',
+  ]},
+  {version:'4.313', date:'2026-07-05', changes:[
+    'District grid: fix FL chip — use INV_ORG_COORDS[loc].state for FL detection (STORE_COORDS has no state field). Swap colors: FL=gold, OK=blue.',
+  ]},
   {version:'4.312', date:'2026-07-05', changes:[
     'District grid: fix FL/OK org chip — now correctly uses store.state==="FL" instead of org field (FL stores defaulted to MCDOK org, causing FL stores to show gold OK chip instead of blue FL chip).',
   ]},
