@@ -1685,85 +1685,122 @@ aside::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px;}
 
 // DISTRICT GRID (SECTION 13a)
 function StoreCard({store, onSelect}) {
-  const {p, t, opsScore, ctrlScore, name, loc, city, vel} = store;
+  const {p, t, opsScore, ctrlScore, name, loc, vel, pSales, pLY} = store;
   const combined = Math.round(opsScore*0.6+ctrlScore*0.4);
-  const trend = p.t2w!=null?p.t2w:null;
-  const healthColor = combined>=80?'#10b981':combined>=65?'#f59e0b':'#ef4444';
-  const hasRecords = store.hasRecords;
 
-  // lowerBetter=true means negative delta is improvement (OEPE, labor)
-  const velBadge = (delta, lowerBetter, fmt) => {
-    if(delta==null||Math.abs(delta)<0.0001) return null;
-    const improving = lowerBetter ? delta<0 : delta>0;
-    const col = improving ? 'rgba(16,185,129,.75)' : 'rgba(248,113,113,.75)';
-    const arrow = improving ? '↑' : '↓';
-    return span({style:{fontSize:'8px',color:col,marginLeft:3,fontWeight:700,fontFamily:'var(--mono)'}},
-      arrow+(fmt?fmt(Math.abs(delta)):Math.abs(delta).toFixed(1)));
+  // FL (Emerald Arches) = blue accent, OK (MCDOK) = gold accent
+  const isFl = store.org === 'Emerald Arches';
+  const orgAccent = isFl ? '#1D4ED8' : '#f5bc00';
+  const orgLabel  = isFl ? 'FL' : 'OK';
+
+  const healthColor = combined>=80?'#10b981':combined>=65?'#f59e0b':'#ef4444';
+  const healthLabel = combined>=80?'Model healthy':combined>=65?'Watch zone':'Needs attention';
+
+  // Metric status color: lowerBetter means over-target is bad
+  const metCol = (val, tgt, lowerBetter) => {
+    if(!val||!tgt) return '#94a3b8';
+    if(lowerBetter) return val<=tgt?'#10b981':val<=tgt*1.05?'#f59e0b':'#ef4444';
+    return val>=tgt?'#10b981':val>=tgt*0.95?'#f59e0b':'#ef4444';
   };
 
-  return div({className:'store-card',onClick:()=>onSelect(store),
-    style:{borderLeft:'3px solid '+(store.org==='Emerald Arches'?'var(--ea-accent)':'var(--mcdok-accent)')}},
-    div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}},
-      div(null,
-        div({style:{display:'flex',alignItems:'center',gap:4}},
-          div({style:{fontWeight:700,fontSize:'13px'}},(name.length>26?name.replace(/-/g,'‑').slice(0,25)+'…':name)),
-          hasRecords&&span({style:{fontSize:'9px',cursor:'default'},title:'This store has records data loaded'},'🏆')
+  const fmtSales = v => !v ? '—' : v>=1e6?'$'+(v/1e6).toFixed(1)+'M':'$'+(v/1e3).toFixed(1)+'K';
+  const vsLY = pSales>0&&pLY>0 ? (pSales-pLY)/pLY : null;
+
+  const crits = store.findings.filter(f=>f.t==='crit');
+  const warns  = store.findings.filter(f=>f.t==='warn'||f.t==='watch');
+  const topIssue = crits.length?crits[0]:warns[0];
+
+  const tileBdr = crits.length?'rgba(239,68,68,.25)':warns.length?'rgba(245,158,11,.2)':'rgba(255,255,255,.06)';
+
+  return div({className:'store-card',onClick:()=>onSelect(store),style:{
+    borderRadius:'var(--r)',border:'.5px solid '+tileBdr,
+    background:'var(--surf2)',overflow:'hidden',display:'flex',
+    flexDirection:'column',cursor:'pointer'}},
+
+    // 4px top accent bar: blue for FL, gold for OK
+    div({style:{height:4,background:orgAccent,flexShrink:0}}),
+
+    div({style:{padding:'9px 10px',display:'flex',flexDirection:'column',gap:7,flex:1}},
+
+      // Header: store name + org chip
+      div({style:{display:'flex',alignItems:'flex-start',gap:4}},
+        div({style:{flex:1,minWidth:0}},
+          div({style:{fontWeight:800,fontSize:'11.5px',lineHeight:'15px',
+            whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color:'var(--text)'}},
+            name+(store.hasRecords?' 🏆':'')),
+          div({style:{fontSize:'7.5px',color:'var(--text3)',marginTop:1}},'#'+loc+
+            (store.gm?' · GM: '+store.gm.split(' ')[0]:'')
+          )
         ),
-        div({style:{fontSize:'9px',color:'var(--text3)'}},
-          (store.city||city||'')+', '+(store.state||'OK')+' · #'+loc),
-        store.gm&&div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},'GM: '+store.gm)
+        span({style:{fontSize:'7px',fontWeight:700,padding:'1px 5px',borderRadius:99,flexShrink:0,
+          background:isFl?'rgba(29,78,216,.18)':'rgba(245,188,0,.12)',
+          color:orgAccent,border:'.5px solid '+orgAccent+'55'}},orgLabel)
       ),
-      div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3}},
-        div({style:{display:'flex',alignItems:'center',gap:3}},
-          div({style:{fontFamily:'var(--mono)',fontSize:'20px',fontWeight:700,color:healthColor}},combined),
-          vel&&vel.opsScore!=null&&Math.abs(vel.opsScore)>=2&&span({style:{
-            fontSize:'9px',fontWeight:700,
-            color:vel.opsScore>0?'#10b981':'#f87171',
-            background:vel.opsScore>0?'rgba(16,185,129,.12)':'rgba(248,113,113,.12)',
-            borderRadius:3,padding:'1px 4px'}},
-            (vel.opsScore>0?'↑+':'↓')+Math.round(Math.abs(vel.opsScore)))
+
+      // 4-metric rows: Sales, Labor, OEPE, TPPH
+      div({style:{display:'flex',flexDirection:'column',gap:3}},
+        // Sales row
+        div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
+          fontSize:'9.5px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:3}},
+          span({style:{color:'var(--text3)'}},'Sales'),
+          div({style:{display:'flex',alignItems:'baseline',gap:4}},
+            span({style:{fontFamily:'var(--mono)',fontWeight:700,color:'var(--amber)'}}
+              ,fmtSales(pSales)),
+            vsLY!=null&&span({style:{fontSize:'7.5px',color:vsLY>=0?'#10b981':'#f87171',fontWeight:600}},
+              (vsLY>=0?'+':'')+((vsLY*100).toFixed(1))+'%')
+          )
         ),
-        store.org&&store.org!=='MCDOK'&&span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',
-          borderRadius:3,background:'rgba(167,139,250,.15)',color:'#a78bfa',
-          border:'.5px solid rgba(167,139,250,.3)'}},store.org),
-        div({style:{display:'flex',alignItems:'center',gap:2}},h(ModelHealthBadge,{loc:store.loc,settings:window._mfSettings||{},ds:window._mfDS||{},showDetail:false}),h(InfoIcon,{articleKey:'model_health'}))
+        // Labor row
+        div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
+          fontSize:'9.5px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:3}},
+          span({style:{color:'var(--text3)'}},'Labor'),
+          span({style:{fontFamily:'var(--mono)',fontWeight:700,
+            color:metCol(p.laborPct,t.tLabor,true)}},
+            p.laborPct>0?(p.laborPct*100).toFixed(1)+'%':'—')
+        ),
+        // OEPE row
+        div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
+          fontSize:'9.5px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:3}},
+          span({style:{color:'var(--text3)'}},'OEPE'),
+          span({style:{fontFamily:'var(--mono)',fontWeight:700,
+            color:metCol(p.oepe,t.tOepe,true)}},
+            p.oepe>0?Math.round(p.oepe)+'s':'—')
+        ),
+        // TPPH row
+        div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
+          fontSize:'9.5px'}},
+          span({style:{color:'var(--text3)'}},'TPPH'),
+          span({style:{fontFamily:'var(--mono)',fontWeight:700,
+            color:metCol(p.tpph,t.tTpph,false)}},
+            p.tpph>0?p.tpph.toFixed(1):'—')
+        )
+      ),
+
+      // Footer: health label + combined score
+      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'auto',paddingTop:2}},
+        div({style:{display:'flex',alignItems:'center',gap:4,fontSize:'8px',color:healthColor}},
+          span({style:{width:6,height:6,borderRadius:'50%',background:healthColor,display:'inline-block',flexShrink:0}}),
+          healthLabel,
+          vel&&vel.opsScore!=null&&Math.abs(vel.opsScore)>=2&&span({style:{
+            fontSize:'7.5px',fontWeight:700,marginLeft:2,
+            color:vel.opsScore>0?'#10b981':'#f87171'}},
+            (vel.opsScore>0?'↑+':'↓')+Math.round(Math.abs(vel.opsScore))+'pt')
+        ),
+        div({style:{fontFamily:'var(--mono)',fontSize:'18px',fontWeight:800,color:healthColor,lineHeight:1}},
+          combined)
+      ),
+
+      // Critical/Watch flag (top issue, truncated)
+      topIssue&&div({style:{
+        fontSize:'7.5px',borderTop:'.5px solid rgba(255,255,255,.05)',paddingTop:4,marginTop:1,
+        color:crits.length?'#f87171':'#f59e0b',
+        display:'flex',alignItems:'center',gap:3,overflow:'hidden'}},
+        span(null,crits.length?'⚠':'●'),
+        span({style:{fontWeight:600,flexShrink:0}},crits.length?'Critical':'Watch'),
+        span({style:{color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+          ': '+(topIssue.m||'').replace(/^(CRITICAL|WATCH|INTEGRITY ALERT)\s*—\s*/,'').slice(0,35)+'...')
       )
-    ),
-    div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'3px 6px',fontSize:'10px',marginBottom:6}},
-      ...[
-        {l:'Ops',  v:opsScore+'/100',  c:opsScore>=80?'#10b981':opsScore>=65?'#f59e0b':'#ef4444',  vb:vel&&velBadge(vel.opsScore,false,v=>Math.round(v)+'pt')},
-        {l:'Ctrl', v:ctrlScore+'/100', c:ctrlScore>=80?'#10b981':ctrlScore>=65?'#f59e0b':'#ef4444', vb:vel&&velBadge(vel.ctrlScore,false,v=>Math.round(v)+'pt')},
-        {l:'OEPE', v:p.oepe>0?Math.round(p.oepe)+'s':'—',  c:p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8',  vb:vel&&p.oepe>0&&velBadge(vel.oepe,true,v=>Math.round(v)+'s')},
-        {l:'TPPH', v:p.tpph>0?p.tpph.toFixed(2):'—',       c:p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8',  vb:vel&&p.tpph>0&&velBadge(vel.tpph,false,v=>v.toFixed(2))},
-        {l:'Labor',v:p.laborPct>0?fP(p.laborPct,1):'—',    c:(()=>{if(!p.laborPct||!t.tLabor)return'#94a3b8';const d=p.laborPct-t.tLabor;const a=Math.abs(d);return a<=.005?'#10b981':a<=.02?'#f59e0b':'#ef4444';})(), vb:vel&&p.laborPct>0&&velBadge(vel.laborPct,true,v=>(v*100).toFixed(1)+'pp')},
-        {l:'T2W',  v:trend!=null?fPct(trend):'—',            c:trend!=null?(trend>=0?'#10b981':'#ef4444'):'#94a3b8',                    vb:null},
-      ].map(({l,v,c,vb},i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:2}},
-        span({style:{color:'var(--text3)'}},l),
-        div({style:{display:'flex',alignItems:'center'}},
-          span({style:{fontFamily:'var(--mono)',color:c,fontWeight:600}},v),
-          vb||null)
-      ))
-    ),
-        // Show top critical issue (not raw count) — clickable to go to store
-    (()=>{
-      const crits=store.findings.filter(f=>f.t==='crit');
-      const warns=store.findings.filter(f=>f.t==='warn');
-      if(!crits.length&&!warns.length) return null;
-      const topMsg=crits.length?(crits[0].m||'').slice(0,40):warns[0]&&(warns[0].m||'').slice(0,40);
-      return div({
-        onClick:()=>{if(onSelect)onSelect(store);},
-        style:{fontSize:'9px',cursor:'pointer',userSelect:'none',
-          color:crits.length?'#f87171':'#f59e0b',
-          background:crits.length?'rgba(239,68,68,.08)':'rgba(245,158,11,.08)',
-          border:'.5px solid '+(crits.length?'rgba(239,68,68,.2)':'rgba(245,158,11,.2)'),
-          borderRadius:3,padding:'3px 7px',marginTop:2,
-          display:'flex',alignItems:'center',gap:4},
-        title:'Click to open '+store.name+' — '+crits.length+' critical, '+warns.length+' watch'},
-        span(null,crits.length?'⚠':'◉'),
-        span({style:{fontWeight:600}},crits.length?'Critical':'Watch'),
-        crits.length>0&&span({style:{opacity:.7}},': '+topMsg.split('–')[0].trim().slice(0,30)+'…')
-      );
-    })()
+    )
   );
 }
 
