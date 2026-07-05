@@ -694,13 +694,13 @@ function App() {
       if(!sbRows?.length) return;
       const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
       setDs(prev=>{
-        const existing=new Set((prev.laborRows||[]).map(r=>r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10))));
+        const existing=new Set((prev?.laborRows||[]).map(r=>r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10))));
         const fresh=sbRows.filter(r=>{
           const k=r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
           return !existing.has(k);
         });
         if(!fresh.length) return prev;
-        const merged=[...(prev.laborRows||[]),...fresh].sort((a,b)=>{
+        const merged=[...(prev?.laborRows||[]),...fresh].sort((a,b)=>{
           const da=a.date instanceof Date?a.date:new Date(a.date+'T00:00:00');
           const db=b.date instanceof Date?b.date:new Date(b.date+'T00:00:00');
           return da-db;

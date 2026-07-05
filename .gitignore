@@ -31,3 +31,5 @@ supabase/.temp/
 
 # Local Netlify folder
 .netlify
+.vercel
+.env*
