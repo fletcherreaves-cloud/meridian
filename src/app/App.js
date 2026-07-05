@@ -72,9 +72,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.309';
-const MERIDIAN_BUILD_DATE = '2026-07-04';
+const MERIDIAN_VERSION    = '4.310';
+const MERIDIAN_BUILD_DATE = '2026-07-05';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.310', date:'2026-07-05', changes:[
+    'District Priority Brief: redesigned to 4-column tile grid (Option A+C). Each store tile now has a 4px top accent bar (blue=FL, gold=OK), FL/OK state chip, 4-metric row (4W Sales, Labor%, OEPE, TPPH) with on/near/over status coloring, Ops Score, and finding sections. Panel widened to 1200px max. SMG VOICE: auto-calibrate smart targets from historical data using p75/p25 percentile engine. LifeLenz: extended schedRows load window from 90 days to 5 years for signal correlation history.',
+  ]},
   {version:'4.309', date:'2026-07-04', changes:[
     'Signals: expanded from 11 to 36 correlation signals across 6 domains. New SERVICE signals: Park Rate→OEPE, Park Rate→Sales, DT Mix→OEPE, R2P Pace→Sales, Avg Check→OEPE. New LABOR signals: TPPH→Labor%, Avg Check↔TPPH (speed/ticket tradeoff), Scheduling Gap→OT Hours, Avg Wage Rate→Labor%, Guest Count→Labor% (volume leverage). New FINANCIAL/CONTROLS signals: Discount%→Sales, Drawer Opens→Cash O/S, Manual Refund→Labor%, Waste (Red B)→Food Cost%, POS Overrides→TPPH. New SALES signals: Monthly Sales→Food Cost% (leverage), TPPH→Food Cost%, Avg Check→Daily Sales. New CUSTOMER signals: Park Rate→OSAT, Avg Check→OSAT, Scheduling Gap→OSAT, Discount%→OSAT, Guest Count↔Avg Check (traffic/ticket tradeoff).',
   ]},

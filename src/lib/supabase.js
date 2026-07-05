@@ -309,7 +309,7 @@ export async function saveLifeLenzSchedule(rows) {
 }
 
 // Load LifeLenz schedule rows — defaults to last 90 days + next 30 days
-export async function loadLifeLenzSchedule({ daysBack = 90, daysFwd = 30 } = {}) {
+export async function loadLifeLenzSchedule({ daysBack = 1825, daysFwd = 30 } = {}) {
   if (!supabase) return [];
   const from = new Date(); from.setDate(from.getDate() - daysBack);
   const to   = new Date(); to.setDate(to.getDate() + daysFwd);

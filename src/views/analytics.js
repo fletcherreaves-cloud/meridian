@@ -1789,77 +1789,150 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
     return clean.length>maxLen ? clean.slice(0,maxLen)+'…' : clean;
   };
 
-  // ── Store card component ───────────────────────────────────────────────────
+  // ── Store card component (tile grid layout) ───────────────────────────────────────────
   const StoreCard = ({s, tierCol, tierIcon}) => {
     const isExp = !!expanded[s.loc];
-    const allWatchFindings = s.watches;
-    const displayCrits  = isExp ? s.crits   : s.crits.slice(0,2);
-    const displayWatches= isExp ? allWatchFindings : allWatchFindings.slice(0,1);
+    const displayCrits   = isExp ? s.crits   : s.crits.slice(0,1);
+    const displayWatches = isExp ? s.watches  : s.watches.slice(0,1);
     const hasMore = s.crits.length+s.watches.length > displayCrits.length+displayWatches.length;
-    const trendDir = s.p&&s.p.t2w!=null ? (s.p.t2w>=.02?'📈':s.p.t2w<=-.02?'📉':'→') : null;
-    const trendCol = s.p&&s.p.t2w!=null ? (s.p.t2w>=.02?'#10b981':s.p.t2w<=-.02?'#ef4444':'var(--text3)') : 'var(--text3)';
+
+    // FL/OK org detection for top accent bar + state chip
+    const isFl = (INV_ORG_COORDS[s.loc]||{}).state === 'FL';
+    const orgAccent = isFl ? '#1D4ED8' : '#f5bc00';
+    const orgLabel  = isFl ? 'FL' : 'OK';
+
+    // Ops score color
+    const scoreCol = s.opsScore>=80?'#10b981':s.opsScore>=65?'#f59e0b':'#ef4444';
+
+    // Metric values from the 6-week performance snapshot
+    const oepe  = s.p?.oepe;
+    const tpph  = s.p?.tpph;
+    const labor = s.p?.laborPct;
+    const t2w   = s.p?.t2w;
+
+    const oepeStatus  = oepe  && s.t?.tOepe  ? (oepe>s.t.tOepe+8    ?'over':oepe>s.t.tOepe          ?'warn':'ok') : null;
+    const tpphStatus  = tpph  && s.t?.tTpph  ? (tpph<s.t.tTpph-0.2  ?'over':tpph<s.t.tTpph          ?'warn':'ok') : null;
+    const laborStatus = labor && s.t?.tLabor  ? (labor>s.t.tLabor+0.02?'over':labor>s.t.tLabor        ?'warn':'ok') : null;
+
+    const metCol = st => st==='over'?'#ef4444':st==='warn'?'#f59e0b':st==='ok'?'#10b981':'var(--text)';
+    const metLbl = (st, lowerBetter) => !st ? null
+      : st==='ok' ? '✓ ok'
+      : st==='warn' ? '~ near'
+      : (lowerBetter ? '▲ over' : '▼ low');
+
+    const salesVal = s.pSales>0
+      ? '$'+(s.pSales>=1e6?(s.pSales/1e6).toFixed(1)+'M':(s.pSales/1e3).toFixed(1)+'K') : '—';
+    const salesTrendCol = t2w!=null?(t2w>=.02?'#10b981':t2w<=-.02?'#ef4444':'var(--text3)'):'var(--text3)';
+    const salesTrendLbl = t2w!=null
+      ? (t2w>=.02?'▲':t2w<=-.02?'▼':'—')+' '+(t2w>=0?'+':'')+((t2w*100).toFixed(1))+'%'
+      : null;
+
+    const tileBdr = tierCol==='#ef4444'?'rgba(239,68,68,.3)':tierCol==='#f59e0b'?'rgba(245,158,11,.25)':'rgba(16,185,129,.2)';
+
     return div({style:{
-      border:'.5px solid '+tierCol+'55',borderRadius:'var(--r)',
-      background:tierCol==='#ef4444'?'rgba(239,68,68,.04)':tierCol==='#f59e0b'?'rgba(245,158,11,.035)':'rgba(16,185,129,.04)',
-      padding:'10px 14px',marginBottom:8}},
-      // ── Card header ────────────────────────────────────────────────
-      div({style:{display:'flex',alignItems:'flex-start',gap:10,marginBottom:6}},
-        span({style:{fontSize:'16px',flexShrink:0,lineHeight:'22px'}},tierIcon),
-        div({style:{flex:1,minWidth:0}},
-          div({style:{display:'flex',flexWrap:'wrap',gap:6,alignItems:'baseline',marginBottom:2}},
-            span({style:{fontSize:'11px',fontWeight:800,color:'var(--amber)'}},(STORE_NAMES[s.loc]||s.loc)),
-            span({style:{fontSize:'9px',color:'var(--text3)'}},'#'+s.loc),
-            s.city&&span({style:{fontSize:'8.5px',color:'var(--text3)'}},'· '+s.city+(s.state?', '+s.state:'')),
-            trendDir&&span({style:{fontSize:'9px',color:trendCol,fontWeight:600}},
-              trendDir+(s.p.t2w!=null?' '+(s.p.t2w>=0?'+':'')+((s.p.t2w*100).toFixed(1))+'% 2W':'')),
-            s.calGap&&span({title:'Forecast MAPE '+s.storedMape+'% — Why Engine scan recommended',
-              style:{fontSize:'7px',padding:'1px 6px',borderRadius:99,background:'rgba(99,102,241,.15)',
-                color:'#818cf8',fontWeight:700,cursor:'help'}},'🔬 '+s.storedMape+'% MAPE')
+      borderRadius:'var(--r)',border:'.5px solid '+tileBdr,
+      background:'var(--surf2)',overflow:'hidden',
+      display:'flex',flexDirection:'column'}},
+
+      // 4px top accent bar: blue=FL / gold=OK
+      div({style:{height:4,background:orgAccent,flexShrink:0}}),
+
+      div({style:{padding:'8px 10px',display:'flex',flexDirection:'column',gap:6,flex:1}},
+
+        // ── Header ────────────────────────────────────────────────────
+        div({style:{display:'flex',alignItems:'flex-start',gap:5}},
+          div({style:{flex:1,minWidth:0}},
+            div({style:{fontSize:'10px',fontWeight:800,color:'var(--amber)',
+              whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',lineHeight:'15px'}},
+              tierIcon+' '+(STORE_NAMES[s.loc]||s.loc)),
+            div({style:{display:'flex',gap:5,flexWrap:'wrap',fontSize:'7.5px',color:'var(--text3)',marginTop:2}},
+              s.gm&&span(null,'GM: ',span({style:{color:'var(--text2)'}},(s.gm).split(' ')[0])),
+              s.sup&&span(null,'Sup: ',span({style:{color:'var(--text2)'}},s.sup.split(' ').slice(-1)[0])),
+              span({style:{color:scoreCol,fontWeight:700}},'Score '+(s.opsScore!=null?s.opsScore:'—')+'/100')
+            )
           ),
-          div({style:{display:'flex',gap:10,flexWrap:'wrap',fontSize:'8.5px',color:'var(--text3)'}},
-            s.gm&&div(null,'GM: ',span({style:{color:'var(--text2)'}},(s.gm||'').split(' ')[0])),
-            s.operator&&div(null,'Operator: ',span({style:{color:'var(--text2)'}},s.operator.split(' ').slice(-1)[0])),
-            s.sup&&div(null,'Sup: ',span({style:{color:'var(--text2)'}},s.sup.split(' ').slice(-1)[0])),
-            s.vsLY!=null&&div(null,'4W vs LY: ',span({style:{color:s.vsLY>=0?'#10b981':'#f87171',fontWeight:700}},
-              (s.vsLY>=0?'+':'')+((s.vsLY*100).toFixed(1))+'%'))
+          div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3,flexShrink:0}},
+            span({style:{fontSize:'6.5px',fontWeight:700,padding:'1px 5px',borderRadius:99,
+              background:isFl?'rgba(29,78,216,.18)':'rgba(245,188,0,.12)',
+              color:orgAccent,border:'.5px solid '+orgAccent+'55'}},orgLabel),
+            onSelectStore&&btn({
+              style:{fontSize:'7px',padding:'2px 7px',background:'rgba(245,158,11,.1)',
+                border:'.5px solid rgba(245,158,11,.25)',borderRadius:'var(--r)',
+                color:'var(--amber)',cursor:'pointer'},
+              onClick:()=>{onSelectStore(s.loc);onClose&&onClose();}
+            },'Open →')
           )
         ),
-        div({style:{display:'flex',gap:4,flexShrink:0}},
-          onSelectStore&&btn({
-            style:{fontSize:'8px',padding:'3px 9px',background:'rgba(245,158,11,.1)',
-              border:'.5px solid rgba(245,158,11,.25)',borderRadius:'var(--r)',
-              color:'var(--amber)',cursor:'pointer',whiteSpace:'nowrap'},
-            onClick:()=>{onSelectStore(s.loc);onClose&&onClose();}
-          },'Open →')
+
+        // ── 4-metric row ─────────────────────────────────────────────────
+        div({style:{display:'flex',gap:3}},
+          // 4W Sales
+          div({style:{flex:1,minWidth:0,padding:'4px 3px',borderRadius:3,
+            background:'rgba(255,255,255,.03)',textAlign:'center'}},
+            div({style:{fontSize:'6.5px',color:'var(--text3)',textTransform:'uppercase',
+              letterSpacing:'.3px',marginBottom:2}},'4W Sales'),
+            div({style:{fontSize:'10px',fontWeight:800,color:'var(--text)',lineHeight:1.1}},salesVal),
+            salesTrendLbl&&div({style:{fontSize:'6.5px',marginTop:1,color:salesTrendCol}},salesTrendLbl)
+          ),
+          // Labor %
+          div({style:{flex:1,minWidth:0,padding:'4px 3px',borderRadius:3,
+            background:'rgba(255,255,255,.03)',textAlign:'center'}},
+            div({style:{fontSize:'6.5px',color:'var(--text3)',textTransform:'uppercase',
+              letterSpacing:'.3px',marginBottom:2}},'Labor'),
+            div({style:{fontSize:'10px',fontWeight:800,lineHeight:1.1,color:metCol(laborStatus)}},
+              labor!=null?((labor*100).toFixed(1)+'%'):'—'),
+            metLbl(laborStatus,true)&&div({style:{fontSize:'6.5px',marginTop:1,color:metCol(laborStatus)}},
+              metLbl(laborStatus,true))
+          ),
+          // OEPE
+          div({style:{flex:1,minWidth:0,padding:'4px 3px',borderRadius:3,
+            background:'rgba(255,255,255,.03)',textAlign:'center'}},
+            div({style:{fontSize:'6.5px',color:'var(--text3)',textTransform:'uppercase',
+              letterSpacing:'.3px',marginBottom:2}},'OEPE'),
+            div({style:{fontSize:'10px',fontWeight:800,lineHeight:1.1,color:metCol(oepeStatus)}},
+              oepe!=null?Math.round(oepe)+'s':'—'),
+            metLbl(oepeStatus,true)&&div({style:{fontSize:'6.5px',marginTop:1,color:metCol(oepeStatus)}},
+              metLbl(oepeStatus,true))
+          ),
+          // TPPH
+          div({style:{flex:1,minWidth:0,padding:'4px 3px',borderRadius:3,
+            background:'rgba(255,255,255,.03)',textAlign:'center'}},
+            div({style:{fontSize:'6.5px',color:'var(--text3)',textTransform:'uppercase',
+              letterSpacing:'.3px',marginBottom:2}},'TPPH'),
+            div({style:{fontSize:'10px',fontWeight:800,lineHeight:1.1,color:metCol(tpphStatus)}},
+              tpph!=null?tpph.toFixed(1):'—'),
+            metLbl(tpphStatus,false)&&div({style:{fontSize:'6.5px',marginTop:1,color:metCol(tpphStatus)}},
+              metLbl(tpphStatus,false))
+          )
+        ),
+
+        // ── Findings (red/amber only; green stores have none) ─────────────────
+        (displayCrits.length>0||displayWatches.length>0)&&div({style:{display:'flex',flexDirection:'column',gap:3}},
+          ...displayCrits.map((f,i)=>div({key:'c'+i,style:{
+            fontSize:'8px',lineHeight:1.4,color:'var(--text)',
+            padding:'4px 7px',background:'rgba(239,68,68,.07)',
+            border:'.5px solid rgba(239,68,68,.2)',borderRadius:3}},
+            span({style:{fontSize:'6.5px',fontWeight:700,color:'#ef4444',textTransform:'uppercase',
+              letterSpacing:'.3px',display:'block',marginBottom:1}},'Critical'),
+            fmtFinding(f.m,isExp?400:110)
+          )),
+          ...displayWatches.map((f,i)=>div({key:'w'+i,style:{
+            fontSize:'8px',lineHeight:1.4,color:'var(--text2)',
+            padding:'3px 7px',background:'rgba(245,158,11,.05)',
+            border:'.5px solid rgba(245,158,11,.15)',borderRadius:3}},
+            fmtFinding(f.m,isExp?400:110)
+          )),
+          (hasMore||isExp)&&btn({
+            style:{alignSelf:'flex-start',marginTop:1,fontSize:'7.5px',padding:'2px 7px',
+              background:'transparent',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+              color:'var(--text3)',cursor:'pointer'},
+            onClick:()=>toggleExp(s.loc)},
+            isExp ? '▲ Less'
+                  : '▼ +'+(s.crits.length+s.watches.length-displayCrits.length-displayWatches.length)+' more')
         )
-      ),
-      // ── Findings ───────────────────────────────────────────────────
-      div({style:{display:'flex',flexDirection:'column',gap:4}},
-        ...displayCrits.map((f,i)=>div({key:'c'+i,style:{
-          fontSize:'9px',lineHeight:1.5,color:'var(--text)',
-          padding:'5px 9px',background:'rgba(239,68,68,.07)',
-          border:'.5px solid rgba(239,68,68,.2)',borderRadius:4}},
-          span({style:{fontSize:'7.5px',fontWeight:700,color:'#ef4444',textTransform:'uppercase',
-            letterSpacing:'.3px',display:'block',marginBottom:2}},'Critical'),
-          fmtFinding(f.m,isExp?999:160)
-        )),
-        ...displayWatches.map((f,i)=>div({key:'w'+i,style:{
-          fontSize:'9px',lineHeight:1.5,color:'var(--text2)',
-          padding:'4px 9px',background:'rgba(245,158,11,.05)',
-          border:'.5px solid rgba(245,158,11,.15)',borderRadius:4}},
-          fmtFinding(f.m,isExp?999:140)
-        )),
-        (hasMore||isExp)&&btn({
-          style:{alignSelf:'flex-start',marginTop:2,fontSize:'8px',padding:'2px 8px',
-            background:'transparent',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-            color:'var(--text3)',cursor:'pointer'},
-          onClick:()=>toggleExp(s.loc)},
-          isExp ? '▲ Show less'
-                : '▼ +'+(s.crits.length+s.watches.length-displayCrits.length-displayWatches.length)+' more')
       )
     );
   };
-
   if(!stores||!stores.length||!stores.some(s=>s.findings))
     return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:451,display:'flex',alignItems:'center',justifyContent:'center'}},
       div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
@@ -1870,7 +1943,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:451,display:'flex',flexDirection:'column',paddingTop:20}},
     div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',maxWidth:980,margin:'0 auto',width:'calc(100% - 32px)',
+    div({style:{flex:1,background:'var(--surf)',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',
       borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',
       boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
 
@@ -1986,10 +2059,12 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
             div({style:{fontSize:'10px',fontWeight:700,color:'#ef4444',textTransform:'uppercase',letterSpacing:'.5px'}},'Action Required'),
             span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},red.length+' store'+(red.length>1?'s':''))
           ),
-          ...red.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#ef4444',tierIcon:'🚨'}))
+          div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
+            ...red.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#ef4444',tierIcon:'🚨'}))
+          )
         ),
 
-        // ── Watch Closely ──────────────────────────────────────────────────────
+        // ── Watch Closely ─────────────────────────────────────────────────────
         amber.length>0&&div(null,
           div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
             padding:'5px 0',borderBottom:'.5px solid rgba(245,158,11,.25)'}},
@@ -1997,10 +2072,12 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
             div({style:{fontSize:'10px',fontWeight:700,color:'#f59e0b',textTransform:'uppercase',letterSpacing:'.5px'}},'Watch Closely'),
             span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},amber.length+' store'+(amber.length>1?'s':''))
           ),
-          ...amber.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#f59e0b',tierIcon:'⚠️'}))
+          div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
+            ...amber.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#f59e0b',tierIcon:'⚠️'}))
+          )
         ),
 
-        // ── Running Well ───────────────────────────────────────────────────────
+        // ── Running Well ──────────────────────────────────────────────────────
         green.length>0&&div(null,
           div({style:{display:'flex',alignItems:'center',gap:8,margin:'14px 0 8px',
             padding:'5px 0',borderBottom:'.5px solid rgba(16,185,129,.2)'}},
@@ -2008,20 +2085,8 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
             div({style:{fontSize:'10px',fontWeight:700,color:'#10b981',textTransform:'uppercase',letterSpacing:'.5px'}},'Running Well'),
             span({style:{fontSize:'8.5px',color:'var(--text3)',fontWeight:400}},green.length+' store'+(green.length>1?'s':''))
           ),
-          div({style:{display:'flex',gap:6,flexWrap:'wrap',paddingBottom:4}},
-            ...green.map(s=>{
-              const hasStr=s.strength&&s.strength.length>0;
-              return div({key:s.loc,style:{
-                display:'flex',alignItems:'center',gap:6,
-                padding:'5px 10px',borderRadius:'var(--r)',
-                background:'rgba(16,185,129,.05)',border:'.5px solid rgba(16,185,129,.2)',
-                cursor:onSelectStore?'pointer':'default'},
-                onClick:onSelectStore?()=>{onSelectStore(s.loc);onClose&&onClose();}:undefined},
-                div({style:{fontSize:'9px',fontWeight:700,color:'var(--amber)'}},(STORE_NAMES[s.loc]||s.loc)),
-                hasStr&&div({style:{fontSize:'8px',color:'#34d399'}},
-                  '· '+(s.strength.includes('ELITE')?'⭐ Elite':s.strength.includes('CONTROLS')?'🔒 Controls':s.strength.includes('OPS')?'⚡ Ops':'✓'))
-              );
-            })
+          div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8,paddingBottom:4}},
+            ...green.map(s=>h(StoreCard,{key:s.loc,s,tierCol:'#10b981',tierIcon:'✅'}))
           )
         )
       )

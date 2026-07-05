@@ -25,6 +25,67 @@ const SMG_DEFAULTS = {
   avgYellow:     0.3,
 };
 
+// ── Smart target calibration ───────────────────────────────────────────────────
+// Computes recommended thresholds from historical FullScale data.
+// Higher-better: p75 = green standard, (p75 - p50) spread = yellow band.
+// Lower-better:  p25 = green standard, (p50 - p25) spread = yellow band.
+function pct(arr, p) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a,b)=>a-b);
+  const idx = (p/100)*(s.length-1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  return s[lo] + (s[hi]-s[lo])*(idx-lo);
+}
+
+function computeSmgSmartTargets(fsRows) {
+  if (!fsRows || fsRows.length < 4) return null;
+
+  const get = key => fsRows.map(r => r[key]).filter(v => v != null && !isNaN(v));
+
+  const top2  = get('osatTop2');
+  const osat5 = get('osat5');
+  const b2b   = get('osatB2B');
+  const acc   = get('accuracyB2B');
+  const dtP   = get('dtProblem');
+  const ovP   = get('overallProblem');
+  const avg   = get('osatAvg');
+
+  const higher = (vals) => {
+    if (vals.length < 4) return null;
+    const std    = pct(vals, 75);  // top-25% performance = standard
+    const yellow = Math.max(0.01, Math.round((pct(vals, 75) - pct(vals, 50)) * 100) / 100);
+    return { std: Math.round(std*1000)/1000, yellow };
+  };
+  const lower = (vals) => {
+    if (vals.length < 4) return null;
+    const std    = pct(vals, 25);  // bottom-25% (best) = standard
+    const yellow = Math.max(0.01, Math.round((pct(vals, 50) - pct(vals, 25)) * 100) / 100);
+    return { std: Math.round(std*1000)/1000, yellow };
+  };
+
+  const osat   = higher(top2);
+  const accR   = higher(acc);
+  const dtPr   = lower(dtP);
+  const ovPr   = lower(ovP);
+  const avgR   = avg.length >= 4 ? { std: Math.round(pct(avg, 75)*100)/100, yellow: Math.max(0.1, Math.round((pct(avg,75)-pct(avg,50))*100)/100) } : null;
+
+  return {
+    osatStd:    osat?.std    ?? SMG_DEFAULTS.osatStd,
+    osatYellow: osat?.yellow ?? SMG_DEFAULTS.osatYellow,
+    accStd:     accR?.std    ?? SMG_DEFAULTS.accStd,
+    accYellow:  accR?.yellow ?? SMG_DEFAULTS.accYellow,
+    dtProbStd:     dtPr?.std    ?? SMG_DEFAULTS.dtProbStd,
+    dtProbYellow:  dtPr?.yellow ?? SMG_DEFAULTS.dtProbYellow,
+    ovProbStd:     ovPr?.std    ?? SMG_DEFAULTS.ovProbStd,
+    ovProbYellow:  ovPr?.yellow ?? SMG_DEFAULTS.ovProbYellow,
+    avgStd:    avgR?.std    ?? SMG_DEFAULTS.avgStd,
+    avgYellow: avgR?.yellow ?? SMG_DEFAULTS.avgYellow,
+    _calibrated: true,
+    _n: fsRows.length,
+    _months: [...new Set(fsRows.map(r => `${r.year}-${r.month}`))].length,
+  };
+}
+
 function loadSmgSettings() {
   try { return { ...SMG_DEFAULTS, ...JSON.parse(localStorage.getItem(SMG_SETTINGS_KEY) || '{}') }; }
   catch { return { ...SMG_DEFAULTS }; }
@@ -122,9 +183,10 @@ function ScoreDistBar({ rows }) {
 }
 
 // ── Settings editor ────────────────────────────────────────────────────────────
-function SmgSettingsEditor({ settings, onChange }) {
+function SmgSettingsEditor({ settings, onChange, fsRows }) {
   const { useState } = React;
   const [local, setLocal] = useState({ ...settings });
+  const [calibMsg, setCalibMsg] = useState(null);
 
   const upd = (k, v) => setLocal(s => ({ ...s, [k]: v }));
   const pctIn = (k, label, step=0.01) => h('label', { style: { display:'flex', alignItems:'center', gap:8, fontSize:11 } },
@@ -146,41 +208,92 @@ function SmgSettingsEditor({ settings, onChange }) {
 
   const save = () => { saveSmgSettings(local); onChange(local); };
 
-  return h('div', { style: { padding:'16px 20px', borderBottom:'1px solid var(--bdr)', background:'var(--surf2)',
-    display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 } },
+  const autoCalibrate = () => {
+    const suggested = computeSmgSmartTargets(fsRows || []);
+    if (!suggested) {
+      setCalibMsg({ ok: false, text: 'Need at least 4 store-month records to calibrate. Upload more FullScale reports.' });
+      return;
+    }
+    const { _n, _months, ...vals } = suggested;
+    setLocal(s => ({ ...s, ...vals }));
+    setCalibMsg({ ok: true, text: `Calibrated from ${_n} store-months across ${_months} periods. Review thresholds below, then Save.` });
+  };
 
-    h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
-      h('div', { style: { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase',
-        letterSpacing:'.5px', marginBottom:4 } }, 'OSAT / Top-2 / B2B Standard'),
-      pctIn('osatStd',    'Standard (green ≥)'),
-      pctIn('osatYellow', 'Yellow band (pp)'),
-      h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:2 } },
-        `Green ≥ ${(local.osatStd*100).toFixed(0)}% · Yellow ≥ ${((local.osatStd-local.osatYellow)*100).toFixed(0)}% · Red below`)
+  return h('div', { style: { borderBottom:'1px solid var(--bdr)', background:'var(--surf2)' } },
+
+    // Auto-calibrate banner
+    h('div', { style: { padding:'10px 20px', borderBottom:'.5px solid var(--bdr)',
+      display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' } },
+      h('div', { style: { flex:1 } },
+        h('div', { style: { fontSize:10, fontWeight:700, color:'var(--text)', marginBottom:2 } },
+          'Smart Target Calibration'),
+        h('div', { style: { fontSize:9, color:'var(--text3)', lineHeight:1.4 } },
+          'Auto-sets thresholds from your data: p75 of historical performance = green standard (top-quartile bar). ',
+          'Yellow zone = gap between p75 and p50. ',
+          (fsRows && fsRows.length >= 4)
+            ? `${fsRows.length} store-month records available.`
+            : 'Upload FullScale reports to enable.')
+      ),
+      h('button', {
+        onClick: autoCalibrate,
+        disabled: !(fsRows && fsRows.length >= 4),
+        style: {
+          padding:'6px 14px', borderRadius:5, cursor: (fsRows && fsRows.length >= 4) ? 'pointer' : 'default',
+          background: (fsRows && fsRows.length >= 4) ? '#6366f1' : 'var(--surf)',
+          color: (fsRows && fsRows.length >= 4) ? '#fff' : 'var(--text3)',
+          border: 'none', fontSize:11, fontWeight:600, whiteSpace:'nowrap', flexShrink:0
+        }
+      }, '✦ Auto-calibrate from data'),
+      calibMsg && h('div', { style: {
+        width:'100%', padding:'6px 10px', borderRadius:5, fontSize:10,
+        background: calibMsg.ok ? 'rgba(16,185,129,.12)' : 'rgba(248,113,113,.12)',
+        color: calibMsg.ok ? '#10b981' : '#ef4444',
+        border: `1px solid ${calibMsg.ok ? 'rgba(16,185,129,.3)' : 'rgba(248,113,113,.3)'}`
+      } }, calibMsg.text)
     ),
 
-    h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
-      h('div', { style: { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase',
-        letterSpacing:'.5px', marginBottom:4 } }, 'Problem Rates'),
-      pctIn('dtProbStd',    'DT Problem (green ≤)'),
-      pctIn('dtProbYellow', 'Yellow band (pp)'),
-      pctIn('ovProbStd',    'Any Problem (green ≤)'),
-      pctIn('ovProbYellow', 'Yellow band (pp)'),
-      h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:2 } },
-        `DT: ≤${(local.dtProbStd*100).toFixed(0)}% green · >${((local.dtProbStd+local.dtProbYellow)*100).toFixed(0)}% red`)
-    ),
+    // Manual threshold inputs
+    h('div', { style: { padding:'14px 20px', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 } },
 
-    h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
-      h('div', { style: { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase',
-        letterSpacing:'.5px', marginBottom:4 } }, 'Accuracy B2B / OSAT Avg'),
-      pctIn('accStd',    'Accuracy B2B std'),
-      pctIn('accYellow', 'Yellow band (pp)'),
-      rawIn('avgStd',    'OSAT Avg standard'),
-      h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:4, gridColumn:'1/-1' } },
-        'Standard = McDonald\'s accountability baseline. Per-store targets will override when available.'),
-      h('button', { onClick: save, style: { marginTop:8, padding:'5px 14px', borderRadius:5, cursor:'pointer',
-        background:'var(--accent)', color:'#fff', border:'none', fontSize:11, fontWeight:600,
-        alignSelf:'flex-start' } }, 'Save Thresholds')
-    ),
+      h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
+        h('div', { style: { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase',
+          letterSpacing:'.5px', marginBottom:4 } }, 'OSAT / Top-2 / B2B'),
+        pctIn('osatStd',    'Standard (green ≥)'),
+        pctIn('osatYellow', 'Yellow band (pp)'),
+        h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:2 } },
+          `Green ≥ ${(local.osatStd*100).toFixed(0)}% · Yellow ≥ ${((local.osatStd-local.osatYellow)*100).toFixed(0)}% · Red below`)
+      ),
+
+      h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
+        h('div', { style: { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase',
+          letterSpacing:'.5px', marginBottom:4 } }, 'Problem Rates'),
+        pctIn('dtProbStd',    'DT Problem (green ≤)'),
+        pctIn('dtProbYellow', 'Yellow band (pp)'),
+        pctIn('ovProbStd',    'Any Problem (green ≤)'),
+        pctIn('ovProbYellow', 'Yellow band (pp)'),
+        h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:2 } },
+          `DT: ≤${(local.dtProbStd*100).toFixed(0)}% green · >${((local.dtProbStd+local.dtProbYellow)*100).toFixed(0)}% red`)
+      ),
+
+      h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
+        h('div', { style: { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase',
+          letterSpacing:'.5px', marginBottom:4 } }, 'Accuracy B2B / OSAT Avg'),
+        pctIn('accStd',    'Accuracy B2B std'),
+        pctIn('accYellow', 'Yellow band (pp)'),
+        rawIn('avgStd',    'OSAT Avg standard'),
+        h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:4, gridColumn:'1/-1' } },
+          'Thresholds apply org-wide. Auto-calibrate sets these from your p75 historical results.'),
+        h('div', { style: { display:'flex', gap:8, marginTop:8 } },
+          h('button', { onClick: save, style: { padding:'5px 14px', borderRadius:5, cursor:'pointer',
+            background:'var(--accent)', color:'#fff', border:'none', fontSize:11, fontWeight:600 } },
+            'Save Thresholds'),
+          h('button', { onClick: () => { setLocal({...SMG_DEFAULTS}); setCalibMsg(null); },
+            style: { padding:'5px 14px', borderRadius:5, cursor:'pointer',
+              background:'transparent', color:'var(--text3)', border:'1px solid var(--bdr)', fontSize:11 } },
+            'Reset to defaults')
+        )
+      ),
+    )
   );
 }
 
@@ -248,7 +361,7 @@ function FullScalePanel({ fsRows, stores }) {
   return h('div', {style:{overflowY:'auto',flex:1,display:'flex',flexDirection:'column'}},
 
     // Settings editor (collapsible)
-    showSettings && h(SmgSettingsEditor, { settings, onChange: s => { setSettings(s); setShowSettings(false); } }),
+    showSettings && h(SmgSettingsEditor, { settings, onChange: s => { setSettings(s); setShowSettings(false); }, fsRows }),
 
     h('div', {style:{overflowY:'auto',flex:1,padding:16}},
       // Toolbar row: period selector + settings toggle
