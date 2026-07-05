@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES } from '../constants.js';
+import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { ModelHealthBadge } from './analytics.js';
@@ -1688,9 +1688,9 @@ function StoreCard({store, onSelect}) {
   const {p, t, opsScore, ctrlScore, name, loc, vel, pSales, pLY} = store;
   const combined = Math.round(opsScore*0.6+ctrlScore*0.4);
 
-  // FL = blue accent, OK = gold accent; use state field (org defaults to MCDOK for FL stores)
-  const isFl = store.state === 'FL';
-  const orgAccent = isFl ? '#1D4ED8' : '#f5bc00';
+  // FL = gold accent, OK = blue accent; look up state from INV_ORG_COORDS (STORE_COORDS has no state field)
+  const isFl = INV_ORG_COORDS[loc]?.state === 'FL';
+  const orgAccent = isFl ? '#f5bc00' : '#1D4ED8';
   const orgLabel  = isFl ? 'FL' : 'OK';
 
   const healthColor = combined>=80?'#10b981':combined>=65?'#f59e0b':'#ef4444';
@@ -1733,7 +1733,7 @@ function StoreCard({store, onSelect}) {
           )
         ),
         span({style:{fontSize:'7px',fontWeight:700,padding:'1px 5px',borderRadius:99,flexShrink:0,
-          background:isFl?'rgba(29,78,216,.18)':'rgba(245,188,0,.12)',
+          background:isFl?'rgba(245,188,0,.12)':'rgba(29,78,216,.18)',
           color:orgAccent,border:'.5px solid '+orgAccent+'55'}},orgLabel)
       ),
 
