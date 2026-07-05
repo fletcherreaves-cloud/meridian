@@ -617,6 +617,28 @@ create policy "feature_requests: public read"  on public.feature_requests for se
 create policy "feature_requests: public write" on public.feature_requests for all    using (true);
 create index if not exists feature_requests_status_idx on public.feature_requests (status);
 
+-- ── Custom Signals (Signal Lab) ───────────────────────────────────────────────
+create table if not exists public.custom_signals (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  x_metric     text not null,
+  y_metric     text not null,
+  granularity  text not null default 'daily',   -- 'daily' | 'monthly'
+  scope        text not null default 'district', -- 'district' | store loc string
+  status       text not null default 'active',   -- 'active' | 'promoted' | 'graveyard'
+  promoted_to  text[] default '{}',              -- subset of: 'projections','morning_brief','sage'
+  latest_r     numeric,
+  latest_n     int,
+  history      jsonb default '[]',               -- [{date,r,n}] last 50 computations
+  note         text,
+  votes        int default 0,
+  created_by   uuid references auth.users(id),
+  created_at   timestamptz default now()
+);
+alter table public.custom_signals enable row level security;
+create policy "custom_signals: public read"  on public.custom_signals for select using (true);
+create policy "custom_signals: public write" on public.custom_signals for all    using (true);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════

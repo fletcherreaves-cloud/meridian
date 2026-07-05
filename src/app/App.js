@@ -37,7 +37,8 @@ import { SignalsPanel } from '../views/signals.js';
 import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { computeInsights } from '../engine/insights.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, uploadReportFile } from '../lib/supabase.js';
+import { computeAllCustomSignals } from '../engine/signal-registry.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -604,6 +605,7 @@ function App() {
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showSignals,         setShowSignals]         = useState(false);
   const [signals,             setSignals]             = useState([]);
+  const [customSignalDefs,    setCustomSignalDefs]    = useState([]);
   const [showSage,            setShowSage]            = useState(false);
   const [showFeatureRequests, setShowFeatureRequests] = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
@@ -955,6 +957,13 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${darRows.length} DAR rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] DAR rows load failed:',e);}
+      try{
+        const customDefs=await loadCustomSignals();
+        if(customDefs.length>0){
+          setCustomSignalDefs(customDefs);
+          console.log(`[Meridian] ✓ Loaded ${customDefs.length} custom signal definitions`);
+        }
+      }catch(e){console.warn('[Meridian] Custom signals load failed:',e);}
     })();
   },[]);
 
@@ -1249,6 +1258,21 @@ function App() {
       if(_uploadEvents) setUserEvents(_uploadEvents);
     });
     try { setSignals(computeInsights(currentDS)); } catch(e) { console.warn('[insights] error:', e); }
+    // Recompute custom signals and persist history
+    if(customSignalDefs.length>0){
+      try{
+        const activeDefs=customSignalDefs.filter(d=>d.status!=='graveyard');
+        const results=computeAllCustomSignals(activeDefs,currentDS);
+        const today=new Date().toISOString().slice(0,10);
+        for(const def of activeDefs){
+          const sig=results[def.id];
+          if(sig&&sig.r!=null){
+            appendCustomSignalHistory(def.id,sig.r,sig.n,def.history||[]).catch(()=>{});
+            setCustomSignalDefs(prev=>prev.map(d=>d.id===def.id?{...d,latest_r:sig.r,latest_n:sig.n,history:[...(d.history||[]),{date:today,r:sig.r,n:sig.n}].slice(-50)}:d));
+          }
+        }
+      }catch(e){console.warn('[custom signals] recompute error:',e);}
+    }
     // Persist new rows to Supabase for cross-device sync
     if(supabase){
       const newLaborRows=(currentDS.laborRows||[]).filter(r=>!_prevLaborKeys.has(r.loc+'|'+_toDs(r)));
@@ -1653,7 +1677,7 @@ function App() {
         h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
       ),
       div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
-        h(SignalsPanel,{ds,signals}),
+        h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs}),
       ),
     ),
     showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},

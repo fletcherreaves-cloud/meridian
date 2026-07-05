@@ -1,217 +1,179 @@
 // @ts-nocheck
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
+import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire } from '../engine/signal-registry.js';
+import { saveCustomSignal, updateCustomSignal } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
+
 const h = React.createElement;
-const { useState: uSt, useMemo: uM } = React;
+const { useState: uSt, useMemo: uM, useEffect: uE, useCallback: uCB } = React;
 
 const amber = '#f59e0b', grn = '#10b981', red = '#ef4444', muted = '#6b7280', blue = '#60a5fa';
+const surf2 = 'rgba(255,255,255,.04)', bdr = 'rgba(255,255,255,.1)';
 
 const DOMAINS = [
-  { key: null,         label: 'All' },
-  { key: 'service',   label: 'Service' },
-  { key: 'sales',     label: 'Sales' },
-  { key: 'labor',     label: 'Labor' },
-  { key: 'food_cost', label: 'Food Cost' },
-  { key: 'customer',  label: 'Customer' },
+  { key: null, label: 'All' }, { key: 'service', label: 'Service' }, { key: 'sales', label: 'Sales' },
+  { key: 'labor', label: 'Labor' }, { key: 'food_cost', label: 'Food Cost' }, { key: 'customer', label: 'Customer' },
 ];
-
-// Cascade chain signal IDs in order
 const CASCADE_IDS = ['schedule_gap_oepe', 'oepe_kvs', 'oepe_sales', 'kvs_service_sales', 'schedule_gap_sales'];
 
+// ── Shared helpers ────────────────────────────────────────────────────────────
 function rColor(r, expectedDir) {
-  if (r === null || r === undefined) return muted;
+  if (r == null) return muted;
   const a = Math.abs(r);
   if (a < 0.20) return muted;
   const dirMatch = !expectedDir ||
-    (expectedDir === 'negative' && r < 0) ||
-    (expectedDir === 'positive' && r > 0) ||
-    expectedDir === null;
+    (expectedDir === 'negative' && r < 0) || (expectedDir === 'positive' && r > 0) || expectedDir === null;
   if (!dirMatch) return muted;
   if (a >= 0.50) return grn;
   if (a >= 0.30) return amber;
   return muted;
 }
 
-// Three-tier threshold label: No Effect / Within Tolerance / Out of Range
-function thresholdLabel(sig) {
-  const a = Math.abs(sig.r || 0);
-  if (a < 0.20 || (sig.n || 0) < 8) return 'No effect';
-  const dirMatch = !sig.expectedDir ||
-    (sig.expectedDir === 'negative' && sig.r < 0) ||
-    (sig.expectedDir === 'positive' && sig.r > 0) ||
-    sig.expectedDir === null;
-  if (!dirMatch) return 'No effect';
+function rColorSimple(r) {
+  if (r == null) return muted;
+  const a = Math.abs(r);
+  if (a >= 0.50) return grn;
+  if (a >= 0.30) return amber;
+  return muted;
+}
+
+function thresholdLabel(r, n, expectedDir) {
+  const a = Math.abs(r || 0);
+  if (a < 0.20 || (n || 0) < 8) return 'No effect';
+  if (expectedDir) {
+    const dirMatch = (expectedDir === 'negative' && r < 0) || (expectedDir === 'positive' && r > 0);
+    if (!dirMatch) return 'No effect';
+  }
   if (a >= 0.50) return 'Out of range';
   if (a >= 0.30) return 'Within tolerance';
   return 'No effect';
 }
 
-function strengthLabel(sig) {
-  if (!sig.r || Math.abs(sig.r) < 0.20) return 'No signal';
-  if (sig.confirmed) {
-    if (Math.abs(sig.r) >= 0.70) return 'Strong';
-    if (Math.abs(sig.r) >= 0.50) return 'Moderate';
-    return 'Plausible';
-  }
-  if (Math.abs(sig.r) >= 0.30) return 'Weak / needs more data';
-  return 'No signal';
-}
-
-function statusChip(sig) {
-  const thr = thresholdLabel(sig);
+function StatusChip({ r, n, confirmed, expectedDir }) {
+  const thr = thresholdLabel(r, n, expectedDir);
   if (thr === 'No effect')
     return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(107,114,128,.15)', color: muted } }, 'No effect');
   if (thr === 'Out of range')
     return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(16,185,129,.12)', color: grn } }, '↑ Out of range');
-  // within tolerance — confirmed or plausible
-  if (sig.confirmed)
+  if (confirmed)
     return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.12)', color: amber } }, '~ Within tolerance');
   return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.08)', color: amber } }, '~ Plausible');
 }
 
 function CorrelationBar({ r }) {
-  const a = Math.abs(r || 0);
-  const col = a >= 0.50 ? grn : a >= 0.30 ? amber : muted;
-  const pct = Math.min(100, a * 100);
-  return h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-    h('div', { style: { flex: 1, height: '6px', background: 'rgba(255,255,255,.08)', borderRadius: '3px', overflow: 'hidden' } },
-      h('div', { style: { width: pct + '%', height: '100%', background: col, borderRadius: '3px', transition: 'width .4s' } })
+  const a = Math.abs(r || 0), col = rColorSimple(r);
+  return h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+    h('div', { style: { flex: 1, height: 6, background: 'rgba(255,255,255,.08)', borderRadius: 3, overflow: 'hidden' } },
+      h('div', { style: { width: Math.min(100, a * 100) + '%', height: '100%', background: col, borderRadius: 3, transition: 'width .4s' } })
     ),
-    h('span', { style: { fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: col, minWidth: '44px' } },
-      r != null ? (r >= 0 ? '+' : '') + r.toFixed(3) : '—'
-    ),
+    h('span', { style: { fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: col, minWidth: 44 } },
+      r != null ? (r >= 0 ? '+' : '') + r.toFixed(3) : '—'),
   );
 }
 
+function pillBtn(active, onClick, label) {
+  return h('button', { onClick, style: {
+    padding: '4px 12px', borderRadius: '99px',
+    border: `1px solid ${active ? 'rgba(245,158,11,.4)' : bdr}`,
+    background: active ? 'rgba(245,158,11,.1)' : 'transparent',
+    color: active ? amber : muted, fontSize: 11, fontWeight: active ? 700 : 400, cursor: 'pointer',
+  } }, label);
+}
+
+// ── Built-in Signal Card ──────────────────────────────────────────────────────
 function SignalCard({ sig, expanded, onToggle }) {
   const col = rColor(sig.r, sig.expectedDir);
   const isExp = expanded === sig.id;
-  const thr = thresholdLabel(sig);
-  const isOOR = thr === 'Out of range';
+  const thr = thresholdLabel(sig.r, sig.n, sig.expectedDir);
 
-  return h('div', {
-    style: {
-      border: `1px solid ${isOOR ? 'rgba(16,185,129,.25)' : sig.confirmed ? 'rgba(245,158,11,.2)' : 'rgba(255,255,255,.1)'}`,
-      borderRadius: '8px',
-      background: isOOR ? 'rgba(16,185,129,.03)' : 'rgba(255,255,255,.02)',
-      marginBottom: '10px',
-      overflow: 'hidden',
-    }
-  },
-    // Header
-    h('div', {
-      onClick: onToggle,
-      style: { cursor: 'pointer', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '12px', userSelect: 'none' }
-    },
-      // r value circle
-      h('div', {
-        style: {
-          width: '48px', height: '48px', borderRadius: '50%', flexShrink: 0,
-          background: `conic-gradient(${col} ${Math.abs(sig.r || 0) * 360}deg, rgba(255,255,255,.08) 0deg)`,
+  return h('div', { style: {
+    border: `1px solid ${thr === 'Out of range' ? 'rgba(16,185,129,.25)' : sig.confirmed ? 'rgba(245,158,11,.2)' : bdr}`,
+    borderRadius: 8, background: thr === 'Out of range' ? 'rgba(16,185,129,.03)' : surf2, marginBottom: 10, overflow: 'hidden',
+  } },
+    h('div', { onClick: onToggle, style: { cursor: 'pointer', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, userSelect: 'none' } },
+      h('div', { style: {
+        width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+        background: `conic-gradient(${col} ${Math.abs(sig.r || 0) * 360}deg, rgba(255,255,255,.08) 0deg)`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      } },
+        h('div', { style: {
+          width: 36, height: 36, borderRadius: '50%', background: 'var(--bg,#111827)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }
-      },
-        h('div', {
-          style: {
-            width: '36px', height: '36px', borderRadius: '50%',
-            background: 'var(--bg, #111827)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'monospace', fontSize: '10px', fontWeight: 700, color: col,
-          }
-        }, sig.r != null ? (sig.r >= 0 ? '+' : '') + sig.r.toFixed(2) : '—')
+          fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: col,
+        } }, sig.r != null ? (sig.r >= 0 ? '+' : '') + sig.r.toFixed(2) : '—')
       ),
-      // Info
       h('div', { style: { flex: 1, minWidth: 0 } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '3px' } },
-          h('span', { style: { fontWeight: 700, fontSize: '13px', color: 'var(--text, #111827)' } }, sig.name),
-          statusChip(sig),
-          sig.domain && h('span', { style: { fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', padding: '1px 6px', borderRadius: '99px', background: 'rgba(255,255,255,.06)', color: muted } }, sig.domain.replace('_', ' ')),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 } },
+          h('span', { style: { fontWeight: 700, fontSize: 13 } }, sig.name),
+          h(StatusChip, { r: sig.r, n: sig.n, confirmed: sig.confirmed, expectedDir: sig.expectedDir }),
+          sig.domain && h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', padding: '1px 6px', borderRadius: '99px', background: 'rgba(255,255,255,.06)', color: muted } }, sig.domain.replace('_', ' ')),
         ),
-        h('div', { style: { fontSize: '11px', color: muted } }, sig.description),
-        sig.note && h('div', { style: { fontSize: '10px', color: amber, marginTop: '2px' } }, '⚠ ' + sig.note),
+        h('div', { style: { fontSize: 11, color: muted } }, sig.description),
+        sig.note && h('div', { style: { fontSize: 10, color: amber, marginTop: 2 } }, '⚠ ' + sig.note),
       ),
-      // Stats
       h('div', { style: { textAlign: 'right', flexShrink: 0 } },
-        h('div', { style: { fontSize: '10px', color: muted } }, 'n = ' + (sig.n || 0) + ' pts'),
-        h('div', { style: { fontSize: '10px', color: muted, marginTop: '1px' } }, strengthLabel(sig)),
+        h('div', { style: { fontSize: 10, color: muted } }, 'n = ' + (sig.n || 0)),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 1 } }, !sig.r || Math.abs(sig.r) < 0.20 ? 'No signal' : sig.confirmed ? Math.abs(sig.r) >= 0.70 ? 'Strong' : 'Moderate' : 'Plausible'),
       ),
-      h('span', { style: { fontSize: '13px', color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none' } }, '▾'),
+      h('span', { style: { fontSize: 13, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none' } }, '▾'),
     ),
-    // Expanded detail
-    isExp && h('div', { style: { padding: '0 14px 12px', borderTop: '1px solid rgba(255,255,255,.07)' } },
-      h('div', { style: { display: 'flex', gap: '24px', marginTop: '10px', flexWrap: 'wrap' } },
-        h('div', { style: { flex: 1, minWidth: '200px' } },
-          h('div', { style: { fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: '6px' } }, 'Correlation Strength'),
+    isExp && h('div', { style: { padding: '0 14px 12px', borderTop: `1px solid ${bdr}` } },
+      h('div', { style: { display: 'flex', gap: 24, marginTop: 10, flexWrap: 'wrap' } },
+        h('div', { style: { flex: 1, minWidth: 200 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Correlation Strength'),
           h(CorrelationBar, { r: sig.r }),
-          h('div', { style: { marginTop: '6px', fontSize: '10px', color: muted } },
+          h('div', { style: { marginTop: 6, fontSize: 10, color: muted } },
             'Direction: ',
-            h('span', { style: { color: 'var(--text,#111827)' } },
-              sig.direction === 'negative' ? '↓ negative (inverse)' : '↑ positive (direct)'
-            ),
+            h('span', null, sig.direction === 'negative' ? '↓ negative (inverse)' : '↑ positive (direct)'),
             sig.expectedDir && h('span', { style: { color: sig.direction === sig.expectedDir ? grn : red } },
-              ' — ' + (sig.direction === sig.expectedDir ? '✓ as expected' : '✗ unexpected direction')
-            )
+              ' — ' + (sig.direction === sig.expectedDir ? '✓ as expected' : '✗ unexpected direction')),
           ),
         ),
-        h('div', { style: { flex: 1, minWidth: '200px' } },
-          h('div', { style: { fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: '6px' } }, 'Data Points'),
-          h('div', { style: { fontSize: '12px', color: 'var(--text,#111827)' } },
+        h('div', { style: { flex: 1, minWidth: 200 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Data Points'),
+          h('div', { style: { fontSize: 12 } },
             h('span', { style: { fontFamily: 'monospace', fontWeight: 700, color: blue } }, sig.n || 0), ' matched pairs',
           ),
-          h('div', { style: { fontSize: '10px', color: muted, marginTop: '4px' } },
-            'X: ', h('em', null, sig.xLabel),
-          ),
-          h('div', { style: { fontSize: '10px', color: muted } },
-            'Y: ', h('em', null, sig.yLabel),
-          ),
+          h('div', { style: { fontSize: 10, color: muted, marginTop: 4 } }, 'X: ', h('em', null, sig.xLabel)),
+          h('div', { style: { fontSize: 10, color: muted } }, 'Y: ', h('em', null, sig.yLabel)),
         ),
-        h('div', { style: { flex: 1, minWidth: '200px' } },
-          h('div', { style: { fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: '6px' } }, 'Threshold Assessment'),
-          h('div', { style: { fontSize: '11px', color: 'var(--text,#111827)', lineHeight: 1.5 } },
+        h('div', { style: { flex: 1, minWidth: 200 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Assessment'),
+          h('div', { style: { fontSize: 11, lineHeight: 1.5 } },
             thr === 'Out of range'
               ? `Signal confirmed and significant (|r| = ${Math.abs(sig.r).toFixed(2)}). This relationship is strong enough to act on — investigate root cause.`
               : thr === 'Within tolerance'
-              ? `Relationship detected but within an acceptable range (|r| = ${Math.abs(sig.r).toFixed(2)}). Monitor for strengthening. More data improves confidence.`
-              : `No meaningful statistical relationship found yet (|r| = ${Math.abs(sig.r || 0).toFixed(2)}). These metrics may be independent, or more data is needed.`
-          ),
+              ? `Relationship detected but within acceptable range (|r| = ${Math.abs(sig.r).toFixed(2)}). Monitor for strengthening. More data improves confidence.`
+              : `No meaningful statistical relationship found yet (|r| = ${Math.abs(sig.r || 0).toFixed(2)}). These metrics may be independent, or more data is needed.`),
         ),
       ),
     ),
   );
 }
 
-// ── Cascade chain banner ───────────────────────────────────────────────────────
+// ── Cascade Chain ─────────────────────────────────────────────────────────────
 function CascadeChain({ signals }) {
   const cascadeMap = {};
-  for (const s of (signals || [])) {
-    if (CASCADE_IDS.includes(s.id)) cascadeMap[s.id] = s;
-  }
+  for (const s of (signals || [])) { if (CASCADE_IDS.includes(s.id)) cascadeMap[s.id] = s; }
   const confirmedCascade = Object.values(cascadeMap).filter(s => s.confirmed).length;
   if (confirmedCascade < 2) return null;
-
   const nodes = [
-    { id: 'schedule_gap_oepe', label: 'Scheduling Gap' },
-    { id: 'oepe_kvs',          label: 'OEPE Speed' },
-    { id: 'kvs_service_sales', label: 'KVS / Throughput' },
-    { id: 'oepe_sales',        label: 'Daily Sales', alt: 'schedule_gap_sales' },
+    { id: 'schedule_gap_oepe', label: 'Scheduling Gap' }, { id: 'oepe_kvs', label: 'OEPE Speed' },
+    { id: 'kvs_service_sales', label: 'KVS / Throughput' }, { id: 'oepe_sales', label: 'Daily Sales', alt: 'schedule_gap_sales' },
   ];
-
-  return h('div', { style: { marginBottom: '16px', padding: '12px 14px', background: 'rgba(96,165,250,.05)', border: '1px solid rgba(96,165,250,.2)', borderRadius: '8px' } },
-    h('div', { style: { fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: blue, marginBottom: '6px' } },
-      '↳ Scheduling Cascade Active'
-    ),
-    h('div', { style: { fontSize: '11px', color: muted, marginBottom: '10px', lineHeight: 1.5 } },
-      `${confirmedCascade} linked signal${confirmedCascade > 1 ? 's' : ''} confirmed. Under-staffing is cascading through service speed into sales outcomes.`
-    ),
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
+  return h('div', { style: { marginBottom: 16, padding: '12px 14px', background: 'rgba(96,165,250,.05)', border: '1px solid rgba(96,165,250,.2)', borderRadius: 8 } },
+    h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: blue, marginBottom: 6 } }, '↳ Scheduling Cascade Active'),
+    h('div', { style: { fontSize: 11, color: muted, marginBottom: 10, lineHeight: 1.5 } },
+      `${confirmedCascade} linked signal${confirmedCascade > 1 ? 's' : ''} confirmed. Under-staffing is cascading through service speed into sales outcomes.`),
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
       nodes.flatMap((node, i) => {
         const sig = cascadeMap[node.id] || cascadeMap[node.alt];
         const active = sig?.confirmed;
         const parts = [];
-        if (i > 0) parts.push(h('span', { key: `a${i}`, style: { color: active ? blue : 'rgba(96,165,250,.3)', fontWeight: 700, fontSize: '12px' } }, '→'));
+        if (i > 0) parts.push(h('span', { key: `a${i}`, style: { color: active ? blue : 'rgba(96,165,250,.3)', fontWeight: 700, fontSize: 12 } }, '→'));
         parts.push(h('div', { key: node.id, style: {
-          padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: 600,
+          padding: '3px 10px', borderRadius: '99px', fontSize: 11, fontWeight: 600,
           background: active ? 'rgba(96,165,250,.15)' : 'rgba(255,255,255,.04)',
           border: `1px solid ${active ? 'rgba(96,165,250,.35)' : 'rgba(255,255,255,.08)'}`,
           color: active ? blue : 'rgba(107,114,128,.6)',
@@ -222,173 +184,527 @@ function CascadeChain({ signals }) {
   );
 }
 
-// ── Data readiness indicator ───────────────────────────────────────────────────
+// ── Data Readiness ────────────────────────────────────────────────────────────
 function DataReadiness({ ds }) {
   const checks = [
-    { label: 'Labor Analysis', ok: (ds.laborRows?.length || 0) >= 30, count: ds.laborRows?.length || 0, unit: 'rows' },
-    { label: 'Operations Report', ok: (ds.opsRows?.length || 0) >= 10, count: ds.opsRows?.length || 0, unit: 'rows' },
-    { label: 'FOB Reports', ok: (ds.fobRows?.length || 0) >= 5, count: ds.fobRows?.length || 0, unit: 'rows' },
-    { label: 'LifeLenz Schedule', ok: (ds.schedRows?.length || 0) >= 20, count: ds.schedRows?.length || 0, unit: 'rows' },
-    { label: 'SMG FullScale', ok: (ds.smgFullscale?.length || 0) >= 3, count: ds.smgFullscale?.length || 0, unit: 'stores' },
-    { label: 'Labor Exceptions', ok: (ds.exceptionRows?.length || 0) >= 5, count: ds.exceptionRows?.length || 0, unit: 'rows' },
+    { label: 'Labor Analysis', ok: (ds.laborRows?.length || 0) >= 30, count: ds.laborRows?.length || 0 },
+    { label: 'Operations Report', ok: (ds.opsRows?.length || 0) >= 10, count: ds.opsRows?.length || 0 },
+    { label: 'FOB Reports', ok: (ds.fobRows?.length || 0) >= 5, count: ds.fobRows?.length || 0 },
+    { label: 'LifeLenz Schedule', ok: (ds.schedRows?.length || 0) >= 20, count: ds.schedRows?.length || 0 },
+    { label: 'SMG FullScale', ok: (ds.smgFullscale?.length || 0) >= 3, count: ds.smgFullscale?.length || 0 },
+    { label: 'Controls', ok: (ds.ctrlRows?.length || 0) >= 5, count: ds.ctrlRows?.length || 0 },
   ];
-  return h('div', {
-    style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', padding: '10px 14px', background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.08)', borderRadius: '8px' }
-  },
-    h('div', { style: { width: '100%', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: '4px' } }, 'Data available for signal detection'),
-    checks.map(c => h('div', { key: c.label, style: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: c.ok ? grn : c.count > 0 ? amber : muted } },
-      h('span', null, c.ok ? '✓' : c.count > 0 ? '~' : '○'),
-      c.label,
-      h('span', { style: { fontFamily: 'monospace', fontSize: '10px', color: muted } }, '(' + c.count + ' ' + c.unit + ')'),
-    ))
+  return h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
+    h('div', { style: { width: '100%', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 4 } }, 'Data available for signal detection'),
+    checks.map(c => h('div', { key: c.label, style: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: c.ok ? grn : c.count > 0 ? amber : muted } },
+      h('span', null, c.ok ? '✓' : c.count > 0 ? '~' : '○'), c.label,
+      h('span', { style: { fontFamily: 'monospace', fontSize: 10, color: muted } }, '(' + c.count + ')'),
+    )),
+  );
+}
+
+// ── Metric Selector ───────────────────────────────────────────────────────────
+function MetricSelect({ value, onChange, label, excludeKey }) {
+  return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 200 } },
+    h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted } }, label),
+    h('select', {
+      value: value || '',
+      onChange: e => onChange(e.target.value || null),
+      style: { padding: '7px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: value ? 'var(--text,#f1f5f9)' : muted, fontSize: 12, cursor: 'pointer' },
+    },
+      h('option', { value: '' }, '— select metric —'),
+      METRIC_CATEGORIES.map(cat =>
+        h('optgroup', { key: cat.key, label: cat.label },
+          cat.metrics
+            .filter(m => m.key !== excludeKey)
+            .map(m => h('option', { key: m.key, value: m.key }, m.label))
+        )
+      )
+    ),
+  );
+}
+
+// ── Mini r sparkline ──────────────────────────────────────────────────────────
+function MiniSparkline({ history }) {
+  if (!history?.length) return null;
+  const pts = history.slice(-20);
+  const W = 160, H = 32, pad = 4;
+  const ys = pts.map(p => Math.abs(p.r || 0));
+  const maxY = Math.max(0.1, ...ys);
+  const xStep = pts.length > 1 ? (W - pad * 2) / (pts.length - 1) : 0;
+  const xs = pts.map((_, i) => pad + i * xStep);
+  const yCoord = v => H - pad - (v / maxY) * (H - pad * 2);
+  const polyPts = pts.map((p, i) => `${xs[i].toFixed(1)},${yCoord(Math.abs(p.r || 0)).toFixed(1)}`).join(' ');
+  const lastR = pts[pts.length - 1]?.r || 0;
+  const col = rColorSimple(lastR);
+  return h('div', null,
+    h('svg', { width: W, height: H, style: { display: 'block' } },
+      h('polyline', { points: polyPts, fill: 'none', stroke: col, strokeWidth: 1.5, strokeLinejoin: 'round' }),
+      h('circle', { cx: xs[pts.length - 1], cy: yCoord(ys[ys.length - 1]), r: 3, fill: col }),
+    ),
+    h('div', { style: { fontSize: 9, color: muted, marginTop: 2 } }, pts.length + ' data points · r trend'),
+  );
+}
+
+// ── Signal Builder ────────────────────────────────────────────────────────────
+function SignalBuilder({ ds, onSave, existingDefs }) {
+  const [xMetric, setXMetric] = uSt(null);
+  const [yMetric, setYMetric] = uSt(null);
+  const [granularity, setGranularity] = uSt('daily');
+  const [scope, setScope] = uSt('district');
+  const [name, setName] = uSt('');
+  const [preview, setPreview] = uSt(null);
+  const [running, setRunning] = uSt(false);
+  const [saving, setSaving] = uSt(false);
+  const [error, setError] = uSt(null);
+
+  const availLocs = uM(() => {
+    const locs = new Set();
+    [...(ds?.laborRows || []), ...(ds?.opsRows || [])].forEach(r => { if (r.loc) locs.add(String(parseInt(r.loc))); });
+    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
+  }, [ds]);
+
+  const xMeta = xMetric ? findMetric(xMetric) : null;
+  const yMeta = yMetric ? findMetric(yMetric) : null;
+
+  // Auto-restrict granularity when a monthly-only metric is chosen
+  uE(() => {
+    if (xMeta && !xMeta.granularity.includes(granularity)) setGranularity('monthly');
+    if (yMeta && !yMeta.granularity.includes(granularity)) setGranularity('monthly');
+  }, [xMetric, yMetric]);
+
+  const canRun = xMetric && yMetric && xMetric !== yMetric;
+  const canSave = preview && preview.r != null && preview.n >= 5;
+  const autoName = xMeta && yMeta ? `${xMeta.label} → ${yMeta.label}` : '';
+
+  const alreadyExists = uM(() => {
+    if (!xMetric || !yMetric) return false;
+    return existingDefs.some(d => d.xMetric === xMetric && d.yMetric === yMetric && d.granularity === granularity);
+  }, [existingDefs, xMetric, yMetric, granularity]);
+
+  const runPreview = () => {
+    if (!canRun) return;
+    setRunning(true); setError(null); setPreview(null);
+    try {
+      const result = computeCustomSignal({ xMetric, yMetric, granularity, scope }, ds);
+      setPreview(result);
+    } catch (e) {
+      setError('Computation error: ' + e.message);
+    }
+    setRunning(false);
+  };
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    const def = {
+      name: (name.trim() || autoName).slice(0, 120),
+      xMetric, yMetric, granularity, scope,
+      latest_r: preview.r, latest_n: preview.n,
+      history: [{ date: new Date().toISOString().slice(0, 10), r: preview.r, n: preview.n }],
+      status: 'active', promoted_to: [],
+    };
+    const saved = await saveCustomSignal(def);
+    if (saved) {
+      onSave({ ...def, id: saved.id, votes: 0 });
+      setXMetric(null); setYMetric(null); setName(''); setPreview(null); setScope('district'); setError(null);
+    } else {
+      setError('Failed to save — check Supabase connection. (Run the custom_signals table SQL first if this is the first time.)');
+    }
+    setSaving(false);
+  };
+
+  return h('div', { style: { padding: 16, background: surf2, border: `1px solid ${bdr}`, borderRadius: 10, marginBottom: 20 } },
+    h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 14, color: amber } }, '+ Define New Signal'),
+    // Metric selectors
+    h('div', { style: { display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' } },
+      h(MetricSelect, { label: 'X Metric (cause / input)', value: xMetric, onChange: setXMetric, excludeKey: yMetric }),
+      h('div', { style: { display: 'flex', alignItems: 'center', color: muted, fontSize: 18, paddingBottom: 2 } }, '→'),
+      h(MetricSelect, { label: 'Y Metric (outcome / output)', value: yMetric, onChange: setYMetric, excludeKey: xMetric }),
+    ),
+    // Options
+    h('div', { style: { display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' } },
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+        h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: muted } }, 'Granularity'),
+        h('div', { style: { display: 'flex', gap: 6 } },
+          ['daily', 'monthly'].map(g => {
+            const supported = (!xMeta || xMeta.granularity.includes(g)) && (!yMeta || yMeta.granularity.includes(g));
+            return h('button', { key: g, onClick: () => supported && setGranularity(g), style: {
+              padding: '5px 12px', borderRadius: 6,
+              border: `1px solid ${granularity === g ? 'rgba(245,158,11,.5)' : bdr}`,
+              background: granularity === g ? 'rgba(245,158,11,.12)' : 'transparent',
+              color: granularity === g ? amber : supported ? muted : 'rgba(107,114,128,.35)',
+              fontSize: 11, cursor: supported ? 'pointer' : 'not-allowed', fontWeight: granularity === g ? 700 : 400,
+            } }, g + (supported ? '' : ' (n/a)'));
+          })
+        ),
+      ),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+        h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: muted } }, 'Scope'),
+        h('select', { value: scope, onChange: e => setScope(e.target.value), style: { padding: '6px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: 'var(--text)', fontSize: 11, cursor: 'pointer' } },
+          h('option', { value: 'district' }, 'All stores (district)'),
+          availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] ? `${STORE_NAMES[loc]} (${loc})` : `Store ${loc}`)),
+        ),
+      ),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 180 } },
+        h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: muted } }, 'Signal Name (optional)'),
+        h('input', { value: name, onChange: e => setName(e.target.value), placeholder: autoName || 'Auto-generated from metrics', style: { padding: '6px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: 'var(--text)', fontSize: 11, outline: 'none' } }),
+      ),
+    ),
+    alreadyExists && h('div', { style: { fontSize: 11, color: amber, marginBottom: 10, padding: '6px 10px', background: 'rgba(245,158,11,.08)', borderRadius: 6 } },
+      '⚠ A signal with this X/Y/granularity combination already exists.'),
+    // Actions
+    h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' } },
+      h('button', { onClick: runPreview, disabled: !canRun || running, style: {
+        padding: '7px 18px', borderRadius: 6, border: 'none',
+        background: canRun ? amber : 'rgba(245,158,11,.2)',
+        color: canRun ? '#000' : muted, fontSize: 12, fontWeight: 700, cursor: canRun ? 'pointer' : 'not-allowed',
+      } }, running ? 'Computing…' : '▶ Preview Correlation'),
+      preview && canSave && h('button', { onClick: handleSave, disabled: saving, style: { padding: '7px 18px', borderRadius: 6, border: 'none', background: grn, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer' } },
+        saving ? 'Saving…' : '✓ Save Signal'),
+      error && h('span', { style: { fontSize: 11, color: red } }, error),
+    ),
+    // Preview result
+    preview && h('div', { style: { marginTop: 14, padding: '12px 14px', background: 'rgba(255,255,255,.03)', borderRadius: 8, border: `1px solid ${bdr}` } },
+      h('div', { style: { fontSize: 11, fontWeight: 700, color: muted, marginBottom: 8 } }, 'Preview result'),
+      h('div', { style: { display: 'flex', gap: 24, flexWrap: 'wrap' } },
+        h('div', { style: { flex: 1, minWidth: 160 } },
+          h(CorrelationBar, { r: preview.r }),
+          h('div', { style: { fontSize: 10, color: muted, marginTop: 4 } }, 'n = ' + preview.n + ' matched pairs'),
+        ),
+        h('div', { style: { flex: 1, minWidth: 160, fontSize: 11, color: muted, lineHeight: 1.6 } },
+          preview.r != null
+            ? h('div', null,
+                h(StatusChip, { r: preview.r, n: preview.n, confirmed: preview.confirmed }),
+                h('div', { style: { marginTop: 6 } },
+                  Math.abs(preview.r) >= 0.50 ? 'Strong relationship — worth saving and promoting once confirmed.' :
+                  Math.abs(preview.r) >= 0.30 ? 'Moderate relationship. Save it and let it accumulate more data.' :
+                  'Weak or no signal. Try different metrics or adjust scope.'))
+            : preview.n < 5
+            ? 'Not enough matched pairs (' + preview.n + '). Upload more data or switch to monthly granularity.'
+            : 'Could not compute — check that both metrics have uploaded data.',
+        ),
+      ),
+    ),
+  );
+}
+
+// ── Custom Signal Card ────────────────────────────────────────────────────────
+function CustomSignalCard({ sig, def, expanded, onToggle, onPromote, onRetire, onVote, onDelete }) {
+  const col = rColorSimple(sig?.r);
+  const isExp = expanded === def.id;
+  const thr = thresholdLabel(sig?.r, sig?.n);
+  const canPromote = sig?.confirmed && def.status !== 'promoted';
+  const retireProposed = shouldRetire(def, sig?.r, sig?.n);
+  const xMeta = findMetric(def.xMetric);
+  const yMeta = findMetric(def.yMetric);
+
+  return h('div', { style: {
+    border: `1px solid ${thr === 'Out of range' ? 'rgba(16,185,129,.3)' : canPromote ? 'rgba(245,158,11,.3)' : retireProposed ? 'rgba(239,68,68,.25)' : bdr}`,
+    borderRadius: 8, background: surf2, marginBottom: 10, overflow: 'hidden',
+  } },
+    h('div', { onClick: onToggle, style: { cursor: 'pointer', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, userSelect: 'none' } },
+      // r circle
+      h('div', { style: { width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: `conic-gradient(${col} ${Math.abs(sig?.r || 0) * 360}deg, rgba(255,255,255,.08) 0deg)`, display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+        h('div', { style: { width: 34, height: 34, borderRadius: '50%', background: 'var(--bg,#111827)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: col } },
+          sig?.r != null ? (sig.r >= 0 ? '+' : '') + sig.r.toFixed(2) : '—'),
+      ),
+      h('div', { style: { flex: 1, minWidth: 0 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 } },
+          h('span', { style: { fontWeight: 700, fontSize: 13 } }, def.name),
+          h(StatusChip, { r: sig?.r, n: sig?.n, confirmed: sig?.confirmed }),
+          def.status === 'promoted' && h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: '99px', background: 'rgba(96,165,250,.15)', color: blue, border: '1px solid rgba(96,165,250,.3)' } }, '▲ PROMOTED'),
+          retireProposed && h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: '99px', background: 'rgba(239,68,68,.12)', color: red } }, 'Retire?'),
+          h('span', { style: { fontSize: 9, padding: '1px 5px', borderRadius: '99px', background: 'rgba(255,255,255,.06)', color: muted } }, def.granularity),
+        ),
+        h('div', { style: { fontSize: 10, color: muted } },
+          (xMeta?.label || def.xMetric) + ' → ' + (yMeta?.label || def.yMetric),
+          def.scope !== 'district' && (STORE_NAMES?.[def.scope] ? ` · ${STORE_NAMES[def.scope]}` : ` · Store ${def.scope}`),
+        ),
+      ),
+      h('div', { style: { textAlign: 'right', flexShrink: 0, fontSize: 10, color: muted } },
+        h('div', null, 'n = ' + (sig?.n || 0)),
+        h('div', { style: { marginTop: 1 } }, (def.votes || 0) + ' votes'),
+      ),
+      h('span', { style: { fontSize: 13, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none' } }, '▾'),
+    ),
+    isExp && h('div', { style: { padding: '0 14px 14px', borderTop: `1px solid ${bdr}` } },
+      h('div', { style: { display: 'flex', gap: 24, marginTop: 10, flexWrap: 'wrap', marginBottom: 12 } },
+        h('div', { style: { flex: 1, minWidth: 180 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Correlation'),
+          h(CorrelationBar, { r: sig?.r }),
+          h('div', { style: { marginTop: 6, fontSize: 10, color: muted } }, 'X: ', h('em', null, xMeta?.label || def.xMetric)),
+          h('div', { style: { fontSize: 10, color: muted } }, 'Y: ', h('em', null, yMeta?.label || def.yMetric)),
+        ),
+        def.history?.length > 0 && h('div', { style: { flex: 1, minWidth: 180 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'History'),
+          h(MiniSparkline, { history: def.history }),
+        ),
+        sig?.regression && h('div', { style: { flex: 1, minWidth: 180 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Regression'),
+          h('div', { style: { fontSize: 11, color: muted } }, 'Slope: ', h('span', { style: { fontFamily: 'monospace', color: col } }, sig.regression.slope.toFixed(4))),
+          h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, 'Each unit increase in X → Y changes by ', h('strong', null, sig.regression.slope.toFixed(4))),
+        ),
+      ),
+      def.note && h('div', { style: { fontSize: 11, color: amber, marginBottom: 8, padding: '6px 10px', background: 'rgba(245,158,11,.08)', borderRadius: 6 } }, def.note),
+      // Action buttons
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
+        h('button', { onClick: () => onVote(def), style: { padding: '5px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 11, cursor: 'pointer' } },
+          '👍 ' + (def.votes || 0)),
+        canPromote && h('button', { onClick: () => onPromote(def, sig), style: { padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(96,165,250,.4)', background: 'rgba(96,165,250,.1)', color: blue, fontSize: 11, fontWeight: 700, cursor: 'pointer' } },
+          '▲ Promote Signal'),
+        def.status === 'promoted' && h('button', { onClick: () => onPromote(def, sig, true), style: { padding: '5px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 11, cursor: 'pointer' } },
+          'Demote'),
+        retireProposed && h('button', { onClick: () => onRetire(def), style: { padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(239,68,68,.4)', background: 'rgba(239,68,68,.08)', color: red, fontSize: 11, cursor: 'pointer' } },
+          '⚰ Send to Graveyard'),
+        h('button', { onClick: () => onDelete(def), style: { padding: '5px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 11, cursor: 'pointer', marginLeft: 'auto' } },
+          '✕ Delete'),
+      ),
+    ),
+  );
+}
+
+// ── Graveyard Tab ─────────────────────────────────────────────────────────────
+function GraveyardTab({ defs, onRestore }) {
+  const graveyardDefs = defs.filter(d => d.status === 'graveyard');
+  if (!graveyardDefs.length)
+    return h('div', { style: { textAlign: 'center', padding: '48px 24px', color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+      h('div', { style: { fontSize: 28, marginBottom: 10 } }, '⚰'),
+      h('div', { style: { fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, 'Graveyard is empty'),
+      'Signals with n ≥ 50 and |r| < 0.15 for 3 consecutive runs will be proposed for retirement.',
+    );
+
+  return h('div', null,
+    h('div', { style: { fontSize: 11, color: muted, marginBottom: 16, lineHeight: 1.6, padding: '10px 14px', background: surf2, borderRadius: 8, border: `1px solid ${bdr}` } },
+      '⚰ Retired signals — statistically no meaningful relationship was found. ',
+      'This is valuable knowledge: these metric pairs are likely independent in your operation. ',
+      'Archived for reference and never deleted.'),
+    graveyardDefs.map(def => {
+      const xMeta = findMetric(def.xMetric);
+      const yMeta = findMetric(def.yMetric);
+      return h('div', { key: def.id, style: { padding: '12px 14px', border: '1px solid rgba(107,114,128,.2)', borderRadius: 8, marginBottom: 8, background: 'rgba(107,114,128,.04)', display: 'flex', alignItems: 'center', gap: 12 } },
+        h('div', { style: { flex: 1 } },
+          h('div', { style: { fontWeight: 600, fontSize: 12, color: muted, marginBottom: 3 } }, def.name),
+          h('div', { style: { fontSize: 10, color: 'rgba(107,114,128,.6)' } },
+            (xMeta?.label || def.xMetric) + ' → ' + (yMeta?.label || def.yMetric),
+            ' · final |r| = ' + (Math.abs(def.latest_r || 0)).toFixed(3) + ' (n = ' + (def.latest_n || 0) + ')'),
+        ),
+        h('button', { onClick: () => onRestore(def), style: { padding: '4px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 11, cursor: 'pointer' } }, 'Restore'),
+      );
+    })
+  );
+}
+
+// ── Promote Modal ─────────────────────────────────────────────────────────────
+function PromoteModal({ def, sig, onConfirm, onCancel }) {
+  const [selected, setSelected] = uSt(def.promoted_to || []);
+  const toggle = key => setSelected(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  const options = [
+    { key: 'projections', label: '▦ Projections', desc: 'Show a signal influence callout when this X metric is in range' },
+    { key: 'morning_brief', label: '🌅 Morning Brief', desc: 'Flag this relationship in the daily store summary' },
+    { key: 'sage', label: '🧠 SAGE', desc: 'Include this correlation in SAGE AI context when relevant' },
+  ];
+  return h('div', { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+    h('div', { style: { width: 420, background: 'var(--surf,#1a1f2e)', borderRadius: 12, padding: 24, border: `1px solid ${bdr}`, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
+      h('div', { style: { fontSize: 14, fontWeight: 700, marginBottom: 6 } }, '▲ Promote Signal'),
+      h('div', { style: { fontSize: 11, color: muted, marginBottom: 16, lineHeight: 1.5 } },
+        `"${def.name}" has a confirmed correlation (r = ${sig?.r?.toFixed(3) || '?'}). Promoting integrates it into Meridian's intelligence layer.`),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 } },
+        options.map(opt => h('div', { key: opt.key, onClick: () => toggle(opt.key), style: {
+          padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+          border: `1px solid ${selected.includes(opt.key) ? blue : bdr}`,
+          background: selected.includes(opt.key) ? 'rgba(96,165,250,.08)' : surf2,
+        } },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+            h('input', { type: 'checkbox', checked: selected.includes(opt.key), readOnly: true, style: { accentColor: blue } }),
+            h('span', { style: { fontWeight: 600, fontSize: 12, color: selected.includes(opt.key) ? blue : 'var(--text)' } }, opt.label),
+          ),
+          h('div', { style: { fontSize: 10, color: muted, marginTop: 3, marginLeft: 20 } }, opt.desc),
+        ))
+      ),
+      h('div', { style: { display: 'flex', gap: 10, justifyContent: 'flex-end' } },
+        h('button', { onClick: onCancel, style: { padding: '7px 16px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 12, cursor: 'pointer' } }, 'Cancel'),
+        h('button', { onClick: () => onConfirm(selected), style: { padding: '7px 16px', borderRadius: 6, border: 'none', background: blue, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, 'Promote'),
+      ),
+    ),
   );
 }
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
-export function SignalsPanel({ ds, signals }) {
+export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange }) {
+  const [tab, setTab] = uSt('builtin');
   const [expanded, setExpanded] = uSt(null);
   const [filterDomain, setFilterDomain] = uSt(null);
   const [filterLoc, setFilterLoc] = uSt(null);
+  const [localDefs, setLocalDefs] = uSt(customSignalDefs || []);
+  const [promoteTarget, setPromoteTarget] = uSt(null);
 
-  // Collect unique locs from all data sources
+  uE(() => { setLocalDefs(customSignalDefs || []); }, [customSignalDefs]);
+
+  const activeDefs = uM(() => localDefs.filter(d => d.status !== 'graveyard'), [localDefs]);
+  const graveyardCount = uM(() => localDefs.filter(d => d.status === 'graveyard').length, [localDefs]);
+
   const availLocs = uM(() => {
     const locs = new Set();
-    [...(ds?.laborRows || []), ...(ds?.schedRows || []), ...(ds?.opsRows || [])].forEach(r => {
-      if (r.loc) locs.add(normLoc(r.loc));
-    });
-    return [...locs].sort((a, b) => {
-      const na = STORE_NAMES?.[a] || a, nb = STORE_NAMES?.[b] || b;
-      return na.localeCompare(nb);
-    });
+    [...(ds?.laborRows || []), ...(ds?.schedRows || []), ...(ds?.opsRows || [])].forEach(r => { if (r.loc) locs.add(normLoc(r.loc)); });
+    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
   }, [ds]);
 
-  // Filter ds to a single location for per-store analysis
   const filteredDs = uM(() => {
     if (!filterLoc) return ds;
     const keep = r => normLoc(r?.loc) === filterLoc;
-    return {
-      ...ds,
-      laborRows:    (ds?.laborRows    || []).filter(keep),
-      schedRows:    (ds?.schedRows    || []).filter(keep),
-      opsRows:      (ds?.opsRows      || []).filter(keep),
-      fobRows:      (ds?.fobRows      || []).filter(keep),
-      exceptionRows:(ds?.exceptionRows|| []).filter(keep),
-      smgFullscale: (ds?.smgFullscale || []).filter(keep),
-    };
+    return { ...ds, laborRows: (ds?.laborRows || []).filter(keep), schedRows: (ds?.schedRows || []).filter(keep), opsRows: (ds?.opsRows || []).filter(keep), fobRows: (ds?.fobRows || []).filter(keep), exceptionRows: (ds?.exceptionRows || []).filter(keep), smgFullscale: (ds?.smgFullscale || []).filter(keep) };
   }, [ds, filterLoc]);
 
-  // Recompute signals for the filtered loc, or use pre-computed all-stores signals
   const baseSignals = uM(() => {
     if (!filterLoc) return signals || [];
     try { return computeInsights(filteredDs); } catch { return []; }
   }, [filteredDs, filterLoc, signals]);
 
-  // Apply domain filter
-  const displaySignals = uM(() => {
-    if (!filterDomain) return baseSignals;
-    return baseSignals.filter(s => s.domain === filterDomain);
-  }, [baseSignals, filterDomain]);
-
+  const displaySignals = uM(() => !filterDomain ? baseSignals : baseSignals.filter(s => s.domain === filterDomain), [baseSignals, filterDomain]);
   const confirmedCount = displaySignals.filter(s => s.confirmed).length;
   const plausibleCount = displaySignals.filter(s => !s.confirmed && Math.abs(s.r || 0) >= 0.30).length;
   const hasData = (ds?.laborRows?.length || 0) >= 30 || (ds?.fobRows?.length || 0) >= 5 || (ds?.schedRows?.length || 0) >= 20;
-  const storeName = filterLoc ? (STORE_NAMES?.[filterLoc] || `Store ${filterLoc}`) : null;
 
-  const pillBtn = (active, onClick, label) => h('button', {
-    onClick,
-    style: {
-      padding: '4px 12px', borderRadius: '99px', border: `1px solid ${active ? 'rgba(245,158,11,.4)' : 'rgba(255,255,255,.1)'}`,
-      background: active ? 'rgba(245,158,11,.1)' : 'transparent', color: active ? amber : muted,
-      fontSize: '11px', fontWeight: active ? 700 : 400, cursor: 'pointer',
+  // Compute custom signals live for Signal Lab display
+  const labSignals = uM(() => {
+    if (!activeDefs.length || !ds) return {};
+    const out = {};
+    for (const def of activeDefs) {
+      try { out[def.id] = computeCustomSignal(def, ds); } catch {}
     }
-  }, label);
+    return out;
+  }, [activeDefs, ds]);
 
-  return h('div', { style: { padding: '16px', maxWidth: '920px', margin: '0 auto' } },
+  const mutateLocalDefs = uCB((next) => {
+    setLocalDefs(next);
+    onCustomDefsChange?.(next);
+  }, [onCustomDefsChange]);
+
+  const handleNewSignal = uCB(def => {
+    mutateLocalDefs([...localDefs, def]);
+    setTab('lab');
+    setExpanded(null);
+  }, [localDefs, mutateLocalDefs]);
+
+  const handlePromote = uCB(async (def, sig, demote) => {
+    if (demote) {
+      const updated = await updateCustomSignal(def.id, { status: 'active', promoted_to: [] });
+      if (updated) mutateLocalDefs(localDefs.map(d => d.id === def.id ? { ...d, status: 'active', promoted_to: [] } : d));
+      return;
+    }
+    setPromoteTarget({ def, sig });
+  }, [localDefs, mutateLocalDefs]);
+
+  const confirmPromote = uCB(async (selectedModules) => {
+    const { def } = promoteTarget;
+    const updated = await updateCustomSignal(def.id, { status: 'promoted', promoted_to: selectedModules });
+    if (updated) mutateLocalDefs(localDefs.map(d => d.id === def.id ? { ...d, status: 'promoted', promoted_to: selectedModules } : d));
+    setPromoteTarget(null);
+  }, [promoteTarget, localDefs, mutateLocalDefs]);
+
+  const handleRetire = uCB(async (def) => {
+    const sig = labSignals[def.id];
+    const updated = await updateCustomSignal(def.id, { status: 'graveyard', latest_r: sig?.r, latest_n: sig?.n });
+    if (updated) mutateLocalDefs(localDefs.map(d => d.id === def.id ? { ...d, status: 'graveyard', latest_r: sig?.r, latest_n: sig?.n } : d));
+  }, [localDefs, labSignals, mutateLocalDefs]);
+
+  const handleRestore = uCB(async (def) => {
+    const updated = await updateCustomSignal(def.id, { status: 'active' });
+    if (updated) mutateLocalDefs(localDefs.map(d => d.id === def.id ? { ...d, status: 'active' } : d));
+  }, [localDefs, mutateLocalDefs]);
+
+  const handleVote = uCB(async (def) => {
+    const updated = await updateCustomSignal(def.id, { votes: (def.votes || 0) + 1 });
+    if (updated) mutateLocalDefs(localDefs.map(d => d.id === def.id ? { ...d, votes: (d.votes || 0) + 1 } : d));
+  }, [localDefs, mutateLocalDefs]);
+
+  const handleDelete = uCB(async (def) => {
+    if (!confirm(`Delete signal "${def.name}"? This cannot be undone.`)) return;
+    const updated = await updateCustomSignal(def.id, { status: 'graveyard' });
+    if (updated) mutateLocalDefs(localDefs.map(d => d.id === def.id ? { ...d, status: 'graveyard' } : d));
+  }, [localDefs, mutateLocalDefs]);
+
+  const TAB_STYLE = (active, danger) => ({
+    padding: '6px 16px', borderRadius: '99px', fontSize: 12, fontWeight: active ? 700 : 400, cursor: 'pointer',
+    border: `1px solid ${active ? (danger ? 'rgba(239,68,68,.4)' : 'rgba(245,158,11,.45)') : bdr}`,
+    background: active ? (danger ? 'rgba(239,68,68,.08)' : 'rgba(245,158,11,.1)') : 'transparent',
+    color: active ? (danger ? red : amber) : muted,
+  });
+
+  return h('div', { style: { padding: 16, maxWidth: 920, margin: '0 auto' } },
+    promoteTarget && h(PromoteModal, { def: promoteTarget.def, sig: promoteTarget.sig, onConfirm: confirmPromote, onCancel: () => setPromoteTarget(null) }),
 
     // Header
-    h('div', { style: { marginBottom: '16px' } },
-      h('div', { style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: amber, marginBottom: '4px' } }, 'Intelligence'),
-      h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '22px', fontWeight: 900, letterSpacing: '-.03em', color: 'var(--text,#111827)' } }, 'Signals'),
-      h('div', { style: { fontSize: '12px', color: muted, marginTop: '4px' } },
-        'Cross-metric correlation analysis — runs automatically on every data upload. Finds statistical patterns between scheduling, labor, service, and financial outcomes.'
+    h('div', { style: { marginBottom: 16 } },
+      h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'Intelligence'),
+      h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 900, letterSpacing: '-.03em' } }, 'Signals'),
+      h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Cross-metric correlation analysis. Built-in signals run automatically; define your own in Signal Lab.'),
+    ),
+
+    // Tab bar
+    h('div', { style: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' } },
+      h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
+      h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
+      h('button', { onClick: () => setTab('graveyard'), style: TAB_STYLE(tab === 'graveyard', true) }, `⚰ Graveyard${graveyardCount ? ` (${graveyardCount})` : ''}`),
+    ),
+
+    // ── BUILT-IN TAB ──────────────────────────────────────────────────────────
+    tab === 'builtin' && h('div', null,
+      h('div', { style: { display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' } },
+        h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+          DOMAINS.map(d => pillBtn(filterDomain === d.key, () => setFilterDomain(d.key), d.label))
+        ),
+        availLocs.length > 1 && h('select', {
+          value: filterLoc || '', onChange: e => setFilterLoc(e.target.value || null),
+          style: { marginLeft: 'auto', padding: '4px 8px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: filterLoc ? amber : muted, fontSize: 11, cursor: 'pointer' },
+        },
+          h('option', { value: '' }, 'All stores'),
+          availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))
+        ),
+      ),
+      baseSignals.length > 0 && h('div', { style: { display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' } },
+        filterLoc && h('div', { style: { fontSize: 11, color: blue, fontWeight: 600 } }, `📍 ${STORE_NAMES?.[filterLoc] || `Store ${filterLoc}`} analysis`),
+        h('div', { style: { padding: '5px 12px', borderRadius: '99px', background: 'rgba(16,185,129,.1)', border: '1px solid rgba(16,185,129,.25)', fontSize: 12, fontWeight: 700, color: grn } }, confirmedCount + ' out of range'),
+        h('div', { style: { padding: '5px 12px', borderRadius: '99px', background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.25)', fontSize: 12, fontWeight: 700, color: amber } }, plausibleCount + ' within tolerance'),
+        h('div', { style: { padding: '5px 12px', borderRadius: '99px', background: surf2, border: `1px solid ${bdr}`, fontSize: 12, color: muted } }, (displaySignals.length - confirmedCount - plausibleCount) + ' no effect'),
+      ),
+      h(DataReadiness, { ds }),
+      h(CascadeChain, { signals: baseSignals }),
+      !displaySignals.length && h('div', { style: { textAlign: 'center', padding: 48, color: muted, fontSize: 13, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+        h('div', { style: { fontSize: 28, marginBottom: 12 } }, hasData ? '🔍' : '📡'),
+        h('div', { style: { fontWeight: 700, marginBottom: 8, fontSize: 14 } }, filterDomain ? `No ${filterDomain.replace('_', ' ')} signals yet` : hasData ? 'No patterns detected yet' : 'No data loaded'),
+        hasData
+          ? h('div', { style: { lineHeight: 1.7, maxWidth: 480, margin: '0 auto' } }, filterDomain ? 'Try "All" or upload more data.' : 'Upload additional months of history — more data increases signal confidence.')
+          : 'Upload Labor Analysis, Operations Reports, and LifeLenz data to start detecting patterns.',
+      ),
+      displaySignals.map(sig => h(SignalCard, { key: sig.id, sig, expanded, onToggle: () => setExpanded(expanded === sig.id ? null : sig.id) })),
+      h('div', { style: { marginTop: 16, fontSize: 10, color: muted, lineHeight: 1.6 } },
+        '⚙ Signals use Pearson r. Out of range = |r| ≥ 0.50 (n ≥ 20), Within tolerance = |r| 0.30–0.49, No effect = |r| < 0.30. Recomputes after every upload.',
       ),
     ),
 
-    // Filter row: domain pills + store selector
-    h('div', { style: { display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' } },
-      // Domain pills
-      h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-        DOMAINS.map(d => pillBtn(filterDomain === d.key, () => setFilterDomain(d.key), d.label))
+    // ── SIGNAL LAB TAB ────────────────────────────────────────────────────────
+    tab === 'lab' && h('div', null,
+      h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
+        '🧪 Signal Lab — define custom correlations between any two metrics in your data. ',
+        'Saved signals recompute automatically after every upload and accumulate history over time. ',
+        'Strong signals (|r| ≥ 0.50, n ≥ 20) can be promoted to Projections, Morning Brief, and SAGE.'),
+      h(SignalBuilder, { ds, onSave: handleNewSignal, existingDefs: localDefs }),
+      activeDefs.length === 0 && h('div', { style: { textAlign: 'center', padding: '32px 24px', color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+        h('div', { style: { fontSize: 24, marginBottom: 10 } }, '🔬'),
+        h('div', { style: { fontWeight: 700, marginBottom: 6 } }, 'No custom signals yet'),
+        'Use the builder above to define your first custom correlation.',
       ),
-      // Store selector
-      availLocs.length > 1 && h('select', {
-        value: filterLoc || '',
-        onChange: e => setFilterLoc(e.target.value || null),
-        style: {
-          marginLeft: 'auto', padding: '4px 8px', borderRadius: '6px',
-          background: '#1a1f2e', border: '1px solid rgba(255,255,255,.12)',
-          color: filterLoc ? amber : muted, fontSize: '11px', cursor: 'pointer',
-        }
-      },
-        h('option', { value: '' }, 'All stores'),
-        availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))
-      ),
+      activeDefs.length > 0 && h('div', { style: { marginBottom: 12, fontSize: 11, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.07em' } }, `Your signals (${activeDefs.length})`),
+      activeDefs.map(def => h(CustomSignalCard, {
+        key: def.id, def, sig: labSignals[def.id] || null, expanded,
+        onToggle: () => setExpanded(expanded === def.id ? null : def.id),
+        onPromote: handlePromote, onRetire: handleRetire, onVote: handleVote, onDelete: handleDelete,
+      })),
     ),
 
-    // Summary chips
-    (baseSignals.length > 0) && h('div', { style: { display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' } },
-      storeName && h('div', { style: { fontSize: '11px', color: blue, fontWeight: 600 } }, `📍 ${storeName} analysis`),
-      h('div', { style: { padding: '5px 12px', borderRadius: '99px', background: 'rgba(16,185,129,.1)', border: '1px solid rgba(16,185,129,.25)', fontSize: '12px', fontWeight: 700, color: grn } },
-        confirmedCount + ' out of range'
-      ),
-      h('div', { style: { padding: '5px 12px', borderRadius: '99px', background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.25)', fontSize: '12px', fontWeight: 700, color: amber } },
-        plausibleCount + ' within tolerance'
-      ),
-      h('div', { style: { padding: '5px 12px', borderRadius: '99px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', fontSize: '12px', color: muted } },
-        (displaySignals.length - confirmedCount - plausibleCount) + ' no effect'
-      ),
-    ),
-
-    // Data readiness
-    h(DataReadiness, { ds }),
-
-    // Cascade chain banner (only shows when ≥2 cascade signals confirmed)
-    h(CascadeChain, { signals: baseSignals }),
-
-    // Empty state
-    (!displaySignals || displaySignals.length === 0) && h('div', {
-      style: { textAlign: 'center', padding: '48px', color: muted, fontSize: '13px', border: '1px dashed rgba(255,255,255,.1)', borderRadius: '8px' }
-    },
-      h('div', { style: { fontSize: '28px', marginBottom: '12px' } }, hasData ? '🔍' : '📡'),
-      h('div', { style: { fontWeight: 700, marginBottom: '8px', fontSize: '14px', color: 'var(--text,#111827)' } },
-        filterDomain ? `No ${filterDomain.replace('_',' ')} signals yet` : hasData ? 'No patterns detected yet' : 'No data loaded'
-      ),
-      hasData
-        ? h('div', { style: { lineHeight: 1.7, maxWidth: '480px', margin: '0 auto' } },
-            filterDomain
-              ? `No signals in the "${filterDomain.replace('_', ' ')}" domain met the threshold. Try "All" or upload more data.`
-              : 'Data is loaded but no statistical patterns crossed the threshold yet. Upload additional months of history — more data increases signal confidence.',
-            h('br', null),
-            h('span', { style: { fontSize: '11px', marginTop: '8px', display: 'block', color: muted } },
-              'Check DevTools console for [signals] lines to see which correlations are being computed.'
-            )
-          )
-        : 'Upload Labor Analysis, Operations Reports, and LifeLenz data to start detecting patterns.',
-    ),
-
-    // Signal cards
-    displaySignals.map(sig =>
-      h(SignalCard, {
-        key: sig.id,
-        sig,
-        expanded,
-        onToggle: () => setExpanded(expanded === sig.id ? null : sig.id),
-      })
-    ),
-
-    // Footer
-    h('div', { style: { marginTop: '16px', fontSize: '10px', color: muted, lineHeight: 1.6 } },
-      '⚙ Signals use Pearson correlation (r). Threshold labels: Out of range = |r| ≥ 0.50 (confirmed), Within tolerance = |r| 0.30–0.49, No effect = |r| < 0.30. Min 8 matched data points per signal. Cascade chain shows the scheduling→OEPE→KVS→Sales path. Recomputes automatically after every upload.',
-    ),
+    // ── GRAVEYARD TAB ─────────────────────────────────────────────────────────
+    tab === 'graveyard' && h(GraveyardTab, { defs: localDefs, onRestore: handleRestore }),
   );
 }

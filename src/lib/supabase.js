@@ -708,6 +708,65 @@ export async function voteFeatureRequest(id, currentVotes) {
   return data;
 }
 
+// ── Custom Signals ────────────────────────────────────────────────────────────
+export async function loadCustomSignals() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('custom_signals')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) { console.warn('[custom_signals] load error:', error); return []; }
+  return data || [];
+}
+
+export async function saveCustomSignal(def) {
+  if (!supabase) return null;
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const row = {
+    name: def.name,
+    x_metric: def.xMetric,
+    y_metric: def.yMetric,
+    granularity: def.granularity || 'daily',
+    scope: def.scope || 'district',
+    status: def.status || 'active',
+    promoted_to: def.promoted_to || [],
+    latest_r: def.latest_r ?? null,
+    latest_n: def.latest_n ?? null,
+    history: def.history || [],
+    note: def.note || null,
+    created_by: uid || null,
+  };
+  const { data, error } = await supabase
+    .from('custom_signals')
+    .insert([row])
+    .select()
+    .single();
+  if (error) { console.warn('[custom_signals] save error:', error); return null; }
+  return data;
+}
+
+export async function updateCustomSignal(id, updates) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('custom_signals')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) { console.warn('[custom_signals] update error:', error); return null; }
+  return data;
+}
+
+// Append a new r/n measurement to history and update latest_r / latest_n
+export async function appendCustomSignalHistory(id, r, n, existingHistory) {
+  if (!supabase) return;
+  const entry = { date: new Date().toISOString().slice(0,10), r, n };
+  const history = [...(existingHistory || []), entry].slice(-50); // keep last 50
+  await supabase.from('custom_signals').update({
+    latest_r: r, latest_n: n, history,
+  }).eq('id', id);
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client
