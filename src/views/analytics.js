@@ -1411,9 +1411,13 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       fsByPeriod[k].count++;
     }
     const fsPeriods = Object.values(fsByPeriod).sort((a,b)=>b.key.localeCompare(a.key));
+    const vpRows = ds&&ds.smgVoicePerf||[];
+    const vpPeriods = [...new Set(vpRows.map(r=>r.period).filter(Boolean))].sort().reverse();
     return {
       fsPeriods,
       smgFullscale: fsRows.length ? {count:fsRows.length} : {count:0},
+      smgVoicePerfPeriods: vpPeriods,
+      smgVoicePerf: vpRows.length ? {count:vpRows.length} : {count:0},
       monthlyTargets: mtLocs ? {count:mtLocs, label:mtLabel} : {count:0},
       laborRows:  calcCov(ds&&ds.laborRows||[]),
       opsRows:    calcCov(ds&&ds.opsRows||[]),
@@ -1421,7 +1425,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       fobRows:    calcCov(ds&&ds.fobRows||[]),
       darRows:    calcCov(ds&&ds.darRows||[]),
     };
-  },[ds&&ds.smgFullscale,ds&&ds.monthlyTargets,ds&&ds.monthlyTargetsMeta,
+  },[ds&&ds.smgFullscale,ds&&ds.smgVoicePerf,ds&&ds.monthlyTargets,ds&&ds.monthlyTargetsMeta,
      ds&&ds.laborRows,ds&&ds.opsRows,ds&&ds.ctrlRows,ds&&ds.fobRows,ds&&ds.darRows]);
 
   const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0)+(recStats.count||0)
@@ -1531,8 +1535,25 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     ['darRows',  'Daily Activity',     supabaseCov.darRows],
   ].map(([k,label,c],i)=>dataRow(k+'-cloud', label, c||{count:0}, '#60a5fa', i%2));
 
+  const vpPeriods = supabaseCov.smgVoicePerfPeriods||[];
   const cloudRows = [
     ...cloudOpRows,
+    // VOICE Performance: one sub-row per period, or empty state
+    ...(vpPeriods.length > 0
+      ? vpPeriods.map((p,i)=>h('tr',{key:'vp-'+p,style:{background:i%2?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+          h('td',{style:{padding:'5px 10px 5px 18px',color:'var(--text)',fontSize:'8.5px',display:'flex',alignItems:'center',gap:4}},
+            span({style:{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}),
+            'VOICE Performance — '+p),
+          h('td',{style:{padding:'5px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--accent)',fontWeight:700,fontSize:'8.5px'}},
+            (supabaseCov.smgVoicePerf?.count||0)+' rows'),
+          h('td',{colSpan:2,style:{padding:'5px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'7.5px'}},'SMG VOICE PDF')
+        ))
+      : [h('tr',{key:'vp-empty',style:{borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+          h('td',{style:{padding:'6px 10px',color:'var(--text3)',fontWeight:600}},'VOICE Performance'),
+          h('td',{style:{padding:'6px 10px',textAlign:'right',color:'var(--text3)',fontFamily:'var(--mono)'}},'—'),
+          h('td',{colSpan:2,style:{padding:'6px 10px',textAlign:'right',color:'var(--text3)',fontSize:'8px'}},'No data — upload VOICE PDF')
+        )]
+    ),
     // SMG FullScale: one sub-row per loaded month
     ...(fsPeriods.length > 0
       ? fsPeriods.map((p,i)=>h('tr',{key:'fs-'+p.key,style:{background:i%2?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
