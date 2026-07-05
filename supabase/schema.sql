@@ -632,9 +632,18 @@ create table if not exists public.custom_signals (
   history      jsonb default '[]',               -- [{date,r,n}] last 50 computations
   note         text,
   votes        int default 0,
+  x_condition  text not null default 'all',         -- 'all'|'high'|'low'|'positive'|'negative'
+  x_reference  text not null default 'median',      -- 'median'|'average'
+  y_condition  text not null default 'all',
+  y_reference  text not null default 'median',
   created_by   uuid references auth.users(id),
   created_at   timestamptz default now()
 );
+-- Migration: add condition columns to existing table (safe to re-run)
+alter table public.custom_signals add column if not exists x_condition text not null default 'all';
+alter table public.custom_signals add column if not exists x_reference text not null default 'median';
+alter table public.custom_signals add column if not exists y_condition text not null default 'all';
+alter table public.custom_signals add column if not exists y_reference text not null default 'median';
 alter table public.custom_signals enable row level security;
 create policy "custom_signals: public read"  on public.custom_signals for select using (true);
 create policy "custom_signals: public write" on public.custom_signals for all    using (true);

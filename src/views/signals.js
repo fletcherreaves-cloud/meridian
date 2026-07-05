@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
-import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire } from '../engine/signal-registry.js';
+import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel } from '../engine/signal-registry.js';
 import { saveCustomSignal, updateCustomSignal } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
@@ -205,21 +205,58 @@ function DataReadiness({ ds }) {
 
 // ── Metric Selector ───────────────────────────────────────────────────────────
 function MetricSelect({ value, onChange, label, excludeKey }) {
+  const optStyle = { color: '#f1f5f9', background: '#1a1f2e' };
   return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 200 } },
     h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted } }, label),
     h('select', {
       value: value || '',
       onChange: e => onChange(e.target.value || null),
-      style: { padding: '7px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: value ? 'var(--text,#f1f5f9)' : muted, fontSize: 12, cursor: 'pointer' },
+      style: { padding: '7px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#f1f5f9', fontSize: 12, cursor: 'pointer' },
     },
-      h('option', { value: '' }, '— select metric —'),
+      h('option', { value: '', style: optStyle }, '— select metric —'),
       METRIC_CATEGORIES.map(cat =>
         h('optgroup', { key: cat.key, label: cat.label },
           cat.metrics
             .filter(m => m.key !== excludeKey)
-            .map(m => h('option', { key: m.key, value: m.key }, m.label))
+            .map(m => h('option', { key: m.key, value: m.key, style: optStyle }, m.label))
         )
       )
+    ),
+  );
+}
+
+// ── Condition Selector ────────────────────────────────────────────────────────
+function ConditionSelect({ metaMeta, axisLabel, value, onChange, reference, onReferenceChange }) {
+  const needsRef = value === 'high' || value === 'low';
+  const condLabel = cond => {
+    if (cond === 'all') return 'All';
+    if (cond === 'high') return metaMeta?.better === 'lower' ? `High (worse)` : 'High';
+    if (cond === 'low')  return metaMeta?.better === 'higher' ? `Low (worse)` : 'Low';
+    if (cond === 'positive') return '> 0';
+    if (cond === 'negative') return '< 0';
+    return cond;
+  };
+  return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+    h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: muted } }, axisLabel + ' condition'),
+    h('div', { style: { display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' } },
+      ['all', 'high', 'low', 'positive', 'negative'].map(cond =>
+        h('button', {
+          key: cond, onClick: () => onChange(cond),
+          style: {
+            padding: '3px 9px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
+            border: `1px solid ${value === cond ? 'rgba(245,158,11,.5)' : bdr}`,
+            background: value === cond ? 'rgba(245,158,11,.1)' : 'transparent',
+            color: value === cond ? amber : muted, fontWeight: value === cond ? 700 : 400,
+          }
+        }, condLabel(cond))
+      ),
+      needsRef && h('select', {
+        value: reference, onChange: e => onReferenceChange(e.target.value),
+        style: { padding: '3px 8px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#f1f5f9', fontSize: 10 }
+      },
+        h('option', { value: 'median', style: { color: '#f1f5f9', background: '#1a1f2e' } }, 'split at median'),
+        h('option', { value: 'average', style: { color: '#f1f5f9', background: '#1a1f2e' } }, 'split at average'),
+      ),
     ),
   );
 }
@@ -257,6 +294,10 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
   const [running, setRunning] = uSt(false);
   const [saving, setSaving] = uSt(false);
   const [error, setError] = uSt(null);
+  const [xCondition, setXCondition] = uSt('all');
+  const [xReference, setXReference] = uSt('median');
+  const [yCondition, setYCondition] = uSt('all');
+  const [yReference, setYReference] = uSt('median');
 
   const availLocs = uM(() => {
     const locs = new Set();
@@ -286,7 +327,7 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
     if (!canRun) return;
     setRunning(true); setError(null); setPreview(null);
     try {
-      const result = computeCustomSignal({ xMetric, yMetric, granularity, scope }, ds);
+      const result = computeCustomSignal({ xMetric, yMetric, granularity, scope, xCondition, xReference, yCondition, yReference }, ds);
       setPreview(result);
     } catch (e) {
       setError('Computation error: ' + e.message);
@@ -300,6 +341,7 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
     const def = {
       name: (name.trim() || autoName).slice(0, 120),
       xMetric, yMetric, granularity, scope,
+      xCondition, xReference, yCondition, yReference,
       latest_r: preview.r, latest_n: preview.n,
       history: [{ date: new Date().toISOString().slice(0, 10), r: preview.r, n: preview.n }],
       status: 'active', promoted_to: [],
@@ -308,6 +350,7 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
     if (saved) {
       onSave({ ...def, id: saved.id, votes: 0 });
       setXMetric(null); setYMetric(null); setName(''); setPreview(null); setScope('district'); setError(null);
+      setXCondition('all'); setXReference('median'); setYCondition('all'); setYReference('median');
     } else {
       setError('Failed to save — check Supabase connection. (Run the custom_signals table SQL first if this is the first time.)');
     }
@@ -317,10 +360,16 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
   return h('div', { style: { padding: 16, background: surf2, border: `1px solid ${bdr}`, borderRadius: 10, marginBottom: 20 } },
     h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 14, color: amber } }, '+ Define New Signal'),
     // Metric selectors
-    h('div', { style: { display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' } },
+    h('div', { style: { display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap', alignItems: 'flex-end' } },
       h(MetricSelect, { label: 'X Metric (cause / input)', value: xMetric, onChange: setXMetric, excludeKey: yMetric }),
       h('div', { style: { display: 'flex', alignItems: 'center', color: muted, fontSize: 18, paddingBottom: 2 } }, '→'),
       h(MetricSelect, { label: 'Y Metric (outcome / output)', value: yMetric, onChange: setYMetric, excludeKey: xMetric }),
+    ),
+    // Condition filters — only shown when metrics are selected
+    (xMetric || yMetric) && h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, flexWrap: 'wrap', padding: '10px 12px', background: 'rgba(245,158,11,.04)', border: '1px solid rgba(245,158,11,.12)', borderRadius: 8 } },
+      h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: amber, letterSpacing: '.07em', width: '100%', marginBottom: 4 } }, 'Conditional filter (optional — narrows data before computing correlation)'),
+      xMetric && h(ConditionSelect, { metaMeta: xMeta, axisLabel: 'X', value: xCondition, onChange: setXCondition, reference: xReference, onReferenceChange: setXReference }),
+      yMetric && h(ConditionSelect, { metaMeta: yMeta, axisLabel: 'Y', value: yCondition, onChange: setYCondition, reference: yReference, onReferenceChange: setYReference }),
     ),
     // Options
     h('div', { style: { display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' } },
@@ -421,6 +470,13 @@ function CustomSignalCard({ sig, def, expanded, onToggle, onPromote, onRetire, o
           (xMeta?.label || def.xMetric) + ' → ' + (yMeta?.label || def.yMetric),
           def.scope !== 'district' && (STORE_NAMES?.[def.scope] ? ` · ${STORE_NAMES[def.scope]}` : ` · Store ${def.scope}`),
         ),
+        (() => {
+          const xCond = getConditionLabel(def.xCondition, def.xReference, xMeta);
+          const yCond = getConditionLabel(def.yCondition, def.yReference, yMeta);
+          if (!xCond && !yCond) return null;
+          return h('div', { style: { fontSize: 10, color: amber, marginTop: 2 } },
+            '⟁ when ' + [xCond ? `X ${xCond}` : null, yCond ? `Y ${yCond}` : null].filter(Boolean).join(' & '));
+        })(),
       ),
       h('div', { style: { textAlign: 'right', flexShrink: 0, fontSize: 10, color: muted } },
         h('div', null, 'n = ' + (sig?.n || 0)),

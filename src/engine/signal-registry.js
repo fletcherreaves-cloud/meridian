@@ -162,9 +162,45 @@ export function linearRegression(pairs) {
   return { slope, intercept: my - slope*mx, mx, my };
 }
 
+// ── Conditional filtering ─────────────────────────────────────────────────────
+// Conditions narrow the data before Pearson is computed.
+// 'high'/'low' split at the median or average of the chosen axis values.
+// 'positive'/'negative' split at zero (useful for gap/variance metrics).
+function computeThreshold(values, reference) {
+  if (!values.length) return null;
+  if (reference === 'average') return values.reduce((a,b)=>a+b,0)/values.length;
+  const sorted = [...values].sort((a,b)=>a-b);
+  return sorted[Math.floor(sorted.length/2)];
+}
+
+function filterPairsByCondition(pairs, axis, condition, reference) {
+  if (!condition || condition === 'all') return pairs;
+  const get = p => axis === 'x' ? p.x : p.y;
+  if (condition === 'positive') return pairs.filter(p => get(p) > 0);
+  if (condition === 'negative') return pairs.filter(p => get(p) < 0);
+  const threshold = computeThreshold(pairs.map(get), reference || 'median');
+  if (threshold == null) return pairs;
+  if (condition === 'high') return pairs.filter(p => get(p) > threshold);
+  if (condition === 'low')  return pairs.filter(p => get(p) < threshold);
+  return pairs;
+}
+
+export function getConditionLabel(condition, reference, metaMeta) {
+  if (!condition || condition === 'all') return null;
+  const ref = reference === 'average' ? 'avg' : 'median';
+  if (condition === 'positive') return '> 0';
+  if (condition === 'negative') return '< 0';
+  if (condition === 'high') return metaMeta?.better === 'lower' ? `Above ${ref} (worse)` : `Above ${ref}`;
+  if (condition === 'low')  return metaMeta?.better === 'higher' ? `Below ${ref} (worse)` : `Below ${ref}`;
+  return condition;
+}
+
 // ── Custom Signal Computation ─────────────────────────────────────────────────
-// def: { id, name, xMetric, yMetric, granularity, scope }
+// def: { id, name, xMetric, yMetric, granularity, scope,
+//        xCondition?, xReference?, yCondition?, yReference? }
 // scope: 'district' or a loc string for per-store
+// xCondition/yCondition: 'all'|'high'|'low'|'positive'|'negative'
+// xReference/yReference: 'median'|'average'
 export function computeCustomSignal(def, ds) {
   const xMeta = findMetric(def.xMetric);
   const yMeta = findMetric(def.yMetric);
@@ -181,15 +217,27 @@ export function computeCustomSignal(def, ds) {
   const yIdx = {};
   for (const r of yVals) yIdx[_normLoc(r.loc) + '_' + keyFn(r.date)] = r.value;
 
-  const pairs = [];
+  let pairs = [];
   for (const r of xVals) {
     const yv = yIdx[_normLoc(r.loc) + '_' + keyFn(r.date)];
     if (yv != null && !isNaN(yv)) pairs.push({ x: r.value, y: yv, loc: r.loc, date: r.date });
   }
 
+  // Apply optional conditions
+  const xCond = def.xCondition || 'all';
+  const yCond = def.yCondition || 'all';
+  const xRef  = def.xReference || 'median';
+  const yRef  = def.yReference || 'median';
+  if (xCond !== 'all') pairs = filterPairsByCondition(pairs, 'x', xCond, xRef);
+  if (yCond !== 'all') pairs = filterPairsByCondition(pairs, 'y', yCond, yRef);
+
   const r = pearson(pairs);
   const regression = r != null ? linearRegression(pairs) : null;
   const confirmed = r != null && Math.abs(r) >= 0.50 && pairs.length >= 20;
+
+  const xCondLabel = getConditionLabel(xCond, xRef, xMeta);
+  const yCondLabel = getConditionLabel(yCond, yRef, yMeta);
+  const condDesc = [xCondLabel ? `X: ${xCondLabel}` : null, yCondLabel ? `Y: ${yCondLabel}` : null].filter(Boolean).join(' · ');
 
   return {
     id: def.id,
@@ -198,7 +246,10 @@ export function computeCustomSignal(def, ds) {
     xMeta, yMeta,
     r, n: pairs.length, pairs, regression, confirmed,
     domain: 'custom', granularity: gran,
-    description: `${xMeta.categoryLabel} → ${yMeta.categoryLabel} · ${gran}`,
+    xCondition: xCond, yCondition: yCond,
+    description: condDesc
+      ? `${xMeta.categoryLabel} → ${yMeta.categoryLabel} · ${gran} · ${condDesc}`
+      : `${xMeta.categoryLabel} → ${yMeta.categoryLabel} · ${gran}`,
   };
 }
 

@@ -716,25 +716,48 @@ export async function loadCustomSignals() {
     .select('*')
     .order('created_at', { ascending: true });
   if (error) { console.warn('[custom_signals] load error:', error); return []; }
-  return data || [];
+  return (data || []).map(r => ({
+    id:          r.id,
+    name:        r.name,
+    xMetric:     r.x_metric,
+    yMetric:     r.y_metric,
+    granularity: r.granularity,
+    scope:       r.scope,
+    status:      r.status,
+    promoted_to: r.promoted_to || [],
+    latest_r:    r.latest_r,
+    latest_n:    r.latest_n,
+    history:     r.history || [],
+    note:        r.note,
+    votes:       r.votes || 0,
+    xCondition:  r.x_condition || 'all',
+    xReference:  r.x_reference || 'median',
+    yCondition:  r.y_condition || 'all',
+    yReference:  r.y_reference || 'median',
+    created_at:  r.created_at,
+  }));
 }
 
 export async function saveCustomSignal(def) {
   if (!supabase) return null;
   const uid = (await supabase.auth.getUser())?.data?.user?.id;
   const row = {
-    name: def.name,
-    x_metric: def.xMetric,
-    y_metric: def.yMetric,
+    name:        def.name,
+    x_metric:    def.xMetric,
+    y_metric:    def.yMetric,
     granularity: def.granularity || 'daily',
-    scope: def.scope || 'district',
-    status: def.status || 'active',
+    scope:       def.scope || 'district',
+    status:      def.status || 'active',
     promoted_to: def.promoted_to || [],
-    latest_r: def.latest_r ?? null,
-    latest_n: def.latest_n ?? null,
-    history: def.history || [],
-    note: def.note || null,
-    created_by: uid || null,
+    latest_r:    def.latest_r ?? null,
+    latest_n:    def.latest_n ?? null,
+    history:     def.history || [],
+    note:        def.note || null,
+    x_condition: def.xCondition || 'all',
+    x_reference: def.xReference || 'median',
+    y_condition: def.yCondition || 'all',
+    y_reference: def.yReference || 'median',
+    created_by:  uid || null,
   };
   const { data, error } = await supabase
     .from('custom_signals')
