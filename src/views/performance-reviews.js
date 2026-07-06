@@ -770,6 +770,7 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
         GhostBtn({onClick:()=>printCheckpoint(review,cfg,activeCheckMonth,orgLabel,orgLogo),
           style:{fontSize:11}},'1:1 Checkpoint')
       ),
+      GhostBtn({onClick:()=>printBlankForm(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Blank Form'),
       GhostBtn({onClick:()=>printReview(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Print / PDF'),
       PrimaryBtn({onClick:doSave,disabled:isReadOnly,
         style:{minWidth:80,opacity:isReadOnly?0.45:1,cursor:isReadOnly?'not-allowed':'pointer'}},
@@ -1238,6 +1239,163 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
 
   <div class="ack">
     <strong>Acknowledgment of Receipt:</strong> By signing below, <em>${review.name}</em> confirms this monthly performance checkpoint was received and discussed in a 1:1 meeting with their supervisor. A copy is retained in the performance file.
+  </div>
+
+  <div class="sig-block">
+    <div><div class="sig-line">${review.name} — Signature &amp; Date</div></div>
+    <div><div class="sig-line">Supervisor — Signature &amp; Date</div></div>
+  </div>
+
+  </body></html>`;
+
+  const w = window.open('','_blank','width=900,height=800');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(()=>w.print(), 400);
+}
+
+// ── Blank fillable form ────────────────────────────────────────────────────────
+function printBlankForm(review, cfg, orgLabel, orgLogo) {
+  if (!orgLabel) orgLabel = getOrgLabel(getStoreOrg(review.loc));
+  const today = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  const half = review.half;
+  const halfLabel = half==='H1' ? 'Mid-Year' : 'End of Year';
+  const mths = halfMonths(half);
+
+  const printCatLabel = key => {
+    const ex=(cfg.extraCategories||[]).find(c=>c.key===key);
+    return ex?ex.label:CAT_LABELS[key]||key;
+  };
+
+  const ratingCircles = `<span class="rt">1</span><span class="rt">2</span><span class="rt">3</span><span class="rt">4</span>`;
+
+  // KPI entry tables — one per category
+  const kpiSection = CAT_KEYS.map(catKey => {
+    const cw = cfg.categoryWeights[catKey];
+    const metrics = cfg.metrics[catKey]||[];
+    if (!metrics.length) return '';
+    const rows = metrics.map(m => {
+      const actHint = m.dollar ? '$__________' : m.pctInput ? '_______ %' : '___________';
+      const tgtHint = m.dollar ? '$__________' : m.pctInput ? '_______ %' : '___________';
+      const autoTag = m.src==='auto' ? `<span style="color:#9ca3af;font-size:8px"> ★auto</span>` : '';
+      return `<tr>
+        <td>${m.label}${autoTag}</td>
+        <td style="text-align:center;color:#6b7280;font-size:9px">${actHint}</td>
+        <td style="text-align:center;color:#6b7280;font-size:9px">${tgtHint}</td>
+        <td style="text-align:center">${ratingCircles}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <h3>${cw?.label||catKey} <span style="font-weight:400;font-size:9px;color:#9ca3af">${Math.round((cw?.weight||0)*100)}% of KPI score</span></h3>
+      <table>
+        <tr>
+          <th>Metric</th>
+          <th style="text-align:center;width:110px">Actual</th>
+          <th style="text-align:center;width:110px">Target</th>
+          <th style="text-align:center;width:110px">Rating — circle one</th>
+        </tr>
+        ${rows}
+      </table>`;
+  }).join('');
+
+  // Behavioral rating tables — one per competency category
+  const extraKeys = (cfg.extraCategories||[]).map(c=>c.key);
+  const allCats = [...CAT_KEYS, ...extraKeys, 'admin'];
+  const behavSection = allCats.map(catKey => {
+    const rawItems = cfg.competencies[review.role]?.[catKey]||[];
+    const items = rawItems.map(normItem).filter(it=>it.active);
+    if (!items.length) return '';
+    const rows = items.map((item,i) => `
+      <tr>
+        <td>${i+1}. ${item.text}</td>
+        <td style="text-align:center;white-space:nowrap">${ratingCircles}</td>
+        <td style="width:180px"></td>
+      </tr>`).join('');
+    return `
+      <h3>${printCatLabel(catKey)}</h3>
+      <table>
+        <tr><th>Competency</th><th style="text-align:center;width:120px">Rating — circle one</th><th>Notes</th></tr>
+        ${rows}
+      </table>`;
+  }).join('');
+
+  const lines = n => Array(n).fill('<div class="line"></div>').join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>${review.name} — ${halfLabel} ${review.year} — Blank Entry Form</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:20px;max-width:800px;margin:0 auto}
+    h1{font-size:16px;font-weight:700;margin-bottom:2px}
+    h2{font-size:13px;font-weight:700;margin:14px 0 6px;padding-bottom:3px;border-bottom:2px solid #111}
+    h3{font-size:10px;font-weight:700;margin:8px 0 4px;color:#374151;text-transform:uppercase;letter-spacing:.3px}
+    table{width:100%;border-collapse:collapse;margin-bottom:6px;font-size:10px}
+    th{background:#f3f4f6;padding:4px 6px;text-align:left;border:1px solid #d1d5db;font-size:9px;text-transform:uppercase;letter-spacing:.3px}
+    td{padding:5px 6px;border:1px solid #e5e7eb;vertical-align:middle}
+    tr:nth-child(even) td{background:#fafafa}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #111}
+    .label{font-size:9px;font-weight:700;color:#6b7280;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px}
+    .line{border-bottom:1px solid #d1d5db;height:22px;margin-bottom:2px}
+    .rt{display:inline-block;width:18px;height:18px;border-radius:50%;border:1.5px solid #374151;text-align:center;line-height:16px;font-size:9px;font-weight:700;margin:0 2px}
+    .rubric{background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:8px 10px;margin:8px 0 12px;font-size:9px}
+    .rubric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:5px}
+    .rubric-item{border:1px solid #e5e7eb;border-radius:3px;padding:4px 6px}
+    .sig-block{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:14px;padding-top:10px;border-top:2px solid #111}
+    .sig-line{border-top:1px solid #111;margin-top:30px;padding-top:3px;font-size:9px;color:#6b7280}
+    @media print{body{padding:8px}@page{margin:.5in;size:letter}}
+  </style></head><body>
+
+  <div class="hdr">
+    <div>
+      <div class="label">Performance Review — Manual Entry Form</div>
+      <h1>${review.name}</h1>
+      <div style="font-size:11px;color:#374151;margin-top:2px">${review.role} · Store ${review.loc||'—'} · ${halfLabel} ${review.year}</div>
+      <div style="font-size:9px;color:#6b7280;margin-top:2px">Printed: ${today} · Enter completed data into Meridian</div>
+    </div>
+    <div style="text-align:right">
+      ${orgLogo?`<img src="${orgLogo}" style="height:28px;object-fit:contain;display:block;margin-bottom:3px">`:''}
+      <span style="font-size:10px;color:#6b7280">${orgLabel||''}</span>
+    </div>
+  </div>
+
+  <div style="margin-bottom:10px;font-size:10px">
+    <strong>Month being entered:</strong>&nbsp;
+    ${mths.map(mn=>`<label style="margin-right:10px"><span class="rt" style="font-size:8px">&nbsp;</span> ${MONTH_NAMES[mn-1]}</label>`).join('')}
+  </div>
+
+  <div class="rubric">
+    <strong>Rating Scale</strong>
+    <div class="rubric-grid">
+      <div class="rubric-item"><strong>① Needs Improvement</strong><br>Significantly below expectations. Active corrective action required.</div>
+      <div class="rubric-item"><strong>② Below</strong><br>Partially meets expectations. Improvement plan in place.</div>
+      <div class="rubric-item"><strong>③ On Target</strong><br>Meets expectations. Reliable and consistent performance.</div>
+      <div class="rubric-item"><strong>④ Exceeds</strong><br>Consistently above expectations. Coaches others independently.</div>
+    </div>
+    <div style="margin-top:5px;color:#6b7280">★auto = field auto-populates from system data (labor analysis, FOB report, SMG FullScale). Still circle a rating.</div>
+  </div>
+
+  <h2>Section 1 — KPI Results</h2>
+  ${kpiSection}
+
+  <h2>Section 2 — Behavioral Ratings</h2>
+  ${behavSection}
+
+  <h2>Section 3 — Development Plan</h2>
+  <table>
+    <tr><th>Focus Area</th><th>Action / Development Plan</th><th style="width:90px;text-align:center">Target Date</th><th style="width:80px;text-align:center">Status</th></tr>
+    ${Array(3).fill('<tr><td style="height:30px">&nbsp;</td><td></td><td></td><td></td></tr>').join('')}
+  </table>
+
+  <h2>Section 4 — Discussion Notes</h2>
+  <div style="margin-bottom:8px">
+    <div style="font-size:10px;font-weight:700;margin-bottom:3px">What's going well?</div>${lines(2)}
+  </div>
+  <div style="margin-bottom:8px">
+    <div style="font-size:10px;font-weight:700;margin-bottom:3px">What needs attention?</div>${lines(2)}
+  </div>
+  <div style="margin-bottom:8px">
+    <div style="font-size:10px;font-weight:700;margin-bottom:3px">Commitments &amp; action items</div>${lines(2)}
   </div>
 
   <div class="sig-block">
