@@ -38,7 +38,7 @@ import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -936,6 +936,13 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${fobRows.length} FOB rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] FOB rows load failed:',e);}
+      try{
+        const qsrFobRows=await loadQsrFob();
+        if(qsrFobRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,qsrFobRows};});
+          console.log(`[Meridian] ✓ Loaded ${qsrFobRows.length} QSRSoft FOB rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] QSRSoft FOB load failed:',e);}
       try{
         const opsRows=await loadOpsRows();
         if(opsRows.length>0){

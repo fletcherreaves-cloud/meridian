@@ -476,6 +476,62 @@ export async function loadFobRows() {
   }));
 }
 
+// ── QSRSoft FOB monthly aggregates (automated pull) ─────────────────────────
+export async function loadQsrFob({ yearMonths } = {}) {
+  if (!supabase) return [];
+  let q = supabase.from('qsr_fob').select('*').order('year_month', { ascending: false });
+  if (yearMonths?.length) q = q.in('year_month', yearMonths);
+  const { data, error } = await q;
+  if (error || !data) { console.warn('[qsr_fob] load error:', error); return []; }
+  return data.map(r => ({
+    loc:                       r.loc,
+    yearMonth:                 r.year_month,
+    prodSalesAmt:              r.prod_sales_amt,
+    compWasteAmt:              r.comp_waste_amt,
+    rawWasteAmt:               r.raw_waste_amt,
+    condimentsAmt:             r.condiments_amt,
+    empMgrMealsAmt:            r.emp_mgr_meals_amt,
+    discountCouponsAmt:        r.discount_coupons_amt,
+    statVarianceAmt:           r.stat_variance_amt,
+    unexplainedAmt:            r.unexplained_amt,
+    totalBaseFood:             r.total_base_food,
+    pnlFoodCostBegin:          r.pnl_food_cost_begin,
+    pnlFoodCostPurchases:      r.pnl_food_cost_purchases,
+    pnlFoodCostAdjustments:    r.pnl_food_cost_adjustments,
+    pnlFoodCostTransfers:      r.pnl_food_cost_transfers,
+    pnlFoodCostPromotions:     r.pnl_food_cost_promotions,
+    pnlFoodCostEnd:            r.pnl_food_cost_end,
+    pnlPaperCostBegin:         r.pnl_paper_cost_begin,
+    pnlPaperCostPurchases:     r.pnl_paper_cost_purchases,
+    pnlPaperCostAdjustments:   r.pnl_paper_cost_adjustments,
+    pnlPaperCostTransfers:     r.pnl_paper_cost_transfers,
+    pnlPaperCostPromotions:    r.pnl_paper_cost_promotions,
+    pnlPaperCostEnd:           r.pnl_paper_cost_end,
+    lyProdSalesAmt:            r.ly_prod_sales_amt,
+    lyCompWasteAmt:            r.ly_comp_waste_amt,
+    lyRawWasteAmt:             r.ly_raw_waste_amt,
+    lyCondimentsAmt:           r.ly_condiments_amt,
+    lyEmpMgrMealsAmt:          r.ly_emp_mgr_meals_amt,
+    lyDiscountCouponsAmt:      r.ly_discount_coupons_amt,
+    lyStatVarianceAmt:         r.ly_stat_variance_amt,
+    lyUnexplainedAmt:          r.ly_unexplained_amt,
+    lyTotalBaseFood:           r.ly_total_base_food,
+    lyPnlFoodCostBegin:        r.ly_pnl_food_cost_begin,
+    lyPnlFoodCostPurchases:    r.ly_pnl_food_cost_purchases,
+    lyPnlFoodCostAdjustments:  r.ly_pnl_food_cost_adjustments,
+    lyPnlFoodCostTransfers:    r.ly_pnl_food_cost_transfers,
+    lyPnlFoodCostPromotions:   r.ly_pnl_food_cost_promotions,
+    lyPnlFoodCostEnd:          r.ly_pnl_food_cost_end,
+    lyPnlPaperCostBegin:       r.ly_pnl_paper_cost_begin,
+    lyPnlPaperCostPurchases:   r.ly_pnl_paper_cost_purchases,
+    lyPnlPaperCostAdjustments: r.ly_pnl_paper_cost_adjustments,
+    lyPnlPaperCostTransfers:   r.ly_pnl_paper_cost_transfers,
+    lyPnlPaperCostPromotions:  r.ly_pnl_paper_cost_promotions,
+    lyPnlPaperCostEnd:         r.ly_pnl_paper_cost_end,
+    updatedAt:                 r.updated_at,
+  }));
+}
+
 // ── Operations / Service rows ────────────────────────────────────────────────
 export async function saveOpsRows(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };
