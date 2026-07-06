@@ -7,13 +7,21 @@ on:
   workflow_dispatch:
     inputs:
       days_back:
-        description: 'Days of history to pull (default: 30)'
+        description: 'Max days of history to look back for gaps (default: 30)'
         required: false
         default: '30'
+      safety_days:
+        description: 'Days to always re-pull for corrections (default: 3)'
+        required: false
+        default: '3'
       days_fwd:
-        description: 'Days of future data to pull (default: 14)'
+        description: 'Days of future schedule data to pull (default: 14)'
         required: false
         default: '14'
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
 
 jobs:
   sync:
@@ -43,8 +51,9 @@ jobs:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           LIFELENZ_DAYS_BACK:        ${{ github.event.inputs.days_back || '30' }}
+          LIFELENZ_SAFETY_DAYS:      ${{ github.event.inputs.safety_days || '3' }}
           LIFELENZ_DAYS_FWD:         ${{ github.event.inputs.days_fwd || '14' }}
-          LIFELENZ_DEBUG:            '1'
+          LIFELENZ_DEBUG:            ${{ github.event.inputs.debug || '0' }}
 
       - name: Upload debug screenshots
         if: always()
