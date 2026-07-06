@@ -32,15 +32,15 @@ const STORE_NSNS = [
   38609, 43380, 43701,
 ];
 
-// selectCols — captured from DevTools; c-prefix columns map to field names without c in response
+// selectCols — use exact field names as they appear in the JSON response (no c-prefix)
 const SELECT_COLS = [
-  'prodSalesAmt', 'compWasteAmt', 'crawWasteAmt', 'condimentsAmt',
-  'cempMgrMealsAmt', 'cdiscountCouponsAmt', 'cstatVarianceAmt', 'cunexplainedAmt',
-  'ctotalBaseFood',
-  'cpnlFoodCostBegin', 'cpnlFoodCostPurchases', 'cpnlFoodCostAdjustments',
-  'cpnlFoodCostTransfers', 'cpnlFoodCostPromotions', 'cpnlFoodCostEnd',
-  'cpnlPaperCostBegin', 'cpnlPaperCostPurchases', 'cpnlPaperCostAdjustments',
-  'cpnlPaperCostTransfers', 'cpnlPaperCostPromotions', 'cpnlPaperCostEnd',
+  'prodSalesAmt', 'compWasteAmt', 'rawWasteAmt', 'condimentsAmt',
+  'empMgrMealsAmt', 'discountCouponsAmt', 'statVarianceAmt', 'unexplainedAmt',
+  'totalBaseFood',
+  'pnlFoodCostBegin', 'pnlFoodCostPurchases', 'pnlFoodCostAdjustments',
+  'pnlFoodCostTransfers', 'pnlFoodCostPromotions', 'pnlFoodCostEnd',
+  'pnlPaperCostBegin', 'pnlPaperCostPurchases', 'pnlPaperCostAdjustments',
+  'pnlPaperCostTransfers', 'pnlPaperCostPromotions', 'pnlPaperCostEnd',
 ].join(',');
 
 const supabase = createClient(
