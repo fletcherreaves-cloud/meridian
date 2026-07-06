@@ -349,6 +349,72 @@ create policy "smg_fullscale: public write" on public.smg_fullscale
 create index if not exists smg_fullscale_year_month_idx
   on public.smg_fullscale (year, month);
 
+-- ── QSRSoft FOB (Food Over Base) ─────────────────────────────────────────────
+-- Monthly per-store FOB data synced daily via scripts/qsrsoft-pull.mjs.
+-- One row per store (loc = padded NSN) per year_month ("2026-07").
+-- Includes current-period and last-year (ly_*) fields.
+-- Requires QSRSOFT_TOKEN GitHub Secret.
+
+create table if not exists public.qsr_fob (
+  loc                          text        not null,
+  year_month                   text        not null,  -- "YYYY-MM"
+  prod_sales_amt               numeric,
+  comp_waste_amt               numeric,
+  raw_waste_amt                numeric,
+  condiments_amt               numeric,
+  emp_mgr_meals_amt            numeric,
+  discount_coupons_amt         numeric,
+  stat_variance_amt            numeric,
+  unexplained_amt              numeric,
+  total_base_food              numeric,
+  pnl_food_cost_begin          numeric,
+  pnl_food_cost_purchases      numeric,
+  pnl_food_cost_adjustments    numeric,
+  pnl_food_cost_transfers      numeric,
+  pnl_food_cost_promotions     numeric,
+  pnl_food_cost_end            numeric,
+  pnl_paper_cost_begin         numeric,
+  pnl_paper_cost_purchases     numeric,
+  pnl_paper_cost_adjustments   numeric,
+  pnl_paper_cost_transfers     numeric,
+  pnl_paper_cost_promotions    numeric,
+  pnl_paper_cost_end           numeric,
+  ly_prod_sales_amt            numeric,
+  ly_comp_waste_amt            numeric,
+  ly_raw_waste_amt             numeric,
+  ly_condiments_amt            numeric,
+  ly_emp_mgr_meals_amt         numeric,
+  ly_discount_coupons_amt      numeric,
+  ly_stat_variance_amt         numeric,
+  ly_unexplained_amt           numeric,
+  ly_total_base_food           numeric,
+  ly_pnl_food_cost_begin       numeric,
+  ly_pnl_food_cost_purchases   numeric,
+  ly_pnl_food_cost_adjustments numeric,
+  ly_pnl_food_cost_transfers   numeric,
+  ly_pnl_food_cost_promotions  numeric,
+  ly_pnl_food_cost_end         numeric,
+  ly_pnl_paper_cost_begin      numeric,
+  ly_pnl_paper_cost_purchases  numeric,
+  ly_pnl_paper_cost_adjustments numeric,
+  ly_pnl_paper_cost_transfers  numeric,
+  ly_pnl_paper_cost_promotions numeric,
+  ly_pnl_paper_cost_end        numeric,
+  updated_at                   timestamptz default now(),
+  primary key (loc, year_month)
+);
+
+alter table public.qsr_fob enable row level security;
+
+create policy "qsr_fob: public read" on public.qsr_fob
+  for select using (true);
+
+create policy "qsr_fob: public write" on public.qsr_fob
+  for all using (true);
+
+create index if not exists qsr_fob_year_month_idx
+  on public.qsr_fob (year_month);
+
 -- ── LifeLenz Schedule (Labor Analysis Summary) ───────────────────────────────
 -- Daily per-store scheduling rows from LifeLenz Labor Analysis Summary Report.
 -- One row per store per date. Upserted on upload so re-syncing is safe.

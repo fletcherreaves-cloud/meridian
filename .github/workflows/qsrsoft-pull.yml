@@ -1,0 +1,41 @@
+name: QSRSoft FOB Pull
+
+on:
+  schedule:
+    # 11:00 UTC = 6:00 AM CDT — after QSRSoft ABC completes (~7-8 AM Central)
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+    inputs:
+      months_back:
+        description: 'Months of history to pull (default: 3)'
+        required: false
+        default: '3'
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull QSRSoft FOB data
+        run: node scripts/qsrsoft-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_MONTHS_BACK:       ${{ github.event.inputs.months_back || '3' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
