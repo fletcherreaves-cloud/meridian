@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-pull.mjs — QSRSoft FOB (Food Over Base) daily/monthly sync
 // Runs in GitHub Actions (or locally). Fetches all 27 stores in a single API call.
+// Smart mode: queries Supabase for existing months, only fetches what's missing
+// plus a safety window — typically 1-2 API calls per daily run.
 //
 // Required env vars:
 //   VITE_SUPABASE_URL
@@ -8,7 +10,8 @@
 //   QSRSOFT_TOKEN              — X-Auth-Token from browser DevTools (expires ~monthly)
 //
 // Optional:
-//   QSRSOFT_MONTHS_BACK  — months of history to pull (default: 3)
+//   QSRSOFT_MONTHS_BACK  — max lookback for missing months (default: 12)
+//   QSRSOFT_SAFETY_DAYS  — days into a new month to re-pull prev month for ABC corrections (default: 3)
 //   QSRSOFT_DEBUG        — set to '1' for verbose logging
 //
 // Token refresh: when this script exits with 401, go to v3.myqsrsoft.com, open
@@ -20,8 +23,9 @@ import { createClient } from '@supabase/supabase-js';
 const API_BASE    = 'https://api.reports.myqsrsoft.com';
 const ORG_ID      = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const ENTERPRISE  = 'McDonalds';
-const MONTHS_BACK = parseInt(process.env.QSRSOFT_MONTHS_BACK || '3', 10);
-const DEBUG       = process.env.QSRSOFT_DEBUG === '1';
+const MONTHS_BACK  = parseInt(process.env.QSRSOFT_MONTHS_BACK  || '12', 10);
+const SAFETY_DAYS  = parseInt(process.env.QSRSOFT_SAFETY_DAYS  || '3',  10);
+const DEBUG        = process.env.QSRSOFT_DEBUG === '1';
 
 // All 27 store NSNs — confirmed from API response 2026-07-06
 const STORE_NSNS = [
@@ -48,23 +52,60 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
 
-// Build list of months to pull: current month plus MONTHS_BACK prior months
-function monthsToFetch() {
-  const months = [];
+// Query Supabase for year_months already in DB
+async function getExistingMonths() {
+  const { data, error } = await supabase
+    .from('qsr_fob')
+    .select('year_month');
+  if (error) { console.warn('[db] could not read existing months:', error.message); return new Set(); }
+  return new Set((data || []).map(r => r.year_month));
+}
+
+function buildMonthEntry(year, month) {
+  const pad = n => String(n).padStart(2, '0');
   const now = new Date();
+  const isCurrent = year === now.getFullYear() && month === now.getMonth() + 1;
+  const lastDay = new Date(year, month, 0).getDate();
+  const endDay  = isCurrent ? now.getDate() : lastDay;
+  return {
+    yearMonth: `${year}-${pad(month)}`,
+    startDate: `${year}-${pad(month)}-01`,
+    endDate:   `${year}-${pad(month)}-${pad(endDay)}`,
+  };
+}
+
+// Smart month selection:
+//   - Current month: always pull (MTD changes every day)
+//   - Previous month: pull for first SAFETY_DAYS of new month (ABC corrections still arriving)
+//   - Older months: only pull if missing from DB
+//   - Looks back up to MONTHS_BACK months for gaps
+async function monthsToFetch() {
+  const now      = new Date();
+  const today    = now.getDate();
+  const existing = await getExistingMonths();
+  const months   = [];
+  const reasons  = [];
+
   for (let i = MONTHS_BACK; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d     = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const year  = d.getFullYear();
     const month = d.getMonth() + 1;
-    const pad   = n => String(n).padStart(2, '0');
-    const lastDay = new Date(year, month, 0).getDate();
-    const endDay  = i === 0 ? now.getDate() : lastDay;
-    months.push({
-      yearMonth: `${year}-${pad(month)}`,
-      startDate: `${year}-${pad(month)}-01`,
-      endDate:   `${year}-${pad(month)}-${pad(endDay)}`,
-    });
+    const entry = buildMonthEntry(year, month);
+
+    const isCurrent      = i === 0;
+    const isPrevious     = i === 1;
+    const inSafetyWindow = isPrevious && today <= SAFETY_DAYS;
+    const isMissing      = !existing.has(entry.yearMonth);
+
+    if (isCurrent || inSafetyWindow || isMissing) {
+      months.push(entry);
+      const why = isCurrent ? 'current MTD' : inSafetyWindow ? `safety (day ${today}/${SAFETY_DAYS})` : 'missing';
+      reasons.push(`${entry.yearMonth} [${why}]`);
+    }
   }
+
+  console.log(`[qsrsoft-pull] ${existing.size > 0 ? existing.size + ' months in DB' : 'no existing data'}`);
+  console.log(`[qsrsoft-pull] pulling ${months.length} month(s): ${reasons.join(', ')}`);
   return months;
 }
 
@@ -182,8 +223,12 @@ async function main() {
     process.exit(1);
   }
 
-  const months = monthsToFetch();
-  console.log(`[qsrsoft-pull] ${months.length} months × ${STORE_NSNS.length} stores`);
+  const months = await monthsToFetch();
+  if (!months.length) {
+    console.log(`[qsrsoft-pull] ✓ all months up to date — nothing to pull`);
+    return;
+  }
+  console.log(`[qsrsoft-pull] ${months.length} month(s) × ${STORE_NSNS.length} stores`);
 
   let totalSaved = 0;
 

@@ -7,7 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       months_back:
-        description: 'Months of history to pull (default: 3)'
+        description: 'Max months to look back for missing data (default: 12)'
+        required: false
+        default: '12'
+      safety_days:
+        description: 'Days into new month to re-pull previous month for ABC corrections (default: 3)'
         required: false
         default: '3'
       debug:
@@ -37,5 +41,6 @@ jobs:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
-          QSRSOFT_MONTHS_BACK:       ${{ github.event.inputs.months_back || '3' }}
+          QSRSOFT_MONTHS_BACK:       ${{ github.event.inputs.months_back || '12' }}
+          QSRSOFT_SAFETY_DAYS:       ${{ github.event.inputs.safety_days || '3' }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
