@@ -106,6 +106,42 @@ function NumInput({value, onChange, placeholder, style={}, disabled}) {
       appearance:'textfield',...style}});
 }
 
+// ── Formatted numeric input (shows $, %, or plain value) ──────────────────────
+function FormattedNumInput({value, onChange, placeholder, style={}, disabled, dollar, pct}) {
+  const [raw, setRaw] = React.useState('');
+  const [focused, setFocused] = React.useState(false);
+  const fmt = n => {
+    if (n == null || isNaN(parseFloat(n))) return '';
+    const v = parseFloat(n);
+    if (dollar) return '$' + Math.round(v).toLocaleString('en-US');
+    if (pct)    return v.toFixed(1) + '%';
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  };
+  const toRaw = n => {
+    if (n == null || isNaN(parseFloat(n))) return '';
+    const v = parseFloat(n);
+    if (dollar) return Math.round(v).toString();
+    if (pct)    return v.toFixed(1);
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  };
+  return inp({
+    type:'text', inputMode: dollar ? 'numeric' : 'decimal',
+    value: focused ? raw : (value != null ? fmt(value) : ''),
+    placeholder, disabled,
+    onFocus: () => { setFocused(true); setRaw(value != null ? toRaw(value) : ''); },
+    onBlur: () => {
+      setFocused(false);
+      const c = raw.replace(/[$,\s%]/g,'');
+      if (c===''||c==='-') { onChange(null); return; }
+      const n = parseFloat(c);
+      onChange(isNaN(n) ? null : n);
+    },
+    onChange: e => { if (focused) setRaw(e.target.value); },
+    style:{width:70,padding:'3px 5px',background:'var(--surf)',border:`1px solid ${BDR}`,
+      borderRadius:4,color:TEXT,fontSize:11,textAlign:'center',...style}
+  });
+}
+
 // ── Help Guide Modal ──────────────────────────────────────────────────────────
 function HelpGuideModal({onClose}) {
   const [section, setSection] = useState('overview');
@@ -890,12 +926,16 @@ function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
           const sc = m.pctInput ? 100 : 1;
           return div({key:mn,style:{width:COL_W,minWidth:COL_W,borderRight:`1px solid ${BDR}`,
             background:bg,display:'flex',flexDirection:'column',gap:2,padding:'4px 2px',alignItems:'center'}},
-            NumInput({value:actual!=null?actual*sc:null,
+            h(FormattedNumInput,{key:'a',value:actual!=null?actual*sc:null,
               onChange:v=>setMonthKPI(mn,m.key,v!=null?v/sc:null),
-              placeholder:m.pctInput?'Act %':'Act',style:{width:COL_W-10,background:bg||'var(--surf)'}}),
-            NumInput({value:target!=null?target*sc:null,
+              placeholder:m.pctInput?'Act %':m.dollar?'Act $':'Act',
+              pct:!!m.pctInput, dollar:!!m.dollar,
+              style:{width:COL_W-10,background:bg||'var(--surf)'}}),
+            h(FormattedNumInput,{key:'t',value:target!=null?target*sc:null,
               onChange:v=>setMonthKPI(mn,m.key+'Tgt',v!=null?v/sc:null),
-              placeholder:m.pctInput?'Tgt %':'Tgt',style:{width:COL_W-10,fontSize:10,color:TEXT3,background:'transparent',
+              placeholder:m.pctInput?'Tgt %':m.dollar?'Tgt $':'Tgt',
+              pct:!!m.pctInput, dollar:!!m.dollar,
+              style:{width:COL_W-10,fontSize:10,color:TEXT3,background:'transparent',
                 border:`1px dashed ${BDR}`}}),
             rating!=null&&span({style:{fontSize:9,color:ratingColor(rating),fontWeight:700}},
               RATING_LABELS[rating]?.slice(0,3)||rating)
@@ -1100,10 +1140,11 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
   const rLabel = r => r===4?'Exceeds':r===3?'On Target':r===2?'Below':r===1?'Needs Improvement':'—';
   const rCol   = r => r===4?'#10b981':r===3?'#2563eb':r===2?'#d97706':'#dc2626';
 
-  const fmtVal = (v, unit) => {
+  const fmtVal = (v, m) => {
     if (v==null) return '—';
-    if (unit==='pct') return (v*100).toFixed(1)+'%';
-    return Math.abs(v)>=100 ? Math.round(v)+'': v.toFixed(1);
+    if (m.dollar)   return '$' + Math.round(v).toLocaleString('en-US');
+    if (m.pctInput) return (v*100).toFixed(1)+'%';
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
   };
 
   const fmtDev = (actual, target, unit) => {
@@ -1124,8 +1165,8 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
       const col = r ? rCol(r) : '#9ca3af';
       return `<tr>
         <td>${m.label}</td>
-        <td style="text-align:center">${fmtVal(actual,m.unit)}</td>
-        <td style="text-align:center;color:#6b7280">${fmtVal(target,m.unit)}</td>
+        <td style="text-align:center">${fmtVal(actual,m)}</td>
+        <td style="text-align:center;color:#6b7280">${fmtVal(target,m)}</td>
         <td style="text-align:center">${fmtDev(actual,target,m.unit)}</td>
         <td style="text-align:center;font-weight:700;color:${col}">${r?rLabel(r):'—'}</td>
       </tr>`;

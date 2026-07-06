@@ -40,15 +40,15 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'fsTablet',   label:'FS Completion T-60 (%)',     weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'Tablet completion %' },
     ],
     sales: [
-      { key:'salesVsTgt', label:'Sales vs. Monthly Target',   weight:0.70, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'sales', tgtField:'salesTgt', note:'Auto from Labor Analysis' },
+      { key:'salesVsTgt', label:'Sales vs. Monthly Target',   weight:0.70, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'sales', tgtField:'salesTgt', dollar:true, note:'Auto from Labor Analysis' },
       { key:'digitalGC',  label:'Digital App GC/Rest/Day',    weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'% vs store target' },
       { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'% vs store target' },
     ],
     profit: [
-      { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', note:'Auto from FOB report' },
+      { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report' },
       { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', pctInput:true, note:'Auto from Labor Analysis' },
-      { key:'opSupplies', label:'Op Supplies vs Budget ($)',  weight:0.15, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual',                    note:'$ vs budget target' },
-      { key:'totalProfit',label:'Total Profit vs Target ($)', weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'$ vs target' },
+      { key:'opSupplies', label:'Op Supplies vs Budget ($)',  weight:0.15, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual', dollar:true,           note:'$ vs budget target' },
+      { key:'totalProfit',label:'Total Profit vs Target ($)', weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual', dollar:true,           note:'$ vs target' },
     ],
     people: [
       { key:'shiftCert',  label:'# Shift Certified Managers', weight:0.25, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'Count vs target' },
