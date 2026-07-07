@@ -1290,11 +1290,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   },[]);
 
   const IDB_LABELS = {
-    laborRows:'Labor Analysis',opsRows:'Operations Report',
-    ctrlRows:'Controls Data',fobRows:'FOB Report',
-    auditRows:'Register Audit',peaksRows:'3 Peaks — Service',
-    peaksSalesRows:'3 Peaks — Sales',
-    darRows:'Daily Activity Reports',pmixRows:'Product Mix',
+    pmixRows:'Product Mix',
     weatherRows:'Weather Data',
   };
 
@@ -1419,14 +1415,19 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       smgVoicePerfPeriods: vpPeriods,
       smgVoicePerf: vpRows.length ? {count:vpRows.length} : {count:0},
       monthlyTargets: mtLocs ? {count:mtLocs, label:mtLabel} : {count:0},
-      laborRows:  calcCov(ds&&ds.laborRows||[]),
-      opsRows:    calcCov(ds&&ds.opsRows||[]),
-      ctrlRows:   calcCov(ds&&ds.ctrlRows||[]),
-      fobRows:    calcCov(ds&&ds.fobRows||[]),
-      darRows:    calcCov(ds&&ds.darRows||[]),
+      laborRows:    calcCov(ds&&ds.laborRows||[]),
+      opsRows:      calcCov(ds&&ds.opsRows||[]),
+      ctrlRows:     calcCov(ds&&ds.ctrlRows||[]),
+      fobRows:      calcCov(ds&&ds.fobRows||[]),
+      darRows:      calcCov(ds&&ds.darRows||[]),
+      peaksRows:    calcCov(ds&&ds.peaksSvcRows||[]),
+      peaksSalesRows: calcCov(ds&&ds.peaksSalesRows||[]),
+      auditRows:    calcCov(ds&&ds.auditRows||[]),
+      qsrFobRows:   calcCov(ds&&ds.qsrFobRows||[], 'date'),
     };
   },[ds&&ds.smgFullscale,ds&&ds.smgVoicePerf,ds&&ds.monthlyTargets,ds&&ds.monthlyTargetsMeta,
-     ds&&ds.laborRows,ds&&ds.opsRows,ds&&ds.ctrlRows,ds&&ds.fobRows,ds&&ds.darRows]);
+     ds&&ds.laborRows,ds&&ds.opsRows,ds&&ds.ctrlRows,ds&&ds.fobRows,ds&&ds.darRows,
+     ds&&ds.peaksSvcRows,ds&&ds.peaksSalesRows,ds&&ds.auditRows,ds&&ds.qsrFobRows]);
 
   const totalRows = Object.values(cov).reduce((a,v)=>a+(v?.count||0),0)+(recStats.count||0)
     + Object.values(sessionCov).reduce((a,v)=>a+(v?.count||0),0);
@@ -1528,14 +1529,49 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   const cfM = supabaseCov.monthlyTargets||{count:0};
   const fsPeriods = supabaseCov.fsPeriods||[];
   const cloudOpRows = [
-    ['laborRows','Labor Analysis',     supabaseCov.laborRows],
-    ['opsRows',  'Operations Report',  supabaseCov.opsRows],
-    ['ctrlRows', 'Controls Data',      supabaseCov.ctrlRows],
-    ['fobRows',  'FOB Report',         supabaseCov.fobRows],
-    ['darRows',  'Daily Activity',     supabaseCov.darRows],
+    ['laborRows',     'Labor Analysis',      supabaseCov.laborRows],
+    ['opsRows',       'Operations Report',   supabaseCov.opsRows],
+    ['ctrlRows',      'Controls Data',       supabaseCov.ctrlRows],
+    ['fobRows',       'FOB Report (EOM)',    supabaseCov.fobRows],
+    ['darRows',       'Daily Activity',      supabaseCov.darRows],
+    ['peaksRows',     '3 Peaks — Service',   supabaseCov.peaksRows],
+    ['peaksSalesRows','3 Peaks — Sales',     supabaseCov.peaksSalesRows],
+    ['auditRows',     'Register Audit',      supabaseCov.auditRows],
   ].map(([k,label,c],i)=>dataRow(k+'-cloud', label, c||{count:0}, '#60a5fa', i%2));
 
   const vpPeriods = supabaseCov.smgVoicePerfPeriods||[];
+
+  // Auto-synced badge
+  const autoTag = h('span',{style:{fontSize:'7px',fontWeight:700,padding:'1px 5px',borderRadius:3,
+    marginLeft:6,background:'rgba(16,185,129,.15)',color:'#10b981',
+    border:'.5px solid rgba(16,185,129,.3)',letterSpacing:'.3px',verticalAlign:'middle'}},'AUTO');
+
+  // Auto-synced rows (GitHub Actions daily)
+  const schedCov = sessionCov.schedRows||{count:0};
+  const qsrFobCov = supabaseCov.qsrFobRows||{count:0};
+  const autoSyncedRows = [
+    (()=>{const c=schedCov;const hasData=c.count>0;
+      return h('tr',{key:'auto-lifelenz',style:{borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+        h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
+          hasData?staleDot(c):null,'LifeLenz Schedule',autoTag),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
+          hasData?c.count.toLocaleString()+' rows':'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontSize:'8px'}},hasData?c.to:'—')
+      );
+    })(),
+    (()=>{const c=qsrFobCov;const hasData=c.count>0;
+      return h('tr',{key:'auto-qsrfob',style:{background:'rgba(255,255,255,.015)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+        h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
+          hasData?staleDot(c):null,'QSRSoft FOB Daily',autoTag),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
+          hasData?c.count.toLocaleString()+' rows':'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontSize:'8px'}},hasData?c.to:'—')
+      );
+    })(),
+  ];
+
   const cloudRows = [
     ...cloudOpRows,
     // VOICE Performance: one sub-row per period, or empty state
@@ -1574,18 +1610,6 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:cfM.count?'var(--accent)':'var(--text3)',fontWeight:cfM.count?700:400}},cfM.count?cfM.count+' stores':'—'),
       h('td',{colSpan:2,style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},cfM.count?cfM.label||'—':'—')
     ),
-    (()=>{const sc=sessionCov.schedRows||{count:0};const hasData=sc.count>0;const alt=(fsPeriods.length+1)%2===0;
-      return h('tr',{key:'lifelenz-sched',style:{background:alt?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
-        h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
-          hasData?staleDot(sc):null,'LifeLenz Schedule'),
-        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'var(--accent)':'var(--text3)',fontWeight:hasData?700:400}},
-          hasData?sc.count.toLocaleString()+' rows':'—'),
-        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},
-          hasData?sc.from:'—'),
-        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},
-          hasData?sc.to:'GitHub Actions sync')
-      );
-    })(),
   ];
 
   const colVal = (c,k) => c?.[k] != null ? c[k] : '—';
@@ -1600,7 +1624,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
         span({style:{fontSize:'18px'}},'🗄'),
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Data Manager'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'Supabase cloud + OPFS local cache · '+totalRows.toLocaleString()+' total rows · cross-device, upload once')
+          div({style:{fontSize:'9px',color:'var(--text3)'}},'LifeLenz + QSRSoft FOB auto-sync daily · '+totalRows.toLocaleString()+' rows · upload-once cloud persistence')
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
@@ -1615,7 +1639,13 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
                   borderBottom:'.5px solid var(--bdr)',textAlign:i===0?'left':'right'}},(l)))
             )),
             h('tbody',null,
-            sectionHdr('hdr-idb','QSRSoft Operations'),
+            sectionHdr('hdr-auto','⚡ Auto-Synced · GitHub Actions Daily'),
+            ...autoSyncedRows,
+            sectionHdr('hdr-pipeline','📧 Email Pipeline · QSRSoft'),
+            ...pipelineRows,
+            sectionHdr('hdr-cloud','☁ Cloud-Persisted · Manual Upload'),
+            ...cloudRows,
+            sectionHdr('hdr-idb','Session Only · Not Persisted'),
             ...idbRows,
             h('tr',{key:'records',style:{borderBottom:'.5px solid rgba(255,255,255,.04)'}},
               h('td',{style:{padding:'6px 10px',fontWeight:600,color:recStats.count>0?'var(--text)':'var(--text3)'}},'Store Records'),
@@ -1626,26 +1656,17 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
                 recStats.count>0?recStats.stores+' store'+(recStats.stores!==1?'s':''):'—'),
               h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},'—')
             ),
-            sectionHdr('hdr-pipeline','Pipeline & Session Data'),
-            ...pipelineRows,
-            sectionHdr('hdr-cloud','Supabase (Cloud-backed)'),
-            ...cloudRows,
             sectionHdr('hdr-eom','FOB EOM Troubleshooter (per-store, session only)'),
             ...eomFileRows
           )  // tbody
           ),  // table
           // Info box
-          totalRows>0&&div({style:{padding:'10px 14px',background:'rgba(16,185,129,.07)',
+          div({style:{padding:'10px 14px',background:'rgba(16,185,129,.07)',
             borderRadius:'var(--r)',border:'.5px solid rgba(16,185,129,.2)',marginBottom:14,
             fontSize:'9px',color:'#34d399',lineHeight:1.7}},
-            '✓ Data persists across sessions. Load new files anytime — rows are merged and deduplicated by location + date. ',
-            'No need to reload historical files on next launch.'
-          ),
-          totalRows===0&&div({style:{padding:'10px 14px',background:'rgba(245,158,11,.07)',
-            borderRadius:'var(--r)',border:'.5px solid rgba(245,158,11,.2)',marginBottom:14,
-            fontSize:'9px',color:'var(--amber)',lineHeight:1.7}},
-            '⚠ No data stored yet. Load your Excel files — Meridian will persist them automatically. ',
-            'Next time you open the app, the data will already be there.'
+            span({style:{fontWeight:700}},'⚡ Auto-synced daily: '),
+            'LifeLenz schedule and QSRSoft FOB pull automatically via GitHub Actions — no action needed. ',
+            span({style:{color:'var(--text3)'}},'Manual uploads (Ops, Controls, SMG, etc.) persist to Supabase and load on any device without re-uploading.')
           ),
           // EOM Supervisor auto-population note
           div({style:{padding:'9px 14px',background:'rgba(96,165,250,.06)',
