@@ -271,12 +271,12 @@ async function fetchFOB(token, startDate, endDate) {
   return data.result || [];
 }
 
-function mapRow(item) {
+function mapRow(item, dateStr) {
   const loc = String(item.storeNum).padStart(7, '0');
   const ly  = k => item[`ly.${k}`] ?? null;
   return {
     loc,
-    date:                         item.date,
+    date:                         dateStr, // API returns year-month ("2024-01"); use request date for daily rows
     prod_sales_amt:               item.prodSalesAmt ?? null,
     comp_waste_amt:               item.compWasteAmt ?? null,
     raw_waste_amt:                item.rawWasteAmt  ?? null,
@@ -386,7 +386,7 @@ async function main() {
       const items = await fetchFOB(token, dateStr, dateStr);
       if (!items.length) { if (DEBUG) console.log(`  ${dateStr}: no data`); continue; }
       if (DEBUG) items.forEach(r => console.log(`    ${dateStr} ${r.storeNum}: sales $${r.prodSalesAmt?.toLocaleString()} | baseFood $${r.totalBaseFood?.toLocaleString()}`));
-      buffer.push(...items.map(mapRow));
+      buffer.push(...items.map(item => mapRow(item, dateStr)));
       totalDays++;
       if (buffer.length >= 500) await flushBuffer();
     } catch (e) {
@@ -399,7 +399,7 @@ async function main() {
         }
         try {
           const items2 = await fetchFOB(token, dateStr, dateStr);
-          if (items2.length) { buffer.push(...items2.map(mapRow)); totalDays++; }
+          if (items2.length) { buffer.push(...items2.map(item => mapRow(item, dateStr))); totalDays++; }
         } catch (e2) {
           console.warn(`  ${dateStr}: still failing after re-auth — ${e2.message}`);
         }
