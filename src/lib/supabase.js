@@ -11,6 +11,20 @@ if (!URL || !KEY) {
 // supabase is null in local-only mode; all callers must guard with `if (supabase)`
 export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 
+// Paginate through all rows — Supabase caps at 1000 by default.
+// Pass a builder fn that receives (from, to) and returns a Supabase query.
+async function fetchAll(builderFn, pageSize = 1000) {
+  let all = [], from = 0;
+  while (true) {
+    const { data, error } = await builderFn(from, from + pageSize - 1);
+    if (error || !data?.length) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 // ── Manual report upload (cross-device sync) ──────────────────────────────────
 // Uploads a raw file to the 'reports' storage bucket and inserts/updates
 // a pending_reports record so other devices can discover and download it.
@@ -385,11 +399,11 @@ export async function saveLaborRows(rows) {
 // Load all labor rows from Supabase (for DI calibration history accumulation)
 export async function loadLaborRows() {
   if (!supabase) return [];
-  const { data, error } = await supabase
-    .from('labor_rows')
-    .select('*')
-    .order('report_date', { ascending: true });
-  if (error || !data) { console.warn('[labor_rows] load error:', error); return []; }
+  const data = await fetchAll((from, to) => supabase
+    .from('labor_rows').select('*')
+    .order('report_date', { ascending: true })
+    .range(from, to));
+  if (!data.length) return [];
   return data.map(r => ({
     loc:      r.loc,
     date:     new Date(r.report_date + 'T00:00:00'),
@@ -519,8 +533,11 @@ export async function savePeaksRows(rows) {
 
 export async function loadPeaksRows() {
   if (!supabase) return [];
-  const { data, error } = await supabase.from('peaks_rows').select('*').order('date', { ascending: false });
-  if (error || !data) { console.warn('[peaks_rows] load error:', error); return []; }
+  const data = await fetchAll((from, to) => supabase
+    .from('peaks_rows').select('*')
+    .order('date', { ascending: false })
+    .range(from, to));
+  if (!data.length) return [];
   return data.map(r => ({
     loc:         r.loc,
     date:        new Date(r.date + 'T00:00:00'),
@@ -598,8 +615,11 @@ export async function saveAuditRows(rows) {
 
 export async function loadAuditRows() {
   if (!supabase) return [];
-  const { data, error } = await supabase.from('audit_rows').select('*').order('date', { ascending: false });
-  if (error || !data) { console.warn('[audit_rows] load error:', error); return []; }
+  const data = await fetchAll((from, to) => supabase
+    .from('audit_rows').select('*')
+    .order('date', { ascending: false })
+    .range(from, to));
+  if (!data.length) return [];
   return data.map(r => ({
     loc:            r.loc,
     date:           new Date(r.date + 'T00:00:00'),
@@ -637,10 +657,12 @@ export async function loadAuditRows() {
 // ── QSRSoft FOB monthly aggregates (automated pull) ─────────────────────────
 export async function loadQsrFob({ yearMonths } = {}) {
   if (!supabase) return [];
-  let q = supabase.from('qsr_fob').select('*').order('year_month', { ascending: false });
-  if (yearMonths?.length) q = q.in('year_month', yearMonths);
-  const { data, error } = await q;
-  if (error || !data) { console.warn('[qsr_fob] load error:', error); return []; }
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_fob').select('*').order('year_month', { ascending: false }).range(from, to);
+    if (yearMonths?.length) q = q.in('year_month', yearMonths);
+    return q;
+  });
+  if (!data.length) return [];
   return data.map(r => ({
     loc:                       r.loc,
     yearMonth:                 r.year_month,
@@ -716,8 +738,11 @@ export async function saveOpsRows(rows) {
 
 export async function loadOpsRows() {
   if (!supabase) return [];
-  const { data, error } = await supabase.from('ops_rows').select('*').order('date', { ascending: false });
-  if (error || !data) { console.warn('[ops_rows] load error:', error); return []; }
+  const data = await fetchAll((from, to) => supabase
+    .from('ops_rows').select('*')
+    .order('date', { ascending: false })
+    .range(from, to));
+  if (!data.length) return [];
   return data.map(r => ({
     loc:  r.loc,
     date: new Date(r.date + 'T00:00:00'),
@@ -784,8 +809,11 @@ export async function saveCtrlRows(rows) {
 
 export async function loadCtrlRows() {
   if (!supabase) return [];
-  const { data, error } = await supabase.from('ctrl_rows').select('*').order('date', { ascending: false });
-  if (error || !data) { console.warn('[ctrl_rows] load error:', error); return []; }
+  const data = await fetchAll((from, to) => supabase
+    .from('ctrl_rows').select('*')
+    .order('date', { ascending: false })
+    .range(from, to));
+  if (!data.length) return [];
   return data.map(r => ({
     loc:            r.loc,
     date:           new Date(r.date + 'T00:00:00'),
@@ -856,12 +884,14 @@ export async function saveDarRows(rows) {
 
 export async function loadDarRows({ daysBack = 90 } = {}) {
   if (!supabase) return [];
-  const from = new Date(); from.setDate(from.getDate() - daysBack);
-  const { data, error } = await supabase
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0,10);
+  const data = await fetchAll((from, to) => supabase
     .from('dar_rows').select('*')
-    .gte('date', from.toISOString().slice(0,10))
-    .order('date', { ascending: false });
-  if (error || !data) { console.warn('[dar_rows] load error:', error); return []; }
+    .gte('date', cutoffStr)
+    .order('date', { ascending: false })
+    .range(from, to));
+  if (!data.length) return [];
   return data.map(r => ({
     loc:    r.loc,
     date:   new Date(r.date + 'T00:00:00'),
