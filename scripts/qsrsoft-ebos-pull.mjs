@@ -48,7 +48,9 @@ const supabase = createClient(
 
 // ── Playwright: login to v3.myqsrsoft.com and navigate to Inventory ──────────
 // The eBOS token only appears in requests to prod.ebos.qsrsoft.com, which the
-// Inventory module triggers. Different token from the reporting API.
+// Inventory → Purchases section triggers. Different token from the reporting API.
+// Nav is a sidebar with collapsible sections; direct URL nav doesn't work (SPA
+// uses internal routing, not path/hash). Click through the sidebar instead.
 async function getEbosTokenPlaywright() {
   const u = process.env.QSRSOFT_USERNAME;
   const p = process.env.QSRSOFT_PASSWORD;
@@ -80,6 +82,21 @@ async function getEbosTokenPlaywright() {
   });
 
   const snap = async (name) => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // Click the first visible element matching any selector in the list
+  const clickFirst = async (selectors, timeout = 5000) => {
+    for (const sel of selectors) {
+      try {
+        const el = page.locator(sel).first();
+        if (await el.isVisible({ timeout }).catch(() => false)) {
+          await el.click();
+          return true;
+        }
+      } catch {}
+    }
+    return false;
+  };
 
   try {
     console.log('[auth] navigating to v3.myqsrsoft.com…');
@@ -102,70 +119,62 @@ async function getEbosTokenPlaywright() {
     await snap('ebos-02-post-login.png');
     console.log('[auth] post-login url:', page.url());
 
-    // Dump storage keys so we can see what tokens the app stores
-    const storageKeys = await page.evaluate(() => {
-      const keys = [];
-      for (const store of [localStorage, sessionStorage]) {
-        for (let i = 0; i < store.length; i++) keys.push(store.key(i));
-      }
-      return keys;
-    });
-    console.log('[auth] storage keys:', storageKeys.join(', '));
-
     if (!ebosToken) {
-      // Strategy 1: try direct URL variations (SPA may use hash or path routing)
-      const candidateUrls = [
-        'https://v3.myqsrsoft.com/inventory/purchases',
-        'https://v3.myqsrsoft.com/inventory',
-        'https://v3.myqsrsoft.com/#/inventory/purchases',
-        'https://v3.myqsrsoft.com/#/inventory',
-      ];
-      for (const url of candidateUrls) {
-        if (ebosToken) break;
-        console.log('[auth] trying url:', url);
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 }).catch(() => {});
-        await new Promise(r => setTimeout(r, 3000));
-        await snap(`ebos-03-${url.split('/').pop() || 'root'}.png`);
+      // Dismiss any modal that appeared on the home dashboard (e.g. Waste Entry popup)
+      await page.keyboard.press('Escape').catch(() => {});
+      await wait(800);
+      await clickFirst([
+        'button:has-text("CANCEL")', 'button:has-text("Cancel")',
+        '[aria-label="Close"]', 'button.close', '.modal-close',
+      ], 2000);
+      await wait(500);
+
+      // Click "Inventory" in the sidebar — uses Playwright text locator which
+      // matches any element type (div/span/button), not just <a>/<li>
+      console.log('[auth] clicking Inventory in sidebar…');
+      const invOk = await clickFirst([
+        'text=Inventory',
+        'nav >> text=Inventory',
+        'aside >> text=Inventory',
+        '[class*="sidebar"] >> text=Inventory',
+        '[class*="nav"] >> text=Inventory',
+      ]);
+      await wait(2000);
+      await snap('ebos-03-inventory-click.png');
+      console.log('[auth] after Inventory click, url:', page.url(), '| found:', invOk);
+
+      if (!ebosToken) {
+        console.log('[auth] clicking Purchases…');
+        const purOk = await clickFirst([
+          'text=Purchases',
+          'nav >> text=Purchases',
+          'aside >> text=Purchases',
+          '[class*="sidebar"] >> text=Purchases',
+          'a:has-text("Purchases")',
+          'button:has-text("Purchases")',
+        ]);
+        await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+        await wait(3000);
+        await snap('ebos-04-purchases.png');
+        console.log('[auth] after Purchases click, url:', page.url(), '| found:', purOk);
       }
-    }
 
-    if (!ebosToken) {
-      // Strategy 2: click through nav — Inventory → Purchases → Ledger
-      console.log('[auth] trying nav clicks…');
-      const navClick = async (sel) => {
-        try {
-          await page.click(sel, { timeout: 5000 });
-          await page.waitForLoadState('networkidle', { timeout: 15000 });
-          await new Promise(r => setTimeout(r, 2000));
-          return true;
-        } catch { return false; }
-      };
-
-      for (const invSel of ['a:has-text("Inventory")', 'li:has-text("Inventory")', '[href*="inventory" i]']) {
-        if (await navClick(invSel)) {
-          await snap('ebos-04-inventory.png');
-          console.log('[auth] clicked Inventory, url:', page.url());
-          if (ebosToken) break;
-
-          for (const purSel of ['a:has-text("Purchases")', 'li:has-text("Purchases")', '[href*="purchase" i]', 'button:has-text("Purchases")']) {
-            if (await navClick(purSel)) {
-              await snap('ebos-05-purchases.png');
-              console.log('[auth] clicked Purchases, url:', page.url());
-              if (ebosToken) break;
-
-              for (const ledSel of ['a:has-text("Ledger")', 'button:has-text("Ledger")', 'li:has-text("Ledger")', '[data-tab*="ledger" i]']) {
-                if (await navClick(ledSel)) {
-                  await snap('ebos-06-ledger.png');
-                  console.log('[auth] clicked Ledger, url:', page.url());
-                  if (ebosToken) break;
-                }
-              }
-              if (ebosToken) break;
-            }
-          }
-          if (ebosToken) break;
-        }
+      if (!ebosToken) {
+        console.log('[auth] clicking Ledger tab…');
+        const ledOk = await clickFirst([
+          'text=Ledger',
+          'button:has-text("Ledger")',
+          'a:has-text("Ledger")',
+          '[data-tab*="ledger" i]',
+          '[class*="tab"]:has-text("Ledger")',
+        ]);
+        await wait(3000);
+        await snap('ebos-05-ledger.png');
+        console.log('[auth] after Ledger click, url:', page.url(), '| found:', ledOk);
       }
+
+      // Give any pending eBOS requests a moment to fire
+      if (!ebosToken) await wait(3000);
     }
 
     await snap('ebos-final.png');
