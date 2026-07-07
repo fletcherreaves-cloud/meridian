@@ -876,6 +876,14 @@ function App() {
         console.log(`[Meridian] ✓ Cloud-synced ${filesToSync.length} report(s)`);
       }catch(e){console.warn('[Meridian] Cross-device sync failed:',e);}
     })();
+    // ── Supabase table diagnostic — logs row counts for all key tables ────────
+    (async()=>{
+      try{
+        const tables=['labor_rows','fob_rows','ops_rows','ctrl_rows','dar_rows','peaks_rows','audit_rows','qsr_fob','lifelenz_schedule','smg_fullscale'];
+        const counts=await Promise.all(tables.map(t=>supabase.from(t).select('*',{count:'exact',head:true}).then(({count,error})=>({t,count:error?`ERR:${error.message}`:count}))));
+        console.log('[Meridian] Supabase table row counts:',Object.fromEntries(counts.map(({t,count})=>[t,count])));
+      }catch(e){console.warn('[Meridian] Diagnostic count failed:',e);}
+    })();
     // ── Auto-load ALL monthly targets from Supabase ───────────────────────────
     // Loads every available period so EOM can look up any month without
     // additional Supabase calls.
