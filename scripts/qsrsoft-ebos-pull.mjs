@@ -68,20 +68,23 @@ async function getEbosTokenPlaywright() {
   const page = await context.newPage();
   let ebosToken = null;
 
+  // Capture X-Auth-Token from ANY request to prod.ebos.qsrsoft.com
   page.on('request', req => {
     if (!req.url().includes('prod.ebos.qsrsoft.com')) return;
     const h = req.headers();
     const t = h['x-auth-token'] || h['X-Auth-Token'];
     if (t && t.length > 20 && !ebosToken) {
       ebosToken = t;
-      if (DEBUG) console.log('[auth] captured eBOS token from request to prod.ebos.qsrsoft.com');
+      console.log('[auth] eBOS token captured from:', req.url().replace(/\?.*/, ''));
     }
   });
+
+  const snap = async (name) => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
 
   try {
     console.log('[auth] navigating to v3.myqsrsoft.com…');
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
-    await page.screenshot({ path: 'screenshots/ebos-01-landing.png', fullPage: true });
+    await snap('ebos-01-landing.png');
 
     const userSel = [
       'input[name="username"]', 'input[name="email"]', 'input[type="email"]',
@@ -96,32 +99,81 @@ async function getEbosTokenPlaywright() {
     await page.fill(passSel, p);
     await page.click(subSel);
     await page.waitForLoadState('networkidle', { timeout: 30000 });
-    await page.screenshot({ path: 'screenshots/ebos-02-post-login.png' });
+    await snap('ebos-02-post-login.png');
     console.log('[auth] post-login url:', page.url());
 
+    // Dump storage keys so we can see what tokens the app stores
+    const storageKeys = await page.evaluate(() => {
+      const keys = [];
+      for (const store of [localStorage, sessionStorage]) {
+        for (let i = 0; i < store.length; i++) keys.push(store.key(i));
+      }
+      return keys;
+    });
+    console.log('[auth] storage keys:', storageKeys.join(', '));
+
     if (!ebosToken) {
-      // Navigate to Inventory module — this triggers eBOS API requests
-      console.log('[auth] navigating to Inventory to trigger eBOS request…');
-      const inventoryLinks = ['a:has-text("Inventory")', 'nav a[href*="inventory" i]', '[data-nav*="inventory" i]'];
-      for (const sel of inventoryLinks) {
+      // Strategy 1: try direct URL variations (SPA may use hash or path routing)
+      const candidateUrls = [
+        'https://v3.myqsrsoft.com/inventory/purchases',
+        'https://v3.myqsrsoft.com/inventory',
+        'https://v3.myqsrsoft.com/#/inventory/purchases',
+        'https://v3.myqsrsoft.com/#/inventory',
+      ];
+      for (const url of candidateUrls) {
+        if (ebosToken) break;
+        console.log('[auth] trying url:', url);
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 3000));
+        await snap(`ebos-03-${url.split('/').pop() || 'root'}.png`);
+      }
+    }
+
+    if (!ebosToken) {
+      // Strategy 2: click through nav — Inventory → Purchases → Ledger
+      console.log('[auth] trying nav clicks…');
+      const navClick = async (sel) => {
         try {
           await page.click(sel, { timeout: 5000 });
           await page.waitForLoadState('networkidle', { timeout: 15000 });
           await new Promise(r => setTimeout(r, 2000));
+          return true;
+        } catch { return false; }
+      };
+
+      for (const invSel of ['a:has-text("Inventory")', 'li:has-text("Inventory")', '[href*="inventory" i]']) {
+        if (await navClick(invSel)) {
+          await snap('ebos-04-inventory.png');
+          console.log('[auth] clicked Inventory, url:', page.url());
           if (ebosToken) break;
-        } catch { /* try next selector */ }
+
+          for (const purSel of ['a:has-text("Purchases")', 'li:has-text("Purchases")', '[href*="purchase" i]', 'button:has-text("Purchases")']) {
+            if (await navClick(purSel)) {
+              await snap('ebos-05-purchases.png');
+              console.log('[auth] clicked Purchases, url:', page.url());
+              if (ebosToken) break;
+
+              for (const ledSel of ['a:has-text("Ledger")', 'button:has-text("Ledger")', 'li:has-text("Ledger")', '[data-tab*="ledger" i]']) {
+                if (await navClick(ledSel)) {
+                  await snap('ebos-06-ledger.png');
+                  console.log('[auth] clicked Ledger, url:', page.url());
+                  if (ebosToken) break;
+                }
+              }
+              if (ebosToken) break;
+            }
+          }
+          if (ebosToken) break;
+        }
       }
-      if (!ebosToken) {
-        // Fallback: direct URL
-        await page.goto('https://v3.myqsrsoft.com/inventory', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
-        await new Promise(r => setTimeout(r, 3000));
-      }
-      await page.screenshot({ path: 'screenshots/ebos-03-inventory.png' });
     }
+
+    await snap('ebos-final.png');
+    console.log('[auth] final url:', page.url());
 
   } catch (e) {
     console.error('[auth] Playwright error:', e.message);
-    await page.screenshot({ path: 'screenshots/ebos-error.png' }).catch(() => {});
+    await snap('ebos-error.png');
   } finally {
     await browser.close();
   }
@@ -223,10 +275,9 @@ function aggregateByDate(items, nsn) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  // QSRSOFT_EBOS_TOKEN preferred; fall back to QSRSOFT_TOKEN (same auth system, may share token)
-  const token = process.env.QSRSOFT_EBOS_TOKEN
-             || process.env.QSRSOFT_TOKEN
-             || await getEbosTokenPlaywright();
+  // QSRSOFT_EBOS_TOKEN preferred; Playwright fallback captures it by navigating to Inventory
+  const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
+  const token = envToken || await getEbosTokenPlaywright();
   if (!token) {
     console.error('[ebos-pull] no auth token available — exiting');
     process.exit(1);
