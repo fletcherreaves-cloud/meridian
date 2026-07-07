@@ -18,6 +18,10 @@ on:
         description: 'Days of future schedule data to pull (default: 14)'
         required: false
         default: '14'
+      start_date:
+        description: 'Backfill from this date (YYYY-MM-DD) — bypasses gap detection. Leave blank for normal daily sync.'
+        required: false
+        default: ''
       debug:
         description: 'Verbose logging (1 = on)'
         required: false
@@ -26,7 +30,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +57,7 @@ jobs:
           LIFELENZ_DAYS_BACK:        ${{ github.event.inputs.days_back || '30' }}
           LIFELENZ_SAFETY_DAYS:      ${{ github.event.inputs.safety_days || '3' }}
           LIFELENZ_DAYS_FWD:         ${{ github.event.inputs.days_fwd || '14' }}
+          LIFELENZ_START_DATE:       ${{ github.event.inputs.start_date || '' }}
           LIFELENZ_DEBUG:            ${{ github.event.inputs.debug || '0' }}
 
       - name: Upload debug screenshots

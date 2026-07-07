@@ -25,6 +25,7 @@ const BUSINESS_ID  = '01979dbf-a166-759b-8702-aba9915c578e';
 const DAYS_BACK    = parseInt(process.env.LIFELENZ_DAYS_BACK    || '30', 10);
 const SAFETY_DAYS  = parseInt(process.env.LIFELENZ_SAFETY_DAYS  || '3',  10);
 const DAYS_FWD     = parseInt(process.env.LIFELENZ_DAYS_FWD     || '14', 10);
+const START_DATE   = process.env.LIFELENZ_START_DATE || null; // override gap detection — pulls from this date forward
 const DEBUG        = process.env.LIFELENZ_DEBUG === '1';
 
 // ── Supabase client (service role — skips RLS) ────────────────────────────
@@ -634,22 +635,30 @@ async function upsertRows(rows) {
 
 // ── Main ──────────────────────────────────────────────────────────────────
 async function main() {
-  // Smart date range: check DB for latest date, only pull what's missing + safety window
-  const today       = new Date();
-  const latestDate  = await getLatestDate();
-  let daysBack;
+  // Date range: START_DATE override bypasses gap detection (used for historical backfills).
+  // Normal daily runs use smart gap detection to only pull what's missing + safety window.
+  const today = new Date();
+  let start, end;
 
-  if (!latestDate) {
-    daysBack = DAYS_BACK;
-    console.log(`[lifelenz-pull] no existing data — pulling ${daysBack} days of history`);
+  if (START_DATE) {
+    start = new Date(START_DATE + 'T00:00:00');
+    end   = addDay(today, DAYS_FWD);
+    console.log(`[lifelenz-pull] start_date override: ${START_DATE} → ${toISO(end)} (${Math.round((end-start)/86400000)} days)`);
   } else {
-    const daysSince = Math.floor((today - latestDate) / 86400000);
-    daysBack = Math.min(Math.max(SAFETY_DAYS, daysSince + SAFETY_DAYS), DAYS_BACK);
-    console.log(`[lifelenz-pull] latest in DB: ${toISO(latestDate)} (${daysSince}d ago) — pulling ${daysBack} days back`);
+    const latestDate = await getLatestDate();
+    let daysBack;
+    if (!latestDate) {
+      daysBack = DAYS_BACK;
+      console.log(`[lifelenz-pull] no existing data — pulling ${daysBack} days of history`);
+    } else {
+      const daysSince = Math.floor((today - latestDate) / 86400000);
+      daysBack = Math.min(Math.max(SAFETY_DAYS, daysSince + SAFETY_DAYS), DAYS_BACK);
+      console.log(`[lifelenz-pull] latest in DB: ${toISO(latestDate)} (${daysSince}d ago) — pulling ${daysBack} days back`);
+    }
+    start = addDay(today, -daysBack);
+    end   = addDay(today, DAYS_FWD);
   }
 
-  const start = addDay(today, -daysBack);
-  const end   = addDay(today, DAYS_FWD);
   console.log(`[lifelenz-pull] date range: ${toISO(start)} → ${toISO(end)}`);
 
   // 1. Auth — use pre-captured token if available, otherwise try REST then Playwright
