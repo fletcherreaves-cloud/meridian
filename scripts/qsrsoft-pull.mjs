@@ -27,8 +27,7 @@ import { createClient } from '@supabase/supabase-js';
 const API_BASE    = 'https://api.reports.myqsrsoft.com';
 const ORG_ID      = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const ENTERPRISE  = 'McDonalds';
-const MONTHS_BACK  = parseInt(process.env.QSRSOFT_MONTHS_BACK  || '30', 10);
-const SAFETY_DAYS  = parseInt(process.env.QSRSOFT_SAFETY_DAYS  || '3',  10);
+const MONTHS_BACK  = parseInt(process.env.QSRSOFT_MONTHS_BACK || '30', 10);
 const DEBUG        = process.env.QSRSOFT_DEBUG === '1';
 
 // All 27 store NSNs — confirmed from API response 2026-07-06
@@ -209,12 +208,11 @@ function buildMonthEntry(year, month) {
 
 // Smart month selection:
 //   - Current month: always pull (MTD changes every day)
-//   - Previous month: pull for first SAFETY_DAYS of new month (ABC corrections still arriving)
+//   - Previous month: always pull (inventory counts can update figures any day of the following month)
 //   - Older months: only pull if missing from DB
 //   - Looks back up to MONTHS_BACK months for gaps
 async function monthsToFetch() {
   const now      = new Date();
-  const today    = now.getDate();
   const existing = await getExistingMonths();
   const months   = [];
   const reasons  = [];
@@ -225,14 +223,13 @@ async function monthsToFetch() {
     const month = d.getMonth() + 1;
     const entry = buildMonthEntry(year, month);
 
-    const isCurrent      = i === 0;
-    const isPrevious     = i === 1;
-    const inSafetyWindow = isPrevious && today <= SAFETY_DAYS;
-    const isMissing      = !existing.has(entry.yearMonth);
+    const isCurrent  = i === 0;
+    const isPrevious = i === 1;  // always re-pull: inventory counts can update prior-month figures any day
+    const isMissing  = !existing.has(entry.yearMonth);
 
-    if (isCurrent || inSafetyWindow || isMissing) {
+    if (isCurrent || isPrevious || isMissing) {
       months.push(entry);
-      const why = isCurrent ? 'current MTD' : inSafetyWindow ? `safety (day ${today}/${SAFETY_DAYS})` : 'missing';
+      const why = isCurrent ? 'current MTD' : isPrevious ? 'prev month (inventory)' : 'missing';
       reasons.push(`${entry.yearMonth} [${why}]`);
     }
   }

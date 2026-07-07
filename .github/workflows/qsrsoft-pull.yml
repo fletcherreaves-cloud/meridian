@@ -10,10 +10,6 @@ on:
         description: 'Max months to look back for missing data (default: 30)'
         required: false
         default: '30'
-      safety_days:
-        description: 'Days into new month to re-pull previous month for ABC corrections (default: 3)'
-        required: false
-        default: '3'
       debug:
         description: 'Verbose logging (1 = on)'
         required: false
@@ -47,7 +43,6 @@ jobs:
           QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
           QSRSOFT_MONTHS_BACK:       ${{ github.event.inputs.months_back || '30' }}
-          QSRSOFT_SAFETY_DAYS:       ${{ github.event.inputs.safety_days || '3' }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
 
       - name: Upload debug screenshots
