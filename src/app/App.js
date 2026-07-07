@@ -38,7 +38,7 @@ import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -837,7 +837,7 @@ function App() {
         let synced;
         try{synced=new Set(JSON.parse(localStorage.getItem('mf_synced_report_ids')||'[]'));}
         catch{synced=new Set();}
-        const cutoff=new Date(Date.now()-30*86400000).toISOString();
+        const cutoff=new Date(Date.now()-180*86400000).toISOString();
         const{data:manualFiles}=await supabase
           .from('pending_reports')
           .select('id,filename,report_type')
@@ -943,6 +943,22 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${qsrFobRows.length} QSRSoft FOB rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] QSRSoft FOB load failed:',e);}
+      try{
+        const sbPeaks=await loadPeaksRows();
+        if(sbPeaks.length>0){
+          const peaksSvcRows  =sbPeaks.filter(r=>r._peakSvc===true);
+          const peaksSalesRows=sbPeaks.filter(r=>r._peakSvc===false);
+          setDs(prev=>{if(!prev)return prev;return {...prev,peaksSvcRows,peaksSalesRows};});
+          console.log(`[Meridian] ✓ Loaded ${sbPeaks.length} peaks rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Peaks rows load failed:',e);}
+      try{
+        const sbAudit=await loadAuditRows();
+        if(sbAudit.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,auditRows:sbAudit};});
+          console.log(`[Meridian] ✓ Loaded ${sbAudit.length} audit rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Audit rows load failed:',e);}
       try{
         const opsRows=await loadOpsRows();
         if(opsRows.length>0){
@@ -1184,11 +1200,14 @@ function App() {
     let currentDS=dsRef.current||buildDS([]);
     const loaded=[];
     const _toDs=r=>r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10);
-    const _prevLaborKeys=new Set((currentDS.laborRows||[]).map(r=>r.loc+'|'+_toDs(r)));
-    const _prevFobKeys  =new Set((currentDS.fobRows ||[]).map(r=>r.loc+'|'+_toDs(r)));
-    const _prevOpsKeys  =new Set((currentDS.opsRows  ||[]).map(r=>r.loc+'|'+_toDs(r)));
-    const _prevCtrlKeys =new Set((currentDS.ctrlRows ||[]).map(r=>r.loc+'|'+_toDs(r)));
-    const _prevDarKeys  =new Set((currentDS.darRows  ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
+    const _prevLaborKeys =new Set((currentDS.laborRows    ||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevFobKeys   =new Set((currentDS.fobRows      ||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevOpsKeys   =new Set((currentDS.opsRows      ||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevCtrlKeys  =new Set((currentDS.ctrlRows     ||[]).map(r=>r.loc+'|'+_toDs(r)));
+    const _prevDarKeys   =new Set((currentDS.darRows      ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
+    const _peakKey       =r=>r.loc+'|'+_toDs(r)+'|'+(r.slice||'')+'|'+(r._peakSvc?'1':'0');
+    const _prevPeaksSvc  =new Set([...(currentDS.peaksSvcRows ||[]),...(currentDS.peaksSalesRows||[])].map(_peakKey));
+    const _prevAuditKeys =new Set((currentDS.auditRows    ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.emp||'')));
     for(const file of fileArr){
       try{
         setLoadMsg('⏳ Parsing '+file.name+'…');
@@ -1282,16 +1301,21 @@ function App() {
     }
     // Persist new rows to Supabase for cross-device sync
     if(supabase){
-      const newLaborRows=(currentDS.laborRows||[]).filter(r=>!_prevLaborKeys.has(r.loc+'|'+_toDs(r)));
-      const newFobRows  =(currentDS.fobRows  ||[]).filter(r=>!_prevFobKeys  .has(r.loc+'|'+_toDs(r)));
-      const newOpsRows  =(currentDS.opsRows  ||[]).filter(r=>!_prevOpsKeys  .has(r.loc+'|'+_toDs(r)));
-      const newCtrlRows =(currentDS.ctrlRows ||[]).filter(r=>!_prevCtrlKeys .has(r.loc+'|'+_toDs(r)));
-      const newDarRows  =(currentDS.darRows  ||[]).filter(r=>!_prevDarKeys  .has(r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
-      if(newLaborRows.length>0) saveLaborRows(newLaborRows).catch(e=>console.warn('[labor_rows] save error:',e));
-      if(newFobRows  .length>0) saveFobRows  (newFobRows  ).catch(e=>console.warn('[fob_rows] save error:',e));
-      if(newOpsRows  .length>0) saveOpsRows  (newOpsRows  ).catch(e=>console.warn('[ops_rows] save error:',e));
-      if(newCtrlRows .length>0) saveCtrlRows (newCtrlRows ).catch(e=>console.warn('[ctrl_rows] save error:',e));
-      if(newDarRows  .length>0) saveDarRows  (newDarRows  ).catch(e=>console.warn('[dar_rows] save error:',e));
+      const newLaborRows=(currentDS.laborRows ||[]).filter(r=>!_prevLaborKeys .has(r.loc+'|'+_toDs(r)));
+      const newFobRows  =(currentDS.fobRows   ||[]).filter(r=>!_prevFobKeys   .has(r.loc+'|'+_toDs(r)));
+      const newOpsRows  =(currentDS.opsRows   ||[]).filter(r=>!_prevOpsKeys   .has(r.loc+'|'+_toDs(r)));
+      const newCtrlRows =(currentDS.ctrlRows  ||[]).filter(r=>!_prevCtrlKeys  .has(r.loc+'|'+_toDs(r)));
+      const newDarRows  =(currentDS.darRows   ||[]).filter(r=>!_prevDarKeys   .has(r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
+      const allPeaks    =[...(currentDS.peaksSvcRows||[]),...(currentDS.peaksSalesRows||[])];
+      const newPeaksRows=allPeaks .filter(r=>!_prevPeaksSvc .has(_peakKey(r)));
+      const newAuditRows=(currentDS.auditRows ||[]).filter(r=>!_prevAuditKeys .has(r.loc+'|'+_toDs(r)+'|'+(r.emp||'')));
+      if(newLaborRows.length>0) saveLaborRows (newLaborRows).catch(e=>console.warn('[labor_rows] save error:',e));
+      if(newFobRows  .length>0) saveFobRows   (newFobRows  ).catch(e=>console.warn('[fob_rows] save error:',e));
+      if(newOpsRows  .length>0) saveOpsRows   (newOpsRows  ).catch(e=>console.warn('[ops_rows] save error:',e));
+      if(newCtrlRows .length>0) saveCtrlRows  (newCtrlRows ).catch(e=>console.warn('[ctrl_rows] save error:',e));
+      if(newDarRows  .length>0) saveDarRows   (newDarRows  ).catch(e=>console.warn('[dar_rows] save error:',e));
+      if(newPeaksRows.length>0) savePeaksRows (newPeaksRows).catch(e=>console.warn('[peaks_rows] save error:',e));
+      if(newAuditRows.length>0) saveAuditRows (newAuditRows).catch(e=>console.warn('[audit_rows] save error:',e));
     }
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
     setLoadMsg('✓ '+names+' loaded · '+currentDS.storeIds.length+' stores');

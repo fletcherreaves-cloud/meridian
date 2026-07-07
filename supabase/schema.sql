@@ -638,6 +638,86 @@ create policy "ctrl_rows: public read"  on public.ctrl_rows for select using (tr
 create policy "ctrl_rows: public write" on public.ctrl_rows for all    using (true);
 create index if not exists ctrl_rows_date_idx on public.ctrl_rows (date desc);
 
+-- ── 3 Peaks rows (speed-of-service + daypart sales) ─────────────────────────
+-- Daypart-level per-store data from the 3 Peaks report.
+-- Service rows (is_svc=true): OEPE, KVS, park stats.
+-- Sales rows (is_svc=false): net sales, GC, avg check, TPPH.
+-- Primary key: (loc, date, slice, is_svc).
+create table if not exists public.peaks_rows (
+  loc           text    not null,
+  date          date    not null,
+  slice         text    not null,  -- daypart label ('Breakfast', 'Lunch', etc.)
+  is_svc        boolean not null,  -- true = service row, false = sales row
+  oepe          numeric,
+  r2p           numeric,
+  avg_ctp       numeric,
+  kvst          numeric,
+  kvsu          numeric,
+  dt_gc         numeric,
+  dt_order_time numeric,
+  dt_line_time  numeric,
+  dt_win1       numeric,
+  dt_win2       numeric,
+  park_cnt      numeric,
+  park_pct      numeric,
+  park_time     numeric,
+  avg_dt_ttl    numeric,
+  net_sales     numeric,
+  prod_sales    numeric,
+  gc            numeric,
+  avg_check     numeric,
+  tpph          numeric,
+  spph          numeric,
+  updated_at    timestamptz default now(),
+  primary key (loc, date, slice, is_svc)
+);
+alter table public.peaks_rows enable row level security;
+create policy "peaks_rows: public read"  on public.peaks_rows for select using (true);
+create policy "peaks_rows: public write" on public.peaks_rows for all    using (true);
+create index if not exists peaks_rows_date_idx on public.peaks_rows (date desc);
+
+-- ── Register Audit rows ───────────────────────────────────────────────────────
+-- Per-employee per-day register audit data from QSRSoft Register Audit report.
+-- Primary key: (loc, date, emp).
+create table if not exists public.audit_rows (
+  loc             text not null,
+  date            date not null,
+  emp             text not null,
+  drawer_sales    numeric,
+  avg_check       numeric,
+  drawer_opens    numeric,
+  drawer_gc       numeric,
+  emp_meal_disc   numeric,
+  emp_meal_ch     numeric,
+  manual_ref_amt  numeric,
+  refund_cnt      numeric,
+  refund_cash     numeric,
+  refund_cashless numeric,
+  mgr_meal_amt    numeric,
+  mgr_meal_cnt    numeric,
+  cash_os_dollar  numeric,
+  cash_os_pct     numeric,
+  pos_over_amt    numeric,
+  pos_over_cnt    numeric,
+  promo_amt       numeric,
+  promo_cnt       numeric,
+  promo_pct       numeric,
+  t_red_b_cnt     numeric,
+  t_red_b_pct     numeric,
+  t_red_b_avg     numeric,
+  t_red_b_dollar  numeric,
+  t_red_a_cnt     numeric,
+  t_red_a_pct     numeric,
+  t_red_a_avg     numeric,
+  t_red_a_dollar  numeric,
+  updated_at      timestamptz default now(),
+  primary key (loc, date, emp)
+);
+alter table public.audit_rows enable row level security;
+create policy "audit_rows: public read"  on public.audit_rows for select using (true);
+create policy "audit_rows: public write" on public.audit_rows for all    using (true);
+create index if not exists audit_rows_date_idx on public.audit_rows (date desc);
+
 -- ── Daily Activity Report rows ────────────────────────────────────────────────
 -- Hourly per-store service/sales data from the Daily Activity Report (DAR).
 -- Primary key: (loc, date, hour) — multiple rows per store per day.

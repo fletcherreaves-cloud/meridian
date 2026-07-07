@@ -476,6 +476,164 @@ export async function loadFobRows() {
   }));
 }
 
+// ── 3 Peaks rows ─────────────────────────────────────────────────────────────
+export async function savePeaksRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:           String(r.loc),
+    date:          toDate(r),
+    slice:         r.slice || '',
+    is_svc:        r._peakSvc === true,
+    oepe:          r.oepe          ?? null,
+    r2p:           r.r2p           ?? null,
+    avg_ctp:       r.avgCTP        ?? null,
+    kvst:          r.kvst          ?? null,
+    kvsu:          r.kvsu          ?? null,
+    dt_gc:         r.dtGC          ?? null,
+    dt_order_time: r.dtOrderTime   ?? null,
+    dt_line_time:  r.dtLineTime    ?? null,
+    dt_win1:       r.dtWin1        ?? null,
+    dt_win2:       r.dtWin2        ?? null,
+    park_cnt:      r.parkCnt       ?? null,
+    park_pct:      r.parkPct       ?? null,
+    park_time:     r.parkTime      ?? null,
+    avg_dt_ttl:    r.avgDTTTL      ?? null,
+    net_sales:     r.netSales      ?? null,
+    prod_sales:    r.prodSales     ?? null,
+    gc:            r.gc            ?? null,
+    avg_check:     r.avgCheck      ?? null,
+    tpph:          r.tpph          ?? null,
+    spph:          r.spph          ?? null,
+    updated_at:    new Date().toISOString(),
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('peaks_rows').upsert(upsert.slice(i, i+CHUNK), { onConflict: 'loc,date,slice,is_svc' });
+    if (error) { console.warn('[peaks_rows] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  return { saved, errors };
+}
+
+export async function loadPeaksRows() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('peaks_rows').select('*').order('date', { ascending: false });
+  if (error || !data) { console.warn('[peaks_rows] load error:', error); return []; }
+  return data.map(r => ({
+    loc:         r.loc,
+    date:        new Date(r.date + 'T00:00:00'),
+    slice:       r.slice,
+    _peakSvc:    r.is_svc,
+    oepe:        r.oepe,
+    r2p:         r.r2p,
+    avgCTP:      r.avg_ctp,
+    kvst:        r.kvst,
+    kvsu:        r.kvsu,
+    dtGC:        r.dt_gc,
+    dtOrderTime: r.dt_order_time,
+    dtLineTime:  r.dt_line_time,
+    dtWin1:      r.dt_win1,
+    dtWin2:      r.dt_win2,
+    parkCnt:     r.park_cnt,
+    parkPct:     r.park_pct,
+    parkTime:    r.park_time,
+    avgDTTTL:    r.avg_dt_ttl,
+    netSales:    r.net_sales,
+    prodSales:   r.prod_sales,
+    gc:          r.gc,
+    avgCheck:    r.avg_check,
+    tpph:        r.tpph,
+    spph:        r.spph,
+  }));
+}
+
+// ── Register Audit rows ───────────────────────────────────────────────────────
+export async function saveAuditRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:             String(r.loc),
+    date:            toDate(r),
+    emp:             r.emp || '',
+    drawer_sales:    r.drawerSales    ?? null,
+    avg_check:       r.avgCheck       ?? null,
+    drawer_opens:    r.drawerOpens    ?? null,
+    drawer_gc:       r.drawerGC       ?? null,
+    emp_meal_disc:   r.empMealDisc    ?? null,
+    emp_meal_ch:     r.empMealCh      ?? null,
+    manual_ref_amt:  r.manualRefAmt   ?? null,
+    refund_cnt:      r.refundCnt      ?? null,
+    refund_cash:     r.refundCash     ?? null,
+    refund_cashless: r.refundCashless ?? null,
+    mgr_meal_amt:    r.mgrMealAmt     ?? null,
+    mgr_meal_cnt:    r.mgrMealCnt     ?? null,
+    cash_os_dollar:  r.cashOSDollar   ?? null,
+    cash_os_pct:     r.cashOSPct      ?? null,
+    pos_over_amt:    r.posOverAmt     ?? null,
+    pos_over_cnt:    r.posOverCnt     ?? null,
+    promo_amt:       r.promoAmt       ?? null,
+    promo_cnt:       r.promoCnt       ?? null,
+    promo_pct:       r.promoPct       ?? null,
+    t_red_b_cnt:     r.tRedBCnt       ?? null,
+    t_red_b_pct:     r.tRedBPct       ?? null,
+    t_red_b_avg:     r.tRedBAvg       ?? null,
+    t_red_b_dollar:  r.tRedBDollar    ?? null,
+    t_red_a_cnt:     r.tRedACnt       ?? null,
+    t_red_a_pct:     r.tRedAPct       ?? null,
+    t_red_a_avg:     r.tRedAAvg       ?? null,
+    t_red_a_dollar:  r.tRedADollar    ?? null,
+    updated_at:      new Date().toISOString(),
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('audit_rows').upsert(upsert.slice(i, i+CHUNK), { onConflict: 'loc,date,emp' });
+    if (error) { console.warn('[audit_rows] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  return { saved, errors };
+}
+
+export async function loadAuditRows() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('audit_rows').select('*').order('date', { ascending: false });
+  if (error || !data) { console.warn('[audit_rows] load error:', error); return []; }
+  return data.map(r => ({
+    loc:            r.loc,
+    date:           new Date(r.date + 'T00:00:00'),
+    emp:            r.emp,
+    drawerSales:    r.drawer_sales,
+    avgCheck:       r.avg_check,
+    drawerOpens:    r.drawer_opens,
+    drawerGC:       r.drawer_gc,
+    empMealDisc:    r.emp_meal_disc,
+    empMealCh:      r.emp_meal_ch,
+    manualRefAmt:   r.manual_ref_amt,
+    refundCnt:      r.refund_cnt,
+    refundCash:     r.refund_cash,
+    refundCashless: r.refund_cashless,
+    mgrMealAmt:     r.mgr_meal_amt,
+    mgrMealCnt:     r.mgr_meal_cnt,
+    cashOSDollar:   r.cash_os_dollar,
+    cashOSPct:      r.cash_os_pct,
+    posOverAmt:     r.pos_over_amt,
+    posOverCnt:     r.pos_over_cnt,
+    promoAmt:       r.promo_amt,
+    promoCnt:       r.promo_cnt,
+    promoPct:       r.promo_pct,
+    tRedBCnt:       r.t_red_b_cnt,
+    tRedBPct:       r.t_red_b_pct,
+    tRedBAvg:       r.t_red_b_avg,
+    tRedBDollar:    r.t_red_b_dollar,
+    tRedACnt:       r.t_red_a_cnt,
+    tRedAPct:       r.t_red_a_pct,
+    tRedAAvg:       r.t_red_a_avg,
+    tRedADollar:    r.t_red_a_dollar,
+  }));
+}
+
 // ── QSRSoft FOB monthly aggregates (automated pull) ─────────────────────────
 export async function loadQsrFob({ yearMonths } = {}) {
   if (!supabase) return [];
