@@ -1,0 +1,60 @@
+name: QSRSoft eBOS Purchases Pull
+
+on:
+  schedule:
+    # 12:00 UTC = 7:00 AM CDT — after daily receiving is posted
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on first run (default: 900 ≈ 30 months)'
+        required: false
+        default: '900'
+      days_recent:
+        description: 'Rolling re-pull window for corrections (default: 30)'
+        required: false
+        default: '30'
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft eBOS purchase data
+        run: node scripts/qsrsoft-ebos-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_EBOS_DAYS_BACK:    ${{ github.event.inputs.days_back   || '900' }}
+          QSRSOFT_EBOS_DAYS_RECENT:  ${{ github.event.inputs.days_recent || '30' }}
+          QSRSOFT_EBOS_DEBUG:        ${{ github.event.inputs.debug || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebos-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

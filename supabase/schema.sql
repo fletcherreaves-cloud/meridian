@@ -795,6 +795,28 @@ alter table public.custom_signals enable row level security;
 create policy "custom_signals: public read"  on public.custom_signals for select using (true);
 create policy "custom_signals: public write" on public.custom_signals for all    using (true);
 
+-- ── QSR eBOS Purchases (daily store purchase ledger) ─────────────────────────
+-- Aggregated daily purchase totals from prod.ebos.qsrsoft.com store_ledger endpoint.
+-- One row per store per date. Auto-synced via qsrsoft-ebos-pull.mjs GitHub Action.
+-- Excludes Credits and inter-store Transfers — Purchase records only.
+create table if not exists public.qsr_ebos_daily (
+  loc              text    not null,  -- 7-digit padded NSN, e.g. '0003708'
+  date             date    not null,
+  food_purchases   numeric,           -- sum of food_sub for Purchase records
+  paper_purchases  numeric,           -- sum of paper_sub
+  ops_purchases    numeric,           -- sum of ops_sub (cleaning, supplies, smallwares)
+  hm_purchases     numeric,           -- sum of happy_meal_sub
+  other_purchases  numeric,           -- sum of other_sub
+  primary key (loc, date)
+);
+alter table public.qsr_ebos_daily enable row level security;
+create policy "qsr_ebos_daily: public read" on public.qsr_ebos_daily
+  for select using (true);
+create policy "qsr_ebos_daily: public write" on public.qsr_ebos_daily
+  for all using (true);
+create index if not exists qsr_ebos_daily_date_idx
+  on public.qsr_ebos_daily (date desc);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════
