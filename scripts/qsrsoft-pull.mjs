@@ -63,7 +63,10 @@ const supabase = createClient(
 async function getAuthTokenPlaywright() {
   const u = process.env.QSRSOFT_USERNAME;
   const p = process.env.QSRSOFT_PASSWORD;
-  if (!u || !p) return null;
+  if (!u || !p) {
+    console.error('[auth] Playwright login skipped — QSRSOFT_USERNAME or QSRSOFT_PASSWORD not set');
+    return null;
+  }
 
   console.log('[auth] QSRSOFT_TOKEN missing/expired — trying Playwright login…');
   const { mkdirSync } = await import('fs');
