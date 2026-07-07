@@ -223,7 +223,10 @@ function aggregateByDate(items, nsn) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  const token = process.env.QSRSOFT_EBOS_TOKEN || await getEbosTokenPlaywright();
+  // QSRSOFT_EBOS_TOKEN preferred; fall back to QSRSOFT_TOKEN (same auth system, may share token)
+  const token = process.env.QSRSOFT_EBOS_TOKEN
+             || process.env.QSRSOFT_TOKEN
+             || await getEbosTokenPlaywright();
   if (!token) {
     console.error('[ebos-pull] no auth token available — exiting');
     process.exit(1);
