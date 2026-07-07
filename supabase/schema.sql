@@ -351,13 +351,14 @@ create index if not exists smg_fullscale_year_month_idx
 
 -- ── QSRSoft FOB (Food Over Base) ─────────────────────────────────────────────
 -- Monthly per-store FOB data synced daily via scripts/qsrsoft-pull.mjs.
--- One row per store (loc = padded NSN) per year_month ("2026-07").
+-- One row per store (loc = padded NSN) per date (daily granularity).
 -- Includes current-period and last-year (ly_*) fields.
--- Requires QSRSOFT_TOKEN GitHub Secret.
+-- Weekly/monthly aggregates are derived in-app from these daily rows.
+-- Requires QSRSOFT_TOKEN or QSRSOFT_USERNAME+PASSWORD GitHub Secrets.
 
 create table if not exists public.qsr_fob (
   loc                          text        not null,
-  year_month                   text        not null,  -- "YYYY-MM"
+  date                         date        not null,
   prod_sales_amt               numeric,
   comp_waste_amt               numeric,
   raw_waste_amt                numeric,
@@ -401,7 +402,7 @@ create table if not exists public.qsr_fob (
   ly_pnl_paper_cost_promotions numeric,
   ly_pnl_paper_cost_end        numeric,
   updated_at                   timestamptz default now(),
-  primary key (loc, year_month)
+  primary key (loc, date)
 );
 
 alter table public.qsr_fob enable row level security;
@@ -412,8 +413,8 @@ create policy "qsr_fob: public read" on public.qsr_fob
 create policy "qsr_fob: public write" on public.qsr_fob
   for all using (true);
 
-create index if not exists qsr_fob_year_month_idx
-  on public.qsr_fob (year_month);
+create index if not exists qsr_fob_date_idx
+  on public.qsr_fob (date desc);
 
 -- ── LifeLenz Schedule (Labor Analysis Summary) ───────────────────────────────
 -- Daily per-store scheduling rows from LifeLenz Labor Analysis Summary Report.

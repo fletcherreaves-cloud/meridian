@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// scripts/qsrsoft-pull.mjs — QSRSoft FOB (Food Over Base) daily/monthly sync
-// Runs in GitHub Actions (or locally). Fetches all 27 stores in a single API call.
-// Smart mode: queries Supabase for existing months, only fetches what's missing
-// plus a safety window — typically 1-2 API calls per daily run.
+// scripts/qsrsoft-pull.mjs — QSRSoft FOB daily sync
+// Pulls daily granularity: one API call per date (startDate=endDate), all 27 stores per call.
+// Smart gap-detection: checks latest date in DB, re-pulls recent window for inventory corrections.
+// Weekly/monthly reports are derived in-app from the daily rows.
 //
 // Required env vars:
 //   VITE_SUPABASE_URL
@@ -13,11 +13,11 @@
 //   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — login credentials (Playwright fallback)
 //
 // Optional:
-//   QSRSOFT_MONTHS_BACK  — max lookback for missing months (default: 30)
-//   QSRSOFT_SAFETY_DAYS  — days into a new month to re-pull prev month for ABC corrections (default: 3)
+//   QSRSOFT_DAYS_BACK    — max history to pull on first run (default: 900 ≈ 30 months)
+//   QSRSOFT_DAYS_RECENT  — rolling re-pull window for inventory corrections (default: 30)
 //   QSRSOFT_DEBUG        — set to '1' for verbose logging
 //
-// Token refresh: when Playwright fails or is unavailable, go to v3.myqsrsoft.com,
+// Token refresh: when Playwright fails, go to v3.myqsrsoft.com,
 // DevTools → Network → any request → copy the X-Auth-Token header value →
 // update the QSRSOFT_TOKEN GitHub Secret.
 
@@ -27,8 +27,14 @@ import { createClient } from '@supabase/supabase-js';
 const API_BASE    = 'https://api.reports.myqsrsoft.com';
 const ORG_ID      = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const ENTERPRISE  = 'McDonalds';
-const MONTHS_BACK  = parseInt(process.env.QSRSOFT_MONTHS_BACK || '30', 10);
-const DEBUG        = process.env.QSRSOFT_DEBUG === '1';
+const DAYS_BACK   = parseInt(process.env.QSRSOFT_DAYS_BACK   || '900', 10); // ~30 months history on first run
+const DAYS_RECENT = parseInt(process.env.QSRSOFT_DAYS_RECENT || '30',  10); // re-pull window for inventory corrections
+const DEBUG       = process.env.QSRSOFT_DEBUG === '1';
+
+// Date helpers (UTC-safe)
+const pad2    = n => String(n).padStart(2, '0');
+const fmtDate = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}`;
+const addDay  = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + n); return r; };
 
 // All 27 store NSNs — confirmed from API response 2026-07-06
 const STORE_NSNS = [
@@ -184,59 +190,41 @@ async function getAuthTokenPlaywright() {
   return authToken;
 }
 
-// ── Query Supabase for year_months already in DB ──────────────────────────────
-async function getExistingMonths() {
+// ── Smart gap detection — returns latest date already in DB ──────────────────
+async function getLatestDate() {
   const { data, error } = await supabase
     .from('qsr_fob')
-    .select('year_month');
-  if (error) { console.warn('[db] could not read existing months:', error.message); return new Set(); }
-  return new Set((data || []).map(r => r.year_month));
+    .select('date')
+    .order('date', { ascending: false })
+    .limit(1)
+    .single();
+  if (error || !data) return null;
+  return new Date(data.date + 'T12:00:00Z'); // noon UTC avoids DST edge cases
 }
 
-function buildMonthEntry(year, month) {
-  const pad = n => String(n).padStart(2, '0');
-  const now = new Date();
-  const isCurrent = year === now.getFullYear() && month === now.getMonth() + 1;
-  const lastDay = new Date(year, month, 0).getDate();
-  const endDay  = isCurrent ? now.getDate() : lastDay;
-  return {
-    yearMonth: `${year}-${pad(month)}`,
-    startDate: `${year}-${pad(month)}-01`,
-    endDate:   `${year}-${pad(month)}-${pad(endDay)}`,
-  };
-}
+// Build the list of daily date strings to fetch.
+// Recent window always re-pulled (inventory counts can update any prior day's figures).
+// Older gaps filled on first run via DAYS_BACK.
+async function datesToFetch() {
+  const today      = new Date();
+  const latestDate = await getLatestDate();
 
-// Smart month selection:
-//   - Current month: always pull (MTD changes every day)
-//   - Previous month: always pull (inventory counts can update figures any day of the following month)
-//   - Older months: only pull if missing from DB
-//   - Looks back up to MONTHS_BACK months for gaps
-async function monthsToFetch() {
-  const now      = new Date();
-  const existing = await getExistingMonths();
-  const months   = [];
-  const reasons  = [];
-
-  for (let i = MONTHS_BACK; i >= 0; i--) {
-    const d     = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const year  = d.getFullYear();
-    const month = d.getMonth() + 1;
-    const entry = buildMonthEntry(year, month);
-
-    const isCurrent  = i === 0;
-    const isPrevious = i === 1;  // always re-pull: inventory counts can update prior-month figures any day
-    const isMissing  = !existing.has(entry.yearMonth);
-
-    if (isCurrent || isPrevious || isMissing) {
-      months.push(entry);
-      const why = isCurrent ? 'current MTD' : isPrevious ? 'prev month (inventory)' : 'missing';
-      reasons.push(`${entry.yearMonth} [${why}]`);
-    }
+  let daysBack;
+  if (!latestDate) {
+    daysBack = DAYS_BACK;
+    console.log(`[qsrsoft-pull] no existing data — pulling ${daysBack} days of history`);
+  } else {
+    const daysSince = Math.floor((today - latestDate) / 86400000);
+    daysBack = Math.min(Math.max(DAYS_RECENT, daysSince + DAYS_RECENT), DAYS_BACK);
+    console.log(`[qsrsoft-pull] latest date ${fmtDate(latestDate)} (${daysSince}d ago) — pulling ${daysBack} days`);
   }
 
-  console.log(`[qsrsoft-pull] ${existing.size > 0 ? existing.size + ' months in DB' : 'no existing data'}`);
-  console.log(`[qsrsoft-pull] pulling ${months.length} month(s): ${reasons.join(', ')}`);
-  return months;
+  const start  = addDay(today, -daysBack);
+  const dates  = [];
+  for (let d = start; fmtDate(d) <= fmtDate(today); d = addDay(d, 1)) {
+    dates.push(fmtDate(d));
+  }
+  return dates;
 }
 
 async function fetchFOB(token, startDate, endDate) {
@@ -288,7 +276,7 @@ function mapRow(item) {
   const ly  = k => item[`ly.${k}`] ?? null;
   return {
     loc,
-    year_month:                   item.date,
+    date:                         item.date,
     prod_sales_amt:               item.prodSalesAmt ?? null,
     comp_waste_amt:               item.compWasteAmt ?? null,
     raw_waste_amt:                item.rawWasteAmt  ?? null,
@@ -338,11 +326,16 @@ function mapRow(item) {
 
 async function upsertRows(rows) {
   if (!rows.length) return 0;
-  const { error } = await supabase
-    .from('qsr_fob')
-    .upsert(rows, { onConflict: 'loc,year_month' });
-  if (error) { console.warn('[supabase] upsert error:', error.message); return 0; }
-  return rows.length;
+  const CHUNK = 500;
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const { error } = await supabase
+      .from('qsr_fob')
+      .upsert(rows.slice(i, i + CHUNK), { onConflict: 'loc,date' });
+    if (error) { console.warn('[supabase] upsert error:', error.message); }
+    else saved += Math.min(CHUNK, rows.length - i);
+  }
+  return saved;
 }
 
 async function main() {
@@ -371,54 +364,53 @@ async function main() {
     process.exit(1);
   }
 
-  const months = await monthsToFetch();
-  if (!months.length) {
-    console.log(`[qsrsoft-pull] ✓ all months up to date — nothing to pull`);
+  const dates = await datesToFetch();
+  if (!dates.length) {
+    console.log(`[qsrsoft-pull] ✓ already up to date — nothing to pull`);
     return;
   }
-  console.log(`[qsrsoft-pull] ${months.length} month(s) × ${STORE_NSNS.length} stores`);
+  console.log(`[qsrsoft-pull] ${dates.length} day(s) × ${STORE_NSNS.length} stores (${dates[0]} → ${dates[dates.length-1]})`);
 
   let totalSaved = 0;
+  let totalDays  = 0;
+  const buffer   = [];
 
-  for (const { yearMonth, startDate, endDate } of months) {
+  const flushBuffer = async () => {
+    if (!buffer.length) return;
+    const saved = await upsertRows(buffer.splice(0));
+    totalSaved += saved;
+  };
+
+  for (const dateStr of dates) {
     try {
-      const items = await fetchFOB(token, startDate, endDate);
-      if (!items.length) { console.log(`  ${yearMonth}: no data`); continue; }
-
-      if (DEBUG) {
-        items.forEach(r => console.log(`    ${r.storeNum}: sales $${r.prodSalesAmt?.toLocaleString()} | baseFood $${r.totalBaseFood?.toLocaleString()}`));
-      }
-
-      const rows  = items.map(mapRow);
-      const saved = await upsertRows(rows);
-      totalSaved += saved;
-      console.log(`  ${yearMonth}: ${saved}/${items.length} stores saved`);
+      const items = await fetchFOB(token, dateStr, dateStr);
+      if (!items.length) { if (DEBUG) console.log(`  ${dateStr}: no data`); continue; }
+      if (DEBUG) items.forEach(r => console.log(`    ${dateStr} ${r.storeNum}: sales $${r.prodSalesAmt?.toLocaleString()} | baseFood $${r.totalBaseFood?.toLocaleString()}`));
+      buffer.push(...items.map(mapRow));
+      totalDays++;
+      if (buffer.length >= 500) await flushBuffer();
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) {
         console.warn(`\n[qsrsoft-pull] Token expired mid-run — attempting Playwright re-auth…`);
-        const freshToken = await getAuthTokenPlaywright();
-        if (!freshToken) {
+        token = await getAuthTokenPlaywright();
+        if (!token) {
           console.error('[qsrsoft-pull] ✗ Re-auth failed. Manually update QSRSOFT_TOKEN GitHub Secret.');
           process.exit(1);
         }
-        // Retry this month with the fresh token
         try {
-          const items2 = await fetchFOB(freshToken, startDate, endDate);
-          if (items2.length) {
-            const saved2 = await upsertRows(items2.map(mapRow));
-            totalSaved += saved2;
-            console.log(`  ${yearMonth}: ${saved2}/${items2.length} stores saved (re-auth)`);
-          }
+          const items2 = await fetchFOB(token, dateStr, dateStr);
+          if (items2.length) { buffer.push(...items2.map(mapRow)); totalDays++; }
         } catch (e2) {
-          console.warn(`  ${yearMonth}: still failing after re-auth — ${e2.message}`);
+          console.warn(`  ${dateStr}: still failing after re-auth — ${e2.message}`);
         }
         continue;
       }
-      console.warn(`  ${yearMonth}: error — ${e.message}`);
+      console.warn(`  ${dateStr}: error — ${e.message}`);
     }
   }
 
-  console.log(`[qsrsoft-pull] ✓ done — ${totalSaved} store-months saved to Supabase`);
+  await flushBuffer();
+  console.log(`[qsrsoft-pull] ✓ done — ${totalSaved} store-days saved across ${totalDays} days`);
 }
 
 main().catch(err => {

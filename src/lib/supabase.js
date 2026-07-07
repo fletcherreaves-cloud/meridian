@@ -654,18 +654,18 @@ export async function loadAuditRows() {
   }));
 }
 
-// ── QSRSoft FOB monthly aggregates (automated pull) ─────────────────────────
-export async function loadQsrFob({ yearMonths } = {}) {
+// ── QSRSoft FOB daily rows (automated pull) ──────────────────────────────────
+export async function loadQsrFob({ dates } = {}) {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => {
-    let q = supabase.from('qsr_fob').select('*').order('year_month', { ascending: false }).range(from, to);
-    if (yearMonths?.length) q = q.in('year_month', yearMonths);
+    let q = supabase.from('qsr_fob').select('*').order('date', { ascending: false }).range(from, to);
+    if (dates?.length) q = q.in('date', dates);
     return q;
   });
   if (!data.length) return [];
   return data.map(r => ({
     loc:                       r.loc,
-    yearMonth:                 r.year_month,
+    date:                      r.date,
     prodSalesAmt:              r.prod_sales_amt,
     compWasteAmt:              r.comp_waste_amt,
     rawWasteAmt:               r.raw_waste_amt,

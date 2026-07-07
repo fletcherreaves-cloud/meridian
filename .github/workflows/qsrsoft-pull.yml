@@ -6,8 +6,12 @@ on:
     - cron: '0 11 * * *'
   workflow_dispatch:
     inputs:
-      months_back:
-        description: 'Max months to look back for missing data (default: 30)'
+      days_back:
+        description: 'Max days of history on first run (default: 900 ≈ 30 months)'
+        required: false
+        default: '900'
+      days_recent:
+        description: 'Rolling re-pull window for inventory corrections (default: 30)'
         required: false
         default: '30'
       debug:
@@ -42,7 +46,8 @@ jobs:
           QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
           QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
-          QSRSOFT_MONTHS_BACK:       ${{ github.event.inputs.months_back || '30' }}
+          QSRSOFT_DAYS_BACK:         ${{ github.event.inputs.days_back   || '900' }}
+          QSRSOFT_DAYS_RECENT:       ${{ github.event.inputs.days_recent || '30' }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
 
       - name: Upload debug screenshots
