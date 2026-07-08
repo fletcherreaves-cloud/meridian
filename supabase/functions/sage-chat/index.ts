@@ -402,9 +402,12 @@ Deno.serve(async (req: Request) => {
             }
           }
 
+          // Thinking blocks require a `signature` field to replay — strip them.
+          // Tool_use blocks are all that's needed for the tool-result turn.
+          const replayContent = assistantContent.filter((b: any) => b.type !== 'thinking');
           conversationMessages = [
             ...conversationMessages,
-            { role: 'assistant', content: assistantContent },
+            { role: 'assistant', content: replayContent },
             { role: 'user',      content: toolResults },
           ];
         }
