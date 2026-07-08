@@ -793,21 +793,29 @@ function App() {
     });
     // ── Auto-ingest pending QSRSoft reports ───────────────────────────────────
     // Check for files uploaded by the Gmail poller (pending_reports table).
-    // Download each unprocessed file from Storage, parse with existing parsers,
-    // merge into the DS, then mark as processed.
+    // Per-device tracking via localStorage: the global 'processed' flag is only
+    // set by the first device to see the file, so other devices never re-download.
+    // We now use 'mf_email_report_ids' localStorage set so each device independently
+    // processes email reports it hasn't yet seen, regardless of the global flag.
     (async()=>{
       try{
+        let emailSynced;
+        try{emailSynced=new Set(JSON.parse(localStorage.getItem('mf_email_report_ids')||'[]'));}
+        catch{emailSynced=new Set();}
+        const cutoff=new Date(Date.now()-30*86400000).toISOString();
         const {data:pending,error}=await supabase
           .from('pending_reports')
           .select('id,filename,storage_path,report_type')
-          .eq('processed',false)
           .neq('source','manual')
+          .gte('uploaded_at',cutoff)
           .order('uploaded_at',{ascending:true})
-          .limit(50);
+          .limit(100);
         if(error||!pending?.length) return;
-        console.log(`[Meridian] ${pending.length} pending QSRSoft report(s) found`);
+        const toFetch=pending.filter(r=>!emailSynced.has(String(r.id)));
+        if(!toFetch.length) return;
+        console.log(`[Meridian] ${toFetch.length} email report(s) not yet on this device`);
         const filesToProcess=[];
-        for(const rec of pending){
+        for(const rec of toFetch){
           try{
             const {data:blob,error:dlErr}=await supabase.storage
               .from('qsr-reports')
@@ -825,12 +833,17 @@ function App() {
         if(!filesToProcess.length) return;
         // Reuse existing handleFiles — parses, merges, saves to OPFS
         await handleFiles(filesToProcess);
-        // Mark all as processed
-        const ids=pending.map(r=>r.id);
-        await supabase.from('pending_reports')
-          .update({processed:true,processed_at:new Date().toISOString()})
-          .in('id',ids);
-        console.log(`[Meridian] ✓ Auto-ingested ${filesToProcess.length} QSRSoft report(s)`);
+        // Mark this device as having processed these files
+        const newSynced=new Set([...emailSynced,...toFetch.map(r=>String(r.id))]);
+        try{localStorage.setItem('mf_email_report_ids',JSON.stringify([...newSynced]));}catch{}
+        // Also set global processed flag for any still-unprocessed records
+        const globalUnprocessed=toFetch.filter(r=>!r.processed).map(r=>r.id);
+        if(globalUnprocessed.length){
+          await supabase.from('pending_reports')
+            .update({processed:true,processed_at:new Date().toISOString()})
+            .in('id',globalUnprocessed);
+        }
+        console.log(`[Meridian] ✓ Auto-ingested ${filesToProcess.length} QSRSoft email report(s)`);
       }catch(e){console.warn('[Meridian] Pending report check failed:',e);}
     })();
     // ── Auto-ingest VOICE Performance PDFs from Gmail poller ─────────────────
