@@ -459,7 +459,7 @@ const QSR_DAR_FIELDS = {
   // ── Sales ──────────────────────────────────────────────────────────────
   product_sales:        {label:'Actual Sales',      desc:'Actual product sales dollars for this hour slot',                       unit:'$'},
   mean_sales:           {label:'Hist Mean Sales',   desc:'QSRSoft rolling historical mean sales for this store/slot/DOW (approx 5-week rolling avg). Used as the system baseline.',  unit:'$'},
-  proj_sales_dollars:   {label:'QSRSoft Proj Sales',desc:'QSRSoft system-generated sales projection for this slot. Based on rolling historical mean; does not account for weather, events, or trend.',  unit:'$'},
+  proj_sales_dollars:   {label:'Sched Proj Sales',  desc:'Scheduled sales projection for this slot, sourced from LifeLenz. Represents the sales volume implied by the GM\'s scheduled labor hours — a human-in-the-loop estimate, not a QSRSoft statistical model.',  unit:'$'},
   ly_product_sales:     {label:'LY Sales',          desc:'Last year product sales for the same slot and calendar date',           unit:'$'},
 
   // ── Transactions ───────────────────────────────────────────────────────
@@ -485,7 +485,7 @@ const QSR_DAR_FIELDS = {
 
   // ── Labor ──────────────────────────────────────────────────────────────
   actual_punched_hours: {label:'Act Hrs',           desc:'Actual labor hours punched (clocked in/out) during this hour slot',   unit:'hrs'},
-  total_needed_hours:   {label:'Needed Hrs',        desc:'QSRSoft labor model\'s calculated hours needed for this sales volume', unit:'hrs'},
+  total_needed_hours:   {label:'Needed Hrs',        desc:'Labor hours for this slot from LifeLenz — either (a) the algorithmic recommendation ("needed" hours for the projected sales volume) or (b) the actual hours the manager scheduled. Ambiguous without further API investigation; compare against actual_punched_hours to derive over/under-scheduling variance.',  unit:'hrs'},
   ly_actual_punched_hours:{label:'LY Act Hrs',      desc:'Last year actual punched labor hours for this slot',                   unit:'hrs'},
 
   // ── Order Accuracy ─────────────────────────────────────────────────────

@@ -2984,7 +2984,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
   // Export CSV
   const exportCSV=()=>{
     if(!results) return;
-    const hdr=['Store#','Store Name','Days','LY Adj MAPE','AI Forecast MAPE','AI Model Used','Blend MAPE','Dialed-In MAPE','QSRSoft Proj MAPE','Best Model'];
+    const hdr=['Store#','Store Name','Days','LY Adj MAPE','AI Forecast MAPE','AI Model Used','Blend MAPE','Dialed-In MAPE','Sched Proj MAPE (LifeLenz)','Best Model'];
     const rows=sorted.map(loc=>{
       const s=results.byStore[String(loc)];
       const nm=sNameC(String(loc));
@@ -3128,7 +3128,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             {label:'LY Adjusted MAPE',    val:mapeFmt(results.dist.ly),  col:mapeCol(results.dist.ly),   bg:'rgba(255,255,255,.02)'},
             {label:'Blend MAPE',          val:mapeFmt(results.dist.blend),col:mapeCol(results.dist.blend),bg:'rgba(255,255,255,.02)'},
             results.dist.di!=null&&{label:'Dialed-In MAPE',val:mapeFmt(results.dist.di),col:mapeCol(results.dist.di),bg:'rgba(245,188,0,.04)'},
-            results.dist.qsr!=null&&{label:'QSRSoft Proj MAPE',val:mapeFmt(results.dist.qsr),col:mapeCol(results.dist.qsr),bg:'rgba(148,163,184,.04)',sub:'vs Meridian AI: '+(results.dist.ai!=null&&results.dist.qsr!=null?(results.dist.qsr-results.dist.ai>0?'+':'')+((results.dist.qsr-results.dist.ai)).toFixed(1)+'pp':'—')},
+            results.dist.qsr!=null&&{label:'Sched Proj MAPE (LifeLenz)',val:mapeFmt(results.dist.qsr),col:mapeCol(results.dist.qsr),bg:'rgba(148,163,184,.04)',sub:'vs Meridian AI: '+(results.dist.ai!=null&&results.dist.qsr!=null?(results.dist.qsr-results.dist.ai>0?'+':'')+((results.dist.qsr-results.dist.ai)).toFixed(1)+'pp':'—')},
             {label:'Period / Records',val:results.periodLabel,sub:results.rangeLabel+' · '+results.totalDays.toLocaleString()+' days',col:'#a5b4fc',bg:'rgba(165,180,252,.04)'},
           ].filter(Boolean).map((k,i)=>div({key:i,style:{flex:'1 1 130px',minWidth:120,background:k.bg,border:'.5px solid var(--bdr)',borderRadius:6,padding:'7px 10px'}},
             div({style:{fontSize:'8px',textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',marginBottom:3}},k.label),
@@ -3149,7 +3149,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             span(null,'Click column headers to sort · Best model per row highlighted in gold'),
             div({style:{marginLeft:'auto',display:'flex',gap:6}},
               span(null,'Sort by:'),
-              ...[['ai','AI'],['ly','LY Adj'],['blend','Blend'],['di','DI'],['qsr','QSRSoft']].map(([k,l])=>
+              ...[['ai','AI'],['ly','LY Adj'],['blend','Blend'],['di','DI'],['qsr','Sched']].map(([k,l])=>
                 span({key:k,style:{cursor:'pointer',fontWeight:sortCol===k?700:400,
                   color:sortCol===k?'var(--gold)':'var(--text3)',padding:'0 4px'},
                   onClick:()=>setSortCol(k)},l))
@@ -3162,7 +3162,8 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
               ...MODELS.map(m=>th({key:m.key,style:{...thS,color:sortCol===m.key?m.col:'var(--text3)'},
                 onClick:()=>setSortCol(m.key)},m.label+' ▾')),
               th({style:{...thS,color:sortCol==='qsr'?'#94a3b8':'var(--text3)',cursor:'pointer'},
-                onClick:()=>setSortCol('qsr')},'QSRSoft Proj ▾'),
+                title:'Scheduled Projection (LifeLenz) — sales forecast derived from GM-scheduled labor hours, pulled into QSRSoft DAR',
+                onClick:()=>setSortCol('qsr')},'Sched Proj ▾'),
               th({style:{...thS,textAlign:'center',color:'var(--gold)'}},'Best Model')
             )),
             h('tbody',null, sorted.map((loc,i)=>{
