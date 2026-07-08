@@ -39,13 +39,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
       - name: Pull QSRSoft Daily Activity data
         run: node scripts/qsrsoft-dar-pull.mjs
         env:
           VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
           QSRSOFT_DAR_DAYS_BACK:      ${{ github.event.inputs.days_back   || '90' }}
           QSRSOFT_DAR_DAYS_RECENT:    ${{ github.event.inputs.days_recent || '7'  }}
           QSRSOFT_DAR_FORCE_FULL:     ${{ github.event.inputs.force_full  || '0'  }}
           QSRSOFT_DAR_DEBUG:          ${{ github.event.inputs.debug       || '0'  }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dar-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

@@ -1,17 +1,30 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-dar-pull.mjs
-// QSRSoft Daily Activity Report — hourly intraday data for all stores
+// QSRSoft Daily Activity Report — hourly intraday data for all 27 stores
 // API: https://api.reports.myqsrsoft.com/v1/reports/shift/daily-activity-raw
-// One API call per day covers ALL 27 stores. No Playwright — uses QSRSOFT_TOKEN.
-// Table: qsr_daily_activity (loc, dt, hour_slot) PK
+// One API call per day covers ALL 27 stores simultaneously.
+//
+// Required env vars:
+//   VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//
+// Auth — tried in order:
+//   QSRSOFT_TOKEN      — reporting API X-Auth-Token (direct server-side fetch)
+//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback: logs in, navigates
+//                        to Daily Activity page, captures token, fetches in-browser
+//
+// Optional:
+//   QSRSOFT_DAR_DAYS_BACK   — max history on first run (default: 90)
+//   QSRSOFT_DAR_DAYS_RECENT — rolling re-pull window (default: 7)
+//   QSRSOFT_DAR_FORCE_FULL  — set to '1' to ignore existing data and pull full range
+//   QSRSOFT_DAR_DEBUG       — set to '1' for verbose logging
 
 import { createClient } from '@supabase/supabase-js';
 
-const BASE_URL = 'https://api.reports.myqsrsoft.com/v1/reports/shift/daily-activity-raw';
-const ORG_ID   = 'a546d4ef-684a-4f25-8bc0-6580af068875';
+const DAR_BASE  = 'https://api.reports.myqsrsoft.com';
+const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 
 const STORE_NSNS = [
-  3708, 5183, 5985, 6178, 6838, 6972,
+  3708,  5183,  5985,  6178,  6838,  6972,
   10034, 10422, 10915, 11657, 13113, 18213,
   20475, 24471, 29760, 31357, 32525, 33109,
   33222, 33704, 34222, 35064, 35242, 37566,
@@ -24,35 +37,34 @@ const FORCE_FULL  = process.env.QSRSOFT_DAR_FORCE_FULL === '1';
 const DEBUG       = process.env.QSRSOFT_DAR_DEBUG      === '1';
 
 const SELECT_COLS = [
-  'transactions', 'productSales', 'allNetSales',
-  'dt_transactions', 'dt_allNetSales',
-  'is_transactions', 'is_allNetSales',
-  'transScrubbed', 'prodSalesScrubbed',
-  'dt_trans_cnt', 'dt_untilserve', 'dt_untilstore', 'dt_untilrecall',
-  'dt_heldtime', 'dt_carsheld',
-  'fc_trans_cnt', 'fc_untilserve', 'fc_untilcloseDrawer',
-  'mfy1_itemscount', 'mfy1_trans_cnt', 'mfy1_untilserve',
-  'mfy2_itemscount', 'mfy2_trans_cnt', 'mfy2_untilserve',
-  'bev_trans_cnt', 'bev_itemscount', 'bev_untilserve', 'bev_untilcloseDrawer',
-  'actualPunchedHours', 'totalScheduledHours', 'totalNeededHours',
-  'salariedManagerScheduledHours', 'actualPunchedDollars',
-  'healthy_count', 'unhealthy_count',
-  'projectedTransScrubbed', 'projectedDTTransScrubbed', 'projectedInStoreTranScrubbed',
-  'projectedProdSalesScrubbed', 'projectedKVSItemsScrubbed',
-  'totalTransactions', 'dtTransactions', 'salesDollars', 'sandwichCounts', 'inStoreProjTrans',
-  'totalSalesMean', 'totalTransactionsMean', 'totalDriveThruTransactionsMean',
-  'totalSandwichesMean', 'totalFryHashesMean', 'totalBeveragesMean',
+  'transactions','productSales','allNetSales',
+  'dt_transactions','dt_allNetSales','is_transactions','is_allNetSales',
+  'transScrubbed','prodSalesScrubbed',
+  'dt_trans_cnt','dt_untilserve','dt_untilstore','dt_untilrecall','dt_heldtime','dt_carsheld',
+  'fc_trans_cnt','fc_untilserve','fc_untilcloseDrawer',
+  'mfy1_itemscount','mfy1_trans_cnt','mfy1_untilserve',
+  'mfy2_itemscount','mfy2_trans_cnt','mfy2_untilserve',
+  'bev_trans_cnt','bev_itemscount','bev_untilserve','bev_untilcloseDrawer',
+  'actualPunchedHours','totalScheduledHours','totalNeededHours',
+  'salariedManagerScheduledHours','actualPunchedDollars',
+  'healthy_count','unhealthy_count',
+  'projectedTransScrubbed','projectedDTTransScrubbed','projectedInStoreTranScrubbed',
+  'projectedProdSalesScrubbed','projectedKVSItemsScrubbed',
+  'totalTransactions','dtTransactions','salesDollars','sandwichCounts','inStoreProjTrans',
+  'totalSalesMean','totalTransactionsMean','totalDriveThruTransactionsMean',
+  'totalSandwichesMean','totalFryHashesMean','totalBeveragesMean',
 ].join(',');
 
 function fmtDate(d) { return d.toISOString().slice(0, 10); }
 function addDay(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
-function n(v) { return v ?? 0; }
+function nv(v) { return v ?? 0; }
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
 
+// ── Gap detection ─────────────────────────────────────────────────────────────
 async function getLatestDate() {
   const { data } = await supabase
     .from('qsr_daily_activity')
@@ -63,136 +75,102 @@ async function getLatestDate() {
   return data?.dt ? new Date(data.dt + 'T12:00:00Z') : null;
 }
 
-async function fetchDay(token, date) {
-  const params = new URLSearchParams({
-    timeSegment:      'openClose',
-    segmentBy:        'hour',
-    segmentNames:     'open-close',
-    segmentsSelected: 'open-close',
-    nsd:              'd',
-    nsn:              STORE_NSNS.join(','),
-    orgId:            ORG_ID,
-    enterpriseName:   'McDonalds',
-    startDate:        date,
-    endDate:          date,
-    compType:         'trading',
-    weekStart:        '3',
-    timeInterval:     'hour',
-    selectCols:       SELECT_COLS,
-  });
-
-  const url = `${BASE_URL}?${params}`;
-  if (DEBUG) console.log(`[dar-pull] GET ${url.slice(0, 140)}...`);
-
-  const resp = await fetch(url, {
-    headers: {
-      'X-Auth-Token': token,
-      'Accept':       'application/json',
-      'Origin':       'https://v3.myqsrsoft.com',
-      'Referer':      'https://v3.myqsrsoft.com/',
-      'User-Agent':   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-    },
-  });
-
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
-  const body = await resp.json();
-  return Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
+async function getDateRange() {
+  const today = new Date();
+  if (FORCE_FULL) {
+    const s = fmtDate(addDay(today, -DAYS_BACK));
+    const e = fmtDate(today);
+    console.log(`[dar-pull] force_full=1 — pulling ${DAYS_BACK} days (${s} → ${e})`);
+    return { startDate: s, endDate: e };
+  }
+  const latest = await getLatestDate();
+  if (!latest) {
+    const s = fmtDate(addDay(today, -DAYS_BACK));
+    console.log(`[dar-pull] no existing data — pulling ${DAYS_BACK} days from ${s}`);
+    return { startDate: s, endDate: fmtDate(today) };
+  }
+  const daysSince   = Math.floor((today - latest) / 86400000);
+  const daysToFetch = Math.min(Math.max(DAYS_RECENT, daysSince + DAYS_RECENT), DAYS_BACK);
+  const s = fmtDate(addDay(today, -daysToFetch));
+  console.log(`[dar-pull] latest ${fmtDate(latest)} (${daysSince}d ago) — pulling ${daysToFetch} days`);
+  return { startDate: s, endDate: fmtDate(today) };
 }
 
+// ── Row mapping ───────────────────────────────────────────────────────────────
 function mapRow(row, date) {
   return {
     loc:       String(row.nsn).padStart(7, '0'),
     dt:        date,
     hour_slot: row.endQtrHourTime,
-
-    // Actual metrics (zero for future hours)
-    transactions:        n(row.transactions),
-    product_sales:       n(row.productSales ?? row.prodSalesScrubbed),
-    net_sales:           n(row.allNetSales),
-    dt_transactions:     n(row.dt_transactions),
-    dt_sales:            n(row.dt_allNetSales),
-    is_transactions:     n(row.is_transactions),
-    is_sales:            n(row.is_allNetSales),
-    trans_scrubbed:      n(row.transScrubbed),
-    prod_sales_scrubbed: n(row.prodSalesScrubbed),
-
-    // DT timing — raw µs sums; divide by dt_trans_cnt to get per-car avg
-    dt_trans_cnt:   n(row.dt_trans_cnt),
-    dt_untilserve:  n(row.dt_untilserve),
-    dt_untilstore:  n(row.dt_untilstore),
-    dt_untilrecall: n(row.dt_untilrecall),
-    dt_heldtime:    n(row.dt_heldtime),
-    dt_carsheld:    n(row.dt_carsheld),
-
-    // Front counter timing
-    fc_trans_cnt:        n(row.fc_trans_cnt),
-    fc_untilserve:       n(row.fc_untilserve),
-    fc_untilclosedrawer: n(row.fc_untilclosedrawer),
-
-    // MFY lanes
-    mfy1_itemscount: n(row.mfy1_itemscount),
-    mfy1_trans_cnt:  n(row.mfy1_trans_cnt),
-    mfy1_untilserve: n(row.mfy1_untilserve),
-    mfy2_itemscount: n(row.mfy2_itemscount),
-    mfy2_trans_cnt:  n(row.mfy2_trans_cnt),
-    mfy2_untilserve: n(row.mfy2_untilserve),
-
-    // Beverages
-    bev_trans_cnt:        n(row.bev_trans_cnt),
-    bev_itemscount:       n(row.bev_itemscount),
-    bev_untilserve:       n(row.bev_untilserve),
-    bev_untilclosedrawer: n(row.bev_untilclosedrawer),
-
-    // Labor
-    actual_punched_hours:             n(row.actualPunchedHours),
-    total_scheduled_hours:            n(row.totalScheduledHours),
-    total_needed_hours:               n(row.totalNeededHours),
-    salaried_manager_scheduled_hours: n(row.salariedManagerScheduledHours),
-    actual_punched_dollars:           n(row.actualPunchedDollars),
-
-    // Order accuracy
-    healthy_count:   n(row.healthy_count),
-    unhealthy_count: n(row.unhealthy_count),
-
-    // System projections (valid for all hours including future)
-    proj_trans_scrubbed:      n(row.projectedTransScrubbed),
-    proj_dt_trans_scrubbed:   n(row.projectedDTTransScrubbed),
-    proj_is_trans_scrubbed:   n(row.projectedInStoreTransScrubbed),
-    proj_prod_sales_scrubbed: n(row.projectedProdSalesScrubbed),
-    proj_kvs_items_scrubbed:  n(row.projectedKVSItemsScrubbed),
-    proj_total_transactions:  n(row.totalTransactions),
-    proj_dt_transactions:     n(row.dtTransactions),
-    proj_sales_dollars:       n(row.salesDollars),
-    proj_sandwich_counts:     n(row.sandwichCounts),
-    proj_is_transactions:     n(row.inStoreProjTrans),
-
-    // Historical means (~5-week rolling, from system)
-    mean_sales:           n(row.totalSalesMean),
-    mean_transactions:    n(row.totalTransactionsMean),
-    mean_dt_transactions: n(row.totalDriveThruTransactionsMean),
-    mean_sandwiches:      n(row.totalSandwichesMean),
-    mean_fry_hashes:      n(row.totalFryHashesMean),
-    mean_beverages:       n(row.totalBeveragesMean),
-
-    // Last year — same day, same time slot
-    ly_transactions:   n(row['ly.transactions']),
-    ly_product_sales:  n(row['ly.productSales']),
-    ly_dt_transactions:n(row['ly.dt_transactions']),
-    ly_dt_sales:       n(row['ly.dt_allNetSales']),
-    ly_is_transactions:n(row['ly.is_transactions']),
-    ly_sales_dollars:  n(row['ly.salesDollars']),
-    ly_punched_hours:  n(row['ly.actualPunchedHours']),
-
+    transactions:        nv(row.transactions),
+    product_sales:       nv(row.productSales ?? row.prodSalesScrubbed),
+    net_sales:           nv(row.allNetSales),
+    dt_transactions:     nv(row.dt_transactions),
+    dt_sales:            nv(row.dt_allNetSales),
+    is_transactions:     nv(row.is_transactions),
+    is_sales:            nv(row.is_allNetSales),
+    trans_scrubbed:      nv(row.transScrubbed),
+    prod_sales_scrubbed: nv(row.prodSalesScrubbed),
+    dt_trans_cnt:        nv(row.dt_trans_cnt),
+    dt_untilserve:       nv(row.dt_untilserve),
+    dt_untilstore:       nv(row.dt_untilstore),
+    dt_untilrecall:      nv(row.dt_untilrecall),
+    dt_heldtime:         nv(row.dt_heldtime),
+    dt_carsheld:         nv(row.dt_carsheld),
+    fc_trans_cnt:        nv(row.fc_trans_cnt),
+    fc_untilserve:       nv(row.fc_untilserve),
+    fc_untilclosedrawer: nv(row.fc_untilclosedrawer),
+    mfy1_itemscount:     nv(row.mfy1_itemscount),
+    mfy1_trans_cnt:      nv(row.mfy1_trans_cnt),
+    mfy1_untilserve:     nv(row.mfy1_untilserve),
+    mfy2_itemscount:     nv(row.mfy2_itemscount),
+    mfy2_trans_cnt:      nv(row.mfy2_trans_cnt),
+    mfy2_untilserve:     nv(row.mfy2_untilserve),
+    bev_trans_cnt:       nv(row.bev_trans_cnt),
+    bev_itemscount:      nv(row.bev_itemscount),
+    bev_untilserve:      nv(row.bev_untilserve),
+    bev_untilclosedrawer:nv(row.bev_untilclosedrawer),
+    actual_punched_hours:             nv(row.actualPunchedHours),
+    total_scheduled_hours:            nv(row.totalScheduledHours),
+    total_needed_hours:               nv(row.totalNeededHours),
+    salaried_manager_scheduled_hours: nv(row.salariedManagerScheduledHours),
+    actual_punched_dollars:           nv(row.actualPunchedDollars),
+    healthy_count:   nv(row.healthy_count),
+    unhealthy_count: nv(row.unhealthy_count),
+    proj_trans_scrubbed:      nv(row.projectedTransScrubbed),
+    proj_dt_trans_scrubbed:   nv(row.projectedDTTransScrubbed),
+    proj_is_trans_scrubbed:   nv(row.projectedInStoreTransScrubbed),
+    proj_prod_sales_scrubbed: nv(row.projectedProdSalesScrubbed),
+    proj_kvs_items_scrubbed:  nv(row.projectedKVSItemsScrubbed),
+    proj_total_transactions:  nv(row.totalTransactions),
+    proj_dt_transactions:     nv(row.dtTransactions),
+    proj_sales_dollars:       nv(row.salesDollars),
+    proj_sandwich_counts:     nv(row.sandwichCounts),
+    proj_is_transactions:     nv(row.inStoreProjTrans),
+    mean_sales:           nv(row.totalSalesMean),
+    mean_transactions:    nv(row.totalTransactionsMean),
+    mean_dt_transactions: nv(row.totalDriveThruTransactionsMean),
+    mean_sandwiches:      nv(row.totalSandwichesMean),
+    mean_fry_hashes:      nv(row.totalFryHashesMean),
+    mean_beverages:       nv(row.totalBeveragesMean),
+    ly_transactions:    nv(row['ly.transactions']),
+    ly_product_sales:   nv(row['ly.productSales']),
+    ly_dt_transactions: nv(row['ly.dt_transactions']),
+    ly_dt_sales:        nv(row['ly.dt_allNetSales']),
+    ly_is_transactions: nv(row['ly.is_transactions']),
+    ly_sales_dollars:   nv(row['ly.salesDollars']),
+    ly_punched_hours:   nv(row['ly.actualPunchedHours']),
     updated_at: new Date().toISOString(),
   };
 }
 
+// ── Supabase upsert ───────────────────────────────────────────────────────────
 async function upsertBatch(records) {
   if (!records.length) return 0;
-  const BATCH = 500;
+  const SIZE = 500;
   let total = 0;
-  for (let i = 0; i < records.length; i += BATCH) {
-    const batch = records.slice(i, i + BATCH);
+  for (let i = 0; i < records.length; i += SIZE) {
+    const batch = records.slice(i, i + SIZE);
     const { error } = await supabase
       .from('qsr_daily_activity')
       .upsert(batch, { onConflict: 'loc,dt,hour_slot' });
@@ -202,56 +180,237 @@ async function upsertBatch(records) {
   return total;
 }
 
-async function main() {
-  const token = process.env.QSRSOFT_TOKEN;
-  if (!token) throw new Error('QSRSOFT_TOKEN not set');
+function buildUrl(date) {
+  const params = new URLSearchParams({
+    timeSegment: 'openClose', segmentBy: 'hour',
+    segmentNames: 'open-close', segmentsSelected: 'open-close',
+    nsd: 'd', nsn: STORE_NSNS.join(','), orgId: ORG_ID,
+    enterpriseName: 'McDonalds', startDate: date, endDate: date,
+    compType: 'trading', weekStart: '3', timeInterval: 'hour',
+    selectCols: SELECT_COLS,
+  });
+  return `${DAR_BASE}/v1/reports/shift/daily-activity-raw?${params}`;
+}
 
-  const today = new Date();
-  let startDate, endDate;
+// ── Path A: direct server-side fetch ─────────────────────────────────────────
+async function fetchDayDirect(token, date) {
+  const url = buildUrl(date);
+  if (DEBUG) console.log(`[dar-pull] GET ${url.slice(0, 120)}...`);
+  const resp = await fetch(url, {
+    headers: {
+      'X-Auth-Token': token,
+      'Accept':       'application/json',
+      'Origin':       'https://v3.myqsrsoft.com',
+      'Referer':      'https://v3.myqsrsoft.com/',
+      'User-Agent':   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+    },
+  });
+  if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  const body = await resp.json();
+  return Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
+}
 
-  if (FORCE_FULL) {
-    startDate = fmtDate(addDay(today, -DAYS_BACK));
-    endDate   = fmtDate(today);
-    console.log(`[dar-pull] force_full=1 — pulling ${DAYS_BACK} days (${startDate} → ${endDate})`);
-  } else {
-    const latest = await getLatestDate();
-    if (!latest) {
-      startDate = fmtDate(addDay(today, -DAYS_BACK));
-      console.log(`[dar-pull] no existing data — pulling ${DAYS_BACK} days from ${startDate}`);
-    } else {
-      const daysSince   = Math.floor((today - latest) / 86400000);
-      const daysToFetch = Math.min(Math.max(DAYS_RECENT, daysSince + DAYS_RECENT), DAYS_BACK);
-      startDate = fmtDate(addDay(today, -daysToFetch));
-      console.log(`[dar-pull] latest ${fmtDate(latest)} (${daysSince}d ago) — pulling ${daysToFetch} days`);
+async function runDirect(token, dates) {
+  let totalRows = 0;
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i];
+    try {
+      const rows = await fetchDayDirect(token, date);
+      if (!rows.length) { console.log(`[dar-pull]   ${date}: no data`); continue; }
+      const records = rows.map(r => mapRow(r, date));
+      const n = await upsertBatch(records);
+      totalRows += n;
+      console.log(`[dar-pull]   ${date}: ${rows.length} rows → ${n} upserted`);
+    } catch (e) {
+      if (e.message.startsWith('AUTH_FAILED')) throw e; // bubble up for fallback
+      console.error(`[dar-pull]   ${date} ERROR: ${e.message}`);
     }
-    endDate = fmtDate(today);
+    if (i < dates.length - 1) await new Promise(r => setTimeout(r, 150));
   }
+  return totalRows;
+}
+
+// ── Path B: Playwright login → in-browser fetches ────────────────────────────
+async function pullViaPlaywright(dates) {
+  const u = process.env.QSRSOFT_USERNAME;
+  const pw = process.env.QSRSOFT_PASSWORD;
+  if (!u || !pw) {
+    console.error('[auth] QSRSOFT_USERNAME or QSRSOFT_PASSWORD not set — cannot use Playwright fallback');
+    return null;
+  }
+
+  const { chromium } = await import('playwright');
+  const { mkdirSync } = await import('fs');
+  try { mkdirSync('screenshots', { recursive: true }); } catch {}
+
+  console.log('[auth] launching Playwright…');
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(180000);
+
+  let darToken = null;
+  page.on('request', req => {
+    if (!req.url().includes('api.reports.myqsrsoft.com')) return;
+    const t = req.headers()['x-auth-token'];
+    if (t && t.length > 20 && !darToken) {
+      darToken = t;
+      if (DEBUG) console.log('[auth] DAR token captured from:', req.url().replace(/\?.*/, ''));
+    }
+  });
+
+  const snap = (name) => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  try {
+    // ── Login ──
+    console.log('[auth] navigating to v3.myqsrsoft.com…');
+    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
+    await snap('dar-01-landing.png');
+
+    const userSel = [
+      'input[name="username"]','input[name="email"]','input[type="email"]',
+      '#username','#email','input[autocomplete="username"]',
+      'input[placeholder*="email" i]','input[placeholder*="username" i]',
+    ].join(', ');
+    await page.waitForSelector(userSel, { timeout: 20000 });
+    await page.fill(userSel, u);
+    await page.fill('input[type="password"], input[name="password"]', pw);
+    await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await snap('dar-02-post-login.png');
+    console.log('[auth] post-login url:', page.url());
+
+    // ── Navigate to Daily Activity page to trigger api.reports.myqsrsoft.com calls ──
+    console.log('[auth] navigating to Daily Activity report…');
+    await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/dailyActivity', {
+      waitUntil: 'networkidle',
+      timeout: 30000,
+    });
+    await wait(3000);
+    await snap('dar-03-daily-activity.png');
+    console.log('[auth] daily activity url:', page.url(), '| token captured:', !!darToken);
+
+    if (!darToken) {
+      // Token not yet captured — the page may not have auto-fired a request.
+      // Try fetching a URL from within the browser to trigger the auth flow.
+      console.log('[auth] token not captured from navigation — attempting in-browser fetch to trigger auth…');
+      const today = fmtDate(new Date());
+      const testUrl = buildUrl(today);
+      const testResult = await page.evaluate(async (url) => {
+        try {
+          const r = await fetch(url, { credentials: 'include' });
+          return { status: r.status, ok: r.ok };
+        } catch (e) { return { error: e.message }; }
+      }, testUrl);
+      console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
+      await wait(2000);
+    }
+
+    if (!darToken) {
+      console.error('[auth] ✗ could not capture DAR token — running in-browser fetches without pre-captured token');
+    } else {
+      console.log(`[auth] ✓ DAR token captured (${darToken.length} chars) — fetching ${dates.length} dates in-browser…`);
+    }
+
+    // ── Fetch all dates from within the live browser session ──
+    // The browser session has cookies + token — no 401 issues.
+    const { rows: allRows, log } = await page.evaluate(async (args) => {
+      const { dates, nsns, orgId, selectCols, darBase, debug } = args;
+      const allRows = [], log = [];
+
+      function buildUrl(date) {
+        const p = new URLSearchParams({
+          timeSegment: 'openClose', segmentBy: 'hour',
+          segmentNames: 'open-close', segmentsSelected: 'open-close',
+          nsd: 'd', nsn: nsns.join(','), orgId,
+          enterpriseName: 'McDonalds', startDate: date, endDate: date,
+          compType: 'trading', weekStart: '3', timeInterval: 'hour',
+          selectCols,
+        });
+        return `${darBase}/v1/reports/shift/daily-activity-raw?${p}`;
+      }
+
+      for (const date of dates) {
+        const url = buildUrl(date);
+        try {
+          const r = await fetch(url, { credentials: 'include' });
+          if (!r.ok) { log.push(`${date} HTTP ${r.status}`); continue; }
+          const body = await r.json();
+          const rows = Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
+          rows.forEach(row => row._date = date);
+          allRows.push(...rows);
+          log.push(`${date}: ${rows.length} rows`);
+        } catch (e) {
+          log.push(`${date} ERROR: ${e.message}`);
+        }
+        // small delay between requests
+        await new Promise(res => setTimeout(res, 150));
+      }
+      return { rows: allRows, log };
+    }, { dates, nsns: STORE_NSNS, orgId: ORG_ID, selectCols: SELECT_COLS, darBase: DAR_BASE, debug: DEBUG });
+
+    for (const msg of log) console.log('[dar-pull]', msg);
+    await snap('dar-final.png');
+    return allRows;
+
+  } catch (e) {
+    console.error('[auth] Playwright error:', e.message);
+    await snap('dar-error.png');
+    return null;
+  } finally {
+    await browser.close();
+  }
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+async function main() {
+  const { startDate, endDate } = await getDateRange();
 
   const dates = [];
   for (let d = new Date(startDate + 'T12:00:00Z'); fmtDate(d) <= endDate; d = addDay(d, 1)) {
     dates.push(fmtDate(d));
   }
-
   console.log(`[dar-pull] ${dates.length} dates × ${STORE_NSNS.length} stores (~${dates.length * STORE_NSNS.length * 25} rows expected)`);
-  let totalRows = 0;
 
-  for (let i = 0; i < dates.length; i++) {
-    const date = dates[i];
+  // ── Path A: direct token ──
+  const token = (process.env.QSRSOFT_TOKEN || '').trim();
+  if (token) {
+    console.log('[auth] trying direct server-side fetch with QSRSOFT_TOKEN…');
     try {
-      const rows = await fetchDay(token, date);
-      if (!rows.length) { console.log(`[dar-pull]   ${date}: no data`); continue; }
-      const records = rows.map(r => mapRow(r, date));
-      const upserted = await upsertBatch(records);
-      totalRows += upserted;
-      console.log(`[dar-pull]   ${date}: ${rows.length} rows → ${upserted} upserted`);
-    } catch (err) {
-      console.error(`[dar-pull]   ${date} ERROR: ${err.message}`);
+      const total = await runDirect(token, dates);
+      console.log(`[dar-pull] done. Total: ${total} rows`);
+      return;
+    } catch (e) {
+      if (e.message.startsWith('AUTH_FAILED')) {
+        console.log('[auth] QSRSOFT_TOKEN rejected (401/403) — falling back to Playwright');
+      } else {
+        throw e;
+      }
     }
-    // 150ms between requests — polite to the API
-    if (i < dates.length - 1) await new Promise(r => setTimeout(r, 150));
   }
 
-  console.log(`[dar-pull] done. Total: ${totalRows} rows`);
+  // ── Path B: Playwright ──
+  const allRows = await pullViaPlaywright(dates);
+  if (!allRows) {
+    console.error('[dar-pull] no auth method succeeded — set QSRSOFT_TOKEN or QSRSOFT_USERNAME+PASSWORD');
+    process.exit(1);
+  }
+
+  const records = allRows.map(r => mapRow(r, r._date));
+  let totalSaved = 0;
+  for (let i = 0; i < records.length; i += 500) {
+    const batch = records.slice(i, i + 500);
+    const { error } = await supabase
+      .from('qsr_daily_activity')
+      .upsert(batch, { onConflict: 'loc,dt,hour_slot' });
+    if (error) console.error('[supabase] upsert error:', error.message);
+    else totalSaved += batch.length;
+  }
+  console.log(`[dar-pull] done. ${allRows.length} rows fetched → ${totalSaved} upserted`);
 }
 
-main().catch(err => { console.error('[dar-pull] FATAL:', err); process.exit(1); });
+main().catch(e => { console.error('[dar-pull] FATAL:', e); process.exit(1); });
