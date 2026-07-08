@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// scripts/lifelenz-vlh-explore.mjs — round 3
-// Found: Schedule type has vlhSettingsCache: VlhSettingsCache
-// This round: introspect VlhSettingsCache fields, then fetch real data for all stores.
+// scripts/lifelenz-vlh-explore.mjs — round 4
+// schedules(businessId) query confirmed working.
+// This round: get VlhSettingsCache field names, then pull real data for all stores.
 
 const BASE        = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID = '01979dbf-a166-759b-8702-aba9915c578e';
@@ -28,73 +28,87 @@ const gql = async (operationName, query, variables = {}) => {
   return { status: res.status, json, text };
 };
 
-// ── Step 1: Introspect VlhSettingsCache ───────────────────────────────────
-console.log('══ 1. VlhSettingsCache type fields ══════════════════════════════');
+// ── 1. VlhSettingsCache field names (full output, no truncation) ──────────
+console.log('══ VlhSettingsCache field names ═════════════════════════════════');
 const typeRes = await gql('IntrospectVlhSettingsCache', `
   query IntrospectVlhSettingsCache {
     __type(name: "VlhSettingsCache") {
       name
       fields {
         name
-        description
         type { name kind ofType { name kind ofType { name kind } } }
       }
     }
   }
 `);
-if (typeRes.json?.data?.__type?.fields) {
-  console.log('VlhSettingsCache fields:');
-  typeRes.json.data.__type.fields.forEach(f => {
-    const t = f.type?.name || f.type?.ofType?.name || f.type?.ofType?.ofType?.name || f.type?.kind;
-    console.log(`  ${f.name}: ${t}  ${f.description ? '// '+f.description : ''}`);
-  });
-} else {
-  console.log('Result:', typeRes.text.slice(0, 600));
-}
+const cacheFields = typeRes.json?.data?.__type?.fields || [];
+cacheFields.forEach(f => {
+  const t = f.type?.name || f.type?.ofType?.name || f.type?.ofType?.ofType?.name || f.type?.kind;
+  console.log(`  ${f.name}: ${t}`);
+});
 
-// ── Step 2: Get all schedule IDs ──────────────────────────────────────────
-const schRes = await fetch(`${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`, { headers: HEADERS });
-const schJson = await schRes.json();
-const STORE_RE = /\b\d{4,7}\b/;
-const schedules = (schJson?.data || []).filter(s =>
-  s.attributes?.schedule_status !== 'archived' &&
-  STORE_RE.test(s.attributes?.schedule_name || '')
-);
-console.log(`\n── ${schedules.length} store schedules found ─────────────────────────────────`);
+// ── 2. Pull all stores with every VlhSettingsCache field ──────────────────
+// Build the field list dynamically from introspection so we get everything
+const scalarFields = cacheFields
+  .filter(f => {
+    const kind = f.type?.kind || f.type?.ofType?.kind;
+    // Include scalars and enums; skip objects/lists (need separate query)
+    return ['SCALAR','ENUM','NON_NULL'].includes(kind) ||
+           ['SCALAR','ENUM'].includes(f.type?.ofType?.kind) ||
+           ['SCALAR','ENUM'].includes(f.type?.ofType?.ofType?.kind);
+  })
+  .map(f => f.name);
 
-// ── Step 3: Fetch vlhSettingsCache for first store (with __typename to see structure) ──
-const probe = schedules[0];
-console.log(`\n══ 2. vlhSettingsCache data for: ${probe.attributes.schedule_name} ══`);
-const dataRes = await gql('GetScheduleVlhSettings', `
-  query GetScheduleVlhSettings($id: ID!, $businessId: ID!) {
-    schedule(id: $id, businessId: $businessId) {
-      id
-      scheduleName
-      vlhSettingsCache {
-        __typename
-      }
-    }
-  }
-`, { id: probe.id, businessId: BUSINESS_ID });
-console.log('Raw result:', JSON.stringify(dataRes.json, null, 2).slice(0, 1200));
+console.log(`\nScalar/enum fields to query: ${scalarFields.join(', ')}`);
 
-// ── Step 4: Try fetching ALL stores with a fragment ───────────────────────
-// (Only run this if step 3 succeeded — adapt field names from step 1 output)
-console.log('\n══ 3. vlhSettingsCache for all stores (typename + all scalar fields) ══');
-const allRes = await gql('GetAllScheduleVlhSettings', `
-  query GetAllScheduleVlhSettings($businessId: ID!) {
+const fieldBlock = scalarFields.length > 0
+  ? scalarFields.join('\n        ')
+  : '# no scalar fields found — querying with guesses below';
+
+const queryFields = scalarFields.length > 0 ? fieldBlock : `
+        frontCounter
+        driveThru
+        kitchen
+        coffee
+        beverage
+        frontCounterType
+        driveThruType
+        kitchenType
+        coffeeType
+        beverageType`;
+
+console.log('\n══ All stores VLH data ══════════════════════════════════════════');
+const allRes = await gql('GetAllVlhSettings', `
+  query GetAllVlhSettings($businessId: ID!) {
     schedules(businessId: $businessId) {
       nodes {
         id
         scheduleName
         vlhSettingsCache {
-          __typename
+          ${queryFields}
         }
       }
     }
   }
 `, { businessId: BUSINESS_ID });
-console.log(`Status: ${allRes.status}`);
-console.log(allRes.text.slice(0, 1200));
+
+if (allRes.json?.errors) {
+  console.log('Errors (field name hints):');
+  allRes.json.errors.forEach(e => console.log(' ', e.message));
+}
+
+if (allRes.json?.data?.schedules?.nodes) {
+  const STORE_RE = /\b\d{4,7}\b/;
+  const stores = allRes.json.data.schedules.nodes.filter(n =>
+    n.vlhSettingsCache && STORE_RE.test(n.scheduleName)
+  );
+  console.log(`\n${stores.length} stores with VLH data:`);
+  stores.forEach(s => {
+    console.log(`\n  ${s.scheduleName}`);
+    console.log('  ', JSON.stringify(s.vlhSettingsCache));
+  });
+} else {
+  console.log('Raw response:', allRes.text.slice(0, 2000));
+}
 
 console.log('\nDone.');
