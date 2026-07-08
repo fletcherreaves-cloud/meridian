@@ -180,7 +180,9 @@ async function pullViaPlaywright(startDate, endDate) {
     await snap('ebos-02-post-login.png');
     console.log('[auth] post-login url:', page.url());
 
-    // ── Navigate to Purchases page → triggers api/inv/purchase/vendor → captures token ──
+    // ── Navigate to Purchases page ──
+    // The overview uses GraphQL (no X-Auth-Token). REST calls to prod.ebos.qsrsoft.com/api/inv/
+    // only fire when the Ledger tab is clicked — so we must click it to capture the token.
     console.log('[auth] navigating to /cimt/inventory/purchases…');
     await page.goto('https://v3.myqsrsoft.com/cimt/inventory/purchases', { waitUntil: 'networkidle', timeout: 30000 });
     await wait(2000);
@@ -188,7 +190,41 @@ async function pullViaPlaywright(startDate, endDate) {
     console.log('[auth] purchases url:', page.url());
 
     if (!ebosToken) {
-      console.error('[auth] ✗ could not capture eBOS token from purchases page');
+      // Diagnostic: log all tab-role / tab-class elements so we can see exact text
+      const tabInfo = await page.evaluate(() =>
+        [...document.querySelectorAll('[role="tab"], [class*="tab"]')]
+          .map(el => el.textContent.trim().slice(0, 40))
+          .filter(Boolean)
+      );
+      console.log('[auth] tabs on page:', JSON.stringify(tabInfo));
+
+      // Click the Ledger tab via DOM text-node walk (works on any element type)
+      const ledgerClick = await page.evaluate(() => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (node.textContent.trim() !== 'Ledger') continue;
+          let el = node.parentElement;
+          for (let i = 0; i < 5; i++) {
+            if (!el) break;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              el.click();
+              return { ok: true, tag: el.tagName, cls: el.className.toString().slice(0, 60) };
+            }
+            el = el.parentElement;
+          }
+        }
+        return { ok: false };
+      });
+      console.log('[auth] Ledger tab click:', JSON.stringify(ledgerClick));
+      await wait(3000); // wait for REST call to fire
+      await snap('ebos-04-ledger.png');
+      console.log('[auth] after Ledger click, url:', page.url(), '| token:', !!ebosToken);
+    }
+
+    if (!ebosToken) {
+      console.error('[auth] ✗ could not capture eBOS token');
       console.error('  Manual refresh: v3.myqsrsoft.com → Inventory → Purchases → Ledger tab');
       console.error('  DevTools → Network → prod.ebos.qsrsoft.com/api/inv/ request → X-Auth-Token');
       console.error('  → update QSRSOFT_EBOS_TOKEN GitHub Secret');
