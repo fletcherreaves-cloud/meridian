@@ -239,6 +239,9 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
 
   const labor  = (ds.laborRows||[]).find(sameDay) || (ds.laborRows||[]).find(nearby);
   const ctrl   = (ds.ctrlRows||[]).find(sameDay)  || (ds.ctrlRows||[]).find(nearby);
+  // Email pipeline sources: Daily Glimpse (OEPE, GC, parkedPct, laborPct) + Cash Sheet (GC, refunds)
+  const glimpse = (ds.glimpseRows||[]).find(sameDay) || (ds.glimpseRows||[]).find(nearby);
+  const cash    = (ds.cashRows||[]).find(sameDay)    || (ds.cashRows||[]).find(nearby);
   const peaks  = (ds.peaksSvcRows||[]).filter(r=>String(r.loc)===locStr&&Math.abs(r.date-targetDate)<3*86400000);
   const norms  = computeStoreNorms(loc, ds);
 
@@ -286,9 +289,9 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
   return {
     loc, name: sNameC(loc),
     supervisor: LOC_SUPERVISOR[locStr]||'Unknown',
-    hasData: !!(labor||ctrl||peaks.length||dar),
-    // Labor fields — DAR fills in when labor not uploaded
-    sales:      labor?.sales>0 ? labor.sales : (darSales || null),
+    hasData: !!(labor||ctrl||glimpse||cash||peaks.length||dar),
+    // Labor fields — DAR fills in when labor not uploaded; email pipeline (glimpse/cash) fills when neither uploaded
+    sales:      labor?.sales>0 ? labor.sales : (glimpse?.allNetSales>0 ? glimpse.allNetSales : (cash?.allNetSales>0 ? cash.allNetSales : (darSales || null))),
     projSales: (()=>{
       if(labor?.projSales>0) return labor.projSales;
       if(darProjSales>0) return darProjSales;
@@ -296,25 +299,30 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
       const monthly = tgt?.tJuneProj || tgt?.tOperatorProj || tgt?.tMayProj || 0;
       return monthly>0 ? Math.round(monthly/30) : null;
     })(),
-    gc:         labor?.gc>0 ? labor.gc : (labor?.actualGC>0 ? labor.actualGC : null),
+    gc:         labor?.gc>0 ? labor.gc : (labor?.actualGC>0 ? labor.actualGC : (glimpse?.gc>0 ? glimpse.gc : (cash?.gc>0 ? cash.gc : null))),
     tpph:       labor?.tpph>0 ? labor.tpph :
                 (ctrl?.tpph>0 ? ctrl.tpph :
                 (DEFAULT_TARGETS[locStr]?.tJuneTpph>0 ? DEFAULT_TARGETS[locStr].tJuneTpph : null)),
     laborPct:   labor?.laborPct>0 ? labor.laborPct :
                 (ctrl?.laborPct>0 ? ctrl.laborPct :
-                (DEFAULT_TARGETS[locStr]?.tJuneLaborPct>0 ? DEFAULT_TARGETS[locStr].tJuneLaborPct : null)),
+                (glimpse?.laborPct>0 ? glimpse.laborPct :
+                (DEFAULT_TARGETS[locStr]?.tJuneLaborPct>0 ? DEFAULT_TARGETS[locStr].tJuneLaborPct : null))),
     actVsNeed:  labor?.actVsNeed != null ? labor.actVsNeed : (ctrl?.actVsNeed ?? darActVsNeed),
     salesVsExp, gcVsExp,
-    // Controls fields
+    // Controls fields — ctrl upload first, then email pipeline (glimpse > cash) as fallback
     drawerOpens:  ctrl?.drawerOpens||null,
-    posOverAmt:   ctrl?.posOverAmt||null,
+    posOverAmt:   ctrl?.posOverAmt ?? (glimpse?.posOverAmt ?? (cash?.posOverAmt ?? null)),
     manualRefAmt: ctrl?.manualRefAmt||null,
-    refundAmt:    ctrl?.refundAmt||(ctrl?.cashRefAmt||0)+(ctrl?.cashlessRefAmt||0)||null,
+    refundAmt:    ctrl?.refundAmt != null ? ctrl.refundAmt :
+                  ((ctrl?.cashRefAmt||0)+(ctrl?.cashlessRefAmt||0)||null) ??
+                  (cash?.cashRefAmt!=null||cash?.cashlessRefAmt!=null ? (cash?.cashRefAmt||0)+(cash?.cashlessRefAmt||0) : null),
     tRedAPct:     ctrl?.tRedAPct||null,
     tRedBPct:     ctrl?.tRedBPct||null,
-    cashOSAmt:    ctrl?.cashOSAmt||null,
-    // Service fields — DAR DT time fills OEPE when 3 Peaks not uploaded
-    oepe: oepe ?? darOepe, kvst, kvsu, dtPark,
+    cashOSAmt:    ctrl?.cashOSAmt ?? (glimpse?.cashOS ?? (cash?.cashOS ?? null)),
+    // Service fields — 3 Peaks first, then Daily Glimpse OEPE (daily aggregate), then DAR-derived
+    oepe: oepe ?? (glimpse?.oepe ?? darOepe),
+    kvst, kvsu,
+    dtPark: dtPark ?? (glimpse?.parkedPct > 0 ? Math.round(glimpse.parkedPct * 1000) / 10 : null),
     oepeNorm: norms.oepeNorm,
     kvstNorm: norms.kvstNorm,
     // Daypart data
@@ -327,11 +335,13 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
     smgOsat:     smgFs?.osatTop2||null,
     smgMonth:    smgFs ? new Date(smgFs.year,smgFs.month-1).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : null,
     // Data coverage
-    hasLabor: !!labor,
-    hasCtrl:  !!ctrl,
-    hasPeaks: peaks.length > 0,
-    hasFOB:   !!fob,
-    hasSMG:   !!smgFs,
+    hasLabor:   !!labor,
+    hasCtrl:    !!ctrl,
+    hasPeaks:   peaks.length > 0,
+    hasGlimpse: !!glimpse,
+    hasCash:    !!cash,
+    hasFOB:     !!fob,
+    hasSMG:     !!smgFs,
   };
 }
 
