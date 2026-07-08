@@ -11,12 +11,7 @@ const btn  = (p,...c) => h('button', p, ...c);
 const DT_GREEN = 200; // seconds — on target
 const DT_AMB   = 240; // seconds — caution
 
-const fmtDT = (s) => {
-  if (s == null || isNaN(s)) return '—';
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return m + ':' + String(sec).padStart(2, '0');
-};
+const fmtDT = (s) => s == null || isNaN(s) ? '—' : Math.round(s) + 's';
 
 const dtColor = (s) =>
   s == null ? 'var(--text3)' : s < DT_GREEN ? '#10b981' : s < DT_AMB ? '#f59e0b' : '#ef4444';
@@ -71,11 +66,11 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   // ── Derived ──────────────────────────────────────────────────────────────
   const activeLocs = React.useMemo(() => {
     const storeLocs = new Set((stores || []).map(s => String(s.loc)));
-    return ALL_LOCS.filter(l => storeLocs.has(l) || storeLocs.size === 0).filter(l => {
-      if (orgFilter === 'fl') return FL_LOCS.has(l);
-      if (orgFilter === 'ok') return !FL_LOCS.has(l);
-      return true;
-    });
+    const base = ALL_LOCS.filter(l => storeLocs.has(l) || storeLocs.size === 0);
+    if (orgFilter === 'fl') return base.filter(l =>  FL_LOCS.has(l));
+    if (orgFilter === 'ok') return base.filter(l => !FL_LOCS.has(l));
+    if (orgFilter !== 'all') return base.filter(l => l === orgFilter);
+    return base;
   }, [stores, orgFilter]);
 
   const midDt = React.useMemo(() => {
@@ -176,7 +171,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
         div({ style:{ flex:1 }},
           div({ style:{ fontSize:'14px', fontWeight:800, color:'var(--text)' }}, 'DT Speed of Service'),
           div({ style:{ fontSize:'9px', color:'var(--text3)' }},
-            'Drive-through serve time analytics · from qsr_daily_activity · green <3:20 · amber <4:00 · red ≥4:00'),
+            'Drive-through serve time analytics · from qsr_daily_activity · green <200s · amber <240s · red ≥240s'),
         ),
         h('select', { value:period, onChange:e=>setPeriod(e.target.value), style:selStyle },
           ...PERIODS.map(p => h('option', { key:p.id, value:p.id }, p.label))),
@@ -184,6 +179,12 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
           h('option', { value:'all' }, 'All Stores'),
           h('option', { value:'fl'  }, 'Florida'),
           h('option', { value:'ok'  }, 'Oklahoma'),
+          h('optgroup', { label:'— Florida —' },
+            ...ALL_LOCS.filter(l =>  FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
+              .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
+          h('optgroup', { label:'— Oklahoma —' },
+            ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
+              .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
         ),
         btn({ className:'btn btn-sm', style:{ color:'var(--text3)' }, onClick:onClose }, '✕'),
       ),
