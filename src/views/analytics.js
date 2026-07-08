@@ -1278,6 +1278,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   const [qsrFiles, setQsrFiles] = uSt([]);
   const [ebosCov,  setEbosCov]  = uSt({count:0});
   const [darCov,   setDarCov]   = uSt({count:0});
+  const [syncTimes, setSyncTimes] = uSt({life:null, ebos:null, dar:null});
 
   uE(()=>{
     if(idbCoverage && Object.keys(idbCoverage).length>0) setCov(idbCoverage);
@@ -1296,9 +1297,17 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       supabase.from('qsr_daily_activity').select('*',{count:'exact',head:true}),
       supabase.from('qsr_daily_activity').select('dt').order('dt',{ascending:true}).limit(1).single(),
       supabase.from('qsr_daily_activity').select('dt').order('dt',{ascending:false}).limit(1).single(),
-    ]).then(([cnt,mn,mx,darCnt,darMn,darMx])=>{
+      supabase.from('lifelenz_schedules').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
+      supabase.from('qsr_ebos_daily').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
+      supabase.from('qsr_daily_activity').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
+    ]).then(([cnt,mn,mx,darCnt,darMn,darMx,lifeSy,ebosSy,darSy])=>{
       if(cnt.count) setEbosCov({count:cnt.count,from:mn.data?.date||'?',to:mx.data?.date||'?'});
       if(darCnt.count) setDarCov({count:darCnt.count,from:darMn.data?.dt||'?',to:darMx.data?.dt||'?'});
+      setSyncTimes({
+        life: lifeSy.data?.updated_at||null,
+        ebos: ebosSy.data?.updated_at||null,
+        dar:  darSy.data?.updated_at||null,
+      });
     });
   },[]);
 
@@ -1319,6 +1328,19 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     };
     const dates = rows.map(toStr).filter(Boolean).sort();
     return {count:rows.length, from:dates[0]||'?', to:dates[dates.length-1]||'?'};
+  };
+
+  // Format a UTC timestamp as "Xm ago" / "Xh ago" / "Xd ago"
+  const fmtSyncAgo = (ts) => {
+    if(!ts) return null;
+    const ms = Date.now() - new Date(ts).getTime();
+    if(ms < 0) return null;
+    const m = Math.floor(ms/60000);
+    if(m < 60) return m+'m ago';
+    const h = Math.floor(ms/3600000);
+    if(h < 24) return h+'h ago';
+    const d = Math.floor(ms/86400000);
+    return d+'d ago';
   };
 
   // Staleness: days since latest date in coverage
@@ -1562,11 +1584,24 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   // Auto-synced rows (GitHub Actions daily)
   const schedCov = sessionCov.schedRows||{count:0};
   const qsrFobCov = supabaseCov.qsrFobRows||{count:0};
+
+  // Helper: sync time sub-label shown below the data source name
+  const syncLabel = (ts) => {
+    const ago = fmtSyncAgo(ts);
+    if(!ago) return null;
+    return span({style:{display:'block',fontSize:'7px',color:'var(--text3)',fontWeight:400,marginTop:1,lineHeight:1}},
+      '↻ synced '+ago);
+  };
+
   const autoSyncedRows = [
     (()=>{const c=schedCov;const hasData=c.count>0;
       return h('tr',{key:'auto-lifelenz',style:{borderBottom:'.5px solid rgba(255,255,255,.04)'}},
         h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
-          hasData?staleDot(c):null,'LifeLenz Schedule',autoTag),
+          hasData?staleDot(c):null,
+          span({style:{display:'flex',flexDirection:'column'}},
+            'LifeLenz Schedule',
+            syncLabel(syncTimes.life)),
+          autoTag),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' rows':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1586,7 +1621,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     (()=>{const c=ebosCov;const hasData=c.count>0;
       return h('tr',{key:'auto-ebos',style:{borderBottom:'.5px solid rgba(255,255,255,.04)'}},
         h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
-          hasData?staleDot(c):null,'QSRSoft eBOS Purchases',autoTag),
+          hasData?staleDot(c):null,
+          span({style:{display:'flex',flexDirection:'column'}},
+            'QSRSoft eBOS Purchases',
+            syncLabel(syncTimes.ebos)),
+          autoTag),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' store-days':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1596,7 +1635,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
     (()=>{const c=darCov;const hasData=c.count>0;
       return h('tr',{key:'auto-dar',style:{background:'rgba(255,255,255,.015)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
         h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
-          hasData?staleDot(c):null,'QSRSoft Daily Activity',autoTag),
+          hasData?staleDot(c):null,
+          span({style:{display:'flex',flexDirection:'column'}},
+            'QSRSoft Daily Activity',
+            syncLabel(syncTimes.dar)),
+          autoTag),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' hour-slots':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1672,7 +1715,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
                   borderBottom:'.5px solid var(--bdr)',textAlign:i===0?'left':'right'}},(l)))
             )),
             h('tbody',null,
-            sectionHdr('hdr-auto','⚡ Auto-Synced · GitHub Actions Daily'),
+            sectionHdr('hdr-auto','⚡ Auto-Synced · GitHub Actions · Daily ~5am CDT'),
             ...autoSyncedRows,
             sectionHdr('hdr-pipeline','📧 Email Pipeline · QSRSoft'),
             ...pipelineRows,
@@ -1697,8 +1740,8 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
           div({style:{padding:'10px 14px',background:'rgba(16,185,129,.07)',
             borderRadius:'var(--r)',border:'.5px solid rgba(16,185,129,.2)',marginBottom:14,
             fontSize:'9px',color:'#34d399',lineHeight:1.7}},
-            span({style:{fontWeight:700}},'⚡ Auto-synced daily: '),
-            'LifeLenz schedule, QSRSoft FOB, and eBOS Purchases pull automatically via GitHub Actions — no action needed. ',
+            span({style:{fontWeight:700}},'⚡ Auto-synced daily (~5am CDT): '),
+            'LifeLenz schedule, QSRSoft FOB, eBOS Purchases, and Daily Activity (hourly for all 27 stores) pull automatically via GitHub Actions — no action needed. ',
             span({style:{color:'var(--text3)'}},'Manual uploads (Ops, Controls, SMG, etc.) persist to Supabase and load on any device without re-uploading.')
           ),
           // EOM Supervisor auto-population note

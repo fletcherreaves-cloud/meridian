@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES } from '../constants.js';
 import { dKey } from '../utils/date.js';
+import { supabase } from '../lib/supabase.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -514,6 +515,137 @@ function StoreBriefCard({store, expanded, setExpanded}){
   );
 }
 
+// ── Today's Hourly Pace vs 30-Day Mean (qsr_daily_activity) ─────────────────
+const DAR_DAYPARTS = [
+  {id:'bfst', label:'Breakfast', slots:['06:00','07:00','08:00','09:00','10:00','11:00']},
+  {id:'lnch', label:'Lunch',     slots:['12:00','13:00','14:00']},
+  {id:'pm',   label:'PM',        slots:['15:00','16:00','17:00']},
+  {id:'din',  label:'Dinner',    slots:['18:00','19:00','20:00','21:00']},
+  {id:'late', label:'Late Night',slots:['22:00','23:00','24:00','25:00','26:00','27:00','28:00']},
+];
+const fK = v => v >= 1000 ? '$'+(v/1000).toFixed(1)+'K' : '$'+Math.round(v);
+const pctClr = v => v == null ? '#6b7280' : v >= 0 ? '#10b981' : '#ef4444';
+
+function TodayPaceCard({date}) {
+  const [rows, setRows] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
+  const targetDate = date instanceof Date ? date.toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+
+  React.useEffect(() => {
+    if(!supabase) { setLoading(false); return; }
+    setLoading(true);
+    supabase.from('qsr_daily_activity')
+      .select('hour_slot,product_sales,mean_sales,proj_sales_dollars,ly_product_sales')
+      .eq('dt', targetDate)
+      .order('hour_slot')
+      .then(({data, error: err}) => {
+        if(err) { setError(err.message); setLoading(false); return; }
+        setRows(data || []);
+        setLoading(false);
+      });
+  }, [targetDate]);
+
+  if(!supabase) return null;
+  if(loading) return h('div',{style:{padding:'10px 14px',background:'rgba(255,255,255,.03)',borderRadius:8,
+    border:'.5px solid rgba(255,255,255,.08)',marginBottom:14,fontSize:'9px',color:'#4a6080'}},
+    '↻ Loading today\'s pace…');
+  if(error || !rows || !rows.length) return null;
+
+  // Aggregate by hour slot across all stores
+  const bySlot = {};
+  for(const r of rows) {
+    const s = r.hour_slot;
+    if(!bySlot[s]) bySlot[s] = {actual:0, mean:0, proj:0, ly:0};
+    bySlot[s].actual += r.product_sales || 0;
+    bySlot[s].mean   += r.mean_sales || 0;
+    bySlot[s].proj   += r.proj_sales_dollars || 0;
+    bySlot[s].ly     += r.ly_product_sales || 0;
+  }
+
+  // Completed hours = slots with actual sales > 0
+  const completedSlots = Object.keys(bySlot).filter(s => bySlot[s].actual > 0).sort();
+  const totalActual = completedSlots.reduce((a,s) => a + bySlot[s].actual, 0);
+  const totalMean   = completedSlots.reduce((a,s) => a + bySlot[s].mean,   0);
+  const totalProj   = Object.values(bySlot).reduce((a,h) => a + h.proj, 0);  // full-day projection
+  const totalLY     = completedSlots.reduce((a,s) => a + bySlot[s].ly,   0);
+
+  if(totalActual === 0) return null; // no actuals yet today
+
+  const pctVsMean = totalMean > 0 ? (totalActual - totalMean) / totalMean : null;
+  const pctVsLY   = totalLY   > 0 ? (totalActual - totalLY)   / totalLY   : null;
+  const paceColor = pctVsMean == null ? '#6b7280' : pctVsMean >= 0 ? '#10b981' : '#ef4444';
+
+  // Format completed hours range label
+  const firstSlot = completedSlots[0] || '—';
+  const lastSlot  = completedSlots[completedSlots.length-1] || '—';
+  const slotLabel = firstSlot === lastSlot ? firstSlot : firstSlot + '–' + lastSlot;
+
+  // Daypart breakdown
+  const dpData = DAR_DAYPARTS.map(dp => {
+    const dpSlots = dp.slots.filter(s => completedSlots.includes(s));
+    if(!dpSlots.length) return null;
+    const actual = dpSlots.reduce((a,s) => a + bySlot[s].actual, 0);
+    const mean   = dpSlots.reduce((a,s) => a + bySlot[s].mean,   0);
+    const pct    = mean > 0 ? (actual - mean) / mean : null;
+    return {...dp, actual, mean, pct, completed: dpSlots.length, total: dp.slots.length};
+  }).filter(Boolean);
+
+  return h('div',{style:{marginBottom:'16px',background:'rgba(16,185,129,.05)',
+    border:'.5px solid rgba(16,185,129,.2)',borderRadius:8,padding:'12px 14px'}},
+    // Header row
+    h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',
+      flexWrap:'wrap',gap:8,marginBottom:10}},
+      h('div',null,
+        h('div',{style:{fontSize:'9px',fontWeight:800,textTransform:'uppercase',letterSpacing:'.07em',
+          color:'#10b981',marginBottom:3}},'⚡ Today\'s District Pace'),
+        h('div',{style:{fontSize:'9px',color:'#4a6080'}},'All 27 stores · hours '+slotLabel+' · '+completedSlots.length+' hr'+(completedSlots.length!==1?'s':'')+' of data')
+      ),
+      h('div',{style:{display:'flex',gap:16,flexWrap:'wrap'}},
+        h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontFamily:'monospace',fontSize:'20px',fontWeight:800,color:paceColor,lineHeight:1,letterSpacing:'-1px'}},
+            fK(totalActual)),
+          h('div',{style:{fontSize:'8px',color:'#4a6080',marginTop:1}},'actual to date')
+        ),
+        totalMean > 0 && h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontFamily:'monospace',fontSize:'20px',fontWeight:800,color:'#4a6080',lineHeight:1,letterSpacing:'-1px'}},
+            fK(totalMean)),
+          h('div',{style:{fontSize:'8px',color:'#4a6080',marginTop:1}},'historical mean')
+        ),
+        pctVsMean != null && h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontFamily:'monospace',fontSize:'20px',fontWeight:800,color:paceColor,lineHeight:1,letterSpacing:'-1px'}},
+            (pctVsMean >= 0 ? '+' : '') + (pctVsMean * 100).toFixed(1) + '%'),
+          h('div',{style:{fontSize:'8px',color:'#4a6080',marginTop:1}},'vs mean'),
+        ),
+        pctVsLY != null && h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontFamily:'monospace',fontSize:'14px',fontWeight:700,color:pctClr(pctVsLY),lineHeight:1}},
+            (pctVsLY >= 0 ? '+' : '') + (pctVsLY * 100).toFixed(1) + '%'),
+          h('div',{style:{fontSize:'8px',color:'#4a6080',marginTop:1}},'vs LY')
+        ),
+        totalProj > 0 && h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontFamily:'monospace',fontSize:'14px',fontWeight:700,color:'#60a5fa',lineHeight:1}},
+            fK(totalProj)),
+          h('div',{style:{fontSize:'8px',color:'#4a6080',marginTop:1}},'full-day proj')
+        ),
+      )
+    ),
+    // Daypart breakdown mini-pills
+    dpData.length > 0 && h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+      dpData.map(dp =>
+        h('div',{key:dp.id,style:{background:'rgba(255,255,255,.04)',border:'.5px solid rgba(255,255,255,.1)',
+          borderRadius:6,padding:'5px 10px',textAlign:'center',minWidth:80}},
+          h('div',{style:{fontSize:'8px',fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:3}},
+            dp.label+(dp.completed<dp.total?' ('+dp.completed+'/'+dp.total+'h)':'')),
+          h('div',{style:{fontFamily:'monospace',fontSize:'12px',fontWeight:700,color:'var(--text)',lineHeight:1}},
+            fK(dp.actual)),
+          dp.pct != null && h('div',{style:{fontSize:'8px',fontWeight:600,color:pctClr(dp.pct),marginTop:2}},
+            (dp.pct>=0?'+':'')+(dp.pct*100).toFixed(1)+'% vs mean')
+        )
+      )
+    )
+  );
+}
+
 // ── MorningBriefPanel ────────────────────────────────────────────────────────
 function MorningBriefPanel({ds, settings, customSignalDefs}){
   const uSt=React.useState, uM=React.useMemo, uCB=React.useCallback, uE=React.useEffect;
@@ -607,6 +739,9 @@ function MorningBriefPanel({ds, settings, customSignalDefs}){
         )
       )
     ),
+
+    // ── Today's hourly pace (from qsr_daily_activity) ───────────────────────
+    h(TodayPaceCard, {date: briefDate}),
 
     // ── Promoted signal watch ────────────────────────────────────────────────
     (()=>{

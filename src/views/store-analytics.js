@@ -9,6 +9,7 @@ import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchFo
 import { AIInsightsTab, ModelHealthBadge } from './analytics.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
+import { supabase } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1491,6 +1492,156 @@ function RegisterAuditTab({ds, loc}) {
 
 // COMPARE COMPONENTS
 
+// ── Daypart Pace Card — today's per-store DAR data ────────────────────────────
+const DAYPARTS_DEF = [
+  {id:'bfst', label:'Breakfast', emoji:'🌅', slots:['06:00','07:00','08:00','09:00','10:00','11:00']},
+  {id:'lnch', label:'Lunch',     emoji:'☀',  slots:['12:00','13:00','14:00']},
+  {id:'pm',   label:'PM',        emoji:'🌤',  slots:['15:00','16:00','17:00']},
+  {id:'din',  label:'Dinner',    emoji:'🌆',  slots:['18:00','19:00','20:00','21:00']},
+  {id:'late', label:'Late Night',emoji:'🌙',  slots:['22:00','23:00','24:00','25:00','26:00','27:00','28:00']},
+];
+
+function DaypartPaceCard({loc}) {
+  const [rows, setRows]     = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [dateOpt, setDateOpt] = useState('today');  // 'today' | 'yesterday'
+  const [collapsed, setCollapsed] = useState(false);
+
+  const targetDate = (() => {
+    const d = new Date();
+    if(dateOpt === 'yesterday') d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  useEffect(() => {
+    if(!supabase || !loc) { setLoading(false); return; }
+    setLoading(true);
+    const nsn = String(loc).padStart(7, '0');
+    supabase.from('qsr_daily_activity')
+      .select('hour_slot,product_sales,mean_sales,proj_sales_dollars,ly_product_sales,dt_trans_cnt,dt_untilserve,actual_punched_hours,total_needed_hours')
+      .eq('dt', targetDate)
+      .eq('loc', nsn)
+      .order('hour_slot')
+      .then(({data, error}) => {
+        setRows(error ? [] : (data || []));
+        setLoading(false);
+      });
+  }, [loc, dateOpt]);
+
+  if(!supabase) return null;
+
+  const pctClr = v => v == null ? '#6b7280' : v >= 0.01 ? '#10b981' : v <= -0.01 ? '#ef4444' : '#f59e0b';
+  const fK = v => v >= 1000 ? '$'+(v/1000).toFixed(1)+'K' : '$'+Math.round(v);
+
+  const completedSlots = (rows||[]).filter(r => (r.product_sales || 0) > 0).map(r => r.hour_slot).sort();
+  const hasData = completedSlots.length > 0;
+
+  const dpData = DAYPARTS_DEF.map(dp => {
+    const dpRows = (rows||[]).filter(r => dp.slots.includes(r.hour_slot));
+    if(!dpRows.length) return null;
+    const doneRows = dpRows.filter(r => (r.product_sales || 0) > 0);
+    const actual  = doneRows.reduce((a,r) => a + (r.product_sales || 0), 0);
+    const mean    = doneRows.reduce((a,r) => a + (r.mean_sales    || 0), 0);
+    const proj    = dpRows.reduce((a,r) => a + (r.proj_sales_dollars || 0), 0);
+    const ly      = doneRows.reduce((a,r) => a + (r.ly_product_sales  || 0), 0);
+    const dtSecs  = doneRows.reduce((a,r) => a + (r.dt_untilserve     || 0), 0) / 1e6;
+    const dtCnt   = doneRows.reduce((a,r) => a + (r.dt_trans_cnt      || 0), 0);
+    const avgDT   = dtCnt > 0 ? dtSecs / dtCnt : null;
+    const pctMean = mean > 0 && actual > 0 ? (actual - mean) / mean : null;
+    const pctLY   = ly   > 0 && actual > 0 ? (actual - ly)   / ly   : null;
+    const pctProj = proj > 0 && actual > 0 ? (actual - proj)  / proj : null;
+    const labor   = doneRows.reduce((a,r) => a + (r.actual_punched_hours || 0), 0);
+    const needed  = doneRows.reduce((a,r) => a + (r.total_needed_hours   || 0), 0);
+    const laborVsNeed = needed > 0 ? labor - needed : null;
+    const isActive = doneRows.length > 0 && doneRows.length < dpRows.length;
+    const isDone   = doneRows.length >= dpRows.length && actual > 0;
+    return {...dp, actual, mean, proj, ly, avgDT, pctMean, pctLY, pctProj, labor, needed, laborVsNeed, isActive, isDone, doneRows: doneRows.length, totalSlots: dpRows.length};
+  }).filter(Boolean);
+
+  const visibleDp = dpData.filter(dp => dp.actual > 0 || dp.proj > 0);
+
+  return div({style:{marginBottom:10,border:'.5px solid rgba(255,255,255,.1)',borderRadius:'var(--r)',overflow:'hidden'}},
+    // Card header
+    div({style:{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',
+      background:'rgba(255,255,255,.03)',borderBottom:'.5px solid rgba(255,255,255,.08)',cursor:'pointer'},
+      onClick:()=>setCollapsed(c=>!c)},
+      span({style:{fontSize:'11px',fontWeight:800,color:'var(--text)',flex:1}},'⏱ Daypart Pace'),
+      div({style:{display:'flex',gap:4}},
+        ...['today','yesterday'].map(v =>
+          h('button',{key:v,
+            onClick:e=>{e.stopPropagation();setDateOpt(v);},
+            style:{fontSize:'7px',fontWeight:700,padding:'1px 6px',borderRadius:3,border:'.5px solid',cursor:'pointer',
+              background:dateOpt===v?'rgba(245,158,11,.15)':'transparent',
+              borderColor:dateOpt===v?'rgba(245,158,11,.4)':'rgba(255,255,255,.12)',
+              color:dateOpt===v?'var(--amber)':'var(--text3)'}},
+            v==='today'?'Today':'Yesterday'))
+      ),
+      loading && span({style:{fontSize:'8px',color:'#4a6080'}},'Loading…'),
+      span({style:{fontSize:'10px',color:'var(--text3)',marginLeft:4}}, collapsed?'▶':'▼')
+    ),
+
+    !collapsed && div({style:{padding:'10px 12px'}},
+      !hasData && !loading && div({style:{fontSize:'9px',color:'#4a6080',textAlign:'center',padding:'12px 0'}},
+        'No data for '+targetDate+' — sync runs ~5am CDT'),
+
+      hasData && div(null,
+        // Summary row
+        (()=>{
+          const totAct  = visibleDp.reduce((a,d)=>a+(d.actual||0),0);
+          const totMean = visibleDp.reduce((a,d)=>a+(d.mean||0),0);
+          const totProj = visibleDp.reduce((a,d)=>a+(d.proj||0),0);
+          const totLY   = visibleDp.reduce((a,d)=>a+(d.ly||0),0);
+          const pm = totMean>0?(totAct-totMean)/totMean:null;
+          const pl = totLY>0?(totAct-totLY)/totLY:null;
+          return div({style:{display:'flex',gap:12,marginBottom:10,paddingBottom:8,borderBottom:'.5px solid rgba(255,255,255,.06)',flexWrap:'wrap'}},
+            div({style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:800,color:pctClr(pm)}},fK(totAct)),
+            pm!=null&&span({style:{fontSize:'10px',fontWeight:700,color:pctClr(pm),alignSelf:'center'}},(pm>=0?'+':'')+(pm*100).toFixed(1)+'% vs mean'),
+            pl!=null&&span({style:{fontSize:'10px',color:pctClr(pl),alignSelf:'center'}},(pl>=0?'+':'')+(pl*100).toFixed(1)+'% vs LY'),
+            totProj>0&&span({style:{fontSize:'9px',color:'#60a5fa',alignSelf:'center'}},fK(totProj)+' full-day proj'),
+            span({style:{fontSize:'8px',color:'#4a6080',alignSelf:'center',marginLeft:'auto'}},
+              completedSlots.length+' hr'+(completedSlots.length!==1?'s':'')+' · '+targetDate)
+          );
+        })(),
+
+        // Daypart grid
+        div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:6}},
+          visibleDp.map(dp =>
+            div({key:dp.id,style:{
+              background:dp.isActive?'rgba(245,158,11,.06)':dp.isDone?'rgba(16,185,129,.05)':'rgba(255,255,255,.03)',
+              border:'.5px solid '+(dp.isActive?'rgba(245,158,11,.2)':dp.isDone?'rgba(16,185,129,.15)':'rgba(255,255,255,.07)'),
+              borderRadius:6,padding:'8px 10px'}},
+              div({style:{display:'flex',alignItems:'center',gap:4,marginBottom:4}},
+                span({style:{fontSize:'11px'}},dp.emoji),
+                span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',flex:1}},dp.label),
+                dp.isActive&&span({style:{fontSize:'7px',color:'#f59e0b',fontWeight:700}},'live'),
+                dp.isDone&&span({style:{fontSize:'7px',color:'#10b981',fontWeight:700}},'done'),
+              ),
+              // Sales actual
+              dp.actual>0&&div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:800,
+                color:pctClr(dp.pctMean),lineHeight:1,marginBottom:3}},fK(dp.actual)),
+              dp.actual===0&&dp.proj>0&&div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:700,
+                color:'#60a5fa',lineHeight:1,marginBottom:3}},fK(dp.proj)+' proj'),
+              // vs mean / LY
+              div({style:{display:'flex',gap:6,flexWrap:'wrap'}},
+                dp.pctMean!=null&&span({style:{fontSize:'8px',color:pctClr(dp.pctMean),fontWeight:600}},
+                  (dp.pctMean>=0?'+':'')+(dp.pctMean*100).toFixed(1)+'% mean'),
+                dp.pctLY!=null&&span({style:{fontSize:'8px',color:pctClr(dp.pctLY)}},
+                  (dp.pctLY>=0?'+':'')+(dp.pctLY*100).toFixed(1)+'% LY'),
+              ),
+              // DT speed
+              dp.avgDT!=null&&dp.avgDT>0&&div({style:{fontSize:'8px',color:'#94a3b8',marginTop:3}},
+                '⚡ '+Math.round(dp.avgDT)+'s DT avg'),
+              // Labor vs needed
+              dp.laborVsNeed!=null&&div({style:{fontSize:'8px',color:dp.laborVsNeed>2?'#ef4444':dp.laborVsNeed<-2?'#60a5fa':'#4a6080',marginTop:2}},
+                '👷 '+(dp.laborVsNeed>=0?'+':'')+dp.laborVsNeed.toFixed(1)+'h vs need'),
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
 // STORE DASHBOARD (SECTION 13)
 function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections}) {
   const [tab, setTab]             = useState('overview');
@@ -1748,6 +1899,9 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
           );
         })
       ),
+
+      // ── Daypart Pace Card (from qsr_daily_activity) ─────────────
+      h(DaypartPaceCard, {loc: store.loc}),
 
       // ── Priority Findings ────────────────────────────────────────
       (()=>{
