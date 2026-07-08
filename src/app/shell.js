@@ -217,6 +217,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // ── ANALYTICS ──────────────────────────────────────────────
       can('analytics.store') && navLabel('ANALYTICS'),
       pis('analytics.store',    'Signals',            '📡', ()=>onOpenModal('signals'),            false),
+      pis('analytics.store',    'DT Speed of Service','🚗', ()=>onOpenModal('dt-sos'),             false),
       navItem('SAGE',                                  '🧠', ()=>onOpenModal('sage'),               false),
       navItem('Feature Requests',                      '💡', ()=>onOpenModal('feature-requests'),   false),
       pi('analytics.brief',       'Forecast Brief',   '🔭', ()=>onOpenModal('brief'),            false),
