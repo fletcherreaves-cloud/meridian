@@ -530,7 +530,7 @@ function TodayPaceCard({date}) {
   const [rows, setRows] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
-  const targetDate = date instanceof Date ? date.toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+  const targetDate = date instanceof Date && !isNaN(date) ? date.toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
 
   React.useEffect(() => {
     if(!supabase) { setLoading(false); return; }
@@ -706,8 +706,8 @@ function MorningBriefPanel({ds, settings, customSignalDefs}){
         ),
         h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
           h('input',{type:'date',
-            value:briefDate instanceof Date?briefDate.toISOString().slice(0,10):'',
-            onChange:e=>setBriefDate(new Date(e.target.value+'T12:00:00')),
+            value:briefDate instanceof Date && !isNaN(briefDate)?briefDate.toISOString().slice(0,10):'',
+            onChange:e=>{ if(e.target.value) setBriefDate(new Date(e.target.value+'T12:00:00')); },
             style:{background:'rgba(255,255,255,.07)',border:'1px solid rgba(255,255,255,.12)',
                    borderRadius:'7px',padding:'6px 10px',color:'var(--text,#111827)',fontSize:'12px',cursor:'pointer'}}),
           h('button',{
