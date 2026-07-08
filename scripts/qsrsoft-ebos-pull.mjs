@@ -129,50 +129,65 @@ async function getEbosTokenPlaywright() {
         'button:has-text("CANCEL")', 'button:has-text("Cancel")',
         '[aria-label="Close"]', 'button.close', '.modal-close',
       ], 2000);
-      await wait(500);
+      // Let SPA animations settle before interacting with nav
+      await wait(2000);
 
-      // Click "Inventory" in the sidebar — uses Playwright text locator which
-      // matches any element type (div/span/button), not just <a>/<li>
-      console.log('[auth] clicking Inventory in sidebar…');
-      const invOk = await clickFirst([
-        'text=Inventory',
-        'nav >> text=Inventory',
-        'aside >> text=Inventory',
-        '[class*="sidebar"] >> text=Inventory',
-        '[class*="nav"] >> text=Inventory',
-      ]);
+      // JS-based nav: find elements by raw text node content and click them.
+      // Playwright selector engine fails on this SPA's sidebar component tree,
+      // so we walk the DOM directly to find and click text nodes.
+      const jsClick = async (label) => {
+        const result = await page.evaluate((text) => {
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          let node;
+          while ((node = walker.nextNode())) {
+            if (node.textContent.trim() !== text) continue;
+            // Walk up to find the nearest clickable ancestor
+            let el = node.parentElement;
+            for (let i = 0; i < 5; i++) {
+              if (!el || !el.parentElement) break;
+              const r = el.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) { el.click(); return { ok: true, tag: el.tagName, cls: el.className.toString().slice(0, 60) }; }
+              el = el.parentElement;
+            }
+          }
+          return { ok: false };
+        }, label);
+        return result;
+      };
+
+      // Diagnostic: log what DOM elements contain "Inventory" so we can see structure
+      const invInfo = await page.evaluate(() => {
+        const out = [];
+        document.querySelectorAll('*').forEach(el => {
+          if (el.childElementCount === 0 && el.textContent.trim() === 'Inventory') {
+            out.push({ tag: el.tagName, cls: el.className.toString().slice(0, 60), parentTag: el.parentElement?.tagName, parentCls: el.parentElement?.className.toString().slice(0, 40), w: el.getBoundingClientRect().width });
+          }
+        });
+        return out;
+      });
+      console.log('[auth] "Inventory" DOM elements:', JSON.stringify(invInfo));
+
+      console.log('[auth] clicking Inventory (JS)…');
+      const invRes = await jsClick('Inventory');
       await wait(2000);
       await snap('ebos-03-inventory-click.png');
-      console.log('[auth] after Inventory click, url:', page.url(), '| found:', invOk);
+      console.log('[auth] Inventory click:', JSON.stringify(invRes), '| url:', page.url());
 
       if (!ebosToken) {
-        console.log('[auth] clicking Purchases…');
-        const purOk = await clickFirst([
-          'text=Purchases',
-          'nav >> text=Purchases',
-          'aside >> text=Purchases',
-          '[class*="sidebar"] >> text=Purchases',
-          'a:has-text("Purchases")',
-          'button:has-text("Purchases")',
-        ]);
+        console.log('[auth] clicking Purchases (JS)…');
+        const purRes = await jsClick('Purchases');
         await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
         await wait(3000);
         await snap('ebos-04-purchases.png');
-        console.log('[auth] after Purchases click, url:', page.url(), '| found:', purOk);
+        console.log('[auth] Purchases click:', JSON.stringify(purRes), '| url:', page.url());
       }
 
       if (!ebosToken) {
-        console.log('[auth] clicking Ledger tab…');
-        const ledOk = await clickFirst([
-          'text=Ledger',
-          'button:has-text("Ledger")',
-          'a:has-text("Ledger")',
-          '[data-tab*="ledger" i]',
-          '[class*="tab"]:has-text("Ledger")',
-        ]);
+        console.log('[auth] clicking Ledger (JS)…');
+        const ledRes = await jsClick('Ledger');
         await wait(3000);
         await snap('ebos-05-ledger.png');
-        console.log('[auth] after Ledger click, url:', page.url(), '| found:', ledOk);
+        console.log('[auth] Ledger click:', JSON.stringify(ledRes), '| url:', page.url());
       }
 
       // Give any pending eBOS requests a moment to fire
