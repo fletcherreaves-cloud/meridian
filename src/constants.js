@@ -446,4 +446,53 @@ const INV_ORG_COORDS={
 const _FL_STORES = new Set(['6178','6838','10034','35242','37566','38609','43701']);
 function getStoreOrg(loc) { return _FL_STORES.has(String(loc)) ? 'emerald' : 'mcdok'; }
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg };
+// QSR_DAR_FIELDS — field dictionary for the qsr_daily_activity table.
+// Maps each DB column name to a display label, description, and unit.
+// Source: QSRSoft Daily Activity Report (DAR) via daily-activity-raw API endpoint.
+// Purpose: UI tooltips, SAGE system context, and data documentation.
+const QSR_DAR_FIELDS = {
+  // ── Identity / Time ────────────────────────────────────────────────────
+  loc:                  {label:'Store NSN',         desc:'McDonald\'s National Store Number, zero-padded to 7 digits',            unit:''},
+  dt:                   {label:'Date',              desc:'Calendar date of the data row (local time)',                             unit:'YYYY-MM-DD'},
+  hour_slot:            {label:'Hour Slot',         desc:'End time of the 1-hour slot (e.g. "11:00" = 10am–11am block). Slots above "24:00" span past midnight: "25:00" = 12am–1am, etc.',  unit:'HH:MM'},
+
+  // ── Sales ──────────────────────────────────────────────────────────────
+  product_sales:        {label:'Actual Sales',      desc:'Actual product sales dollars for this hour slot',                       unit:'$'},
+  mean_sales:           {label:'Hist Mean Sales',   desc:'QSRSoft rolling historical mean sales for this store/slot/DOW (approx 5-week rolling avg). Used as the system baseline.',  unit:'$'},
+  proj_sales_dollars:   {label:'QSRSoft Proj Sales',desc:'QSRSoft system-generated sales projection for this slot. Based on rolling historical mean; does not account for weather, events, or trend.',  unit:'$'},
+  ly_product_sales:     {label:'LY Sales',          desc:'Last year product sales for the same slot and calendar date',           unit:'$'},
+
+  // ── Transactions ───────────────────────────────────────────────────────
+  trans_cnt:            {label:'Trans Count',       desc:'Total transaction count (orders completed) in this hour slot',         unit:'#'},
+  ly_trans_cnt:         {label:'LY Trans Count',    desc:'Last year transaction count for this slot',                            unit:'#'},
+  mean_trans_cnt:       {label:'Mean Trans Count',  desc:'Historical mean transaction count for this slot',                      unit:'#'},
+
+  // ── Average Check ──────────────────────────────────────────────────────
+  avg_check:            {label:'Avg Check',         desc:'Average sales per transaction (product_sales / trans_cnt)',             unit:'$'},
+  ly_avg_check:         {label:'LY Avg Check',      desc:'Last year average check for this slot',                                unit:'$'},
+
+  // ── Drive-Thru Speed ───────────────────────────────────────────────────
+  dt_untilserve:        {label:'DT Until Serve',    desc:'Cumulative microseconds from car arrival at speaker to food delivery window (OEPE). Divide by 1,000,000 for seconds. Divide by dt_trans_cnt for per-car avg.',  unit:'µs'},
+  dt_trans_cnt:         {label:'DT Trans Count',    desc:'Number of drive-thru transactions in this slot. Use as denominator for all DT timing averages.',  unit:'#'},
+  dt_pullforward:       {label:'DT Pull-Forward',   desc:'Cumulative µs cars were held in pull-forward queue during this slot',   unit:'µs'},
+  dt_greet:             {label:'DT Greet',          desc:'Cumulative µs from car arrival to greeting (speaker activation)',       unit:'µs'},
+  dt_menu:              {label:'DT Menu',           desc:'Cumulative µs from greeting to order completion at speaker',           unit:'µs'},
+  dt_payment:           {label:'DT Payment',        desc:'Cumulative µs from order completion to payment at window',             unit:'µs'},
+  dt_cashier:           {label:'DT Cashier / Pick-Up', desc:'Cumulative µs at the pick-up / cashier window before food delivery', unit:'µs'},
+  dt_avgspeed:          {label:'DT Avg Speed',      desc:'QSRSoft computed average DT speed (may duplicate dt_untilserve/dt_trans_cnt calculation)',  unit:'µs'},
+  ly_dt_untilserve:     {label:'LY DT Until Serve', desc:'Last year DT Until Serve for this slot',                               unit:'µs'},
+  ly_dt_trans_cnt:      {label:'LY DT Trans Count', desc:'Last year drive-thru transaction count for this slot',                  unit:'#'},
+
+  // ── Labor ──────────────────────────────────────────────────────────────
+  actual_punched_hours: {label:'Act Hrs',           desc:'Actual labor hours punched (clocked in/out) during this hour slot',   unit:'hrs'},
+  total_needed_hours:   {label:'Needed Hrs',        desc:'QSRSoft labor model\'s calculated hours needed for this sales volume', unit:'hrs'},
+  ly_actual_punched_hours:{label:'LY Act Hrs',      desc:'Last year actual punched labor hours for this slot',                   unit:'hrs'},
+
+  // ── Order Accuracy ─────────────────────────────────────────────────────
+  healthy_cnt:          {label:'Healthy Orders',    desc:'Orders with no reported errors or customer complaints (order accuracy)',  unit:'#'},
+  unhealthy_cnt:        {label:'Unhealthy Orders',  desc:'Orders with reported errors, missing items, or customer complaints',   unit:'#'},
+  ly_healthy_cnt:       {label:'LY Healthy Orders', desc:'Last year healthy order count for this slot',                          unit:'#'},
+  ly_unhealthy_cnt:     {label:'LY Unhealthy Orders',desc:'Last year unhealthy order count for this slot',                      unit:'#'},
+};
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS };
