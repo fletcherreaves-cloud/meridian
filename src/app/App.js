@@ -24,7 +24,7 @@ import { computeSmartTargets, SmartTargetPanel } from '../features/smart-targets
 import { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor } from '../views/labor-tools.js';
 import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief } from '../features/projections.js';
 import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard } from '../views/store-analytics.js';
-import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel } from '../views/analytics.js';
+import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
 import { DeliveryMixPanel } from '../views/delivery-mix.js';
@@ -544,7 +544,8 @@ function App() {
   const [showOnePager,    setShowOnePager]    = useState(false);
   const [showGMBrief,     setShowGMBrief]     = useState(false);
   const [idbCoverage,     setIdbCoverage]     = useState(null);
-  const [showDataManager, setShowDataManager] = useState(false);
+  const [showDataManager,    setShowDataManager]    = useState(false);
+  const [showStoreVlhConfig, setShowStoreVlhConfig] = useState(false);
   const [showLFZGap,      setShowLFZGap]      = useState(false);
   const [showDARDaypart,  setShowDARDaypart]  = useState(false);
   const [showPMix,        setShowPMix]        = useState(false);
@@ -1684,7 +1685,9 @@ function App() {
     showOnePager&&h(StoreOnePager,{stores,ds,settings,onClose:()=>setShowOnePager(false)}),
     showGMBrief&&h(GMCoachingBrief,{stores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
     showDARDaypart&&h(DARDaypartPanel,{stores,ds,settings,onClose:()=>setShowDARDaypart(false)}),
-    showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false)}),
+    showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false),
+      onOpenStoreConfig:()=>{setShowDataManager(false);setShowStoreVlhConfig(true);}}),
+    showStoreVlhConfig&&h(StoreVlhConfigPanel,{onClose:()=>setShowStoreVlhConfig(false)}),
     showMonthlyProj&&h(MonthlyProjectionsPanel,{ds,stores,settings,customSignalDefs,onClose:()=>setShowMonthlyProj(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),

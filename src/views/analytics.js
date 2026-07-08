@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, fetchOpenMeteoWeather } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, fetchOpenMeteoWeather, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE } from '../constants.js';
 import { dKey, addD, mwStart, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
@@ -1271,7 +1271,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 // View and manage persisted IndexedDB data coverage.
 // Shows row counts and date ranges per data type.
 // Allows selective clear or full reset.
-function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
+function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig}) {
   const {useState:uSt, useEffect:uE} = React;
   const [cov,    setCov]   = uSt(idbCoverage||{});
   const [status, setStatus]= uSt('');
@@ -1764,7 +1764,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
           ),
           // Actions
           div({style:{display:'flex',gap:8,justifyContent:'space-between',alignItems:'center',flexWrap:'wrap'}},
-            div({style:{display:'flex',gap:8}}),
+            div({style:{display:'flex',gap:8}},
+              onOpenStoreConfig&&btn({className:'btn btn-sm',
+                style:{background:'rgba(245,188,0,.1)',border:'.5px solid rgba(245,188,0,.3)',color:'var(--gold)',fontSize:'9px'},
+                onClick:onOpenStoreConfig},'⚙ Store VLH Config')
+            ),
             div({style:{display:'flex',gap:8,alignItems:'center'}},
             onLoad&&btn({className:'btn btn-sm',style:{background:'rgba(96,165,250,.12)',border:'.5px solid rgba(96,165,250,.3)',color:'#60a5fa',fontSize:'9px'},
               onClick:()=>{onClose();onLoad();}},'📂 Upload Files'),
@@ -1781,6 +1785,126 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
 
 
 // ── end LaborAnalyticsPanel ───────────────────────────────────────────
+
+// ════════════════════════════════════════════════════════════════════════════════
+// STORE VLH CONFIGURATION  (v4.360)
+// ════════════════════════════════════════════════════════════════════════════════
+// Per-store physical configuration panel for VLH guide lookup.
+// Saves to store_vlh_config Supabase table; used to select correct VLH guide page
+// for labor-efficiency calculations.
+function StoreVlhConfigPanel({onClose}) {
+  const {useState:uSt, useEffect:uE} = React;
+  const [configs, setConfigs] = uSt({});
+  const [status, setStatus]   = uSt({});   // loc -> 'saving'|'saved'
+  const [loaded, setLoaded]   = uSt(false);
+  const [err, setErr]         = uSt(null);
+
+  uE(() => {
+    if (!supabase) { setLoaded(true); return; }
+    supabase.from('store_vlh_config').select('*').then(({data,error:e}) => {
+      if (e) setErr(e.message);
+      else { const m={}; (data||[]).forEach(r=>{ m[r.loc]=r; }); setConfigs(m); }
+      setLoaded(true);
+    });
+  }, []);
+
+  const dflt = (loc) => ({loc, aot:false, dt_type:'side_tandem', in_store:'self_serve', kitchen:'fryer_same', vlh_guide:'standard'});
+  const getCfg = (loc) => configs[loc] || dflt(loc);
+
+  const saveField = async (loc, field, value) => {
+    const updated = {...getCfg(loc), [field]:value};
+    setConfigs(prev => ({...prev, [loc]:updated}));
+    setStatus(prev => ({...prev, [loc]:'saving'}));
+    if (supabase) {
+      await supabase.from('store_vlh_config')
+        .upsert({...updated, updated_at:new Date().toISOString()}, {onConflict:'loc'});
+    }
+    setStatus(prev => ({...prev, [loc]:'saved'}));
+    setTimeout(() => setStatus(prev => { const n={...prev}; delete n[loc]; return n; }), 2000);
+  };
+
+  const allLocs = Object.keys(STORE_NAMES);
+  const okLocs  = allLocs.filter(l => getStoreOrg(l) === 'mcdok').sort((a,b) => sName(a).localeCompare(sName(b)));
+  const flLocs  = allLocs.filter(l => getStoreOrg(l) !== 'mcdok').sort((a,b) => sName(a).localeCompare(sName(b)));
+
+  const selS = {background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:4,color:'var(--text)',fontSize:'9px',padding:'2px 4px',width:'100%'};
+  const thS  = {fontSize:'8px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',padding:'6px 8px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap',textAlign:'left'};
+
+  const storeRow = (loc, i) => {
+    const cfg = getCfg(loc);
+    const st  = status[loc];
+    return h('tr', {key:loc, style:{background:i%2?'transparent':'rgba(255,255,255,.018)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+      h('td',{style:{padding:'5px 8px 5px 12px',whiteSpace:'nowrap'}},
+        span({style:{fontWeight:600,color:'var(--gold)',fontSize:'9px'}}, sNameC(loc))),
+      h('td',{style:{padding:'4px 8px',textAlign:'center'}},
+        h('input',{type:'checkbox',checked:!!cfg.aot,onChange:e=>saveField(loc,'aot',e.target.checked),
+          style:{cursor:'pointer',accentColor:'var(--gold)'}})),
+      h('td',{style:{padding:'3px 6px'}},
+        h('select',{value:cfg.dt_type,onChange:e=>saveField(loc,'dt_type',e.target.value),style:selS},
+          VLH_DT_TYPES.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+      h('td',{style:{padding:'3px 6px'}},
+        h('select',{value:cfg.in_store,onChange:e=>saveField(loc,'in_store',e.target.value),style:selS},
+          VLH_IN_STORE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+      h('td',{style:{padding:'3px 6px'}},
+        h('select',{value:cfg.kitchen,onChange:e=>saveField(loc,'kitchen',e.target.value),style:selS},
+          VLH_KITCHEN.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+      h('td',{style:{padding:'3px 6px'}},
+        h('select',{value:cfg.vlh_guide,onChange:e=>saveField(loc,'vlh_guide',e.target.value),style:selS},
+          VLH_GUIDE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+      h('td',{style:{padding:'4px 8px',textAlign:'center',fontSize:'10px',
+        color:st==='saved'?'#10b981':st==='saving'?'#f59e0b':'transparent',minWidth:16}},
+        st==='saved'?'✓':st==='saving'?'…':'.')
+    );
+  };
+
+  const secRow = (label) => h('tr',{key:label},
+    h('td',{colSpan:7,style:{padding:'5px 12px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',
+      letterSpacing:'.5px',color:'var(--text3)',background:'rgba(255,255,255,.03)',borderBottom:'.5px solid var(--bdr)'}},label)
+  );
+
+  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:16}},
+    div({style:{flex:'0 0 16px',cursor:'pointer'},onClick:onClose}),
+    div({style:{flex:1,background:'var(--surf)',maxWidth:1000,margin:'0 auto',width:'calc(100% - 32px)',
+      borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',
+      boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
+      // Header
+      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)',display:'flex',alignItems:'center',gap:10}},
+        div({style:{flex:1}},
+          div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'Store VLH Configuration'),
+          div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2}},
+            'Physical configuration per store — used to select the correct VLH guide page for labor-efficiency calculations. Changes auto-save.')),
+        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
+      ),
+      // Legend row
+      div({style:{padding:'5px 16px',fontSize:'8.5px',color:'var(--text3)',background:'rgba(245,188,0,.04)',borderBottom:'.5px solid var(--bdr)',lineHeight:1.8}},
+        span({style:{fontWeight:700,color:'var(--gold)'}},'AOT '),'= Automated Order Taking (kiosks present)  ·  ',
+        span({style:{fontWeight:700,color:'var(--gold)'}},'VLH Guide '),'= HPG (High Productivity) allows more GCs per labor hour vs Standard'
+      ),
+      // Table
+      div({style:{flex:1,overflowY:'auto'}},
+        err ? div({style:{padding:24,color:'#ef4444',fontSize:'10px'}},'Error loading config: '+err) :
+        !loaded ? div({style:{padding:24,color:'var(--text3)',fontSize:'10px'}},'Loading store configurations…') :
+        h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+          h('thead',null,h('tr',null,
+            h('th',{style:{...thS,paddingLeft:12}},'Store'),
+            h('th',{style:{...thS,textAlign:'center'}},'AOT'),
+            h('th',{style:thS},'Drive Thru'),
+            h('th',{style:thS},'In-Store Service'),
+            h('th',{style:thS},'Kitchen'),
+            h('th',{style:thS},'VLH Guide'),
+            h('th',{style:{...thS,width:24}})
+          )),
+          h('tbody',null,
+            secRow('Oklahoma — MCDOK'),
+            ...okLocs.map((loc,i)=>storeRow(loc,i)),
+            secRow('Florida — Emerald Arches'),
+            ...flLocs.map((loc,i)=>storeRow(loc,okLocs.length+i))
+          )
+        )
+      )
+    )
+  );
+}
 
 // ════════════════════════════════════════════════════════════════════════════════
 // DISTRICT PRIORITY BRIEF  (v4.198)
@@ -9241,4 +9365,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ModelHealthBadge, ChannelIntelligencePanel, MonthlyProjectionsPanel };
+export { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ModelHealthBadge, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel };

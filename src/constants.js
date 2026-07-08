@@ -446,6 +446,28 @@ const INV_ORG_COORDS={
 const _FL_STORES = new Set(['6178','6838','10034','35242','37566','38609','43701']);
 function getStoreOrg(loc) { return _FL_STORES.has(String(loc)) ? 'emerald' : 'mcdok'; }
 
+// VLH guide configuration options — used in store_vlh_config table and StoreVlhConfigPanel
+const VLH_DT_TYPES = [
+  {value:'side_tandem',   label:'Side By Side / Tandem'},
+  {value:'single_2booth', label:'Single Lane 2 Booth'},
+  {value:'single_1booth', label:'Single Lane 1 Booth'},
+  {value:'no_dt',         label:'No Drive Thru'},
+];
+const VLH_IN_STORE = [
+  {value:'self_serve', label:'Self Serve'},
+  {value:'crew_pour',  label:'Crew Pour'},
+];
+const VLH_KITCHEN = [
+  {value:'fryer_same', label:'Fryer Same Side'},
+  {value:'fryer_opp',  label:'Fryer Opposite Side'},
+  {value:'opl',        label:'OPL'},
+  {value:'copl',       label:'COPL'},
+];
+const VLH_GUIDE = [
+  {value:'standard', label:'Standard'},
+  {value:'hpg',      label:'High Productivity (HPG)'},
+];
+
 // QSR_DAR_FIELDS — field dictionary for the qsr_daily_activity table.
 // Maps each DB column name to a display label, description, and unit.
 // Source: QSRSoft Daily Activity Report (DAR) via daily-activity-raw API endpoint.
@@ -495,4 +517,4 @@ const QSR_DAR_FIELDS = {
   ly_unhealthy_cnt:     {label:'LY Unhealthy Orders',desc:'Last year unhealthy order count for this slot',                      unit:'#'},
 };
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE };
