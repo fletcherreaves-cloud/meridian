@@ -817,6 +817,30 @@ create policy "qsr_ebos_daily: public write" on public.qsr_ebos_daily
 create index if not exists qsr_ebos_daily_date_idx
   on public.qsr_ebos_daily (date desc);
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- forecast_snapshots — per-day forecast vs actual accuracy record
+-- Written by ForecastAccuracyPanel.runBacktest; queried by SAGE tool use.
+-- PK: (loc, dt, source). source ∈ {ai, ly, blend, di, qsr}
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists public.forecast_snapshots (
+  id              uuid    primary key default gen_random_uuid(),
+  loc             text    not null,   -- numeric NSN, e.g. '3708' (no zero-padding)
+  dt              date    not null,
+  source          text    not null,   -- 'ai' | 'ly' | 'blend' | 'di' | 'qsr'
+  forecast_sales  numeric,
+  actual_sales    numeric,
+  mape            numeric,            -- |actual - forecast| / actual * 100
+  created_at      timestamptz default now(),
+  unique(loc, dt, source)
+);
+alter table public.forecast_snapshots enable row level security;
+create policy "forecast_snapshots: public read" on public.forecast_snapshots
+  for select using (true);
+create policy "forecast_snapshots: public write" on public.forecast_snapshots
+  for all using (true);
+create index if not exists forecast_snapshots_loc_dt_idx
+  on public.forecast_snapshots (loc, dt desc);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════

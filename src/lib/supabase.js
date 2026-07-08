@@ -1102,6 +1102,35 @@ export async function loadDtHistory(days = 90) {
   return data || [];
 }
 
+// ── Forecast snapshots ────────────────────────────────────────────────────────
+// Upsert per-day forecast accuracy rows from the backtest panel.
+// rows: Array<{loc, dt, source, forecast_sales, actual_sales, mape}>
+export async function saveForecastSnapshots(rows) {
+  if (!supabase || !rows?.length) return;
+  const BATCH = 500;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const { error } = await supabase
+      .from('forecast_snapshots')
+      .upsert(rows.slice(i, i + BATCH), { onConflict: 'loc,dt,source' });
+    if (error) console.error('saveForecastSnapshots batch', i, error.message);
+  }
+}
+
+export async function loadForecastSnapshots(locs, days = 90) {
+  if (!supabase) return [];
+  const startDt = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  let q = supabase
+    .from('forecast_snapshots')
+    .select('loc,dt,source,forecast_sales,actual_sales,mape')
+    .gte('dt', startDt)
+    .order('dt', { ascending: true })
+    .limit(50000);
+  if (locs?.length) q = q.in('loc', locs);
+  const { data, error } = await q;
+  if (error) { console.error('loadForecastSnapshots:', error.message); return []; }
+  return data || [];
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client

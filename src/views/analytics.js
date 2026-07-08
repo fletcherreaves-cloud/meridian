@@ -12,7 +12,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -2964,6 +2964,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // constant per-store, since assignments could in principle change mid-
     // backtest-window even though that's rare in practice.
     locs.forEach(loc=>{acc[String(loc)]={ly:[],ai:[],blend:[],di:[],qsr:[]};aiModelTally[String(loc)]={};});
+    const snapshots=[];
 
     // Pre-fetch QSRSoft daily projections from qsr_daily_activity for the selected window.
     // Sum proj_sales_dollars across all hour slots per loc+dt to get a daily total,
@@ -3001,12 +3002,13 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
           const blE=(f.lyAdj>0&&f.forecast>0)?Math.abs(act-(f.lyAdj+f.forecast)/2)/act*100:null;
           const dow=r.date.getDay();
           if(!acc[ls]) return;
-          if(lyE!=null&&lyE<150){acc[ls].ly.push({v:lyE,dow});}
-          if(aiE!=null&&aiE<150){acc[ls].ai.push({v:aiE,dow});}
-          if(blE!=null&&blE<150){acc[ls].blend.push({v:blE,dow});}
+          const dk=dateKey(r.date);
+          if(lyE!=null&&lyE<150){acc[ls].ly.push({v:lyE,dow});snapshots.push({loc:ls,dt:dk,source:'ly',forecast_sales:+f.lyAdj.toFixed(2),actual_sales:+act.toFixed(2),mape:+lyE.toFixed(4)});}
+          if(aiE!=null&&aiE<150){acc[ls].ai.push({v:aiE,dow});snapshots.push({loc:ls,dt:dk,source:'ai',forecast_sales:+f.forecast.toFixed(2),actual_sales:+act.toFixed(2),mape:+aiE.toFixed(4)});}
+          if(blE!=null&&blE<150){acc[ls].blend.push({v:blE,dow});snapshots.push({loc:ls,dt:dk,source:'blend',forecast_sales:+((f.lyAdj+f.forecast)/2).toFixed(2),actual_sales:+act.toFixed(2),mape:+blE.toFixed(4)});}
           const qsrP=qsrProjLookup[ls]?.[dateKey(r.date)];
           const qsrE=(qsrP!=null&&qsrP>0&&act>0)?Math.abs(act-qsrP)/act*100:null;
-          if(qsrE!=null&&qsrE<150){acc[ls].qsr.push({v:qsrE,dow});}
+          if(qsrE!=null&&qsrE<150){acc[ls].qsr.push({v:qsrE,dow});snapshots.push({loc:ls,dt:dk,source:'qsr',forecast_sales:+qsrP.toFixed(2),actual_sales:+act.toFixed(2),mape:+qsrE.toFixed(4)});}
           // Live DI backtest (v4.195) — previously this report read a stale
           // calibration-time snapshot (settings.dialedIn[loc].mape6w) instead
           // of freshly backtesting DI over the SAME selected window as LY/AI/
@@ -3018,7 +3020,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
           if(settings.dialedInEnabled&&settings.dialedIn&&settings.dialedIn[ls]){
             const fDI=forecastDay(ls,r.date,ds,{...settings,_userEvents:userEvents},null,t,null,'di');
             const diE=fDI&&fDI.forecast>0?Math.abs(act-fDI.forecast)/act*100:null;
-            if(diE!=null&&diE<150){acc[ls].di.push({v:diE,dow});}
+            if(diE!=null&&diE<150){acc[ls].di.push({v:diE,dow});snapshots.push({loc:ls,dt:dk,source:'di',forecast_sales:+fDI.forecast.toFixed(2),actual_sales:+act.toFixed(2),mape:+diE.toFixed(4)});}
           }
         }catch(e){}
       });
@@ -3026,6 +3028,9 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
       await new Promise(res=>setTimeout(res,0));
     }
     if(cancelRef.current){setRunning(false);return;}
+
+    // Persist snapshots to Supabase (fire-and-forget — don't block UI)
+    if(snapshots.length) saveForecastSnapshots(snapshots).catch(()=>{});
 
     // Build per-store results
     const byStore={};
