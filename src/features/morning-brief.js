@@ -230,7 +230,7 @@ function computeStoreNorms(loc, ds){
 }
 
 // ── Assemble one store's data for a target date ──────────────────────────────
-function assembleBriefStoreData(loc, targetDate, ds){
+function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
   const locStr = String(loc);
   const dk = dKey(targetDate);
   const sameDay = r => String(r.loc)===locStr && dKey(r.date)===dk;
@@ -251,15 +251,25 @@ function assembleBriefStoreData(loc, targetDate, ds){
   const _parkRaw = avgPeaks('park');
   const dtPark = _parkRaw==null?null:(_parkRaw<=1?Math.round(_parkRaw*1000)/10:_parkRaw);
 
+  // qsr_daily_activity aggregates for this store (keyed by unpadded loc)
+  const dar = darByLoc?.[locStr] || null;
+  // DAR-derived actVsNeed and DT serve time (fallback when labor/3Peaks not uploaded)
+  const darActVsNeed = dar && dar.needed > 0 ? +(dar.punched - dar.needed).toFixed(1) : null;
+  const darOepe      = dar && dar.dtCnt > 0  ? +(dar.dtTime / dar.dtCnt / 1000).toFixed(0) : null;
+
   // GC vs expected
+  const darSales = dar ? dar.sales : null;
+  const darProjSales = dar ? dar.projSales : null;
   const salesVsExp = (()=>{
-   const _p=labor?.projSales>0?labor.projSales:
+   const _p=labor?.projSales>0?labor.projSales:darProjSales||
      (()=>{const _t=typeof DEFAULT_TARGETS!=='undefined'?DEFAULT_TARGETS[locStr]:null;
            const _m=_t?.tJuneProj||_t?.tOperatorProj||_t?.tMayProj||0;
            return _m>0?Math.round(_m/30):0;})();
-   return _p>0&&labor?.sales>0?(((labor.sales-_p)/_p)*100):null;
+   const _s=labor?.sales>0?labor.sales:darSales;
+   return _p>0&&_s>0?(((_s-_p)/_p)*100):null;
  })();
-  const expGC = (norms.gcSalesRatio && labor?.sales) ? labor.sales*norms.gcSalesRatio : null;
+  const laborSales = labor?.sales>0 ? labor.sales : darSales;
+  const expGC = (norms.gcSalesRatio && laborSales) ? laborSales*norms.gcSalesRatio : null;
   const gcVsExp = (expGC && labor?.gc) ? ((labor.gc-expGC)/expGC*100) : null;
 
   // FOB: most recent entry for this store within 35 days (monthly cadence)
@@ -276,11 +286,12 @@ function assembleBriefStoreData(loc, targetDate, ds){
   return {
     loc, name: sNameC(loc),
     supervisor: LOC_SUPERVISOR[locStr]||'Unknown',
-    hasData: !!(labor||ctrl||peaks.length),
-    // Labor fields
-    sales:      labor?.sales>0 ? labor.sales : null,
+    hasData: !!(labor||ctrl||peaks.length||dar),
+    // Labor fields — DAR fills in when labor not uploaded
+    sales:      labor?.sales>0 ? labor.sales : (darSales || null),
     projSales: (()=>{
       if(labor?.projSales>0) return labor.projSales;
+      if(darProjSales>0) return darProjSales;
       const tgt = typeof DEFAULT_TARGETS!=='undefined' ? DEFAULT_TARGETS[locStr] : null;
       const monthly = tgt?.tJuneProj || tgt?.tOperatorProj || tgt?.tMayProj || 0;
       return monthly>0 ? Math.round(monthly/30) : null;
@@ -292,7 +303,7 @@ function assembleBriefStoreData(loc, targetDate, ds){
     laborPct:   labor?.laborPct>0 ? labor.laborPct :
                 (ctrl?.laborPct>0 ? ctrl.laborPct :
                 (DEFAULT_TARGETS[locStr]?.tJuneLaborPct>0 ? DEFAULT_TARGETS[locStr].tJuneLaborPct : null)),
-    actVsNeed:  labor?.actVsNeed != null ? labor.actVsNeed : (ctrl?.actVsNeed ?? null),
+    actVsNeed:  labor?.actVsNeed != null ? labor.actVsNeed : (ctrl?.actVsNeed ?? darActVsNeed),
     salesVsExp, gcVsExp,
     // Controls fields
     drawerOpens:  ctrl?.drawerOpens||null,
@@ -302,8 +313,8 @@ function assembleBriefStoreData(loc, targetDate, ds){
     tRedAPct:     ctrl?.tRedAPct||null,
     tRedBPct:     ctrl?.tRedBPct||null,
     cashOSAmt:    ctrl?.cashOSAmt||null,
-    // Service fields
-    oepe, kvst, kvsu, dtPark,
+    // Service fields — DAR DT time fills OEPE when 3 Peaks not uploaded
+    oepe: oepe ?? darOepe, kvst, kvsu, dtPark,
     oepeNorm: norms.oepeNorm,
     kvstNorm: norms.kvstNorm,
     // Daypart data
@@ -333,9 +344,9 @@ function evaluateStoreCorrelations(data){
 }
 
 // ── Compute full district morning brief ──────────────────────────────────────
-function computeMorningBrief(ds, targetDate){
+function computeMorningBrief(ds, targetDate, darByLoc){
   const stores = Object.keys(STORE_NAMES).map(loc=>{
-    const data = assembleBriefStoreData(loc, targetDate, ds);
+    const data = assembleBriefStoreData(loc, targetDate, ds, darByLoc);
     const flags = evaluateStoreCorrelations(data);
     const severity = flags.some(f=>f.severity==='RED') ? 'RED'
                    : flags.some(f=>f.severity==='AMBER') ? 'AMBER'
@@ -654,11 +665,40 @@ function MorningBriefPanel({ds, settings, customSignalDefs}){
   const [filter, setFilter] = uSt('ALL'); // ALL | RED | AMBER | GREEN
   const [supervisorFilter, setSupervisorFilter] = uSt('ALL');
   const [generating, setGenerating] = uSt(false);
+  const [darByLoc, setDarByLoc] = uSt({});
 
   // Re-sync date if ds changes
   uE(()=>{ const ld=getLatestBriefDate(ds); if(ld) setBriefDate(ld); },[ds]);
 
-  const brief = uM(()=>computeMorningBrief(ds, briefDate),[ds, briefDate]);
+  // Load qsr_daily_activity for briefDate → aggregate per store
+  uE(()=>{
+    if(!briefDate || !(briefDate instanceof Date) || isNaN(briefDate)) return;
+    const dt = briefDate.toISOString().slice(0,10);
+    supabase.from('qsr_daily_activity')
+      .select('loc,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours')
+      .eq('dt', dt)
+      .then(({data})=>{
+        if(!data?.length){ setDarByLoc({}); return; }
+        const map = {};
+        for(const r of data){
+          const key = String(parseInt(r.loc, 10)); // strip leading zeros
+          if(!map[key]) map[key] = {sales:0,projSales:0,punched:0,needed:0,dtTime:0,dtCnt:0};
+          const s = map[key];
+          // Only count product_sales > 0 slots for sales (completed slots only)
+          if((r.product_sales||0) > 0){
+            s.sales     += r.product_sales || 0;
+            s.projSales += r.proj_sales_dollars || 0;
+          }
+          s.punched += r.actual_punched_hours || 0;
+          s.needed  += r.total_needed_hours   || 0;
+          s.dtTime  += r.dt_untilserve        || 0;
+          s.dtCnt   += r.dt_trans_cnt         || 0;
+        }
+        setDarByLoc(map);
+      });
+  },[briefDate]);
+
+  const brief = uM(()=>computeMorningBrief(ds, briefDate, darByLoc),[ds, briefDate, darByLoc]);
   const filtered = uM(()=>{
     let s = brief.stores;
     if(filter!=='ALL') s=s.filter(st=>st.severity===filter);
@@ -672,15 +712,17 @@ function MorningBriefPanel({ds, settings, customSignalDefs}){
 
   // Data source coverage pills
   const dsCoverage = uM(()=>{
+    const darCount = Object.keys(darByLoc).length;
     const sources = [
-      {key:'Labor',      loaded:!!(ds.laborRows?.length),     count:ds.laborRows?.length},
-      {key:'Controls',   loaded:!!(ds.ctrlRows?.length),      count:ds.ctrlRows?.length},
-      {key:'3 Peaks',    loaded:!!(ds.peaksSvcRows?.length),  count:ds.peaksSvcRows?.length},
-      {key:'Food Cost',  loaded:!!(ds.fobRows?.length),       count:ds.fobRows?.length},
-      {key:'SMG OSAT',   loaded:!!(ds.smgFullscale?.length),  count:ds.smgFullscale?.length},
+      {key:'Daily Activity', loaded:darCount>0,                    count:darCount||null},
+      {key:'Labor',          loaded:!!(ds.laborRows?.length),      count:ds.laborRows?.length},
+      {key:'Controls',       loaded:!!(ds.ctrlRows?.length),       count:ds.ctrlRows?.length},
+      {key:'3 Peaks',        loaded:!!(ds.peaksSvcRows?.length),   count:ds.peaksSvcRows?.length},
+      {key:'Food Cost',      loaded:!!(ds.fobRows?.length),        count:ds.fobRows?.length},
+      {key:'SMG OSAT',       loaded:!!(ds.smgFullscale?.length),   count:ds.smgFullscale?.length},
     ];
     return sources;
-  },[ds]);
+  },[ds, darByLoc]);
 
   return h('div',{style:{padding:'16px',maxWidth:'860px',margin:'0 auto'}},
 
