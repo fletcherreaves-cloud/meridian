@@ -70,14 +70,16 @@ async function getEbosTokenPlaywright() {
   const page = await context.newPage();
   let ebosToken = null;
 
-  // Capture X-Auth-Token from ANY request to prod.ebos.qsrsoft.com
+  // Capture X-Auth-Token from prod.ebos.qsrsoft.com/api/inv/ requests only.
+  // The home/shift-dashboard page triggers api/cash/ calls with a DIFFERENT token
+  // that returns 401 on the inventory endpoints — must filter to inv module.
   page.on('request', req => {
-    if (!req.url().includes('prod.ebos.qsrsoft.com')) return;
+    if (!req.url().includes('prod.ebos.qsrsoft.com/api/inv/')) return;
     const h = req.headers();
     const t = h['x-auth-token'] || h['X-Auth-Token'];
     if (t && t.length > 20 && !ebosToken) {
       ebosToken = t;
-      console.log('[auth] eBOS token captured from:', req.url().replace(/\?.*/, ''));
+      console.log('[auth] eBOS inv token captured from:', req.url().replace(/\?.*/, ''));
     }
   });
 
