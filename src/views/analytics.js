@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, fetchOpenMeteoWeather, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, fetchOpenMeteoWeather, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE } from '../constants.js';
 import { dKey, addD, mwStart, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
@@ -1808,7 +1808,7 @@ function StoreVlhConfigPanel({onClose}) {
     });
   }, []);
 
-  const dflt = (loc) => ({loc, aot:false, dt_type:'side_tandem', in_store:'self_serve', kitchen:'fryer_same', vlh_guide:'standard'});
+  const dflt = (loc) => ({loc, aot:false, dt_type:'side_tandem', in_store:'self_serve', kitchen:'fryer_same', vlh_guide:'standard', coffee:'none'});
   const getCfg = (loc) => configs[loc] || dflt(loc);
 
   const saveField = async (loc, field, value) => {
@@ -1851,6 +1851,9 @@ function StoreVlhConfigPanel({onClose}) {
       h('td',{style:{padding:'3px 6px'}},
         h('select',{value:cfg.vlh_guide,onChange:e=>saveField(loc,'vlh_guide',e.target.value),style:selS},
           VLH_GUIDE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+      h('td',{style:{padding:'3px 6px'}},
+        h('select',{value:cfg.coffee||'none',onChange:e=>saveField(loc,'coffee',e.target.value),style:selS},
+          VLH_COFFEE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
       h('td',{style:{padding:'4px 8px',textAlign:'center',fontSize:'10px',
         color:st==='saved'?'#10b981':st==='saving'?'#f59e0b':'transparent',minWidth:16}},
         st==='saved'?'✓':st==='saving'?'…':'.')
@@ -1858,7 +1861,7 @@ function StoreVlhConfigPanel({onClose}) {
   };
 
   const secRow = (label) => h('tr',{key:label},
-    h('td',{colSpan:7,style:{padding:'5px 12px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',
+    h('td',{colSpan:8,style:{padding:'5px 12px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',
       letterSpacing:'.5px',color:'var(--text3)',background:'rgba(255,255,255,.03)',borderBottom:'.5px solid var(--bdr)'}},label)
   );
 
@@ -1878,7 +1881,8 @@ function StoreVlhConfigPanel({onClose}) {
       // Legend row
       div({style:{padding:'5px 16px',fontSize:'8.5px',color:'var(--text3)',background:'rgba(245,188,0,.04)',borderBottom:'.5px solid var(--bdr)',lineHeight:1.8}},
         span({style:{fontWeight:700,color:'var(--gold)'}},'AOT '),'= Automated Order Taking (kiosks present)  ·  ',
-        span({style:{fontWeight:700,color:'var(--gold)'}},'VLH Guide '),'= HPG (High Productivity) allows more GCs per labor hour vs Standard'
+        span({style:{fontWeight:700,color:'var(--gold)'}},'VLH Guide '),'= HPG allows more GCs per labor hour vs Standard  ·  ',
+        span({style:{fontWeight:700,color:'var(--gold)'}},'Coffee '),'= BDAP (Beverage Dispensing Automation) and/or McCafé station'
       ),
       // Table
       div({style:{flex:1,overflowY:'auto'}},
@@ -1892,6 +1896,7 @@ function StoreVlhConfigPanel({onClose}) {
             h('th',{style:thS},'In-Store Service'),
             h('th',{style:thS},'Kitchen'),
             h('th',{style:thS},'VLH Guide'),
+            h('th',{style:thS},'Coffee'),
             h('th',{style:{...thS,width:24}})
           )),
           h('tbody',null,

@@ -467,6 +467,12 @@ const VLH_GUIDE = [
   {value:'standard', label:'Standard'},
   {value:'hpg',      label:'High Productivity (HPG)'},
 ];
+const VLH_COFFEE = [
+  {value:'none',   label:'None'},
+  {value:'bdap',   label:'BDAP Only'},
+  {value:'mccafe', label:'McCafé Only'},
+  {value:'both',   label:'BDAP + McCafé'},
+];
 
 // QSR_DAR_FIELDS — field dictionary for the qsr_daily_activity table.
 // Maps each DB column name to a display label, description, and unit.
@@ -517,4 +523,4 @@ const QSR_DAR_FIELDS = {
   ly_unhealthy_cnt:     {label:'LY Unhealthy Orders',desc:'Last year unhealthy order count for this slot',                      unit:'#'},
 };
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE };
