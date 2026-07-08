@@ -662,7 +662,7 @@ function aggregateByStore(rows) {
       key,
       storeName: STORE_NAMES?.[key] || `Store ${key}`,
       salesPct:  s.meanSales > 0 ? (s.sales / s.meanSales * 100) : null,
-      dtAvgSec:  s.dtCnt > 0     ? (s.dtTime / s.dtCnt)          : null,
+      dtAvgSec:  s.dtCnt > 0     ? (s.dtTime / s.dtCnt / 1000)   : null,
       laborPct:  s.needed > 0    ? (s.punched / s.needed * 100)  : null,
       accRate:   (s.healthy + s.unhealthy) > 0
                    ? (s.healthy / (s.healthy + s.unhealthy) * 100)
@@ -700,7 +700,7 @@ function HourlyDetail({ slots }) {
       h('tbody', null,
         sorted.map(r => {
           const pace = r.mean_sales > 0 ? (r.product_sales / r.mean_sales * 100) : null;
-          const dt   = r.dt_trans_cnt > 0 ? (r.dt_untilserve / r.dt_trans_cnt) : null;
+          const dt   = r.dt_trans_cnt > 0 ? (r.dt_untilserve / r.dt_trans_cnt / 1000) : null;
           const lab  = r.total_needed_hours > 0 ? (r.actual_punched_hours / r.total_needed_hours * 100) : null;
           const acc  = (r.healthy_count + r.unhealthy_count) > 0
                          ? (r.healthy_count / (r.healthy_count + r.unhealthy_count) * 100) : null;
