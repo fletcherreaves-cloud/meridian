@@ -596,8 +596,7 @@ const ACC_AMB = 92, ACC_RED = 85; // % healthy (below = bad)
 
 function fmtSecs(s) {
   if (s == null || isNaN(s)) return '—';
-  const m = Math.floor(s / 60), sec = Math.round(s % 60);
-  return `${m}:${String(sec).padStart(2,'0')}`;
+  return `${Math.round(s)}s`;
 }
 
 function fmtPct(v) {
