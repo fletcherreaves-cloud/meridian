@@ -643,10 +643,8 @@ function storeLocKey(loc7) {
 function aggregateByStore(rows) {
   const map = {};
   for (const r of rows) {
-    if (!map[r.loc]) map[r.loc] = { loc: r.loc, sales: 0, meanSales: 0, dtTime: 0, dtCnt: 0, punched: 0, needed: 0, healthy: 0, unhealthy: 0, slots: [] };
+    if (!map[r.loc]) map[r.loc] = { loc: r.loc, dtTime: 0, dtCnt: 0, punched: 0, needed: 0, healthy: 0, unhealthy: 0, slots: [] };
     const s = map[r.loc];
-    s.sales     += r.product_sales || 0;
-    s.meanSales += r.mean_sales    || 0;
     s.dtTime    += r.dt_untilserve || 0;
     s.dtCnt     += r.dt_trans_cnt  || 0;
     s.punched   += r.actual_punched_hours || 0;
@@ -657,13 +655,17 @@ function aggregateByStore(rows) {
   }
   return Object.values(map).map(s => {
     const key = storeLocKey(s.loc);
+    // Sales pace: only use completed slots (product_sales > 0) so future/empty hours don't skew denominator
+    const done = s.slots.filter(r => (r.product_sales || 0) > 0);
+    const sales     = done.reduce((a, r) => a + (r.product_sales || 0), 0);
+    const meanSales = done.reduce((a, r) => a + (r.mean_sales    || 0), 0);
     return {
       ...s,
       key,
       storeName: STORE_NAMES?.[key] || `Store ${key}`,
-      salesPct:  s.meanSales > 0 ? (s.sales / s.meanSales * 100) : null,
-      dtAvgSec:  s.dtCnt > 0     ? (s.dtTime / s.dtCnt / 1000)   : null,
-      laborPct:  s.needed > 0    ? (s.punched / s.needed * 100)  : null,
+      salesPct:  meanSales > 0 ? (sales / meanSales * 100)       : null,
+      dtAvgSec:  s.dtCnt > 0   ? (s.dtTime / s.dtCnt / 1000)     : null,
+      laborPct:  s.needed > 0  ? (s.punched / s.needed * 100)    : null,
       accRate:   (s.healthy + s.unhealthy) > 0
                    ? (s.healthy / (s.healthy + s.unhealthy) * 100)
                    : null,
