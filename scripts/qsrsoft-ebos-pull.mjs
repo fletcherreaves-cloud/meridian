@@ -144,6 +144,7 @@ async function fetchStoreLedger(token, nsn, startDate, endDate) {
   const resp = await fetch(url, {
     headers: {
       'X-Auth-Token':    token,
+      'X-Current-Nsn':   String(nsn),
       'Accept':          'application/json',
       'Accept-Encoding': 'gzip, deflate, br, zstd',
       'Origin':          'https://v3.myqsrsoft.com',
@@ -282,10 +283,11 @@ async function pullViaPlaywright(startDate, endDate) {
         try {
           const r = await fetch(url, {
             headers: {
-              'X-Auth-Token': token,
-              'Accept':       'application/json',
-              'Origin':       'https://v3.myqsrsoft.com',
-              'Referer':      'https://v3.myqsrsoft.com/',
+              'X-Auth-Token':  token,
+              'X-Current-Nsn': String(nsn),
+              'Accept':        'application/json',
+              'Origin':        'https://v3.myqsrsoft.com',
+              'Referer':       'https://v3.myqsrsoft.com/',
             },
           });
           if (!r.ok) { log.push(`NSN ${nsn} HTTP ${r.status}`); continue; }
