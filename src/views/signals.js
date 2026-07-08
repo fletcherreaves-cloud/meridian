@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel } from '../engine/signal-registry.js';
-import { saveCustomSignal, updateCustomSignal } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -587,8 +587,264 @@ function PromoteModal({ def, sig, onConfirm, onCancel }) {
 }
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
+// ── Live Ops Tab ──────────────────────────────────────────────────────────────
+
+const DT_RED = 240, DT_AMB = 200; // seconds
+const PACE_AMB = 90, PACE_RED = 80; // % of mean
+const LABOR_AMB = 110, LABOR_RED = 120; // % of needed
+const ACC_AMB = 92, ACC_RED = 85; // % healthy (below = bad)
+
+function fmtSecs(s) {
+  if (s == null || isNaN(s)) return '—';
+  const m = Math.floor(s / 60), sec = Math.round(s % 60);
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function fmtPct(v) {
+  if (v == null || isNaN(v)) return '—';
+  return v.toFixed(0) + '%';
+}
+
+function metricDot(col) {
+  return h('span', { style: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: col, flexShrink: 0 } });
+}
+
+function speedColor(s) {
+  if (s == null) return muted;
+  if (s > DT_RED) return red;
+  if (s > DT_AMB) return amber;
+  return grn;
+}
+function paceColor(pct) {
+  if (pct == null) return muted;
+  if (pct < PACE_RED) return red;
+  if (pct < PACE_AMB) return amber;
+  return grn;
+}
+function laborColor(pct) {
+  if (pct == null) return muted;
+  if (pct > LABOR_RED) return red;
+  if (pct > LABOR_AMB) return amber;
+  if (pct < 70) return red;
+  if (pct < 80) return amber;
+  return grn;
+}
+function accColor(pct) {
+  if (pct == null) return muted;
+  if (pct < ACC_RED) return red;
+  if (pct < ACC_AMB) return amber;
+  return grn;
+}
+
+function storeLocKey(loc7) {
+  return String(parseInt(loc7, 10));
+}
+
+function aggregateByStore(rows) {
+  const map = {};
+  for (const r of rows) {
+    if (!map[r.loc]) map[r.loc] = { loc: r.loc, sales: 0, meanSales: 0, dtTime: 0, dtCnt: 0, punched: 0, needed: 0, healthy: 0, unhealthy: 0, slots: [] };
+    const s = map[r.loc];
+    s.sales     += r.product_sales || 0;
+    s.meanSales += r.mean_sales    || 0;
+    s.dtTime    += r.dt_untilserve || 0;
+    s.dtCnt     += r.dt_trans_cnt  || 0;
+    s.punched   += r.actual_punched_hours || 0;
+    s.needed    += r.total_needed_hours   || 0;
+    s.healthy   += r.healthy_count   || 0;
+    s.unhealthy += r.unhealthy_count || 0;
+    s.slots.push(r);
+  }
+  return Object.values(map).map(s => {
+    const key = storeLocKey(s.loc);
+    return {
+      ...s,
+      key,
+      storeName: STORE_NAMES?.[key] || `Store ${key}`,
+      salesPct:  s.meanSales > 0 ? (s.sales / s.meanSales * 100) : null,
+      dtAvgSec:  s.dtCnt > 0     ? (s.dtTime / s.dtCnt)          : null,
+      laborPct:  s.needed > 0    ? (s.punched / s.needed * 100)  : null,
+      accRate:   (s.healthy + s.unhealthy) > 0
+                   ? (s.healthy / (s.healthy + s.unhealthy) * 100)
+                   : null,
+    };
+  }).sort((a, b) => a.storeName.localeCompare(b.storeName));
+}
+
+function alertCount(store) {
+  let n = 0;
+  if (store.salesPct != null && store.salesPct < PACE_AMB) n++;
+  if (store.dtAvgSec != null && store.dtAvgSec > DT_AMB)   n++;
+  if (store.laborPct != null && store.laborPct > LABOR_AMB) n++;
+  if (store.accRate  != null && store.accRate  < ACC_AMB)   n++;
+  return n;
+}
+
+function HourlyDetail({ slots }) {
+  const sorted = [...slots].sort((a, b) => a.hour_slot.localeCompare(b.hour_slot));
+  const cellStyle = { padding: '5px 10px', fontSize: 11, textAlign: 'right' };
+  const hdr = { ...cellStyle, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
+  const lbl = { ...cellStyle, textAlign: 'left', color: muted };
+  return h('div', { style: { padding: '10px 14px 14px', borderTop: `1px solid ${bdr}` } },
+    h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+      h('thead', null,
+        h('tr', null,
+          h('th', { style: { ...hdr, textAlign: 'left' } }, 'Hour'),
+          h('th', { style: hdr }, 'Sales'),
+          h('th', { style: hdr }, 'vs Mean'),
+          h('th', { style: hdr }, 'DT Speed'),
+          h('th', { style: hdr }, 'Labor'),
+          h('th', { style: hdr }, 'Accuracy'),
+        )
+      ),
+      h('tbody', null,
+        sorted.map(r => {
+          const pace = r.mean_sales > 0 ? (r.product_sales / r.mean_sales * 100) : null;
+          const dt   = r.dt_trans_cnt > 0 ? (r.dt_untilserve / r.dt_trans_cnt) : null;
+          const lab  = r.total_needed_hours > 0 ? (r.actual_punched_hours / r.total_needed_hours * 100) : null;
+          const acc  = (r.healthy_count + r.unhealthy_count) > 0
+                         ? (r.healthy_count / (r.healthy_count + r.unhealthy_count) * 100) : null;
+          // hour_slot "06:00" = ends at 6am → show as "5am"
+          const end = parseInt(r.hour_slot, 10);
+          const start = (end - 1 + 24) % 24;
+          const fmt = h => h === 0 ? '12am' : h <= 11 ? `${h}am` : h === 12 ? '12pm' : `${h-12}pm`;
+          return h('tr', { key: r.hour_slot, style: { borderTop: `1px solid rgba(255,255,255,.04)` } },
+            h('td', { style: lbl }, `${fmt(start)}–${fmt(end)}`),
+            h('td', { style: cellStyle }, r.product_sales != null ? `$${r.product_sales.toLocaleString('en-US', {maximumFractionDigits:0})}` : '—'),
+            h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(0)}%` : '—'),
+            h('td', { style: { ...cellStyle, color: speedColor(dt), fontWeight: dt != null && dt > DT_AMB ? 700 : 400 } }, dt != null ? fmtSecs(dt) : '—'),
+            h('td', { style: { ...cellStyle, color: laborColor(lab), fontWeight: lab != null && lab > LABOR_AMB ? 700 : 400 } }, lab != null ? fmtPct(lab) : '—'),
+            h('td', { style: { ...cellStyle, color: accColor(acc) } }, acc != null ? fmtPct(acc) : '—'),
+          );
+        })
+      )
+    )
+  );
+}
+
+function StoreRow({ store, expanded, onToggle }) {
+  const alerts = alertCount(store);
+  const isExp = expanded === store.loc;
+  return h('div', { style: { border: `1px solid ${alerts >= 2 ? 'rgba(239,68,68,.25)' : alerts === 1 ? 'rgba(245,158,11,.2)' : bdr}`, borderRadius: 8, marginBottom: 6, overflow: 'hidden', background: alerts >= 2 ? 'rgba(239,68,68,.02)' : surf2 } },
+    h('div', {
+      onClick: onToggle,
+      style: { cursor: 'pointer', padding: '10px 14px', display: 'grid', gridTemplateColumns: '1fr 110px 110px 100px 100px 28px', alignItems: 'center', gap: 8, userSelect: 'none' },
+    },
+      // Store name + alert badge
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+        alerts > 0 && h('span', { style: { fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: '99px', background: alerts >= 2 ? 'rgba(239,68,68,.15)' : 'rgba(245,158,11,.12)', color: alerts >= 2 ? red : amber, flexShrink: 0 } }, `${alerts} alert${alerts > 1 ? 's' : ''}`),
+        h('span', { style: { fontWeight: 600, fontSize: 13 } }, store.storeName),
+      ),
+      // Sales pace
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
+        metricDot(paceColor(store.salesPct)),
+        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: paceColor(store.salesPct), fontWeight: store.salesPct != null && store.salesPct < PACE_AMB ? 700 : 400 } },
+          store.salesPct != null ? `${store.salesPct.toFixed(0)}%` : '—'),
+      ),
+      // DT speed
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
+        store.dtAvgSec != null ? metricDot(speedColor(store.dtAvgSec)) : null,
+        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: speedColor(store.dtAvgSec), fontWeight: store.dtAvgSec != null && store.dtAvgSec > DT_AMB ? 700 : 400 } },
+          store.dtAvgSec != null ? fmtSecs(store.dtAvgSec) : '—'),
+      ),
+      // Labor %
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
+        store.laborPct != null ? metricDot(laborColor(store.laborPct)) : null,
+        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: laborColor(store.laborPct), fontWeight: store.laborPct != null && store.laborPct > LABOR_AMB ? 700 : 400 } },
+          store.laborPct != null ? fmtPct(store.laborPct) : '—'),
+      ),
+      // Accuracy
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
+        store.accRate != null ? metricDot(accColor(store.accRate)) : null,
+        h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: accColor(store.accRate) } },
+          store.accRate != null ? fmtPct(store.accRate) : '—'),
+      ),
+      h('span', { style: { fontSize: 12, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none', justifySelf: 'end' } }, '▾'),
+    ),
+    isExp && h(HourlyDetail, { slots: store.slots }),
+  );
+}
+
+function LiveOpsTab() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [date, setDate] = uSt(todayStr);
+  const [rows, setRows] = uSt([]);
+  const [loading, setLoading] = uSt(false);
+  const [error, setError] = uSt(null);
+  const [expanded, setExpanded] = uSt(null);
+
+  const fetch = async (d) => {
+    setLoading(true); setError(null);
+    const data = await loadDailyActivity({ date: d });
+    if (!data.length && d === todayStr) {
+      // no data for today — try yesterday
+      const yd = new Date(); yd.setDate(yd.getDate() - 1);
+      const yStr = yd.toISOString().slice(0, 10);
+      const fallback = await loadDailyActivity({ date: yStr });
+      if (fallback.length) { setDate(yStr); setRows(fallback); }
+      else setRows([]);
+    } else {
+      setRows(data);
+    }
+    setLoading(false);
+  };
+
+  uE(() => { fetch(date); }, [date]);
+
+  const stores = uM(() => aggregateByStore(rows), [rows]);
+  const alertStores = stores.filter(s => alertCount(s) > 0);
+  const critStores  = stores.filter(s => alertCount(s) >= 2);
+
+  const colHdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
+
+  return h('div', null,
+    // Toolbar
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' } },
+      h('input', { type: 'date', value: date, max: todayStr,
+        onChange: e => setDate(e.target.value),
+        style: { padding: '5px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#e5e7eb', fontSize: 12, cursor: 'pointer' },
+      }),
+      loading && h('span', { style: { fontSize: 11, color: muted } }, 'Loading…'),
+      !loading && rows.length > 0 && h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+        critStores.length > 0 && h('div', { style: { padding: '4px 10px', borderRadius: '99px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', fontSize: 11, fontWeight: 700, color: red } }, `${critStores.length} critical`),
+        h('div', { style: { padding: '4px 10px', borderRadius: '99px', background: alertStores.length ? 'rgba(245,158,11,.1)' : 'rgba(16,185,129,.08)', border: `1px solid ${alertStores.length ? 'rgba(245,158,11,.25)' : 'rgba(16,185,129,.2)'}`, fontSize: 11, fontWeight: 700, color: alertStores.length ? amber : grn } },
+          alertStores.length ? `${alertStores.length} stores with alerts` : `All ${stores.length} stores nominal`),
+        h('span', { style: { fontSize: 11, color: muted } }, `${stores.length} stores · ${rows.length} hour-slots`),
+      ),
+    ),
+
+    !loading && rows.length > 0 && h('div', null,
+      // Column headers
+      h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 110px 110px 100px 100px 28px', gap: 8, padding: '4px 14px', marginBottom: 4 } },
+        h('div', { style: { ...colHdr, textAlign: 'left' } }, 'Store'),
+        h('div', { style: colHdr }, 'Sales Pace'),
+        h('div', { style: colHdr }, 'DT Speed'),
+        h('div', { style: colHdr }, 'Labor vs Need'),
+        h('div', { style: colHdr }, 'Accuracy'),
+        h('div', null),
+      ),
+      // Sort: alerts-first, then alpha
+      [...stores].sort((a, b) => alertCount(b) - alertCount(a) || a.storeName.localeCompare(b.storeName))
+        .map(store => h(StoreRow, { key: store.loc, store, expanded, onToggle: () => setExpanded(expanded === store.loc ? null : store.loc) })),
+    ),
+
+    !loading && rows.length === 0 && h('div', { style: { textAlign: 'center', padding: '48px 24px', color: muted, fontSize: 13, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+      h('div', { style: { fontSize: 28, marginBottom: 12 } }, '📡'),
+      h('div', { style: { fontWeight: 700, marginBottom: 8 } }, 'No data for this date'),
+      'Daily activity syncs automatically at 5am CDT. Try selecting a recent date.',
+    ),
+
+    !loading && rows.length > 0 && h('div', { style: { marginTop: 14, fontSize: 10, color: muted, lineHeight: 1.7 } },
+      `Pace = actual sales ÷ QSRSoft mean sales for the day. `,
+      `DT speed = avg seconds from order to serve (🔴 > 4:00, 🟡 3:20–4:00, 🟢 < 3:20). `,
+      `Labor = punched hours ÷ needed hours (🔴 > 120%, 🟡 110–120%). `,
+      `Accuracy = healthy orders ÷ total (🔴 < ${ACC_RED}%, 🟡 ${ACC_RED}–${ACC_AMB}%). Click any store to see hourly breakdown.`,
+    ),
+  );
+}
+
 export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange }) {
-  const [tab, setTab] = uSt('builtin');
+  const [tab, setTab] = uSt('liveops');
   const [expanded, setExpanded] = uSt(null);
   const [filterDomain, setFilterDomain] = uSt(null);
   const [filterLoc, setFilterLoc] = uSt(null);
@@ -700,10 +956,14 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
 
     // Tab bar
     h('div', { style: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' } },
+      h('button', { onClick: () => setTab('liveops'), style: TAB_STYLE(tab === 'liveops') }, '⚡ Live Ops'),
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
       h('button', { onClick: () => setTab('graveyard'), style: TAB_STYLE(tab === 'graveyard', true) }, `⚰ Graveyard${graveyardCount ? ` (${graveyardCount})` : ''}`),
     ),
+
+    // ── LIVE OPS TAB ─────────────────────────────────────────────────────────
+    tab === 'liveops' && h(LiveOpsTab, null),
 
     // ── BUILT-IN TAB ──────────────────────────────────────────────────────────
     tab === 'builtin' && h('div', null,

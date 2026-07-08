@@ -1034,6 +1034,34 @@ export async function appendCustomSignalHistory(id, r, n, existingHistory) {
   }).eq('id', id);
 }
 
+// ── qsr_daily_activity ────────────────────────────────────────────────────────
+export async function loadDailyActivity({ date, daysBack = 1 } = {}) {
+  if (!supabase) return [];
+  const target = date || new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('qsr_daily_activity')
+    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count,proj_sales_dollars')
+    .eq('dt', target)
+    .order('loc')
+    .order('hour_slot');
+  if (error) { console.error('loadDailyActivity:', error); return []; }
+  return data || [];
+}
+
+export async function loadDailyActivityRange(startDate, endDate) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('qsr_daily_activity')
+    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count')
+    .gte('dt', startDate)
+    .lte('dt', endDate)
+    .order('dt')
+    .order('loc')
+    .order('hour_slot');
+  if (error) { console.error('loadDailyActivityRange:', error); return []; }
+  return data || [];
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client
