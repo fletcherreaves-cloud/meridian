@@ -72,7 +72,7 @@ scripts/               — lifelenz-pull.mjs, qsrsoft-ebos-pull.mjs, qsrsoft-dar
 | Source | Status | How |
 |---|---|---|
 | LifeLenz (labor/scheduling) | ✅ Automated | GitHub Actions daily sync, REST API, X-Auth-Token secret → `lifelenz_schedules` |
-| QSRSoft eBOS Purchases | ✅ Automated | GitHub Actions daily, Playwright auth → `qsr_ebos_daily` |
+| QSRSoft eBOS Purchases | ✅ Automated | GitHub Actions daily 10:00 UTC, Playwright auth, all 27 stores → `qsr_ebos_daily` |
 | QSRSoft Daily Activity (DAR) | ✅ Automated | GitHub Actions daily 10:00 UTC, Playwright auth, all 27 stores/hour → `qsr_daily_activity` |
 | QSRSoft P&L / Food Cost | 🔄 Partial | Email pipeline: Apps Script → Edge Function; also manual CSV upload |
 | SMG VOICE (CSAT) | 📤 Manual | PDF drop (comments) + Excel drop (FullScale aggregate) |
@@ -159,18 +159,17 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ---
 
-## Top Priorities (as of 2026-07-08)
+## Top Priorities (updated 2026-07-08, post v4.368)
 
-**Automation ceiling reached (v4.356).** Three live data streams now run unattended: LifeLenz, QSRSoft eBOS purchases, and QSRSoft Daily Activity (hourly intraday data for all 27 stores). Next phase: build intelligence on top of this data.
+**Intelligence phase.** Three live data streams run unattended (LifeLenz, eBOS, DAR). Morning Brief hourly pace, Store Dashboard daypart card, and Signals LiveOps are all live. See `memory/project-backlog.md` for full checklist — update it every sprint.
 
-1. **Data Manager sync times** — show schedule ("Daily ~5am CDT") + last-synced timestamp from `max(updated_at)` for each auto-sync table. See `memory/project-backlog.md`.
-2. **Morning Brief hourly pace** — today's sales pace vs 30-day mean from `qsr_daily_activity`. Real-time "how is today tracking?" answer without logging into QSRSoft.
-3. **Store Dashboard daypart card** — aggregate hour slots to Breakfast/Lunch/PM/Dinner/Late from `qsr_daily_activity`. Show vs projection, vs LY.
-4. **Signals panel** — use `qsr_daily_activity` as primary source: DT serve time vs mean by slot, sales pace vs mean, labor vs needed. See `memory/project-backlog.md` for alert criteria.
-5. **Projections: add QSRSoft baseline** — `proj_sales_dollars` from `qsr_daily_activity` as a second comparison line (Meridian target vs QSRSoft projection vs actual).
-6. **FOB / Food Cost panel** — data exists in `ds.fobRows`, needs a dedicated panel.
-7. **Supabase persistence** — move `fobRows`, `opsRows`, `ctrlRows`, `darRows`, `smgFullscale` from OPFS → Supabase (cloud-first, cross-device). See `memory/project-supabase-priority.md`.
-8. **Operator Summary rework** — rename + group selector (Patch / Operator / Company / Org).
+✅ Done: Data Manager sync times · Morning Brief hourly pace · Store Dashboard daypart card · Signals LiveOps · Morning Brief email pipeline wire-up
+
+**Remaining (in order):**
+1. **Projections: QSRSoft baseline** — `proj_sales_dollars` from `qsr_daily_activity` as second comparison line.
+2. **FOB / Food Cost panel** — data in `ds.fobRows`, needs a dedicated panel.
+3. **Supabase persistence** — move `fobRows`, `opsRows`, `ctrlRows`, `smgFullscale` from OPFS → Supabase.
+4. **Operator Summary rework** — rename + Patch/Operator/Company/Org group selector.
 
 ---
 

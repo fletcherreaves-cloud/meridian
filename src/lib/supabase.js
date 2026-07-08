@@ -1060,6 +1060,20 @@ export async function loadDailyActivity({ date, daysBack = 1 } = {}) {
   return data || [];
 }
 
+export async function loadStoreDaypartData(loc, date) {
+  if (!supabase) return [];
+  const locPadded = String(loc).padStart(7, '0');
+  const target = date || new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('qsr_daily_activity')
+    .select('dt,hour_slot,product_sales,mean_sales,ly_product_sales,dt_untilserve,dt_trans_cnt,proj_sales_dollars,actual_punched_hours,total_needed_hours')
+    .eq('loc', locPadded)
+    .eq('dt', target)
+    .order('hour_slot');
+  if (error) { console.error('loadStoreDaypartData:', error); return []; }
+  return data || [];
+}
+
 export async function loadDailyActivityRange(startDate, endDate) {
   if (!supabase) return [];
   const { data, error } = await supabase

@@ -7,6 +7,7 @@ import { forecastDay, fetchLY, getStoreOrg, fetchLYDate } from '../engine/foreca
 import { computeEventFactors } from '../utils/events.js';
 import { TH, f$ } from '../utils/fmt.js';
 import { ForecastAudit } from '../views/analytics.js';
+import { supabase } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -579,6 +580,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   const [lockConfirmData, setLockConfirmData] = useState(null);  // {summaries, periodLabel, lockType, onConfirm}
   const [showLockHistory, setShowLockHistory] = useState(false); // lock history panel
   const [monthLocking,   setMonthLocking]    = useState(false);  // in-progress month lock
+  const [qsrProjByLoc,   setQsrProjByLoc]   = useState({});     // {loc: total proj_sales_dollars for period}
 
   // ── Week days (Wed-Tue) ────────────────────────────────
   const projDays = React.useMemo(()=>{
@@ -603,6 +605,25 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   },[weekStart,projPeriod,customStart,customEnd]);
   // weekDays alias for backward compat with rest of component
   const weekDays = projDays;
+
+  // ── QSRSoft projection baseline from qsr_daily_activity ───────────────
+  React.useEffect(()=>{
+    if(!supabase||!weekDays.length) return;
+    const startDt = dKey(weekDays[0]);
+    const endDt   = dKey(weekDays[weekDays.length-1]);
+    supabase.from('qsr_daily_activity')
+      .select('loc,proj_sales_dollars')
+      .gte('dt',startDt).lte('dt',endDt)
+      .then(({data})=>{
+        if(!data) return;
+        const byLoc={};
+        for(const r of data){
+          const l=String(parseInt(r.loc,10));
+          byLoc[l]=(byLoc[l]||0)+(r.proj_sales_dollars||0);
+        }
+        setQsrProjByLoc(byLoc);
+      });
+  },[weekDays.length>0&&dKey(weekDays[0]),weekDays.length>0&&dKey(weekDays[weekDays.length-1])]);
 
   // ── Group structures ───────────────────────────────────
   const patches    = settings.supervisorGroups||{};
@@ -1154,6 +1175,13 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
         fontSize:'10px',color:hasRefinement?'#818cf8':'var(--text3)'},
         title:hasRefinement?'Refined: '+f$(asLockedTotal)+' originally planned, now '+f$(weekTotal)+' after week-level updates.':'No week-level refinement yet — matches Current Effective.'},
         asLockedTotal>0?(f$(asLockedTotal)+(hasRefinement?' 🔄':'')):'—'),
+      // QSRSoft system projection baseline
+      (()=>{const qp=qsrProjByLoc[loc]||0;const diff=qp>0&&weekTotal>0?weekTotal-qp:null;
+        return td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',
+          fontSize:'10px',color:qp>0?'#60a5fa':'var(--text3)'},
+          title:qp>0?'QSRSoft projects '+f$(Math.round(qp))+' for this period. Meridian: '+f$(Math.round(weekTotal))+(diff!=null?' (diff: '+(diff>=0?'+':'')+f$(Math.round(diff))+')':''):'No QSRSoft projection data for this period.'},
+          qp>0?f$(Math.round(qp)):'—');
+      })(),
       // LY Actual — raw same-DOW historical total for the period
       td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',
         fontSize:'10px',color:'var(--text3)'},
@@ -1205,7 +1233,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
         fontWeight:700,color:'var(--amber)',borderLeft:'.5px solid var(--bdr)'}},wkTotal>0?f$(wkTotal):'—'),
       projPeriod!=='week'&&td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',
         fontSize:'10px',color:'var(--text3)'}},asLockedTotal>0?f$(asLockedTotal):'—'),
-      td(),td(),td()  // LY Actual, vs LY, actions
+      td(),td(),td(),td()  // QSRSoft Proj, LY Actual, vs LY, actions
     );
   };
 
@@ -1225,6 +1253,10 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
         wkTotal>0?f$(wkTotal):'—'),
       projPeriod!=='week'&&td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',
         fontSize:'11px',fontWeight:700,color:'#a5b4fc'}},asLockedTotal>0?f$(asLockedTotal):'—'),
+      (()=>{const qpTotal=ALL_LOCS.reduce((a,l)=>a+(qsrProjByLoc[l]||0),0);
+        return td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',
+          fontSize:'11px',fontWeight:700,color:qpTotal>0?'#60a5fa':'var(--text3)'}},
+          qpTotal>0?f$(Math.round(qpTotal)):'—');})(),
       td(),td(),td()  // LY Actual, vs LY, actions
     );
   };
@@ -1693,6 +1725,9 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                   projPeriod!=='week'&&th({style:{...TH,textAlign:'right',color:'var(--text3)'},
                     title:'The original business-plan number from when the month was locked, ignoring any later week-level refinements. Differs from Current Effective only on weeks that have since been re-locked individually with fresher data.'},
                     'As Locked (Month Plan)'),
+                  th({style:{...TH,textAlign:'right',color:'#60a5fa'},
+                    title:'QSRSoft\'s own system projection for this period, summed from qsr_daily_activity.proj_sales_dollars. Compare to Meridian\'s forecast (Period Total) and actual LY.'},
+                    'QSRSoft Proj'),
                   th({style:{...TH,textAlign:'right',color:'var(--text3)'},
                     title:'Actual sales from the same day of week, 52 weeks prior.\nMonday Jun 1, 2026 → compares to actual Monday Jun 2, 2025.\nThis column shows the raw historical value — no blending, no smoothing.'},
                     'LY Actual'),
