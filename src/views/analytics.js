@@ -1277,6 +1277,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
   const [status, setStatus]= uSt('');
   const [qsrFiles, setQsrFiles] = uSt([]);
   const [ebosCov,  setEbosCov]  = uSt({count:0});
+  const [darCov,   setDarCov]   = uSt({count:0});
 
   uE(()=>{
     if(idbCoverage && Object.keys(idbCoverage).length>0) setCov(idbCoverage);
@@ -1292,8 +1293,12 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
       supabase.from('qsr_ebos_daily').select('*',{count:'exact',head:true}),
       supabase.from('qsr_ebos_daily').select('date').order('date',{ascending:true}).limit(1).single(),
       supabase.from('qsr_ebos_daily').select('date').order('date',{ascending:false}).limit(1).single(),
-    ]).then(([cnt,mn,mx])=>{
+      supabase.from('qsr_daily_activity').select('*',{count:'exact',head:true}),
+      supabase.from('qsr_daily_activity').select('dt').order('dt',{ascending:true}).limit(1).single(),
+      supabase.from('qsr_daily_activity').select('dt').order('dt',{ascending:false}).limit(1).single(),
+    ]).then(([cnt,mn,mx,darCnt,darMn,darMx])=>{
       if(cnt.count) setEbosCov({count:cnt.count,from:mn.data?.date||'?',to:mx.data?.date||'?'});
+      if(darCnt.count) setDarCov({count:darCnt.count,from:darMn.data?.dt||'?',to:darMx.data?.dt||'?'});
     });
   },[]);
 
@@ -1588,6 +1593,16 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontSize:'8px'}},hasData?c.to:'—')
       );
     })(),
+    (()=>{const c=darCov;const hasData=c.count>0;
+      return h('tr',{key:'auto-dar',style:{background:'rgba(255,255,255,.015)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+        h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
+          hasData?staleDot(c):null,'QSRSoft Daily Activity',autoTag),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
+          hasData?c.count.toLocaleString()+' hour-slots':'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontSize:'8px'}},hasData?c.to:'—')
+      );
+    })(),
   ];
 
   const cloudRows = [
@@ -1642,7 +1657,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad}) {
         span({style:{fontSize:'18px'}},'🗄'),
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Data Manager'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'LifeLenz · QSRSoft FOB · eBOS Purchases auto-sync daily · '+totalRows.toLocaleString()+' rows · upload-once cloud persistence')
+          div({style:{fontSize:'9px',color:'var(--text3)'}},'LifeLenz · QSRSoft FOB · eBOS Purchases · Daily Activity auto-sync · '+totalRows.toLocaleString()+' rows · upload-once cloud persistence')
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),

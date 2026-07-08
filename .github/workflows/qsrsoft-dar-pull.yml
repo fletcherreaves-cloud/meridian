@@ -1,0 +1,51 @@
+name: QSRSoft Daily Activity Pull
+
+on:
+  schedule:
+    # 10:00 UTC = 5:00 AM CDT — previous day is fully closed by then
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on initial run (default: 90)'
+        required: false
+        default: '90'
+      days_recent:
+        description: 'Rolling re-pull window in days (default: 7)'
+        required: false
+        default: '7'
+      force_full:
+        description: 'Force full days_back pull, ignoring existing data (1 = on)'
+        required: false
+        default: '0'
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull QSRSoft Daily Activity data
+        run: node scripts/qsrsoft-dar-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_DAR_DAYS_BACK:      ${{ github.event.inputs.days_back   || '90' }}
+          QSRSOFT_DAR_DAYS_RECENT:    ${{ github.event.inputs.days_recent || '7'  }}
+          QSRSOFT_DAR_FORCE_FULL:     ${{ github.event.inputs.force_full  || '0'  }}
+          QSRSOFT_DAR_DEBUG:          ${{ github.event.inputs.debug       || '0'  }}
