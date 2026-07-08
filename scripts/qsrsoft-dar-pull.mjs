@@ -300,12 +300,12 @@ async function pullViaPlaywright(dates) {
       console.log('[auth] token not captured from navigation — attempting in-browser fetch to trigger auth…');
       const today = fmtDate(new Date());
       const testUrl = buildUrl(today);
-      const testResult = await page.evaluate(async (url) => {
+      const testResult = await page.evaluate(async ({ url }) => {
         try {
           const r = await fetch(url, { credentials: 'include' });
           return { status: r.status, ok: r.ok };
         } catch (e) { return { error: e.message }; }
-      }, testUrl);
+      }, { url: testUrl });
       console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
       await wait(2000);
     }
@@ -319,7 +319,7 @@ async function pullViaPlaywright(dates) {
     // ── Fetch all dates from within the live browser session ──
     // The browser session has cookies + token — no 401 issues.
     const { rows: allRows, log } = await page.evaluate(async (args) => {
-      const { dates, nsns, orgId, selectCols, darBase, debug } = args;
+      const { dates, nsns, orgId, selectCols, darBase, token, debug } = args;
       const allRows = [], log = [];
 
       function buildUrl(date) {
@@ -337,7 +337,14 @@ async function pullViaPlaywright(dates) {
       for (const date of dates) {
         const url = buildUrl(date);
         try {
-          const r = await fetch(url, { credentials: 'include' });
+          const r = await fetch(url, {
+            headers: {
+              'X-Auth-Token': token,
+              'Accept':       'application/json',
+              'Origin':       'https://v3.myqsrsoft.com',
+              'Referer':      'https://v3.myqsrsoft.com/',
+            },
+          });
           if (!r.ok) { log.push(`${date} HTTP ${r.status}`); continue; }
           const body = await r.json();
           const rows = Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
@@ -347,11 +354,10 @@ async function pullViaPlaywright(dates) {
         } catch (e) {
           log.push(`${date} ERROR: ${e.message}`);
         }
-        // small delay between requests
         await new Promise(res => setTimeout(res, 150));
       }
       return { rows: allRows, log };
-    }, { dates, nsns: STORE_NSNS, orgId: ORG_ID, selectCols: SELECT_COLS, darBase: DAR_BASE, debug: DEBUG });
+    }, { dates, nsns: STORE_NSNS, orgId: ORG_ID, selectCols: SELECT_COLS, darBase: DAR_BASE, token: darToken, debug: DEBUG });
 
     for (const msg of log) console.log('[dar-pull]', msg);
     await snap('dar-final.png');
