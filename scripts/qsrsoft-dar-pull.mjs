@@ -311,31 +311,18 @@ async function pullViaPlaywright(dates) {
     }
 
     if (!darToken) {
-      console.error('[auth] ✗ could not capture DAR token — running in-browser fetches without pre-captured token');
-    } else {
-      console.log(`[auth] ✓ DAR token captured (${darToken.length} chars) — fetching ${dates.length} dates in-browser…`);
+      console.error('[auth] ✗ could not capture DAR token');
+      await snap('dar-error.png');
+      return 0;
     }
+    console.log(`[auth] ✓ DAR token captured (${darToken.length} chars) — fetching ${dates.length} dates…`);
 
-    // ── Fetch all dates from within the live browser session ──
-    // The browser session has cookies + token — no 401 issues.
-    const { rows: allRows, log } = await page.evaluate(async (args) => {
-      const { dates, nsns, orgId, selectCols, darBase, token, debug } = args;
-      const allRows = [], log = [];
-
-      function buildUrl(date) {
-        const p = new URLSearchParams({
-          timeSegment: 'openClose', segmentBy: 'hour',
-          segmentNames: 'open-close', segmentsSelected: 'open-close',
-          nsd: 'd', nsn: nsns.join(','), orgId,
-          enterpriseName: 'McDonalds', startDate: date, endDate: date,
-          compType: 'trading', weekStart: '3', timeInterval: 'hour',
-          selectCols,
-        });
-        return `${darBase}/v1/reports/shift/daily-activity-raw?${p}`;
-      }
-
-      for (const date of dates) {
-        const url = buildUrl(date);
+    // ── One page.evaluate() per date — real-time progress, incremental upsert ──
+    let totalUpserted = 0;
+    for (let i = 0; i < dates.length; i++) {
+      const date = dates[i];
+      const url = buildUrl(date);
+      const result = await page.evaluate(async ({ url, token }) => {
         try {
           const r = await fetch(url, {
             headers: {
@@ -344,28 +331,36 @@ async function pullViaPlaywright(dates) {
               'Origin':       'https://v3.myqsrsoft.com',
               'Referer':      'https://v3.myqsrsoft.com/',
             },
+            signal: AbortSignal.timeout(20000),
           });
-          if (!r.ok) { log.push(`${date} HTTP ${r.status}`); continue; }
+          if (!r.ok) return { error: `HTTP ${r.status}` };
           const body = await r.json();
-          const rows = Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
-          rows.forEach(row => row._date = date);
-          allRows.push(...rows);
-          log.push(`${date}: ${rows.length} rows`);
+          const rows = Array.isArray(body) ? body : (body?.result || []);
+          return { rows };
         } catch (e) {
-          log.push(`${date} ERROR: ${e.message}`);
+          return { error: e.message };
         }
-        await new Promise(res => setTimeout(res, 150));
-      }
-      return { rows: allRows, log };
-    }, { dates, nsns: STORE_NSNS, orgId: ORG_ID, selectCols: SELECT_COLS, darBase: DAR_BASE, token: darToken, debug: DEBUG });
+      }, { url, token: darToken });
 
-    for (const msg of log) console.log('[dar-pull]', msg);
+      if (result.error) {
+        console.error(`[dar-pull]   ${date} ERROR: ${result.error}`);
+      } else if (!result.rows.length) {
+        console.log(`[dar-pull]   ${date}: no data`);
+      } else {
+        const records = result.rows.map(r => mapRow(r, date));
+        const n = await upsertBatch(records);
+        totalUpserted += n;
+        console.log(`[dar-pull]   ${date}: ${result.rows.length} rows → ${n} upserted`);
+      }
+      if (i < dates.length - 1) await new Promise(r => setTimeout(r, 100));
+    }
+
     await snap('dar-final.png');
-    return allRows;
+    return totalUpserted;
 
   } catch (e) {
     console.error('[auth] Playwright error:', e.message);
-    await snap('dar-error.png');
+    await page.screenshot({ path: 'screenshots/dar-error.png', fullPage: true }).catch(() => {});
     return null;
   } finally {
     await browser.close();
@@ -400,23 +395,12 @@ async function main() {
   }
 
   // ── Path B: Playwright ──
-  const allRows = await pullViaPlaywright(dates);
-  if (!allRows) {
+  const totalSaved = await pullViaPlaywright(dates);
+  if (totalSaved === null) {
     console.error('[dar-pull] no auth method succeeded — set QSRSOFT_TOKEN or QSRSOFT_USERNAME+PASSWORD');
     process.exit(1);
   }
-
-  const records = allRows.map(r => mapRow(r, r._date));
-  let totalSaved = 0;
-  for (let i = 0; i < records.length; i += 500) {
-    const batch = records.slice(i, i + 500);
-    const { error } = await supabase
-      .from('qsr_daily_activity')
-      .upsert(batch, { onConflict: 'loc,dt,hour_slot' });
-    if (error) console.error('[supabase] upsert error:', error.message);
-    else totalSaved += batch.length;
-  }
-  console.log(`[dar-pull] done. ${allRows.length} rows fetched → ${totalSaved} upserted`);
+  console.log(`[dar-pull] done. ${totalSaved} rows upserted`);
 }
 
 main().catch(e => { console.error('[dar-pull] FATAL:', e); process.exit(1); });
