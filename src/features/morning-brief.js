@@ -537,31 +537,27 @@ const DAR_DAYPARTS = [
 const fK = v => v >= 1000 ? '$'+(v/1000).toFixed(1)+'K' : '$'+Math.round(v);
 const pctClr = v => v == null ? '#6b7280' : v >= 0 ? '#10b981' : '#ef4444';
 
-function TodayPaceCard({date}) {
-  const [rows, setRows] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState(null);
+function TodayPaceCard({date, darRows}) {
   const targetDate = date instanceof Date && !isNaN(date) ? date.toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
 
+  // Use shared darRows if they match the target date; otherwise fetch own
+  const [ownRows, setOwnRows] = React.useState(null);
+  const sharedMatch = darRows && darRows.length > 0 && darRows[0]?.dt === targetDate;
+  const rows = sharedMatch ? darRows : ownRows;
+
   React.useEffect(() => {
-    if(!supabase) { setLoading(false); return; }
-    setLoading(true);
+    if(sharedMatch || !supabase) return; // shared data covers this date
     supabase.from('qsr_daily_activity')
-      .select('hour_slot,product_sales,mean_sales,proj_sales_dollars,ly_product_sales')
+      .select('hour_slot,dt,product_sales,mean_sales,proj_sales_dollars,ly_product_sales')
       .eq('dt', targetDate)
       .order('hour_slot')
-      .then(({data, error: err}) => {
-        if(err) { setError(err.message); setLoading(false); return; }
-        setRows(data || []);
-        setLoading(false);
-      });
-  }, [targetDate]);
+      .then(({data}) => setOwnRows(data || []));
+  }, [targetDate, sharedMatch]);
 
-  if(!supabase) return null;
-  if(loading) return h('div',{style:{padding:'10px 14px',background:'rgba(255,255,255,.03)',borderRadius:8,
+  if(!rows) return h('div',{style:{padding:'10px 14px',background:'rgba(255,255,255,.03)',borderRadius:8,
     border:'.5px solid rgba(255,255,255,.08)',marginBottom:14,fontSize:'9px',color:'#4a6080'}},
     '↻ Loading today\'s pace…');
-  if(error || !rows || !rows.length) return null;
+  if(!rows.length) return null;
 
   // Aggregate by hour slot across all stores
   const bySlot = {};
@@ -658,45 +654,45 @@ function TodayPaceCard({date}) {
 }
 
 // ── MorningBriefPanel ────────────────────────────────────────────────────────
-function MorningBriefPanel({ds, settings, customSignalDefs}){
+function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}){
   const uSt=React.useState, uM=React.useMemo, uCB=React.useCallback, uE=React.useEffect;
   const [briefDate, setBriefDate] = uSt(()=>getLatestBriefDate(ds));
   const [expanded, setExpanded] = uSt(null);
   const [filter, setFilter] = uSt('ALL'); // ALL | RED | AMBER | GREEN
   const [supervisorFilter, setSupervisorFilter] = uSt('ALL');
   const [generating, setGenerating] = uSt(false);
-  const [darByLoc, setDarByLoc] = uSt({});
 
   // Re-sync date if ds changes
   uE(()=>{ const ld=getLatestBriefDate(ds); if(ld) setBriefDate(ld); },[ds]);
 
-  // Load qsr_daily_activity for briefDate → aggregate per store
+  // Build darByLoc from shared darRows (if they match briefDate), else fetch own
+  const briefDateStr = briefDate instanceof Date && !isNaN(briefDate) ? briefDate.toISOString().slice(0,10) : null;
+  const sharedMatch = darRows && darRows.length > 0 && darRows[0]?.dt === briefDateStr;
+  const [ownDarRows, setOwnDarRows] = uSt([]);
   uE(()=>{
-    if(!briefDate || !(briefDate instanceof Date) || isNaN(briefDate)) return;
-    const dt = briefDate.toISOString().slice(0,10);
+    if(sharedMatch || !briefDateStr || !supabase) return;
     supabase.from('qsr_daily_activity')
-      .select('loc,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours')
-      .eq('dt', dt)
-      .then(({data})=>{
-        if(!data?.length){ setDarByLoc({}); return; }
-        const map = {};
-        for(const r of data){
-          const key = String(parseInt(r.loc, 10)); // strip leading zeros
-          if(!map[key]) map[key] = {sales:0,projSales:0,punched:0,needed:0,dtTime:0,dtCnt:0};
-          const s = map[key];
-          // Only count product_sales > 0 slots for sales (completed slots only)
-          if((r.product_sales||0) > 0){
-            s.sales     += r.product_sales || 0;
-            s.projSales += r.proj_sales_dollars || 0;
-          }
-          s.punched += r.actual_punched_hours || 0;
-          s.needed  += r.total_needed_hours   || 0;
-          s.dtTime  += r.dt_untilserve        || 0;
-          s.dtCnt   += r.dt_trans_cnt         || 0;
-        }
-        setDarByLoc(map);
-      });
-  },[briefDate]);
+      .select('loc,dt,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours')
+      .eq('dt', briefDateStr)
+      .then(({data})=>setOwnDarRows(data||[]));
+  },[briefDateStr, sharedMatch]);
+
+  const activeDarRows = sharedMatch ? darRows : ownDarRows;
+  const darByLoc = uM(()=>{
+    if(!activeDarRows.length) return {};
+    const map = {};
+    for(const r of activeDarRows){
+      const key = String(parseInt(r.loc, 10));
+      if(!map[key]) map[key] = {sales:0,projSales:0,punched:0,needed:0,dtTime:0,dtCnt:0};
+      const s = map[key];
+      if((r.product_sales||0) > 0){ s.sales += r.product_sales||0; s.projSales += r.proj_sales_dollars||0; }
+      s.punched += r.actual_punched_hours||0;
+      s.needed  += r.total_needed_hours  ||0;
+      s.dtTime  += r.dt_untilserve       ||0;
+      s.dtCnt   += r.dt_trans_cnt        ||0;
+    }
+    return map;
+  },[activeDarRows]);
 
   const brief = uM(()=>computeMorningBrief(ds, briefDate, darByLoc),[ds, briefDate, darByLoc]);
   const filtered = uM(()=>{
@@ -783,7 +779,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs}){
     ),
 
     // ── Today's hourly pace (from qsr_daily_activity) ───────────────────────
-    h(TodayPaceCard, {date: briefDate}),
+    h(TodayPaceCard, {date: briefDate, darRows}),
 
     // ── Promoted signal watch ────────────────────────────────────────────────
     (()=>{

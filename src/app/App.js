@@ -606,6 +606,8 @@ function App() {
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   const [showSignals,         setShowSignals]         = useState(false);
   const [signals,             setSignals]             = useState([]);
+  const [darRows,             setDarRows]             = useState([]);
+  const darFetchRef = useRef({ date: '', ts: 0 });
   const [customSignalDefs,    setCustomSignalDefs]    = useState([]);
   const [showSage,            setShowSage]            = useState(false);
   const [showFeatureRequests, setShowFeatureRequests] = useState(false);
@@ -685,6 +687,50 @@ function App() {
   };
 
   React.useEffect(()=>{ performFullIDBRestore(); },[]);
+
+  // ── Daily Activity (qsr_daily_activity) — shared, auto-refreshed ─────────
+  // Fetches today's rows once, re-fetches when tab regains focus or user
+  // interacts after 30 min of inactivity. All consumers (Morning Brief,
+  // Today's Pace card, Live Ops) share this data so one refresh covers all.
+  const STALE_MS = 30 * 60 * 1000;
+  const refreshDar = useCallback(async (targetDate) => {
+    if (!supabase) return;
+    const dt = targetDate || new Date().toISOString().slice(0, 10);
+    const cache = darFetchRef.current;
+    if (cache.date === dt && Date.now() - cache.ts < STALE_MS) return;
+    darFetchRef.current = { date: dt, ts: Date.now() }; // claim slot to prevent parallel fetches
+    const { data } = await supabase
+      .from('qsr_daily_activity')
+      .select('loc,dt,hour_slot,product_sales,mean_sales,proj_sales_dollars,ly_product_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count')
+      .eq('dt', dt)
+      .order('loc').order('hour_slot');
+    setDarRows(data || []);
+  }, []);
+
+  // Fetch on mount + refresh on visibility change + first interaction after stale
+  const lastActivityCheckRef = useRef(0);
+  React.useEffect(() => {
+    if (!supabase) return;
+    refreshDar(new Date().toISOString().slice(0, 10));
+    const onVisible = () => {
+      if (document.visibilityState === 'visible')
+        refreshDar(new Date().toISOString().slice(0, 10));
+    };
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityCheckRef.current < STALE_MS) return;
+      lastActivityCheckRef.current = now;
+      refreshDar(new Date().toISOString().slice(0, 10));
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    document.addEventListener('click', onActivity, { passive: true });
+    document.addEventListener('keydown', onActivity, { passive: true });
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('click', onActivity);
+      document.removeEventListener('keydown', onActivity);
+    };
+  }, [refreshDar]);
 
   // ── Supabase: register client + sync on mount ──────────────────────────────
   React.useEffect(()=>{
@@ -1719,7 +1765,7 @@ function App() {
         h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
       ),
       div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
-        h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs}),
+        h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar}),
       ),
     ),
     showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
@@ -1958,7 +2004,7 @@ function App() {
             h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Correlation engine · 9 rules · 27 stores · Sorted by priority')),
           h('button',{onClick:()=>setShowMorningBrief(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
         div({style:{overflowY:'auto',maxHeight:'88vh'}},
-          h(MorningBriefPanel,{ds,settings,customSignalDefs}))
+          h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar}))
       )
     ),
         showEOMSummary&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},

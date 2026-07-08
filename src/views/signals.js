@@ -766,27 +766,40 @@ function StoreRow({ store, expanded, onToggle }) {
   );
 }
 
-function LiveOpsTab() {
+function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
   const todayStr = new Date().toISOString().slice(0, 10);
   const [date, setDate] = uSt(todayStr);
-  const [rows, setRows] = uSt([]);
+  const [ownRows, setOwnRows] = uSt([]);
   const [loading, setLoading] = uSt(false);
   const [error, setError] = uSt(null);
   const [expanded, setExpanded] = uSt(null);
   const [syncing, setSyncing] = uSt(false);
   const [syncMsg, setSyncMsg] = uSt(null); // {type:'ok'|'err', text}
 
+  // Use shared rows when viewing today; fetch own for historical dates
+  const sharedMatch = date === todayStr && sharedDarRows && sharedDarRows.length > 0;
+  const rows = sharedMatch ? sharedDarRows : ownRows;
+
   const fetchRows = async (d) => {
+    if (d === todayStr && sharedDarRows?.length) {
+      // Today's data is already in shared state; just surface it
+      if (!sharedDarRows.length) {
+        const yd = new Date(); yd.setDate(yd.getDate() - 1);
+        const yStr = yd.toISOString().slice(0, 10);
+        setDate(yStr);
+      }
+      return;
+    }
     setLoading(true); setError(null);
     const data = await loadDailyActivity({ date: d });
     if (!data.length && d === todayStr) {
       const yd = new Date(); yd.setDate(yd.getDate() - 1);
       const yStr = yd.toISOString().slice(0, 10);
       const fallback = await loadDailyActivity({ date: yStr });
-      if (fallback.length) { setDate(yStr); setRows(fallback); }
-      else setRows([]);
+      if (fallback.length) { setDate(yStr); setOwnRows(fallback); }
+      else setOwnRows([]);
     } else {
-      setRows(data);
+      setOwnRows(data);
     }
     setLoading(false);
   };
@@ -798,11 +811,13 @@ function LiveOpsTab() {
     if (result?.error) {
       setSyncMsg({ type: 'err', text: result.error });
     } else {
-      setSyncMsg({ type: 'ok', text: 'Sync started — fresh data arrives in ~10 min. Reload this tab when ready.' });
+      setSyncMsg({ type: 'ok', text: 'Sync started — fresh data arrives in ~10 min.' });
+      // Re-query Supabase now so any recently-written rows appear immediately
+      if (refreshDar) refreshDar(todayStr);
     }
   };
 
-  uE(() => { fetchRows(date); }, [date]);
+  uE(() => { fetchRows(date); }, [date, sharedDarRows]);
 
   const stores = uM(() => aggregateByStore(rows), [rows]);
   const alertStores = stores.filter(s => alertCount(s) > 0);
@@ -864,7 +879,7 @@ function LiveOpsTab() {
   );
 }
 
-export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange }) {
+export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange, darRows, refreshDar }) {
   const [tab, setTab] = uSt('liveops');
   const [expanded, setExpanded] = uSt(null);
   const [filterDomain, setFilterDomain] = uSt(null);
@@ -984,7 +999,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     ),
 
     // ── LIVE OPS TAB ─────────────────────────────────────────────────────────
-    tab === 'liveops' && h(LiveOpsTab, null),
+    tab === 'liveops' && h(LiveOpsTab, { darRows, refreshDar }),
 
     // ── BUILT-IN TAB ──────────────────────────────────────────────────────────
     tab === 'builtin' && h('div', null,
