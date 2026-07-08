@@ -31,7 +31,8 @@ import { createClient } from '@supabase/supabase-js';
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_EBOS_DAYS_BACK   || '900', 10);
 const DAYS_RECENT = parseInt(process.env.QSRSOFT_EBOS_DAYS_RECENT || '30',  10);
-const DEBUG       = process.env.QSRSOFT_EBOS_DEBUG === '1';
+const DEBUG       = process.env.QSRSOFT_EBOS_DEBUG      === '1';
+const FORCE_FULL  = process.env.QSRSOFT_EBOS_FORCE_FULL === '1';
 
 const pad2    = n => String(n).padStart(2, '0');
 const fmtDate = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}`;
@@ -96,7 +97,11 @@ async function getLatestDate() {
 }
 
 async function getDateRange() {
-  const today      = new Date();
+  const today = new Date();
+  if (FORCE_FULL) {
+    console.log(`[ebos-pull] force_full=1 — pulling full ${DAYS_BACK} days of history`);
+    return { startDate: fmtDate(addDay(today, -DAYS_BACK)), endDate: fmtDate(today) };
+  }
   const latestDate = await getLatestDate();
   let daysBack;
   if (!latestDate) {
