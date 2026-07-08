@@ -44,6 +44,7 @@ jobs:
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
           QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
           QSRSOFT_EBOS_DAYS_BACK:    ${{ github.event.inputs.days_back   || '900' }}

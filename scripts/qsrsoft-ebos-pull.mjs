@@ -8,10 +8,12 @@
 //   VITE_SUPABASE_URL
 //   SUPABASE_SERVICE_ROLE_KEY
 //
-// Auth — provide ONE of:
-//   QSRSOFT_EBOS_TOKEN        — pre-captured X-Auth-Token from prod.ebos.qsrsoft.com (fastest)
-//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright: logs in and fetches ALL store data from
-//                                          within the live browser session (token stays valid)
+// Auth — tried in order:
+//   QSRSOFT_EBOS_TOKEN   — pre-captured X-Auth-Token from prod.ebos.qsrsoft.com (fastest)
+//   QSRSOFT_TOKEN        — reporting API token; exchanged for eBOS token via SSO endpoint
+//                          (api.sso.myqsrsoft.com/token/ebosByOrg — no Playwright needed)
+//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback: logs in, clicks Ledger tab,
+//                                          fetches all store data from within the live session
 //
 // Optional:
 //   QSRSOFT_EBOS_DAYS_BACK    — max history on first run (default: 900 ≈ 30 months)
@@ -47,6 +49,39 @@ const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
+
+// ── SSO token exchange ────────────────────────────────────────────────────────
+// The purchases page sends the main QSRSoft X-Auth-Token to this SSO endpoint
+// and receives an eBOS-specific X-Auth-Token in return. If QSRSOFT_TOKEN is set
+// we can skip Playwright entirely — just exchange and pull.
+const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
+
+async function getEbosTokenViaSso(qsrsoftToken) {
+  const url = `https://api.sso.myqsrsoft.com/token/ebosByOrg?orgId=${EBOS_ORG_ID}`;
+  console.log('[auth] trying SSO token exchange…');
+  const resp = await fetch(url, {
+    headers: {
+      'X-Auth-Token': qsrsoftToken,
+      'Accept':       'application/json',
+      'Origin':       'https://v3.myqsrsoft.com',
+      'Referer':      'https://v3.myqsrsoft.com/',
+      'User-Agent':   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+    },
+  });
+  if (!resp.ok) {
+    console.log(`[auth] SSO exchange HTTP ${resp.status} — token may not work for eBOS`);
+    return null;
+  }
+  const data = await resp.json();
+  if (DEBUG) console.log('[auth] SSO response:', JSON.stringify(data).slice(0, 200));
+  // Response shape TBD — log all keys on first successful call
+  const token = data.token || data.accessToken || data.access_token
+              || data.ebosByOrg || data.ebosToken || data.x_auth_token
+              || (typeof data === 'string' ? data : null);
+  console.log('[auth] SSO response keys:', Object.keys(data).join(', '));
+  if (!token) console.log('[auth] SSO response (full):', JSON.stringify(data).slice(0, 400));
+  return token || null;
+}
 
 // ── Smart gap detection ───────────────────────────────────────────────────────
 async function getLatestDate() {
@@ -302,52 +337,65 @@ async function pullViaPlaywright(startDate, endDate) {
   }
 }
 
+// ── Fetch all stores with a known token (external Node.js fetches) ────────────
+async function runWithToken(token, startDate, endDate) {
+  let totalLineItems = 0, totalDayRows = 0, totalSaved = 0, authFailed = false;
+  const buffer = [];
+  const flush = async () => {
+    if (!buffer.length) return;
+    const batch = buffer.splice(0);
+    const { error } = await supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' });
+    if (error) console.error('[supabase] upsert error:', error.message);
+    else totalSaved += batch.length;
+  };
+  console.log(`[ebos-pull] date range: ${startDate} → ${endDate}`);
+  for (const nsn of STORE_NSNS) {
+    if (authFailed) break;
+    try {
+      const items = await fetchStoreLedger(token, nsn, startDate, endDate);
+      const rows  = aggregateByDate(items, nsn);
+      totalLineItems += items.length;
+      totalDayRows   += rows.length;
+      buffer.push(...rows);
+      console.log(`[ebos] NSN ${nsn}: ${items.length} line items → ${rows.length} day-rows`);
+      if (buffer.length >= 500) await flush();
+    } catch (e) {
+      if (e.message.startsWith('AUTH_FAILED')) {
+        authFailed = true;
+        console.error(`[ebos] auth failed — token expired or invalid`);
+      } else {
+        console.error(`[ebos] NSN ${nsn} error: ${e.message}`);
+      }
+    }
+  }
+  await flush();
+  console.log(`[ebos-pull] done — ${totalLineItems} line items, ${totalDayRows} store-days, ${totalSaved} rows saved`);
+  if (authFailed) process.exit(1);
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
   const { startDate, endDate } = await getDateRange();
   console.log(`[ebos-pull] stores: ${STORE_NSNS.length}`);
 
-  // ── Path A: pre-captured token — fast external Node.js fetches ──
+  // ── Path A: pre-captured QSRSOFT_EBOS_TOKEN ──
   if (envToken) {
-    let totalLineItems = 0, totalDayRows = 0, totalSaved = 0, authFailed = false;
-    const buffer = [];
-    const flush = async () => {
-      if (!buffer.length) return;
-      const batch = buffer.splice(0);
-      const { error } = await supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' });
-      if (error) console.error('[supabase] upsert error:', error.message);
-      else totalSaved += batch.length;
-    };
-    console.log(`[ebos-pull] using QSRSOFT_EBOS_TOKEN | date range: ${startDate} → ${endDate}`);
-    for (const nsn of STORE_NSNS) {
-      if (authFailed) break;
-      try {
-        const items = await fetchStoreLedger(envToken, nsn, startDate, endDate);
-        const rows  = aggregateByDate(items, nsn);
-        totalLineItems += items.length;
-        totalDayRows   += rows.length;
-        buffer.push(...rows);
-        console.log(`[ebos] NSN ${nsn}: ${items.length} line items → ${rows.length} day-rows`);
-        if (buffer.length >= 500) await flush();
-      } catch (e) {
-        if (e.message.startsWith('AUTH_FAILED')) {
-          authFailed = true;
-          console.error(`[ebos] QSRSOFT_EBOS_TOKEN expired — update the GitHub Secret`);
-          console.error('  v3.myqsrsoft.com → Inventory → Purchases → Ledger tab');
-          console.error('  DevTools → Network → prod.ebos.qsrsoft.com/api/inv/ → copy X-Auth-Token');
-        } else {
-          console.error(`[ebos] NSN ${nsn} error: ${e.message}`);
-        }
-      }
-    }
-    await flush();
-    console.log(`[ebos-pull] done — ${totalLineItems} line items, ${totalDayRows} store-days, ${totalSaved} rows saved`);
-    if (authFailed) process.exit(1);
-    return;
+    return runWithToken(envToken, startDate, endDate);
   }
 
-  // ── Path B: Playwright — login + fetch all data from within the live session ──
+  // ── Path B: SSO token exchange using QSRSOFT_TOKEN (no Playwright needed) ──
+  const reportingToken = (process.env.QSRSOFT_TOKEN || '').trim();
+  if (reportingToken) {
+    const ssoToken = await getEbosTokenViaSso(reportingToken);
+    if (ssoToken) {
+      console.log('[auth] ✓ eBOS token obtained via SSO exchange');
+      return runWithToken(ssoToken, startDate, endDate);
+    }
+    console.log('[auth] SSO exchange did not return a usable token — falling back to Playwright');
+  }
+
+  // ── Path C: Playwright — login + fetch all data from within the live session ──
   const rows = await pullViaPlaywright(startDate, endDate);
   if (!rows) {
     console.error('[ebos-pull] no auth — set QSRSOFT_EBOS_TOKEN or QSRSOFT_USERNAME+PASSWORD');
