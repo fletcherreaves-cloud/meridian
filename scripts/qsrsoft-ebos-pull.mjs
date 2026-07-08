@@ -86,20 +86,6 @@ async function getEbosTokenPlaywright() {
   const snap = async (name) => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
-  // Click the first visible element matching any selector in the list
-  const clickFirst = async (selectors, timeout = 5000) => {
-    for (const sel of selectors) {
-      try {
-        const el = page.locator(sel).first();
-        if (await el.isVisible({ timeout }).catch(() => false)) {
-          await el.click();
-          return true;
-        }
-      } catch {}
-    }
-    return false;
-  };
-
   try {
     console.log('[auth] navigating to v3.myqsrsoft.com…');
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
@@ -122,76 +108,14 @@ async function getEbosTokenPlaywright() {
     console.log('[auth] post-login url:', page.url());
 
     if (!ebosToken) {
-      // Dismiss any modal that appeared on the home dashboard (e.g. Waste Entry popup)
-      await page.keyboard.press('Escape').catch(() => {});
-      await wait(800);
-      await clickFirst([
-        'button:has-text("CANCEL")', 'button:has-text("Cancel")',
-        '[aria-label="Close"]', 'button.close', '.modal-close',
-      ], 2000);
-      // Let SPA animations settle before interacting with nav
-      await wait(2000);
-
-      // JS-based nav: find elements by raw text node content and click them.
-      // Playwright selector engine fails on this SPA's sidebar component tree,
-      // so we walk the DOM directly to find and click text nodes.
-      const jsClick = async (label) => {
-        const result = await page.evaluate((text) => {
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-          let node;
-          while ((node = walker.nextNode())) {
-            if (node.textContent.trim() !== text) continue;
-            // Walk up to find the nearest clickable ancestor
-            let el = node.parentElement;
-            for (let i = 0; i < 5; i++) {
-              if (!el || !el.parentElement) break;
-              const r = el.getBoundingClientRect();
-              if (r.width > 0 && r.height > 0) { el.click(); return { ok: true, tag: el.tagName, cls: el.className.toString().slice(0, 60) }; }
-              el = el.parentElement;
-            }
-          }
-          return { ok: false };
-        }, label);
-        return result;
-      };
-
-      // Diagnostic: log what DOM elements contain "Inventory" so we can see structure
-      const invInfo = await page.evaluate(() => {
-        const out = [];
-        document.querySelectorAll('*').forEach(el => {
-          if (el.childElementCount === 0 && el.textContent.trim() === 'Inventory') {
-            out.push({ tag: el.tagName, cls: el.className.toString().slice(0, 60), parentTag: el.parentElement?.tagName, parentCls: el.parentElement?.className.toString().slice(0, 40), w: el.getBoundingClientRect().width });
-          }
-        });
-        return out;
-      });
-      console.log('[auth] "Inventory" DOM elements:', JSON.stringify(invInfo));
-
-      console.log('[auth] clicking Inventory (JS)…');
-      const invRes = await jsClick('Inventory');
-      await wait(2000);
-      await snap('ebos-03-inventory-click.png');
-      console.log('[auth] Inventory click:', JSON.stringify(invRes), '| url:', page.url());
-
-      if (!ebosToken) {
-        console.log('[auth] clicking Purchases (JS)…');
-        const purRes = await jsClick('Purchases');
-        await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-        await wait(3000);
-        await snap('ebos-04-purchases.png');
-        console.log('[auth] Purchases click:', JSON.stringify(purRes), '| url:', page.url());
-      }
-
-      if (!ebosToken) {
-        console.log('[auth] clicking Ledger (JS)…');
-        const ledRes = await jsClick('Ledger');
-        await wait(3000);
-        await snap('ebos-05-ledger.png');
-        console.log('[auth] Ledger click:', JSON.stringify(ledRes), '| url:', page.url());
-      }
-
-      // Give any pending eBOS requests a moment to fire
-      if (!ebosToken) await wait(3000);
+      // Navigate directly to the Purchases page — this triggers api/inv/ requests
+      // which carry the eBOS inventory token. URL confirmed: /cimt/inventory/purchases
+      // (Ledger tab does not change the URL, so landing here is sufficient.)
+      console.log('[auth] navigating to /cimt/inventory/purchases…');
+      await page.goto('https://v3.myqsrsoft.com/cimt/inventory/purchases', { waitUntil: 'networkidle', timeout: 30000 });
+      await wait(3000);
+      await snap('ebos-03-purchases.png');
+      console.log('[auth] purchases url:', page.url());
     }
 
     await snap('ebos-final.png');
