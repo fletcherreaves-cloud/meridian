@@ -1843,17 +1843,17 @@ function StoreVlhConfigPanel({onClose}) {
         h('select',{value:cfg.dt_type,onChange:e=>saveField(loc,'dt_type',e.target.value),style:selS},
           VLH_DT_TYPES.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
       h('td',{style:{padding:'3px 6px'}},
-        h('select',{value:cfg.in_store,onChange:e=>saveField(loc,'in_store',e.target.value),style:selS},
-          VLH_IN_STORE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
-      h('td',{style:{padding:'3px 6px'}},
         h('select',{value:cfg.kitchen,onChange:e=>saveField(loc,'kitchen',e.target.value),style:selS},
           VLH_KITCHEN.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
       h('td',{style:{padding:'3px 6px'}},
-        h('select',{value:cfg.vlh_guide,onChange:e=>saveField(loc,'vlh_guide',e.target.value),style:selS},
-          VLH_GUIDE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
-      h('td',{style:{padding:'3px 6px'}},
         h('select',{value:cfg.coffee||'none',onChange:e=>saveField(loc,'coffee',e.target.value),style:selS},
           VLH_COFFEE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+      h('td',{style:{padding:'3px 6px'}},
+        h('select',{value:cfg.in_store,onChange:e=>saveField(loc,'in_store',e.target.value),style:selS},
+          VLH_IN_STORE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
+      h('td',{style:{padding:'3px 6px'}},
+        h('select',{value:cfg.vlh_guide,onChange:e=>saveField(loc,'vlh_guide',e.target.value),style:selS},
+          VLH_GUIDE.map(o=>h('option',{key:o.value,value:o.value},o.label)))),
       h('td',{style:{padding:'4px 8px',textAlign:'center',fontSize:'10px',
         color:st==='saved'?'#10b981':st==='saving'?'#f59e0b':'transparent',minWidth:16}},
         st==='saved'?'✓':st==='saving'?'…':'.')
@@ -1881,8 +1881,9 @@ function StoreVlhConfigPanel({onClose}) {
       // Legend row
       div({style:{padding:'5px 16px',fontSize:'8.5px',color:'var(--text3)',background:'rgba(245,188,0,.04)',borderBottom:'.5px solid var(--bdr)',lineHeight:1.8}},
         span({style:{fontWeight:700,color:'var(--gold)'}},'AOT '),'= Automated Order Taking (kiosks present)  ·  ',
-        span({style:{fontWeight:700,color:'var(--gold)'}},'VLH Guide '),'= HPG allows more GCs per labor hour vs Standard  ·  ',
-        span({style:{fontWeight:700,color:'var(--gold)'}},'Coffee '),'= BDAP (Beverage Dispensing Automation) and/or McCafé station'
+        span({style:{fontWeight:700,color:'var(--gold)'}},'Coffee '),'= BDAP and/or McCafé station  ·  ',
+        span({style:{fontWeight:700,color:'var(--gold)'}},'Beverage '),'= Self Serve (customers) or Crew Pour (crew pours drinks)  ·  ',
+        span({style:{fontWeight:700,color:'var(--gold)'}},'VLH Guide '),'= HPG allows more GCs per labor hour vs Standard'
       ),
       // Table
       div({style:{flex:1,overflowY:'auto'}},
@@ -1893,10 +1894,10 @@ function StoreVlhConfigPanel({onClose}) {
             h('th',{style:{...thS,paddingLeft:12}},'Store'),
             h('th',{style:{...thS,textAlign:'center'}},'AOT'),
             h('th',{style:thS},'Drive Thru'),
-            h('th',{style:thS},'In-Store Service'),
             h('th',{style:thS},'Kitchen'),
-            h('th',{style:thS},'VLH Guide'),
             h('th',{style:thS},'Coffee'),
+            h('th',{style:thS},'Beverage'),
+            h('th',{style:thS},'VLH Guide'),
             h('th',{style:{...thS,width:24}})
           )),
           h('tbody',null,
