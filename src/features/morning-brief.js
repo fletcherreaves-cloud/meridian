@@ -324,9 +324,10 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
     tRedAPct:     ctrl?.tRedAPct||null,
     tRedBPct:     ctrl?.tRedBPct||null,
     cashOSAmt:    ctrl?.cashOSAmt ?? (glimpse?.cashOS ?? (cash?.cashOS ?? null)),
-    // Service fields — 3 Peaks first, then Daily Glimpse OEPE (daily aggregate), then DAR-derived
-    oepe: oepe ?? (glimpse?.oepe ?? darOepe),
-    kvst, kvsu,
+    // Service fields — 3 Peaks first, then Daily Glimpse (daily aggregate), then DAR-derived
+    oepe: oepe ?? (glimpse?.oepe > 0 ? glimpse.oepe : darOepe),
+    kvst: kvst ?? (glimpse?.kvst > 0 ? glimpse.kvst : null),
+    kvsu,
     dtPark: dtPark ?? (glimpse?.parkedPct > 0 ? Math.round(glimpse.parkedPct * 1000) / 10 : null),
     oepeNorm: norms.oepeNorm,
     kvstNorm: norms.kvstNorm,
@@ -536,7 +537,7 @@ function StoreBriefCard({store, expanded, setExpanded}){
           store.hasFOB&&('Food Cost'+(fobMonth?' ('+fobMonth+')':'')),
           store.hasSMG&&('SMG OSAT'+(smgMonth?' ('+smgMonth+')':'')),
         ].filter(Boolean).join(' · ')||'None loaded')+
-        (!store.hasPeaks?' · (load 3 Peaks for KVS/DT Parked)':'')+
+        (!store.hasPeaks&&!store.hasGlimpse?' · (load 3 Peaks or email Glimpse for service data)':'')+
         (!store.hasFOB?' · (upload FOB for food cost)':'')),
       )
     )
