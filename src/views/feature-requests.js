@@ -17,8 +17,16 @@ const SEED_ITEMS = [
   { id:'seed-orgsum',  title:'Org Summary group selector',                    category:'Analytics',   status:'completed', priority:'medium', completed_version:'v4.314', votes:0, submitted_by:'Fletcher Reaves', description:'Renamed from Operator Summary. Groups: Company (all stores), Org (FL/OK), Operator, Patch (supervisor territory).' },
   { id:'seed-dm',      title:'Data Manager cloud-first update',               category:'Data',        status:'completed', priority:'low',    completed_version:'v4.315', votes:0, submitted_by:'Fletcher Reaves', description:'Supabase section now shows operational row coverage. Header updated to reflect cloud-first architecture.' },
   { id:'seed-fr',      title:'Feature Requests module',                       category:'UI',          status:'completed', priority:'low',    completed_version:'v4.316', votes:0, submitted_by:'Fletcher Reaves', description:'Track feature ideas from all users. Pre-seeded with roadmap history. Supabase-backed for cross-user submissions.' },
+  { id:'seed-ebos',    title:'QSRSoft eBOS purchases automation',             category:'Data',        status:'completed', priority:'high',   completed_version:'v4.340', votes:0, submitted_by:'Fletcher Reaves', description:'Daily GitHub Actions sync of op supplies purchases via Playwright auth → qsr_ebos_daily table.' },
+  { id:'seed-dar',     title:'QSRSoft Daily Activity (DAR) automation',       category:'Data',        status:'completed', priority:'high',   completed_version:'v4.356', votes:0, submitted_by:'Fletcher Reaves', description:'Hourly intraday data for all 27 stores, quarter-hour granularity → qsr_daily_activity. Runs daily 5am CDT.' },
+  { id:'seed-daypart', title:'Store Dashboard daypart card',                  category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.357', votes:0, submitted_by:'Fletcher Reaves', description:'Aggregates hour slots to Breakfast/Lunch/PM/Dinner/Late from qsr_daily_activity. Shows vs projection, vs LY.' },
+  { id:'seed-pace',    title:'Morning Brief district hourly pace',            category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.358', votes:0, submitted_by:'Fletcher Reaves', description:'TodayPaceCard: today sales pace vs 30-day mean by hour slot from qsr_daily_activity.' },
+  { id:'seed-signals', title:'Signals LiveOps panel',                        category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.360', votes:0, submitted_by:'Fletcher Reaves', description:'Live operational alerts from qsr_daily_activity: sales pace, DT serve time, labor vs needed hours.' },
+  { id:'seed-qsrproj', title:'Projections QSRSoft baseline column',          category:'Analytics',   status:'completed', priority:'medium', completed_version:'v4.369', votes:0, submitted_by:'Fletcher Reaves', description:'Adds proj_sales_dollars from qsr_daily_activity as a second comparison line in Projections grid.' },
   // Planned
   { id:'seed-sage-tl', title:'SAGE tool use — live Supabase queries',         category:'AI',          status:'planned',   priority:'high',   completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'SAGE queries Supabase directly for live numbers instead of relying on context window data injection.' },
+  { id:'seed-mape',    title:'MAPE daily — three-way forecast accuracy',      category:'Analytics',   status:'planned',   priority:'high',   completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Meridian forecast vs QSRSoft proj_sales_dollars vs actual from qsr_daily_activity. Enables forecast_snapshots table.' },
+  { id:'seed-dt-sos',  title:'DT Speed-of-Service Analytics panel',          category:'Analytics',   status:'planned',   priority:'high',   completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Cross-store, by hour, 90-day trend from dt_untilserve/dt_trans_cnt. Best slots, worst stores, day-of-week patterns.' },
   { id:'seed-sage-mm', title:'SAGE cross-device session memory',              category:'AI',          status:'planned',   priority:'medium', completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Conversation retention and context across devices and sessions for continuity.' },
   { id:'seed-osat',    title:'Performance Review OSAT auto-fill polish',      category:'Analytics',   status:'planned',   priority:'medium', completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Preview SMG data being auto-filled; show which months have coverage; handle multi-month reviews cleanly.' },
   { id:'seed-beta',    title:'Beta operator onboarding',                      category:'Data',        status:'planned',   priority:'high',   completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Onboard a second trusted operator to Meridian beta. RBAC, restricted panel set, their own Supabase RLS config.' },
@@ -44,9 +52,10 @@ const CATEGORY_COLORS = {
   'General':     '#94a3b8',
 };
 
-const CATEGORIES = ['AI','Analytics','Data','Finance','Guest Voice','Labor','UI','General'];
-const STATUSES   = ['idea','planned','in-progress','completed','declined'];
-const PRIORITIES = ['high','medium','low'];
+const CATEGORIES     = ['AI','Analytics','Data','Finance','Guest Voice','Labor','UI','General'];
+const STATUSES       = ['idea','planned','in-progress','completed','declined'];
+const PRIORITIES     = ['high','medium','low'];
+const PRIORITY_COLOR = { high:'#ef4444', medium:'#f59e0b', low:'#94a3b8' };
 
 function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.idea;
@@ -60,9 +69,8 @@ function CategoryTag({ category }) {
     background:c+'18', color:c, border:`.5px solid ${c}44` }}, category);
 }
 
-function RequestCard({ req, isDev, onVote, onStatusChange }) {
+function RequestCard({ req, isDev, onVote, onStatusChange, compact }) {
   const [expanded, setExpanded] = React.useState(false);
-  const [editStatus, setEditStatus] = React.useState(false);
   const [devNotes, setDevNotes] = React.useState(req.dev_notes || '');
   const [savingNotes, setSavingNotes] = React.useState(false);
 
@@ -72,7 +80,39 @@ function RequestCard({ req, isDev, onVote, onStatusChange }) {
     setSavingNotes(false);
   };
 
-  const isSeed = req.is_seed || req.id?.startsWith('seed-');
+  if (compact) {
+    return div({ style:{ background:'var(--surf)', border:'.5px solid var(--bdr)',
+      borderRadius:'var(--r)', padding:'7px 10px', marginBottom:5, cursor:'pointer' },
+      onClick:()=>setExpanded(e=>!e) },
+      div({ style:{ display:'flex', alignItems:'flex-start', gap:5, marginBottom:3 }},
+        span({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text)', flex:1, minWidth:0,
+          lineHeight:1.3, ...(expanded ? {} : { overflow:'hidden', display:'-webkit-box',
+          WebkitLineClamp:2, WebkitBoxOrient:'vertical' }) }}, req.title),
+        btn({ style:{ fontSize:'8px', padding:'1px 5px', borderRadius:99, border:'.5px solid var(--bdr)',
+          background:'transparent', color:'var(--text3)', cursor:'pointer', flexShrink:0, whiteSpace:'nowrap' },
+          onClick:e=>{ e.stopPropagation(); onVote(req); } }, '▲ ' + (req.votes || 0)),
+      ),
+      div({ style:{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }},
+        h(CategoryTag, { category: req.category || 'General' }),
+        span({ style:{ fontSize:'7px', color: PRIORITY_COLOR[req.priority]||'#94a3b8',
+          textTransform:'uppercase', fontWeight:700 }}, req.priority),
+        req.completed_version && span({ style:{ fontSize:'7px', color:'var(--text3)' }}, req.completed_version),
+        span({ style:{ fontSize:'7px', color:'var(--text3)' }}, req.submitted_by || 'Anon'),
+      ),
+      expanded && req.description && div({ style:{ marginTop:5, fontSize:'8.5px', color:'var(--text3)', lineHeight:1.5 }}, req.description),
+      expanded && req.dev_notes && div({ style:{ marginTop:4, fontSize:'8.5px', color:'#60a5fa' }},
+        span({ style:{ fontWeight:700, marginRight:3 }}, 'Dev:'), req.dev_notes),
+      expanded && isDev && div({ style:{ marginTop:6, display:'flex', gap:4, flexWrap:'wrap' }},
+        ...STATUSES.map(s => btn({ key:s,
+          style:{ fontSize:'7.5px', padding:'1px 6px', borderRadius:99, cursor:'pointer',
+            border:`.5px solid ${req.status===s?STATUS_META[s].color+'88':'var(--bdr)'}`,
+            background:req.status===s ? STATUS_META[s].bg : 'transparent',
+            color:req.status===s ? STATUS_META[s].color : 'var(--text3)' },
+          onClick:e=>{ e.stopPropagation(); onStatusChange(req.id || req.seed_id, { status:s }); }
+        }, STATUS_META[s].label))
+      ),
+    );
+  }
 
   return div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)',
     borderRadius:'var(--r)', overflow:'hidden', marginBottom:6 }},
@@ -130,6 +170,27 @@ function RequestCard({ req, isDev, onVote, onStatusChange }) {
           savingNotes ? 'Saving…' : 'Save Notes')
       )
     )
+  );
+}
+
+function KanbanView({ items, isDev, onVote, onStatusChange }) {
+  return div({ style:{ display:'flex', gap:10, overflowX:'auto', padding:'10px 16px', flex:1, alignItems:'flex-start' }},
+    ...STATUSES.map(status => {
+      const col = items.filter(r => r.status === status);
+      const m = STATUS_META[status];
+      return div({ key:status, style:{ minWidth:210, flex:'0 0 210px', display:'flex', flexDirection:'column' }},
+        div({ style:{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }},
+          span({ style:{ fontSize:'9px', fontWeight:700, color:m.color, textTransform:'uppercase', letterSpacing:'.5px' }}, m.label),
+          span({ style:{ fontSize:'8px', color:'var(--text3)', background:'rgba(255,255,255,.06)',
+            padding:'1px 5px', borderRadius:99, border:'.5px solid var(--bdr)' }}, col.length),
+        ),
+        col.length === 0
+          ? div({ style:{ fontSize:'8px', color:'var(--text3)', textAlign:'center', padding:'20px 0',
+              border:'.5px dashed var(--bdr)', borderRadius:'var(--r)' }}, 'Empty')
+          : col.map((req, i) => h(RequestCard, { key:req.id||req.title||i, req,
+              isDev, onVote, onStatusChange, compact:true }))
+      );
+    })
   );
 }
 
@@ -209,8 +270,13 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
 
   const [dbItems,    setDbItems]    = React.useState([]);
   const [loading,    setLoading]    = React.useState(true);
+  const [viewMode,   setViewMode]   = React.useState('list');
   const [filterStat, setFilterStat] = React.useState('all');
   const [filterCat,  setFilterCat]  = React.useState('all');
+  const [filterPri,  setFilterPri]  = React.useState('all');
+  const [filterAge,  setFilterAge]  = React.useState('all');
+  const [searchUser, setSearchUser] = React.useState('');
+  const [searchText, setSearchText] = React.useState('');
   const [showForm,   setShowForm]   = React.useState(false);
   const [votedIds,   setVotedIds]   = React.useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('mf_voted_reqs') || '[]')); }
@@ -224,18 +290,28 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
     }).catch(() => setLoading(false));
   }, []);
 
-  // Merge seed + DB items (DB items with is_seed=true replace seed constants by seed_id matching title)
-  const dbIds = new Set(dbItems.map(r => r.title));
-  const seedsToShow = SEED_ITEMS.filter(s => !dbIds.has(s.title));
+  const dbTitles = new Set(dbItems.map(r => r.title));
+  const seedsToShow = SEED_ITEMS.filter(s => !dbTitles.has(s.title));
   const allItems = [...seedsToShow, ...dbItems].sort((a, b) => {
     const order = { 'in-progress':0, planned:1, idea:2, completed:3, declined:4 };
     return (order[a.status]??9) - (order[b.status]??9) || (b.votes||0) - (a.votes||0);
   });
 
-  const filtered = allItems.filter(r =>
-    (filterStat === 'all' || r.status === filterStat) &&
-    (filterCat  === 'all' || r.category === filterCat)
-  );
+  const ageMs = { '7d':7*86400000, '30d':30*86400000, '90d':90*86400000 };
+  const now = Date.now();
+
+  const filtered = allItems.filter(r => {
+    if (filterStat !== 'all' && r.status !== filterStat) return false;
+    if (filterCat  !== 'all' && (r.category||'General') !== filterCat) return false;
+    if (filterPri  !== 'all' && r.priority !== filterPri) return false;
+    if (filterAge  !== 'all' && r.created_at && now - new Date(r.created_at).getTime() > ageMs[filterAge]) return false;
+    if (searchUser.trim() && !(r.submitted_by||'').toLowerCase().includes(searchUser.trim().toLowerCase())) return false;
+    if (searchText.trim()) {
+      const t = searchText.trim().toLowerCase();
+      if (!(r.title+' '+(r.description||'')).toLowerCase().includes(t)) return false;
+    }
+    return true;
+  });
 
   const cats = [...new Set(allItems.map(r => r.category || 'General'))].sort();
 
@@ -248,9 +324,6 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
     if (req.id && !req.id.startsWith('seed-')) {
       const updated = await voteFeatureRequest(req.id, req.votes || 0);
       if (updated) setDbItems(prev => prev.map(r => r.id === updated.id ? updated : r));
-    } else {
-      // Seed item — optimistic local only (no DB id yet)
-      setDbItems(prev => prev.map(r => r.id === req.id ? { ...r, votes:(r.votes||0)+1 } : r));
     }
   };
 
@@ -276,10 +349,17 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
     counts[s] = s === 'all' ? allItems.length : allItems.filter(r => r.status === s).length;
   });
 
+  const hasFilter = filterStat!=='all'||filterCat!=='all'||filterPri!=='all'||filterAge!=='all'||searchUser||searchText;
+
+  const selStyle = { fontSize:'9px', padding:'2px 6px', background:'var(--surf2)',
+    border:'.5px solid var(--bdr)', borderRadius:'var(--r)', color:'var(--text)', colorScheme:'dark', cursor:'pointer' };
+  const inpStyle = { fontSize:'9px', padding:'2px 8px', background:'var(--surf2)',
+    border:'.5px solid var(--bdr)', borderRadius:'var(--r)', color:'var(--text)', colorScheme:'dark', outline:'none' };
+
   return div({ style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.82)', zIndex:460,
     display:'flex', flexDirection:'column', paddingTop:20 }},
     div({ style:{ flex:'0 0 20px', cursor:'pointer' }, onClick:onClose }),
-    div({ style:{ flex:1, background:'var(--surf)', maxWidth:860, margin:'0 auto',
+    div({ style:{ flex:1, background:'var(--surf)', maxWidth:viewMode==='kanban'?1120:860, margin:'0 auto',
       width:'calc(100% - 32px)', borderRadius:'var(--rl) var(--rl) 0 0',
       display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 -8px 40px rgba(0,0,0,.4)' }},
 
@@ -291,6 +371,14 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
           div({ style:{ fontSize:'14px', fontWeight:800, color:'var(--text)' }}, 'Feature Requests'),
           div({ style:{ fontSize:'9px', color:'var(--text3)' }},
             `${allItems.length} items · vote for what matters most · ideas shape the roadmap`)
+        ),
+        div({ style:{ display:'flex', borderRadius:'var(--r)', border:'.5px solid var(--bdr)', overflow:'hidden', marginRight:8 }},
+          ...['list','kanban'].map(v => btn({ key:v,
+            style:{ fontSize:'9px', padding:'3px 10px', cursor:'pointer', border:'none',
+              background:viewMode===v?'rgba(245,188,0,.18)':'transparent',
+              color:viewMode===v?'var(--accent)':'var(--text3)', fontWeight:viewMode===v?700:400 },
+            onClick:()=>setViewMode(v) },
+            v==='list' ? '≡ List' : '⬛ Kanban'))
         ),
         btn({ style:{ fontSize:'10px', padding:'4px 12px', borderRadius:'var(--r)', cursor:'pointer',
           background:'var(--accent)', color:'#000', fontWeight:700, border:'none', marginRight:6 },
@@ -306,8 +394,9 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
 
       // Filter bar
       div({ style:{ padding:'8px 16px', borderBottom:'.5px solid var(--bdr)', flexShrink:0,
-        display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }},
-        div({ style:{ display:'flex', gap:3, flexWrap:'wrap' }},
+        display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }},
+        // Status pills — hidden in kanban (columns are the status)
+        viewMode === 'list' && div({ style:{ display:'flex', gap:3, flexWrap:'wrap' }},
           ...['all', ...STATUSES].map(s => {
             const m = s === 'all' ? { label:'All', color:'var(--text2)', bg:'rgba(255,255,255,.06)' } : STATUS_META[s];
             const active = filterStat === s;
@@ -319,30 +408,45 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
               m.label + (counts[s] ? ` (${counts[s]})` : ''))
           })
         ),
-        div({ style:{ display:'flex', gap:3, flexWrap:'wrap', marginLeft:'auto', alignItems:'center' }},
-          span({ style:{ fontSize:'7.5px', color:'var(--text3)', marginRight:2 }}, 'Category:'),
-          h('select', { value:filterCat, onChange:e=>setFilterCat(e.target.value),
-            style:{ fontSize:'9px', padding:'2px 6px', background:'var(--surf2)',
-              border:'.5px solid var(--bdr)', borderRadius:'var(--r)', color:'var(--text)', colorScheme:'dark', cursor:'pointer' }},
-            h('option', { value:'all' }, 'All'),
-            ...cats.map(c => h('option', { key:c, value:c }, c)))
+        div({ style:{ display:'flex', gap:6, flexWrap:'wrap', marginLeft:'auto', alignItems:'center' }},
+          h('select', { value:filterPri, onChange:e=>setFilterPri(e.target.value), style:selStyle },
+            h('option',{value:'all'},'Priority: All'),
+            ...PRIORITIES.map(p=>h('option',{key:p,value:p},p[0].toUpperCase()+p.slice(1)))),
+          h('select', { value:filterCat, onChange:e=>setFilterCat(e.target.value), style:selStyle },
+            h('option',{value:'all'},'Category: All'),
+            ...cats.map(c=>h('option',{key:c,value:c},c))),
+          h('select', { value:filterAge, onChange:e=>setFilterAge(e.target.value), style:selStyle },
+            h('option',{value:'all'},'Any date'),
+            h('option',{value:'7d'},'Last 7 days'),
+            h('option',{value:'30d'},'Last 30 days'),
+            h('option',{value:'90d'},'Last 90 days')),
+          h('input',{ value:searchUser, onChange:e=>setSearchUser(e.target.value),
+            placeholder:'Submitter…', style:{...inpStyle,width:90} }),
+          h('input',{ value:searchText, onChange:e=>setSearchText(e.target.value),
+            placeholder:'Search…', style:{...inpStyle,width:110} }),
+          hasFilter && btn({ style:{ fontSize:'8px', padding:'2px 8px', borderRadius:99, cursor:'pointer',
+            border:'.5px solid var(--bdr)', background:'transparent', color:'var(--text3)' },
+            onClick:()=>{ setFilterStat('all');setFilterCat('all');setFilterPri('all');
+              setFilterAge('all');setSearchUser('');setSearchText(''); }
+          }, '✕ Clear'),
         )
       ),
 
-      // List
-      div({ style:{ flex:1, overflowY:'auto', padding:'10px 16px' }},
-        loading && div({ style:{ textAlign:'center', color:'var(--text3)', padding:40 }}, 'Loading…'),
-        !loading && filtered.length === 0 && div({ style:{ textAlign:'center', color:'var(--text3)', padding:40 }},
-          'No items match the current filter.'),
-        !loading && filtered.map((req, i) =>
-          h(RequestCard, { key: req.id || req.title || i, req,
-            isDev, onVote:handleVote, onStatusChange:handleStatusChange })
-        ),
-        isDev && !loading && div({ style:{ marginTop:8, padding:'6px 10px', fontSize:'8px',
-          color:'var(--text3)', borderTop:'.5px solid var(--bdr)', textAlign:'center',
-          lineHeight:1.6 }},
-          'Dev mode: click any card to expand status controls and notes.')
-      )
+      // Content — list or kanban
+      viewMode === 'kanban'
+        ? h(KanbanView, { items:filtered, isDev, onVote:handleVote, onStatusChange:handleStatusChange })
+        : div({ style:{ flex:1, overflowY:'auto', padding:'10px 16px' }},
+            loading && div({ style:{ textAlign:'center', color:'var(--text3)', padding:40 }}, 'Loading…'),
+            !loading && filtered.length === 0 && div({ style:{ textAlign:'center', color:'var(--text3)', padding:40 }},
+              'No items match the current filter.'),
+            !loading && filtered.map((req, i) =>
+              h(RequestCard, { key:req.id||req.title||i, req,
+                isDev, onVote:handleVote, onStatusChange:handleStatusChange })
+            ),
+            isDev && !loading && div({ style:{ marginTop:8, padding:'6px 10px', fontSize:'8px',
+              color:'var(--text3)', borderTop:'.5px solid var(--bdr)', textAlign:'center', lineHeight:1.6 }},
+              'Dev mode: click any card to expand status controls and notes.')
+          )
     )
   );
 }
