@@ -1034,6 +1034,18 @@ export async function appendCustomSignalHistory(id, r, n, existingHistory) {
   }).eq('id', id);
 }
 
+// ── On-demand sync triggers ───────────────────────────────────────────────────
+export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
+  if (!supabase) return { error: 'No Supabase client' };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: 'Not authenticated' };
+  const { data, error } = await supabase.functions.invoke('trigger-dar-sync', {
+    body: { days_back: String(daysBack), days_recent: String(daysRecent) },
+  });
+  if (error) return { error: error.message || 'Trigger failed' };
+  return data;
+}
+
 // ── qsr_daily_activity ────────────────────────────────────────────────────────
 export async function loadDailyActivity({ date, daysBack = 1 } = {}) {
   if (!supabase) return [];

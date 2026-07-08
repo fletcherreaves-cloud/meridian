@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel } from '../engine/signal-registry.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -772,12 +772,13 @@ function LiveOpsTab() {
   const [loading, setLoading] = uSt(false);
   const [error, setError] = uSt(null);
   const [expanded, setExpanded] = uSt(null);
+  const [syncing, setSyncing] = uSt(false);
+  const [syncMsg, setSyncMsg] = uSt(null); // {type:'ok'|'err', text}
 
-  const fetch = async (d) => {
+  const fetchRows = async (d) => {
     setLoading(true); setError(null);
     const data = await loadDailyActivity({ date: d });
     if (!data.length && d === todayStr) {
-      // no data for today — try yesterday
       const yd = new Date(); yd.setDate(yd.getDate() - 1);
       const yStr = yd.toISOString().slice(0, 10);
       const fallback = await loadDailyActivity({ date: yStr });
@@ -789,7 +790,18 @@ function LiveOpsTab() {
     setLoading(false);
   };
 
-  uE(() => { fetch(date); }, [date]);
+  const handleSync = async () => {
+    setSyncing(true); setSyncMsg(null);
+    const result = await triggerDarSync({ daysRecent: 1 });
+    setSyncing(false);
+    if (result?.error) {
+      setSyncMsg({ type: 'err', text: result.error });
+    } else {
+      setSyncMsg({ type: 'ok', text: 'Sync started — fresh data arrives in ~10 min. Reload this tab when ready.' });
+    }
+  };
+
+  uE(() => { fetchRows(date); }, [date]);
 
   const stores = uM(() => aggregateByStore(rows), [rows]);
   const alertStores = stores.filter(s => alertCount(s) > 0);
@@ -799,18 +811,26 @@ function LiveOpsTab() {
 
   return h('div', null,
     // Toolbar
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' } },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: syncMsg ? 8 : 16, flexWrap: 'wrap' } },
       h('input', { type: 'date', value: date, max: todayStr,
-        onChange: e => setDate(e.target.value),
+        onChange: e => { setDate(e.target.value); setSyncMsg(null); },
         style: { padding: '5px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#e5e7eb', fontSize: 12, cursor: 'pointer' },
       }),
-      loading && h('span', { style: { fontSize: 11, color: muted } }, 'Loading…'),
-      !loading && rows.length > 0 && h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+      h('button', {
+        onClick: handleSync, disabled: syncing || loading,
+        style: { padding: '5px 12px', borderRadius: 6, border: `1px solid ${syncing ? bdr : 'rgba(245,158,11,.4)'}`, background: syncing ? 'transparent' : 'rgba(245,158,11,.08)', color: syncing ? muted : amber, fontSize: 12, fontWeight: 600, cursor: syncing ? 'default' : 'pointer' },
+      }, syncing ? '⟳ Syncing…' : '⟳ Sync Now'),
+      !loading && rows.length > 0 && h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginLeft: 4 } },
         critStores.length > 0 && h('div', { style: { padding: '4px 10px', borderRadius: '99px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', fontSize: 11, fontWeight: 700, color: red } }, `${critStores.length} critical`),
         h('div', { style: { padding: '4px 10px', borderRadius: '99px', background: alertStores.length ? 'rgba(245,158,11,.1)' : 'rgba(16,185,129,.08)', border: `1px solid ${alertStores.length ? 'rgba(245,158,11,.25)' : 'rgba(16,185,129,.2)'}`, fontSize: 11, fontWeight: 700, color: alertStores.length ? amber : grn } },
           alertStores.length ? `${alertStores.length} stores with alerts` : `All ${stores.length} stores nominal`),
         h('span', { style: { fontSize: 11, color: muted } }, `${stores.length} stores · ${rows.length} hour-slots`),
       ),
+      loading && h('span', { style: { fontSize: 11, color: muted } }, 'Loading…'),
+    ),
+    syncMsg && h('div', { style: { marginBottom: 12, padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, background: syncMsg.type === 'ok' ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)', border: `1px solid ${syncMsg.type === 'ok' ? 'rgba(16,185,129,.25)' : 'rgba(239,68,68,.25)'}`, color: syncMsg.type === 'ok' ? grn : red, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
+      h('span', null, syncMsg.text),
+      syncMsg.type === 'ok' && h('button', { onClick: () => { setSyncMsg(null); fetchRows(date); }, style: { padding: '3px 10px', borderRadius: 4, border: `1px solid rgba(16,185,129,.4)`, background: 'rgba(16,185,129,.1)', color: grn, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' } }, 'Reload'),
     ),
 
     !loading && rows.length > 0 && h('div', null,
