@@ -239,9 +239,14 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
 
   const labor  = (ds.laborRows||[]).find(sameDay) || (ds.laborRows||[]).find(nearby);
   const ctrl   = (ds.ctrlRows||[]).find(sameDay)  || (ds.ctrlRows||[]).find(nearby);
-  // Email pipeline sources: Daily Glimpse (OEPE, GC, parkedPct, laborPct) + Cash Sheet (GC, refunds)
-  const glimpse = (ds.glimpseRows||[]).find(sameDay) || (ds.glimpseRows||[]).find(nearby);
-  const cash    = (ds.cashRows||[]).find(sameDay)    || (ds.cashRows||[]).find(nearby);
+  // Email pipeline sources: Daily Glimpse + Cash Sheet.
+  // Use parseInt loc comparison (QSRSoft may zero-pad: "0043701" vs "43701").
+  // Use 7-day window: email files have no date in their filename so they get
+  // the processing date, which may be 1-2 days after the actual report date.
+  const locInt = parseInt(locStr, 10);
+  const eMatch = r => parseInt(r.loc, 10) === locInt && Math.abs(r.date - targetDate) < 7*86400000;
+  const glimpse = (ds.glimpseRows||[]).filter(eMatch).sort((a,b)=>Math.abs(a.date-targetDate)-Math.abs(b.date-targetDate))[0] || null;
+  const cash    = (ds.cashRows||[]).filter(eMatch).sort((a,b)=>Math.abs(a.date-targetDate)-Math.abs(b.date-targetDate))[0] || null;
   const peaks  = (ds.peaksSvcRows||[]).filter(r=>String(r.loc)===locStr&&Math.abs(r.date-targetDate)<3*86400000);
   const norms  = computeStoreNorms(loc, ds);
 
@@ -525,11 +530,13 @@ function StoreBriefCard({store, expanded, setExpanded}){
         h('span',null,'Data: '+([
           store.hasLabor&&'Labor',
           store.hasCtrl&&'Controls',
+          store.hasGlimpse&&'Daily Glimpse',
+          store.hasCash&&'Cash Sheet',
           store.hasPeaks&&'3 Peaks',
           store.hasFOB&&('Food Cost'+(fobMonth?' ('+fobMonth+')':'')),
           store.hasSMG&&('SMG OSAT'+(smgMonth?' ('+smgMonth+')':'')),
         ].filter(Boolean).join(' · ')||'None loaded')+
-        (!store.hasPeaks?' · (load 3 Peaks for service data)':'')+
+        (!store.hasPeaks?' · (load 3 Peaks for KVS/DT Parked)':'')+
         (!store.hasFOB?' · (upload FOB for food cost)':'')),
       )
     )
