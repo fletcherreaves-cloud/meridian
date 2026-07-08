@@ -396,7 +396,7 @@ This is a private tool for one operator. Be candid, specific, and direct.`;
 }
 
 // ── Edge Function call with SSE streaming ─────────────────────────────────────
-async function callSageStream(messages, systemPrompt, onChunk, signal) {
+async function callSageStream(messages, systemPrompt, onChunk, signal, onStatus) {
   const sbUrl = import.meta.env.VITE_SUPABASE_URL || '';
   if (!sbUrl) throw new Error('VITE_SUPABASE_URL not set — Supabase not configured.');
 
@@ -436,9 +436,11 @@ async function callSageStream(messages, systemPrompt, onChunk, signal) {
       const data = line.slice(6).trim();
       if (data === '[DONE]') return;
       try {
-        const { text } = JSON.parse(data);
-        if (text) onChunk(text);
-      } catch { /* skip malformed */ }
+        const parsed = JSON.parse(data);
+        if (parsed.text)   onChunk(parsed.text);
+        if (parsed.status && onStatus) onStatus(parsed.status);
+        if (parsed.error)  throw new Error(parsed.error);
+      } catch (e) { if (e.message && !e.message.startsWith('data:')) throw e; }
     }
   }
 }
@@ -736,6 +738,7 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
   const [input, setInput]       = uSt('');
   const [streaming, setStreaming] = uSt(false);
   const [streamText, setStreamText] = uSt('');
+  const [toolStatus, setToolStatus] = uSt('');
   const [error, setError]       = uSt(null);
   const threadRef = uRef(null);
   const abortRef  = uRef(null);
@@ -757,6 +760,7 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
     setMessages(newMessages);
     setStreaming(true);
     setStreamText('');
+    setToolStatus('');
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -770,6 +774,7 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
         systemPrompt,
         (chunk) => { full += chunk; setStreamText(full); },
         ctrl.signal,
+        (status) => setToolStatus(status),
       );
       if (full) setMessages(prev => [...prev, { role: 'assistant', content: full }]);
     } catch (e) {
@@ -779,6 +784,7 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
     } finally {
       setStreaming(false);
       setStreamText('');
+      setToolStatus('');
       abortRef.current = null;
     }
   }, [input, messages, streaming, ds, signals]);
@@ -837,8 +843,17 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
       // Streaming assistant message
       streaming && streamText && h(MsgBubble, { key: 'stream', msg: { role: 'assistant', content: streamText + '▌' }, streaming: true }),
 
-      // Thinking indicator (before first token)
-      streaming && !streamText && h(ThinkingDots, { key: 'think' }),
+      // Thinking / tool-status indicator (before first token)
+      streaming && !streamText && h('div', { key: 'think', style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+        h(ThinkingDots, null),
+        toolStatus && h('div', { style: {
+          fontSize: '11px', color: amber, opacity: 0.8,
+          display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 2,
+        } },
+          h('span', { style: { fontSize: 10 } }, '🔍'),
+          toolStatus,
+        ),
+      ),
 
       // Error
       error && h('div', { style: { marginTop: 8, padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.18)', color: '#ef4444', fontSize: '12px', lineHeight: 1.5 } },
