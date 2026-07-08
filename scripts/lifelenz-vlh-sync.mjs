@@ -8,20 +8,33 @@
 //   VITE_SUPABASE_URL         — Supabase project URL
 //   SUPABASE_SERVICE_ROLE_KEY — service role key (bypasses RLS)
 
-import { createClient } from '@supabase/supabase-js';
-
 const BASE        = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID = '01979dbf-a166-759b-8702-aba9915c578e';
 const TOKEN       = process.env.LIFELENZ_TOKEN;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!TOKEN)                          { console.error('Missing LIFELENZ_TOKEN');            process.exit(1); }
-if (!process.env.VITE_SUPABASE_URL)  { console.error('Missing VITE_SUPABASE_URL');         process.exit(1); }
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) { console.error('Missing SUPABASE_SERVICE_ROLE_KEY'); process.exit(1); }
+if (!TOKEN)        { console.error('Missing LIFELENZ_TOKEN');            process.exit(1); }
+if (!SUPABASE_URL) { console.error('Missing VITE_SUPABASE_URL');         process.exit(1); }
+if (!SUPABASE_KEY) { console.error('Missing SUPABASE_SERVICE_ROLE_KEY'); process.exit(1); }
 
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-);
+// Direct REST upsert — no Supabase client, no WebSocket dependency
+async function supabaseUpsert(table, rows) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      'apikey':        SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type':  'application/json',
+      'Prefer':        'resolution=merge-duplicates',
+    },
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase upsert failed (${res.status}): ${text}`);
+  }
+}
 
 const HEADERS = {
   'X-Auth-Token':      TOKEN,
@@ -149,14 +162,7 @@ const rows = stores.map(store => {
   return row;
 });
 
-// Upsert all rows
-const { error } = await supabase
-  .from('store_vlh_config')
-  .upsert(rows, { onConflict: 'loc' });
-
-if (error) {
-  console.error('Supabase upsert error:', error.message);
-  process.exit(1);
-}
+// Upsert all rows via REST (no WebSocket / realtime dependency)
+await supabaseUpsert('store_vlh_config', rows);
 
 console.log(`\nDone — ${rows.length} store configs upserted to store_vlh_config.`);
