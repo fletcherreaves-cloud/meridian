@@ -513,7 +513,13 @@ const MERIDIAN_CHANGELOG  = [
 // ── Data Policy Banner — shown once per session, dismissed via localStorage ──
 const DATA_POLICY_KEY = 'mf_data_policy_v1';
 function DataPolicyBanner() {
-  const [show, setShow] = React.useState(() => !localStorage.getItem(DATA_POLICY_KEY));
+  const isFirst = !localStorage.getItem(DATA_POLICY_KEY);
+  const [show, setShow] = React.useState(isFirst);
+  React.useEffect(() => {
+    if (!isFirst) return;
+    const t = setTimeout(() => { localStorage.setItem(DATA_POLICY_KEY, '1'); setShow(false); }, 8000);
+    return () => clearTimeout(t);
+  }, []);
   if (!show) return null;
   const dismiss = () => { localStorage.setItem(DATA_POLICY_KEY, '1'); setShow(false); };
   return React.createElement('div', {
@@ -528,16 +534,16 @@ function DataPolicyBanner() {
       React.createElement('strong', { style: { color: 'var(--text)', marginRight: 4 } }, 'Data Notice:'),
       'This tool processes McDonald\'s operational data (sales, labor, food cost, customer satisfaction). ' +
       'Data is stored in Supabase (PostgreSQL) and accessed only by authorized users. ' +
-      'No data is shared with third parties. For questions, contact fletcher.reaves@mcreaves.com.'
+      'No data is shared with third parties. See Settings → Identity for full details.'
     ),
     React.createElement('button', {
       onClick: dismiss,
       style: {
         flexShrink: 0, padding: '5px 14px', borderRadius: 5, cursor: 'pointer',
-        background: 'var(--accent)', color: '#000', border: 'none',
-        fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+        background: 'rgba(255,255,255,.08)', color: 'var(--text2)', border: '.5px solid var(--bdr)',
+        fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer',
       }
-    }, 'OK, got it')
+    }, 'Dismiss')
   );
 }
 

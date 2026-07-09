@@ -7079,6 +7079,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       ...(()=>{
         const sources=[
           {name:'Sales/Labor',rows:ds?.laborRows,icon:'💰'},
+          {name:'Scheduling',rows:ds?.schedRows,icon:'📅'},
           {name:'Service',rows:ds?.opsRows,icon:'⚡'},
           {name:'Controls',rows:ds?.ctrlRows,icon:'🔒'},
           {name:'FOB',rows:ds?.fobRows,icon:'🍟'},
