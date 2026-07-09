@@ -358,7 +358,34 @@ You advise Fletcher Reaves, a McDonald's operator managing ${storeCount} locatio
 
 Today: ${today}
 
-DATA LOADED IN MERIDIAN (row counts):
+LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
+─────────────────────────────────────────────────────────────────────────────────────────
+You have two tools that query live Supabase data (updated daily via automation):
+
+1. query_daily_activity(start_date, end_date?, locs?)
+   Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
+   USE FOR: "how did we do today/yesterday/this week?", "which stores are lagging vs projection?",
+            "what's drive-thru speed?", "show me yesterday's sales rank", "how did [store] track last 7 days?"
+   TARGETS: DT speed < 200s = green, 200–240s = amber, > 240s = red.
+   NOTE: Data lags ~1 day (yesterday's data available today after ~7am ET automated sync).
+
+2. query_lifelenz_labor(start_date, end_date?, locs?)
+   Returns: sch_vlh (scheduled VLH), need_vlh (needed VLH), gap (positive = over-scheduled, negative = under-staffed).
+   USE FOR: "are stores over/under-staffed?", "scheduling gaps this week", "VLH by store", "labor efficiency"
+
+3. query_forecast_snapshots(start_date, end_date?, locs?, source?)
+   Returns: per-store MAPE by forecast source. Sources: ai (Meridian AI), ly (last-year-adj), blend, di (dialed-in), qsr (QSRSoft scheduled projection).
+   USE FOR: "how accurate is my forecast?", "which model is best?", "MAPE by store", "which stores have worst forecast accuracy?", "AI vs LY accuracy comparison"
+
+TOOL USAGE RULES:
+- ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
+- ALWAYS call query_lifelenz_labor for any scheduling, staffing, or VLH question about the current/recent period
+- For "today" use ${today}; for "yesterday" use the previous calendar day
+- You can call both tools simultaneously if a question spans both domains
+- The static OPERATIONAL DATA below comes from manually uploaded files (potentially weeks old). For live/current questions, tool data is more authoritative than the static summaries.
+─────────────────────────────────────────────────────────────────────────────────────────
+
+UPLOADED FILE DATA (row counts — may be weeks behind):
   Labor/Ops:       ${ds?.laborRows?.length || 0} daily rows
   Operations/OEPE: ${ds?.opsRows?.length || 0} rows
   FOB/Food Cost:   ${ds?.fobRows?.length || 0} records
@@ -366,7 +393,7 @@ DATA LOADED IN MERIDIAN (row counts):
   SMG FullScale:   ${ds?.smgFullscale?.length || 0} store-period records
   Controls:        ${ds?.ctrlRows?.length || 0} rows
 
-${dataSections ? `CURRENT OPERATIONAL DATA:\n${'─'.repeat(60)}\n${dataSections}${'─'.repeat(60)}` : ''}
+${dataSections ? `CURRENT OPERATIONAL DATA (from uploaded files):\n${'─'.repeat(60)}\n${dataSections}${'─'.repeat(60)}` : ''}
 ${confirmedSigs ? `\nCONFIRMED SIGNALS (statistically meaningful correlations, |r|≥0.50):\n${confirmedSigs}` : ''}
 ${plausibleSigs ? `\nPLAUSIBLE SIGNALS (emerging patterns, |r| 0.30–0.49):\n${plausibleSigs}` : ''}
 ${promotedCustom ? `\nCUSTOM SIGNALS (user-promoted to SAGE):\n${promotedCustom}` : ''}
@@ -726,10 +753,12 @@ function ThinkingDots() {
 
 // ── Quick-start prompt chips ──────────────────────────────────────────────────
 const QUICK_PROMPTS = [
-  'Which stores need my attention this week?',
+  'Which stores are lagging vs projection yesterday?',
+  'How did DT speed look this week across all stores?',
+  'Which stores have the biggest scheduling gaps this week?',
+  'Which stores need my attention today?',
   'Give me a full food cost analysis.',
   'Where are my biggest labor opportunities?',
-  'Break down my service times by store.',
 ];
 
 // ── Main panel ────────────────────────────────────────────────────────────────

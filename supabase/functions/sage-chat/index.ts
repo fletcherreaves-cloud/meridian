@@ -100,6 +100,37 @@ Returns per-store scheduled vs needed hours summary.`,
       required: ['start_date'],
     },
   },
+  {
+    name: 'query_forecast_snapshots',
+    description: `Query forecast accuracy history — MAPE (mean absolute percentage error) by store, date, and forecast source.
+Use for questions about: forecast accuracy, which forecast model is best, how accurate predictions have been, MAPE trends.
+Sources: 'ai' = Meridian AI model, 'ly' = last-year-adjusted, 'blend' = average of ai+ly, 'di' = dialed-in manual, 'qsr' = QSRSoft projection.
+Returns per-store MAPE averages for each source over the date range.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: {
+          type: 'string',
+          description: 'Start date YYYY-MM-DD (inclusive). Required.',
+        },
+        end_date: {
+          type: 'string',
+          description: 'End date YYYY-MM-DD (inclusive). Defaults to start_date.',
+        },
+        locs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Store loc IDs to filter. Omit for all stores.',
+        },
+        source: {
+          type: 'string',
+          enum: ['ai', 'ly', 'blend', 'di', 'qsr'],
+          description: 'Filter to a single forecast source. Omit to return all sources.',
+        },
+      },
+      required: ['start_date'],
+    },
+  },
 ];
 
 async function runTool(name: string, input: Record<string, unknown>): Promise<string> {
@@ -206,6 +237,72 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<st
       date_range: startDate === endDate ? startDate : `${startDate} to ${endDate}`,
       stores,
       note: 'gap_vlh = sch_vlh - need_vlh. Positive = over-scheduled. Negative = under-staffed.',
+    });
+  }
+
+  if (name === 'query_forecast_snapshots') {
+    const today = new Date().toISOString().slice(0, 10);
+    const startDate = (input.start_date as string) || today;
+    const endDate   = (input.end_date   as string) || startDate;
+    const locs      = input.locs   as string[] | undefined;
+    const source    = input.source as string   | undefined;
+
+    let q = sb
+      .from('forecast_snapshots')
+      .select('loc,dt,source,forecast_sales,actual_sales,mape')
+      .gte('dt', startDate)
+      .lte('dt', endDate)
+      .limit(100000);
+
+    if (locs?.length)  q = q.in('loc', locs);
+    if (source)        q = q.eq('source', source);
+
+    const { data, error } = await q;
+    if (error) {
+      // Table may not exist yet
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        return 'forecast_snapshots table not yet created. Ask Fletcher to run the schema SQL in Supabase SQL Editor.';
+      }
+      return `Database error: ${error.message}`;
+    }
+    if (!data?.length) return `No forecast snapshot data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}. Run the Forecast Accuracy backtest in Analytics to generate snapshots.`;
+
+    // Aggregate by store+source
+    const byStoreSrc: Record<string, { mapeSum: number; days: number }> = {};
+    for (const row of data) {
+      const key = `${row.loc}|${row.source}`;
+      if (!byStoreSrc[key]) byStoreSrc[key] = { mapeSum: 0, days: 0 };
+      byStoreSrc[key].mapeSum += row.mape || 0;
+      byStoreSrc[key].days++;
+    }
+
+    // Reshape to per-store, per-source summary
+    const storeMap: Record<string, Record<string, number>> = {};
+    for (const [key, v] of Object.entries(byStoreSrc)) {
+      const [loc, src] = key.split('|');
+      if (!storeMap[loc]) storeMap[loc] = {};
+      storeMap[loc][src] = +((v.mapeSum / v.days)).toFixed(2);
+    }
+
+    const stores = Object.entries(storeMap).map(([loc, srcs]) => ({
+      loc,
+      name: STORE_NAMES[loc] || `Store ${loc}`,
+      ...srcs,
+    })).sort((a, b) => (a.ai ?? a.ly ?? 99) - (b.ai ?? b.ly ?? 99));
+
+    // District averages
+    const srcNames = ['ai', 'ly', 'blend', 'di', 'qsr'];
+    const distAvg: Record<string, string | null> = {};
+    for (const src of srcNames) {
+      const vals = stores.map(s => (s as Record<string, unknown>)[src] as number).filter(v => v != null);
+      distAvg[src] = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
+    }
+
+    return JSON.stringify({
+      date_range: startDate === endDate ? startDate : `${startDate} to ${endDate}`,
+      district_avg_mape: distAvg,
+      stores,
+      note: 'mape = mean absolute % error. Lower = better. Sources: ai=Meridian AI, ly=last-year-adj, blend=(ai+ly)/2, di=dialed-in, qsr=QSRSoft scheduled projection.',
     });
   }
 
@@ -389,8 +486,9 @@ Deno.serve(async (req: Request) => {
           // Execute each tool call and emit status events
           const toolResults: unknown[] = [];
           for (const tu of toolUses) {
-            const label = tu.name === 'query_daily_activity' ? 'sales & DT data'
-                        : tu.name === 'query_lifelenz_labor' ? 'labor schedules'
+            const label = tu.name === 'query_daily_activity'    ? 'sales & DT data'
+                        : tu.name === 'query_lifelenz_labor'   ? 'labor schedules'
+                        : tu.name === 'query_forecast_snapshots' ? 'forecast accuracy'
                         : tu.name.replace(/_/g, ' ');
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Querying ${label}…` })}\n\n`));
 
