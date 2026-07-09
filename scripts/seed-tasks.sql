@@ -1,3 +1,31 @@
+-- ── Task Queue tables ────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tasks (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  title       text        NOT NULL,
+  tier        int         NOT NULL DEFAULT 2 CHECK (tier IN (1,2,3)),
+  priority    int         NOT NULL DEFAULT 2 CHECK (priority IN (1,2,3)),
+  status      text        NOT NULL DEFAULT 'backlog'
+                CHECK (status IN ('backlog','ready','in_progress','done','blocked','scrapped')),
+  description text,
+  notes       text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tasks access" ON tasks;
+CREATE POLICY "tasks access" ON tasks USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS session_notes (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  body        text        NOT NULL,
+  source      text        NOT NULL DEFAULT 'manual',
+  consumed    boolean     NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE session_notes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "notes access" ON session_notes;
+CREATE POLICY "notes access" ON session_notes USING (true) WITH CHECK (true);
+
 -- ── user_settings table (needed for cross-device projection/AE persistence) ───
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id    uuid references auth.users(id) ON DELETE CASCADE,
@@ -13,8 +41,7 @@ CREATE POLICY "own settings" ON user_settings
   WITH CHECK (user_id = auth.uid());
 
 -- ── Task Queue seed — Notes 19 backlog ───────────────────────────────────────
--- Run this in the Supabase SQL Editor after the tasks/session_notes tables exist.
--- Each task is idempotent: skipped if a row with the same title already exists.
+-- Idempotent: skipped if a row with the same title already exists.
 
 INSERT INTO tasks (title, tier, priority, status, description, notes)
 SELECT * FROM (VALUES
