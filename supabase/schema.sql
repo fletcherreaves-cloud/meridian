@@ -841,6 +841,25 @@ create policy "forecast_snapshots: public write" on public.forecast_snapshots
 create index if not exists forecast_snapshots_loc_dt_idx
   on public.forecast_snapshots (loc, dt desc);
 
+-- qsr_field_definitions — field info-icon definitions scraped from QSRSoft UI
+-- Written by scripts/qsrsoft-field-scraper.mjs; powers tooltips + SAGE context.
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists public.qsr_field_definitions (
+  id          uuid    primary key default gen_random_uuid(),
+  page_key    text    not null,   -- 'dar' | 'fob' | 'pnl' | 'ebos' | 'cash'
+  field_label text    not null,   -- display label from QSRSoft column header
+  description text,               -- tooltip / info-icon text
+  db_col      text,               -- optional: maps to our Supabase column name
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now(),
+  unique(page_key, field_label)
+);
+alter table public.qsr_field_definitions enable row level security;
+create policy "qsr_field_definitions: public read" on public.qsr_field_definitions
+  for select using (true);
+create policy "qsr_field_definitions: service write" on public.qsr_field_definitions
+  for all using (true);
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════
