@@ -293,7 +293,7 @@ function parseLaborData(wb,sheet,defaultDateOverride){
     const flrNeed=parseNum(r[C.flrNeed]);
     const flrSch=parseNum(r[C.flrSch]);
     const laborPctVal=parsePct(r[C.labor])||parsePct(r[C.crewLaborPct])||parsePct(r[C.totalLaborPct]);
-    rows.push({loc,date:dt,
+    rows.push({loc,date:dt,isPeriodSummary:!!_summaryDate,
       sales:parseNum(r[C.sales])||parseNum(r[C.allNetSales]),
       allNetSales:parseNum(r[C.allNetSales]),
       projSales:parseNum(r[C.proj]),

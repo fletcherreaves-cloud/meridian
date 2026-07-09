@@ -134,7 +134,7 @@ function forecastEWMA(laborRows, laborIdx, loc, date, alpha){
   alpha = alpha || 0.25;
   const dow = date.getDay();
   const byDate = {};
-  (laborRows||[]).forEach(r=>{if(String(r.loc)===String(loc)&&r.sales>0)byDate[dKey(r.date)]=r.sales;});
+  (laborRows||[]).forEach(r=>{if(String(r.loc)===String(loc)&&r.sales>0&&!r.isPeriodSummary)byDate[dKey(r.date)]=r.sales;});
   const peers = Object.entries(byDate)
     .map(([dk,v])=>({d:new Date(dk+'T00:00:00'),v}))
     .filter(({d,v})=>d<date && d.getDay()===dow && v>0)
@@ -152,7 +152,7 @@ function forecastAdaptiveDI(laborRows, laborIdx, loc, date, params){
   const {w2,w4,w6,alpha} = p;
   const dow = date.getDay();
   const byDate = {};
-  (laborRows||[]).forEach(r=>{if(String(r.loc)===String(loc)&&r.sales>0)byDate[dKey(r.date)]=r.sales;});
+  (laborRows||[]).forEach(r=>{if(String(r.loc)===String(loc)&&r.sales>0&&!r.isPeriodSummary)byDate[dKey(r.date)]=r.sales;});
 
   function ewmaWindow(days){
     const cutoff=addDR(date,-days);
@@ -180,7 +180,7 @@ function forecastAdaptiveEnsemble(laborRows, laborIdx, loc, date){
   const str = String(loc);
   const isWeekend = (date.getDay()===0||date.getDay()===6);
   const byDate = {};
-  (laborRows||[]).forEach(r=>{if(String(r.loc)===str&&r.sales>0)byDate[dKey(r.date)]=r.sales;});
+  (laborRows||[]).forEach(r=>{if(String(r.loc)===str&&r.sales>0&&!r.isPeriodSummary)byDate[dKey(r.date)]=r.sales;});
 
   // Signal 1: EWMA DOW
   const sEWMA = forecastEWMA(laborRows, laborIdx, loc, date, isWeekend?0.30:0.22);
@@ -278,12 +278,13 @@ function getForecastWeather(loc, date) {
 function fetchRow(idx,loc,date,field){
   const rows=idx[loc+'_'+dKey(date)];
   if(!rows||!rows.length)return field?0:null;
-  if(!field) return rows[0];
-  // If multiple rows exist (e.g. both Ops Report and Labor Analysis loaded),
-  // prefer the row with the highest value for the requested field to avoid
-  // zero-sales Labor Analysis rows masking valid Ops Report data.
-  if(rows.length===1) return rows[0][field]||0;
-  const best = rows.reduce((b,r)=>(r[field]||0)>(b[field]||0)?r:b, rows[0]);
+  if(!field) return rows.find(r=>!r.isPeriodSummary)||rows[0];
+  // Prefer non-period-summary rows; period-summary rows have inflated multi-day totals.
+  // Among eligible rows, pick the one with the highest value for the requested field.
+  const eligible=rows.filter(r=>!r.isPeriodSummary);
+  const pool=eligible.length?eligible:rows;
+  if(pool.length===1) return pool[0][field]||0;
+  const best=pool.reduce((b,r)=>(r[field]||0)>(b[field]||0)?r:b, pool[0]);
   return best[field]||0;
 }
 // Weather lookup: use date-only index since Mesonet uses station IDs not store IDs
@@ -1259,7 +1260,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(_assignedModel==='ae'){
     const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date);
     if(_aeFcst&&_aeFcst>0){
-      const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
+      const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})();
       const _aeORow=fetchRow(ds.opsIdx,loc,date);const _aeCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
       const _aeIsFuture=date>sodOf(new Date());
       return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:0,varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
@@ -1271,7 +1272,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(_assignedModel==='ewma'){
     const _ewmaFcst=forecastEWMA(_locLaborRows,ds.laborIdx,loc,date);
     if(_ewmaFcst&&_ewmaFcst>0){
-      const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].sales:0;})();
+      const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})();
       const _ewmaORow=fetchRow(ds.opsIdx,loc,date);const _ewmaCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
       return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:0,varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
         oepe:_ewmaORow?(_ewmaORow.oepe||0):0,tpph:_ewmaCtrlRow?(_ewmaCtrlRow.tpph||0):0,labor:_ewmaCtrlRow?(_ewmaCtrlRow.laborPct||0):0,
@@ -1449,7 +1450,7 @@ function forecastModels(loc, date, ds, settings) {
     if(!ds||!ds.laborRows) return null;
     const dow = date.getDay();
     const recent = ds.laborRows
-      .filter(r=>r.loc===loc&&r.date<date&&r.date.getDay()===dow&&r.sales>0)
+      .filter(r=>r.loc===loc&&r.date<date&&r.date.getDay()===dow&&r.sales>0&&!r.isPeriodSummary)
       .sort((a,b)=>b.date-a.date).slice(0,8);
     if(recent.length<3) return null;
     let wtSum=0, wSum=0;
@@ -1463,7 +1464,7 @@ function forecastModels(loc, date, ds, settings) {
     if(!ds||!ds.laborRows) return null;
     const dow = date.getDay();
     const pts = ds.laborRows
-      .filter(r=>r.loc===loc&&r.date<date&&r.date.getDay()===dow&&r.sales>0)
+      .filter(r=>r.loc===loc&&r.date<date&&r.date.getDay()===dow&&r.sales>0&&!r.isPeriodSummary)
       .sort((a,b)=>a.date-b.date).slice(-12);
     if(pts.length<5) return null;
     const n=pts.length;

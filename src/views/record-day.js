@@ -125,7 +125,7 @@ function computeRecords(ds, windowDays) {
   // ── Daily aggregates from laborRows ──────────────────────────────
   const dayMap = {};
   for (const r of ds.laborRows) {
-    if (!r.loc || !r.date) continue;
+    if (!r.loc || !r.date || r.isPeriodSummary) continue;
     const dk = dKey(r.date);
     const k  = r.loc + '_' + dk;
     if (!dayMap[k]) {

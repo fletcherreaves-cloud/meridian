@@ -674,7 +674,7 @@ function App() {
       if(total>0){
         const bIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
         const lastAct={};
-        for(const r of labor){if(r.sales>0){if(!lastAct[r.loc]||r.date>lastAct[r.loc])lastAct[r.loc]=r.date;}}
+        for(const r of labor){if(r.sales>0&&!r.isPeriodSummary){if(!lastAct[r.loc]||r.date>lastAct[r.loc])lastAct[r.loc]=r.date;}}
         const restoredDs={
           laborRows:labor, opsRows:ops, ctrlRows:ctrl,
           fobRows:fob, auditRows:audit,
