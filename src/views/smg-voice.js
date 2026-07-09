@@ -7,21 +7,21 @@ import * as React from 'react';
 const h = React.createElement;
 
 // ── Settings storage ───────────────────────────────────────────────────────────
-const SMG_SETTINGS_KEY = 'mf_smg_settings_v1';
+const SMG_SETTINGS_KEY = 'mf_smg_settings_v2';
 
 const SMG_DEFAULTS = {
-  // Higher-is-better metrics (OSAT, Top-2, B2B) — stored as 0–1 decimals
-  osatStd:       0.80,   // standard threshold for OSAT / Top-2 / B2B metrics
+  // Higher-is-better metrics (OSAT, Top-2, OSAT B2B) — stored as 0–1 decimals
+  osatStd:       0.90,   // McDonald's standard: OSAT / Top-2 / OSAT B2B ≥ 90%
   osatYellow:    0.05,   // yellow band: within this many pp below standard
-  accStd:        0.85,   // Accuracy B2B standard
-  accYellow:     0.05,
+  accStd:        0.95,   // McDonald's standard: Accuracy B2B ≥ 95%
+  accYellow:     0.03,
   // Lower-is-better metrics (problem rates)
-  dtProbStd:     0.10,   // DT Problem rate standard (≤ this = green)
+  dtProbStd:     0.10,   // McDonald's standard: DT Problem rate ≤ 10%
   dtProbYellow:  0.05,   // yellow band: within this many pp above standard
-  ovProbStd:     0.08,   // Overall Problem rate standard
+  ovProbStd:     0.10,   // McDonald's standard: Any Problem rate ≤ 10%
   ovProbYellow:  0.05,
   // OSAT avg (1–5 scale)
-  avgStd:        4.0,
+  avgStd:        4.5,
   avgYellow:     0.3,
 };
 
