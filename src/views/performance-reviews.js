@@ -1994,8 +1994,8 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
               onChange:e=>update(`wage.${field}`,e.target.value),
               style:{padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
                 borderRadius:4,color:TEXT,fontSize:12}})
-          : NumInput({value:review.wage?.[field], onChange:v=>update(`wage.${field}`,v),
-              style:{width:100}})
+          : h(FormattedNumInput,{value:review.wage?.[field], onChange:v=>update(`wage.${field}`,v),
+              dollar:true, style:{width:100}})
       ]),
         lbl({style:{color:TEXT2,alignSelf:'flex-start'}},'Notes'),
         ta({rows:2,value:review.wage?.notes||'',
