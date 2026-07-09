@@ -543,6 +543,26 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   }
   if(!bestParams)return{_why:'grid found no best params (all MAPE=NaN, check forecastDay computation)'};
 
+  // Post-hoc MAPE trimming (v4.382) — mirrors runModelAssignmentBacktest v4.204.
+  // The grid search found bestParams using raw MAPE (cheap inner loop). Now we
+  // recompute bestMape in one extra pass over precomputed rows, trimming the
+  // worst 5% of per-day errors. A single unflagged or untagged bad day (closure
+  // with partial sales, storm, anomaly) can push raw MAPE from ~10% to 170%+
+  // even when every other day is well-forecasted — a data-quality artifact,
+  // not a model failure. Trimming is the same defensive measure already
+  // applied in the model-assignment backtest; calibrateStore now matches.
+  let _trimmedN=0;
+  {
+    const allApes=precomputed.map(p=>{
+      const fc=evalForecast(p,bestParams.lyW,bestParams.opsMult,bestParams.t2,bestParams.t4,bestParams.t6);
+      return(fc>0&&p.actual>0)?Math.abs(p.actual-fc)/p.actual*100:null;
+    }).filter(v=>v!==null);
+    allApes.sort((a,b)=>a-b);
+    _trimmedN=allApes.length>=20?Math.ceil(allApes.length*0.05):allApes.length>=10?1:0;
+    const kept=_trimmedN>0?allApes.slice(0,allApes.length-_trimmedN):allApes;
+    if(kept.length) bestMape=kept.reduce((a,b)=>a+b,0)/kept.length;
+  }
+
   // Compute period MAPEs (6W, 4W, 2W, 1W) — now uses the SAME evalForecast
   // shared with the grid search above, fixing the lyW-inert typo that
   // existed here previously (old code did ly*lyW + ly*(1-lyW), using `ly`
@@ -556,7 +576,7 @@ async function calibrateStore(loc, ds, settings, onProgress) {
     // zone near the very start of available history.
     const periodRows=rows.filter(r=>r.date>=cut&&r.sales>0&&!_uev[dKey(r.date)]&&(!_windowStart||r.date>=_windowStart));
     if(!periodRows.length||!bestParams) return null;
-    let s=0,c=0;
+    const apes=[];
     for(const row of periodRows){
       const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date,settings._userEvents)||0;
       if(lyRaw<=0) continue;
@@ -593,9 +613,13 @@ async function calibrateStore(loc, ds, settings, onProgress) {
         wAdj:1+(getWxAdj(ds.weatherIdx,loc,row.date,settings.weather,settings.empiricalWeather,ds)||0),
         opsF:baseOpsF};
       const fc=evalForecast(p,bestParams.lyW,bestParams.opsMult,bestParams.t2,bestParams.t4,bestParams.t6);
-      if(fc>0&&row.sales>0){s+=Math.abs(row.sales-fc)/row.sales*100;c++;}
+      if(fc>0&&row.sales>0) apes.push(Math.abs(row.sales-fc)/row.sales*100);
     }
-    return c?+(s/c).toFixed(2):null;
+    if(!apes.length) return null;
+    apes.sort((a,b)=>a-b);
+    const _ptrim=apes.length>=20?Math.ceil(apes.length*0.05):apes.length>=10?1:0;
+    const keptApes=_ptrim>0?apes.slice(0,apes.length-_ptrim):apes;
+    return +(keptApes.reduce((a,b)=>a+b,0)/keptApes.length).toFixed(2);
   };
 
   const mape6w=_computePeriodMape(6);
@@ -604,7 +628,7 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   const mape1w=_computePeriodMape(1);
   const _settingsFp=JSON.stringify({lyOutlierThreshold:settings.lyOutlierThreshold,opsNorm:settings.opsNorm});
 
-  return{...bestParams,mape:+bestMape.toFixed(2),mape6w,mape4w,mape2w,mape1w,
+  return{...bestParams,mape:+bestMape.toFixed(2),trimmedN:_trimmedN,mape6w,mape4w,mape2w,mape1w,
     samples:precomputed.length,runDate:new Date().toISOString().slice(0,10),
     settingsFp:_settingsFp,
     // recentOnly detection transparency (v4.195) — visible in results so
