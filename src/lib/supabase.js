@@ -1037,13 +1037,25 @@ export async function appendCustomSignalHistory(id, r, n, existingHistory) {
 // ── On-demand sync triggers ───────────────────────────────────────────────────
 export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
   if (!supabase) return { error: 'No Supabase client' };
+  const sbUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  if (!sbUrl) return { error: 'VITE_SUPABASE_URL not set' };
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { error: 'Not authenticated' };
-  const { data, error } = await supabase.functions.invoke('trigger-dar-sync', {
-    body: { days_back: String(daysBack), days_recent: String(daysRecent) },
-  });
-  if (error) return { error: error.message || 'Trigger failed' };
-  return data;
+  try {
+    const res = await fetch(`${sbUrl}/functions/v1/trigger-dar-sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ days_back: String(daysBack), days_recent: String(daysRecent) }),
+    });
+    const text = await res.text().catch(() => '');
+    if (!res.ok) return { error: `Sync failed (${res.status})${text ? ': ' + text : ''}` };
+    try { return JSON.parse(text); } catch { return {}; }
+  } catch (e) {
+    return { error: e.message || 'Network error' };
+  }
 }
 
 // ── qsr_daily_activity ────────────────────────────────────────────────────────
