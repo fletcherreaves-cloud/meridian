@@ -1343,14 +1343,9 @@ function App() {
     let currentDS=dsRef.current||buildDS([]);
     const loaded=[];
     const _toDs=r=>r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10);
-    const _prevLaborKeys =new Set((currentDS.laborRows    ||[]).map(r=>r.loc+'|'+_toDs(r)));
-    const _prevFobKeys   =new Set((currentDS.fobRows      ||[]).map(r=>r.loc+'|'+_toDs(r)));
-    const _prevOpsKeys   =new Set((currentDS.opsRows      ||[]).map(r=>r.loc+'|'+_toDs(r)));
-    const _prevCtrlKeys  =new Set((currentDS.ctrlRows     ||[]).map(r=>r.loc+'|'+_toDs(r)));
     const _prevDarKeys   =new Set((currentDS.darRows      ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
-    const _peakKey       =r=>r.loc+'|'+_toDs(r)+'|'+(r.slice||'')+'|'+(r._peakSvc?'1':'0');
-    const _prevPeaksSvc  =new Set([...(currentDS.peaksSvcRows ||[]),...(currentDS.peaksSalesRows||[])].map(_peakKey));
-    const _prevAuditKeys =new Set((currentDS.auditRows    ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.emp||'')));
+    // Track rows parsed in this upload batch so we always upsert them to Supabase (overwrites stale data for corrected re-uploads)
+    const _freshLaborRows=[],_freshFobRows=[],_freshOpsRows=[],_freshCtrlRows=[],_freshPeakSvcRows=[],_freshPeakSalesRows=[],_freshAuditRows=[];
     for(const file of fileArr){
       try{
         setLoadMsg('⏳ Parsing '+file.name+'…');
@@ -1405,7 +1400,15 @@ function App() {
             }
             loaded.push({name:file.name,type});
           } else {
+            const _bL=currentDS.laborRows.length,_bF=(currentDS.fobRows||[]).length,_bO=currentDS.opsRows.length,_bC=currentDS.ctrlRows.length,_bPS=(currentDS.peaksSvcRows||[]).length,_bPA=(currentDS.peaksSalesRows||[]).length,_bA=(currentDS.auditRows||[]).length;
             currentDS=mergeDS(currentDS,wb,type,file.name);
+            _freshLaborRows.push(...currentDS.laborRows.slice(_bL));
+            _freshFobRows.push(...(currentDS.fobRows||[]).slice(_bF));
+            _freshOpsRows.push(...currentDS.opsRows.slice(_bO));
+            _freshCtrlRows.push(...currentDS.ctrlRows.slice(_bC));
+            _freshPeakSvcRows.push(...(currentDS.peaksSvcRows||[]).slice(_bPS));
+            _freshPeakSalesRows.push(...(currentDS.peaksSalesRows||[]).slice(_bPA));
+            _freshAuditRows.push(...(currentDS.auditRows||[]).slice(_bA));
             loaded.push({name:file.name,type});
             // Cloud sync — upload raw file so other devices can auto-ingest it
             if(supabase&&!file._pendingId&&!file._manualSyncId&&type.type!=='unknown')
@@ -1444,21 +1447,15 @@ function App() {
     }
     // Persist new rows to Supabase for cross-device sync
     if(supabase){
-      const newLaborRows=(currentDS.laborRows ||[]).filter(r=>!_prevLaborKeys .has(r.loc+'|'+_toDs(r)));
-      const newFobRows  =(currentDS.fobRows   ||[]).filter(r=>!_prevFobKeys   .has(r.loc+'|'+_toDs(r)));
-      const newOpsRows  =(currentDS.opsRows   ||[]).filter(r=>!_prevOpsKeys   .has(r.loc+'|'+_toDs(r)));
-      const newCtrlRows =(currentDS.ctrlRows  ||[]).filter(r=>!_prevCtrlKeys  .has(r.loc+'|'+_toDs(r)));
-      const newDarRows  =(currentDS.darRows   ||[]).filter(r=>!_prevDarKeys   .has(r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
-      const allPeaks    =[...(currentDS.peaksSvcRows||[]),...(currentDS.peaksSalesRows||[])];
-      const newPeaksRows=allPeaks .filter(r=>!_prevPeaksSvc .has(_peakKey(r)));
-      const newAuditRows=(currentDS.auditRows ||[]).filter(r=>!_prevAuditKeys .has(r.loc+'|'+_toDs(r)+'|'+(r.emp||'')));
-      if(newLaborRows.length>0) saveLaborRows (newLaborRows).catch(e=>console.warn('[labor_rows] save error:',e));
-      if(newFobRows  .length>0) saveFobRows   (newFobRows  ).catch(e=>console.warn('[fob_rows] save error:',e));
-      if(newOpsRows  .length>0) saveOpsRows   (newOpsRows  ).catch(e=>console.warn('[ops_rows] save error:',e));
-      if(newCtrlRows .length>0) saveCtrlRows  (newCtrlRows ).catch(e=>console.warn('[ctrl_rows] save error:',e));
-      if(newDarRows  .length>0) saveDarRows   (newDarRows  ).catch(e=>console.warn('[dar_rows] save error:',e));
-      if(newPeaksRows.length>0) savePeaksRows (newPeaksRows).catch(e=>console.warn('[peaks_rows] save error:',e));
-      if(newAuditRows.length>0) saveAuditRows (newAuditRows).catch(e=>console.warn('[audit_rows] save error:',e));
+      const newDarRows=(currentDS.darRows||[]).filter(r=>!_prevDarKeys.has(r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
+      const _freshPeaksAll=[..._freshPeakSvcRows,..._freshPeakSalesRows];
+      if(_freshLaborRows .length>0) saveLaborRows (_freshLaborRows ).catch(e=>console.warn('[labor_rows] save error:',e));
+      if(_freshFobRows   .length>0) saveFobRows   (_freshFobRows   ).catch(e=>console.warn('[fob_rows] save error:',e));
+      if(_freshOpsRows   .length>0) saveOpsRows   (_freshOpsRows   ).catch(e=>console.warn('[ops_rows] save error:',e));
+      if(_freshCtrlRows  .length>0) saveCtrlRows  (_freshCtrlRows  ).catch(e=>console.warn('[ctrl_rows] save error:',e));
+      if(newDarRows      .length>0) saveDarRows   (newDarRows      ).catch(e=>console.warn('[dar_rows] save error:',e));
+      if(_freshPeaksAll  .length>0) savePeaksRows (_freshPeaksAll  ).catch(e=>console.warn('[peaks_rows] save error:',e));
+      if(_freshAuditRows .length>0) saveAuditRows (_freshAuditRows ).catch(e=>console.warn('[audit_rows] save error:',e));
     }
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
     setLoadMsg('✓ '+names+' loaded · '+currentDS.storeIds.length+' stores');
