@@ -39,7 +39,7 @@ import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -75,9 +75,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.316';
-const MERIDIAN_BUILD_DATE = '2026-07-05';
+const MERIDIAN_VERSION    = '4.388';
+const MERIDIAN_BUILD_DATE = '2026-07-09';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.388', date:'2026-07-09', changes:[
+    'QSRSoft field definitions: load 412 definitions from Supabase at startup (ds.qsrFieldDefs). FOBAnalysisPanel: hover any food cost category row to see QSRSoft\'s definition. SAGE: field definitions for FOB, DAR, Ops, Cash pages injected into system prompt so SAGE can explain what any metric means.',
+  ]},
   {version:'4.316', date:'2026-07-05', changes:[
     'Feature Requests module: Supabase-backed panel for all users to submit ideas and vote. Pre-seeded with roadmap history (13 items). Dev mode: status changes + notes. Nav: ANALYTICS section.',
   ]},
@@ -1098,6 +1101,13 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${customDefs.length} custom signal definitions`);
         }
       }catch(e){console.warn('[Meridian] Custom signals load failed:',e);}
+      try{
+        const qsrFieldDefs=await loadQsrFieldDefs();
+        if(Object.keys(qsrFieldDefs).length>0){
+          setDs(prev=>{if(!prev)return prev;return{...prev,qsrFieldDefs};});
+          console.log(`[Meridian] ✓ Loaded QSRSoft field definitions`);
+        }
+      }catch(e){console.warn('[Meridian] QSR field defs load failed:',e);}
     })();
   },[]);
 

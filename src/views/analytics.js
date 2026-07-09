@@ -203,16 +203,16 @@ function importReview(file, onTagEvent, onDone) {
 // Data: ds.fobRows | Targets: DEFAULT_TARGETS[loc] per store
 // Month-only selection (as per business requirement).
 const FOB_COMP=[
-  {key:'compWaste',  tgt:'tCompWaste',  label:'Completed Waste',     icon:'🗑', threshold:0.001,  lower:true},
+  {key:'compWaste',  tgt:'tCompWaste',  label:'Completed Waste',     icon:'🗑', threshold:0.001,  lower:true,  qsrPage:'fob',  qsrField:'Comp Waste %'},
   {key:'rawWaste',   tgt:'tRawWaste',   label:'Raw Waste',           icon:'🥩', threshold:0.001,  lower:true},
-  {key:'condiment',  tgt:'tCondiment',  label:'Condiments',          icon:'🧂', threshold:0.001,  lower:true},
-  {key:'empMeal',    tgt:'tEmpFood',    label:'Emp / Mgr Meals',     icon:'🍔', threshold:0.001,  lower:true},
-  {key:'statVar',    tgt:'tStatLoss',   label:'Variance Stat',       icon:'📊', threshold:0.002,  lower:true},
-  {key:'unexplained',tgt:'tUnex',       label:'Unexplained',         icon:'❓', threshold:0.0005, lower:true},
-  {key:'fobPct',     tgt:'tFOBTarget',  label:'Food Over Base (FOB)',icon:'📈', threshold:0.003,  lower:true, sep:true},
-  {key:'baseFoodPct',tgt:'tFOBBase',    label:'Base Food',           icon:'🥗', threshold:0.005,  lower:true},
-  {key:'discCoupon', tgt:'tDiscCoupPct',label:'Discounts / Coupons', icon:'🎫', threshold:0.003,  lower:false, note:'Lower is favorable — means more discount activity vs. sales'},
-  {key:'pLFoodPct',  tgt:'tFOBTotal',   label:'Total Food Cost',     icon:'💰', threshold:0.005,  lower:true, isTotal:true},
+  {key:'condiment',  tgt:'tCondiment',  label:'Condiments',          icon:'🧂', threshold:0.001,  lower:true,  qsrPage:'fob',  qsrField:'Condiment %'},
+  {key:'empMeal',    tgt:'tEmpFood',    label:'Emp / Mgr Meals',     icon:'🍔', threshold:0.001,  lower:true,  qsrPage:'fob',  qsrField:'Emp Meal %'},
+  {key:'statVar',    tgt:'tStatLoss',   label:'Variance Stat',       icon:'📊', threshold:0.002,  lower:true,  qsrPage:'cash', qsrField:'Stat Var %'},
+  {key:'unexplained',tgt:'tUnex',       label:'Unexplained',         icon:'❓', threshold:0.0005, lower:true,  qsrPage:'cash', qsrField:'Unexplained %'},
+  {key:'fobPct',     tgt:'tFOBTarget',  label:'Food Over Base (FOB)',icon:'📈', threshold:0.003,  lower:true,  sep:true, qsrPage:'fob', qsrField:'FOB %'},
+  {key:'baseFoodPct',tgt:'tFOBBase',    label:'Base Food',           icon:'🥗', threshold:0.005,  lower:true,  qsrPage:'fob',  qsrField:'Base Food %'},
+  {key:'discCoupon', tgt:'tDiscCoupPct',label:'Discounts / Coupons', icon:'🎫', threshold:0.003,  lower:false, note:'Lower is favorable — means more discount activity vs. sales', qsrPage:'fob', qsrField:'Disc Coupon %'},
+  {key:'pLFoodPct',  tgt:'tFOBTotal',   label:'Total Food Cost',     icon:'💰', threshold:0.005,  lower:true,  isTotal:true, qsrPage:'fob', qsrField:'P & L Food Cost %'},
 ];
 
 function computeFOBMetrics(fobRows, allTargets, selLoc, selMonth){
@@ -2739,12 +2739,13 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     const m=metrics[c.key];
     const dc=fCol(m.diffPct,c.lower);
     const isExpanded=expandedRow===c.key;
+    const fieldTip=c.qsrField?(ds?.qsrFieldDefs?.[c.qsrPage]?.[c.qsrField]||''):'';
     return[
       tr({key:c.key,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
         background:c.isTotal?'rgba(165,180,252,.06)':c.sep?'rgba(255,255,255,.02)':i%2?'rgba(255,255,255,.015)':'transparent',
         borderTop:c.sep?'1px solid rgba(255,255,255,.1)':'none',cursor:'pointer'},
         onClick:()=>setExpandedRow(isExpanded?null:c.key)},
-        td({style:{padding:'5px 8px',textAlign:'left',fontWeight:c.isTotal?700:500,color:c.isTotal?'#a5b4fc':'var(--text)',fontSize:'9px'}},
+        td({style:{padding:'5px 8px',textAlign:'left',fontWeight:c.isTotal?700:500,color:c.isTotal?'#a5b4fc':'var(--text)',fontSize:'9px'},title:fieldTip||undefined},
           span({style:{marginRight:5}},c.icon),c.label),
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',color:'var(--text2)'}},pFmtA(m.target)),
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',fontWeight:c.isTotal?700:500,color:c.isTotal?'#a5b4fc':'var(--text)'}},pFmtA(m.actual)),

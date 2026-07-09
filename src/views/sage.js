@@ -313,6 +313,29 @@ function buildScheduleSummary(ds) {
   return out;
 }
 
+// ── QSRSoft field definitions section for SAGE ───────────────────────────────
+function buildFieldDefsSection(qsrFieldDefs) {
+  if (!qsrFieldDefs) return '';
+  const PAGES = [
+    { key: 'fob',  label: 'FOB / Food Cost' },
+    { key: 'dar',  label: 'Daily Activity Report (DAR)' },
+    { key: 'ops',  label: 'Operations Report' },
+    { key: 'cash', label: 'Cash / Controls' },
+  ];
+  let out = '';
+  for (const p of PAGES) {
+    const fields = qsrFieldDefs[p.key];
+    if (!fields) continue;
+    out += `\n${p.label}:\n`;
+    for (const [label, desc] of Object.entries(fields)) {
+      out += `  ${label}: ${desc}\n`;
+    }
+  }
+  return out
+    ? `\nQSRSOFT FIELD DEFINITIONS (use when asked what a metric means):\n${'─'.repeat(60)}\n${out}`
+    : '';
+}
+
 // ── System prompt builder ─────────────────────────────────────────────────────
 function buildSystemPrompt(ds, signals, customSignalDefs) {
   const today = new Date().toISOString().slice(0, 10);
@@ -421,7 +444,7 @@ If you don't have data on something, say so clearly — do not speculate.
 ─────────────────────────────────────────────────────────────────────────
 
 TERMINOLOGY: OEPE, TPPH, Labor%, FOB, Base Food%, OSAT, DT%, B2B, MOP, Kiosk, 3PO, KVS, Park, VLH.
-This is a private tool for one operator. Be candid, specific, and direct.`;
+This is a private tool for one operator. Be candid, specific, and direct.${buildFieldDefsSection(ds?.qsrFieldDefs)}`;
 }
 
 // ── Edge Function call with SSE streaming ─────────────────────────────────────

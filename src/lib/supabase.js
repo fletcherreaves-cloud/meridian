@@ -1143,6 +1143,20 @@ export async function loadForecastSnapshots(locs, days = 90) {
   return data || [];
 }
 
+export async function loadQsrFieldDefs() {
+  if (!supabase) return {};
+  const { data, error } = await supabase
+    .from('qsr_field_definitions')
+    .select('page_key,field_label,description');
+  if (error) { console.warn('[supabase] loadQsrFieldDefs:', error.message); return {}; }
+  const map = {};
+  for (const row of data || []) {
+    if (!map[row.page_key]) map[row.page_key] = {};
+    map[row.page_key][row.field_label] = row.description;
+  }
+  return map;
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client
