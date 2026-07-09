@@ -767,7 +767,7 @@ function StoreRow({ store, expanded, onToggle }) {
 }
 
 function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = (()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
   const [date, setDate] = uSt(todayStr);
   const [ownRows, setOwnRows] = uSt([]);
   const [loading, setLoading] = uSt(false);

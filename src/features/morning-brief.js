@@ -280,6 +280,19 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
   const expGC = (norms.gcSalesRatio && laborSales) ? laborSales*norms.gcSalesRatio : null;
   const gcVsExp = (expGC && labor?.gc) ? ((labor.gc-expGC)/expGC*100) : null;
 
+  // LY comparison: same date last year from laborRows
+  const lyTarget = new Date(targetDate);
+  lyTarget.setFullYear(lyTarget.getFullYear()-1);
+  const lyDk = dKey(lyTarget);
+  const lyLabor = (ds.laborRows||[]).find(r=>String(r.loc)===locStr&&dKey(r.date)===lyDk)
+               ||(ds.laborRows||[]).find(r=>String(r.loc)===locStr&&Math.abs(r.date-lyTarget)<2*86400000);
+  const lySales = lyLabor?.sales>0 ? lyLabor.sales : null;
+  const lyGC    = lyLabor?.gc>0    ? lyLabor.gc    : null;
+  const curSales = labor?.sales>0 ? labor.sales : darSales;
+  const curGC    = labor?.gc>0 ? labor.gc : null;
+  const vsLYSales = (curSales&&lySales) ? ((curSales-lySales)/lySales*100) : null;
+  const vsLYGC    = (curGC&&lyGC)       ? ((curGC-lyGC)/lyGC*100)          : null;
+
   // FOB: most recent entry for this store within 35 days (monthly cadence)
   const fobSorted = (ds.fobRows||[])
     .filter(r=>String(r.loc)===locStr && r.date && Math.abs(r.date-targetDate)<35*86400000)
@@ -313,7 +326,7 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
                 (glimpse?.laborPct>0 ? glimpse.laborPct :
                 (DEFAULT_TARGETS[locStr]?.tJuneLaborPct>0 ? DEFAULT_TARGETS[locStr].tJuneLaborPct : null))),
     actVsNeed:  labor?.actVsNeed != null ? labor.actVsNeed : (ctrl?.actVsNeed ?? darActVsNeed),
-    salesVsExp, gcVsExp,
+    salesVsExp, gcVsExp, vsLYSales, vsLYGC,
     // Controls fields — ctrl upload first, then email pipeline (glimpse > cash) as fallback
     drawerOpens:  ctrl?.drawerOpens||null,
     posOverAmt:   ctrl?.posOverAmt ?? (glimpse?.posOverAmt ?? (cash?.posOverAmt ?? null)),
@@ -408,7 +421,8 @@ function StoreBriefCard({store, expanded, setExpanded}){
   const {severity, flags, name, supervisor, hasData,
          sales, projSales, gc, oepe, oepeNorm, drawerOpens,
          actVsNeed, tpph, laborPct, kvst, dtPark,
-         baseFoodPct, totFoodPct, fobMonth, smgOsat, smgMonth} = store;
+         baseFoodPct, totFoodPct, fobMonth, smgOsat, smgMonth,
+         vsLYSales, vsLYGC} = store;
   const c = SCOLOR[severity], bg = SBG[severity], bdr = SBDR[severity];
 
   return h('div',{
@@ -498,6 +512,10 @@ function StoreBriefCard({store, expanded, setExpanded}){
           ['vs Proj', store.salesVsExp!=null?(store.salesVsExp>0?'+':'')+store.salesVsExp.toFixed(1)+'%':'—',
             store.salesVsExp!=null?(store.salesVsExp>-3?'#10b981':store.salesVsExp>-8?'#f59e0b':'#ef4444'):null],
           ['GC',     gc!=null?gc.toFixed(0):'—'],
+          ...(vsLYSales!=null?[['vs LY Sales',(vsLYSales>0?'+':'')+vsLYSales.toFixed(1)+'%',
+            vsLYSales>=0?'#10b981':vsLYSales>=-5?'#f59e0b':'#ef4444']]:[]),
+          ...(vsLYGC!=null?[['vs LY GC',(vsLYGC>0?'+':'')+vsLYGC.toFixed(1)+'%',
+            vsLYGC>=0?'#10b981':vsLYGC>=-5?'#f59e0b':'#ef4444']]:[]),
           ['OEPE',   oepe!=null?oepe.toFixed(0)+'s':'—', oepeNorm&&oepe?oepe>oepeNorm*1.15?'#ef4444':oepe>oepeNorm*1.05?'#f59e0b':'#10b981':null],
           ['OEPE Norm',oepeNorm!=null?oepeNorm.toFixed(0)+'s':'—'],
           ['KVS',    kvst!=null?kvst.toFixed(0)+'s':'—'],
