@@ -12,6 +12,8 @@ const muted = '#6b7280';
 const grn   = '#10b981';
 const red   = '#ef4444';
 
+const SAGE_THREAD_KEY = 'mf_sage_thread_v1';
+
 // ── Data summary helpers ──────────────────────────────────────────────────────
 function _avg(arr) {
   const v = arr.filter(x => x != null && !isNaN(x));
@@ -763,7 +765,12 @@ const QUICK_PROMPTS = [
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 export function SagePanel({ ds, signals, customSignalDefs }) {
-  const [messages, setMessages] = uSt([]);
+  const [messages, setMessages] = uSt(() => {
+    try {
+      const saved = localStorage.getItem(SAGE_THREAD_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput]       = uSt('');
   const [streaming, setStreaming] = uSt(false);
   const [streamText, setStreamText] = uSt('');
@@ -773,10 +780,26 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
   const abortRef  = uRef(null);
 
   uEf(() => {
+    try {
+      if (messages.length > 0) {
+        localStorage.setItem(SAGE_THREAD_KEY, JSON.stringify(messages));
+      } else {
+        localStorage.removeItem(SAGE_THREAD_KEY);
+      }
+    } catch (_) { /* quota exceeded — ignore */ }
+  }, [messages]);
+
+  uEf(() => {
     if (threadRef.current) {
       threadRef.current.scrollTop = threadRef.current.scrollHeight;
     }
   }, [messages, streamText]);
+
+  const clearThread = () => {
+    setMessages([]);
+    localStorage.removeItem(SAGE_THREAD_KEY);
+    setError(null);
+  };
 
   const send = uCb(async () => {
     const text = input.trim();
@@ -830,10 +853,24 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
   return h('div', { style: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' } },
 
     // ── Header ──────────────────────────────────────────────────────────────
-    h('div', { style: { padding: '16px 20px 14px', borderBottom: '1px solid rgba(255,255,255,.08)', flexShrink: 0 } },
-      h('div', { style: { fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'AI Assistant'),
-      h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '24px', fontWeight: 900, letterSpacing: '-.04em', color: 'var(--text, #f1f5f9)', lineHeight: 1 } }, 'SAGE'),
-      h('div', { style: { fontSize: '11px', color: muted, marginTop: 4 } }, 'Strategic Analytics & Guidance Engine · Claude Opus'),
+    h('div', { style: { padding: '16px 20px 14px', borderBottom: '1px solid rgba(255,255,255,.08)', flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' } },
+      h('div', null,
+        h('div', { style: { fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'AI Assistant'),
+        h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '24px', fontWeight: 900, letterSpacing: '-.04em', color: 'var(--text, #f1f5f9)', lineHeight: 1 } }, 'SAGE'),
+        h('div', { style: { fontSize: '11px', color: muted, marginTop: 4 } }, 'Strategic Analytics & Guidance Engine · Claude Opus'),
+      ),
+      messages.length > 0 && !streaming && h('button', {
+        onClick: clearThread,
+        title: 'Clear conversation',
+        style: {
+          background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+          borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
+          fontSize: '11px', color: muted, flexShrink: 0, marginTop: 2,
+          transition: 'all .15s',
+        },
+        onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(239,68,68,.4)'; e.currentTarget.style.color = '#ef4444'; },
+        onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+      }, '✕ New chat'),
     ),
 
     // ── Thread ───────────────────────────────────────────────────────────────

@@ -129,15 +129,15 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
 | Labor Tools + LifeLenz | ✅ | Scheduling intelligence, synced daily |
 | Management | ✅ | Coaching, performance reviews |
 | Inventory | ✅ | |
-| SMG VOICE | ✅ | Comments tab + FullScale scorecard; thresholds TBD |
+| SMG VOICE | ✅ | Comments tab + FullScale scorecard; thresholds set (OSAT ≥90%, Acc B2B ≥95%) |
 | Location Intel | ✅ | |
 | Calendar Manager | ✅ | Recurring rules |
 | Smart Targets | ✅ | |
-| Data Manager | ✅ | Needs updated for all new file types |
-| SAGE AI | ✅ | Claude Opus 4.8-powered chat, fully deployed |
-| Signals | 🔄 | Operational alert/pattern surface — in progress |
-| FOB / Food Cost | ❌ | Data parsed, no dedicated panel yet |
-| Feature Requests | ❌ | Module to track and surface user-requested features |
+| Data Manager | ✅ | |
+| SAGE AI | ✅ | Claude Opus 4.8, live tool use (sales/DT/labor/forecast accuracy), streaming |
+| Signals | ✅ | LiveOps tab (qsr_daily_activity), DT Speed panel, custom signal engine |
+| FOB / Food Cost | ✅ | FOBAnalysisPanel + FOBEOMPanel (per-store inventory troubleshooter) |
+| Feature Requests | ✅ | Supabase-backed, pre-seeded with roadmap history |
 
 ---
 
@@ -149,27 +149,27 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - **Model:** `claude-opus-4-8` with `thinking: {type: "adaptive"}`, `max_tokens: 8000`
 - **Deploy command:** `supabase functions deploy sage-chat --no-verify-jwt` (`--no-verify-jwt` required for CORS)
 
+**Live tools (v4.373–v4.379):** `query_daily_activity` (sales + DT), `query_lifelenz_labor` (VLH gap), `query_forecast_snapshots` (MAPE by model). System prompt documents tools explicitly so SAGE calls them proactively.
+
 **Vision (future enhancements):**
-- All-in-one: reporting + diagnostic + coaching in one interface
 - Cross-device session memory and conversation retention
 - Action plans, tables/charts in responses, copy/email output
 - Prompt catalog with thumbs-up/down rating
 - RBAC-aware (what SAGE sees/recommends depends on caller's role)
-- Tool use: SAGE queries Supabase directly for live numbers
 
 ---
 
-## Top Priorities (updated 2026-07-08, post v4.368)
+## Top Priorities (updated 2026-07-08, post v4.380)
 
-**Intelligence phase.** Three live data streams run unattended (LifeLenz, eBOS, DAR). Morning Brief hourly pace, Store Dashboard daypart card, and Signals LiveOps are all live. See `memory/project-backlog.md` for full checklist — update it every sprint.
+**All backlog items done as of v4.380.** Three live data streams run unattended (LifeLenz, eBOS, DAR). SAGE has live tool use for sales/DT/labor/forecast. DT Speed panel, SMG thresholds, beta/release mode, data policy, and perf review formatting all shipped. See `memory/project-backlog.md` for full history.
 
-✅ Done: Data Manager sync times · Morning Brief hourly pace · Store Dashboard daypart card · Signals LiveOps · Morning Brief email pipeline wire-up
+⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` in the Supabase SQL Editor to enable forecast accuracy tracking.
 
-**Remaining (in order):**
-1. **Projections: QSRSoft baseline** — `proj_sales_dollars` from `qsr_daily_activity` as second comparison line.
-2. **FOB / Food Cost panel** — data in `ds.fobRows`, needs a dedicated panel.
-3. **Supabase persistence** — move `fobRows`, `opsRows`, `ctrlRows`, `smgFullscale` from OPFS → Supabase.
-4. **Operator Summary rework** — rename + Patch/Operator/Company/Org group selector.
+**Next candidate areas (no active sprint):**
+- SAGE conversation persistence (localStorage thread save/restore)
+- Yearly projections view in Projection Workspace  
+- Info icon scraper for QSRSoft field definitions (requires QSRSoft access)
+- SAGE RBAC awareness (tailor responses to caller's role)
 
 ---
 
