@@ -369,7 +369,8 @@ export async function loadLifeLenzSchedule({ daysBack = 1825, daysFwd = 30 } = {
 // Save labor rows to Supabase for cross-device persistence and DI calibration history
 export async function saveLaborRows(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };
-  const valid = rows.filter(r => r.loc && r.date && (r.sales > 0));
+  // Exclude period-summary rows — they have multi-day totals, not daily actuals.
+  const valid = rows.filter(r => r.loc && r.date && r.sales > 0 && !r.isPeriodSummary);
   if (!valid.length) return { saved: 0, errors: [] };
   const upsert = valid.map(r => ({
     loc:         String(r.loc),
