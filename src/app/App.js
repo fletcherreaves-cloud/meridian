@@ -503,6 +503,37 @@ const MERIDIAN_CHANGELOG  = [
   ]},
 ];
 
+// ── Data Policy Banner — shown once per session, dismissed via localStorage ──
+const DATA_POLICY_KEY = 'mf_data_policy_v1';
+function DataPolicyBanner() {
+  const [show, setShow] = React.useState(() => !localStorage.getItem(DATA_POLICY_KEY));
+  if (!show) return null;
+  const dismiss = () => { localStorage.setItem(DATA_POLICY_KEY, '1'); setShow(false); };
+  return React.createElement('div', {
+    style: {
+      position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 600,
+      background: 'rgba(15,17,23,.97)', borderTop: '1px solid var(--bdr2)',
+      padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 16,
+      backdropFilter: 'blur(6px)',
+    }
+  },
+    React.createElement('span', { style: { fontSize: 11, color: 'var(--text2)', flex: 1, lineHeight: 1.5 } },
+      React.createElement('strong', { style: { color: 'var(--text)', marginRight: 4 } }, 'Data Notice:'),
+      'This tool processes McDonald\'s operational data (sales, labor, food cost, customer satisfaction). ' +
+      'Data is stored in Supabase (PostgreSQL) and accessed only by authorized users. ' +
+      'No data is shared with third parties. For questions, contact fletcher.reaves@mcreaves.com.'
+    ),
+    React.createElement('button', {
+      onClick: dismiss,
+      style: {
+        flexShrink: 0, padding: '5px 14px', borderRadius: 5, cursor: 'pointer',
+        background: 'var(--accent)', color: '#000', border: 'none',
+        fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+      }
+    }, 'OK, got it')
+  );
+}
+
 function App() {
   const [ds, setDs]               = useState(null);
   const [view, setView]           = useState('command'); // command | district | store | org
@@ -2050,7 +2081,9 @@ function App() {
       )
     ),
     // ── First-run tutorial overlay (zIndex 500 — above everything) ──────────
-    showTutorial&&h(TutorialOverlay,{onClose:()=>setShowTutorial(false)})
+    showTutorial&&h(TutorialOverlay,{onClose:()=>setShowTutorial(false)}),
+    // ── Data policy notice (fixed-bottom, dismissed once per device) ─────────
+    h(DataPolicyBanner, null)
   );
 }
 
