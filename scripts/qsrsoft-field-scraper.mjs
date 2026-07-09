@@ -25,12 +25,7 @@ const DISCOVERY_OUT = path.join(SCREENSHOTS, 'field-discovery.json');
 const HEADLESS = process.argv.includes('--headless');
 const SAVE     = process.argv.includes('--save');
 
-const u  = process.env.QSRSOFT_USERNAME;
-const pw = process.env.QSRSOFT_PASSWORD;
-if (!u || !pw) {
-  console.error('QSRSOFT_USERNAME and QSRSOFT_PASSWORD required');
-  process.exit(1);
-}
+// No credentials needed — script opens a browser and waits for manual login
 
 // ── Report pages to scrape ────────────────────────────────────────────────────
 // Each entry: { key, label, url }
@@ -173,22 +168,23 @@ async function main() {
   const allFindings = [];
 
   try {
-    // ── Login ──────────────────────────────────────────────────────────────────
-    console.log('[scraper] logging in to v3.myqsrsoft.com…');
-    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
-    await snap(page, 'scraper-01-landing.png');
+    // ── Login — manual ────────────────────────────────────────────────────────
+    console.log('[scraper] opening v3.myqsrsoft.com — please log in manually in the browser window');
+    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
 
-    const userSel = [
-      'input[name="username"]','input[name="email"]','input[type="email"]',
-      '#username','#email','input[autocomplete="username"]',
-      'input[placeholder*="email" i]','input[placeholder*="username" i]',
-    ].join(', ');
+    // Wait until the URL is no longer the login page (up to 3 minutes)
+    console.log('[scraper] waiting for you to log in… (up to 3 minutes)');
+    await page.waitForFunction(
+      () => !window.location.href.includes('login') && !window.location.href.includes('auth') && window.location.pathname !== '/',
+      { timeout: 180000, polling: 1000 },
+    ).catch(async () => {
+      // Also accept if we're just past the root with a session
+      const url = page.url();
+      if (!url.includes('v3.myqsrsoft.com') || url.endsWith('/')) {
+        throw new Error('Login not detected after 3 minutes — did you log in?');
+      }
+    });
 
-    await page.waitForSelector(userSel, { timeout: 20000 });
-    await page.fill(userSel, u);
-    await page.fill('input[type="password"], input[name="password"]', pw);
-    await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
     await snap(page, 'scraper-02-post-login.png');
     console.log('[scraper] logged in — url:', page.url());
 
