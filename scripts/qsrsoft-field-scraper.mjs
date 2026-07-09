@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-// scripts/qsrsoft-field-scraper.mjs — extract QSRSoft field definitions via report ℹ button
+// scripts/qsrsoft-field-scraper.mjs — capture QSRSoft field definitions from ℹ dialogs
 //
-// Interactive mode: opens a browser, you log in and navigate to each report page,
-// press Enter in the terminal after each page. The script clicks the report-level
-// ℹ button, captures the dialog, and saves results.
+// YOU click the ℹ button; this script watches for a dialog and captures the content.
 //
 // Run:
 //   node scripts/qsrsoft-field-scraper.mjs
@@ -23,7 +21,6 @@ const SAVE = process.argv.includes('--save');
 
 fs.mkdirSync(SCREENSHOTS, { recursive: true });
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 const snap = (page, name) => page.screenshot({ path: path.join(SCREENSHOTS, name), fullPage: true }).catch(() => {});
 
@@ -32,7 +29,99 @@ function prompt(msg) {
   return new Promise(resolve => rl.question(msg, ans => { rl.close(); resolve(ans.trim()); }));
 }
 
-// Supabase setup (--save only)
+// Poll for a visible dialog and capture its content
+async function waitForDialog(page, timeoutMs = 8000) {
+  const DIALOG_SELS = [
+    '.v-dialog .v-card',
+    '.v-overlay__content .v-card',
+    '[role="dialog"]',
+    '.v-dialog__content',
+    '.v-overlay.v-overlay--active .v-card',
+  ];
+
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    for (const sel of DIALOG_SELS) {
+      const el = await page.$(sel);
+      if (el) {
+        const visible = await el.isVisible().catch(() => false);
+        if (visible) return el;
+      }
+    }
+    await wait(200);
+  }
+  return null;
+}
+
+async function captureDialog(page, pageKey, idx) {
+  const dialog = await waitForDialog(page);
+  if (!dialog) {
+    console.log('  no dialog detected within 8 seconds');
+    return null;
+  }
+
+  await snap(page, `scraper-${pageKey}-dialog-${idx}.png`);
+
+  const raw = await dialog.evaluate(el => el.innerText?.replace(/\s+/g, ' ').trim() || '');
+  console.log(`  dialog captured (${raw.length} chars):`);
+  console.log(`  ${raw.slice(0, 300)}`);
+
+  // Try to parse structured fields: look for label:description patterns
+  const fields = await dialog.evaluate(el => {
+    const results = [];
+
+    // dt/dd pairs
+    el.querySelectorAll('dt').forEach(dt => {
+      const dd = dt.nextElementSibling;
+      if (dd?.tagName === 'DD') {
+        results.push({
+          label: dt.innerText?.replace(/\s+/g, ' ').trim(),
+          description: dd.innerText?.replace(/\s+/g, ' ').trim(),
+        });
+      }
+    });
+
+    // table rows (2-column)
+    if (!results.length) {
+      el.querySelectorAll('tr').forEach(tr => {
+        const cells = tr.querySelectorAll('td, th');
+        if (cells.length >= 2) {
+          results.push({
+            label: cells[0].innerText?.replace(/\s+/g, ' ').trim(),
+            description: cells[1].innerText?.replace(/\s+/g, ' ').trim(),
+          });
+        }
+      });
+    }
+
+    // heading + paragraph pairs
+    if (!results.length) {
+      el.querySelectorAll('h3, h4, h5, strong, b').forEach(h => {
+        const next = h.nextElementSibling || h.parentElement?.nextElementSibling;
+        if (next) {
+          results.push({
+            label: h.innerText?.replace(/\s+/g, ' ').trim(),
+            description: next.innerText?.replace(/\s+/g, ' ').trim(),
+          });
+        }
+      });
+    }
+
+    // Fallback: full text block
+    if (!results.length) {
+      const text = el.innerText?.replace(/\s+/g, ' ').trim();
+      if (text) results.push({ label: '', description: text });
+    }
+
+    return results;
+  });
+
+  console.log(`  parsed ${fields.length} field entries`);
+  fields.slice(0, 5).forEach(f => console.log(`    "${f.label}" → "${f.description?.slice(0, 80)}"`));
+
+  return fields.map(f => ({ page: pageKey, ...f }));
+}
+
 async function getSupabase() {
   const { createClient } = await import('@supabase/supabase-js');
   const url = process.env.VITE_SUPABASE_URL;
@@ -41,104 +130,10 @@ async function getSupabase() {
   return createClient(url, key);
 }
 
-// Click the report-level ℹ button and capture the dialog that appears
-async function clickInfoAndCapture(page, pageKey) {
-  // The clickable ℹ icon in the report header bar
-  // Distinguished from non-clickable info icons by v-icon--clickable class
-  const INFO_BTN = 'i.mdi-information.v-icon--clickable, button .mdi-information, .v-btn .mdi-information';
-  const DIALOG_SEL = '.v-dialog .v-card, .v-overlay__content .v-card, .v-dialog__content, [role="dialog"]';
-
-  const icons = await page.$$(INFO_BTN);
-  console.log(`  ℹ clickable icons found: ${icons.length}`);
-
-  const allFindings = [];
-
-  for (let i = 0; i < icons.length; i++) {
-    console.log(`  clicking icon ${i + 1}/${icons.length}…`);
-    try {
-      await icons[i].scrollIntoViewIfNeeded();
-
-      // Click the parent button if the icon itself isn't the trigger
-      const clickTarget = await icons[i].evaluateHandle(el =>
-        el.closest('button, [role="button"], .v-btn') || el
-      );
-      await clickTarget.click();
-      await wait(1500);
-
-      // Look for a dialog
-      const dialog = await page.$(DIALOG_SEL);
-      if (!dialog) {
-        console.log(`    no dialog appeared`);
-        await page.keyboard.press('Escape');
-        await wait(300);
-        continue;
-      }
-
-      // Extract all text content from the dialog
-      const dialogText = await dialog.evaluate(el => el.innerText?.replace(/\s+/g, ' ').trim());
-      console.log(`    dialog text (${dialogText?.length} chars): ${dialogText?.slice(0, 200)}`);
-
-      // Try to extract structured field definitions
-      // QSRSoft dialogs often have dt/dd pairs, table rows, or labeled sections
-      const fields = await dialog.evaluate(el => {
-        const results = [];
-
-        // Pattern 1: definition list (dt = field name, dd = description)
-        const dts = el.querySelectorAll('dt, .field-name, [class*="field-label"]');
-        dts.forEach(dt => {
-          const dd = dt.nextElementSibling;
-          results.push({
-            label: dt.textContent?.replace(/\s+/g, ' ').trim(),
-            description: dd?.textContent?.replace(/\s+/g, ' ').trim() || '',
-          });
-        });
-
-        // Pattern 2: table rows (first cell = label, second = description)
-        if (!results.length) {
-          el.querySelectorAll('tr').forEach(tr => {
-            const cells = tr.querySelectorAll('td, th');
-            if (cells.length >= 2) {
-              results.push({
-                label: cells[0].textContent?.replace(/\s+/g, ' ').trim(),
-                description: cells[1].textContent?.replace(/\s+/g, ' ').trim(),
-              });
-            }
-          });
-        }
-
-        // Pattern 3: just grab full text as one block
-        if (!results.length) {
-          results.push({ label: '', description: el.innerText?.replace(/\s+/g, ' ').trim() });
-        }
-
-        return results;
-      });
-
-      console.log(`    extracted ${fields.length} field definitions`);
-      fields.forEach(f => console.log(`      "${f.label}" → "${f.description?.slice(0, 80)}"`));
-
-      allFindings.push(...fields.map(f => ({ page: pageKey, ...f })));
-
-      // Save screenshot of dialog
-      await snap(page, `scraper-${pageKey}-dialog-${i}.png`);
-
-      // Close dialog
-      await page.keyboard.press('Escape');
-      await wait(500);
-
-    } catch (err) {
-      console.log(`    error clicking icon ${i}: ${err.message}`);
-      await page.keyboard.press('Escape').catch(() => {});
-    }
-  }
-
-  return allFindings;
-}
-
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: false, slowMo: 30 });
+  const browser = await chromium.launch({ headless: false, slowMo: 0 });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
   });
@@ -148,13 +143,9 @@ async function main() {
   const allFindings = [];
 
   try {
-    // ── Step 1: Login ──────────────────────────────────────────────────────────
-    console.log('\n[scraper] opening QSRSoft…');
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await prompt('\n>>> Log in to QSRSoft in the browser window, then press Enter here: ');
-    console.log('[scraper] logged in — url:', page.url());
+    await prompt('\n>>> Log in to QSRSoft, then press Enter: ');
 
-    // ── Step 2: Scrape each report page interactively ─────────────────────────
     const reportPages = [
       { key: 'dar',  label: 'Daily Activity Report' },
       { key: 'fob',  label: 'Food Over Base' },
@@ -165,41 +156,50 @@ async function main() {
 
     for (const rp of reportPages) {
       console.log(`\n${'─'.repeat(60)}`);
-      const ans = await prompt(`>>> Navigate to "${rp.label}" in the browser, then press Enter (or type "skip" to skip): `);
-      if (ans.toLowerCase() === 'skip') { console.log('  skipped'); continue; }
+      const ans = await prompt(`>>> Navigate to "${rp.label}", then press Enter (or "skip"): `);
+      if (ans.toLowerCase() === 'skip') continue;
 
-      const currentUrl = page.url();
-      console.log(`[${rp.key}] url: ${currentUrl}`);
-      await snap(page, `scraper-${rp.key}-loaded.png`);
+      await snap(page, `scraper-${rp.key}-page.png`);
 
-      // Wait a moment for any lazy content
-      await wait(2000);
+      // Allow multiple ℹ dialogs per page (some pages may have several)
+      let iconIdx = 0;
+      while (true) {
+        const action = await prompt(
+          `>>> Click a ℹ button in the browser, then press Enter — or type "done" to move to next page: `
+        );
+        if (action.toLowerCase() === 'done') break;
 
-      console.log(`[${rp.key}] looking for ℹ button and clicking…`);
-      const findings = await clickInfoAndCapture(page, rp.key);
-      allFindings.push(...findings);
-      console.log(`[${rp.key}] found ${findings.length} total definitions`);
+        console.log(`  waiting for dialog…`);
+        const findings = await captureDialog(page, rp.key, iconIdx++);
+
+        if (findings) {
+          allFindings.push(...findings);
+          // Press Escape to close dialog before next click
+          await page.keyboard.press('Escape');
+          await wait(400);
+        }
+      }
+
+      console.log(`  [${rp.key}] done — ${allFindings.filter(f => f.page === rp.key).length} definitions so far`);
     }
 
-    // ── Step 3: Save ──────────────────────────────────────────────────────────
+    // ── Save ──────────────────────────────────────────────────────────────────
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`[scraper] complete — ${allFindings.length} total field definitions`);
+    console.log(`[scraper] complete — ${allFindings.length} total definitions`);
     fs.writeFileSync(DISCOVERY_OUT, JSON.stringify(allFindings, null, 2));
     console.log(`[scraper] saved to ${DISCOVERY_OUT}`);
 
     if (SAVE && allFindings.length > 0) {
-      const meaningful = allFindings.filter(f => f.label || f.description);
-      console.log(`[scraper] upserting ${meaningful.length} rows to Supabase…`);
+      const rows = allFindings.filter(f => f.label || f.description)
+        .map(f => ({ page_key: f.page, field_label: f.label || '', description: f.description || '' }));
+      console.log(`[scraper] upserting ${rows.length} rows to Supabase…`);
       const sb = await getSupabase();
-      const { error } = await sb.from('qsr_field_definitions').upsert(
-        meaningful.map(f => ({ page_key: f.page, field_label: f.label || '', description: f.description || '' })),
-        { onConflict: 'page_key,field_label' }
-      );
-      if (error) console.error('[supabase] error:', error.message);
+      const { error } = await sb.from('qsr_field_definitions').upsert(rows, { onConflict: 'page_key,field_label' });
+      if (error) console.error('[supabase]', error.message);
       else console.log('[supabase] upsert complete');
     }
 
-    await prompt('\n>>> Done. Press Enter to close the browser: ');
+    await prompt('\n>>> Press Enter to close the browser: ');
 
   } catch (err) {
     console.error('[scraper] fatal:', err.message);
