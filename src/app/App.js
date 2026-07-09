@@ -36,6 +36,7 @@ import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
+import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
@@ -75,9 +76,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.388';
+const MERIDIAN_VERSION    = '4.389';
 const MERIDIAN_BUILD_DATE = '2026-07-09';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.389', date:'2026-07-09', changes:[
+    'Task Queue: mobile-first panel for autonomous + manual work tracking. Two tabs — Queue (add/prioritize/status) and AI Notes (drop session context). Tier 1/2/3 safety classification, priority 🔴🟡🟢, status lifecycle. Fixed ⊕ FAB, bottom-sheet add form. Supabase-backed (tasks + session_notes tables). Nav: ANALYTICS → Task Queue.',
+  ]},
   {version:'4.388', date:'2026-07-09', changes:[
     'QSRSoft field definitions: load 412 definitions from Supabase at startup (ds.qsrFieldDefs). FOBAnalysisPanel: hover any food cost category row to see QSRSoft\'s definition. SAGE: field definitions for FOB, DAR, Ops, Cash pages injected into system prompt so SAGE can explain what any metric means.',
   ]},
@@ -646,6 +650,7 @@ function App() {
   const [customSignalDefs,    setCustomSignalDefs]    = useState([]);
   const [showSage,            setShowSage]            = useState(false);
   const [showFeatureRequests, setShowFeatureRequests] = useState(false);
+  const [showTaskQueue,       setShowTaskQueue]       = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   const [showFcstRef,         setShowFcstRef]         = useState(false);
   const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
@@ -1711,6 +1716,7 @@ function App() {
         if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
         if(modal==='sage')              setShowSage(true);
         if(modal==='feature-requests')  setShowFeatureRequests(true);
+        if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
       }
     }),
@@ -1845,6 +1851,7 @@ function App() {
       ),
     ),
     showFeatureRequests&&h(FeatureRequestsPanel,{ds,settings,onClose:()=>setShowFeatureRequests(false)}),
+    showTaskQueue&&h(TaskQueuePanel,{onClose:()=>setShowTaskQueue(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),

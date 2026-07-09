@@ -1157,6 +1157,63 @@ export async function loadQsrFieldDefs() {
   return map;
 }
 
+// ── Task Queue ────────────────────────────────────────────────────────────────
+export async function loadTasks() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .not('status', 'eq', 'scrapped')
+    .order('priority', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) { console.warn('[supabase] loadTasks:', error.message); return []; }
+  return data || [];
+}
+
+export async function saveTask(task) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('tasks').insert(task).select().single();
+  if (error) { console.warn('[supabase] saveTask:', error.message); return null; }
+  return data;
+}
+
+export async function updateTask(id, updates) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('tasks')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) console.warn('[supabase] updateTask:', error.message);
+}
+
+// ── Session Notes ─────────────────────────────────────────────────────────────
+export async function loadSessionNotes() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('session_notes')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error) { console.warn('[supabase] loadSessionNotes:', error.message); return []; }
+  return data || [];
+}
+
+export async function saveSessionNote(body, source = 'manual') {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('session_notes')
+    .insert({ body, source })
+    .select()
+    .single();
+  if (error) { console.warn('[supabase] saveSessionNote:', error.message); return null; }
+  return data;
+}
+
+export async function markNoteConsumed(id) {
+  if (!supabase) return;
+  await supabase.from('session_notes').update({ consumed: true }).eq('id', id);
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client
