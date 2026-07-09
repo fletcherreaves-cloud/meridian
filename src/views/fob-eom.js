@@ -69,6 +69,28 @@ function colOf(hdr, ...names) {
 
 function n(v) { const x=parseFloat(String(v||0).replace(/[^0-9.\-]/g,'')); return isNaN(x)?0:x; }
 
+function parsePeriodFromFilename(name) {
+  if (!name) return null;
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const SHORT   = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  // Full month name: "June2026", "June_2026", "June 2026"
+  const mFull = name.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)[_\s-]*(\d{4})\b/i);
+  if (mFull) return `${mFull[1].charAt(0).toUpperCase()}${mFull[1].slice(1).toLowerCase()} ${mFull[2]}`;
+  // Short month: "Jun2026", "Jun_2026"
+  const mShort = name.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[_\s-]?(\d{4})\b/i);
+  if (mShort) {
+    const idx = SHORT.indexOf(mShort[1].slice(0, 3).toLowerCase());
+    if (idx >= 0) return `${MONTHS[idx]} ${mShort[2]}`;
+  }
+  // Numeric MM_YYYY
+  const mNum = name.match(/[_-](\d{1,2})[_-](\d{4})\b/);
+  if (mNum) {
+    const mo = parseInt(mNum[1], 10), yr = parseInt(mNum[2], 10);
+    if (mo >= 1 && mo <= 12 && yr >= 2020) return `${MONTHS[mo-1]} ${yr}`;
+  }
+  return null;
+}
+
 // ── File parsers ──────────────────────────────────────────────────────────────
 
 function parseContributors(wb) {
@@ -204,8 +226,7 @@ function analyzeData({contributors, onHand, summary, variance, pl}) {
   const vsMap = {};
   (variance||[]).forEach(r=>vsMap[r.wrin]=r);
 
-  // Extract store/period info from file content (contributors header usually has store#)
-  const period = pl ? 'June 2026' : '—';
+  // period is derived from filename in the calling component, not from file content
 
   // FOB contributors
   const fobStatus = contributors || [];
@@ -801,7 +822,7 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
     const m = name.match(/^(\d{3,5})_/);
     const storeNum = m ? m[1] : 'unknown';
     setStoreData(prev=>{
-      const slot = {...(prev[storeNum]||{}), [type]: data};
+      const slot = {...(prev[storeNum]||{}), [type]: data, [`_name_${type}`]: name};
       return {...prev, [storeNum]: slot};
     });
     // Auto-select first store loaded
@@ -832,13 +853,22 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
     });
   },[loadedFiles, selClasses]);
 
-  // Detect period from any loaded filename
+  // Detect period from uploaded filenames (stored as _name_<type> keys in storeData)
   const period = useMemo(()=>{
-    const allNames = Object.values(storeData).flatMap(s=>Object.keys(s));
-    // filenames not tracked directly — derive from contributors header if available
-    const contrib = loadedFiles.contributors;
-    if (!contrib||!contrib.length) return 'Current Month';
-    return 'June 2026'; // TODO: parse from file metadata
+    // Try each file type in priority order
+    for (const type of ['contributors','pl','onhand','summary','variance']) {
+      const fname = loadedFiles[`_name_${type}`];
+      const parsed = parsePeriodFromFilename(fname);
+      if (parsed) return parsed;
+    }
+    // Fallback: check other stores' files for a period clue
+    for (const store of Object.values(storeData)) {
+      for (const type of ['contributors','pl','onhand','summary','variance']) {
+        const parsed = parsePeriodFromFilename(store[`_name_${type}`]);
+        if (parsed) return parsed;
+      }
+    }
+    return 'Current Month';
   },[loadedFiles,storeData]);
 
   const anyLoaded = Object.keys(storeData).length>0;
