@@ -242,7 +242,16 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           div({className:'set-row'},div({className:'set-lbl'},'Your Name'),inp({className:'set-inp',defaultValue:S.userName||'',onBlur:e=>set('userName',e.target.value),placeholder:'e.g. Fletcher',title:'Used in the At a Glance welcome greeting'})),
           div({className:'set-row'},div({className:'set-lbl'},'District Name'),inp({className:'set-inp',defaultValue:S.districtName||'',onBlur:e=>set('districtName',e.target.value),placeholder:'e.g. McDOK'})),
           div({className:'set-note'},'Appears in report headers, file exports, and email subjects. Update if your district or operating company name changes. Stays editable.'),
-          div({className:'set-row'},div({className:'set-lbl'},'Operator Name'),inp({className:'set-inp',defaultValue:S.operatorName||'',onBlur:e=>set('operatorName',e.target.value),placeholder:'e.g. Ryan Thorley'}))
+          div({className:'set-row'},div({className:'set-lbl'},'Operator Name'),inp({className:'set-inp',defaultValue:S.operatorName||'',onBlur:e=>set('operatorName',e.target.value),placeholder:'e.g. Ryan Thorley'})),
+          div({style:{marginTop:18,paddingTop:14,borderTop:'1px solid var(--bdr)'}},
+            div({style:{fontSize:'10px',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--text2)',marginBottom:8}},'Data Policy'),
+            div({className:'set-note',style:{lineHeight:1.7}},
+              h('strong',{style:{color:'var(--text)'}},'Data Notice: '),
+              'This tool processes McDonald\'s operational data (sales, labor, food cost, customer satisfaction). ' +
+              'Data is stored in Supabase (PostgreSQL) and accessed only by authorized users. ' +
+              'No data is shared with third parties. For questions, contact fletcher.reaves@mcreaves.com.'
+            )
+          )
         ),
         activeSection==='forecast'&&div({className:'set-sec'},
           div({className:'set-sec-t'},'Forecast Parameters'),
