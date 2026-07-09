@@ -38,24 +38,11 @@ const REPORT_PAGES = [
   { key: 'cash', label: 'Cash / Controls',        url: null, navText: 'Cash' },
 ];
 
-// ── Selectors to probe for info icons ────────────────────────────────────────
-const INFO_SELECTORS = [
-  'i.fa-info-circle',
-  'i.fa-info',
-  'i[class*="info"]',
-  'span[class*="info-icon"]',
-  'span[class*="infoIcon"]',
-  '.info-icon',
-  '.infoIcon',
-  '[data-toggle="tooltip"]',
-  '[data-bs-toggle="tooltip"]',
-  '[data-tippy-content]',
-  'th [title]',
-  'td [title]',
-  '[aria-label]',
-  'button[class*="info"]',
-  'svg[class*="info"]',
-].join(', ');
+// ag-Grid + Vuetify: info icons are mdi-information elements inside header cells
+const INFO_ICON_SEL  = 'i.mdi-information, .mdi-information';
+const HEADER_CELL_SEL = '.ag-header-cell';
+// Vuetify 3 tooltip appears in .v-overlay__content when hovered
+const TOOLTIP_SEL = '.v-overlay__content, .v-tooltip__content, [class*="v-tooltip"] .v-overlay__content';
 
 // ── Supabase setup (only needed with --save) ──────────────────────────────────
 async function getSupabase() {
@@ -70,89 +57,53 @@ async function getSupabase() {
 const wait  = (ms) => new Promise(r => setTimeout(r, ms));
 const snap  = (page, name) => page.screenshot({ path: path.join(SCREENSHOTS, name), fullPage: true }).catch(() => {});
 
-// Extract all info-icon elements on the current page and their context
-async function extractInfoIcons(page, pageKey) {
-  return page.evaluate(({ selectors, pageKey }) => {
-    const results = [];
-    const seen = new Set();
-
-    // Try each selector
-    const els = document.querySelectorAll(selectors);
-    els.forEach(el => {
-      // Get tooltip text from various attributes and siblings
-      const tooltip =
-        el.getAttribute('data-tippy-content') ||
-        el.getAttribute('data-original-title') ||
-        el.getAttribute('title') ||
-        el.getAttribute('aria-label') ||
-        el.getAttribute('data-content') ||
-        el.closest('[data-tippy-content]')?.getAttribute('data-tippy-content') ||
-        el.closest('[title]')?.getAttribute('title') || '';
-
-      // Get field label from nearest header context
-      const th = el.closest('th, td, .column-header, [class*="header"], [class*="col"]');
-      const label = (th?.textContent || el.parentElement?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-
-      // Also grab the element's own text
-      const elText = el.textContent?.replace(/\s+/g, ' ').trim().slice(0, 80) || '';
-
-      // CSS classes of the element
-      const cls = el.className || '';
-
-      // Outer HTML snippet for inspection
-      const html = el.outerHTML?.slice(0, 200) || '';
-
-      const key = `${tooltip}::${label}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-
-      results.push({ page: pageKey, label, tooltip, elText, cls, html });
-    });
-
-    return results;
-  }, { selectors: INFO_SELECTORS, pageKey });
+// Wait for ag-Grid to finish loading on the current page
+async function waitForGrid(page) {
+  try {
+    // Wait for at least one header cell to appear
+    await page.waitForSelector(HEADER_CELL_SEL, { timeout: 15000 });
+    // Wait for loading overlay to disappear
+    await page.waitForFunction(
+      () => !document.querySelector('.ag-loading, .ag-overlay-loading-wrapper, .v-skeleton-loader'),
+      { timeout: 15000, polling: 500 },
+    ).catch(() => {}); // grid may not have a loading overlay
+    await wait(1000); // final settle
+  } catch (_) {
+    console.log('  (no ag-grid detected — continuing anyway)');
+  }
 }
 
-// Try clicking an info icon to reveal a tooltip/modal, then capture the popup text
-async function clickAndCapture(page, el) {
+// Hover an mdi-information icon and capture the Vuetify tooltip text
+async function hoverInfoIcon(page, el) {
   try {
+    await el.scrollIntoViewIfNeeded();
     await el.hover();
-    await wait(600);
-    // Look for newly visible tooltip/popover
-    const popText = await page.evaluate(() => {
-      const selectors = [
-        '.tippy-content', '.tooltip-inner', '.popover-body',
-        '[class*="tooltip"]:not([class*="icon"])', '[role="tooltip"]',
-        '.tooltip', '.popover', '[class*="popover"]',
-        '.modal-body', '.info-popup', '[class*="info-popup"]',
-      ];
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el && el.offsetParent !== null) { // visible
-          const text = el.textContent?.replace(/\s+/g, ' ').trim();
-          if (text && text.length > 3) return text;
-        }
+    await wait(800);
+    const text = await page.evaluate((tooltipSel) => {
+      const tips = Array.from(document.querySelectorAll(tooltipSel));
+      for (const t of tips) {
+        const txt = t.textContent?.replace(/\s+/g, ' ').trim();
+        if (txt && txt.length > 3) return txt;
       }
       return null;
-    });
-    if (popText) return popText;
-
-    // Try click instead of hover
-    await el.click().catch(() => {});
-    await wait(500);
-    const popText2 = await page.evaluate(() => {
-      const selectors = ['.tippy-content','.tooltip-inner','.popover-body','[role="tooltip"]','.modal-body'];
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el && el.offsetParent !== null) {
-          const text = el.textContent?.replace(/\s+/g, ' ').trim();
-          if (text && text.length > 3) return text;
-        }
-      }
-      return null;
-    });
-    return popText2;
+    }, TOOLTIP_SEL);
+    // Move mouse away to close tooltip
+    await page.mouse.move(0, 0);
+    await wait(200);
+    return text;
   } catch (_) { return null; }
+}
+
+// Get the column header label for an mdi-information icon
+async function getHeaderLabel(el) {
+  return el.evaluate(node => {
+    const cell = node.closest('.ag-header-cell, .ag-header-group-cell, th, [class*="header"]');
+    if (!cell) return node.parentElement?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 80) || '';
+    // ag-Grid: the label text is in .ag-header-cell-text
+    const labelEl = cell.querySelector('.ag-header-cell-text, .ag-header-group-cell-label');
+    if (labelEl) return labelEl.textContent?.replace(/\s+/g, ' ').trim();
+    return cell.textContent?.replace(/\s+/g, ' ').trim().slice(0, 80) || '';
+  }).catch(() => '');
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -169,112 +120,60 @@ async function main() {
 
   try {
     // ── Login — manual ────────────────────────────────────────────────────────
-    console.log('[scraper] opening v3.myqsrsoft.com — please log in manually in the browser window');
+    console.log('[1/6] opening v3.myqsrsoft.com…');
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    console.log('[1/6] page loaded — please log in manually, then press Enter in this terminal');
 
-    // Wait until the URL is no longer the login page (up to 3 minutes)
-    console.log('[scraper] waiting for you to log in… (up to 3 minutes)');
-    await page.waitForFunction(
-      () => !window.location.href.includes('login') && !window.location.href.includes('auth') && window.location.pathname !== '/',
-      { timeout: 180000, polling: 1000 },
-    ).catch(async () => {
-      // Also accept if we're just past the root with a session
-      const url = page.url();
-      if (!url.includes('v3.myqsrsoft.com') || url.endsWith('/')) {
-        throw new Error('Login not detected after 3 minutes — did you log in?');
-      }
+    // Wait for Enter keypress — simplest possible "are you done?" signal
+    await new Promise(resolve => {
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.once('data', () => { process.stdin.setRawMode(false); process.stdin.pause(); resolve(); });
     });
 
+    console.log('[2/6] resuming — current url:', page.url());
     await snap(page, 'scraper-02-post-login.png');
-    console.log('[scraper] logged in — url:', page.url());
-
-    // ── Discover nav links (for pages without direct URLs) ──────────────────
-    const navLinks = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('a, [role="menuitem"], [role="option"]'))
-        .map(a => ({ text: a.textContent?.replace(/\s+/g,' ').trim(), href: a.href || '' }))
-        .filter(a => a.text && a.href && a.href.includes('myqsrsoft.com'))
-        .slice(0, 100);
-    });
-    console.log('[scraper] nav links found:', navLinks.length);
-    if (navLinks.length) {
-      console.log('  sample:', navLinks.slice(0,5).map(l=>l.text).join(' | '));
-    }
-
-    // Fill in missing URLs from nav
-    for (const rp of REPORT_PAGES) {
-      if (!rp.url && rp.navText) {
-        const match = navLinks.find(l => l.text.toLowerCase().includes(rp.navText.toLowerCase()));
-        if (match) {
-          rp.url = match.href;
-          console.log(`[scraper] resolved ${rp.key} → ${rp.url}`);
-        }
-      }
-    }
 
     // ── Scrape each report page ─────────────────────────────────────────────
     for (const rp of REPORT_PAGES) {
       if (!rp.url) {
-        console.log(`[scraper] SKIP ${rp.key} — no URL found`);
+        console.log(`[scraper] SKIP ${rp.key} — no URL`);
         continue;
       }
 
-      console.log(`\n[scraper] → ${rp.label} (${rp.url})`);
+      console.log(`\n[scraper] → ${rp.label}`);
       try {
-        await page.goto(rp.url, { waitUntil: 'networkidle', timeout: 30000 });
-        await wait(2000); // let lazy-loaded content render
+        console.log(`  [a] navigating…`);
+        await page.goto(rp.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        console.log(`  [b] waiting 4s for content…`);
+        await wait(4000);
+        console.log(`  [c] taking screenshot…`);
         await snap(page, `scraper-${rp.key}.png`);
 
-        // Quick page structure dump
-        const structure = await page.evaluate(() => ({
-          title: document.title,
-          headings: Array.from(document.querySelectorAll('h1,h2,h3')).map(h=>h.textContent?.trim()).slice(0,5),
-          thCount: document.querySelectorAll('th').length,
-          tdCount: document.querySelectorAll('td').length,
-          bodySnippet: document.body.innerHTML.slice(0, 500),
-        }));
-        console.log(`  title: ${structure.title}`);
-        console.log(`  headings: ${structure.headings.join(' | ')}`);
-        console.log(`  table cells: ${structure.thCount} th, ${structure.tdCount} td`);
+        console.log(`  [d] waiting for ag-grid to load…`);
+        await waitForGrid(page);
 
-        // ── Static extraction ──
-        const staticFindings = await extractInfoIcons(page, rp.key);
-        console.log(`  static info icons found: ${staticFindings.length}`);
-        staticFindings.forEach(f => {
-          console.log(`    label="${f.label}" tooltip="${f.tooltip?.slice(0,80)}" cls="${f.cls}"`);
-        });
+        const url = page.url();
+        console.log(`  url: ${url}`);
 
-        // ── Click/hover each to get dynamic tooltips ──
-        const iconEls = await page.$$(INFO_SELECTORS);
-        console.log(`  clickable elements matching selectors: ${iconEls.length}`);
+        console.log(`  [e] finding mdi-information icons in header cells…`);
+        const iconEls = await page.$$(INFO_ICON_SEL);
+        console.log(`  info icons found: ${iconEls.length}`);
 
-        const dynamicFindings = [];
-        for (let i = 0; i < Math.min(iconEls.length, 30); i++) {
+        const pageFindings = [];
+        for (let i = 0; i < iconEls.length; i++) {
           const el = iconEls[i];
-          const popText = await clickAndCapture(page, el);
-          if (popText && popText.length > 5) {
-            const label = await el.evaluate(node => {
-              const ctx = node.closest('th, td, .column-header, [class*="header"]');
-              return (ctx?.textContent || node.parentElement?.textContent || '').replace(/\s+/g,' ').trim().slice(0,80);
-            }).catch(() => '');
-            const existing = staticFindings.find(f => f.label === label);
-            if (!existing?.tooltip) {
-              dynamicFindings.push({ page: rp.key, label, tooltip: popText, source: 'click' });
-              console.log(`    [click] label="${label}" → "${popText.slice(0,80)}"`);
-            }
+          console.log(`  hovering icon ${i + 1}/${iconEls.length}…`);
+          const label   = await getHeaderLabel(el);
+          const tooltip = await hoverInfoIcon(page, el);
+          console.log(`    label="${label}" tooltip="${(tooltip || '').slice(0, 80)}"`);
+          if (label || tooltip) {
+            pageFindings.push({ page: rp.key, label, tooltip: tooltip || '', source: 'hover' });
           }
         }
 
-        const pageFindings = [...staticFindings, ...dynamicFindings];
         allFindings.push(...pageFindings);
-
-        // Also dump raw HTML of first few th elements for analysis
-        const thSamples = await page.evaluate(() =>
-          Array.from(document.querySelectorAll('th')).slice(0,10).map(th => th.outerHTML.slice(0,300))
-        );
-        if (thSamples.length) {
-          console.log(`  th samples:`);
-          thSamples.forEach((s,i) => console.log(`    [${i}] ${s.replace(/\n/g,' ')}`));
-        }
+        console.log(`  [f] done — ${pageFindings.length} definitions from ${rp.key}`);
 
       } catch (err) {
         console.error(`  [error] ${rp.key}: ${err.message}`);
