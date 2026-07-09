@@ -123,9 +123,12 @@ function computeRecords(ds, windowDays) {
   const windowStart = new Date(dataEnd.getTime() - windowDays * 86400000);
 
   // ── Daily aggregates from laborRows ──────────────────────────────
+  // Cap: a single McDonald's daily sales above $80K is almost certainly a
+  // period-summary total loaded from Supabase before the isPeriodSummary flag existed.
+  const DAILY_SALES_MAX = 80000;
   const dayMap = {};
   for (const r of ds.laborRows) {
-    if (!r.loc || !r.date || r.isPeriodSummary) continue;
+    if (!r.loc || !r.date || r.isPeriodSummary || r.sales > DAILY_SALES_MAX) continue;
     const dk = dKey(r.date);
     const k  = r.loc + '_' + dk;
     if (!dayMap[k]) {

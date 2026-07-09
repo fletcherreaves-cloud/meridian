@@ -6419,6 +6419,21 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   },[ds?.fobRows?.length]);
   const fobInRange = fobRecent; // alias so existing code compiles unchanged
 
+  // Service + Controls: prefer the selected date range; fall back to the most
+  // recent available week when no data exists for the current period.
+  const _recentWeek = (rows) => {
+    if(!rows.length) return {rows:[],isStale:false,label:null};
+    const inR = rows.filter(r=>inRange(r.date,effectiveDateRange));
+    if(inR.length) return {rows:inR,isStale:false,label:null};
+    const maxD = new Date(Math.max(...rows.map(r=>r.date)));
+    const wkStart = new Date(maxD); wkStart.setDate(maxD.getDate()-6);
+    const recent = rows.filter(r=>r.date&&r.date>=wkStart&&r.date<=maxD);
+    const lbl = maxD.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
+    return {rows:recent,isStale:true,label:'Most recent: wk of '+lbl};
+  };
+  const opsEffective  = React.useMemo(()=>_recentWeek(ds?.opsRows ||[]),[ds?.opsRows?.length,effectiveDateRange]);
+  const ctrlEffective = React.useMemo(()=>_recentWeek(ds?.ctrlRows||[]),[ds?.ctrlRows?.length,effectiveDateRange]);
+
   const avgOf=(rows,field)=>{const v=rows.map(r=>r[field]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const sumOf=(rows,field)=>rows.reduce((a,r)=>a+(r[field]||0),0);
   const pctOf=(a,b)=>b>0?((a/b-1)*100).toFixed(1)+'%':null;
@@ -6620,26 +6635,29 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Service section ───────────────────────────────────────────
   const serviceSec=React.useMemo(()=>{
-    if(!opsInRange.length)return null;
-    const opsScoped=opsInRange.filter(r=>allLocs.includes(String(r.loc)));
+    const {rows:opsEff,isStale:opsSt,label:opsStaleLbl}=opsEffective;
+    if(!opsEff.length)return null;
+    const opsScoped=opsEff.filter(r=>allLocs.includes(String(r.loc)));
     const oepe=avgOf(opsScoped,'oepe');
     const park=avgOf(opsScoped,'park');
     const kvst=avgOf(opsScoped,'kvst');
     const kvsu=avgOf(opsScoped,'kvsu');
     const r2p=avgOf(opsScoped,'r2p');
     return{
-      oepe,okOepe:mktAvg(okLocs,opsInRange,'oepe'),flOepe:mktAvg(flLocs,opsInRange,'oepe'),
-      park,okPark:mktAvg(okLocs,opsInRange,'park'),flPark:mktAvg(flLocs,opsInRange,'park'),
-      kvst,okKvst:mktAvg(okLocs,opsInRange,'kvst'),flKvst:mktAvg(flLocs,opsInRange,'kvst'),
-      kvsu,okKvsu:mktAvg(okLocs,opsInRange,'kvsu'),flKvsu:mktAvg(flLocs,opsInRange,'kvsu'),
-      r2p,okR2p:mktAvg(okLocs,opsInRange,'r2p'),flR2p:mktAvg(flLocs,opsInRange,'r2p'),
+      oepe,okOepe:mktAvg(okLocs,opsEff,'oepe'),flOepe:mktAvg(flLocs,opsEff,'oepe'),
+      park,okPark:mktAvg(okLocs,opsEff,'park'),flPark:mktAvg(flLocs,opsEff,'park'),
+      kvst,okKvst:mktAvg(okLocs,opsEff,'kvst'),flKvst:mktAvg(flLocs,opsEff,'kvst'),
+      kvsu,okKvsu:mktAvg(okLocs,opsEff,'kvsu'),flKvsu:mktAvg(flLocs,opsEff,'kvsu'),
+      r2p,okR2p:mktAvg(okLocs,opsEff,'r2p'),flR2p:mktAvg(flLocs,opsEff,'r2p'),
+      isStale:opsSt,staleLabel:opsStaleLbl,
     };
-  },[opsInRange,allLocs,okLocs,flLocs]);
+  },[opsEffective,allLocs,okLocs,flLocs]);
 
   // ── Controls section ─────────────────────────────────────────
   const ctrlSec=React.useMemo(()=>{
-    if(!ctrlInRange.length)return null;
-    const ctrlScoped=ctrlInRange.filter(r=>allLocs.includes(String(r.loc)));
+    const {rows:ctrlEff,isStale:ctrlSt,label:ctrlStaleLbl}=ctrlEffective;
+    if(!ctrlEff.length)return null;
+    const ctrlScoped=ctrlEff.filter(r=>allLocs.includes(String(r.loc)));
     const a=f=>avgOf(ctrlScoped,f);
     const s=f=>sumOf(ctrlScoped,f);
     // Field names match exactly what parseCtrlData stores
@@ -6664,12 +6682,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       discPct:a('discPct'),tpph:a('tpph'),laborPct:a('laborPct'),
       actVsNeed:a('actVsNeed'),otHrs:s('otHrs'),actHrs:s('actHrs'),
       // Market averages
-      okTRedAPct:mktAvg(okLocs,ctrlInRange,'tRedAPct'),flTRedAPct:mktAvg(flLocs,ctrlInRange,'tRedAPct'),
-      okTRedBPct:mktAvg(okLocs,ctrlInRange,'tRedBPct'),flTRedBPct:mktAvg(flLocs,ctrlInRange,'tRedBPct'),
-      okPromoPct:mktAvg(okLocs,ctrlInRange,'promoPct'),flPromoPct:mktAvg(flLocs,ctrlInRange,'promoPct'),
-      okCashOSPct:mktAvg(okLocs,ctrlInRange,'cashOSPct'),flCashOSPct:mktAvg(flLocs,ctrlInRange,'cashOSPct'),
+      okTRedAPct:mktAvg(okLocs,ctrlEff,'tRedAPct'),flTRedAPct:mktAvg(flLocs,ctrlEff,'tRedAPct'),
+      okTRedBPct:mktAvg(okLocs,ctrlEff,'tRedBPct'),flTRedBPct:mktAvg(flLocs,ctrlEff,'tRedBPct'),
+      okPromoPct:mktAvg(okLocs,ctrlEff,'promoPct'),flPromoPct:mktAvg(flLocs,ctrlEff,'promoPct'),
+      okCashOSPct:mktAvg(okLocs,ctrlEff,'cashOSPct'),flCashOSPct:mktAvg(flLocs,ctrlEff,'cashOSPct'),
+      isStale:ctrlSt,staleLabel:ctrlStaleLbl,
     };
-  },[ctrlInRange,allLocs,okLocs,flLocs]);
+  },[ctrlEffective,allLocs,okLocs,flLocs]);
 
   // ── FOB section ───────────────────────────────────────────────
   const fobSec=React.useMemo(()=>{
@@ -7455,6 +7474,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'⚡'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Service'),
+            serviceSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},serviceSec.staleLabel),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
           ),
           serviceSec?div({style:{padding:'10px 12px'}},
@@ -7483,6 +7503,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onNav&&onNav('district')},
             span(null,'🔒'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Controls & Integrity'),
+            ctrlSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},ctrlSec.staleLabel),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
           ),
           ctrlSec?div({style:{padding:'10px 12px'}},
