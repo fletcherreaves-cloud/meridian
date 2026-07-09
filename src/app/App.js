@@ -821,7 +821,17 @@ function App() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
-        .then(({ data }) => { if (data?.role) setUserRole(data.role); })
+        .then(({ data }) => {
+          if (data?.role) {
+            setUserRole(data.role);
+            // Non-developer roles default to release mode (Test Kitchen hidden)
+            // unless the user has already stored an explicit preference
+            if (data.role !== 'developer' && localStorage.getItem('mf_beta_mode') === null) {
+              setBetaMode(true);
+              localStorage.setItem('mf_beta_mode', 'true');
+            }
+          }
+        })
         .catch(() => {});
     });
     // ── Auto-ingest pending QSRSoft reports ───────────────────────────────────

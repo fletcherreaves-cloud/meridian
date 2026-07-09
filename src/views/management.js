@@ -213,8 +213,9 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
               ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['supervisors','🗂 Patches'],
-              ['ai','🤖 AI'],['dev','🛠 Dev'],['store-notes','📍 Store Notes'],
-              ...(userRole==='admin'?[['data','🗄 Data']]:[])]
+              ['ai','🤖 AI'],['store-notes','📍 Store Notes'],
+              ...(userRole==='developer'?[['dev','🛠 Dev']]:[]),
+              ...(userRole==='admin'||userRole==='developer'?[['data','🗄 Data']]:[])]
           .map(([k,l])=>div({key:k,
             onClick:()=>setActiveSection(k),
             style:{padding:'8px 14px',fontSize:'10px',fontWeight:activeSection===k?700:400,
