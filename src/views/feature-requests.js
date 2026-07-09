@@ -278,6 +278,7 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
   const [searchUser, setSearchUser] = React.useState('');
   const [searchText, setSearchText] = React.useState('');
   const [showForm,   setShowForm]   = React.useState(false);
+  const [showHow,    setShowHow]    = React.useState(false);
   const [votedIds,   setVotedIds]   = React.useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('mf_voted_reqs') || '[]')); }
     catch { return new Set(); }
@@ -384,6 +385,68 @@ export function FeatureRequestsPanel({ ds, settings, onClose }) {
           background:'var(--accent)', color:'#000', fontWeight:700, border:'none', marginRight:6 },
           onClick:()=>setShowForm(s=>!s) }, showForm ? '✕ Cancel' : '+ New Request'),
         btn({ className:'btn btn-sm', style:{ color:'var(--text3)' }, onClick:onClose }, '✕')
+      ),
+
+      // How-this-works info box
+      div({ style:{ borderBottom:'.5px solid var(--bdr)', flexShrink:0,
+        background:'rgba(96,165,250,.05)' }},
+        div({ style:{ display:'flex', alignItems:'center', gap:8, padding:'7px 16px',
+          cursor:'pointer', userSelect:'none' }, onClick:()=>setShowHow(s=>!s) },
+          span({ style:{ fontSize:'10px', color:'#60a5fa' }}, showHow ? '▾' : '▸'),
+          span({ style:{ fontSize:'10px', fontWeight:700, color:'#60a5fa' }},
+            'How to use this queue with Claude Code'),
+          span({ style:{ fontSize:'9px', color:'var(--text3)', marginLeft:'auto' }},
+            showHow ? 'collapse' : 'expand')
+        ),
+        showHow && div({ style:{ padding:'0 16px 14px', display:'flex', flexDirection:'column', gap:10 }},
+          // Step-by-step
+          div({ style:{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }},
+            div({ style:{ background:'rgba(255,255,255,.04)', borderRadius:6, padding:'10px 12px',
+              border:'.5px solid rgba(96,165,250,.2)' }},
+              div({ style:{ fontSize:'10px', fontWeight:700, color:'#60a5fa', marginBottom:6 }},
+                '1  Submit a request in this panel'),
+              div({ style:{ fontSize:'9px', color:'var(--text2)', lineHeight:1.7 }},
+                '• Click "+ New Request" above\n• Fill in Title (required), Description, Category, Priority\n• Hit Submit — it saves to Supabase instantly\n• Status starts as "Idea"')
+            ),
+            div({ style:{ background:'rgba(255,255,255,.04)', borderRadius:6, padding:'10px 12px',
+              border:'.5px solid rgba(245,188,0,.2)' }},
+              div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--accent)', marginBottom:6 }},
+                '2  Start a Claude Code session'),
+              div({ style:{ fontSize:'9px', color:'var(--text2)', lineHeight:1.7 }},
+                '• Open Claude Code (Terminal or App)\n• Say: "Check the Feature Requests queue and work on the top items"\n• Or say: "Work on the idea I submitted about [title]"\n• Claude reads the queue, implements, marks done')
+            )
+          ),
+          // Tips row
+          div({ style:{ background:'rgba(255,255,255,.03)', borderRadius:6, padding:'10px 12px',
+            border:'.5px solid var(--bdr)' }},
+            div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text2)', marginBottom:6 }},
+              'Tips for better results'),
+            div({ style:{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6 }},
+              ...[
+                ['Be specific in the title', 'Bad: "Fix the chart". Good: "Record Day Best Week is double-counting Jun 24 data"'],
+                ['Use description for context', 'Explain WHY it matters, not just what. Include store numbers, dates, or screenshots if relevant.'],
+                ['Set priority intentionally', 'High = breaking/blocking. Medium = important but not urgent. Low = nice to have.'],
+              ].map(([h2,b],i)=>div({key:i, style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.6}},
+                span({style:{fontWeight:700,color:'var(--text)',display:'block',marginBottom:2}},h2),b))
+            )
+          ),
+          // Dev CLI note (only show to dev/admin)
+          isDev && div({ style:{ background:'rgba(16,185,129,.05)', borderRadius:6, padding:'10px 12px',
+            border:'.5px solid rgba(16,185,129,.2)' }},
+            div({ style:{ fontSize:'10px', fontWeight:700, color:'#10b981', marginBottom:6 }},
+              'CLI Reference (Developer)'),
+            div({ style:{ fontFamily:'var(--mono)', fontSize:'8.5px', color:'#10b981',
+              lineHeight:1.9, whiteSpace:'pre' }},
+              'node scripts/features.mjs list                     # see all queue items\n' +
+              'node scripts/features.mjs list --status=idea       # only new ideas\n' +
+              'node scripts/features.mjs add --title="..." --priority=high --category=Analytics\n' +
+              'node scripts/features.mjs update <id> --status=completed --completed_version=v4.x\n' +
+              'node scripts/features.mjs sync-memory              # refresh memory file from DB\n\n' +
+              'Requires SUPABASE_SERVICE_ROLE_KEY in .env.local\n' +
+              '(Supabase Dashboard → Settings → API → service_role secret)'
+            )
+          )
+        )
       ),
 
       // Submit form
