@@ -40,7 +40,7 @@ import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -620,6 +620,7 @@ function App() {
   const saveLockedProjections = useCallback((next)=>{
     setLockedProjections(next);
     try{localStorage.setItem('mf_locked_projections',JSON.stringify(next));}catch{}
+    saveUserSetting('locked_projections', next).catch(()=>{});
   },[]);
   const [anomFilter, setAnomFilter]    = useState('all');
   const [showAttention, setShowAttention] = useState(false);
@@ -1113,6 +1114,22 @@ function App() {
           console.log(`[Meridian] ✓ Loaded QSRSoft field definitions`);
         }
       }catch(e){console.warn('[Meridian] QSR field defs load failed:',e);}
+      // Load cross-device user settings (locked projections, AE calibration params)
+      try{
+        const remoteProj=await loadUserSetting('locked_projections');
+        if(remoteProj&&typeof remoteProj==='object'&&Object.keys(remoteProj).length>0){
+          setLockedProjections(remoteProj);
+          try{localStorage.setItem('mf_locked_projections',JSON.stringify(remoteProj));}catch{}
+          console.log('[Meridian] ✓ Loaded locked projections from Supabase');
+        }
+      }catch(e){console.warn('[Meridian] locked projections load failed:',e);}
+      try{
+        const remoteAE=await loadUserSetting('ae_params');
+        if(remoteAE?.params&&typeof remoteAE.params==='object'){
+          try{localStorage.setItem('mf_ae_params',JSON.stringify(remoteAE));}catch{}
+          console.log('[Meridian] ✓ Loaded AE calibration params from Supabase');
+        }
+      }catch(e){console.warn('[Meridian] AE params load failed:',e);}
     })();
   },[]);
 
@@ -1496,7 +1513,7 @@ function App() {
               recalib[loc]=bestP;
             }
             // Store recalibrated params
-            try{localStorage.setItem('mf_ae_params',JSON.stringify({params:recalib,ts:Date.now()}));}catch{}
+            try{const aeBlob={params:recalib,ts:Date.now()};localStorage.setItem('mf_ae_params',JSON.stringify(aeBlob));saveUserSetting('ae_params',aeBlob).catch(()=>{});}catch{}
             console.log('[AE] complete:', Object.keys(recalib).length,'stores in',(performance.now()-_aeT0).toFixed(0)+'ms');
           }catch(e){console.warn('AE recalibration failed:',e);}
         })();

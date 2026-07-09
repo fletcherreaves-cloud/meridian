@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { loadDtHistory } from '../lib/supabase.js';
-import { STORE_NAMES, sNameC, getStoreOrg } from '../constants.js';
+import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 
 const h = React.createElement;
 const div  = (p,...c) => h('div',  p, ...c);
@@ -69,6 +69,11 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     const base = ALL_LOCS.filter(l => storeLocs.has(l) || storeLocs.size === 0);
     if (orgFilter === 'fl') return base.filter(l =>  FL_LOCS.has(l));
     if (orgFilter === 'ok') return base.filter(l => !FL_LOCS.has(l));
+    if (orgFilter.startsWith('__patch__')) {
+      const patchName = orgFilter.slice(9);
+      const patchLocs = new Set((DEF_SETTINGS.supervisorGroups?.[patchName] || []).map(String));
+      return base.filter(l => patchLocs.has(l));
+    }
     if (orgFilter !== 'all') return base.filter(l => l === orgFilter);
     return base;
   }, [stores, orgFilter]);
@@ -83,18 +88,22 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     for (const r of rows) {
       const loc = String(parseInt(r.loc, 10));
       if (!activeLocs.includes(loc)) continue;
-      if (!map[loc]) map[loc] = { totalUs: 0, totalCnt: 0, earlyUs: 0, earlyCnt: 0 };
+      if (!map[loc]) map[loc] = { totalUs: 0, totalCnt: 0, earlyUs: 0, earlyCnt: 0, lateUs: 0, lateCnt: 0 };
       map[loc].totalUs  += r.dt_untilserve  || 0;
       map[loc].totalCnt += r.dt_trans_cnt   || 0;
       if (r.dt < midDt) {
         map[loc].earlyUs  += r.dt_untilserve  || 0;
         map[loc].earlyCnt += r.dt_trans_cnt   || 0;
+      } else {
+        map[loc].lateUs   += r.dt_untilserve  || 0;
+        map[loc].lateCnt  += r.dt_trans_cnt   || 0;
       }
     }
     return Object.entries(map).map(([loc, d]) => {
-      const avg  = d.totalCnt > 0 ? d.totalUs / d.totalCnt / 1000 : null;
-      const early = d.earlyCnt > 0 ? d.earlyUs / d.earlyCnt / 1000 : null;
-      const trend = (avg != null && early != null) ? avg - early : null; // negative = improving
+      const avg   = d.totalCnt > 0 ? d.totalUs  / d.totalCnt  / 1000 : null;
+      const early = d.earlyCnt > 0 ? d.earlyUs  / d.earlyCnt  / 1000 : null;
+      const late  = d.lateCnt  > 0 ? d.lateUs   / d.lateCnt   / 1000 : null;
+      const trend = (early != null && late != null) ? late - early : null; // negative = improving
       return { loc, avg, trans: d.totalCnt, trend };
     });
   }, [rows, activeLocs, midDt]);
@@ -179,6 +188,10 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
           h('option', { value:'all' }, 'All Stores'),
           h('option', { value:'fl'  }, 'Florida'),
           h('option', { value:'ok'  }, 'Oklahoma'),
+          h('optgroup', { label:'— Patches —' },
+            ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([name, locs]) =>
+              h('option', { key: name, value: '__patch__' + name },
+                name.split(' ')[0] + ' Patch (' + locs.length + ' stores)'))),
           h('optgroup', { label:'— Florida —' },
             ...ALL_LOCS.filter(l =>  FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
               .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
@@ -238,12 +251,12 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                   h('tbody', null,
                     ...sorted.map(s => {
                       const trendStr = s.trend == null ? '—'
-                        : (s.trend < 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(s.trend)) + 's';
+                        : (s.trend < 0 ? '▲ ' : '▼ ') + Math.abs(s.trend).toFixed(1) + 's';
                       const trendColor = s.trend == null ? 'var(--text3)'
                         : s.trend < -5 ? '#10b981' : s.trend > 5 ? '#ef4444' : 'var(--text3)';
                       const trendTitle = s.trend == null ? '' : s.trend < 0
-                        ? `${Math.abs(Math.round(s.trend))}s faster vs first half of period`
-                        : `${Math.abs(Math.round(s.trend))}s slower vs first half of period`;
+                        ? `${Math.abs(s.trend).toFixed(1)}s faster vs first half of period (2nd half vs 1st half)`
+                        : `${Math.abs(s.trend).toFixed(1)}s slower vs first half of period (2nd half vs 1st half)`;
                       return h('tr', { key:s.loc, style:{ borderTop:'.5px solid var(--bdr)',
                         background:dtBg(s.avg) }},
                         h('td', { style:{ padding:'5px 10px', fontSize:'10px', color:'var(--text)',
@@ -265,7 +278,12 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
               div({ style:{ flex:'1 1 220px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
                 borderRadius:'var(--r)', overflow:'hidden' }},
                 div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)',
-                  fontSize:'10px', fontWeight:800, color:'var(--text)' }}, 'By Hour — District'),
+                  fontSize:'10px', fontWeight:800, color:'var(--text)' }},
+                  'By Hour — ' + (orgFilter === 'all' ? 'District' :
+                    orgFilter === 'fl'  ? 'Florida' :
+                    orgFilter === 'ok'  ? 'Oklahoma' :
+                    orgFilter.startsWith('__patch__') ? orgFilter.slice(9).split(' ')[0] + ' Patch' :
+                    (STORE_NAMES[orgFilter] || orgFilter))),
                 h('table', { style:{ width:'100%', borderCollapse:'collapse' }},
                   h('thead', null,
                     h('tr', null,

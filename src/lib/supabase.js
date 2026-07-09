@@ -1214,6 +1214,30 @@ export async function markNoteConsumed(id) {
   await supabase.from('session_notes').update({ consumed: true }).eq('id', id);
 }
 
+// ── User settings (cross-device persistence) ─────────────────────────────────
+// Stores arbitrary JSON blobs keyed by setting name, tied to the authenticated user.
+// Requires: CREATE TABLE user_settings (user_id uuid references auth.users, key text,
+//   value jsonb, updated_at timestamptz default now(), PRIMARY KEY (user_id, key));
+// RLS: enable, policy: user_id = auth.uid() for all operations.
+export async function saveUserSetting(key, value) {
+  if (!supabase) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('user_settings')
+    .upsert({ user_id: user.id, key, value, updated_at: new Date().toISOString() },
+             { onConflict: 'user_id,key' });
+}
+
+export async function loadUserSetting(key) {
+  if (!supabase) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase.from('user_settings')
+    .select('value').eq('user_id', user.id).eq('key', key).single();
+  if (error) return null;
+  return data?.value ?? null;
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client
