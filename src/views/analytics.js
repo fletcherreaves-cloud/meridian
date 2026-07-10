@@ -6754,6 +6754,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const hour=today.getHours();
   const greetWord=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
 
+  const [headerScrolled, setHeaderScrolled] = React.useState(false);
+  const handleAAGScroll = React.useCallback((e) => {
+    setHeaderScrolled(e.currentTarget.scrollTop > 60);
+  }, []);
+
   const pF=v=>v!=null?fP(v):'—';
   const pFn=(v,d=1)=>v!=null?((v*100).toFixed(d)+'%'):'—';
   const sFmt=v=>v!=null?f$(Math.round(v)):'—';
@@ -6963,18 +6968,23 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   },[ds?.laborRows?.length,stores,settings,userEvents]);
 
   // ── RENDER ────────────────────────────────────────────────────
-  return div({style:{display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'}},
+  return div({style:{display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'},
+    onScroll:handleAAGScroll},
 
     // ── WELCOME HEADER ─────────────────────────────────────────
     div({style:{background:'linear-gradient(135deg,#090e18 0%,rgba(10,18,40,.98) 100%)',
-      padding:'18px 24px 14px',borderBottom:'1px solid var(--bdr)',flexShrink:0}},
+      padding:headerScrolled?'6px 24px':'18px 24px 14px',
+      borderBottom:'1px solid var(--bdr)',flexShrink:0,
+      transition:'padding .2s ease'}},
 
-      // Title row
-      div({style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}},
+      // Title row — always visible, compact when scrolled
+      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',
+        marginBottom:headerScrolled?0:8}},
         div(null,
-          div({style:{fontSize:'22px',fontWeight:800,color:'var(--amber)',letterSpacing:'-0.5px',lineHeight:1.1}},
+          div({style:{fontSize:headerScrolled?'14px':'22px',fontWeight:800,color:'var(--amber)',
+            letterSpacing:'-0.5px',lineHeight:1.1,transition:'font-size .2s ease'}},
             'At a Glance'),
-          userName
+          !headerScrolled&&(userName
             ?div({style:{fontSize:'13px',color:'rgba(255,255,255,.8)',marginTop:2,fontWeight:500}},
                 greetWord+', '+userName+'!')
             :div({style:{fontSize:'12px',color:'rgba(255,255,255,.5)',marginTop:2}},
@@ -6982,9 +6992,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 span({style:{fontSize:'10px',color:'rgba(245,158,11,.6)',cursor:'pointer'},
                   onClick:()=>{}/* Settings is a separate nav */,
                   title:'Go to Settings → Your Name to personalize your greeting'},
-                  '(Add your name in Settings ✎)')),
+                  '(Add your name in Settings ✎)')))
         ),
-        // Period label — shows the active toolbar date range
+        // Period label — always visible
         div({style:{fontSize:'10px',padding:'4px 10px',borderRadius:4,
           background:'rgba(255,255,255,.18)',border:'.5px solid rgba(255,255,255,.4)',
           color:'#fff',fontWeight:500,letterSpacing:'.2px',whiteSpace:'nowrap'}},
@@ -6994,26 +7004,26 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             'This Week')
       ),
 
-      // State comment
-      div({style:{display:'flex',alignItems:'center',gap:8}},
-        div({style:{flex:1,fontSize:'11px',lineHeight:1.5,
-          color:commentMode==='ai'&&aiComment?'rgba(255,255,255,.85)':ruleComment.color}},
-          commentMode==='rule'?ruleComment.text:
-          aiLoading?'Generating...':(aiComment||ruleComment.text)),
-        div({style:{display:'flex',gap:4}},
-          ['rule','ai'].map(m=>btn({key:m,
-            style:{fontSize:'9px',padding:'2px 8px',borderRadius:3,cursor:'pointer',fontWeight:500,
-              background:commentMode===m?'rgba(245,158,11,.35)':'rgba(255,255,255,.18)',
-              color:commentMode===m?'var(--amber)':'#fff',
-              border:commentMode===m?'.5px solid rgba(245,158,11,.6)':'.5px solid rgba(255,255,255,.4)'},
-            onClick:()=>{setCommentMode(m);if(m==='ai'&&!aiComment)fetchAIComment();}},
-            m==='rule'?'Rule-Based':'AI Narrative'))
-        )
-      ),
-
-      // Data freshness badge
-      div({style:{marginTop:6,fontSize:'9px',color:ageClr}},
-        '● Data: '+( latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded'))
+      // State comment + freshness — hidden when scrolled
+      !headerScrolled&&div(null,
+        div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+          div({style:{flex:1,fontSize:'11px',lineHeight:1.5,
+            color:commentMode==='ai'&&aiComment?'rgba(255,255,255,.85)':ruleComment.color}},
+            commentMode==='rule'?ruleComment.text:
+            aiLoading?'Generating...':(aiComment||ruleComment.text)),
+          div({style:{display:'flex',gap:4}},
+            ['rule','ai'].map(m=>btn({key:m,
+              style:{fontSize:'9px',padding:'2px 8px',borderRadius:3,cursor:'pointer',fontWeight:500,
+                background:commentMode===m?'rgba(245,158,11,.35)':'rgba(255,255,255,.18)',
+                color:commentMode===m?'var(--amber)':'#fff',
+                border:commentMode===m?'.5px solid rgba(245,158,11,.6)':'.5px solid rgba(255,255,255,.4)'},
+              onClick:()=>{setCommentMode(m);if(m==='ai'&&!aiComment)fetchAIComment();}},
+              m==='rule'?'Rule-Based':'AI Narrative'))
+          )
+        ),
+        div({style:{fontSize:'9px',color:ageClr}},
+          '● Data: '+(latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded'))
+      )
     ),
 
     // ── ACTION CHECKLIST ───────────────────────────────────────
@@ -7091,8 +7101,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
     // ── LOADED DATA SUMMARY ────────────────────────────────────
     div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
-      padding:'8px 24px',flexShrink:0,display:'flex',alignItems:'center',
-      gap:16,flexWrap:'wrap'}},
+      padding:headerScrolled?'0 24px':'8px 24px',flexShrink:0,display:'flex',alignItems:'center',
+      gap:16,flexWrap:'wrap',overflow:'hidden',
+      maxHeight:headerScrolled?0:'120px',transition:'max-height .2s ease, padding .2s ease'}},
       div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',
         letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0}},'Loaded Data'),
       ...(()=>{
