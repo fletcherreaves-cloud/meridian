@@ -1,4 +1,4 @@
-// Meridian Service Worker — v4.276
+// Meridian Service Worker — v4.394
 // Handles Web Share Target API so files can be shared directly from
 // QSRSoft (or any app) to Meridian on mobile without opening a file picker.
 // Stashes shared files in Cache API; App.js picks them up on next render.
@@ -43,7 +43,9 @@ self.addEventListener('fetch', event => {
       console.warn('[Meridian SW] share-target error:', err);
     }
 
-    // Redirect back to the app — the app's mount effect picks up the cache
-    return Response.redirect('/meridian/', 303);
+    // Redirect back to the app — the app's mount effect picks up the cache.
+    // App deploys at root now (start_url "/"); the old "/meridian/" path was a
+    // stale GitHub-Pages-era base and no longer valid.
+    return Response.redirect('/', 303);
   })());
 });
