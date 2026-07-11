@@ -401,8 +401,8 @@ input,select{font-family:var(--sans);color:var(--text)}
   .dbar-r { flex-wrap: wrap; gap: 8px; }
   /* Topbar padding */
   .hdr { padding: 0 8px !important; }
-  /* Date picker popup */
-  .drp-popup { right: -60px; min-width: 260px; }
+  /* Date picker popup: fixed to viewport so it never overflows horizontally */
+  .drp-popup { position: fixed; left: 8px; right: 8px; top: 52px; min-width: unset; width: auto; max-height: 80vh; overflow-y: auto; }
   .drp-presets { gap: 3px; }
   .drp-pre { font-size: 9px; padding: 3px 6px; }
   /* hband: 2 cols on mobile */
