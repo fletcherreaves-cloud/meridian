@@ -1136,6 +1136,45 @@ export async function loadEbosMonthlyByStore(year, month) {
   return map;
 }
 
+// ── QSRSoft daily-activity aggregated summary ─────────────────────────────────
+// Returns one row per (loc, date) with sales/GC/DT totals summed across hour slots.
+// Used by AtAGlance as a zero-upload fallback when laborRows is empty.
+export async function loadQsrActSummary(daysBack = 35) {
+  if (!supabase) return [];
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - daysBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('qsr_daily_activity')
+    .select('loc,dt,sales_amount,trans_cnt,dt_untilserve,dt_trans_cnt,ly_sales_amount,ly_trans_cnt')
+    .gte('dt', cutoffStr)
+    .order('dt');
+  if (error) { console.error('loadQsrActSummary:', error); return []; }
+  const map = {};
+  for (const r of data || []) {
+    const loc = String(parseInt(r.loc, 10)); // strip zero-padding ("0003708" → "3708")
+    const key = loc + '_' + r.dt;
+    if (!map[key]) map[key] = {
+      loc, date: new Date(r.dt + 'T00:00:00'),
+      sales: 0, allNetSales: 0, gc: 0,
+      _dtTotal: 0, _dtCars: 0,
+      lySales: 0, lyGc: 0,
+      _isQsrAct: true,
+    };
+    map[key].sales        += r.sales_amount    || 0;
+    map[key].allNetSales  += r.sales_amount    || 0;
+    map[key].gc           += r.trans_cnt       || 0;
+    map[key]._dtTotal     += r.dt_untilserve   || 0;
+    map[key]._dtCars      += r.dt_trans_cnt    || 0;
+    map[key].lySales      += r.ly_sales_amount || 0;
+    map[key].lyGc         += r.ly_trans_cnt    || 0;
+  }
+  return Object.values(map).map(r => ({
+    ...r,
+    salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+  }));
+}
+
 // ── Forecast snapshots ────────────────────────────────────────────────────────
 // Upsert per-day forecast accuracy rows from the backtest panel.
 // rows: Array<{loc, dt, source, forecast_sales, actual_sales, mape}>

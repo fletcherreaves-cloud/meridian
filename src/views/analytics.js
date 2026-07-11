@@ -6393,9 +6393,19 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       fallbackLabel:maxD.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
   },[dateRange,ds?.laborRows?.length]);
 
-  const labInRange = React.useMemo(()=>
-    (ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange))
-  ,[ds?.laborRows?.length,effectiveDateRange]);
+  const labInRange = React.useMemo(()=>{
+    const manual=(ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
+    if(manual.length>0) return manual;
+    // No manual Operations Report uploads — fall back to auto-synced QSRSoft daily totals.
+    // qsrActSummaryRows has the same {loc, date, sales, allNetSales, gc, salesVsLYPct} shape.
+    return (ds?.qsrActSummaryRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
+  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
+
+  // True when labInRange is sourced from QSRSoft auto-sync rather than manual upload
+  const usingQsrFallback=React.useMemo(()=>{
+    const manual=(ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
+    return manual.length===0&&(ds?.qsrActSummaryRows||[]).length>0;
+  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
 
   const opsInRange = React.useMemo(()=>
     (ds?.opsRows||[]).filter(r=>inRange(r.date,effectiveDateRange))
@@ -6454,9 +6464,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Data status ────────────────────────────────────────────────
   const latestLab=React.useMemo(()=>{
-    const dates=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
-    return dates.length?new Date(Math.max(...dates)):null;
-  },[ds?.laborRows?.length]);
+    const labDates=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
+    if(labDates.length) return new Date(Math.max(...labDates));
+    // Fall back to most recent QSRSoft auto-sync date
+    const qsrDates=(ds?.qsrActSummaryRows||[]).map(r=>r.date).filter(Boolean);
+    return qsrDates.length?new Date(Math.max(...qsrDates)):null;
+  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length]);
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
 
@@ -6481,7 +6494,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     else if(allLocs.length-nLocked>5)issues.push({lvl:'warning',msg:(allLocs.length-nLocked)+' projection locks still needed'});
     if(hlth.red>0)issues.push({lvl:'warning',msg:hlth.red+' store'+(hlth.red>1?'s':'')+' at red model health'});
     else if(hlth.green>=allLocs.length*.75&&allLocs.length>0)good.push(hlth.green+' stores at trusted health');
-    if(!ds?.loaded||!ds.laborRows?.length)issues.push({lvl:'critical',msg:'no data loaded — upload Operations Report'});
+    if(!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length))issues.push({lvl:'critical',msg:'no data loaded — upload Operations Report'});
     if(issues.some(i=>i.lvl==='critical'))
       return{tone:'critical',color:'#f87171',text:'🚨 Action required — '+issues.map(i=>i.msg).join('; ')+'.'};
     if(issues.length>0)
@@ -6936,7 +6949,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   },[labInRange,okLocs,flLocs,allLocs]);
 
   // ── No data state ─────────────────────────────────────────────
-  const noData=!ds?.loaded||!ds.laborRows?.length;
+  // noData is false when either manual laborRows OR auto-synced qsrActSummaryRows are present
+  const noData=!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length);
 
   // ── District weekly projections — memoized so 189 forecastDay calls only fire
   // when ds/stores/settings/userEvents actually change, not on every render
@@ -7108,7 +7122,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0}},'Loaded Data'),
       ...(()=>{
         const sources=[
-          {name:'Sales/Labor',rows:ds?.laborRows,icon:'💰'},
+          ds?.laborRows?.length
+            ? {name:'Sales/Labor',rows:ds?.laborRows,icon:'💰'}
+            : {name:'QSRSoft Auto',rows:ds?.qsrActSummaryRows,icon:'⚡'},
           {name:'Scheduling',rows:ds?.schedRows,icon:'📅'},
           {name:'Service',rows:ds?.opsRows,icon:'⚡'},
           {name:'Controls',rows:ds?.ctrlRows,icon:'🔒'},
@@ -7139,6 +7155,18 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         div({style:{fontSize:'24px',marginBottom:8}},'📂'),
         div({style:{fontWeight:600,color:'var(--text)',marginBottom:4}},'No data loaded'),
         div(null,'Upload Operations Report to see your At a Glance dashboard.')
+      ),
+
+      !noData&&usingQsrFallback&&div({style:{
+        margin:'0 0 10px',padding:'8px 12px',borderRadius:6,
+        background:'rgba(96,165,250,.08)',border:'.5px solid rgba(96,165,250,.25)',
+        display:'flex',alignItems:'center',gap:8,fontSize:'10px',color:'#93c5fd',
+      }},
+        span({style:{fontSize:'14px'}},'⚡'),
+        div(null,
+          span({style:{fontWeight:700}},'Showing auto-synced QSRSoft data'),
+          span({style:{color:'var(--text3)'}},' — sales & guest counts from daily QSRSoft sync (last 35 days). Upload an Operations Report to add labor, service, and controls data.')
+        )
       ),
 
       !noData&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(380px,100%),1fr))',gap:10}},
