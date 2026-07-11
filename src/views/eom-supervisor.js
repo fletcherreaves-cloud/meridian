@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEF_SETTINGS } from '../constants.js';
+import { loadEbosMonthlyByStore } from '../lib/supabase.js';
 
 const h = React.createElement;
 const { useState: uSt, useEffect: uE, useMemo: uM, useCallback: uCB, useRef: uR } = React;
@@ -51,7 +52,7 @@ function saveManual(year, month, data) {
 }
 
 // ── Per-store data computation ────────────────────────────────────────────────
-function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
+function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   const locStr = String(loc);
   // Look up this period's targets from the all-periods index first; fall back to current monthlyTargets.
   const periodKey = `${selYear}-${selMonth}`;
@@ -123,7 +124,8 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth) {
 
   // Manual overrides / inputs for this store
   const m            = manual[locStr] || {};
-  const actOpSup     = m.actOpSup     != null ? +m.actOpSup     : null;
+  const ebosOpSup    = ebosByLoc?.[locStr] != null ? Math.round(ebosByLoc[locStr] * 100) / 100 : null;
+  const actOpSup     = m.actOpSup     != null ? +m.actOpSup     : ebosOpSup;
   const actCash      = m.actCash      != null ? +m.actCash      : cashFromCtrl;
   // OT Hours and OT $ — manual override first, then sum of all daily labor rows for the month
   const otHours      = m.otHours      != null ? +m.otHours      : (monthlyOtHrs    > 0 ? monthlyOtHrs    : null);
@@ -542,9 +544,10 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
   const [selMonth, setSelMonth] = uSt(now.getMonth() + 1);
   const [groupType, setGroupType] = uSt('supervisor'); // supervisor | operator | all
   const [selGroup, setSelGroup]   = uSt('all');
-  const [expanded,  setExpanded]  = uSt(null);
-  const [manual,    setManual]    = uSt(() => loadManual(now.getFullYear(), now.getMonth() + 1));
-  const [forPrint,  setForPrint]  = uSt(false);
+  const [expanded,   setExpanded]  = uSt(null);
+  const [manual,     setManual]    = uSt(() => loadManual(now.getFullYear(), now.getMonth() + 1));
+  const [forPrint,   setForPrint]  = uSt(false);
+  const [ebosByLoc,  setEbosByLoc] = uSt({});
 
   // Reload manual data when month changes — local first, then merge remote
   uE(() => {
@@ -559,6 +562,11 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
         }).catch(() => {});
     }
   }, [selYear, selMonth, supabase]);
+
+  // Load eBOS op supply actuals for the selected month
+  uE(() => {
+    loadEbosMonthlyByStore(selYear, selMonth).then(setEbosByLoc).catch(() => {});
+  }, [selYear, selMonth]);
 
   // Sync monthly targets month if available
   uE(() => {
@@ -590,9 +598,9 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
 
   // Compute per-store EOM data — targets resolved from ds.allMonthlyTargets by period
   const storeData = uM(() =>
-    targetLocs.map(loc => computeStoreEOM(loc, ds, manual, selYear, selMonth))
+    targetLocs.map(loc => computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc))
               .filter(s => s.hasTargets || s.hasFOB)
-  , [targetLocs, ds, manual, selYear, selMonth]);
+  , [targetLocs, ds, manual, selYear, selMonth, ebosByLoc]);
 
   // Rollup
   const rollup = uM(() => computeRollup(storeData), [storeData]);
@@ -641,6 +649,9 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
           fobLoaded
             ? h('span', { style: { color: grn } }, '✓ FOB data in session')
             : h('span', { style: { color: amber } }, '○ No FOB data — food cost actuals will be missing'),
+          Object.keys(ebosByLoc).length > 0
+            ? h('span', { style: { color: grn } }, '✓ eBOS op supplies: ' + Object.keys(ebosByLoc).length + ' stores')
+            : h('span', { style: { color: muted } }, '○ No eBOS data for period'),
         )
       ),
 

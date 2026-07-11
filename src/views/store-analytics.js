@@ -1544,7 +1544,7 @@ function DaypartPaceCard({loc}) {
     const mean    = doneRows.reduce((a,r) => a + (r.mean_sales    || 0), 0);
     const proj    = dpRows.reduce((a,r) => a + (r.proj_sales_dollars || 0), 0);
     const ly      = doneRows.reduce((a,r) => a + (r.ly_product_sales  || 0), 0);
-    const dtSecs  = doneRows.reduce((a,r) => a + (r.dt_untilserve     || 0), 0) / 1e6;
+    const dtSecs  = doneRows.reduce((a,r) => a + (r.dt_untilserve     || 0), 0) / 1000;
     const dtCnt   = doneRows.reduce((a,r) => a + (r.dt_trans_cnt      || 0), 0);
     const avgDT   = dtCnt > 0 ? dtSecs / dtCnt : null;
     const pctMean = mean > 0 && actual > 0 ? (actual - mean) / mean : null;

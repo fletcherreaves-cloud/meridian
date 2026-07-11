@@ -1115,6 +1115,27 @@ export async function loadDtHistory(days = 90) {
   return data || [];
 }
 
+// ── eBOS monthly op supplies by store ────────────────────────────────────────
+// Returns { [loc]: totalOps } where loc is the unpadded NSN string, for a given month.
+export async function loadEbosMonthlyByStore(year, month) {
+  if (!supabase) return {};
+  const y = String(year), m = String(month).padStart(2, '0');
+  const start = `${y}-${m}-01`;
+  const end   = `${y}-${m}-31`; // gt/lte bounds handle varying month lengths
+  const { data, error } = await supabase
+    .from('qsr_ebos_daily')
+    .select('loc,ops_purchases')
+    .gte('date', start)
+    .lte('date', end);
+  if (error) { console.error('loadEbosMonthlyByStore:', error); return {}; }
+  const map = {};
+  for (const r of data || []) {
+    const loc = String(parseInt(r.loc, 10));
+    map[loc] = (map[loc] || 0) + (r.ops_purchases || 0);
+  }
+  return map;
+}
+
 // ── Forecast snapshots ────────────────────────────────────────────────────────
 // Upsert per-day forecast accuracy rows from the backtest panel.
 // rows: Array<{loc, dt, source, forecast_sales, actual_sales, mape}>
