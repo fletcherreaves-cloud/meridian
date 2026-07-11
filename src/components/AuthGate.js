@@ -364,6 +364,80 @@ export function AuthGate({ children }) {
   return h(LoginCard, null, content);
 }
 
+// ── Change-password button + modal (shown when logged in via magic link) ────────
+export function ChangePasswordBtn({ style = {} }) {
+  if (!supabase) return null;
+  const [open,    setOpen]    = useState(false);
+  const [pass,    setPass]    = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const reset = () => { setPass(''); setConfirm(''); setError(''); setSuccess(false); };
+  const close = () => { setOpen(false); reset(); };
+
+  const submit = async e => {
+    e.preventDefault();
+    if (pass.length < 6)  { setError('Password must be at least 6 characters.'); return; }
+    if (pass !== confirm)  { setError('Passwords do not match.'); return; }
+    setLoading(true); setError('');
+    const { error: err } = await supabase.auth.updateUser({ password: pass });
+    setLoading(false);
+    if (err) setError(friendlyAuthError(err));
+    else     setSuccess(true);
+  };
+
+  return h(React.Fragment, null,
+    btn({
+      onClick: () => { reset(); setOpen(true); },
+      style: {
+        background: 'none', border: `1px solid ${BDR}`, color: TEXT3,
+        borderRadius: R, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+        ...style,
+      },
+    }, 'Change password'),
+
+    open && div({
+      style: {
+        position: 'fixed', inset: 0, zIndex: 9999,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,.65)', padding: 20,
+      },
+      onClick: e => { if (e.target === e.currentTarget) close(); },
+    },
+      div({
+        style: {
+          width: '100%', maxWidth: 340, background: SURF,
+          border: `1px solid ${BDR}`, borderRadius: 12,
+          padding: '24px 22px', boxShadow: '0 24px 64px rgba(0,0,0,.6)',
+        }
+      },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 } },
+          div({ style: { fontSize: 13, fontWeight: 700, color: TEXT } }, 'Change Password'),
+          btn({ onClick: close, style: { background: 'none', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', lineHeight: 1 } }, '×')
+        ),
+        success
+          ? div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+              h(OkBox, { msg: '✓ Password updated. Sign in with your new password next time.' }),
+              btn({
+                onClick: close,
+                style: { padding: '9px 0', background: BDR, color: TEXT, border: 'none', borderRadius: R, fontSize: 13, cursor: 'pointer' }
+              }, 'Done')
+            )
+          : h('form', { onSubmit: submit, style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+              h(TextInput, { label: 'New Password', type: 'password', value: pass, onChange: setPass,
+                placeholder: 'Min. 6 characters', autoFocus: true, autoComplete: 'new-password' }),
+              h(TextInput, { label: 'Confirm Password', type: 'password', value: confirm, onChange: setConfirm,
+                placeholder: 'Re-enter password', autoComplete: 'new-password' }),
+              h(ErrBox, { msg: error }),
+              h(PrimaryBtn, { loading, disabled: !pass || !confirm }, 'Set Password')
+            )
+      )
+    )
+  );
+}
+
 // ── Sign-out button — drop anywhere in nav ──────────────────────────────────────
 export function SignOutBtn({ style = {} }) {
   if (!supabase) return null;

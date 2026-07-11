@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { sName, sNameC } from '../constants.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode } from '../utils/date.js';
-import { SignOutBtn } from '../components/AuthGate.js';
+import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -410,7 +410,8 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           borderColor:!betaMode?'rgba(168,85,247,.4)':'rgba(255,255,255,.1)',
           fontWeight:!betaMode?700:400},
         onClick:onToggleBeta},'⚗'),
-      // Sign out (only renders when Supabase auth is active)
+      // Auth controls (only render when Supabase auth is active)
+      h(ChangePasswordBtn, {style:{fontSize:'9px',padding:'3px 8px'}}),
       h(SignOutBtn, {style:{fontSize:'9px',padding:'3px 8px'}})
     )
   );
