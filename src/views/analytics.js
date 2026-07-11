@@ -6309,6 +6309,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const [showSecCfg,setShowSecCfg] = React.useState(false);
   const [lbMetric,setLbMetric] = React.useState('sales'); // leaderboard selected metric
   const saveSecs = s=>{setSecs(s);localStorage.setItem('mf_kpi_secs',JSON.stringify(s));};
+  // ── Per-section collapse (mobile, session-only) ───────────────
+  const [collapsedSecs, setCollapsedSecs] = React.useState({});
+  const collapseToggle = id => setCollapsedSecs(p => ({...p, [id]: !p[id]}));
+  const collBtn = id => btn({
+    style:{fontSize:'12px',background:'none',border:'none',color:'var(--text3)',
+      cursor:'pointer',padding:'4px 8px',borderRadius:3,flexShrink:0,
+      minWidth:32,minHeight:32,display:'flex',alignItems:'center',justifyContent:'center',
+      touchAction:'manipulation'},
+    onClick:e=>{e.stopPropagation();collapseToggle(id);},
+    title:collapsedSecs[id]?'Expand section':'Collapse section'
+  },collapsedSecs[id]?'▸':'▾');
   const toggleSec = id=>saveSecs(secs.map(s=>s.id===id?{...s,on:!s.on}:s));
   const moveSec = (id,dir)=>{
     const idx=secs.findIndex(s=>s.id===id);if(idx<0)return;
@@ -7260,8 +7271,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   it.declineSt>0&&span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,background:'rgba(239,68,68,.12)',color:'#ef4444',border:'.5px solid rgba(239,68,68,.3)'}},it.declineSt+' declining'),
                   it.laborSt>0&&span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,background:'rgba(245,158,11,.12)',color:'#f59e0b',border:'.5px solid rgba(245,158,11,.3)'}},it.laborSt+' labor ↑'),
                   it.mapeSt>0&&span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,background:'rgba(139,92,246,.12)',color:'#a78bfa',border:'.5px solid rgba(139,92,246,.3)'}},it.mapeSt+' MAPE ↑')
-                )
+                ),
+              collBtn('intelligence')
             ),
+            !collapsedSecs['intelligence']&&h(React.Fragment,null,
             // Signal rows
             div(null,...signals.map(s=>sigRow(s.icon,s.label,s.val,s.sub,s.col,s.dot,s.nav))),
             // Footer — clickable alert chips
@@ -7285,6 +7298,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 onClick:()=>onOpenModal&&onOpenModal('priority-brief')},
                 '🎯 Priority Brief →')
             )
+            )
           );
         })(),
 
@@ -7294,8 +7308,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:onOpenProjections},
             span(null,'📈'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Projections & Forecasting'),
-            span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
+            span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
+            collBtn('projections')
           ),
+          !collapsedSecs['projections']&&h(React.Fragment,null,
           div({style:{padding:'10px 12px',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}},
             div({style:{textAlign:'center'}},
               div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
@@ -7370,6 +7386,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               );
             })()
           )
+          )
         ),
 
         // ── LOCK DEADLINE COUNTDOWN ──────────────────────────────────────
@@ -7421,9 +7438,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             salesSec&&salesSec.salesVsLY!=null&&span({style:{fontSize:'10px',fontFamily:'var(--mono)',
               color:(salesSec.salesVsLY*100)>=0?'#10b981':'#f87171'}},
-              ((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(1)+'% vs LY')
+              ((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(1)+'% vs LY'),
+            collBtn('sales')
           ),
-          salesSec?div({style:{padding:'10px 12px'}},
+          !collapsedSecs['sales']&&(salesSec?div({style:{padding:'10px 12px'}},
             // Top metrics
             div({style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:8}},
               div({style:{textAlign:'center'}},
@@ -7461,7 +7479,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 )
               )
             )
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No sales data for this period')
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No sales data for this period'))
         ),
 
         // ── LABOR SECTION ──
@@ -7470,9 +7488,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'👥'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Labor'),
-            span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
+            span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
+            collBtn('labor')
           ),
-          laborSec?div({style:{padding:'10px 12px'}},
+          !collapsedSecs['labor']&&(laborSec?div({style:{padding:'10px 12px'}},
             div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}},
               div({style:{textAlign:'center'}},
                 div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
@@ -7504,7 +7523,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'OT Hours')
               )
             )
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No labor data for this period')
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No labor data for this period'))
         ),
 
         // ── SERVICE SECTION ──
@@ -7514,9 +7533,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             span(null,'⚡'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Service'),
             serviceSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},serviceSec.staleLabel),
-            span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
+            span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
+            collBtn('service')
           ),
-          serviceSec?div({style:{padding:'10px 12px'}},
+          !collapsedSecs['service']&&(serviceSec?div({style:{padding:'10px 12px'}},
             [
               {label:'OEPE W/O Parked',val:serviceSec.oepe,ok:serviceSec.okOepe,fl:serviceSec.flOepe,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:160},
               {label:'DT Parked %',val:serviceSec.park,ok:serviceSec.okPark,fl:serviceSec.flPark,fmt:v=>((v||0)*100).toFixed(1)+'%',goodDir:'low',tgt:.10},
@@ -7533,7 +7553,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{flex:1}},MktBadge({ok:row.ok,fl:row.fl,fmt:row.fmt}))
               );
             })
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No service data for this period')
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No service data for this period'))
         ),
 
         // ── CONTROLS SECTION ──
@@ -7543,9 +7563,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             span(null,'🔒'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Controls & Integrity'),
             ctrlSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},ctrlSec.staleLabel),
-            span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
+            span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
+            collBtn('controls')
           ),
-          ctrlSec?div({style:{padding:'10px 12px'}},
+          !collapsedSecs['controls']&&(ctrlSec?div({style:{padding:'10px 12px'}},
             // ── Labor sub-section ─────────────────────────────────────
             laborSec&&div({style:{marginBottom:10,paddingBottom:8,borderBottom:'.5px solid var(--bdr)'}},
               div({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',letterSpacing:'.5px',
@@ -7591,7 +7612,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{flex:1}},MktBadge({ok:row.ok,fl:row.fl,fmt:row.fmt}))
               )
             )
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No controls data — upload Operations Report')
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No controls data — upload Operations Report'))
         ),
 
         // ── FOB SECTION ──
@@ -7600,9 +7621,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenBrief&&onOpenBrief()},
             span(null,'🍟'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'FOB & Food Cost'),
-            span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
+            span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
+            collBtn('fob')
           ),
-          fobSec?div({style:{padding:'10px 12px'}},
+          !collapsedSecs['fob']&&(fobSec?div({style:{padding:'10px 12px'}},
             // Big FOB%, Food Cost%, Base Food%
             div({style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:8}},
               div({style:{textAlign:'center',padding:'8px',borderRadius:5,
@@ -7671,7 +7693,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 )
               )
             )
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No FOB data — upload Operations Report with FOB sheet')
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No FOB data — upload Operations Report with FOB sheet'))
         ),
 
         // ── DIGITAL SALES SECTION ──────────────────────────────────
@@ -7682,9 +7704,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Digital Sales'),
             digitalSec&&span({style:{fontSize:'9px',color:'#60a5fa',fontWeight:600}},
               'McDelivery + MOP + Kiosk'),
-            span({style:{fontSize:'9px',color:'var(--amber)'}},' \u2192')
+            span({style:{fontSize:'9px',color:'var(--amber)'}},' \u2192'),
+            collBtn('digital')
           ),
-          digitalSec?div({style:{padding:'10px 12px'}},
+          !collapsedSecs['digital']&&(digitalSec?div({style:{padding:'10px 12px'}},
             // ── Hero metric: Digital Mix ──────────────────────────────
             div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}},
               div({style:{textAlign:'center',padding:'8px',borderRadius:6,
@@ -7749,7 +7772,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 'MOP & Kiosk drive higher avg check. McDelivery expands trade area beyond 3-mile radius.')
             )
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},
-            'No channel data — upload Operations Report with Sales sheet')
+            'No channel data — upload Operations Report with Sales sheet'))
         ),
 
         // ── DISTRICT PULSE RADAR ──
@@ -7791,8 +7814,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               span(null,'🎯'),
               span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'District Pulse'),
               span({style:{fontSize:'9px',color:'var(--text3)',marginRight:4}},'Performance vs Targets'),
+              collBtn('radar')
             ),
-            div({style:{padding:'12px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}},
+            !collapsedSecs['radar']&&div({style:{padding:'12px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}},
               // SVG Radar
               div({style:{flex:'0 0 auto',position:'relative'}},
                 h('svg',{viewBox:'0 0 200 200',style:{width:180,height:180}},
@@ -7870,9 +7894,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'🏆'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Store Leaderboard'),
-            span({style:{fontSize:'9px',color:'var(--amber)'}},'→')
+            span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
+            collBtn('leaderboard')
           ),
-          div({style:{padding:'8px 12px'}},
+          !collapsedSecs['leaderboard']&&div({style:{padding:'8px 12px'}},
             // Metric tabs
             div({style:{display:'flex',gap:3,marginBottom:8,flexWrap:'wrap'}},
               [['sales','💰 Sales'],['oepe','⚡ OEPE'],['labor','👥 Labor%'],['tred','🔒 T-Reds']].map(([k,l])=>
