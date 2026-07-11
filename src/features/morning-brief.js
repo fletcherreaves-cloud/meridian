@@ -994,13 +994,15 @@ window.onerror = function(msg, src, line, col, err) {
   // React 19 calls reportError() for all errors, including those caught by ErrorBoundary.
   // Skip those — the ErrorBoundary already shows a recovery UI for them.
   if (msg && String(msg).indexOf('Minified React error') !== -1) return false;
-  // Cross-origin / opaque errors surface as the uninformative "Script error." with
-  // line 0, col 0, no source and no Error object. These are typically benign (browser
-  // extensions, Safari quirks, third-party/opaque resources) and MUST NOT tear down the
-  // whole app — on iOS Safari this was replacing #root with the error screen, breaking
-  // the home-screen/standalone experience even in private mode. Log and move on.
-  if ((!err) && (!src) && !line && !col) {
-    console.warn('[Meridian] Ignored opaque cross-origin error:', msg);
+  // Only show the error screen when a real Error object is available.
+  // "Script error." is the browser's opaque cross-origin error message — it fires on
+  // iOS Safari for benign Share-sheet events, extensions, and third-party resources.
+  // In every such case err is null/undefined. If there's no Error object we have no
+  // stack trace and no evidence of a real bug in our code, so silently log and return.
+  // (The old guard also checked !src, !line, !col — but iOS Safari can pass a page URL
+  // as src even for opaque errors, making that check too narrow.)
+  if (!err) {
+    console.warn('[Meridian onerror] Ignored (no Error object):', msg, '| src:', src, '| line:', line, col);
     return false;
   }
   document.getElementById('root').innerHTML =
