@@ -131,7 +131,7 @@ input,select{font-family:var(--sans);color:var(--text)}
 
 /* Layout */
 .app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
-.hdr{display:flex;align-items:center;gap:8px;padding:0 16px;height:48px;background:var(--surf);border-bottom:.5px solid var(--bdr);flex-shrink:0;position:sticky;top:0;z-index:50}
+.hdr{display:flex;align-items:center;gap:8px;padding:env(safe-area-inset-top,0px) 16px 0;height:calc(48px + env(safe-area-inset-top,0px));background:var(--surf);border-bottom:.5px solid var(--bdr);flex-shrink:0;position:sticky;top:0;z-index:50}
 .body{flex:1;overflow-y:auto}
 .logo{font-size:16px;font-weight:700;color:var(--amber);letter-spacing:-.5px;white-space:nowrap;flex-shrink:0}
 .logo em{color:var(--text);font-style:normal;font-weight:300}
@@ -400,9 +400,9 @@ input,select{font-family:var(--sans);color:var(--text)}
   .dbar { flex-direction: column; align-items: flex-start !important; }
   .dbar-r { flex-wrap: wrap; gap: 8px; }
   /* Topbar padding */
-  .hdr { padding: 0 8px !important; }
+  .hdr { padding: env(safe-area-inset-top,0px) 8px 0 !important; }
   /* Date picker popup: fixed to viewport so it never overflows horizontally */
-  .drp-popup { position: fixed; left: 8px; right: 8px; top: 52px; min-width: unset; width: auto; max-height: 80vh; overflow-y: auto; }
+  .drp-popup { position: fixed; left: 8px; right: 8px; top: calc(52px + env(safe-area-inset-top,0px)); min-width: unset; width: auto; max-height: 80vh; overflow-y: auto; }
   .drp-presets { gap: 3px; }
   .drp-pre { font-size: 9px; padding: 3px 6px; }
   /* hband: 2 cols on mobile */
