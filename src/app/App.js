@@ -724,10 +724,39 @@ function App() {
           try { setSignals(computeInsights(restoredDs)); } catch(e) { console.warn('[insights] restore compute failed:', e); }
         });
       } else {
+        // No local IDB data (fresh install / PWA cold start / storage cleared).
+        // Initialize ds to an empty shell so the Supabase startup loads below can
+        // populate it — without this, every setDs(prev=>{if(!prev)return prev;...})
+        // guard silently drops cloud data when prev is null.
+        // loaded:false is correct — file-based data gates still show "no data" state.
+        setDs({
+          laborRows:[], opsRows:[], ctrlRows:[], fobRows:[], auditRows:[],
+          peaksSvcRows:[], peaksSalesRows:[], darRows:[],
+          pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
+          glimpseRows:[], cashRows:[], exceptionRows:[],
+          targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{},
+          smgVoicePerf:[], loaded:false,
+          laborIdx:{}, opsIdx:{}, ctrlIdx:{},
+          laborByLoc:{}, opsByLoc:{}, ctrlByLoc:{}, darByLoc:{},
+          weatherIdx:{}, wxByDate:{}, storeIds:[], lastActual:{},
+        });
         setLoadMsg(null);
+        console.log('[Meridian] No IDB data — initialized empty ds; Supabase loads will populate');
       }
     }catch(e){
       console.warn('IDB restore failed:',e);
+      // Also initialize empty shell on error so Supabase loads can still run.
+      setDs({
+        laborRows:[], opsRows:[], ctrlRows:[], fobRows:[], auditRows:[],
+        peaksSvcRows:[], peaksSalesRows:[], darRows:[],
+        pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
+        glimpseRows:[], cashRows:[], exceptionRows:[],
+        targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{},
+        smgVoicePerf:[], loaded:false,
+        laborIdx:{}, opsIdx:{}, ctrlIdx:{},
+        laborByLoc:{}, opsByLoc:{}, ctrlByLoc:{}, darByLoc:{},
+        weatherIdx:{}, wxByDate:{}, storeIds:[], lastActual:{},
+      });
       setLoadMsg('❌ Auto-restore failed — load data via Upload');
       setTimeout(()=>setLoadMsg(null),8000);
     }
