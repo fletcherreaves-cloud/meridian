@@ -1146,7 +1146,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,sales_amount,trans_cnt,dt_untilserve,dt_trans_cnt,ly_sales_amount,ly_trans_cnt')
+    .select('loc,dt,product_sales,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions')
     .gte('dt', cutoffStr)
     .order('dt');
   if (error) { console.error('loadQsrActSummary:', error); return []; }
@@ -1161,13 +1161,13 @@ export async function loadQsrActSummary(daysBack = 35) {
       lySales: 0, lyGc: 0,
       _isQsrAct: true,
     };
-    map[key].sales        += r.sales_amount    || 0;
-    map[key].allNetSales  += r.sales_amount    || 0;
-    map[key].gc           += r.trans_cnt       || 0;
+    map[key].sales        += r.product_sales   || 0;
+    map[key].allNetSales  += r.product_sales   || 0;
+    map[key].gc           += (r.healthy_count  || 0) + (r.unhealthy_count || 0);
     map[key]._dtTotal     += r.dt_untilserve   || 0;
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
-    map[key].lySales      += r.ly_sales_amount || 0;
-    map[key].lyGc         += r.ly_trans_cnt    || 0;
+    map[key].lySales      += r.ly_product_sales || 0;
+    map[key].lyGc         += r.ly_transactions || 0;
   }
   return Object.values(map).map(r => ({
     ...r,

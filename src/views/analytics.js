@@ -6961,7 +6961,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── No data state ─────────────────────────────────────────────
   // noData is false when either manual laborRows OR auto-synced qsrActSummaryRows are present
-  const noData=!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length);
+  const noData=!ds?.laborRows?.length&&!ds?.qsrActSummaryRows?.length;
 
   // ── District weekly projections — memoized so 189 forecastDay calls only fire
   // when ds/stores/settings/userEvents actually change, not on every render
