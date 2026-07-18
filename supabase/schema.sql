@@ -861,6 +861,136 @@ create policy "qsr_field_definitions: service write" on public.qsr_field_definit
   for all using (true);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- QSRSoft emailed reports — server-side parsed (cloud-first, cross-device)
+-- Populated by scripts/qsrsoft-email-parse.mjs (GitHub Action): reads the CSVs
+-- ingested to the qsr-reports storage bucket, parses with src/parsers, upserts
+-- here. Previously these were parsed client-side on login into device-local IDB
+-- only. One row per store per date. loc = numeric NSN as parsed (e.g. '3708').
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Sales Ledger — channel sales mix (DT, breakfast, McDelivery, MOP, kiosk, etc.)
+create table if not exists public.sales_ledger_daily (
+  loc                text not null,
+  date               date not null,
+  all_net_sales      numeric,
+  all_net_sales_ly   numeric,
+  sales_vs_ly_pct    numeric,
+  gc                 numeric,
+  avg_check          numeric,
+  dt_sales           numeric,
+  dt_gc              numeric,
+  dt_avg_chk         numeric,
+  dt_pct_total       numeric,
+  bf_sales           numeric,
+  bf_gc              numeric,
+  bf_avg_chk         numeric,
+  bf_pct_total       numeric,
+  deliv_sales        numeric,
+  deliv_gc           numeric,
+  deliv_avg_chk      numeric,
+  deliv_pct_total    numeric,
+  mop_sales          numeric,
+  mop_gc             numeric,
+  mop_avg_chk        numeric,
+  mop_pct_total      numeric,
+  kiosk_sales        numeric,
+  kiosk_gc           numeric,
+  kiosk_avg_chk      numeric,
+  kiosk_pct_total    numeric,
+  fc_sales           numeric,
+  fc_gc              numeric,
+  fc_pct_total       numeric,
+  in_store_sales     numeric,
+  in_store_gc        numeric,
+  in_store_pct_total numeric,
+  eat_in_sales       numeric,
+  eat_in_gc          numeric,
+  updated_at         timestamptz default now(),
+  primary key (loc, date)
+);
+alter table public.sales_ledger_daily enable row level security;
+create policy "sales_ledger_daily: public read"  on public.sales_ledger_daily for select using (true);
+create policy "sales_ledger_daily: public write" on public.sales_ledger_daily for all    using (true);
+create index if not exists sales_ledger_daily_date_idx on public.sales_ledger_daily (date desc);
+
+-- Daily Glimpse — controls + service scorecard (OEPE, KVS, cash O/S, T-reds, promo, daypart)
+create table if not exists public.daily_glimpse_daily (
+  loc                 text not null,
+  date                date not null,
+  all_net_sales       numeric,
+  sales_vs_prior      numeric,
+  sales_vs_prior_pct  numeric,
+  dt_sales            numeric,
+  dt_gc               numeric,
+  dt_avg_check        numeric,
+  gc                  numeric,
+  avg_check           numeric,
+  labor_pct           numeric,
+  promo_amt           numeric,
+  promo_pct           numeric,
+  pos_over_cnt        numeric,
+  pos_over_amt        numeric,
+  cash_os             numeric,
+  cash_os_pct         numeric,
+  t_red_void_cnt      numeric,
+  t_red_deleted_cnt   numeric,
+  oepe                numeric,
+  oepe_full           numeric,
+  parked_pct          numeric,
+  kvst                numeric,
+  kvs_items           numeric,
+  kvs_healthy         numeric,
+  brk_car_cnt         numeric,
+  lu_car_cnt          numeric,
+  dn_car_cnt          numeric,
+  digital_pct_sales   numeric,
+  app_pct_sales       numeric,
+  updated_at          timestamptz default now(),
+  primary key (loc, date)
+);
+alter table public.daily_glimpse_daily enable row level security;
+create policy "daily_glimpse_daily: public read"  on public.daily_glimpse_daily for select using (true);
+create policy "daily_glimpse_daily: public write" on public.daily_glimpse_daily for all    using (true);
+create index if not exists daily_glimpse_daily_date_idx on public.daily_glimpse_daily (date desc);
+
+-- Cash Sheet — cash management + 3PO delivery platform breakdown
+create table if not exists public.cash_sheet_daily (
+  loc                text not null,
+  date               date not null,
+  all_net_sales      numeric,
+  gc                 numeric,
+  avg_check          numeric,
+  doordash_sales     numeric,
+  doordash_gc        numeric,
+  ubereats_sales     numeric,
+  ubereats_gc        numeric,
+  grubhub_sales      numeric,
+  grubhub_gc         numeric,
+  total_3po_sales    numeric,
+  total_3po_gc       numeric,
+  mop_eat_in         numeric,
+  mop_takeout        numeric,
+  kiosk_eat_in       numeric,
+  kiosk_takeout      numeric,
+  cash_os            numeric,
+  cash_os_pct        numeric,
+  cash_ref_cnt       numeric,
+  cash_ref_amt       numeric,
+  cashless_ref_cnt   numeric,
+  cashless_ref_amt   numeric,
+  pos_over_cnt       numeric,
+  pos_over_amt       numeric,
+  t_red_void_cnt     numeric,
+  t_red_deleted_cnt  numeric,
+  updated_at         timestamptz default now(),
+  primary key (loc, date)
+);
+alter table public.cash_sheet_daily enable row level security;
+create policy "cash_sheet_daily: public read"  on public.cash_sheet_daily for select using (true);
+create policy "cash_sheet_daily: public write" on public.cash_sheet_daily for all    using (true);
+create index if not exists cash_sheet_daily_date_idx on public.cash_sheet_daily (date desc);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- INITIAL SEED (run manually after schema)
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- After creating your first user account, promote it to admin:
