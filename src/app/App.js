@@ -40,7 +40,7 @@ import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -1159,6 +1159,18 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
         }
       }catch(e){console.warn('[Meridian] QSRSoft act summary load failed:',e);}
+      // Server-parsed QSRSoft email reports (Daily Glimpse, Cash Sheet, Sales Ledger).
+      // Cloud-first source of truth — override the device-local IDB rows only when
+      // the Supabase tables have data, so freshness follows the app on any device.
+      try{
+        const [glimpse,cash]=await Promise.all([loadGlimpse(60),loadCash(60)]);
+        if(glimpse.length||cash.length){
+          setDs(prev=>{if(!prev)return prev;return{...prev,
+            ...(glimpse.length?{glimpseRows:glimpse}:{}),
+            ...(cash.length?{cashRows:cash}:{})};});
+          console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length}`);
+        }
+      }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);}
       // Load cross-device user settings (locked projections, AE calibration params)
       try{
         const remoteProj=await loadUserSetting('locked_projections');

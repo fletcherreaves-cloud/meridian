@@ -1184,6 +1184,84 @@ export async function loadQsrActSummary(daysBack = 35) {
   }));
 }
 
+// ── Cloud-first emailed-report loaders ────────────────────────────────────────
+// Load the server-parsed QSRSoft email reports from Supabase and return them in
+// the SAME camelCase shape the client parsers produce, so existing consumers
+// (delivery-mix, morning-brief, At A Glance) work unchanged — but cross-device
+// fresh instead of device-local IDB. All fail soft to [] (e.g. table not yet
+// created), preserving the prior IDB behavior.
+const _mkDate = (dt) => new Date(dt + 'T00:00:00');
+
+export async function loadGlimpse(daysBack = 45) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const { data, error } = await supabase.from('daily_glimpse_daily')
+    .select('*').gte('date', cutoff.toISOString().slice(0, 10)).order('date');
+  if (error) { console.warn('loadGlimpse:', error.message); return []; }
+  return (data || []).map(r => ({
+    loc: r.loc, date: _mkDate(r.date),
+    allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
+    dtSales: r.dt_sales, dtGC: r.dt_gc, dtAvgCheck: r.dt_avg_check,
+    gc: r.gc, avgCheck: r.avg_check, laborPct: r.labor_pct,
+    promoAmt: r.promo_amt, promoPct: r.promo_pct,
+    posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
+    cashOS: r.cash_os, cashOSPct: r.cash_os_pct,
+    tRedVoidCnt: r.t_red_void_cnt, tRedDeletedCnt: r.t_red_deleted_cnt,
+    oepe: r.oepe, oepeFull: r.oepe_full, parkedPct: r.parked_pct,
+    kvst: r.kvst, kvsItems: r.kvs_items, kvsHealthy: r.kvs_healthy,
+    brkCarCnt: r.brk_car_cnt, luCarCnt: r.lu_car_cnt, dnCarCnt: r.dn_car_cnt,
+    digitalPctSales: r.digital_pct_sales, appPctSales: r.app_pct_sales,
+    _isCloud: true,
+  }));
+}
+
+export async function loadCash(daysBack = 45) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const { data, error } = await supabase.from('cash_sheet_daily')
+    .select('*').gte('date', cutoff.toISOString().slice(0, 10)).order('date');
+  if (error) { console.warn('loadCash:', error.message); return []; }
+  return (data || []).map(r => ({
+    loc: r.loc, date: _mkDate(r.date),
+    allNetSales: r.all_net_sales, gc: r.gc, avgCheck: r.avg_check,
+    doorDashSales: r.doordash_sales, doorDashGC: r.doordash_gc,
+    uberEatsSales: r.ubereats_sales, uberEatsGC: r.ubereats_gc,
+    grubhubSales: r.grubhub_sales, grubhubGC: r.grubhub_gc,
+    total3poSales: r.total_3po_sales, total3poGC: r.total_3po_gc,
+    mopEatIn: r.mop_eat_in, mopTakeout: r.mop_takeout,
+    kioskEatIn: r.kiosk_eat_in, kioskTakeout: r.kiosk_takeout,
+    cashOS: r.cash_os, cashOSPct: r.cash_os_pct,
+    cashRefCnt: r.cash_ref_cnt, cashRefAmt: r.cash_ref_amt,
+    cashlessRefCnt: r.cashless_ref_cnt, cashlessRefAmt: r.cashless_ref_amt,
+    posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
+    tRedVoidCnt: r.t_red_void_cnt, tRedDeletedCnt: r.t_red_deleted_cnt,
+    _isCloud: true,
+  }));
+}
+
+export async function loadSalesLedger(daysBack = 45) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const { data, error } = await supabase.from('sales_ledger_daily')
+    .select('*').gte('date', cutoff.toISOString().slice(0, 10)).order('date');
+  if (error) { console.warn('loadSalesLedger:', error.message); return []; }
+  return (data || []).map(r => ({
+    loc: r.loc, date: _mkDate(r.date),
+    sales: r.all_net_sales, allNetSales: r.all_net_sales, allNetSalesLY: r.all_net_sales_ly, salesVsLYPct: r.sales_vs_ly_pct,
+    gc: r.gc, avgCheck: r.avg_check,
+    dtSales: r.dt_sales, dtGC: r.dt_gc, dtAvgChk: r.dt_avg_chk, dtPctTotal: r.dt_pct_total,
+    bfSales: r.bf_sales, bfGC: r.bf_gc, bfAvgChk: r.bf_avg_chk, bfPctTotal: r.bf_pct_total,
+    delivSales: r.deliv_sales, delivGC: r.deliv_gc, delivAvgChk: r.deliv_avg_chk, delivPctTotal: r.deliv_pct_total,
+    mopSales: r.mop_sales, mopGC: r.mop_gc, mopAvgChk: r.mop_avg_chk, mopPctTotal: r.mop_pct_total,
+    kioskSales: r.kiosk_sales, kioskGC: r.kiosk_gc, kioskAvgChk: r.kiosk_avg_chk, kioskPctTotal: r.kiosk_pct_total,
+    fcSales: r.fc_sales, fcGC: r.fc_gc, fcPctTotal: r.fc_pct_total,
+    inStoreSales: r.in_store_sales, inStoreGC: r.in_store_gc, inStorePctTotal: r.in_store_pct_total,
+    eatInSales: r.eat_in_sales, eatInGC: r.eat_in_gc,
+    laborPct: 0, actHrs: 0, otHrs: 0, tpph: 0, spph: 0,
+    _isCloudLedger: true,
+  }));
+}
+
 // ── Forecast snapshots ────────────────────────────────────────────────────────
 // Upsert per-day forecast accuracy rows from the backtest panel.
 // rows: Array<{loc, dt, source, forecast_sales, actual_sales, mape}>
