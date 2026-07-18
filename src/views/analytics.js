@@ -6337,14 +6337,19 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Auto-generate checklist items from app state
   const autoItems = React.useMemo(()=>{
     const items=[];
-    const latestLab = ds&&ds.laborRows&&ds.laborRows.length?
-      new Date(Math.max(...ds.laborRows.map(r=>r.date).filter(Boolean))):null;
+    // Freshness = newest business date across manual labor uploads AND the
+    // auto-synced QSRSoft daily-activity (DAR) feed. DAR refreshes daily on its
+    // own, so stale manual labor rows must not mask fresh auto-synced sales.
+    const _labD=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
+    const _qsrD=(ds?.qsrActSummaryRows||[]).map(r=>r.date).filter(Boolean);
+    const _freshD=[..._labD,..._qsrD];
+    const latestLab = _freshD.length?new Date(Math.max(..._freshD)):null;
     const dataAge = latestLab?Math.floor((today-latestLab)/864e5):999;
     if(dataAge>14) items.push({id:'auto_data_stale',priority:'high',
-      text:'Data is '+dataAge+' days old — upload Operations Report',
-      detail:'Upload: Operations_Report_[YYYY-MM-DD]_to_[YYYY-MM-DD].xlsx'});
+      text:'Sales data is '+dataAge+' days old — QSRSoft auto-sync may be down',
+      detail:'Check the daily pull (Signals → Sync), or upload an Operations Report as fallback.'});
     else if(dataAge>7) items.push({id:'auto_data_warn',priority:'medium',
-      text:'Data is '+dataAge+' days old — update when available',detail:''});
+      text:'Sales data is '+dataAge+' days old — verify auto-sync',detail:''});
     const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
     const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
     const wsKey=dKey(ws);
@@ -6475,11 +6480,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Data status ────────────────────────────────────────────────
   const latestLab=React.useMemo(()=>{
+    // Newest of manual labor uploads and the auto-synced QSRSoft (DAR) feed.
+    // Take the max of both so fresh auto-synced sales aren't hidden behind an
+    // old manual Operations Report still sitting in the cache.
     const labDates=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
-    if(labDates.length) return new Date(Math.max(...labDates));
-    // Fall back to most recent QSRSoft auto-sync date
     const qsrDates=(ds?.qsrActSummaryRows||[]).map(r=>r.date).filter(Boolean);
-    return qsrDates.length?new Date(Math.max(...qsrDates)):null;
+    const all=[...labDates,...qsrDates];
+    return all.length?new Date(Math.max(...all)):null;
   },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length]);
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
@@ -6505,7 +6512,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     else if(allLocs.length-nLocked>5)issues.push({lvl:'warning',msg:(allLocs.length-nLocked)+' projection locks still needed'});
     if(hlth.red>0)issues.push({lvl:'warning',msg:hlth.red+' store'+(hlth.red>1?'s':'')+' at red model health'});
     else if(hlth.green>=allLocs.length*.75&&allLocs.length>0)good.push(hlth.green+' stores at trusted health');
-    if(!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length))issues.push({lvl:'critical',msg:'no data loaded — upload Operations Report'});
+    if(!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length))issues.push({lvl:'critical',msg:'no data loaded — check connection or upload Operations Report'});
     if(issues.some(i=>i.lvl==='critical'))
       return{tone:'critical',color:'#f87171',text:'🚨 Action required — '+issues.map(i=>i.msg).join('; ')+'.'};
     if(issues.length>0)
