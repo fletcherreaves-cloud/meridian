@@ -1036,7 +1036,11 @@ export async function appendCustomSignalHistory(id, r, n, existingHistory) {
 }
 
 // ── On-demand sync triggers ───────────────────────────────────────────────────
-export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
+// Dispatch any data-pull workflow from the app. `workflow` is one of
+// 'dar' | 'ebos' | 'fob' | 'lifelenz'; `inputs` optionally overrides that
+// workflow's dispatch inputs (e.g. { days_recent: 1 }). Backed by the
+// trigger-dar-sync Edge Function, which owns the workflow allowlist + defaults.
+export async function triggerSync(workflow = 'dar', inputs = {}) {
   if (!supabase) return { error: 'No Supabase client' };
   const sbUrl = import.meta.env.VITE_SUPABASE_URL || '';
   if (!sbUrl) return { error: 'VITE_SUPABASE_URL not set' };
@@ -1049,7 +1053,7 @@ export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ days_back: String(daysBack), days_recent: String(daysRecent) }),
+      body: JSON.stringify({ workflow, inputs }),
     });
     const text = await res.text().catch(() => '');
     if (!res.ok) return { error: `Sync failed (${res.status})${text ? ': ' + text : ''}` };
@@ -1057,6 +1061,11 @@ export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
   } catch (e) {
     return { error: e.message || 'Network error' };
   }
+}
+
+// Back-compat wrapper for the existing Live Ops DAR button.
+export async function triggerDarSync({ daysBack = 7, daysRecent = 1 } = {}) {
+  return triggerSync('dar', { days_back: String(daysBack), days_recent: String(daysRecent) });
 }
 
 // ── qsr_daily_activity ────────────────────────────────────────────────────────

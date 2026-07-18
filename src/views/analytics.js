@@ -12,7 +12,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1279,6 +1279,25 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   const [ebosCov,  setEbosCov]  = uSt({count:0});
   const [darCov,   setDarCov]   = uSt({count:0});
   const [syncTimes, setSyncTimes] = uSt({life:null, ebos:null, dar:null});
+  // On-demand pull triggers (dispatch GitHub Actions via trigger-dar-sync fn)
+  const [syncBusy, setSyncBusy] = uSt(null);   // workflow key currently dispatching
+  const [syncNote, setSyncNote] = uSt(null);   // { wf, msg, err }
+  const doSync = async (wf) => {
+    setSyncBusy(wf); setSyncNote(null);
+    const r = await triggerSync(wf, {});
+    setSyncBusy(null);
+    setSyncNote(r && r.error
+      ? { wf, msg: r.error, err:true }
+      : { wf, msg: (r && r.message) || 'Sync started — data refreshes in ~10 min.', err:false });
+  };
+  const syncBtn = (wf) => h('button',{
+    onClick:()=>doSync(wf), disabled:syncBusy===wf, title:'Pull fresh data now',
+    style:{marginLeft:6,fontSize:'7px',fontWeight:700,padding:'1px 6px',borderRadius:3,
+      cursor:syncBusy===wf?'default':'pointer',verticalAlign:'middle',whiteSpace:'nowrap',
+      background:syncBusy===wf?'rgba(255,255,255,.08)':'rgba(245,188,0,.15)',
+      color:syncBusy===wf?'var(--text3)':'var(--accent)',
+      border:'.5px solid '+(syncBusy===wf?'rgba(255,255,255,.15)':'rgba(245,188,0,.4)')}},
+    syncBusy===wf?'…':'↻ Sync');
 
   uE(()=>{
     if(idbCoverage && Object.keys(idbCoverage).length>0) setCov(idbCoverage);
@@ -1601,7 +1620,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           span({style:{display:'flex',flexDirection:'column'}},
             'LifeLenz Schedule',
             syncLabel(syncTimes.life)),
-          autoTag),
+          autoTag,syncBtn('lifelenz')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' rows':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1611,7 +1630,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
     (()=>{const c=qsrFobCov;const hasData=c.count>0;
       return h('tr',{key:'auto-qsrfob',style:{background:'rgba(255,255,255,.015)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
         h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
-          hasData?staleDot(c):null,'QSRSoft FOB Daily',autoTag),
+          hasData?staleDot(c):null,'QSRSoft FOB Daily',autoTag,syncBtn('fob')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' rows':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1625,7 +1644,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft eBOS Purchases',
             syncLabel(syncTimes.ebos)),
-          autoTag),
+          autoTag,syncBtn('ebos')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' store-days':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1639,7 +1658,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft Daily Activity',
             syncLabel(syncTimes.dar)),
-          autoTag),
+          autoTag,syncBtn('dar')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' hour-slots':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1715,8 +1734,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
                   borderBottom:'.5px solid var(--bdr)',textAlign:i===0?'left':'right'}},(l)))
             )),
             h('tbody',null,
-            sectionHdr('hdr-auto','⚡ Auto-Synced · GitHub Actions · Daily ~5am CDT'),
+            sectionHdr('hdr-auto','⚡ Auto-Synced · GitHub Actions · Daily ~5am CT + intraday · ↻ Sync to pull now'),
             ...autoSyncedRows,
+            syncNote&&h('tr',{key:'sync-note'},
+              h('td',{colSpan:4,style:{padding:'2px 10px 8px',fontSize:'8px',
+                color:syncNote.err?'#f87171':'#10b981'}}, syncNote.msg)),
             sectionHdr('hdr-pipeline','📧 Email Pipeline · QSRSoft'),
             ...pipelineRows,
             sectionHdr('hdr-cloud','☁ Cloud-Persisted · Manual Upload'),
