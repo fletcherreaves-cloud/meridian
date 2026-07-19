@@ -6482,6 +6482,25 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const opsEffective  = React.useMemo(()=>_recentWeek(ds?.opsRows ||[]),[ds?.opsRows?.length,effectiveDateRange]);
   const ctrlEffective = React.useMemo(()=>_recentWeek(ds?.ctrlRows||[]),[ds?.ctrlRows?.length,effectiveDateRange]);
 
+  // Service metrics: prefer the manual Operations Report; fall back to the
+  // auto-synced Daily Glimpse (OEPE / KVS time / KVS usage) so the tile isn't
+  // blank without an upload. R2P has no auto source, so it only shows from manual.
+  const svcEffective = React.useMemo(()=>{
+    if(opsEffective.rows.length) return {...opsEffective,auto:false};
+    const g=_recentWeek((ds?.glimpseRows||[]).map(r=>({loc:r.loc,date:r.date,
+      oepe:r.oepe,park:r.parkedPct,kvst:r.kvst,kvsu:r.kvsHealthy,r2p:null})));
+    return {...g,auto:g.rows.length>0};
+  },[opsEffective,ds?.glimpseRows?.length,effectiveDateRange]);
+
+  // Channel sales mix: prefer manual/labor rows that carry channel splits; else
+  // the auto-synced Sales Ledger (DT / breakfast / McDelivery / MOP / kiosk).
+  const channelRows = React.useMemo(()=>{
+    const lab=(ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange)&&(r.dtSales||r.bfSales||r.mopSales||r.kioskSales));
+    if(lab.length) return {rows:lab,auto:false};
+    const led=(ds?.salesLedgerRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
+    return {rows:led,auto:led.length>0};
+  },[ds?.laborRows?.length,ds?.salesLedgerRows?.length,effectiveDateRange]);
+
   const avgOf=(rows,field)=>{const v=rows.map(r=>r[field]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const sumOf=(rows,field)=>rows.reduce((a,r)=>a+(r[field]||0),0);
   const pctOf=(a,b)=>b>0?((a/b-1)*100).toFixed(1)+'%':null;
@@ -6632,11 +6651,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       {key:'eatInSales',pctKey:null,label:'Eat-In'},
     ];
     const labScoped=labInRange.filter(r=>allLocs.includes(String(r.loc)));
+    // Channel splits: manual labor rows when present, else auto-synced Sales Ledger.
+    const chScoped=channelRows.rows.filter(r=>allLocs.includes(String(r.loc)));
     const chData=channels.map(ch=>{
-      const s=sumOf(labScoped,ch.key);
+      const s=sumOf(chScoped,ch.key);
       const pct=totSales>0&&s>0?s/totSales:null;
-      const okA=mktAvg(okLocs,labInRange,ch.key,'sum');
-      const flA=mktAvg(flLocs,labInRange,ch.key,'sum');
       return{...ch,sales:s,pct,okAvgPct:null,flAvgPct:null};
     });
     const salesVsLY=avgOf(labScoped,'salesVsLYPct');
@@ -6654,7 +6673,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const avgCheckLY=totGCLY>0?totSalesLY/totGCLY:0;
     const avgCheckVsLY=avgCheckLY>0?(avgChk-avgCheckLY)/avgCheckLY:null;
     return{totSales,totGC,avgChk,channels:chData,salesVsLY,gcVsLY,avgCheckVsLY,okSales,flSales,okSalesVsLY,flSalesVsLY};
-  },[labInRange,allLocs,okLocs,flLocs,ds?.laborRows,dateRange]);
+  },[labInRange,channelRows,allLocs,okLocs,flLocs,ds?.laborRows,dateRange]);
 
   // ── Labor section ─────────────────────────────────────────────
   const laborSec=React.useMemo(()=>{
@@ -6688,7 +6707,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Service section ───────────────────────────────────────────
   const serviceSec=React.useMemo(()=>{
-    const {rows:opsEff,isStale:opsSt,label:opsStaleLbl}=opsEffective;
+    const {rows:opsEff,isStale:opsSt,label:opsStaleLbl,auto:svcAuto}=svcEffective;
     if(!opsEff.length)return null;
     const opsScoped=opsEff.filter(r=>allLocs.includes(String(r.loc)));
     const oepe=avgOf(opsScoped,'oepe');
@@ -6702,9 +6721,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       kvst,okKvst:mktAvg(okLocs,opsEff,'kvst'),flKvst:mktAvg(flLocs,opsEff,'kvst'),
       kvsu,okKvsu:mktAvg(okLocs,opsEff,'kvsu'),flKvsu:mktAvg(flLocs,opsEff,'kvsu'),
       r2p,okR2p:mktAvg(okLocs,opsEff,'r2p'),flR2p:mktAvg(flLocs,opsEff,'r2p'),
-      isStale:opsSt,staleLabel:opsStaleLbl,
+      isStale:opsSt,staleLabel:opsStaleLbl,auto:svcAuto,
     };
-  },[opsEffective,allLocs,okLocs,flLocs]);
+  },[svcEffective,allLocs,okLocs,flLocs]);
 
   // ── Controls section ─────────────────────────────────────────
   const ctrlSec=React.useMemo(()=>{

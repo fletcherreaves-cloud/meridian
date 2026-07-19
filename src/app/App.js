@@ -1163,12 +1163,13 @@ function App() {
       // Cloud-first source of truth — override the device-local IDB rows only when
       // the Supabase tables have data, so freshness follows the app on any device.
       try{
-        const [glimpse,cash]=await Promise.all([loadGlimpse(60),loadCash(60)]);
-        if(glimpse.length||cash.length){
+        const [glimpse,cash,ledger]=await Promise.all([loadGlimpse(60),loadCash(60),loadSalesLedger(60)]);
+        if(glimpse.length||cash.length||ledger.length){
           setDs(prev=>{if(!prev)return prev;return{...prev,
             ...(glimpse.length?{glimpseRows:glimpse}:{}),
-            ...(cash.length?{cashRows:cash}:{})};});
-          console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length}`);
+            ...(cash.length?{cashRows:cash}:{}),
+            ...(ledger.length?{salesLedgerRows:ledger}:{})};});
+          console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
         }
       }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);}
       // Load cross-device user settings (locked projections, AE calibration params)
