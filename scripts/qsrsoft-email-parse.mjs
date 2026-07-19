@@ -150,6 +150,14 @@ async function main() {
   for (const p of pending) {
     const h = HANDLERS[p.report_type];
     if (!h) continue;
+    // Daily Glimpse has no per-row date column — its rows are dated from the
+    // filename. A weekly/monthly Glimpse file therefore collapses all its
+    // store-days onto one date and would overwrite good daily rows. Daily
+    // Glimpse files already cover every date, so skip the rollups.
+    if (p.report_type === 'daily-glimpse' && /weekly|monthly/i.test(p.filename)) {
+      if (DEBUG) console.log(`  · skip rollup ${p.filename} (glimpse has no date column)`);
+      continue;
+    }
     try {
       const { data: blob, error: dlErr } = await sb.storage.from(BUCKET).download(p.storage_path);
       if (dlErr || !blob) { console.error(`  ✗ download ${p.storage_path}: ${dlErr?.message || 'no data'}`); continue; }
