@@ -6485,23 +6485,35 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const opsEffective  = React.useMemo(()=>_recentWeek(ds?.opsRows ||[]),[ds?.opsRows?.length,effectiveDateRange]);
   const ctrlEffective = React.useMemo(()=>_recentWeek(ds?.ctrlRows||[]),[ds?.ctrlRows?.length,effectiveDateRange]);
 
-  // Service metrics: prefer the manual Operations Report; fall back to the
-  // auto-synced Daily Glimpse (OEPE / KVS time / KVS usage) so the tile isn't
-  // blank without an upload. R2P has no auto source, so it only shows from manual.
-  const svcEffective = React.useMemo(()=>{
-    if(opsEffective.rows.length) return {...opsEffective,auto:false};
-    const g=_recentWeek((ds?.glimpseRows||[]).map(r=>({loc:r.loc,date:r.date,
-      oepe:r.oepe,park:r.parkedPct,kvst:r.kvst,kvsu:r.kvsHealthy,r2p:null})));
-    return {...g,auto:g.rows.length>0};
-  },[opsEffective,ds?.glimpseRows?.length,effectiveDateRange]);
+  // Freshest-wins merge: union two same-shape row arrays by (loc, day). The
+  // primary (manual upload) overrides the secondary (auto pull/email) for the
+  // SAME day — a manual upload is an intentional override — while the auto source
+  // fills in every day the manual data doesn't cover (e.g. the days since the last
+  // manual upload). Net: whatever is freshest per date always shows.
+  const mergeFresh = (primary, secondary) => {
+    const k = r => String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+    const m = new Map();
+    for(const r of (secondary||[])) if(r&&r.date) m.set(k(r),r);
+    for(const r of (primary||[]))   if(r&&r.date) m.set(k(r),r); // manual overrides same-day auto
+    return [...m.values()];
+  };
 
-  // Channel sales mix: prefer manual/labor rows that carry channel splits; else
-  // the auto-synced Sales Ledger (DT / breakfast / McDelivery / MOP / kiosk).
+  // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
+  // Glimpse, freshest-per-day. R2P has no auto source, so it only shows from manual.
+  const svcEffective = React.useMemo(()=>{
+    const gl=(ds?.glimpseRows||[]).map(r=>({loc:r.loc,date:r.date,
+      oepe:r.oepe,park:r.parkedPct,kvst:r.kvst,kvsu:r.kvsHealthy,r2p:null}));
+    const res=_recentWeek(mergeFresh(ds?.opsRows,gl));
+    return {...res,auto:(ds?.opsRows||[]).length===0&&gl.length>0};
+  },[ds?.opsRows?.length,ds?.glimpseRows?.length,effectiveDateRange]);
+
+  // Channel sales mix: manual labor channel rows merged with auto Sales Ledger,
+  // freshest-per-day (manual overrides the same day; ledger fills recent gaps).
   const channelRows = React.useMemo(()=>{
-    const lab=(ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange)&&(r.dtSales||r.bfSales||r.mopSales||r.kioskSales));
-    if(lab.length) return {rows:lab,auto:false};
-    const led=(ds?.salesLedgerRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
-    return {rows:led,auto:led.length>0};
+    const lab=(ds?.laborRows||[]).filter(r=>r.dtSales||r.bfSales||r.mopSales||r.kioskSales);
+    const led=(ds?.salesLedgerRows||[]);
+    const merged=mergeFresh(lab,led).filter(r=>inRange(r.date,effectiveDateRange));
+    return {rows:merged,auto:lab.length===0&&led.length>0};
   },[ds?.laborRows?.length,ds?.salesLedgerRows?.length,effectiveDateRange]);
 
   const avgOf=(rows,field)=>{const v=rows.map(r=>r[field]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
