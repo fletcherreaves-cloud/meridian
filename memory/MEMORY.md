@@ -1,0 +1,22 @@
+# Meridian Project Memory
+
+- [Meridian project status & architecture](project-meridian.md) — migration complete, module map, tech stack, test status
+- [Data persistence model](project-data-model.md) — IndexedDB/Dexie, upload-once model, what survives vs resets
+- [Hosting options](project-hosting.md) — GitHub Pages vs Netlify vs Vercel, current state (not yet deployed)
+- [Performance Review System](project-perf-reviews.md) — v4.223, files, data model, scoring, Phase 2 roadmap
+- [QSRSoft email pipeline](project-qsrsoft-pipeline.md) — v4.240-241, parsers, Edge Function, Apps Script, schedule, ABC strategy
+- [Enhancement backlog](project-backlog.md) — operator summary rework, Food Cost/FOB panel, perf review fixes, RBAC grouping, data manager completeness
+- [FOB/Food Cost context](project-fob-context.md) — panel exists, vision for multi-location variance analysis, QSRSoft one-location-at-a-time problem
+- [LifeLenz session notes](lifelenz-session.md) — token lifecycle, ~5min inactivity timeout (mouse wiggle dismisses), sync script operational details
+- [Selector UI standard](feedback-selector-ui-standard.md) — pill-style, All→State→Org/Patch→Store hierarchy for all location filters
+- QSRSoft download automation to explore — see "To Explore" section in [QSRSoft email pipeline](project-qsrsoft-pipeline.md)
+- [Cross-device sync rework needed](project-sync-rework.md) — base64-in-DB workaround, remind when adding second org or new users
+- [Supabase persistence priority](project-supabase-priority.md) — TOP PRIORITY: move fobRows, opsRows, ctrlRows, darRows, smgFullscale to Supabase; cloud-first = no re-upload on device/URL switch
+- [SAGE AI Assistant](project-sage.md) — v4.281, Claude Opus 4.8 chat panel, sage-chat Edge Function, needs `supabase secrets set ANTHROPIC_API_KEY=...` + `supabase functions deploy sage-chat`
+- [Security notes](project-security-notes.md) — xlsx high-severity vuln, no fix, accepted risk (trusted uploads only); revisit if untrusted uploads ever added
+- [Data source redundancy](project-data-redundancy.md) — no master key; sales/labor/food cost appear in multiple ds.* sources; pre-beta audit needed; automation ceiling reached at v4.339
+- [QSRSoft Daily Activity + Shift Dashboard](project-qsrsoft-daily-activity.md) — daily-activity-raw endpoint discovered (quarter-hour granularity), shift dashboard = live per-store ops via eBOS api/cash/
+- [Store VLH Configuration](project-vlh-config.md) — store_vlh_config table, StoreVlhConfigPanel, VLH guide PDFs, coffee/BDAP/McCafé config; foundation for VLH efficiency calc
+- [Feature Requests module](feature-requests.md) — UI (list/kanban, filters), Supabase table schema, seed items, CLI access via scripts/features.mjs
+- [Deploy rule](feedback-deploy.md) — always push to origin/main after every commit; Vercel auto-deploys on push
+- [PWA Share sheet bug](project-pwa-share-bug.md) — iOS Safari Share button fails after v4.393; blocks Add to Home Screen; needs investigation
