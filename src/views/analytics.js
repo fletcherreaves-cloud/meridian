@@ -6359,12 +6359,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Auto-generate checklist items from app state
   const autoItems = React.useMemo(()=>{
     const items=[];
-    // Freshness = newest business date across manual labor uploads AND the
-    // auto-synced QSRSoft daily-activity (DAR) feed. DAR refreshes daily on its
-    // own, so stale manual labor rows must not mask fresh auto-synced sales.
-    const _labD=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
-    const _qsrD=(ds?.qsrActSummaryRows||[]).map(r=>r.date).filter(Boolean);
-    const _freshD=[..._labD,..._qsrD];
+    // Freshness = newest business date across manual labor AND every auto-synced
+    // feed (DAR summary, FOB, Daily Glimpse, Cash Sheet), clamped to today so a
+    // stale manual upload can't mask fresh auto data and LifeLenz's forward
+    // schedule can't skew it.
+    const _tMs=today.getTime();
+    const _pick=arr=>(arr||[]).map(r=>r.date).filter(Boolean)
+      .map(d=>d instanceof Date?d.getTime():new Date(d).getTime());
+    const _freshD=[..._pick(ds?.laborRows),..._pick(ds?.qsrActSummaryRows),..._pick(ds?.qsrFobRows),
+      ..._pick(ds?.glimpseRows),..._pick(ds?.cashRows)].filter(ms=>!isNaN(ms)&&ms<=_tMs);
     const latestLab = _freshD.length?new Date(Math.max(..._freshD)):null;
     const dataAge = latestLab?Math.floor((today-latestLab)/864e5):999;
     if(dataAge>14) items.push({id:'auto_data_stale',priority:'high',
@@ -6521,14 +6524,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Data status ────────────────────────────────────────────────
   const latestLab=React.useMemo(()=>{
-    // Newest of manual labor uploads and the auto-synced QSRSoft (DAR) feed.
-    // Take the max of both so fresh auto-synced sales aren't hidden behind an
-    // old manual Operations Report still sitting in the cache.
-    const labDates=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
-    const qsrDates=(ds?.qsrActSummaryRows||[]).map(r=>r.date).filter(Boolean);
-    const all=[...labDates,...qsrDates];
+    // Newest actual business date across manual labor AND every auto-synced feed
+    // (DAR summary, FOB, Daily Glimpse, Cash Sheet). Max so a stale manual upload
+    // can't mask fresh auto data; clamp to today so LifeLenz's forward schedule
+    // (or any future-dated row) can't skew it.
+    const tMs=today.getTime();
+    const pick=arr=>(arr||[]).map(r=>r.date).filter(Boolean)
+      .map(d=>d instanceof Date?d.getTime():new Date(d).getTime());
+    const all=[...pick(ds?.laborRows),...pick(ds?.qsrActSummaryRows),...pick(ds?.qsrFobRows),
+      ...pick(ds?.glimpseRows),...pick(ds?.cashRows)].filter(ms=>!isNaN(ms)&&ms<=tMs);
     return all.length?new Date(Math.max(...all)):null;
-  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length]);
+  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length]);
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
 
