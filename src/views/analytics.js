@@ -6483,7 +6483,6 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return {rows:recent,isStale:true,label:'Most recent: wk of '+lbl};
   };
   const opsEffective  = React.useMemo(()=>_recentWeek(ds?.opsRows ||[]),[ds?.opsRows?.length,effectiveDateRange]);
-  const ctrlEffective = React.useMemo(()=>_recentWeek(ds?.ctrlRows||[]),[ds?.ctrlRows?.length,effectiveDateRange]);
 
   // Freshest-wins merge: union two same-shape row arrays by (loc, day). The
   // primary (manual upload) overrides the secondary (auto pull/email) for the
@@ -6497,6 +6496,32 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     for(const r of (primary||[]))   if(r&&r.date) m.set(k(r),r); // manual overrides same-day auto
     return [...m.values()];
   };
+
+  // Controls: manual Controls sheet merged with the CLEAN auto-synced fields from
+  // Daily Glimpse + Cash Sheet (promo, cash O/S, POS overrings, refunds, labor %).
+  // T-reds / TPPH / drawer opens / meals have no clean auto equivalent, so they
+  // stay manual-only (blank on days where only auto data exists).
+  const ctrlAuto = React.useMemo(()=>{
+    const byKey=new Map();
+    const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+    for(const g of (ds?.glimpseRows||[])){
+      byKey.set(kk(g),{loc:g.loc,date:g.date,
+        promoPct:g.promoPct,promoAmt:g.promoAmt,
+        cashOSPct:g.cashOSPct,cashOSAmt:g.cashOS,
+        posOverCnt:g.posOverCnt,posOverAmt:g.posOverAmt,
+        laborPct:g.laborPct});
+    }
+    for(const c of (ds?.cashRows||[])){
+      const key=kk(c);const ex=byKey.get(key)||{loc:c.loc,date:c.date};
+      byKey.set(key,{...ex,
+        cashOSPct:ex.cashOSPct??c.cashOSPct,cashOSAmt:ex.cashOSAmt??c.cashOS,
+        posOverCnt:ex.posOverCnt??c.posOverCnt,posOverAmt:ex.posOverAmt??c.posOverAmt,
+        cashRefCnt:c.cashRefCnt,cashRefAmt:c.cashRefAmt,
+        cashlessRefCnt:c.cashlessRefCnt,cashlessRefAmt:c.cashlessRefAmt});
+    }
+    return [...byKey.values()];
+  },[ds?.glimpseRows?.length,ds?.cashRows?.length]);
+  const ctrlEffective = React.useMemo(()=>_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
 
   // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
   // Glimpse, freshest-per-day. R2P has no auto source, so it only shows from manual.
@@ -6697,8 +6722,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const laborSec=React.useMemo(()=>{
     // Labor productivity metrics (TPPH, labor%, OT, Act vs Need) live in the
     // Controls sheet (ctrlRows/Billable Sales group) — NOT the Sales sheet (labInRange).
-    // Sales sheet only has channel sales data. Fall back to labInRange if ctrl is empty.
-    const cRows=ctrlInRange.length?ctrlInRange:[];
+    // Use the merged controls source (manual + auto Glimpse) so Labor % fills from
+    // the auto feed on days without a manual upload. Fall back to labInRange.
+    const cRows=ctrlEffective.rows.length?ctrlEffective.rows:[];
     const lRows=labInRange;
     if(!cRows.length&&!lRows.length)return null;
     const cScoped=cRows.filter(r=>allLocs.includes(String(r.loc)));
@@ -6721,7 +6747,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       return{loc,laborPct:avgOf(cr,'laborPct')||avgOf(lr,'laborPct'),tpph:avgOf(cr,'tpph')||avgOf(lr,'tpph')};
     }).filter(x=>x.laborPct!=null).sort((a,b)=>a.laborPct-b.laborPct);
     return{laborPct,tpph,avn,otHrs,actHrs,crewHrs,avgRate,okLaborAvg,flLaborAvg,okTpphAvg,flTpphAvg,ranked};
-  },[labInRange,ctrlInRange,allLocs,okLocs,flLocs]);
+  },[labInRange,ctrlEffective,allLocs,okLocs,flLocs]);
 
   // ── Service section ───────────────────────────────────────────
   const serviceSec=React.useMemo(()=>{
