@@ -52,7 +52,7 @@ import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance,
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
-import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor, opsReportIsDaily } from '../parsers/index.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 import {
   fetchForecastWeather,
@@ -1400,6 +1400,7 @@ function App() {
     setLoadMsg('⏳ Reading '+fileArr.length+' file'+(fileArr.length>1?'s…':'…'));
     let currentDS=dsRef.current||buildDS([]);
     const loaded=[];
+    const _skipped=[]; // period-summary Operations Reports refused (no daily dates)
     const _toDs=r=>r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10);
     const _prevDarKeys   =new Set((currentDS.darRows      ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
     // Track rows parsed in this upload batch so we always upsert them to Supabase (overwrites stale data for corrected re-uploads)
@@ -1458,6 +1459,14 @@ function App() {
             }
             loaded.push({name:file.name,type});
           } else {
+            // Guard: refuse a period-summary Operations Report (no per-day date
+            // column). Daily rows are the source of truth — a period total
+            // corrupts daily forecasts and record-day math. Skip it and flag it.
+            if((type.type==='ops_report'||type.type==='combined')&&!opsReportIsDaily(wb)){
+              _skipped.push(file.name);
+              console.warn('[Meridian] Skipped period-summary Operations Report (no daily dates):',file.name);
+              continue;
+            }
             const _bL=currentDS.laborRows.length,_bF=(currentDS.fobRows||[]).length,_bO=currentDS.opsRows.length,_bC=currentDS.ctrlRows.length,_bPS=(currentDS.peaksSvcRows||[]).length,_bPA=(currentDS.peaksSalesRows||[]).length,_bA=(currentDS.auditRows||[]).length;
             currentDS=mergeDS(currentDS,wb,type,file.name);
             _freshLaborRows.push(...currentDS.laborRows.slice(_bL));
@@ -1516,7 +1525,8 @@ function App() {
       if(_freshAuditRows .length>0) saveAuditRows (_freshAuditRows ).catch(e=>console.warn('[audit_rows] save error:',e));
     }
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
-    setLoadMsg('✓ '+names+' loaded · '+currentDS.storeIds.length+' stores');
+    const _skipMsg=_skipped.length?'  ⚠ Skipped '+_skipped.length+' period-summary file'+(_skipped.length>1?'s':'')+' (no daily dates — upload the daily Operations Report instead)':'';
+    setLoadMsg((loaded.length?'✓ '+names+' loaded · '+currentDS.storeIds.length+' stores':'⚠ No files loaded')+_skipMsg);
     // ── Persist to IndexedDB (survives refresh) ──────────────────────────
     (async()=>{
       try{
