@@ -186,6 +186,7 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - No TypeScript — plain JS with `// @ts-nocheck`.
 - Every new persistent data type goes into Supabase (save on upload + load on startup). Ask "does this belong in Supabase?" for every new data model.
 - Automate data sources where possible; always keep manual upload as fallback.
+- **Auto/emailed-first, freshest-wins (standing rule).** Every tile/column must be fed by an auto-pulled or emailed cloud stream (DAR `qsr_daily_activity`, `qsr_fob`, `qsr_ebos_daily`, `lifelenz_schedules`; emailed `daily_glimpse_daily`/`sales_ledger_daily`/`cash_sheet_daily`). Manual uploads (`laborRows`/`ctrlRows`/`opsRows`/FOB Excel) are **last-resort fill only** — they may fill a loc/date the cloud doesn't cover yet but must **never override** auto/emailed data or be a tile's primary source. Manual data is device-local IDB (blank on other devices, stale past the last upload). See `memory/project-data-redundancy.md`.
 - Version bump with each significant feature: `v4.xxx` in commit message.
 - Performance reviews: do not hard-code org names (remove "Murphy Family Restaurants" refs).
 - When adding LifeLenz API features: do NOT re-investigate GraphQL `GetPdfReportsBusinessOfficeLocations` (returns location IDs, not schedule IDs). See `memory/lifelenz-session.md` for dead ends.

@@ -1155,11 +1155,13 @@ function App() {
           console.log(`[Meridian] ✓ Loaded QSRSoft field definitions`);
         }
       }catch(e){console.warn('[Meridian] QSR field defs load failed:',e);}
-      // QSRSoft daily-activity summary: 35-day aggregated daily totals per store.
-      // Used by AtAGlance as a zero-upload fallback so new operators see sales data
-      // immediately without having to upload any Operations Reports.
+      // QSRSoft daily-activity summary: 60-day aggregated daily totals per store
+      // (sales, DT, and auto-pulled actual/needed labor hours). Used by AtAGlance
+      // as a zero-upload fallback and by the Scheduling QSR columns so actual
+      // labor hours are cloud-fresh on every device — back into June, not just
+      // the days a manual report happened to cover.
       try{
-        const qsrActSummaryRows=await loadQsrActSummary(35);
+        const qsrActSummaryRows=await loadQsrActSummary(60);
         if(qsrActSummaryRows.length>0){
           setDs(prev=>{if(!prev)return prev;return{...prev,qsrActSummaryRows};});
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);

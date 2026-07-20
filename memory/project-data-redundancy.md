@@ -7,6 +7,23 @@ metadata:
   originSessionId: 5b414dcb-fdd6-4da2-ac88-7ae8b2b824d9
 ---
 
+## ⭐ SOURCING PRINCIPLE (2026-07-20) — auto/emailed-first, freshest-wins
+
+**Every metric a panel displays must be tied to an AUTO-PULLED or EMAILED data
+stream, and the most current data must always win.** This is a standing rule for
+all future work, not a one-off.
+
+- **Primary sources = the cloud streams** that refresh on their own on every device:
+  - Auto API pulls → `qsr_daily_activity` (DAR: sales, DT, **actual/needed punched hours**), `qsr_ebos_daily`, `qsr_fob`, `lifelenz_schedules`.
+  - Emailed → server-parsed → Supabase → `daily_glimpse_daily` (**labor %**, OEPE/KVS, controls), `sales_ledger_daily` (channel mix/3PO), `cash_sheet_daily`.
+- **Manual uploads** (Labor Analysis Excel → `laborRows`, Operations Report → `ctrlRows`/`opsRows`, FOB Excel, etc.) are **LAST-RESORT FILL ONLY**. They may fill a loc/date the cloud streams don't cover yet; they must **never override** auto/emailed data, and must never be the primary source for a tile or column.
+- **Freshest-wins merge order** everywhere: cloud-auto/emailed → (only if absent) manual. When two cloud sources overlap, prefer the more recent / more granular one.
+- **Why the manual trap is easy to fall into:** manual sources are device-local IDB — they look "present" on the dev's own machine but are empty on every other device and stop at whatever date the last upload happened to cover. That's exactly the failure the Scheduling QSR columns hit (v4.430–v4.432): they were keyed off manual `laborRows`/`ctrlRows`, so they went blank on other devices and had no data before the last manual upload (~7/10). Fixed by sourcing QSR Labor % ← Glimpse, QSR Hours ← DAR summed punched hours (60-day cloud window), manual only as fill.
+
+**Checklist for any new tile/column:** (1) Which auto/emailed stream feeds this? (2) Does it load cloud-first on a fresh device? (3) Is manual strictly a fallback that can't override? (4) Does the freshest available date win?
+
+---
+
 No master key / single source of truth exists across overlapping data sources. Each panel pulls from its designated `ds.*` field independently.
 
 **Why:** Not a problem at current scale (one user, known uploads), but could cause subtle inconsistencies if panels showing the "same" number draw from different sources. Becomes a real risk before multi-user beta.

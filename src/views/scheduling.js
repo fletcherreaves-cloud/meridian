@@ -265,29 +265,37 @@ function weekLabel(wed) {
   return fmt(wed)+'–'+fmt(tue);
 }
 
-function OpportunityReport({ schedRows, laborRows, ctrlRows, settings,
+function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrActRows, settings,
   selWeek: extSelWeek, setSelWeek: extSetSelWeek, weeks: extWeeks }) {
-  // ── Actual-labor rows indexed by loc+dateStr for the QSR cross-reference.
-  // Source from BOTH the manual Labor Analysis Excel (ds.laborRows, device-local
-  // IDB) AND the cloud-synced Operations Report control sheet (ds.ctrlRows) —
-  // both carry laborPct + actHrs. ctrlRows loads cloud-first on every device, so
-  // the QSR columns populate even where the Excel was never uploaded (a fresh
-  // device or preview origin). laborRows overlays ctrlRows on any date conflict.
+  // ── QSR actual-labor cross-reference, keyed loc+dateStr.
+  // Sourced auto/emailed-first, freshest-wins (per the data-refresh design):
+  //   • QSR Labor %  ← Daily Glimpse (emailed → Supabase, cloud-fresh)
+  //   • QSR Hours    ← DAR qsr_daily_activity summed punched hours (auto-pulled)
+  // The manual Labor Analysis Excel (laborRows) and Operations Report control
+  // sheet (ctrlRows) are only a LAST-RESORT fill for a loc/date the cloud streams
+  // don't cover yet — they never override auto/emailed data. Because the cloud
+  // streams load 60 days deep on every device, the columns populate back into
+  // June regardless of which manual reports happened to be uploaded.
   const laborIdx = useMemo(() => {
-    const m = {};
-    const add = (rows, overwrite) => {
-      for(const r of (rows||[])) {
-        if(!r.date || !r.loc) continue;
-        const dt = r.date instanceof Date ? r.date : new Date(r.date);
-        if(isNaN(dt)) continue;
-        const key = normLoc(r.loc) + '|' + dt.toISOString().slice(0,10);
-        if(overwrite || !m[key]) m[key] = r;
-      }
+    const pctIdx = {}, hrsIdx = {};
+    const toDateStr = r => {
+      if(!r.date || !r.loc) return null;
+      const dt = r.date instanceof Date ? r.date : new Date(r.date);
+      return isNaN(dt) ? null : normLoc(r.loc) + '|' + dt.toISOString().slice(0,10);
     };
-    add(ctrlRows, false);   // cloud baseline
-    add(laborRows, true);   // manual Excel wins when present
-    return m;
-  }, [laborRows, ctrlRows]);
+    // laborPct is stored as a 0-1 fraction (parsePct) across all these sources;
+    // normalize to 0-100 to match the panel's fmtPct and LifeLenz % column.
+    const norm = v => (v && Math.abs(v) < 1.5) ? v * 100 : v;
+    // ── Labor % — Glimpse (emailed) primary, manual fill only where absent ──
+    for(const r of (glimpseRows||[])) { const k=toDateStr(r); if(k && r.laborPct) pctIdx[k]={pct:norm(r.laborPct),src:'glimpse'}; }
+    for(const r of (ctrlRows||[]))    { const k=toDateStr(r); if(k && !pctIdx[k] && r.laborPct) pctIdx[k]={pct:norm(r.laborPct),src:'ctrl'}; }
+    for(const r of (laborRows||[]))   { const k=toDateStr(r); if(k && !pctIdx[k] && r.laborPct) pctIdx[k]={pct:norm(r.laborPct),src:'labor'}; }
+    // ── Hours — DAR (auto-pulled) primary, manual fill only where absent ──
+    for(const r of (qsrActRows||[]))  { const k=toDateStr(r); if(k && r.actHrs) hrsIdx[k]={hrs:r.actHrs,src:'dar'}; }
+    for(const r of (ctrlRows||[]))    { const k=toDateStr(r); if(k && !hrsIdx[k] && r.actHrs) hrsIdx[k]={hrs:r.actHrs,src:'ctrl'}; }
+    for(const r of (laborRows||[]))   { const k=toDateStr(r); if(k && !hrsIdx[k] && r.actHrs) hrsIdx[k]={hrs:r.actHrs,src:'labor'}; }
+    return { pctIdx, hrsIdx };
+  }, [glimpseRows, qsrActRows, ctrlRows, laborRows]);
 
   // ── Scope options from settings (supervisorGroups + operators)
   const scopeOptions = useMemo(() => {
@@ -385,22 +393,12 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, settings,
         const controlled  = Math.max(0, schedHrs - crewHrs);
         const excessVsTgt = schedHrs - tgtHrs;
         const laborPct    = r.laborPct || 0; // LifeLenz punched %
-        // QSR cross-reference
+        // QSR cross-reference — cloud-first (Glimpse labor %, DAR hours),
+        // already scale-normalized when the indexes were built.
         const dateStr = r.date.toISOString().slice(0,10);
-        const qsr = laborIdx[loc + '|' + dateStr];
-        let qsrLaborPct = null, qsrActHrs = null;
-        if(qsr){
-          const lp = qsr.laborPct || 0, ah = qsr.actHrs || 0;
-          // Some sources carry empty placeholder rows — treat an all-zero row as
-          // no-data so the day shows '—' rather than a misleading 0.0%.
-          if(lp || ah){
-            // laborRows/ctrlRows store laborPct as a 0-1 fraction (parsePct), but
-            // fmtPct and the LifeLenz % column here are on a 0-100 scale —
-            // normalize so both columns are comparable.
-            qsrLaborPct = Math.abs(lp) < 1.5 ? lp * 100 : lp;
-            qsrActHrs   = ah || null;
-          }
-        }
+        const qkey = loc + '|' + dateStr;
+        const qsrLaborPct = laborIdx.pctIdx[qkey] ? laborIdx.pctIdx[qkey].pct : null;
+        const qsrActHrs   = laborIdx.hrsIdx[qkey] ? laborIdx.hrsIdx[qkey].hrs : null;
         return { date: r.date, sales, needHrs, schedHrs, crewHrs, tgtHrs, controlled, excessVsTgt, laborPct, qsrLaborPct, qsrActHrs };
       });
 
@@ -1159,7 +1157,7 @@ export function SchedulingPanel({ ds, settings, onClose }) {
             h('button', { onClick: () => setActiveTab('opportunity'), style: btnStyle(activeTab==='opportunity') }, '📊 Opportunity')
           ),
           activeTab === 'opportunity'
-            ? h(OpportunityReport, { schedRows:weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], settings,
+            ? h(OpportunityReport, { schedRows:weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], glimpseRows: (ds&&ds.glimpseRows)||[], qsrActRows: (ds&&ds.qsrActSummaryRows)||[], settings,
                 selWeek:activeWeekKey, setSelWeek, weeks:availableWeeks })
             : div({ style: { textAlign:'center', padding:'60px 20px', color:TEXT3 } },
                 div({ style: { fontSize:32, marginBottom:12 } }, '📋'),
@@ -1188,7 +1186,7 @@ export function SchedulingPanel({ ds, settings, onClose }) {
           ),
 
           // ── Content ─────────────────────────────────────────────────────────
-          activeTab === 'opportunity' && h(OpportunityReport, { schedRows: weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], settings,
+          activeTab === 'opportunity' && h(OpportunityReport, { schedRows: weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], glimpseRows: (ds&&ds.glimpseRows)||[], qsrActRows: (ds&&ds.qsrActSummaryRows)||[], settings,
             selWeek: activeWeekKey, setSelWeek, weeks: availableWeeks }),
           (locs.length > 1 && activeTab === 'district') && h(DistrictSummary, { schedRows: weekRows }),
 
