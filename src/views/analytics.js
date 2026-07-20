@@ -6298,9 +6298,13 @@ function ModelHealthBadge({loc, settings, ds, showDetail}) {
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   const today = new Date();
   const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
-  const orgOf = loc => (STORE_COORDS[String(loc)]||{}).org||'MCDOK';
-  const okLocs = allLocs.filter(l=>orgOf(l)==='MCDOK');
-  const flLocs = allLocs.filter(l=>orgOf(l)==='Emerald Arches');
+  // Market split by store state (STORE_COORDS carries no org, so it defaulted
+  // every store to MCDOK and left the FL pill empty). OK: = Oklahoma stores,
+  // FL: = Florida (panhandle) stores — matching the pill labels.
+  const stateOf = loc => (INV_ORG_COORDS[String(loc)]||{}).state;
+  const orgOf = loc => stateOf(loc)==='FL' ? 'MCDOK' : 'Emerald Arches';
+  const okLocs = allLocs.filter(l=>stateOf(l)==='OK');
+  const flLocs = allLocs.filter(l=>stateOf(l)==='FL');
 
   // ── Date range comes from the toolbar (global App state) ───────────────
   // The toolbar date picker controls the date range for all views including At a Glance.
@@ -6489,7 +6493,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const fobAmt=(r.rawWasteAmt||0)+(r.compWasteAmt||0)+(r.condimentsAmt||0)+(r.empMgrMealsAmt||0)+(r.statVarianceAmt||0)+(r.unexplainedAmt||0);
       const foodCost=(r.pnlFoodCostBegin||0)+(r.pnlFoodCostPurchases||0)+(r.pnlFoodCostAdjustments||0)+(r.pnlFoodCostTransfers||0)-(r.pnlFoodCostPromotions||0)-(r.pnlFoodCostEnd||0);
       const paperCost=(r.pnlPaperCostBegin||0)+(r.pnlPaperCostPurchases||0)+(r.pnlPaperCostAdjustments||0)+(r.pnlPaperCostTransfers||0)-(r.pnlPaperCostPromotions||0)-(r.pnlPaperCostEnd||0);
-      return {loc:String(r.loc),date:r._d,
+      return {loc:String(parseInt(r.loc,10)),date:r._d, // qsr_fob loc is zero-padded — normalize to match allLocs
         fobPct:pct(fobAmt,s), baseFoodPct:pct(r.totalBaseFood,s),
         rawWaste:pct(r.rawWasteAmt,s), compWaste:pct(r.compWasteAmt,s),
         condiment:pct(r.condimentsAmt,s), empMeal:pct(r.empMgrMealsAmt,s),
@@ -6860,26 +6864,38 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── FOB section ───────────────────────────────────────────────
   const fobSec=React.useMemo(()=>{
-    if(!fobInRange.length)return null;
-    const fobScoped=fobInRange.filter(r=>allLocs.includes(String(r.loc)));
-    const a=f=>avgOf(fobScoped,f);
+    // Show BOTH: current month-to-date (auto qsr_fob) as the primary number, and
+    // last completed month (manual FOB Report) as a reference. Primary = MTD when
+    // available, else the manual last month.
+    const mtd  =fobAuto.filter(r=>allLocs.includes(String(r.loc)));
+    const prior=fobRecent.filter(r=>allLocs.includes(String(r.loc)));
+    const primaryScoped = mtd.length?mtd:prior;
+    if(!primaryScoped.length)return null;
+    const primaryIsMTD = mtd.length>0;
+    const primarySrc = primaryIsMTD?fobAuto:fobRecent;
+    const a=f=>avgOf(primaryScoped,f);
+    const refScoped = primaryIsMTD?prior:[]; // manual last-month reference (only when primary is MTD)
+    const rf=f=>refScoped.length?avgOf(refScoped,f):null;
+    const priorMonth = prior.length?new Date(Math.max(...prior.map(r=>r.date instanceof Date?r.date.getTime():new Date(r.date).getTime()))).toLocaleDateString('en-US',{month:'short'}):null;
     return{
       fobPct:a('fobPct'),baseFoodPct:a('baseFoodPct'),unexplained:a('unexplained'),
       compWaste:a('compWaste'),rawWaste:a('rawWaste'),condiment:a('condiment'),
       empMeal:a('empMeal'),statVar:a('statVar'),discCoupon:a('discCoupon'),
       pLFoodPct:a('pLFoodPct'),pLPaperPct:a('pLPaperPct'),
-      okFobPct:mktAvg(okLocs,fobInRange,'fobPct'),flFobPct:mktAvg(flLocs,fobInRange,'fobPct'),
-      okPLFoodPct:mktAvg(okLocs,fobInRange,'pLFoodPct'),flPLFoodPct:mktAvg(flLocs,fobInRange,'pLFoodPct'),
-      okBaseFoodPct:mktAvg(okLocs,fobInRange,'baseFoodPct'),flBaseFoodPct:mktAvg(flLocs,fobInRange,'baseFoodPct'),
-      okUnexp:mktAvg(okLocs,fobInRange,'unexplained'),flUnexp:mktAvg(flLocs,fobInRange,'unexplained'),
-      okCompWaste:mktAvg(okLocs,fobInRange,'compWaste'),flCompWaste:mktAvg(flLocs,fobInRange,'compWaste'),
-      okRawWaste:mktAvg(okLocs,fobInRange,'rawWaste'),flRawWaste:mktAvg(flLocs,fobInRange,'rawWaste'),
-      okCondiment:mktAvg(okLocs,fobInRange,'condiment'),flCondiment:mktAvg(flLocs,fobInRange,'condiment'),
-      okEmpMeal:mktAvg(okLocs,fobInRange,'empMeal'),flEmpMeal:mktAvg(flLocs,fobInRange,'empMeal'),
-      okStatVar:mktAvg(okLocs,fobInRange,'statVar'),flStatVar:mktAvg(flLocs,fobInRange,'statVar'),
-      okDiscCoupon:mktAvg(okLocs,fobInRange,'discCoupon'),flDiscCoupon:mktAvg(flLocs,fobInRange,'discCoupon'),
+      primaryIsMTD, priorMonth,
+      priorFobPct:rf('fobPct'), priorBaseFoodPct:rf('baseFoodPct'), priorPLFoodPct:rf('pLFoodPct'),
+      okFobPct:mktAvg(okLocs,primarySrc,'fobPct'),flFobPct:mktAvg(flLocs,primarySrc,'fobPct'),
+      okPLFoodPct:mktAvg(okLocs,primarySrc,'pLFoodPct'),flPLFoodPct:mktAvg(flLocs,primarySrc,'pLFoodPct'),
+      okBaseFoodPct:mktAvg(okLocs,primarySrc,'baseFoodPct'),flBaseFoodPct:mktAvg(flLocs,primarySrc,'baseFoodPct'),
+      okUnexp:mktAvg(okLocs,primarySrc,'unexplained'),flUnexp:mktAvg(flLocs,primarySrc,'unexplained'),
+      okCompWaste:mktAvg(okLocs,primarySrc,'compWaste'),flCompWaste:mktAvg(flLocs,primarySrc,'compWaste'),
+      okRawWaste:mktAvg(okLocs,primarySrc,'rawWaste'),flRawWaste:mktAvg(flLocs,primarySrc,'rawWaste'),
+      okCondiment:mktAvg(okLocs,primarySrc,'condiment'),flCondiment:mktAvg(flLocs,primarySrc,'condiment'),
+      okEmpMeal:mktAvg(okLocs,primarySrc,'empMeal'),flEmpMeal:mktAvg(flLocs,primarySrc,'empMeal'),
+      okStatVar:mktAvg(okLocs,primarySrc,'statVar'),flStatVar:mktAvg(flLocs,primarySrc,'statVar'),
+      okDiscCoupon:mktAvg(okLocs,primarySrc,'discCoupon'),flDiscCoupon:mktAvg(flLocs,primarySrc,'discCoupon'),
     };
-  },[fobInRange,allLocs,okLocs,flLocs]);
+  },[fobAuto,fobRecent,allLocs,okLocs,flLocs]);
 
   // ── Intelligence Summary (Morning Brief) ─────────────────────────
   const intelSec=React.useMemo(()=>{
@@ -7796,19 +7812,22 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',
                   color:fobSec.fobPct!=null?(fobSec.fobPct<.035?'#10b981':fobSec.fobPct<.055?'#f59e0b':'#f87171'):'var(--text3)'}},
                   fobSec.fobPct!=null?((fobSec.fobPct||0)*100).toFixed(2)+'%':'—'),
-                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'FOB %'),
+                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'FOB %'+(fobSec.primaryIsMTD?' · MTD':'')),
+                fobSec.priorFobPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorFobPct||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
                 MktBadge({ok:fobSec.okFobPct,fl:fobSec.flFobPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
               div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'rgba(255,255,255,.04)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
                   fobSec.pLFoodPct!=null?((fobSec.pLFoodPct||0)*100).toFixed(1)+'%':'—'),
-                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'P&L Food Cost %'),
+                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'P&L Food Cost %'+(fobSec.primaryIsMTD?' · MTD':'')),
+                fobSec.priorPLFoodPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorPLFoodPct||0)*100).toFixed(1)+'% '+(fobSec.priorMonth||'')),
                 MktBadge({ok:fobSec.okPLFoodPct,fl:fobSec.flPLFoodPct,fmt:v=>((v||0)*100).toFixed(1)+'%'})
               ),
               div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'rgba(255,255,255,.04)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
                   fobSec.baseFoodPct!=null?((fobSec.baseFoodPct||0)*100).toFixed(1)+'%':'—'),
-                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Base Food %'),
+                div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Base Food %'+(fobSec.primaryIsMTD?' · MTD':'')),
+                fobSec.priorBaseFoodPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorBaseFoodPct||0)*100).toFixed(1)+'% '+(fobSec.priorMonth||'')),
                 MktBadge({ok:fobSec.okBaseFoodPct,fl:fobSec.flBaseFoodPct,fmt:v=>((v||0)*100).toFixed(1)+'%'})
               )
             ),
