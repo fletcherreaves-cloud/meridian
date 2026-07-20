@@ -1157,7 +1157,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
   const data = await fetchAll((from, to) => supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,product_sales,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions')
+    .select('loc,dt,product_sales,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
     .gte('dt', cutoffStr)
     .order('dt')
     .range(from, to));
@@ -1170,6 +1170,7 @@ export async function loadQsrActSummary(daysBack = 35) {
       sales: 0, allNetSales: 0, gc: 0,
       _dtTotal: 0, _dtCars: 0,
       lySales: 0, lyGc: 0,
+      actHrs: 0, needHrs: 0,
       _isQsrAct: true,
     };
     map[key].sales        += r.product_sales   || 0;
@@ -1179,10 +1180,16 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
     map[key].lySales      += r.ly_product_sales || 0;
     map[key].lyGc         += r.ly_transactions || 0;
+    // Actual punched + needed labor hours summed across the day's hour slots —
+    // the auto-pulled DAR labor totals (cloud-fresh on every device).
+    map[key].actHrs       += r.actual_punched_hours || 0;
+    map[key].needHrs      += r.total_needed_hours   || 0;
   }
   return Object.values(map).map(r => ({
     ...r,
     salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+    // Derive a QSR labor % from the day's product sales when an average crew rate
+    // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));
 }
 

@@ -681,6 +681,12 @@ function App() {
         const bIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
         const lastAct={};
         for(const r of labor){if(r.sales>0&&!r.isPeriodSummary){if(!lastAct[r.loc]||r.date>lastAct[r.loc])lastAct[r.loc]=r.date;}}
+        // Rebuild the weather date-index from restored weatherRows. This path used
+        // to leave wxByDate empty, which silently killed Market Intelligence weather
+        // correlations after a cold-start restore (data present, lookup empty).
+        const wxIdx={};
+        for(const r of (weather||[])){if(!r.date)continue;const _dk=dKey(r.date);
+          if(r.loc)wxIdx[String(r.loc)+'_'+_dk]=r; if(!wxIdx[_dk])wxIdx[_dk]=r;}
         const restoredDs={
           laborRows:labor, opsRows:ops, ctrlRows:ctrl,
           fobRows:fob, auditRows:audit,
@@ -691,7 +697,7 @@ function App() {
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
-          weatherIdx:{}, wxByDate:{},
+          weatherIdx:bIdx(weather||[]), wxByDate:wxIdx,
           storeIds:[...new Set(labor.map(r=>r.loc))].sort(),
           lastActual:lastAct,
         };
@@ -1149,11 +1155,13 @@ function App() {
           console.log(`[Meridian] ✓ Loaded QSRSoft field definitions`);
         }
       }catch(e){console.warn('[Meridian] QSR field defs load failed:',e);}
-      // QSRSoft daily-activity summary: 35-day aggregated daily totals per store.
-      // Used by AtAGlance as a zero-upload fallback so new operators see sales data
-      // immediately without having to upload any Operations Reports.
+      // QSRSoft daily-activity summary: 60-day aggregated daily totals per store
+      // (sales, DT, and auto-pulled actual/needed labor hours). Used by AtAGlance
+      // as a zero-upload fallback and by the Scheduling QSR columns so actual
+      // labor hours are cloud-fresh on every device — back into June, not just
+      // the days a manual report happened to cover.
       try{
-        const qsrActSummaryRows=await loadQsrActSummary(35);
+        const qsrActSummaryRows=await loadQsrActSummary(60);
         if(qsrActSummaryRows.length>0){
           setDs(prev=>{if(!prev)return prev;return{...prev,qsrActSummaryRows};});
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
@@ -1208,12 +1216,28 @@ function App() {
       const newRows = await fetchOpenMeteoWeather('2022-01-01', today, ()=>{}).catch(()=>[]);
       if(!newRows.length) return;
       await idbPutRows('weatherRows', newRows).catch(()=>{});
-      const wDates = newRows.map(r=>r._d||'').filter(Boolean).sort();
+      // fetchOpenMeteoWeather rows carry .date (Date) but not _d; derive dates
+      // straight off .date so coverage/staleness don't collapse to '?'.
+      const wDates = newRows.map(r=>r.date?dKey(r.date):'').filter(Boolean).sort();
+      // Rebuild the weather date-index. Without this, a fresh fetch populated
+      // ds.weatherRows but left ds.wxByDate at whatever it was (empty {} on a
+      // cold start), so Market Intelligence weather correlations silently stayed
+      // hidden — liWeatherCorr reads wxByDate, not weatherRows. Mirror the
+      // IDB-restore rebuild so both keys (loc_date and bare date) are present.
+      const wxIdx={};
+      for(const r of newRows){if(!r.date)continue;const _dk=dKey(r.date);
+        if(r.loc)wxIdx[String(r.loc)+'_'+_dk]=r; if(!wxIdx[_dk])wxIdx[_dk]=r;}
+      const bWxIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
       setDs(prev=>{
         if(!prev) return prev;
-        const updated={...prev, weatherRows:newRows};
+        const updated={...prev, weatherRows:newRows, wxByDate:wxIdx, weatherIdx:bWxIdx(newRows)};
         opfsSave(updated).catch(()=>{});  // persist to OPFS so it survives reload
         return updated;
+      });
+      // Keep the module-level wx cache warm too, so anomaly notes resolve.
+      newRows.forEach(r=>{if(!r.loc||!r.date)return;
+        const _wk=String(r.loc)+'_'+dKey(r.date);
+        _wxCache[_wk]={tmax:r.tmax,tmin:r.tmin,rain:r.rain,wmax:r.wmax||r.wspd||0,source:r.source||'open-meteo'};
       });
       setIdbCoverage(prev=>({
         ...(prev||{}),
@@ -1915,18 +1939,18 @@ function App() {
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showScheduling&&h(SchedulingPanel,{ds,settings,onClose:()=>setShowScheduling(false)}),
     showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
+      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 16px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
         span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em'}},'📡 Signals'),
-        h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
+        h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×'),
       ),
       div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
         h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar}),
       ),
     ),
     showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
+      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
         span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em',color:'var(--text)'}},'🧠 SAGE'),
-        h('button',{onClick:()=>setShowSage(false),style:{background:'none',border:'none',cursor:'pointer',color:'#6b7280',fontSize:'20px',lineHeight:1}},'×'),
+        h('button',{onClick:()=>setShowSage(false),style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×'),
       ),
       div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
         h(SagePanel,{ds,signals,customSignalDefs}),

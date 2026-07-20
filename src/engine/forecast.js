@@ -415,7 +415,7 @@ function gcCrossCheck(loc,date,ds,settings,salesForecast){
   // GC trend — use same trend signal as sales
   const tDow=dowOf(date);
   const today=new Date();
-  const eDt=ds.lastActual[loc]||today;
+  const eDt=(ds.lastActual&&ds.lastActual[loc])||today;
   const gcTrend=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2)*0.5+
                 getDOWTrend(ds.laborIdx,loc,date,eDt,3,4)*0.3+
                 getDOWTrend(ds.laborIdx,loc,date,eDt,5,6)*0.2;
@@ -1225,7 +1225,7 @@ function InfoIcon({articleKey, inline}) {
 function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(!ds)return{date,loc,ly:0,lyAdj:0,t2:0,t4:0,t6:0,forecast:0,actual:0,goal:0,varPct:null,pass:null,isFuture:true,opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:true};
   const t=tgt||ds.targets[loc]||DEFAULT_TARGETS[loc]||{};
-  const anchor=ds.lastActual[loc]||addD(new Date(),-1);
+  const anchor=(ds.lastActual&&ds.lastActual[loc])||addD(new Date(),-1);
   // isFuture: date is after the last known actual OR after today (whichever is more conservative)
   const todayStart=sodOf(new Date());
   const isFuture=date>anchor&&date>=todayStart;
