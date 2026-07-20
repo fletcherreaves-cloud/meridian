@@ -6493,7 +6493,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const fobAmt=(r.rawWasteAmt||0)+(r.compWasteAmt||0)+(r.condimentsAmt||0)+(r.empMgrMealsAmt||0)+(r.statVarianceAmt||0)+(r.unexplainedAmt||0);
       const foodCost=(r.pnlFoodCostBegin||0)+(r.pnlFoodCostPurchases||0)+(r.pnlFoodCostAdjustments||0)+(r.pnlFoodCostTransfers||0)-(r.pnlFoodCostPromotions||0)-(r.pnlFoodCostEnd||0);
       const paperCost=(r.pnlPaperCostBegin||0)+(r.pnlPaperCostPurchases||0)+(r.pnlPaperCostAdjustments||0)+(r.pnlPaperCostTransfers||0)-(r.pnlPaperCostPromotions||0)-(r.pnlPaperCostEnd||0);
-      return {loc:String(r.loc),date:r._d,
+      return {loc:String(parseInt(r.loc,10)),date:r._d, // qsr_fob loc is zero-padded — normalize to match allLocs
         fobPct:pct(fobAmt,s), baseFoodPct:pct(r.totalBaseFood,s),
         rawWaste:pct(r.rawWasteAmt,s), compWaste:pct(r.compWasteAmt,s),
         condiment:pct(r.condimentsAmt,s), empMeal:pct(r.empMgrMealsAmt,s),
