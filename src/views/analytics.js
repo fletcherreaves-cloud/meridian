@@ -6619,6 +6619,21 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const sumOf=(rows,field)=>rows.reduce((a,r)=>a+(r[field]||0),0);
   const pctOf=(a,b)=>b>0?((a/b-1)*100).toFixed(1)+'%':null;
 
+  // ── "As of" tile freshness ────────────────────────────────────
+  // Newest business date (≤ today) in a tile's OWN source rows, so each tile
+  // states exactly how current its number is — removes date guesswork.
+  const _asOfDate = (rows) => {
+    let m=null; const tMs=today.getTime();
+    for(const r of (rows||[])){ if(!r||!r.date)continue;
+      const d=r.date instanceof Date?r.date:new Date(r.date); const ms=d.getTime();
+      if(!isNaN(ms)&&ms<=tMs&&(!m||ms>m.getTime()))m=d; }
+    return m;
+  };
+  const _asOfTag = (rows) => { const d=_asOfDate(rows); return d?span({
+    style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic',whiteSpace:'nowrap'},
+    title:'Newest data date shown in this tile'},
+    'as of '+d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'})):null; };
+
   const labByLoc=loc=>labInRange.filter(r=>r.loc===String(loc));
   const opsByLoc=loc=>opsInRange.filter(r=>r.loc===String(loc));
   const ctrlByLoc=loc=>ctrlInRange.filter(r=>r.loc===String(loc));
@@ -7675,6 +7690,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'💰'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Sales & Guest Counts'),
+            _asOfTag(labInRange),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             salesSec&&salesSec.salesVsLY!=null&&span({style:{fontSize:'10px',fontFamily:'var(--mono)',
               color:(salesSec.salesVsLY*100)>=0?'#10b981':'#f87171'}},
@@ -7728,6 +7744,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'👥'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Labor'),
+            _asOfTag(labInRange),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('labor')
           ),
@@ -7772,6 +7789,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'⚡'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Service'),
+            _asOfTag(svcEffective.rows),
             serviceSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},serviceSec.staleLabel),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('service')
@@ -7802,6 +7820,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onNav&&onNav('district')},
             span(null,'🔒'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Controls & Integrity'),
+            _asOfTag(ctrlEffective.rows),
             ctrlSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},ctrlSec.staleLabel),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('controls')
@@ -7861,6 +7880,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenBrief&&onOpenBrief()},
             span(null,'🍟'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'FOB & Food Cost'),
+            _asOfTag(fobAuto),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('fob')
           ),
@@ -7948,6 +7968,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'\uD83D\uDCF1'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Digital Sales'),
+            _asOfTag(channelRows.rows),
             digitalSec&&span({style:{fontSize:'9px',color:'#60a5fa',fontWeight:600}},
               'McDelivery + MOP + Kiosk'),
             span({style:{fontSize:'9px',color:'var(--amber)'}},' \u2192'),
