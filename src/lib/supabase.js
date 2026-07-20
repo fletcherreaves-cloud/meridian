@@ -1153,12 +1153,14 @@ export async function loadQsrActSummary(daysBack = 35) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const { data, error } = await supabase
+  // Paginate — qsr_daily_activity has ~675 rows/day, so a single query hits the
+  // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
+  const data = await fetchAll((from, to) => supabase
     .from('qsr_daily_activity')
     .select('loc,dt,product_sales,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions')
     .gte('dt', cutoffStr)
-    .order('dt');
-  if (error) { console.error('loadQsrActSummary:', error); return []; }
+    .order('dt')
+    .range(from, to));
   const map = {};
   for (const r of data || []) {
     const loc = String(parseInt(r.loc, 10)); // strip zero-padding ("0003708" → "3708")
