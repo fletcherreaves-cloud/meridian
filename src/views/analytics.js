@@ -6618,7 +6618,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(!ly.length&&!day.length) return null;
     const up=ly.slice(0,3).filter(r=>r.salesVsLYPct>0);
     const down=ly.slice(-3).reverse().filter(r=>r.salesVsLYPct<0);
-    const dt=day.map(r=>({loc:r.loc,dt:r._dtCars>0?r._dtTotal/r._dtCars:null})).filter(r=>r.dt!=null).sort((a,b)=>b.dt-a.dt);
+    // DT until-serve: sum(µs)/sum(cars)/1000 = avg seconds per car (matches DT panel).
+    const dt=day.map(r=>({loc:r.loc,dt:r._dtCars>0?r._dtTotal/r._dtCars/1000:null})).filter(r=>r.dt!=null&&r.dt>0&&r.dt<1200).sort((a,b)=>b.dt-a.dt);
     return {date:new Date(maxMs),up,down,slowDT:dt.slice(0,2),
       behind:ly.filter(r=>r.salesVsLYPct<0).length,total:ly.length};
   },[ds?.qsrActSummaryRows?.length,allLocs]);
@@ -6743,10 +6744,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     ];
     const labScoped=labInRange.filter(r=>allLocs.includes(String(r.loc)));
     // Channel splits: manual labor rows when present, else auto-synced Sales Ledger.
+    // % must divide by the SAME source's total sales (not totSales, which comes
+    // from a different array) or the ratios blow up.
     const chScoped=channelRows.rows.filter(r=>allLocs.includes(String(r.loc)));
+    const chTot=sumOf(chScoped,'allNetSales')||sumOf(chScoped,'sales')||totSales;
     const chData=channels.map(ch=>{
       const s=sumOf(chScoped,ch.key);
-      const pct=totSales>0&&s>0?s/totSales:null;
+      const pct=chTot>0&&s>0?s/chTot:null;
       return{...ch,sales:s,pct,okAvgPct:null,flAvgPct:null};
     });
     const salesVsLY=avgOf(labScoped,'salesVsLYPct');
@@ -7198,15 +7202,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',fontSize:'11px'}},
       span({style:{fontWeight:700,color:'var(--amber)',whiteSpace:'nowrap'}},'📊 Today’s Movers'),
       span({style:{fontSize:'8px',color:'var(--text3)',whiteSpace:'nowrap'}},
-        'as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
-      ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600}},
+        'sales & DT speed · as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+      (moversStrip.up.length||moversStrip.down.length)&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Sales vs LY'),
+      ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
         '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(1)+'%')),
-      ...moversStrip.down.map((r,i)=>span({key:'d'+i,style:{color:'#f87171',whiteSpace:'nowrap',fontWeight:600}},
+      ...moversStrip.down.map((r,i)=>span({key:'d'+i,style:{color:'#f87171',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
         '▼ '+(STORE_NAMES[r.loc]||r.loc)+' '+r.salesVsLYPct.toFixed(1)+'%')),
-      ...moversStrip.slowDT.map((r,i)=>span({key:'dt'+i,style:{color:'var(--text2)',whiteSpace:'nowrap'}},
-        '🚗 '+(STORE_NAMES[r.loc]||r.loc)+' DT '+Math.round(r.dt)+'s')),
-      moversStrip.total>0&&span({style:{color:'var(--text3)',whiteSpace:'nowrap',marginLeft:'auto'}},
-        moversStrip.behind+' of '+moversStrip.total+' behind LY')
+      moversStrip.slowDT.length&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Slowest DT'),
+      ...moversStrip.slowDT.map((r,i)=>span({key:'dt'+i,style:{color:'var(--text2)',whiteSpace:'nowrap'},title:'Average drive-thru until-serve time today'},
+        '🚗 '+(STORE_NAMES[r.loc]||r.loc)+' '+Math.round(r.dt)+'s')),
+      moversStrip.total>0&&span({style:{color:'var(--text3)',whiteSpace:'nowrap',marginLeft:'auto'},title:'Stores with net sales below last year today'},
+        moversStrip.behind+' of '+moversStrip.total+' stores behind LY')
     ),
 
     // ── ACTION CHECKLIST ───────────────────────────────────────
