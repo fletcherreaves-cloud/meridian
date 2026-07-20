@@ -681,6 +681,12 @@ function App() {
         const bIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
         const lastAct={};
         for(const r of labor){if(r.sales>0&&!r.isPeriodSummary){if(!lastAct[r.loc]||r.date>lastAct[r.loc])lastAct[r.loc]=r.date;}}
+        // Rebuild the weather date-index from restored weatherRows. This path used
+        // to leave wxByDate empty, which silently killed Market Intelligence weather
+        // correlations after a cold-start restore (data present, lookup empty).
+        const wxIdx={};
+        for(const r of (weather||[])){if(!r.date)continue;const _dk=dKey(r.date);
+          if(r.loc)wxIdx[String(r.loc)+'_'+_dk]=r; if(!wxIdx[_dk])wxIdx[_dk]=r;}
         const restoredDs={
           laborRows:labor, opsRows:ops, ctrlRows:ctrl,
           fobRows:fob, auditRows:audit,
@@ -691,7 +697,7 @@ function App() {
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
           laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
           laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
-          weatherIdx:{}, wxByDate:{},
+          weatherIdx:bIdx(weather||[]), wxByDate:wxIdx,
           storeIds:[...new Set(labor.map(r=>r.loc))].sort(),
           lastActual:lastAct,
         };
