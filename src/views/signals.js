@@ -695,6 +695,7 @@ function HourlyDetail({ slots }) {
           h('th', { style: hdr }, 'vs Mean'),
           h('th', { style: hdr }, 'DT Speed'),
           h('th', { style: hdr }, 'Labor'),
+          h('th', { style: hdr }, 'Gap hrs'),
           h('th', { style: hdr }, 'Accuracy'),
         )
       ),
@@ -705,6 +706,12 @@ function HourlyDetail({ slots }) {
           const lab  = r.total_needed_hours > 0 ? (r.actual_punched_hours / r.total_needed_hours * 100) : null;
           const acc  = (r.healthy_count + r.unhealthy_count) > 0
                          ? (r.healthy_count / (r.healthy_count + r.unhealthy_count) * 100) : null;
+          // Intraday labor gap: punched − needed hours for this block. Negative =
+          // understaffed (short crew that hour); positive = overstaffed. Colored so
+          // a short rush hour (red) stands apart from a slack overstaffed hour (amber).
+          const gap  = (r.actual_punched_hours != null && r.total_needed_hours != null && (r.total_needed_hours > 0 || r.actual_punched_hours > 0))
+                         ? (r.actual_punched_hours - r.total_needed_hours) : null;
+          const gapColor = gap == null ? muted : gap <= -1 ? red : gap < -0.25 ? amber : gap > 1.5 ? amber : grn;
           // hour_slot "06:00" = ends at 6am → show as "5am"
           const end = parseInt(r.hour_slot, 10);
           const start = (end - 1 + 24) % 24;
@@ -715,6 +722,7 @@ function HourlyDetail({ slots }) {
             h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(0)}%` : '—'),
             h('td', { style: { ...cellStyle, color: speedColor(dt), fontWeight: dt != null && dt > DT_AMB ? 700 : 400 } }, dt != null ? fmtSecs(dt) : '—'),
             h('td', { style: { ...cellStyle, color: laborColor(lab), fontWeight: lab != null && lab > LABOR_AMB ? 700 : 400 } }, lab != null ? fmtPct(lab) : '—'),
+            h('td', { style: { ...cellStyle, color: gapColor, fontWeight: gap != null && gap <= -1 ? 700 : 400 } }, gap != null ? `${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : '—'),
             h('td', { style: { ...cellStyle, color: accColor(acc) } }, acc != null ? fmtPct(acc) : '—'),
           );
         })
