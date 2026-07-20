@@ -1110,13 +1110,17 @@ export async function loadDailyActivityRange(startDate, endDate) {
   return data || [];
 }
 
-// ── DT Speed-of-Service history ───────────────────────────────────────────────
+// ── Speed-of-Service history (all stations) ──────────────────────────────────
+// Includes per-station until-serve + transaction counts so the panel can show
+// where the bottleneck is (DT window vs front counter vs kitchen make-line vs
+// beverage), not just the drive-thru. Values are milliseconds; avg = Σuntilserve
+// / Σtrans / 1000 seconds. Filtered to hours with drive-thru activity.
 export async function loadDtHistory(days = 90) {
   if (!supabase) return [];
   const startDt = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,hour_slot,dt_untilserve,dt_trans_cnt')
+    .select('loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt')
     .gte('dt', startDt)
     .gt('dt_trans_cnt', 0)
     .limit(100000);

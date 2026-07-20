@@ -695,6 +695,7 @@ function HourlyDetail({ slots }) {
           h('th', { style: hdr }, 'vs Mean'),
           h('th', { style: hdr }, 'DT Speed'),
           h('th', { style: hdr }, 'Labor'),
+          h('th', { style: hdr }, 'Gap hrs'),
           h('th', { style: hdr }, 'Accuracy'),
         )
       ),
@@ -705,6 +706,12 @@ function HourlyDetail({ slots }) {
           const lab  = r.total_needed_hours > 0 ? (r.actual_punched_hours / r.total_needed_hours * 100) : null;
           const acc  = (r.healthy_count + r.unhealthy_count) > 0
                          ? (r.healthy_count / (r.healthy_count + r.unhealthy_count) * 100) : null;
+          // Intraday labor gap: punched − needed hours for this block. Negative =
+          // understaffed (short crew that hour); positive = overstaffed. Colored so
+          // a short rush hour (red) stands apart from a slack overstaffed hour (amber).
+          const gap  = (r.actual_punched_hours != null && r.total_needed_hours != null && (r.total_needed_hours > 0 || r.actual_punched_hours > 0))
+                         ? (r.actual_punched_hours - r.total_needed_hours) : null;
+          const gapColor = gap == null ? muted : gap <= -1 ? red : gap < -0.25 ? amber : gap > 1.5 ? amber : grn;
           // hour_slot "06:00" = ends at 6am → show as "5am"
           const end = parseInt(r.hour_slot, 10);
           const start = (end - 1 + 24) % 24;
@@ -715,6 +722,7 @@ function HourlyDetail({ slots }) {
             h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(0)}%` : '—'),
             h('td', { style: { ...cellStyle, color: speedColor(dt), fontWeight: dt != null && dt > DT_AMB ? 700 : 400 } }, dt != null ? fmtSecs(dt) : '—'),
             h('td', { style: { ...cellStyle, color: laborColor(lab), fontWeight: lab != null && lab > LABOR_AMB ? 700 : 400 } }, lab != null ? fmtPct(lab) : '—'),
+            h('td', { style: { ...cellStyle, color: gapColor, fontWeight: gap != null && gap <= -1 ? 700 : 400 } }, gap != null ? `${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : '—'),
             h('td', { style: { ...cellStyle, color: accColor(acc) } }, acc != null ? fmtPct(acc) : '—'),
           );
         })
@@ -823,6 +831,51 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
   const alertStores = stores.filter(s => alertCount(s) > 0);
   const critStores  = stores.filter(s => alertCount(s) >= 2);
 
+  // Baseline anomalies — completed hours running far off their QSRSoft mean
+  // (historical hour-of-day baseline). Surfaces the biggest deviations so an
+  // unusually hot rush or a dead hour pops on its own instead of hiding inside
+  // a store's daily average. $ mean floor filters tiny-hour noise.
+  const anomalies = uM(() => {
+    const HOT = 130, COLD = 70, MIN_MEAN = 300;
+    const out = [];
+    for (const r of rows) {
+      const ms = r.mean_sales || 0;
+      const sales = r.product_sales || 0;
+      if (ms < MIN_MEAN || sales <= 0) continue;
+      const pace = sales / ms * 100;
+      if (pace >= HOT || pace <= COLD)
+        out.push({ loc: r.loc, key: storeLocKey(r.loc), slot: r.hour_slot, pace });
+    }
+    out.sort((a, b) => Math.abs(b.pace - 100) - Math.abs(a.pace - 100));
+    return out.slice(0, 6);
+  }, [rows]);
+  const slotLabel = (slot) => {
+    const end = parseInt(slot, 10); const start = (end - 1 + 24) % 24;
+    const f = hh => hh === 0 ? '12a' : hh <= 11 ? `${hh}a` : hh === 12 ? '12p' : `${hh - 12}p`;
+    return `${f(start)}–${f(end)}`;
+  };
+
+  // Tracking to plan — district actual vs QSRSoft projected sales (proj_sales_dollars).
+  // Pace = actual for completed hours ÷ projection for those same hours. Projected
+  // EOD landing = actual so far + projection for the hours not yet run. On a past
+  // date every hour is complete, so it reads as "how the day landed vs plan".
+  const planPace = uM(() => {
+    let doneActual = 0, doneProj = 0, remProj = 0, fullProj = 0;
+    for (const r of rows) {
+      const proj = r.proj_sales_dollars || 0;
+      fullProj += proj;
+      if ((r.product_sales || 0) > 0) { doneActual += r.product_sales; doneProj += proj; }
+      else remProj += proj;
+    }
+    if (fullProj <= 0) return null;
+    return {
+      pacePct: doneProj > 0 ? doneActual / doneProj * 100 : null,
+      projectedEOD: doneActual + remProj,
+      fullProj, doneActual,
+    };
+  }, [rows]);
+  const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
+
   const colHdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
 
   return h('div', null,
@@ -847,6 +900,39 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
     syncMsg && h('div', { style: { marginBottom: 12, padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, background: syncMsg.type === 'ok' ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)', border: `1px solid ${syncMsg.type === 'ok' ? 'rgba(16,185,129,.25)' : 'rgba(239,68,68,.25)'}`, color: syncMsg.type === 'ok' ? grn : red, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
       h('span', null, syncMsg.text),
       syncMsg.type === 'ok' && h('button', { onClick: () => { setSyncMsg(null); fetchRows(date); }, style: { padding: '3px 10px', borderRadius: 4, border: `1px solid rgba(16,185,129,.4)`, background: 'rgba(16,185,129,.1)', color: grn, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' } }, 'Reload'),
+    ),
+
+    !loading && rows.length > 0 && planPace && h('div', { style: { marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap' } },
+      (() => {
+        const p = planPace.pacePct;
+        const pc = p == null ? muted : p >= 100 ? grn : p >= 95 ? amber : red;
+        const card = (label, value, color, sub) => h('div', { style: { flex: '1 1 150px', minWidth: 150, background: surf2, border: `1px solid ${bdr}`, borderRadius: 8, padding: '9px 12px' } },
+          h('div', { style: { fontSize: 9, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 } }, label),
+          h('div', { style: { fontSize: 18, fontWeight: 800, fontFamily: 'monospace', color: color || 'var(--text)' } }, value),
+          sub && h('div', { style: { fontSize: 9, color: muted, marginTop: 2 } }, sub),
+        );
+        return [
+          card('Pace vs Plan', p != null ? `${p.toFixed(0)}%` : '—', pc, p != null ? (p >= 100 ? 'ahead of projection' : 'behind projection') : 'no projection'),
+          card('Projected EOD', money(planPace.projectedEOD), 'var(--text)', 'actual so far + remaining plan'),
+          card('Full-Day Plan', money(planPace.fullProj), muted, 'QSRSoft projected sales'),
+        ];
+      })()
+    ),
+
+    !loading && rows.length > 0 && anomalies.length > 0 && h('div', { style: { marginBottom: 14, padding: '9px 12px', borderRadius: 8, background: 'rgba(245,188,0,.05)', border: `1px solid rgba(245,188,0,.2)` } },
+      h('div', { style: { fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: amber, marginBottom: 6 } }, '⚡ Baseline Anomalies — hours off historical normal'),
+      h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
+        ...anomalies.map((a, i) => {
+          const hot = a.pace >= 100;
+          const delta = Math.round(a.pace - 100);
+          return h('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '3px 9px', borderRadius: '99px', background: surf2, border: `1px solid ${bdr}`, whiteSpace: 'nowrap' } },
+            h('span', { style: { fontWeight: 600 } }, STORE_NAMES?.[a.key] || `Store ${a.key}`),
+            h('span', { style: { color: muted, fontSize: 10 } }, slotLabel(a.slot)),
+            h('span', { style: { fontFamily: 'monospace', fontWeight: 700, color: hot ? grn : red } }, `${hot ? '▲ +' : '▼ '}${delta}%`),
+          );
+        })
+      ),
+      h('div', { style: { fontSize: 9, color: muted, marginTop: 6 } }, 'vs QSRSoft mean sales for that hour-of-day. ▲ unusually busy · ▼ unusually slow.'),
     ),
 
     !loading && rows.length > 0 && h('div', null,

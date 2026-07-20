@@ -245,6 +245,30 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     });
   }, [rows, activeLocs, midDt]);
 
+  // Per-station district speed-of-service — where the bottleneck actually is.
+  // Kitchen combines both MFY make-lines. Each avg is Σuntilserve/Σtrans/1000 s.
+  // Stations run on different scales (a counter serve is far shorter than a DT
+  // window cycle), so we show each on its own — the point is trend + which
+  // station is dragging, not a like-for-like race between them.
+  const stationData = React.useMemo(() => {
+    const acc = [
+      { key:'dt',      label:'Drive-Thru',    icon:'🚗', us:['dt_untilserve'],                     cnt:['dt_trans_cnt'] },
+      { key:'fc',      label:'Front Counter', icon:'🧾', us:['fc_untilserve'],                     cnt:['fc_trans_cnt'] },
+      { key:'kitchen', label:'Kitchen (MFY)', icon:'🍔', us:['mfy1_untilserve','mfy2_untilserve'], cnt:['mfy1_trans_cnt','mfy2_trans_cnt'] },
+      { key:'bev',     label:'Beverage',      icon:'🥤', us:['bev_untilserve'],                    cnt:['bev_trans_cnt'] },
+    ].map(d => ({ ...d, sumUs:0, sumCnt:0 }));
+    for (const r of rows) {
+      const loc = String(parseInt(r.loc, 10));
+      if (!activeLocs.includes(loc)) continue;
+      for (const a of acc) {
+        for (const k of a.us)  a.sumUs  += r[k] || 0;
+        for (const k of a.cnt) a.sumCnt += r[k] || 0;
+      }
+    }
+    return acc.map(a => ({ key:a.key, label:a.label, icon:a.icon,
+      avg: a.sumCnt > 0 ? a.sumUs / a.sumCnt / 1000 : null, cnt:a.sumCnt }));
+  }, [rows, activeLocs]);
+
   const hourData = React.useMemo(() => {
     const map = {};
     for (const r of rows) {
@@ -331,9 +355,9 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
         background:'var(--surf2)', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }},
         span({ style:{ fontSize:'18px' }}, '🚗'),
         div({ style:{ flex:1 }},
-          div({ style:{ fontSize:'14px', fontWeight:800, color:'var(--text)' }}, 'DT Speed of Service'),
+          div({ style:{ fontSize:'14px', fontWeight:800, color:'var(--text)' }}, 'Speed of Service'),
           div({ style:{ fontSize:'9px', color:'var(--text3)' }},
-            'Drive-through serve time analytics · from qsr_daily_activity · green <200s · amber <240s · red ≥240s'),
+            'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · DT thresholds green <200s · amber <240s · red ≥240s'),
         ),
         h('select', { value:period, onChange:e=>setPeriod(e.target.value), style:selStyle },
           ...PERIODS.map(p => h('option', { key:p.id, value:p.id }, p.label))),
@@ -374,6 +398,29 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
               worstStore && h(SummaryCard, { label:'Needs Attention', value:sNameC(worstStore.loc), color:'#ef4444', sub:fmtDT(worstStore.avg) }),
               bestDp     && h(SummaryCard, { label:'Fastest Daypart', value:bestDp.label,           color:'#10b981', sub:fmtDT(bestDp.avg)     }),
               worstDp    && h(SummaryCard, { label:'Slowest Daypart', value:worstDp.label,          color:'#ef4444', sub:fmtDT(worstDp.avg)    }),
+            ),
+
+            // ── Speed of Service by station ───────────────────────
+            // Where the bottleneck is: DT window vs front counter vs kitchen
+            // make-line vs beverage. Each station on its own scale.
+            stationData.some(s => s.avg != null) && div({ style:{ background:'var(--surf2)',
+              border:'.5px solid var(--bdr)', borderRadius:'var(--r)', padding:'10px 12px' }},
+              div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)', marginBottom:8 }},
+                'Speed of Service by Station — avg order-to-serve'),
+              div({ style:{ display:'flex', gap:10, flexWrap:'wrap' }},
+                ...stationData.map(s => div({ key:s.key, style:{ flex:'1 1 120px', minWidth:120,
+                  background:'var(--surf)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)',
+                  padding:'8px 10px' }},
+                  div({ style:{ fontSize:'9px', color:'var(--text3)', fontWeight:700,
+                    textTransform:'uppercase', letterSpacing:'.4px', marginBottom:3 }},
+                    s.icon + ' ' + s.label),
+                  div({ style:{ fontSize:'17px', fontWeight:800, fontFamily:'var(--mono)',
+                    color: s.key === 'dt' ? dtColor(s.avg) : 'var(--text)' }},
+                    s.avg != null ? fmtDT(s.avg) : '—'),
+                  div({ style:{ fontSize:'8px', color:'var(--text3)', marginTop:2 }},
+                    s.cnt > 0 ? s.cnt.toLocaleString() + ' orders' : 'no data')
+                ))
+              )
             ),
 
             // ── Weekly trend chart ────────────────────────────────
