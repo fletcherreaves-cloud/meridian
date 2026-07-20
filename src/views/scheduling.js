@@ -388,8 +388,19 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, settings,
         // QSR cross-reference
         const dateStr = r.date.toISOString().slice(0,10);
         const qsr = laborIdx[loc + '|' + dateStr];
-        const qsrLaborPct = qsr ? (qsr.laborPct || 0) : null;
-        const qsrActHrs   = qsr ? (qsr.actHrs   || 0) : null;
+        let qsrLaborPct = null, qsrActHrs = null;
+        if(qsr){
+          const lp = qsr.laborPct || 0, ah = qsr.actHrs || 0;
+          // Some sources carry empty placeholder rows — treat an all-zero row as
+          // no-data so the day shows '—' rather than a misleading 0.0%.
+          if(lp || ah){
+            // laborRows/ctrlRows store laborPct as a 0-1 fraction (parsePct), but
+            // fmtPct and the LifeLenz % column here are on a 0-100 scale —
+            // normalize so both columns are comparable.
+            qsrLaborPct = Math.abs(lp) < 1.5 ? lp * 100 : lp;
+            qsrActHrs   = ah || null;
+          }
+        }
         return { date: r.date, sales, needHrs, schedHrs, crewHrs, tgtHrs, controlled, excessVsTgt, laborPct, qsrLaborPct, qsrActHrs };
       });
 
