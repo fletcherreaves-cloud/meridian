@@ -159,17 +159,23 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ---
 
-## Top Priorities (updated 2026-07-08, post v4.380)
+## Top Priorities (updated 2026-07-20, post v4.426 — Data-Refresh sprint)
 
-**All backlog items done as of v4.380.** Three live data streams run unattended (LifeLenz, eBOS, DAR). SAGE has live tool use for sales/DT/labor/forecast. DT Speed panel, SMG thresholds, beta/release mode, data policy, and perf review formatting all shipped. See `memory/project-backlog.md` for full history.
+**Data-Refresh sprint shipped (v4.406–v4.426), all live in production:**
+- **Emailed QSRSoft reports now parse server-side into Supabase.** `scripts/qsrsoft-email-parse.mjs` (GitHub Action, `.github/workflows/qsrsoft-email-parse.yml`, 1pm+4pm CT) reads the CSVs the ingest pipeline drops in the `qsr-reports` bucket, parses them with the SAME `src/parsers` functions the client uses (zero drift), and upserts to new tables **`sales_ledger_daily` / `daily_glimpse_daily` / `cash_sheet_daily`**. Previously these parsed client-side on login into device-local IDB only. Now channel mix / 3PO / OEPE / KVS / controls are cloud-fresh on every device.
+- **At A Glance tiles use freshest-wins** (manual upload overrides same-day; auto fills the gap since last upload). Digital Sales ← Sales Ledger; Service (OEPE/KVS) ← Daily Glimpse; Controls ← Glimpse+Cash; Labor % ← Glimpse; **FOB ← qsr_fob, dollar-weighted** (Σ$/ΣprodSales, not straight avg) showing current MTD + last completed month.
+- **Freshness banner** re-anchored to the newest date across all auto streams (fixed the false "data X days old"). Root cause also fixed: `loadQsrActSummary` was truncating at Supabase's 1000-row cap (now paginated).
+- **Movers strip** on At A Glance (top sales-vs-LY movers, slowest DT, stores behind LY — cloud-fresh).
+- **In-app Sync buttons** (Data Manager) dispatch any pull workflow; **intraday DAR** at ~8a/10a/2p CT.
+- **Ops Report guard**: refuses period-summary uploads (no daily dates) — daily rows are the source of truth.
+- **OK/FL market pills fixed**: were defaulting all stores to MCDOK (FL pill empty); now split by `INV_ORG_COORDS.state` (OK=20 Oklahoma, FL=7 Florida).
 
-⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` in the Supabase SQL Editor to enable forecast accuracy tracking.
+⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` (still not confirmed done). The 3 new email-report tables have been created in Supabase.
 
-**Next candidate areas (no active sprint):**
-- SAGE conversation persistence (localStorage thread save/restore)
-- Yearly projections view in Projection Workspace  
-- Info icon scraper for QSRSoft field definitions (requires QSRSoft access)
-- SAGE RBAC awareness (tailor responses to caller's role)
+**Next candidate areas:**
+- Phase-2 bugs: Projections weekly-view crash on location expand; Signals won't close on mobile; Market Intelligence weather stopped showing.
+- FR: TPPH auto-target calc; Projections vs Actuals. "As of [date]" labels on tiles.
+- SAGE conversation persistence, RBAC awareness; yearly projections view.
 
 ---
 

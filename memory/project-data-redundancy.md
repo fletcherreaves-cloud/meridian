@@ -35,6 +35,12 @@ Parser: `sales: parseNum(r[C.sales]) || parseNum(r[C.allNetSales])` — parsers/
 - Food cost: `fobRows` (manual EOM) vs `qsrFobRows` (auto-synced daily MTD)
 - Guest count / OEPE: `peaksSvcRows`, `peaksSalesRows`, possibly `opsRows`
 
-## Automation ceiling (as of v4.339)
+## Automation ceiling (as of v4.339) — SUPERSEDED by v4.426 (2026-07-20)
 
-No additional automation is possible — remaining manual sources (Ops Report, Controls, DAR, Register Audit, 3 Peaks, SMG VOICE) all come from McDonald's internal systems (mBOS/BOS) or SMG with no public API. Everything automatable is automated.
+~~No additional automation is possible — remaining manual sources all come from mBOS/BOS or SMG with no public API.~~
+
+**Obsolete.** The Data-Refresh sprint (v4.406–v4.426) broke this ceiling. The QSRSoft **emailed** reports — Sales Ledger, Daily Glimpse, Cash Sheet — DO carry the channel mix / 3PO / OEPE / KVS / controls (promo, cash O/S, T-reds, overrings, refunds) data. They arrive automatically via the Gmail→Edge-Function ingest pipeline, and are now **parsed server-side** (`scripts/qsrsoft-email-parse.mjs` GitHub Action) into Supabase tables `sales_ledger_daily` / `daily_glimpse_daily` / `cash_sheet_daily`, then loaded cloud-first. So these metrics are auto-fresh on every device without a manual Operations Report.
+
+**Still genuinely manual-only** (no email/API source): R2P, drawer opens, and the per-daypart granularity of the 3 Peaks / Register Audit workbooks.
+
+**FOB roll-up note (v4.426):** district/OK/FL FOB figures are **dollar-weighted** — Σ(component $)/Σ(Prod Net Sales $) from `qsr_fob` raw amounts — NOT a straight average of store percentages. Both current MTD and last-completed-month come from `qsr_fob` (each month's final row = that month's actual).
