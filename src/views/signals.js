@@ -823,6 +823,30 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
   const alertStores = stores.filter(s => alertCount(s) > 0);
   const critStores  = stores.filter(s => alertCount(s) >= 2);
 
+  // Baseline anomalies — completed hours running far off their QSRSoft mean
+  // (historical hour-of-day baseline). Surfaces the biggest deviations so an
+  // unusually hot rush or a dead hour pops on its own instead of hiding inside
+  // a store's daily average. $ mean floor filters tiny-hour noise.
+  const anomalies = uM(() => {
+    const HOT = 130, COLD = 70, MIN_MEAN = 300;
+    const out = [];
+    for (const r of rows) {
+      const ms = r.mean_sales || 0;
+      const sales = r.product_sales || 0;
+      if (ms < MIN_MEAN || sales <= 0) continue;
+      const pace = sales / ms * 100;
+      if (pace >= HOT || pace <= COLD)
+        out.push({ loc: r.loc, key: storeLocKey(r.loc), slot: r.hour_slot, pace });
+    }
+    out.sort((a, b) => Math.abs(b.pace - 100) - Math.abs(a.pace - 100));
+    return out.slice(0, 6);
+  }, [rows]);
+  const slotLabel = (slot) => {
+    const end = parseInt(slot, 10); const start = (end - 1 + 24) % 24;
+    const f = hh => hh === 0 ? '12a' : hh <= 11 ? `${hh}a` : hh === 12 ? '12p' : `${hh - 12}p`;
+    return `${f(start)}–${f(end)}`;
+  };
+
   const colHdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
 
   return h('div', null,
@@ -847,6 +871,22 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
     syncMsg && h('div', { style: { marginBottom: 12, padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, background: syncMsg.type === 'ok' ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)', border: `1px solid ${syncMsg.type === 'ok' ? 'rgba(16,185,129,.25)' : 'rgba(239,68,68,.25)'}`, color: syncMsg.type === 'ok' ? grn : red, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
       h('span', null, syncMsg.text),
       syncMsg.type === 'ok' && h('button', { onClick: () => { setSyncMsg(null); fetchRows(date); }, style: { padding: '3px 10px', borderRadius: 4, border: `1px solid rgba(16,185,129,.4)`, background: 'rgba(16,185,129,.1)', color: grn, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' } }, 'Reload'),
+    ),
+
+    !loading && rows.length > 0 && anomalies.length > 0 && h('div', { style: { marginBottom: 14, padding: '9px 12px', borderRadius: 8, background: 'rgba(245,188,0,.05)', border: `1px solid rgba(245,188,0,.2)` } },
+      h('div', { style: { fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: amber, marginBottom: 6 } }, '⚡ Baseline Anomalies — hours off historical normal'),
+      h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8 } },
+        ...anomalies.map((a, i) => {
+          const hot = a.pace >= 100;
+          const delta = Math.round(a.pace - 100);
+          return h('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '3px 9px', borderRadius: '99px', background: surf2, border: `1px solid ${bdr}`, whiteSpace: 'nowrap' } },
+            h('span', { style: { fontWeight: 600 } }, STORE_NAMES?.[a.key] || `Store ${a.key}`),
+            h('span', { style: { color: muted, fontSize: 10 } }, slotLabel(a.slot)),
+            h('span', { style: { fontFamily: 'monospace', fontWeight: 700, color: hot ? grn : red } }, `${hot ? '▲ +' : '▼ '}${delta}%`),
+          );
+        })
+      ),
+      h('div', { style: { fontSize: 9, color: muted, marginTop: 6 } }, 'vs QSRSoft mean sales for that hour-of-day. ▲ unusually busy · ▼ unusually slow.'),
     ),
 
     !loading && rows.length > 0 && h('div', null,
