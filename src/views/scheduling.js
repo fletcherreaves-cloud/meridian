@@ -265,18 +265,29 @@ function weekLabel(wed) {
   return fmt(wed)+'–'+fmt(tue);
 }
 
-function OpportunityReport({ schedRows, laborRows, settings,
+function OpportunityReport({ schedRows, laborRows, ctrlRows, settings,
   selWeek: extSelWeek, setSelWeek: extSetSelWeek, weeks: extWeeks }) {
-  // ── Labor rows indexed by loc+dateStr for QSR cross-reference
+  // ── Actual-labor rows indexed by loc+dateStr for the QSR cross-reference.
+  // Source from BOTH the manual Labor Analysis Excel (ds.laborRows, device-local
+  // IDB) AND the cloud-synced Operations Report control sheet (ds.ctrlRows) —
+  // both carry laborPct + actHrs. ctrlRows loads cloud-first on every device, so
+  // the QSR columns populate even where the Excel was never uploaded (a fresh
+  // device or preview origin). laborRows overlays ctrlRows on any date conflict.
   const laborIdx = useMemo(() => {
     const m = {};
-    for(const r of (laborRows||[])) {
-      if(!r.date || !r.loc) continue;
-      const key = normLoc(r.loc) + '|' + r.date.toISOString().slice(0,10);
-      if(!m[key]) m[key] = r;
-    }
+    const add = (rows, overwrite) => {
+      for(const r of (rows||[])) {
+        if(!r.date || !r.loc) continue;
+        const dt = r.date instanceof Date ? r.date : new Date(r.date);
+        if(isNaN(dt)) continue;
+        const key = normLoc(r.loc) + '|' + dt.toISOString().slice(0,10);
+        if(overwrite || !m[key]) m[key] = r;
+      }
+    };
+    add(ctrlRows, false);   // cloud baseline
+    add(laborRows, true);   // manual Excel wins when present
     return m;
-  }, [laborRows]);
+  }, [laborRows, ctrlRows]);
 
   // ── Scope options from settings (supervisorGroups + operators)
   const scopeOptions = useMemo(() => {
@@ -1137,7 +1148,7 @@ export function SchedulingPanel({ ds, settings, onClose }) {
             h('button', { onClick: () => setActiveTab('opportunity'), style: btnStyle(activeTab==='opportunity') }, '📊 Opportunity')
           ),
           activeTab === 'opportunity'
-            ? h(OpportunityReport, { schedRows:weekRows, laborRows: (ds&&ds.laborRows)||[], settings,
+            ? h(OpportunityReport, { schedRows:weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], settings,
                 selWeek:activeWeekKey, setSelWeek, weeks:availableWeeks })
             : div({ style: { textAlign:'center', padding:'60px 20px', color:TEXT3 } },
                 div({ style: { fontSize:32, marginBottom:12 } }, '📋'),
@@ -1166,7 +1177,7 @@ export function SchedulingPanel({ ds, settings, onClose }) {
           ),
 
           // ── Content ─────────────────────────────────────────────────────────
-          activeTab === 'opportunity' && h(OpportunityReport, { schedRows: weekRows, laborRows: (ds&&ds.laborRows)||[], settings,
+          activeTab === 'opportunity' && h(OpportunityReport, { schedRows: weekRows, laborRows: (ds&&ds.laborRows)||[], ctrlRows: (ds&&ds.ctrlRows)||[], settings,
             selWeek: activeWeekKey, setSelWeek, weeks: availableWeeks }),
           (locs.length > 1 && activeTab === 'district') && h(DistrictSummary, { schedRows: weekRows }),
 
