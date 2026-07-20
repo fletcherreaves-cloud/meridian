@@ -855,6 +855,27 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
     return `${f(start)}–${f(end)}`;
   };
 
+  // Tracking to plan — district actual vs QSRSoft projected sales (proj_sales_dollars).
+  // Pace = actual for completed hours ÷ projection for those same hours. Projected
+  // EOD landing = actual so far + projection for the hours not yet run. On a past
+  // date every hour is complete, so it reads as "how the day landed vs plan".
+  const planPace = uM(() => {
+    let doneActual = 0, doneProj = 0, remProj = 0, fullProj = 0;
+    for (const r of rows) {
+      const proj = r.proj_sales_dollars || 0;
+      fullProj += proj;
+      if ((r.product_sales || 0) > 0) { doneActual += r.product_sales; doneProj += proj; }
+      else remProj += proj;
+    }
+    if (fullProj <= 0) return null;
+    return {
+      pacePct: doneProj > 0 ? doneActual / doneProj * 100 : null,
+      projectedEOD: doneActual + remProj,
+      fullProj, doneActual,
+    };
+  }, [rows]);
+  const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
+
   const colHdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
 
   return h('div', null,
@@ -879,6 +900,23 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
     syncMsg && h('div', { style: { marginBottom: 12, padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, background: syncMsg.type === 'ok' ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)', border: `1px solid ${syncMsg.type === 'ok' ? 'rgba(16,185,129,.25)' : 'rgba(239,68,68,.25)'}`, color: syncMsg.type === 'ok' ? grn : red, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
       h('span', null, syncMsg.text),
       syncMsg.type === 'ok' && h('button', { onClick: () => { setSyncMsg(null); fetchRows(date); }, style: { padding: '3px 10px', borderRadius: 4, border: `1px solid rgba(16,185,129,.4)`, background: 'rgba(16,185,129,.1)', color: grn, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' } }, 'Reload'),
+    ),
+
+    !loading && rows.length > 0 && planPace && h('div', { style: { marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap' } },
+      (() => {
+        const p = planPace.pacePct;
+        const pc = p == null ? muted : p >= 100 ? grn : p >= 95 ? amber : red;
+        const card = (label, value, color, sub) => h('div', { style: { flex: '1 1 150px', minWidth: 150, background: surf2, border: `1px solid ${bdr}`, borderRadius: 8, padding: '9px 12px' } },
+          h('div', { style: { fontSize: 9, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 } }, label),
+          h('div', { style: { fontSize: 18, fontWeight: 800, fontFamily: 'monospace', color: color || 'var(--text)' } }, value),
+          sub && h('div', { style: { fontSize: 9, color: muted, marginTop: 2 } }, sub),
+        );
+        return [
+          card('Pace vs Plan', p != null ? `${p.toFixed(0)}%` : '—', pc, p != null ? (p >= 100 ? 'ahead of projection' : 'behind projection') : 'no projection'),
+          card('Projected EOD', money(planPace.projectedEOD), 'var(--text)', 'actual so far + remaining plan'),
+          card('Full-Day Plan', money(planPace.fullProj), muted, 'QSRSoft projected sales'),
+        ];
+      })()
     ),
 
     !loading && rows.length > 0 && anomalies.length > 0 && h('div', { style: { marginBottom: 14, padding: '9px 12px', borderRadius: 8, background: 'rgba(245,188,0,.05)', border: `1px solid rgba(245,188,0,.2)` } },
