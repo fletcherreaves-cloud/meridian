@@ -6298,9 +6298,13 @@ function ModelHealthBadge({loc, settings, ds, showDetail}) {
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   const today = new Date();
   const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
-  const orgOf = loc => (STORE_COORDS[String(loc)]||{}).org||'MCDOK';
-  const okLocs = allLocs.filter(l=>orgOf(l)==='MCDOK');
-  const flLocs = allLocs.filter(l=>orgOf(l)==='Emerald Arches');
+  // Market split by store state (STORE_COORDS carries no org, so it defaulted
+  // every store to MCDOK and left the FL pill empty). OK: = Oklahoma stores,
+  // FL: = Florida (panhandle) stores — matching the pill labels.
+  const stateOf = loc => (INV_ORG_COORDS[String(loc)]||{}).state;
+  const orgOf = loc => stateOf(loc)==='FL' ? 'MCDOK' : 'Emerald Arches';
+  const okLocs = allLocs.filter(l=>stateOf(l)==='OK');
+  const flLocs = allLocs.filter(l=>stateOf(l)==='FL');
 
   // ── Date range comes from the toolbar (global App state) ───────────────
   // The toolbar date picker controls the date range for all views including At a Glance.
