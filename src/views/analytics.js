@@ -6602,6 +6602,24 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
 
+  // ── Today's movers (cloud-fresh DAR) ───────────────────────────
+  // Surfaces what changed since you last looked, straight from the freshest
+  // auto-synced daily-activity data — the "something new when I open the app".
+  const moversStrip=React.useMemo(()=>{
+    const rows=(ds?.qsrActSummaryRows||[]).filter(r=>allLocs.includes(String(r.loc))&&r.date);
+    if(!rows.length) return null;
+    const ms=r=>r.date instanceof Date?r.date.getTime():new Date(r.date).getTime();
+    const maxMs=Math.max(...rows.map(ms));
+    const day=rows.filter(r=>ms(r)===maxMs);
+    const ly=day.filter(r=>r.salesVsLYPct!=null).sort((a,b)=>b.salesVsLYPct-a.salesVsLYPct);
+    if(!ly.length&&!day.length) return null;
+    const up=ly.slice(0,3).filter(r=>r.salesVsLYPct>0);
+    const down=ly.slice(-3).reverse().filter(r=>r.salesVsLYPct<0);
+    const dt=day.map(r=>({loc:r.loc,dt:r._dtCars>0?r._dtTotal/r._dtCars:null})).filter(r=>r.dt!=null).sort((a,b)=>b.dt-a.dt);
+    return {date:new Date(maxMs),up,down,slowDT:dt.slice(0,2),
+      behind:ly.filter(r=>r.salesVsLYPct<0).length,total:ly.length};
+  },[ds?.qsrActSummaryRows?.length,allLocs]);
+
   // ── Model health ───────────────────────────────────────────────
   const hlth=React.useMemo(()=>{
     let g=0,y=0,r=0;
@@ -7168,6 +7186,24 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         div({style:{fontSize:'9px',color:ageClr}},
           '● Data: '+(latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded'))
       )
+    ),
+
+    // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
+    moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
+      style:{background:'linear-gradient(90deg,rgba(245,188,0,.06),transparent)',
+        borderBottom:'.5px solid var(--bdr)',padding:'7px 24px',flexShrink:0,
+        display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',fontSize:'11px'}},
+      span({style:{fontWeight:700,color:'var(--amber)',whiteSpace:'nowrap'}},'📊 Today’s Movers'),
+      span({style:{fontSize:'8px',color:'var(--text3)',whiteSpace:'nowrap'}},
+        'as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+      ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600}},
+        '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(1)+'%')),
+      ...moversStrip.down.map((r,i)=>span({key:'d'+i,style:{color:'#f87171',whiteSpace:'nowrap',fontWeight:600}},
+        '▼ '+(STORE_NAMES[r.loc]||r.loc)+' '+r.salesVsLYPct.toFixed(1)+'%')),
+      ...moversStrip.slowDT.map((r,i)=>span({key:'dt'+i,style:{color:'var(--text2)',whiteSpace:'nowrap'}},
+        '🚗 '+(STORE_NAMES[r.loc]||r.loc)+' DT '+Math.round(r.dt)+'s')),
+      moversStrip.total>0&&span({style:{color:'var(--text3)',whiteSpace:'nowrap',marginLeft:'auto'}},
+        moversStrip.behind+' of '+moversStrip.total+' behind LY')
     ),
 
     // ── ACTION CHECKLIST ───────────────────────────────────────
