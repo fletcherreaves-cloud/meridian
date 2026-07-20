@@ -12,7 +12,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1279,6 +1279,25 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   const [ebosCov,  setEbosCov]  = uSt({count:0});
   const [darCov,   setDarCov]   = uSt({count:0});
   const [syncTimes, setSyncTimes] = uSt({life:null, ebos:null, dar:null});
+  // On-demand pull triggers (dispatch GitHub Actions via trigger-dar-sync fn)
+  const [syncBusy, setSyncBusy] = uSt(null);   // workflow key currently dispatching
+  const [syncNote, setSyncNote] = uSt(null);   // { wf, msg, err }
+  const doSync = async (wf) => {
+    setSyncBusy(wf); setSyncNote(null);
+    const r = await triggerSync(wf, {});
+    setSyncBusy(null);
+    setSyncNote(r && r.error
+      ? { wf, msg: r.error, err:true }
+      : { wf, msg: (r && r.message) || 'Sync started — data refreshes in ~10 min.', err:false });
+  };
+  const syncBtn = (wf) => h('button',{
+    onClick:()=>doSync(wf), disabled:syncBusy===wf, title:'Pull fresh data now',
+    style:{marginLeft:6,fontSize:'7px',fontWeight:700,padding:'1px 6px',borderRadius:3,
+      cursor:syncBusy===wf?'default':'pointer',verticalAlign:'middle',whiteSpace:'nowrap',
+      background:syncBusy===wf?'rgba(255,255,255,.08)':'rgba(245,188,0,.15)',
+      color:syncBusy===wf?'var(--text3)':'var(--accent)',
+      border:'.5px solid '+(syncBusy===wf?'rgba(255,255,255,.15)':'rgba(245,188,0,.4)')}},
+    syncBusy===wf?'…':'↻ Sync');
 
   uE(()=>{
     if(idbCoverage && Object.keys(idbCoverage).length>0) setCov(idbCoverage);
@@ -1601,7 +1620,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           span({style:{display:'flex',flexDirection:'column'}},
             'LifeLenz Schedule',
             syncLabel(syncTimes.life)),
-          autoTag),
+          autoTag,syncBtn('lifelenz')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' rows':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1611,7 +1630,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
     (()=>{const c=qsrFobCov;const hasData=c.count>0;
       return h('tr',{key:'auto-qsrfob',style:{background:'rgba(255,255,255,.015)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
         h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
-          hasData?staleDot(c):null,'QSRSoft FOB Daily',autoTag),
+          hasData?staleDot(c):null,'QSRSoft FOB Daily',autoTag,syncBtn('fob')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' rows':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1625,7 +1644,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft eBOS Purchases',
             syncLabel(syncTimes.ebos)),
-          autoTag),
+          autoTag,syncBtn('ebos')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' store-days':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1639,7 +1658,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           span({style:{display:'flex',flexDirection:'column'}},
             'QSRSoft Daily Activity',
             syncLabel(syncTimes.dar)),
-          autoTag),
+          autoTag,syncBtn('dar')),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontWeight:hasData?700:400}},
           hasData?c.count.toLocaleString()+' hour-slots':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
@@ -1715,8 +1734,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
                   borderBottom:'.5px solid var(--bdr)',textAlign:i===0?'left':'right'}},(l)))
             )),
             h('tbody',null,
-            sectionHdr('hdr-auto','⚡ Auto-Synced · GitHub Actions · Daily ~5am CDT'),
+            sectionHdr('hdr-auto','⚡ Auto-Synced · GitHub Actions · Daily ~5am CT + intraday · ↻ Sync to pull now'),
             ...autoSyncedRows,
+            syncNote&&h('tr',{key:'sync-note'},
+              h('td',{colSpan:4,style:{padding:'2px 10px 8px',fontSize:'8px',
+                color:syncNote.err?'#f87171':'#10b981'}}, syncNote.msg)),
             sectionHdr('hdr-pipeline','📧 Email Pipeline · QSRSoft'),
             ...pipelineRows,
             sectionHdr('hdr-cloud','☁ Cloud-Persisted · Manual Upload'),
@@ -6337,14 +6359,22 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Auto-generate checklist items from app state
   const autoItems = React.useMemo(()=>{
     const items=[];
-    const latestLab = ds&&ds.laborRows&&ds.laborRows.length?
-      new Date(Math.max(...ds.laborRows.map(r=>r.date).filter(Boolean))):null;
+    // Freshness = newest business date across manual labor AND every auto-synced
+    // feed (DAR summary, FOB, Daily Glimpse, Cash Sheet), clamped to today so a
+    // stale manual upload can't mask fresh auto data and LifeLenz's forward
+    // schedule can't skew it.
+    const _tMs=today.getTime();
+    const _pick=arr=>(arr||[]).map(r=>r.date).filter(Boolean)
+      .map(d=>d instanceof Date?d.getTime():new Date(d).getTime());
+    const _freshD=[..._pick(ds?.laborRows),..._pick(ds?.qsrActSummaryRows),..._pick(ds?.qsrFobRows),
+      ..._pick(ds?.glimpseRows),..._pick(ds?.cashRows)].filter(ms=>!isNaN(ms)&&ms<=_tMs);
+    const latestLab = _freshD.length?new Date(Math.max(..._freshD)):null;
     const dataAge = latestLab?Math.floor((today-latestLab)/864e5):999;
     if(dataAge>14) items.push({id:'auto_data_stale',priority:'high',
-      text:'Data is '+dataAge+' days old — upload Operations Report',
-      detail:'Upload: Operations_Report_[YYYY-MM-DD]_to_[YYYY-MM-DD].xlsx'});
+      text:'Sales data is '+dataAge+' days old — QSRSoft auto-sync may be down',
+      detail:'Check the daily pull (Signals → Sync), or upload an Operations Report as fallback.'});
     else if(dataAge>7) items.push({id:'auto_data_warn',priority:'medium',
-      text:'Data is '+dataAge+' days old — update when available',detail:''});
+      text:'Sales data is '+dataAge+' days old — verify auto-sync',detail:''});
     const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
     const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
     const wsKey=dKey(ws);
@@ -6453,7 +6483,63 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return {rows:recent,isStale:true,label:'Most recent: wk of '+lbl};
   };
   const opsEffective  = React.useMemo(()=>_recentWeek(ds?.opsRows ||[]),[ds?.opsRows?.length,effectiveDateRange]);
-  const ctrlEffective = React.useMemo(()=>_recentWeek(ds?.ctrlRows||[]),[ds?.ctrlRows?.length,effectiveDateRange]);
+
+  // Freshest-wins merge: union two same-shape row arrays by (loc, day). The
+  // primary (manual upload) overrides the secondary (auto pull/email) for the
+  // SAME day — a manual upload is an intentional override — while the auto source
+  // fills in every day the manual data doesn't cover (e.g. the days since the last
+  // manual upload). Net: whatever is freshest per date always shows.
+  const mergeFresh = (primary, secondary) => {
+    const k = r => String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+    const m = new Map();
+    for(const r of (secondary||[])) if(r&&r.date) m.set(k(r),r);
+    for(const r of (primary||[]))   if(r&&r.date) m.set(k(r),r); // manual overrides same-day auto
+    return [...m.values()];
+  };
+
+  // Controls: manual Controls sheet merged with the CLEAN auto-synced fields from
+  // Daily Glimpse + Cash Sheet (promo, cash O/S, POS overrings, refunds, labor %).
+  // T-reds / TPPH / drawer opens / meals have no clean auto equivalent, so they
+  // stay manual-only (blank on days where only auto data exists).
+  const ctrlAuto = React.useMemo(()=>{
+    const byKey=new Map();
+    const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+    for(const g of (ds?.glimpseRows||[])){
+      byKey.set(kk(g),{loc:g.loc,date:g.date,
+        promoPct:g.promoPct,promoAmt:g.promoAmt,
+        cashOSPct:g.cashOSPct,cashOSAmt:g.cashOS,
+        posOverCnt:g.posOverCnt,posOverAmt:g.posOverAmt,
+        laborPct:g.laborPct});
+    }
+    for(const c of (ds?.cashRows||[])){
+      const key=kk(c);const ex=byKey.get(key)||{loc:c.loc,date:c.date};
+      byKey.set(key,{...ex,
+        cashOSPct:ex.cashOSPct??c.cashOSPct,cashOSAmt:ex.cashOSAmt??c.cashOS,
+        posOverCnt:ex.posOverCnt??c.posOverCnt,posOverAmt:ex.posOverAmt??c.posOverAmt,
+        cashRefCnt:c.cashRefCnt,cashRefAmt:c.cashRefAmt,
+        cashlessRefCnt:c.cashlessRefCnt,cashlessRefAmt:c.cashlessRefAmt});
+    }
+    return [...byKey.values()];
+  },[ds?.glimpseRows?.length,ds?.cashRows?.length]);
+  const ctrlEffective = React.useMemo(()=>_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
+
+  // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
+  // Glimpse, freshest-per-day. R2P has no auto source, so it only shows from manual.
+  const svcEffective = React.useMemo(()=>{
+    const gl=(ds?.glimpseRows||[]).map(r=>({loc:r.loc,date:r.date,
+      oepe:r.oepe,park:r.parkedPct,kvst:r.kvst,kvsu:r.kvsHealthy,r2p:null}));
+    const res=_recentWeek(mergeFresh(ds?.opsRows,gl));
+    return {...res,auto:(ds?.opsRows||[]).length===0&&gl.length>0};
+  },[ds?.opsRows?.length,ds?.glimpseRows?.length,effectiveDateRange]);
+
+  // Channel sales mix: manual labor channel rows merged with auto Sales Ledger,
+  // freshest-per-day (manual overrides the same day; ledger fills recent gaps).
+  const channelRows = React.useMemo(()=>{
+    const lab=(ds?.laborRows||[]).filter(r=>r.dtSales||r.bfSales||r.mopSales||r.kioskSales);
+    const led=(ds?.salesLedgerRows||[]);
+    const merged=mergeFresh(lab,led).filter(r=>inRange(r.date,effectiveDateRange));
+    return {rows:merged,auto:lab.length===0&&led.length>0};
+  },[ds?.laborRows?.length,ds?.salesLedgerRows?.length,effectiveDateRange]);
 
   const avgOf=(rows,field)=>{const v=rows.map(r=>r[field]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const sumOf=(rows,field)=>rows.reduce((a,r)=>a+(r[field]||0),0);
@@ -6475,12 +6561,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Data status ────────────────────────────────────────────────
   const latestLab=React.useMemo(()=>{
-    const labDates=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
-    if(labDates.length) return new Date(Math.max(...labDates));
-    // Fall back to most recent QSRSoft auto-sync date
-    const qsrDates=(ds?.qsrActSummaryRows||[]).map(r=>r.date).filter(Boolean);
-    return qsrDates.length?new Date(Math.max(...qsrDates)):null;
-  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length]);
+    // Newest actual business date across manual labor AND every auto-synced feed
+    // (DAR summary, FOB, Daily Glimpse, Cash Sheet). Max so a stale manual upload
+    // can't mask fresh auto data; clamp to today so LifeLenz's forward schedule
+    // (or any future-dated row) can't skew it.
+    const tMs=today.getTime();
+    const pick=arr=>(arr||[]).map(r=>r.date).filter(Boolean)
+      .map(d=>d instanceof Date?d.getTime():new Date(d).getTime());
+    const all=[...pick(ds?.laborRows),...pick(ds?.qsrActSummaryRows),...pick(ds?.qsrFobRows),
+      ...pick(ds?.glimpseRows),...pick(ds?.cashRows)].filter(ms=>!isNaN(ms)&&ms<=tMs);
+    return all.length?new Date(Math.max(...all)):null;
+  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length]);
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
 
@@ -6505,7 +6596,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     else if(allLocs.length-nLocked>5)issues.push({lvl:'warning',msg:(allLocs.length-nLocked)+' projection locks still needed'});
     if(hlth.red>0)issues.push({lvl:'warning',msg:hlth.red+' store'+(hlth.red>1?'s':'')+' at red model health'});
     else if(hlth.green>=allLocs.length*.75&&allLocs.length>0)good.push(hlth.green+' stores at trusted health');
-    if(!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length))issues.push({lvl:'critical',msg:'no data loaded — upload Operations Report'});
+    if(!ds?.loaded||(!ds.laborRows?.length&&!ds.qsrActSummaryRows?.length))issues.push({lvl:'critical',msg:'no data loaded — check connection or upload Operations Report'});
     if(issues.some(i=>i.lvl==='critical'))
       return{tone:'critical',color:'#f87171',text:'🚨 Action required — '+issues.map(i=>i.msg).join('; ')+'.'};
     if(issues.length>0)
@@ -6603,11 +6694,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       {key:'eatInSales',pctKey:null,label:'Eat-In'},
     ];
     const labScoped=labInRange.filter(r=>allLocs.includes(String(r.loc)));
+    // Channel splits: manual labor rows when present, else auto-synced Sales Ledger.
+    const chScoped=channelRows.rows.filter(r=>allLocs.includes(String(r.loc)));
     const chData=channels.map(ch=>{
-      const s=sumOf(labScoped,ch.key);
+      const s=sumOf(chScoped,ch.key);
       const pct=totSales>0&&s>0?s/totSales:null;
-      const okA=mktAvg(okLocs,labInRange,ch.key,'sum');
-      const flA=mktAvg(flLocs,labInRange,ch.key,'sum');
       return{...ch,sales:s,pct,okAvgPct:null,flAvgPct:null};
     });
     const salesVsLY=avgOf(labScoped,'salesVsLYPct');
@@ -6625,14 +6716,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const avgCheckLY=totGCLY>0?totSalesLY/totGCLY:0;
     const avgCheckVsLY=avgCheckLY>0?(avgChk-avgCheckLY)/avgCheckLY:null;
     return{totSales,totGC,avgChk,channels:chData,salesVsLY,gcVsLY,avgCheckVsLY,okSales,flSales,okSalesVsLY,flSalesVsLY};
-  },[labInRange,allLocs,okLocs,flLocs,ds?.laborRows,dateRange]);
+  },[labInRange,channelRows,allLocs,okLocs,flLocs,ds?.laborRows,dateRange]);
 
   // ── Labor section ─────────────────────────────────────────────
   const laborSec=React.useMemo(()=>{
     // Labor productivity metrics (TPPH, labor%, OT, Act vs Need) live in the
     // Controls sheet (ctrlRows/Billable Sales group) — NOT the Sales sheet (labInRange).
-    // Sales sheet only has channel sales data. Fall back to labInRange if ctrl is empty.
-    const cRows=ctrlInRange.length?ctrlInRange:[];
+    // Use the merged controls source (manual + auto Glimpse) so Labor % fills from
+    // the auto feed on days without a manual upload. Fall back to labInRange.
+    const cRows=ctrlEffective.rows.length?ctrlEffective.rows:[];
     const lRows=labInRange;
     if(!cRows.length&&!lRows.length)return null;
     const cScoped=cRows.filter(r=>allLocs.includes(String(r.loc)));
@@ -6655,11 +6747,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       return{loc,laborPct:avgOf(cr,'laborPct')||avgOf(lr,'laborPct'),tpph:avgOf(cr,'tpph')||avgOf(lr,'tpph')};
     }).filter(x=>x.laborPct!=null).sort((a,b)=>a.laborPct-b.laborPct);
     return{laborPct,tpph,avn,otHrs,actHrs,crewHrs,avgRate,okLaborAvg,flLaborAvg,okTpphAvg,flTpphAvg,ranked};
-  },[labInRange,ctrlInRange,allLocs,okLocs,flLocs]);
+  },[labInRange,ctrlEffective,allLocs,okLocs,flLocs]);
 
   // ── Service section ───────────────────────────────────────────
   const serviceSec=React.useMemo(()=>{
-    const {rows:opsEff,isStale:opsSt,label:opsStaleLbl}=opsEffective;
+    const {rows:opsEff,isStale:opsSt,label:opsStaleLbl,auto:svcAuto}=svcEffective;
     if(!opsEff.length)return null;
     const opsScoped=opsEff.filter(r=>allLocs.includes(String(r.loc)));
     const oepe=avgOf(opsScoped,'oepe');
@@ -6673,9 +6765,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       kvst,okKvst:mktAvg(okLocs,opsEff,'kvst'),flKvst:mktAvg(flLocs,opsEff,'kvst'),
       kvsu,okKvsu:mktAvg(okLocs,opsEff,'kvsu'),flKvsu:mktAvg(flLocs,opsEff,'kvsu'),
       r2p,okR2p:mktAvg(okLocs,opsEff,'r2p'),flR2p:mktAvg(flLocs,opsEff,'r2p'),
-      isStale:opsSt,staleLabel:opsStaleLbl,
+      isStale:opsSt,staleLabel:opsStaleLbl,auto:svcAuto,
     };
-  },[opsEffective,allLocs,okLocs,flLocs]);
+  },[svcEffective,allLocs,okLocs,flLocs]);
 
   // ── Controls section ─────────────────────────────────────────
   const ctrlSec=React.useMemo(()=>{

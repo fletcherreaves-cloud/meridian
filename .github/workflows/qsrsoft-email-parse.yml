@@ -1,0 +1,46 @@
+name: QSRSoft Email Report Parse
+
+# Parses the emailed QSRSoft CSVs (Sales Ledger / Daily Glimpse / Cash Sheet)
+# already ingested to the qsr-reports storage bucket, and upserts them to
+# Supabase so channel mix / 3PO / controls / OEPE / KVS are cloud-fresh on every
+# device (no client parse-on-login required). No QSRSoft creds needed — reads
+# from Supabase storage only.
+
+on:
+  schedule:
+    # Reports arrive ~10:30 AM Central and are ingested within the hour by the
+    # hourly Gmail poller. Times are Central-anchored; UTC cron ignores DST.
+    - cron: '0 18 * * *'   # ~1:00 PM CDT — after daily reports land + ingest
+    - cron: '0 21 * * *'   # ~4:00 PM CDT — catch late sends + weekly/monthly
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Rolling window of report days to (re)parse'
+        required: false
+        default: '4'
+      debug:
+        description: 'Verbose per-file logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Parse ingested QSRSoft email reports
+        run: node scripts/qsrsoft-email-parse.mjs --days=${{ github.event.inputs.days || '4' }} ${{ github.event.inputs.debug == '1' && '--debug' || '' }}
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

@@ -2,8 +2,14 @@ name: QSRSoft Daily Activity Pull
 
 on:
   schedule:
-    # 10:00 UTC = 5:00 AM CDT — previous day is fully closed by then
+    # Times are anchored to US Central. GitHub cron is fixed UTC and does NOT
+    # observe DST, so these land ~1h earlier (Central) during winter (CST).
+    # 10:00 UTC = 5:00 AM CDT — previous day is fully closed by then (morning batch)
     - cron: '0 10 * * *'
+    # Intraday current-day refreshes — qsr_daily_activity carries today's live sales + DT
+    - cron: '0 13 * * *'   # ~8:00 AM CDT
+    - cron: '0 15 * * *'   # ~10:00 AM CDT
+    - cron: '0 19 * * *'   # ~2:00 PM CDT
   workflow_dispatch:
     inputs:
       days_back:

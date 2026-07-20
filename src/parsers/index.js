@@ -359,6 +359,25 @@ function parseOpsData(wb,sheet,defaultDateOverride){
   return rows;
 }
 
+// Guard: does an Operations Report workbook carry per-day rows? A daily report
+// has a Business Date column on its Sales/Service sheet; a period-summary export
+// does not. We refuse period summaries — daily rows are the source of truth and
+// any period figure is computed from them. Returns true when daily (or when the
+// workbook isn't an ops-style sheet we should block), false for a period summary.
+function opsReportIsDaily(wb){
+  const names=(wb&&wb.SheetNames)||[];
+  const hasDateCol=pred=>{
+    const sn=names.find(s=>pred(String(s).toLowerCase()));
+    if(!sn) return null; // sheet not present
+    const raw=parseRaw(wb,sn); const h=raw[autoHdrRow(raw)]||[];
+    return fc(h,'Business Date','Date','Period')>=0;
+  };
+  const checks=[hasDateCol(s=>s==='sales'||s.startsWith('sales ')),
+                hasDateCol(s=>s==='service'||s.startsWith('service '))].filter(v=>v!==null);
+  if(!checks.length) return true; // no recognizable Sales/Service sheet — don't block
+  return checks.some(Boolean);
+}
+
 function parseCtrlData(wb,sheet,defaultDateOverride){
   // Accept 'Controls' (new Operations Report format) OR 'ControlsData' (legacy)
   if(!sheet){
@@ -1808,4 +1827,4 @@ async function parseSMGVoicePDF(file) {
   return rows;
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale };
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale, opsReportIsDaily };

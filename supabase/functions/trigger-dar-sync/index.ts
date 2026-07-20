@@ -1,5 +1,9 @@
-// trigger-dar-sync — dispatches the qsrsoft-dar-pull GitHub Actions workflow
-// on demand so operators can pull fresh daily activity data from the Live Ops tab.
+// trigger-dar-sync — dispatches a data-pull GitHub Actions workflow on demand so
+// operators can pull fresh data straight from the app (Data Manager / Live Ops).
+//
+// Body: { workflow?: 'dar'|'ebos'|'fob'|'lifelenz', inputs?: {...},
+//         days_back?, days_recent? }  — top-level days_* kept for backward compat.
+// Defaults to 'dar' when no workflow is given.
 //
 // Deploy:  supabase functions deploy trigger-dar-sync
 // Secrets: supabase secrets set GITHUB_PAT=ghp_...
@@ -8,7 +12,16 @@
 const GITHUB_PAT   = Deno.env.get('GITHUB_PAT')!;
 const GITHUB_OWNER = 'fletcherreaves-cloud';
 const GITHUB_REPO  = 'meridian';
-const WORKFLOW_ID  = 'qsrsoft-dar-pull.yml';
+
+// Allowlist of dispatchable workflows. `inputs` are the ONLY keys forwarded to
+// GitHub — sending an input a workflow doesn't declare returns HTTP 422, so each
+// entry lists exactly that workflow's dispatch inputs with fast-refresh defaults.
+const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; label: string }> = {
+  dar:      { file: 'qsrsoft-dar-pull.yml',  label: 'Daily Activity',    inputs: { days_back: '7',  days_recent: '1', force_full: '0', debug: '0' } },
+  ebos:     { file: 'qsrsoft-ebos-pull.yml', label: 'eBOS Purchases',    inputs: { days_back: '30', days_recent: '2', force_full: '0', debug: '0' } },
+  fob:      { file: 'qsrsoft-pull.yml',      label: 'FOB / P&L Cost',    inputs: { days_back: '30', days_recent: '2', debug: '0' } },
+  lifelenz: { file: 'lifelenz-pull.yml',     label: 'LifeLenz Schedule', inputs: { days_back: '7', safety_days: '3', days_fwd: '14', debug: '0' } },
+};
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -36,13 +49,26 @@ Deno.serve(async (req: Request) => {
 
   if (!GITHUB_PAT) return json({ error: 'GITHUB_PAT secret not configured' }, 503);
 
-  // Parse optional inputs from request body
-  let inputs: Record<string, string> = {};
-  try { inputs = (await req.json()) ?? {}; } catch { /* no body — defaults fine */ }
+  // Parse the request body
+  let body: Record<string, unknown> = {};
+  try { body = (await req.json()) ?? {}; } catch { /* no body — defaults fine */ }
 
-  // Dispatch workflow — days_recent=1 by default for a fast on-demand pull
+  const key = String(body.workflow ?? 'dar');
+  const wf = WORKFLOWS[key];
+  if (!wf) return json({ error: `Unknown workflow '${key}'` }, 400);
+
+  // Build inputs from the workflow's declared defaults, overriding only with
+  // caller-supplied values for keys that workflow actually accepts (nested
+  // `inputs` object, or top-level days_* kept for backward compatibility).
+  const override = (body.inputs ?? {}) as Record<string, unknown>;
+  const inputs: Record<string, string> = { ...wf.inputs };
+  for (const k of Object.keys(wf.inputs)) {
+    if (override[k] != null) inputs[k] = String(override[k]);
+    else if (body[k] != null) inputs[k] = String(body[k]); // legacy top-level days_back/days_recent
+  }
+
   const dispatch = await fetch(
-    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_ID}/dispatches`,
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${wf.file}/dispatches`,
     {
       method: 'POST',
       headers: {
@@ -51,15 +77,7 @@ Deno.serve(async (req: Request) => {
         'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        ref: 'main',
-        inputs: {
-          days_back:   inputs.days_back   ?? '7',
-          days_recent: inputs.days_recent ?? '1',
-          force_full:  inputs.force_full  ?? '0',
-          debug:       inputs.debug       ?? '0',
-        },
-      }),
+      body: JSON.stringify({ ref: 'main', inputs }),
     }
   );
 
@@ -70,5 +88,5 @@ Deno.serve(async (req: Request) => {
   }
 
   // 204 No Content is the success response from GitHub workflow dispatch
-  return json({ status: 'dispatched', message: 'Daily activity sync started — data will refresh in ~10 minutes.' });
+  return json({ status: 'dispatched', workflow: key, message: `${wf.label} sync started — data will refresh in ~10 minutes.` });
 });

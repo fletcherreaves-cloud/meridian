@@ -40,7 +40,7 @@ import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -52,7 +52,7 @@ import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance,
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
-import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor, opsReportIsDaily } from '../parsers/index.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 import {
   fetchForecastWeather,
@@ -1159,6 +1159,19 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
         }
       }catch(e){console.warn('[Meridian] QSRSoft act summary load failed:',e);}
+      // Server-parsed QSRSoft email reports (Daily Glimpse, Cash Sheet, Sales Ledger).
+      // Cloud-first source of truth — override the device-local IDB rows only when
+      // the Supabase tables have data, so freshness follows the app on any device.
+      try{
+        const [glimpse,cash,ledger]=await Promise.all([loadGlimpse(60),loadCash(60),loadSalesLedger(60)]);
+        if(glimpse.length||cash.length||ledger.length){
+          setDs(prev=>{if(!prev)return prev;return{...prev,
+            ...(glimpse.length?{glimpseRows:glimpse}:{}),
+            ...(cash.length?{cashRows:cash}:{}),
+            ...(ledger.length?{salesLedgerRows:ledger}:{})};});
+          console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
+        }
+      }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);}
       // Load cross-device user settings (locked projections, AE calibration params)
       try{
         const remoteProj=await loadUserSetting('locked_projections');
@@ -1387,6 +1400,7 @@ function App() {
     setLoadMsg('⏳ Reading '+fileArr.length+' file'+(fileArr.length>1?'s…':'…'));
     let currentDS=dsRef.current||buildDS([]);
     const loaded=[];
+    const _skipped=[]; // period-summary Operations Reports refused (no daily dates)
     const _toDs=r=>r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10);
     const _prevDarKeys   =new Set((currentDS.darRows      ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
     // Track rows parsed in this upload batch so we always upsert them to Supabase (overwrites stale data for corrected re-uploads)
@@ -1445,6 +1459,14 @@ function App() {
             }
             loaded.push({name:file.name,type});
           } else {
+            // Guard: refuse a period-summary Operations Report (no per-day date
+            // column). Daily rows are the source of truth — a period total
+            // corrupts daily forecasts and record-day math. Skip it and flag it.
+            if((type.type==='ops_report'||type.type==='combined')&&!opsReportIsDaily(wb)){
+              _skipped.push(file.name);
+              console.warn('[Meridian] Skipped period-summary Operations Report (no daily dates):',file.name);
+              continue;
+            }
             const _bL=currentDS.laborRows.length,_bF=(currentDS.fobRows||[]).length,_bO=currentDS.opsRows.length,_bC=currentDS.ctrlRows.length,_bPS=(currentDS.peaksSvcRows||[]).length,_bPA=(currentDS.peaksSalesRows||[]).length,_bA=(currentDS.auditRows||[]).length;
             currentDS=mergeDS(currentDS,wb,type,file.name);
             _freshLaborRows.push(...currentDS.laborRows.slice(_bL));
@@ -1503,7 +1525,8 @@ function App() {
       if(_freshAuditRows .length>0) saveAuditRows (_freshAuditRows ).catch(e=>console.warn('[audit_rows] save error:',e));
     }
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
-    setLoadMsg('✓ '+names+' loaded · '+currentDS.storeIds.length+' stores');
+    const _skipMsg=_skipped.length?'  ⚠ Skipped '+_skipped.length+' period-summary file'+(_skipped.length>1?'s':'')+' (no daily dates — upload the daily Operations Report instead)':'';
+    setLoadMsg((loaded.length?'✓ '+names+' loaded · '+currentDS.storeIds.length+' stores':'⚠ No files loaded')+_skipMsg);
     // ── Persist to IndexedDB (survives refresh) ──────────────────────────
     (async()=>{
       try{
