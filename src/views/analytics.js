@@ -6468,11 +6468,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       r.date.getFullYear()===maxDate.getFullYear()&&
       r.date.getMonth()===maxDate.getMonth());
   },[ds?.fobRows?.length]);
-  // Auto FOB fallback from qsr_fob (raw dollar amounts) → percentages of product
-  // sales. FOB total = waste+condiments+meals+stat-var+unexplained (Disc/Coupon
-  // is reference only, excluded). P&L food/paper cost use the standard inventory
-  // formula: begin + purchases + adjustments + transfers − promotions − end.
-  // Manual FOB Report takes precedence; this fills in only when none is loaded.
+  // Auto FOB fallback from qsr_fob → each FOB component as a % of Product Net
+  // Sales (component_amt / prodSalesAmt), per the FOB report. FOB total excludes
+  // Disc/Coupon (reference only). P&L Food/Paper Cost % are NOT computed here yet
+  // — the inventory-component formula guess didn't match the report, so they're
+  // left blank pending the confirmed formula. Manual FOB Report takes precedence.
   const fobAuto = React.useMemo(()=>{
     const rows=ds?.qsrFobRows||[];
     if(!rows.length) return [];
@@ -6486,15 +6486,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return [...byLoc.values()].map(r=>{
       const s=r.prodSalesAmt||0;
       const fobAmt=(r.rawWasteAmt||0)+(r.compWasteAmt||0)+(r.condimentsAmt||0)+(r.empMgrMealsAmt||0)+(r.statVarianceAmt||0)+(r.unexplainedAmt||0);
-      const foodCost=(r.pnlFoodCostBegin||0)+(r.pnlFoodCostPurchases||0)+(r.pnlFoodCostAdjustments||0)+(r.pnlFoodCostTransfers||0)-(r.pnlFoodCostPromotions||0)-(r.pnlFoodCostEnd||0);
-      const paperCost=(r.pnlPaperCostBegin||0)+(r.pnlPaperCostPurchases||0)+(r.pnlPaperCostAdjustments||0)+(r.pnlPaperCostTransfers||0)-(r.pnlPaperCostPromotions||0)-(r.pnlPaperCostEnd||0);
       return {loc:String(r.loc),date:r._d,
         fobPct:pct(fobAmt,s), baseFoodPct:pct(r.totalBaseFood,s),
         rawWaste:pct(r.rawWasteAmt,s), compWaste:pct(r.compWasteAmt,s),
         condiment:pct(r.condimentsAmt,s), empMeal:pct(r.empMgrMealsAmt,s),
         statVar:pct(r.statVarianceAmt,s), unexplained:pct(r.unexplainedAmt,s),
         discCoupon:pct(r.discountCouponsAmt,s),
-        pLFoodPct:pct(foodCost,s), pLPaperPct:pct(paperCost,s), _auto:true};
+        pLFoodPct:null, pLPaperPct:null, _auto:true};
     });
   },[ds?.qsrFobRows?.length]);
   const fobInRange = fobRecent.length?fobRecent:fobAuto; // manual FOB Report first, else auto qsr_fob
