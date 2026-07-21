@@ -33,7 +33,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [skipList, setSkipList] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
+  const dirRef = useRef(null);
 
   const refresh = () => { setLoading(true); loadGradedVisits().then(v => { setVisits(v); setLoading(false); }).catch(() => setLoading(false)); };
   useEffect(() => { refresh(); }, []);
@@ -59,19 +61,19 @@ export function GradedVisitsPanel({ ds, onClose }) {
     keys.forEach((k, i) => { (collisions[k] = collisions[k] || []).push(parsed[i]); });
     const collided = Object.entries(collisions).filter(([, arr]) => arr.length > 1)
       .map(([k, arr]) => `${arr.length}× same key ${k}  → e.g. ${arr[0]._file || ''} / ${arr[1]._file || ''}`);
-    console.log('[graded-visits] received', htmls.length, '· parsed', parsed.length, '· unique keys', uniqueKeys, '· skipped', skipped.length, keys);
+    console.log('[graded-visits] selected', all.length, '· HTML', htmls.length, '· parsed', parsed.length, '· unique keys', uniqueKeys, '· skipped', skipped.length, keys, all.map(f => f.name));
     if (fileRef.current) fileRef.current.value = ''; // allow re-selecting the same files
     const res = parsed.length ? await saveGradedVisits(parsed) : { saved: 0, errors: [] };
     setBusy(false);
     setSkipList(skipped.concat(collided.length ? ['— key collisions (parser read same store+date for different files):', ...collided] : []));
     if (res.errors.length) { setMsg({ t: 'err', x: 'Save error: ' + res.errors[0] }); return; }
-    if (!res.saved && !skipped.length) { setMsg({ t: 'err', x: 'Nothing imported.' }); return; }
     const dupN = parsed.length - uniqueKeys;
-    const bits = [`Received ${htmls.length}`, `parsed ${parsed.length}`, `saved ${res.saved}`];
+    const bits = [`Selected ${all.length}`];
+    if (notHtml) bits.push(`${htmls.length} HTML (${notHtml} non-HTML ignored)`);
+    bits.push(`parsed ${parsed.length}`, `saved ${res.saved}`);
     if (dupN > 0) bits.push(`${dupN} collapsed on duplicate store+date`);
     if (skipped.length) bits.push(`${skipped.length} skipped`);
-    if (notHtml) bits.push(`${notHtml} non-HTML`);
-    setMsg({ t: (skipped.length || dupN > 0) ? 'warn' : 'ok', x: bits.join(' · ') });
+    setMsg({ t: (notHtml || skipped.length || dupN > 0) ? 'warn' : 'ok', x: bits.join(' · ') });
     if (res.saved) refresh();
   };
 
@@ -118,13 +120,21 @@ export function GradedVisitsPanel({ ds, onClose }) {
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 } },
 
-        // Upload row
-        div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 12px', background: 'rgba(245,188,0,.05)', border: '.5px dashed rgba(245,188,0,.3)', borderRadius: 8 } },
+        // Upload / drop zone
+        div({
+          onDragOver: e => { e.preventDefault(); if (!dragOver) setDragOver(true); },
+          onDragLeave: e => { e.preventDefault(); setDragOver(false); },
+          onDrop: e => { e.preventDefault(); setDragOver(false); onFiles(e.dataTransfer.files); },
+          style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '12px', background: dragOver ? 'rgba(245,188,0,.16)' : 'rgba(245,188,0,.05)', border: `1px dashed rgba(245,188,0,${dragOver ? '.75' : '.3'})`, borderRadius: 8, transition: 'background .1s' } },
           btn({ onClick: () => fileRef.current && fileRef.current.click(), disabled: busy,
             style: { padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(245,158,11,.4)', background: 'rgba(245,158,11,.1)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: busy ? 'default' : 'pointer' } },
-            busy ? 'Importing…' : '＋ Upload visit reports (.html)'),
+            busy ? 'Importing…' : '＋ Upload files'),
+          btn({ onClick: () => dirRef.current && dirRef.current.click(), disabled: busy,
+            style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 600, cursor: busy ? 'default' : 'pointer' } },
+            '📁 Upload folder'),
           h('input', { ref: fileRef, type: 'file', accept: '.html,.htm', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
-          span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'CFV & RGR HTML exports. Re-importing a store+date overwrites it.'),
+          h('input', { ref: dirRef, type: 'file', webkitdirectory: '', directory: '', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
+          span({ style: { fontSize: 10, color: dragOver ? 'var(--amber)' : 'var(--text3)' } }, dragOver ? 'Drop to import' : 'Drag files or a whole folder here (or use the buttons). CFV & RGR HTML. Re-import overwrites same store+date.'),
           msg && span({ style: { fontSize: 11, fontWeight: 600, marginLeft: 'auto', color: msg.t === 'ok' ? '#10b981' : msg.t === 'warn' ? '#f59e0b' : '#ef4444' } }, msg.x)),
 
         // Skipped files — so you can see exactly which didn't import and why.
