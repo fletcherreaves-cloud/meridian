@@ -95,21 +95,50 @@ function computeSmartTargets(loc, ds, settings){
   const cut6w=mk(6),cut12w=mk(12),cut26w=mk(26),cut52w=mk(52),cutLY=mk(104);
   const results={};
 
+  // ── Cloud fallbacks (auto/emailed) ──────────────────────────────────────────
+  // Same freshest-wins rule as the rest of the app: when a store has no MANUAL
+  // rows for a metric's source, derive the series from the auto/emailed cloud
+  // streams instead so Smart Targets isn't blank on any device. Manual wins when
+  // present; only cleanly-mappable fields are filled (others stay blank — no
+  // regression). Field scales mirror the manual rows (laborPct/park/fobPct are
+  // 0-1 fractions, oepe seconds, avgCheck dollars).
+  const dstr = d => d instanceof Date ? d.toISOString().slice(0,10) : String(d).slice(0,10);
+  const glByDate = {};
+  for(const g of (ds.glimpseRows||[])) if(String(g.loc)===String(loc)) glByDate[dstr(g.date)] = g;
+  const cloudLabor = () => (ds.qsrActSummaryRows||[]).filter(r=>String(r.loc)===String(loc)).map(r=>{
+    const g = glByDate[dstr(r.date)];
+    return { loc, date:r.date, sales:r.sales, salesVsLYPct:r.salesVsLYPct,
+      tpph: r.actHrs>0 ? r.gc/r.actHrs : 0,
+      avgCheck: r.gc>0 ? r.sales/r.gc : 0,
+      laborPct: g && g.laborPct ? g.laborPct : 0 };
+  });
+  const cloudOps = () => (ds.glimpseRows||[]).filter(g=>String(g.loc)===String(loc))
+    .map(g=>({ loc, date:g.date, oepe:g.oepe, park:g.parkedPct }));
+  const cloudCtrl = () => (ds.glimpseRows||[]).filter(g=>String(g.loc)===String(loc))
+    .map(g=>({ loc, date:g.date, cashOSPct:g.cashOSPct })); // tRedAPct has no clean auto source
+  const cloudFob = () => (ds.qsrFobRows||[]).filter(r=>String(parseInt(r.loc,10))===String(loc)).map(r=>{
+    const s=r.prodSalesAmt||0;
+    const fobAmt=(r.rawWasteAmt||0)+(r.compWasteAmt||0)+(r.condimentsAmt||0)+(r.empMgrMealsAmt||0)+(r.statVarianceAmt||0)+(r.unexplainedAmt||0);
+    return { loc, date:(r.date instanceof Date?r.date:new Date(String(r.date).slice(0,10)+'T00:00:00')), fobPct: s>0?fobAmt/s:0 };
+  });
+
   SMART_METRICS.forEach(function(metric){
-    // Get rows for this metric's data source
+    // Get rows for this metric's data source — manual first, cloud fallback if empty.
     let allRows=[];
-    if(metric.src==='ops')   allRows=(ds.opsRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);
-    else if(metric.src==='labor') allRows=(ds.laborRows||[]).filter(r=>r.loc===loc&&r.sales>0&&r.date>cutLY);
-    else if(metric.src==='ctrl') allRows=(ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);
-    else if(metric.src==='fob')  allRows=(ds.fobRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);
+    if(metric.src==='ops')        { allRows=(ds.opsRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);            if(!allRows.length) allRows=cloudOps().filter(r=>r.date&&r.date>cutLY); }
+    else if(metric.src==='labor') { allRows=(ds.laborRows||[]).filter(r=>r.loc===loc&&r.sales>0&&r.date>cutLY); if(!allRows.length) allRows=cloudLabor().filter(r=>r.date&&r.sales>0&&r.date>cutLY); }
+    else if(metric.src==='ctrl')  { allRows=(ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);           if(!allRows.length) allRows=cloudCtrl().filter(r=>r.date&&r.date>cutLY); }
+    else if(metric.src==='fob')   { allRows=(ds.fobRows||[]).filter(r=>r.loc===loc&&r.date>cutLY);            if(!allRows.length) allRows=cloudFob().filter(r=>r.date&&r.date>cutLY); }
 
     let vals6w=[],vals12w=[],vals26w=[],vals52w=[];
 
     if(metric.k==='salesGrowth'){
       allRows.filter(r=>r.date>cut26w).forEach(function(r){
-        const ly=fetchLY(ds.laborIdx,ds.laborRows,loc,r.date,settings._userEvents)||0;
-        if(ly>0&&r.sales>0){
-          const g=(r.sales-ly)/ly*100;
+        // Cloud rows carry salesVsLYPct directly; manual rows need an LY lookup.
+        let g=null;
+        if(typeof r.salesVsLYPct==='number') g=r.salesVsLYPct;
+        else { const ly=fetchLY(ds.laborIdx,ds.laborRows,loc,r.date,settings._userEvents)||0; if(ly>0&&r.sales>0) g=(r.sales-ly)/ly*100; }
+        if(g!=null){
           if(r.date>cut6w) vals6w.push(g);
           if(r.date>cut12w) vals12w.push(g);
           vals26w.push(g); vals52w.push(g);
