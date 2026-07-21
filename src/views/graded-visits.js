@@ -29,6 +29,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selLoc, setSelLoc] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -52,7 +53,11 @@ export function GradedVisitsPanel({ ds, onClose }) {
     else { setMsg({ t: 'ok', x: `Imported ${res.saved} visit${res.saved > 1 ? 's' : ''}.` }); refresh(); }
   };
 
-  const filtered = useMemo(() => selLoc === 'all' ? visits : visits.filter(v => String(v.store) === String(selLoc)), [visits, selLoc]);
+  const filtered = useMemo(() => visits.filter(v =>
+    (selLoc === 'all' || String(v.store) === String(selLoc)) &&
+    (typeFilter === 'all' || (v.reportType || 'CFV') === typeFilter)
+  ), [visits, selLoc, typeFilter]);
+  const types = useMemo(() => [...new Set(visits.map(v => v.reportType || 'CFV'))], [visits]);
   const stats = useMemo(() => {
     const scored = filtered.filter(v => v.score != null);
     const passes = scored.filter(v => v.score >= PASS).length;
@@ -78,8 +83,11 @@ export function GradedVisitsPanel({ ds, onClose }) {
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '📋'),
         div({ style: { flex: 1 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Graded Visits — Customer First Visit'),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Channel · mobile-app vs traditional · pass ≥ ' + PASS + '% · RGR / Ecosure slot in once uploaded')),
+          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Graded Visits'),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'CFV (channel · app) & RGR (whole-restaurant, component-scored) · pass ≥ ' + PASS + '% · Ecosure slots in once uploaded')),
+        types.length > 1 && h('select', { value: typeFilter, onChange: e => setTypeFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
+          h('option', { value: 'all' }, 'All Types'),
+          types.map(t => h('option', { key: t, value: t }, t))),
         h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
           h('option', { value: 'all' }, 'All Stores'),
           storesWithData.map(l => h('option', { key: l, value: l }, sNameC(l)))),
@@ -92,7 +100,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
         div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 12px', background: 'rgba(245,188,0,.05)', border: '.5px dashed rgba(245,188,0,.3)', borderRadius: 8 } },
           btn({ onClick: () => fileRef.current && fileRef.current.click(), disabled: busy,
             style: { padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(245,158,11,.4)', background: 'rgba(245,158,11,.1)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: busy ? 'default' : 'pointer' } },
-            busy ? 'Importing…' : '＋ Upload CFV reports (.html)'),
+            busy ? 'Importing…' : '＋ Upload visit reports (.html)'),
           h('input', { ref: fileRef, type: 'file', accept: '.html,.htm', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
           span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'Comprehensive Visit Report exports. Re-importing a store+date overwrites it.'),
           msg && span({ style: { fontSize: 11, fontWeight: 600, marginLeft: 'auto', color: msg.t === 'ok' ? '#10b981' : '#ef4444' } }, msg.x)),
@@ -101,7 +109,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
           : visits.length === 0 ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12, border: '1px dashed var(--bdr)', borderRadius: 8 } },
             div({ style: { fontSize: 26, marginBottom: 10 } }, '📋'),
             div({ style: { fontWeight: 700, marginBottom: 6 } }, 'No graded visits yet'),
-            'Upload your Customer First Visit HTML exports above to get started.')
+            'Upload your visit report HTML exports (CFV or RGR) above to get started.')
             : [
               // Summary cards
               div({ key: 'cards', style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
@@ -114,25 +122,28 @@ export function GradedVisitsPanel({ ds, onClose }) {
               div({ key: 'tbl', style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
                 h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
                   h('thead', null, h('tr', null,
+                    h('th', { style: { ...thS, textAlign: 'left' } }, 'Type'),
                     h('th', { style: { ...thS, textAlign: 'left' } }, 'Store'),
                     h('th', { style: { ...thS, textAlign: 'left' } }, 'Date'),
-                    h('th', { style: { ...thS, textAlign: 'left' } }, 'Daypart'),
-                    h('th', { style: { ...thS, textAlign: 'left' } }, 'Channel'),
-                    h('th', { style: thS }, 'Order'),
-                    h('th', { style: thS }, 'Primary'),
-                    h('th', { style: thS }, 'Counter'),
+                    h('th', { style: { ...thS, textAlign: 'left' } }, 'Detail'),
                     h('th', { style: thS }, 'Score'),
                     h('th', { style: thS }, 'Result'))),
                   h('tbody', null, ...filtered.map((v, i) => {
-                    const pm = primaryModule(v), cm = counterModule(v);
+                    const isRGR = (v.reportType || 'CFV') === 'RGR';
+                    const compTip = Object.entries(v.modules || {}).map(([k, m]) => `${k}: ${fmtPct(m.pct)}`).join('  ·  ');
+                    const belowN = Object.values(v.modules || {}).filter(m => m.pct < 80).length;
+                    const detail = isRGR
+                      ? span({ title: compTip },
+                          v.status ? span({ style: { fontWeight: 600, color: 'var(--text2)' } }, v.status) : null,
+                          span({ style: { marginLeft: v.status ? 6 : 0, color: belowN ? '#f59e0b' : 'var(--text3)' } }, belowN + ' comp <80'))
+                      : span(null,
+                          span({ style: { color: 'var(--text2)' } }, v.channel || '—'),
+                          v.mobileApp != null ? span({ style: { marginLeft: 6, color: v.mobileApp ? '#60a5fa' : 'var(--text3)', fontWeight: v.mobileApp ? 700 : 400 } }, v.mobileApp ? '📱 App' : 'Traditional') : null);
                     return h('tr', { key: v.id || i },
+                      h('td', { style: { ...tdS, textAlign: 'left' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: (isRGR ? '#a78bfa' : '#60a5fa') + '22', color: isRGR ? '#a78bfa' : '#60a5fa' } }, v.reportType || 'CFV')),
                       h('td', { style: { ...tdS, textAlign: 'left', fontWeight: 600 } }, sNameC(String(v.store))),
                       h('td', { style: { ...tdS, textAlign: 'left', color: 'var(--text2)' } }, niceDate(v.dateISO)),
-                      h('td', { style: { ...tdS, textAlign: 'left', color: 'var(--text3)' } }, v.daypart || '—'),
-                      h('td', { style: { ...tdS, textAlign: 'left' } }, v.channel || '—'),
-                      h('td', { style: { ...tdS, color: v.mobileApp ? '#60a5fa' : 'var(--text3)', fontWeight: v.mobileApp ? 700 : 400 } }, v.mobileApp === true ? '📱 App' : v.mobileApp === false ? 'Traditional' : '—'),
-                      h('td', { style: { ...tdS, fontFamily: 'var(--mono)', color: scoreColor(pm && pm.pct) }, title: pm ? pm.name : '' }, pm ? fmtPct(pm.pct) : '—'),
-                      h('td', { style: { ...tdS, fontFamily: 'var(--mono)', color: scoreColor(cm) } }, cm != null ? fmtPct(cm) : '—'),
+                      h('td', { style: { ...tdS, textAlign: 'left', fontSize: 10 } }, detail),
                       h('td', { style: { ...tdS, fontFamily: 'var(--mono)', fontWeight: 800, color: scoreColor(v.score) } }, v.score != null ? fmtPct(v.score) : '—'),
                       h('td', { style: tdS }, v.pass == null ? '—' : span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: (v.pass ? '#10b981' : '#ef4444') + '22', color: v.pass ? '#10b981' : '#ef4444' } }, v.pass ? '✓ Pass' : '✗ Fail')));
                   })))),

@@ -73,3 +73,55 @@ describe('graded-visits parser', () => {
     expect(lines).toEqual(['A&B', 'C']);
   });
 });
+
+// RGR (Running Great Restaurants) — whole-restaurant, component-scored.
+const rgrFixture = (opts = {}) => {
+  const { overall = '88%', cleanliness = '85.4', hsCrit = 'Critical Questions Passed', fsCrit = 'Critical Questions Passed' } = opts;
+  return `<html><body>
+    <div>Comprehensive Visit Report</div><div>Acceptable</div>
+    <div>Running Great Restaurants Visit - Running Great Restaurants 2026</div>
+    <div>Announced</div>
+    <div>Visit detail</div><div>06838</div><div>DEFUNIAK SPRINGS</div>
+    <div>Restaurant number:</div><div>06838</div>
+    <div>Owner/Operator:</div><div>Jacob Thorley</div>
+    <div>Restaurant manager:</div><div>Stephanie Harris</div>
+    <div>Supervisor:</div><div>Brad Denley</div>
+    <div>Date:</div><div>10-Feb-2026</div>
+    <div>Visit done by:</div><div>Jessica Stevenson</div>
+    <div>Health & Safety:</div><div>${hsCrit}</div>
+    <div>US Food Safety:</div><div>${fsCrit}</div>
+    <div>Score(%):</div>
+    <div>Overall:</div><div>${overall}</div>
+    <div>Quality:</div><div>89.3%</div>
+    <div>Service:</div><div>90.2%</div>
+    <div>Cleanliness:</div><div>${cleanliness}%</div>
+    <div>Shift Leadership:</div><div>90.9%</div>
+    <div>Health & Safety:</div><div>94.1%</div>
+    <div>US Food Safety:</div><div>84%</div>
+    <div>To meet standards, the Running Great Restaurants Visit requires an 80% or higher overall score, with no critical questions missed and no more than one component score below 80.</div>
+  </body></html>`;
+};
+
+describe('RGR parser', () => {
+  it('dispatches to RGR and extracts components + status', () => {
+    const v = parseGradedVisit(rgrFixture(), { passThreshold: 80 });
+    expect(v.reportType).toBe('RGR');
+    expect(v.store).toBe('06838');
+    expect(v.score).toBeCloseTo(88, 3);
+    expect(v.status).toBe('Acceptable');
+    expect(v.channel).toBeNull();           // whole-restaurant, not a channel
+    expect(v.modules['Cleanliness'].pct).toBeCloseTo(85.4, 3);
+    expect(v.modules['US Food Safety'].pct).toBeCloseTo(84, 3);
+  });
+
+  it('applies the 3-part pass rule', () => {
+    // overall >=80, critical ok, <=1 component below 80 → pass
+    expect(parseGradedVisit(rgrFixture({ cleanliness: '77' })).pass).toBe(true);   // exactly one <80
+    // two components below 80 → fail
+    expect(parseGradedVisit(rgrFixture({ overall: '84%', cleanliness: '70' })).modules['Cleanliness'].pct).toBe(70);
+    // a missed critical question → fail regardless of score
+    expect(parseGradedVisit(rgrFixture({ hsCrit: 'Critical Question Missed' })).pass).toBe(false);
+    // overall below threshold → fail
+    expect(parseGradedVisit(rgrFixture({ overall: '78%' })).pass).toBe(false);
+  });
+});

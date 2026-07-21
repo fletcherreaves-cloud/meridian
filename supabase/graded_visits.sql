@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS graded_visits (
   pass         boolean,                              -- score >= threshold (80% for CFV)
   channel      text,                                 -- Drive Thru | Curbside | Front Counter | Delivery | Counter
   mobile_app   boolean,                              -- true = app/mobile order, false = traditional, null = unknown
+  status       text,                                 -- RGR rating word (Acceptable / Outstanding / ...)
   modules      jsonb,                                -- { "Drive Thru": {pct,ach,pos}, "Behind the Counter": {...} }
   raw_title    text,
   created_at   timestamptz NOT NULL DEFAULT now(),

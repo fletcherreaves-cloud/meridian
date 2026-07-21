@@ -1425,6 +1425,7 @@ export async function saveGradedVisits(rows) {
     pass:        r.pass     ?? null,
     channel:     r.channel  ?? null,
     mobile_app:  r.mobileApp ?? null,
+    status:      r.status   ?? null,
     modules:     r.modules  ?? null,
     raw_title:   r.title    ?? null,
     updated_at:  new Date().toISOString(),
@@ -1443,7 +1444,7 @@ export async function loadGradedVisits() {
   return (data || []).map(r => ({
     id: r.id, reportType: r.report_type, store: r.loc, dateISO: r.visit_date, date: r.visit_date,
     daypart: r.daypart, weekpart: r.weekpart, owner: r.owner, manager: r.manager, visitBy: r.visit_by,
-    score: r.score, pass: r.pass, channel: r.channel, mobileApp: r.mobile_app,
+    score: r.score, pass: r.pass, channel: r.channel, mobileApp: r.mobile_app, status: r.status,
     modules: r.modules || {}, title: r.raw_title,
   }));
 }

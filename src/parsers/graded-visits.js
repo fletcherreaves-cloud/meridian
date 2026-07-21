@@ -90,19 +90,9 @@ function channelOf(modules) {
   return counter ? CHANNEL_MODULES[counter] : null;
 }
 
-export function parseGradedVisit(htmlText, { passThreshold = 80 } = {}) {
-  const L = htmlToLines(htmlText);
-  const title = L.find(l => /customer first visit/i.test(l)) || '';
-  const scoreRaw = _after(L, 'Score(%)');
-  const score = scoreRaw != null ? parseFloat(String(scoreRaw).replace('%', '')) : null;
-  const modules = parseModules(L);
-  const channel = channelOf(modules);
-  const app = appUsed(L);
-  // Curbside/Mobile visits are app transactions by definition.
-  const mobileApp = channel === 'Curbside' || channel === 'Mobile' ? true : app;
+// Shared header fields common to both report layouts.
+function header(L) {
   return {
-    reportType: 'CFV',
-    title,
     store: _after(L, 'Restaurant number'),
     name: (() => { const i = L.indexOf('Visit detail'); return i >= 0 ? (L[i + 2] || null) : null; })(),
     date: _after(L, 'Date'),
@@ -111,12 +101,86 @@ export function parseGradedVisit(htmlText, { passThreshold = 80 } = {}) {
     weekpart: _after(L, 'Weekpart'),
     owner: _after(L, 'Owner/Operator'),
     manager: _after(L, 'Restaurant manager'),
+    supervisor: _after(L, 'Supervisor'),
     visitBy: _after(L, 'Visit done by'),
+  };
+}
+
+// ── CFV (Customer First Visit) — single-channel transaction ─────────────────
+function parseCFV(L, passThreshold) {
+  const scoreRaw = _after(L, 'Score(%)');
+  const score = scoreRaw != null ? parseFloat(String(scoreRaw).replace('%', '')) : null;
+  const modules = parseModules(L);
+  const channel = channelOf(modules);
+  const app = appUsed(L);
+  const mobileApp = channel === 'Curbside' || channel === 'Mobile' ? true : app;
+  return {
+    reportType: 'CFV',
+    title: L.find(l => /customer first visit/i.test(l)) || '',
+    ...header(L),
     completionTime: _after(L, 'Visit Completion Time'),
     score,
     pass: score != null ? score >= passThreshold : null,
+    status: null,
     channel,
     mobileApp,                 // true = app/mobile order, false = traditional, null = unknown
-    modules,                   // { 'Drive Thru': {pct, ach, pos}, 'Behind the Counter': {...} }
+    modules,                   // { 'Drive Thru': {pct,ach,pos}, 'Behind the Counter': {...} }
   };
+}
+
+// ── RGR (Running Great Restaurants) — whole-restaurant review ───────────────
+// Pass rule (stated in the report): overall >= threshold, no critical question
+// missed, and no more than ONE component below 80%.
+function parseRGR(L, passThreshold) {
+  const status = (() => { const i = L.indexOf('Comprehensive Visit Report'); return i >= 0 ? (L[i + 1] || null) : null; })();
+  const announced = L.some(l => /^announced$/i.test(l));
+  // Component scores from the "Score(%):" block (Overall + the components).
+  const si = L.findIndex(l => /^score\(%\):?$/i.test(l));
+  const components = {}; let overall = null;
+  if (si >= 0) {
+    for (let i = si + 1; i < L.length; i++) {
+      if (/to meet standards/i.test(L[i])) break;
+      const m = L[i].match(/^(.+?):$/);
+      const nv = L[i + 1] && L[i + 1].match(/^([\d.]+)%?$/);
+      if (m && nv) {
+        const label = m[1].trim(), val = parseFloat(nv[1]);
+        if (/^overall$/i.test(label)) overall = val; else components[label] = { pct: val };
+        i++;
+      }
+    }
+  }
+  // Critical-question gates (Health & Safety, US Food Safety).
+  const crit = (label) => {
+    for (let i = 0; i < L.length; i++) {
+      if (L[i] === label || L[i] === label + ':') {
+        const nx = (L[i + 1] || '').toLowerCase();
+        if (nx.includes('critical questions passed')) return true;
+        if (nx.includes('critical')) return false;
+      }
+    }
+    return null;
+  };
+  const criticalOk = crit('Health & Safety') !== false && crit('US Food Safety') !== false;
+  const belowCount = Object.values(components).filter(c => c.pct < 80).length;
+  const pass = overall != null ? (overall >= passThreshold && criticalOk && belowCount <= 1) : null;
+  return {
+    reportType: 'RGR',
+    title: L.find(l => /running great restaurants/i.test(l)) || '',
+    ...header(L),
+    score: overall,
+    pass,
+    status,                    // e.g. "Acceptable" / "Outstanding"
+    announced,
+    criticalPassed: criticalOk,
+    channel: null,             // RGR is whole-restaurant, not a single channel
+    mobileApp: null,
+    modules: components,       // { Quality:{pct}, Service:{pct}, Cleanliness:{pct}, ... }
+  };
+}
+
+// Dispatch on report title. CFV and RGR share the graded_visits schema; add
+// Ecosure the same way once its format is known.
+export function parseGradedVisit(htmlText, { passThreshold = 80 } = {}) {
+  const L = htmlToLines(htmlText);
+  return L.some(l => /running great restaurants/i.test(l)) ? parseRGR(L, passThreshold) : parseCFV(L, passThreshold);
 }
