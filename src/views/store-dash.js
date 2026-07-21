@@ -5,6 +5,8 @@ import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
+import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
+import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { ModelHealthBadge } from './analytics.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol } from '../utils/fmt.js';
@@ -2486,29 +2488,95 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
     return{cR:filt(ds.ctrlRows), lR:filt(ds.laborRows), oR:filt(ds.opsRows)};
   },[ds,selLoc,cutoff]);
 
-  // Smart targets: best-quartile from ALL available data per loc
-  const smartT = uM(()=>{
-    if (!ds) return {};
-    const locs = selLoc==='all'?Object.keys(STORE_NAMES):[selLoc];
-    const cAll=(ds.ctrlRows||[]).filter(r=>locs.includes(String(r.loc)));
-    const lAll=(ds.laborRows||[]).filter(r=>locs.includes(String(r.loc))&&r.sales>0);
-    const oAll=(ds.opsRows||[]).filter(r=>locs.includes(String(r.loc)));
-    return{
-      oepe:  bqAvg(oAll,'oepe',false),
-      park:  bqAvg(oAll,'park',false),
-      kvst:  bqAvg(oAll,'kvst',false),
-      r2p:   bqAvg(oAll,'r2p',true),
-      tpph:  bqAvg(lAll,'tpph',true)||bqAvg(cAll,'tpph',true),
-      labor: bqAvg(cAll,'laborPct',false)||bqAvg(lAll,'laborPct',false),
-      fob:   bqAvg(cAll,'fobPct',false),
-      baseFd:bqAvg(cAll,'baseFoodPct',false),
-      fobTot:bqAvg(cAll,'pLFoodPct',false),
-      cashOS:bqAvg(cAll,'cashOSPct',false),
-      tRedB: bqAvg(cAll,'tRedBPct',false),
-      gc:    bqAvg(lAll,'gc',true),
-      avgChk:bqAvg(lAll,'avgCheck',true),
-    };
-  },[ds,selLoc]);
+  // ── Smart Targets Model v2 — source map (auto/emailed-first, freshest-wins) ──
+  // Each metric points at its CORRECT source (the old code read FOB fields off
+  // ctrlRows — always null). Manual rows are primary; cloud streams fill any
+  // loc/date with no manual upload. FOB uses qsr_fob $-amounts so district
+  // roll-ups can be dollar-weighted exactly (Σ$/Σprodsales), never a mean of %s.
+  const SPEC = {
+    oepe:   {man:{src:'opsRows',f:'oepe'},        cloud:{src:'glimpseRows',f:'oepe'}},
+    park:   {man:{src:'opsRows',f:'park'},        cloud:{src:'glimpseRows',f:'parkedPct'}},
+    kvst:   {man:{src:'opsRows',f:'kvst'},        cloud:{src:'glimpseRows',f:'kvst'}},
+    r2p:    {man:{src:'opsRows',f:'r2p'}},
+    tpph:   {man:{src:'ctrlRows',f:'tpph'}, man2:{src:'laborRows',f:'tpph'}, cloud:{src:'qsrActSummaryRows',fn:r=>r.actHrs>0?r.gc/r.actHrs:null}},
+    labor:  {man:{src:'ctrlRows',f:'laborPct'}, man2:{src:'laborRows',f:'laborPct'}, cloud:{src:'glimpseRows',f:'laborPct'}},
+    crewlbr:{man:{src:'laborRows',f:'crewLaborPct'}},
+    actvsNd:{man:{src:'laborRows',f:'actVsNeed'}, cloud:{src:'qsrActSummaryRows',fn:r=>(r.actHrs!=null&&r.needHrs!=null)?r.actHrs-r.needHrs:null}, keepZero:true, signed:true},
+    baseFd: {man:{src:'fobRows',f:'baseFoodPct'}, fob:{num:'totalBaseFood'}},
+    fob:    {man:{src:'fobRows',f:'fobPct'},      fob:{fobSum:true}},
+    fobTot: {man:{src:'fobRows',f:'pLFoodPct'},   fob:{pnl:true}},
+    compW:  {man:{src:'fobRows',f:'compWaste'},   fob:{num:'compWasteAmt'}},
+    rawW:   {man:{src:'fobRows',f:'rawWaste'},    fob:{num:'rawWasteAmt'}},
+    cond:   {man:{src:'fobRows',f:'condiment'},   fob:{num:'condimentsAmt'}},
+    empMl:  {man:{src:'fobRows',f:'empMeal'},     fob:{num:'empMgrMealsAmt'}},
+    statV:  {man:{src:'fobRows',f:'statVar'},     fob:{num:'statVarianceAmt'}},
+    disc:   {man:{src:'fobRows',f:'discCoupon'},  fob:{num:'discountCouponsAmt'}},
+    cashOS: {man:{src:'ctrlRows',f:'cashOSPct'},  cloud:{src:'glimpseRows',f:'cashOSPct'}, signed:true},
+    tRedB:  {man:{src:'ctrlRows',f:'tRedBPct'}},
+    tRedA:  {man:{src:'ctrlRows',f:'tRedAPct'}},
+    discP:  {man:{src:'ctrlRows',f:'discPct'}},
+    gc:     {man:{src:'laborRows',f:'gc'},        cloud:{src:'qsrActSummaryRows',f:'gc'}},
+    avgChk: {man:{src:'laborRows',f:'avgCheck'},  cloud:{src:'qsrActSummaryRows',fn:r=>r.gc>0?r.sales/r.gc:null}},
+    sales:  {man:{src:'laborRows',f:'sales'},     cloud:{src:'qsrActSummaryRows',f:'sales'}},
+  };
+  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); return d && !isNaN(d) && d.getTime() >= ms; };
+  const _keep = (v, spec) => typeof v === 'number' && !isNaN(v) && (spec.keepZero || v !== 0);
+  // qsr_fob is MTD-cumulative → collapse to one value per (loc,month): the final
+  // (max-date) row = that month's actual. Returns [{val, num, den, date}].
+  const _fobMonthly = (loc, sinceMs, spec) => {
+    const byMon = {};
+    for (const r of (ds.qsrFobRows || [])) {
+      if (String(parseInt(r.loc, 10)) !== String(loc) || !_inRangeMs(r, sinceMs)) continue;
+      const d = r.date instanceof Date ? r.date : new Date(String(r.date).slice(0,10) + 'T00:00:00');
+      const key = d.getFullYear() + '-' + d.getMonth();
+      if (!byMon[key] || d > byMon[key]._d) byMon[key] = { ...r, _d: d };
+    }
+    const out = [];
+    for (const r of Object.values(byMon)) {
+      const den = r.prodSalesAmt || 0; if (den <= 0) continue;
+      let num;
+      if (spec.fob.num) num = r[spec.fob.num] || 0;
+      else if (spec.fob.fobSum) num = (r.rawWasteAmt||0)+(r.compWasteAmt||0)+(r.condimentsAmt||0)+(r.empMgrMealsAmt||0)+(r.statVarianceAmt||0)+(r.unexplainedAmt||0);
+      else if (spec.fob.pnl) num = (r.pnlFoodCostBegin||0)+(r.pnlFoodCostPurchases||0)+(r.pnlFoodCostAdjustments||0)+(r.pnlFoodCostTransfers||0)-(r.pnlFoodCostPromotions||0)-(r.pnlFoodCostEnd||0);
+      else continue;
+      out.push({ val: num / den, num, den, date: r._d });
+    }
+    return out;
+  };
+  // Cloud-first daily value series for a metric+store since `sinceMs`.
+  const valuesForLoc = (metricId, loc, sinceMs) => {
+    const spec = SPEC[metricId]; if (!spec) return [];
+    // FOB metrics: manual fobRows.f first, else qsr_fob monthly actuals.
+    if (spec.fob) {
+      const man = (ds.fobRows || []).filter(r => String(r.loc) === String(loc) && _inRangeMs(r, sinceMs))
+        .map(r => r[spec.man.f]).filter(v => _keep(v, spec));
+      if (man.length) return man;
+      return _fobMonthly(loc, sinceMs, spec).map(p => p.val).filter(v => _keep(v, spec));
+    }
+    // Manual (+ optional secondary manual) primary
+    for (const key of ['man', 'man2']) {
+      const s = spec[key]; if (!s) continue;
+      const vals = (ds[s.src] || []).filter(r => String(r.loc) === String(loc) && _inRangeMs(r, sinceMs))
+        .map(r => (s.fn ? s.fn(r) : r[s.f])).filter(v => _keep(v, spec));
+      if (vals.length) return vals;
+    }
+    // Cloud fallback
+    if (spec.cloud) {
+      const s = spec.cloud;
+      const matchLoc = s.src === 'qsrFobRows' ? (r => String(parseInt(r.loc,10)) === String(loc)) : (r => String(r.loc) === String(loc));
+      return (ds[s.src] || []).filter(r => matchLoc(r) && _inRangeMs(r, sinceMs))
+        .map(r => (s.fn ? s.fn(r) : r[s.f])).filter(v => _keep(v, spec));
+    }
+    return [];
+  };
+  // Dollar-weighted district value for FOB metrics (Σcomponent$/Σprodsales$).
+  const fobDollarPairs = (metricId, locs, sinceMs) => {
+    const spec = SPEC[metricId]; if (!spec || !spec.fob) return null;
+    const pairs = [];
+    for (const loc of locs) for (const p of _fobMonthly(loc, sinceMs, spec)) pairs.push({ num: p.num, den: p.den });
+    return pairs.length ? pairs : null;
+  };
+  const _mktOf = l => (INV_ORG_COORDS[String(l)] || {}).state;
 
   // Official targets — yearly (ds.targets) then monthly (ds.monthlyTargets) override DEFAULT_TARGETS
   const mergedT = loc => ({...(DEFAULT_TARGETS[loc]||{}), ...((ds&&ds.targets&&ds.targets[loc])||{}), ...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{})});
@@ -2525,7 +2593,53 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
     return mergedT(selLoc);
   },[selLoc,ds]);
 
-  const smartKeyMap = {oepe:'oepe',park:'park',kvst:'kvst',r2p:'r2p',tpph:'tpph',labor:'labor',crewlbr:'labor',baseFd:'baseFd',fob:'fob',fobTot:'fobTot',cashOS:'cashOS',tRedB:'tRedB',gc:'gc',avgChk:'avgChk'};
+  // ── Per-metric Smart + Current, computed through the tested v2 model ─────────
+  const computed = uM(() => {
+    if (!ds) return {};
+    const allLocs = Object.keys(DEFAULT_TARGETS);
+    const scopeLocs = selLoc === 'all' ? allLocs : [selLoc];
+    const histMs = addDR(new Date(), -365).getTime();
+    const l4wMs = addDR(new Date(), -28).getTime();
+    const frac = 0.25; // realistic step toward district best-quartile
+    // Volume once (robust avg daily sales) for peer-tier matching.
+    const volMap = {};
+    for (const l of allLocs) volMap[l] = robustBaseline(valuesForLoc('sales', l, histMs)).value || 0;
+    const out = {};
+    for (const m of METRICS) {
+      // Precompute each store's history + robust baseline ONCE per metric so the
+      // peer loop is O(stores), not O(stores²) of re-scanning ds arrays.
+      const histByLoc = {}, baseByLoc = {};
+      for (const l of allLocs) { histByLoc[l] = valuesForLoc(m.id, l, histMs); baseByLoc[l] = robustBaseline(histByLoc[l]).value; }
+      const peersFor = (loc) => {
+        const mkt = _mktOf(loc), me = volMap[loc] || 0, arr = [];
+        for (const l of allLocs) {
+          if (l === loc || _mktOf(l) !== mkt || baseByLoc[l] == null) continue;
+          if (me > 0 && volMap[l] > 0 && Math.abs(volMap[l] - me) / me > 0.40) continue;
+          arr.push(baseByLoc[l]);
+        }
+        return arr;
+      };
+      const targetFor = (loc) => {
+        const base = baseByLoc[loc];
+        if (base == null) return { smart: null, excluded: 0, n: 0, confidence: 'none' };
+        // reuse the precomputed series via the model (series drives excluded/n/confidence)
+        return computeSmartTarget(histByLoc[loc], peersFor(loc), { lowerBetter: m.lowerBetter, frac });
+      };
+      if (selLoc === 'all') {
+        const smarts = []; let excl = 0, nSum = 0;
+        for (const l of scopeLocs) { const r = targetFor(l); if (r.smart != null) { smarts.push(r.smart); excl += r.excluded; nSum += r.n; } }
+        const pairs = fobDollarPairs(m.id, scopeLocs, l4wMs);
+        const current = pairs ? dollarWeightedRatio(pairs)
+          : _median(scopeLocs.map(l => robustBaseline(valuesForLoc(m.id, l, l4wMs)).value).filter(v => v != null));
+        out[m.id] = { smart: _median(smarts), current, excluded: excl, confidence: nSum >= 40 ? 'high' : nSum >= 15 ? 'medium' : 'low' };
+      } else {
+        const r = targetFor(selLoc);
+        const current = robustBaseline(valuesForLoc(m.id, selLoc, l4wMs)).value;
+        out[m.id] = { smart: r.smart, current, excluded: r.excluded, confidence: r.confidence };
+      }
+    }
+    return out;
+  }, [ds, selLoc]);
 
   const fmtVal = (v,m)=>{
     if(v==null) return '—';
@@ -2564,7 +2678,7 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
             span({style:{color:'#60a5fa'}},'📋 Official'),
             span({style:{marginLeft:8,color:'#34d399'}},'💡 Smart'),
-            span({style:{color:'var(--text3)',marginLeft:8}},' · Official = 2026 yearly targets file · Smart = best-quartile from your historical data'))
+            span({style:{color:'var(--text3)',marginLeft:8}},' · Official = 2026 yearly targets file · Smart = model: robust baseline → realistic step toward your district best-quartile (FL/OK separate, anomalies excluded)'))
         ),
         // Store selector
         h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
@@ -2606,9 +2720,9 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
           )),
           h('tbody',null,...visMetrics.map((m,i)=>{
             const offVal  = m.offKey ? officialT[m.offKey] : null;
-            const smKey   = smartKeyMap[m.id];
-            const smVal   = smKey ? smartT[smKey] : null;
-            const cur     = m.dataFn(locRows.cR, locRows.lR, locRows.oR);
+            const cm      = computed[m.id] || {};
+            const smVal   = cm.smart != null ? cm.smart : null;
+            const cur     = cm.current != null ? cm.current : null;
             const sCol    = statusCol(cur,offVal,m);
             const sIcon   = statusIcon(cur,offVal,m);
             const gap     = cur!=null&&offVal!=null ? (m.lowerBetter?(cur-offVal):-(cur-offVal)) : null;
@@ -2626,9 +2740,13 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
                   : span({style:{color:'var(--text3)',fontSize:'8px'}},'— not in file')),
               td({style:{padding:'5px 8px',textAlign:'right'}},
                 smVal!=null
-                  ? div({style:{display:'inline-flex',alignItems:'center',gap:3}},
+                  ? div({title:(cm.excluded?cm.excluded+' anomalous day(s) set aside · ':'')+(cm.confidence||'')+' confidence',
+                      style:{display:'inline-flex',alignItems:'center',gap:3}},
                       span({style:{fontFamily:'var(--mono)',color:'#34d399'}},fmtVal(smVal,m)),
-                      span({style:{fontSize:'7px',color:'#34d399',opacity:.7}},'💡'))
+                      span({style:{fontSize:'7px',color:'#34d399',opacity:.7}},'💡'),
+                      cm.confidence&&span({style:{fontSize:'6.5px',fontWeight:700,marginLeft:1,
+                        color:cm.confidence==='high'?'#34d399':cm.confidence==='medium'?'#f59e0b':'#94a3b8'}},
+                        cm.confidence[0].toUpperCase()))
                   : span({style:{color:'var(--text3)',fontSize:'8px'}},'— no data')),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
                 cur!=null ? fmtVal(cur,m) : span({style:{color:'var(--text3)',fontSize:'8px'}},'— no data')),
@@ -2645,8 +2763,8 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
       // ── Footer note ──────────────────────────────────────────────────
       div({style:{padding:'6px 16px',borderTop:'.5px solid var(--bdr)',flexShrink:0,fontSize:'8px',color:'var(--text3)',background:'var(--surf2)'}},
         '📋 Official targets loaded from: 2026 Restaurant Targets — Updated — OK — FL.xlsx  · ',
-        '💡 Smart targets computed from best 25th percentile of your loaded historical data  · ',
-        'Upload an Operations Report to populate Current column')
+        '💡 Smart = robust baseline (median, anomalies excluded) stepped 25% toward your district (FL/OK) best-quartile of similar-volume stores · dollar-weighted where $ known · hover for confidence + anomalies set aside  · ',
+        'Current = last-4-week robust average (cloud-first). Suffix H/M/L = confidence.')
     )
   );
 }

@@ -172,6 +172,8 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` (still not confirmed done). The 3 new email-report tables have been created in Supabase.
 
+**⭐ North-star & roadmap (2026-07-21):** see `memory/vision-and-roadmap.md` — accuracy-integrity system (P0), Smart Targets Model v2 for all metrics (P1), Projections current-month actuals + DT weekly-trend (P1), UX coherence pass + panel scorecard (P2), Graded-Visit Predictor for CFV/RGR/Ecosure + novel composite indices (P3), multi-user then multi-tenant deployment (P4). Standing rules: correct math, never average averages, dollar-weight aggregates, self-audit every report.
+
 **Next candidate areas:**
 - Phase-2 bugs: Projections weekly-view crash on location expand; Signals won't close on mobile; Market Intelligence weather stopped showing.
 - FR: TPPH auto-target calc; Projections vs Actuals. "As of [date]" labels on tiles.
@@ -214,6 +216,7 @@ Full index in `memory/MEMORY.md`. Key files:
 
 | File | What's in it |
 |---|---|
+| `memory/vision-and-roadmap.md` | ⭐ North-star vision, Smart Targets Model v2 design, accuracy-integrity system, UX-coherence scope, deployment paths, prioritized roadmap |
 | `memory/lifelenz-session.md` | LifeLenz API runbook, dead ends, token refresh steps |
 | `memory/project-backlog.md` | Feature backlog from field notes |
 | `memory/project-supabase-priority.md` | Supabase migration status — what's in, what's not |
