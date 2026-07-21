@@ -48,21 +48,30 @@ export function GradedVisitsPanel({ ds, onClose }) {
     for (const f of htmls) {
       try {
         const v = parseGradedVisit(await f.text(), { passThreshold: PASS });
-        if (v.store && v.dateISO) parsed.push(v);
+        if (v.store && v.dateISO) { v._file = f.name; parsed.push(v); }
         else skipped.push(f.name + (v.store ? ' — no date found' : ' — unrecognized format (no store id)'));
       } catch (e) { skipped.push(f.name + ' — parse error'); }
     }
+    // Key collisions = the parser read the same store+date for different files.
+    const keys = parsed.map(v => String(v.store) + '|' + v.dateISO + '|' + (v.reportType || 'CFV'));
+    const uniqueKeys = new Set(keys).size;
+    const collisions = {};
+    keys.forEach((k, i) => { (collisions[k] = collisions[k] || []).push(parsed[i]); });
+    const collided = Object.entries(collisions).filter(([, arr]) => arr.length > 1)
+      .map(([k, arr]) => `${arr.length}× same key ${k}  → e.g. ${arr[0]._file || ''} / ${arr[1]._file || ''}`);
+    console.log('[graded-visits] received', htmls.length, '· parsed', parsed.length, '· unique keys', uniqueKeys, '· skipped', skipped.length, keys);
+    if (fileRef.current) fileRef.current.value = ''; // allow re-selecting the same files
     const res = parsed.length ? await saveGradedVisits(parsed) : { saved: 0, errors: [] };
-    const dups = parsed.length - res.saved;
     setBusy(false);
-    setSkipList(skipped);
+    setSkipList(skipped.concat(collided.length ? ['— key collisions (parser read same store+date for different files):', ...collided] : []));
     if (res.errors.length) { setMsg({ t: 'err', x: 'Save error: ' + res.errors[0] }); return; }
     if (!res.saved && !skipped.length) { setMsg({ t: 'err', x: 'Nothing imported.' }); return; }
-    const bits = [`Imported ${res.saved}`];
-    if (dups > 0) bits.push(`${dups} duplicate${dups > 1 ? 's' : ''} merged`);
+    const dupN = parsed.length - uniqueKeys;
+    const bits = [`Received ${htmls.length}`, `parsed ${parsed.length}`, `saved ${res.saved}`];
+    if (dupN > 0) bits.push(`${dupN} collapsed on duplicate store+date`);
     if (skipped.length) bits.push(`${skipped.length} skipped`);
-    if (notHtml) bits.push(`${notHtml} non-HTML ignored`);
-    setMsg({ t: skipped.length ? 'warn' : 'ok', x: bits.join(' · ') });
+    if (notHtml) bits.push(`${notHtml} non-HTML`);
+    setMsg({ t: (skipped.length || dupN > 0) ? 'warn' : 'ok', x: bits.join(' · ') });
     if (res.saved) refresh();
   };
 
