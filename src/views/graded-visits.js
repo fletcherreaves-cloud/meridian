@@ -32,25 +32,38 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [skipList, setSkipList] = useState([]);
   const fileRef = useRef(null);
 
   const refresh = () => { setLoading(true); loadGradedVisits().then(v => { setVisits(v); setLoading(false); }).catch(() => setLoading(false)); };
   useEffect(() => { refresh(); }, []);
 
   const onFiles = async (fileList) => {
-    const files = Array.from(fileList || []).filter(f => /\.html?$/i.test(f.name));
-    if (!files.length) { setMsg({ t: 'err', x: 'Drop .html visit reports.' }); return; }
-    setBusy(true); setMsg(null);
-    const parsed = [];
-    for (const f of files) {
-      try { const v = parseGradedVisit(await f.text(), { passThreshold: PASS }); if (v.store && v.dateISO) parsed.push(v); }
-      catch (e) { /* skip unreadable */ }
+    const all = Array.from(fileList || []);
+    const htmls = all.filter(f => /\.html?$/i.test(f.name));
+    const notHtml = all.length - htmls.length;
+    if (!htmls.length) { setMsg({ t: 'err', x: `No .html files (got ${all.length}). Export the visit as HTML, not PDF.` }); return; }
+    setBusy(true); setMsg(null); setSkipList([]);
+    const parsed = [], skipped = [];
+    for (const f of htmls) {
+      try {
+        const v = parseGradedVisit(await f.text(), { passThreshold: PASS });
+        if (v.store && v.dateISO) parsed.push(v);
+        else skipped.push(f.name + (v.store ? ' — no date found' : ' — unrecognized format (no store id)'));
+      } catch (e) { skipped.push(f.name + ' — parse error'); }
     }
-    if (!parsed.length) { setBusy(false); setMsg({ t: 'err', x: 'No valid CFV reports found in those files.' }); return; }
-    const res = await saveGradedVisits(parsed);
+    const res = parsed.length ? await saveGradedVisits(parsed) : { saved: 0, errors: [] };
+    const dups = parsed.length - res.saved;
     setBusy(false);
-    if (res.errors.length) setMsg({ t: 'err', x: 'Save error: ' + res.errors[0] });
-    else { setMsg({ t: 'ok', x: `Imported ${res.saved} visit${res.saved > 1 ? 's' : ''}.` }); refresh(); }
+    setSkipList(skipped);
+    if (res.errors.length) { setMsg({ t: 'err', x: 'Save error: ' + res.errors[0] }); return; }
+    if (!res.saved && !skipped.length) { setMsg({ t: 'err', x: 'Nothing imported.' }); return; }
+    const bits = [`Imported ${res.saved}`];
+    if (dups > 0) bits.push(`${dups} duplicate${dups > 1 ? 's' : ''} merged`);
+    if (skipped.length) bits.push(`${skipped.length} skipped`);
+    if (notHtml) bits.push(`${notHtml} non-HTML ignored`);
+    setMsg({ t: skipped.length ? 'warn' : 'ok', x: bits.join(' · ') });
+    if (res.saved) refresh();
   };
 
   const filtered = useMemo(() => visits.filter(v =>
@@ -102,8 +115,14 @@ export function GradedVisitsPanel({ ds, onClose }) {
             style: { padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(245,158,11,.4)', background: 'rgba(245,158,11,.1)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: busy ? 'default' : 'pointer' } },
             busy ? 'Importing…' : '＋ Upload visit reports (.html)'),
           h('input', { ref: fileRef, type: 'file', accept: '.html,.htm', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
-          span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'Comprehensive Visit Report exports. Re-importing a store+date overwrites it.'),
-          msg && span({ style: { fontSize: 11, fontWeight: 600, marginLeft: 'auto', color: msg.t === 'ok' ? '#10b981' : '#ef4444' } }, msg.x)),
+          span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'CFV & RGR HTML exports. Re-importing a store+date overwrites it.'),
+          msg && span({ style: { fontSize: 11, fontWeight: 600, marginLeft: 'auto', color: msg.t === 'ok' ? '#10b981' : msg.t === 'warn' ? '#f59e0b' : '#ef4444' } }, msg.x)),
+
+        // Skipped files — so you can see exactly which didn't import and why.
+        skipList.length > 0 && div({ style: { padding: '8px 12px', background: 'rgba(239,68,68,.05)', border: '.5px solid rgba(239,68,68,.2)', borderRadius: 8, fontSize: 10, color: 'var(--text2)' } },
+          div({ style: { fontWeight: 700, color: '#f59e0b', marginBottom: 4 } }, `Skipped ${skipList.length} file${skipList.length > 1 ? 's' : ''} (send me one and I'll add its format):`),
+          div({ style: { display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 120, overflowY: 'auto', fontFamily: 'var(--mono)', fontSize: 9 } },
+            skipList.map((s, i) => div({ key: i, style: { color: 'var(--text3)' } }, '• ' + s)))),
 
         loading ? div({ style: { textAlign: 'center', padding: '40px', color: 'var(--text3)', fontSize: 12 } }, 'Loading visits…')
           : visits.length === 0 ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12, border: '1px dashed var(--bdr)', borderRadius: 8 } },

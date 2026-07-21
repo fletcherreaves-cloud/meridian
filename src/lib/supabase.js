@@ -1412,7 +1412,12 @@ export async function loadUserSetting(key) {
 // ── Graded Visits (CFV / RGR / Ecosure) ──────────────────────────────────────
 export async function saveGradedVisits(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };
-  const upsert = rows.filter(r => r.store && r.dateISO).map(r => ({
+  // Dedupe by the conflict key (last wins) — a single upsert batch cannot touch
+  // the same (loc, visit_date, report_type) row twice or Postgres rejects it all.
+  const byKey = new Map();
+  for (const r of rows) { if (r.store && r.dateISO) byKey.set(String(r.store) + '|' + r.dateISO + '|' + (r.reportType || 'CFV'), r); }
+  const deduped = [...byKey.values()];
+  const upsert = deduped.map(r => ({
     report_type: r.reportType || 'CFV',
     loc:         String(r.store),
     visit_date:  r.dateISO,
