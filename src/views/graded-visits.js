@@ -114,10 +114,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const stats = useMemo(() => {
     const scored = filtered.filter(v => v.score != null);
     const passes = scored.filter(v => v.score >= PASS).length;
-    const app = filtered.filter(v => v.mobileApp === true).length;
-    const trad = filtered.filter(v => v.mobileApp === false).length;
     const avg = scored.length ? scored.reduce((a, v) => a + v.score, 0) / scored.length : null;
-    return { n: filtered.length, passes, passRate: scored.length ? passes / scored.length * 100 : null, app, trad, avg };
+    return { n: filtered.length, passes, passRate: scored.length ? passes / scored.length * 100 : null, avg };
   }, [filtered]);
   const storesWithData = useMemo(() => [...new Set(visits.map(v => String(v.store)))].sort(), [visits]);
   const scopeLabel = selLoc === 'all' ? 'All Stores' : selLoc === 'fl' ? 'Florida' : selLoc === 'ok' ? 'Oklahoma'
@@ -125,12 +123,12 @@ export function GradedVisitsPanel({ ds, onClose }) {
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   const exportCSV = () => {
-    const cols = ['Type', 'Store', 'NSN', 'Date', 'Daypart', 'Channel', 'Order', 'Score', 'Result', 'Status', 'Modules'];
+    const cols = ['Type', 'Store', 'NSN', 'Date', 'Daypart', 'Channel', 'Score', 'Result', 'Status', 'Modules'];
     const lines = [cols.map(csvCell).join(',')];
     for (const v of filtered) {
       const mods = Object.entries(v.modules || {}).map(([k, m]) => `${k} ${fmtPct(m.pct)}`).join('; ');
       lines.push([v.reportType || 'CFV', sNameC(String(v.store)), v.store, v.dateISO || '', v.daypart || '',
-        v.channel || '', v.mobileApp == null ? '' : (v.mobileApp ? 'App' : 'Traditional'),
+        v.channel || '',
         v.score == null ? '' : v.score, v.pass == null ? '' : (v.pass ? 'Pass' : 'Fail'), v.status || '', mods].map(csvCell).join(','));
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
@@ -143,9 +141,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const rows = filtered.map(v => {
       const mods = Object.entries(v.modules || {}).map(([k, m]) => `${esc(k)} ${fmtPct(m.pct)}`).join(' · ');
-      const order = v.mobileApp == null ? '—' : (v.mobileApp ? 'App' : 'Traditional');
       const res = v.pass == null ? '—' : (v.pass ? 'PASS' : 'FAIL');
-      return `<tr><td>${esc(v.reportType || 'CFV')}</td><td>${esc(sNameC(String(v.store)))}</td><td>${esc(niceDate(v.dateISO))}</td><td>${esc(v.channel || v.status || '')}</td><td>${order}</td><td class="n">${v.score == null ? '—' : fmtPct(v.score)}</td><td class="${v.pass ? 'pass' : 'fail'}">${res}</td><td class="mods">${mods}</td></tr>`;
+      return `<tr><td>${esc(v.reportType || 'CFV')}</td><td>${esc(sNameC(String(v.store)))}</td><td>${esc(niceDate(v.dateISO))}</td><td>${esc(v.channel || v.status || '')}</td><td class="n">${v.score == null ? '—' : fmtPct(v.score)}</td><td class="${v.pass ? 'pass' : 'fail'}">${res}</td><td class="mods">${mods}</td></tr>`;
     }).join('');
     const scored = filtered.filter(v => v.score != null);
     const passN = scored.filter(v => v.score >= PASS).length;
@@ -166,7 +163,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
         <div class="kpi"><b>${scored.length ? Math.round(passN / scored.length * 100) : '—'}%</b><span>Pass Rate</span></div>
         <div class="kpi"><b>${scored.length ? fmtPct(scored.reduce((a, v) => a + v.score, 0) / scored.length) : '—'}</b><span>Avg Score</span></div>
       </div>
-      <table><thead><tr><th>Type</th><th>Store</th><th>Date</th><th>Channel / Status</th><th>Order</th><th style="text-align:right">Score</th><th>Result</th><th>Modules</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Type</th><th>Store</th><th>Date</th><th>Channel / Status</th><th style="text-align:right">Score</th><th>Result</th><th>Modules</th></tr></thead><tbody>${rows}</tbody></table>
       </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { setMsg({ t: 'err', x: 'Pop-up blocked — allow pop-ups to print.' }); return; }
@@ -286,7 +283,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
         span({ style: { fontSize: 18 } }, '📋'),
         div({ style: { flex: 1 } },
           div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Graded Visits'),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'CFV (channel · app) & RGR (whole-restaurant, component-scored) · pass ≥ ' + PASS + '% · Ecosure slots in once uploaded')),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'CFV (single-channel) & RGR (whole-restaurant, component-scored) · pass ≥ ' + PASS + '% · Ecosure slots in once uploaded')),
         types.length > 1 && h('select', { value: typeFilter, onChange: e => setTypeFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
           h('option', { value: 'all' }, 'All Types'),
           types.map(t => h('option', { key: t, value: t }, t))),
@@ -341,8 +338,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
               div({ key: 'cards', style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
                 card('Visits', String(stats.n)),
                 card('Pass Rate', stats.passRate != null ? Math.round(stats.passRate) + '%' : '—', scoreColor(stats.passRate)),
-                card('Avg Score', stats.avg != null ? fmtPct(stats.avg) : '—', scoreColor(stats.avg)),
-                card('App / Traditional', stats.app + ' / ' + stats.trad)),
+                card('Avg Score', stats.avg != null ? fmtPct(stats.avg) : '—', scoreColor(stats.avg))),
 
               // Visits table
               div({ key: 'tbl', style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
@@ -364,9 +360,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
                       ? span({ title: compTip },
                           v.status ? span({ style: { fontWeight: 600, color: 'var(--text2)' } }, v.status) : null,
                           span({ style: { marginLeft: v.status ? 6 : 0, color: belowN ? '#f59e0b' : 'var(--text3)' } }, belowN + ' comp <80'))
-                      : span(null,
-                          span({ style: { color: 'var(--text2)' } }, v.channel || '—'),
-                          v.mobileApp != null ? span({ style: { marginLeft: 6, color: v.mobileApp ? '#60a5fa' : 'var(--text3)', fontWeight: v.mobileApp ? 700 : 400 } }, v.mobileApp ? '📱 App' : 'Traditional') : null);
+                      : span({ style: { color: 'var(--text2)' } }, v.channel || '—');
                     return h(React.Fragment, { key: v.id || i },
                       h('tr', { onClick: () => toggleContext(v), title: 'Show operational context at time of visit', style: { cursor: 'pointer', background: isOpen ? 'rgba(245,188,0,.06)' : 'transparent' } },
                         h('td', { style: { ...tdS, textAlign: 'left' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: (isRGR ? '#a78bfa' : '#60a5fa') + '22', color: isRGR ? '#a78bfa' : '#60a5fa' } }, v.reportType || 'CFV')),
@@ -382,6 +376,6 @@ export function GradedVisitsPanel({ ds, onClose }) {
 
       // Footer
       div({ style: { padding: '6px 16px', borderTop: '.5px solid var(--bdr)', flexShrink: 0, fontSize: 8, color: 'var(--text3)', background: 'var(--surf2)' } },
-        'Channel = primary scored module (Drive Thru / Curbside / Front Counter / Delivery). App = Curbside (mobile by nature) or the DT “using your McDonald’s App” question. Foundation for the Graded-Visit Predictor.')
+        'Channel = order method (Drive Thru / Curbside / Delivery / In-Store) = the primary scored module. Foundation for the Graded-Visit Predictor.')
     ));
 }

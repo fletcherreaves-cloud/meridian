@@ -46,15 +46,17 @@ describe('graded-visits parser', () => {
     expect(parseGradedVisit(fixture({ score: '76.1%' }), { passThreshold: 70 }).pass).toBe(true);
   });
 
-  it('reads the DT app question → mobile vs traditional', () => {
-    expect(parseGradedVisit(fixture({ appQ: 'Yes' })).mobileApp).toBe(true);
-    expect(parseGradedVisit(fixture({ appQ: 'No' })).mobileApp).toBe(false);
+  it('does not infer app-vs-traditional — channel is the order method (mobileApp always null)', () => {
+    // The DT "did the order taker ask about the app" answer only records whether
+    // the employee asked, not whether the shopper used the app, so we never map it.
+    expect(parseGradedVisit(fixture({ appQ: 'Yes' })).mobileApp).toBeNull();
+    expect(parseGradedVisit(fixture({ appQ: 'No' })).mobileApp).toBeNull();
   });
 
-  it('treats a Curbside module as a mobile-app transaction regardless of the app Q', () => {
+  it('surfaces the Curbside module as the channel without an app flag', () => {
     const v = parseGradedVisit(fixture({ primary: 'Curbside', primaryPct: '61.5', primaryAch: '32', primaryPos: '52' }));
     expect(v.channel).toBe('Curbside');
-    expect(v.mobileApp).toBe(true);
+    expect(v.mobileApp).toBeNull();
   });
 
   it('picks the primary channel as the non-Counter module', () => {

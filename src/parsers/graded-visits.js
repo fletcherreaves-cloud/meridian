@@ -6,10 +6,11 @@
 // dispatch on the report title.
 //
 // Omnichannel model (owner's definition): the visit's channel = its primary
-// scored module — Drive Thru, Curbside (=Mobile/MOP), Front Counter, or Delivery
-// — always paired with "Behind the Counter". App vs traditional:
-//   • Curbside/Mobile module     → mobile-app transaction by nature
-//   • Drive Thru + DT app Q "Yes" → app used at DT; "No" → traditional
+// scored module — Drive Thru, Curbside (=Mobile/MOP), Front Counter/In-Store, or
+// Delivery — always paired with "Behind the Counter". The channel IS the order
+// method; we do not infer app-vs-traditional (the DT "did the order taker ask
+// about the app" question only records whether the employee asked, not whether
+// the shopper actually used the app, so it's not a reliable usage signal).
 
 // HTML → clean, ordered list of visible text lines.
 export function htmlToLines(htmlText) {
@@ -58,20 +59,6 @@ function parseModules(L) {
   return out;
 }
 
-// Did the shopper use the McDonald's app? Look for the app question and its Yes/No.
-function appUsed(L) {
-  for (let i = 0; i < L.length; i++) {
-    const l = L[i].toLowerCase();
-    if (l.includes('mcdonald') && l.includes('app')) {
-      for (let j = i + 1; j < Math.min(i + 6, L.length); j++) {
-        if (L[j] === 'Yes') return true;
-        if (L[j] === 'No') return false;
-      }
-    }
-  }
-  return null; // question not present (e.g. a Curbside-only module)
-}
-
 // Channel / order method = the FIRST module listed under the Score Calculator,
 // verbatim (e.g. "Drive Thru", "Curbside", "Front Counter", "Delivery"). This is
 // the report's own order-method label — we don't remap it, so any variant shows
@@ -105,10 +92,11 @@ function parseCFV(L, passThreshold) {
   const score = scoreRaw != null ? parseFloat(String(scoreRaw).replace('%', '')) : null;
   const modules = parseModules(L);
   const channel = channelOf(modules);
-  const app = appUsed(L);
-  // Curbside / Mobile order methods are app transactions by nature; otherwise use
-  // the DT "using your McDonald's App" question.
-  const mobileApp = /curbside|mobile/i.test(channel || '') ? true : app;
+  // Order method = the channel itself (Drive Thru / Curbside / Delivery / In-Store).
+  // We do NOT infer app-vs-traditional: the DT "did the order taker ask about the
+  // app" question only records whether the employee asked, not whether the shopper
+  // used the app, so it's not a reliable usage signal.
+  const mobileApp = null;
   return {
     reportType: 'CFV',
     title: L.find(l => /customer first visit/i.test(l)) || '',
@@ -118,7 +106,7 @@ function parseCFV(L, passThreshold) {
     pass: score != null ? score >= passThreshold : null,
     status: null,
     channel,
-    mobileApp,                 // true = app/mobile order, false = traditional, null = unknown
+    mobileApp,                 // always null — channel is the order method; app usage isn't reliably reported
     modules,                   // { 'Drive Thru': {pct,ach,pos}, 'Behind the Counter': {...} }
   };
 }
