@@ -38,6 +38,7 @@ import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
+import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger } from '../lib/supabase.js';
@@ -662,6 +663,7 @@ function App() {
   const [showFcstRef,         setShowFcstRef]         = useState(false);
   const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
   const [showDtSoS,       setShowDtSoS]       = useState(false);
+  const [showGradedVisits, setShowGradedVisits] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
   const [isDragging, setIsDragging]    = useState(false);
@@ -1700,7 +1702,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -1713,7 +1715,7 @@ function App() {
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);setShowDICompare(false);
       setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
-      setShowFOB(false);setShowFcstAccuracy(false);setShowDtSoS(false);setShowGMBrief(false);setShowHelp(false);
+      setShowFOB(false);setShowFcstAccuracy(false);setShowDtSoS(false);setShowGradedVisits(false);setShowGMBrief(false);setShowHelp(false);
       setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
@@ -1791,6 +1793,7 @@ function App() {
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
         if(modal==='dt-sos')         perm('analytics.store')&&setShowDtSoS(true);
+        if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
         if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&setShowLifeLenzBridge(true);
@@ -1979,6 +1982,7 @@ function App() {
     ),
     showFcstAccuracy&&h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>setShowFcstAccuracy(false)}),
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
+    showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
     showAttention&&h(AttentionPanel,{stores,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},

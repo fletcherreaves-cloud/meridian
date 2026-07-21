@@ -21,6 +21,18 @@ export function htmlToLines(htmlText) {
   return t.split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 
+const _MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+// "28-Jan-2026" / "07-July-2026" → "2026-01-28" (reports mix abbreviated + full
+// month names). Returns null if unparseable.
+export function parseVisitDate(s) {
+  if (!s) return null;
+  const m = String(s).trim().match(/^(\d{1,2})[-\/\s]+([A-Za-z]+)[-\/\s]+(\d{4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10), mon = _MONTHS[m[2].slice(0, 3).toLowerCase()], yr = parseInt(m[3], 10);
+  if (!mon) return null;
+  return `${yr}-${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 const _after = (L, label, n = 1) => {
   const want = label.toLowerCase();
   for (let i = 0; i < L.length; i++) {
@@ -94,6 +106,7 @@ export function parseGradedVisit(htmlText, { passThreshold = 80 } = {}) {
     store: _after(L, 'Restaurant number'),
     name: (() => { const i = L.indexOf('Visit detail'); return i >= 0 ? (L[i + 2] || null) : null; })(),
     date: _after(L, 'Date'),
+    dateISO: parseVisitDate(_after(L, 'Date')),
     daypart: _after(L, 'Day parts'),
     weekpart: _after(L, 'Weekpart'),
     owner: _after(L, 'Owner/Operator'),

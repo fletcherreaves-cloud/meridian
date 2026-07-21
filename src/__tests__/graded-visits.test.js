@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseGradedVisit, htmlToLines } from '../parsers/graded-visits.js';
+import { parseGradedVisit, htmlToLines, parseVisitDate } from '../parsers/graded-visits.js';
 
 // Synthetic fixture mirroring the real "Comprehensive Visit Report" structure
 // (the actual reports are private). Each field is its own element so the text
@@ -59,6 +59,13 @@ describe('graded-visits parser', () => {
 
   it('picks the primary channel as the non-Counter module', () => {
     expect(parseGradedVisit(fixture()).channel).toBe('Drive Thru');
+  });
+
+  it('parseVisitDate handles abbreviated and full month names', () => {
+    expect(parseVisitDate('28-Jan-2026')).toBe('2026-01-28');
+    expect(parseVisitDate('07-July-2026')).toBe('2026-07-07');
+    expect(parseVisitDate('06-Apr-2026')).toBe('2026-04-06');
+    expect(parseVisitDate('garbage')).toBeNull();
   });
 
   it('htmlToLines strips tags and entities', () => {

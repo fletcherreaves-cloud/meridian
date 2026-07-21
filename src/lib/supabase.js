@@ -1408,3 +1408,42 @@ export async function loadUserSetting(key) {
 //      In that case, pass the MSAL access token to Supabase via
 //        supabase.auth.setSession({ access_token: msalToken })
 //   The database schema and RLS policies do not change in either path.
+
+// ── Graded Visits (CFV / RGR / Ecosure) ──────────────────────────────────────
+export async function saveGradedVisits(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const upsert = rows.filter(r => r.store && r.dateISO).map(r => ({
+    report_type: r.reportType || 'CFV',
+    loc:         String(r.store),
+    visit_date:  r.dateISO,
+    daypart:     r.daypart  ?? null,
+    weekpart:    r.weekpart ?? null,
+    owner:       r.owner    ?? null,
+    manager:     r.manager  ?? null,
+    visit_by:    r.visitBy  ?? null,
+    score:       r.score    ?? null,
+    pass:        r.pass     ?? null,
+    channel:     r.channel  ?? null,
+    mobile_app:  r.mobileApp ?? null,
+    modules:     r.modules  ?? null,
+    raw_title:   r.title    ?? null,
+    updated_at:  new Date().toISOString(),
+  }));
+  if (!upsert.length) return { saved: 0, errors: ['no valid rows (missing store or date)'] };
+  const { error } = await supabase.from('graded_visits').upsert(upsert, { onConflict: 'loc,visit_date,report_type' });
+  if (error) { console.warn('[graded_visits] save error:', error); return { saved: 0, errors: [error.message] }; }
+  console.log(`[graded_visits] saved ${upsert.length} visits`);
+  return { saved: upsert.length, errors: [] };
+}
+
+export async function loadGradedVisits() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('graded_visits').select('*').order('visit_date', { ascending: false });
+  if (error) { console.warn('[graded_visits] load error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, reportType: r.report_type, store: r.loc, dateISO: r.visit_date, date: r.visit_date,
+    daypart: r.daypart, weekpart: r.weekpart, owner: r.owner, manager: r.manager, visitBy: r.visit_by,
+    score: r.score, pass: r.pass, channel: r.channel, mobileApp: r.mobile_app,
+    modules: r.modules || {}, title: r.raw_title,
+  }));
+}
