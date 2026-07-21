@@ -694,8 +694,9 @@ function HourlyDetail({ slots }) {
           h('th', { style: hdr }, 'Sales'),
           h('th', { style: hdr }, 'vs Mean'),
           h('th', { style: hdr }, 'DT Speed'),
-          h('th', { style: hdr }, 'Labor'),
-          h('th', { style: hdr }, 'Gap hrs'),
+          h('th', { style: hdr, title: 'Actual punched hours ÷ needed hours (staffing level, not cost)' }, 'Punch/Need'),
+          h('th', { style: hdr, title: 'Punched − needed hours (− short / + over)' }, 'Gap vs Need'),
+          h('th', { style: hdr, title: 'Punched − scheduled hours (− short vs plan / + over plan)' }, 'Gap vs Sched'),
           h('th', { style: hdr }, 'Accuracy'),
         )
       ),
@@ -706,12 +707,18 @@ function HourlyDetail({ slots }) {
           const lab  = r.total_needed_hours > 0 ? (r.actual_punched_hours / r.total_needed_hours * 100) : null;
           const acc  = (r.healthy_count + r.unhealthy_count) > 0
                          ? (r.healthy_count / (r.healthy_count + r.unhealthy_count) * 100) : null;
-          // Intraday labor gap: punched − needed hours for this block. Negative =
-          // understaffed (short crew that hour); positive = overstaffed. Colored so
-          // a short rush hour (red) stands apart from a slack overstaffed hour (amber).
-          const gap  = (r.actual_punched_hours != null && r.total_needed_hours != null && (r.total_needed_hours > 0 || r.actual_punched_hours > 0))
-                         ? (r.actual_punched_hours - r.total_needed_hours) : null;
-          const gapColor = gap == null ? muted : gap <= -1 ? red : gap < -0.25 ? amber : gap > 1.5 ? amber : grn;
+          // Intraday labor gaps for this block, in hours. Negative = short
+          // (understaffed), positive = over. Gap vs Need = punched − what the
+          // system says the volume needed; Gap vs Sched = punched − what the GM
+          // planned. Colored so a short rush hour (red) stands apart from slack
+          // overstaffing (amber).
+          const hasLabor = (r.total_needed_hours > 0 || r.actual_punched_hours > 0 || r.total_scheduled_hours > 0);
+          const gap      = hasLabor && r.actual_punched_hours != null && r.total_needed_hours != null
+                             ? (r.actual_punched_hours - r.total_needed_hours) : null;
+          const gapSched = hasLabor && r.actual_punched_hours != null && r.total_scheduled_hours != null
+                             ? (r.actual_punched_hours - r.total_scheduled_hours) : null;
+          const gapClr   = g => g == null ? muted : g <= -1 ? red : g < -0.25 ? amber : g > 1.5 ? amber : grn;
+          const gapColor = gapClr(gap);
           // hour_slot "06:00" = ends at 6am → show as "5am"
           const end = parseInt(r.hour_slot, 10);
           const start = (end - 1 + 24) % 24;
@@ -723,6 +730,7 @@ function HourlyDetail({ slots }) {
             h('td', { style: { ...cellStyle, color: speedColor(dt), fontWeight: dt != null && dt > DT_AMB ? 700 : 400 } }, dt != null ? fmtSecs(dt) : '—'),
             h('td', { style: { ...cellStyle, color: laborColor(lab), fontWeight: lab != null && lab > LABOR_AMB ? 700 : 400 } }, lab != null ? fmtPct(lab) : '—'),
             h('td', { style: { ...cellStyle, color: gapColor, fontWeight: gap != null && gap <= -1 ? 700 : 400 } }, gap != null ? `${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : '—'),
+            h('td', { style: { ...cellStyle, color: gapClr(gapSched), fontWeight: gapSched != null && gapSched <= -1 ? 700 : 400 } }, gapSched != null ? `${gapSched > 0 ? '+' : ''}${gapSched.toFixed(1)}` : '—'),
             h('td', { style: { ...cellStyle, color: accColor(acc) } }, acc != null ? fmtPct(acc) : '—'),
           );
         })
@@ -959,8 +967,8 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
     !loading && rows.length > 0 && h('div', { style: { marginTop: 14, fontSize: 10, color: muted, lineHeight: 1.7 } },
       `Pace = actual sales ÷ QSRSoft mean sales for the day. `,
       `DT speed = avg seconds from order to serve (🔴 > 4:00, 🟡 3:20–4:00, 🟢 < 3:20). `,
-      `Labor = punched hours ÷ needed hours (🔴 > 120%, 🟡 110–120%). `,
-      `Accuracy = healthy orders ÷ total (🔴 < ${ACC_RED}%, 🟡 ${ACC_RED}–${ACC_AMB}%). Click any store to see hourly breakdown.`,
+      `Labor vs Need = punched hours ÷ needed hours — a staffing level, NOT cost-based labor % (🔴 > 120%, 🟡 110–120%). `,
+      `Accuracy = healthy orders ÷ total (🔴 < ${ACC_RED}%, 🟡 ${ACC_RED}–${ACC_AMB}%). Click a store for the hourly breakdown, incl. Gap vs Need / Gap vs Sched (punched − needed / − scheduled hours, − short · + over).`,
     ),
   );
 }
