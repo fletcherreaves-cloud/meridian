@@ -72,22 +72,15 @@ function appUsed(L) {
   return null; // question not present (e.g. a Curbside-only module)
 }
 
-const CHANNEL_MODULES = {
-  'drive thru': 'Drive Thru',
-  'curbside': 'Curbside',
-  'front counter': 'Front Counter',
-  'behind the counter': 'Counter',
-  'delivery': 'Delivery',
-  'mobile': 'Mobile',
-};
-
-// Primary channel = the non-"Counter" module (DT / Curbside / Delivery / FC).
+// Channel / order method = the FIRST module listed under the Score Calculator,
+// verbatim (e.g. "Drive Thru", "Curbside", "Front Counter", "Delivery"). This is
+// the report's own order-method label — we don't remap it, so any variant shows
+// exactly. "Behind the Counter" is the always-present companion module, not the
+// order method, so it's only used as a last-resort fallback.
 function channelOf(modules) {
-  const names = Object.keys(modules).map(n => n.toLowerCase());
-  const primary = names.find(n => n !== 'behind the counter' && CHANNEL_MODULES[n]);
-  if (primary) return CHANNEL_MODULES[primary];
-  const counter = names.find(n => CHANNEL_MODULES[n]);
-  return counter ? CHANNEL_MODULES[counter] : null;
+  const keys = Object.keys(modules);
+  const primary = keys.find(k => k.toLowerCase() !== 'behind the counter');
+  return primary || keys[0] || null;
 }
 
 // Shared header fields common to both report layouts.
@@ -113,7 +106,9 @@ function parseCFV(L, passThreshold) {
   const modules = parseModules(L);
   const channel = channelOf(modules);
   const app = appUsed(L);
-  const mobileApp = channel === 'Curbside' || channel === 'Mobile' ? true : app;
+  // Curbside / Mobile order methods are app transactions by nature; otherwise use
+  // the DT "using your McDonald's App" question.
+  const mobileApp = /curbside|mobile/i.test(channel || '') ? true : app;
   return {
     reportType: 'CFV',
     title: L.find(l => /customer first visit/i.test(l)) || '',

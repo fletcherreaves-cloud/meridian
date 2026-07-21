@@ -1453,3 +1453,21 @@ export async function loadGradedVisits() {
     modules: r.modules || {}, title: r.raw_title,
   }));
 }
+
+// ── Operational context for a graded visit ───────────────────────────────────
+// The hourly DAR picture for a store on the visit date (speed by station, labor
+// vs need/sched, KVS health) plus the day's Daily Glimpse summary (OEPE/KVS/labor)
+// — the environment the restaurant was in when the visit happened. Foundation for
+// the Graded-Visit Predictor. loc is padded to 7 for qsr_daily_activity.
+export async function loadVisitDAR(loc, dateISO) {
+  if (!supabase || !loc || !dateISO) return { hours: [], glimpse: null };
+  const padded = String(parseInt(loc, 10)).padStart(7, '0');
+  const short = String(parseInt(loc, 10));
+  const [{ data: hrs }, { data: gl }] = await Promise.all([
+    supabase.from('qsr_daily_activity')
+      .select('hour_slot,product_sales,dt_untilserve,dt_trans_cnt,dt_untilstore,dt_carsheld,dt_heldtime,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
+      .eq('loc', padded).eq('dt', dateISO).order('hour_slot'),
+    supabase.from('daily_glimpse_daily').select('*').eq('loc', short).eq('date', dateISO).limit(1),
+  ]);
+  return { hours: hrs || [], glimpse: (gl && gl[0]) || null };
+}
