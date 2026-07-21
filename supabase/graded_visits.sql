@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS graded_visits (
   pass         boolean,                              -- score >= threshold (80% for CFV)
   channel      text,                                 -- Drive Thru | Curbside | Front Counter | Delivery | Counter
   mobile_app   boolean,                              -- true = app/mobile order, false = traditional, null = unknown
-  status       text,                                 -- RGR rating word (Acceptable / Outstanding / ...)
+  status          text,                              -- RGR rating word (Acceptable / Outstanding / ...)
+  completion_time text,                              -- visit completion time as shown, e.g. "09:30 AM"
   modules      jsonb,                                -- { "Drive Thru": {pct,ach,pos}, "Behind the Counter": {...} }
   raw_title    text,
   created_at   timestamptz NOT NULL DEFAULT now(),
@@ -24,6 +25,10 @@ CREATE TABLE IF NOT EXISTS graded_visits (
   UNIQUE (loc, visit_date, report_type)              -- upsert key (re-drop overwrites)
 );
 CREATE INDEX IF NOT EXISTS graded_visits_loc_date_idx ON graded_visits (loc, visit_date);
+
+-- Patch already-deployed tables (CREATE TABLE IF NOT EXISTS won't add columns to
+-- an existing table). Safe to re-run.
+ALTER TABLE graded_visits ADD COLUMN IF NOT EXISTS completion_time text;
 
 -- RLS — mirror the proven client-writable pattern (see reviews table in
 -- schema.sql): any authenticated user can read/write. WITH CHECK gates INSERT and

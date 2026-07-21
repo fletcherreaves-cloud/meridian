@@ -1426,13 +1426,14 @@ export async function saveGradedVisits(rows) {
     owner:       r.owner    ?? null,
     manager:     r.manager  ?? null,
     visit_by:    r.visitBy  ?? null,
-    score:       r.score    ?? null,
-    pass:        r.pass     ?? null,
-    channel:     r.channel  ?? null,
-    mobile_app:  r.mobileApp ?? null,
-    status:      r.status   ?? null,
-    modules:     r.modules  ?? null,
-    raw_title:   r.title    ?? null,
+    score:           r.score    ?? null,
+    pass:            r.pass     ?? null,
+    channel:         r.channel  ?? null,
+    mobile_app:      r.mobileApp ?? null,
+    status:          r.status   ?? null,
+    completion_time: r.completionTime ?? null,
+    modules:         r.modules  ?? null,
+    raw_title:       r.title    ?? null,
     updated_at:  new Date().toISOString(),
   }));
   if (!upsert.length) return { saved: 0, errors: ['no valid rows (missing store or date)'] };
@@ -1450,6 +1451,7 @@ export async function loadGradedVisits() {
     id: r.id, reportType: r.report_type, store: r.loc, dateISO: r.visit_date, date: r.visit_date,
     daypart: r.daypart, weekpart: r.weekpart, owner: r.owner, manager: r.manager, visitBy: r.visit_by,
     score: r.score, pass: r.pass, channel: r.channel, mobileApp: r.mobile_app, status: r.status,
+    completionTime: r.completion_time,
     modules: r.modules || {}, title: r.raw_title,
   }));
 }
