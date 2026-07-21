@@ -252,14 +252,14 @@ export function GradedVisitsPanel({ ds, onClose }) {
         div({ style: { fontSize: 8.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 } }, 'Hourly (DAR)'),
         h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 660 } },
           h('thead', null, h('tr', null,
-            ...['Hour', 'Sales', 'DT', 'Front Ctr', 'Kitchen', 'Bev', 'Punch', 'Need', 'Sched', 'vs Need', 'KVS OK'].map((l, i) => h('th', { key: i, style: { ...th2, textAlign: i === 0 ? 'left' : 'right' } }, l)))),
+            ...['Hour', 'Sales', 'DT', 'Front Ctr', 'Kitchen', 'Bev', 'Pull Fwd', 'Punch', 'Need', 'Sched', 'vs Need'].map((l, i) => h('th', { key: i, style: { ...th2, textAlign: i === 0 ? 'left' : 'right' } }, l)))),
           h('tbody', null, ...hrs.map((x, i) => {
             const dt = secOf(x.dt_untilserve, x.dt_trans_cnt), fc = secOf(x.fc_untilserve, x.fc_trans_cnt);
             const kit = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0));
             const bev = secOf(x.bev_untilserve, x.bev_trans_cnt);
+            const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
             const punch = x.actual_punched_hours, need = x.total_needed_hours, sched = x.total_scheduled_hours;
             const gap = (punch != null && need != null) ? punch - need : null;
-            const kvs = (x.healthy_count + x.unhealthy_count) > 0 ? x.healthy_count / (x.healthy_count + x.unhealthy_count) * 100 : null;
             const visitHr = cutoff && parseInt(x.hour_slot, 10) === cutoff;
             return h('tr', { key: i, style: { borderBottom: '.5px solid rgba(255,255,255,.03)', background: visitHr ? 'rgba(245,188,0,.12)' : 'transparent' } },
               h('td', { style: { ...td2, textAlign: 'left', color: 'var(--text2)' } }, hourLabel(x.hour_slot) + (visitHr ? ' ◂ visit' : '')),
@@ -268,13 +268,13 @@ export function GradedVisitsPanel({ ds, onClose }) {
               h('td', { style: td2 }, fmtSec(fc)),
               h('td', { style: td2 }, fmtSec(kit)),
               h('td', { style: td2 }, fmtSec(bev)),
+              h('td', { style: { ...td2, color: pullFwd == null ? 'var(--text3)' : pullFwd > 10 ? '#f59e0b' : 'var(--text)' } }, pullFwd == null ? '—' : pullFwd.toFixed(1) + '%'),
               h('td', { style: td2 }, punch != null ? punch.toFixed(1) : '—'),
               h('td', { style: td2 }, need != null ? need.toFixed(1) : '—'),
               h('td', { style: td2 }, sched != null ? sched.toFixed(1) : '—'),
-              h('td', { style: { ...td2, fontWeight: gap != null && gap <= -1 ? 700 : 400, color: gap == null ? 'var(--text3)' : gap <= -1 ? '#ef4444' : gap > 1.5 ? '#f59e0b' : '#10b981' } }, gap == null ? '—' : (gap > 0 ? '+' : '') + gap.toFixed(1)),
-              h('td', { style: { ...td2, color: kvs == null ? 'var(--text3)' : kvs >= 90 ? '#10b981' : '#f59e0b' } }, kvs == null ? '—' : Math.round(kvs) + '%'));
+              h('td', { style: { ...td2, fontWeight: gap != null && gap <= -1 ? 700 : 400, color: gap == null ? 'var(--text3)' : gap <= -1 ? '#ef4444' : gap > 1.5 ? '#f59e0b' : '#10b981' } }, gap == null ? '—' : (gap > 0 ? '+' : '') + gap.toFixed(1)));
           })))),
-      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6 } }, 'Daily = best available of Glimpse / DAR summary / Ops / Controls / Labor. Hourly = qsr_daily_activity (DT/FC/Kitchen/Bev serve, punched vs needed vs scheduled, KVS). Dayparts = 3 Peaks.'));
+      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6 } }, 'Daily = best available of Glimpse / DAR summary / Ops / Controls / Labor. Hourly = qsr_daily_activity (DT/FC/Kitchen/Bev serve, Pull-Forward %, punched vs needed vs scheduled). R2P / KVS-per-GC hourly pending their DAR field names; KVS-Healthy / Win times shown in Daily. Dayparts = 3 Peaks.'));
   };
 
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
