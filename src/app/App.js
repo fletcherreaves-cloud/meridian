@@ -784,7 +784,7 @@ function App() {
     darFetchRef.current = { date: dt, ts: Date.now() }; // claim slot to prevent parallel fetches
     const { data } = await supabase
       .from('qsr_daily_activity')
-      .select('loc,dt,hour_slot,product_sales,mean_sales,proj_sales_dollars,ly_product_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count')
+      .select('loc,dt,hour_slot,product_sales,mean_sales,proj_sales_dollars,ly_product_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
       .eq('dt', dt)
       .order('loc').order('hour_slot');
     setDarRows(data || []);

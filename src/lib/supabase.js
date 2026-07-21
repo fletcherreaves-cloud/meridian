@@ -1074,7 +1074,7 @@ export async function loadDailyActivity({ date, daysBack = 1 } = {}) {
   const target = date || new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count,proj_sales_dollars')
+    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count,proj_sales_dollars')
     .eq('dt', target)
     .order('loc')
     .order('hour_slot');
