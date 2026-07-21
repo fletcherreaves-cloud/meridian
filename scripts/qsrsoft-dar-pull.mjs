@@ -32,7 +32,11 @@ const STORE_NSNS = [
 ];
 
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_DAR_DAYS_BACK   || '90', 10);
-const DAYS_RECENT = parseInt(process.env.QSRSOFT_DAR_DAYS_RECENT || '7',  10);
+const DAYS_RECENT = parseInt(process.env.QSRSOFT_DAR_DAYS_RECENT || '4',  10);
+// Explicit backfill window (YYYY-MM-DD). When set, overrides the rolling logic —
+// pull exactly this range. Lets a 1-2 year backfill run in safe chunks (quarters).
+const START_DATE  = (process.env.QSRSOFT_DAR_START_DATE || '').trim();
+const END_DATE    = (process.env.QSRSOFT_DAR_END_DATE   || '').trim();
 const FORCE_FULL  = process.env.QSRSOFT_DAR_FORCE_FULL === '1';
 const DEBUG       = process.env.QSRSOFT_DAR_DEBUG      === '1';
 
@@ -77,6 +81,11 @@ async function getLatestDate() {
 
 async function getDateRange() {
   const today = new Date();
+  if (START_DATE) {
+    const e = END_DATE || fmtDate(today);
+    console.log(`[dar-pull] explicit backfill window ${START_DATE} → ${e}`);
+    return { startDate: START_DATE, endDate: e };
+  }
   if (FORCE_FULL) {
     const s = fmtDate(addDay(today, -DAYS_BACK));
     const e = fmtDate(today);
