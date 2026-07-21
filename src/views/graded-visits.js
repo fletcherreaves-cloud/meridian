@@ -180,29 +180,76 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const thS = { padding: '6px 8px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)' };
   const tdS = { padding: '6px 8px', fontSize: 11, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap', textAlign: 'right' };
 
-  // Operational context (DAR + Glimpse) for a visit's store on its date — the
-  // restaurant's state at the time of the visit.
+  // Operational context for a visit's store on its date — the restaurant's state
+  // at the time of the visit. Hourly DAR when present; otherwise (and alongside)
+  // daily totals/averages pulled from whatever auto/manual sources cover the date
+  // (Daily Glimpse, DAR summary, Operations/Controls/Labor), plus Peaks dayparts.
+  const _sameLoc = (r, store) => String(parseInt(r.loc, 10)) === String(parseInt(store, 10));
+  const _sameDay = (r, iso) => { const d = r.date instanceof Date ? r.date : new Date(r.date); return d && !isNaN(d) && d.toISOString().slice(0, 10) === iso; };
+  const _pickDay = (arr, v) => (arr || []).filter(r => r && r.loc && r.date && _sameLoc(r, v.store) && _sameDay(r, v.dateISO));
+  const _num = (...xs) => { for (const x of xs) if (typeof x === 'number' && !isNaN(x)) return x; return null; };
+
   const renderContext = (v) => {
     const c = ctx[v.id];
     if (!c || c.loading) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11 } }, 'Loading operational context…');
+    const cutoff = completionHour(v.completionTime);
     const hrs = (c.hours || []).filter(x => (x.dt_trans_cnt || 0) > 0 || (x.product_sales || 0) > 0 || (x.actual_punched_hours || 0) > 0);
-    if (!hrs.length) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11, lineHeight: 1.6 } },
-      'No hourly DAR data for ' + niceDate(v.dateISO) + ' yet — the activity feed currently goes back ~90 days. Run the historical DAR backfill (start_date/end_date on the DAR workflow) to populate context for older visit dates.');
-    const g = c.glimpse, cutoff = completionHour(v.completionTime);
-    const chip = (l, val) => div({ style: { display: 'flex', flexDirection: 'column', minWidth: 66 } },
+    const g = c.glimpse;                                   // raw daily_glimpse row for the date (any date)
+    const ops = _pickDay(ds?.opsRows, v)[0] || null;
+    const ctrl = _pickDay(ds?.ctrlRows, v)[0] || null;
+    const lab = _pickDay(ds?.laborRows, v)[0] || null;
+    const qsr = _pickDay(ds?.qsrActSummaryRows, v)[0] || null;
+    const psvc = _pickDay(ds?.peaksSvcRows, v);
+    const psale = _pickDay(ds?.peaksSalesRows, v);
+    // Merged daily metrics — best available source wins.
+    const daily = {
+      oepe:   _num(g && g.oepe, ops && ops.oepe),
+      kvst:   _num(g && g.kvst, ops && ops.kvst),
+      kvsH:   _num(g && g.kvs_healthy, ops && ops.kvsHealthy),      // 0-1
+      r2p:    _num(ops && ops.r2p, psvc.length ? psvc.reduce((a, r) => a + (r.r2p || 0), 0) / psvc.filter(r => r.r2p).length : null),
+      laborPct: _num(g && g.labor_pct, ctrl && ctrl.laborPct, lab && lab.laborPct),  // fraction
+      parked: _num(g && g.parked_pct, ops && ops.park),            // fraction
+      tpph:   _num(ctrl && ctrl.tpph, lab && lab.tpph),
+      sales:  _num(qsr && qsr.sales, lab && lab.sales, g && g.all_net_sales),
+      gc:     _num(qsr && qsr.gc, lab && lab.gc, g && g.gc),
+    };
+    const hasDaily = Object.values(daily).some(x => x != null);
+    if (!hrs.length && !hasDaily && !psvc.length) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11, lineHeight: 1.6 } },
+      'No operational data found for ' + niceDate(v.dateISO) + ' in any source (DAR, Glimpse, Ops/Controls/Labor, Peaks). If the visit predates your DAR history, run the backfill for that window.');
+    const chip = (l, val) => val == null ? null : div({ style: { display: 'flex', flexDirection: 'column', minWidth: 62 } },
       div({ style: { fontSize: 8, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, l),
       div({ style: { fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--text)' } }, val));
     const th2 = { padding: '4px 7px', fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text3)', textAlign: 'right', whiteSpace: 'nowrap', borderBottom: '.5px solid var(--bdr)' };
     const td2 = { padding: '4px 7px', fontSize: 10.5, textAlign: 'right', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' };
     return div({ style: { padding: '10px 14px', background: 'rgba(255,255,255,.02)' } },
       div({ style: { fontSize: 9, fontWeight: 700, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 } }, 'Operational context — ' + niceDate(v.dateISO) + (v.daypart ? ' · ' + v.daypart : '')),
-      g && div({ style: { display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 10, paddingBottom: 8, borderBottom: '.5px solid var(--bdr)' } },
-        chip('OEPE', g.oepe != null ? Math.round(g.oepe) + 's' : '—'),
-        chip('KVS Time', g.kvst != null ? Math.round(g.kvst) + 's' : '—'),
-        chip('KVS Healthy', g.kvs_healthy != null ? Math.round(g.kvs_healthy * 100) + '%' : '—'),
-        chip('Labor %', g.labor_pct != null ? (g.labor_pct * 100).toFixed(1) + '%' : '—'),
-        chip('DT Parked', g.parked_pct != null ? (g.parked_pct * 100).toFixed(1) + '%' : '—')),
-      div({ style: { overflowX: 'auto' } },
+      // Daily summary chips (from whichever source covers the date)
+      hasDaily && div({ style: { display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 10, paddingBottom: 8, borderBottom: '.5px solid var(--bdr)' } },
+        chip('OEPE', daily.oepe != null ? Math.round(daily.oepe) + 's' : null),
+        chip('R2P', daily.r2p != null ? Math.round(daily.r2p) + 's' : null),
+        chip('KVS Time', daily.kvst != null ? Math.round(daily.kvst) + 's' : null),
+        chip('KVS Healthy', daily.kvsH != null ? Math.round(daily.kvsH * 100) + '%' : null),
+        chip('Labor %', daily.laborPct != null ? (daily.laborPct * 100).toFixed(1) + '%' : null),
+        chip('DT Parked', daily.parked != null ? (daily.parked * 100).toFixed(1) + '%' : null),
+        chip('TPPH', daily.tpph != null ? daily.tpph.toFixed(1) : null),
+        chip('Sales', daily.sales != null ? '$' + Math.round(daily.sales).toLocaleString() : null),
+        chip('Guests', daily.gc != null ? Math.round(daily.gc).toLocaleString() : null)),
+      // Peaks by daypart (segment view) when available
+      psvc.length > 0 && div({ style: { marginBottom: 10 } },
+        div({ style: { fontSize: 8.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 } }, 'By Daypart (3 Peaks)'),
+        h('table', { style: { borderCollapse: 'collapse' } },
+          h('thead', null, h('tr', null, ...['Daypart', 'Sales', 'OEPE', 'R2P'].map((l, i) => h('th', { key: i, style: { ...th2, textAlign: i === 0 ? 'left' : 'right', padding: '3px 12px 3px 0' } }, l)))),
+          h('tbody', null, ...psvc.map((r, i) => {
+            const sale = psale.find(s => s.slice === r.slice);
+            return h('tr', { key: i },
+              h('td', { style: { ...td2, textAlign: 'left', color: 'var(--text2)', paddingRight: 12 } }, r.slice || '—'),
+              h('td', { style: { ...td2, paddingRight: 12 } }, sale && sale.netSales ? '$' + Math.round(sale.netSales).toLocaleString() : '—'),
+              h('td', { style: { ...td2, paddingRight: 12 } }, r.oepe ? Math.round(r.oepe) + 's' : '—'),
+              h('td', { style: { ...td2, paddingRight: 12 } }, r.r2p ? Math.round(r.r2p) + 's' : '—'));
+          })))),
+      // Hourly DAR table (most granular) when present
+      hrs.length > 0 && div({ style: { overflowX: 'auto' } },
+        div({ style: { fontSize: 8.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 } }, 'Hourly (DAR)'),
         h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 660 } },
           h('thead', null, h('tr', null,
             ...['Hour', 'Sales', 'DT', 'Front Ctr', 'Kitchen', 'Bev', 'Punch', 'Need', 'Sched', 'vs Need', 'KVS OK'].map((l, i) => h('th', { key: i, style: { ...th2, textAlign: i === 0 ? 'left' : 'right' } }, l)))),
@@ -227,7 +274,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
               h('td', { style: { ...td2, fontWeight: gap != null && gap <= -1 ? 700 : 400, color: gap == null ? 'var(--text3)' : gap <= -1 ? '#ef4444' : gap > 1.5 ? '#f59e0b' : '#10b981' } }, gap == null ? '—' : (gap > 0 ? '+' : '') + gap.toFixed(1)),
               h('td', { style: { ...td2, color: kvs == null ? 'var(--text3)' : kvs >= 90 ? '#10b981' : '#f59e0b' } }, kvs == null ? '—' : Math.round(kvs) + '%'));
           })))),
-      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6 } }, 'Hourly DT/Front-Counter/Kitchen(MFY)/Beverage order-to-serve, punched vs needed vs scheduled hours, and KVS health — from qsr_daily_activity. Daily OEPE/KVS/Labor from Daily Glimpse.'));
+      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6 } }, 'Daily = best available of Glimpse / DAR summary / Ops / Controls / Labor. Hourly = qsr_daily_activity (DT/FC/Kitchen/Bev serve, punched vs needed vs scheduled, KVS). Dayparts = 3 Peaks.'));
   };
 
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },

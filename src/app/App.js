@@ -1434,6 +1434,23 @@ function App() {
     for(const file of fileArr){
       try{
         setLoadMsg('⏳ Parsing '+file.name+'…');
+        // Graded-visit HTML (CFV / RGR / Ecosure) — route to the graded-visit
+        // parser and save to Supabase, so a report dropped anywhere lands in the
+        // Graded Visits panel.
+        if(/\.html?$/i.test(file.name)){
+          try{
+            const text=await file.text();
+            const {parseGradedVisit}=await import('../parsers/graded-visits.js');
+            const v=parseGradedVisit(text,{passThreshold:80});
+            if(v.store&&v.dateISO){
+              const {saveGradedVisits}=await import('../lib/supabase.js');
+              await saveGradedVisits([v]);
+              loaded.push({name:file.name,type:{type:'graded-visit',label:'Graded Visit · '+(v.reportType||'CFV')}});
+              console.log('[Meridian] Graded visit saved:',v.store,v.dateISO,v.reportType);
+            } else console.warn('[Meridian] HTML not a visit report:',file.name);
+          }catch(e){console.warn('[Meridian] Graded-visit parse failed:',file.name,e);}
+          continue;
+        }
         const isPDF=file.name.toLowerCase().endsWith('.pdf');
         if(isPDF){
           // PDF files — route to specialized parsers (no XLSX)
