@@ -219,7 +219,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const th2 = { padding: '4px 7px', fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text3)', textAlign: 'right', whiteSpace: 'nowrap', borderBottom: '.5px solid var(--bdr)' };
     const td2 = { padding: '4px 7px', fontSize: 10.5, textAlign: 'right', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' };
     return div({ style: { padding: '10px 14px', background: 'rgba(255,255,255,.02)' } },
-      div({ style: { fontSize: 9, fontWeight: 700, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 } }, 'Operational context — ' + niceDate(v.dateISO) + (v.daypart ? ' · ' + v.daypart : '')),
+      div({ style: { fontSize: 9, fontWeight: 700, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 } }, 'Operational context — ' + niceDate(v.dateISO) + (v.daypart ? ' · ' + v.daypart : '') + (v.completionTime ? ' · visit ' + v.completionTime : '')),
       // Daily summary chips (from whichever source covers the date)
       hasDaily && div({ style: { display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 10, paddingBottom: 8, borderBottom: '.5px solid var(--bdr)' } },
         chip('OEPE', daily.oepe != null ? Math.round(daily.oepe) + 's' : null),
@@ -257,9 +257,12 @@ export function GradedVisitsPanel({ ds, onClose }) {
             const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
             const punch = x.actual_punched_hours, need = x.total_needed_hours, sched = x.total_scheduled_hours;
             const gap = (punch != null && need != null) ? punch - need : null;
-            const visitHr = cutoff && parseInt(x.hour_slot, 10) === cutoff;
-            return h('tr', { key: i, style: { borderBottom: '.5px solid rgba(255,255,255,.03)', background: visitHr ? 'rgba(245,188,0,.12)' : 'transparent' } },
-              h('td', { style: { ...td2, textAlign: 'left', color: 'var(--text2)' } }, hourLabel(x.hour_slot) + (visitHr ? ' ◂ visit' : '')),
+            // Highlight the visit hour plus the hour on either side for context.
+            const rel = cutoff ? parseInt(x.hour_slot, 10) - cutoff : null; // 0 = during, -1 = before, +1 = after
+            const visitHr = rel === 0, nearVisit = rel === -1 || rel === 1;
+            const relTag = visitHr ? ' ◂ visit' : rel === -1 ? ' ◂ hour before' : rel === 1 ? ' ◂ hour after' : '';
+            return h('tr', { key: i, style: { borderBottom: '.5px solid rgba(255,255,255,.03)', background: visitHr ? 'rgba(245,188,0,.16)' : nearVisit ? 'rgba(245,188,0,.06)' : 'transparent' } },
+              h('td', { style: { ...td2, textAlign: 'left', color: visitHr ? 'var(--amber)' : 'var(--text2)', fontWeight: visitHr ? 700 : 400 } }, hourLabel(x.hour_slot) + relTag),
               h('td', { style: td2 }, x.product_sales ? '$' + Math.round(x.product_sales).toLocaleString() : '—'),
               h('td', { style: { ...td2, fontWeight: dt != null && dt > 240 ? 700 : 400, color: dt != null && dt > 240 ? '#ef4444' : 'var(--text)' } }, fmtSec(dt)),
               h('td', { style: td2 }, fmtSec(fc)),
@@ -365,7 +368,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
                       h('tr', { onClick: () => toggleContext(v), title: 'Show operational context at time of visit', style: { cursor: 'pointer', background: isOpen ? 'rgba(245,188,0,.06)' : 'transparent' } },
                         h('td', { style: { ...tdS, textAlign: 'left' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: (isRGR ? '#a78bfa' : '#60a5fa') + '22', color: isRGR ? '#a78bfa' : '#60a5fa' } }, v.reportType || 'CFV')),
                         h('td', { style: { ...tdS, textAlign: 'left', fontWeight: 600 } }, sNameC(String(v.store))),
-                        h('td', { style: { ...tdS, textAlign: 'left', color: 'var(--text2)' } }, niceDate(v.dateISO)),
+                        h('td', { style: { ...tdS, textAlign: 'left', color: 'var(--text2)' } },
+                          niceDate(v.dateISO),
+                          v.completionTime ? span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ' · ' + v.completionTime) : null),
                         h('td', { style: { ...tdS, textAlign: 'left', fontSize: 10 } }, detail),
                         h('td', { style: { ...tdS, fontFamily: 'var(--mono)', fontWeight: 800, color: scoreColor(v.score) } }, v.score != null ? fmtPct(v.score) : '—'),
                         h('td', { style: tdS }, v.pass == null ? '—' : span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: (v.pass ? '#10b981' : '#ef4444') + '22', color: v.pass ? '#10b981' : '#ef4444' } }, v.pass ? '✓ Pass' : '✗ Fail')),
