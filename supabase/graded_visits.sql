@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS graded_visits (
   pass         boolean,                              -- score >= threshold (80% for CFV)
   channel      text,                                 -- Drive Thru | Curbside | Front Counter | Delivery | Counter
   mobile_app   boolean,                              -- true = app/mobile order, false = traditional, null = unknown
+  status       text,                                 -- RGR rating word (Acceptable / Outstanding / ...)
   modules      jsonb,                                -- { "Drive Thru": {pct,ach,pos}, "Behind the Counter": {...} }
   raw_title    text,
   created_at   timestamptz NOT NULL DEFAULT now(),
@@ -23,6 +24,15 @@ CREATE TABLE IF NOT EXISTS graded_visits (
   UNIQUE (loc, visit_date, report_type)              -- upsert key (re-drop overwrites)
 );
 CREATE INDEX IF NOT EXISTS graded_visits_loc_date_idx ON graded_visits (loc, visit_date);
+
+-- RLS — mirror the proven client-writable pattern (see reviews table in
+-- schema.sql): any authenticated user can read/write. WITH CHECK gates INSERT and
+-- UPDATE (the client upserts), USING gates SELECT/UPDATE/DELETE. Without a policy,
+-- RLS-enabled tables deny every write ("new row violates row-level security policy").
 ALTER TABLE graded_visits ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "graded_visits access" ON graded_visits;
-CREATE POLICY "graded_visits access" ON graded_visits USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "graded_visits rw" ON graded_visits;
+CREATE POLICY "graded_visits rw" ON graded_visits
+  FOR ALL
+  USING (auth.uid() IS NOT NULL)
+  WITH CHECK (auth.uid() IS NOT NULL);

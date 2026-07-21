@@ -1408,3 +1408,66 @@ export async function loadUserSetting(key) {
 //      In that case, pass the MSAL access token to Supabase via
 //        supabase.auth.setSession({ access_token: msalToken })
 //   The database schema and RLS policies do not change in either path.
+
+// ── Graded Visits (CFV / RGR / Ecosure) ──────────────────────────────────────
+export async function saveGradedVisits(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  // Dedupe by the conflict key (last wins) — a single upsert batch cannot touch
+  // the same (loc, visit_date, report_type) row twice or Postgres rejects it all.
+  const byKey = new Map();
+  for (const r of rows) { if (r.store && r.dateISO) byKey.set(String(r.store) + '|' + r.dateISO + '|' + (r.reportType || 'CFV'), r); }
+  const deduped = [...byKey.values()];
+  const upsert = deduped.map(r => ({
+    report_type: r.reportType || 'CFV',
+    loc:         String(r.store),
+    visit_date:  r.dateISO,
+    daypart:     r.daypart  ?? null,
+    weekpart:    r.weekpart ?? null,
+    owner:       r.owner    ?? null,
+    manager:     r.manager  ?? null,
+    visit_by:    r.visitBy  ?? null,
+    score:       r.score    ?? null,
+    pass:        r.pass     ?? null,
+    channel:     r.channel  ?? null,
+    mobile_app:  r.mobileApp ?? null,
+    status:      r.status   ?? null,
+    modules:     r.modules  ?? null,
+    raw_title:   r.title    ?? null,
+    updated_at:  new Date().toISOString(),
+  }));
+  if (!upsert.length) return { saved: 0, errors: ['no valid rows (missing store or date)'] };
+  const { error } = await supabase.from('graded_visits').upsert(upsert, { onConflict: 'loc,visit_date,report_type' });
+  if (error) { console.warn('[graded_visits] save error:', error); return { saved: 0, errors: [error.message] }; }
+  console.log(`[graded_visits] saved ${upsert.length} visits`);
+  return { saved: upsert.length, errors: [] };
+}
+
+export async function loadGradedVisits() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('graded_visits').select('*').order('visit_date', { ascending: false });
+  if (error) { console.warn('[graded_visits] load error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, reportType: r.report_type, store: r.loc, dateISO: r.visit_date, date: r.visit_date,
+    daypart: r.daypart, weekpart: r.weekpart, owner: r.owner, manager: r.manager, visitBy: r.visit_by,
+    score: r.score, pass: r.pass, channel: r.channel, mobileApp: r.mobile_app, status: r.status,
+    modules: r.modules || {}, title: r.raw_title,
+  }));
+}
+
+// ── Operational context for a graded visit ───────────────────────────────────
+// The hourly DAR picture for a store on the visit date (speed by station, labor
+// vs need/sched, KVS health) plus the day's Daily Glimpse summary (OEPE/KVS/labor)
+// — the environment the restaurant was in when the visit happened. Foundation for
+// the Graded-Visit Predictor. loc is padded to 7 for qsr_daily_activity.
+export async function loadVisitDAR(loc, dateISO) {
+  if (!supabase || !loc || !dateISO) return { hours: [], glimpse: null };
+  const padded = String(parseInt(loc, 10)).padStart(7, '0');
+  const short = String(parseInt(loc, 10));
+  const [{ data: hrs }, { data: gl }] = await Promise.all([
+    supabase.from('qsr_daily_activity')
+      .select('hour_slot,product_sales,dt_untilserve,dt_trans_cnt,dt_untilstore,dt_carsheld,dt_heldtime,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
+      .eq('loc', padded).eq('dt', dateISO).order('hour_slot'),
+    supabase.from('daily_glimpse_daily').select('*').eq('loc', short).eq('date', dateISO).limit(1),
+  ]);
+  return { hours: hrs || [], glimpse: (gl && gl[0]) || null };
+}
