@@ -1,10 +1,12 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sNameC } from '../constants.js';
+import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 import { parseGradedVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits } from '../lib/supabase.js';
 
 const h = React.createElement;
+const ALL_LOCS = Object.keys(STORE_NAMES);
+const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald')); // 7 FL panhandle stores
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
@@ -77,10 +79,19 @@ export function GradedVisitsPanel({ ds, onClose }) {
     if (res.saved) refresh();
   };
 
+  // Standardized location scope (All → State → Patch → Store), matching the rest
+  // of the app. null = all stores.
+  const activeLocs = useMemo(() => {
+    if (selLoc === 'all') return null;
+    if (selLoc === 'fl') return new Set(ALL_LOCS.filter(l => FL_LOCS.has(l)));
+    if (selLoc === 'ok') return new Set(ALL_LOCS.filter(l => !FL_LOCS.has(l)));
+    if (selLoc.startsWith('__patch__')) return new Set(((DEF_SETTINGS.supervisorGroups || {})[selLoc.slice(9)] || []).map(String));
+    return new Set([String(selLoc)]);
+  }, [selLoc]);
   const filtered = useMemo(() => visits.filter(v =>
-    (selLoc === 'all' || String(v.store) === String(selLoc)) &&
+    (activeLocs === null || activeLocs.has(String(v.store))) &&
     (typeFilter === 'all' || (v.reportType || 'CFV') === typeFilter)
-  ), [visits, selLoc, typeFilter]);
+  ), [visits, activeLocs, typeFilter]);
   const types = useMemo(() => [...new Set(visits.map(v => v.reportType || 'CFV'))], [visits]);
   const stats = useMemo(() => {
     const scored = filtered.filter(v => v.score != null);
@@ -91,6 +102,58 @@ export function GradedVisitsPanel({ ds, onClose }) {
     return { n: filtered.length, passes, passRate: scored.length ? passes / scored.length * 100 : null, app, trad, avg };
   }, [filtered]);
   const storesWithData = useMemo(() => [...new Set(visits.map(v => String(v.store)))].sort(), [visits]);
+  const scopeLabel = selLoc === 'all' ? 'All Stores' : selLoc === 'fl' ? 'Florida' : selLoc === 'ok' ? 'Oklahoma'
+    : selLoc.startsWith('__patch__') ? selLoc.slice(9) : sNameC(String(selLoc));
+
+  const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
+  const exportCSV = () => {
+    const cols = ['Type', 'Store', 'NSN', 'Date', 'Daypart', 'Channel', 'Order', 'Score', 'Result', 'Status', 'Modules'];
+    const lines = [cols.map(csvCell).join(',')];
+    for (const v of filtered) {
+      const mods = Object.entries(v.modules || {}).map(([k, m]) => `${k} ${fmtPct(m.pct)}`).join('; ');
+      lines.push([v.reportType || 'CFV', sNameC(String(v.store)), v.store, v.dateISO || '', v.daypart || '',
+        v.channel || '', v.mobileApp == null ? '' : (v.mobileApp ? 'App' : 'Traditional'),
+        v.score == null ? '' : v.score, v.pass == null ? '' : (v.pass ? 'Pass' : 'Fail'), v.status || '', mods].map(csvCell).join(','));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `graded-visits-${scopeLabel.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+  const printReport = () => {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const rows = filtered.map(v => {
+      const mods = Object.entries(v.modules || {}).map(([k, m]) => `${esc(k)} ${fmtPct(m.pct)}`).join(' · ');
+      const order = v.mobileApp == null ? '—' : (v.mobileApp ? 'App' : 'Traditional');
+      const res = v.pass == null ? '—' : (v.pass ? 'PASS' : 'FAIL');
+      return `<tr><td>${esc(v.reportType || 'CFV')}</td><td>${esc(sNameC(String(v.store)))}</td><td>${esc(niceDate(v.dateISO))}</td><td>${esc(v.channel || v.status || '')}</td><td>${order}</td><td class="n">${v.score == null ? '—' : fmtPct(v.score)}</td><td class="${v.pass ? 'pass' : 'fail'}">${res}</td><td class="mods">${mods}</td></tr>`;
+    }).join('');
+    const scored = filtered.filter(v => v.score != null);
+    const passN = scored.filter(v => v.score >= PASS).length;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Graded Visits — ${esc(scopeLabel)}</title>
+      <style>
+        body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:28px;font-size:12px}
+        h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:11px;margin-bottom:14px}
+        .kpis{display:flex;gap:24px;margin-bottom:16px} .kpi b{font-size:18px} .kpi span{color:#666;font-size:10px;display:block;text-transform:uppercase;letter-spacing:.5px}
+        table{width:100%;border-collapse:collapse} th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#666;border-bottom:2px solid #f5bc00;padding:6px 8px}
+        td{padding:5px 8px;border-bottom:1px solid #eee} td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:700} td.mods{color:#666;font-size:10px}
+        td.pass{color:#158a3a;font-weight:700} td.fail{color:#c0392b;font-weight:700}
+        @media print{body{margin:0}}
+      </style></head><body>
+      <h1>Graded Visits — ${esc(scopeLabel)}</h1>
+      <div class="sub">${filtered.length} visit(s) · pass ≥ ${PASS}% · generated ${esc(niceDate(new Date().toISOString().slice(0, 10)))}</div>
+      <div class="kpis">
+        <div class="kpi"><b>${filtered.length}</b><span>Visits</span></div>
+        <div class="kpi"><b>${scored.length ? Math.round(passN / scored.length * 100) : '—'}%</b><span>Pass Rate</span></div>
+        <div class="kpi"><b>${scored.length ? fmtPct(scored.reduce((a, v) => a + v.score, 0) / scored.length) : '—'}</b><span>Avg Score</span></div>
+      </div>
+      <table><thead><tr><th>Type</th><th>Store</th><th>Date</th><th>Channel / Status</th><th>Order</th><th style="text-align:right">Score</th><th>Result</th><th>Modules</th></tr></thead><tbody>${rows}</tbody></table>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { setMsg({ t: 'err', x: 'Pop-up blocked — allow pop-ups to print.' }); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+  };
 
   const card = (label, value, color) => div({ style: { flex: '1 1 120px', minWidth: 120, background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '9px 12px' } },
     div({ style: { fontSize: 9, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 3 } }, label),
@@ -112,9 +175,19 @@ export function GradedVisitsPanel({ ds, onClose }) {
         types.length > 1 && h('select', { value: typeFilter, onChange: e => setTypeFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
           h('option', { value: 'all' }, 'All Types'),
           types.map(t => h('option', { key: t, value: t }, t))),
-        h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
+        h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px', colorScheme: 'dark' } },
           h('option', { value: 'all' }, 'All Stores'),
-          storesWithData.map(l => h('option', { key: l, value: l }, sNameC(l)))),
+          h('option', { value: 'fl' }, 'Florida'),
+          h('option', { value: 'ok' }, 'Oklahoma'),
+          h('optgroup', { label: '— Patches —' },
+            ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([name, locs]) =>
+              h('option', { key: name, value: '__patch__' + name }, name.split(' ')[0] + ' Patch (' + locs.length + ')'))),
+          h('optgroup', { label: '— Florida —' },
+            ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
+          h('optgroup', { label: '— Oklahoma —' },
+            ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
+        btn({ onClick: exportCSV, disabled: !filtered.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default' } }, '⬇ CSV'),
+        btn({ onClick: printReport, disabled: !filtered.length, title: 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default' } }, '🖨 Print'),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       // Body
@@ -132,7 +205,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
           btn({ onClick: () => dirRef.current && dirRef.current.click(), disabled: busy,
             style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 600, cursor: busy ? 'default' : 'pointer' } },
             '📁 Upload folder'),
-          h('input', { ref: fileRef, type: 'file', accept: '.html,.htm', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
+          h('input', { ref: fileRef, type: 'file', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
           h('input', { ref: dirRef, type: 'file', webkitdirectory: '', directory: '', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
           span({ style: { fontSize: 10, color: dragOver ? 'var(--amber)' : 'var(--text3)' } }, dragOver ? 'Drop to import' : 'Drag files or a whole folder here (or use the buttons). CFV & RGR HTML. Re-import overwrites same store+date.'),
           msg && span({ style: { fontSize: 11, fontWeight: 600, marginLeft: 'auto', color: msg.t === 'ok' ? '#10b981' : msg.t === 'warn' ? '#f59e0b' : '#ef4444' } }, msg.x)),
