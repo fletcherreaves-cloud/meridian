@@ -8,19 +8,29 @@
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 import { computeSmartTarget, robustBaseline, weightedRecencyProjection, windowRate, backtestProjectors } from '../engine/smart-targets.js';
+import { forecastModels } from '../engine/forecast.js';
 import { loadDailySales } from '../lib/supabase.js';
 
 // Competing period-projectors, all pure functions of a store's daily series.
 // The owner's T3M/T6W/T3W weighted-recency method runs against naive short/long
 // baselines so the backtest can crown which one actually fits each store best.
-// (forecast-engine daily models are a heavier Layer-2 plug-in — same interface.)
 const PROJECTORS = [
   { key: 'owner', name: 'T3M/T6W/T3W', short: 'Owner', project: (s, o) => weightedRecencyProjection(s, o).projection },
   { key: 'recent', name: 'Recent 3-wk run-rate', short: '3-wk', project: (s, o) => { const w = windowRate(s, o.asOf, 21); return w.rate == null ? null : w.rate * o.targetDays; } },
   { key: 'avg3m', name: '3-month average', short: '3-mo', project: (s, o) => { const w = windowRate(s, o.asOf, 90); return w.rate == null ? null : w.rate * o.targetDays; } },
 ];
-const PROJ_NAME = Object.fromEntries(PROJECTORS.map(p => [p.key, p.name]));
-const PROJ_SHORT = Object.fromEntries(PROJECTORS.map(p => [p.key, p.short]));
+// Our forecast-engine daily models, folded in on demand as period-projectors
+// (sum of daily forecasts across the target window). Heavier — they read the
+// store's daily history from ds and are run async + cached behind a button.
+const FCAST_MODELS = [
+  { key: 'm1', name: 'Composite', short: 'Comp' },
+  { key: 'm3', name: 'Momentum', short: 'Mom' },
+  { key: 'm4', name: 'Regression', short: 'Reg' },
+  { key: 'ens', name: 'Ensemble', short: 'Ens' },
+];
+const ALL_META = [...PROJECTORS, ...FCAST_MODELS];
+const METH_NAME = Object.fromEntries(ALL_META.map(p => [p.key, p.name]));
+const METH_SHORT = Object.fromEntries(ALL_META.map(p => [p.key, p.short]));
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -48,12 +58,16 @@ const METRICS = [
 const confColor = c => c === 'High' ? '#10b981' : c === 'Med' ? '#f59e0b' : '#ef4444';
 
 export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
-  const { useState, useMemo, useEffect } = React;
+  const { useState, useMemo, useEffect, useRef } = React;
   const [metricKey, setMetricKey] = useState('sales');
   const [scope, setScope] = useState('all');
   const [windowDays, setWindowDays] = useState(90);
   const [hist, setHist] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showModels, setShowModels] = useState(false); // fold forecast-engine models into the scoreboard
+  const [modelBt, setModelBt] = useState({});           // {[loc]: {perMethod, winner, folds}} incl. forecast models
+  const [modelBusy, setModelBusy] = useState(false);
+  const fcCache = useRef(new Map());                     // `${loc}|${iso}` -> {m1,m3,m4,ens} daily forecasts
   const metric = METRICS.find(m => m.key === metricKey) || METRICS[0];
 
   // Source this metric's daily history: prefer the in-memory feed (instant); only
@@ -153,10 +167,59 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     // Aggregate win-tally across stores (how often each method wins).
     const tally = {}; let scored = 0;
     for (const r of rows) { if (r.winner) { tally[r.winner] = (tally[r.winner] || 0) + 1; scored++; } }
-    return { rows, daysInMonth, tally, scored, doBacktest };
+    // Per-loc daily series ({date,value}), reused by the async forecast-model backtest.
+    const seriesByLoc = {};
+    for (const loc of Object.keys(byLoc)) seriesByLoc[loc] = byLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
+    return { rows, daysInMonth, tally, scored, doBacktest, seriesByLoc };
   }, [hist, metricKey, windowDays, ds]);
 
-  const shown = model.rows.filter(r => activeLocs === null || activeLocs.has(locNum(r.loc)));
+  // When the learning window/metric changes the series changes, so any computed
+  // forecast-model backtest is stale — drop it and its cache.
+  useEffect(() => { setModelBt({}); setShowModels(false); fcCache.current.clear(); }, [metricKey, windowDays, hist]);
+
+  // Daily forecasts for (loc, date) from the forecast engine, cached. Causal:
+  // forecastModels uses LY + trailing same-DOW actuals up to `date` only.
+  const fcModelsFor = (loc, iso) => {
+    const key = loc + '|' + iso;
+    let m = fcCache.current.get(key);
+    if (!m) {
+      let res = null;
+      try { res = forecastModels(loc, new Date(iso + 'T00:00:00'), ds, settings || DEF_SETTINGS); } catch { res = null; }
+      m = {};
+      if (res && res.allModels) for (const x of res.allModels) if (typeof x.forecast === 'number') m[x.key] = x.forecast;
+      fcCache.current.set(key, m);
+    }
+    return m;
+  };
+
+  // Fold the forecast-engine models into the per-store scoreboard. Async + chunked
+  // so the UI stays responsive; where a store lacks daily history (ds.laborRows),
+  // a model simply doesn't score (shown as no-data rather than a fake number).
+  const runModelBacktest = async () => {
+    setShowModels(true);
+    if (modelBusy || !model.seriesByLoc) return;
+    setModelBusy(true);
+    await new Promise(r => setTimeout(r, 12)); // let the spinner paint
+    const out = {}; const locs = Object.keys(model.seriesByLoc); let i = 0;
+    for (const loc of locs) {
+      const fcProj = FCAST_MODELS.map(fm => ({ key: fm.key, name: fm.name, project: (s, o) => {
+        const end = new Date(o.asOf); end.setDate(end.getDate() + o.targetDays);
+        let sum = 0, n = 0; const d = new Date(o.asOf);
+        while (d < end) { const v = fcModelsFor(loc, isoOf(d))[fm.key]; if (typeof v === 'number' && v > 0) { sum += v; n++; } d.setDate(d.getDate() + 1); }
+        return n ? sum * (o.targetDays / n) : null; // scale up if some days had no forecast
+      } }));
+      out[loc] = backtestProjectors(model.seriesByLoc[loc], [...PROJECTORS, ...fcProj], { periodDays: 28, folds: 3 });
+      if (++i % 4 === 0) await new Promise(r => setTimeout(r, 0)); // yield to keep UI live
+    }
+    setModelBt(out); setModelBusy(false);
+  };
+
+  // Effective scoreboard: swap in the fuller (incl. forecast models) result per loc
+  // once it's computed. Falls back to the instant 3-method backtest otherwise.
+  const useModels = showModels && Object.keys(modelBt).length > 0;
+  const methodsMeta = useModels ? ALL_META : PROJECTORS;
+  const shownRaw = model.rows.filter(r => activeLocs === null || activeLocs.has(locNum(r.loc)));
+  const shown = shownRaw.map(r => { const mb = modelBt[r.loc]; return (useModels && mb) ? { ...r, winner: mb.winner, btPerMethod: mb.perMethod, btFolds: mb.folds } : r; });
 
   const selStyle = { fontSize: 10, padding: '3px 7px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', colorScheme: 'dark', cursor: 'pointer' };
   const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
@@ -165,7 +228,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   // Tooltip for the Best-fit cell: each method's backtested MAPE, winner first.
   const btTitle = r => {
     if (!r.btFolds) return 'Not enough completed 28-day periods to backtest yet';
-    const parts = PROJECTORS.map(p => { const m = r.btPerMethod[p.key]; return m ? `${p.name}: ${m.mape}% MAPE (n=${m.n})` : `${p.name}: —`; });
+    const parts = methodsMeta.map(p => { const m = r.btPerMethod[p.key]; return m ? `${p.name}: ${m.mape}% MAPE (n=${m.n})` : `${p.name}: —`; });
     return `Best fit over ${r.btFolds} held-out 28-day period(s):\n` + parts.join('\n');
   };
   const row = r => h('tr', { key: r.loc, title: `baseline ${metric.fmt(r.baseline)} · own-trajectory ${metric.fmt(r.own)} · peer anchor ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers) · ${r.n} days, ${r.excludedDays} anomalies excluded` },
@@ -176,7 +239,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     h('td', { style: { ...td, fontWeight: 700, color: r.vsOff == null ? 'var(--text3)' : r.vsOff >= 0 ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'),
     model.doBacktest ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' }, title: btTitle(r) },
       r.winner
-        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, PROJ_SHORT[r.winner]),
+        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
             r.btPerMethod[r.winner] ? span({ style: { color: 'var(--text3)', fontSize: 9, marginLeft: 5 } }, r.btPerMethod[r.winner].mape + '%') : null)
         : span({ style: { color: 'var(--text3)', fontSize: 9 } }, '—')) : null,
     h('td', { style: { ...td, textAlign: 'center' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: confColor(r.confidence) + '22', color: confColor(r.confidence) } }, r.confidence)),
@@ -186,7 +249,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   const exportCSV = () => {
     const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline (mo)', 'Peer anchor (mo)', 'Days', 'Lookback days', 'Target month'];
     const lines = [cols.map(csvCell).join(',')];
-    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), r.official == null ? '' : Math.round(r.official), r.smart == null ? '' : Math.round(r.smart), r.current == null ? '' : Math.round(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? PROJ_NAME[r.winner] : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, r.baseline == null ? '' : Math.round(r.baseline), r.anchor == null ? '' : Math.round(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
+    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), r.official == null ? '' : Math.round(r.official), r.smart == null ? '' : Math.round(r.smart), r.current == null ? '' : Math.round(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, r.baseline == null ? '' : Math.round(r.baseline), r.anchor == null ? '' : Math.round(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}.csv`; a.click(); URL.revokeObjectURL(url);
@@ -244,10 +307,12 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
             model.doBacktest && shown.some(r => r.winner)
               ? div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 11px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
                   span({ style: { fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)' } }, 'Method scoreboard'),
-                  ...PROJECTORS.map(p => { const shownWins = shown.filter(r => r.winner === p.key).length; return span({ key: p.key, title: PROJ_NAME[p.key], style: { fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 } },
+                  ...methodsMeta.map(p => { const shownWins = shown.filter(r => r.winner === p.key).length; return span({ key: p.key, title: METH_NAME[p.key], style: { fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 } },
                     span({ style: { fontWeight: 700, color: p.key === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, p.name),
                     span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: p.key === 'owner' ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
-                  span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE'))
+                  useModels
+                    ? span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE · forecast models included')
+                    : btn({ onClick: runModelBacktest, disabled: modelBusy, title: 'Fold Composite/Momentum/Regression/Ensemble into the backtest (needs daily labor history; runs in the background)', style: { marginLeft: 'auto', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 10, fontWeight: 700, cursor: modelBusy ? 'default' : 'pointer' } }, modelBusy ? 'Running models…' : '＋ Forecast models'))
               : null,
             div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
               h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
@@ -262,7 +327,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
                   h('th', { style: th }, 'Anomalies'))),
                 h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-          'Official = QSRSoft monthly file (tProdSales). Smart = robust daily baseline (median, ±' + '3·MAD anomalies dropped) projected by a capped trend, nudged toward the top-quartile of like-sized same-state peers, capped at 8% move, never below baseline. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Anomalies = days set aside from the baseline. Pilot metric: Sales; more metrics use the same engine.')
+          'Official = QSRSoft monthly file (tProdSales). Smart = robust daily baseline (median, ±' + '3·MAD anomalies dropped) projected by a capped trend, nudged toward the top-quartile of like-sized same-state peers, capped at 8% move, never below baseline. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = the projection method with the lowest error on held-out 28-day periods (T3M/T6W/T3W = your weighted-recency method). ＋ Forecast models folds in Composite/Momentum/Regression/Ensemble (these read daily labor history from an uploaded Operations/Labor report; they show no score where that history is absent). Pilot metric: Sales; more metrics use the same engine.')
       )
     ));
 }

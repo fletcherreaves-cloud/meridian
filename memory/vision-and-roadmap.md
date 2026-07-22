@@ -60,11 +60,16 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
       **"Best fit"** column (winning method + MAPE per store) and an aggregate
       **Method scoreboard** strip (owner vs 3-wk run-rate vs 3-mo avg wins), plus
       winner/MAPE in CSV. `PROJECTORS` array = the plug-in point.
-    - ⏭️ **Layer 2 (next):** fold the `src/engine/forecast.js` daily models
-      (Composite/Momentum/Regression/Ensemble) in as additional projectors by
-      summing daily forecasts across the target period. Heavier (needs ds +
-      per-day eval) — precompute/cache to avoid re-introducing panel lag. Same
-      projector interface, so they drop straight into `PROJECTORS`/backtest.
+    - ✅ **Layer 2 shipped (v4.459):** the `src/engine/forecast.js` daily models
+      (Composite/Momentum/Regression/Ensemble) fold into the scoreboard as
+      period-projectors (sum of daily `forecastModels` over the target window).
+      Run **async behind a "＋ Forecast models" button** with a per-(loc,date)
+      `fcCache` ref + chunked yields so the panel stays instant on open. Caveat:
+      forecast models read daily history from `ds.laborRows` (uploaded
+      Operations/Labor) — where that's absent cloud-side they score "—" rather
+      than fabricate. **Future:** retarget the forecast models to the auto
+      product-sales series so they compete everywhere, not just where labor
+      uploads exist.
     - ⏭️ Known-event (+/-) UI: let the owner mark event dates/deltas per store
       (engine hooks `excludeDates`/`eventDelta` already exist).
   - Extend v2 metrics to labor %, FOB %, speed (add METRICS entries + a source
