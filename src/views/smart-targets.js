@@ -8,6 +8,7 @@
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 import { computeSmartTarget, robustBaseline } from '../engine/smart-targets.js';
+import { loadQsrActSummary } from '../lib/supabase.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -24,18 +25,31 @@ const isoOf = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 
 // which Official target field to compare, direction, and formatting.
 const METRICS = [
   { key: 'sales', label: 'Sales ($ / month)', direction: 'higher', official: 'tProdSales',
-    rows: ds => ds && ds.qsrActSummaryRows, daily: r => r.sales, monthly: true,
+    // Loads its own per-(loc,date) product-sales history for the full window, so it
+    // doesn't depend on the 60-day, lazily-loaded ds.qsrActSummaryRows cache.
+    load: days => loadQsrActSummary(days), daily: r => r.sales, monthly: true,
     fmt: v => v == null ? '—' : '$' + Math.round(v).toLocaleString() },
 ];
 
 const confColor = c => c === 'High' ? '#10b981' : c === 'Med' ? '#f59e0b' : '#ef4444';
 
 export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
-  const { useState, useMemo } = React;
+  const { useState, useMemo, useEffect } = React;
   const [metricKey, setMetricKey] = useState('sales');
   const [scope, setScope] = useState('all');
   const [windowDays, setWindowDays] = useState(90);
+  const [hist, setHist] = useState([]);
+  const [loading, setLoading] = useState(true);
   const metric = METRICS.find(m => m.key === metricKey) || METRICS[0];
+
+  // Load this metric's own daily history for the full window.
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    Promise.resolve(metric.load(windowDays + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
+      .catch(() => { if (live) { setHist([]); setLoading(false); } });
+    return () => { live = false; };
+  }, [metricKey, windowDays]);
 
   // Active locs for the scope filter (All → State → Patch → Store).
   const activeLocs = useMemo(() => {
@@ -54,7 +68,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
     // Per-loc daily series within the window.
     const byLoc = {};
-    for (const r of (metric.rows(ds) || [])) {
+    for (const r of (hist || [])) {
       if (!r || !r.date || !r.loc) continue;
       const d = isoOf(r.date);
       if (d < cutoff || d > isoOf(now)) continue;
@@ -96,7 +110,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     }).filter(r => r.smart != null);
     rows.sort((a, b) => (b.smart || 0) - (a.smart || 0));
     return { rows, daysInMonth };
-  }, [ds, metricKey, windowDays]);
+  }, [hist, metricKey, windowDays, ds]);
 
   const shown = model.rows.filter(r => activeLocs === null || activeLocs.has(locNum(r.loc)));
 
@@ -135,7 +149,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
 
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
-        !shown.length
+        loading
+          ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12 } }, 'Loading sales history…')
+          : !shown.length
           ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12 } },
               'No sales history in the selected window. Smart Targets needs daily sales (qsr_daily_activity) loaded.')
           : div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
