@@ -48,9 +48,18 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
 - ⚠️ **A dormant v1 exists**: `src/features/smart-targets.js` (`computeSmartTargets`
   + `SmartTargetPanel`, modal `smart-targets`, no nav). Left intact; decide which
   to retire. v2 does NOT reuse v1.
-- **TODO:** extend v2 to labor %, FOB %, speed (add METRICS entries + a source per
-  metric; ratio metrics anchor on level with direction='lower'); persist accepted
-  Smart targets; add an "apply as Official" action.
+- **TODO (updated 2026-07-22):**
+  - **Multi-projector + win-tracking (owner's #1 ask):** implement the owner's
+    T3M/T6W/T3W weighted-recency projector as a pure fn; run it alongside the
+    `src/engine/forecast.js` models on the same series; record each method's
+    projection + realized error per store; surface a "which method wins per
+    store" scoreboard. Anomaly-exclude + known-event (+/-) adjustment on all.
+  - Extend v2 metrics to labor %, FOB %, speed (add METRICS entries + a source
+    per metric; ratio metrics anchor on level with direction='lower').
+  - Horizons out to **yearly** (user asked for 60/90/180d → up to 1yr).
+  - Auto-run calibration; prompt user for any judgment calls inline.
+  - Persist accepted Smart targets; add "apply as Official" → feed Monthly
+    Projections as official distributed targets.
 
 ## Workstream C — The two "next-ups"
 - **Projections → current-month actuals for all locations/groupings** (pairs with the *Projections vs Actuals* feature idea).
@@ -83,14 +92,28 @@ streams (DAR summary, Daily Glimpse, qsr_fob components, cash sheet, LifeLenz).
 Wire EVERY metric to a source so none are blank — the current "no data" Food &
 Paper rows come straight from `qsr_fob` component amounts.
 
+**⭐ OWNER'S INTENT CORRECTION (2026-07-22) — how projection actually works:**
+The owner's traditional, proven sales-projection method is **NOT** a plain
+baseline×trend. It is a **weighted-recency blend of trailing windows**:
+**T3M (trailing 3 months) + T6W (trailing 6 weeks) + T3W (trailing 3 weeks),
+with more weight on the most recent window** — while ruling out anomalies and
+**accounting for known events (+/-)** (holidays, promos, local events, closures).
+Requirement: **run BOTH** — (a) programmatically replicate the owner's
+T3M/T6W/T3W weighted method, AND (b) our developed forecast models
+(`src/engine/forecast.js` model set). **Track every method's projection per
+store and grade which one wins** (lowest error vs actuals) → this per-store
+"which-model-wins" scoreboard is itself valuable insight data. Do not lose this
+intent: the owner's method is a first-class projector, not a fallback.
+
 **Per store, per metric:**
 1. **Robust baseline** — central tendency that ignores anomalies: **median + MAD**
    (median absolute deviation) or trimmed mean. Winsorize / drop points beyond
    k·MAD. Report *how many* days were excluded ("3 anomalous days set aside") —
    this operationalizes the owner's "handle addressable one-offs through store
    discipline, not by baking them into the target."
-2. **Own trajectory** — robust baseline + bounded trend (slope over trailing
-   window), projected forward. Realistic step, not a leap.
+2. **Own trajectory** — the owner's **T3M/T6W/T3W weighted-recency blend**
+   (above), anomaly-filtered, event-adjusted. Robust baseline + bounded trend is
+   a *component/sanity-check*, not the whole method. Realistic step, not a leap.
 3. **District peer anchor** — FL and OK computed **separately**. Use the district's
    **dollar-weighted** distribution (never average of store %s) for that metric,
    within the store's **volume tier** (compare like-sized stores). Stretch anchor =
