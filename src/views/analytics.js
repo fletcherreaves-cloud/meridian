@@ -12,6 +12,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
+import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync } from '../lib/supabase.js';
 
 const h=React.createElement;
@@ -2659,6 +2660,44 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
 
 
 
+// Reusable self-audit badge (accuracy layer, Workstream A). Renders a compact
+// pass/warn chip from an audit() result; failed checks are listed in the tooltip.
+function AuditBadge({result}){
+  if(!result) return null;
+  const ok=result.pass;
+  const failed=(result.checks||[]).filter(c=>!c.ok);
+  const title=ok?('Self-audit: all '+result.total+' checks passed')
+    :('Self-audit — needs attention:\n• '+failed.map(c=>c.name+(c.detail?': '+c.detail:'')).join('\n• '));
+  return React.createElement('span',{title,style:{fontSize:'8px',padding:'2px 7px',borderRadius:3,fontWeight:700,whiteSpace:'nowrap',alignSelf:'center',
+    background:ok?'rgba(16,185,129,.12)':'rgba(245,158,11,.12)',color:ok?'#10b981':'#f59e0b',border:'.5px solid '+(ok?'rgba(16,185,129,.3)':'rgba(245,158,11,.3)')}},
+    ok?'✓ Audited':'⚠ '+failed.length+' check'+(failed.length>1?'s':''));
+}
+
+// Self-audit invariants for the FOB analysis report — surfaces data-integrity
+// issues (missing data, out-of-range %, zero-sales locations, and a reconciliation
+// of the reported weighted FOB% against a fresh dollar-weighted recompute).
+function fobAudit(metrics){
+  if(!metrics) return _audit([_chk('data present',false,'no FOB rows for scope/month')]);
+  const fob=metrics.fobPct||{};
+  const lb=fob.locBreakdown||[];
+  const checks=[
+    _chk('data present',(metrics.rowCount||0)>0,'rowCount='+(metrics.rowCount||0)),
+    _chk('total sales > 0',(metrics.totalSales||0)>0,'totalSales='+Math.round(metrics.totalSales||0)),
+    _chkRange((fob.actual||0)*100,0,100,'FOB% in [0,100]'),
+    _chk('all locations have sales',lb.every(l=>l.sales>0),(lb.filter(l=>!(l.sales>0)).map(l=>l.loc).join(', ')||'')),
+  ];
+  // Reconcile the reported weighted FOB% against a fresh dollar-weighted recompute
+  // from the per-location breakdown (Σ pct·sales / Σ sales — never a mean of %s).
+  if(lb.length){
+    const recomputed=_wmean(lb,l=>l.pct,l=>l.sales);
+    if(recomputed!=null&&fob.actual!=null){
+      const r=_recon({reported:fob.actual,recomputed},{tolerance:0.005});
+      checks.push(_chk('weighted FOB reconciles',r.ok,r.detail));
+    }
+  }
+  return _audit(checks);
+}
+
 function FOBAnalysisPanel({stores, ds, settings, onClose}){
   const allLocs=React.useMemo(()=>(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&DEFAULT_TARGETS[s.loc]).map(s=>s.loc),[stores]);
   const okLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='OK'),[allLocs]);
@@ -2701,6 +2740,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     const effLoc=(selLoc==='ok'||selLoc==='fl')?'all':selLoc;
     return computeFOBMetrics(filtRows,allTargets,effLoc,selMonth);
   },[ds.fobRows,allTargets,selLoc,selMonth,fobActiveLocs]);
+  const auditResult=React.useMemo(()=>fobAudit(metrics),[metrics]);
 
   const pFmt=v=>(v>=0?'+':'')+(v*100).toFixed(2)+'%';
   const pFmtA=v=>(v*100).toFixed(2)+'%';
@@ -2749,7 +2789,8 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
         div({style:{fontSize:'8px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginBottom:2}},k.label),
         div({style:{fontSize:'15px',fontFamily:'var(--mono)',fontWeight:700,color:k.col}},''+k.val),
         div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2}},k.sub)
-      ))
+      )),
+      React.createElement(AuditBadge,{result:auditResult})
     );
   };
 
