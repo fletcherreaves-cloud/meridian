@@ -158,6 +158,42 @@ export function SkillsMatrixPanel({ ds, onClose }) {
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
   };
 
+  // Bulk worksheet: one update worksheet PER STORE for the current scope (All/FL/
+  // OK/patch), each store page-broken so they print as separate handouts.
+  const printWorksheetsByStore = () => {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));
+    const nameOf = loc => (stores.find(s => locNum(s[0]) === locNum(loc)) || [])[1] || (sorted.find(e => locNum(e.loc) === locNum(loc)) || {}).homeStore || STORE_NAMES[locNum(loc)] || locNum(loc);
+    const byLoc = {};
+    for (const e of sorted) { const k = locNum(e.loc); (byLoc[k] = byLoc[k] || []).push(e); }
+    const locs = Object.keys(byLoc).sort((a, b) => String(nameOf(a)).localeCompare(String(nameOf(b))));
+    if (!locs.length) return;
+    const head = ['Employee', 'Job Title', ...jobs].map((x, i) => `<th class="${i < 2 ? 'lbl' : 'st'}"><span>${esc(x)}</span></th>`).join('');
+    const sheet = loc => {
+      const rows = byLoc[loc];
+      const bodyRows = rows.map(e => `<tr><td class="s">${esc(e.employee)}</td><td class="t">${esc(e.role || '')}</td>${jobs.map(j => { const v = (e.skills || {})[j]; return `<td class="box">${v ? `<span class="cur">${v}</span>` : ''}</td>`; }).join('')}</tr>`).join('');
+      const blanks = Array.from({ length: 4 }, () => `<tr class="blank"><td class="s">&nbsp;</td><td class="t"></td>${jobs.map(() => '<td class="box"></td>').join('')}</tr>`).join('');
+      return `<div class="store-sheet"><h1>Employee Skill Levels — Update Worksheet</h1>
+        <div class="sub">${esc(nameOf(loc))} (#${esc(locNum(loc))}) · ${rows.length} crew · ${jobs.length} stations · ${esc(new Date().toLocaleDateString())}</div>
+        <div class="note">Current rating is shown small/gray in each box. Write the <b>new</b> rating (1–5) in the box for any station that changed, then enter the updates in LifeLenz. Blank box = no change. Empty rows at the bottom are for new hires.</div>
+        <table><thead><tr>${head}</tr></thead><tbody>${bodyRows}${blanks}</tbody></table></div>`;
+    };
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Skill Worksheets — ${esc(locs.length)} stores</title>
+      <style>@page{size:landscape}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:12px;font-size:9px}
+      h1{font-size:14px;margin:0 0 2px}.sub{color:#555;font-size:10px;margin-bottom:4px}
+      .note{color:#444;font-size:9px;margin-bottom:8px;padding:4px 6px;background:#fff8e6;border:1px solid #f0d060;border-radius:4px}
+      .store-sheet{page-break-before:always}.store-sheet:first-child{page-break-before:auto}
+      table{border-collapse:collapse}tr{page-break-inside:avoid}
+      th{font-size:7.5px;color:#333;border:1px solid #bbb;padding:2px;vertical-align:bottom}
+      th.st{writing-mode:vertical-rl;transform:rotate(180deg);height:96px;text-align:left}
+      th.lbl{text-align:left;min-width:110px}
+      td{border:1px solid #ccc;padding:0}
+      td.s{font-weight:600;padding:2px 5px;white-space:nowrap}td.t{color:#555;padding:2px 5px;white-space:nowrap;font-size:8px}
+      td.box{width:20px;height:20px;position:relative}td.box .cur{position:absolute;top:0;left:1px;font-size:7px;color:#aaa}
+      tr.blank td{height:22px}tr.blank td.s{min-width:110px}
+      @media print{body{margin:0}}</style></head><body>${locs.map(sheet).join('')}</body></html>`;
+    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  };
+
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
     div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
     div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1600, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
@@ -176,6 +212,7 @@ export function SkillsMatrixPanel({ ds, onClose }) {
         btn({ onClick: exportCSV, disabled: !sorted.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: sorted.length ? 'pointer' : 'default' } }, '⬇ CSV'),
         btn({ onClick: printReport, disabled: !sorted.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: sorted.length ? 'pointer' : 'default' } }, '🖨 Print'),
         btn({ onClick: printWorksheet, disabled: !sorted.length, title: 'Printable worksheet — current ratings with write-in boxes for updates', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: sorted.length ? 'pointer' : 'default' } }, '📝 Worksheet'),
+        (() => { const nStores = new Set(sorted.map(e => locNum(e.loc))).size; return btn({ onClick: printWorksheetsByStore, disabled: nStores < 2, title: 'One worksheet per store for the selected scope, page-broken between stores (for handouts)', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: nStores >= 2 ? 'pointer' : 'default', opacity: nStores >= 2 ? 1 : 0.5 } }, '📝 Per-store' + (nStores >= 2 ? ' ×' + nStores : '')); })(),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       div({ style: { flex: 1, overflow: 'auto', padding: '12px 16px' } },
