@@ -1624,13 +1624,21 @@ export async function loadLifeLenzLaborWeek({ weekStart = null } = {}) {
 }
 
 // ── Crew Skills Matrix (LifeLenz People List) ────────────────────────────────
-// Per-employee skill ratings (1-5) by job, keyed by home store + name.
-// `employees` = [{employee, loc, homeStore, role, roleCode, isPrimaryRole,
+// Per-employee skill ratings (1-5) by job. Keyed by the ROSTER store (the store
+// whose People page/file this is), NOT the employee's home store — a person
+// rostered at a transition/shared store must show under THAT store even if their
+// home store is elsewhere. `home_store` keeps the home for display.
+// `employees` = [{employee, loc(home), homeStore, role, roleCode, isPrimaryRole,
 //                 schoolCalendar, skills:{job:rating}}].
-export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_csv' } = {}) {
+// opts.rosterLoc = the store this roster belongs to (overrides each e.loc).
+// opts.replace   = delete this store's existing rows first, so the roster is
+//                  authoritative (a re-pull/upload wins — "pull takes precedence")
+//                  and no stale crew linger.
+export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_csv', rosterLoc = null, replace = false } = {}) {
   if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
-  const rows = (employees || []).filter(e => e && e.employee && e.loc).map(e => ({
-    loc: String(parseInt(e.loc, 10)),
+  const roster = rosterLoc != null ? String(parseInt(rosterLoc, 10)) : null;
+  const rows = (employees || []).filter(e => e && e.employee && (roster || e.loc)).map(e => ({
+    loc: roster || String(parseInt(e.loc, 10)),
     employee: e.employee,
     home_store: e.homeStore ?? null,
     role: e.role ?? null,
@@ -1642,6 +1650,10 @@ export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_
     updated_at: new Date().toISOString(),
   }));
   if (!rows.length) return { saved: 0, errors: [] };
+  if (replace && roster) {
+    const { error: delErr } = await supabase.from('employee_skills').delete().eq('loc', roster);
+    if (delErr) console.warn('[employee_skills] replace-delete error:', delErr.message);
+  }
   const { error } = await supabase.from('employee_skills').upsert(rows, { onConflict: 'loc,employee' });
   if (error) {
     if (error.message?.includes('relation') || error.code === '42P01')
@@ -1652,7 +1664,7 @@ export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_
   return { saved: rows.length, errors: [] };
 }
 
-// Load the whole skills roster → [{employee, loc, homeStore, role, ..., skills}].
+// Load the whole skills roster → [{employee, loc(roster), homeStore, ..., updatedAt}].
 export async function loadEmployeeSkills() {
   if (!supabase) return [];
   const { data, error } = await supabase.from('employee_skills').select('*');
@@ -1660,6 +1672,6 @@ export async function loadEmployeeSkills() {
   return data.map(r => ({
     employee: r.employee, loc: r.loc, homeStore: r.home_store, role: r.role,
     roleCode: r.role_code, isPrimaryRole: r.is_primary_role, schoolCalendar: r.school_calendar,
-    skills: r.skills_json || {}, source: r.source,
+    skills: r.skills_json || {}, source: r.source, updatedAt: r.updated_at,
   }));
 }

@@ -127,27 +127,34 @@ async function downloadPeopleCSV(page, url, tag) {
   return csvText;
 }
 
-async function upsertEmployees(employees) {
-  const rows = employees.filter(e => e.employee && e.loc).map(e => ({
-    loc: String(parseInt(e.loc, 10)), employee: e.employee, home_store: e.homeStore ?? null,
+// Roster-keyed + authoritative: every employee on this store's page is stored
+// under THIS store (rosterLoc), and the store's prior rows are replaced first, so
+// a re-pull is complete + wins over stale/manual data. home_store keeps the home.
+async function upsertEmployees(employees, rosterLoc) {
+  const loc = String(parseInt(rosterLoc, 10));
+  if (!(parseInt(rosterLoc, 10) > 0)) { console.warn('[supabase] skip — no roster loc'); return 0; }
+  const rows = employees.filter(e => e.employee).map(e => ({
+    loc, employee: e.employee, home_store: e.homeStore ?? null,
     role: e.role ?? null, role_code: e.roleCode ?? null, is_primary_role: e.isPrimaryRole !== false,
     school_calendar: e.schoolCalendar ?? null, skills_json: e.skills ?? {},
     source: 'lifelenz_people_scrape', updated_at: new Date().toISOString(),
   }));
   if (!rows.length) return 0;
+  await supabase.from('employee_skills').delete().eq('loc', loc); // replace this store's roster
   const { error } = await supabase.from('employee_skills').upsert(rows, { onConflict: 'loc,employee' });
   if (error) { console.warn('[supabase] upsert error:', error.message); return 0; }
   return rows.length;
 }
 
-async function pullOne(page, url, tag) {
+async function pullOne(page, url, tag, rosterLoc) {
   const csv = await downloadPeopleCSV(page, url, tag);
   if (!csv) { console.warn(`[people] ${tag}: no CSV captured`); return 0; }
   const wb = XLSX.read(csv, { type: 'string', raw: true });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: true });
   const parsed = parsePeopleSkills(rows);
-  const saved = await upsertEmployees(parsed.employees);
-  console.log(`[people] ${parsed.pulledStore || tag}: ${parsed.employees.length} employees, ${saved} saved`);
+  const loc = rosterLoc || parsed.pulledLoc; // the store whose roster this is
+  const saved = await upsertEmployees(parsed.employees, loc);
+  console.log(`[people] ${parsed.pulledStore || tag} (#${loc}): ${parsed.employees.length} on roster, ${saved} saved`);
   return saved;
 }
 
@@ -179,7 +186,7 @@ async function main() {
   console.log(`[people] ${list.length} store page(s) to pull`);
   let totalSaved = 0;
   for (const t of list) {
-    try { totalSaved += await pullOne(page, t.url, t.loc || t.url); }
+    try { totalSaved += await pullOne(page, t.url, t.loc || t.url, t.loc); }
     catch (e) { console.error(`[people] ${t.loc || t.url} error:`, e.message); }
   }
   await browser.close();
