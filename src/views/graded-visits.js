@@ -370,7 +370,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const renderContext = (v) => {
     const c = ctx[v.id];
     if (!c || c.loading) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11 } }, 'Loading operational context…');
-    const { cutoff, hrs, daily, hasDaily, psvc, psale } = contextData(v);
+    const { cutoff, hrs, dayAgg, visitHourRow, daily, hasDaily, psvc, psale } = contextData(v);
     if (!hrs.length && !hasDaily && !psvc.length) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11, lineHeight: 1.6 } },
       'No operational data found for ' + niceDate(v.dateISO) + ' in any source (DAR, Glimpse, Ops/Controls/Labor, Peaks). If the visit predates your DAR history, run the backfill for that window.');
     const chip = (l, val) => val == null ? null : div({ style: { display: 'flex', flexDirection: 'column', minWidth: 62 } },
