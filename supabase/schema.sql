@@ -1002,3 +1002,68 @@ create index if not exists cash_sheet_daily_date_idx on public.cash_sheet_daily 
 --         org  = 'emerald',
 --         accessible_locs = array['6178','6838','10034','35242','37566','38609','43701']
 --     where email = 'brad@example.com';
+
+-- ── Labor Analysis: Store Config (Fixed-Labor-Hours worksheet) ──────────────────
+-- Slowly-changing per-store config for the weekly FLH labor analysis. Seeded from
+-- the MBI Labor Analysis worksheet, then maintained via the in-app editor.
+-- hours_json = canonical 7-weekday model:
+--   { "mon": {"open":0.2292,"close":0.9167,"hours":16.5}, ... "sun": {...} }
+-- (open/close are Excel time fractions of a day; hours = resolved hours open.)
+create table if not exists public.store_labor_config (
+  loc              text primary key,          -- store number, e.g. '3708'
+  is_24hr          boolean default false,      -- open 24h every day
+  is_24_note       text,                       -- preserves nuance e.g. "24 HR W/E"
+  maint_hours      float,                      -- Total Maintenance Hours/Wk
+  maint_people     float,                      -- Number of Maint. People Scheduled
+  maint_days_off   text,                        -- Primary Maint. Days Off
+  prep_hours       float,                      -- Total Prep Hours/Wk
+  lobby_hours      float,                      -- Total Lobby Hours/Wk
+  hours_json       jsonb,                       -- 7-weekday open/close/hours
+  updated_at       timestamptz default now(),
+  updated_by       uuid references public.profiles(id)
+);
+
+alter table public.store_labor_config enable row level security;
+
+create policy "store_labor_config: public read" on public.store_labor_config
+  for select using (true);
+create policy "store_labor_config: public write" on public.store_labor_config
+  for all using (true);
+
+-- ── Labor Analysis: Weekly LifeLenz Inputs (Band 1) ─────────────────────────────
+-- One row per store per week — the LifeLenz-sourced labor projection inputs the
+-- FLH report is built from. Interim source: parsed from the MBI worksheet upload;
+-- future: scraped from LifeLenz live scheduling pages. Derived efficiency columns
+-- (scheduled/target labor $, projected hours, variances, recommended fixed/floor)
+-- are computed in src/engine/labor-analysis.js, NOT stored.
+create table if not exists public.lifelenz_labor_week (
+  loc                text not null,             -- store number, e.g. '3708'
+  week_start         date not null,             -- Monday/period start, e.g. 2026-07-15
+  week_end           date,                      -- period end, e.g. 2026-07-21
+  month_tag          text,                      -- label from the sheet, e.g. 'June'
+  proj_sales_month   float,                     -- Proj Sales for Month (optional)
+  sales_fcst         float,                     -- Sales Forecast (week)
+  labor_pct_actual   float,                     -- Labor % of Sales (actual scheduled)
+  gc_fcst            float,                     -- GC Forecast
+  hours_fcst         float,                     -- Hours Forecast
+  hours_sched        float,                     -- Hours Scheduled
+  sched_fixed_pct    float,                     -- Scheduled Fixed Labor %
+  tpph               float,                     -- Scheduled TPMH (TPPH)
+  rate               float,                     -- Current Avg Rate of Pay
+  labor_target_org   float,                     -- Labor Target (Organization) %
+  actual_hours       float,                     -- Actual Hours (optional)
+  source             text default 'mbi_upload', -- 'mbi_upload' | 'lifelenz_scrape'
+  updated_at         timestamptz default now(),
+  updated_by         uuid references public.profiles(id),
+  primary key (loc, week_start)
+);
+
+alter table public.lifelenz_labor_week enable row level security;
+
+create policy "lifelenz_labor_week: public read" on public.lifelenz_labor_week
+  for select using (true);
+create policy "lifelenz_labor_week: public write" on public.lifelenz_labor_week
+  for all using (true);
+
+create index if not exists lifelenz_labor_week_week_idx
+  on public.lifelenz_labor_week (week_start);

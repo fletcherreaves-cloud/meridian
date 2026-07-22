@@ -1514,3 +1514,106 @@ export async function loadVisitDAR(loc, dateISO) {
   ]);
   return { hours: hrs || [], glimpse: (gl && gl[0]) || null };
 }
+
+// ── Labor Analysis (Fixed-Labor-Hours) ───────────────────────────────────────
+// Per-store config (hours-of-op + gathered fixed-hours) and weekly LifeLenz
+// inputs. Derived efficiency columns are computed in src/engine/labor-analysis.js,
+// never stored. loc is unpadded ('3708') to match STORE_NAMES.
+
+// Upsert per-store config. `configs` = [{loc, is24hr, is24Note, maintHours,
+// maintPeople, maintDaysOff, prepHours, lobbyHours, hours}].
+export async function saveStoreLaborConfig(configs) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  const rows = (configs || []).filter(c => c && c.loc).map(c => ({
+    loc: String(parseInt(c.loc, 10)),
+    is_24hr: !!c.is24hr,
+    is_24_note: c.is24Note ?? null,
+    maint_hours: c.maintHours ?? null,
+    maint_people: c.maintPeople ?? null,
+    maint_days_off: c.maintDaysOff ?? null,
+    prep_hours: c.prepHours ?? null,
+    lobby_hours: c.lobbyHours ?? null,
+    hours_json: c.hours ?? null,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase.from('store_labor_config').upsert(rows, { onConflict: 'loc' });
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01')
+      console.error('[store_labor_config] Table missing — run the store_labor_config block from schema.sql.');
+    else console.error('[store_labor_config] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: rows.length, errors: [] };
+}
+
+// Load all store config → { loc: {is24hr, is24Note, maintHours, ..., hours} }.
+export async function loadStoreLaborConfig() {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('store_labor_config').select('*');
+  if (error || !data) { if (error) console.warn('[store_labor_config] load error:', error.message); return {}; }
+  const out = {};
+  for (const r of data) out[r.loc] = {
+    loc: r.loc, is24hr: r.is_24hr, is24Note: r.is_24_note,
+    maintHours: r.maint_hours, maintPeople: r.maint_people, maintDaysOff: r.maint_days_off,
+    prepHours: r.prep_hours, lobbyHours: r.lobby_hours, hours: r.hours_json || {},
+  };
+  return out;
+}
+
+// Upsert weekly Band-1 inputs. `rows` = [{loc, band1{...}}] or flat band1 rows;
+// pass weekStart/weekEnd/monthTag from the parsed sheet.
+export async function saveLifeLenzLaborWeek(stores, { weekStart, weekEnd, monthTag, source = 'mbi_upload' } = {}) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  if (!weekStart) return { saved: 0, errors: ['weekStart required'] };
+  const rows = (stores || []).map(s => (s.band1 ? s.band1 : s)).filter(b => b && b.loc).map(b => ({
+    loc: String(parseInt(b.loc, 10)),
+    week_start: weekStart, week_end: weekEnd ?? null, month_tag: monthTag ?? null,
+    proj_sales_month: b.projSalesMonth ?? null,
+    sales_fcst: b.salesFcst ?? null,
+    labor_pct_actual: b.laborPctActual ?? null,
+    gc_fcst: b.gcFcst ?? null,
+    hours_fcst: b.hoursFcst ?? null,
+    hours_sched: b.hoursSched ?? null,
+    sched_fixed_pct: b.schedFixedPct ?? null,
+    tpph: b.tpph ?? null,
+    rate: b.rate ?? null,
+    labor_target_org: b.laborTargetOrg ?? null,
+    actual_hours: b.actualHours ?? null,
+    source,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase.from('lifelenz_labor_week').upsert(rows, { onConflict: 'loc,week_start' });
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01')
+      console.error('[lifelenz_labor_week] Table missing — run the lifelenz_labor_week block from schema.sql.');
+    else console.error('[lifelenz_labor_week] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: rows.length, errors: [] };
+}
+
+// Load weekly labor inputs. Pass weekStart for one week, else the latest week per
+// store. Returns { weekStart, rows: { loc: {salesFcst, laborPctActual, ...} } }.
+export async function loadLifeLenzLaborWeek({ weekStart = null } = {}) {
+  if (!supabase) return { weekStart: null, rows: {} };
+  let q = supabase.from('lifelenz_labor_week').select('*');
+  if (weekStart) q = q.eq('week_start', weekStart);
+  else q = q.order('week_start', { ascending: false });
+  const { data, error } = await q;
+  if (error || !data) { if (error) console.warn('[lifelenz_labor_week] load error:', error.message); return { weekStart: null, rows: {} }; }
+  // Without an explicit week, keep only each store's most-recent row.
+  const rows = {}; let latest = weekStart;
+  for (const r of data) {
+    if (rows[r.loc]) continue; // data is week-desc → first seen is newest
+    if (!latest || r.week_start > latest) latest = r.week_start;
+    rows[r.loc] = {
+      loc: r.loc, weekStart: r.week_start, weekEnd: r.week_end, monthTag: r.month_tag,
+      projSalesMonth: r.proj_sales_month, salesFcst: r.sales_fcst, laborPctActual: r.labor_pct_actual,
+      gcFcst: r.gc_fcst, hoursFcst: r.hours_fcst, hoursSched: r.hours_sched, schedFixedPct: r.sched_fixed_pct,
+      tpph: r.tpph, rate: r.rate, laborTargetOrg: r.labor_target_org, actualHours: r.actual_hours, source: r.source,
+    };
+  }
+  return { weekStart: latest, rows };
+}
