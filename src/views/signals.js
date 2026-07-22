@@ -560,8 +560,8 @@ function PromoteModal({ def, sig, onConfirm, onCancel }) {
     { key: 'morning_brief', label: '🌅 Morning Brief', desc: 'Flag this relationship in the daily store summary' },
     { key: 'sage', label: '🧠 SAGE', desc: 'Include this correlation in SAGE AI context when relevant' },
   ];
-  return h('div', { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' } },
-    h('div', { style: { width: 420, background: 'var(--surf,#1a1f2e)', borderRadius: 12, padding: 24, border: `1px solid ${bdr}`, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
+  return h('div', { onClick: onCancel, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' } },
+    h('div', { onClick: e => e.stopPropagation(), style: { width: 'min(420px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--surf,#1a1f2e)', borderRadius: 12, padding: 24, border: `1px solid ${bdr}`, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 700, marginBottom: 6 } }, '▲ Promote Signal'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 16, lineHeight: 1.5 } },
         `"${def.name}" has a confirmed correlation (r = ${sig?.r?.toFixed(3) || '?'}). Promoting integrates it into Meridian's intelligence layer.`),

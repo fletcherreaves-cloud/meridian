@@ -188,6 +188,11 @@ function detectType(filename, wb){
   if(fn.includes('daily activity report')||fn.includes('daily_activity'))return{type:'dar',label:'Daily Activity Report (Hourly)',dr,confidence:'high'};
   // ── Product Mix ──
   if(fn.includes('product mix')||fn.includes('product_mix')||fn.includes('pmix'))return{type:'pmix',label:'Product Mix',dr,confidence:'high'};
+  // MBI Labor Analysis (weekly FLH worksheet) — must precede the generic
+  // 'labor analysis' match since the file is named "MBI_Labor_Analysis.xlsx".
+  if(fn.includes('mbi')&&(fn.includes('labor analysis')||fn.includes('labor_analysis')))return{type:'mbi-labor',label:'MBI Labor Analysis (FLH)',dr,confidence:'high'};
+  // LifeLenz People List (Simple CSV) → Crew Skills Matrix
+  if(fn.includes('people_list')||fn.includes('people list'))return{type:'people-skills',label:'Crew Skills (People List)',dr,confidence:'high'};
   // LifeLenz Labor Analysis Summary Report (must come before generic 'labor analysis' match)
   // Matches both space-separated and underscore-separated filenames from the sync script
   if(fn.includes('labor analysis summary report')||fn.includes('labor_analysis_summary_report'))return{type:'ll-labor',label:'LifeLenz Labor Analysis',dr,confidence:'high'};
@@ -1827,4 +1832,174 @@ async function parseSMGVoicePDF(file) {
   return rows;
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale, opsReportIsDaily };
+// ── MBI Labor Analysis (weekly Fixed-Labor-Hours worksheet) ──────────────────
+// Parses the owner's "MBI - Labor Analysis" sheet into two streams:
+//   • weekly Band-1 LifeLenz inputs per store  → lifelenz_labor_week
+//   • per-store config (hours-of-op + fixed hrs) → store_labor_config
+// Layout is a FIXED template (their own file): 3 header rows, data from row 4,
+// stops at "Sub Total"/"Grand Total"/legend rows. Column positions are stable, so
+// we read by letter (duplicate headers like two "Store Open Time Sun" make
+// header-lookup ambiguous). See memory/project-labor-analysis-flh.md.
+const _MBI = {
+  loc: 0, projSalesMonth: 1, salesFcst: 2, laborPctActual: 3, gcFcst: 4, hoursFcst: 5,
+  hoursSched: 6, schedFixedPct: 7, tpph: 8, rate: 9, laborTargetOrg: 11, actualHours: 22,
+  maintHours: 28, maintPeople: 29, maintDaysOff: 30, prepHours: 31, lobbyHours: 32, is24hr: 33,
+};
+// Hours-of-op open/close column pairs → the weekdays they cover. Applied in this
+// order so broad bands set a default and specific bands override (last wins).
+const _MBI_HOURS_BANDS = [
+  { o: 34, c: 35, days: ['sun','mon','tue','wed','thu','fri','sat'] }, // All Days
+  { o: 37, c: 38, days: ['sun','mon','tue','wed','thu'] },             // Sun-Thu
+  { o: 55, c: 56, days: ['mon','tue','wed','thu','fri','sat'] },       // Mon-Sat
+  { o: 47, c: 48, days: ['mon','tue','wed','thu'] },                   // Mon-Thu
+  { o: 41, c: 42, days: ['mon','tue','wed'] },                         // Mon-Wed
+  { o: 43, c: 44, days: ['thu','fri','sat'] },                         // Thu-Sat
+  { o: 39, c: 40, days: ['fri','sat'] },                               // Fri-Sat
+  { o: 45, c: 46, days: ['sun'] },                                     // Sun
+  { o: 53, c: 54, days: ['sun'] },                                     // Sun (2nd column)
+  { o: 49, c: 50, days: ['fri'] },                                     // Fri
+  { o: 51, c: 52, days: ['sat'] },                                     // Sat
+];
+// Per-day "Hours Open" columns (BF..BL) — authoritative resolved hours by weekday.
+const _MBI_PERDAY = { wed: 57, thu: 58, fri: 59, sat: 60, sun: 61, mon: 62, tue: 63 };
+
+function _mbiNum(v){ if(v===null||v===undefined||v==='')return null; const n=typeof v==='number'?v:parseFloat(String(v).replace(/[$,%]/g,'')); return isNaN(n)?null:n; }
+function _mbiIsTime(v){ return typeof v==='number' && v>=0 && v<=1; }
+// Hours Forecast / Scheduled / Actual are Excel [h]:mm DURATIONS — stored as
+// fractions of a day (1.0 = 24h). Convert the day-serial to real hours (×24) so
+// downstream math is unit-consistent (e.g. raw 62.52 → 1500.5 hours).
+function _mbiHours(v){ const n=_mbiNum(v); return n==null?null:n*24; }
+
+// Parse the raw rows array (from parseRaw) → { weekStart, weekEnd, monthTag, stores:[...] }.
+function parseMbiLaborAnalysis(rows){
+  if(!rows || rows.length<4) return { weekStart:null, weekEnd:null, monthTag:null, stores:[] };
+  const monthTag = rows[1] && rows[1][1] ? String(rows[1][1]).trim() : null; // B2
+  // Week range lives in C2 like "07/15/26 - 07/21/26".
+  let weekStart=null, weekEnd=null;
+  const wr = rows[1] && rows[1][2] ? String(rows[1][2]) : '';
+  const m = wr.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  const toISO = s => { const p=s.split('/'); if(p.length!==3)return null; let[mm,dd,yy]=p.map(Number); if(yy<100)yy+=2000; return `${yy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`; };
+  if(m){ weekStart=toISO(m[1]); weekEnd=toISO(m[2]); }
+
+  const stores=[];
+  for(let i=3;i<rows.length;i++){
+    const r=rows[i]; if(!r) continue;
+    const loc=r[_MBI.loc];
+    if(loc===null||loc===undefined||loc==='') continue;
+    // Stop/skip roll-up + legend rows (non-numeric location labels).
+    if(typeof loc!=='number' && !/^\d{3,7}$/.test(String(loc).trim())) continue;
+    const locStr = String(parseInt(loc,10)); // unpadded, matches STORE_NAMES keys
+
+    const band1 = {
+      loc: locStr,
+      projSalesMonth: _mbiNum(r[_MBI.projSalesMonth]),
+      salesFcst: _mbiNum(r[_MBI.salesFcst]),
+      laborPctActual: _mbiNum(r[_MBI.laborPctActual]),
+      gcFcst: _mbiNum(r[_MBI.gcFcst]),
+      hoursFcst: _mbiHours(r[_MBI.hoursFcst]),   // [h]:mm day-serial → hours
+      hoursSched: _mbiHours(r[_MBI.hoursSched]), // [h]:mm day-serial → hours
+      schedFixedPct: _mbiNum(r[_MBI.schedFixedPct]),
+      tpph: _mbiNum(r[_MBI.tpph]),
+      rate: _mbiNum(r[_MBI.rate]),
+      laborTargetOrg: _mbiNum(r[_MBI.laborTargetOrg]),
+      actualHours: _mbiHours(r[_MBI.actualHours]), // [h]:mm day-serial → hours
+    };
+
+    // Resolve hours of operation to a canonical 7-weekday model.
+    const hours = { sun:{}, mon:{}, tue:{}, wed:{}, thu:{}, fri:{}, sat:{} };
+    for(const b of _MBI_HOURS_BANDS){
+      const ov=r[b.o], cv=r[b.c];
+      const hasO=_mbiIsTime(ov), hasC=_mbiIsTime(cv);
+      if(!hasO && !hasC) continue;
+      for(const d of b.days){ if(hasO) hours[d].open=ov; if(hasC) hours[d].close=cv; }
+    }
+    // Attach authoritative per-day resolved hours (BF..BL); fall back to computed.
+    for(const [d,ci] of Object.entries(_MBI_PERDAY)){
+      const hv=_mbiNum(r[ci]);
+      const cur=hours[d];
+      let comp=null;
+      if(_mbiIsTime(cur.open) && _mbiIsTime(cur.close)){ comp=(cur.close-cur.open)*24; if(comp<=0)comp+=24; comp=Math.round(comp*100)/100; }
+      cur.hours = (hv!=null? hv : comp);
+    }
+    const rawIs24 = r[_MBI.is24hr]; const is24Str = rawIs24==null?'':String(rawIs24).trim();
+    const allDays24 = Object.values(hours).every(h=>h.hours===24);
+    const config = {
+      loc: locStr,
+      is24hr: allDays24 || /^(y|yes|24)/i.test(is24Str),
+      is24Note: is24Str || null,   // preserves "24 HR W/E" nuance
+      maintHours: _mbiNum(r[_MBI.maintHours]),
+      maintPeople: _mbiNum(r[_MBI.maintPeople]),
+      maintDaysOff: r[_MBI.maintDaysOff]==null?null:String(r[_MBI.maintDaysOff]).trim(),
+      prepHours: _mbiNum(r[_MBI.prepHours]),
+      lobbyHours: _mbiNum(r[_MBI.lobbyHours]),
+      hours,
+    };
+    stores.push({ loc: locStr, band1, config });
+  }
+  return { weekStart, weekEnd, monthTag, stores };
+}
+
+// Workbook wrapper — pick the labor-analysis sheet and parse it.
+function parseMbiLaborAnalysisWb(wb){
+  const name = (wb.SheetNames||[]).find(n=>/labor\s*analysis/i.test(n)) || wb.SheetNames[0];
+  return parseMbiLaborAnalysis(parseRaw(wb, name));
+}
+
+// ── LifeLenz People List (Simple CSV) → Crew Skills Matrix ───────────────────
+// Explodes the packed "SCHEDULE JOBS" string ("BEVERAGE SPECIALIST (3), DRIVE
+// THRU (3), ...") into a per-employee { job: rating(1-5) } map so it can render
+// as a skills matrix (renamed "Skill Levels"). Also parses home store + primary
+// role. Header carries a BOM; job/role cells are wrapped in literal quotes.
+function _stripQuotes(s){ return s==null?'':String(s).replace(/^﻿/,'').replace(/^"+|"+$/g,'').trim(); }
+
+// Parse "BEVERAGE SPECIALIST (3), DRIVE THRU (5), ..." → { job: rating }.
+function parseSkillJobs(raw){
+  const s = _stripQuotes(raw); const out = {};
+  if(!s) return out;
+  const re = /([^,()]+?)\s*\((\d)\)/g; let m;
+  while((m = re.exec(s))){ const job = m[1].trim().replace(/\s+/g,' '); const rating = parseInt(m[2],10);
+    if(job && rating>=1 && rating<=5) out[job] = rating; }
+  return out;
+}
+
+// "0011657 - PURCELL" / "0033704 - TECUMSEH, OK" → { loc:'11657', name:'PURCELL' }.
+function parseHomeStore(raw){
+  const s = _stripQuotes(raw); const m = s.match(/^(\d{3,7})\s*-\s*(.+)$/);
+  if(!m) return { loc:null, name: s || null };
+  return { loc: String(parseInt(m[1],10)), name: m[2].trim() };
+}
+
+// "Primary (00650 - CREW PERSON)" → { isPrimary:true, code:'00650', role:'CREW PERSON' }.
+function parseJobRate(raw){
+  const s = _stripQuotes(raw); const m = s.match(/(\w+)?\s*\(\s*(\d+)\s*-\s*(.+?)\)/);
+  if(!m) return { isPrimary:/primary/i.test(s), code:null, role: s || null };
+  return { isPrimary:/primary/i.test(m[1]||''), code:m[2], role:m[3].trim() };
+}
+
+function parsePeopleSkills(rows){
+  if(!rows || rows.length<2) return { employees:[], jobs:[], pulledLoc:null, pulledStore:null };
+  const employees = []; const jobSet = new Set();
+  // Store this file was pulled for = the modal (most common) home store.
+  const locCount = {};
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i]; if(!r) continue;
+    const name = _stripQuotes(r[0]); if(!name) continue;
+    const skills = parseSkillJobs(r[1]);
+    const home = parseHomeStore(r[2]);
+    const school = _stripQuotes(r[3]); const rate = parseJobRate(r[4]);
+    for(const j of Object.keys(skills)) jobSet.add(j);
+    if(home.loc) locCount[home.loc] = (locCount[home.loc]||0)+1;
+    employees.push({ employee:name, loc:home.loc, homeStore:home.name,
+      role:rate.role, roleCode:rate.code, isPrimaryRole:rate.isPrimary,
+      schoolCalendar:(school && school!=='-')?school:null, skills });
+  }
+  const pulledLoc = Object.keys(locCount).sort((a,b)=>locCount[b]-locCount[a])[0] || null;
+  const pulledStore = pulledLoc ? (employees.find(e=>e.loc===pulledLoc)||{}).homeStore || null : null;
+  return { employees, jobs:[...jobSet].sort(), pulledLoc, pulledStore };
+}
+
+function parsePeopleSkillsWb(wb){
+  return parsePeopleSkills(parseRaw(wb, wb.SheetNames[0]));
+}
+
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs };

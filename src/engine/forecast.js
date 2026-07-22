@@ -276,6 +276,7 @@ function getForecastWeather(loc, date) {
 }
 
 function fetchRow(idx,loc,date,field){
+  if(!idx)return field?0:null; // ops/ctrl/weather indices are optional — absent = no row
   const rows=idx[loc+'_'+dKey(date)];
   if(!rows||!rows.length)return field?0:null;
   if(!field) return rows.find(r=>!r.isPeriodSummary)||rows[0];

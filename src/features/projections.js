@@ -3,10 +3,10 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS } from '../constants.js';
 import { dKey, sodOf, addD, eodOf, thisWeek } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
-import { forecastDay, fetchLY, getStoreOrg, fetchLYDate } from '../engine/forecast.js';
+import { forecastDay, fetchLY, getStoreOrg, fetchLYDate, gcCrossCheck } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 import { TH, f$ } from '../utils/fmt.js';
-import { ForecastAudit } from '../views/analytics.js';
+import { ForecastAudit, CurrentMonthPaceSection } from '../views/analytics.js';
 import { supabase } from '../lib/supabase.js';
 
 const h=React.createElement;
@@ -1702,6 +1702,11 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
           )
         ),
 
+        // Current-month actuals vs sales target (pace) — same section as the
+        // Monthly Projections panel, following this view's group selection.
+        h(CurrentMonthPaceSection, { ds, stores, settings, mt: ds&&ds.monthlyTargets, locs: ALL_LOCS,
+          groupView: groupBy==='operator' ? 'operator' : groupBy==='patch' ? 'supervisor' : 'flat' }),
+
         loading&&!Object.keys(weekData).length
           ? div({style:{padding:40,textAlign:'center',color:'var(--text3)'}},'⏳ Computing projections for all 27 stores…')
           : tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
@@ -1823,7 +1828,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                           ),
                         deepTab==='audit'&&deepStoreObj&&
                           h(ForecastAudit,{store:deepStoreObj,ds,settings,userEvents,
-                            dateRange:{s:weekDays[0],e:weekDays[6]},
+                            dateRange:{s:weekDays[0],e:weekDays[weekDays.length-1]},
                             onClose:()=>setDeepTab('forecast')})
                       )
                     )

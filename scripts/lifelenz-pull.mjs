@@ -368,6 +368,30 @@ function apiHeaders(token, scheduleId = null) {
   return h;
 }
 
+// Detect a session-expired / invalid-token response by status OR body signature.
+// LifeLenz returns 422 with {"error":{"code":"INVALID_SESSION_ERROR", ...}} when a
+// token expires (not 401/403), so status alone is not enough.
+function isSessionExpired(status, body) {
+  if (status === 401 || status === 403 || status === 422) return true;
+  const b = (body || '').toLowerCase();
+  return b.includes('invalid_session_error')
+      || b.includes('session expired')
+      || b.includes('please sign in again')
+      || b.includes('sign in again');
+}
+
+// Re-authenticate from scratch (direct REST → Playwright browser) when the
+// pre-captured token has expired. Returns a fresh token or null.
+async function reauth() {
+  console.warn('[auth] session expired — re-authenticating via login flow…');
+  let t = await getAuthTokenDirect();
+  if (!t) {
+    console.log('[auth] direct REST login failed, falling back to Playwright browser…');
+    t = await getAuthToken();
+  }
+  return t;
+}
+
 // ── Step 2: Discover store schedules via REST /api/admin/businesses/{id}/schedules ──
 // This endpoint returns all schedules in JSON:API format:
 //   { data: [{ id, type: "schedules", attributes: { schedule_name, code, schedule_status, ... } }] }
@@ -665,16 +689,20 @@ async function main() {
   let token = process.env.LIFELENZ_TOKEN || null;
   if (token) {
     console.log('[auth] using LIFELENZ_TOKEN from env (skipping browser login)');
-    // Quick sanity-check the token works
-    const check = await fetch(`${BASE}/workforce/business/${BUSINESS_ID}/schedules`, {
-      headers: { 'X-Auth-Token': token, 'Accept': 'application/json' },
+    // Sanity-check the token against the SAME endpoint we actually use for
+    // discovery (the old /workforce/... path 404s and gave false confidence).
+    const check = await fetch(`${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`, {
+      headers: { ...apiHeaders(token), 'Accept': 'application/json' },
     });
     console.log('[auth] token validation →', check.status);
-    if (check.status === 401 || check.status === 403) {
-      console.warn('[auth] LIFELENZ_TOKEN rejected (expired?), falling back to login flow');
-      token = null;
-    } else if (!check.ok) {
-      console.log('[auth] token validation non-200 but not auth error — proceeding with token');
+    if (!check.ok) {
+      const body = await check.text().catch(() => '');
+      if (isSessionExpired(check.status, body)) {
+        console.warn(`[auth] LIFELENZ_TOKEN rejected (${check.status}, expired?), falling back to login flow`);
+        token = null;
+      } else {
+        console.log('[auth] token validation non-200 but not a session error — proceeding with token');
+      }
     }
   }
   if (!token) {
@@ -685,15 +713,32 @@ async function main() {
     token = await getAuthToken();
   }
 
-  // 2. Discover schedules
+  // 2. Discover schedules — if the token turns out to be expired here (422
+  // INVALID_SESSION_ERROR slips past validation), re-auth once and retry so the
+  // daily sync self-heals when LIFELENZ_TOKEN rotates.
   let schedules;
   try {
     schedules = await getStoreSchedules(token);
   } catch (e) {
-    console.error('[schedules] error:', e.message);
-    console.error('If this is a 401, the token may not be correct.');
-    console.error('If this is a 404, the schedule discovery URL may differ — check LifeLenz DevTools for the right endpoint.');
-    process.exit(1);
+    const msg = e && e.message || '';
+    if (isSessionExpired(0, msg)) {
+      const fresh = await reauth();
+      if (fresh) {
+        token = fresh;
+        try {
+          schedules = await getStoreSchedules(token);
+        } catch (e2) {
+          console.error('[schedules] error after re-auth:', e2.message);
+          process.exit(1);
+        }
+      }
+    }
+    if (!schedules) {
+      console.error('[schedules] error:', msg);
+      console.error('If this is a 401/422, the token may be expired and re-auth failed (check LIFELENZ_USERNAME/PASSWORD secrets).');
+      console.error('If this is a 404, the schedule discovery URL may differ — check LifeLenz DevTools for the right endpoint.');
+      process.exit(1);
+    }
   }
 
   if (!schedules.length) {

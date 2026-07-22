@@ -12,6 +12,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
+import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync } from '../lib/supabase.js';
 
 const h=React.createElement;
@@ -2659,6 +2660,44 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
 
 
 
+// Reusable self-audit badge (accuracy layer, Workstream A). Renders a compact
+// pass/warn chip from an audit() result; failed checks are listed in the tooltip.
+function AuditBadge({result}){
+  if(!result) return null;
+  const ok=result.pass;
+  const failed=(result.checks||[]).filter(c=>!c.ok);
+  const title=ok?('Self-audit: all '+result.total+' checks passed')
+    :('Self-audit — needs attention:\n• '+failed.map(c=>c.name+(c.detail?': '+c.detail:'')).join('\n• '));
+  return React.createElement('span',{title,style:{fontSize:'8px',padding:'2px 7px',borderRadius:3,fontWeight:700,whiteSpace:'nowrap',alignSelf:'center',
+    background:ok?'rgba(16,185,129,.12)':'rgba(245,158,11,.12)',color:ok?'#10b981':'#f59e0b',border:'.5px solid '+(ok?'rgba(16,185,129,.3)':'rgba(245,158,11,.3)')}},
+    ok?'✓ Audited':'⚠ '+failed.length+' check'+(failed.length>1?'s':''));
+}
+
+// Self-audit invariants for the FOB analysis report — surfaces data-integrity
+// issues (missing data, out-of-range %, zero-sales locations, and a reconciliation
+// of the reported weighted FOB% against a fresh dollar-weighted recompute).
+function fobAudit(metrics){
+  if(!metrics) return _audit([_chk('data present',false,'no FOB rows for scope/month')]);
+  const fob=metrics.fobPct||{};
+  const lb=fob.locBreakdown||[];
+  const checks=[
+    _chk('data present',(metrics.rowCount||0)>0,'rowCount='+(metrics.rowCount||0)),
+    _chk('total sales > 0',(metrics.totalSales||0)>0,'totalSales='+Math.round(metrics.totalSales||0)),
+    _chkRange((fob.actual||0)*100,0,100,'FOB% in [0,100]'),
+    _chk('all locations have sales',lb.every(l=>l.sales>0),(lb.filter(l=>!(l.sales>0)).map(l=>l.loc).join(', ')||'')),
+  ];
+  // Reconcile the reported weighted FOB% against a fresh dollar-weighted recompute
+  // from the per-location breakdown (Σ pct·sales / Σ sales — never a mean of %s).
+  if(lb.length){
+    const recomputed=_wmean(lb,l=>l.pct,l=>l.sales);
+    if(recomputed!=null&&fob.actual!=null){
+      const r=_recon({reported:fob.actual,recomputed},{tolerance:0.005});
+      checks.push(_chk('weighted FOB reconciles',r.ok,r.detail));
+    }
+  }
+  return _audit(checks);
+}
+
 function FOBAnalysisPanel({stores, ds, settings, onClose}){
   const allLocs=React.useMemo(()=>(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&DEFAULT_TARGETS[s.loc]).map(s=>s.loc),[stores]);
   const okLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='OK'),[allLocs]);
@@ -2701,6 +2740,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     const effLoc=(selLoc==='ok'||selLoc==='fl')?'all':selLoc;
     return computeFOBMetrics(filtRows,allTargets,effLoc,selMonth);
   },[ds.fobRows,allTargets,selLoc,selMonth,fobActiveLocs]);
+  const auditResult=React.useMemo(()=>fobAudit(metrics),[metrics]);
 
   const pFmt=v=>(v>=0?'+':'')+(v*100).toFixed(2)+'%';
   const pFmtA=v=>(v*100).toFixed(2)+'%';
@@ -2749,7 +2789,8 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
         div({style:{fontSize:'8px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginBottom:2}},k.label),
         div({style:{fontSize:'15px',fontFamily:'var(--mono)',fontWeight:700,color:k.col}},''+k.val),
         div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2}},k.sub)
-      ))
+      )),
+      React.createElement(AuditBadge,{result:auditResult})
     );
   };
 
@@ -6664,6 +6705,23 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
 
+  // Sales reconciliation (accuracy layer, Workstream A): cross-check period PRODUCT
+  // sales across independent sources for the active scope. Only DAR-summary
+  // (its `sales` = Σ product_sales) and Sales-Ledger (`prodSales`) carry product
+  // sales, so those two reconcile; Labor's single `sales` is a net/total basis with
+  // no product split — shown for reference in the tooltip, NOT reconciled (mixing
+  // bases would false-alarm). Flags when the two product-sales totals differ >2%.
+  const salesRecon = React.useMemo(()=>{
+    const inScope = r => r && r.loc && r.date && allLocs.includes(String(r.loc)) && inRange(r.date, effectiveDateRange);
+    const darTot = sumOf((ds?.qsrActSummaryRows||[]).filter(inScope), 'sales');
+    const ledTot = sumOf((ds?.salesLedgerRows||[]).filter(inScope), 'prodSales');
+    const labTot = sumOf((ds?.laborRows||[]).filter(inScope), 'sales');
+    const src = {};
+    if(darTot>0) src.DAR = darTot;
+    if(ledTot>0) src.Ledger = ledTot;
+    return { r:_recon(src, {tolerance:0.02}), count:Object.keys(src).length, darTot, ledTot, labTot };
+  },[ds?.qsrActSummaryRows?.length, ds?.salesLedgerRows?.length, ds?.laborRows?.length, effectiveDateRange, stores]);
+
   // ── Today's movers (cloud-fresh DAR) ───────────────────────────
   // Surfaces what changed since you last looked, straight from the freshest
   // auto-synced daily-activity data — the "something new when I open the app".
@@ -7282,7 +7340,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           )
         ),
         div({style:{fontSize:'9px',color:ageClr}},
-          '● Data: '+(latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded'))
+          '● Data: '+(latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded')),
+        salesRecon.count>=2&&div({
+          title:(salesRecon.r.ok?'Product-sales sources agree within 2%':'Product-sales sources disagree by '+((salesRecon.r.relative||0)*100).toFixed(1)+'% (>2%)')
+            +'\nDAR (Σ product sales): $'+Math.round(salesRecon.darTot).toLocaleString()
+            +'\nSales Ledger (product): $'+Math.round(salesRecon.ledTot).toLocaleString()
+            +(salesRecon.labTot>0?'\nLabor (net basis — reference only, not reconciled): $'+Math.round(salesRecon.labTot).toLocaleString():''),
+          style:{fontSize:'9px',fontWeight:700,color:salesRecon.r.ok?'#10b981':'#f59e0b',cursor:'default',whiteSpace:'nowrap'}},
+          salesRecon.r.ok?'✓ Sales reconciled':'⚠ Sales sources differ '+((salesRecon.r.relative||0)*100).toFixed(1)+'%')
       )
     ),
 
@@ -9355,6 +9420,109 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
 </body></html>`;
 }
 
+// Reusable: current-month actuals vs sales target (pace). Shown in both the
+// Monthly Projections panel and the daily Projections view. Reuses
+// computeMonthActuals() so the numbers match the printed patch sheet. Renders
+// null when the target month has no actuals yet. `period` overrides the month
+// otherwise derived from the targets' own _year/_month.
+export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupView='flat', period: periodProp }) {
+  const { useMemo, useState, useEffect } = React;
+  // Base month = explicit prop → else the month of the most recent actual data →
+  // else the current calendar month. So it self-detects the right month to show
+  // regardless of which targets happen to be "loaded" in the panel.
+  const latestActualMonth = useMemo(()=>{
+    let max=null; const t=Date.now();
+    const scan=arr=>(arr||[]).forEach(r=>{ if(!r||!r.date) return; const d=r.date instanceof Date?r.date:new Date(r.date); const ms=d.getTime(); if(!isNaN(ms)&&ms<=t&&(!max||ms>max)) max=d; });
+    scan(ds&&ds.laborRows); scan(ds&&ds.fobRows); scan(ds&&ds.schedRows);
+    return max ? {year:max.getFullYear(), month:max.getMonth()+1} : null;
+  }, [ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.fobRows&&ds.fobRows.length, ds&&ds.schedRows&&ds.schedRows.length]);
+  const now = new Date();
+  const base = periodProp || latestActualMonth || {year:now.getFullYear(), month:now.getMonth()+1};
+  const [offset, setOffset] = useState(0);           // month stepper (‹ ›)
+  const period = useMemo(()=>{ const idx = base.year*12 + (base.month-1) + offset; return { year: Math.floor(idx/12), month: (idx%12)+1 }; }, [base.year, base.month, offset]);
+
+  // Targets for the shown month: use the passed mt when it IS that month, else load it.
+  const mtIsThisMonth = useMemo(()=> !!(mt && Object.values(mt).some(t=>t&&t._year===period.year&&t._month===period.month)), [mt, period.year, period.month]);
+  const [loadedMt, setLoadedMt] = useState(null);
+  useEffect(()=>{
+    if(mtIsThisMonth){ setLoadedMt(null); return; }
+    let live=true; loadMonthlyTargets(period.year, period.month).then(m=>{ if(live) setLoadedMt(m||{}); });
+    return ()=>{ live=false; };
+  }, [period.year, period.month, mtIsThisMonth]);
+  const effMt = mtIsThisMonth ? mt : (loadedMt||{});
+
+  // MTD actual must be PRODUCT sales (same basis as tProdSales) from the COMPLETE
+  // auto/emailed streams — not manual labor, which lags and undercounts. Priority
+  // per (loc,date): emailed sales_ledger (prodSales) > DAR product sales; manual
+  // labor (computeMonthActuals) only fills locs the auto streams don't cover.
+  const actuals = useMemo(()=>{
+    const ym = period.year + '-' + String(period.month).padStart(2,'0');
+    const inMonth = d => { if(!d) return null; const iso=(d instanceof Date?d:new Date(d)).toISOString().slice(0,10); return iso.slice(0,7)===ym?iso:null; };
+    const cell = {}; // loc|iso -> {sales, prio}
+    const put = (loc, iso, sales, prio) => { if(iso==null||typeof sales!=='number'||!(sales>0)) return; const k=String(parseInt(loc,10))+'|'+iso; const cur=cell[k]; if(!cur||prio>cur.prio) cell[k]={sales,prio}; };
+    for(const r of (ds&&ds.salesLedgerRows||[])) put(r.loc, inMonth(r.date), r.prodSales, 3);
+    for(const r of (ds&&ds.qsrActSummaryRows||[])) put(r.loc, inMonth(r.date), r.sales, 2); // qsrActSummary.sales = Σ product_sales
+    const byLoc={}; let maxIso=null;
+    for(const k of Object.keys(cell)){ const [loc,iso]=k.split('|'); byLoc[loc]=(byLoc[loc]||0)+cell[k].sales; if(!maxIso||iso>maxIso) maxIso=iso; }
+    // Last-resort fill for locs with no auto product-sales coverage.
+    const manual = computeMonthActuals(ds, period.year, period.month);
+    for(const loc of Object.keys(manual.byLoc||{})){ if(!(byLoc[loc]>0) && manual.byLoc[loc].sales>0) byLoc[loc]=manual.byLoc[loc].sales; }
+    if(!maxIso && manual.maxDate) maxIso=manual.maxDate;
+    return { byLoc: Object.fromEntries(Object.entries(byLoc).map(([l,s])=>[l,{sales:s}])), maxDate: maxIso };
+  }, [period.year, period.month, ds&&ds.salesLedgerRows&&ds.salesLedgerRows.length, ds&&ds.qsrActSummaryRows&&ds.qsrActSummaryRows.length, ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.fobRows&&ds.fobRows.length]);
+
+  if(!(locs||[]).length) return null;
+  if(!periodProp && !latestActualMonth && !(actuals&&actuals.maxDate)) return null; // nothing to anchor on
+
+  const monthLbl = new Date(period.year, period.month-1, 1).toLocaleDateString('en-US',{month:'long', year:'numeric'});
+  const storeName = loc => { const s=(stores||[]).find(st=>String(st.loc)===String(loc)); return s?s.name.slice(0,22):'#'+loc; };
+  const stepBtn = (delta,lbl) => h('button',{onClick:()=>setOffset(o=>o+delta),title:delta<0?'Previous month':'Next month',
+    style:{padding:'1px 8px',fontSize:13,lineHeight:1,borderRadius:4,cursor:'pointer',border:'1px solid var(--bdr)',background:'var(--surf)',color:'var(--text2)'}},lbl);
+  const hasActuals = !!(actuals && actuals.maxDate);
+  const daysInMonth = new Date(period.year, period.month, 0).getDate();
+  const dayOfMax = hasActuals ? new Date(actuals.maxDate+'T12:00:00').getDate() : 0;
+  const frac = dayOfMax>0 ? dayOfMax/daysInMonth : 0;
+  const money = v => v==null ? '—' : '$'+Math.round(v).toLocaleString();
+  const pctCol = v => v==null ? 'var(--text3)' : v>=0 ? '#10b981' : v<-3 ? '#ef4444' : '#f59e0b';
+
+  const rowData = groupView==='flat'
+    ? locs.map(loc=>({label:storeName(loc)+' ('+loc+')',tgt:(effMt[loc]||{}).tProdSales||0,act:(actuals.byLoc?.[loc]||{}).sales||0}))
+    : (()=>{ const gm = groupView==='operator'?(settings?.operators||{}):(settings?.supervisorGroups||{}); const ls=new Set(locs);
+        return Object.entries(gm).map(([g,gs])=>{const gl=gs.map(String).filter(l=>ls.has(l));if(!gl.length)return null;
+          let tgt=0,act=0; gl.forEach(loc=>{tgt+=(effMt[loc]||{}).tProdSales||0; act+=(actuals.byLoc?.[loc]||{}).sales||0;});
+          return {label:g+' ('+gl.length+')',tgt,act};}).filter(Boolean); })();
+  const withPace = rowData.map(r=>{const pace=frac>0?r.act/frac:null;const vs=r.tgt>0&&pace!=null?(pace/r.tgt-1)*100:null;return {...r,pace,vs};});
+  const tgtSum=withPace.reduce((a,r)=>a+r.tgt,0), actSum=withPace.reduce((a,r)=>a+r.act,0);
+  const totPace=frac>0?actSum/frac:null, totVs=tgtSum>0&&totPace!=null?(totPace/tgtSum-1)*100:null;
+
+  const header = div({style:{position:'sticky',top:0,zIndex:2,padding:'7px 20px 5px',background:'var(--surf2)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+    span({style:{fontSize:11,fontWeight:800,color:'var(--text)'}},'🎯 Actuals vs Target'),
+    div({style:{display:'flex',alignItems:'center',gap:4}}, stepBtn(-1,'‹'),
+      span({style:{fontSize:10,fontWeight:700,color:'var(--text2)',minWidth:104,textAlign:'center'}},monthLbl), stepBtn(1,'›')),
+    hasActuals&&span({style:{fontSize:9,fontWeight:600,color:'var(--text3)'}},'as of '+new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · day '+dayOfMax+' of '+daysInMonth+' · Pace = MTD ÷ days × month'),
+    !mtIsThisMonth&&loadedMt!==null&&tgtSum<=0&&span({style:{fontSize:9,color:'#f59e0b'}},'no targets loaded for this month'),
+    hasActuals&&totVs!=null&&span({style:{marginLeft:'auto',fontSize:11,fontWeight:800,color:pctCol(totVs)}},'District pace '+(totVs>=0?'+':'')+totVs.toFixed(1)+'% vs target'));
+
+  if(!hasActuals) return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)'}},
+    header, div({style:{padding:'4px 20px 10px',fontSize:10,color:'var(--text3)'}}, 'No actuals loaded for '+monthLbl+' yet — step ‹ › to a month with data.'));
+
+  const th2={padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',textAlign:'right',whiteSpace:'nowrap',position:'sticky',top:0,background:'var(--surf2)'};
+  const td2={padding:'3px 10px',fontSize:11,textAlign:'right',fontFamily:'var(--mono)',whiteSpace:'nowrap'};
+  const rowEl=(r,bold)=>h('tr',{key:r.label,style:{borderTop:'.5px solid var(--bdr)',background:bold?'rgba(96,165,250,.06)':'transparent'}},
+    h('td',{style:{...td2,textAlign:'left',fontFamily:'inherit',fontWeight:bold?700:500}},r.label),
+    h('td',{style:td2},money(r.tgt)),
+    h('td',{style:td2},money(r.act)),
+    h('td',{style:td2},money(r.pace)),
+    h('td',{style:{...td2,color:pctCol(r.vs),fontWeight:700}},r.vs==null?'—':(r.vs>=0?'+':'')+r.vs.toFixed(1)+'%'));
+  return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)',maxHeight:240,overflowY:'auto'}},
+    header,
+    h('table',{style:{width:'100%',borderCollapse:'collapse'}},
+      h('thead',null,h('tr',null,
+        h('th',{style:{...th2,textAlign:'left'}},groupView==='flat'?'Store':(groupView==='operator'?'Operator':'Supervisor')),
+        h('th',{style:th2},'Sales Target'),h('th',{style:th2},'MTD Actual'),h('th',{style:th2},'Pace (proj)'),h('th',{style:th2},'Pace vs Tgt'))),
+      h('tbody',null,...withPace.map(r=>rowEl(r,false)),rowEl({label:'District Total',tgt:tgtSum,act:actSum,pace:totPace,vs:totVs},true))));
+}
+
 function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
@@ -9421,6 +9589,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     const s = (stores||[]).find(st=>String(st.loc)===String(loc));
     return s ? s.name.slice(0,22) : '#'+loc;
   };
+
 
   // Build column group spans
   const groups = [];
@@ -9707,6 +9876,9 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
         })
       );
     })(),
+
+    // ── Current-month actuals vs target (pace) — for all locations/groupings ──
+    h(CurrentMonthPaceSection, { ds, stores, settings, mt, locs, groupView, period: selPeriod }),
 
     // Table
     locs.length===0

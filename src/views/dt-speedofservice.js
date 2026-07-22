@@ -23,6 +23,14 @@ const dtBg = (s) =>
 const ALL_LOCS = Object.keys(STORE_NAMES);
 const FL_LOCS  = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald'));
 
+// Distinct series colors for the multi-line (by store / by patch) trend view.
+const SERIES_COLORS = ['#60a5fa','#f59e0b','#10b981','#ef4444','#a78bfa','#f472b6','#22d3ee','#facc15','#fb923c','#4ade80','#e879f9','#38bdf8','#fca5a5','#c4b5fd','#5eead4','#fdba74'];
+// loc (unpadded) → short patch name, from the supervisor groups.
+const LOC_PATCH = {};
+for (const [name, locs] of Object.entries(DEF_SETTINGS.supervisorGroups || {})) {
+  for (const l of (locs || [])) LOC_PATCH[String(parseInt(l, 10))] = name.split(' ')[0];
+}
+
 const HOUR_LABELS = {
   '05:00':'5am','06:00':'6am','07:00':'7am','08:00':'8am','09:00':'9am','10:00':'10am',
   '11:00':'11am','12:00':'12pm','13:00':'1pm','14:00':'2pm','15:00':'3pm','16:00':'4pm',
@@ -62,82 +70,91 @@ function useChart(canvasRef, buildFn, deps) {
 }
 
 // ── Trend chart (weekly aggregation) ─────────────────────────────────────────
-function DtTrendChart({ rows, activeLocs, label }) {
+// mode: 'avg' = single weighted district/scope line; 'store' = one line per store;
+// 'patch' = one line per patch. Every line is Σuntilserve/Σtrans/1000 within its
+// group per Mon–Sun week (weighted — never an average of daily averages).
+function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
   const ref = React.useRef(null);
 
-  const weeklyData = React.useMemo(() => {
-    const map = {};
+  const { weeks, series } = React.useMemo(() => {
+    const bySeries = {}, weekSet = new Set();
     for (const r of rows) {
       const loc = String(parseInt(r.loc, 10));
       if (!activeLocs.includes(loc)) continue;
-      if (!r.dt || !r.dt_trans_cnt) continue;
-      // Truncate to Monday of week
+      if (!r.dt_untilserve || !r.dt_trans_cnt) continue;
       const d = new Date(r.dt + 'T00:00:00');
       const day = d.getDay();
-      d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+      d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // Monday of week
       const wk = d.toISOString().slice(0, 10);
-      if (!map[wk]) map[wk] = { totalUs: 0, totalCnt: 0, date: new Date(d) };
-      map[wk].totalUs  += r.dt_untilserve || 0;
-      map[wk].totalCnt += r.dt_trans_cnt  || 0;
+      weekSet.add(wk);
+      const sk = mode === 'store' ? loc : mode === 'patch' ? (LOC_PATCH[loc] || 'Other') : 'all';
+      const bs = (bySeries[sk] = bySeries[sk] || {});
+      const cell = (bs[wk] = bs[wk] || { us: 0, cnt: 0 });
+      cell.us += r.dt_untilserve; cell.cnt += r.dt_trans_cnt;
     }
-    return Object.entries(map)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, d]) => ({ date: d.date, avg: d.totalCnt > 0 ? d.totalUs / d.totalCnt / 1000 : null }))
-      .filter(r => r.avg != null);
-  }, [rows, activeLocs.join(',')]);
+    const weeks = [...weekSet].sort();
+    const series = Object.entries(bySeries).map(([key, wkMap]) => ({
+      key,
+      name: mode === 'store' ? (STORE_NAMES[key] || key) : mode === 'patch' ? key : label,
+      data: weeks.map(w => wkMap[w] && wkMap[w].cnt > 0 ? Math.round(wkMap[w].us / wkMap[w].cnt / 1000 * 10) / 10 : null),
+      totalCnt: Object.values(wkMap).reduce((a, v) => a + v.cnt, 0),
+    })).sort((a, b) => b.totalCnt - a.totalCnt);
+    return { weeks, series };
+  }, [rows, activeLocs.join(','), mode, label]);
 
   useChart(ref, canvas => {
-    if (!weeklyData.length) return null;
-    const labels = weeklyData.map(r => r.date.toLocaleDateString('en-US', { month:'short', day:'numeric' }));
-    const data   = weeklyData.map(r => Math.round(r.avg * 10) / 10);
-    const ptColors = data.map(v => v < DT_GREEN ? '#10b981' : v < DT_AMB ? '#f59e0b' : '#ef4444');
-    // Reference lines as flat datasets (no annotation plugin needed)
+    if (!weeks.length) return null;
+    const labels = weeks.map(w => new Date(w + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' }));
     const refLine = (val, color, lbl) => ({
       label: lbl, data: labels.map(() => val),
       borderColor: color, borderWidth: 1, borderDash: [4, 4],
-      pointRadius: 0, fill: false, tension: 0,
+      pointRadius: 0, fill: false, tension: 0, spanGaps: true,
     });
+    let datasets;
+    if (mode === 'avg') {
+      const data = series[0]?.data || [];
+      const ptColors = data.map(v => v == null ? '#60a5fa' : v < DT_GREEN ? '#10b981' : v < DT_AMB ? '#f59e0b' : '#ef4444');
+      datasets = [
+        refLine(DT_GREEN, 'rgba(16,185,129,.4)', '🟢 200s target'),
+        refLine(DT_AMB,   'rgba(239,68,68,.35)',  '🔴 240s caution'),
+        { label: 'Avg DT', data, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,.08)',
+          borderWidth: 2.5, tension: 0.35, fill: true, pointBackgroundColor: ptColors, pointBorderColor: ptColors, pointRadius: 4, spanGaps: true },
+      ];
+    } else {
+      datasets = [
+        refLine(DT_GREEN, 'rgba(16,185,129,.35)', '200s'),
+        refLine(DT_AMB,   'rgba(239,68,68,.3)',    '240s'),
+        ...series.map((s, i) => {
+          const c = SERIES_COLORS[i % SERIES_COLORS.length];
+          return { label: s.name, data: s.data, borderColor: c, backgroundColor: c + '22',
+            borderWidth: 2, tension: 0.3, fill: false, pointRadius: 2, pointBackgroundColor: c, spanGaps: true };
+        }),
+      ];
+    }
     return new Chart(canvas, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [
-          refLine(DT_GREEN, 'rgba(16,185,129,.4)', '🟢 200s target'),
-          refLine(DT_AMB,   'rgba(239,68,68,.35)',  '🔴 240s caution'),
-          {
-            label: 'Avg DT',
-            data,
-            borderColor: '#60a5fa',
-            backgroundColor: 'rgba(96,165,250,.08)',
-            borderWidth: 2.5,
-            tension: 0.35,
-            fill: true,
-            pointBackgroundColor: ptColors,
-            pointBorderColor: ptColors,
-            pointRadius: 4,
-          },
-        ],
-      },
+      data: { labels, datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
+          legend: { display: mode !== 'avg', position: 'bottom',
+            labels: { color:'#94a3b8', font:{ size:9 }, boxWidth:10, padding:6,
+              filter: it => !/^(200s|240s)$/.test(it.text) } },
           tooltip: { ...TT, callbacks: {
-            label: c => c.datasetIndex === 2 ? `${label}: ${c.raw}s` : c.dataset.label,
+            label: c => /^(🟢 200s target|🔴 240s caution|200s|240s)$/.test(c.dataset.label) ? null : `${c.dataset.label}: ${c.raw}s`,
           }},
         },
         scales: {
           x: { ...AX },
-          y: { ...AX, min: 0, suggestedMax: 300,
-               ticks: { ...AX.ticks, callback: v => v + 's' }},
+          y: { ...AX, min: 0, suggestedMax: 300, ticks: { ...AX.ticks, callback: v => v + 's' }},
         },
       },
     });
-  }, [weeklyData]);
+  }, [weeks.join(','), series.length, mode]);
 
-  if (!weeklyData.length) return null;
-  return div({ style:{ height:160 }}, h('canvas', { ref }));
+  if (!weeks.length) return null;
+  return div({ style:{ height: mode === 'avg' ? 160 : 220 }}, h('canvas', { ref }));
 }
 
 // ── Daypart bar chart ─────────────────────────────────────────────────────────
@@ -193,6 +210,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   const [orgFilter, setOrgFilter] = React.useState('all');
   const [sortCol,   setSortCol]   = React.useState('avg');
   const [sortDir,   setSortDir]   = React.useState(1); // 1=asc (fast first), -1=desc
+  const [trendMode, setTrendMode] = React.useState('avg'); // 'avg' | 'store' | 'patch'
   const [loading,   setLoading]   = React.useState(true);
   const [rows,      setRows]      = React.useState([]);
 
@@ -424,12 +442,23 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
             ),
 
             // ── Weekly trend chart ────────────────────────────────
-            div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)',
-              padding:'10px 12px' }},
-              div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)', marginBottom:6 }},
-                `Weekly Trend — ${trendLabel} avg DT (${period})`),
-              h(DtTrendChart, { rows, activeLocs, label: trendLabel }),
-            ),
+            (() => {
+              const modeBtn = (m, lbl) => btn({ onClick:()=>setTrendMode(m),
+                style:{ padding:'2px 9px', fontSize:'8.5px', fontWeight:700, borderRadius:5, cursor:'pointer',
+                  border:'1px solid var(--bdr)', background: trendMode===m ? '#60a5fa' : 'var(--surf)',
+                  color: trendMode===m ? '#08121f' : 'var(--text3)' }}, lbl);
+              const modeSub = trendMode==='avg' ? `${trendLabel} weighted avg`
+                : trendMode==='store' ? 'one line per store in scope'
+                : 'one line per patch';
+              return div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)', padding:'10px 12px' }},
+                div({ style:{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }},
+                  div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)' }}, `Weekly DT Trend (${period})`),
+                  span({ style:{ fontSize:'8px', color:'var(--text3)' }}, modeSub),
+                  div({ style:{ display:'flex', gap:4, marginLeft:'auto' }},
+                    modeBtn('avg', 'Avg'), modeBtn('store', 'By store'), modeBtn('patch', 'By patch'))),
+                h(DtTrendChart, { rows, activeLocs, label: trendLabel, mode: trendMode }),
+              );
+            })(),
 
             // ── Daypart bar chart ─────────────────────────────────
             div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)',

@@ -325,16 +325,19 @@ export async function saveLifeLenzSchedule(rows) {
 // Load LifeLenz schedule rows — defaults to last 90 days + next 30 days
 export async function loadLifeLenzSchedule({ daysBack = 1825, daysFwd = 30 } = {}) {
   if (!supabase) return [];
-  const from = new Date(); from.setDate(from.getDate() - daysBack);
-  const to   = new Date(); to.setDate(to.getDate() + daysFwd);
+  const start = new Date(); start.setDate(start.getDate() - daysBack);
+  const end   = new Date(); end.setDate(end.getDate() + daysFwd);
   const fmt  = d => d.toISOString().slice(0, 10);
-  const { data, error } = await supabase
+  // Paginate — a multi-year window across 27 stores far exceeds Supabase's 1000-row
+  // cap; a single select silently returned only the newest ~1000 rows (~37 days).
+  const data = await fetchAll((lo, hi) => supabase
     .from('lifelenz_schedule')
     .select('*')
-    .gte('date', fmt(from))
-    .lte('date', fmt(to))
-    .order('date', { ascending: false });
-  if (error || !data) { console.warn('[lifelenz_schedule] load error:', error); return []; }
+    .gte('date', fmt(start))
+    .lte('date', fmt(end))
+    .order('date', { ascending: false })
+    .range(lo, hi));
+  if (!data || !data.length) return [];
   return data.map(r => ({
     loc:           r.loc,
     date:          new Date(r.date + 'T12:00:00'),
@@ -1098,16 +1101,17 @@ export async function loadStoreDaypartData(loc, date) {
 
 export async function loadDailyActivityRange(startDate, endDate) {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  // Paginate — 27 stores × ~25 hour slots exceeds the 1000-row cap after ~1.5 days,
+  // so a single select silently truncated any multi-day range.
+  return fetchAll((lo, hi) => supabase
     .from('qsr_daily_activity')
     .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count')
     .gte('dt', startDate)
     .lte('dt', endDate)
     .order('dt')
     .order('loc')
-    .order('hour_slot');
-  if (error) { console.error('loadDailyActivityRange:', error); return []; }
-  return data || [];
+    .order('hour_slot')
+    .range(lo, hi));
 }
 
 // ── Speed-of-Service history (all stations) ──────────────────────────────────
@@ -1118,14 +1122,17 @@ export async function loadDailyActivityRange(startDate, endDate) {
 export async function loadDtHistory(days = 90) {
   if (!supabase) return [];
   const startDt = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-  const { data, error } = await supabase
+  // Paginate — .limit(100000) does NOT defeat Supabase's server-side max-rows cap
+  // (~1000), so 90 days × 27 stores was silently truncated to ~1 day. fetchAll pages.
+  return fetchAll((lo, hi) => supabase
     .from('qsr_daily_activity')
     .select('loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt')
     .gte('dt', startDt)
     .gt('dt_trans_cnt', 0)
-    .limit(100000);
-  if (error) { console.error('loadDtHistory:', error); return []; }
-  return data || [];
+    .order('dt')
+    .order('loc')
+    .order('hour_slot')
+    .range(lo, hi));
 }
 
 // ── eBOS monthly op supplies by store ────────────────────────────────────────
@@ -1195,6 +1202,40 @@ export async function loadQsrActSummary(daysBack = 35) {
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));
+}
+
+// Fast daily product-sales per (loc,date) for a window — minimal columns and
+// PARALLEL pagination (count → fire all page requests at once), so a long window
+// loads in seconds instead of ~60 sequential round-trips. Used by Smart Targets.
+export async function loadDailySales(days = 120) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const PAGE = 1000;
+  const { count } = await supabase.from('qsr_daily_activity')
+    .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
+  const total = count || 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  // Deterministic order so parallel .range() slices partition without gaps/overlap.
+  const reqs = [];
+  for (let p = 0; p < pages; p++) {
+    reqs.push(supabase.from('qsr_daily_activity')
+      .select('loc,dt,product_sales')
+      .gte('dt', cutoffStr)
+      .order('dt').order('loc').order('hour_slot')
+      .range(p * PAGE, p * PAGE + PAGE - 1));
+  }
+  const results = await Promise.all(reqs);
+  const map = {};
+  for (const res of results) {
+    for (const r of (res && res.data) || []) {
+      const loc = String(parseInt(r.loc, 10));
+      const k = loc + '|' + r.dt;
+      if (!map[k]) map[k] = { loc, date: new Date(r.dt + 'T00:00:00'), sales: 0 };
+      map[k].sales += r.product_sales || 0;
+    }
+  }
+  return Object.values(map);
 }
 
 // ── Cloud-first emailed-report loaders ────────────────────────────────────────
@@ -1426,13 +1467,14 @@ export async function saveGradedVisits(rows) {
     owner:       r.owner    ?? null,
     manager:     r.manager  ?? null,
     visit_by:    r.visitBy  ?? null,
-    score:       r.score    ?? null,
-    pass:        r.pass     ?? null,
-    channel:     r.channel  ?? null,
-    mobile_app:  r.mobileApp ?? null,
-    status:      r.status   ?? null,
-    modules:     r.modules  ?? null,
-    raw_title:   r.title    ?? null,
+    score:           r.score    ?? null,
+    pass:            r.pass     ?? null,
+    channel:         r.channel  ?? null,
+    mobile_app:      r.mobileApp ?? null,
+    status:          r.status   ?? null,
+    completion_time: r.completionTime ?? null,
+    modules:         r.modules  ?? null,
+    raw_title:       r.title    ?? null,
     updated_at:  new Date().toISOString(),
   }));
   if (!upsert.length) return { saved: 0, errors: ['no valid rows (missing store or date)'] };
@@ -1450,6 +1492,7 @@ export async function loadGradedVisits() {
     id: r.id, reportType: r.report_type, store: r.loc, dateISO: r.visit_date, date: r.visit_date,
     daypart: r.daypart, weekpart: r.weekpart, owner: r.owner, manager: r.manager, visitBy: r.visit_by,
     score: r.score, pass: r.pass, channel: r.channel, mobileApp: r.mobile_app, status: r.status,
+    completionTime: r.completion_time,
     modules: r.modules || {}, title: r.raw_title,
   }));
 }
@@ -1465,9 +1508,158 @@ export async function loadVisitDAR(loc, dateISO) {
   const short = String(parseInt(loc, 10));
   const [{ data: hrs }, { data: gl }] = await Promise.all([
     supabase.from('qsr_daily_activity')
-      .select('hour_slot,product_sales,dt_untilserve,dt_trans_cnt,dt_untilstore,dt_carsheld,dt_heldtime,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
+      .select('hour_slot,product_sales,transactions,ly_product_sales,ly_transactions,dt_untilserve,dt_trans_cnt,dt_untilstore,dt_untilrecall,dt_carsheld,dt_heldtime,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt,actual_punched_hours,actual_punched_dollars,prod_sales_scrubbed,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
       .eq('loc', padded).eq('dt', dateISO).order('hour_slot'),
     supabase.from('daily_glimpse_daily').select('*').eq('loc', short).eq('date', dateISO).limit(1),
   ]);
   return { hours: hrs || [], glimpse: (gl && gl[0]) || null };
+}
+
+// ── Labor Analysis (Fixed-Labor-Hours) ───────────────────────────────────────
+// Per-store config (hours-of-op + gathered fixed-hours) and weekly LifeLenz
+// inputs. Derived efficiency columns are computed in src/engine/labor-analysis.js,
+// never stored. loc is unpadded ('3708') to match STORE_NAMES.
+
+// Upsert per-store config. `configs` = [{loc, is24hr, is24Note, maintHours,
+// maintPeople, maintDaysOff, prepHours, lobbyHours, hours}].
+export async function saveStoreLaborConfig(configs) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  const rows = (configs || []).filter(c => c && c.loc).map(c => ({
+    loc: String(parseInt(c.loc, 10)),
+    is_24hr: !!c.is24hr,
+    is_24_note: c.is24Note ?? null,
+    maint_hours: c.maintHours ?? null,
+    maint_people: c.maintPeople ?? null,
+    maint_days_off: c.maintDaysOff ?? null,
+    prep_hours: c.prepHours ?? null,
+    lobby_hours: c.lobbyHours ?? null,
+    hours_json: c.hours ?? null,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase.from('store_labor_config').upsert(rows, { onConflict: 'loc' });
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01')
+      console.error('[store_labor_config] Table missing — run the store_labor_config block from schema.sql.');
+    else console.error('[store_labor_config] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: rows.length, errors: [] };
+}
+
+// Load all store config → { loc: {is24hr, is24Note, maintHours, ..., hours} }.
+export async function loadStoreLaborConfig() {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('store_labor_config').select('*');
+  if (error || !data) { if (error) console.warn('[store_labor_config] load error:', error.message); return {}; }
+  const out = {};
+  for (const r of data) out[r.loc] = {
+    loc: r.loc, is24hr: r.is_24hr, is24Note: r.is_24_note,
+    maintHours: r.maint_hours, maintPeople: r.maint_people, maintDaysOff: r.maint_days_off,
+    prepHours: r.prep_hours, lobbyHours: r.lobby_hours, hours: r.hours_json || {},
+  };
+  return out;
+}
+
+// Upsert weekly Band-1 inputs. `rows` = [{loc, band1{...}}] or flat band1 rows;
+// pass weekStart/weekEnd/monthTag from the parsed sheet.
+export async function saveLifeLenzLaborWeek(stores, { weekStart, weekEnd, monthTag, source = 'mbi_upload' } = {}) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  if (!weekStart) return { saved: 0, errors: ['weekStart required'] };
+  const rows = (stores || []).map(s => (s.band1 ? s.band1 : s)).filter(b => b && b.loc).map(b => ({
+    loc: String(parseInt(b.loc, 10)),
+    week_start: weekStart, week_end: weekEnd ?? null, month_tag: monthTag ?? null,
+    proj_sales_month: b.projSalesMonth ?? null,
+    sales_fcst: b.salesFcst ?? null,
+    labor_pct_actual: b.laborPctActual ?? null,
+    gc_fcst: b.gcFcst ?? null,
+    hours_fcst: b.hoursFcst ?? null,
+    hours_sched: b.hoursSched ?? null,
+    sched_fixed_pct: b.schedFixedPct ?? null,
+    tpph: b.tpph ?? null,
+    rate: b.rate ?? null,
+    labor_target_org: b.laborTargetOrg ?? null,
+    actual_hours: b.actualHours ?? null,
+    source,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase.from('lifelenz_labor_week').upsert(rows, { onConflict: 'loc,week_start' });
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01')
+      console.error('[lifelenz_labor_week] Table missing — run the lifelenz_labor_week block from schema.sql.');
+    else console.error('[lifelenz_labor_week] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: rows.length, errors: [] };
+}
+
+// Load weekly labor inputs. Pass weekStart for one week, else the latest week per
+// store. Returns { weekStart, rows: { loc: {salesFcst, laborPctActual, ...} } }.
+export async function loadLifeLenzLaborWeek({ weekStart = null } = {}) {
+  if (!supabase) return { weekStart: null, rows: {} };
+  let q = supabase.from('lifelenz_labor_week').select('*');
+  if (weekStart) q = q.eq('week_start', weekStart);
+  else q = q.order('week_start', { ascending: false });
+  const { data, error } = await q;
+  if (error || !data) { if (error) console.warn('[lifelenz_labor_week] load error:', error.message); return { weekStart: null, rows: {} }; }
+  // Back-compat heal: rows written before v4.464 stored Hours Forecast/Scheduled
+  // as Excel [h]:mm day-serials (raw ~62.5) instead of real hours (~1500). A real
+  // store's weekly hours are always >1000, so anything under 300 is a day-serial
+  // → ×24. New uploads already store real hours, so this is a no-op for them.
+  const _healHrs = v => (v != null && v > 0 && v < 300) ? v * 24 : v;
+  // Without an explicit week, keep only each store's most-recent row.
+  const rows = {}; let latest = weekStart;
+  for (const r of data) {
+    if (rows[r.loc]) continue; // data is week-desc → first seen is newest
+    if (!latest || r.week_start > latest) latest = r.week_start;
+    rows[r.loc] = {
+      loc: r.loc, weekStart: r.week_start, weekEnd: r.week_end, monthTag: r.month_tag,
+      projSalesMonth: r.proj_sales_month, salesFcst: r.sales_fcst, laborPctActual: r.labor_pct_actual,
+      gcFcst: r.gc_fcst, hoursFcst: _healHrs(r.hours_fcst), hoursSched: _healHrs(r.hours_sched), schedFixedPct: r.sched_fixed_pct,
+      tpph: r.tpph, rate: r.rate, laborTargetOrg: r.labor_target_org, actualHours: _healHrs(r.actual_hours), source: r.source,
+    };
+  }
+  return { weekStart: latest, rows };
+}
+
+// ── Crew Skills Matrix (LifeLenz People List) ────────────────────────────────
+// Per-employee skill ratings (1-5) by job, keyed by home store + name.
+// `employees` = [{employee, loc, homeStore, role, roleCode, isPrimaryRole,
+//                 schoolCalendar, skills:{job:rating}}].
+export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_csv' } = {}) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  const rows = (employees || []).filter(e => e && e.employee && e.loc).map(e => ({
+    loc: String(parseInt(e.loc, 10)),
+    employee: e.employee,
+    home_store: e.homeStore ?? null,
+    role: e.role ?? null,
+    role_code: e.roleCode ?? null,
+    is_primary_role: e.isPrimaryRole !== false,
+    school_calendar: e.schoolCalendar ?? null,
+    skills_json: e.skills ?? {},
+    source,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase.from('employee_skills').upsert(rows, { onConflict: 'loc,employee' });
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01')
+      console.error('[employee_skills] Table missing — run the employee_skills block from schema.sql.');
+    else console.error('[employee_skills] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: rows.length, errors: [] };
+}
+
+// Load the whole skills roster → [{employee, loc, homeStore, role, ..., skills}].
+export async function loadEmployeeSkills() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('employee_skills').select('*');
+  if (error || !data) { if (error) console.warn('[employee_skills] load error:', error.message); return []; }
+  return data.map(r => ({
+    employee: r.employee, loc: r.loc, homeStore: r.home_store, role: r.role,
+    roleCode: r.role_code, isPrimaryRole: r.is_primary_role, schoolCalendar: r.school_calendar,
+    skills: r.skills_json || {}, source: r.source,
+  }));
 }

@@ -35,6 +35,50 @@ A shared toolkit applied at every report/aggregation boundary:
 ## Workstream B — Smart Targets Model v2 (all metrics, forecasted)
 See detailed design below. Delivers the visible win AND exercises Workstream A.
 
+**Progress (2026-07-22):**
+- ✅ **Pure engine** `src/engine/smart-targets.js` (v4.450) — robustBaseline
+  (median ±k·MAD, excluded-days count), trendSlope, likeSizedPeers, peerAnchor
+  (good-direction quartile of same-volume-band peers), blend (capped, never worse
+  than baseline, direction-aware), confidence, computeSmartTarget. **18 unit
+  tests**, all passing.
+- ✅ **v2 panel** `src/views/smart-targets.js` (v4.451) — nav 🧭 "Smart Targets"
+  (modal key `smart-targets-v2`). Pilots **Sales** from qsr_daily_activity product
+  sales; 5-col comparison Official/Smart/Current/vs-Official/Confidence + anomalies,
+  FL/OK/patch/store scope, 60/90/180d base. METRICS registry = extension point.
+- ⚠️ **A dormant v1 exists**: `src/features/smart-targets.js` (`computeSmartTargets`
+  + `SmartTargetPanel`, modal `smart-targets`, no nav). Left intact; decide which
+  to retire. v2 does NOT reuse v1.
+- **TODO (updated 2026-07-22):**
+  - **Multi-projector + win-tracking (owner's #1 ask):**
+    - ✅ **Layer 1 shipped (v4.458):** owner's **T3M/T6W/T3W weighted-recency
+      projector** as pure fns in `src/engine/smart-targets.js`
+      (`weightedRecencyProjection`, `windowRate` w/ anomaly-exclusion +
+      `excludeDates`/`eventDelta` hooks) plus a **generic scoreboard harness**
+      (`backtestProjectors`, `periodTotal`, `toISODate`) that grades ANY set of
+      period-projectors on held-out 28-day folds and names the per-store winner.
+      9 new unit tests. Panel (`src/views/smart-targets.js`) now shows a
+      **"Best fit"** column (winning method + MAPE per store) and an aggregate
+      **Method scoreboard** strip (owner vs 3-wk run-rate vs 3-mo avg wins), plus
+      winner/MAPE in CSV. `PROJECTORS` array = the plug-in point.
+    - ✅ **Layer 2 shipped (v4.459):** the `src/engine/forecast.js` daily models
+      (Composite/Momentum/Regression/Ensemble) fold into the scoreboard as
+      period-projectors (sum of daily `forecastModels` over the target window).
+      Run **async behind a "＋ Forecast models" button** with a per-(loc,date)
+      `fcCache` ref + chunked yields so the panel stays instant on open. Caveat:
+      forecast models read daily history from `ds.laborRows` (uploaded
+      Operations/Labor) — where that's absent cloud-side they score "—" rather
+      than fabricate. **Future:** retarget the forecast models to the auto
+      product-sales series so they compete everywhere, not just where labor
+      uploads exist.
+    - ⏭️ Known-event (+/-) UI: let the owner mark event dates/deltas per store
+      (engine hooks `excludeDates`/`eventDelta` already exist).
+  - Extend v2 metrics to labor %, FOB %, speed (add METRICS entries + a source
+    per metric; ratio metrics anchor on level with direction='lower').
+  - Horizons out to **yearly** (user asked for 60/90/180d → up to 1yr).
+  - Auto-run calibration; prompt user for any judgment calls inline.
+  - Persist accepted Smart targets; add "apply as Official" → feed Monthly
+    Projections as official distributed targets.
+
 ## Workstream C — The two "next-ups"
 - **Projections → current-month actuals for all locations/groupings** (pairs with the *Projections vs Actuals* feature idea).
 - **DT/Speed-of-Service → weekly-trend chart by patch/store.**
@@ -66,14 +110,28 @@ streams (DAR summary, Daily Glimpse, qsr_fob components, cash sheet, LifeLenz).
 Wire EVERY metric to a source so none are blank — the current "no data" Food &
 Paper rows come straight from `qsr_fob` component amounts.
 
+**⭐ OWNER'S INTENT CORRECTION (2026-07-22) — how projection actually works:**
+The owner's traditional, proven sales-projection method is **NOT** a plain
+baseline×trend. It is a **weighted-recency blend of trailing windows**:
+**T3M (trailing 3 months) + T6W (trailing 6 weeks) + T3W (trailing 3 weeks),
+with more weight on the most recent window** — while ruling out anomalies and
+**accounting for known events (+/-)** (holidays, promos, local events, closures).
+Requirement: **run BOTH** — (a) programmatically replicate the owner's
+T3M/T6W/T3W weighted method, AND (b) our developed forecast models
+(`src/engine/forecast.js` model set). **Track every method's projection per
+store and grade which one wins** (lowest error vs actuals) → this per-store
+"which-model-wins" scoreboard is itself valuable insight data. Do not lose this
+intent: the owner's method is a first-class projector, not a fallback.
+
 **Per store, per metric:**
 1. **Robust baseline** — central tendency that ignores anomalies: **median + MAD**
    (median absolute deviation) or trimmed mean. Winsorize / drop points beyond
    k·MAD. Report *how many* days were excluded ("3 anomalous days set aside") —
    this operationalizes the owner's "handle addressable one-offs through store
    discipline, not by baking them into the target."
-2. **Own trajectory** — robust baseline + bounded trend (slope over trailing
-   window), projected forward. Realistic step, not a leap.
+2. **Own trajectory** — the owner's **T3M/T6W/T3W weighted-recency blend**
+   (above), anomaly-filtered, event-adjusted. Robust baseline + bounded trend is
+   a *component/sanity-check*, not the whole method. Realistic step, not a leap.
 3. **District peer anchor** — FL and OK computed **separately**. Use the district's
    **dollar-weighted** distribution (never average of store %s) for that metric,
    within the store's **volume tier** (compare like-sized stores). Stretch anchor =
