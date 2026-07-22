@@ -64,16 +64,18 @@ Our `SELECT_COLS` requested the wrong case/spelling vs the real API fields:
 If the API is case-sensitive, historical rows have these fields empty → a
 **re-pull is needed** to populate R2P / Bev Run Time / in-store-proj history.
 
-## Applying to the Graded-Visits hourly context (TODO next session)
-The hourly table in `src/views/graded-visits.js` already shows (correct, just
-labeled generically): "DT" = Avg DT TTL, "Front Ctr" = Avg Win TTL, "Kitchen" =
-KVS Time Per GC, "Pull Fwd" = DT Pull Forward %. To finish per owner request:
-1. Relabel those columns (DT TTL / Win TTL / KVS-per-GC) for clarity.
-2. Add **R2P** column = `(fc_untilserve − fc_untilclosedrawer)/fc_trans_cnt/1000`
-   — requires `fc_untilclosedrawer` in `loadVisitDAR`'s select (and populated).
-3. Optionally add **OEPE** `(dt_untilserve − dt_untilstore)/dt_trans_cnt/1000`
-   and **CTP** `(dt_untilserve − dt_untilrecall)/dt_trans_cnt/1000` — both base
-   fields (`dt_untilstore`, `dt_untilrecall`) are already stored; add to select.
-4. KVS Healthy Usage hourly = `healthy_count/(healthy_count+unhealthy_count)`
-   (already in select) — owner said leave off hourly, keep in Daily.
-5. After the field-name fix lands, run a DAR backfill so R2P/Bev history fills.
+## Applying to the Graded-Visits hourly context — DONE (v4.432)
+The hourly table in `src/views/graded-visits.js` now shows, with exact formulas
+(`hourMetrics()`), relabeled columns: **OEPE · DT TTL · CTP · R2P · Win TTL ·
+KVS/GC · Bev · Pull Fwd · Punch/Need/Sched · vs Need**. Print/CSV export mirror it.
+- `loadVisitDAR` select now includes `dt_untilrecall` + `fc_untilclosedrawer`.
+- **OEPE/CTP/R2P are guarded** on their subtrahend being > 0, so a not-yet-
+  backfilled `fc_untilclosedrawer` / `dt_untilrecall` renders "—" instead of a
+  bogus value equal to the total time. **Run a DAR backfill** (field-name fix
+  v4.430) and R2P/CTP populate historically.
+- KVS Healthy Usage hourly (`healthy_count/(healthy+unhealthy)`) intentionally
+  left off hourly per owner; shown in the Daily chips.
+
+## Still open
+- Consider adding `mop_transactions` to the pull (MOP/app GC) — not yet pulled.
+- Relabel the same timing columns anywhere else they surface (Signals SoS panel).

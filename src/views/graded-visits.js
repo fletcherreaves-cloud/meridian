@@ -189,14 +189,22 @@ export function GradedVisitsPanel({ ds, onClose }) {
 
   // Per-hour derived metrics — shared by the on-screen table and the print/CSV export.
   const hourMetrics = (x, cutoff) => {
-    const dt = secOf(x.dt_untilserve, x.dt_trans_cnt), fc = secOf(x.fc_untilserve, x.fc_trans_cnt);
-    const kit = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0));
+    // Exact QSRSoft formulas (see memory/project-qsrsoft-dar-columns.md). All are
+    // Σµs / trans / 1000 = seconds. Difference metrics are guarded on their
+    // subtrahend being present so a not-yet-backfilled field shows "—" instead of
+    // silently equaling the total time.
+    const dt  = secOf(x.dt_untilserve, x.dt_trans_cnt);                              // Avg DT TTL
+    const fc  = secOf(x.fc_untilserve, x.fc_trans_cnt);                              // Avg Win TTL
+    const oepe = (x.dt_untilstore || 0) > 0 ? secOf(x.dt_untilserve - x.dt_untilstore, x.dt_trans_cnt) : null; // OEPE (incl parked)
+    const ctp  = (x.dt_untilrecall || 0) > 0 ? secOf(x.dt_untilserve - x.dt_untilrecall, x.dt_trans_cnt) : null; // Cash-to-Present
+    const r2p  = (x.fc_untilclosedrawer || 0) > 0 ? secOf(x.fc_untilserve - x.fc_untilclosedrawer, x.fc_trans_cnt) : null; // FC Receipt-to-Present
+    const kit = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0)); // KVS Time Per GC
     const bev = secOf(x.bev_untilserve, x.bev_trans_cnt);
     const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
     const punch = x.actual_punched_hours, need = x.total_needed_hours, sched = x.total_scheduled_hours;
     const gap = (punch != null && need != null) ? punch - need : null;
     const rel = cutoff ? parseInt(x.hour_slot, 10) - cutoff : null; // 0 = during, -1 = before, +1 = after
-    return { hourSlot: x.hour_slot, label: hourLabel(x.hour_slot), sales: x.product_sales, dt, fc, kit, bev, pullFwd,
+    return { hourSlot: x.hour_slot, label: hourLabel(x.hour_slot), sales: x.product_sales, oepe, dt, ctp, r2p, fc, kit, bev, pullFwd,
       punch, need, sched, gap, rel, visitHr: rel === 0, nearVisit: rel === -1 || rel === 1 };
   };
 
@@ -233,11 +241,11 @@ export function GradedVisitsPanel({ ds, onClose }) {
     ? hrs.filter(x => Math.abs(parseInt(x.hour_slot, 10) - cutoff) <= 1) : hrs;
 
   // Hourly export columns mirror the on-screen table exactly.
-  const HOUR_COLS = ['Hour', 'Sales', 'DT', 'Front Ctr', 'Kitchen', 'Bev', 'Pull Fwd %', 'Punch', 'Need', 'Sched', 'vs Need'];
+  const HOUR_COLS = ['Hour', 'Sales', 'OEPE', 'DT TTL', 'CTP', 'R2P', 'Win TTL', 'KVS/GC', 'Bev', 'Pull Fwd %', 'Punch', 'Need', 'Sched', 'vs Need'];
   const hourRowValues = (m) => [
     m.label + (m.visitHr ? ' (visit)' : m.rel === -1 ? ' (hr before)' : m.rel === 1 ? ' (hr after)' : ''),
     m.sales != null ? Math.round(m.sales) : '',
-    m.dt ?? '', m.fc ?? '', m.kit ?? '', m.bev ?? '',
+    m.oepe ?? '', m.dt ?? '', m.ctp ?? '', m.r2p ?? '', m.fc ?? '', m.kit ?? '', m.bev ?? '',
     m.pullFwd == null ? '' : m.pullFwd.toFixed(1),
     m.punch != null ? m.punch.toFixed(1) : '', m.need != null ? m.need.toFixed(1) : '', m.sched != null ? m.sched.toFixed(1) : '',
     m.gap == null ? '' : (m.gap > 0 ? '+' : '') + m.gap.toFixed(1),
@@ -362,16 +370,20 @@ export function GradedVisitsPanel({ ds, onClose }) {
       // Hourly DAR table (most granular) when present
       hrs.length > 0 && div({ style: { overflowX: 'auto' } },
         div({ style: { fontSize: 8.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 } }, 'Hourly (DAR)'),
-        h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 660 } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 880 } },
           h('thead', null, h('tr', null,
-            ...['Hour', 'Sales', 'DT', 'Front Ctr', 'Kitchen', 'Bev', 'Pull Fwd', 'Punch', 'Need', 'Sched', 'vs Need'].map((l, i) => h('th', { key: i, style: { ...th2, textAlign: i === 0 ? 'left' : 'right' } }, l)))),
+            ...['Hour', 'Sales', 'OEPE', 'DT TTL', 'CTP', 'R2P', 'Win TTL', 'KVS/GC', 'Bev', 'Pull Fwd', 'Punch', 'Need', 'Sched', 'vs Need'].map((l, i) => h('th', { key: i, style: { ...th2, textAlign: i === 0 ? 'left' : 'right' } }, l)))),
           h('tbody', null, ...hrs.map((x, i) => {
             const m = hourMetrics(x, cutoff);
             const relTag = m.visitHr ? ' ◂ visit' : m.rel === -1 ? ' ◂ hour before' : m.rel === 1 ? ' ◂ hour after' : '';
+            const svc = (val, hot) => h('td', { style: { ...td2, fontWeight: val != null && val > hot ? 700 : 400, color: val != null && val > hot ? '#ef4444' : 'var(--text)' } }, fmtSec(val));
             return h('tr', { key: i, style: { borderBottom: '.5px solid rgba(255,255,255,.03)', background: m.visitHr ? 'rgba(245,188,0,.16)' : m.nearVisit ? 'rgba(245,188,0,.06)' : 'transparent' } },
               h('td', { style: { ...td2, textAlign: 'left', color: m.visitHr ? 'var(--amber)' : 'var(--text2)', fontWeight: m.visitHr ? 700 : 400 } }, m.label + relTag),
               h('td', { style: td2 }, m.sales ? '$' + Math.round(m.sales).toLocaleString() : '—'),
-              h('td', { style: { ...td2, fontWeight: m.dt != null && m.dt > 240 ? 700 : 400, color: m.dt != null && m.dt > 240 ? '#ef4444' : 'var(--text)' } }, fmtSec(m.dt)),
+              svc(m.oepe, 240),
+              svc(m.dt, 240),
+              h('td', { style: td2 }, fmtSec(m.ctp)),
+              h('td', { style: td2 }, fmtSec(m.r2p)),
               h('td', { style: td2 }, fmtSec(m.fc)),
               h('td', { style: td2 }, fmtSec(m.kit)),
               h('td', { style: td2 }, fmtSec(m.bev)),
@@ -381,7 +393,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
               h('td', { style: td2 }, m.sched != null ? m.sched.toFixed(1) : '—'),
               h('td', { style: { ...td2, fontWeight: m.gap != null && m.gap <= -1 ? 700 : 400, color: m.gap == null ? 'var(--text3)' : m.gap <= -1 ? '#ef4444' : m.gap > 1.5 ? '#f59e0b' : '#10b981' } }, m.gap == null ? '—' : (m.gap > 0 ? '+' : '') + m.gap.toFixed(1)));
           })))),
-      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6 } }, 'Daily = best available of Glimpse / DAR summary / Ops / Controls / Labor. Hourly = qsr_daily_activity (DT/FC/Kitchen/Bev serve, Pull-Forward %, punched vs needed vs scheduled). R2P / KVS-per-GC hourly pending their DAR field names; KVS-Healthy / Win times shown in Daily. Dayparts = 3 Peaks. Print / CSV export the daily summary + the chosen hourly rows.'));
+      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6, lineHeight: 1.5 } }, 'Hourly (DAR), QSRSoft formulas: OEPE = (dt serve − store)/GC · DT TTL = dt serve/GC · CTP = (dt serve − recall)/GC · R2P = (fc serve − close-drawer)/GC (front counter) · Win TTL = fc serve/GC · KVS/GC = (MFY1+MFY2 serve)/kitchen GC · Pull Fwd = cars-held/GC · Punch/Need/Sched hours, vs Need = punch − need. R2P & CTP show “—” until a DAR re-pull backfills fc-close-drawer / dt-recall. Daily = best of Glimpse/DAR-summary/Ops/Controls/Labor; Dayparts = 3 Peaks. Print / CSV export the daily summary + chosen hourly rows.'));
   };
 
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
