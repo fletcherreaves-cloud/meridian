@@ -237,19 +237,20 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
           ${secRow('FIXED LABOR HOURS')}${FLH_FIXED.map(stnRow).join('')}${totRow('TOTAL FIXED LABOR HOURS')}
         </tbody></table></div>`;
     };
+    // Tightened to fit one landscape page per store (3 floor + 22 fixed + totals).
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>FLH Worksheets — ${esc(shown.length)} stores</title>
-      <style>@page{size:landscape;margin:0.4in}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:0;font-size:9px}
-      .store-sheet{page-break-before:always}.store-sheet:first-child{page-break-before:auto}
-      .note-strip{font-size:9px;color:#444;background:#fff8e6;border:1px solid #f0d060;border-radius:4px;padding:4px 6px;margin:0 0 6px}
-      table.summary{border-collapse:collapse;width:100%;margin:0 0 6px}table.summary td{border:1px solid #ccc;padding:3px 6px;font-size:9px}
-      table.summary td.sl{background:#f4f4f4;font-weight:600;width:20%}table.summary td.sv{font-variant-numeric:tabular-nums}
+      <style>@page{size:landscape;margin:0.3in}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:0;font-size:7.5px}
+      .store-sheet{page-break-before:always;page-break-inside:avoid}.store-sheet:first-child{page-break-before:auto}
+      .note-strip{font-size:7px;color:#444;background:#fff8e6;border:1px solid #f0d060;border-radius:3px;padding:2px 5px;margin:0 0 3px;line-height:1.15}
+      table.summary{border-collapse:collapse;width:100%;margin:0 0 3px}table.summary td{border:1px solid #ccc;padding:1px 5px;font-size:8px}
+      table.summary td.sl{background:#f4f4f4;font-weight:600;width:22%}table.summary td.sv{font-variant-numeric:tabular-nums}
       table.grid{border-collapse:collapse;width:100%}tr{page-break-inside:avoid}thead{display:table-header-group}
-      th.pagehdr{text-align:left;font-size:11px;font-weight:800;background:#f5bc00;color:#111;padding:4px 7px;border:1px solid #999}
-      th{font-size:8px;color:#333;border:1px solid #bbb;padding:3px;background:#f4f4f4}th.lbl,th.notehd{text-align:left}
-      td{border:1px solid #ccc;padding:2px 4px;font-size:8.5px}
-      td.code{font-weight:700;text-align:center;width:26px}td.stn{font-weight:600;white-space:nowrap}
-      td.box{width:34px;height:20px}td.note{color:#555;font-size:8px}
-      tr.tr-tot td{font-weight:800;background:#fbfbe8}tr.tr-sec td{font-weight:800;background:#eee;text-transform:uppercase;letter-spacing:.4px;font-size:8px}
+      th.pagehdr{text-align:left;font-size:9.5px;font-weight:800;background:#f5bc00;color:#111;padding:2px 6px;border:1px solid #999}
+      th{font-size:7px;color:#333;border:1px solid #bbb;padding:1px 2px;background:#f4f4f4}th.lbl,th.notehd{text-align:left}
+      td{border:1px solid #ccc;padding:0 3px;font-size:7.5px;height:13px;line-height:12px}
+      td.code{font-weight:700;text-align:center;width:22px}td.stn{font-weight:600;white-space:nowrap}
+      td.box{width:30px}td.note{color:#555;font-size:6.5px;line-height:1.05}
+      tr.tr-tot td{font-weight:800;background:#fbfbe8}tr.tr-sec td{font-weight:800;background:#eee;text-transform:uppercase;letter-spacing:.3px;font-size:7px;padding:1px 3px}
       </style></head><body>${shown.map(sheet).join('')}</body></html>`;
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };

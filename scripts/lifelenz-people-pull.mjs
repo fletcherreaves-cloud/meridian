@@ -83,10 +83,16 @@ async function downloadPeopleCSV(page, url, tag) {
   page.on('response', onResp);
   // The LifeLenz SPA polls constantly (ping/events), so 'networkidle' never fires
   // — use domcontentloaded, then wait for the app's Download Report control.
+  const waitAuthed = () => page.getByText(/download report/i).first().waitFor({ state: 'visible', timeout: 25000 }).then(() => true).catch(() => false);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  const looksAuthed = await page.getByText(/download report/i).first().waitFor({ state: 'visible', timeout: 25000 }).then(() => true).catch(() => false);
+  let looksAuthed = await waitAuthed();
+  // Session lost (bounced to /auth/login) — e.g. someone else logged in and the
+  // single-session got invalidated. Re-login once and retry this store.
+  if (!looksAuthed && /\/auth\/login/i.test(page.url())) {
+    console.log(`[people] ${tag}: bounced to login — re-authenticating…`);
+    try { await login(page); await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); looksAuthed = await waitAuthed(); } catch (e) { if (DEBUG) console.log('[people] re-login failed:', e.message); }
+  }
   if (DEBUG) { try { mkdirSync('screenshots', { recursive: true }); await page.screenshot({ path: `screenshots/people-${tag}.png`, fullPage: true }); } catch {} }
-  // Guard: if the token didn't take, the SPA bounces to a blank/login page.
   if (!looksAuthed) {
     const body = await page.evaluate(() => document.body?.innerText?.slice(0, 300) || '(empty)').catch(() => '?');
     console.log(`[people] ${tag}: 'Download Report' not visible — page text:`, body, '| url:', page.url());
