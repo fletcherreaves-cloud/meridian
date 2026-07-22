@@ -1823,7 +1823,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                           ),
                         deepTab==='audit'&&deepStoreObj&&
                           h(ForecastAudit,{store:deepStoreObj,ds,settings,userEvents,
-                            dateRange:{s:weekDays[0],e:weekDays[6]},
+                            dateRange:{s:weekDays[0],e:weekDays[weekDays.length-1]},
                             onClose:()=>setDeepTab('forecast')})
                       )
                     )
