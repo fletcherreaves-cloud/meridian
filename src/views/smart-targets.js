@@ -24,10 +24,12 @@ const isoOf = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 
 // Metric registry. Sales piloted; each entry says where the daily value comes from,
 // which Official target field to compare, direction, and formatting.
 const METRICS = [
-  { key: 'sales', label: 'Sales ($ / month)', direction: 'higher', official: 'tProdSales',
-    // Loads its own per-(loc,date) product-sales history for the full window, so it
-    // doesn't depend on the 60-day, lazily-loaded ds.qsrActSummaryRows cache.
-    load: days => loadQsrActSummary(days), daily: r => r.sales, monthly: true,
+  { key: 'sales', label: 'Sales ($ / month)', direction: 'higher', official: 'tProdSales', monthly: true,
+    // Fast path: sales_ledger_daily is already in memory (one product-sales row per
+    // store/day) → instant. Fallback: the complete-but-heavy DAR hourly aggregate.
+    mem: ds => (ds && ds.salesLedgerRows || []).map(r => ({ loc: r.loc, date: r.date, sales: r.prodSales })),
+    fetch: days => loadQsrActSummary(days),
+    daily: r => r.sales,
     fmt: v => v == null ? '—' : '$' + Math.round(v).toLocaleString() },
 ];
 
@@ -42,14 +44,23 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   const [loading, setLoading] = useState(true);
   const metric = METRICS.find(m => m.key === metricKey) || METRICS[0];
 
-  // Load this metric's own daily history for the full window.
+  // Source this metric's daily history: prefer the in-memory feed (instant); only
+  // fetch the heavy DAR aggregate if that feed is too thin for a baseline.
   useEffect(() => {
     let live = true;
     setLoading(true);
-    Promise.resolve(metric.load(windowDays + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
+    const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
+    const mem = (metric.mem ? metric.mem(ds) : []).filter(r => {
+      if (!r || !r.date || !r.loc) return false;
+      const v = metric.daily(r);
+      return typeof v === 'number' && !isNaN(v) && v > 0 && isoOf(r.date) >= cutoff;
+    });
+    const memLocs = new Set(mem.map(r => locNum(r.loc))), memDays = new Set(mem.map(r => isoOf(r.date)));
+    if (mem.length && memLocs.size >= 8 && memDays.size >= 20) { setHist(mem); setLoading(false); return; }
+    Promise.resolve(metric.fetch(windowDays + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
       .catch(() => { if (live) { setHist([]); setLoading(false); } });
     return () => { live = false; };
-  }, [metricKey, windowDays]);
+  }, [metricKey, windowDays, ds]);
 
   // Active locs for the scope filter (All → State → Patch → Store).
   const activeLocs = useMemo(() => {
