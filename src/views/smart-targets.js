@@ -60,7 +60,13 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     Promise.resolve(metric.fetch(windowDays + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
       .catch(() => { if (live) { setHist([]); setLoading(false); } });
     return () => { live = false; };
-  }, [metricKey, windowDays, ds]);
+    // Depend on the ledger feed LENGTH, not the whole ds — ds changes many times at
+    // startup and was re-firing this fetch (the flicker).
+  }, [metricKey, windowDays, ds && ds.salesLedgerRows && ds.salesLedgerRows.length]);
+
+  // The upcoming month this target is FOR (e.g., next month). The lookback window
+  // above is how far back we learn from — a separate thing.
+  const targetLabel = useMemo(() => { const d = new Date(); d.setMonth(d.getMonth() + 1, 1); return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }, []);
 
   // Active locs for the scope filter (All → State → Patch → Store).
   const activeLocs = useMemo(() => {
@@ -75,7 +81,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
 
   const model = useMemo(() => {
     const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    // Target the UPCOMING month; convert daily → monthly using that month's day count.
+    const target = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const daysInMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
     const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
     // Per-loc daily series within the window.
     const byLoc = {};
@@ -138,6 +146,33 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     h('td', { style: { ...td, textAlign: 'center' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: confColor(r.confidence) + '22', color: confColor(r.confidence) } }, r.confidence)),
     h('td', { style: { ...td, color: r.excludedDays ? '#f59e0b' : 'var(--text3)' } }, r.excludedDays ? r.excludedDays + ' excl' : '—'));
 
+  const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
+  const exportCSV = () => {
+    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Confidence', 'Anomalies excluded', 'Baseline (mo)', 'Peer anchor (mo)', 'Days', 'Lookback days', 'Target month'];
+    const lines = [cols.map(csvCell).join(',')];
+    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), r.official == null ? '' : Math.round(r.official), r.smart == null ? '' : Math.round(r.smart), r.current == null ? '' : Math.round(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.confidence, r.excludedDays, r.baseline == null ? '' : Math.round(r.baseline), r.anchor == null ? '' : Math.round(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+  const printReport = () => {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const rowsHtml = shown.map(r => `<tr><td>${esc(storeNm(r.loc))} <span class="m">#${esc(locNum(r.loc))}</span></td><td class="n">${esc(metric.fmt(r.official))}</td><td class="n b">${esc(metric.fmt(r.smart))}</td><td class="n">${esc(metric.fmt(r.current))}</td><td class="n ${r.vsOff == null ? '' : r.vsOff >= 0 ? 'up' : 'dn'}">${r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'}</td><td class="c">${esc(r.confidence)}</td><td class="n">${r.excludedDays || 0}</td></tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Smart Targets — ${esc(targetLabel)}</title>
+      <style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:26px;font-size:12px}
+      h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}
+      table{width:100%;border-collapse:collapse}th{text-align:right;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#666;border-bottom:2px solid #f5bc00;padding:6px 8px}th:first-child{text-align:left}
+      td{padding:5px 8px;border-bottom:1px solid #eee}td.n{text-align:right;font-variant-numeric:tabular-nums}td.b{font-weight:800}td.c{text-align:center}td.up{color:#158a3a;font-weight:700}td.dn{color:#c0392b;font-weight:700}.m{color:#999;font-size:10px}
+      @media print{body{margin:0}}</style></head><body>
+      <h1>Smart Targets — ${esc(metric.label)}</h1>
+      <div class="sub">Recommended target for <b>${esc(targetLabel)}</b> · learned from a ${windowDays}-day lookback · ${shown.length} stores · generated ${esc(new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))}</div>
+      <table><thead><tr><th>Store</th><th>Official</th><th>Smart</th><th>Current</th><th>vs Official</th><th style="text-align:center">Conf</th><th>Anomalies</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+  };
+
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
     div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
     div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
@@ -145,17 +180,20 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '🧭'),
         div({ style: { flex: 1 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Smart Targets'),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Data-proven target per store: robust baseline → bounded trend → like-sized peer stretch (FL/OK separate) → capped blend. Hover a row for the build-up.')),
+          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, 'Smart Targets',
+            span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Target: ' + targetLabel)),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Recommended monthly ' + (metric.label.split(' ')[0].toLowerCase()) + ' target for ' + targetLabel + ', learned from the lookback window: robust baseline → bounded trend → like-sized peer stretch (FL/OK separate) → capped. Hover a row for the build-up.')),
         h('select', { value: metricKey, onChange: e => setMetricKey(e.target.value), style: selStyle },
           ...METRICS.map(m => h('option', { key: m.key, value: m.key }, m.label))),
-        h('select', { value: windowDays, onChange: e => setWindowDays(+e.target.value), style: selStyle },
-          h('option', { value: 60 }, '60-day base'), h('option', { value: 90 }, '90-day base'), h('option', { value: 180 }, '180-day base')),
+        h('select', { value: windowDays, onChange: e => setWindowDays(+e.target.value), title: 'Lookback: how far back to learn from', style: selStyle },
+          h('option', { value: 60 }, 'Lookback 60d'), h('option', { value: 90 }, 'Lookback 90d'), h('option', { value: 180 }, 'Lookback 180d')),
         h('select', { value: scope, onChange: e => setScope(e.target.value), style: selStyle },
           h('option', { value: 'all' }, 'All Stores'), h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
           h('optgroup', { label: '— Patches —' }, ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
           h('optgroup', { label: '— Florida —' }, ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
           h('optgroup', { label: '— Oklahoma —' }, ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
+        btn({ onClick: exportCSV, disabled: !shown.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '⬇ CSV'),
+        btn({ onClick: printReport, disabled: !shown.length, title: 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '🖨 Print'),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       // Body
