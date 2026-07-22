@@ -45,6 +45,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const [expanded, setExpanded] = useState(null);   // visit id whose context is open
   const [ctx, setCtx] = useState({});               // { [id]: {loading, hours, glimpse} }
   const [exportScope, setExportScope] = useState('near'); // 'near' = visit ±1hr, 'all' = full day
+  const [printCtx, setPrintCtx] = useState(false);        // include per-visit operational context in Print all
+  const [printBusy, setPrintBusy] = useState(false);
   const fileRef = useRef(null);
   const dirRef = useRef(null);
 
@@ -138,8 +140,36 @@ export function GradedVisitsPanel({ ds, onClose }) {
     a.href = url; a.download = `graded-visits-${scopeLabel.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
   };
-  const printReport = () => {
+  // Per-visit operational-context block for the "Print all" report — Day totals,
+  // the hour before the visit, and the visit hour, on the full metric set. Loads
+  // DAR fresh (print-all visits aren't necessarily expanded). Returns '' if no DAR.
+  const buildVisitCtxHtml = async (v, esc) => {
+    let hours = [];
+    try { const r = await loadVisitDAR(v.store, v.dateISO); hours = (r && r.hours) || []; } catch { hours = []; }
+    const active = hours.filter(x => (x.dt_trans_cnt || 0) > 0 || (x.product_sales || 0) > 0 || (x.actual_punched_hours || 0) > 0);
+    if (!active.length) return '';
+    const cutoff = completionHour(v.completionTime);
+    const dayM = hourMetrics(aggregateHours(hours), null);
+    const visRow = cutoff != null ? hours.find(x => parseInt(x.hour_slot, 10) === cutoff) : null;
+    const befRow = cutoff != null ? hours.find(x => parseInt(x.hour_slot, 10) === cutoff - 1) : null;
+    const hrLbl = n => hourLabel(String(n).padStart(2, '0') + ':00');
+    const head = METRICS.map(mt => `<th class="n">${esc(mt.label)}</th>`).join('');
+    const rowFor = (lbl, m, cls) => m ? `<tr class="${cls || ''}"><td>${esc(lbl)}</td>${METRICS.map(mt => `<td class="n">${esc(mt.fmt(m[mt.key]))}</td>`).join('')}</tr>` : '';
+    return `<div class="visitctx"><h3>${esc(sNameC(String(v.store)))} — ${esc(niceDate(v.dateISO))}${v.completionTime ? ' · visit ' + esc(v.completionTime) : ''}${v.daypart ? ' · ' + esc(v.daypart) : ''}${v.channel ? ' · ' + esc(v.channel) : ''}${v.score != null ? ' · ' + esc(fmtPct(v.score)) + (v.pass ? ' PASS' : ' FAIL') : ''}</h3>
+      <table class="ctx"><thead><tr><th></th>${head}</tr></thead><tbody>
+      ${rowFor('Day', dayM)}
+      ${befRow ? rowFor('Hour before' + (cutoff ? ' · ' + hrLbl(cutoff - 1) : ''), hourMetrics(befRow, cutoff), 'near') : ''}
+      ${visRow ? rowFor('Visit hr' + (cutoff ? ' · ' + hrLbl(cutoff) : ''), hourMetrics(visRow, cutoff), 'visit') : ''}
+      </tbody></table></div>`;
+  };
+
+  const printReport = async () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    // Open the window synchronously (in the click gesture) to dodge pop-up blockers,
+    // then fill it — context loading is async.
+    const w = window.open('', '_blank');
+    if (!w) { setMsg({ t: 'err', x: 'Pop-up blocked — allow pop-ups to print.' }); return; }
+    w.document.write('<!doctype html><html><body style="font-family:-apple-system,sans-serif;color:#555;padding:40px">Generating report…</body></html>');
     const rows = filtered.map(v => {
       const mods = Object.entries(v.modules || {}).map(([k, m]) => `${esc(k)} ${fmtPct(m.pct)}`).join(' · ');
       const res = v.pass == null ? '—' : (v.pass ? 'PASS' : 'FAIL');
@@ -147,14 +177,28 @@ export function GradedVisitsPanel({ ds, onClose }) {
     }).join('');
     const scored = filtered.filter(v => v.score != null);
     const passN = scored.filter(v => v.score >= PASS).length;
+    // Optional per-visit context sections (Day · hour before · visit hour).
+    let ctxHtml = '';
+    if (printCtx) {
+      setPrintBusy(true);
+      try {
+        const sections = (await Promise.all(filtered.map(v => buildVisitCtxHtml(v, esc)))).filter(Boolean);
+        if (sections.length) ctxHtml = `<h2 class="ctxhead">Operational context — Day · hour before · visit hour</h2>${sections.join('')}`;
+      } finally { setPrintBusy(false); }
+    }
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Graded Visits — ${esc(scopeLabel)}</title>
       <style>
+        ${printCtx ? '@page{size:landscape}' : ''}
         body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:28px;font-size:12px}
         h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:11px;margin-bottom:14px}
+        h2.ctxhead{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#666;margin:22px 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}
         .kpis{display:flex;gap:24px;margin-bottom:16px} .kpi b{font-size:18px} .kpi span{color:#666;font-size:10px;display:block;text-transform:uppercase;letter-spacing:.5px}
         table{width:100%;border-collapse:collapse} th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#666;border-bottom:2px solid #f5bc00;padding:6px 8px}
         td{padding:5px 8px;border-bottom:1px solid #eee} td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:700} td.mods{color:#666;font-size:10px}
         td.pass{color:#158a3a;font-weight:700} td.fail{color:#c0392b;font-weight:700}
+        .visitctx{margin:0 0 14px;page-break-inside:avoid} .visitctx h3{font-size:11px;margin:12px 0 4px;color:#111}
+        table.ctx{font-size:8.5px} table.ctx th{font-size:7.5px;padding:3px 5px} table.ctx td{padding:2px 5px;font-weight:400}
+        table.ctx td:first-child{font-weight:700;text-align:left} table.ctx tr.visit td{background:#fff4d1} table.ctx tr.near td{background:#fffbe9}
         @media print{body{margin:0}}
       </style></head><body>
       <h1>Graded Visits — ${esc(scopeLabel)}</h1>
@@ -165,10 +209,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
         <div class="kpi"><b>${scored.length ? fmtPct(scored.reduce((a, v) => a + v.score, 0) / scored.length) : '—'}</b><span>Avg Score</span></div>
       </div>
       <table><thead><tr><th>Type</th><th>Store</th><th>Date</th><th>Channel / Status</th><th style="text-align:right">Score</th><th>Result</th><th>Modules</th></tr></thead><tbody>${rows}</tbody></table>
+      ${ctxHtml}
       </body></html>`;
-    const w = window.open('', '_blank');
-    if (!w) { setMsg({ t: 'err', x: 'Pop-up blocked — allow pop-ups to print.' }); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+    try { w.document.open(); w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300); } catch { /* window closed */ }
   };
 
   const card = (label, value, color) => div({ style: { flex: '1 1 120px', minWidth: 120, background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '9px 12px' } },
@@ -467,7 +510,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
 
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
     div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 32px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1500, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
 
       // Header
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
@@ -490,7 +533,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
           h('optgroup', { label: '— Oklahoma —' },
             ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
         btn({ onClick: exportCSV, disabled: !filtered.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default' } }, '⬇ CSV'),
-        btn({ onClick: printReport, disabled: !filtered.length, title: 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default' } }, '🖨 Print'),
+        btn({ onClick: () => setPrintCtx(x => !x), title: 'Include each visit’s Day / hour-before / visit-hour context in the printed report',
+          style: { padding: '3px 8px', borderRadius: 6, border: '1px solid ' + (printCtx ? 'var(--amber)' : 'var(--bdr)'), background: printCtx ? 'var(--amber)' : 'var(--surf)', color: printCtx ? '#1a1a1a' : 'var(--text3)', fontSize: 10, fontWeight: 700, cursor: 'pointer' } }, (printCtx ? '✓ ' : '+ ') + 'context'),
+        btn({ onClick: printReport, disabled: !filtered.length || printBusy, title: printCtx ? 'Print / PDF — includes per-visit context' : 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length && !printBusy ? 'pointer' : 'default' } }, printBusy ? 'Loading…' : '🖨 Print'),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       // Body
