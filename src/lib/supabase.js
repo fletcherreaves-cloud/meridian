@@ -1204,6 +1204,40 @@ export async function loadQsrActSummary(daysBack = 35) {
   }));
 }
 
+// Fast daily product-sales per (loc,date) for a window — minimal columns and
+// PARALLEL pagination (count → fire all page requests at once), so a long window
+// loads in seconds instead of ~60 sequential round-trips. Used by Smart Targets.
+export async function loadDailySales(days = 120) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const PAGE = 1000;
+  const { count } = await supabase.from('qsr_daily_activity')
+    .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
+  const total = count || 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  // Deterministic order so parallel .range() slices partition without gaps/overlap.
+  const reqs = [];
+  for (let p = 0; p < pages; p++) {
+    reqs.push(supabase.from('qsr_daily_activity')
+      .select('loc,dt,product_sales')
+      .gte('dt', cutoffStr)
+      .order('dt').order('loc').order('hour_slot')
+      .range(p * PAGE, p * PAGE + PAGE - 1));
+  }
+  const results = await Promise.all(reqs);
+  const map = {};
+  for (const res of results) {
+    for (const r of (res && res.data) || []) {
+      const loc = String(parseInt(r.loc, 10));
+      const k = loc + '|' + r.dt;
+      if (!map[k]) map[k] = { loc, date: new Date(r.dt + 'T00:00:00'), sales: 0 };
+      map[k].sales += r.product_sales || 0;
+    }
+  }
+  return Object.values(map);
+}
+
 // ── Cloud-first emailed-report loaders ────────────────────────────────────────
 // Load the server-parsed QSRSoft email reports from Supabase and return them in
 // the SAME camelCase shape the client parsers produce, so existing consumers

@@ -8,7 +8,7 @@
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 import { computeSmartTarget, robustBaseline } from '../engine/smart-targets.js';
-import { loadQsrActSummary } from '../lib/supabase.js';
+import { loadDailySales } from '../lib/supabase.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -28,7 +28,7 @@ const METRICS = [
     // Fast path: sales_ledger_daily is already in memory (one product-sales row per
     // store/day) → instant. Fallback: the complete-but-heavy DAR hourly aggregate.
     mem: ds => (ds && ds.salesLedgerRows || []).map(r => ({ loc: r.loc, date: r.date, sales: r.prodSales })),
-    fetch: days => loadQsrActSummary(days),
+    fetch: days => loadDailySales(days),
     daily: r => r.sales,
     fmt: v => v == null ? '—' : '$' + Math.round(v).toLocaleString() },
 ];
