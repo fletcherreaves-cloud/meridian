@@ -44,6 +44,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const [dragOver, setDragOver] = useState(false);
   const [expanded, setExpanded] = useState(null);   // visit id whose context is open
   const [ctx, setCtx] = useState({});               // { [id]: {loading, hours, glimpse} }
+  const [exportScope, setExportScope] = useState('near'); // 'near' = visit ±1hr, 'all' = full day
   const fileRef = useRef(null);
   const dirRef = useRef(null);
 
@@ -186,9 +187,23 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const _pickDay = (arr, v) => (arr || []).filter(r => r && r.loc && r.date && _sameLoc(r, v.store) && _sameDay(r, v.dateISO));
   const _num = (...xs) => { for (const x of xs) if (typeof x === 'number' && !isNaN(x)) return x; return null; };
 
-  const renderContext = (v) => {
-    const c = ctx[v.id];
-    if (!c || c.loading) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11 } }, 'Loading operational context…');
+  // Per-hour derived metrics — shared by the on-screen table and the print/CSV export.
+  const hourMetrics = (x, cutoff) => {
+    const dt = secOf(x.dt_untilserve, x.dt_trans_cnt), fc = secOf(x.fc_untilserve, x.fc_trans_cnt);
+    const kit = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0));
+    const bev = secOf(x.bev_untilserve, x.bev_trans_cnt);
+    const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
+    const punch = x.actual_punched_hours, need = x.total_needed_hours, sched = x.total_scheduled_hours;
+    const gap = (punch != null && need != null) ? punch - need : null;
+    const rel = cutoff ? parseInt(x.hour_slot, 10) - cutoff : null; // 0 = during, -1 = before, +1 = after
+    return { hourSlot: x.hour_slot, label: hourLabel(x.hour_slot), sales: x.product_sales, dt, fc, kit, bev, pullFwd,
+      punch, need, sched, gap, rel, visitHr: rel === 0, nearVisit: rel === -1 || rel === 1 };
+  };
+
+  // Assemble a visit's operational context from the loaded DAR (ctx) plus the
+  // best-available daily/segment sources. Shared by render + export.
+  const contextData = (v) => {
+    const c = ctx[v.id] || {};
     const cutoff = completionHour(v.completionTime);
     const hrs = (c.hours || []).filter(x => (x.dt_trans_cnt || 0) > 0 || (x.product_sales || 0) > 0 || (x.actual_punched_hours || 0) > 0);
     const g = c.glimpse;                                   // raw daily_glimpse row for the date (any date)
@@ -210,7 +225,93 @@ export function GradedVisitsPanel({ ds, onClose }) {
       sales:  _num(qsr && qsr.sales, lab && lab.sales, g && g.all_net_sales),
       gc:     _num(qsr && qsr.gc, lab && lab.gc, g && g.gc),
     };
-    const hasDaily = Object.values(daily).some(x => x != null);
+    return { cutoff, hrs, daily, hasDaily: Object.values(daily).some(x => x != null), psvc, psale };
+  };
+
+  // Which hourly rows an export includes: visit ±1hr ("near") or the full day ("all").
+  const scopedHours = (hrs, cutoff, scope) => (scope === 'near' && cutoff != null)
+    ? hrs.filter(x => Math.abs(parseInt(x.hour_slot, 10) - cutoff) <= 1) : hrs;
+
+  // Hourly export columns mirror the on-screen table exactly.
+  const HOUR_COLS = ['Hour', 'Sales', 'DT', 'Front Ctr', 'Kitchen', 'Bev', 'Pull Fwd %', 'Punch', 'Need', 'Sched', 'vs Need'];
+  const hourRowValues = (m) => [
+    m.label + (m.visitHr ? ' (visit)' : m.rel === -1 ? ' (hr before)' : m.rel === 1 ? ' (hr after)' : ''),
+    m.sales != null ? Math.round(m.sales) : '',
+    m.dt ?? '', m.fc ?? '', m.kit ?? '', m.bev ?? '',
+    m.pullFwd == null ? '' : m.pullFwd.toFixed(1),
+    m.punch != null ? m.punch.toFixed(1) : '', m.need != null ? m.need.toFixed(1) : '', m.sched != null ? m.sched.toFixed(1) : '',
+    m.gap == null ? '' : (m.gap > 0 ? '+' : '') + m.gap.toFixed(1),
+  ];
+  const scopeLabelTxt = (cutoff) => exportScope === 'near' && cutoff != null ? 'Visit ±1hr' : 'Full day';
+
+  const contextCSV = (v) => {
+    const { cutoff, hrs } = contextData(v);
+    const rows = scopedHours(hrs, cutoff, exportScope).map(x => hourMetrics(x, cutoff));
+    const lines = [
+      ['Store', sNameC(String(v.store)), 'NSN', v.store].map(csvCell).join(','),
+      ['Date', v.dateISO || '', 'Visit', v.completionTime || '', 'Daypart', v.daypart || ''].map(csvCell).join(','),
+      ['Channel', v.channel || '', 'Score', v.score == null ? '' : v.score, 'Result', v.pass == null ? '' : (v.pass ? 'Pass' : 'Fail')].map(csvCell).join(','),
+      ['Rows', scopeLabelTxt(cutoff)].map(csvCell).join(','),
+      '',
+      HOUR_COLS.map(csvCell).join(','),
+      ...rows.map(m => hourRowValues(m).map(csvCell).join(',')),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `visit-context-${sNameC(String(v.store)).replace(/\s+/g, '_')}-${v.dateISO}-${exportScope}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const printContext = (v) => {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const { cutoff, hrs, daily, hasDaily, psvc, psale } = contextData(v);
+    const rows = scopedHours(hrs, cutoff, exportScope).map(x => hourMetrics(x, cutoff));
+    const dchip = (l, val) => val == null ? '' : `<div class="chip"><span>${esc(l)}</span><b>${esc(val)}</b></div>`;
+    const dailyHtml = hasDaily ? `<div class="chips">${[
+      dchip('OEPE', daily.oepe != null ? Math.round(daily.oepe) + 's' : null),
+      dchip('R2P', daily.r2p != null ? Math.round(daily.r2p) + 's' : null),
+      dchip('KVS Time', daily.kvst != null ? Math.round(daily.kvst) + 's' : null),
+      dchip('KVS Healthy', daily.kvsH != null ? Math.round(daily.kvsH * 100) + '%' : null),
+      dchip('Labor %', daily.laborPct != null ? (daily.laborPct * 100).toFixed(1) + '%' : null),
+      dchip('DT Parked', daily.parked != null ? (daily.parked * 100).toFixed(1) + '%' : null),
+      dchip('TPPH', daily.tpph != null ? daily.tpph.toFixed(1) : null),
+      dchip('Sales', daily.sales != null ? '$' + Math.round(daily.sales).toLocaleString() : null),
+      dchip('Guests', daily.gc != null ? Math.round(daily.gc).toLocaleString() : null),
+    ].join('')}</div>` : '';
+    const peaksHtml = psvc.length ? `<h2>By Daypart (3 Peaks)</h2><table><thead><tr><th>Daypart</th><th class="n">Sales</th><th class="n">OEPE</th><th class="n">R2P</th></tr></thead><tbody>${
+      psvc.map(r => { const sale = psale.find(s => s.slice === r.slice); return `<tr><td>${esc(r.slice || '—')}</td><td class="n">${sale && sale.netSales ? '$' + Math.round(sale.netSales).toLocaleString() : '—'}</td><td class="n">${r.oepe ? Math.round(r.oepe) + 's' : '—'}</td><td class="n">${r.r2p ? Math.round(r.r2p) + 's' : '—'}</td></tr>`; }).join('')
+    }</tbody></table>` : '';
+    const hourHtml = rows.length ? `<h2>Hourly (DAR) — ${esc(scopeLabelTxt(cutoff))}</h2><table><thead><tr>${
+      HOUR_COLS.map((l, i) => `<th class="${i === 0 ? '' : 'n'}">${esc(l)}</th>`).join('')
+    }</tr></thead><tbody>${
+      rows.map(m => `<tr class="${m.visitHr ? 'visit' : m.nearVisit ? 'near' : ''}">${hourRowValues(m).map((cell, i) => `<td class="${i === 0 ? '' : 'n'}">${esc(cell)}</td>`).join('')}</tr>`).join('')
+    }</tbody></table>` : '';
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Visit Context — ${esc(sNameC(String(v.store)))} ${esc(v.dateISO || '')}</title>
+      <style>
+        body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:28px;font-size:12px}
+        h1{font-size:17px;margin:0 0 2px} h2{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666;margin:18px 0 6px}
+        .sub{color:#666;font-size:11px;margin-bottom:12px}
+        .chips{display:flex;flex-wrap:wrap;gap:20px;margin:8px 0 4px}
+        .chip span{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#888} .chip b{font-size:15px}
+        table{width:100%;border-collapse:collapse;margin-top:2px} th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#666;border-bottom:2px solid #f5bc00;padding:5px 8px} th.n{text-align:right}
+        td{padding:4px 8px;border-bottom:1px solid #eee;font-variant-numeric:tabular-nums} td.n{text-align:right}
+        tr.visit td{background:#fff4d1;font-weight:700} tr.near td{background:#fffbe9}
+        @media print{body{margin:0}}
+      </style></head><body>
+      <h1>${esc(sNameC(String(v.store)))} — Visit Operational Context</h1>
+      <div class="sub">${esc(niceDate(v.dateISO))}${v.completionTime ? ' · visit ' + esc(v.completionTime) : ''}${v.daypart ? ' · ' + esc(v.daypart) : ''}${v.channel ? ' · ' + esc(v.channel) : ''}${v.score != null ? ' · ' + esc(fmtPct(v.score)) + (v.pass ? ' PASS' : ' FAIL') : ''}</div>
+      ${dailyHtml}${peaksHtml}${hourHtml}
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { setMsg({ t: 'err', x: 'Pop-up blocked — allow pop-ups to print.' }); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+  };
+
+  const renderContext = (v) => {
+    const c = ctx[v.id];
+    if (!c || c.loading) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11 } }, 'Loading operational context…');
+    const { cutoff, hrs, daily, hasDaily, psvc, psale } = contextData(v);
     if (!hrs.length && !hasDaily && !psvc.length) return div({ style: { padding: '10px 14px', color: 'var(--text3)', fontSize: 11, lineHeight: 1.6 } },
       'No operational data found for ' + niceDate(v.dateISO) + ' in any source (DAR, Glimpse, Ops/Controls/Labor, Peaks). If the visit predates your DAR history, run the backfill for that window.');
     const chip = (l, val) => val == null ? null : div({ style: { display: 'flex', flexDirection: 'column', minWidth: 62 } },
@@ -218,8 +319,22 @@ export function GradedVisitsPanel({ ds, onClose }) {
       div({ style: { fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--text)' } }, val));
     const th2 = { padding: '4px 7px', fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text3)', textAlign: 'right', whiteSpace: 'nowrap', borderBottom: '.5px solid var(--bdr)' };
     const td2 = { padding: '4px 7px', fontSize: 10.5, textAlign: 'right', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' };
+    // Scope toggle governs what the Print / CSV export includes.
+    const canNear = cutoff != null;
+    const scopeBtn = (val, label) => btn({ onClick: () => setExportScope(val), disabled: val === 'near' && !canNear,
+      title: val === 'near' && !canNear ? 'No visit time on this record — re-upload to enable' : ('Export ' + label),
+      style: { padding: '2px 8px', fontSize: 9, fontWeight: 700, borderRadius: 5, cursor: val === 'near' && !canNear ? 'default' : 'pointer',
+        border: '1px solid var(--bdr)', background: exportScope === val ? 'var(--amber)' : 'var(--surf)',
+        color: exportScope === val ? '#1a1a1a' : (val === 'near' && !canNear) ? 'var(--text3)' : 'var(--text2)' } }, label);
+    const expBtn = (label, onClick) => btn({ onClick, style: { padding: '2px 9px', fontSize: 10, fontWeight: 600, borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', cursor: 'pointer' } }, label);
     return div({ style: { padding: '10px 14px', background: 'rgba(255,255,255,.02)' } },
-      div({ style: { fontSize: 9, fontWeight: 700, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 } }, 'Operational context — ' + niceDate(v.dateISO) + (v.daypart ? ' · ' + v.daypart : '') + (v.completionTime ? ' · visit ' + v.completionTime : '')),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 } },
+        div({ style: { fontSize: 9, fontWeight: 700, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'Operational context — ' + niceDate(v.dateISO) + (v.daypart ? ' · ' + v.daypart : '') + (v.completionTime ? ' · visit ' + v.completionTime : '')),
+        // Export toolbar (right-aligned): row scope + Print / CSV
+        div({ style: { display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto' } },
+          span({ style: { fontSize: 8, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px', marginRight: 1 } }, 'Send rows:'),
+          scopeBtn('near', 'Visit ±1hr'), scopeBtn('all', 'Full day'),
+          expBtn('🖨 Print', () => printContext(v)), expBtn('⬇ CSV', () => contextCSV(v)))),
       // Daily summary chips (from whichever source covers the date)
       hasDaily && div({ style: { display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 10, paddingBottom: 8, borderBottom: '.5px solid var(--bdr)' } },
         chip('OEPE', daily.oepe != null ? Math.round(daily.oepe) + 's' : null),
@@ -251,30 +366,22 @@ export function GradedVisitsPanel({ ds, onClose }) {
           h('thead', null, h('tr', null,
             ...['Hour', 'Sales', 'DT', 'Front Ctr', 'Kitchen', 'Bev', 'Pull Fwd', 'Punch', 'Need', 'Sched', 'vs Need'].map((l, i) => h('th', { key: i, style: { ...th2, textAlign: i === 0 ? 'left' : 'right' } }, l)))),
           h('tbody', null, ...hrs.map((x, i) => {
-            const dt = secOf(x.dt_untilserve, x.dt_trans_cnt), fc = secOf(x.fc_untilserve, x.fc_trans_cnt);
-            const kit = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0));
-            const bev = secOf(x.bev_untilserve, x.bev_trans_cnt);
-            const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
-            const punch = x.actual_punched_hours, need = x.total_needed_hours, sched = x.total_scheduled_hours;
-            const gap = (punch != null && need != null) ? punch - need : null;
-            // Highlight the visit hour plus the hour on either side for context.
-            const rel = cutoff ? parseInt(x.hour_slot, 10) - cutoff : null; // 0 = during, -1 = before, +1 = after
-            const visitHr = rel === 0, nearVisit = rel === -1 || rel === 1;
-            const relTag = visitHr ? ' ◂ visit' : rel === -1 ? ' ◂ hour before' : rel === 1 ? ' ◂ hour after' : '';
-            return h('tr', { key: i, style: { borderBottom: '.5px solid rgba(255,255,255,.03)', background: visitHr ? 'rgba(245,188,0,.16)' : nearVisit ? 'rgba(245,188,0,.06)' : 'transparent' } },
-              h('td', { style: { ...td2, textAlign: 'left', color: visitHr ? 'var(--amber)' : 'var(--text2)', fontWeight: visitHr ? 700 : 400 } }, hourLabel(x.hour_slot) + relTag),
-              h('td', { style: td2 }, x.product_sales ? '$' + Math.round(x.product_sales).toLocaleString() : '—'),
-              h('td', { style: { ...td2, fontWeight: dt != null && dt > 240 ? 700 : 400, color: dt != null && dt > 240 ? '#ef4444' : 'var(--text)' } }, fmtSec(dt)),
-              h('td', { style: td2 }, fmtSec(fc)),
-              h('td', { style: td2 }, fmtSec(kit)),
-              h('td', { style: td2 }, fmtSec(bev)),
-              h('td', { style: { ...td2, color: pullFwd == null ? 'var(--text3)' : pullFwd > 10 ? '#f59e0b' : 'var(--text)' } }, pullFwd == null ? '—' : pullFwd.toFixed(1) + '%'),
-              h('td', { style: td2 }, punch != null ? punch.toFixed(1) : '—'),
-              h('td', { style: td2 }, need != null ? need.toFixed(1) : '—'),
-              h('td', { style: td2 }, sched != null ? sched.toFixed(1) : '—'),
-              h('td', { style: { ...td2, fontWeight: gap != null && gap <= -1 ? 700 : 400, color: gap == null ? 'var(--text3)' : gap <= -1 ? '#ef4444' : gap > 1.5 ? '#f59e0b' : '#10b981' } }, gap == null ? '—' : (gap > 0 ? '+' : '') + gap.toFixed(1)));
+            const m = hourMetrics(x, cutoff);
+            const relTag = m.visitHr ? ' ◂ visit' : m.rel === -1 ? ' ◂ hour before' : m.rel === 1 ? ' ◂ hour after' : '';
+            return h('tr', { key: i, style: { borderBottom: '.5px solid rgba(255,255,255,.03)', background: m.visitHr ? 'rgba(245,188,0,.16)' : m.nearVisit ? 'rgba(245,188,0,.06)' : 'transparent' } },
+              h('td', { style: { ...td2, textAlign: 'left', color: m.visitHr ? 'var(--amber)' : 'var(--text2)', fontWeight: m.visitHr ? 700 : 400 } }, m.label + relTag),
+              h('td', { style: td2 }, m.sales ? '$' + Math.round(m.sales).toLocaleString() : '—'),
+              h('td', { style: { ...td2, fontWeight: m.dt != null && m.dt > 240 ? 700 : 400, color: m.dt != null && m.dt > 240 ? '#ef4444' : 'var(--text)' } }, fmtSec(m.dt)),
+              h('td', { style: td2 }, fmtSec(m.fc)),
+              h('td', { style: td2 }, fmtSec(m.kit)),
+              h('td', { style: td2 }, fmtSec(m.bev)),
+              h('td', { style: { ...td2, color: m.pullFwd == null ? 'var(--text3)' : m.pullFwd > 10 ? '#f59e0b' : 'var(--text)' } }, m.pullFwd == null ? '—' : m.pullFwd.toFixed(1) + '%'),
+              h('td', { style: td2 }, m.punch != null ? m.punch.toFixed(1) : '—'),
+              h('td', { style: td2 }, m.need != null ? m.need.toFixed(1) : '—'),
+              h('td', { style: td2 }, m.sched != null ? m.sched.toFixed(1) : '—'),
+              h('td', { style: { ...td2, fontWeight: m.gap != null && m.gap <= -1 ? 700 : 400, color: m.gap == null ? 'var(--text3)' : m.gap <= -1 ? '#ef4444' : m.gap > 1.5 ? '#f59e0b' : '#10b981' } }, m.gap == null ? '—' : (m.gap > 0 ? '+' : '') + m.gap.toFixed(1)));
           })))),
-      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6 } }, 'Daily = best available of Glimpse / DAR summary / Ops / Controls / Labor. Hourly = qsr_daily_activity (DT/FC/Kitchen/Bev serve, Pull-Forward %, punched vs needed vs scheduled). R2P / KVS-per-GC hourly pending their DAR field names; KVS-Healthy / Win times shown in Daily. Dayparts = 3 Peaks.'));
+      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6 } }, 'Daily = best available of Glimpse / DAR summary / Ops / Controls / Labor. Hourly = qsr_daily_activity (DT/FC/Kitchen/Bev serve, Pull-Forward %, punched vs needed vs scheduled). R2P / KVS-per-GC hourly pending their DAR field names; KVS-Healthy / Win times shown in Daily. Dayparts = 3 Peaks. Print / CSV export the daily summary + the chosen hourly rows.'));
   };
 
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
