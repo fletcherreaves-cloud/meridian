@@ -52,12 +52,13 @@ async function downloadPeopleCSV(page, url, tag) {
   const seenCsv = [];
   const onResp = r => { try { if ((r.headers()['content-type'] || '').toLowerCase().includes('csv')) seenCsv.push(r.url()); } catch {} };
   page.on('response', onResp);
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
-  await page.waitForTimeout(2500);
+  // The LifeLenz SPA polls constantly (ping/events), so 'networkidle' never fires
+  // — use domcontentloaded, then wait for the app's Download Report control.
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  const looksAuthed = await page.getByText(/download report/i).first().waitFor({ state: 'visible', timeout: 25000 }).then(() => true).catch(() => false);
   if (DEBUG) { try { mkdirSync('screenshots', { recursive: true }); await page.screenshot({ path: `screenshots/people-${tag}.png`, fullPage: true }); } catch {} }
   // Guard: if the token didn't take, the SPA bounces to a blank/login page.
-  const looksAuthed = await page.getByText(/download report/i).count().then(c => c > 0).catch(() => false);
-  if (!looksAuthed && DEBUG) {
+  if (!looksAuthed) {
     const body = await page.evaluate(() => document.body?.innerText?.slice(0, 300) || '(empty)').catch(() => '?');
     console.log(`[people] ${tag}: 'Download Report' not visible — page text:`, body, '| url:', page.url());
   }
