@@ -1,9 +1,8 @@
 name: LifeLenz People Skills Sync
 
 on:
-  # Skills change slowly — weekly is plenty. Mondays 11:00 UTC (~6am CT).
-  schedule:
-    - cron: '0 11 * * 1'
+  # Manual-only until the token-based pull is proven against the live site. Add a
+  # weekly `schedule:` back once a dispatch run succeeds (skills change slowly).
   workflow_dispatch:
     inputs:
       people_urls:
@@ -37,8 +36,7 @@ jobs:
       - name: Run People Skills sync
         run: node scripts/lifelenz-people-pull.mjs
         env:
-          LIFELENZ_USERNAME:         ${{ secrets.LIFELENZ_USERNAME }}
-          LIFELENZ_PASSWORD:         ${{ secrets.LIFELENZ_PASSWORD }}
+          LIFELENZ_TOKEN:            ${{ secrets.LIFELENZ_TOKEN }}
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           LIFELENZ_PEOPLE_URLS:      ${{ github.event.inputs.people_urls || secrets.LIFELENZ_PEOPLE_URLS }}

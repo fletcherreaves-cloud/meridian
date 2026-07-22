@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 // ── LifeLenz People List → employee_skills (Employee Skill Levels) ───────────
-// Logs into LifeLenz admin (Playwright), discovers every store's scheduleId,
-// opens each store's People page (/us01/people/{businessId}/{scheduleId}),
-// triggers Download Report → Simple (CSV), parses with the SAME src/parsers
-// function the app uses (zero drift), and upserts to Supabase `employee_skills`.
+// Uses the working LIFELENZ_TOKEN (same secret the labor pull uses) instead of a
+// browser form-login — LifeLenz's login is a Cloudflare-protected OAuth SPA that
+// renders nothing headless, so we skip it. We inject the token so the People page
+// loads authenticated, drive Download Report → Simple (CSV), parse with the SAME
+// src/parsers function the app uses (zero drift), and upsert to `employee_skills`.
 //
-// The People page is GraphQL-driven and the "Simple (CSV)" is built in-browser,
-// so we drive the export UI and capture the download. Store selection is by URL:
-// the second path segment IS the store's scheduleId (same IDs getStoreSchedules
-// returns), so we loop all stores by URL — no dropdown automation.
+// Store selection is by URL: /us01/people/{businessId}/{scheduleId}. scheduleIds
+// come from the same /api/admin/businesses/{id}/schedules call the labor pull uses.
 //
-// Env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_USERNAME,
-//      LIFELENZ_PASSWORD. Optional LIFELENZ_PEOPLE_URLS (JSON [{loc,url}]) to
-//      override discovery; DEBUG=1 for verbose logging + screenshots.
+// Env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_TOKEN. Optional
+//      LIFELENZ_PEOPLE_URLS (JSON [{loc,url}]) to override discovery; DEBUG=1.
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
@@ -22,8 +20,7 @@ import { parsePeopleSkills } from '../src/parsers/index.js';
 const DEBUG = process.env.DEBUG === '1';
 const BASE = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID = '01979dbf-a166-759b-8702-aba9915c578e';
-const CLIENT_ID = '63acf6b91f6c301188a20e18';
-const REDIRECT_URI = 'https://admin.lifelenz.com/us01/auth/callback';
+const TOKEN = process.env.LIFELENZ_TOKEN || '';
 const peopleUrl = scheduleId => `https://admin.lifelenz.com/us01/people/${BUSINESS_ID}/${scheduleId}`;
 
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -33,78 +30,14 @@ function apiHeaders(token) {
     'X-Version': '1.75.21', 'Accept': 'application/json', 'Content-Type': 'application/json' };
 }
 
-// Log in via IDM OAuth; capture the X-Auth-Token from outgoing API headers.
-async function login(context) {
-  const page = await context.newPage();
-  let token = null;
-  page.on('request', req => { const h = req.headers(); if (h['x-auth-token'] && !token) token = h['x-auth-token']; });
-  page.on('response', async resp => { try { const h = resp.headers(); if (h['x-auth-token'] && !token) token = h['x-auth-token']; } catch {} });
-  const authUrl = 'https://idm.lifelenz.com/connect/authorize?' + new URLSearchParams({
-    client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
-    scope: 'openid profile email offline_access', state: 'meridian-people',
-  });
-  // Capture the OAuth auth code from the redirect back to admin.lifelenz.com.
-  let authCode = null;
-  page.on('request', req => { const u = req.url(); if (u.includes('admin.lifelenz.com') && u.includes('code=')) { try { const c = new URL(u).searchParams.get('code'); if (c) authCode = c; } catch {} } });
-
-  try { mkdirSync('screenshots', { recursive: true }); } catch {}
-  console.log('[auth] navigating to IDM authorize…');
-  await page.goto(authUrl, { waitUntil: 'networkidle', timeout: 45000 });
-  console.log('[auth] page title:', await page.title().catch(() => '?'), '| url:', page.url());
-  try { await page.screenshot({ path: 'screenshots/people-01-login.png', fullPage: true }); } catch {}
-  const userSel = ['input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email',
-    'input[name="loginName"]', 'input[name="login"]', 'input[name="user"]', 'input[name="UserName"]', 'input[name="EmailAddress"]',
-    'input[autocomplete="username"]', 'input[autocomplete="email"]', 'input[placeholder*="email" i]', 'input[placeholder*="user" i]'].join(', ');
-  const passSel = 'input[name="password"], input[type="password"], #password, input[autocomplete="current-password"]';
-  const subSel = 'button[type="submit"], input[type="submit"], .btn-primary, .login-btn, button:has-text("Login"), button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Continue"), button:has-text("Next")';
-  try {
-    await page.waitForSelector(userSel, { timeout: 20000 });
-  } catch (e) {
-    // Diagnostics: dump every visible input + the page HTML so we can fix the selector.
-    const inputs = await page.evaluate(() => Array.from(document.querySelectorAll('input')).map(el => ({ type: el.type, name: el.name, id: el.id, placeholder: el.placeholder, autocomplete: el.getAttribute('autocomplete'), visible: el.offsetParent !== null }))).catch(() => []);
-    const buttons = await page.evaluate(() => Array.from(document.querySelectorAll('button, a[role="button"]')).map(el => (el.innerText || '').trim()).filter(Boolean).slice(0, 20)).catch(() => []);
-    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 600) || '(empty)').catch(() => '?');
-    const html = await page.content().catch(() => '');
-    const frames = page.frames().map(f => f.url());
-    console.error('[auth] username selector not found.');
-    console.error('[auth] body preview:', bodyText);
-    console.error('[auth] inputs:', JSON.stringify(inputs));
-    console.error('[auth] buttons:', JSON.stringify(buttons));
-    console.error('[auth] frames:', JSON.stringify(frames));
-    console.error('[auth] html (first 2500):', html.slice(0, 2500));
-    try { await page.screenshot({ path: 'screenshots/people-login-fail.png', fullPage: true }); } catch {}
-    throw e;
-  }
-  await page.fill(userSel, process.env.LIFELENZ_USERNAME);
-  await page.fill(passSel, process.env.LIFELENZ_PASSWORD);
-  await page.click(subSel);
-  await page.waitForFunction(() => location.href.includes('admin.lifelenz.com') || !location.href.includes('idm.lifelenz.com'), { timeout: 25000 });
-  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-  try { await page.screenshot({ path: 'screenshots/people-02-post-login.png', fullPage: true }); } catch {}
-  // Exchange the OAuth code for an access token (reliable path).
-  if (authCode && !token) {
-    try {
-      const r = await fetch('https://idm.lifelenz.com/connect/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ grant_type: 'authorization_code', code: authCode, client_id: CLIENT_ID, redirect_uri: REDIRECT_URI }).toString() });
-      console.log('[auth] token exchange →', r.status);
-      if (r.ok) { const t = await r.json().catch(() => null); if (t && t.access_token) token = t.access_token; }
-    } catch (e) { console.warn('[auth] token exchange error:', e.message); }
-  }
-  // Nudge an API call so the token appears in a request header if not seen yet.
-  if (!token) { try { await page.goto('https://admin.lifelenz.com/us01/dashboard', { waitUntil: 'networkidle', timeout: 20000 }); } catch {} }
-  console.log('[auth] logged in' + (token ? ' (token captured)' : ' (no token yet — schedule discovery may fall back)'));
-  return { page, token };
-}
-
-// Discover active store schedules → [{loc, scheduleId, name}] using the same REST
-// endpoint + filter the labor pull uses.
-async function discoverStores(page, token) {
+// Discover active store schedules → [{loc, scheduleId, name}] (server-side fetch).
+async function discoverStores(token) {
   const url = `${BASE}/api/admin/businesses/${BUSINESS_ID}/schedules`;
   let all = [];
   try {
-    const data = await page.evaluate(async ([u, h]) => { const r = await fetch(u, { headers: h }); return r.ok ? await r.json() : { error: r.status }; }, [url, apiHeaders(token)]);
-    all = (data && data.data) || [];
-    if (data && data.error) console.warn('[schedules] REST →', data.error);
+    const r = await fetch(url, { headers: apiHeaders(token) });
+    console.log('[schedules] REST →', r.status);
+    if (r.ok) { const d = await r.json(); all = (d && d.data) || []; }
   } catch (e) { console.warn('[schedules] discovery error:', e.message); }
   const stores = all
     .filter(s => s.attributes && s.attributes.schedule_status === 'active')
@@ -116,11 +49,18 @@ async function discoverStores(page, token) {
 
 // Drive the export UI and capture the Simple CSV text for the current page.
 async function downloadPeopleCSV(page, url, tag) {
-  const seenCsvUrls = [];
-  const onResp = r => { try { const ct = (r.headers()['content-type'] || '').toLowerCase(); if (ct.includes('csv')) seenCsvUrls.push(r.url()); } catch {} };
+  const seenCsv = [];
+  const onResp = r => { try { if ((r.headers()['content-type'] || '').toLowerCase().includes('csv')) seenCsv.push(r.url()); } catch {} };
   page.on('response', onResp);
   await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(2500);
+  if (DEBUG) { try { mkdirSync('screenshots', { recursive: true }); await page.screenshot({ path: `screenshots/people-${tag}.png`, fullPage: true }); } catch {} }
+  // Guard: if the token didn't take, the SPA bounces to a blank/login page.
+  const looksAuthed = await page.getByText(/download report/i).count().then(c => c > 0).catch(() => false);
+  if (!looksAuthed && DEBUG) {
+    const body = await page.evaluate(() => document.body?.innerText?.slice(0, 300) || '(empty)').catch(() => '?');
+    console.log(`[people] ${tag}: 'Download Report' not visible — page text:`, body, '| url:', page.url());
+  }
   let csvText = null;
   try {
     const dl = page.waitForEvent('download', { timeout: 20000 });
@@ -130,11 +70,9 @@ async function downloadPeopleCSV(page, url, tag) {
     const download = await dl;
     const stream = await download.createReadStream();
     if (stream) { const chunks = []; for await (const c of stream) chunks.push(c); csvText = Buffer.concat(chunks).toString('utf8'); }
-  } catch (e) {
-    if (DEBUG) { console.log(`[people] ${tag}: UI download failed:`, e.message); try { mkdirSync('screenshots', { recursive: true }); await page.screenshot({ path: `screenshots/people-${tag}.png`, fullPage: true }); } catch {} }
-  }
-  if (!csvText && seenCsvUrls.length) {
-    csvText = await page.evaluate(async u => { const r = await fetch(u, { credentials: 'include' }); return r.ok ? await r.text() : null; }, seenCsvUrls[seenCsvUrls.length - 1]);
+  } catch (e) { if (DEBUG) console.log(`[people] ${tag}: UI download failed:`, e.message); }
+  if (!csvText && seenCsv.length) {
+    csvText = await page.evaluate(async u => { const r = await fetch(u, { credentials: 'include' }); return r.ok ? await r.text() : null; }, seenCsv[seenCsv.length - 1]);
   }
   page.off('response', onResp);
   return csvText;
@@ -165,23 +103,34 @@ async function pullOne(page, url, tag) {
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'] });
-  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36', acceptDownloads: true });
-  await context.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => undefined }));
-
-  let page, token;
-  try { ({ page, token } = await login(context)); }
-  catch (e) { console.error('[auth] login failed:', e.message); await browser.close(); process.exit(1); }
+  if (!TOKEN) { console.error('[people] LIFELENZ_TOKEN not set — required (same secret the labor pull uses).'); process.exit(1); }
 
   // Targets: explicit override, else discover all stores by scheduleId.
   let list = [];
   if (process.env.LIFELENZ_PEOPLE_URLS) {
     try { list = JSON.parse(process.env.LIFELENZ_PEOPLE_URLS); } catch (e) { console.error('[cfg] LIFELENZ_PEOPLE_URLS bad JSON:', e.message); }
-  } else if (token) {
-    const stores = await discoverStores(page, token);
+  } else {
+    const stores = await discoverStores(TOKEN);
     list = stores.map(s => ({ loc: s.loc, url: peopleUrl(s.scheduleId) }));
   }
-  if (!list.length) { console.error('[people] no target pages (need a captured token or LIFELENZ_PEOPLE_URLS)'); await browser.close(); process.exit(1); }
+  if (!list.length) { console.error('[people] no target pages (token invalid, or no schedules discovered)'); process.exit(1); }
+
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'] });
+  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36', acceptDownloads: true });
+  await context.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => undefined }));
+  // Seed the token into storage under common keys so the SPA considers itself
+  // authenticated (we don't know the exact key, so cover the likely candidates).
+  await context.addInitScript(tok => {
+    try { for (const k of ['authToken', 'token', 'access_token', 'X-Auth-Token', 'auth-token', 'lifelenz.token', 'auth']) { localStorage.setItem(k, tok); } } catch {}
+  }, TOKEN);
+  // Inject the token header on every LifeLenz API request the SPA makes.
+  await context.route('**/*', route => {
+    const req = route.request(); const u = req.url();
+    if (u.includes('us01-connect.lifelenz.com') || u.includes('/manager/graphql') || u.includes('/api/')) {
+      route.continue({ headers: { ...req.headers(), 'x-auth-token': TOKEN, 'x-business-id': BUSINESS_ID, 'x-lifelenz-device': 'webadmin', 'x-version': '1.75.21' } });
+    } else route.continue();
+  });
+  const page = await context.newPage();
 
   console.log(`[people] ${list.length} store page(s) to pull`);
   let totalSaved = 0;
