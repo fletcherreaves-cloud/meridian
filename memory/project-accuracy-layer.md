@@ -49,6 +49,16 @@ badge. Builders: `check(name, ok, detail)`, `checkRowsSumToTotal`, `checkInRange
    vs labor; show a ⚠ when they disagree instead of silently picking one.
 3. **Any Supabase loader** that could exceed 1000 rows → `fetchAllPages`
    (audit existing loaders; `loadQsrActSummary` was already fixed manually).
+   ✅ v4.439 audit found + fixed 3 silently-truncating loaders in `supabase.js`
+   (all now use the existing `fetchAll` pager):
+   - `loadLifeLenzSchedule` — 5-year window (`daysBack:1825`) × 27 stores was
+     returning only the newest ~1000 rows (~37 days).
+   - `loadDailyActivityRange` — 27 stores × ~25 slots exceeds 1000 after ~1.5 days.
+   - `loadDtHistory` — `.limit(100000)` does NOT beat Supabase's server max-rows
+     cap; the 90-day Speed-of-Service panel was getting ~1 day. (FINDING: `.limit(N)`
+     above the server cap is a no-op — always paginate with `.range`.)
+   Still worth a pass: `fob_rows` (manual, usually small) and `smg_fullscale`
+   (monthly, small) selects have no pagination but rarely exceed 1000.
 4. **Generated reports (print/CSV)** — attach an `audit()` badge (rows sum to
    total, % in range, dates complete).
 5. Graded-Visits day aggregate already sums-then-divides (weighted) — can adopt

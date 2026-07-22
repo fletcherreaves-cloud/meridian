@@ -325,16 +325,19 @@ export async function saveLifeLenzSchedule(rows) {
 // Load LifeLenz schedule rows — defaults to last 90 days + next 30 days
 export async function loadLifeLenzSchedule({ daysBack = 1825, daysFwd = 30 } = {}) {
   if (!supabase) return [];
-  const from = new Date(); from.setDate(from.getDate() - daysBack);
-  const to   = new Date(); to.setDate(to.getDate() + daysFwd);
+  const start = new Date(); start.setDate(start.getDate() - daysBack);
+  const end   = new Date(); end.setDate(end.getDate() + daysFwd);
   const fmt  = d => d.toISOString().slice(0, 10);
-  const { data, error } = await supabase
+  // Paginate — a multi-year window across 27 stores far exceeds Supabase's 1000-row
+  // cap; a single select silently returned only the newest ~1000 rows (~37 days).
+  const data = await fetchAll((lo, hi) => supabase
     .from('lifelenz_schedule')
     .select('*')
-    .gte('date', fmt(from))
-    .lte('date', fmt(to))
-    .order('date', { ascending: false });
-  if (error || !data) { console.warn('[lifelenz_schedule] load error:', error); return []; }
+    .gte('date', fmt(start))
+    .lte('date', fmt(end))
+    .order('date', { ascending: false })
+    .range(lo, hi));
+  if (!data || !data.length) return [];
   return data.map(r => ({
     loc:           r.loc,
     date:          new Date(r.date + 'T12:00:00'),
@@ -1098,16 +1101,17 @@ export async function loadStoreDaypartData(loc, date) {
 
 export async function loadDailyActivityRange(startDate, endDate) {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  // Paginate — 27 stores × ~25 hour slots exceeds the 1000-row cap after ~1.5 days,
+  // so a single select silently truncated any multi-day range.
+  return fetchAll((lo, hi) => supabase
     .from('qsr_daily_activity')
     .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count')
     .gte('dt', startDate)
     .lte('dt', endDate)
     .order('dt')
     .order('loc')
-    .order('hour_slot');
-  if (error) { console.error('loadDailyActivityRange:', error); return []; }
-  return data || [];
+    .order('hour_slot')
+    .range(lo, hi));
 }
 
 // ── Speed-of-Service history (all stations) ──────────────────────────────────
@@ -1118,14 +1122,17 @@ export async function loadDailyActivityRange(startDate, endDate) {
 export async function loadDtHistory(days = 90) {
   if (!supabase) return [];
   const startDt = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-  const { data, error } = await supabase
+  // Paginate — .limit(100000) does NOT defeat Supabase's server-side max-rows cap
+  // (~1000), so 90 days × 27 stores was silently truncated to ~1 day. fetchAll pages.
+  return fetchAll((lo, hi) => supabase
     .from('qsr_daily_activity')
     .select('loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt')
     .gte('dt', startDt)
     .gt('dt_trans_cnt', 0)
-    .limit(100000);
-  if (error) { console.error('loadDtHistory:', error); return []; }
-  return data || [];
+    .order('dt')
+    .order('loc')
+    .order('hour_slot')
+    .range(lo, hi));
 }
 
 // ── eBOS monthly op supplies by store ────────────────────────────────────────
