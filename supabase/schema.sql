@@ -1069,7 +1069,9 @@ create index if not exists lifelenz_labor_week_week_idx
   on public.lifelenz_labor_week (week_start);
 
 -- ── Crew Skills Matrix (LifeLenz People List, Simple CSV) ───────────────────────
--- One row per employee (keyed by home store + name). skills_json = the exploded
+-- One row per employee per ROSTER store (keyed by roster store + name) — a person
+-- rostered at a shared/transition store shows under THAT store, not their home.
+-- skills_json = the exploded
 -- "SCHEDULE JOBS" map, e.g. {"DRIVE THRU":3,"BEVERAGE SPECIALIST":5,...} rated 1-5.
 -- Rendered as the "Skill Levels" matrix. Interim source: parsed from the People
 -- List Simple CSV upload; future: scraped from the LifeLenz people page per store.

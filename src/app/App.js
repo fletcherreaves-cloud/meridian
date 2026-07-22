@@ -1520,11 +1520,16 @@ function App() {
             loaded.push({name:file.name,type});
           } else if(type.type==='people-skills'){
             // LifeLenz People List (Simple CSV) → crew skills matrix in Supabase.
+            // Key by the ROSTER store (from the filename, e.g. people_list_simple_
+            // 0018213__LINDSAY…), not each person's home store, and replace that
+            // store's rows so the upload is authoritative for it.
             const ppl=parsePeopleSkillsWb(wb);
+            const _fm=(file.name||'').match(/people[_ ]list[_ ]simple[_ ]0*(\d{3,7})/i);
+            const rosterLoc=_fm?String(parseInt(_fm[1],10)):(ppl.pulledLoc||null);
             if(ppl.employees.length>0){
               currentDS={...currentDS,peopleSkills:ppl};
-              console.log(`[Meridian] Crew Skills: ${ppl.employees.length} employees from ${file.name}`);
-              saveEmployeeSkills(ppl.employees).catch(e=>console.warn('[employee_skills] save error:',e));
+              console.log(`[Meridian] Crew Skills: ${ppl.employees.length} on roster #${rosterLoc} from ${file.name}`);
+              saveEmployeeSkills(ppl.employees,{rosterLoc,replace:!!rosterLoc}).catch(e=>console.warn('[employee_skills] save error:',e));
             }
             loaded.push({name:file.name,type});
           } else {

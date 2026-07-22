@@ -16,6 +16,24 @@ const locNum = s => { const n = parseInt(s, 10); return Number.isNaN(n) ? String
 const ALL_LOCS = Object.keys(STORE_NAMES);
 const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald')); // FL panhandle
 
+// Shared print CSS for the update worksheets. Print-friendly margins via @page;
+// the store title sits in <thead> (which repeats on every printed page) so
+// multi-page stores keep their header. `thead{display:table-header-group}` makes
+// the repeat explicit.
+const WORKSHEET_PRINT_CSS = `@page{size:landscape;margin:0.45in}
+  body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:0;font-size:9px}
+  .note{color:#444;font-size:9px;margin:0 0 8px;padding:4px 6px;background:#fff8e6;border:1px solid #f0d060;border-radius:4px}
+  table{border-collapse:collapse;width:100%}tr{page-break-inside:avoid}thead{display:table-header-group}
+  th.pagehdr{text-align:left;font-size:11px;font-weight:800;background:#f5bc00;color:#111;padding:4px 7px;border:1px solid #999}
+  .wid{font-size:14px;font-weight:900;letter-spacing:.5px;margin-right:8px}
+  th{font-size:7.5px;color:#333;border:1px solid #bbb;padding:2px;vertical-align:bottom}
+  th.st{writing-mode:vertical-rl;transform:rotate(180deg);height:96px;text-align:left}
+  th.lbl{text-align:left;min-width:110px}
+  td{border:1px solid #ccc;padding:0}
+  td.s{font-weight:600;padding:2px 5px;white-space:nowrap}td.t{color:#555;padding:2px 5px;white-space:nowrap;font-size:8px}
+  td.box{width:20px;height:20px;position:relative}td.box .cur{position:absolute;top:0;left:1px;font-size:7px;color:#aaa}
+  tr.blank td{height:22px}tr.blank td.s{min-width:110px}`;
+
 // Preferred left→right order: production → service → leadership/admin. Anything
 // not listed is appended alphabetically.
 const STATION_ORDER = ['DRIVE THRU', 'WINDOW', 'BEVERAGE SPECIALIST', 'FRENCH FRIES', 'HASHBROWN',
@@ -55,11 +73,20 @@ export function SkillsMatrixPanel({ ds, onClose }) {
     return () => { live = false; };
   }, [ds && ds.peopleSkills]);
 
-  // Distinct stores present, for the filter.
+  // Distinct stores present, for the filter. loc is now the ROSTER store, so use
+  // the canonical store name (home_store is per-person and unreliable as a label).
   const stores = useMemo(() => {
     const m = {};
-    for (const e of rows) if (e.loc) m[e.loc] = e.homeStore || STORE_NAMES[locNum(e.loc)] || e.loc;
+    for (const e of rows) if (e.loc) m[e.loc] = STORE_NAMES[locNum(e.loc)] || e.homeStore || e.loc;
     return Object.entries(m).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  }, [rows]);
+
+  // Coverage readout: total crew rows, stores loaded, and the freshest pull date.
+  const covStats = useMemo(() => {
+    let maxTs = null; for (const e of rows) if (e.updatedAt && (!maxTs || e.updatedAt > maxTs)) maxTs = e.updatedAt;
+    const storeCount = new Set(rows.map(e => locNum(e.loc)).filter(Boolean)).size;
+    let updated = null; if (maxTs) { const d = new Date(maxTs); if (!isNaN(+d)) updated = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+    return { crew: rows.length, storeCount, updated };
   }, [rows]);
 
   const scoped = useMemo(() => {
@@ -118,16 +145,30 @@ export function SkillsMatrixPanel({ ds, onClose }) {
   };
   const printReport = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));
+    const nameOf = loc => STORE_NAMES[locNum(loc)] || (stores.find(s => locNum(s[0]) === locNum(loc)) || [])[1] || locNum(loc);
     const head = ['Employee', 'Job Title', ...jobs].map(x => `<th>${esc(x)}</th>`).join('');
-    const body = sorted.map(e => `<tr><td class="s">${esc(e.employee)}</td><td>${esc(e.role || '')}</td>${jobs.map(j => { const v = (e.skills || {})[j]; return `<td class="r${v || 0}">${v || ''}</td>`; }).join('')}</tr>`).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Skill Levels — ${esc(store === 'all' ? 'All Stores' : (stores.find(s => locNum(s[0]) === locNum(store)) || [])[1] || store)}</title>
-      <style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:14px;font-size:9px}h1{font-size:14px;margin:0 0 2px}.sub{color:#666;font-size:10px;margin-bottom:10px}
-      table{border-collapse:collapse}th{font-size:8px;color:#555;border-bottom:2px solid #f5bc00;padding:3px 4px;text-align:center}th:first-child,th:nth-child(2){text-align:left}
+    const colspan = 2 + jobs.length;
+    // Group per store so each location starts on its own page; the store header
+    // (bold ID) lives in <thead> and repeats when a store spills to more pages.
+    const byLoc = {};
+    for (const e of sorted) { const k = locNum(e.loc); (byLoc[k] = byLoc[k] || []).push(e); }
+    const locs = Object.keys(byLoc).sort((a, b) => String(nameOf(a)).localeCompare(String(nameOf(b))));
+    const section = loc => {
+      const rws = byLoc[loc];
+      const body = rws.map(e => `<tr><td class="s">${esc(e.employee)}</td><td>${esc(e.role || '')}</td>${jobs.map(j => { const v = (e.skills || {})[j]; return `<td class="r${v || 0}">${v || ''}</td>`; }).join('')}</tr>`).join('');
+      return `<div class="loc-sheet"><table><thead>
+        <tr><th class="loc-hd" colspan="${colspan}"><span class="loc-id">#${esc(locNum(loc))}</span><span class="loc-nm">${esc(nameOf(loc))}</span><span class="loc-meta">Employee Skill Levels · ${rws.length} crew · ${jobs.length} stations · ${esc(new Date().toLocaleDateString())}</span></th></tr>
+        <tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    };
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Employee Skill Levels</title>
+      <style>@page{margin:0.4in}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:0;font-size:9px}
+      .loc-sheet{page-break-before:always}.loc-sheet:first-child{page-break-before:auto}
+      table{border-collapse:collapse;width:100%}tr{page-break-inside:avoid}thead{display:table-header-group}
+      th.loc-hd{background:#f5bc00;color:#111;border:1px solid #8a6d00;padding:5px 9px;text-align:left;vertical-align:baseline}
+      .loc-id{font-size:17px;font-weight:900;letter-spacing:.5px;margin-right:9px}.loc-nm{font-size:13px;font-weight:800;margin-right:9px}.loc-meta{font-size:8.5px;font-weight:600;color:#5a4a00}
+      th{font-size:8px;color:#555;border-bottom:2px solid #f5bc00;padding:3px 4px;text-align:center}th:first-child,th:nth-child(2){text-align:left}
       td{padding:2px 5px;border-bottom:1px solid #eee;text-align:center;font-variant-numeric:tabular-nums}td.s{text-align:left;font-weight:600}
-      td.r1{background:#fecaca}td.r2{background:#fed7aa}td.r3{background:#fef08a}td.r4{background:#d9f99d}td.r5{background:#a7f3d0}@media print{body{margin:0}}</style></head><body>
-      <h1>Employee Skill Levels</h1>
-      <div class="sub">${esc(store === 'all' ? 'All Stores' : (stores.find(s => locNum(s[0]) === locNum(store)) || [])[1] || store)} · ${sorted.length} crew · ${jobs.length} stations · generated ${esc(new Date().toLocaleDateString())}</div>
-      <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`;
+      td.r1{background:#fecaca}td.r2{background:#fed7aa}td.r3{background:#fef08a}td.r4{background:#d9f99d}td.r5{background:#a7f3d0}</style></head><body>${locs.map(section).join('')}</body></html>`;
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
   };
 
@@ -142,24 +183,13 @@ export function SkillsMatrixPanel({ ds, onClose }) {
     const body = sorted.map(e => `<tr><td class="s">${esc(e.employee)}</td><td class="t">${esc(e.role || '')}</td>${cellsFor(e)}</tr>`).join('');
     // 4 blank rows for new hires / additions.
     const blanks = Array.from({ length: 4 }, () => `<tr class="blank"><td class="s">&nbsp;</td><td class="t"></td>${jobs.map(() => '<td class="box"></td>').join('')}</tr>`).join('');
+    const colspan = jobs.length + 2;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Skills Update Worksheet — ${esc(storeName)}</title>
-      <style>@page{size:landscape}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:12px;font-size:9px}
-      h1{font-size:14px;margin:0 0 2px}.sub{color:#555;font-size:10px;margin-bottom:4px}
-      .note{color:#444;font-size:9px;margin-bottom:8px;padding:4px 6px;background:#fff8e6;border:1px solid #f0d060;border-radius:4px}
-      table{border-collapse:collapse}
-      th{font-size:7.5px;color:#333;border:1px solid #bbb;padding:2px;vertical-align:bottom}
-      th.st{writing-mode:vertical-rl;transform:rotate(180deg);height:96px;text-align:left}
-      th.lbl{text-align:left;min-width:110px}
-      td{border:1px solid #ccc;padding:0}
-      td.s{font-weight:600;padding:2px 5px;white-space:nowrap}td.t{color:#555;padding:2px 5px;white-space:nowrap;font-size:8px}
-      td.box{width:20px;height:20px;position:relative}
-      td.box .cur{position:absolute;top:0;left:1px;font-size:7px;color:#aaa}
-      tr.blank td{height:22px}tr.blank td.s{min-width:110px}
-      @media print{body{margin:0}}</style></head><body>
-      <h1>Employee Skill Levels — Update Worksheet</h1>
-      <div class="sub">${esc(storeName)} · ${sorted.length} crew · ${jobs.length} stations · ${esc(new Date().toLocaleDateString())}</div>
+      <style>${WORKSHEET_PRINT_CSS}</style></head><body>
       <div class="note">Current rating is shown small/gray in each box. Write the <b>new</b> rating (1–5) in the box for any station that changed, then enter the updates in LifeLenz. Blank box = no change. Use the empty rows at the bottom for new hires.</div>
-      <table><thead><tr>${head}</tr></thead><tbody>${body}${blanks}</tbody></table></body></html>`;
+      <table><thead>
+        <tr><th class="pagehdr" colspan="${colspan}">${esc(storeName)} — Employee Skill Levels Update Worksheet · ${sorted.length} crew · ${esc(new Date().toLocaleDateString())}</th></tr>
+        <tr>${head}</tr></thead><tbody>${body}${blanks}</tbody></table></body></html>`;
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
   };
 
@@ -167,35 +197,27 @@ export function SkillsMatrixPanel({ ds, onClose }) {
   // OK/patch), each store page-broken so they print as separate handouts.
   const printWorksheetsByStore = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));
-    const nameOf = loc => (stores.find(s => locNum(s[0]) === locNum(loc)) || [])[1] || (sorted.find(e => locNum(e.loc) === locNum(loc)) || {}).homeStore || STORE_NAMES[locNum(loc)] || locNum(loc);
+    const nameOf = loc => STORE_NAMES[locNum(loc)] || (stores.find(s => locNum(s[0]) === locNum(loc)) || [])[1] || locNum(loc);
     const byLoc = {};
     for (const e of sorted) { const k = locNum(e.loc); (byLoc[k] = byLoc[k] || []).push(e); }
     const locs = Object.keys(byLoc).sort((a, b) => String(nameOf(a)).localeCompare(String(nameOf(b))));
     if (!locs.length) return;
+    const colspan = jobs.length + 2;
     const head = ['Employee', 'Job Title', ...jobs].map((x, i) => `<th class="${i < 2 ? 'lbl' : 'st'}"><span>${esc(x)}</span></th>`).join('');
     const sheet = loc => {
       const rows = byLoc[loc];
       const bodyRows = rows.map(e => `<tr><td class="s">${esc(e.employee)}</td><td class="t">${esc(e.role || '')}</td>${jobs.map(j => { const v = (e.skills || {})[j]; return `<td class="box">${v ? `<span class="cur">${v}</span>` : ''}</td>`; }).join('')}</tr>`).join('');
       const blanks = Array.from({ length: 4 }, () => `<tr class="blank"><td class="s">&nbsp;</td><td class="t"></td>${jobs.map(() => '<td class="box"></td>').join('')}</tr>`).join('');
-      return `<div class="store-sheet"><h1>Employee Skill Levels — Update Worksheet</h1>
-        <div class="sub">${esc(nameOf(loc))} (#${esc(locNum(loc))}) · ${rows.length} crew · ${jobs.length} stations · ${esc(new Date().toLocaleDateString())}</div>
+      // Title lives in <thead> so it repeats on every printed page of this store.
+      return `<div class="store-sheet">
         <div class="note">Current rating is shown small/gray in each box. Write the <b>new</b> rating (1–5) in the box for any station that changed, then enter the updates in LifeLenz. Blank box = no change. Empty rows at the bottom are for new hires.</div>
-        <table><thead><tr>${head}</tr></thead><tbody>${bodyRows}${blanks}</tbody></table></div>`;
+        <table><thead>
+          <tr><th class="pagehdr" colspan="${colspan}"><span class="wid">#${esc(locNum(loc))}</span>${esc(nameOf(loc))} — Update Worksheet · ${rows.length} crew · ${esc(new Date().toLocaleDateString())}</th></tr>
+          <tr>${head}</tr></thead><tbody>${bodyRows}${blanks}</tbody></table></div>`;
     };
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Skill Worksheets — ${esc(locs.length)} stores</title>
-      <style>@page{size:landscape}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:12px;font-size:9px}
-      h1{font-size:14px;margin:0 0 2px}.sub{color:#555;font-size:10px;margin-bottom:4px}
-      .note{color:#444;font-size:9px;margin-bottom:8px;padding:4px 6px;background:#fff8e6;border:1px solid #f0d060;border-radius:4px}
-      .store-sheet{page-break-before:always}.store-sheet:first-child{page-break-before:auto}
-      table{border-collapse:collapse}tr{page-break-inside:avoid}
-      th{font-size:7.5px;color:#333;border:1px solid #bbb;padding:2px;vertical-align:bottom}
-      th.st{writing-mode:vertical-rl;transform:rotate(180deg);height:96px;text-align:left}
-      th.lbl{text-align:left;min-width:110px}
-      td{border:1px solid #ccc;padding:0}
-      td.s{font-weight:600;padding:2px 5px;white-space:nowrap}td.t{color:#555;padding:2px 5px;white-space:nowrap;font-size:8px}
-      td.box{width:20px;height:20px;position:relative}td.box .cur{position:absolute;top:0;left:1px;font-size:7px;color:#aaa}
-      tr.blank td{height:22px}tr.blank td.s{min-width:110px}
-      @media print{body{margin:0}}</style></head><body>${locs.map(sheet).join('')}</body></html>`;
+      <style>.store-sheet{page-break-before:always}.store-sheet:first-child{page-break-before:auto}
+      ${WORKSHEET_PRINT_CSS}</style></head><body>${locs.map(sheet).join('')}</body></html>`;
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
 
@@ -205,7 +227,8 @@ export function SkillsMatrixPanel({ ds, onClose }) {
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '🎓'),
         div({ style: { flex: 1, minWidth: 160 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Employee Skill Levels'),
+          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, 'Employee Skill Levels',
+            covStats.crew ? span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, covStats.crew.toLocaleString() + ' crew · ' + covStats.storeCount + ' stores' + (covStats.updated ? ' · ' + covStats.updated : '')) : null),
           div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'LifeLenz People List → skills matrix. Each station rated 1–5 (red→green). Click a station header to sort; ≥3 = proficient.')),
         h('input', { value: q, onChange: e => setQ(e.target.value), placeholder: 'Search name / title…', style: { ...selStyle, minWidth: 140 } }),
         h('select', { value: store, onChange: e => setStore(e.target.value), style: selStyle },

@@ -18,6 +18,41 @@ const btn = (p, ...c) => h('button', p, ...c);
 const ALL_LOCS = Object.keys(STORE_NAMES);
 const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald'));
 const locNum = s => { const n = parseInt(s, 10); return Number.isNaN(n) ? String(s == null ? '' : s) : String(n); };
+
+// FLH planning template (sheet 2 "FLH - Worksheet"): Wed→Tue grid, Floor + Fixed
+// stations with guidance notes. Manager writes planned hours; the header carries
+// the store's projected sales/hours (pulled from the weekly analysis) + the
+// Floor/FLH/Max ranges (10% / 15% / 25% of projected hours).
+const FLH_DAYS = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue'];
+const FLH_FLOOR = [
+  { code: 'FL', name: 'FLOOR', note: 'Floor coverage min of peaks or 7 hrs/day, optionally from open to close (Hourly Only). Generally, all open hours should be covered' },
+  { code: 'FG', name: 'FLOOR GUEST SERVICE', note: 'Peaks/High Volume Periods 7(+) hrs/day, based on store needs' },
+  { code: 'FP', name: 'FLOOR PRODUCTION', note: 'Peaks/High Volume Periods 7(+) hrs/day, based on store needs' },
+];
+const FLH_FIXED = [
+  { code: 'A', name: 'ADMINISTRATION/CASH', note: '4 hrs/day, figure actual admin time spent and allocate (eg: deposits, email, voice, complaints, orders) (Hourly Only)' },
+  { code: 'BP', name: 'BIRTHDAY PARTIES', note: 'N/A' },
+  { code: 'C', name: 'CLOSING', note: '2 hrs/day (2 hourly for 1 hour) *Does not include Manager' },
+  { code: 'FS', name: 'FOOD SAFETY', note: '1.5 hrs/day (Performed 2x/day)' },
+  { code: 'GL', name: 'GUEST EXPERIENCE', note: 'Peaks/High Volume Periods 7(+) hrs/day, based on store needs' },
+  { code: 'H', name: 'HIRING', note: '1-2 hrs/day' },
+  { code: 'ID', name: 'INDIVIDUAL DEVELOPMENT', note: '3 hrs/day' },
+  { code: 'L', name: 'LOBBY', note: 'Min 7 hrs/day (Peaks)' },
+  { code: 'M', name: 'MAINTENANCE', note: 'Total of maintenance hours. Hrs distributed per their schedule' },
+  { code: 'MM', name: 'MANAGER MEETING', note: 'Number of hourly managers x 1 hour each' },
+  { code: 'O', name: 'OPENING', note: '2-3 hrs/day' },
+  { code: 'TP', name: 'OTP', note: '1 hr/day' },
+  { code: 'PM', name: 'PLANNED MAINTENANCE', note: 'Min 1 hr/day' },
+  { code: 'PS', name: 'PRE-SHIFT', note: '15 - 30 minutes each/peak for FM, FG, FP' },
+  { code: 'ST', name: 'STAT', note: '1 hr/day for inventory count/analyze and 2 hrs/wk to deep dive stat' },
+  { code: 'SC', name: 'SCHEDULES', note: 'Time taken to do scheduling and review thereof. Likely 3-6 hours' },
+  { code: 'S', name: 'SUPPORT / PREP', note: 'Min 6 hrs/day - Adjust to need' },
+  { code: 'T', name: 'TRAINING', note: 'Min 8 hrs/day' },
+  { code: 'TR', name: 'TRANSITION', note: 'Included in VLH with Grill. Would probably not utilize.' },
+  { code: 'TD', name: 'TRUCK DELIVERY', note: '3 hrs/day each truck day, 1 hr each day prior to truck for rotation and prep of delivery' },
+  { code: 'V', name: 'VAT', note: 'Included with maintenance hours' },
+  { code: 'WT', name: 'WALK THRUS', note: '1 hr/day (20 minutes/peak)' },
+];
 const storeNm = l => STORE_NAMES[locNum(l)] || locNum(l);
 const isFL = l => FL_LOCS.has(locNum(l));
 
@@ -51,6 +86,7 @@ const COLS = [
 export function LaborAnalysisPanel({ ds, settings, onClose }) {
   const { useState, useMemo, useEffect } = React;
   const [tab, setTab] = useState('report');       // 'report' | 'config'
+  const [flhHours, setFlhHours] = useState('lifelenz'); // FLH template hours basis: 'lifelenz' (F) | 'target' (O)
   const [scope, setScope] = useState('all');
   const [week, setWeek] = useState(null);         // {weekStart, rows}
   const [config, setConfig] = useState({});       // {loc: {...}}
@@ -167,6 +203,58 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
   };
 
+  // Per-store FLH planning worksheet (sheet-2 template). One page per store in the
+  // current scope; projected sales/hours pulled from the weekly analysis, hours
+  // basis chosen at print time (LifeLenz forecast F, or target-based O). Manager
+  // fills the Wed→Tue grid; guidance notes + Floor/FLH/Max ranges are pre-filled.
+  const printFLHWorksheets = () => {
+    if (!shown.length) return;
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));
+    const basisLbl = flhHours === 'lifelenz' ? 'LifeLenz' : 'Target';
+    const fmtH = v => v == null || Number.isNaN(v) ? '—' : Math.round(v).toLocaleString();
+    const fmtS = v => v == null || Number.isNaN(v) ? '—' : '$' + Math.round(v).toLocaleString();
+    const colspan = 2 + FLH_DAYS.length + 1 + 1;
+    const headRow = `<tr><th class="lbl">Code</th><th class="lbl">Station</th>${FLH_DAYS.map(d => `<th>${d}</th>`).join('')}<th>Total</th><th class="notehd">Explanation / Reasoning / Suggestions</th></tr>`;
+    const stnRow = s => `<tr><td class="code">${esc(s.code)}</td><td class="stn">${esc(s.name)}</td>${FLH_DAYS.map(() => '<td class="box"></td>').join('')}<td class="box"></td><td class="note">${esc(s.note || '')}</td></tr>`;
+    const totRow = lbl => `<tr class="tr-tot"><td></td><td class="stn">${esc(lbl)}</td>${FLH_DAYS.map(() => '<td class="box"></td>').join('')}<td class="box"></td><td></td></tr>`;
+    const secRow = lbl => `<tr class="tr-sec"><td colspan="${colspan}">${esc(lbl)}</td></tr>`;
+    const sheet = r => {
+      const H = (flhHours === 'lifelenz' ? r.hoursFcst : r.projHrsTarget) || 0;
+      const summary = `<table class="summary"><tbody>
+        <tr><td class="sl">Projected Sales for Period</td><td class="sv">${fmtS(r.salesFcst)}</td>
+            <td class="sl">Projected Hours for Period (${esc(basisLbl)})</td><td class="sv">${fmtH(H)}</td></tr>
+        <tr><td class="sl">Target Floor Hours (10–15%)</td><td class="sv">${fmtH(H * 0.10)} – ${fmtH(H * 0.15)} &nbsp;(median ${fmtH(H * 0.125)})</td>
+            <td class="sl">Target FLH (10–15%)</td><td class="sv">${fmtH(H * 0.10)} – ${fmtH(H * 0.15)} &nbsp;(median ${fmtH(H * 0.125)})</td></tr>
+        <tr><td class="sl">Maximum Floor + Fixed Hours (25%)</td><td class="sv">${fmtH(H * 0.25)}</td>
+            <td class="sl">Combined Floor + FLH — 25% or below?</td><td class="sv">☐ Yes &nbsp; ☐ No</td></tr></tbody></table>`;
+      return `<div class="store-sheet">
+        <div class="note-strip">Write planned hours per day for each station. Floor + Fixed should stay within the ranges above (Combined ≤ 25% of projected hours). Guidance is a starting point — adjust to store needs.</div>
+        ${summary}
+        <table class="grid"><thead>
+          <tr><th class="pagehdr" colspan="${colspan}">${esc(storeNm(r.loc))} (#${esc(locNum(r.loc))}) — Fixed-Labor-Hours Worksheet · Proj Sales ${fmtS(r.salesFcst)} · Proj Hours ${fmtH(H)} (${esc(basisLbl)}) · ${esc(new Date().toLocaleDateString())}</th></tr>
+          ${headRow}</thead><tbody>
+          ${secRow('FLOOR HOURS')}${FLH_FLOOR.map(stnRow).join('')}${totRow('TOTAL FLOOR HOURS')}
+          ${secRow('FIXED LABOR HOURS')}${FLH_FIXED.map(stnRow).join('')}${totRow('TOTAL FIXED LABOR HOURS')}
+        </tbody></table></div>`;
+    };
+    // Tightened to fit one landscape page per store (3 floor + 22 fixed + totals).
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>FLH Worksheets — ${esc(shown.length)} stores</title>
+      <style>@page{size:landscape;margin:0.3in}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:0;font-size:7.5px}
+      .store-sheet{page-break-before:always;page-break-inside:avoid}.store-sheet:first-child{page-break-before:auto}
+      .note-strip{font-size:7px;color:#444;background:#fff8e6;border:1px solid #f0d060;border-radius:3px;padding:2px 5px;margin:0 0 3px;line-height:1.15}
+      table.summary{border-collapse:collapse;width:100%;margin:0 0 3px}table.summary td{border:1px solid #ccc;padding:1px 5px;font-size:8px}
+      table.summary td.sl{background:#f4f4f4;font-weight:600;width:22%}table.summary td.sv{font-variant-numeric:tabular-nums}
+      table.grid{border-collapse:collapse;width:100%}tr{page-break-inside:avoid}thead{display:table-header-group}
+      th.pagehdr{text-align:left;font-size:9.5px;font-weight:800;background:#f5bc00;color:#111;padding:2px 6px;border:1px solid #999}
+      th{font-size:7px;color:#333;border:1px solid #bbb;padding:1px 2px;background:#f4f4f4}th.lbl,th.notehd{text-align:left}
+      td{border:1px solid #ccc;padding:0 3px;font-size:7.5px;height:13px;line-height:12px}
+      td.code{font-weight:700;text-align:center;width:22px}td.stn{font-weight:600;white-space:nowrap}
+      td.box{width:30px}td.note{color:#555;font-size:6.5px;line-height:1.05}
+      tr.tr-tot td{font-weight:800;background:#fbfbe8}tr.tr-sec td{font-weight:800;background:#eee;text-transform:uppercase;letter-spacing:.3px;font-size:7px;padding:1px 3px}
+      </style></head><body>${shown.map(sheet).join('')}</body></html>`;
+    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  };
+
   const scopeSelect = h('select', { value: scope, onChange: e => setScope(e.target.value), style: selStyle },
     h('option', { value: 'all' }, 'All Stores'), h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
     h('optgroup', { label: '— Patches —' }, ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
@@ -188,6 +276,8 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
         scopeSelect,
         tab === 'report' ? btn({ onClick: exportCSV, disabled: !shown.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '⬇ CSV') : null,
         tab === 'report' ? btn({ onClick: printReport, disabled: !shown.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '🖨 Print') : null,
+        tab === 'report' ? h('select', { value: flhHours, onChange: e => setFlhHours(e.target.value), title: 'FLH worksheet — which projected hours to base the ranges on', style: selStyle }, h('option', { value: 'lifelenz' }, 'FLH hrs: LifeLenz'), h('option', { value: 'target' }, 'FLH hrs: Target (col O)')) : null,
+        tab === 'report' ? btn({ onClick: printFLHWorksheets, disabled: !shown.length, title: 'Print the per-store Fixed-Labor-Hours planning worksheet (one page per store in scope)', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: shown.length ? 'pointer' : 'default' } }, '🗒 FLH Worksheet' + (shown.length > 1 ? ' ×' + shown.length : '')) : null,
         tab === 'config' ? span({ style: { fontSize: 10, color: 'var(--text3)' } }, saveMsg) : null,
         tab === 'config' ? btn({ onClick: saveConfig, disabled: !Object.keys(edit).length, style: { padding: '3px 11px', borderRadius: 6, border: '1px solid var(--amber)', background: Object.keys(edit).length ? 'var(--amber)' : 'var(--surf)', color: Object.keys(edit).length ? '#111' : 'var(--text3)', fontSize: 11, fontWeight: 700, cursor: Object.keys(edit).length ? 'pointer' : 'default' } }, 'Save config') : null,
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
