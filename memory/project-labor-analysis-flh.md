@@ -67,13 +67,24 @@ T=5,144.99, X=121.68, AB=304.21. Engine unit tests assert these.
   `hoursOpen`/`fracToTime` (Excel time-fraction → hours/clock; close≤open wraps
   past midnight), `FLH_THRESHOLDS`. **18 unit tests**, all green.
 
-## TODO (Phase 1 remaining)
+## Progress (parser)
 
-- **Parser** — parse the multi-band xlsx (merged headers on rows 1–3, data from
-  row 4, stop at "Sub Total"/"Grand Total"/legend rows) into: (a) weekly Band-1
-  rows for `lifelenz_labor_week`, (b) per-store config for `store_labor_config`
-  (hours-of-op normalized to a canonical 7-day model + fixed-hours inputs).
-  STORE_NAMES keys unpadded; sheet loc already unpadded ("3708").
+- ✅ **Parser** `parseMbiLaborAnalysis(rows)` + `parseMbiLaborAnalysisWb(wb)` in
+  `src/parsers/index.js` (v4.461). Reads by FIXED column position (`_MBI` map +
+  `_MBI_HOURS_BANDS` + `_MBI_PERDAY`) since duplicate headers ("Store Open Time
+  Sun" ×2) make header lookup ambiguous. Output:
+  `{ weekStart, weekEnd, monthTag, stores:[{loc, band1{…}, config{…}}] }`.
+  - **Hours deciphered** to a canonical 7-weekday model: bands applied broad→
+    specific (last wins), per-day hours from BF–BL are authoritative (fall back
+    to `(close−open)*24`, wrap past midnight). `is24hr` = all-days-24 OR the
+    Y/N flag; `is24Note` preserves the "24 HR W/E" nuance.
+  - Skips Sub Total / Grand Total / legend rows; loc unpadded via `parseInt`.
+  - `detectType` routes `MBI_Labor_Analysis.xlsx` → `mbi-labor` (added BEFORE the
+    generic 'labor analysis' match so it doesn't collide).
+  - Fixture `src/__tests__/fixtures/mbi-labor-sample.json` (real rows: 3708,
+    5183, 18213, 6178, 43701 + a subtotal row). **11 parser tests**, all green.
+
+## TODO (Phase 1 remaining)
 - **Supabase tables** (owner runs SQL):
   - `store_labor_config` (loc PK): 7-day open/close (or the raw day-band set),
     is_24hr, maint_hours, maint_people, maint_days_off, prep_hours, lobby_hours.
