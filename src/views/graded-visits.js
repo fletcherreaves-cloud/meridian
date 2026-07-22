@@ -1,12 +1,18 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 import { parseGradedVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 
 const h = React.createElement;
 const ALL_LOCS = Object.keys(STORE_NAMES);
 const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald')); // 7 FL panhandle stores
+// STORE_NAMES keys are unpadded ("3708") but the report's restaurant number is
+// zero-padded ("03708"); normalize before any name lookup or loc comparison so
+// 4-digit stores resolve their name (and aren't dropped by the loc filters).
+const locNum = (s) => { const n = parseInt(s, 10); return Number.isNaN(n) ? String(s == null ? '' : s) : String(n); };
+const storeName = (s) => STORE_NAMES[locNum(s)] || locNum(s);
+const storeLabel = (s) => { const n = locNum(s), nm = STORE_NAMES[n]; return nm ? n + ' — ' + nm : n; }; // "3708 — Ardmore-Broadway"
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
@@ -106,11 +112,11 @@ export function GradedVisitsPanel({ ds, onClose }) {
     if (selLoc === 'all') return null;
     if (selLoc === 'fl') return new Set(ALL_LOCS.filter(l => FL_LOCS.has(l)));
     if (selLoc === 'ok') return new Set(ALL_LOCS.filter(l => !FL_LOCS.has(l)));
-    if (selLoc.startsWith('__patch__')) return new Set(((DEF_SETTINGS.supervisorGroups || {})[selLoc.slice(9)] || []).map(String));
-    return new Set([String(selLoc)]);
+    if (selLoc.startsWith('__patch__')) return new Set(((DEF_SETTINGS.supervisorGroups || {})[selLoc.slice(9)] || []).map(l => locNum(l)));
+    return new Set([locNum(selLoc)]);
   }, [selLoc]);
   const filtered = useMemo(() => visits.filter(v =>
-    (activeLocs === null || activeLocs.has(String(v.store))) &&
+    (activeLocs === null || activeLocs.has(locNum(v.store))) &&
     (typeFilter === 'all' || (v.reportType || 'CFV') === typeFilter)
   ), [visits, activeLocs, typeFilter]);
   const types = useMemo(() => [...new Set(visits.map(v => v.reportType || 'CFV'))], [visits]);
@@ -122,7 +128,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
   }, [filtered]);
   const storesWithData = useMemo(() => [...new Set(visits.map(v => String(v.store)))].sort(), [visits]);
   const scopeLabel = selLoc === 'all' ? 'All Stores' : selLoc === 'fl' ? 'Florida' : selLoc === 'ok' ? 'Oklahoma'
-    : selLoc.startsWith('__patch__') ? selLoc.slice(9) : sNameC(String(selLoc));
+    : selLoc.startsWith('__patch__') ? selLoc.slice(9) : storeLabel(selLoc);
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   const exportCSV = () => {
@@ -130,7 +136,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const lines = [cols.map(csvCell).join(',')];
     for (const v of filtered) {
       const mods = Object.entries(v.modules || {}).map(([k, m]) => `${k} ${fmtPct(m.pct)}`).join('; ');
-      lines.push([v.reportType || 'CFV', sNameC(String(v.store)), v.store, v.dateISO || '', v.daypart || '',
+      lines.push([v.reportType || 'CFV', storeName(v.store), locNum(v.store), v.dateISO || '', v.daypart || '',
         v.channel || '',
         v.score == null ? '' : v.score, v.pass == null ? '' : (v.pass ? 'Pass' : 'Fail'), v.status || '', mods].map(csvCell).join(','));
     }
@@ -155,7 +161,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const hrLbl = n => hourLabel(String(n).padStart(2, '0') + ':00');
     const head = METRICS.map(mt => `<th class="n">${esc(mt.label)}</th>`).join('');
     const rowFor = (lbl, m, cls) => m ? `<tr class="${cls || ''}"><td>${esc(lbl)}</td>${METRICS.map(mt => `<td class="n">${esc(mt.fmt(m[mt.key]))}</td>`).join('')}</tr>` : '';
-    return `<div class="visitctx"><h3>${esc(sNameC(String(v.store)))} — ${esc(niceDate(v.dateISO))}${v.completionTime ? ' · visit ' + esc(v.completionTime) : ''}${v.daypart ? ' · ' + esc(v.daypart) : ''}${v.channel ? ' · ' + esc(v.channel) : ''}${v.score != null ? ' · ' + esc(fmtPct(v.score)) + (v.pass ? ' PASS' : ' FAIL') : ''}</h3>
+    return `<div class="visitctx"><h3>${esc(storeLabel(v.store))} · ${esc(niceDate(v.dateISO))}${v.completionTime ? ' · visit ' + esc(v.completionTime) : ''}${v.daypart ? ' · ' + esc(v.daypart) : ''}${v.channel ? ' · ' + esc(v.channel) : ''}${v.score != null ? ' · ' + esc(fmtPct(v.score)) + (v.pass ? ' PASS' : ' FAIL') : ''}</h3>
       <table class="ctx"><thead><tr><th></th>${head}</tr></thead><tbody>
       ${rowFor('Day', dayM)}
       ${befRow ? rowFor('Hour before' + (cutoff ? ' · ' + hrLbl(cutoff - 1) : ''), hourMetrics(befRow, cutoff), 'near') : ''}
@@ -173,7 +179,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const rows = filtered.map(v => {
       const mods = Object.entries(v.modules || {}).map(([k, m]) => `${esc(k)} ${fmtPct(m.pct)}`).join(' · ');
       const res = v.pass == null ? '—' : (v.pass ? 'PASS' : 'FAIL');
-      return `<tr><td>${esc(v.reportType || 'CFV')}</td><td>${esc(sNameC(String(v.store)))}</td><td>${esc(niceDate(v.dateISO))}</td><td>${esc(v.channel || v.status || '')}</td><td class="n">${v.score == null ? '—' : fmtPct(v.score)}</td><td class="${v.pass ? 'pass' : 'fail'}">${res}</td><td class="mods">${mods}</td></tr>`;
+      return `<tr><td>${esc(v.reportType || 'CFV')}</td><td>${esc(storeLabel(v.store))}</td><td>${esc(niceDate(v.dateISO))}</td><td>${esc(v.channel || v.status || '')}</td><td class="n">${v.score == null ? '—' : fmtPct(v.score)}</td><td class="${v.pass ? 'pass' : 'fail'}">${res}</td><td class="mods">${mods}</td></tr>`;
     }).join('');
     const scored = filtered.filter(v => v.score != null);
     const passN = scored.filter(v => v.score >= PASS).length;
@@ -340,7 +346,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const visM = visitHourRow ? hourMetrics(visitHourRow, cutoff) : null;
     const rows = scopedHours(hrs, cutoff, exportScope).map(x => hourMetrics(x, cutoff));
     const lines = [
-      ['Store', sNameC(String(v.store)), 'NSN', v.store].map(csvCell).join(','),
+      ['Store', storeName(v.store), 'NSN', locNum(v.store)].map(csvCell).join(','),
       ['Date', v.dateISO || '', 'Visit', v.completionTime || '', 'Daypart', v.daypart || ''].map(csvCell).join(','),
       ['Channel', v.channel || '', 'Score', v.score == null ? '' : v.score, 'Result', v.pass == null ? '' : (v.pass ? 'Pass' : 'Fail')].map(csvCell).join(','),
       ['Rows', scopeLabelTxt(cutoff)].map(csvCell).join(','),
@@ -353,7 +359,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `visit-context-${sNameC(String(v.store)).replace(/\s+/g, '_')}-${v.dateISO}-${exportScope}.csv`;
+    a.href = url; a.download = `visit-context-${storeName(v.store).replace(/\s+/g, '_')}-${v.dateISO}-${exportScope}.csv`;
     a.click(); URL.revokeObjectURL(url);
   };
 
@@ -389,7 +395,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     }</tr></thead><tbody>${
       rows.map(m => `<tr class="${m.visitHr ? 'visit' : m.nearVisit ? 'near' : ''}"><td>${esc(rowLabel(m))}</td>${metricCells(m)}</tr>`).join('')
     }</tbody></table>` : '';
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Visit Context — ${esc(sNameC(String(v.store)))} ${esc(v.dateISO || '')}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Visit Context — ${esc(storeLabel(v.store))} ${esc(v.dateISO || '')}</title>
       <style>
         body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:28px;font-size:12px}
         h1{font-size:17px;margin:0 0 2px} h2{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666;margin:18px 0 6px}
@@ -401,7 +407,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
         tr.visit td{background:#fff4d1;font-weight:700} tr.near td{background:#fffbe9}
         @media print{body{margin:0}}
       </style></head><body>
-      <h1>${esc(sNameC(String(v.store)))} — Visit Operational Context</h1>
+      <h1>${esc(storeLabel(v.store))} — Visit Operational Context</h1>
       <div class="sub">${esc(niceDate(v.dateISO))}${v.completionTime ? ' · visit ' + esc(v.completionTime) : ''}${v.daypart ? ' · ' + esc(v.daypart) : ''}${v.channel ? ' · ' + esc(v.channel) : ''}${v.score != null ? ' · ' + esc(fmtPct(v.score)) + (v.pass ? ' PASS' : ' FAIL') : ''}</div>
       ${summaryHtml}${chipsHtml}${peaksHtml}${hourHtml}
       </body></html>`;
@@ -600,7 +606,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
                     return h(React.Fragment, { key: v.id || i },
                       h('tr', { onClick: () => toggleContext(v), title: 'Show operational context at time of visit', style: { cursor: 'pointer', background: isOpen ? 'rgba(245,188,0,.06)' : 'transparent' } },
                         h('td', { style: { ...tdS, textAlign: 'left' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: (isRGR ? '#a78bfa' : '#60a5fa') + '22', color: isRGR ? '#a78bfa' : '#60a5fa' } }, v.reportType || 'CFV')),
-                        h('td', { style: { ...tdS, textAlign: 'left', fontWeight: 600 } }, sNameC(String(v.store))),
+                        h('td', { style: { ...tdS, textAlign: 'left', fontWeight: 600 } },
+                          storeName(v.store),
+                          span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9, marginLeft: 5 } }, '#' + locNum(v.store))),
                         h('td', { style: { ...tdS, textAlign: 'left', color: 'var(--text2)' } },
                           niceDate(v.dateISO),
                           v.completionTime ? span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ' · ' + v.completionTime) : null),
