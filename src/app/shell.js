@@ -205,6 +205,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),     false),
       pis('analytics.store',    'Targets',            '◉', ()=>onOpenModal('unified-targets'),   false),
       pis('analytics.store',    'Monthly Projections','📅', ()=>onOpenModal('monthly-proj'),     false),
+      pis('analytics.store',    'Smart Targets',      '🧭', ()=>onOpenModal('smart-targets-v2'), false),
       // ── OPERATIONS ─────────────────────────────────────────────
       can('analytics.store') && navLabel('OPERATIONS'),
       pis('analytics.labor',    'Labor Analytics',    '👷', ()=>onOpenModal('labor-analytics'),  false),
