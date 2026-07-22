@@ -1665,13 +1665,24 @@ export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_
 }
 
 // Load the whole skills roster → [{employee, loc(roster), homeStore, ..., updatedAt}].
+// Paginated: the roster is >1000 rows (27 stores × ~57 crew), and Supabase caps a
+// plain select at 1000 — without paging, ~19 stores' worth silently drop.
 export async function loadEmployeeSkills() {
   if (!supabase) return [];
-  const { data, error } = await supabase.from('employee_skills').select('*');
-  if (error || !data) { if (error) console.warn('[employee_skills] load error:', error.message); return []; }
-  return data.map(r => ({
-    employee: r.employee, loc: r.loc, homeStore: r.home_store, role: r.role,
-    roleCode: r.role_code, isPrimaryRole: r.is_primary_role, schoolCalendar: r.school_calendar,
-    skills: r.skills_json || {}, source: r.source, updatedAt: r.updated_at,
-  }));
+  const PAGE = 1000;
+  const { count } = await supabase.from('employee_skills').select('loc', { count: 'exact', head: true });
+  const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
+  const reqs = [];
+  for (let p = 0; p < pages; p++) reqs.push(supabase.from('employee_skills').select('*').order('loc').order('employee').range(p * PAGE, p * PAGE + PAGE - 1));
+  const results = await Promise.all(reqs);
+  const out = [];
+  for (const res of results) {
+    if (res.error) { console.warn('[employee_skills] load error:', res.error.message); continue; }
+    for (const r of (res.data || [])) out.push({
+      employee: r.employee, loc: r.loc, homeStore: r.home_store, role: r.role,
+      roleCode: r.role_code, isPrimaryRole: r.is_primary_role, schoolCalendar: r.school_calendar,
+      skills: r.skills_json || {}, source: r.source, updatedAt: r.updated_at,
+    });
+  }
+  return out;
 }
