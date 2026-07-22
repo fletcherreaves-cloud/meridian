@@ -2,7 +2,19 @@ import { describe, it, expect } from 'vitest';
 import {
   median, mad, quantile, trendSlope, robustBaseline,
   likeSizedPeers, peerAnchor, blend, confidence, computeSmartTarget,
+  windowRate, weightedRecencyProjection, periodTotal, backtestProjectors, toISODate,
 } from '../engine/smart-targets.js';
+
+// Build a daily series ending at `endIso`, `days` long, from a value fn(i, date).
+function dailyFrom(endIso, days, valueFn) {
+  const out = [];
+  const end = new Date(endIso + 'T00:00:00');
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(end); d.setDate(d.getDate() - i);
+    out.push({ date: d, value: valueFn(days - 1 - i, d) });
+  }
+  return out;
+}
 
 describe('smart-targets — robust stats', () => {
   it('median handles odd/even and skips non-numbers', () => {
@@ -137,5 +149,89 @@ describe('smart-targets — end to end', () => {
     const r = computeSmartTarget(series, [], { direction: 'higher', volume: 500 });
     expect(r.anchor).toBeNull();
     expect(r.smart).toBeGreaterThanOrEqual(r.baseline);
+  });
+});
+
+describe('smart-targets — owner weighted-recency projector', () => {
+  it('windowRate returns the anomaly-excluded mean daily rate for the window', () => {
+    // 90 days of ~1000/day (natural weekly variation) with one freak 0-day in
+    // the last 21. Real sales always vary, so MAD is nonzero and the outlier drops.
+    const series = dailyFrom('2026-06-30', 90, (i) => (i === 80 ? 0 : 980 + (i % 7) * 8));
+    const asOf = new Date('2026-07-01T00:00:00'); // exclusive upper bound
+    const w = windowRate(series, asOf, 21, { k: 3 });
+    expect(w.n).toBe(21);
+    expect(w.excluded).toBe(1);            // the 0-day dropped
+    expect(w.rate).toBeGreaterThan(975);   // not dragged down by the 0
+  });
+
+  it('projects a period total from the weighted blend of T3M/T6W/T3W', () => {
+    // Steady 2000/day for 120 days → every window rate = 2000 → 31-day period = 62000
+    const series = dailyFrom('2026-07-31', 120, () => 2000);
+    const asOf = new Date('2026-08-01T00:00:00');
+    const r = weightedRecencyProjection(series, { asOf, targetDays: 31 });
+    expect(r.dailyRate).toBeCloseTo(2000, 6);
+    expect(r.projection).toBeCloseTo(62000, 6);
+  });
+
+  it('weights recent windows more when the trend is rising', () => {
+    // Ramp: older days lower, recent days higher. Recency-weighted rate should
+    // exceed the flat 3-month average.
+    const series = dailyFrom('2026-07-31', 120, (i) => 1000 + i * 10); // i:0..119
+    const asOf = new Date('2026-08-01T00:00:00');
+    const flat = weightedRecencyProjection(series, { asOf, targetDays: 30, weights: { m3: 1, w6: 0, w3: 0 } });
+    const recency = weightedRecencyProjection(series, { asOf, targetDays: 30 }); // default recency-weighted
+    expect(recency.dailyRate).toBeGreaterThan(flat.dailyRate);
+  });
+
+  it('applies a signed known-event delta to the projection', () => {
+    const series = dailyFrom('2026-07-31', 90, () => 1000);
+    const asOf = new Date('2026-08-01T00:00:00');
+    const base = weightedRecencyProjection(series, { asOf, targetDays: 30 });
+    const withEvent = weightedRecencyProjection(series, { asOf, targetDays: 30, eventDelta: 5000 });
+    expect(withEvent.projection).toBeCloseTo(base.projection + 5000, 6);
+  });
+
+  it('returns null projection when no window has data', () => {
+    const series = dailyFrom('2026-01-31', 30, () => 1000); // all far before asOf
+    const asOf = new Date('2026-08-01T00:00:00');
+    const r = weightedRecencyProjection(series, { asOf, targetDays: 30 });
+    expect(r.projection).toBeNull();
+  });
+});
+
+describe('smart-targets — projector scoreboard (which wins per store)', () => {
+  it('periodTotal sums values inside [start,end)', () => {
+    const series = dailyFrom('2026-07-31', 60, () => 100);
+    const { total, n } = periodTotal(series, new Date('2026-07-01T00:00:00'), new Date('2026-07-31T00:00:00'));
+    expect(n).toBe(30);          // Jul 1..30 inclusive of start, exclusive of 31
+    expect(total).toBe(3000);
+  });
+
+  it('grades competing projectors and names the closer one the winner', () => {
+    // Actual recent periods run ~1000/day. "good" projects the true rate; "bad"
+    // lowballs. Backtest should crown "good".
+    const series = dailyFrom('2026-07-31', 150, () => 1000);
+    const good = { key: 'good', name: 'Good', project: (s, o) => 1000 * o.targetDays };
+    const bad = { key: 'bad', name: 'Bad', project: (s, o) => 600 * o.targetDays };
+    const r = backtestProjectors(series, [good, bad], { periodDays: 28, folds: 3 });
+    expect(r.folds).toBeGreaterThan(0);
+    expect(r.winner).toBe('good');
+    expect(r.perMethod.good.mape).toBeLessThan(r.perMethod.bad.mape);
+    expect(r.perMethod.good.mape).toBeCloseTo(0, 1);
+  });
+
+  it('lets the owner method compete against a naive flat model', () => {
+    const series = dailyFrom('2026-07-31', 150, (i) => 900 + i * 2); // gently rising
+    const owner = { key: 'owner', name: 'T3M/T6W/T3W', project: (s, o) => weightedRecencyProjection(s, o) };
+    const flat = { key: 'flat', name: 'Flat-3wk', project: (s, o) => weightedRecencyProjection(s, { ...o, weights: { m3: 1, w6: 0, w3: 0 } }) };
+    const r = backtestProjectors(series, [owner, flat], { periodDays: 28, folds: 3 });
+    expect(r.winner).not.toBeNull();
+    expect(Object.keys(r.perMethod).sort()).toEqual(['flat', 'owner']);
+  });
+
+  it('toISODate normalizes Date and string inputs', () => {
+    expect(toISODate('2026-08-15')).toBe('2026-08-15');
+    expect(toISODate(new Date('2026-08-15T12:00:00Z'))).toBe('2026-08-15');
+    expect(toISODate('not-a-date')).toBeNull();
   });
 });

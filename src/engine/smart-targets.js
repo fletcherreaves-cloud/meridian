@@ -118,3 +118,109 @@ export function computeSmartTarget(series, peers, opts = {}) {
   const smart = blend(own, anchor, { closeGapFrac, capFrac, direction });
   return { smart, baseline: rb.baseline, own, anchor, tierN, confidence: confidence(rb.n, cv), excludedDays: rb.excluded, n: rb.n, cv };
 }
+
+// ── Owner's weighted-recency projector (T3M / T6W / T3W) ─────────────────────
+// The owner's proven method: project a period total from a daily RATE that blends
+// three trailing windows — trailing 3 months, 6 weeks, 3 weeks — with the most
+// weight on the most recent window. Anomalies are excluded from each window's
+// rate (robust mean of the k·MAD-kept set), and known events adjust the result
+// (+/- dollars, or a set of dates to drop from history as one-offs).
+//
+//   dailySeries : [{date: Date|string, value: number}]  (any order)
+//   asOf        : Date|string — project as if standing here (exclusive upper bound)
+//   targetDays  : # of days in the period you're projecting (e.g. days in August)
+//   weights     : {m3:.., w6:.., w3:..} recency weights (default favor recent)
+//   excludeDates: Set/array of ISO 'YYYY-MM-DD' one-off days to drop from history
+//   eventDelta  : signed dollars (or metric units) to add to the projection
+export function toISODate(d) {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(+dt)) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+// Robust (anomaly-excluded) mean daily rate over the days in [asOf-days, asOf).
+export function windowRate(dailySeries, asOf, days, { k = 3, excludeDates } = {}) {
+  const end = asOf instanceof Date ? new Date(asOf) : new Date(asOf);
+  if (Number.isNaN(+end)) return { rate: null, n: 0, excluded: 0 };
+  const start = new Date(end); start.setDate(start.getDate() - days);
+  const excl = excludeDates instanceof Set ? excludeDates : new Set(excludeDates || []);
+  const vals = [];
+  for (const r of dailySeries || []) {
+    const iso = toISODate(r.date); if (!iso) continue;
+    const dt = new Date(iso + 'T00:00:00');
+    if (dt >= start && dt < end && !excl.has(iso) && _isNum(r.value)) vals.push(r.value);
+  }
+  if (!vals.length) return { rate: null, n: 0, excluded: 0 };
+  const rb = robustBaseline(vals, { k });               // drop anomalous days
+  const kept = rb.kept.length ? rb.kept : vals;
+  const rate = kept.reduce((a, b) => a + b, 0) / kept.length; // mean daily rate
+  return { rate, n: vals.length, excluded: rb.excluded };
+}
+
+export function weightedRecencyProjection(dailySeries, opts = {}) {
+  const {
+    asOf = new Date(), targetDays = 30, k = 3,
+    weights = { m3: 0.2, w6: 0.3, w3: 0.5 }, // recency-weighted: 3-week heaviest
+    excludeDates = null, eventDelta = 0,
+  } = opts;
+  const t3m = windowRate(dailySeries, asOf, 90, { k, excludeDates });
+  const t6w = windowRate(dailySeries, asOf, 42, { k, excludeDates });
+  const t3w = windowRate(dailySeries, asOf, 21, { k, excludeDates });
+  const parts = [
+    { r: t3m.rate, w: weights.m3 },
+    { r: t6w.rate, w: weights.w6 },
+    { r: t3w.rate, w: weights.w3 },
+  ].filter(p => _isNum(p.r) && p.w > 0);
+  if (!parts.length) return { projection: null, dailyRate: null, windows: { t3m, t6w, t3w }, wSum: 0 };
+  const wSum = parts.reduce((a, p) => a + p.w, 0);
+  const dailyRate = parts.reduce((a, p) => a + p.r * p.w, 0) / wSum; // normalized blend
+  const projection = dailyRate * targetDays + (_isNum(eventDelta) ? eventDelta : 0);
+  return { projection, dailyRate, windows: { t3m, t6w, t3w }, wSum };
+}
+
+// ── Generic projector scoreboard (which method wins per store) ────────────────
+// Walk back over the most recent completed periods, project each with every
+// supplied projector, compare to the actual period total, and grade. A projector
+// is { key, name, project(dailySeries, {asOf, targetDays}) -> number|{projection} }.
+// Returns per-method MAPE + the winning key, so the owner's method and the
+// forecast-engine models compete on the same held-out actuals.
+function _proj(val) { return _isNum(val) ? val : (val && _isNum(val.projection) ? val.projection : null); }
+
+export function periodTotal(dailySeries, start, end) {
+  const s = new Date(toISODate(start) + 'T00:00:00'), e = new Date(toISODate(end) + 'T00:00:00');
+  let sum = 0, n = 0;
+  for (const r of dailySeries || []) {
+    const iso = toISODate(r.date); if (!iso) continue;
+    const dt = new Date(iso + 'T00:00:00');
+    if (dt >= s && dt < e && _isNum(r.value)) { sum += r.value; n++; }
+  }
+  return { total: sum, n };
+}
+
+export function backtestProjectors(dailySeries, projectors, opts = {}) {
+  const { periodDays = 28, folds = 3, minCoverageFrac = 0.6 } = opts;
+  const series = (dailySeries || []).filter(r => toISODate(r.date) && _isNum(r.value));
+  if (!series.length || !(projectors || []).length) return { perMethod: {}, winner: null, folds: 0 };
+  const maxIso = series.map(r => toISODate(r.date)).sort().slice(-1)[0];
+  const anchor = new Date(maxIso + 'T00:00:00'); anchor.setDate(anchor.getDate() + 1); // exclusive end
+  const scores = {}; projectors.forEach(p => { scores[p.key] = []; });
+  let usedFolds = 0;
+  for (let f = 0; f < folds; f++) {
+    const end = new Date(anchor); end.setDate(end.getDate() - f * periodDays);
+    const start = new Date(end); start.setDate(start.getDate() - periodDays);
+    const act = periodTotal(series, start, end);
+    if (!(act.total > 0) || act.n < periodDays * minCoverageFrac) continue; // skip sparse periods
+    usedFolds++;
+    for (const p of projectors) {
+      let val = null;
+      try { val = _proj(p.project(series, { asOf: start, targetDays: periodDays })); } catch { val = null; }
+      if (_isNum(val) && val > 0) scores[p.key].push(Math.abs(val - act.total) / act.total * 100);
+    }
+  }
+  const perMethod = {};
+  for (const [k, errs] of Object.entries(scores)) {
+    if (errs.length) perMethod[k] = { mape: +(errs.reduce((a, v) => a + v, 0) / errs.length).toFixed(1), n: errs.length, accuracy: +Math.max(0, 100 - errs.reduce((a, v) => a + v, 0) / errs.length).toFixed(1) };
+  }
+  const ranked = Object.entries(perMethod).sort((a, b) => a[1].mape - b[1].mape);
+  return { perMethod, winner: ranked.length ? ranked[0][0] : null, folds: usedFolds };
+}

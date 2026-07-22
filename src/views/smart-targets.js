@@ -7,8 +7,20 @@
 // FL and OK are anchored SEPARATELY (peers are same-state, like-sized only).
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
-import { computeSmartTarget, robustBaseline } from '../engine/smart-targets.js';
+import { computeSmartTarget, robustBaseline, weightedRecencyProjection, windowRate, backtestProjectors } from '../engine/smart-targets.js';
 import { loadDailySales } from '../lib/supabase.js';
+
+// Competing period-projectors, all pure functions of a store's daily series.
+// The owner's T3M/T6W/T3W weighted-recency method runs against naive short/long
+// baselines so the backtest can crown which one actually fits each store best.
+// (forecast-engine daily models are a heavier Layer-2 plug-in — same interface.)
+const PROJECTORS = [
+  { key: 'owner', name: 'T3M/T6W/T3W', short: 'Owner', project: (s, o) => weightedRecencyProjection(s, o).projection },
+  { key: 'recent', name: 'Recent 3-wk run-rate', short: '3-wk', project: (s, o) => { const w = windowRate(s, o.asOf, 21); return w.rate == null ? null : w.rate * o.targetDays; } },
+  { key: 'avg3m', name: '3-month average', short: '3-mo', project: (s, o) => { const w = windowRate(s, o.asOf, 90); return w.rate == null ? null : w.rate * o.targetDays; } },
+];
+const PROJ_NAME = Object.fromEntries(PROJECTORS.map(p => [p.key, p.name]));
+const PROJ_SHORT = Object.fromEntries(PROJECTORS.map(p => [p.key, p.short]));
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -108,6 +120,8 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       const st = FL_LOCS.has(loc) ? 'fl' : 'ok';
       if (baseByLoc[loc].baseline != null) peersByState[st].push(baseByLoc[loc]);
     }
+    // Only backtest monthly-projected metrics (period totals). Ratio metrics later.
+    const doBacktest = !!metric.monthly;
     const rows = Object.keys(byLoc).map(loc => {
       const entries = byLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d));
       const series = entries.map(x => x.v);
@@ -123,12 +137,23 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       const current = toMonthly(curDaily);
       const official = officialFor(loc);
       const vsOff = (smart != null && official > 0) ? (smart / official - 1) * 100 : null;
+      // Scoreboard: which projection method fits THIS store best on held-out history.
+      let bt = { perMethod: {}, winner: null, folds: 0 };
+      if (doBacktest) {
+        const dailySeries = entries.map(x => ({ date: x.d, value: x.v }));
+        bt = backtestProjectors(dailySeries, PROJECTORS, { periodDays: 28, folds: 3 });
+      }
+      const ownerMape = bt.perMethod.owner ? bt.perMethod.owner.mape : null;
       return { loc, smart, current, official: official != null ? official : null, vsOff,
         confidence: r.confidence, excludedDays: r.excludedDays, n: r.n, baseline: toMonthly(r.baseline),
-        anchor: toMonthly(r.anchor), own: toMonthly(r.own), tierN: r.tierN };
+        anchor: toMonthly(r.anchor), own: toMonthly(r.own), tierN: r.tierN,
+        winner: bt.winner, btFolds: bt.folds, btPerMethod: bt.perMethod, ownerMape };
     }).filter(r => r.smart != null);
     rows.sort((a, b) => (b.smart || 0) - (a.smart || 0));
-    return { rows, daysInMonth };
+    // Aggregate win-tally across stores (how often each method wins).
+    const tally = {}; let scored = 0;
+    for (const r of rows) { if (r.winner) { tally[r.winner] = (tally[r.winner] || 0) + 1; scored++; } }
+    return { rows, daysInMonth, tally, scored, doBacktest };
   }, [hist, metricKey, windowDays, ds]);
 
   const shown = model.rows.filter(r => activeLocs === null || activeLocs.has(locNum(r.loc)));
@@ -137,20 +162,31 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
   const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
 
+  // Tooltip for the Best-fit cell: each method's backtested MAPE, winner first.
+  const btTitle = r => {
+    if (!r.btFolds) return 'Not enough completed 28-day periods to backtest yet';
+    const parts = PROJECTORS.map(p => { const m = r.btPerMethod[p.key]; return m ? `${p.name}: ${m.mape}% MAPE (n=${m.n})` : `${p.name}: —`; });
+    return `Best fit over ${r.btFolds} held-out 28-day period(s):\n` + parts.join('\n');
+  };
   const row = r => h('tr', { key: r.loc, title: `baseline ${metric.fmt(r.baseline)} · own-trajectory ${metric.fmt(r.own)} · peer anchor ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers) · ${r.n} days, ${r.excludedDays} anomalies excluded` },
     h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(r.loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '#' + locNum(r.loc))),
     h('td', { style: td }, metric.fmt(r.official)),
     h('td', { style: { ...td, fontWeight: 800, color: 'var(--amber)' } }, metric.fmt(r.smart)),
     h('td', { style: td }, metric.fmt(r.current)),
     h('td', { style: { ...td, fontWeight: 700, color: r.vsOff == null ? 'var(--text3)' : r.vsOff >= 0 ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'),
+    model.doBacktest ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' }, title: btTitle(r) },
+      r.winner
+        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, PROJ_SHORT[r.winner]),
+            r.btPerMethod[r.winner] ? span({ style: { color: 'var(--text3)', fontSize: 9, marginLeft: 5 } }, r.btPerMethod[r.winner].mape + '%') : null)
+        : span({ style: { color: 'var(--text3)', fontSize: 9 } }, '—')) : null,
     h('td', { style: { ...td, textAlign: 'center' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: confColor(r.confidence) + '22', color: confColor(r.confidence) } }, r.confidence)),
     h('td', { style: { ...td, color: r.excludedDays ? '#f59e0b' : 'var(--text3)' } }, r.excludedDays ? r.excludedDays + ' excl' : '—'));
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   const exportCSV = () => {
-    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Confidence', 'Anomalies excluded', 'Baseline (mo)', 'Peer anchor (mo)', 'Days', 'Lookback days', 'Target month'];
+    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline (mo)', 'Peer anchor (mo)', 'Days', 'Lookback days', 'Target month'];
     const lines = [cols.map(csvCell).join(',')];
-    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), r.official == null ? '' : Math.round(r.official), r.smart == null ? '' : Math.round(r.smart), r.current == null ? '' : Math.round(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.confidence, r.excludedDays, r.baseline == null ? '' : Math.round(r.baseline), r.anchor == null ? '' : Math.round(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
+    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), r.official == null ? '' : Math.round(r.official), r.smart == null ? '' : Math.round(r.smart), r.current == null ? '' : Math.round(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? PROJ_NAME[r.winner] : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, r.baseline == null ? '' : Math.round(r.baseline), r.anchor == null ? '' : Math.round(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}.csv`; a.click(); URL.revokeObjectURL(url);
@@ -203,7 +239,17 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
           : !shown.length
           ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12 } },
               'No sales history in the selected window. Smart Targets needs daily sales (qsr_daily_activity) loaded.')
-          : div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
+          : div(null,
+            // Aggregate scoreboard: how often each method wins across shown stores.
+            model.doBacktest && shown.some(r => r.winner)
+              ? div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 11px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
+                  span({ style: { fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)' } }, 'Method scoreboard'),
+                  ...PROJECTORS.map(p => { const shownWins = shown.filter(r => r.winner === p.key).length; return span({ key: p.key, title: PROJ_NAME[p.key], style: { fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 } },
+                    span({ style: { fontWeight: 700, color: p.key === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, p.name),
+                    span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: p.key === 'owner' ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
+                  span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE'))
+              : null,
+            div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
               h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
                 h('thead', null, h('tr', null,
                   h('th', { style: { ...th, textAlign: 'left' } }, 'Store'),
@@ -211,9 +257,10 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
                   h('th', { style: th }, 'Smart'),
                   h('th', { style: th }, 'Current'),
                   h('th', { style: th }, 'vs Official'),
+                  model.doBacktest ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Which projection method fits this store best on held-out history (lowest MAPE)' }, 'Best fit') : null,
                   h('th', { style: { ...th, textAlign: 'center' } }, 'Conf'),
                   h('th', { style: th }, 'Anomalies'))),
-                h('tbody', null, ...shown.map(row)))),
+                h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
           'Official = QSRSoft monthly file (tProdSales). Smart = robust daily baseline (median, ±' + '3·MAD anomalies dropped) projected by a capped trend, nudged toward the top-quartile of like-sized same-state peers, capped at 8% move, never below baseline. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Anomalies = days set aside from the baseline. Pilot metric: Sales; more metrics use the same engine.')
       )

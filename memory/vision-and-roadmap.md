@@ -49,11 +49,24 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
   + `SmartTargetPanel`, modal `smart-targets`, no nav). Left intact; decide which
   to retire. v2 does NOT reuse v1.
 - **TODO (updated 2026-07-22):**
-  - **Multi-projector + win-tracking (owner's #1 ask):** implement the owner's
-    T3M/T6W/T3W weighted-recency projector as a pure fn; run it alongside the
-    `src/engine/forecast.js` models on the same series; record each method's
-    projection + realized error per store; surface a "which method wins per
-    store" scoreboard. Anomaly-exclude + known-event (+/-) adjustment on all.
+  - **Multi-projector + win-tracking (owner's #1 ask):**
+    - ✅ **Layer 1 shipped (v4.458):** owner's **T3M/T6W/T3W weighted-recency
+      projector** as pure fns in `src/engine/smart-targets.js`
+      (`weightedRecencyProjection`, `windowRate` w/ anomaly-exclusion +
+      `excludeDates`/`eventDelta` hooks) plus a **generic scoreboard harness**
+      (`backtestProjectors`, `periodTotal`, `toISODate`) that grades ANY set of
+      period-projectors on held-out 28-day folds and names the per-store winner.
+      9 new unit tests. Panel (`src/views/smart-targets.js`) now shows a
+      **"Best fit"** column (winning method + MAPE per store) and an aggregate
+      **Method scoreboard** strip (owner vs 3-wk run-rate vs 3-mo avg wins), plus
+      winner/MAPE in CSV. `PROJECTORS` array = the plug-in point.
+    - ⏭️ **Layer 2 (next):** fold the `src/engine/forecast.js` daily models
+      (Composite/Momentum/Regression/Ensemble) in as additional projectors by
+      summing daily forecasts across the target period. Heavier (needs ds +
+      per-day eval) — precompute/cache to avoid re-introducing panel lag. Same
+      projector interface, so they drop straight into `PROJECTORS`/backtest.
+    - ⏭️ Known-event (+/-) UI: let the owner mark event dates/deltas per store
+      (engine hooks `excludeDates`/`eventDelta` already exist).
   - Extend v2 metrics to labor %, FOB %, speed (add METRICS entries + a source
     per metric; ratio metrics anchor on level with direction='lower').
   - Horizons out to **yearly** (user asked for 60/90/180d → up to 1yr).
