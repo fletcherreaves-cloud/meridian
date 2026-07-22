@@ -204,7 +204,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.store',    'Store Scorecard',    '⇈', ()=>onOpenModal('ranking'),           false),
       pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),     false),
       pis('analytics.store',    'Targets',            '◉', ()=>onOpenModal('unified-targets'),   false),
-      pis('analytics.store',    'Monthly Targets',    '📅', ()=>onOpenModal('monthly-proj'),     false),
+      pis('analytics.store',    'Monthly Projections','📅', ()=>onOpenModal('monthly-proj'),     false),
       // ── OPERATIONS ─────────────────────────────────────────────
       can('analytics.store') && navLabel('OPERATIONS'),
       pis('analytics.labor',    'Labor Analytics',    '👷', ()=>onOpenModal('labor-analytics'),  false),
