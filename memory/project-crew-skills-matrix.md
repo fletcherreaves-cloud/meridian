@@ -55,16 +55,23 @@ Columns: `EMPLOYEE` (BOM on header), `SCHEDULE JOBS`, `HOME STORE`,
 - ✅ **Workflow** `.github/workflows/lifelenz-people-pull.yml` — weekly (Mon 11:00
   UTC) + workflow_dispatch. Env: LIFELENZ_USERNAME/PASSWORD, SUPABASE creds,
   `LIFELENZ_PEOPLE_URLS` (JSON [{loc,url}]).
-- ⏳ **NEEDS from owner (live-only, can't test from here):**
-  1. **Per-store URL / store-picker mechanism** — the shared URL is ONE store
-     (Purcell, viewId 019c9ad6-…). Need how to target each of the 27 stores:
-     a per-store URL/viewId map, or whether a store filter on the page drives the
-     export. Set `LIFELENZ_PEOPLE_URLS` secret to a JSON array of {loc,url}.
-  2. **OR the export request URL** from DevTools (Network → Download Report →
-     Simple CSV → copy request URL). That unlocks a fast API pull for all stores
-     and removes the fragile UI-driving.
-  3. Run once via workflow_dispatch (debug=1) — the logs print observed CSV
-     endpoints + screenshots to confirm selectors.
-- ⚠️ Scheduled runs execute from the DEFAULT branch (main) — won't run on cron
-  until PR #12 merges. workflow_dispatch works from any branch.
+- ✅ **URL pattern SOLVED (DevTools, v4.468):** the People page is
+  `/us01/people/{businessId}/{scheduleId}` — the 2nd path segment IS the store's
+  **scheduleId** (Ponce de Leon `019c9ad6…`, Purcell `019866cf…`). Same IDs
+  `getStoreSchedules()` returns. The list is GraphQL-driven
+  (`GetAllEmploymentsForPeopleRoleList`, POST `us01-connect…/manager/graphql`,
+  vars `{businessId, scheduleId}`) — but that query does NOT carry the 1-5 skill
+  ratings, so we don't reverse the GraphQL; the **Simple CSV export DOES** carry
+  them, so we UI-drive the download.
+- ✅ **Script now all-stores (v4.468):** login captures X-Auth-Token → discover
+  active store schedules via `/api/admin/businesses/{id}/schedules` (in-browser
+  fetch) → build each store's people URL by scheduleId → UI-drive Download Report
+  → Simple (CSV) → parse + upsert. No dropdown automation. Override with
+  `LIFELENZ_PEOPLE_URLS` if needed.
+- ⏳ **Only unverified bit (live-only):** the export button selectors
+  (`Download Report`, `Simple (CSV)` by text) and that the CSV comes through as a
+  Playwright download event. First run should be **debug=1** — it screenshots the
+  page + logs on failure. Adjust selectors if the first run misses.
+- ⚠️ Scheduled/dispatch runs execute from the DEFAULT branch (main) — the workflow
+  only appears in the Actions UI and runs on cron once PR #12 merges.
 - Optional next: coverage heat by daypart/station gaps; "who can open/close".
