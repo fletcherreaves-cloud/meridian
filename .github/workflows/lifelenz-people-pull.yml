@@ -2,6 +2,7 @@ name: LifeLenz People Skills Sync
 
 on:
   # Skills change slowly — weekly is plenty. Mondays 11:00 UTC (~6am CT).
+  # (Proven working 2026-07-22: 1,529 employees across 27 stores.)
   schedule:
     - cron: '0 11 * * 1'
   workflow_dispatch:
@@ -37,6 +38,7 @@ jobs:
       - name: Run People Skills sync
         run: node scripts/lifelenz-people-pull.mjs
         env:
+          LIFELENZ_TOKEN:            ${{ secrets.LIFELENZ_TOKEN }}
           LIFELENZ_USERNAME:         ${{ secrets.LIFELENZ_USERNAME }}
           LIFELENZ_PASSWORD:         ${{ secrets.LIFELENZ_PASSWORD }}
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
