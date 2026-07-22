@@ -84,7 +84,28 @@ T=5,144.99, X=121.68, AB=304.21. Engine unit tests assert these.
   - Fixture `src/__tests__/fixtures/mbi-labor-sample.json` (real rows: 3708,
     5183, 18213, 6178, 43701 + a subtotal row). **11 parser tests**, all green.
 
+## Progress (persistence + panel — Phase 1 COMPLETE)
+
+- ✅ **Tables** (v4.462) — `store_labor_config` + `lifelenz_labor_week` in
+  `supabase/schema.sql` (user has run both). Load/save in `src/lib/supabase.js`:
+  `saveStoreLaborConfig`/`loadStoreLaborConfig`,
+  `saveLifeLenzLaborWeek`/`loadLifeLenzLaborWeek`.
+- ✅ **Upload wiring** (v4.463) — App.js dispatch: `detectType`→`mbi-labor`→
+  `parseMbiLaborAnalysisWb` → saves weekly Band-1 + per-store config to Supabase,
+  keeps `ds.laborAnalysis` for immediate display.
+- ✅ **Panel** `src/views/labor-analysis.js` — nav 🧮 "Labor Analysis" (modal
+  `labor-analysis`). Report tab: per-store weekly table (inputs + engine-derived
+  efficiency + recommended fixed/floor), scope pill (All/FL/OK/patch/store),
+  **dollar-weighted OK/FL/Grand subtotals**, scorecard flags (labor%>target red;
+  hours ± green/amber), CSV + print. Config tab: editable gathered fixed-hours
+  (maint/prep/lobby/24hr) + read-only deciphered per-day hours.
+
 ## TODO (Phase 1 remaining)
+
+- Hours-of-operation **editing** in the Config tab (currently read-only; edit the
+  7-weekday open/close). Fixed-hours inputs already editable.
+- Optional: load `ds.laborAnalysis`/config on startup (panel loads lazily on open
+  now, which is fine).
 - **Supabase tables** (owner runs SQL):
   - `store_labor_config` (loc PK): 7-day open/close (or the raw day-band set),
     is_24hr, maint_hours, maint_people, maint_days_off, prep_hours, lobby_hours.
