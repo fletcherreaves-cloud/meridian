@@ -6705,6 +6705,23 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
 
+  // Sales reconciliation (accuracy layer, Workstream A): cross-check period PRODUCT
+  // sales across independent sources for the active scope. Only DAR-summary
+  // (its `sales` = Σ product_sales) and Sales-Ledger (`prodSales`) carry product
+  // sales, so those two reconcile; Labor's single `sales` is a net/total basis with
+  // no product split — shown for reference in the tooltip, NOT reconciled (mixing
+  // bases would false-alarm). Flags when the two product-sales totals differ >2%.
+  const salesRecon = React.useMemo(()=>{
+    const inScope = r => r && r.loc && r.date && allLocs.includes(String(r.loc)) && inRange(r.date, effectiveDateRange);
+    const darTot = sumOf((ds?.qsrActSummaryRows||[]).filter(inScope), 'sales');
+    const ledTot = sumOf((ds?.salesLedgerRows||[]).filter(inScope), 'prodSales');
+    const labTot = sumOf((ds?.laborRows||[]).filter(inScope), 'sales');
+    const src = {};
+    if(darTot>0) src.DAR = darTot;
+    if(ledTot>0) src.Ledger = ledTot;
+    return { r:_recon(src, {tolerance:0.02}), count:Object.keys(src).length, darTot, ledTot, labTot };
+  },[ds?.qsrActSummaryRows?.length, ds?.salesLedgerRows?.length, ds?.laborRows?.length, effectiveDateRange, stores]);
+
   // ── Today's movers (cloud-fresh DAR) ───────────────────────────
   // Surfaces what changed since you last looked, straight from the freshest
   // auto-synced daily-activity data — the "something new when I open the app".
@@ -7323,7 +7340,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           )
         ),
         div({style:{fontSize:'9px',color:ageClr}},
-          '● Data: '+(latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded'))
+          '● Data: '+(latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded')),
+        salesRecon.count>=2&&div({
+          title:(salesRecon.r.ok?'Product-sales sources agree within 2%':'Product-sales sources disagree by '+((salesRecon.r.relative||0)*100).toFixed(1)+'% (>2%)')
+            +'\nDAR (Σ product sales): $'+Math.round(salesRecon.darTot).toLocaleString()
+            +'\nSales Ledger (product): $'+Math.round(salesRecon.ledTot).toLocaleString()
+            +(salesRecon.labTot>0?'\nLabor (net basis — reference only, not reconciled): $'+Math.round(salesRecon.labTot).toLocaleString():''),
+          style:{fontSize:'9px',fontWeight:700,color:salesRecon.r.ok?'#10b981':'#f59e0b',cursor:'default',whiteSpace:'nowrap'}},
+          salesRecon.r.ok?'✓ Sales reconciled':'⚠ Sales sources differ '+((salesRecon.r.relative||0)*100).toFixed(1)+'%')
       )
     ),
 

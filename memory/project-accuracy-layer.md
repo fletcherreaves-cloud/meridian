@@ -42,11 +42,23 @@ badge. Builders: `check(name, ok, detail)`, `checkRowsSumToTotal`, `checkInRange
 **Pagination:** `fetchAllPages(fetchPage, {pageSize:1000})` — defeats Supabase's
 1000-row cap (the freshness-banner bug root cause). fetchPage(offset, limit)→array.
 
-## Next: bake in (retrofit targets, owner to prioritize)
-1. **FOB / Food Cost** — route district roll-ups through `weightedMean` (dollar-
-   weighted); add a `checkInRange` audit badge on the panel.
-2. **Freshness / At-A-Glance** — `reconcile` day sales across sales_ledger vs DAR
-   vs labor; show a ⚠ when they disagree instead of silently picking one.
+## Baked in so far
+1. ✅ **FOB / Food Cost** (v4.440) — verified the district roll-up already
+   dollar-weights (no math change); added a reusable **`AuditBadge`** + `fobAudit()`
+   self-audit (data present, total sales>0, FOB% in [0,100], all locs have sales,
+   and a `reconcile()` of the reported weighted FOB% vs a fresh `weightedMean`
+   recompute). Badge shows in the FOB KPI strip. AuditBadge is reusable.
+2. ✅ **At-A-Glance sales reconciliation** (v4.441) — `salesRecon` memo +
+   ✓/⚠ badge by the "● Data:" status. Cross-checks period **PRODUCT** sales
+   (owner's call) across sources for the active scope. KEY SEMANTIC FINDING:
+   only DAR-summary (`sales` = Σ product_sales) and Sales-Ledger (`prodSales`)
+   carry product sales; **`labor_rows` has only a single `sales` (net/total
+   basis, no product split)** — so labor is shown in the tooltip for reference
+   but NOT reconciled (mixing bases would false-alarm). Flags >2% divergence.
+   TODO if wanted: add a product-sales field to the Ops/labor upload so labor
+   can join the reconcile on a like-for-like basis.
+
+## Next: bake in (remaining targets)
 3. **Any Supabase loader** that could exceed 1000 rows → `fetchAllPages`
    (audit existing loaders; `loadQsrActSummary` was already fixed manually).
    ✅ v4.439 audit found + fixed 3 silently-truncating loaders in `supabase.js`
