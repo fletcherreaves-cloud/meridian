@@ -9426,31 +9426,69 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
 // null when the target month has no actuals yet. `period` overrides the month
 // otherwise derived from the targets' own _year/_month.
 export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupView='flat', period: periodProp }) {
-  const { useMemo } = React;
-  const derived = useMemo(()=>{
-    for (const l of Object.keys(mt||{})) { const t=mt[l]; if(t&&t._year&&t._month) return {year:t._year, month:t._month}; }
-    return null;
-  }, [mt]);
-  const period = periodProp || derived;
-  const actuals = useMemo(()=> period ? computeMonthActuals(ds, period.year, period.month) : null,
-    [period&&period.year, period&&period.month, ds?.laborRows?.length, ds?.schedRows?.length, ds?.fobRows?.length]);
-  if (!period || !actuals || !actuals.maxDate || !(locs||[]).length) return null;
+  const { useMemo, useState, useEffect } = React;
+  // Base month = explicit prop → else the month of the most recent actual data →
+  // else the current calendar month. So it self-detects the right month to show
+  // regardless of which targets happen to be "loaded" in the panel.
+  const latestActualMonth = useMemo(()=>{
+    let max=null; const t=Date.now();
+    const scan=arr=>(arr||[]).forEach(r=>{ if(!r||!r.date) return; const d=r.date instanceof Date?r.date:new Date(r.date); const ms=d.getTime(); if(!isNaN(ms)&&ms<=t&&(!max||ms>max)) max=d; });
+    scan(ds&&ds.laborRows); scan(ds&&ds.fobRows); scan(ds&&ds.schedRows);
+    return max ? {year:max.getFullYear(), month:max.getMonth()+1} : null;
+  }, [ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.fobRows&&ds.fobRows.length, ds&&ds.schedRows&&ds.schedRows.length]);
+  const now = new Date();
+  const base = periodProp || latestActualMonth || {year:now.getFullYear(), month:now.getMonth()+1};
+  const [offset, setOffset] = useState(0);           // month stepper (‹ ›)
+  const period = useMemo(()=>{ const idx = base.year*12 + (base.month-1) + offset; return { year: Math.floor(idx/12), month: (idx%12)+1 }; }, [base.year, base.month, offset]);
+
+  // Targets for the shown month: use the passed mt when it IS that month, else load it.
+  const mtIsThisMonth = useMemo(()=> !!(mt && Object.values(mt).some(t=>t&&t._year===period.year&&t._month===period.month)), [mt, period.year, period.month]);
+  const [loadedMt, setLoadedMt] = useState(null);
+  useEffect(()=>{
+    if(mtIsThisMonth){ setLoadedMt(null); return; }
+    let live=true; loadMonthlyTargets(period.year, period.month).then(m=>{ if(live) setLoadedMt(m||{}); });
+    return ()=>{ live=false; };
+  }, [period.year, period.month, mtIsThisMonth]);
+  const effMt = mtIsThisMonth ? mt : (loadedMt||{});
+
+  const actuals = useMemo(()=> computeMonthActuals(ds, period.year, period.month),
+    [period.year, period.month, ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.schedRows&&ds.schedRows.length, ds&&ds.fobRows&&ds.fobRows.length]);
+
+  if(!(locs||[]).length) return null;
+  if(!periodProp && !latestActualMonth && !(actuals&&actuals.maxDate)) return null; // nothing to anchor on
+
+  const monthLbl = new Date(period.year, period.month-1, 1).toLocaleDateString('en-US',{month:'long', year:'numeric'});
   const storeName = loc => { const s=(stores||[]).find(st=>String(st.loc)===String(loc)); return s?s.name.slice(0,22):'#'+loc; };
+  const stepBtn = (delta,lbl) => h('button',{onClick:()=>setOffset(o=>o+delta),title:delta<0?'Previous month':'Next month',
+    style:{padding:'1px 8px',fontSize:13,lineHeight:1,borderRadius:4,cursor:'pointer',border:'1px solid var(--bdr)',background:'var(--surf)',color:'var(--text2)'}},lbl);
+  const hasActuals = !!(actuals && actuals.maxDate);
   const daysInMonth = new Date(period.year, period.month, 0).getDate();
-  const dayOfMax = new Date(actuals.maxDate+'T12:00:00').getDate();
+  const dayOfMax = hasActuals ? new Date(actuals.maxDate+'T12:00:00').getDate() : 0;
   const frac = dayOfMax>0 ? dayOfMax/daysInMonth : 0;
   const money = v => v==null ? '—' : '$'+Math.round(v).toLocaleString();
   const pctCol = v => v==null ? 'var(--text3)' : v>=0 ? '#10b981' : v<-3 ? '#ef4444' : '#f59e0b';
+
   const rowData = groupView==='flat'
-    ? locs.map(loc=>({label:storeName(loc)+' ('+loc+')',tgt:(mt[loc]||{}).tProdSales||0,act:(actuals.byLoc[loc]||{}).sales||0}))
+    ? locs.map(loc=>({label:storeName(loc)+' ('+loc+')',tgt:(effMt[loc]||{}).tProdSales||0,act:(actuals.byLoc?.[loc]||{}).sales||0}))
     : (()=>{ const gm = groupView==='operator'?(settings?.operators||{}):(settings?.supervisorGroups||{}); const ls=new Set(locs);
         return Object.entries(gm).map(([g,gs])=>{const gl=gs.map(String).filter(l=>ls.has(l));if(!gl.length)return null;
-          let tgt=0,act=0; gl.forEach(loc=>{tgt+=(mt[loc]||{}).tProdSales||0; act+=(actuals.byLoc[loc]||{}).sales||0;});
+          let tgt=0,act=0; gl.forEach(loc=>{tgt+=(effMt[loc]||{}).tProdSales||0; act+=(actuals.byLoc?.[loc]||{}).sales||0;});
           return {label:g+' ('+gl.length+')',tgt,act};}).filter(Boolean); })();
   const withPace = rowData.map(r=>{const pace=frac>0?r.act/frac:null;const vs=r.tgt>0&&pace!=null?(pace/r.tgt-1)*100:null;return {...r,pace,vs};});
   const tgtSum=withPace.reduce((a,r)=>a+r.tgt,0), actSum=withPace.reduce((a,r)=>a+r.act,0);
   const totPace=frac>0?actSum/frac:null, totVs=tgtSum>0&&totPace!=null?(totPace/tgtSum-1)*100:null;
-  const monthLbl = new Date(period.year, period.month-1, 1).toLocaleDateString('en-US',{month:'long'});
+
+  const header = div({style:{position:'sticky',top:0,zIndex:2,padding:'7px 20px 5px',background:'var(--surf2)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+    span({style:{fontSize:11,fontWeight:800,color:'var(--text)'}},'🎯 Actuals vs Target'),
+    div({style:{display:'flex',alignItems:'center',gap:4}}, stepBtn(-1,'‹'),
+      span({style:{fontSize:10,fontWeight:700,color:'var(--text2)',minWidth:104,textAlign:'center'}},monthLbl), stepBtn(1,'›')),
+    hasActuals&&span({style:{fontSize:9,fontWeight:600,color:'var(--text3)'}},'as of '+new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · day '+dayOfMax+' of '+daysInMonth+' · Pace = MTD ÷ days × month'),
+    !mtIsThisMonth&&loadedMt!==null&&tgtSum<=0&&span({style:{fontSize:9,color:'#f59e0b'}},'no targets loaded for this month'),
+    hasActuals&&totVs!=null&&span({style:{marginLeft:'auto',fontSize:11,fontWeight:800,color:pctCol(totVs)}},'District pace '+(totVs>=0?'+':'')+totVs.toFixed(1)+'% vs target'));
+
+  if(!hasActuals) return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)'}},
+    header, div({style:{padding:'4px 20px 10px',fontSize:10,color:'var(--text3)'}}, 'No actuals loaded for '+monthLbl+' yet — step ‹ › to a month with data.'));
+
   const th2={padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',textAlign:'right',whiteSpace:'nowrap',position:'sticky',top:0,background:'var(--surf2)'};
   const td2={padding:'3px 10px',fontSize:11,textAlign:'right',fontFamily:'var(--mono)',whiteSpace:'nowrap'};
   const rowEl=(r,bold)=>h('tr',{key:r.label,style:{borderTop:'.5px solid var(--bdr)',background:bold?'rgba(96,165,250,.06)':'transparent'}},
@@ -9459,11 +9497,8 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
     h('td',{style:td2},money(r.act)),
     h('td',{style:td2},money(r.pace)),
     h('td',{style:{...td2,color:pctCol(r.vs),fontWeight:700}},r.vs==null?'—':(r.vs>=0?'+':'')+r.vs.toFixed(1)+'%'));
-  return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)',maxHeight:220,overflowY:'auto'}},
-    div({style:{position:'sticky',top:0,zIndex:2,padding:'7px 20px 5px',background:'var(--surf2)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
-      span({style:{fontSize:11,fontWeight:800,color:'var(--text)'}},'🎯 '+monthLbl+' Actuals vs Target'),
-      span({style:{fontSize:9,fontWeight:600,color:'var(--text3)'}},'as of '+new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · day '+dayOfMax+' of '+daysInMonth+' · Pace = MTD ÷ days elapsed × month'),
-      totVs!=null&&span({style:{marginLeft:'auto',fontSize:11,fontWeight:800,color:pctCol(totVs)}},'District pace '+(totVs>=0?'+':'')+totVs.toFixed(1)+'% vs target')),
+  return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)',maxHeight:240,overflowY:'auto'}},
+    header,
     h('table',{style:{width:'100%',borderCollapse:'collapse'}},
       h('thead',null,h('tr',null,
         h('th',{style:{...th2,textAlign:'left'}},groupView==='flat'?'Store':(groupView==='operator'?'Operator':'Supervisor')),
