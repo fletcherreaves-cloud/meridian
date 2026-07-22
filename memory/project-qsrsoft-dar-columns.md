@@ -76,6 +76,24 @@ KVS/GC · Bev · Pull Fwd · Punch/Need/Sched · vs Need**. Print/CSV export mir
 - KVS Healthy Usage hourly (`healthy_count/(healthy+unhealthy)`) intentionally
   left off hourly per owner; shown in the Daily chips.
 
+## v4.433 — full column set + Day/Visit-hour summary
+The visit context now runs off a single `METRICS` spec (one source of truth for
+the hourly table, the two-row summary, and print/CSV). Columns (logical order):
+Prod Sales · Prod Sales +/-% · STW GC · STW GC +/-% · OEPE (w/o parked) · DT TTL ·
+Avg CTP · R2P · KVS Time Per GC · KVS Healthy Usage · Bev TTL · DT Pull Forward % ·
+Labor % (= punch $ / prod-sales-scrubbed) · Act Punch Hours · Sched Hours ·
+Needed Hours · Act vs Needed. Win TTL removed.
+- **"Main bar" is now two rows: Day vs Visit Hour.** Day totals are computed by
+  summing raw fields across all hours then running the same formulas — so every
+  rate is dollar/count-weighted, never an average of hourly averages. Fixed the
+  bogus "Guests = 17": STW GC is now Σ transactions (real day guest count).
+- `loadVisitDAR` select added: transactions, ly_product_sales, ly_transactions,
+  actual_punched_dollars, prod_sales_scrubbed (+ earlier dt_untilrecall,
+  fc_untilclosedrawer).
+- OEPE now uses the **w/o-parked** formula per owner: `(dt serve − store − held)/GC`.
+
 ## Still open
 - Consider adding `mop_transactions` to the pull (MOP/app GC) — not yet pulled.
 - Relabel the same timing columns anywhere else they surface (Signals SoS panel).
+- R2P / Avg CTP still show "—" until a DAR backfill repopulates fc-close-drawer /
+  dt-recall history (field-name fix shipped v4.430).
