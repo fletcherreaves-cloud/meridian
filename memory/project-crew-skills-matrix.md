@@ -43,10 +43,28 @@ Columns: `EMPLOYEE` (BOM on header), `SCHEDULE JOBS`, `HOME STORE`,
   Store filter, name/title search, sort (name/title/click a station), highlight
   ≥3/≥4/5, ≥3-proficient coverage footer, CSV + print. Upload wiring in App.js.
 
-## TODO / Phase 2
+## Phase 2 — Auto-pull (scaffolded, v4.467, needs live confirmation)
 
-- **Auto-pull**: Playwright navigate the people page per store → Download Report →
-  Simple (CSV) → parse → `saveEmployeeSkills`. Same two-path auth as other pulls.
-  Decide daily Action vs in-app Sync button (skills change slowly → weekly/on-demand
-  likely enough).
-- Optional: coverage heat by daypart/station gaps; "who can open/close" quick views.
+- ✅ **Script** `scripts/lifelenz-people-pull.mjs` — Playwright login (reuses the
+  IDM OAuth flow from lifelenz-pull.mjs), opens each People page, drives Download
+  Report → Simple (CSV), parses with the SAME `parsePeopleSkills` the app uses
+  (verified in Node: 45 employees / 32 jobs), upserts to `employee_skills`
+  (source `lifelenz_people_scrape`). Two capture strategies: real download event,
+  then in-browser fetch of any observed CSV endpoint. **Logs the export request
+  URL** so we can convert to a fast all-stores API pull (skip the UI).
+- ✅ **Workflow** `.github/workflows/lifelenz-people-pull.yml` — weekly (Mon 11:00
+  UTC) + workflow_dispatch. Env: LIFELENZ_USERNAME/PASSWORD, SUPABASE creds,
+  `LIFELENZ_PEOPLE_URLS` (JSON [{loc,url}]).
+- ⏳ **NEEDS from owner (live-only, can't test from here):**
+  1. **Per-store URL / store-picker mechanism** — the shared URL is ONE store
+     (Purcell, viewId 019c9ad6-…). Need how to target each of the 27 stores:
+     a per-store URL/viewId map, or whether a store filter on the page drives the
+     export. Set `LIFELENZ_PEOPLE_URLS` secret to a JSON array of {loc,url}.
+  2. **OR the export request URL** from DevTools (Network → Download Report →
+     Simple CSV → copy request URL). That unlocks a fast API pull for all stores
+     and removes the fragile UI-driving.
+  3. Run once via workflow_dispatch (debug=1) — the logs print observed CSV
+     endpoints + screenshots to confirm selectors.
+- ⚠️ Scheduled runs execute from the DEFAULT branch (main) — won't run on cron
+  until PR #12 merges. workflow_dispatch works from any branch.
+- Optional next: coverage heat by daypart/station gaps; "who can open/close".
