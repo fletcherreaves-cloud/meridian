@@ -191,6 +191,8 @@ function detectType(filename, wb){
   // MBI Labor Analysis (weekly FLH worksheet) — must precede the generic
   // 'labor analysis' match since the file is named "MBI_Labor_Analysis.xlsx".
   if(fn.includes('mbi')&&(fn.includes('labor analysis')||fn.includes('labor_analysis')))return{type:'mbi-labor',label:'MBI Labor Analysis (FLH)',dr,confidence:'high'};
+  // LifeLenz People List (Simple CSV) → Crew Skills Matrix
+  if(fn.includes('people_list')||fn.includes('people list'))return{type:'people-skills',label:'Crew Skills (People List)',dr,confidence:'high'};
   // LifeLenz Labor Analysis Summary Report (must come before generic 'labor analysis' match)
   // Matches both space-separated and underscore-separated filenames from the sync script
   if(fn.includes('labor analysis summary report')||fn.includes('labor_analysis_summary_report'))return{type:'ll-labor',label:'LifeLenz Labor Analysis',dr,confidence:'high'};
@@ -1943,4 +1945,61 @@ function parseMbiLaborAnalysisWb(wb){
   return parseMbiLaborAnalysis(parseRaw(wb, name));
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb };
+// ── LifeLenz People List (Simple CSV) → Crew Skills Matrix ───────────────────
+// Explodes the packed "SCHEDULE JOBS" string ("BEVERAGE SPECIALIST (3), DRIVE
+// THRU (3), ...") into a per-employee { job: rating(1-5) } map so it can render
+// as a skills matrix (renamed "Skill Levels"). Also parses home store + primary
+// role. Header carries a BOM; job/role cells are wrapped in literal quotes.
+function _stripQuotes(s){ return s==null?'':String(s).replace(/^﻿/,'').replace(/^"+|"+$/g,'').trim(); }
+
+// Parse "BEVERAGE SPECIALIST (3), DRIVE THRU (5), ..." → { job: rating }.
+function parseSkillJobs(raw){
+  const s = _stripQuotes(raw); const out = {};
+  if(!s) return out;
+  const re = /([^,()]+?)\s*\((\d)\)/g; let m;
+  while((m = re.exec(s))){ const job = m[1].trim().replace(/\s+/g,' '); const rating = parseInt(m[2],10);
+    if(job && rating>=1 && rating<=5) out[job] = rating; }
+  return out;
+}
+
+// "0011657 - PURCELL" / "0033704 - TECUMSEH, OK" → { loc:'11657', name:'PURCELL' }.
+function parseHomeStore(raw){
+  const s = _stripQuotes(raw); const m = s.match(/^(\d{3,7})\s*-\s*(.+)$/);
+  if(!m) return { loc:null, name: s || null };
+  return { loc: String(parseInt(m[1],10)), name: m[2].trim() };
+}
+
+// "Primary (00650 - CREW PERSON)" → { isPrimary:true, code:'00650', role:'CREW PERSON' }.
+function parseJobRate(raw){
+  const s = _stripQuotes(raw); const m = s.match(/(\w+)?\s*\(\s*(\d+)\s*-\s*(.+?)\)/);
+  if(!m) return { isPrimary:/primary/i.test(s), code:null, role: s || null };
+  return { isPrimary:/primary/i.test(m[1]||''), code:m[2], role:m[3].trim() };
+}
+
+function parsePeopleSkills(rows){
+  if(!rows || rows.length<2) return { employees:[], jobs:[], pulledLoc:null, pulledStore:null };
+  const employees = []; const jobSet = new Set();
+  // Store this file was pulled for = the modal (most common) home store.
+  const locCount = {};
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i]; if(!r) continue;
+    const name = _stripQuotes(r[0]); if(!name) continue;
+    const skills = parseSkillJobs(r[1]);
+    const home = parseHomeStore(r[2]);
+    const school = _stripQuotes(r[3]); const rate = parseJobRate(r[4]);
+    for(const j of Object.keys(skills)) jobSet.add(j);
+    if(home.loc) locCount[home.loc] = (locCount[home.loc]||0)+1;
+    employees.push({ employee:name, loc:home.loc, homeStore:home.name,
+      role:rate.role, roleCode:rate.code, isPrimaryRole:rate.isPrimary,
+      schoolCalendar:(school && school!=='-')?school:null, skills });
+  }
+  const pulledLoc = Object.keys(locCount).sort((a,b)=>locCount[b]-locCount[a])[0] || null;
+  const pulledStore = pulledLoc ? (employees.find(e=>e.loc===pulledLoc)||{}).homeStore || null : null;
+  return { employees, jobs:[...jobSet].sort(), pulledLoc, pulledStore };
+}
+
+function parsePeopleSkillsWb(wb){
+  return parsePeopleSkills(parseRaw(wb, wb.SheetNames[0]));
+}
+
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs };

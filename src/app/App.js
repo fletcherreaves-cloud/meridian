@@ -36,6 +36,7 @@ import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
+import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { TaskQueuePanel } from '../views/task-queue.js';
@@ -43,7 +44,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -55,7 +56,7 @@ import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance,
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
-import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, opsReportIsDaily } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily } from '../parsers/index.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 import {
   fetchForecastWeather,
@@ -656,6 +657,7 @@ function App() {
   const [showSignals,         setShowSignals]         = useState(false);
   const [showSmartTargetsV2,  setShowSmartTargetsV2]  = useState(false);
   const [showLaborAnalysis,   setShowLaborAnalysis]   = useState(false);
+  const [showSkillsMatrix,    setShowSkillsMatrix]    = useState(false);
   const [signals,             setSignals]             = useState([]);
   const [darRows,             setDarRows]             = useState([]);
   const darFetchRef = useRef({ date: '', ts: 0 });
@@ -1516,6 +1518,15 @@ function App() {
               saveStoreLaborConfig(mbi.stores.map(s=>s.config)).catch(e=>console.warn('[store_labor_config] save error:',e));
             }
             loaded.push({name:file.name,type});
+          } else if(type.type==='people-skills'){
+            // LifeLenz People List (Simple CSV) → crew skills matrix in Supabase.
+            const ppl=parsePeopleSkillsWb(wb);
+            if(ppl.employees.length>0){
+              currentDS={...currentDS,peopleSkills:ppl};
+              console.log(`[Meridian] Crew Skills: ${ppl.employees.length} employees from ${file.name}`);
+              saveEmployeeSkills(ppl.employees).catch(e=>console.warn('[employee_skills] save error:',e));
+            }
+            loaded.push({name:file.name,type});
           } else {
             // Guard: refuse a period-summary Operations Report (no per-day date
             // column). Daily rows are the source of truth — a period total
@@ -1734,7 +1745,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -1857,6 +1868,7 @@ function App() {
         if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
         if(modal==='smart-targets-v2')perm('analytics.store')&&setShowSmartTargetsV2(true);
         if(modal==='labor-analysis')  perm('analytics.store')&&setShowLaborAnalysis(true);
+        if(modal==='skills-matrix')   perm('analytics.store')&&setShowSkillsMatrix(true);
         if(modal==='sage')              setShowSage(true);
         if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='task-queue')        setShowTaskQueue(true);
@@ -1953,6 +1965,7 @@ function App() {
     showMonthlyProj&&h(MonthlyProjectionsPanel,{ds,stores,settings,customSignalDefs,onClose:()=>setShowMonthlyProj(false)}),
     showSmartTargetsV2&&h(SmartTargetsPanel,{ds,stores,settings,onClose:()=>setShowSmartTargetsV2(false)}),
     showLaborAnalysis&&h(LaborAnalysisPanel,{ds,settings,onClose:()=>setShowLaborAnalysis(false)}),
+    showSkillsMatrix&&h(SkillsMatrixPanel,{ds,onClose:()=>setShowSkillsMatrix(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),

@@ -1067,3 +1067,28 @@ create policy "lifelenz_labor_week: public write" on public.lifelenz_labor_week
 
 create index if not exists lifelenz_labor_week_week_idx
   on public.lifelenz_labor_week (week_start);
+
+-- ── Crew Skills Matrix (LifeLenz People List, Simple CSV) ───────────────────────
+-- One row per employee (keyed by home store + name). skills_json = the exploded
+-- "SCHEDULE JOBS" map, e.g. {"DRIVE THRU":3,"BEVERAGE SPECIALIST":5,...} rated 1-5.
+-- Rendered as the "Skill Levels" matrix. Interim source: parsed from the People
+-- List Simple CSV upload; future: scraped from the LifeLenz people page per store.
+create table if not exists public.employee_skills (
+  loc              text not null,             -- home store number, e.g. '11657'
+  employee         text not null,             -- employee full name
+  home_store       text,                      -- store name, e.g. 'PURCELL'
+  role             text,                      -- primary role, e.g. 'CREW PERSON'
+  role_code        text,                      -- role code, e.g. '00650'
+  is_primary_role  boolean default true,
+  school_calendar  text,
+  skills_json      jsonb,                     -- { job: rating(1-5) }
+  source           text default 'lifelenz_people_csv',
+  updated_at       timestamptz default now(),
+  updated_by       uuid references public.profiles(id),
+  primary key (loc, employee)
+);
+
+alter table public.employee_skills enable row level security;
+
+create policy "employee_skills: public read"  on public.employee_skills for select using (true);
+create policy "employee_skills: public write" on public.employee_skills for all using (true);

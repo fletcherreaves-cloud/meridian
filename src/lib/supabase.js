@@ -1622,3 +1622,44 @@ export async function loadLifeLenzLaborWeek({ weekStart = null } = {}) {
   }
   return { weekStart: latest, rows };
 }
+
+// ── Crew Skills Matrix (LifeLenz People List) ────────────────────────────────
+// Per-employee skill ratings (1-5) by job, keyed by home store + name.
+// `employees` = [{employee, loc, homeStore, role, roleCode, isPrimaryRole,
+//                 schoolCalendar, skills:{job:rating}}].
+export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_csv' } = {}) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  const rows = (employees || []).filter(e => e && e.employee && e.loc).map(e => ({
+    loc: String(parseInt(e.loc, 10)),
+    employee: e.employee,
+    home_store: e.homeStore ?? null,
+    role: e.role ?? null,
+    role_code: e.roleCode ?? null,
+    is_primary_role: e.isPrimaryRole !== false,
+    school_calendar: e.schoolCalendar ?? null,
+    skills_json: e.skills ?? {},
+    source,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase.from('employee_skills').upsert(rows, { onConflict: 'loc,employee' });
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01')
+      console.error('[employee_skills] Table missing — run the employee_skills block from schema.sql.');
+    else console.error('[employee_skills] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: rows.length, errors: [] };
+}
+
+// Load the whole skills roster → [{employee, loc, homeStore, role, ..., skills}].
+export async function loadEmployeeSkills() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('employee_skills').select('*');
+  if (error || !data) { if (error) console.warn('[employee_skills] load error:', error.message); return []; }
+  return data.map(r => ({
+    employee: r.employee, loc: r.loc, homeStore: r.home_store, role: r.role,
+    roleCode: r.role_code, isPrimaryRole: r.is_primary_role, schoolCalendar: r.school_calendar,
+    skills: r.skills_json || {}, source: r.source,
+  }));
+}
