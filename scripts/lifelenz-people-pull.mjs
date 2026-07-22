@@ -96,9 +96,26 @@ async function downloadPeopleCSV(page, url, tag) {
     // Attach .catch so a timeout here never becomes an unhandled rejection.
     const dlPromise = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
     try {
-      await page.getByText(/download report/i).first().click({ timeout: 10000 });
-      await page.waitForTimeout(700);
-      await page.getByText(/simple.*\(?csv\)?|^simple$/i).first().click({ timeout: 10000 });
+      // Open the Download Report menu (best-effort), then invoke the Simple (CSV)
+      // export directly: the link is hidden until the menu opens, but the app
+      // (Aurelia) binds the export to a real click handler, so a native .click()
+      // on the element fires it regardless of Playwright's visibility check.
+      await page.getByText(/download report/i).first().click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const clicked = await page.evaluate(() => {
+        const els = Array.from(document.querySelectorAll('a,button'));
+        const el = els.find(e => /downloademployeerostercsvsimple/i.test(e.getAttribute('click.delegate') || ''))
+                || els.find(e => /simple\s*\(csv\)/i.test((e.textContent || '').trim()));
+        if (el) { el.click(); return true; }
+        return false;
+      });
+      if (!clicked && DEBUG) console.log(`[people] ${tag}: Simple (CSV) link not found in DOM`);
+      // A "Disclaimer" modal appears — the download only fires after clicking
+      // "Acknowledge & Export".
+      await page.waitForTimeout(600);
+      await page.getByRole('button', { name: /acknowledge.*export/i }).click({ timeout: 8000 }).catch(async () => {
+        await page.evaluate(() => { const b = Array.from(document.querySelectorAll('a,button')).find(e => /acknowledge\s*&?\s*export/i.test((e.textContent || '').trim())); if (b) b.click(); });
+      });
     } catch (e) { if (DEBUG) console.log(`[people] ${tag}: export click failed:`, e.message); }
     const download = await dlPromise;
     if (download) { const stream = await download.createReadStream(); if (stream) { const chunks = []; for await (const c of stream) chunks.push(c); csvText = Buffer.concat(chunks).toString('utf8'); } }
