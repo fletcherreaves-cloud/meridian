@@ -3,7 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS } from '../constants.js';
 import { dKey, sodOf, addD, eodOf, thisWeek } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
-import { forecastDay, fetchLY, getStoreOrg, fetchLYDate } from '../engine/forecast.js';
+import { forecastDay, fetchLY, getStoreOrg, fetchLYDate, gcCrossCheck } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 import { TH, f$ } from '../utils/fmt.js';
 import { ForecastAudit } from '../views/analytics.js';
