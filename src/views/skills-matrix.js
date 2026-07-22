@@ -5,7 +5,7 @@
 // 1-5 rating in the cell (heat-mapped). The packed "SCHEDULE JOBS" string is
 // exploded by the parser; this renders it as "Skill Levels".
 import * as React from 'react';
-import { STORE_NAMES } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 import { loadEmployeeSkills } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -13,6 +13,8 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 const locNum = s => { const n = parseInt(s, 10); return Number.isNaN(n) ? String(s == null ? '' : s) : String(n); };
+const ALL_LOCS = Object.keys(STORE_NAMES);
+const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald')); // FL panhandle
 
 // Preferred left→right order: production → service → leadership/admin. Anything
 // not listed is appended alphabetically.
@@ -62,7 +64,10 @@ export function SkillsMatrixPanel({ ds, onClose }) {
 
   const scoped = useMemo(() => {
     let r = rows;
-    if (store !== 'all') r = r.filter(e => locNum(e.loc) === locNum(store));
+    if (store === 'fl') r = r.filter(e => FL_LOCS.has(locNum(e.loc)));
+    else if (store === 'ok') r = r.filter(e => !FL_LOCS.has(locNum(e.loc)));
+    else if (store.startsWith('__patch__')) { const set = new Set(((DEF_SETTINGS.supervisorGroups || {})[store.slice(9)] || []).map(l => locNum(l))); r = r.filter(e => set.has(locNum(e.loc))); }
+    else if (store !== 'all') r = r.filter(e => locNum(e.loc) === locNum(store));
     if (q.trim()) { const s = q.trim().toLowerCase(); r = r.filter(e => (e.employee || '').toLowerCase().includes(s) || (e.role || '').toLowerCase().includes(s)); }
     return r;
   }, [rows, store, q]);
@@ -204,7 +209,11 @@ export function SkillsMatrixPanel({ ds, onClose }) {
           div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'LifeLenz People List → skills matrix. Each station rated 1–5 (red→green). Click a station header to sort; ≥3 = proficient.')),
         h('input', { value: q, onChange: e => setQ(e.target.value), placeholder: 'Search name / title…', style: { ...selStyle, minWidth: 140 } }),
         h('select', { value: store, onChange: e => setStore(e.target.value), style: selStyle },
-          h('option', { value: 'all' }, 'All Stores'), ...stores.map(([loc, nm]) => h('option', { key: loc, value: loc }, nm + ' (' + locNum(loc) + ')'))),
+          h('option', { value: 'all' }, 'All Stores'),
+          h('optgroup', { label: '— Groups —' },
+            h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
+            ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
+          h('optgroup', { label: '— Stores —' }, ...stores.map(([loc, nm]) => h('option', { key: loc, value: loc }, nm + ' (' + locNum(loc) + ')')))),
         h('select', { value: sortBy, onChange: e => setSortBy(e.target.value), title: 'Sort rows', style: selStyle },
           h('option', { value: 'name' }, 'Sort: Name'), h('option', { value: 'role' }, 'Sort: Job Title')),
         h('select', { value: minRating, onChange: e => setMinRating(+e.target.value), title: 'Dim ratings below…', style: selStyle },
