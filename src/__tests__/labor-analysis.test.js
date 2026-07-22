@@ -4,11 +4,13 @@ import {
   hoursOpen, fracToTime, FLH_THRESHOLDS,
 } from '../engine/labor-analysis.js';
 
-// Real inputs from the source sheet, store 3708 (row 4). Expected outputs are the
-// sheet's own displayed results — the engine must reproduce them cell-for-cell.
+// Real inputs from the source sheet, store 3708 (row 4). Hours Forecast/Scheduled
+// are [h]:mm durations — the PARSER converts day-serials to real hours (×24), so
+// the engine takes hours: F=46.2083*24=1109.0, G=62.5208*24=1500.5. Expected
+// outputs are the sheet's own displayed results — reproduced cell-for-cell.
 const S3708 = {
   loc: '3708', salesFcst: 74379, laborPctActual: 0.2519, gcFcst: 7443,
-  hoursFcst: 46.208333333333336, hoursSched: 62.520833333333336,
+  hoursFcst: 1109.0, hoursSched: 1500.5,
   schedFixedPct: 0.026, tpph: 4.96, rate: 13.1417313714383, laborTargetOrg: 0.215,
 };
 
@@ -18,9 +20,12 @@ describe('labor-analysis — matches the source worksheet (store 3708)', () => {
   it('Target Labor $ = C*L', () => expect(r.targetLaborD).toBeCloseTo(15991.49, 1));
   it('Labor Target +2% = L+0.02', () => expect(r.laborTargetPlus2).toBeCloseTo(0.235, 6));
   it('Projected Hours/Wk (target) = (C*L)/J', () => expect(r.projHrsTarget).toBeCloseTo(1216.85, 1));
-  it('Hours ± sched vs forecast = G-F', () => expect(r.hrsVsForecast).toBeCloseTo(16.31, 1));
-  it('Hours ± sched vs target = (G*24)-O  [faithful ×24]', () => expect(r.hrsVsTarget).toBeCloseTo(283.65, 1));
-  it('$ ± vs projected (LifeLenz) = Q*J*24', () => expect(r.dollarsVsProjLL).toBeCloseTo(5144.99, 0));
+  it('Hours ± sched vs forecast = G-F (hours) → 391.5', () => expect(r.hrsVsForecast).toBeCloseTo(391.5, 0));
+  it('Hours ± sched vs target = G-O → 283.65', () => expect(r.hrsVsTarget).toBeCloseTo(283.65, 0));
+  it('Hours ± sched vs target+2% = G-P → 170.46', () => expect(r.hrsVsTargetPlus2).toBeCloseTo(170.46, 0));
+  it('$ ± vs projected (LifeLenz) = Q*J → 5145', () => expect(r.dollarsVsProjLL).toBeCloseTo(5145, -1));
+  it('$ ± vs projected (target) = R*J → 3727.68', () => expect(r.dollarsVsTarget).toBeCloseTo(3727.68, 0));
+  it('$ ± vs projected (target+2%) = S*J → 2240.1', () => expect(r.dollarsVsTargetPlus2).toBeCloseTo(2240.1, 0));
   it('Recommended Fixed @10% = O*0.1', () => expect(r.recFixed10).toBeCloseTo(121.68, 1));
   it('Combined @25% = O*0.25', () => expect(r.combined25).toBeCloseTo(304.21, 1));
 });

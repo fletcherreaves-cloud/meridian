@@ -50,10 +50,13 @@ AB Combined @0.25          = O*0.25
 Thresholds (row 3): X3=.1 Y3=.15 Z3=.1 AA3=.15 AB3=.25
 ```
 
-⚠️ **G×24 unit inconsistency:** R/S multiply Hours Scheduled by 24 while Q does
-not. Reproduced faithfully in the engine (matches the sheet's own numbers) but
-**flagged for owner** — if G is already weekly hours this is a latent bug in the
-original sheet. Confirm before trusting R/S/U/V for decisions.
+✅ **G×24 RESOLVED (v4.464):** Hours Forecast (F), Hours Scheduled (G) and Actual
+Hours (W) are Excel **`[h]:mm` durations** — stored as fractions of a DAY (raw
+62.52 displays "1500:30" = 1500.5 hours). The sheet's "(G*24)-O" was compensating
+for that. Fix: the **parser converts F/G/W to real hours (×24)** and the engine
+math is now unit-consistent (`Q=G-F`, `R=G-O`, `S=G-P`, `T=Q*J`, `U=R*J`, `V=S*J`)
+— reproduces S=170.46, U=3727.68, V=2240.1 exactly. Loader has a back-compat heal
+(hours <300 → ×24) so rows written before v4.464 display right without re-upload.
 
 Verified against store 3708 (row 4): C=74379, D=0.2519, F=46.2083, G=62.5208,
 J=13.1417, L=0.215 → K=$18,736.07, N=15,991.49, O=1,216.85, Q=16.31, R=283.65,

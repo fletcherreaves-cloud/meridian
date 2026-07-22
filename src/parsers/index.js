@@ -1863,6 +1863,10 @@ const _MBI_PERDAY = { wed: 57, thu: 58, fri: 59, sat: 60, sun: 61, mon: 62, tue:
 
 function _mbiNum(v){ if(v===null||v===undefined||v==='')return null; const n=typeof v==='number'?v:parseFloat(String(v).replace(/[$,%]/g,'')); return isNaN(n)?null:n; }
 function _mbiIsTime(v){ return typeof v==='number' && v>=0 && v<=1; }
+// Hours Forecast / Scheduled / Actual are Excel [h]:mm DURATIONS — stored as
+// fractions of a day (1.0 = 24h). Convert the day-serial to real hours (×24) so
+// downstream math is unit-consistent (e.g. raw 62.52 → 1500.5 hours).
+function _mbiHours(v){ const n=_mbiNum(v); return n==null?null:n*24; }
 
 // Parse the raw rows array (from parseRaw) → { weekStart, weekEnd, monthTag, stores:[...] }.
 function parseMbiLaborAnalysis(rows){
@@ -1890,13 +1894,13 @@ function parseMbiLaborAnalysis(rows){
       salesFcst: _mbiNum(r[_MBI.salesFcst]),
       laborPctActual: _mbiNum(r[_MBI.laborPctActual]),
       gcFcst: _mbiNum(r[_MBI.gcFcst]),
-      hoursFcst: _mbiNum(r[_MBI.hoursFcst]),
-      hoursSched: _mbiNum(r[_MBI.hoursSched]),
+      hoursFcst: _mbiHours(r[_MBI.hoursFcst]),   // [h]:mm day-serial → hours
+      hoursSched: _mbiHours(r[_MBI.hoursSched]), // [h]:mm day-serial → hours
       schedFixedPct: _mbiNum(r[_MBI.schedFixedPct]),
       tpph: _mbiNum(r[_MBI.tpph]),
       rate: _mbiNum(r[_MBI.rate]),
       laborTargetOrg: _mbiNum(r[_MBI.laborTargetOrg]),
-      actualHours: _mbiNum(r[_MBI.actualHours]),
+      actualHours: _mbiHours(r[_MBI.actualHours]), // [h]:mm day-serial → hours
     };
 
     // Resolve hours of operation to a canonical 7-weekday model.

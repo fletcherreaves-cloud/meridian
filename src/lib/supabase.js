@@ -1603,6 +1603,11 @@ export async function loadLifeLenzLaborWeek({ weekStart = null } = {}) {
   else q = q.order('week_start', { ascending: false });
   const { data, error } = await q;
   if (error || !data) { if (error) console.warn('[lifelenz_labor_week] load error:', error.message); return { weekStart: null, rows: {} }; }
+  // Back-compat heal: rows written before v4.464 stored Hours Forecast/Scheduled
+  // as Excel [h]:mm day-serials (raw ~62.5) instead of real hours (~1500). A real
+  // store's weekly hours are always >1000, so anything under 300 is a day-serial
+  // → ×24. New uploads already store real hours, so this is a no-op for them.
+  const _healHrs = v => (v != null && v > 0 && v < 300) ? v * 24 : v;
   // Without an explicit week, keep only each store's most-recent row.
   const rows = {}; let latest = weekStart;
   for (const r of data) {
@@ -1611,8 +1616,8 @@ export async function loadLifeLenzLaborWeek({ weekStart = null } = {}) {
     rows[r.loc] = {
       loc: r.loc, weekStart: r.week_start, weekEnd: r.week_end, monthTag: r.month_tag,
       projSalesMonth: r.proj_sales_month, salesFcst: r.sales_fcst, laborPctActual: r.labor_pct_actual,
-      gcFcst: r.gc_fcst, hoursFcst: r.hours_fcst, hoursSched: r.hours_sched, schedFixedPct: r.sched_fixed_pct,
-      tpph: r.tpph, rate: r.rate, laborTargetOrg: r.labor_target_org, actualHours: r.actual_hours, source: r.source,
+      gcFcst: r.gc_fcst, hoursFcst: _healHrs(r.hours_fcst), hoursSched: _healHrs(r.hours_sched), schedFixedPct: r.sched_fixed_pct,
+      tpph: r.tpph, rate: r.rate, laborTargetOrg: r.labor_target_org, actualHours: _healHrs(r.actual_hours), source: r.source,
     };
   }
   return { weekStart: latest, rows };

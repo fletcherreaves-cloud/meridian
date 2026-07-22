@@ -29,7 +29,9 @@ describe('MBI parser — Band-1 LifeLenz inputs (store 3708)', () => {
     expect(b.salesFcst).toBeCloseTo(74379, 0);
     expect(b.laborPctActual).toBeCloseTo(0.2519, 3);
     expect(b.gcFcst).toBe(7443);
-    expect(b.hoursSched).toBeCloseTo(62.52, 1);
+    // Hours are [h]:mm durations → converted to real hours (×24): 62.52 → 1500.5
+    expect(b.hoursSched).toBeCloseTo(1500.5, 1);
+    expect(b.hoursFcst).toBeCloseTo(1109.0, 0);
     expect(b.rate).toBeCloseTo(13.14, 1);
     expect(b.laborTargetOrg).toBeCloseTo(0.215, 3);
   });

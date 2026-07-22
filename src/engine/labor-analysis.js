@@ -14,9 +14,12 @@
 //   4 · Known fixed hours       — maintenance/prep/lobby/24hr (config, not math)
 //   5 · Hours of operation      — open/close times + hours-open-per-day (config)
 //
-// ⚠️ Faithful-to-sheet quirk: columns R/S multiply Hours Scheduled by 24
-//    ((G*24)-O) while Q uses G directly (G-F). Reproduced as-is; flagged for
-//    review — if G is already weekly hours, the ×24 is likely a latent bug.
+// Unit note (resolved): in the source sheet Hours Forecast (F), Hours Scheduled
+// (G) and Actual Hours (W) are `[h]:mm` durations — Excel stores them as
+// fractions of a DAY (1.0 = 24h), so a raw 62.52 is really 1500.5 hours. The
+// parser converts these to real hours (×24) on the way in, so THIS engine takes
+// F/G/W already in hours and the math is unit-consistent (no ×24 needed). The
+// sheet's original "(G*24)-O" was just compensating for that day-serial storage.
 
 export const FLH_THRESHOLDS = { fixed10: 0.10, fixed15: 0.15, floor10: 0.10, floor15: 0.15, combined25: 0.25 };
 
@@ -38,10 +41,10 @@ export function computeLaborRow(inp = {}) {
   const N = _mul(C, L);                       // Target Labor $     = C*L
   const O = _div(_mul(C, L), J);              // Proj Hrs/Wk (target)      = (C*L)/J
   const P = _div(_mul(C, M), J);              // Proj Hrs/Wk (target+2%)   = (C*M)/J
-  const Q = _sub(G, F);                       // Hours ± sched vs forecast = G-F
-  const R = _sub(_mul(G, 24), O);             // Hours ± sched vs target   = (G*24)-O  [sheet]
-  const S = _sub(_mul(G, 24), P);             // Hours ± sched vs target+2%= (G*24)-P  [sheet]
-  const T = _mul(_mul(Q, J), 24);             // $ ± vs projected (LifeLenz) = Q*J*24
+  const Q = _sub(G, F);                       // Hours ± sched vs forecast   = G-F
+  const R = _sub(G, O);                       // Hours ± sched vs target     = G-O
+  const S = _sub(G, P);                       // Hours ± sched vs target+2%  = G-P
+  const T = _mul(Q, J);                       // $ ± vs projected (LifeLenz) = Q*J
   const U = _mul(R, J);                       // $ ± vs projected (target)   = R*J
   const V = _mul(S, J);                       // $ ± vs projected (target+2%)= S*J
 
