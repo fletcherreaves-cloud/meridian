@@ -207,7 +207,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.store',    'Monthly Projections','📅', ()=>onOpenModal('monthly-proj'),     false),
       pis('analytics.store',    'Smart Targets',      '🧭', ()=>onOpenModal('smart-targets-v2'), false),
       pis('analytics.store',    'Labor Analysis',     '🧮', ()=>onOpenModal('labor-analysis'),   false),
-      pis('analytics.store',    'Crew Skills',        '🎓', ()=>onOpenModal('skills-matrix'),    false),
+      pis('analytics.store',    'Employee Skill Levels','🎓', ()=>onOpenModal('skills-matrix'),    false),
       // ── OPERATIONS ─────────────────────────────────────────────
       can('analytics.store') && navLabel('OPERATIONS'),
       pis('analytics.labor',    'Labor Analytics',    '👷', ()=>onOpenModal('labor-analytics'),  false),

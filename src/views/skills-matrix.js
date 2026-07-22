@@ -120,9 +120,41 @@ export function SkillsMatrixPanel({ ds, onClose }) {
       table{border-collapse:collapse}th{font-size:8px;color:#555;border-bottom:2px solid #f5bc00;padding:3px 4px;text-align:center}th:first-child,th:nth-child(2){text-align:left}
       td{padding:2px 5px;border-bottom:1px solid #eee;text-align:center;font-variant-numeric:tabular-nums}td.s{text-align:left;font-weight:600}
       td.r1{background:#fecaca}td.r2{background:#fed7aa}td.r3{background:#fef08a}td.r4{background:#d9f99d}td.r5{background:#a7f3d0}@media print{body{margin:0}}</style></head><body>
-      <h1>Skill Levels — Crew Matrix</h1>
+      <h1>Employee Skill Levels</h1>
       <div class="sub">${esc(store === 'all' ? 'All Stores' : (stores.find(s => locNum(s[0]) === locNum(store)) || [])[1] || store)} · ${sorted.length} crew · ${jobs.length} stations · generated ${esc(new Date().toLocaleDateString())}</div>
       <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`;
+    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+  };
+
+  // Manager update worksheet: current rating printed small; an open box to write
+  // the new rating (then enter changes back into LifeLenz). Includes blank rows
+  // for new hires so the whole crew can be reviewed on paper.
+  const printWorksheet = () => {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));
+    const storeName = store === 'all' ? 'All Stores' : (stores.find(s => locNum(s[0]) === locNum(store)) || [])[1] || store;
+    const head = ['Employee', 'Job Title', ...jobs].map((x, i) => `<th class="${i < 2 ? 'lbl' : 'st'}"><span>${esc(x)}</span></th>`).join('');
+    const cellsFor = e => jobs.map(j => { const v = (e.skills || {})[j]; return `<td class="box">${v ? `<span class="cur">${v}</span>` : ''}</td>`; }).join('');
+    const body = sorted.map(e => `<tr><td class="s">${esc(e.employee)}</td><td class="t">${esc(e.role || '')}</td>${cellsFor(e)}</tr>`).join('');
+    // 4 blank rows for new hires / additions.
+    const blanks = Array.from({ length: 4 }, () => `<tr class="blank"><td class="s">&nbsp;</td><td class="t"></td>${jobs.map(() => '<td class="box"></td>').join('')}</tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Skills Update Worksheet — ${esc(storeName)}</title>
+      <style>@page{size:landscape}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:12px;font-size:9px}
+      h1{font-size:14px;margin:0 0 2px}.sub{color:#555;font-size:10px;margin-bottom:4px}
+      .note{color:#444;font-size:9px;margin-bottom:8px;padding:4px 6px;background:#fff8e6;border:1px solid #f0d060;border-radius:4px}
+      table{border-collapse:collapse}
+      th{font-size:7.5px;color:#333;border:1px solid #bbb;padding:2px;vertical-align:bottom}
+      th.st{writing-mode:vertical-rl;transform:rotate(180deg);height:96px;text-align:left}
+      th.lbl{text-align:left;min-width:110px}
+      td{border:1px solid #ccc;padding:0}
+      td.s{font-weight:600;padding:2px 5px;white-space:nowrap}td.t{color:#555;padding:2px 5px;white-space:nowrap;font-size:8px}
+      td.box{width:20px;height:20px;position:relative}
+      td.box .cur{position:absolute;top:0;left:1px;font-size:7px;color:#aaa}
+      tr.blank td{height:22px}tr.blank td.s{min-width:110px}
+      @media print{body{margin:0}}</style></head><body>
+      <h1>Employee Skill Levels — Update Worksheet</h1>
+      <div class="sub">${esc(storeName)} · ${sorted.length} crew · ${jobs.length} stations · ${esc(new Date().toLocaleDateString())}</div>
+      <div class="note">Current rating is shown small/gray in each box. Write the <b>new</b> rating (1–5) in the box for any station that changed, then enter the updates in LifeLenz. Blank box = no change. Use the empty rows at the bottom for new hires.</div>
+      <table><thead><tr>${head}</tr></thead><tbody>${body}${blanks}</tbody></table></body></html>`;
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
   };
 
@@ -132,7 +164,7 @@ export function SkillsMatrixPanel({ ds, onClose }) {
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '🎓'),
         div({ style: { flex: 1, minWidth: 160 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Crew Skill Levels'),
+          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Employee Skill Levels'),
           div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'LifeLenz People List → skills matrix. Each station rated 1–5 (red→green). Click a station header to sort; ≥3 = proficient.')),
         h('input', { value: q, onChange: e => setQ(e.target.value), placeholder: 'Search name / title…', style: { ...selStyle, minWidth: 140 } }),
         h('select', { value: store, onChange: e => setStore(e.target.value), style: selStyle },
@@ -143,6 +175,7 @@ export function SkillsMatrixPanel({ ds, onClose }) {
           h('option', { value: 0 }, 'Show all'), h('option', { value: 3 }, 'Highlight ≥3'), h('option', { value: 4 }, 'Highlight ≥4'), h('option', { value: 5 }, 'Highlight 5 only')),
         btn({ onClick: exportCSV, disabled: !sorted.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: sorted.length ? 'pointer' : 'default' } }, '⬇ CSV'),
         btn({ onClick: printReport, disabled: !sorted.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: sorted.length ? 'pointer' : 'default' } }, '🖨 Print'),
+        btn({ onClick: printWorksheet, disabled: !sorted.length, title: 'Printable worksheet — current ratings with write-in boxes for updates', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: sorted.length ? 'pointer' : 'default' } }, '📝 Worksheet'),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       div({ style: { flex: 1, overflow: 'auto', padding: '12px 16px' } },
