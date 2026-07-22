@@ -35,6 +35,23 @@ A shared toolkit applied at every report/aggregation boundary:
 ## Workstream B — Smart Targets Model v2 (all metrics, forecasted)
 See detailed design below. Delivers the visible win AND exercises Workstream A.
 
+**Progress (2026-07-22):**
+- ✅ **Pure engine** `src/engine/smart-targets.js` (v4.450) — robustBaseline
+  (median ±k·MAD, excluded-days count), trendSlope, likeSizedPeers, peerAnchor
+  (good-direction quartile of same-volume-band peers), blend (capped, never worse
+  than baseline, direction-aware), confidence, computeSmartTarget. **18 unit
+  tests**, all passing.
+- ✅ **v2 panel** `src/views/smart-targets.js` (v4.451) — nav 🧭 "Smart Targets"
+  (modal key `smart-targets-v2`). Pilots **Sales** from qsr_daily_activity product
+  sales; 5-col comparison Official/Smart/Current/vs-Official/Confidence + anomalies,
+  FL/OK/patch/store scope, 60/90/180d base. METRICS registry = extension point.
+- ⚠️ **A dormant v1 exists**: `src/features/smart-targets.js` (`computeSmartTargets`
+  + `SmartTargetPanel`, modal `smart-targets`, no nav). Left intact; decide which
+  to retire. v2 does NOT reuse v1.
+- **TODO:** extend v2 to labor %, FOB %, speed (add METRICS entries + a source per
+  metric; ratio metrics anchor on level with direction='lower'); persist accepted
+  Smart targets; add an "apply as Official" action.
+
 ## Workstream C — The two "next-ups"
 - **Projections → current-month actuals for all locations/groupings** (pairs with the *Projections vs Actuals* feature idea).
 - **DT/Speed-of-Service → weekly-trend chart by patch/store.**
