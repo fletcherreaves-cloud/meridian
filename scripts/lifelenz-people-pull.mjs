@@ -47,6 +47,35 @@ async function discoverStores(token) {
   return stores;
 }
 
+// Establish a session by filling the app's own login form. The form renders at
+// /us01/auth/login (the bare IDM authorize URL is blank headless, but this isn't).
+async function login(page) {
+  console.log('[auth] opening login page…');
+  await page.goto('https://admin.lifelenz.com/us01/auth/login', { waitUntil: 'domcontentloaded', timeout: 45000 });
+  try {
+    await page.waitForSelector('input[type="password"]', { timeout: 25000 }); // reliable anchor
+  } catch (e) {
+    const inputs = await page.evaluate(() => Array.from(document.querySelectorAll('input')).map(el => ({ type: el.type, name: el.name, id: el.id, placeholder: el.placeholder, visible: el.offsetParent !== null }))).catch(() => []);
+    console.error('[auth] no password field. url:', page.url(), '| inputs:', JSON.stringify(inputs));
+    try { mkdirSync('screenshots', { recursive: true }); await page.screenshot({ path: 'screenshots/login-fail.png', fullPage: true }); } catch {}
+    throw e;
+  }
+  // Username = the first visible non-password text/email input.
+  const userSel = 'input[type="email"], input[type="text"], input[name*="user" i], input[name*="email" i], input[name*="login" i], input[name*="geid" i], input[autocomplete="username"]';
+  const u = await page.$(userSel);
+  if (u) await u.fill(process.env.LIFELENZ_USERNAME);
+  else await page.fill('input:not([type="password"]):not([type="hidden"]):not([type="checkbox"]):not([type="submit"]):not([type="button"])', process.env.LIFELENZ_USERNAME);
+  await page.fill('input[type="password"]', process.env.LIFELENZ_PASSWORD);
+  if (DEBUG) { try { mkdirSync('screenshots', { recursive: true }); await page.screenshot({ path: 'screenshots/login-filled.png' }); } catch {} }
+  // Click the primary "Log in" (NOT "Log in with SSO").
+  const primary = page.getByRole('button', { name: /^\s*log ?in\s*$/i }).first();
+  await primary.click({ timeout: 10000 }).catch(async () => { await page.click('button[type="submit"], input[type="submit"]').catch(() => {}); });
+  await page.waitForFunction(() => !location.href.includes('/auth/login'), { timeout: 30000 }).catch(() => {});
+  if (DEBUG) { try { await page.screenshot({ path: 'screenshots/login-after.png', fullPage: true }); } catch {} }
+  console.log('[auth] post-login url:', page.url());
+  if (page.url().includes('/auth/login')) throw new Error('still on login page after submit — check LIFELENZ_USERNAME/PASSWORD');
+}
+
 // Drive the export UI and capture the Simple CSV text for the current page.
 async function downloadPeopleCSV(page, url, tag) {
   const seenCsv = [];
@@ -63,15 +92,17 @@ async function downloadPeopleCSV(page, url, tag) {
     console.log(`[people] ${tag}: 'Download Report' not visible — page text:`, body, '| url:', page.url());
   }
   let csvText = null;
-  try {
-    const dl = page.waitForEvent('download', { timeout: 20000 });
-    await page.getByText(/download report/i).first().click({ timeout: 10000 });
-    await page.waitForTimeout(700);
-    await page.getByText(/simple.*\(?csv\)?|^simple$/i).first().click({ timeout: 10000 });
-    const download = await dl;
-    const stream = await download.createReadStream();
-    if (stream) { const chunks = []; for await (const c of stream) chunks.push(c); csvText = Buffer.concat(chunks).toString('utf8'); }
-  } catch (e) { if (DEBUG) console.log(`[people] ${tag}: UI download failed:`, e.message); }
+  if (looksAuthed) {
+    // Attach .catch so a timeout here never becomes an unhandled rejection.
+    const dlPromise = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
+    try {
+      await page.getByText(/download report/i).first().click({ timeout: 10000 });
+      await page.waitForTimeout(700);
+      await page.getByText(/simple.*\(?csv\)?|^simple$/i).first().click({ timeout: 10000 });
+    } catch (e) { if (DEBUG) console.log(`[people] ${tag}: export click failed:`, e.message); }
+    const download = await dlPromise;
+    if (download) { const stream = await download.createReadStream(); if (stream) { const chunks = []; for await (const c of stream) chunks.push(c); csvText = Buffer.concat(chunks).toString('utf8'); } }
+  }
   if (!csvText && seenCsv.length) {
     csvText = await page.evaluate(async u => { const r = await fetch(u, { credentials: 'include' }); return r.ok ? await r.text() : null; }, seenCsv[seenCsv.length - 1]);
   }
@@ -104,7 +135,8 @@ async function pullOne(page, url, tag) {
 }
 
 async function main() {
-  if (!TOKEN) { console.error('[people] LIFELENZ_TOKEN not set — required (same secret the labor pull uses).'); process.exit(1); }
+  if (!TOKEN) { console.error('[people] LIFELENZ_TOKEN not set — required for schedule discovery.'); process.exit(1); }
+  if (!process.env.LIFELENZ_USERNAME || !process.env.LIFELENZ_PASSWORD) { console.error('[people] LIFELENZ_USERNAME/PASSWORD required for the login form.'); process.exit(1); }
 
   // Targets: explicit override, else discover all stores by scheduleId.
   let list = [];
@@ -119,19 +151,13 @@ async function main() {
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'] });
   const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36', acceptDownloads: true });
   await context.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => undefined }));
-  // Seed the token into storage under common keys so the SPA considers itself
-  // authenticated (we don't know the exact key, so cover the likely candidates).
-  await context.addInitScript(tok => {
-    try { for (const k of ['authToken', 'token', 'access_token', 'X-Auth-Token', 'auth-token', 'lifelenz.token', 'auth']) { localStorage.setItem(k, tok); } } catch {}
-  }, TOKEN);
-  // Inject the token header on every LifeLenz API request the SPA makes.
-  await context.route('**/*', route => {
-    const req = route.request(); const u = req.url();
-    if (u.includes('us01-connect.lifelenz.com') || u.includes('/manager/graphql') || u.includes('/api/')) {
-      route.continue({ headers: { ...req.headers(), 'x-auth-token': TOKEN, 'x-business-id': BUSINESS_ID, 'x-lifelenz-device': 'webadmin', 'x-version': '1.75.21' } });
-    } else route.continue();
-  });
   const page = await context.newPage();
+
+  // Establish a real session via the app's login form (which renders at
+  // /us01/auth/login — unlike the bare IDM authorize URL). This is what lets the
+  // People pages load instead of bouncing back to login.
+  try { await login(page); }
+  catch (e) { console.error('[auth] login failed:', e.message); await browser.close(); process.exit(1); }
 
   console.log(`[people] ${list.length} store page(s) to pull`);
   let totalSaved = 0;
