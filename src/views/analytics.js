@@ -9451,8 +9451,25 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
   }, [period.year, period.month, mtIsThisMonth]);
   const effMt = mtIsThisMonth ? mt : (loadedMt||{});
 
-  const actuals = useMemo(()=> computeMonthActuals(ds, period.year, period.month),
-    [period.year, period.month, ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.schedRows&&ds.schedRows.length, ds&&ds.fobRows&&ds.fobRows.length]);
+  // MTD actual must be PRODUCT sales (same basis as tProdSales) from the COMPLETE
+  // auto/emailed streams — not manual labor, which lags and undercounts. Priority
+  // per (loc,date): emailed sales_ledger (prodSales) > DAR product sales; manual
+  // labor (computeMonthActuals) only fills locs the auto streams don't cover.
+  const actuals = useMemo(()=>{
+    const ym = period.year + '-' + String(period.month).padStart(2,'0');
+    const inMonth = d => { if(!d) return null; const iso=(d instanceof Date?d:new Date(d)).toISOString().slice(0,10); return iso.slice(0,7)===ym?iso:null; };
+    const cell = {}; // loc|iso -> {sales, prio}
+    const put = (loc, iso, sales, prio) => { if(iso==null||typeof sales!=='number'||!(sales>0)) return; const k=String(parseInt(loc,10))+'|'+iso; const cur=cell[k]; if(!cur||prio>cur.prio) cell[k]={sales,prio}; };
+    for(const r of (ds&&ds.salesLedgerRows||[])) put(r.loc, inMonth(r.date), r.prodSales, 3);
+    for(const r of (ds&&ds.qsrActSummaryRows||[])) put(r.loc, inMonth(r.date), r.sales, 2); // qsrActSummary.sales = Σ product_sales
+    const byLoc={}; let maxIso=null;
+    for(const k of Object.keys(cell)){ const [loc,iso]=k.split('|'); byLoc[loc]=(byLoc[loc]||0)+cell[k].sales; if(!maxIso||iso>maxIso) maxIso=iso; }
+    // Last-resort fill for locs with no auto product-sales coverage.
+    const manual = computeMonthActuals(ds, period.year, period.month);
+    for(const loc of Object.keys(manual.byLoc||{})){ if(!(byLoc[loc]>0) && manual.byLoc[loc].sales>0) byLoc[loc]=manual.byLoc[loc].sales; }
+    if(!maxIso && manual.maxDate) maxIso=manual.maxDate;
+    return { byLoc: Object.fromEntries(Object.entries(byLoc).map(([l,s])=>[l,{sales:s}])), maxDate: maxIso };
+  }, [period.year, period.month, ds&&ds.salesLedgerRows&&ds.salesLedgerRows.length, ds&&ds.qsrActSummaryRows&&ds.qsrActSummaryRows.length, ds&&ds.laborRows&&ds.laborRows.length, ds&&ds.fobRows&&ds.fobRows.length]);
 
   if(!(locs||[]).length) return null;
   if(!periodProp && !latestActualMonth && !(actuals&&actuals.maxDate)) return null; // nothing to anchor on
