@@ -43,18 +43,53 @@ async function login(context) {
     client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
     scope: 'openid profile email offline_access', state: 'meridian-people',
   });
+  // Capture the OAuth auth code from the redirect back to admin.lifelenz.com.
+  let authCode = null;
+  page.on('request', req => { const u = req.url(); if (u.includes('admin.lifelenz.com') && u.includes('code=')) { try { const c = new URL(u).searchParams.get('code'); if (c) authCode = c; } catch {} } });
+
+  try { mkdirSync('screenshots', { recursive: true }); } catch {}
   console.log('[auth] navigating to IDM authorize…');
   await page.goto(authUrl, { waitUntil: 'networkidle', timeout: 45000 });
+  console.log('[auth] page title:', await page.title().catch(() => '?'), '| url:', page.url());
+  try { await page.screenshot({ path: 'screenshots/people-01-login.png', fullPage: true }); } catch {}
   const userSel = ['input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email',
+    'input[name="loginName"]', 'input[name="login"]', 'input[name="user"]', 'input[name="UserName"]', 'input[name="EmailAddress"]',
     'input[autocomplete="username"]', 'input[autocomplete="email"]', 'input[placeholder*="email" i]', 'input[placeholder*="user" i]'].join(', ');
   const passSel = 'input[name="password"], input[type="password"], #password, input[autocomplete="current-password"]';
-  const subSel = 'button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in"), button:has-text("Log in")';
-  await page.waitForSelector(userSel, { timeout: 20000 });
+  const subSel = 'button[type="submit"], input[type="submit"], .btn-primary, .login-btn, button:has-text("Login"), button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Continue"), button:has-text("Next")';
+  try {
+    await page.waitForSelector(userSel, { timeout: 20000 });
+  } catch (e) {
+    // Diagnostics: dump every visible input + the page HTML so we can fix the selector.
+    const inputs = await page.evaluate(() => Array.from(document.querySelectorAll('input')).map(el => ({ type: el.type, name: el.name, id: el.id, placeholder: el.placeholder, autocomplete: el.getAttribute('autocomplete'), visible: el.offsetParent !== null }))).catch(() => []);
+    const buttons = await page.evaluate(() => Array.from(document.querySelectorAll('button, a[role="button"]')).map(el => (el.innerText || '').trim()).filter(Boolean).slice(0, 20)).catch(() => []);
+    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 600) || '(empty)').catch(() => '?');
+    const html = await page.content().catch(() => '');
+    const frames = page.frames().map(f => f.url());
+    console.error('[auth] username selector not found.');
+    console.error('[auth] body preview:', bodyText);
+    console.error('[auth] inputs:', JSON.stringify(inputs));
+    console.error('[auth] buttons:', JSON.stringify(buttons));
+    console.error('[auth] frames:', JSON.stringify(frames));
+    console.error('[auth] html (first 2500):', html.slice(0, 2500));
+    try { await page.screenshot({ path: 'screenshots/people-login-fail.png', fullPage: true }); } catch {}
+    throw e;
+  }
   await page.fill(userSel, process.env.LIFELENZ_USERNAME);
   await page.fill(passSel, process.env.LIFELENZ_PASSWORD);
   await page.click(subSel);
   await page.waitForFunction(() => location.href.includes('admin.lifelenz.com') || !location.href.includes('idm.lifelenz.com'), { timeout: 25000 });
   await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+  try { await page.screenshot({ path: 'screenshots/people-02-post-login.png', fullPage: true }); } catch {}
+  // Exchange the OAuth code for an access token (reliable path).
+  if (authCode && !token) {
+    try {
+      const r = await fetch('https://idm.lifelenz.com/connect/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code: authCode, client_id: CLIENT_ID, redirect_uri: REDIRECT_URI }).toString() });
+      console.log('[auth] token exchange →', r.status);
+      if (r.ok) { const t = await r.json().catch(() => null); if (t && t.access_token) token = t.access_token; }
+    } catch (e) { console.warn('[auth] token exchange error:', e.message); }
+  }
   // Nudge an API call so the token appears in a request header if not seen yet.
   if (!token) { try { await page.goto('https://admin.lifelenz.com/us01/dashboard', { waitUntil: 'networkidle', timeout: 20000 }); } catch {} }
   console.log('[auth] logged in' + (token ? ' (token captured)' : ' (no token yet — schedule discovery may fall back)'));
