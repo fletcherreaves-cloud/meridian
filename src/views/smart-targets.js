@@ -7,21 +7,34 @@
 // FL and OK are anchored SEPARATELY (peers are same-state, like-sized only).
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
-import { computeSmartTarget, robustBaseline, weightedRecencyProjection, windowRate, backtestProjectors } from '../engine/smart-targets.js';
+import { computeSmartTarget, robustBaseline, weightedRecencyProjection, windowRate, backtestProjectors, median, _isNum } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
 import { loadDailySales } from '../lib/supabase.js';
 
-// Competing period-projectors, all pure functions of a store's daily series.
-// The owner's T3M/T6W/T3W weighted-recency method runs against naive short/long
-// baselines so the backtest can crown which one actually fits each store best.
-const PROJECTORS = [
+// The three simple trailing projectors. A 2026-07 backtest across all 27 stores
+// found these beat every engineered model (Composite/Momentum/Regression/Ensemble)
+// for monthly store sales — the engineered models won 0 stores — and that the
+// three are statistically TIED (~5% MAPE, differences within n=few-fold noise).
+const SIMPLE = [
   { key: 'owner', name: 'T3M/T6W/T3W', short: 'Owner', project: (s, o) => weightedRecencyProjection(s, o).projection },
   { key: 'recent', name: 'Recent 3-wk run-rate', short: '3-wk', project: (s, o) => { const w = windowRate(s, o.asOf, 21); return w.rate == null ? null : w.rate * o.targetDays; } },
   { key: 'avg3m', name: '3-month average', short: '3-mo', project: (s, o) => { const w = windowRate(s, o.asOf, 90); return w.rate == null ? null : w.rate * o.targetDays; } },
 ];
-// Our forecast-engine daily models, folded in on demand as period-projectors
-// (sum of daily forecasts across the target window). Heavier — they read the
-// store's daily history from ds and are run async + cached behind a button.
+// PRIMARY method: median of the three simple projections. Because they're tied,
+// the median averages away the per-store coin-flip instead of chasing whichever
+// single method happens to post the lowest MAPE on a handful of held-out folds
+// (that "best-fit per store" selection was overfitting to noise). This drives the
+// recommended Smart number.
+const PRIMARY_KEY = 'median3';
+const medianProject = (s, o) => { const v = SIMPLE.map(p => { try { return p.project(s, o); } catch { return null; } }).filter(_isNum); return v.length ? median(v) : null; };
+const PROJECTORS = [
+  { key: PRIMARY_KEY, name: 'Median of simple', short: 'Median', project: medianProject },
+  ...SIMPLE,
+];
+// Engineered forecast-engine models. PRESERVED and fully computable on demand
+// (the "＋ Diagnostic models" button) — they lose to the simple family for
+// short-range monthly targets but are kept intact for diagnosis and potential
+// longer-range use. They read the store's daily history from ds and run async.
 const FCAST_MODELS = [
   { key: 'm1', name: 'Composite', short: 'Comp' },
   { key: 'm3', name: 'Momentum', short: 'Mom' },
@@ -31,6 +44,15 @@ const FCAST_MODELS = [
 const ALL_META = [...PROJECTORS, ...FCAST_MODELS];
 const METH_NAME = Object.fromEntries(ALL_META.map(p => [p.key, p.name]));
 const METH_SHORT = Object.fromEntries(ALL_META.map(p => [p.key, p.short]));
+
+// Backtest history is DECOUPLED from the learning window: we pull a long history
+// (BT_DAYS) purely to grade methods over many held-out periods, while the shorter
+// user-selected lookback still drives the baseline/peer learning. A 90-day window
+// only yields ~2 folds; BT_DAYS at 28-day periods yields up to ~13, so per-store
+// "wins" stop being coin-flips.
+const BT_DAYS = 400;
+const BT_PERIOD = 28;
+const BT_FOLDS = 6;
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -75,7 +97,10 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   useEffect(() => {
     let live = true;
     setLoading(true);
-    const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
+    // Pull the FULL backtest history (not just the learning window) so the
+    // scoreboard has enough held-out periods; the learning window is applied
+    // later in the model memo.
+    const cutoff = isoOf(new Date(Date.now() - BT_DAYS * 86400000));
     const mem = (metric.mem ? metric.mem(ds) : []).filter(r => {
       if (!r || !r.date || !r.loc) return false;
       const v = metric.daily(r);
@@ -83,7 +108,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     });
     const memLocs = new Set(mem.map(r => locNum(r.loc))), memDays = new Set(mem.map(r => isoOf(r.date)));
     if (mem.length && memLocs.size >= 8 && memDays.size >= 20) { setHist(mem); setLoading(false); return; }
-    Promise.resolve(metric.fetch(windowDays + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
+    Promise.resolve(metric.fetch(BT_DAYS + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
       .catch(() => { if (live) { setHist([]); setLoading(false); } });
     return () => { live = false; };
     // Depend on the ledger feed LENGTH, not the whole ds — ds changes many times at
@@ -111,15 +136,20 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const target = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const daysInMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
     const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
-    // Per-loc daily series within the window.
-    const byLoc = {};
+    const nowIso = isoOf(now);
+    // Two per-loc daily series: the short LEARNING window (baseline/peers/Smart)
+    // and the long BACKTEST window (grading methods over many held-out periods).
+    const byLoc = {};    // learning window
+    const btByLoc = {};  // full backtest window
     for (const r of (hist || [])) {
       if (!r || !r.date || !r.loc) continue;
       const d = isoOf(r.date);
-      if (d < cutoff || d > isoOf(now)) continue;
+      if (d > nowIso) continue;
       const v = metric.daily(r);
       if (typeof v !== 'number' || isNaN(v) || v <= 0) continue;
-      (byLoc[locNum(r.loc)] = byLoc[locNum(r.loc)] || []).push({ d, v });
+      const loc = locNum(r.loc);
+      (btByLoc[loc] = btByLoc[loc] || []).push({ d, v });
+      if (d >= cutoff) (byLoc[loc] = byLoc[loc] || []).push({ d, v });
     }
     // Per-loc robust baseline (daily) + volume (total in window) — used as peers.
     const baseByLoc = {};
@@ -147,18 +177,33 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       const last28 = series.slice(-28);
       const curDaily = last28.length ? last28.reduce((a, b) => a + b, 0) / last28.length : null;
       const toMonthly = v => v == null ? null : (metric.monthly ? v * daysInMonth : v);
-      const smart = toMonthly(r.smart);
       const current = toMonthly(curDaily);
       const official = officialFor(loc);
+      // PRIMARY Smart number = median of the three simple projections for the
+      // upcoming period (the proven family). For monthly metrics the projectors
+      // already scale by targetDays; for ratio metrics we take the blended daily
+      // level. Falls back to the peer-anchored computeSmartTarget only if the
+      // simple family can't compute (too-thin history).
+      const learnSeries = entries.map(x => ({ date: x.d, value: x.v }));
+      let smart;
+      if (metric.monthly) {
+        const primary = medianProject(learnSeries, { asOf: now, targetDays: daysInMonth });
+        smart = _isNum(primary) ? primary : toMonthly(r.smart);
+      } else {
+        smart = toMonthly(r.smart); // ratio metrics keep the baseline path until wired
+      }
+      // Peer-anchored stretch target — preserved as a secondary figure (hover).
+      const stretch = toMonthly(r.smart);
       const vsOff = (smart != null && official > 0) ? (smart / official - 1) * 100 : null;
-      // Scoreboard: which projection method fits THIS store best on held-out history.
+      // Scoreboard: which projection method fits THIS store best on held-out
+      // history — now over the LONG backtest window for many folds.
       let bt = { perMethod: {}, winner: null, folds: 0 };
       if (doBacktest) {
-        const dailySeries = entries.map(x => ({ date: x.d, value: x.v }));
-        bt = backtestProjectors(dailySeries, PROJECTORS, { periodDays: 28, folds: 3 });
+        const btSeries = (btByLoc[loc] || []).slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
+        bt = backtestProjectors(btSeries, PROJECTORS, { periodDays: BT_PERIOD, folds: BT_FOLDS });
       }
       const ownerMape = bt.perMethod.owner ? bt.perMethod.owner.mape : null;
-      return { loc, smart, current, official: official != null ? official : null, vsOff,
+      return { loc, smart, stretch, current, official: official != null ? official : null, vsOff,
         confidence: r.confidence, excludedDays: r.excludedDays, n: r.n, baseline: toMonthly(r.baseline),
         anchor: toMonthly(r.anchor), own: toMonthly(r.own), tierN: r.tierN,
         winner: bt.winner, btFolds: bt.folds, btPerMethod: bt.perMethod, ownerMape };
@@ -167,9 +212,10 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     // Aggregate win-tally across stores (how often each method wins).
     const tally = {}; let scored = 0;
     for (const r of rows) { if (r.winner) { tally[r.winner] = (tally[r.winner] || 0) + 1; scored++; } }
-    // Per-loc daily series ({date,value}), reused by the async forecast-model backtest.
+    // Per-loc daily series ({date,value}) over the LONG backtest window, reused by
+    // the async forecast-model (diagnostic) backtest so it grades on the same basis.
     const seriesByLoc = {};
-    for (const loc of Object.keys(byLoc)) seriesByLoc[loc] = byLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
+    for (const loc of Object.keys(btByLoc)) seriesByLoc[loc] = btByLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
     return { rows, daysInMonth, tally, scored, doBacktest, seriesByLoc };
   }, [hist, metricKey, windowDays, ds]);
 
@@ -208,7 +254,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
         while (d < end) { const v = fcModelsFor(loc, isoOf(d))[fm.key]; if (typeof v === 'number' && v > 0) { sum += v; n++; } d.setDate(d.getDate() + 1); }
         return n ? sum * (o.targetDays / n) : null; // scale up if some days had no forecast
       } }));
-      out[loc] = backtestProjectors(model.seriesByLoc[loc], [...PROJECTORS, ...fcProj], { periodDays: 28, folds: 3 });
+      out[loc] = backtestProjectors(model.seriesByLoc[loc], [...PROJECTORS, ...fcProj], { periodDays: BT_PERIOD, folds: BT_FOLDS });
       if (++i % 4 === 0) await new Promise(r => setTimeout(r, 0)); // yield to keep UI live
     }
     setModelBt(out); setModelBusy(false);
@@ -231,7 +277,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const parts = methodsMeta.map(p => { const m = r.btPerMethod[p.key]; return m ? `${p.name}: ${m.mape}% MAPE (n=${m.n})` : `${p.name}: —`; });
     return `Best fit over ${r.btFolds} held-out 28-day period(s):\n` + parts.join('\n');
   };
-  const row = r => h('tr', { key: r.loc, title: `baseline ${metric.fmt(r.baseline)} · own-trajectory ${metric.fmt(r.own)} · peer anchor ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers) · ${r.n} days, ${r.excludedDays} anomalies excluded` },
+  const row = r => h('tr', { key: r.loc, title: `Smart = median of simple methods · peer-stretch target ${metric.fmt(r.stretch)} · baseline ${metric.fmt(r.baseline)} · own-trajectory ${metric.fmt(r.own)} · peer anchor ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers) · ${r.n} days, ${r.excludedDays} anomalies excluded` },
     h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(r.loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '#' + locNum(r.loc))),
     h('td', { style: td }, metric.fmt(r.official)),
     h('td', { style: { ...td, fontWeight: 800, color: 'var(--amber)' } }, metric.fmt(r.smart)),
@@ -239,7 +285,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     h('td', { style: { ...td, fontWeight: 700, color: r.vsOff == null ? 'var(--text3)' : r.vsOff >= 0 ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'),
     model.doBacktest ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' }, title: btTitle(r) },
       r.winner
-        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
+        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
             r.btPerMethod[r.winner] ? span({ style: { color: 'var(--text3)', fontSize: 9, marginLeft: 5 } }, r.btPerMethod[r.winner].mape + '%') : null)
         : span({ style: { color: 'var(--text3)', fontSize: 9 } }, '—')) : null,
     h('td', { style: { ...td, textAlign: 'center' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: confColor(r.confidence) + '22', color: confColor(r.confidence) } }, r.confidence)),
@@ -281,7 +327,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
         div({ style: { flex: 1 } },
           div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, 'Smart Targets',
             span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Target: ' + targetLabel)),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Recommended monthly ' + (metric.label.split(' ')[0].toLowerCase()) + ' target for ' + targetLabel + ', learned from the lookback window: robust baseline → bounded trend → like-sized peer stretch (FL/OK separate) → capped. Hover a row for the build-up.')),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Recommended monthly ' + (metric.label.split(' ')[0].toLowerCase()) + ' target for ' + targetLabel + ' = median of three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — the family a 27-store backtest proved beats every engineered model. Hover a row for the peer-stretch build-up.')),
         h('select', { value: metricKey, onChange: e => setMetricKey(e.target.value), style: selStyle },
           ...METRICS.map(m => h('option', { key: m.key, value: m.key }, m.label))),
         h('select', { value: windowDays, onChange: e => setWindowDays(+e.target.value), title: 'Lookback: how far back to learn from', style: selStyle },
@@ -308,11 +354,11 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
               ? div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 11px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
                   span({ style: { fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)' } }, 'Method scoreboard'),
                   ...methodsMeta.map(p => { const shownWins = shown.filter(r => r.winner === p.key).length; return span({ key: p.key, title: METH_NAME[p.key], style: { fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 } },
-                    span({ style: { fontWeight: 700, color: p.key === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, p.name),
-                    span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: p.key === 'owner' ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
+                    span({ style: { fontWeight: 700, color: p.key === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, p.name),
+                    span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: p.key === PRIMARY_KEY ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
                   useModels
-                    ? span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE · forecast models included')
-                    : btn({ onClick: runModelBacktest, disabled: modelBusy, title: 'Fold Composite/Momentum/Regression/Ensemble into the backtest (needs daily labor history; runs in the background)', style: { marginLeft: 'auto', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 10, fontWeight: 700, cursor: modelBusy ? 'default' : 'pointer' } }, modelBusy ? 'Running models…' : '＋ Forecast models'))
+                    ? span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE · diagnostic models included')
+                    : btn({ onClick: runModelBacktest, disabled: modelBusy, title: 'Fold the engineered models (Composite/Momentum/Regression/Ensemble) into the backtest for diagnosis. They lost 0-for-27 to the simple family for monthly sales but are preserved here. Needs daily labor history; runs in the background.', style: { marginLeft: 'auto', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 10, fontWeight: 700, cursor: modelBusy ? 'default' : 'pointer' } }, modelBusy ? 'Running models…' : '＋ Diagnostic models'))
               : null,
             div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
               h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
@@ -327,7 +373,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
                   h('th', { style: th }, 'Anomalies'))),
                 h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-          'Official = QSRSoft monthly file (tProdSales). Smart = robust daily baseline (median, ±' + '3·MAD anomalies dropped) projected by a capped trend, nudged toward the top-quartile of like-sized same-state peers, capped at 8% move, never below baseline. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = the projection method with the lowest error on held-out 28-day periods (T3M/T6W/T3W = your weighted-recency method). ＋ Forecast models folds in Composite/Momentum/Regression/Ensemble (these read daily labor history from an uploaded Operations/Labor report; they show no score where that history is absent). Pilot metric: Sales; more metrics use the same engine.')
+          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Pilot metric: Sales; more metrics use the same engine.')
       )
     ));
 }

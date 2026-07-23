@@ -70,6 +70,40 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
       than fabricate. **Future:** retarget the forecast models to the auto
       product-sales series so they compete everywhere, not just where labor
       uploads exist.
+    - ✅ **Layer 3 — the bakeoff verdict (v4.483, 2026-07-23):** a full backtest
+      across **all 27 stores** delivered a decisive result: the **simple trailing
+      family (T3M/T6W/T3W · recent-3wk · 3-mo-avg) beat every engineered model.**
+      Engineered models (Composite/Momentum/Regression/Ensemble) won **0 stores**;
+      on a representative store the simple methods clustered at **5.3–5.5% MAPE**
+      while Regression was **14.1%**, Ensemble **11%**, Momentum **10.5%**,
+      Composite **8.5%**. Reading: monthly store sales is a stable, mean-reverting
+      series — recent trailing level ≈ next month; the engineered models add
+      variance with no bias payoff (overfitting). **Second, subtler finding:** the
+      three simple methods are **statistically tied** (differences within n=few-fold
+      noise), so "best-fit method per store" was chasing coin-flips. **Third, a gap
+      the bakeoff exposed:** the recommended "Smart" number was computed by a THIRD
+      path (`computeSmartTarget` peer-blend) that **was never in the bakeoff** — we
+      were recommending a number we hadn't proven.
+    - ✅ **Changes shipped from the verdict (v4.483):**
+      1. **Primary Smart number = MEDIAN of the three simple projections**
+         (`PRIMARY_KEY='median3'`, `medianProject` in `src/views/smart-targets.js`).
+         Median-of-tied-three averages away the per-store coin-flip instead of
+         cherry-picking the lowest-MAPE method. Closes the "recommend what we proved"
+         gap. The peer-anchored `computeSmartTarget` is **preserved as a secondary
+         "stretch target"** on hover — not deleted.
+      2. **Backtest decoupled from the learning window** (`BT_DAYS=400`,
+         `BT_FOLDS=6`, `BT_PERIOD=28`). A 90-day window only yielded ~2 folds
+         (n=2 → noisy winners); pulling ~400 days purely for grading gives up to
+         ~6 recent folds while the shorter user lookback still drives baseline/peers.
+      3. **Engineered models PRESERVED, intact, on demand** — relabeled "＋
+         Diagnostic models" (was "Forecast models"). Kept for diagnosis (why does
+         simple win?) and potential **longer-range** use; nothing ripped out. This
+         is a standing owner directive: cautiously protect the other models.
+    - ⏭️ **Follow-ups from the verdict:** diagnose *why* simple wins and try to
+      fold that structure back into the engineered models (candidate for their
+      redemption on longer horizons); consider deepening folds further as history
+      grows; watch the scoreboard for any store where an engineered model ever
+      legitimately wins.
     - ⏭️ Known-event (+/-) UI: let the owner mark event dates/deltas per store
       (engine hooks `excludeDates`/`eventDelta` already exist).
   - Extend v2 metrics to labor %, FOB %, speed (add METRICS entries + a source
