@@ -9,7 +9,7 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, DEFAULT_TARGETS } from '../constants.js';
 import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
-import { loadDailySales, loadGlimpse, loadSmartTargetAdjustments, saveSmartTargetAdjustment } from '../lib/supabase.js';
+import { loadDailySales, loadGlimpse, loadQsrFob, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
 
 // The three simple trailing projectors. A 2026-07 backtest across all 27 stores
 // found these beat every engineered model (Composite/Momentum/Regression/Ensemble)
@@ -71,9 +71,34 @@ const isoOf = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 
 //   ratio:true    → a weighted LEVEL (Σ(value·weight)/Σweight — never averaged);
 //                   `weight` gives the per-day denominator (sales, cars).
 const pct1 = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+const pct2 = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const secs = v => v == null ? '—' : Math.round(v) + 's';
+
+// qsr_fob rows are DAILY but carry CUMULATIVE month-to-date amounts, so the latest
+// daily row per (loc, month) IS that month's total. Collapse to one monthly point
+// per store: FOB % = Σ(6 waste/variance components)/prodSales (the At-A-Glance
+// canonical formula), dollar-weighted by prodSales.
+function fobMonthly(rows) {
+  const byMonth = new Map();
+  for (const r of rows || []) {
+    if (!r || !r.date || r.loc == null) continue;
+    const d = new Date(String(r.date).slice(0, 10) + 'T00:00:00'); if (Number.isNaN(+d)) continue;
+    const loc = locNum(r.loc);
+    const k = loc + '|' + d.getFullYear() + '-' + (d.getMonth() + 1);
+    const ex = byMonth.get(k);
+    if (!ex || d.getTime() > ex._ms) byMonth.set(k, { r, loc, _ms: d.getTime(), _d: d });
+  }
+  const out = [];
+  for (const { r, loc, _d } of byMonth.values()) {
+    const sales = r.prodSalesAmt || 0; if (!(sales > 0)) continue;
+    const fobAmt = (r.rawWasteAmt || 0) + (r.compWasteAmt || 0) + (r.condimentsAmt || 0) + (r.empMgrMealsAmt || 0) + (r.statVarianceAmt || 0) + (r.unexplainedAmt || 0);
+    out.push({ loc, date: _d, v: fobAmt / sales, w: sales });
+  }
+  return out;
+}
+
 const METRICS = [
-  { key: 'sales', label: 'Sales ($ / month)', direction: 'higher', official: 'tProdSales', monthly: true,
+  { key: 'sales', label: 'Sales ($ / month)', direction: 'higher', official: 'tProdSales', officialCol: 'sales_proj', monthly: true,
     // Fast path: sales_ledger_daily is already in memory (one product-sales row per
     // store/day) → instant. Fallback: the complete-but-heavy DAR hourly aggregate.
     mem: ds => (ds && ds.salesLedgerRows || []).map(r => ({ loc: r.loc, date: r.date, sales: r.prodSales })),
@@ -82,7 +107,7 @@ const METRICS = [
     fmt: v => v == null ? '—' : '$' + Math.round(v).toLocaleString() },
   // Labor % of sales — sales-WEIGHTED (Σ labor$/Σ sales via daily pct×sales), lower
   // is better. From Daily Glimpse (cloud-fresh). Official = per-store labor target.
-  { key: 'laborpct', label: 'Labor % of sales', direction: 'lower', monthly: false, ratio: true,
+  { key: 'laborpct', label: 'Labor % of sales', direction: 'lower', monthly: false, ratio: true, officialCol: 'crew_labor_pct',
     mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales })),
     fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales }))),
     daily: r => r.v, weight: r => r.w,
@@ -96,6 +121,15 @@ const METRICS = [
     daily: r => r.v, weight: r => r.w,
     officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tOepe) ? t.tOepe : null; },
     fmt: secs },
+  // FOB % (food-cost waste/variance as % of product sales), lower is better. From
+  // qsr_fob, monthly (cumulative MTD → one point/store/month), dollar-weighted by
+  // prod sales — matches the At-A-Glance FOB tile formula exactly. Official = tFOBTarget.
+  { key: 'fob', label: 'FOB % (food cost)', direction: 'lower', monthly: false, ratio: true, officialCol: 'fob_target_pct',
+    mem: () => [],
+    fetch: () => loadQsrFob().then(fobMonthly),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tFOBTarget) ? t.tFOBTarget : null; },
+    fmt: pct2 },
 ];
 
 const confColor = c => c === 'High' ? '#10b981' : c === 'Med' ? '#f59e0b' : '#ef4444';
@@ -114,8 +148,15 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   const [editLoc, setEditLoc] = useState(null);          // loc whose known-event editor is open
   const [editDraft, setEditDraft] = useState(null);      // {excludeText, eventDelta, note}
   const [adjMsg, setAdjMsg] = useState('');
+  const [appliedOff, setAppliedOff] = useState({});      // {loc: value} applied-as-Official this session (per metric)
+  const [applyMsg, setApplyMsg] = useState('');
+  const [applyBusy, setApplyBusy] = useState(false);
   const fcCache = useRef(new Map());                     // `${loc}|${iso}` -> {m1,m3,m4,ens} daily forecasts
   const metric = METRICS.find(m => m.key === metricKey) || METRICS[0];
+  // Applied-official overrides are per-metric — clear when the metric changes.
+  useEffect(() => { setAppliedOff({}); setApplyMsg(''); }, [metricKey]);
+  // The (year, month) this target is FOR — the upcoming month.
+  const targetYM = useMemo(() => { const d = new Date(); const t = new Date(d.getFullYear(), d.getMonth() + 1, 1); return { ty: t.getFullYear(), tm: t.getMonth() + 1 }; }, []);
 
   // Per-store known-event adjustments (excluded one-off days + event delta), per metric.
   useEffect(() => {
@@ -161,8 +202,24 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   }, [scope]);
 
   const officialFor = loc => {
+    const applied = appliedOff[locNum(loc)];
+    if (applied != null) return applied;                       // just applied this session
     if (metric.officialVal) return metric.officialVal(loc);
     return ((ds && ds.monthlyTargets && ds.monthlyTargets[locNum(loc)]) || (ds && ds.monthlyTargets && ds.monthlyTargets[loc]) || {})[metric.official];
+  };
+
+  // Push Smart → Official (monthly_targets) for the upcoming month. entries = rows.
+  const applyOfficial = async (entries) => {
+    if (!metric.officialCol || applyBusy) return;
+    const rows = (entries || []).filter(r => r && r.smart != null);
+    if (!rows.length) return;
+    setApplyBusy(true); setApplyMsg('Applying ' + rows.length + '…');
+    const res = await applyOfficialTargets(rows.map(r => ({ loc: r.loc, val: r.smart })), targetYM.ty, targetYM.tm, metric.officialCol);
+    setApplyBusy(false);
+    if (res && res.errors && res.errors.length) { setApplyMsg('⚠ ' + res.errors[0]); return; }
+    setAppliedOff(p => { const n = { ...p }; rows.forEach(r => { n[locNum(r.loc)] = r.smart; }); return n; });
+    setApplyMsg('✓ Applied ' + rows.length + ' to ' + targetLabel);
+    setTimeout(() => setApplyMsg(''), 3000);
   };
 
   const model = useMemo(() => {
@@ -293,7 +350,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const seriesByLoc = {};
     for (const loc of Object.keys(btByLoc)) seriesByLoc[loc] = btByLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
     return { rows, daysInMonth, tally, scored, doBacktest, seriesByLoc };
-  }, [hist, metricKey, windowDays, ds, adjustments]);
+  }, [hist, metricKey, windowDays, ds, adjustments, appliedOff]);
 
   // When the learning window/metric changes the series changes, so any computed
   // forecast-model backtest is stale — drop it and its cache.
@@ -413,7 +470,12 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       (r.eventDelta || r.excludedManual)
         ? span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: 'rgba(245,188,0,.16)', color: 'var(--amber)' } },
             (r.eventDelta ? eventFmt(r.eventDelta) : '') + (r.eventDelta && r.excludedManual ? ' · ' : '') + (r.excludedManual ? r.excludedManual + 'd' : ''))
-        : span({ style: { fontSize: 12, color: 'var(--text3)', fontWeight: 700 } }, '＋')));
+        : span({ style: { fontSize: 12, color: 'var(--text3)', fontWeight: 700 } }, '＋')),
+    // Apply-as-Official (per store)
+    metric.officialCol ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' } },
+      appliedOff[locNum(r.loc)] != null
+        ? span({ style: { fontSize: 8.5, fontWeight: 800, color: '#10b981' }, title: 'Applied to ' + targetLabel + ' official' }, '✓ Applied')
+        : btn({ onClick: () => applyOfficial([r]), disabled: r.smart == null || applyBusy, title: 'Set this store’s Smart number as the official target for ' + targetLabel, style: { padding: '1px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 9, fontWeight: 700, cursor: r.smart != null && !applyBusy ? 'pointer' : 'default' } }, '→ Official')) : null);
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   // CSV numeric formatter — ratio metrics keep precision (labor % as decimal, OEPE
@@ -467,6 +529,8 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
           h('optgroup', { label: '— Patches —' }, ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
           h('optgroup', { label: '— Florida —' }, ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
           h('optgroup', { label: '— Oklahoma —' }, ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
+        metric.officialCol ? btn({ onClick: () => { if (window.confirm('Apply the Smart ' + metric.label.split(' ')[0] + ' target as the OFFICIAL target for ' + targetLabel + ' across ' + shown.length + ' shown store(s)? This writes monthly_targets and feeds Projections.')) applyOfficial(shown); }, disabled: !shown.length || applyBusy, title: 'Write the Smart number to the official monthly_targets for ' + targetLabel + ' (all shown stores)', style: { padding: '3px 10px', borderRadius: 6, border: '1px solid var(--amber)', background: applyBusy ? 'var(--surf)' : 'rgba(245,188,0,.14)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: shown.length && !applyBusy ? 'pointer' : 'default' } }, '✓ Apply as Official') : null,
+        applyMsg ? span({ style: { fontSize: 10, fontWeight: 600, color: applyMsg.startsWith('⚠') ? '#ef4444' : '#10b981' } }, applyMsg) : null,
         btn({ onClick: exportCSV, disabled: !shown.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '⬇ CSV'),
         btn({ onClick: printReport, disabled: !shown.length, title: 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '🖨 Print'),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
@@ -503,10 +567,11 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
                   model.doBacktest ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Which projection method fits this store best on held-out history (lowest MAPE)' }, 'Best fit') : null,
                   h('th', { style: { ...th, textAlign: 'center' } }, 'Conf'),
                   h('th', { style: th }, 'Anomalies'),
-                  h('th', { style: { ...th, textAlign: 'center' }, title: 'Known-event adjustment: exclude one-off days from learning · add an event ± to the target' }, 'Adj'))),
+                  h('th', { style: { ...th, textAlign: 'center' }, title: 'Known-event adjustment: exclude one-off days from learning · add an event ± to the target' }, 'Adj'),
+                  metric.officialCol ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Apply the Smart number as the official monthly target for ' + targetLabel }, 'Apply') : null)),
                 h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Adj = per-store known-event adjustment: exclude one-off days from learning, add a signed event ± to the target. Pilot metric: Sales; more metrics use the same engine.')
+          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Adj = per-store known-event adjustment: exclude one-off days from learning, add a signed event ± to the target. Apply = write the Smart number to the official monthly_targets for ' + targetLabel + ' (feeds Projections; per-store or all-shown). Metrics: Sales (median-of-simple) · Labor % · DT speed (OEPE) · FOB % — ratio metrics are dollar/volume-weighted trailing levels (FOB from qsr_fob monthly, matching the At-A-Glance formula).')
       )
     ),
     editorModal
