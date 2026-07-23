@@ -157,7 +157,7 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - Cross-device session memory and conversation retention
 - Action plans, tables/charts in responses, copy/email output
 - Prompt catalog with thumbs-up/down rating
-- RBAC-aware (what SAGE sees/recommends depends on caller's role)
+- ✅ RBAC-aware (v4.494) — data tools hard-filtered by the caller's `accessible_locs`; role tunes the advice (manager=tactical, supervisor=patch, admin=district). Needs a `sage-chat` redeploy.
 
 ---
 
@@ -174,6 +174,7 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ⚠️ **Pending user action:**
 - **SQL blocks** from `supabase/schema.sql` (each fails soft — app works without them, just won't persist): **`forecast_snapshots`** (still not confirmed), **`smart_target_adjustments`** (v4.486), **`sage_prompts`** (v4.487; v4.488 adds `alter ... add column` schedule cols + **`sage_prompt_runs`** — safe to re-run the whole SAGE block). The 3 email-report tables are already created.
+- **SAGE RBAC (v4.494)** needs a **`sage-chat` redeploy** to take effect: `supabase functions deploy sage-chat --no-verify-jwt`. The edge fn now reads the caller's `profiles.role`/`accessible_locs` server-side and **hard-filters every data tool** to their accessible stores (district totals + the user's rank stay visible for context; other stores' individual figures are hidden), plus an authoritative access-control preamble. `accessible_locs` null/empty = full access (the owner) → no behavior change; an array = restricted. Client unchanged.
 - **SAGE auto-scheduling (v4.488)** needs, to actually fire: (1) create a **runner Supabase user** (a real email/password — the `sage-chat` edge fn validates a user JWT), (2) add GitHub secrets **`SAGE_RUNNER_EMAIL`**, **`SAGE_RUNNER_PASSWORD`**, and **`VITE_SUPABASE_ANON_KEY`** (the `.github/workflows/sage-run.yml` hourly cron uses them; `VITE_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` already exist as secrets). Until then the scheduler simply doesn't run; the rest of SAGE is unaffected.
 
 **🎯 Smart Targets — sales-model verdict (v4.483, 2026-07-23):** a 27-store backtest proved the **simple trailing family (T3M/T6W/T3W · recent-3wk · 3-mo-avg) beats every engineered model** for monthly store sales (Composite/Momentum/Regression/Ensemble won **0 stores**; ~5% MAPE vs 8–14%). The three simple methods are **tied**, so the recommended **Smart number is now the MEDIAN of the three** (not "best-fit per store" — that chased n=2 noise; not the old unproven peer-blend, which is kept as a secondary "stretch"). Backtest **decoupled from the learning window** (`BT_DAYS=400`, `BT_FOLDS=6`). **Engineered models are PRESERVED intact, on demand** ("＋ Diagnostic models"), for diagnosis + potential longer-range use — standing owner directive: cautiously protect them. Details in `memory/vision-and-roadmap.md` (Workstream B, Layer 3).
@@ -183,7 +184,7 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 **Next candidate areas:**
 - Phase-2 bugs: Projections weekly-view crash on location expand; Signals won't close on mobile; Market Intelligence weather stopped showing.
 - FR: TPPH auto-target calc; Projections vs Actuals. "As of [date]" labels on tiles.
-- SAGE conversation persistence, RBAC awareness; yearly projections view.
+- SAGE conversation persistence; multi-tenant deployment.
 
 ---
 
