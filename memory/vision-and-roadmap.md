@@ -151,6 +151,7 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
 
 ## Workstream E — Differentiators (the frontier)
 - **Graded-Visit Predictor** (owner's flagship idea): ingest historical **CFV, RGR, Ecosure** grades; map the operational environment (speed, waste, labor, integrity, complaints) in the window preceding each grade; learn the pattern; score each store's current likelihood of passing + the specific levers to pull. New data source to ingest.
+  - ⏸️ **BLOCKED on data (2026-07-23):** owner doesn't have an **EcoSure sample** available yet — can't start ingestion/modeling until at least one graded-visit export is in hand. Resume the moment a sample lands. (Standing note carried per owner request.)
 - **Novel composite indices** — e.g. Profit-Leak Index (waste+discount+O/S+OT), Operational Coherence Score (speed+labor+accuracy alignment), Traffic-vs-Sales divergence (guest-count leading indicator).
 - Rule: only build a target/signal when a correlation is established or industry-proven.
 
