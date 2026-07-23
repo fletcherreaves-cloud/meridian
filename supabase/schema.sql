@@ -1112,6 +1112,35 @@ create policy "sage_prompts: public read" on public.sage_prompts
 create policy "sage_prompts: public write" on public.sage_prompts
   for all using (true);
 
+-- Phase 2 scheduling columns (safe to run against an existing sage_prompts table).
+alter table public.sage_prompts add column if not exists schedule_enabled boolean default false;
+alter table public.sage_prompts add column if not exists schedule_hour    int;      -- UTC hour 0-23
+alter table public.sage_prompts add column if not exists schedule_freq    text;     -- 'daily' | 'weekly'
+alter table public.sage_prompts add column if not exists schedule_dow     int;      -- 0=Sun..6=Sat (weekly only)
+alter table public.sage_prompts add column if not exists last_run_at      timestamptz;
+
+-- ── SAGE: scheduled-prompt run history ──────────────────────────────────────────
+-- One row per auto-run (scripts/sage-run.mjs). Feeds the At-A-Glance "Scheduled
+-- Runs" tile and the prompt-library run log.
+create table if not exists public.sage_prompt_runs (
+  id          uuid primary key default gen_random_uuid(),
+  prompt_id   uuid references public.sage_prompts(id) on delete cascade,
+  title       text,                        -- snapshot of the prompt title at run time
+  ran_at      timestamptz default now(),
+  ok          boolean default true,
+  result_md   text,                        -- SAGE's answer (markdown)
+  error       text
+);
+
+alter table public.sage_prompt_runs enable row level security;
+
+create policy "sage_prompt_runs: public read" on public.sage_prompt_runs
+  for select using (true);
+create policy "sage_prompt_runs: public write" on public.sage_prompt_runs
+  for all using (true);
+
+create index if not exists sage_prompt_runs_ran_idx on public.sage_prompt_runs (ran_at desc);
+
 -- ── Crew Skills Matrix (LifeLenz People List, Simple CSV) ───────────────────────
 -- One row per employee per ROSTER store (keyed by roster store + name) — a person
 -- rostered at a shared/transition store shows under THAT store, not their home.

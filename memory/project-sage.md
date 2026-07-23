@@ -64,7 +64,18 @@ supabase.js (fail soft if table missing). Save current input; Use (load into
 box) / Run (send now) / Delete. `send` refactored to `sendMessage(text)` so a
 prompt can run without touching the input box.
 
-## Phase 2 — auto-schedule prompts (PLANNED; owner chose GH Action + service account)
+## Phase 2 — auto-schedule prompts ✅ SHIPPED (v4.488, GH Action + service account)
+
+Built exactly as spec'd below. `scripts/sage-run.mjs` + `.github/workflows/sage-run.yml`
+(hourly cron + workflow_dispatch with `force`/`debug`). `sage_prompts` gained
+`schedule_enabled/schedule_hour/schedule_freq/schedule_dow/last_run_at`; new
+`sage_prompt_runs` table. Library modal has an **⏰ Schedule** inline editor
+(daily/weekly · UTC hour · dow) → `updateSagePromptSchedule`. `SageRunsTile` is the
+first At-A-Glance tile (`loadSagePromptRuns(6)`). **To go live:** create a runner
+Supabase user + set GH secrets `SAGE_RUNNER_EMAIL`/`SAGE_RUNNER_PASSWORD`/
+`VITE_SUPABASE_ANON_KEY`. Original spec kept for reference:
+
+### Original spec
 
 - **Auth blocker:** `sage-chat` validates a real user JWT (`sbAdmin.auth.getUser`),
   so a cron job can't call it with the service-role key alone. Plan: a
