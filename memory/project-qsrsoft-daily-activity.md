@@ -159,3 +159,21 @@ When ready to build DAR panels in Meridian: `qsr_daily_activity` has everything 
 - Labor hours punched vs. scheduled vs. needed by hour
 - LY comparisons at the hour slot level
 - Cross-store speed-of-service ranking (aggregate `dt_untilserve / dt_trans_cnt` across stores)
+
+## DAR field surfacing status (2026-07-23, v4.491)
+
+Audited what's surfaced vs available. **The "richer DAR fields" task is largely
+DONE for its headline scope:** station timing (DT/FC/kitchen-MFY/beverage) is in
+the DT Speed of Service panel (`dt-speedofservice.js`, all-station cards);
+`proj_sales_dollars` + `mean_sales` are in Signals (tracking-to-plan + baseline
+anomalies). **Added v4.491:** Signals tracking-to-plan now also shows **guest-count
+pace** (`proj_total_transactions` vs `transactions`) with a **traffic-vs-sales
+divergence** flag (guests ahead of sales → avg-check down, and vice-versa).
+`loadDailyActivity` SELECT widened for `transactions,mean_transactions,proj_total_transactions`.
+
+**Genuine remaining gaps (secondary, all need loader SELECT widening first — no loader
+selects them today):** channel splits `dt_transactions/dt_sales` vs `is_transactions/is_sales`;
+GC **baseline anomalies** (`mean_transactions`, currently $-only); product-volume proj/means
+(`proj_sandwich_counts`, `proj_kvs_items_scrubbed`, `mean_sandwiches/fry_hashes/beverages`);
+station **items/GC** (`mfy1/mfy2/bev_itemscount`); fuller `ly_*` set (`ly_dt_*`, `ly_sales_dollars`,
+`ly_punched_hours`); `salaried_manager_scheduled_hours` for true Act-Hrs. Pick per value if revisited.
