@@ -38,3 +38,46 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 **Why `thinking: {type: "adaptive"}`:** `budget_tokens` is deprecated on Opus 4.8, rejected with 400. Use `{type: "adaptive"}` only.
 
 **System prompt** includes: store count, orgs (MCDOK/Emerald Arches), data date ranges, row counts for all data types, confirmed and plausible signals from the correlation engine.
+
+---
+
+## Self-instrumenting + prompt library (v4.487, 2026-07-23)
+
+**Feature A — "Log this issue" from a SAGE answer.** Every assistant message's
+action bar (Copy/Email/PDF/Excel) now has a **🐞 Log** button →
+`LogIssueModal` (`src/views/sage.js`):
+- Captures the preceding user question + SAGE's answer.
+- `detectSource()` maps keywords → the likely edge tool + table
+  (`query_daily_activity`/`qsr_daily_activity`, `query_lifelenz_labor`/
+  `lifelenz_schedule`, `query_forecast_snapshots`/`forecast_snapshots`).
+- `looksLikeFailure()` (regex on the answer) auto-suggests destination:
+  failure language → **Task Queue** (bug, `saveTask`, tier 2, source `sage`);
+  otherwise → **Feature Request** (`saveFeatureRequest`, category `Data`). User flips.
+- `buildTroubleshootPrompt()` drafts a paste-ready prompt for Claude Code (repro
+  steps, 1000-row cap + loc-padding checks, freshness, the edge tool) into the
+  ticket notes/dev_notes.
+
+**Feature B (Phase 1) — saved-prompt library.** Header **📚 Prompts** →
+`PromptLibraryModal`. Table `sage_prompts` (id, title, prompt_text, tags,
+created_by). Loaders `loadSagePrompts`/`saveSagePrompt`/`deleteSagePrompt` in
+supabase.js (fail soft if table missing). Save current input; Use (load into
+box) / Run (send now) / Delete. `send` refactored to `sendMessage(text)` so a
+prompt can run without touching the input box.
+
+## Phase 2 — auto-schedule prompts (PLANNED; owner chose GH Action + service account)
+
+- **Auth blocker:** `sage-chat` validates a real user JWT (`sbAdmin.auth.getUser`),
+  so a cron job can't call it with the service-role key alone. Plan: a
+  **service-account user** — new secrets `SAGE_RUNNER_EMAIL` / `SAGE_RUNNER_PASSWORD`
+  → `signInWithPassword` to mint an access token → POST `{messages, systemPrompt}`
+  to `/functions/v1/sage-chat`, read the SSE stream to concatenate `text` deltas.
+- **Build:** `scripts/sage-run.mjs` + `.github/workflows/sage-run.yml` (cron, matches
+  the existing daily pulls). New tables: `sage_scheduled_prompts`
+  (prompt_id, cron/schedule, enabled, last_run, next_run) + `sage_prompt_runs`
+  (prompt_id, ran_at, result_md, ok). A prompt row in `sage_prompts` gets a
+  "schedule" toggle in `PromptLibraryModal`.
+- **At-A-Glance tile:** add `{id:'sage',…}` as the FIRST entry of `DEF_SECS`
+  (`src/views/analytics.js:~6361`) AND insert a `secs.find(s=>s.id==='sage'&&s.on)&&(()=>{…})()`
+  block as the first child of the tile grid (`~:7504`, before the Intelligence
+  block) — render order is source order, so both edits are needed. Tile shows the
+  latest scheduled-prompt runs (what fired, when, a result snippet, link into SAGE).
