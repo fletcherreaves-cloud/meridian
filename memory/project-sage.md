@@ -92,3 +92,22 @@ Supabase user + set GH secrets `SAGE_RUNNER_EMAIL`/`SAGE_RUNNER_PASSWORD`/
   block as the first child of the tile grid (`~:7504`, before the Intelligence
   block) — render order is source order, so both edits are needed. Tile shows the
   latest scheduled-prompt runs (what fired, when, a result snippet, link into SAGE).
+
+## RBAC awareness ✅ SHIPPED (v4.494, edge-only — needs redeploy)
+
+Owner chose **hard-filter tools** + **allow district aggregates**. All in
+`supabase/functions/sage-chat/index.ts` (client unchanged):
+- After `getUser`, the fn loads the caller's `profiles.role/accessible_locs/name`
+  server-side (never trusted from the client). `accessible_locs` null/empty →
+  full access; array → restricted `Set` (normalized via `normLoc` = String(parseInt)).
+- `runTool(name, input, allowed)`: each tool queries ALL stores (for district
+  context) then `applyScope()` returns per-store detail ONLY for the caller's
+  stores, adding each one's `rank`/`of_stores`; district totals/averages stay.
+  Restricted callers' model-supplied `locs` filter is ignored (query-all-then-scope),
+  so it can't be used to probe other stores. Payload gains `access:'restricted'`,
+  `hidden_stores`, `scope_note`.
+- An authoritative **ACCESS CONTROL preamble** is appended to the system prompt
+  server-side (defense-in-depth + role tone: manager=tactical / supervisor=patch /
+  admin=district). The tools are the real enforcement.
+- **Owner (accessible_locs null) = unchanged full access.** RBAC only bites for
+  restricted beta operators. **Deploy:** `supabase functions deploy sage-chat --no-verify-jwt`.
