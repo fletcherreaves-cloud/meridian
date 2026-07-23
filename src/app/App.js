@@ -36,6 +36,7 @@ import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
+import { PaceToTargetPanel } from '../views/pace-to-target.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
@@ -620,6 +621,7 @@ function App() {
   const [showEOMSummary,   setShowEOMSummary]   = useState(false); // EOM Supervisor Summary
   const [showAbout, setShowAbout] = useState(false); // About/Changelog modal
   const [showPVSA,     setShowPVSA]    = useState(false);
+  const [showPace,     setShowPace]    = useState(false); // Pace to Target
   const [showDICompare,setShowDICompare]= useState(false);
   const [showHelp,     setShowHelp]    = useState(false);
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
@@ -1747,7 +1749,7 @@ function App() {
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
-    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||
+    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix;
@@ -1837,6 +1839,7 @@ function App() {
         if(modal==='proj-brief')     perm('analytics.forecasting')&&setShowProjBriefSA(true);
         if(modal==='dialedin')       perm('analytics.forecasting')&&setShowDialedIn(true);
         if(modal==='pvsa')           perm('analytics.forecasting')&&setShowPVSA(true);
+        if(modal==='pace-target')    perm('analytics.store')&&setShowPace(true);
         if(modal==='dicompare')      perm('analytics.forecasting')&&setShowDICompare(true);
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
@@ -1970,6 +1973,7 @@ function App() {
     showMonthlyProj&&h(MonthlyProjectionsPanel,{ds,stores,settings,customSignalDefs,onClose:()=>setShowMonthlyProj(false)}),
     showSmartTargetsV2&&h(SmartTargetsPanel,{ds,stores,settings,onClose:()=>setShowSmartTargetsV2(false)}),
     showLaborAnalysis&&h(LaborAnalysisPanel,{ds,settings,onClose:()=>setShowLaborAnalysis(false)}),
+    showPace&&h(PaceToTargetPanel,{ds,stores,settings,onClose:()=>setShowPace(false)}),
     showSkillsMatrix&&h(SkillsMatrixPanel,{ds,onClose:()=>setShowSkillsMatrix(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
