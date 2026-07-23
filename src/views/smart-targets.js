@@ -9,7 +9,7 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, DEFAULT_TARGETS } from '../constants.js';
 import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
-import { loadDailySales, loadGlimpse } from '../lib/supabase.js';
+import { loadDailySales, loadGlimpse, loadSmartTargetAdjustments, saveSmartTargetAdjustment } from '../lib/supabase.js';
 
 // The three simple trailing projectors. A 2026-07 backtest across all 27 stores
 // found these beat every engineered model (Composite/Momentum/Regression/Ensemble)
@@ -110,8 +110,19 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   const [showModels, setShowModels] = useState(false); // fold forecast-engine models into the scoreboard
   const [modelBt, setModelBt] = useState({});           // {[loc]: {perMethod, winner, folds}} incl. forecast models
   const [modelBusy, setModelBusy] = useState(false);
+  const [adjustments, setAdjustments] = useState({});    // {loc: {excludeDates:[], eventDelta, note}} for this metric
+  const [editLoc, setEditLoc] = useState(null);          // loc whose known-event editor is open
+  const [editDraft, setEditDraft] = useState(null);      // {excludeText, eventDelta, note}
+  const [adjMsg, setAdjMsg] = useState('');
   const fcCache = useRef(new Map());                     // `${loc}|${iso}` -> {m1,m3,m4,ens} daily forecasts
   const metric = METRICS.find(m => m.key === metricKey) || METRICS[0];
+
+  // Per-store known-event adjustments (excluded one-off days + event delta), per metric.
+  useEffect(() => {
+    let live = true;
+    loadSmartTargetAdjustments(metricKey).then(a => { if (live) setAdjustments(a || {}); }).catch(() => { if (live) setAdjustments({}); });
+    return () => { live = false; };
+  }, [metricKey]);
 
   // Source this metric's daily history: prefer the in-memory feed (instant); only
   // fetch the heavy DAR aggregate if that feed is too thin for a baseline.
@@ -161,6 +172,13 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const daysInMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
     const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
     const nowIso = isoOf(now);
+    // Known-event exclusions: one-off days the owner marked to drop from LEARNING
+    // (not from the backtest, which stays a raw method-accuracy measure).
+    const exclByLoc = {};
+    for (const loc of Object.keys(adjustments || {})) {
+      const ex = adjustments[loc] && adjustments[loc].excludeDates;
+      if (ex && ex.length) exclByLoc[loc] = new Set(ex);
+    }
     // Two per-loc daily series: the short LEARNING window (baseline/peers/Smart)
     // and the long BACKTEST window (grading methods over many held-out periods).
     const byLoc = {};    // learning window
@@ -174,7 +192,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       const loc = locNum(r.loc);
       const w = metric.weight ? metric.weight(r) : 1;
       (btByLoc[loc] = btByLoc[loc] || []).push({ d, v, w });
-      if (d >= cutoff) (byLoc[loc] = byLoc[loc] || []).push({ d, v, w });
+      if (d >= cutoff && !(exclByLoc[loc] && exclByLoc[loc].has(d))) (byLoc[loc] = byLoc[loc] || []).push({ d, v, w });
     }
     const ratio = !!metric.ratio;
     // Per-loc baseline + volume — used as peers. Monthly metrics use a robust daily
@@ -206,6 +224,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       const peers = peersByState[st].filter(p => p.loc !== loc);
       const toMonthly = v => v == null ? null : (metric.monthly ? v * daysInMonth : v);
       const official = officialFor(loc);
+      const adj = adjustments[loc] || {};
+      const eventDelta = (metric.monthly && _isNum(adj.eventDelta)) ? adj.eventDelta : 0;
+      const excludedManual = (adj.excludeDates || []).length;
       let smart, stretch, current, baseline, own, anchor, tierN, conf, excludedDays, n;
       let bt = { perMethod: {}, winner: null, folds: 0 };
 
@@ -244,6 +265,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
         const learnSeries = entries.map(x => ({ date: x.d, value: x.v }));
         const primary = medianProject(learnSeries, { asOf: now, targetDays: daysInMonth });
         smart = _isNum(primary) ? primary : toMonthly(r.smart);
+        if (_isNum(smart) && eventDelta) smart += eventDelta;   // known-event adjustment
         stretch = toMonthly(r.smart);
         baseline = toMonthly(r.baseline); own = toMonthly(r.own); anchor = toMonthly(r.anchor);
         tierN = r.tierN; conf = r.confidence; excludedDays = r.excludedDays; n = r.n;
@@ -258,6 +280,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       const ownerMape = bt.perMethod.owner ? bt.perMethod.owner.mape : null;
       return { loc, smart, stretch, current, official: official != null ? official : null, vsOff, vsGood,
         confidence: conf, excludedDays, n, baseline, anchor, own, tierN,
+        eventDelta, excludedManual, adjNote: adj.note || '',
         winner: bt.winner, btFolds: bt.folds, btPerMethod: bt.perMethod, ownerMape };
     }).filter(r => r.smart != null);
     // Sort largest-first for totals; best-first (ascending) for 'lower' ratio metrics.
@@ -270,7 +293,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const seriesByLoc = {};
     for (const loc of Object.keys(btByLoc)) seriesByLoc[loc] = btByLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
     return { rows, daysInMonth, tally, scored, doBacktest, seriesByLoc };
-  }, [hist, metricKey, windowDays, ds]);
+  }, [hist, metricKey, windowDays, ds, adjustments]);
 
   // When the learning window/metric changes the series changes, so any computed
   // forecast-model backtest is stale — drop it and its cache.
@@ -324,6 +347,45 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
   const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
 
+  // Known-event editor: open with the store's current adjustment, save to Supabase.
+  const openEditor = loc => {
+    const a = adjustments[locNum(loc)] || {};
+    setEditDraft({ excludeText: (a.excludeDates || []).join(', '), eventDelta: a.eventDelta || '', note: a.note || '' });
+    setAdjMsg(''); setEditLoc(locNum(loc));
+  };
+  const saveEditor = async () => {
+    const loc = editLoc, d = editDraft || {};
+    const excludeDates = String(d.excludeText || '').split(/[\s,]+/).map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s));
+    const eventDelta = metric.monthly ? (parseFloat(d.eventDelta) || 0) : 0;
+    const note = (d.note || '').trim();
+    setAdjMsg('Saving…');
+    const res = await saveSmartTargetAdjustment(loc, metricKey, { excludeDates, eventDelta, note });
+    if (res.errors && res.errors.length) { setAdjMsg('⚠ ' + res.errors[0]); return; }
+    setAdjustments(p => { const n = { ...p }; if (!excludeDates.length && !eventDelta && !note) delete n[locNum(loc)]; else n[locNum(loc)] = { excludeDates, eventDelta, note }; return n; });
+    setEditLoc(null); setEditDraft(null); setAdjMsg('');
+  };
+  const eventFmt = v => (v > 0 ? '+' : '−') + metric.fmt(Math.abs(v));
+  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 11, padding: '6px 8px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 6, color: 'var(--text)', colorScheme: 'dark' };
+  const editorModal = !editLoc ? null : div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 470, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => { setEditLoc(null); setEditDraft(null); } },
+    div({ onClick: e => e.stopPropagation(), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 12, width: 'min(440px, 92vw)', padding: 16, boxShadow: '0 12px 48px rgba(0,0,0,.5)' } },
+      div({ style: { fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 2 } }, 'Known-event adjustment'),
+      div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 12 } }, storeNm(editLoc) + ' · #' + editLoc + ' · ' + metric.label.split(' ')[0]),
+      div({ style: { fontSize: 10, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 } }, 'Exclude one-off days'),
+      div({ style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 5 } }, 'ISO dates (YYYY-MM-DD), comma/space separated — dropped from the learning history so a holiday, outage, or remodel day never biases the target.'),
+      h('textarea', { value: (editDraft && editDraft.excludeText) || '', onChange: e => setEditDraft(d => ({ ...(d || {}), excludeText: e.target.value })), placeholder: '2026-07-04, 2026-05-27', rows: 2, style: { ...fld, fontFamily: 'var(--mono)', resize: 'vertical' } }),
+      metric.monthly ? div({ style: { marginTop: 12 } },
+        div({ style: { fontSize: 10, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 } }, 'Event delta (± added to the projected total)'),
+        div({ style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 5 } }, 'A signed known-event amount added to the target (e.g. 8000 for a local event, -5000 for a road closure).'),
+        h('input', { type: 'number', value: (editDraft && editDraft.eventDelta) || '', onChange: e => setEditDraft(d => ({ ...(d || {}), eventDelta: e.target.value })), placeholder: '0', style: { ...fld, fontFamily: 'var(--mono)' } })) : null,
+      div({ style: { marginTop: 12 } },
+        div({ style: { fontSize: 10, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 } }, 'Note (optional)'),
+        h('input', { value: (editDraft && editDraft.note) || '', onChange: e => setEditDraft(d => ({ ...(d || {}), note: e.target.value })), placeholder: 'Reason / context', style: fld })),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 } },
+        span({ style: { fontSize: 10, color: 'var(--text3)', flex: 1 } }, adjMsg),
+        btn({ onClick: () => setEditDraft({ excludeText: '', eventDelta: '', note: '' }), title: 'Clear all fields (Save then removes the override)', style: { padding: '5px 10px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Clear'),
+        btn({ onClick: () => { setEditLoc(null); setEditDraft(null); }, style: { padding: '5px 10px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Cancel'),
+        btn({ onClick: saveEditor, style: { padding: '5px 14px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--amber)', color: '#111', fontSize: 11, fontWeight: 800, cursor: 'pointer' } }, 'Save'))));
+
   // Tooltip for the Best-fit cell: each method's backtested MAPE, winner first.
   const btTitle = r => {
     if (!r.btFolds) return 'Not enough completed 28-day periods to backtest yet';
@@ -345,7 +407,13 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
             r.btPerMethod[r.winner] ? span({ style: { color: 'var(--text3)', fontSize: 9, marginLeft: 5 } }, r.btPerMethod[r.winner].mape + '%') : null)
         : span({ style: { color: 'var(--text3)', fontSize: 9 } }, '—')) : null,
     h('td', { style: { ...td, textAlign: 'center' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: confColor(r.confidence) + '22', color: confColor(r.confidence) } }, r.confidence)),
-    h('td', { style: { ...td, color: r.excludedDays ? '#f59e0b' : 'var(--text3)' } }, r.excludedDays ? r.excludedDays + ' excl' : '—'));
+    h('td', { style: { ...td, color: r.excludedDays ? '#f59e0b' : 'var(--text3)' } }, r.excludedDays ? r.excludedDays + ' excl' : '—'),
+    // Known-event adjustment — click to edit (exclude one-off days / add event delta).
+    h('td', { style: { ...td, textAlign: 'center', cursor: 'pointer' }, onClick: () => openEditor(r.loc), title: (r.adjNote ? r.adjNote + ' · ' : '') + 'Click to add/edit a known-event adjustment (exclude one-off days, add event ±)' },
+      (r.eventDelta || r.excludedManual)
+        ? span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: 'rgba(245,188,0,.16)', color: 'var(--amber)' } },
+            (r.eventDelta ? eventFmt(r.eventDelta) : '') + (r.eventDelta && r.excludedManual ? ' · ' : '') + (r.excludedManual ? r.excludedManual + 'd' : ''))
+        : span({ style: { fontSize: 12, color: 'var(--text3)', fontWeight: 700 } }, '＋')));
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   // CSV numeric formatter — ratio metrics keep precision (labor % as decimal, OEPE
@@ -353,9 +421,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   const csvNum = v => v == null ? '' : (metric.ratio ? +v.toFixed(4) : Math.round(v));
   const exportCSV = () => {
     const lvlLabel = metric.monthly ? '(mo)' : '(level)';
-    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline ' + lvlLabel, 'Peer anchor ' + lvlLabel, 'Days', 'Lookback days', 'Target month'];
+    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline ' + lvlLabel, 'Peer anchor ' + lvlLabel, 'Event delta', 'Days excluded (manual)', 'Days', 'Lookback days', 'Target month'];
     const lines = [cols.map(csvCell).join(',')];
-    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), csvNum(r.official), csvNum(r.smart), csvNum(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, csvNum(r.baseline), csvNum(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
+    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), csvNum(r.official), csvNum(r.smart), csvNum(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, csvNum(r.baseline), csvNum(r.anchor), r.eventDelta || '', r.excludedManual || '', r.n, windowDays, targetLabel].map(csvCell).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}.csv`; a.click(); URL.revokeObjectURL(url);
@@ -434,10 +502,13 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
                   h('th', { style: th }, 'vs Official'),
                   model.doBacktest ? h('th', { style: { ...th, textAlign: 'center' }, title: 'Which projection method fits this store best on held-out history (lowest MAPE)' }, 'Best fit') : null,
                   h('th', { style: { ...th, textAlign: 'center' } }, 'Conf'),
-                  h('th', { style: th }, 'Anomalies'))),
+                  h('th', { style: th }, 'Anomalies'),
+                  h('th', { style: { ...th, textAlign: 'center' }, title: 'Known-event adjustment: exclude one-off days from learning · add an event ± to the target' }, 'Adj'))),
                 h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Pilot metric: Sales; more metrics use the same engine.')
+          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Adj = per-store known-event adjustment: exclude one-off days from learning, add a signed event ± to the target. Pilot metric: Sales; more metrics use the same engine.')
       )
-    ));
+    ),
+    editorModal
+    );
 }
