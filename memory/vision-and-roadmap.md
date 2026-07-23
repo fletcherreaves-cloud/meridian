@@ -140,7 +140,15 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
     `appliedOff` override (ds.monthlyTargets isn't reactive). Feeds Projections.
 
 ## Workstream C — The two "next-ups"
-- **Projections → current-month actuals for all locations/groupings** (pairs with the *Projections vs Actuals* feature idea).
+- ✅ **Pace to Target shipped (v4.490):** surfaced the existing (but buried)
+  `CurrentMonthPaceSection` as its own nav view (`src/views/pace-to-target.js`,
+  modal `pace-target`, sidebar next to Monthly Projections). Shows MTD actual vs the
+  official `monthly_targets.tProdSales` per store, run-rate pace (MTD ÷ days-elapsed ×
+  month) + % ahead/behind, with a Store/Patch/Operator group toggle. Pairs with Smart
+  Targets → "Apply as Official". NOTE: the pace math + freshest-actuals sourcing were
+  already built inside the Projection Workflow — this just gave them a front door
+  (didn't reinvent). The older "Proj vs Actuals" (`pvsa`) nav item is a separate
+  forecast-accuracy MAPE backtest — leave it be.
 - **DT/Speed-of-Service → weekly-trend chart by patch/store.**
 
 ## Workstream D — UX Coherence & Audit (best-in-class pass)
