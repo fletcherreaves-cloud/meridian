@@ -123,10 +123,29 @@ T=5,144.99, X=121.68, AB=304.21. Engine unit tests assert these.
 
 ## TODO (Phase 2)
 
-- **LifeLenz live-page scrape** — Band-1 numbers are NOT a LifeLenz report; scrape
-  the scheduling/forecast pages per store for a selected date range (Playwright,
-  same two-path auth as existing pulls) → upsert `lifelenz_labor_week`. Keep the
-  xlsx upload as the freshest-wins fallback.
+- **Auto Band-1 from `lifelenz_schedule` (candidate — cheaper than a scrape).** The
+  daily `lifelenz_schedule` table (synced daily by `scripts/lifelenz-pull.mjs`)
+  already carries the LifeLenz Labor Analysis report fields: `fcst_sales`, `fcst_tcs`,
+  `labor_pct`, `proj_vlh`, `sch_vlh`, `sch_fix_hrs`, `crew_hrs`, `ideal_tot_hrs`,
+  `tpmh`, etc. A weekly aggregation → `lifelenz_labor_week` is straightforward for
+  most Band-1 fields:
+    - salesFcst(C) = Σ fcst_sales · gcFcst(E) = Σ fcst_tcs
+    - hoursSched(G) = Σ sch_vlh (or Σ ideal_tot_hrs — SEE BLOCKER)
+    - laborPctActual(D) = Σ(labor_pct·fcst_sales)/Σ fcst_sales (sales-weighted)
+    - rate(J) = Σ sched-labor$/Σ hoursSched · tpph(I) = Σ fcst_tcs/Σ hoursSched
+    - laborTargetOrg(L) = DEFAULT_TARGETS[loc].tCrewLabor/tLabor (org target, not in schedule)
+  ⚠️ **BLOCKER — owner must confirm before building:** memory says "Band-1 numbers
+  are NOT a LifeLenz report" (the MBI xlsx is hand-derived). The unresolved mapping
+  is **which schedule hours column feeds MBI 'Hours Forecast'(F) / 'Hours
+  Scheduled'(G)**: `Proj.VLH`/`Sch.VLH` (variable labor only) vs `Ideal Tot.Hrs`
+  (total incl fixed+floor+mgr). Wrong choice = wrong labor $/hours across every
+  store, so DO NOT guess — get the answer, then wire the aggregation loader
+  (`loadLifeLenzLaborWeekFromSchedule`) and make the panel prefer it (freshest-wins)
+  over the manual MBI upload. Also confirm the **G×24** question below.
+- **LifeLenz live-page scrape** (fallback if the schedule-derive can't reproduce F/G) —
+  scrape the scheduling/forecast pages per store for a date range (Playwright, same
+  two-path auth as existing pulls) → upsert `lifelenz_labor_week`. Keep the xlsx
+  upload as the freshest-wins fallback either way.
 
 ## Open questions for owner
 

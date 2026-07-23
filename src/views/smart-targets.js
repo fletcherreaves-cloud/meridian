@@ -6,22 +6,35 @@
 // Current (recent run-rate) · vs Official · Confidence, plus excluded-anomaly days.
 // FL and OK are anchored SEPARATELY (peers are same-state, like-sized only).
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
-import { computeSmartTarget, robustBaseline, weightedRecencyProjection, windowRate, backtestProjectors } from '../engine/smart-targets.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, DEFAULT_TARGETS } from '../constants.js';
+import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
-import { loadDailySales } from '../lib/supabase.js';
+import { loadDailySales, loadGlimpse } from '../lib/supabase.js';
 
-// Competing period-projectors, all pure functions of a store's daily series.
-// The owner's T3M/T6W/T3W weighted-recency method runs against naive short/long
-// baselines so the backtest can crown which one actually fits each store best.
-const PROJECTORS = [
+// The three simple trailing projectors. A 2026-07 backtest across all 27 stores
+// found these beat every engineered model (Composite/Momentum/Regression/Ensemble)
+// for monthly store sales — the engineered models won 0 stores — and that the
+// three are statistically TIED (~5% MAPE, differences within n=few-fold noise).
+const SIMPLE = [
   { key: 'owner', name: 'T3M/T6W/T3W', short: 'Owner', project: (s, o) => weightedRecencyProjection(s, o).projection },
   { key: 'recent', name: 'Recent 3-wk run-rate', short: '3-wk', project: (s, o) => { const w = windowRate(s, o.asOf, 21); return w.rate == null ? null : w.rate * o.targetDays; } },
   { key: 'avg3m', name: '3-month average', short: '3-mo', project: (s, o) => { const w = windowRate(s, o.asOf, 90); return w.rate == null ? null : w.rate * o.targetDays; } },
 ];
-// Our forecast-engine daily models, folded in on demand as period-projectors
-// (sum of daily forecasts across the target window). Heavier — they read the
-// store's daily history from ds and are run async + cached behind a button.
+// PRIMARY method: median of the three simple projections. Because they're tied,
+// the median averages away the per-store coin-flip instead of chasing whichever
+// single method happens to post the lowest MAPE on a handful of held-out folds
+// (that "best-fit per store" selection was overfitting to noise). This drives the
+// recommended Smart number.
+const PRIMARY_KEY = 'median3';
+const medianProject = (s, o) => { const v = SIMPLE.map(p => { try { return p.project(s, o); } catch { return null; } }).filter(_isNum); return v.length ? median(v) : null; };
+const PROJECTORS = [
+  { key: PRIMARY_KEY, name: 'Median of simple', short: 'Median', project: medianProject },
+  ...SIMPLE,
+];
+// Engineered forecast-engine models. PRESERVED and fully computable on demand
+// (the "＋ Diagnostic models" button) — they lose to the simple family for
+// short-range monthly targets but are kept intact for diagnosis and potential
+// longer-range use. They read the store's daily history from ds and run async.
 const FCAST_MODELS = [
   { key: 'm1', name: 'Composite', short: 'Comp' },
   { key: 'm3', name: 'Momentum', short: 'Mom' },
@@ -31,6 +44,15 @@ const FCAST_MODELS = [
 const ALL_META = [...PROJECTORS, ...FCAST_MODELS];
 const METH_NAME = Object.fromEntries(ALL_META.map(p => [p.key, p.name]));
 const METH_SHORT = Object.fromEntries(ALL_META.map(p => [p.key, p.short]));
+
+// Backtest history is DECOUPLED from the learning window: we pull a long history
+// (BT_DAYS) purely to grade methods over many held-out periods, while the shorter
+// user-selected lookback still drives the baseline/peer learning. A 90-day window
+// only yields ~2 folds; BT_DAYS at 28-day periods yields up to ~13, so per-store
+// "wins" stop being coin-flips.
+const BT_DAYS = 400;
+const BT_PERIOD = 28;
+const BT_FOLDS = 6;
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -43,8 +65,13 @@ const locNum = s => { const n = parseInt(s, 10); return Number.isNaN(n) ? String
 const storeNm = l => STORE_NAMES[locNum(l)] || locNum(l);
 const isoOf = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
 
-// Metric registry. Sales piloted; each entry says where the daily value comes from,
-// which Official target field to compare, direction, and formatting.
+// Metric registry — the extension point. Each entry says where the daily value
+// comes from, which Official target to compare, direction, and formatting.
+//   monthly:true  → a period TOTAL (summed, projected × days) — median-of-simple.
+//   ratio:true    → a weighted LEVEL (Σ(value·weight)/Σweight — never averaged);
+//                   `weight` gives the per-day denominator (sales, cars).
+const pct1 = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+const secs = v => v == null ? '—' : Math.round(v) + 's';
 const METRICS = [
   { key: 'sales', label: 'Sales ($ / month)', direction: 'higher', official: 'tProdSales', monthly: true,
     // Fast path: sales_ledger_daily is already in memory (one product-sales row per
@@ -53,6 +80,22 @@ const METRICS = [
     fetch: days => loadDailySales(days),
     daily: r => r.sales,
     fmt: v => v == null ? '—' : '$' + Math.round(v).toLocaleString() },
+  // Labor % of sales — sales-WEIGHTED (Σ labor$/Σ sales via daily pct×sales), lower
+  // is better. From Daily Glimpse (cloud-fresh). Official = per-store labor target.
+  { key: 'laborpct', label: 'Labor % of sales', direction: 'lower', monthly: false, ratio: true,
+    mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales })),
+    fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales }))),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tLabor) ? t.tLabor : null; },
+    fmt: pct1 },
+  // DT speed (OEPE w/o parked, seconds) — car-WEIGHTED, lower is better. From Daily
+  // Glimpse; weight = DT guest count (fallback total GC). Official = per-store OEPE.
+  { key: 'oepe', label: 'DT speed (OEPE, sec)', direction: 'lower', monthly: false, ratio: true,
+    mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.oepe, w: (r.dtGC > 0 ? r.dtGC : r.gc) })),
+    fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.oepe, w: (r.dtGC > 0 ? r.dtGC : r.gc) }))),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tOepe) ? t.tOepe : null; },
+    fmt: secs },
 ];
 
 const confColor = c => c === 'High' ? '#10b981' : c === 'Med' ? '#f59e0b' : '#ef4444';
@@ -75,7 +118,10 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
   useEffect(() => {
     let live = true;
     setLoading(true);
-    const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
+    // Pull the FULL backtest history (not just the learning window) so the
+    // scoreboard has enough held-out periods; the learning window is applied
+    // later in the model memo.
+    const cutoff = isoOf(new Date(Date.now() - BT_DAYS * 86400000));
     const mem = (metric.mem ? metric.mem(ds) : []).filter(r => {
       if (!r || !r.date || !r.loc) return false;
       const v = metric.daily(r);
@@ -83,12 +129,12 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     });
     const memLocs = new Set(mem.map(r => locNum(r.loc))), memDays = new Set(mem.map(r => isoOf(r.date)));
     if (mem.length && memLocs.size >= 8 && memDays.size >= 20) { setHist(mem); setLoading(false); return; }
-    Promise.resolve(metric.fetch(windowDays + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
+    Promise.resolve(metric.fetch(BT_DAYS + 5)).then(rows => { if (live) { setHist(rows || []); setLoading(false); } })
       .catch(() => { if (live) { setHist([]); setLoading(false); } });
     return () => { live = false; };
     // Depend on the ledger feed LENGTH, not the whole ds — ds changes many times at
     // startup and was re-firing this fetch (the flicker).
-  }, [metricKey, windowDays, ds && ds.salesLedgerRows && ds.salesLedgerRows.length]);
+  }, [metricKey, windowDays, ds && ds.salesLedgerRows && ds.salesLedgerRows.length, ds && ds.glimpseRows && ds.glimpseRows.length]);
 
   // The upcoming month this target is FOR (e.g., next month). The lookback window
   // above is how far back we learn from — a separate thing.
@@ -103,7 +149,10 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     return new Set([locNum(scope)]);
   }, [scope]);
 
-  const officialFor = loc => ((ds && ds.monthlyTargets && ds.monthlyTargets[locNum(loc)]) || (ds && ds.monthlyTargets && ds.monthlyTargets[loc]) || {})[metric.official];
+  const officialFor = loc => {
+    if (metric.officialVal) return metric.officialVal(loc);
+    return ((ds && ds.monthlyTargets && ds.monthlyTargets[locNum(loc)]) || (ds && ds.monthlyTargets && ds.monthlyTargets[loc]) || {})[metric.official];
+  };
 
   const model = useMemo(() => {
     const now = new Date();
@@ -111,22 +160,36 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const target = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const daysInMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
     const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
-    // Per-loc daily series within the window.
-    const byLoc = {};
+    const nowIso = isoOf(now);
+    // Two per-loc daily series: the short LEARNING window (baseline/peers/Smart)
+    // and the long BACKTEST window (grading methods over many held-out periods).
+    const byLoc = {};    // learning window
+    const btByLoc = {};  // full backtest window
     for (const r of (hist || [])) {
       if (!r || !r.date || !r.loc) continue;
       const d = isoOf(r.date);
-      if (d < cutoff || d > isoOf(now)) continue;
+      if (d > nowIso) continue;
       const v = metric.daily(r);
       if (typeof v !== 'number' || isNaN(v) || v <= 0) continue;
-      (byLoc[locNum(r.loc)] = byLoc[locNum(r.loc)] || []).push({ d, v });
+      const loc = locNum(r.loc);
+      const w = metric.weight ? metric.weight(r) : 1;
+      (btByLoc[loc] = btByLoc[loc] || []).push({ d, v, w });
+      if (d >= cutoff) (byLoc[loc] = byLoc[loc] || []).push({ d, v, w });
     }
-    // Per-loc robust baseline (daily) + volume (total in window) — used as peers.
+    const ratio = !!metric.ratio;
+    // Per-loc baseline + volume — used as peers. Monthly metrics use a robust daily
+    // baseline; ratio metrics use the WEIGHTED level (Σ v·w / Σ w), never a mean.
     const baseByLoc = {};
     for (const loc of Object.keys(byLoc)) {
-      const series = byLoc[loc].map(x => x.v);
-      const rb = robustBaseline(series);
-      baseByLoc[loc] = { baseline: rb.baseline, volume: series.reduce((a, b) => a + b, 0), loc };
+      if (ratio) {
+        const pts = byLoc[loc].map(x => ({ value: x.v, weight: x.w }));
+        const wl = weightedLevel(pts);
+        baseByLoc[loc] = { baseline: wl.level, volume: pts.reduce((a, p) => a + (p.weight || 0), 0), loc };
+      } else {
+        const series = byLoc[loc].map(x => x.v);
+        const rb = robustBaseline(series);
+        baseByLoc[loc] = { baseline: rb.baseline, volume: series.reduce((a, b) => a + b, 0), loc };
+      }
     }
     // Peers by state (FL vs OK kept separate).
     const peersByState = { fl: [], ok: [] };
@@ -134,42 +197,78 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       const st = FL_LOCS.has(loc) ? 'fl' : 'ok';
       if (baseByLoc[loc].baseline != null) peersByState[st].push(baseByLoc[loc]);
     }
-    // Only backtest monthly-projected metrics (period totals). Ratio metrics later.
+    // Backtest is for period-TOTAL metrics only (the projector×days bakeoff doesn't
+    // apply to a weighted ratio level).
     const doBacktest = !!metric.monthly;
     const rows = Object.keys(byLoc).map(loc => {
       const entries = byLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d));
-      const series = entries.map(x => x.v);
       const st = FL_LOCS.has(loc) ? 'fl' : 'ok';
       const peers = peersByState[st].filter(p => p.loc !== loc);
-      const vol = series.reduce((a, b) => a + b, 0);
-      const r = computeSmartTarget(series, peers, { direction: metric.direction, volume: vol, capFrac: 0.08, band: 2 });
-      // Recent run-rate ("Current"): mean of the last 28 daily values.
-      const last28 = series.slice(-28);
-      const curDaily = last28.length ? last28.reduce((a, b) => a + b, 0) / last28.length : null;
       const toMonthly = v => v == null ? null : (metric.monthly ? v * daysInMonth : v);
-      const smart = toMonthly(r.smart);
-      const current = toMonthly(curDaily);
       const official = officialFor(loc);
-      const vsOff = (smart != null && official > 0) ? (smart / official - 1) * 100 : null;
-      // Scoreboard: which projection method fits THIS store best on held-out history.
+      let smart, stretch, current, baseline, own, anchor, tierN, conf, excludedDays, n;
       let bt = { perMethod: {}, winner: null, folds: 0 };
-      if (doBacktest) {
-        const dailySeries = entries.map(x => ({ date: x.d, value: x.v }));
-        bt = backtestProjectors(dailySeries, PROJECTORS, { periodDays: 28, folds: 3 });
+
+      if (ratio) {
+        // WEIGHTED ratio target (labor %, speed). Primary = recency-weighted blend of
+        // trailing weighted-levels (the "simple wins" analog), then a bounded nudge
+        // toward the good-direction quartile of like-sized same-state peers.
+        const dailyW = entries.map(x => ({ date: x.d, value: x.v, weight: x.w }));
+        const wl = weightedLevel(entries.map(x => ({ value: x.v, weight: x.w })));
+        const rec = weightedRecencyLevel(dailyW, { asOf: now });
+        baseline = wl.level;
+        own = _isNum(rec.level) ? rec.level : wl.level;                 // recency level
+        const vol = entries.reduce((a, x) => a + (x.w || 0), 0);
+        const pa = peerAnchor(peers, vol, { direction: metric.direction, band: 2 });
+        anchor = pa.anchor; tierN = pa.tierN;
+        smart = own == null ? null : blend(own, anchor, { closeGapFrac: 0.5, capFrac: 0.05, direction: metric.direction });
+        stretch = own;                                                  // pre-nudge level (hover)
+        const last28 = entries.slice(-28).map(x => ({ value: x.v, weight: x.w }));
+        current = weightedLevel(last28).level;
+        n = wl.n; excludedDays = wl.excluded;
+        const ratios = entries.map(x => x.v);
+        const mean = ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null;
+        const sd = ratios.length > 1 ? Math.sqrt(ratios.reduce((a, b) => a + (b - mean) ** 2, 0) / (ratios.length - 1)) : null;
+        conf = confidence(n, mean ? Math.abs(sd / mean) : null);
+      } else {
+        const series = entries.map(x => x.v);
+        const vol = series.reduce((a, b) => a + b, 0);
+        const r = computeSmartTarget(series, peers, { direction: metric.direction, volume: vol, capFrac: 0.08, band: 2 });
+        // Recent run-rate ("Current"): mean of the last 28 daily values.
+        const last28 = series.slice(-28);
+        const curDaily = last28.length ? last28.reduce((a, b) => a + b, 0) / last28.length : null;
+        current = toMonthly(curDaily);
+        // PRIMARY Smart = median of the three simple projections (proven family).
+        // Falls back to the peer-anchored computeSmartTarget only if the simple
+        // family can't compute (too-thin history).
+        const learnSeries = entries.map(x => ({ date: x.d, value: x.v }));
+        const primary = medianProject(learnSeries, { asOf: now, targetDays: daysInMonth });
+        smart = _isNum(primary) ? primary : toMonthly(r.smart);
+        stretch = toMonthly(r.smart);
+        baseline = toMonthly(r.baseline); own = toMonthly(r.own); anchor = toMonthly(r.anchor);
+        tierN = r.tierN; conf = r.confidence; excludedDays = r.excludedDays; n = r.n;
+        // Scoreboard: which projection method fits THIS store best on held-out
+        // history — over the LONG backtest window for many folds.
+        const btSeries = (btByLoc[loc] || []).slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
+        bt = backtestProjectors(btSeries, PROJECTORS, { periodDays: BT_PERIOD, folds: BT_FOLDS });
       }
+      // vs Official — sign is direction-aware (below official is GOOD for 'lower').
+      const vsOff = (smart != null && official > 0) ? (smart / official - 1) * 100 : null;
+      const vsGood = vsOff == null ? null : (metric.direction === 'lower' ? vsOff <= 0 : vsOff >= 0);
       const ownerMape = bt.perMethod.owner ? bt.perMethod.owner.mape : null;
-      return { loc, smart, current, official: official != null ? official : null, vsOff,
-        confidence: r.confidence, excludedDays: r.excludedDays, n: r.n, baseline: toMonthly(r.baseline),
-        anchor: toMonthly(r.anchor), own: toMonthly(r.own), tierN: r.tierN,
+      return { loc, smart, stretch, current, official: official != null ? official : null, vsOff, vsGood,
+        confidence: conf, excludedDays, n, baseline, anchor, own, tierN,
         winner: bt.winner, btFolds: bt.folds, btPerMethod: bt.perMethod, ownerMape };
     }).filter(r => r.smart != null);
-    rows.sort((a, b) => (b.smart || 0) - (a.smart || 0));
+    // Sort largest-first for totals; best-first (ascending) for 'lower' ratio metrics.
+    rows.sort((a, b) => metric.direction === 'lower' ? (a.smart || 0) - (b.smart || 0) : (b.smart || 0) - (a.smart || 0));
     // Aggregate win-tally across stores (how often each method wins).
     const tally = {}; let scored = 0;
     for (const r of rows) { if (r.winner) { tally[r.winner] = (tally[r.winner] || 0) + 1; scored++; } }
-    // Per-loc daily series ({date,value}), reused by the async forecast-model backtest.
+    // Per-loc daily series ({date,value}) over the LONG backtest window, reused by
+    // the async forecast-model (diagnostic) backtest so it grades on the same basis.
     const seriesByLoc = {};
-    for (const loc of Object.keys(byLoc)) seriesByLoc[loc] = byLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
+    for (const loc of Object.keys(btByLoc)) seriesByLoc[loc] = btByLoc[loc].slice().sort((a, b) => a.d.localeCompare(b.d)).map(x => ({ date: x.d, value: x.v }));
     return { rows, daysInMonth, tally, scored, doBacktest, seriesByLoc };
   }, [hist, metricKey, windowDays, ds]);
 
@@ -208,7 +307,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
         while (d < end) { const v = fcModelsFor(loc, isoOf(d))[fm.key]; if (typeof v === 'number' && v > 0) { sum += v; n++; } d.setDate(d.getDate() + 1); }
         return n ? sum * (o.targetDays / n) : null; // scale up if some days had no forecast
       } }));
-      out[loc] = backtestProjectors(model.seriesByLoc[loc], [...PROJECTORS, ...fcProj], { periodDays: 28, folds: 3 });
+      out[loc] = backtestProjectors(model.seriesByLoc[loc], [...PROJECTORS, ...fcProj], { periodDays: BT_PERIOD, folds: BT_FOLDS });
       if (++i % 4 === 0) await new Promise(r => setTimeout(r, 0)); // yield to keep UI live
     }
     setModelBt(out); setModelBusy(false);
@@ -231,32 +330,39 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     const parts = methodsMeta.map(p => { const m = r.btPerMethod[p.key]; return m ? `${p.name}: ${m.mape}% MAPE (n=${m.n})` : `${p.name}: —`; });
     return `Best fit over ${r.btFolds} held-out 28-day period(s):\n` + parts.join('\n');
   };
-  const row = r => h('tr', { key: r.loc, title: `baseline ${metric.fmt(r.baseline)} · own-trajectory ${metric.fmt(r.own)} · peer anchor ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers) · ${r.n} days, ${r.excludedDays} anomalies excluded` },
+  const row = r => h('tr', { key: r.loc, title: (metric.ratio
+      ? `Smart = recency-weighted trailing level ${metric.fmt(r.own)} nudged toward peer best-quartile ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers) · full-window weighted level ${metric.fmt(r.baseline)}`
+      : `Smart = median of simple methods · peer-stretch target ${metric.fmt(r.stretch)} · baseline ${metric.fmt(r.baseline)} · own-trajectory ${metric.fmt(r.own)} · peer anchor ${metric.fmt(r.anchor)} (${r.tierN} like-sized peers)`)
+      + ` · ${r.n} days, ${r.excludedDays} anomalies excluded` },
     h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(r.loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '#' + locNum(r.loc))),
     h('td', { style: td }, metric.fmt(r.official)),
     h('td', { style: { ...td, fontWeight: 800, color: 'var(--amber)' } }, metric.fmt(r.smart)),
     h('td', { style: td }, metric.fmt(r.current)),
-    h('td', { style: { ...td, fontWeight: 700, color: r.vsOff == null ? 'var(--text3)' : r.vsOff >= 0 ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'),
+    h('td', { style: { ...td, fontWeight: 700, color: r.vsGood == null ? 'var(--text3)' : r.vsGood ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'),
     model.doBacktest ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' }, title: btTitle(r) },
       r.winner
-        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
+        ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
             r.btPerMethod[r.winner] ? span({ style: { color: 'var(--text3)', fontSize: 9, marginLeft: 5 } }, r.btPerMethod[r.winner].mape + '%') : null)
         : span({ style: { color: 'var(--text3)', fontSize: 9 } }, '—')) : null,
     h('td', { style: { ...td, textAlign: 'center' } }, span({ style: { fontSize: 8.5, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: confColor(r.confidence) + '22', color: confColor(r.confidence) } }, r.confidence)),
     h('td', { style: { ...td, color: r.excludedDays ? '#f59e0b' : 'var(--text3)' } }, r.excludedDays ? r.excludedDays + ' excl' : '—'));
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
+  // CSV numeric formatter — ratio metrics keep precision (labor % as decimal, OEPE
+  // to 1 dp) rather than rounding a 0.21 to 0.
+  const csvNum = v => v == null ? '' : (metric.ratio ? +v.toFixed(4) : Math.round(v));
   const exportCSV = () => {
-    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline (mo)', 'Peer anchor (mo)', 'Days', 'Lookback days', 'Target month'];
+    const lvlLabel = metric.monthly ? '(mo)' : '(level)';
+    const cols = ['Store', 'NSN', 'Official', 'Smart', 'Current', 'vs Official %', 'Best-fit method', 'Best-fit MAPE %', 'Confidence', 'Anomalies excluded', 'Baseline ' + lvlLabel, 'Peer anchor ' + lvlLabel, 'Days', 'Lookback days', 'Target month'];
     const lines = [cols.map(csvCell).join(',')];
-    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), r.official == null ? '' : Math.round(r.official), r.smart == null ? '' : Math.round(r.smart), r.current == null ? '' : Math.round(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, r.baseline == null ? '' : Math.round(r.baseline), r.anchor == null ? '' : Math.round(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
+    for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), csvNum(r.official), csvNum(r.smart), csvNum(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, csvNum(r.baseline), csvNum(r.anchor), r.n, windowDays, targetLabel].map(csvCell).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}.csv`; a.click(); URL.revokeObjectURL(url);
   };
   const printReport = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    const rowsHtml = shown.map(r => `<tr><td>${esc(storeNm(r.loc))} <span class="m">#${esc(locNum(r.loc))}</span></td><td class="n">${esc(metric.fmt(r.official))}</td><td class="n b">${esc(metric.fmt(r.smart))}</td><td class="n">${esc(metric.fmt(r.current))}</td><td class="n ${r.vsOff == null ? '' : r.vsOff >= 0 ? 'up' : 'dn'}">${r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'}</td><td class="c">${esc(r.confidence)}</td><td class="n">${r.excludedDays || 0}</td></tr>`).join('');
+    const rowsHtml = shown.map(r => `<tr><td>${esc(storeNm(r.loc))} <span class="m">#${esc(locNum(r.loc))}</span></td><td class="n">${esc(metric.fmt(r.official))}</td><td class="n b">${esc(metric.fmt(r.smart))}</td><td class="n">${esc(metric.fmt(r.current))}</td><td class="n ${r.vsGood == null ? '' : r.vsGood ? 'up' : 'dn'}">${r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'}</td><td class="c">${esc(r.confidence)}</td><td class="n">${r.excludedDays || 0}</td></tr>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Smart Targets — ${esc(targetLabel)}</title>
       <style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:26px;font-size:12px}
       h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}
@@ -281,7 +387,9 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
         div({ style: { flex: 1 } },
           div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, 'Smart Targets',
             span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Target: ' + targetLabel)),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Recommended monthly ' + (metric.label.split(' ')[0].toLowerCase()) + ' target for ' + targetLabel + ', learned from the lookback window: robust baseline → bounded trend → like-sized peer stretch (FL/OK separate) → capped. Hover a row for the build-up.')),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, metric.ratio
+            ? 'Recommended ' + metric.label.split(' ')[0].toLowerCase() + ' target = recency-weighted, ' + (metric.key === 'oepe' ? 'car' : 'sales') + '-weighted trailing level (Σ value·weight / Σ weight — never an average of daily ratios), nudged toward the best quartile of like-sized same-state peers. Lower is better. Hover a row for the build-up.'
+            : 'Recommended monthly ' + (metric.label.split(' ')[0].toLowerCase()) + ' target for ' + targetLabel + ' = median of three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — the family a 27-store backtest proved beats every engineered model. Hover a row for the peer-stretch build-up.')),
         h('select', { value: metricKey, onChange: e => setMetricKey(e.target.value), style: selStyle },
           ...METRICS.map(m => h('option', { key: m.key, value: m.key }, m.label))),
         h('select', { value: windowDays, onChange: e => setWindowDays(+e.target.value), title: 'Lookback: how far back to learn from', style: selStyle },
@@ -298,21 +406,23 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
         loading
-          ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12 } }, 'Loading sales history…')
+          ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12 } }, 'Loading ' + metric.label.split(' ')[0].toLowerCase() + ' history…')
           : !shown.length
           ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12 } },
-              'No sales history in the selected window. Smart Targets needs daily sales (qsr_daily_activity) loaded.')
+              metric.ratio
+                ? 'No ' + metric.label.split(' ')[0].toLowerCase() + ' history in the selected window. This metric reads Daily Glimpse (daily_glimpse_daily) — load it to populate.'
+                : 'No sales history in the selected window. Smart Targets needs daily sales (qsr_daily_activity) loaded.')
           : div(null,
             // Aggregate scoreboard: how often each method wins across shown stores.
             model.doBacktest && shown.some(r => r.winner)
               ? div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 11px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
                   span({ style: { fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)' } }, 'Method scoreboard'),
                   ...methodsMeta.map(p => { const shownWins = shown.filter(r => r.winner === p.key).length; return span({ key: p.key, title: METH_NAME[p.key], style: { fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 } },
-                    span({ style: { fontWeight: 700, color: p.key === 'owner' ? 'var(--amber)' : 'var(--text2)' } }, p.name),
-                    span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === 'owner' ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: p.key === 'owner' ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
+                    span({ style: { fontWeight: 700, color: p.key === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, p.name),
+                    span({ style: { fontWeight: 800, fontFamily: 'var(--mono)', padding: '1px 7px', borderRadius: 99, background: p.key === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: p.key === PRIMARY_KEY ? 'var(--amber)' : 'var(--text)' } }, shownWins)); }),
                   useModels
-                    ? span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE · forecast models included')
-                    : btn({ onClick: runModelBacktest, disabled: modelBusy, title: 'Fold Composite/Momentum/Regression/Ensemble into the backtest (needs daily labor history; runs in the background)', style: { marginLeft: 'auto', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 10, fontWeight: 700, cursor: modelBusy ? 'default' : 'pointer' } }, modelBusy ? 'Running models…' : '＋ Forecast models'))
+                    ? span({ style: { fontSize: 8.5, color: 'var(--text3)', marginLeft: 'auto' } }, 'wins per store · lowest backtested MAPE · diagnostic models included')
+                    : btn({ onClick: runModelBacktest, disabled: modelBusy, title: 'Fold the engineered models (Composite/Momentum/Regression/Ensemble) into the backtest for diagnosis. They lost 0-for-27 to the simple family for monthly sales but are preserved here. Needs daily labor history; runs in the background.', style: { marginLeft: 'auto', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 10, fontWeight: 700, cursor: modelBusy ? 'default' : 'pointer' } }, modelBusy ? 'Running models…' : '＋ Diagnostic models'))
               : null,
             div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
               h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
@@ -327,7 +437,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
                   h('th', { style: th }, 'Anomalies'))),
                 h('tbody', null, ...shown.map(row))))),
         div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-          'Official = QSRSoft monthly file (tProdSales). Smart = robust daily baseline (median, ±' + '3·MAD anomalies dropped) projected by a capped trend, nudged toward the top-quartile of like-sized same-state peers, capped at 8% move, never below baseline. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = the projection method with the lowest error on held-out 28-day periods (T3M/T6W/T3W = your weighted-recency method). ＋ Forecast models folds in Composite/Momentum/Regression/Ensemble (these read daily labor history from an uploaded Operations/Labor report; they show no score where that history is absent). Pilot metric: Sales; more metrics use the same engine.')
+          'Official = QSRSoft monthly file (tProdSales). Smart = MEDIAN of the three simple trailing methods (T3M/T6W/T3W · recent 3-wk · 3-mo avg) — a 2026-07 backtest across all 27 stores found this family beats every engineered model (which won 0 stores) and that the three are statistically tied, so the median averages away the per-store coin-flip rather than chasing the lowest-MAPE single method. Peer-stretch target (robust baseline → capped trend → like-sized same-state peer quartile, ±' + '3·MAD anomalies dropped) is preserved on hover as a secondary figure. Current = last-28-day run rate. All monthly figures = daily × ' + model.daysInMonth + ' days. Best fit = lowest error over ' + BT_FOLDS + ' held-out ' + BT_PERIOD + '-day periods (backtest history decoupled from the learning window). ＋ Diagnostic models folds in Composite/Momentum/Regression/Ensemble — preserved intact for diagnosis / longer-range use even though they lose here. Pilot metric: Sales; more metrics use the same engine.')
       )
     ));
 }

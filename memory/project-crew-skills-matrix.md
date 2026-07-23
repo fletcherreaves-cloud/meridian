@@ -63,9 +63,10 @@ that works (`scripts/lifelenz-people-pull.mjs`), hard-won through several runs:
   ('download')` so a per-store miss doesn't crash the run.
 - Parse via `parsePeopleSkills` (shared), upsert `employee_skills`
   (source `lifelenz_people_scrape`). Weekly cron Mon 11:00 UTC + workflow_dispatch.
-- ⚠️ Depends on `LIFELENZ_TOKEN` (schedule discovery) — refresh when it expires,
-  same as the labor pull. FUTURE: discover schedules via the authenticated browser
-  session to drop the token dependency entirely (USERNAME/PASSWORD don't expire).
+- ✅ **Token-independent (v4.482):** login captures the SPA's live X-Auth-Token
+  from its own API requests and uses THAT for schedule discovery — needs only
+  LIFELENZ_USERNAME/PASSWORD (which don't expire). LIFELENZ_TOKEN is now just an
+  optional fallback. No more monthly-token breakage for the People pull.
 
 <details><summary>Earlier scaffold notes (superseded)</summary>
 

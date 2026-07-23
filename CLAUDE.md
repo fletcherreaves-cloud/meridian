@@ -172,6 +172,8 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` (still not confirmed done). The 3 new email-report tables have been created in Supabase.
 
+**🎯 Smart Targets — sales-model verdict (v4.483, 2026-07-23):** a 27-store backtest proved the **simple trailing family (T3M/T6W/T3W · recent-3wk · 3-mo-avg) beats every engineered model** for monthly store sales (Composite/Momentum/Regression/Ensemble won **0 stores**; ~5% MAPE vs 8–14%). The three simple methods are **tied**, so the recommended **Smart number is now the MEDIAN of the three** (not "best-fit per store" — that chased n=2 noise; not the old unproven peer-blend, which is kept as a secondary "stretch"). Backtest **decoupled from the learning window** (`BT_DAYS=400`, `BT_FOLDS=6`). **Engineered models are PRESERVED intact, on demand** ("＋ Diagnostic models"), for diagnosis + potential longer-range use — standing owner directive: cautiously protect them. Details in `memory/vision-and-roadmap.md` (Workstream B, Layer 3).
+
 **⭐ North-star & roadmap (2026-07-21):** see `memory/vision-and-roadmap.md` — accuracy-integrity system (P0), Smart Targets Model v2 for all metrics (P1), Projections current-month actuals + DT weekly-trend (P1), UX coherence pass + panel scorecard (P2), Graded-Visit Predictor for CFV/RGR/Ecosure + novel composite indices (P3), multi-user then multi-tenant deployment (P4). Standing rules: correct math, never average averages, dollar-weight aggregates, self-audit every report.
 
 **Next candidate areas:**

@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // ── LifeLenz People List → employee_skills (Employee Skill Levels) ───────────
-// Uses the working LIFELENZ_TOKEN (same secret the labor pull uses) instead of a
-// browser form-login — LifeLenz's login is a Cloudflare-protected OAuth SPA that
-// renders nothing headless, so we skip it. We inject the token so the People page
-// loads authenticated, drive Download Report → Simple (CSV), parse with the SAME
-// src/parsers function the app uses (zero drift), and upsert to `employee_skills`.
+// Logs into the LifeLenz admin SPA via its own form (/us01/auth/login), captures
+// the session's live X-Auth-Token, discovers each store's scheduleId, opens each
+// store's People page (/us01/people/{businessId}/{scheduleId}), drives Download
+// Report → Simple (CSV), parses with the SAME src/parsers function the app uses
+// (zero drift), and upserts to `employee_skills` (roster-keyed, replace-per-store).
 //
-// Store selection is by URL: /us01/people/{businessId}/{scheduleId}. scheduleIds
-// come from the same /api/admin/businesses/{id}/schedules call the labor pull uses.
+// Token-independent: everything runs off the login session, so it needs only
+// LIFELENZ_USERNAME/PASSWORD (which don't expire). LIFELENZ_TOKEN is an optional
+// fallback for discovery if the session-token capture ever fails.
 //
-// Env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LIFELENZ_TOKEN. Optional
+// Env: LIFELENZ_USERNAME, LIFELENZ_PASSWORD, VITE_SUPABASE_URL,
+//      SUPABASE_SERVICE_ROLE_KEY. Optional: LIFELENZ_TOKEN (fallback),
 //      LIFELENZ_PEOPLE_URLS (JSON [{loc,url}]) to override discovery; DEBUG=1.
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
@@ -20,7 +22,8 @@ import { parsePeopleSkills } from '../src/parsers/index.js';
 const DEBUG = process.env.DEBUG === '1';
 const BASE = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID = '01979dbf-a166-759b-8702-aba9915c578e';
-const TOKEN = process.env.LIFELENZ_TOKEN || '';
+const TOKEN = process.env.LIFELENZ_TOKEN || ''; // optional fallback only
+let sessionToken = null;                         // captured from the SPA post-login
 const peopleUrl = scheduleId => `https://admin.lifelenz.com/us01/people/${BUSINESS_ID}/${scheduleId}`;
 
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -165,29 +168,34 @@ async function pullOne(page, url, tag, rosterLoc) {
 }
 
 async function main() {
-  if (!TOKEN) { console.error('[people] LIFELENZ_TOKEN not set — required for schedule discovery.'); process.exit(1); }
   if (!process.env.LIFELENZ_USERNAME || !process.env.LIFELENZ_PASSWORD) { console.error('[people] LIFELENZ_USERNAME/PASSWORD required for the login form.'); process.exit(1); }
+
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'] });
+  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36', acceptDownloads: true });
+  await context.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => undefined }));
+  const page = await context.newPage();
+  // Capture the SPA's live X-Auth-Token from its own API requests — lets us
+  // discover the store list from the logged-in session, no separate (monthly-
+  // expiring) LIFELENZ_TOKEN needed.
+  page.on('request', req => { try { const h = req.headers(); if (h['x-auth-token'] && !sessionToken) sessionToken = h['x-auth-token']; } catch {} });
+
+  // Establish a real session via the app's login form (renders at /us01/auth/login).
+  try { await login(page); }
+  catch (e) { console.error('[auth] login failed:', e.message); await browser.close(); process.exit(1); }
+  await page.waitForTimeout(2500); // let post-login API calls fire so the token is captured
+  const token = sessionToken || TOKEN;
+  if (!token) { console.error('[people] no auth token — session capture failed and LIFELENZ_TOKEN unset.'); await browser.close(); process.exit(1); }
+  console.log('[auth] discovery token:', sessionToken ? 'session (no LIFELENZ_TOKEN needed)' : 'LIFELENZ_TOKEN fallback');
 
   // Targets: explicit override, else discover all stores by scheduleId.
   let list = [];
   if (process.env.LIFELENZ_PEOPLE_URLS) {
     try { list = JSON.parse(process.env.LIFELENZ_PEOPLE_URLS); } catch (e) { console.error('[cfg] LIFELENZ_PEOPLE_URLS bad JSON:', e.message); }
   } else {
-    const stores = await discoverStores(TOKEN);
+    const stores = await discoverStores(token);
     list = stores.map(s => ({ loc: s.loc, url: peopleUrl(s.scheduleId) }));
   }
-  if (!list.length) { console.error('[people] no target pages (token invalid, or no schedules discovered)'); process.exit(1); }
-
-  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'] });
-  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36', acceptDownloads: true });
-  await context.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => undefined }));
-  const page = await context.newPage();
-
-  // Establish a real session via the app's login form (which renders at
-  // /us01/auth/login — unlike the bare IDM authorize URL). This is what lets the
-  // People pages load instead of bouncing back to login.
-  try { await login(page); }
-  catch (e) { console.error('[auth] login failed:', e.message); await browser.close(); process.exit(1); }
+  if (!list.length) { console.error('[people] no target pages (token invalid, or no schedules discovered)'); await browser.close(); process.exit(1); }
 
   console.log(`[people] ${list.length} store page(s) to pull`);
   let totalSaved = 0;
