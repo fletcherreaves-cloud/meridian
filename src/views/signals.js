@@ -869,20 +869,28 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
   // date every hour is complete, so it reads as "how the day landed vs plan".
   const planPace = uM(() => {
     let doneActual = 0, doneProj = 0, remProj = 0, fullProj = 0;
+    let doneGC = 0, doneProjGC = 0, remProjGC = 0, fullProjGC = 0;   // guest-count pace (leading indicator)
     for (const r of rows) {
       const proj = r.proj_sales_dollars || 0;
-      fullProj += proj;
-      if ((r.product_sales || 0) > 0) { doneActual += r.product_sales; doneProj += proj; }
-      else remProj += proj;
+      const projGC = r.proj_total_transactions || 0;
+      fullProj += proj; fullProjGC += projGC;
+      if ((r.product_sales || 0) > 0) {
+        doneActual += r.product_sales; doneProj += proj;
+        doneGC += r.transactions || 0; doneProjGC += projGC;
+      } else { remProj += proj; remProjGC += projGC; }
     }
-    if (fullProj <= 0) return null;
+    if (fullProj <= 0 && fullProjGC <= 0) return null;
     return {
       pacePct: doneProj > 0 ? doneActual / doneProj * 100 : null,
       projectedEOD: doneActual + remProj,
       fullProj, doneActual,
+      gcPacePct: doneProjGC > 0 ? doneGC / doneProjGC * 100 : null,
+      projectedEODGC: doneGC + remProjGC,
+      fullProjGC, doneGC, hasGC: fullProjGC > 0,
     };
   }, [rows]);
   const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
+  const num = n => Math.round(n).toLocaleString('en-US');
 
   const colHdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
 
@@ -919,10 +927,18 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
           h('div', { style: { fontSize: 18, fontWeight: 800, fontFamily: 'monospace', color: color || 'var(--text)' } }, value),
           sub && h('div', { style: { fontSize: 9, color: muted, marginTop: 2 } }, sub),
         );
+        // Guest-count pace + traffic-vs-sales divergence (leading indicator).
+        const gcp = planPace.gcPacePct;
+        const gcpc = gcp == null ? muted : gcp >= 100 ? grn : gcp >= 95 ? amber : red;
+        const divv = (gcp != null && p != null) ? gcp - p : null;
+        const gcSub = divv != null && Math.abs(divv) >= 3
+          ? (divv > 0 ? '⚠ traffic ahead of sales — check avg down' : '⚠ sales ahead of traffic — check avg up')
+          : 'guests vs projection';
         return [
-          card('Pace vs Plan', p != null ? `${p.toFixed(0)}%` : '—', pc, p != null ? (p >= 100 ? 'ahead of projection' : 'behind projection') : 'no projection'),
-          card('Projected EOD', money(planPace.projectedEOD), 'var(--text)', 'actual so far + remaining plan'),
-          card('Full-Day Plan', money(planPace.fullProj), muted, 'QSRSoft projected sales'),
+          card('Pace vs Plan ($)', p != null ? `${p.toFixed(0)}%` : '—', pc, p != null ? (p >= 100 ? 'ahead of projection' : 'behind projection') : 'no projection'),
+          ...(planPace.hasGC ? [card('Pace vs Plan (GC)', gcp != null ? `${gcp.toFixed(0)}%` : '—', gcpc, gcSub)] : []),
+          card('Projected EOD', money(planPace.projectedEOD), 'var(--text)', planPace.hasGC ? num(planPace.projectedEODGC) + ' guests' : 'actual so far + remaining plan'),
+          card('Full-Day Plan', money(planPace.fullProj), muted, planPace.hasGC ? num(planPace.fullProjGC) + ' guests projected' : 'QSRSoft projected sales'),
         ];
       })()
     ),

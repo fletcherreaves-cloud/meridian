@@ -135,7 +135,7 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
 | Smart Targets | ✅ | |
 | Data Manager | ✅ | |
 | SAGE AI | ✅ | Claude Opus 4.8, live tool use (sales/DT/labor/forecast accuracy), streaming |
-| Signals | ✅ | LiveOps tab (qsr_daily_activity): Tracking-to-Plan (proj_sales_dollars), Baseline Anomalies (mean_sales), intraday labor-gap column; Speed of Service panel (all stations: DT/front-counter/kitchen-MFY/beverage); custom signal engine |
+| Signals | ✅ | LiveOps tab (qsr_daily_activity): Tracking-to-Plan **$ AND guest-count** (proj_sales_dollars + proj_total_transactions, with a traffic-vs-sales divergence flag), Baseline Anomalies (mean_sales), intraday labor-gap column; Speed of Service panel (all stations: DT/front-counter/kitchen-MFY/beverage); custom signal engine |
 | FOB / Food Cost | ✅ | FOBAnalysisPanel + FOBEOMPanel (per-store inventory troubleshooter) |
 | Feature Requests | ✅ | Supabase-backed, pre-seeded with roadmap history |
 
