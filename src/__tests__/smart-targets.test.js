@@ -3,6 +3,7 @@ import {
   median, mad, quantile, trendSlope, robustBaseline,
   likeSizedPeers, peerAnchor, blend, confidence, computeSmartTarget,
   windowRate, weightedRecencyProjection, periodTotal, backtestProjectors, toISODate,
+  weightedLevel, weightedRecencyLevel,
 } from '../engine/smart-targets.js';
 
 // Build a daily series ending at `endIso`, `days` long, from a value fn(i, date).
@@ -196,6 +197,42 @@ describe('smart-targets — owner weighted-recency projector', () => {
     const asOf = new Date('2026-08-01T00:00:00');
     const r = weightedRecencyProjection(series, { asOf, targetDays: 30 });
     expect(r.projection).toBeNull();
+  });
+});
+
+describe('smart-targets — weighted ratio level (labor %, speed)', () => {
+  it('weightedLevel is Σ(v·w)/Σw, NOT the mean of daily ratios', () => {
+    // Two days: 10% labor on $1000, 30% labor on $9000. Sales-weighted labor % is
+    // (0.10·1000 + 0.30·9000)/10000 = 2800/10000 = 0.28 — a straight mean of the
+    // two ratios would wrongly give 0.20.
+    const r = weightedLevel([{ value: 0.10, weight: 1000 }, { value: 0.30, weight: 9000 }]);
+    expect(r.level).toBeCloseTo(0.28, 6);
+    expect(r.level).not.toBeCloseTo(0.20, 3);
+  });
+
+  it('drops days whose ratio is anomalous before weighting', () => {
+    // Many ~21% days plus one freak 90% day — the outlier ratio is excluded.
+    const pts = [];
+    for (let i = 0; i < 20; i++) pts.push({ value: 0.21 + (i % 3) * 0.005, weight: 1000 });
+    pts.push({ value: 0.90, weight: 1000 });
+    const r = weightedLevel(pts, { k: 3 });
+    expect(r.excluded).toBe(1);
+    expect(r.level).toBeLessThan(0.25);
+  });
+
+  it('returns null when no valid weighted points', () => {
+    expect(weightedLevel([{ value: 0.2, weight: 0 }, { value: null, weight: 5 }]).level).toBeNull();
+  });
+
+  it('weightedRecencyLevel blends trailing windows, weighting recent heavier', () => {
+    // Labor % improving (falling) over time; weight steady. Recency-weighted level
+    // should sit below the flat 3-month level because recent days are lower.
+    const daily = dailyFrom('2026-07-31', 120, (i) => ({ pct: 0.26 - i * 0.0003 }))
+      .map(r => ({ date: r.date, value: r.value.pct, weight: 1000 }));
+    const asOf = new Date('2026-08-01T00:00:00');
+    const flat = weightedRecencyLevel(daily, { asOf, weights: { m3: 1, w6: 0, w3: 0 } });
+    const recency = weightedRecencyLevel(daily, { asOf });
+    expect(recency.level).toBeLessThan(flat.level);
   });
 });
 

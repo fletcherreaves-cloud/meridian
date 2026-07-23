@@ -106,8 +106,19 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
       legitimately wins.
     - ⏭️ Known-event (+/-) UI: let the owner mark event dates/deltas per store
       (engine hooks `excludeDates`/`eventDelta` already exist).
-  - Extend v2 metrics to labor %, FOB %, speed (add METRICS entries + a source
-    per metric; ratio metrics anchor on level with direction='lower').
+  - ✅ **Ratio metrics shipped (v4.484):** **Labor %** (sales-weighted, from Daily
+    Glimpse `laborPct`×`allNetSales`) and **DT speed / OEPE** (car-weighted, from
+    Glimpse `oepe`×`dtGC`), both `direction='lower'`. New engine fns
+    `weightedLevel` (Σ v·w / Σ w — never averages daily ratios) + `weightedRecencyLevel`
+    (recency-weighted trailing levels, the "simple wins" analog for ratios), 4 unit
+    tests. METRICS registry now has `ratio`/`weight`/`officialVal`; the model memo
+    branches ratio vs monthly; vs-Official coloring is direction-aware; Official
+    pulls per-store `tLabor`/`tOepe` from DEFAULT_TARGETS. Ratio metrics skip the
+    projector backtest (the ×days bakeoff doesn't apply to a level).
+  - ⏭️ **FOB % deferred (needs owner input):** `qsr_fob` is a MONTHLY series with an
+    ambiguous numerator (base food vs total food-cost vs variance) — it doesn't fit
+    the daily-window machinery, so it's held until the exact FOB % definition +
+    cadence are confirmed rather than fabricated.
   - Horizons out to **yearly** (user asked for 60/90/180d → up to 1yr).
   - Auto-run calibration; prompt user for any judgment calls inline.
   - Persist accepted Smart targets; add "apply as Official" → feed Monthly

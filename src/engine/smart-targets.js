@@ -178,6 +178,56 @@ export function weightedRecencyProjection(dailySeries, opts = {}) {
   return { projection, dailyRate, windows: { t3m, t6w, t3w }, wSum };
 }
 
+// ── Ratio-metric target (labor %, speed, …) — WEIGHTED, never averaged ────────
+// A ratio target must be dollar/volume-weighted: Σ(value·weight)/Σweight, NOT the
+// mean of daily ratios (that would average averages). Each point is
+// {value, weight} — e.g. {value: dayLaborPct, weight: daySales}. Anomalous DAYS
+// (whose ratio is beyond k·MAD of the ratio distribution) are dropped first, then
+// the kept days are weight-aggregated.
+export function weightedLevel(points, { k = 3 } = {}) {
+  const pts = (points || []).filter(p => p && _isNum(p.value) && _isNum(p.weight) && p.weight > 0);
+  if (!pts.length) return { level: null, n: 0, excluded: 0 };
+  const ratios = pts.map(p => p.value);
+  const med = median(ratios), md = mad(ratios, med);
+  const thr = md != null && md > 0 ? 1.4826 * md * k : Infinity;
+  const kept = pts.filter(p => Math.abs(p.value - med) <= thr);
+  const use = kept.length ? kept : pts;
+  const sw = use.reduce((a, p) => a + p.weight, 0);
+  const level = sw > 0 ? use.reduce((a, p) => a + p.value * p.weight, 0) / sw : null;
+  return { level, n: pts.length, excluded: pts.length - kept.length };
+}
+
+// Recency-weighted weighted-level across trailing windows — the ratio analog of
+// weightedRecencyProjection, and the primary "simple" ratio target. Blends the
+// weighted levels of the trailing 3-month / 6-week / 3-week windows with the most
+// weight on the most recent. dailyWeighted = [{date, value, weight}] (any order).
+export function weightedRecencyLevel(dailyWeighted, opts = {}) {
+  const { asOf = new Date(), k = 3, weights = { m3: 0.2, w6: 0.3, w3: 0.5 }, excludeDates = null } = opts;
+  const excl = excludeDates instanceof Set ? excludeDates : new Set(excludeDates || []);
+  const end = asOf instanceof Date ? new Date(asOf) : new Date(asOf);
+  const win = (days) => {
+    if (Number.isNaN(+end)) return { level: null, n: 0, excluded: 0 };
+    const start = new Date(end); start.setDate(start.getDate() - days);
+    const pts = [];
+    for (const r of dailyWeighted || []) {
+      const iso = toISODate(r.date); if (!iso) continue;
+      const dt = new Date(iso + 'T00:00:00');
+      if (dt >= start && dt < end && !excl.has(iso)) pts.push({ value: r.value, weight: r.weight });
+    }
+    return weightedLevel(pts, { k });
+  };
+  const L90 = win(90), L42 = win(42), L21 = win(21);
+  const parts = [
+    { l: L90.level, w: weights.m3 },
+    { l: L42.level, w: weights.w6 },
+    { l: L21.level, w: weights.w3 },
+  ].filter(p => _isNum(p.l) && p.w > 0);
+  if (!parts.length) return { level: null, windows: { L90, L42, L21 }, wSum: 0 };
+  const wSum = parts.reduce((a, p) => a + p.w, 0);
+  const level = parts.reduce((a, p) => a + p.l * p.w, 0) / wSum;
+  return { level, windows: { L90, L42, L21 }, wSum };
+}
+
 // ── Generic projector scoreboard (which method wins per store) ────────────────
 // Walk back over the most recent completed periods, project each with every
 // supplied projector, compare to the actual period total, and grade. A projector
