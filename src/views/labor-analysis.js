@@ -6,9 +6,9 @@
 // labor-analysis engine (dollar-weighted OK/FL/grand subtotals), and prints.
 // Config tab edits the "gathered" fixed-hours inputs (maintenance/prep/lobby/24hr).
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
-import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime } from '../engine/labor-analysis.js';
-import { loadLifeLenzLaborWeek, loadStoreLaborConfig, saveStoreLaborConfig } from '../lib/supabase.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, DEFAULT_TARGETS } from '../constants.js';
+import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime, deriveBand1FromSchedule } from '../engine/labor-analysis.js';
+import { loadLifeLenzLaborWeek, loadStoreLaborConfig, saveStoreLaborConfig, loadLifeLenzSchedule } from '../lib/supabase.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -88,7 +88,9 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
   const [tab, setTab] = useState('report');       // 'report' | 'config'
   const [flhHours, setFlhHours] = useState('lifelenz'); // FLH template hours basis: 'lifelenz' (F) | 'target' (O)
   const [scope, setScope] = useState('all');
-  const [week, setWeek] = useState(null);         // {weekStart, rows}
+  const [weekStart, setWeekStart] = useState(null); // selected week (ISO Monday); null = current week
+  const [sched, setSched] = useState([]);           // raw daily lifelenz_schedule rows (auto source)
+  const [manual, setManual] = useState({ weekStart: null, rows: {} }); // MBI upload / lifelenz_labor_week (gap-fill)
   const [config, setConfig] = useState({});       // {loc: {...}}
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState({});           // dirty config edits
@@ -97,9 +99,11 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
   useEffect(() => {
     let live = true;
     setLoading(true);
-    Promise.all([loadLifeLenzLaborWeek(), loadStoreLaborConfig()]).then(([w, c]) => {
+    // AUTO source (freshest-wins): the daily lifelenz_schedule, aggregated per week.
+    // MANUAL (MBI upload / lifelenz_labor_week) is loaded only as a gap-fill fallback.
+    Promise.all([loadLifeLenzSchedule({ daysBack: 35, daysFwd: 21 }), loadLifeLenzLaborWeek(), loadStoreLaborConfig()]).then(([sch, w, c]) => {
       if (!live) return;
-      // Fall back to the just-uploaded sheet if the DB is empty.
+      // Fall back to the just-uploaded sheet if the labor-week DB is empty.
       if ((!w || !Object.keys(w.rows || {}).length) && ds && ds.laborAnalysis) {
         const la = ds.laborAnalysis; const rows = {};
         for (const s of la.stores) rows[locNum(s.loc)] = s.band1;
@@ -108,12 +112,33 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
       if ((!c || !Object.keys(c).length) && ds && ds.laborAnalysis) {
         c = {}; for (const s of ds.laborAnalysis.stores) c[locNum(s.loc)] = s.config;
       }
-      setWeek(w || { weekStart: null, rows: {} });
+      setSched(sch || []);
+      setManual(w || { weekStart: null, rows: {} });
       setConfig(c || {});
       setLoading(false);
-    }).catch(() => { if (live) { setWeek({ weekStart: null, rows: {} }); setLoading(false); } });
+    }).catch(() => { if (live) { setSched([]); setManual({ weekStart: null, rows: {} }); setLoading(false); } });
     return () => { live = false; };
   }, [ds && ds.laborAnalysis]);
+
+  // The displayed week: AUTO (schedule-derived) wins; MANUAL fills only the stores
+  // AUTO lacks for the SAME week (never overrides). If the schedule has nothing for
+  // the selected week, fall back to the manual (MBI) week entirely.
+  const orgTargetFor = loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && typeof t.tCrewLabor === 'number' ? t.tCrewLabor : null; };
+  const week = useMemo(() => {
+    const auto = deriveBand1FromSchedule(sched, { weekStart, orgTargetFor });
+    const autoLocs = Object.keys(auto.rows);
+    if (!autoLocs.length) {
+      if (manual && Object.keys(manual.rows || {}).length) return { weekStart: manual.weekStart, rows: manual.rows, source: 'manual', autoCount: 0, manualFill: Object.keys(manual.rows).length };
+      return { weekStart: auto.weekStart, rows: {}, source: 'auto', autoCount: 0, manualFill: 0 };
+    }
+    const rows = { ...auto.rows }; let filled = 0;
+    if (manual && manual.weekStart === auto.weekStart) {
+      for (const loc of Object.keys(manual.rows || {})) if (!rows[loc]) { rows[loc] = manual.rows[loc]; filled++; }
+    }
+    return { weekStart: auto.weekStart, rows, source: 'auto', autoCount: autoLocs.length, manualFill: filled };
+  }, [sched, manual, weekStart]);
+
+  const shiftWeek = delta => { const base = (week && week.weekStart) ? new Date(week.weekStart + 'T00:00:00') : new Date(); base.setDate(base.getDate() + delta * 7); setWeekStart(base.toISOString().slice(0, 10)); };
 
   const activeLocs = useMemo(() => {
     if (scope === 'all') return null;
@@ -269,9 +294,15 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '🧮'),
         div({ style: { flex: 1, minWidth: 180 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, 'Labor Analysis',
-            span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Week of ' + ((week && week.weekStart) || '—'))),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Weekly Fixed-Labor-Hours: LifeLenz inputs → scheduled vs target → recommended fixed/floor hours. Dollar-weighted subtotals.')),
+          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } }, 'Labor Analysis',
+            // Week navigator ‹ · ›
+            btn({ onClick: () => shiftWeek(-1), title: 'Previous week', style: { padding: '1px 7px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, '‹'),
+            span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, 'Week of ' + ((week && week.weekStart) || '—')),
+            btn({ onClick: () => shiftWeek(1), title: 'Next week', style: { padding: '1px 7px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, '›'),
+            weekStart ? btn({ onClick: () => setWeekStart(null), title: 'Back to current week', style: { padding: '1px 7px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', fontSize: 9, fontWeight: 700, cursor: 'pointer' } }, 'This week') : null,
+            // Source chip: auto (schedule-derived) vs manual (MBI upload)
+            span({ title: week.source === 'auto' ? 'Auto — derived from the daily LifeLenz schedule (cloud-fresh)' + (week.manualFill ? ' · ' + week.manualFill + ' store(s) gap-filled from manual upload' : '') : 'Manual — from the uploaded MBI Labor Analysis workbook (no schedule data for this week)', style: { fontSize: 8.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: week.source === 'auto' ? 'rgba(16,185,129,.15)' : 'rgba(148,163,184,.18)', color: week.source === 'auto' ? '#10b981' : 'var(--text3)' } }, week.source === 'auto' ? ('⟳ Auto' + (week.manualFill ? ' +' + week.manualFill : '')) : 'Manual')),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Weekly Fixed-Labor-Hours from the daily LifeLenz schedule (auto, cloud-fresh) → scheduled vs target → recommended fixed/floor hours. Hours Forecast = Proj VLH + Fixed + Floor (hourly only). Dollar-weighted subtotals; manual MBI upload gap-fills only.')),
         tabBtn('report', 'Report'), tabBtn('config', 'Config'),
         scopeSelect,
         tab === 'report' ? btn({ onClick: exportCSV, disabled: !shown.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '⬇ CSV') : null,
@@ -287,7 +318,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
           ? div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'Loading labor analysis…')
           : tab === 'report'
           ? (!shown.length
-              ? div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'No weekly labor data yet. Upload the MBI Labor Analysis workbook (Data Manager) to populate it.')
+              ? div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'No labor data for this week. The auto source needs the daily LifeLenz schedule synced (lifelenz_schedule) — try ‹ / › to another week, or upload the MBI Labor Analysis workbook (Data Manager) as a fallback.')
               : div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
                   h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
                     h('thead', null, h('tr', null, h('th', { style: { ...th, textAlign: 'left' } }, 'Store'), ...COLS.map(c => h('th', { key: c.k, style: th }, c.h)))),

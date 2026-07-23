@@ -121,31 +121,45 @@ T=5,144.99, X=121.68, AB=304.21. Engine unit tests assert these.
   >25% fixed rule). Config editor to populate Band-4/5 "gathered" inputs.
 - Wire into nav (Labor Tools area).
 
-## TODO (Phase 2)
+## Phase 2 — Auto Band-1 from `lifelenz_schedule` ✅ SHIPPED (v4.485, 2026-07-23)
 
-- **Auto Band-1 from `lifelenz_schedule` (candidate — cheaper than a scrape).** The
-  daily `lifelenz_schedule` table (synced daily by `scripts/lifelenz-pull.mjs`)
-  already carries the LifeLenz Labor Analysis report fields: `fcst_sales`, `fcst_tcs`,
-  `labor_pct`, `proj_vlh`, `sch_vlh`, `sch_fix_hrs`, `crew_hrs`, `ideal_tot_hrs`,
-  `tpmh`, etc. A weekly aggregation → `lifelenz_labor_week` is straightforward for
-  most Band-1 fields:
-    - salesFcst(C) = Σ fcst_sales · gcFcst(E) = Σ fcst_tcs
-    - hoursSched(G) = Σ sch_vlh (or Σ ideal_tot_hrs — SEE BLOCKER)
-    - laborPctActual(D) = Σ(labor_pct·fcst_sales)/Σ fcst_sales (sales-weighted)
-    - rate(J) = Σ sched-labor$/Σ hoursSched · tpph(I) = Σ fcst_tcs/Σ hoursSched
-    - laborTargetOrg(L) = DEFAULT_TARGETS[loc].tCrewLabor/tLabor (org target, not in schedule)
-  ⚠️ **BLOCKER — owner must confirm before building:** memory says "Band-1 numbers
-  are NOT a LifeLenz report" (the MBI xlsx is hand-derived). The unresolved mapping
-  is **which schedule hours column feeds MBI 'Hours Forecast'(F) / 'Hours
-  Scheduled'(G)**: `Proj.VLH`/`Sch.VLH` (variable labor only) vs `Ideal Tot.Hrs`
-  (total incl fixed+floor+mgr). Wrong choice = wrong labor $/hours across every
-  store, so DO NOT guess — get the answer, then wire the aggregation loader
-  (`loadLifeLenzLaborWeekFromSchedule`) and make the panel prefer it (freshest-wins)
-  over the manual MBI upload. Also confirm the **G×24** question below.
-- **LifeLenz live-page scrape** (fallback if the schedule-derive can't reproduce F/G) —
-  scrape the scheduling/forecast pages per store for a date range (Playwright, same
-  two-path auth as existing pulls) → upsert `lifelenz_labor_week`. Keep the xlsx
-  upload as the freshest-wins fallback either way.
+**No scrape needed.** The daily `lifelenz_schedule` (synced daily by
+`scripts/lifelenz-pull.mjs`) IS the LifeLenz Labor Analysis report at day grain, so
+the weekly Band-1 is just an aggregation of it — cloud-fresh on every device.
+
+- **Engine** `deriveBand1FromSchedule(scheduleRows, {weekStart, orgTargetFor})` +
+  `isoWeekMonday()` in `src/engine/labor-analysis.js` (pure, 11 unit tests). Buckets
+  a Mon–Sun week per store, sums the extensive parts, recomputes the intensive
+  ones from the SUMS (never a mean of daily ratios).
+- **Owner-confirmed mapping (2026-07-23):**
+    - **Hours Forecast (F) = Σ(`proj_vlh` + `fix_guide_hrs` + `proj_floor`)** — Proj
+      VLH + Fixed + Floor, **HOURLY only, NO salaried manager** (mgr is salaried,
+      excluded from this labor %).
+    - **Hours Scheduled (G) = Σ(`sch_vlh` + `sch_fix_hrs` + `sch_floor`)**.
+    - salesFcst(C)=Σ`fcst_sales` · gcFcst(E)=Σ`fcst_tcs`.
+    - laborPctActual(D) = Σ(`labor_pct`·`fcst_sales`)/Σ`fcst_sales` (sales-weighted;
+      normalizes a % stored as 21.5 → 0.215). labor$ = that.
+    - rate(J) = Σlabor$/Σ hoursSched · tpph(I) = Σ`fcst_tcs`/Σ hoursSched.
+    - **laborTargetOrg(L) = DEFAULT_TARGETS[loc].tCrewLabor** (crew/hourly target,
+      matching the hourly-only basis — NOT tLabor which includes mgr).
+    - actualHours(W) left null (schedule has no punched hours; DAR join is a later
+      option). Hours are plain decimals in the report — NO ×24 (the day-serial
+      issue was only the MBI xlsx).
+- **Panel** `src/views/labor-analysis.js` — loads `loadLifeLenzSchedule({daysBack:35,
+  daysFwd:21})`, derives the week, and **auto (schedule) WINS**; the manual
+  MBI/`lifelenz_labor_week` only gap-fills stores auto lacks for the SAME week
+  (standing freshest-wins rule). If the schedule has nothing for the week it falls
+  back to the manual week entirely (prior behavior preserved). Added **‹ / ›
+  week nav + "This week"** and an **⟳ Auto / Manual source chip** (shows +N when
+  manual gap-filled).
+
+### Still open (owner)
+1. Confirm the **G×24** in the engine's R/S columns is intentional (or drop to plain
+   G) — pre-existing question, not introduced here.
+2. **actualHours(W)** — worth joining DAR `actual_punched_hours` so the sheet's
+   actual-vs-plan column populates? (Currently null on the auto path.)
+3. **Week convention** — auto defaults to the current Mon–Sun week; the MBI sheet may
+   plan the *upcoming* week. The ‹ / › nav covers it, but confirm the default.
 
 ## Open questions for owner
 
