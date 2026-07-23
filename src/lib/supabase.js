@@ -1674,6 +1674,42 @@ export async function saveSmartTargetAdjustment(loc, metricKey, { excludeDates =
   return { saved: 1, errors: [] };
 }
 
+// ── SAGE: saved prompt library ───────────────────────────────────────────────
+// Reusable prompts the owner saves for quick re-run. Fails soft to [] if the table
+// isn't created yet.
+export async function loadSagePrompts() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('sage_prompts').select('*').order('updated_at', { ascending: false });
+  if (error) {
+    if (!(error.message || '').includes('relation') && error.code !== '42P01')
+      console.warn('[sage_prompts] load error:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({ id: r.id, title: r.title, promptText: r.prompt_text, tags: r.tags || '', createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at }));
+}
+
+export async function saveSagePrompt({ id = null, title, promptText, tags = '', createdBy = '' } = {}) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  if (!title || !promptText) return { saved: 0, errors: ['title + promptText required'] };
+  const row = { title, prompt_text: promptText, tags: tags || null, updated_at: new Date().toISOString() };
+  if (id) row.id = id; else row.created_by = createdBy || null;
+  const { data, error } = await supabase.from('sage_prompts').upsert(row).select().single();
+  if (error) {
+    if ((error.message || '').includes('relation') || error.code === '42P01')
+      console.error('[sage_prompts] Table missing — run the sage_prompts block from schema.sql.');
+    else console.error('[sage_prompts] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: 1, row: data, errors: [] };
+}
+
+export async function deleteSagePrompt(id) {
+  if (!supabase || !id) return { deleted: 0 };
+  const { error } = await supabase.from('sage_prompts').delete().eq('id', id);
+  if (error) { console.warn('[sage_prompts] delete error:', error.message); return { deleted: 0, errors: [error.message] }; }
+  return { deleted: 1 };
+}
+
 // ── Crew Skills Matrix (LifeLenz People List) ────────────────────────────────
 // Per-employee skill ratings (1-5) by job. Keyed by the ROSTER store (the store
 // whose People page/file this is), NOT the employee's home store — a person

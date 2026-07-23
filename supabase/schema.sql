@@ -1092,6 +1092,26 @@ create policy "smart_target_adjustments: public read" on public.smart_target_adj
 create policy "smart_target_adjustments: public write" on public.smart_target_adjustments
   for all using (true);
 
+-- ── SAGE: saved prompt library ──────────────────────────────────────────────────
+-- Reusable SAGE prompts the owner saves for quick re-run (and, in Phase 2, for
+-- scheduled auto-runs). Consumed by src/views/sage.js.
+create table if not exists public.sage_prompts (
+  id           uuid primary key default gen_random_uuid(),
+  title        text not null,
+  prompt_text  text not null,
+  tags         text,                        -- optional comma-separated labels
+  created_by   text,
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+
+alter table public.sage_prompts enable row level security;
+
+create policy "sage_prompts: public read" on public.sage_prompts
+  for select using (true);
+create policy "sage_prompts: public write" on public.sage_prompts
+  for all using (true);
+
 -- ── Crew Skills Matrix (LifeLenz People List, Simple CSV) ───────────────────────
 -- One row per employee per ROSTER store (keyed by roster store + name) — a person
 -- rostered at a shared/transition store shows under THAT store, not their home.

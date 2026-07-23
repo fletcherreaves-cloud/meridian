@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import * as XLSX from 'xlsx';
-import { supabase } from '../lib/supabase.js';
+import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -652,8 +652,136 @@ function extractTables(text) {
   }).filter(t => t.length > 1);
 }
 
+// ── Feature A: turn a SAGE data issue into a Task / Feature Request ───────────
+// Maps a SAGE answer to its likely data source (tool + table) so the ticket +
+// troubleshooting prompt carry the pertinent details.
+const DATA_SOURCES = [
+  { kw: /\b(sales|revenue|guest count|\bgc\b|drive.?thru|\bdt\b|oepe|kvs|speed of service|transactions|tickets)\b/i, tool: 'query_daily_activity', table: 'qsr_daily_activity', label: 'Daily Activity (sales / DT / speed)' },
+  { kw: /\b(labor|vlh|schedul|hours|tpph|tpmh|crew|fixed labor|floor)\b/i, tool: 'query_lifelenz_labor', table: 'lifelenz_schedule', label: 'LifeLenz labor / scheduling' },
+  { kw: /\b(forecast|mape|projection accuracy|snapshot|model accuracy)\b/i, tool: 'query_forecast_snapshots', table: 'forecast_snapshots', label: 'Forecast snapshots' },
+];
+const detectSource = text => DATA_SOURCES.find(s => s.kw.test(text || '')) || null;
+// Language that suggests SAGE couldn't get the data (→ a troubleshooting Task).
+const FAIL_RE = /\b(no data|don'?t have|do not have|unable to|couldn'?t|could not|can'?t|cannot|not available|isn'?t available|no access|missing|returned (no|0|zero)|no (results|rows|records|data)|not found|don'?t see|do not see|not enough data|insufficient data|error|failed)\b/i;
+const looksLikeFailure = text => FAIL_RE.test(text || '');
+
+function buildTroubleshootPrompt(question, answer, src) {
+  const a = (answer || '').replace(/\s+/g, ' ').trim().slice(0, 800);
+  return [
+    'Investigate a SAGE data issue in Meridian.', '',
+    'USER ASKED:', question || '(unknown)', '',
+    'SAGE RESPONDED (excerpt):', a, '',
+    'LIKELY SOURCE: ' + (src ? `${src.label} — edge tool \`${src.tool}\`, table \`${src.table}\`` : 'unknown — infer from the question'), '',
+    'TROUBLESHOOT:',
+    '1. Reproduce: query the tool/loader for the same store(s) and date(s) the user asked about.',
+    '2. Loader check (src/lib/supabase.js): 1000-row Supabase cap must be paginated; loc must be NSN zero-padded to 7 chars; verify the date filters.',
+    `3. Freshness: is ${src ? '`' + src.table + '`' : 'the source table'} actually populated for that window? (the daily GitHub Action sync may have failed).`,
+    `4. Edge tool (supabase/functions/sage-chat/index.ts): check ${src ? '`' + src.tool + '`' : 'the relevant tool'} arg mapping + is_error handling.`,
+    '5. Root-cause, fix, and report what was wrong and the fix.',
+  ].join('\n');
+}
+
+function LogIssueModal({ question, answer, onClose }) {
+  const src = detectSource((question || '') + ' ' + (answer || ''));
+  const [dest, setDest] = uSt(looksLikeFailure(answer) ? 'task' : 'fr');
+  const [title, setTitle] = uSt(('SAGE data issue: ' + (question || '').trim()).slice(0, 80));
+  const [priority, setPriority] = uSt('high');
+  const troubleshoot = buildTroubleshootPrompt(question, answer, src);
+  const context = [
+    'Reported from SAGE.',
+    src ? 'Likely source: ' + src.label + ' (tool ' + src.tool + ', table ' + src.table + ').' : 'Source: unknown.',
+    '', 'Q: ' + (question || '(unknown)'),
+    '', 'SAGE said: ' + (answer || '').replace(/\s+/g, ' ').trim().slice(0, 600),
+  ].join('\n');
+  const [notes, setNotes] = uSt(troubleshoot);
+  const [saving, setSaving] = uSt(false);
+  const [msg, setMsg] = uSt('');
+
+  const doSave = async () => {
+    if (!title.trim()) { setMsg('Title required'); return; }
+    setSaving(true); setMsg('Saving…');
+    let res;
+    if (dest === 'task') {
+      res = await saveTask({ title: title.trim(), description: context, notes,
+        tier: 2, priority: priority === 'high' ? 1 : priority === 'low' ? 3 : 2, status: 'backlog', source: 'sage' });
+    } else {
+      res = await saveFeatureRequest({ title: title.trim(), description: context, dev_notes: notes,
+        category: 'Data', priority, status: 'idea', submitted_by: 'SAGE', votes: 0, is_seed: false });
+    }
+    setSaving(false);
+    if (res == null || (res.errors && res.errors.length)) { setMsg('⚠ ' + ((res && res.errors && res.errors[0]) || 'Save failed — is the table created?')); return; }
+    setMsg('✓ Saved to ' + (dest === 'task' ? 'Task Queue' : 'Feature Requests'));
+    setTimeout(onClose, 900);
+  };
+
+  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
+  const seg = (val, label, hint) => h('button', { onClick: () => setDest(val), title: hint, style: { flex: 1, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (dest === val ? amber : 'rgba(255,255,255,.12)'), background: dest === val ? 'rgba(245,158,11,.14)' : 'transparent', color: dest === val ? amber : muted } }, label);
+
+  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
+    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
+      h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '🐞 Log this as an issue'),
+      h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Turn SAGE’s response into a tracked ticket with a ready-to-run troubleshooting prompt.' + (src ? ' Detected source: ' + src.label + '.' : '')),
+      h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: muted, marginBottom: 5 } }, 'Where should this go?'),
+      h('div', { style: { display: 'flex', gap: 8, marginBottom: 4 } },
+        seg('task', '🔧 Task Queue', 'A bug / troubleshooting task (a data pull that failed or returned nothing).'),
+        seg('fr', '💡 Feature Request', 'A capability gap — data or an answer SAGE can’t provide yet.')),
+      h('div', { style: { fontSize: 9.5, color: muted, marginBottom: 12 } }, dest === 'task' ? 'Suggested: this reads like a data-pull failure to troubleshoot.' : 'Suggested: this reads like a capability to add.'),
+      h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, marginBottom: 4 } }, 'Title'),
+      h('input', { value: title, onChange: e => setTitle(e.target.value), style: { ...fld, marginBottom: 10 } }),
+      h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, marginBottom: 4, display: 'flex', justifyContent: 'space-between' } }, h('span', null, dest === 'task' ? 'Notes (troubleshooting prompt — paste to Claude Code)' : 'Dev notes (troubleshooting prompt)'), h('span', { style: { fontWeight: 400, fontStyle: 'italic' } }, 'editable')),
+      h('textarea', { value: notes, onChange: e => setNotes(e.target.value), rows: 9, style: { ...fld, fontFamily: 'var(--mono,monospace)', fontSize: 11, resize: 'vertical', marginBottom: 10 } }),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+        h('span', { style: { fontSize: 10, fontWeight: 700, color: muted } }, 'Priority'),
+        h('select', { value: priority, onChange: e => setPriority(e.target.value), style: { ...fld, width: 'auto', padding: '5px 8px', colorScheme: 'dark' } },
+          h('option', { value: 'high' }, 'High'), h('option', { value: 'medium' }, 'Medium'), h('option', { value: 'low' }, 'Low')),
+        h('span', { style: { flex: 1, fontSize: 10, color: msg.startsWith('⚠') ? red : grn } }, msg),
+        h('button', { onClick: onClose, style: { padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Cancel'),
+        h('button', { onClick: doSave, disabled: saving, style: { padding: '6px 16px', borderRadius: 6, border: 'none', background: amber, color: '#000', fontSize: 11, fontWeight: 800, cursor: saving ? 'default' : 'pointer' } }, saving ? '…' : 'Create'))));
+}
+
+function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRefresh }) {
+  const [title, setTitle] = uSt('');
+  const [msg, setMsg] = uSt('');
+  const [busy, setBusy] = uSt(false);
+  const canSave = (currentInput || '').trim().length > 0;
+  const saveCurrent = async () => {
+    if (!canSave) return;
+    setBusy(true); setMsg('Saving…');
+    const res = await saveSagePrompt({ title: (title.trim() || currentInput.trim().slice(0, 48)), promptText: currentInput.trim(), createdBy: 'Fletcher' });
+    setBusy(false);
+    if (res == null || (res.errors && res.errors.length)) { setMsg('⚠ ' + ((res && res.errors && res.errors[0]) || 'Save failed — is the table created?')); return; }
+    setTitle(''); setMsg('✓ Saved'); onRefresh();
+    setTimeout(() => setMsg(''), 1500);
+  };
+  const del = async (id) => { await deleteSagePrompt(id); onRefresh(); };
+  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
+  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
+    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
+      h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '📚 Prompt library'),
+      h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Save prompts you run often; use or re-run them any time. (Auto-scheduling coming next.)'),
+      h('div', { style: { display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-end' } },
+        h('div', { style: { flex: 1 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, marginBottom: 4 } }, 'Save current input as a prompt'),
+          h('input', { value: title, onChange: e => setTitle(e.target.value), placeholder: canSave ? 'Optional title…' : 'Type a prompt in SAGE first', disabled: !canSave, style: fld })),
+        h('button', { onClick: saveCurrent, disabled: !canSave || busy, style: { padding: '7px 14px', borderRadius: 6, border: 'none', background: canSave ? amber : 'rgba(245,158,11,.15)', color: canSave ? '#000' : 'rgba(245,158,11,.4)', fontSize: 11, fontWeight: 800, cursor: canSave ? 'pointer' : 'default' } }, '★ Save')),
+      msg && h('div', { style: { fontSize: 10, color: msg.startsWith('⚠') ? red : grn, marginBottom: 8 } }, msg),
+      h('div', { style: { borderTop: '1px solid rgba(255,255,255,.08)', margin: '8px 0' } }),
+      !prompts.length
+        ? h('div', { style: { fontSize: 11, color: muted, textAlign: 'center', padding: '20px 0' } }, 'No saved prompts yet.')
+        : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+            ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid rgba(255,255,255,.09)', borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.03)' } },
+              h('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, p.title),
+              h('div', { style: { fontSize: 10.5, color: muted, marginBottom: 6, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, (p.promptText || '').slice(0, 220)),
+              h('div', { style: { display: 'flex', gap: 6 } },
+                h('button', { onClick: () => onRun(p.promptText), style: { padding: '3px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' } }, '▶ Run'),
+                h('button', { onClick: () => onUse(p.promptText), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Use'),
+                h('button', { onClick: () => del(p.id), title: 'Delete', style: { padding: '3px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', marginLeft: 'auto' } }, 'Delete'))))),
+      h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 12 } },
+        h('button', { onClick: onClose, style: { padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Close'))));
+}
+
 // ── Message bubble ────────────────────────────────────────────────────────────
-function MsgBubble({ msg, streaming }) {
+function MsgBubble({ msg, streaming, onLog }) {
   const isUser = msg.role === 'user';
   const [copied, setCopied] = uSt(false);
 
@@ -728,6 +856,7 @@ function MsgBubble({ msg, streaming }) {
     h('button', { onClick: handleEmail, style: btnStyle(false) }, 'Email'),
     h('button', { onClick: handlePDF,   style: btnStyle(false) }, 'PDF'),
     h('button', { onClick: handleExcel, style: btnStyle(false) }, 'Excel'),
+    onLog && h('button', { onClick: onLog, title: 'Log this as an issue → Task or Feature Request (with a troubleshooting prompt)', style: btnStyle(false) }, '🐞 Log'),
   );
 
   return h('div', {
@@ -799,8 +928,14 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
   const [streamText, setStreamText] = uSt('');
   const [toolStatus, setToolStatus] = uSt('');
   const [error, setError]       = uSt(null);
+  const [logTarget, setLogTarget] = uSt(null);   // {question, answer} for the issue-logger modal
+  const [promptLibOpen, setPromptLibOpen] = uSt(false);
+  const [prompts, setPrompts]   = uSt([]);        // saved SAGE prompts
   const threadRef = uRef(null);
   const abortRef  = uRef(null);
+
+  const refreshPrompts = uCb(() => { loadSagePrompts().then(setPrompts).catch(() => setPrompts([])); }, []);
+  uEf(() => { refreshPrompts(); }, [refreshPrompts]);
 
   uEf(() => {
     try {
@@ -824,8 +959,8 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
     setError(null);
   };
 
-  const send = uCb(async () => {
-    const text = input.trim();
+  const sendMessage = uCb(async (raw) => {
+    const text = (raw || '').trim();
     if (!text || streaming) return;
 
     setInput('');
@@ -862,7 +997,9 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
       setToolStatus('');
       abortRef.current = null;
     }
-  }, [input, messages, streaming, ds, signals]);
+  }, [messages, streaming, ds, signals, customSignalDefs]);
+
+  const send = uCb(() => sendMessage(input), [sendMessage, input]);
 
   const stop = () => { abortRef.current?.abort(); };
 
@@ -882,18 +1019,30 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
         h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '24px', fontWeight: 900, letterSpacing: '-.04em', color: 'var(--text, #f1f5f9)', lineHeight: 1 } }, 'SAGE'),
         h('div', { style: { fontSize: '11px', color: muted, marginTop: 4 } }, 'Strategic Analytics & Guidance Engine · Claude Opus'),
       ),
-      messages.length > 0 && !streaming && h('button', {
-        onClick: clearThread,
-        title: 'Clear conversation',
-        style: {
-          background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
-          borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
-          fontSize: '11px', color: muted, flexShrink: 0, marginTop: 2,
-          transition: 'all .15s',
-        },
-        onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(239,68,68,.4)'; e.currentTarget.style.color = '#ef4444'; },
-        onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
-      }, '✕ New chat'),
+      h('div', { style: { display: 'flex', gap: 6, flexShrink: 0, marginTop: 2 } },
+        h('button', {
+          onClick: () => setPromptLibOpen(true),
+          title: 'Saved prompts — save & re-run your go-to questions',
+          style: {
+            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
+            fontSize: '11px', color: muted, transition: 'all .15s',
+          },
+          onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(245,158,11,.4)'; e.currentTarget.style.color = amber; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+        }, '📚 Prompts' + (prompts.length ? ' · ' + prompts.length : '')),
+        messages.length > 0 && !streaming && h('button', {
+          onClick: clearThread,
+          title: 'Clear conversation',
+          style: {
+            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
+            fontSize: '11px', color: muted, transition: 'all .15s',
+          },
+          onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(239,68,68,.4)'; e.currentTarget.style.color = '#ef4444'; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+        }, '✕ New chat'),
+      ),
     ),
 
     // ── Thread ───────────────────────────────────────────────────────────────
@@ -927,7 +1076,10 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
       ),
 
       // Messages
-      messages.map((msg, i) => h(MsgBubble, { key: i, msg, streaming: false })),
+      messages.map((msg, i) => h(MsgBubble, { key: i, msg, streaming: false,
+        onLog: msg.role === 'assistant'
+          ? () => setLogTarget({ question: (messages[i - 1] && messages[i - 1].role === 'user') ? messages[i - 1].content : '', answer: msg.content })
+          : null })),
 
       // Streaming assistant message
       streaming && streamText && h(MsgBubble, { key: 'stream', msg: { role: 'assistant', content: streamText + '▌' }, streaming: true }),
@@ -1011,5 +1163,15 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
     h('div', { style: { padding: '6px 16px 10px', fontSize: '9px', color: muted, flexShrink: 0 } },
       'Powered by Claude Opus 4.8 with adaptive thinking · Messages are sent to Anthropic via Supabase Edge Function',
     ),
+
+    // Modals
+    logTarget && h(LogIssueModal, { question: logTarget.question, answer: logTarget.answer, onClose: () => setLogTarget(null) }),
+    promptLibOpen && h(PromptLibraryModal, {
+      prompts, currentInput: input,
+      onClose: () => setPromptLibOpen(false),
+      onRefresh: refreshPrompts,
+      onUse: (t) => { setInput(t); setPromptLibOpen(false); },
+      onRun: (t) => { setPromptLibOpen(false); sendMessage(t); },
+    }),
   );
 }

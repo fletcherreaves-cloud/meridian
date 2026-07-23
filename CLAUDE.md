@@ -151,6 +151,8 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 **Live tools (v4.373–v4.379):** `query_daily_activity` (sales + DT), `query_lifelenz_labor` (VLH gap), `query_forecast_snapshots` (MAPE by model). System prompt documents tools explicitly so SAGE calls them proactively.
 
+**Self-instrumenting + prompt library (v4.487):** every SAGE answer has a **🐞 Log** action → opens a modal that turns the response into a **Task Queue** ticket (data-pull failures) or **Feature Request** (capability gaps) — auto-suggested by failure-language + data-source detection (`query_daily_activity`/`query_lifelenz_labor`/`query_forecast_snapshots`), pre-filled with the Q+A context AND a ready-to-paste **troubleshooting prompt** for Claude Code. Header **📚 Prompts** = saved-prompt library (`sage_prompts` table): save the current input, Use/Run/Delete saved prompts. **Phase 2 (planned):** auto-schedule prompts via a GitHub Action (`scripts/sage-run.mjs` + `SAGE_RUNNER_EMAIL/PASSWORD` service account to mint a user token — the edge fn validates a real user JWT) → results to an At-A-Glance tile. `send`→`sendMessage(text)` refactor already supports headless invocation.
+
 **Vision (future enhancements):**
 - Cross-device session memory and conversation retention
 - Action plans, tables/charts in responses, copy/email output
@@ -170,7 +172,7 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - **Ops Report guard**: refuses period-summary uploads (no daily dates) — daily rows are the source of truth.
 - **OK/FL market pills fixed**: were defaulting all stores to MCDOK (FL pill empty); now split by `INV_ORG_COORDS.state` (OK=20 Oklahoma, FL=7 Florida).
 
-⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` (still not confirmed done), and the new **`smart_target_adjustments`** block (v4.486 — powers the Smart Targets known-event Adj column; app fails soft without it, just won't persist adjustments). The 3 email-report tables are already created in Supabase.
+⚠️ **Pending user action:** Run these SQL blocks from `supabase/schema.sql` (each fails soft — the app works without them, just won't persist): **`forecast_snapshots`** (still not confirmed), **`smart_target_adjustments`** (v4.486 — Smart Targets known-event Adj column), **`sage_prompts`** (v4.487 — SAGE saved-prompt library). The 3 email-report tables are already created.
 
 **🎯 Smart Targets — sales-model verdict (v4.483, 2026-07-23):** a 27-store backtest proved the **simple trailing family (T3M/T6W/T3W · recent-3wk · 3-mo-avg) beats every engineered model** for monthly store sales (Composite/Momentum/Regression/Ensemble won **0 stores**; ~5% MAPE vs 8–14%). The three simple methods are **tied**, so the recommended **Smart number is now the MEDIAN of the three** (not "best-fit per store" — that chased n=2 noise; not the old unproven peer-blend, which is kept as a secondary "stretch"). Backtest **decoupled from the learning window** (`BT_DAYS=400`, `BT_FOLDS=6`). **Engineered models are PRESERVED intact, on demand** ("＋ Diagnostic models"), for diagnosis + potential longer-range use — standing owner directive: cautiously protect them. Details in `memory/vision-and-roadmap.md` (Workstream B, Layer 3).
 
