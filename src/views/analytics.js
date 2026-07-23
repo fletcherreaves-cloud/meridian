@@ -13,7 +13,7 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -6336,6 +6336,29 @@ function ModelHealthBadge({loc, settings, ds, showDetail}) {
   );
 }
 
+// ── SAGE Scheduled Runs tile (At-A-Glance) ───────────────────────────────────
+// Latest auto-run prompt results (scripts/sage-run.mjs → sage_prompt_runs).
+function SageRunsTile() {
+  const [runs, setRuns] = React.useState(null);
+  React.useEffect(() => { let live = true; loadSagePromptRuns(6).then(r => { if (live) setRuns(r || []); }).catch(() => { if (live) setRuns([]); }); return () => { live = false; }; }, []);
+  const rel = ts => { if (!ts) return ''; const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000); if (s < 3600) return Math.max(1, Math.floor(s / 60)) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago'; };
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '🧭'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'SAGE Scheduled Runs'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Auto-run prompt results · manage in SAGE → 📚 Prompts')));
+  if (runs === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  if (!runs.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No scheduled runs yet. In SAGE, save a prompt (📚 Prompts) and set a schedule to have it run automatically — results land here.'));
+  return card(head, h('div', null, ...runs.map(r => h('div', { key: r.id, style: { padding: '8px 14px', borderBottom: '.5px solid rgba(255,255,255,.05)' } },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+      h('span', { style: { width: 6, height: 6, borderRadius: '50%', background: r.ok ? '#10b981' : '#ef4444', flexShrink: 0 } }),
+      h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text,#e8eaed)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.title || 'Prompt'),
+      h('span', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, rel(r.ranAt))),
+    h('div', { style: { fontSize: 10, color: 'var(--text3,#9aa0aa)', marginTop: 2, lineHeight: 1.4, maxHeight: 30, overflow: 'hidden' } },
+      r.ok ? ((r.resultMd || '').replace(/[#*|`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140) || '—') : ('⚠ ' + (r.error || 'failed')))))));
+}
+
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   const today = new Date();
   const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
@@ -6359,6 +6382,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // ── Section config ───────────────────────────────────────────
   const DEF_SECS=[
+    {id:'sage',label:'SAGE Scheduled Runs',icon:'🧭',on:true},
     {id:'intelligence',label:'Intelligence Summary',icon:'🧠',on:true},
     {id:'projections',label:'Projections & Forecasting',icon:'📈',on:true},
     {id:'sales',label:'Sales & Guest Counts',icon:'💰',on:true},
@@ -7501,6 +7525,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       ),
 
       !noData&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(380px,100%),1fr))',gap:10}},
+
+        // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
+        secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
 
         // ── PROJECTIONS SECTION ──
         // ── INTELLIGENCE SUMMARY TILE ──────────────────────────

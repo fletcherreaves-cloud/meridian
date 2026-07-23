@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import * as XLSX from 'xlsx';
-import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt } from '../lib/supabase.js';
+import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -754,11 +754,19 @@ function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRe
     setTimeout(() => setMsg(''), 1500);
   };
   const del = async (id) => { await deleteSagePrompt(id); onRefresh(); };
+  const [schedFor, setSchedFor] = uSt(null);   // prompt id whose schedule editor is open
+  const [sdraft, setSdraft] = uSt({ freq: 'daily', hour: 13, dow: 1 });
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const schedLabel = p => p.scheduleEnabled ? '⏰ ' + ((p.scheduleFreq === 'weekly') ? DOW[p.scheduleDow || 0] : 'Daily') + ' ' + String(p.scheduleHour == null ? 0 : p.scheduleHour).padStart(2, '0') + ':00 UTC' : null;
+  const openSched = p => { setSdraft({ freq: p.scheduleFreq || 'daily', hour: p.scheduleHour != null ? p.scheduleHour : 13, dow: p.scheduleDow != null ? p.scheduleDow : 1 }); setSchedFor(p.id); };
+  const saveSched = async (p) => { await updateSagePromptSchedule(p.id, { enabled: true, hour: +sdraft.hour, freq: sdraft.freq, dow: +sdraft.dow }); setSchedFor(null); onRefresh(); };
+  const clearSched = async (p) => { await updateSagePromptSchedule(p.id, { enabled: false }); setSchedFor(null); onRefresh(); };
   const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
+  const miniSel = { fontSize: 10.5, padding: '3px 6px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 5, color: 'var(--text,#f1f5f9)', colorScheme: 'dark' };
   return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
     h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '📚 Prompt library'),
-      h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Save prompts you run often; use or re-run them any time. (Auto-scheduling coming next.)'),
+      h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Save prompts you run often; use, re-run, or schedule them to run automatically. Scheduled results land on the At-A-Glance “Scheduled Runs” tile.'),
       h('div', { style: { display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-end' } },
         h('div', { style: { flex: 1 } },
           h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, marginBottom: 4 } }, 'Save current input as a prompt'),
@@ -769,13 +777,26 @@ function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRe
       !prompts.length
         ? h('div', { style: { fontSize: 11, color: muted, textAlign: 'center', padding: '20px 0' } }, 'No saved prompts yet.')
         : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-            ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid rgba(255,255,255,.09)', borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.03)' } },
-              h('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, p.title),
+            ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.3)' : 'rgba(255,255,255,.09)'), borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.03)' } },
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 } },
+                h('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#f1f5f9)', flex: 1 } }, p.title),
+                schedLabel(p) && h('span', { title: 'Auto-runs on this schedule', style: { fontSize: 9, fontWeight: 700, color: amber, background: 'rgba(245,158,11,.14)', borderRadius: 99, padding: '1px 7px' } }, schedLabel(p))),
               h('div', { style: { fontSize: 10.5, color: muted, marginBottom: 6, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, (p.promptText || '').slice(0, 220)),
-              h('div', { style: { display: 'flex', gap: 6 } },
+              h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
                 h('button', { onClick: () => onRun(p.promptText), style: { padding: '3px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' } }, '▶ Run'),
                 h('button', { onClick: () => onUse(p.promptText), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Use'),
-                h('button', { onClick: () => del(p.id), title: 'Delete', style: { padding: '3px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', marginLeft: 'auto' } }, 'Delete'))))),
+                h('button', { onClick: () => (schedFor === p.id ? setSchedFor(null) : openSched(p)), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.4)' : 'rgba(255,255,255,.14)'), background: 'transparent', color: p.scheduleEnabled ? amber : muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, '⏰ Schedule'),
+                h('button', { onClick: () => del(p.id), title: 'Delete', style: { padding: '3px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', marginLeft: 'auto' } }, 'Delete')),
+              // Inline schedule editor
+              schedFor === p.id && h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,.08)' } },
+                h('span', { style: { fontSize: 10, color: muted } }, 'Run'),
+                h('select', { value: sdraft.freq, onChange: e => setSdraft(d => ({ ...d, freq: e.target.value })), style: miniSel }, h('option', { value: 'daily' }, 'Daily'), h('option', { value: 'weekly' }, 'Weekly')),
+                sdraft.freq === 'weekly' && h('select', { value: sdraft.dow, onChange: e => setSdraft(d => ({ ...d, dow: +e.target.value })), style: miniSel }, ...DOW.map((d, i) => h('option', { key: i, value: i }, d))),
+                h('span', { style: { fontSize: 10, color: muted } }, 'at'),
+                h('select', { value: sdraft.hour, onChange: e => setSdraft(d => ({ ...d, hour: +e.target.value })), style: miniSel }, ...Array.from({ length: 24 }, (_, i) => h('option', { key: i, value: i }, String(i).padStart(2, '0') + ':00'))),
+                h('span', { style: { fontSize: 9, color: muted } }, 'UTC'),
+                h('button', { onClick: () => saveSched(p), style: { padding: '3px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', marginLeft: 'auto' } }, 'Set'),
+                p.scheduleEnabled && h('button', { onClick: () => clearSched(p), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Turn off'))))),
       h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 12 } },
         h('button', { onClick: onClose, style: { padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Close'))));
 }

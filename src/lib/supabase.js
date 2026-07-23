@@ -1685,7 +1685,29 @@ export async function loadSagePrompts() {
       console.warn('[sage_prompts] load error:', error.message);
     return [];
   }
-  return (data || []).map(r => ({ id: r.id, title: r.title, promptText: r.prompt_text, tags: r.tags || '', createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at }));
+  return (data || []).map(r => ({ id: r.id, title: r.title, promptText: r.prompt_text, tags: r.tags || '', createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,
+    scheduleEnabled: !!r.schedule_enabled, scheduleHour: r.schedule_hour, scheduleFreq: r.schedule_freq || 'daily', scheduleDow: r.schedule_dow, lastRunAt: r.last_run_at }));
+}
+
+// Set/clear a prompt's auto-run schedule (Phase 2). enabled+hour+freq(+dow for weekly).
+export async function updateSagePromptSchedule(id, { enabled = false, hour = null, freq = 'daily', dow = null } = {}) {
+  if (!supabase || !id) return { saved: 0, errors: ['id required'] };
+  const row = { schedule_enabled: !!enabled, schedule_hour: enabled ? hour : null, schedule_freq: enabled ? freq : null, schedule_dow: enabled && freq === 'weekly' ? dow : null, updated_at: new Date().toISOString() };
+  const { error } = await supabase.from('sage_prompts').update(row).eq('id', id);
+  if (error) { console.warn('[sage_prompts] schedule error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: 1, errors: [] };
+}
+
+// Recent scheduled-prompt run history (for the At-A-Glance tile + library log).
+export async function loadSagePromptRuns(limit = 10) {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('sage_prompt_runs').select('*').order('ran_at', { ascending: false }).limit(limit);
+  if (error) {
+    if (!(error.message || '').includes('relation') && error.code !== '42P01')
+      console.warn('[sage_prompt_runs] load error:', error.message);
+    return [];
+  }
+  return (data || []).map(r => ({ id: r.id, promptId: r.prompt_id, title: r.title, ranAt: r.ran_at, ok: r.ok !== false, resultMd: r.result_md || '', error: r.error || '' }));
 }
 
 export async function saveSagePrompt({ id = null, title, promptText, tags = '', createdBy = '' } = {}) {
