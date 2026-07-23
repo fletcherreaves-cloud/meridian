@@ -1068,6 +1068,30 @@ create policy "lifelenz_labor_week: public write" on public.lifelenz_labor_week
 create index if not exists lifelenz_labor_week_week_idx
   on public.lifelenz_labor_week (week_start);
 
+-- ── Smart Targets: per-store known-event adjustments ────────────────────────────
+-- Lets the owner (a) drop one-off days from the learning history (holidays, remodels,
+-- outages, freak weather) so anomalies don't bias the target, and (b) add a signed
+-- known-event delta to the projected period total (e.g. +$8k for a local event next
+-- month). Consumed by src/views/smart-targets.js via the engine's excludeDates /
+-- eventDelta hooks. One row per (loc, metric_key).
+create table if not exists public.smart_target_adjustments (
+  loc            text not null,               -- store number, e.g. '3708'
+  metric_key     text not null,               -- 'sales' | 'laborpct' | 'oepe' | …
+  exclude_dates  jsonb default '[]'::jsonb,   -- ISO 'YYYY-MM-DD' one-off days to drop
+  event_delta    float default 0,             -- signed units added to the projection (sales $)
+  event_note     text,                        -- free-text reason (shown on hover)
+  updated_at     timestamptz default now(),
+  updated_by     uuid references public.profiles(id),
+  primary key (loc, metric_key)
+);
+
+alter table public.smart_target_adjustments enable row level security;
+
+create policy "smart_target_adjustments: public read" on public.smart_target_adjustments
+  for select using (true);
+create policy "smart_target_adjustments: public write" on public.smart_target_adjustments
+  for all using (true);
+
 -- ── Crew Skills Matrix (LifeLenz People List, Simple CSV) ───────────────────────
 -- One row per employee per ROSTER store (keyed by roster store + name) — a person
 -- rostered at a shared/transition store shows under THAT store, not their home.

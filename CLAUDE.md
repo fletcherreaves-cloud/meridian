@@ -170,7 +170,7 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - **Ops Report guard**: refuses period-summary uploads (no daily dates) — daily rows are the source of truth.
 - **OK/FL market pills fixed**: were defaulting all stores to MCDOK (FL pill empty); now split by `INV_ORG_COORDS.state` (OK=20 Oklahoma, FL=7 Florida).
 
-⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` (still not confirmed done). The 3 new email-report tables have been created in Supabase.
+⚠️ **Pending user action:** Run the `forecast_snapshots` SQL block from `supabase/schema.sql` (still not confirmed done), and the new **`smart_target_adjustments`** block (v4.486 — powers the Smart Targets known-event Adj column; app fails soft without it, just won't persist adjustments). The 3 email-report tables are already created in Supabase.
 
 **🎯 Smart Targets — sales-model verdict (v4.483, 2026-07-23):** a 27-store backtest proved the **simple trailing family (T3M/T6W/T3W · recent-3wk · 3-mo-avg) beats every engineered model** for monthly store sales (Composite/Momentum/Regression/Ensemble won **0 stores**; ~5% MAPE vs 8–14%). The three simple methods are **tied**, so the recommended **Smart number is now the MEDIAN of the three** (not "best-fit per store" — that chased n=2 noise; not the old unproven peer-blend, which is kept as a secondary "stretch"). Backtest **decoupled from the learning window** (`BT_DAYS=400`, `BT_FOLDS=6`). **Engineered models are PRESERVED intact, on demand** ("＋ Diagnostic models"), for diagnosis + potential longer-range use — standing owner directive: cautiously protect them. Details in `memory/vision-and-roadmap.md` (Workstream B, Layer 3).
 

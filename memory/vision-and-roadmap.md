@@ -104,8 +104,15 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
       redemption on longer horizons); consider deepening folds further as history
       grows; watch the scoreboard for any store where an engineered model ever
       legitimately wins.
-    - ⏭️ Known-event (+/-) UI: let the owner mark event dates/deltas per store
-      (engine hooks `excludeDates`/`eventDelta` already exist).
+    - ✅ **Known-event (+/-) UI shipped (v4.486):** per-store, per-metric adjustments
+      in `smart_target_adjustments` (Supabase): **exclude one-off days** (dropped from
+      the learning window so a holiday/outage/remodel doesn't bias the target) +
+      **event delta** (signed $ added to the projected total, monthly metrics) + note.
+      New **Adj** column on the Smart Targets table opens a per-store editor; loaders
+      `loadSmartTargetAdjustments`/`saveSmartTargetAdjustment` (fail soft if the table
+      isn't created yet — empty adjustment deletes the row). Wired via the engine's
+      existing `excludeDates`/`eventDelta` hooks. ⚠️ needs the `smart_target_adjustments`
+      SQL block run in Supabase to persist.
   - ✅ **Ratio metrics shipped (v4.484):** **Labor %** (sales-weighted, from Daily
     Glimpse `laborPct`×`allNetSales`) and **DT speed / OEPE** (car-weighted, from
     Glimpse `oepe`×`dtGC`), both `direction='lower'`. New engine fns

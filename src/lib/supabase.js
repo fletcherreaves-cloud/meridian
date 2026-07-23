@@ -1623,6 +1623,57 @@ export async function loadLifeLenzLaborWeek({ weekStart = null } = {}) {
   return { weekStart: latest, rows };
 }
 
+// ── Smart Targets: per-store known-event adjustments ─────────────────────────
+// excludeDates (drop one-off days from learning) + eventDelta (signed units added
+// to the projected total) + note, keyed by (loc, metricKey). Fails soft to {}.
+export async function loadSmartTargetAdjustments(metricKey = null) {
+  if (!supabase) return {};
+  let q = supabase.from('smart_target_adjustments').select('*');
+  if (metricKey) q = q.eq('metric_key', metricKey);
+  const { data, error } = await q;
+  if (error) {
+    if (!(error.message || '').includes('relation') && error.code !== '42P01')
+      console.warn('[smart_target_adjustments] load error:', error.message);
+    return {};
+  }
+  const out = {};
+  for (const r of data || []) {
+    const loc = String(parseInt(r.loc, 10));
+    (out[r.metric_key] = out[r.metric_key] || {})[loc] = {
+      excludeDates: Array.isArray(r.exclude_dates) ? r.exclude_dates : [],
+      eventDelta: typeof r.event_delta === 'number' ? r.event_delta : 0,
+      note: r.event_note || '',
+    };
+  }
+  return metricKey ? (out[metricKey] || {}) : out;
+}
+
+export async function saveSmartTargetAdjustment(loc, metricKey, { excludeDates = [], eventDelta = 0, note = '' } = {}) {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  if (!loc || !metricKey) return { saved: 0, errors: ['loc + metricKey required'] };
+  // Empty adjustment → delete the row so the table only holds real overrides.
+  const clean = (excludeDates || []).filter(Boolean);
+  if (!clean.length && !eventDelta && !(note || '').trim()) {
+    const { error } = await supabase.from('smart_target_adjustments')
+      .delete().eq('loc', String(parseInt(loc, 10))).eq('metric_key', metricKey);
+    if (error) { console.warn('[smart_target_adjustments] delete error:', error.message); return { saved: 0, errors: [error.message] }; }
+    return { saved: 0, deleted: true, errors: [] };
+  }
+  const row = {
+    loc: String(parseInt(loc, 10)), metric_key: metricKey,
+    exclude_dates: clean, event_delta: Number(eventDelta) || 0,
+    event_note: (note || '').trim() || null, updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('smart_target_adjustments').upsert(row, { onConflict: 'loc,metric_key' });
+  if (error) {
+    if ((error.message || '').includes('relation') || error.code === '42P01')
+      console.error('[smart_target_adjustments] Table missing — run the smart_target_adjustments block from schema.sql.');
+    else console.error('[smart_target_adjustments] save error:', error.message);
+    return { saved: 0, errors: [error.message] };
+  }
+  return { saved: 1, errors: [] };
+}
+
 // ── Crew Skills Matrix (LifeLenz People List) ────────────────────────────────
 // Per-employee skill ratings (1-5) by job. Keyed by the ROSTER store (the store
 // whose People page/file this is), NOT the employee's home store — a person
