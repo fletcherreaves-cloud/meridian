@@ -122,14 +122,22 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
     branches ratio vs monthly; vs-Official coloring is direction-aware; Official
     pulls per-store `tLabor`/`tOepe` from DEFAULT_TARGETS. Ratio metrics skip the
     projector backtest (the ×days bakeoff doesn't apply to a level).
-  - ⏭️ **FOB % deferred (needs owner input):** `qsr_fob` is a MONTHLY series with an
-    ambiguous numerator (base food vs total food-cost vs variance) — it doesn't fit
-    the daily-window machinery, so it's held until the exact FOB % definition +
-    cadence are confirmed rather than fabricated.
+  - ✅ **FOB % metric shipped (v4.489):** resolved the numerator by matching the
+    At-A-Glance FOB tile exactly — FOB % = Σ(rawWaste+compWaste+condiments+
+    empMgrMeals+statVariance+unexplained)/Σ prodSales, dollar-weighted. `qsr_fob` is
+    daily-but-cumulative-MTD, so `fobMonthly()` collapses to one monthly point per
+    store (latest row = month total) fed through the ratio engine; official =
+    `tFOBTarget`. Recency windows degrade gracefully to a trailing-months weighted
+    level (recommend the 180d lookback for FOB).
   - Horizons out to **yearly** (user asked for 60/90/180d → up to 1yr).
   - Auto-run calibration; prompt user for any judgment calls inline.
-  - Persist accepted Smart targets; add "apply as Official" → feed Monthly
-    Projections as official distributed targets.
+  - ✅ **"Apply as Official" shipped (v4.489):** per-store ("→ Official") + bulk
+    ("✓ Apply as Official") writes the Smart number to `monthly_targets` for the
+    upcoming month via `applyOfficialTargets(entries, year, month, col)` — a PARTIAL
+    upsert that sets only that metric's column (sales→`sales_proj`, labor→
+    `crew_labor_pct`, FOB→`fob_target_pct`; OEPE has no column so no Apply), preserving
+    every other target for that store/month. Instant feedback via a per-metric
+    `appliedOff` override (ds.monthlyTargets isn't reactive). Feeds Projections.
 
 ## Workstream C — The two "next-ups"
 - **Projections → current-month actuals for all locations/groupings** (pairs with the *Projections vs Actuals* feature idea).

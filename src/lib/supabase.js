@@ -55,6 +55,22 @@ export async function uploadReportFile(file, reportType) {
 // ── Monthly Targets ───────────────────────────────────────────────────────────
 // Save parsed monthly targets to Supabase. targets = { loc: {tCrewLabor, ...} }
 // Returns { saved, errors }.
+// Apply Smart Targets to the OFFICIAL monthly_targets for one (year, month).
+// entries = [{loc, val}]; col = the DB column to set (e.g. 'sales_proj',
+// 'crew_labor_pct', 'fob_target_pct'). Partial upsert — ON CONFLICT updates ONLY
+// this column (+updated_at), preserving every other target already set for that
+// store/month. Feeds Monthly Projections.
+export async function applyOfficialTargets(entries, year, month, col = 'sales_proj') {
+  if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
+  const rows = (entries || []).filter(e => e && e.loc != null && e.val != null).map(e => ({
+    loc: String(e.loc), year, month, [col]: e.val, updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase.from('monthly_targets').upsert(rows, { onConflict: 'loc,year,month' });
+  if (error) { console.error('[monthly_targets] applyOfficial error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length, errors: [] };
+}
+
 export async function saveMonthlyTargets(targets, year, month) {
   if (!supabase) return { saved: 0, errors: ['Supabase not configured'] };
   const rows = Object.entries(targets).map(([loc, t]) => ({
