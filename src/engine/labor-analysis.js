@@ -100,6 +100,82 @@ export function analyzeSheet(inputRows = [], isFL = () => false) {
   return { rows, subtotals: { ok: aggregateGroup(ok), fl: aggregateGroup(fl), grand: aggregateGroup(rows) } };
 }
 
+// ── Weekly Band-1 derived from the daily LifeLenz schedule ───────────────────
+// The daily `lifelenz_schedule` table (synced daily by scripts/lifelenz-pull.mjs)
+// IS the LifeLenz Labor Analysis report at day grain, so the weekly Band-1 inputs
+// can be aggregated from it — no separate scrape, cloud-fresh on every device.
+//
+// Owner-confirmed field mapping (2026-07-23):
+//   Hours Forecast (F)  = Proj VLH + Fixed(guide) + Floor   — HOURLY labor only,
+//                          NO salaried manager (mgr is salaried, not in this %).
+//   Hours Scheduled (G) = Sch VLH  + Sch Fixed    + Sch Floor
+// Intensive fields (Labor %, Rate, TPPH) are recomputed from the weekly SUMS,
+// never a mean of daily ratios. Rate/Labor$ come from the daily Labor % × that
+// day's forecast sales (the schedule carries no rate column).
+
+// Monday (local) of the week containing `d`, at 00:00.
+export function isoWeekMonday(d) {
+  const dt = d instanceof Date ? new Date(d) : new Date(d);
+  if (Number.isNaN(+dt)) return null;
+  const dow = (dt.getDay() + 6) % 7;            // 0=Mon … 6=Sun
+  dt.setDate(dt.getDate() - dow); dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+const _isoDay = d => { const x = d instanceof Date ? d : new Date(d); return Number.isNaN(+x) ? null : x.toISOString().slice(0, 10); };
+const _locNum = s => { const n = parseInt(s, 10); return Number.isNaN(n) ? String(s == null ? '' : s) : String(n); };
+
+// rows: camelCase daily schedule rows (as loadLifeLenzSchedule returns) —
+// {loc, date, fcstSales, fcstTCs, laborPct, projVLH, schVLH, fixGuideHrs,
+//  schFixHrs, projFloor, schFloor, …}. Returns { weekStart, weekEnd, rows:{loc:band1} }.
+export function deriveBand1FromSchedule(rows = [], { weekStart = null, asOf = new Date(), orgTargetFor = null } = {}) {
+  let wsDate = weekStart ? new Date(weekStart + 'T00:00:00') : isoWeekMonday(asOf);
+  if (!wsDate || Number.isNaN(+wsDate)) wsDate = isoWeekMonday(new Date());
+  const wsIso = _isoDay(wsDate);
+  const weDate = new Date(wsDate); weDate.setDate(weDate.getDate() + 7);
+  const weIso = _isoDay(weDate);
+
+  const acc = {};
+  for (const r of rows || []) {
+    if (!r || r.loc == null || r.date == null) continue;
+    const iso = _isoDay(r.date); if (!iso || iso < wsIso || iso >= weIso) continue;
+    const loc = _locNum(r.loc);
+    const a = acc[loc] || (acc[loc] = { loc, salesFcst: 0, gcFcst: 0, hoursFcst: 0, hoursSched: 0, schedFixedHrs: 0, laborDol: 0, salesForPct: 0, days: 0 });
+    const fs = _n(r.fcstSales) || 0;
+    a.salesFcst += fs;
+    a.gcFcst    += _n(r.fcstTCs) || 0;
+    a.hoursFcst += (_n(r.projVLH) || 0) + (_n(r.fixGuideHrs) || 0) + (_n(r.projFloor) || 0); // Proj VLH + Fixed + Floor
+    a.hoursSched += (_n(r.schVLH) || 0) + (_n(r.schFixHrs) || 0) + (_n(r.schFloor) || 0);     // Sch  VLH + Fixed + Floor
+    a.schedFixedHrs += _n(r.schFixHrs) || 0;
+    // Daily labor $ = dayLabor% × dayForecastSales. Normalize the % if the source
+    // stored it as 21.5 rather than 0.215.
+    let lp = _n(r.laborPct);
+    if (lp != null && Math.abs(lp) > 1.5) lp = lp / 100;
+    if (lp != null && fs > 0) { a.laborDol += lp * fs; a.salesForPct += fs; }
+    a.days++;
+  }
+
+  const out = {};
+  for (const loc of Object.keys(acc)) {
+    const a = acc[loc];
+    if (!(a.salesFcst > 0)) continue;                    // no forecast → skip this store
+    const laborPctActual = a.salesForPct > 0 ? a.laborDol / a.salesForPct : null; // Σ$ / Σsales
+    const rate = (a.hoursSched > 0 && a.laborDol > 0) ? a.laborDol / a.hoursSched : null; // Σ$ / Σhrs
+    const tpph = a.hoursSched > 0 ? a.gcFcst / a.hoursSched : null;               // Σgc / Σhrs
+    const schedFixedPct = a.hoursSched > 0 ? a.schedFixedHrs / a.hoursSched : null;
+    const tgt = orgTargetFor ? orgTargetFor(loc) : null;
+    out[loc] = {
+      loc, salesFcst: a.salesFcst, gcFcst: a.gcFcst,
+      hoursFcst: a.hoursFcst || null, hoursSched: a.hoursSched || null,
+      laborPctActual, rate, tpph, schedFixedPct,
+      laborTargetOrg: _n(tgt),
+      actualHours: null, projSalesMonth: null,
+      daysCovered: a.days, source: 'lifelenz_schedule',
+    };
+  }
+  return { weekStart: wsIso, weekEnd: weIso, rows: out };
+}
+
 // ── Hours of operation ───────────────────────────────────────────────────────
 // Store hours are Excel time fractions (0.208≈5:00, 0.916≈22:00). Hours open for
 // a day = (close-open)*24; a close of 0 or ≤ open means the store runs to/through

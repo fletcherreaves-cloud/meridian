@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeLaborRow, analyzeStore, aggregateGroup, analyzeSheet,
   hoursOpen, fracToTime, FLH_THRESHOLDS,
+  isoWeekMonday, deriveBand1FromSchedule,
 } from '../engine/labor-analysis.js';
 
 // Real inputs from the source sheet, store 3708 (row 4). Hours Forecast/Scheduled
@@ -97,5 +98,56 @@ describe('labor-analysis — hours of operation', () => {
   });
   it('FLH thresholds are the sheet constants', () => {
     expect(FLH_THRESHOLDS).toEqual({ fixed10: 0.10, fixed15: 0.15, floor10: 0.10, floor15: 0.15, combined25: 0.25 });
+  });
+});
+
+describe('labor-analysis — weekly Band-1 from daily LifeLenz schedule', () => {
+  it('isoWeekMonday returns the Monday of the week', () => {
+    expect(isoWeekMonday(new Date('2026-07-22T12:00:00')).getDay()).toBe(1); // Wed → Mon
+  });
+
+  // A store with 7 clean days in the target week, plus one row in the NEXT week
+  // (must be excluded). Per-day: Proj VLH 150 + Fixed 30 + Floor 20 = 200 hrs
+  // forecast; Sch 160 + 30 + 20 = 210 hrs scheduled; sales 10k, GC 1000, labor 21%.
+  const mk = (loc, date, o) => ({ loc, date, fcstSales: 10000, fcstTCs: 1000, laborPct: 0.21, projVLH: 150, fixGuideHrs: 30, projFloor: 20, schVLH: 160, schFixHrs: 30, schFloor: 20, ...o });
+  const week = ['2026-07-20', '2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26'];
+  const rows = week.map(d => mk('0003708', d));
+  rows.push(mk('0003708', '2026-07-27', { fcstSales: 99999 })); // next week — excluded
+
+  const out = deriveBand1FromSchedule(rows, { weekStart: '2026-07-20', orgTargetFor: () => 0.215 });
+  const b = out.rows['3708'];
+
+  it('buckets only the target week (excludes next-week rows)', () => {
+    expect(out.weekStart).toBe('2026-07-20');
+    expect(b.salesFcst).toBeCloseTo(70000, 6);   // 7×10k, NOT including the 99999 day
+  });
+  it('Hours Forecast (F) = Σ(Proj VLH + Fixed + Floor)', () => {
+    expect(b.hoursFcst).toBeCloseTo(1400, 6);     // 7×200
+  });
+  it('Hours Scheduled (G) = Σ(Sch VLH + Sch Fixed + Sch Floor)', () => {
+    expect(b.hoursSched).toBeCloseTo(1470, 6);    // 7×210
+  });
+  it('GC forecast sums Fcst TCs', () => expect(b.gcFcst).toBeCloseTo(7000, 6));
+  it('Labor % is sales-weighted Σ$/Σsales (not a mean of daily %s)', () => {
+    expect(b.laborPctActual).toBeCloseTo(0.21, 6);          // Σ(0.21×10k)/Σ10k
+  });
+  it('Rate = Σ labor$ / Σ scheduled hours', () => {
+    expect(b.rate).toBeCloseTo(14700 / 1470, 6);            // = 10.0
+  });
+  it('TPPH = Σ GC / Σ scheduled hours', () => {
+    expect(b.tpph).toBeCloseTo(7000 / 1470, 6);
+  });
+  it('org target wired from orgTargetFor', () => expect(b.laborTargetOrg).toBeCloseTo(0.215, 6));
+
+  it('normalizes a labor % stored as 21.5 rather than 0.215', () => {
+    const r2 = ['2026-07-20', '2026-07-21'].map(d => mk('0009999', d, { laborPct: 21 }));
+    const o2 = deriveBand1FromSchedule(r2, { weekStart: '2026-07-20' });
+    expect(o2.rows['9999'].laborPctActual).toBeCloseTo(0.21, 6);
+  });
+
+  it('skips a store with no forecast sales in the week', () => {
+    const r3 = [mk('0001111', '2026-07-20', { fcstSales: 0 })];
+    const o3 = deriveBand1FromSchedule(r3, { weekStart: '2026-07-20' });
+    expect(o3.rows['1111']).toBeUndefined();
   });
 });
