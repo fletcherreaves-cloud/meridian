@@ -486,9 +486,12 @@ create table if not exists public.lifelenz_job_hours (
 alter table public.lifelenz_job_hours enable row level security;
 
 -- Public read/write — operational, no PII; matches the lifelenz_schedule pattern.
+-- drop-if-exists first so this block is safe to re-run (create policy has no IF NOT EXISTS).
+drop policy if exists "lifelenz_job_hours: public read" on public.lifelenz_job_hours;
 create policy "lifelenz_job_hours: public read" on public.lifelenz_job_hours
   for select using (true);
 
+drop policy if exists "lifelenz_job_hours: public write" on public.lifelenz_job_hours;
 create policy "lifelenz_job_hours: public write" on public.lifelenz_job_hours
   for all using (true);
 
