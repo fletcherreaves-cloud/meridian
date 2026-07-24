@@ -6,7 +6,7 @@ metadata:
   type: project
 ---
 
-# Meridian Panel Catalog (live) — as of v4.511 (2026-07-24)
+# Meridian Panel Catalog (live) — as of v4.513 (2026-07-24)
 
 > **Now also in-app:** a user-friendly version ships as the **"Panel Index"** Knowledge Base
 > article (`KB_ARTICLES.panel_index` in `src/engine/forecast.js`, category "App Guide", v4.511).
@@ -39,11 +39,7 @@ Permission keys: `analytics.store/district/labor/brief/forecasting/ai/dashboard`
 - **Org Summary** (`operator-summary`, analytics.district) — org/district-level rollup scorecard. *derived*. ✅
 - **Store Scorecard** (`ranking`, analytics.store) — per-store ranking across KPIs. *derived*. ✅
 - **Performance Reviews** (`perf-reviews`, reviews.view) — modular weighted GM/mgr reviews; scoring engine (the seed for a future general form-builder). *Supabase*. ✅
-- **Targets** (`unified-targets`, analytics.store) — monthly targets, Supabase-persisted. *monthly_targets*. ✅ **[Planning-hub merge]**
-- **Monthly Projections** (`monthly-proj`) — per-store monthly projection + patch rollups. *forecast engine*. ✅ **[Planning-hub]**
-- **Pace to Target** (`pace-target`) — MTD actual vs official target + pace/run-rate. *actuals + targets*. ✅ **[Planning-hub]**
-- **Yearly Projections** (`yearly-proj`) — annual projection view. *forecast engine*. ✅ **[Planning-hub]**
-- **Smart Targets** (`smart-targets-v2`) — median-of-simple recommended targets + backtest; multi-metric. *`src/features/smart-targets`*. ✅ **[Planning-hub]**
+- **Planning** (`planning`, analytics.store) — ✅ **MERGED HUB (v4.513)**. One nav entry, five lazy tabs (only the active tab mounts): **Targets** (`unified-targets` → tab `targets`, monthly_targets), **Monthly** (`monthly-proj` → `monthly`, forecast engine + patch rollups), **Pace** (`pace-target` → `pace`, MTD vs official + run-rate), **Yearly** (`yearly-proj` → `yearly`, annual), **Smart** (`smart-targets-v2` → `smart`, median-of-simple + backtest, multi-metric). Hub = `PlanningHubPanel` in `src/app/App.js`; each panel gained an `embedded` prop that drops its own full-screen overlay so it fills the hub body. **Legacy modal ids still resolve** (they now deep-link to the matching tab), so At-A-Glance tiles / SAGE links keep working.
 - **Labor Analysis** (`labor-analysis`, analytics.store) — weekly FLH/Band-1 (VLH/Fixed/Floor) derived from `lifelenz_schedule`; dollar-weighted subtotals. *`src/engine/labor-analysis.js`*. ✅ **[Scheduling-hub]**
 - **Employee Skill Levels** (`skills-matrix`) — per-employee cross-training/skill matrix. *LifeLenz `employmentRoles`*. ✅ **[Scheduling-hub]**
 
@@ -89,7 +85,7 @@ Forecast/projection cluster (heavy overlap — candidates to merge into Planning
 ---
 
 ## Consolidation shortlist (cross-ref Notes 24)
-1. **Planning hub** ← Targets + Monthly Projections + Pace to Target + Yearly Projections + Smart Targets (+ Test-Kitchen forecast cluster as advanced tabs). Kills the biggest overlap.
+1. ✅ **Planning hub** (v4.513) ← Targets + Monthly Projections + Pace to Target + Yearly Projections + Smart Targets, now one nav entry + five lazy tabs. **DONE.** (Still open: optionally fold the Test-Kitchen forecast cluster in as advanced tabs.)
 2. **Scheduling hub** ← Labor Analysis + Scheduling + Schedule Summary + Labor Analytics + Employee Skill Levels → new **Labor & Scheduling** category.
 3. **People/HR** ← Performance Reviews + Visit Readiness + Graded Visits (+ future coaching).
 4. **Prune Test Kitchen**: dedupe `proj` ×2; fold Calendar Manager into Events & Tags; promote or retire the forecast-diagnostic panels.

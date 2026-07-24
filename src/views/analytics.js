@@ -9629,7 +9629,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
       h('tbody',null,...withPace.map(r=>rowEl(r,false)),rowEl({label:'District Total',tgt:tgtSum,act:actSum,pace:totPace,vs:totVs},true))));
 }
 
-function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs}) {
+function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs, embedded}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
   const [selPeriod,    setSelPeriod]    = useState(null); // {year, month} or null = use ds
@@ -9843,7 +9843,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     setSheetOpen(false);
   };
 
-  return div({style:{position:'fixed',inset:0,zIndex:300,background:'var(--bg)',
+  return div({style:embedded?{position:'relative',flex:1,minHeight:0,background:'var(--bg)',display:'flex',flexDirection:'column',overflow:'hidden'}:{position:'fixed',inset:0,zIndex:300,background:'var(--bg)',
     display:'flex',flexDirection:'column',overflow:'hidden'}},
 
     // Header
@@ -9959,7 +9959,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
             color:sheetGroup?'#fff':'var(--text3)',border:'none'}},
           sheetLoading?'Loading…':'Open Report')
       ),
-      btn({onClick:onClose,style:{marginLeft:4,padding:'4px 12px',background:'var(--surf)',
+      !embedded&&btn({onClick:onClose,style:{marginLeft:4,padding:'4px 12px',background:'var(--surf)',
         border:'1px solid var(--bdr)',borderRadius:4,color:'var(--text)',cursor:'pointer',fontSize:12}},'✕ Close')
     ),
 

@@ -204,11 +204,8 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.district', 'Org Summary',        '📊', ()=>onOpenModal('operator-summary'), false),
       pis('analytics.store',    'Store Scorecard',    '⇈', ()=>onOpenModal('ranking'),           false),
       pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),     false),
-      pis('analytics.store',    'Targets',            '◉', ()=>onOpenModal('unified-targets'),   false),
-      pis('analytics.store',    'Monthly Projections','📅', ()=>onOpenModal('monthly-proj'),     false),
-      pis('analytics.store',    'Pace to Target',     '🏁', ()=>onOpenModal('pace-target'),      false),
-      pis('analytics.store',    'Yearly Projections', '📆', ()=>onOpenModal('yearly-proj'),      false),
-      pis('analytics.store',    'Smart Targets',      '🧭', ()=>onOpenModal('smart-targets-v2'), false),
+      // Planning hub (Notes 24): Targets · Monthly Projections · Pace · Yearly · Smart Targets, tabbed
+      pis('analytics.store',    'Planning',           '🎯', ()=>onOpenModal('planning'),          false),
       pis('analytics.store',    'Labor Analysis',     '🧮', ()=>onOpenModal('labor-analysis'),   false),
       pis('analytics.store',    'Employee Skill Levels','🎓', ()=>onOpenModal('skills-matrix'),    false),
       // ── OPERATIONS ─────────────────────────────────────────────
