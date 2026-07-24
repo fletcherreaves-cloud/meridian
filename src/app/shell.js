@@ -206,13 +206,12 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),     false),
       // Planning hub (Notes 24): Targets · Monthly Projections · Pace · Yearly · Smart Targets, tabbed
       pis('analytics.store',    'Planning',           '🎯', ()=>onOpenModal('planning'),          false),
-      pis('analytics.store',    'Labor Analysis',     '🧮', ()=>onOpenModal('labor-analysis'),   false),
-      pis('analytics.store',    'Employee Skill Levels','🎓', ()=>onOpenModal('skills-matrix'),    false),
+      // ── LABOR & SCHEDULING ─────────────────────────────────────
+      // Scheduling hub (Notes 24): Labor Analytics · Scheduling · Schedule Summary · Labor Analysis · Skills, tabbed
+      can('analytics.store') && navLabel('LABOR & SCHEDULING'),
+      pis('analytics.store',    'Scheduling',         '🗓', ()=>onOpenModal('sched-hub'),         false),
       // ── OPERATIONS ─────────────────────────────────────────────
       can('analytics.store') && navLabel('OPERATIONS'),
-      pis('analytics.labor',    'Labor Analytics',    '👷', ()=>onOpenModal('labor-analytics'),  false),
-      pis('analytics.store',    'Scheduling',         '📋', ()=>onOpenModal('scheduling'),        false),
-      pis('analytics.store',    'Schedule Summary',   '🗓', ()=>onOpenModal('sched-summary'),    false),
       pis('analytics.store',    'Food Cost',          '🥗', ()=>onOpenModal('fob-analysis'),     false),
       pis('analytics.store',    'End of Month',       '📋', ()=>onOpenModal('fob-eom'),          false),
       pis('analytics.district', 'EOM Supervisor',     '📊', ()=>onOpenModal('eom-summary'),      false),

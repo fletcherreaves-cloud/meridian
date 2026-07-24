@@ -1348,7 +1348,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
 
 // ── end OperatorSummaryPanel ─────────────────────────────────────────────────
 
-function LaborAnalyticsPanel({stores, ds, settings, onClose}) {
+function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   const {useState:uSt,useMemo:uM} = React;
   const allLocs = uM(()=>(stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc),[stores]);
   const okLocs  = uM(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='OK'),[allLocs]);
@@ -1540,12 +1540,12 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose}) {
 
   // ── No data guard ──
   const hasData=ds&&((ds.laborRows||[]).length>0||(ds.ctrlRows||[]).length>0);
-  if(!hasData)return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
+  if(!hasData)return div({style:embedded?{position:'relative',flex:1,minHeight:0,display:'flex',alignItems:'center',justifyContent:'center'}:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
       div({style:{fontSize:40,marginBottom:12}},'👷'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Labor Data Loaded'),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load a Labor Analysis or Operations Report to populate this dashboard.'),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      !embedded&&btn({className:'btn btn-sm',onClick:onClose},'Close')));
 
   // ── KPI cards ──
   const kpiCards=()=>{
@@ -1981,11 +1981,11 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose}) {
   // ── TABS config ──
   const TABS=[{id:'overview',l:'📋 Overview'},{id:'rankings',l:'⇈ Rankings'},{id:'dow',l:'📅 Day of Week'},{id:'trend',l:'📈 6-Wk Trend'},{id:'insights',l:'⚡ Insights'}];
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
-    div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',
-      borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',
-      boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
+  const OUTER=embedded?{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20};
+  const CARD=embedded?{flex:1,minHeight:0,background:'var(--surf)',width:'100%',display:'flex',flexDirection:'column',overflow:'hidden'}:{flex:1,background:'var(--surf)',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'};
+  return div({style:OUTER},
+    !embedded&&div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
+    div({style:CARD},
       // Header
       div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
         div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'👷 Labor Analytics'),
@@ -2021,7 +2021,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose}) {
               'Days':            s.days,
             }))
           }),
-          btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕'))
+          !embedded&&btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕'))
       ),
       // Period pills
       periodBar,

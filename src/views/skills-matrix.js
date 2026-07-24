@@ -54,7 +54,7 @@ function orderJobs(jobs) {
   return [...ordered, ...rest];
 }
 
-export function SkillsMatrixPanel({ ds, onClose }) {
+export function SkillsMatrixPanel({ ds, onClose, embedded }) {
   const { useState, useMemo, useEffect } = React;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -221,9 +221,11 @@ export function SkillsMatrixPanel({ ds, onClose }) {
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
 
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1600, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+  const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };
+  const CARD = embedded ? { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: 1, background: 'var(--surf)', maxWidth: 1600, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' };
+  return div({ style: OUTER },
+    !embedded && div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
+    div({ style: CARD },
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '🎓'),
         div({ style: { flex: 1, minWidth: 160 } },
@@ -245,7 +247,7 @@ export function SkillsMatrixPanel({ ds, onClose }) {
         btn({ onClick: printReport, disabled: !sorted.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: sorted.length ? 'pointer' : 'default' } }, '🖨 Print'),
         btn({ onClick: printWorksheet, disabled: !sorted.length, title: 'Printable worksheet — current ratings with write-in boxes for updates', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: sorted.length ? 'pointer' : 'default' } }, '📝 Worksheet'),
         (() => { const nStores = new Set(sorted.map(e => locNum(e.loc))).size; return btn({ onClick: printWorksheetsByStore, disabled: nStores < 2, title: 'One worksheet per store for the selected scope, page-broken between stores (for handouts)', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: nStores >= 2 ? 'pointer' : 'default', opacity: nStores >= 2 ? 1 : 0.5 } }, '📝 Per-store' + (nStores >= 2 ? ' ×' + nStores : '')); })(),
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+        !embedded && btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       div({ style: { flex: 1, overflow: 'auto', padding: '12px 16px' } },
         loading

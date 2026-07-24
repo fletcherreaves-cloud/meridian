@@ -99,7 +99,7 @@ function StoreRow({ s, expanded, onToggle, jobRows }) {
   );
 }
 
-export function ScheduleSummaryPanel({ ds, onClose }) {
+export function ScheduleSummaryPanel({ ds, onClose, embedded }) {
   const { useMemo, useState } = React;
   const res = useMemo(() => computeScheduleSummary(ds?.schedRows || []), [ds?.schedRows]);
   // Per-station job hours, indexed by normalized loc + week-start (Wednesday ISO),
@@ -122,9 +122,11 @@ export function ScheduleSummaryPanel({ ds, onClose }) {
     h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 } }, label),
     h('div', { style: { fontSize: 16, fontWeight: 800, fontFamily: 'var(--mono)', color: col || 'var(--text)' } }, val));
 
-  return h('div', { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    h('div', { style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    h('div', { style: { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+  const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };
+  const CARD = embedded ? { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' };
+  return h('div', { style: OUTER },
+    !embedded && h('div', { style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
+    h('div', { style: CARD },
       h('div', { style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         h('span', { style: { fontSize: 18 } }, '📋'),
         h('div', { style: { flex: 1, minWidth: 180 } },
@@ -134,7 +136,7 @@ export function ScheduleSummaryPanel({ ds, onClose }) {
           h('button', { onClick: () => setWkIdx(i => Math.min(res.weeks.length - 1, i + 1)), disabled: wkIdx >= res.weeks.length - 1, style: navBtn }, '‹'),
           h('span', { style: { fontSize: 11, fontWeight: 700, minWidth: 96, textAlign: 'center' } }, 'Wk of ' + (wk.weekStart.getMonth() + 1) + '/' + wk.weekStart.getDate()),
           h('button', { onClick: () => setWkIdx(i => Math.max(0, i - 1)), disabled: wkIdx <= 0, style: navBtn }, '›')),
-        h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+        !embedded && h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } },
         !wk ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },

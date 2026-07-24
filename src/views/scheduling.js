@@ -955,7 +955,7 @@ function SyncPanel({ schedRows }) {
   );
 }
 
-export function SchedulingPanel({ ds, settings, onClose }) {
+export function SchedulingPanel({ ds, settings, onClose, embedded }) {
   const schedRows = (ds && ds.schedRows) || [];
   const [activeTab,  setActiveTab]  = useState('opportunity');
   const [showSync,   setShowSync]   = useState(false);
@@ -1035,8 +1035,12 @@ export function SchedulingPanel({ ds, settings, onClose }) {
       : fmtY(first) + ' – ' + fmtY(last);
   }, [schedRows]);
 
-  const overlayStyle = { position:'fixed', inset:0, background:'rgba(0,0,0,.7)', display:'flex', alignItems:'flex-start', justifyContent:'center', zIndex:9000, padding:'24px 16px', overflowY:'auto' };
-  const panelStyle   = { background:SURF, border:`1px solid ${BDR}`, borderRadius:12, width:'100%', maxWidth:1100, padding:'24px 28px', boxShadow:'0 24px 64px rgba(0,0,0,.6)' };
+  const overlayStyle = embedded
+    ? { position:'relative', flex:1, minHeight:0, display:'flex', flexDirection:'column', overflowY:'auto' }
+    : { position:'fixed', inset:0, background:'rgba(0,0,0,.7)', display:'flex', alignItems:'flex-start', justifyContent:'center', zIndex:9000, padding:'24px 16px', overflowY:'auto' };
+  const panelStyle   = embedded
+    ? { background:SURF, width:'100%', padding:'16px 20px' }
+    : { background:SURF, border:`1px solid ${BDR}`, borderRadius:12, width:'100%', maxWidth:1100, padding:'24px 28px', boxShadow:'0 24px 64px rgba(0,0,0,.6)' };
 
   const btnStyle = (active) => ({
     background: 'none', border: 'none',
@@ -1064,7 +1068,7 @@ export function SchedulingPanel({ ds, settings, onClose }) {
   }, [schedRows]);
   const missingCount = useMemo(() => recentWeeks(4).filter(w => !loadedWeekKeys.has(w.k)).length, [loadedWeekKeys]);
 
-  return div({ style: overlayStyle, onClick: e => { if(e.target===e.currentTarget) onClose(); } },
+  return div({ style: overlayStyle, onClick: embedded ? undefined : e => { if(e.target===e.currentTarget) onClose(); } },
     div({ style: panelStyle },
 
       // ── Header ──────────────────────────────────────────────────────────────
@@ -1091,7 +1095,7 @@ export function SchedulingPanel({ ds, settings, onClose }) {
                 pointerEvents:'none' }
             }, missingCount)
           ),
-          h('button', {
+          !embedded && h('button', {
             onClick: onClose,
             style: { background:'none', border:`1px solid ${BDR}`, color:TEXT3, borderRadius:R, padding:'5px 12px', fontSize:12, cursor:'pointer' }
           }, 'Close')

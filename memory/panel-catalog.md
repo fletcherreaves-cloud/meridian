@@ -6,7 +6,7 @@ metadata:
   type: project
 ---
 
-# Meridian Panel Catalog (live) — as of v4.513 (2026-07-24)
+# Meridian Panel Catalog (live) — as of v4.515 (2026-07-24)
 
 > **Now also in-app:** a user-friendly version ships as the **"Panel Index"** Knowledge Base
 > article (`KB_ARTICLES.panel_index` in `src/engine/forecast.js`, category "App Guide", v4.511).
@@ -40,13 +40,11 @@ Permission keys: `analytics.store/district/labor/brief/forecasting/ai/dashboard`
 - **Store Scorecard** (`ranking`, analytics.store) — per-store ranking across KPIs. *derived*. ✅
 - **Performance Reviews** (`perf-reviews`, reviews.view) — modular weighted GM/mgr reviews; scoring engine (the seed for a future general form-builder). *Supabase*. ✅
 - **Planning** (`planning`, analytics.store) — ✅ **MERGED HUB (v4.513)**. One nav entry, five lazy tabs (only the active tab mounts): **Targets** (`unified-targets` → tab `targets`, monthly_targets), **Monthly** (`monthly-proj` → `monthly`, forecast engine + patch rollups), **Pace** (`pace-target` → `pace`, MTD vs official + run-rate), **Yearly** (`yearly-proj` → `yearly`, annual), **Smart** (`smart-targets-v2` → `smart`, median-of-simple + backtest, multi-metric). Hub = `PlanningHubPanel` in `src/app/App.js`; each panel gained an `embedded` prop that drops its own full-screen overlay so it fills the hub body. **Legacy modal ids still resolve** (they now deep-link to the matching tab), so At-A-Glance tiles / SAGE links keep working.
-- **Labor Analysis** (`labor-analysis`, analytics.store) — weekly FLH/Band-1 (VLH/Fixed/Floor) derived from `lifelenz_schedule`; dollar-weighted subtotals. *`src/engine/labor-analysis.js`*. ✅ **[Scheduling-hub]**
-- **Employee Skill Levels** (`skills-matrix`) — per-employee cross-training/skill matrix. *LifeLenz `employmentRoles`*. ✅ **[Scheduling-hub]**
+
+## LABOR & SCHEDULING
+- **Scheduling** (`sched-hub`, analytics.store) — ✅ **MERGED HUB (v4.515)**. One nav entry, five lazy tabs (only the active tab mounts; RBAC-filtered by tab perm): **Labor Analytics** (`labor-analytics` → tab `analytics`, analytics.labor — TPPH/labor%/OT/Act-vs-Need, ctrlRows/DAR), **Scheduling** (`scheduling` → `scheduling`, LifeLenz intelligence), **Schedule Summary** (`sched-summary` → `summary`, LifeLenz weekly band + Fixed%/Floor%/F+F% + per-station hours & cost, `lifelenz_schedule`+`lifelenz_job_hours`), **Labor Analysis** (`labor-analysis` → `analysis`, weekly FLH/Band-1 VLH/Fixed/Floor from `lifelenz_schedule`), **Skills** (`skills-matrix` → `skills`, per-employee cross-training matrix, LifeLenz `employmentRoles`). Hub = `SchedulingHubPanel` in `src/app/App.js`; each panel gained an `embedded` prop. **Legacy modal ids still resolve** to the matching tab.
 
 ## OPERATIONS
-- **Labor Analytics** (`labor-analytics`, analytics.labor) — TPPH, labor%, OT, Act-vs-Need (Controls/Billable-Sales). *ctrlRows/DAR*. ✅ **[Scheduling-hub]**
-- **Scheduling** (`scheduling`, analytics.store) — scheduling intelligence panel. *LifeLenz*. ✅ **[Scheduling-hub]**
-- **Schedule Summary** (`sched-summary`) — LifeLenz weekly band across ALL stores (Labor%, Sales/GC fcst, Sched vs Fcst hrs, TPMH, **Fixed%/Floor%/F+F%**) + **per-station hours & cost** (expand). *`lifelenz_schedule` + `lifelenz_job_hours`*. ✅ **[Scheduling-hub]** (v4.506–4.509)
 - **Food Cost** (`fob-analysis`, analytics.store) — FOB/food-cost analysis. *qsr_fob / FOB Excel*. ✅
 - **End of Month** (`fob-eom`) — per-store EOM inventory troubleshooter. *FOB*. ✅
 - **EOM Supervisor** (`eom-summary`, analytics.district) — supervisor EOM rollup. *FOB*. ✅
@@ -86,7 +84,7 @@ Forecast/projection cluster (heavy overlap — candidates to merge into Planning
 
 ## Consolidation shortlist (cross-ref Notes 24)
 1. ✅ **Planning hub** (v4.513) ← Targets + Monthly Projections + Pace to Target + Yearly Projections + Smart Targets, now one nav entry + five lazy tabs. **DONE.** (Still open: optionally fold the Test-Kitchen forecast cluster in as advanced tabs.)
-2. **Scheduling hub** ← Labor Analysis + Scheduling + Schedule Summary + Labor Analytics + Employee Skill Levels → new **Labor & Scheduling** category.
+2. ✅ **Scheduling hub** (v4.515) ← Labor Analytics + Scheduling + Schedule Summary + Labor Analysis + Skills → new **Labor & Scheduling** category. **DONE.**
 3. **People/HR** ← Performance Reviews + Visit Readiness + Graded Visits (+ future coaching).
 4. **Prune Test Kitchen**: dedupe `proj` ×2; fold Calendar Manager into Events & Tags; promote or retire the forecast-diagnostic panels.
 5. **Docs**: grow Knowledge Base into the on-demand docs repository; surface THIS catalog in-app as the "Panel Index."
