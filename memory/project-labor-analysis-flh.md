@@ -194,8 +194,32 @@ wk of Wed Jul 22 2026; test `src/__tests__/schedule-summary.test.js`):**
 hrs) and labeled "(hrs)" — confirm against a store vs LifeLenz's own Fixed Lbr% before
 treating as authoritative (LifeLenz may use a cost-based denominator).
 
-**STILL TO PULL (needs a DevTools capture):** the right-panel **per-job hours+cost
-breakdown** (Beverage Specialist / Drive Thru / Grill / Window / Floor / …, with #shifts,
-hours, $cost). Not in the `labor_analysis_actuals_report` CSV — it's a separate LifeLenz
-request. Get the URL + response JSON from the schedule-week page's Network tab, then wire
-it into the pull + a new table/column.
+**✅ PER-JOB BREAKDOWN SHIPPED (v4.507):** the right-panel per-job hours+cost breakdown
+(Drive Thru / Grill / Lobby / Maintenance / …, #shifts, reg/OT hours, $cost, $/hr) is now
+pulled from LifeLenz `ShiftsForSchedulePeriod` into the `lifelenz_job_hours` table and shown
+in the Weekly Schedule Summary expanded store view. Details in
+`memory/project-lifelenz-schedule-jobs.md` (GraphQL query VERIFIED against the real capture
+2026-07-24 — ISO8601DateTime!/ShiftTypeEnum! types, earnings via @include not a shifts() arg;
+rejected/unassigned roster shifts excluded). (User: run the `lifelenz_job_hours` SQL block in
+`supabase/schema.sql`.)
+
+### Fixed / Floor standard — viewed SEPARATELY (owner-confirmed 2026-07-24, v4.506)
+
+Owner: *"Floor Hours and Fixed Hours viewed separately. It did not always used to be
+that way. Fixed Hours and Floor Hours should each be scheduled between 10%–15% for each
+segment, BUT no more than 25% of total hours scheduled."*
+
+- **Denominator = total scheduled hours** = `Σ(schVLH + schFixHrs + schFloor)` — the same
+  total already used for Scheduled Hrs and Fixed %.
+- **Fixed %** = `Σ schFixHrs / total sched` → target band **10–15%**.
+- **Floor %** = `Σ schFloor / total sched` → target band **10–15%**.
+- **Combined (Fixed + Floor) %** = `Σ(schFixHrs+schFloor) / total sched` → hard cap
+  **≤ 25%**.
+- Constants live in `src/engine/schedule-summary.js`: `FIXED_FLOOR_SEG_MIN=0.10`,
+  `FIXED_FLOOR_SEG_MAX=0.15`, `FIXED_FLOOR_COMBINED_MAX=0.25`. Both store rows and the
+  district roll up as **ratio-of-aggregates** (Σseg / Σsched), never a mean of store %s.
+- **Panel** (`src/views/schedule-summary.js`): three columns/tiles — **Fixed %**, **Floor %**,
+  **F+F %**. Each segment is **green in-band (10–15%), amber outside**; combined is
+  **green ≤25%, red over the cap**. Replaces the single "Fixed Lbr % (hrs)" tile.
+- The ~0.17pp gap once seen vs LifeLenz's own Fixed Lbr% (our 12.44% vs their 12.61% on
+  DeFuniak) is rounding at the display layer — the hours-based math is correct.

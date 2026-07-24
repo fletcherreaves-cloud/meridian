@@ -34,6 +34,11 @@ const edges = [
   { node: { assignedEmploymentId: 'E4', shiftType: 'roster', scheduleId: 'OTHER', pivotMetrics: [
     { businessRoleId: DT, earnings: 56, seconds: 14400, payType: 'regular' },
   ] } },
+  // REJECTED roster shift: shiftType 'roster' but no assigned employee + null earnings
+  // with non-zero seconds — would add phantom $0 hours if not excluded.
+  { node: { assignedEmploymentId: null, shiftType: 'roster', scheduleId: SCH, pivotMetrics: [
+    { businessRoleId: DT, earnings: null, seconds: 16200, payType: 'regular' },
+  ] } },
 ];
 const shifts = { edges };
 const roster = [
@@ -45,14 +50,14 @@ describe('lifelenz-shift-jobs — per-station rollup', () => {
   const byRole = rollupShiftsByRole(shifts, { scheduleId: SCH });
   const find = id => byRole.find(r => r.businessRoleId === id);
 
-  it('excludes offer shifts and other-schedule bleed (4 roles only)', () => {
+  it('excludes offer shifts, other-schedule bleed, and rejected (unassigned) shifts (4 roles)', () => {
     expect(byRole.length).toBe(4);
     expect(byRole.map(r => r.businessRoleId).sort()).toEqual([DT, LOB, GB, GR].sort());
   });
-  it('Drive Thru = 6.5h / $97.50 across 1 shift, all regular', () => {
+  it('Drive Thru = 6.5h / $97.50 across 1 shift — the rejected 4.5h shift is NOT counted', () => {
     const r = find(DT);
     expect(r.name).toBe('Drive Thru');
-    expect(r.hours).toBeCloseTo(6.5, 6);
+    expect(r.hours).toBeCloseTo(6.5, 6);   // would be 11.0 if the rejected shift leaked in
     expect(r.cost).toBeCloseTo(97.5, 6);
     expect(r.nShifts).toBe(1);
     expect(r.regHours).toBeCloseTo(6.5, 6);

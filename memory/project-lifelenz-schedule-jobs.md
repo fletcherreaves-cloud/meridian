@@ -156,18 +156,57 @@ report's Proj-VLH (variable) vs Fix-Guide-Hrs (fixed) vs Floor columns. The (not
 `businessRoles` query would carry `businessRoleCategoryId` linking each role UUID to one of these —
 letting per-job rollups also roll up by Variable/Fixed/Floor.
 
-## Build plan (not yet started)
+## Build status — SHIPPED v4.507 (2026-07-24)
 
-1. **Pull**: extend `scripts/lifelenz-pull.mjs` (or new `scripts/lifelenz-shifts-pull.mjs`)
-   to POST `ShiftsForSchedulePeriod` per schedule per week (paginate), group pivotMetrics by
-   businessRoleId, resolve jobTitle names via `GetPaginatedJobTitles`.
-2. **Table**: `lifelenz_job_hours` (loc, week_start, business_role_id, role_name, job_title,
-   hours, cost, reg_hours, ot_hours, n_shifts) PK (loc, week_start, business_role_id).
-   Ask "does this belong in Supabase?" → yes (cloud-fresh, per-device).
-3. **Surface**: per-job breakdown rows under each store in `ScheduleSummaryPanel` (expand).
-4. **Role-name config**: `LIFELENZ_BUSINESS_ROLES` const seeded with the confirmed map above;
-   backfill from a `businessRoles` capture when available.
-5. (Optional) `ScheduleComplianceWarnings` → a compliance/minor-law feed.
+✅ **1. Pull** — extended `scripts/lifelenz-pull.mjs` (NOT a separate script — reuses the one
+auth + `getStoreSchedules` discovery). After the CSV upsert it runs `pullJobHours(token,
+schedules, start, end)`: for every store schedule × every Wednesday-anchored week in the pull
+range it POSTs `ShiftsForSchedulePeriod` (paginated), rolls up via the SAME engine
+(`rollupShiftsByRole` from `src/engine/lifelenz-shift-jobs.js` — zero drift), and upserts.
+**Fully best-effort/non-fatal**: wrapped so any failure logs + returns [] and can NEVER cost
+the (already-committed) CSV pull. Escape hatch `LIFELENZ_SKIP_JOBS=1`. First-failure logs the
+GraphQL error verbatim then goes quiet (avoids 27×N noise).
+✅ **2. Table** — `lifelenz_job_hours` (loc, week_start, business_role_id, role_name, category,
+code, hours, cost, reg_hours, ot_hours, n_shifts) PK (loc, week_start, business_role_id) in
+`supabase/schema.sql`. **week_start = the WEDNESDAY anchor** (WEEK_START_DOW=3) so keys line up
+with the Schedule Summary panel's weekKey. ⚠️ **User must run this SQL block** in the Supabase
+editor (fails soft — app works without it, per-station section just shows "not yet pulled").
+✅ **3. Loader** — `loadLifeLenzJobHours({weeksBack,weeksFwd})` in `src/lib/supabase.js`
+(paginated); App.js startup sets `ds.jobHours`.
+✅ **4. Surface** — `ScheduleSummaryPanel` expanded store view now renders `StationBreakdown`
+below the daily grid: per-station Station/Cat/Shifts/Reg/OT/Hours/Cost/$per-hr, category
+summary (Variable/Floor/Fixed hrs) + total row. Indexed by `_normLoc(loc)+'|'+weekKey`.
+✅ **Role-name config** — `LIFELENZ_BUSINESS_ROLES` already authoritative (all 34 roles).
+
+✅ **GraphQL query VERIFIED against the real DevTools capture (2026-07-24).** The initial
+reconstruction had wrong variable types that would have failed every call — corrected in
+`SHIFTS_QUERY`:
+- `startDateTime` / `endDateTime` are **`ISO8601DateTime!`** (NOT `String!`) — and must be
+  sent as canonical UTC with ms + Z (`2026-07-22T00:00:00.000Z`); a bare `…T00:00:00` is
+  rejected by the scalar.
+- `shiftType` is **`[ShiftTypeEnum!]`** (NOT `[String!]`). Values passed:
+  `["offer","offer_to_all","roster","time_off","open"]`.
+- **`includePayRates` is NOT a `shifts()` argument** — in the real query it only gates the
+  `earnings` field via `@include(if: $includePayRates)`. We request `earnings` plain (the
+  owner token is authorized), so the var/arg is dropped entirely.
+- Headers on the real request: `x-auth-token`, `x-lifelenz-device: webadmin`,
+  `x-schedule-id`, `x-version: 1.75.50`, `x-user-journey: Display Schedule Week` (and an
+  `x-user-id` we can't derive for the service account — omitted, and the CSV pull works the
+  same way without it).
+
+**Response confirmed the engine filters are correct + exposed one edge case:** the week for
+DeFuniak (`01979dc0-a7cb-…`) returns 227 edges including **shared-store bleed** from Ponce de
+Leon `019c9ad6-63ef-…` (filtered by scheduleId ✓), **open** shifts (null earnings, excluded by
+shiftType ✓), and a **REJECTED roster shift** (`shiftType:'roster'`, `assignedEmploymentId:null`,
+`earnings:null`, non-zero `seconds`). The last would have added phantom $0 hours, so
+`_committed` now also requires a truthy `assignedEmploymentId`. `isAbsent:true` shifts (e.g.
+"Late Notice – Unexcused") keep their scheduled hours (planned = scheduled). Pay math sanity:
+`$16/hr × 4h = 14400s = $64`, `payType:'overtime'` seen on real OT segments.
+
+Still open / optional:
+- Per-EMPLOYEE breakdown (engine `rollupShiftsByEmployee` ready) — would need the roster from
+  `GetSchedulableEmploymentsForPeriod` pulled too; not wired yet.
+- (Optional) `ScheduleComplianceWarnings` → a compliance/minor-law feed.
 
 ⚠️ The `x-auth-token` values pasted in the DevTools captures are LIVE session tokens — treat
 as sensitive, NEVER hardcode; the pull reads `LIFELENZ_TOKEN` from env like the existing job.

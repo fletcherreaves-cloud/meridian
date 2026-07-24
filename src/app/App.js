@@ -49,7 +49,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -85,9 +85,23 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.505';
+const MERIDIAN_VERSION    = '4.509';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.509', date:'2026-07-24', changes:[
+    'Per-station breakdown (v4.507) now uses the verified LifeLenz shift query, so the daily sync can actually pull it. Also excludes rejected/unassigned shifts so a dropped shift no longer adds phantom hours to a station. (No visible change until the data lands after the next LifeLenz sync.)',
+  ]},
+  {version:'4.508', date:'2026-07-24', changes:[
+    'Fix: the At-A-Glance "Sales & Guest Counts" tile showed a wildly inflated "vs LY" (e.g. +330%). Current-period sales were summed over the whole window but last-year sales only over whatever days happened to have data — so when last year covered just a fraction of the current days, the ratio exploded. vs LY (sales, guests, and avg check, district + OK/FL) is now a matched-day comparison: each store contributes only days where BOTH this year and last year have real data, so the percentages are true year-over-year again.',
+    'Fix: the At-A-Glance "This Week — District Projection" table left Actual, vs LY, and Acc% blank all week. Actuals were only read from manual labor uploads; the current week\'s live numbers arrive via the auto-synced daily activity (DAR), which the projection wasn\'t reading. It now fills each completed day\'s Actual (and real last-year sales) from the auto-synced stream when a manual upload isn\'t present — so Actual/vs LY/Acc% populate as the week fills in. (Note: the header "vs LY %" can still read ~0% for stores on the adaptive-ensemble model — a separate, deeper item.)',
+    'Fix: SAGE\'s 📚 Prompts library felt "dead" — nothing was clickable — whenever the SAGE composer was empty. The Save controls were gated on there being text in the composer, so with an empty composer and no saved prompts yet, everything was disabled. The modal now has its own prompt box (pre-filled from the composer when it has text): type or paste any prompt and save it directly, no composer text required.',
+  ]},
+  {version:'4.507', date:'2026-07-24', changes:[
+    'New: per-station hours & cost breakdown in the Weekly Schedule Summary. Expand any store and, below the daily grid, you now see where its scheduled hours and labor dollars go by LifeLenz station — Drive Thru, Grill, Lobby, Maintenance, Opening, and the rest — each tagged Variable / Floor / Fixed, with shift count, regular vs overtime hours, cost, and $/hr, plus a category summary and a total row. Pulled automatically from LifeLenz (ShiftsForSchedulePeriod) into a new cloud table so it\'s the same on every device; it fills in after the daily LifeLenz sync.',
+  ]},
+  {version:'4.506', date:'2026-07-24', changes:[
+    'Weekly Schedule Summary now shows Fixed Hours and Floor Hours as SEPARATE segments — Fixed %, Floor %, and a combined Fixed+Floor % — instead of one lumped Fixed Labor %. Each is scheduled hours in that segment ÷ total scheduled hours. Color flags apply the standard: each segment should run 10–15% (green in-band, amber outside), and the combined Fixed+Floor must stay at or under 25% of total scheduled hours (green ok, red over the cap). Applies at both the store and district level, rolled up as a true ratio of aggregate hours.',
+  ]},
   {version:'4.505', date:'2026-07-24', changes:[
     'Fix: Weekly Schedule Summary labor % was reading far too high (e.g. a store showing 72% instead of ~24%). The daily labor % is an ACTUAL figure — null on future days and temporarily enormous on the current, partial day (labor has accrued but the day’s sales haven’t landed yet, so a mid-day read can be 400%+). That single partial day was dominating the weekly dollar-weighted average. Now the weekly labor % is dollar-weighted over the completed days only; future/partial/garbage days are dropped and show blank in the daily grid.',
   ]},
@@ -1184,6 +1198,16 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${lfzRows.length} LifeLenz schedule rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);}
+      try{
+        const jobRows = await loadLifeLenzJobHours();
+        if(jobRows.length>0){
+          setDs(prev=>{
+            if(!prev) return prev;
+            return {...prev, jobHours: jobRows};
+          });
+          console.log(`[Meridian] ✓ Loaded ${jobRows.length} LifeLenz per-job rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] LifeLenz job-hours load failed:',e);}
       // ── FOB / Ops / Controls / DAR ──────────────────────────────────────────
       const _mkIdx2=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
       try{

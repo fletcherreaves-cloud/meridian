@@ -38,16 +38,23 @@ function normLaborPct(raw) {
   return (f >= LABOR_PCT_MIN && f <= LABOR_PCT_MAX) ? f : null;
 }
 
+// Fixed / Floor labor standards (owner-confirmed 2026-07-24, viewed SEPARATELY):
+//   • Fixed Hours  should be 10–15% of total scheduled hours.
+//   • Floor Hours  should be 10–15% of total scheduled hours.
+//   • Combined (Fixed + Floor) must NOT exceed 25% of total scheduled hours.
+// Bands drive the color flags in the UI (in-band / out-of-band / combined breach).
+export const FIXED_FLOOR_SEG_MIN = 0.10, FIXED_FLOOR_SEG_MAX = 0.15, FIXED_FLOOR_COMBINED_MAX = 0.25;
+
 // Roll a set of daily rows (one store, one week) into the band.
 function rollup(loc, rows) {
-  let fcstSales = 0, fcstGC = 0, schedHrs = 0, fcstHrs = 0, fixHrs = 0, laborPctW = 0, laborSalesW = 0;
+  let fcstSales = 0, fcstGC = 0, schedHrs = 0, fcstHrs = 0, fixHrs = 0, floorHrs = 0, laborPctW = 0, laborSalesW = 0;
   const days = rows
     .slice()
     .sort((a, b) => a.date - b.date)
     .map(r => {
       const sH = schedHrsOf(r), fH = fcstHrsOf(r);
       fcstSales += _n(r.fcstSales); fcstGC += _n(r.fcstTCs);
-      schedHrs += sH; fcstHrs += fH; fixHrs += _n(r.schFixHrs);
+      schedHrs += sH; fcstHrs += fH; fixHrs += _n(r.schFixHrs); floorHrs += _n(r.schFloor);
       const lp = normLaborPct(r.laborPct); // % scale, or null for future/partial/garbage days
       if (lp != null) { laborPctW += lp * _n(r.fcstSales); laborSalesW += _n(r.fcstSales); }
       return { date: r.date, schedHrs: sH, fcstHrs: fH, hrsDiff: sH - fH, laborPct: lp, fcstSales: r.fcstSales, fcstGC: r.fcstTCs };
@@ -60,8 +67,12 @@ function rollup(loc, rows) {
     // average of daily %s, and never contaminated by the current partial day. % scale.
     laborPct: laborSalesW > 0 ? laborPctW / laborSalesW : null,
     tpmh: schedHrs > 0 ? fcstGC / schedHrs : null,
-    // Fixed labor as a share of scheduled hours (hours-based). Labeled as such in UI.
+    // Fixed / Floor labor as a share of scheduled hours (hours-based). Kept SEPARATE per
+    // the owner standard; combined is what the ≤25% cap applies to. Labeled as such in UI.
+    fixHrs, floorHrs,
     fixedLaborPct: schedHrs > 0 ? fixHrs / schedHrs : null,
+    floorLaborPct: schedHrs > 0 ? floorHrs / schedHrs : null,
+    combinedFixedFloorPct: schedHrs > 0 ? (fixHrs + floorHrs) / schedHrs : null,
     days,
     nDays: days.length,
   };
@@ -82,15 +93,20 @@ export function computeScheduleSummary(schedRows, opts = {}) {
     const stores = Object.keys(byWeek[wk]).map(loc => rollup(loc, byWeek[wk][loc]));
     stores.sort((a, b) => (b.hrsDiff) - (a.hrsDiff)); // most over-scheduled first
     // District rollup (dollar/hour weighted).
-    let dSales = 0, dGC = 0, dSched = 0, dFcst = 0, dFix = 0, dLaborD = 0, dLaborSales = 0;
-    for (const s of stores) { dSales += s.fcstSales; dGC += s.fcstGC; dSched += s.schedHrs; dFcst += s.fcstHrs; if (s.laborPct != null) { dLaborD += s.laborPct * s.fcstSales; dLaborSales += s.fcstSales; } dFix += (s.fixedLaborPct || 0) * s.schedHrs; }
+    let dSales = 0, dGC = 0, dSched = 0, dFcst = 0, dFix = 0, dFloor = 0, dLaborD = 0, dLaborSales = 0;
+    for (const s of stores) { dSales += s.fcstSales; dGC += s.fcstGC; dSched += s.schedHrs; dFcst += s.fcstHrs; if (s.laborPct != null) { dLaborD += s.laborPct * s.fcstSales; dLaborSales += s.fcstSales; } dFix += _n(s.fixHrs); dFloor += _n(s.floorHrs); }
     const district = {
       nStores: stores.length,
       fcstSales: dSales, fcstGC: dGC, schedHrs: dSched, fcstHrs: dFcst, hrsDiff: dSched - dFcst,
       // District labor % dollar-weighted over stores that have a valid weekly labor %.
       laborPct: dLaborSales > 0 ? dLaborD / dLaborSales : null,
       tpmh: dSched > 0 ? dGC / dSched : null,
+      // Fixed / Floor as a share of district scheduled hours (ratio-of-aggregates, not
+      // an average of store %s). Kept separate; combined is what the ≤25% cap applies to.
+      fixHrs: dFix, floorHrs: dFloor,
       fixedLaborPct: dSched > 0 ? dFix / dSched : null,
+      floorLaborPct: dSched > 0 ? dFloor / dSched : null,
+      combinedFixedFloorPct: dSched > 0 ? (dFix + dFloor) / dSched : null,
     };
     return { weekKey: wk, weekStart: weekStartOf(wk + 'T12:00:00'), stores, district };
   });

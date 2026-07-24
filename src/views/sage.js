@@ -771,17 +771,20 @@ function LogIssueModal({ question, answer, conversation, onClose }) {
 }
 
 function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRefresh }) {
+  // Editable draft — NO longer gated on the SAGE composer having text. Prefilled from
+  // the composer when it has text, but you can always type/paste a prompt to save here.
+  const [draft, setDraft] = uSt((currentInput || '').trim());
   const [title, setTitle] = uSt('');
   const [msg, setMsg] = uSt('');
   const [busy, setBusy] = uSt(false);
-  const canSave = (currentInput || '').trim().length > 0;
+  const canSave = (draft || '').trim().length > 0;
   const saveCurrent = async () => {
     if (!canSave) return;
     setBusy(true); setMsg('Saving…');
-    const res = await saveSagePrompt({ title: (title.trim() || currentInput.trim().slice(0, 48)), promptText: currentInput.trim(), createdBy: 'Fletcher' });
+    const res = await saveSagePrompt({ title: (title.trim() || draft.trim().slice(0, 48)), promptText: draft.trim(), createdBy: 'Fletcher' });
     setBusy(false);
     if (res == null || (res.errors && res.errors.length)) { setMsg('⚠ ' + ((res && res.errors && res.errors[0]) || 'Save failed — is the table created?')); return; }
-    setTitle(''); setMsg('✓ Saved'); onRefresh();
+    setTitle(''); setDraft(''); setMsg('✓ Saved'); onRefresh();
     setTimeout(() => setMsg(''), 1500);
   };
   const del = async (id) => { await deleteSagePrompt(id); onRefresh(); };
@@ -798,11 +801,12 @@ function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRe
     h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '📚 Prompt library'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Save prompts you run often; use, re-run, or schedule them to run automatically. Scheduled results land on the At-A-Glance “Scheduled Runs” tile.'),
-      h('div', { style: { display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-end' } },
-        h('div', { style: { flex: 1 } },
-          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, marginBottom: 4 } }, 'Save current input as a prompt'),
-          h('input', { value: title, onChange: e => setTitle(e.target.value), placeholder: canSave ? 'Optional title…' : 'Type a prompt in SAGE first', disabled: !canSave, style: fld })),
-        h('button', { onClick: saveCurrent, disabled: !canSave || busy, style: { padding: '7px 14px', borderRadius: 6, border: 'none', background: canSave ? amber : 'rgba(245,158,11,.15)', color: canSave ? '#000' : 'rgba(245,158,11,.4)', fontSize: 11, fontWeight: 800, cursor: canSave ? 'pointer' : 'default' } }, '★ Save')),
+      h('div', { style: { marginBottom: 6 } },
+        h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, marginBottom: 4 } }, 'Save a prompt' + (currentInput && currentInput.trim() ? ' (pre-filled from SAGE)' : '')),
+        h('textarea', { value: draft, onChange: e => setDraft(e.target.value), placeholder: 'Type or paste a prompt to save…', rows: 3, style: { ...fld, resize: 'vertical', minHeight: 54, lineHeight: 1.4 } }),
+        h('div', { style: { display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' } },
+          h('input', { value: title, onChange: e => setTitle(e.target.value), placeholder: 'Optional title…', style: { ...fld, flex: 1 } }),
+          h('button', { onClick: saveCurrent, disabled: !canSave || busy, style: { padding: '7px 14px', borderRadius: 6, border: 'none', background: canSave ? amber : 'rgba(245,158,11,.15)', color: canSave ? '#000' : 'rgba(245,158,11,.4)', fontSize: 11, fontWeight: 800, cursor: canSave ? 'pointer' : 'default', whiteSpace: 'nowrap' } }, '★ Save'))),
       msg && h('div', { style: { fontSize: 10, color: msg.startsWith('⚠') ? red : grn, marginBottom: 8 } }, msg),
       h('div', { style: { borderTop: '1px solid rgba(255,255,255,.08)', margin: '8px 0' } }),
       !prompts.length

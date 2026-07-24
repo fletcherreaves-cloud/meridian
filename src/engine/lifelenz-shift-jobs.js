@@ -80,13 +80,16 @@ function _nodes(shifts) {
 // Only committed, in-store shifts count toward the schedule's hours+cost. Open/offer
 // shifts are proposals (null earnings); shifts on OTHER schedules (shared-store bleed)
 // are filtered by scheduleId. shiftType 'roster' = the committed roster; 'time_off' has
-// no pivotMetrics. Pass {includeTypes} to override (default ['roster']).
+// no pivotMetrics. A REJECTED roster shift also carries shiftType 'roster' but has a null
+// assignedEmploymentId and null earnings (with non-zero seconds) — requiring an assigned
+// employee drops those phantom hours. Pass {includeTypes} to override (default ['roster']).
 function _committed(nodes, { scheduleId, includeTypes = ['roster'] } = {}) {
   const okType = new Set(includeTypes);
   return nodes.filter(nd =>
     nd &&
     Array.isArray(nd.pivotMetrics) && nd.pivotMetrics.length &&
     okType.has(nd.shiftType) &&
+    nd.assignedEmploymentId &&
     (!scheduleId || nd.scheduleId === scheduleId)
   );
 }
