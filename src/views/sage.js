@@ -14,6 +14,7 @@ const grn   = '#10b981';
 const red   = '#ef4444';
 
 const SAGE_THREAD_KEY = 'mf_sage_thread_v1';
+const SAGE_SESSIONS_KEY = 'mf_sage_sessions_v1';   // archived past conversations (recoverable "tabs")
 
 // ── Data summary helpers ──────────────────────────────────────────────────────
 function _avg(arr) {
@@ -967,13 +968,17 @@ const QUICK_PROMPTS = [
 ];
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-export function SagePanel({ ds, signals, customSignalDefs }) {
+export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   const [messages, setMessages] = uSt(() => {
     try {
       const saved = localStorage.getItem(SAGE_THREAD_KEY);
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+  const [sessions, setSessions] = uSt(() => {
+    try { return JSON.parse(localStorage.getItem(SAGE_SESSIONS_KEY) || '[]'); } catch { return []; }
+  });
+  const [sessionsOpen, setSessionsOpen] = uSt(false);
   const [input, setInput]       = uSt('');
   const [streaming, setStreaming] = uSt(false);
   const [streamText, setStreamText] = uSt('');
@@ -1004,11 +1009,41 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
     }
   }, [messages, streamText]);
 
+  // Report thinking/idle status to the shell (drives the minimized pill's light).
+  uEf(() => { onBusy?.(streaming); }, [streaming]);
+
+  const persistSessions = (next) => {
+    setSessions(next);
+    try { localStorage.setItem(SAGE_SESSIONS_KEY, JSON.stringify(next.slice(0, 25))); } catch {}
+  };
+  // Archive the current conversation into the recoverable session list.
+  const archiveCurrent = () => {
+    if (!messages.length) return;
+    const firstUser = messages.find(m => m.role === 'user');
+    const entry = {
+      id: 's' + messages.length + '_' + (messages[0]?.content || '').length + '_' + (firstUser?.content || '').slice(0, 8),
+      title: (firstUser?.content || 'Conversation').replace(/\s+/g, ' ').trim().slice(0, 60),
+      count: messages.length,
+      messages,
+    };
+    // De-dupe by id, newest first, cap 25.
+    persistSessions([entry, ...sessions.filter(s => s.id !== entry.id)].slice(0, 25));
+  };
+
   const clearThread = () => {
+    archiveCurrent();
     setMessages([]);
     localStorage.removeItem(SAGE_THREAD_KEY);
     setError(null);
   };
+
+  const reopenSession = (s) => {
+    archiveCurrent();
+    setMessages(s.messages || []);
+    setSessionsOpen(false);
+    setError(null);
+  };
+  const deleteSession = (id) => persistSessions(sessions.filter(s => s.id !== id));
 
   const sendMessage = uCb(async (raw) => {
     const text = (raw || '').trim();
@@ -1082,9 +1117,20 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
           onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(245,158,11,.4)'; e.currentTarget.style.color = amber; },
           onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
         }, '📚 Prompts' + (prompts.length ? ' · ' + prompts.length : '')),
+        sessions.length > 0 && h('button', {
+          onClick: () => setSessionsOpen(true),
+          title: 'Past conversations — reopen a previous SAGE session',
+          style: {
+            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
+            fontSize: '11px', color: muted, transition: 'all .15s',
+          },
+          onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(96,165,250,.4)'; e.currentTarget.style.color = '#60a5fa'; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+        }, '🕘 History · ' + sessions.length),
         messages.length > 0 && !streaming && h('button', {
           onClick: clearThread,
-          title: 'Clear conversation',
+          title: 'Archive this conversation to History and start fresh',
           style: {
             background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
             borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
@@ -1226,5 +1272,25 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
       onUse: (t) => { setInput(t); setPromptLibOpen(false); },
       onRun: (t) => { setPromptLibOpen(false); sendMessage(t); },
     }), document.body),
+    sessionsOpen && createPortal(h(SessionsModal, {
+      sessions, onClose: () => setSessionsOpen(false), onReopen: reopenSession, onDelete: deleteSession,
+    }), document.body),
   );
+}
+
+// Past-conversation history ("tabs") — reopen or delete an archived session.
+function SessionsModal({ sessions, onClose, onReopen, onDelete }) {
+  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
+    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
+      h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '🕘 Conversation history'),
+      h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Reopen a past SAGE conversation. Your current chat is archived here automatically when you start a new one.'),
+      !sessions.length && h('div', { style: { fontSize: 12, color: muted, padding: 16, textAlign: 'center', border: '1px dashed rgba(255,255,255,.12)', borderRadius: 8 } }, 'No past conversations yet.'),
+      sessions.map(s => h('div', { key: s.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,.08)', marginBottom: 6 } },
+        h('div', { onClick: () => onReopen(s), style: { flex: 1, minWidth: 0, cursor: 'pointer' } },
+          h('div', { style: { fontSize: 12, fontWeight: 600, color: 'var(--text,#f1f5f9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, s.title || 'Conversation'),
+          h('div', { style: { fontSize: 10, color: muted } }, (s.count || 0) + ' messages')),
+        h('button', { onClick: () => onReopen(s), style: { padding: '4px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' } }, 'Reopen'),
+        h('button', { onClick: () => onDelete(s.id), title: 'Delete', style: { padding: '4px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, '✕'))),
+      h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 10 } },
+        h('button', { onClick: onClose, style: { padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Close'))));
 }

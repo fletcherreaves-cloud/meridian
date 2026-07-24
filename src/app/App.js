@@ -84,9 +84,13 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.502';
+const MERIDIAN_VERSION    = '4.503';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.503', date:'2026-07-24', changes:[
+    'SAGE is now minimizable. Hit "—" and SAGE collapses to a floating pill (bottom-right) while the session keeps running — so you can pull up other Meridian data at the same time. The pill glows red while SAGE is thinking and green when the answer\'s ready; click it to jump back in. A matching status dot sits in the SAGE header.',
+    'SAGE conversation history: every chat is archived when you start a new one, and a 🕘 History button lets you reopen or delete past conversations — so closed sessions and previous searches are always recoverable.',
+  ]},
   {version:'4.502', date:'2026-07-24', changes:[
     'Fix: SAGE\'s 📚 Prompts library (and the 🐞 Log modal) opened but ignored all clicks/typing — the modals were trapped inside SAGE\'s stacking context and covered by other app layers. They now render at the top level (portal) above everything, so they\'re fully interactive.',
     'Fix: the 🐞 Log button was capturing the wrong prompt — if you\'d answered a SAGE suggestion with "Yes, please", that thin reply became the logged context. It now walks back to the actual substantive prompt and captures the last few turns of the conversation, so multi-prompt sessions log accurately.',
@@ -737,6 +741,8 @@ function App() {
   const darFetchRef = useRef({ date: '', ts: 0 });
   const [customSignalDefs,    setCustomSignalDefs]    = useState([]);
   const [showSage,            setShowSage]            = useState(false);
+  const [sageMin,             setSageMin]             = useState(false); // SAGE minimized to a floating pill (session keeps running)
+  const [sageBusy,            setSageBusy]            = useState(false); // SAGE is streaming/thinking (drives the pill's red/green light)
   const [showFeatureRequests, setShowFeatureRequests] = useState(false);
   const [showTaskQueue,       setShowTaskQueue]       = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
@@ -2086,14 +2092,28 @@ function App() {
         h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar}),
       ),
     ),
-    showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
+    // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
+    // running in the background and you can look at other Meridian data at the
+    // same time. The floating pill (below) shows red while thinking, green when ready.
+    showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
-        span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em',color:'var(--text)'}},'🧠 SAGE'),
-        h('button',{onClick:()=>setShowSage(false),style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×'),
+        div({style:{display:'flex',alignItems:'center',gap:8}},
+          span({style:{width:8,height:8,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 6px '+(sageBusy?'#ef4444':'#10b981')}}),
+          span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em',color:'var(--text)'}},'🧠 SAGE'),
+          sageBusy&&span({style:{fontSize:'10px',color:'#ef4444',fontWeight:700}},'working…')),
+        div({style:{display:'flex',alignItems:'center',gap:2}},
+          h('button',{onClick:()=>setSageMin(true),title:'Minimize — keep SAGE running while you look at other data',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'22px',lineHeight:1,padding:'4px 8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'—'),
+          h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×')),
       ),
       div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
-        h(SagePanel,{ds,signals,customSignalDefs}),
+        h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy}),
       ),
+    ),
+    // Minimized pill — click to restore. Red dot = thinking, green = ready.
+    showSage&&sageMin&&div({onClick:()=>setSageMin(false),style:{position:'fixed',right:16,bottom:'calc(16px + env(safe-area-inset-bottom,0px))',zIndex:361,display:'flex',alignItems:'center',gap:8,padding:'10px 14px',borderRadius:'999px',background:'var(--surf,#1e293b)',border:'1px solid '+(sageBusy?'rgba(239,68,68,.5)':'rgba(16,185,129,.5)'),boxShadow:'0 8px 30px rgba(0,0,0,.5)',cursor:'pointer'}},
+      span({style:{width:9,height:9,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 8px '+(sageBusy?'#ef4444':'#10b981')}}),
+      span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'13px',color:'var(--text)'}},'🧠 SAGE'),
+      span({style:{fontSize:'10px',fontWeight:700,color:sageBusy?'#ef4444':'#10b981'}},sageBusy?'working…':'ready'),
     ),
     showFeatureRequests&&h(FeatureRequestsPanel,{ds,settings,onClose:()=>setShowFeatureRequests(false)}),
     showTaskQueue&&h(TaskQueuePanel,{onClose:()=>setShowTaskQueue(false)}),
