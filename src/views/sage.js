@@ -385,7 +385,7 @@ Today: ${today}
 
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have two tools that query live Supabase data (updated daily via automation):
+You have four tools that query live Supabase data (updated daily via automation):
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -401,6 +401,11 @@ You have two tools that query live Supabase data (updated daily via automation):
 3. query_forecast_snapshots(start_date, end_date?, locs?, source?)
    Returns: per-store MAPE by forecast source. Sources: ai (Meridian AI), ly (last-year-adj), blend, di (dialed-in), qsr (QSRSoft scheduled projection).
    USE FOR: "how accurate is my forecast?", "which model is best?", "MAPE by store", "which stores have worst forecast accuracy?", "AI vs LY accuracy comparison"
+
+4. query_promo_roi(start_date?, end_date?, margin_rate?, locs?)
+   Returns: per lever (promo, discount) a district verdict + per-store rows (lift %, extra sales/day, extra give-away/day, gross-profit delta/day, verdict pays/costs/neutral). Matched-day method: promo-heavy vs promo-light days within each weekday.
+   USE FOR: "are our promos paying off?", "is [store]'s discounting worth it?", "which stores give away margin without a sales lift?", "promo/discount ROI", "should we cut any promotions?"
+   CAVEAT: directional screen (association with controls), NOT a randomized experiment — always say so. Defaults to ~90 days if no dates given (needs a multi-week window).
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
@@ -659,6 +664,7 @@ const DATA_SOURCES = [
   { kw: /\b(sales|revenue|guest count|\bgc\b|drive.?thru|\bdt\b|oepe|kvs|speed of service|transactions|tickets)\b/i, tool: 'query_daily_activity', table: 'qsr_daily_activity', label: 'Daily Activity (sales / DT / speed)' },
   { kw: /\b(labor|vlh|schedul|hours|tpph|tpmh|crew|fixed labor|floor)\b/i, tool: 'query_lifelenz_labor', table: 'lifelenz_schedule', label: 'LifeLenz labor / scheduling' },
   { kw: /\b(forecast|mape|projection accuracy|snapshot|model accuracy)\b/i, tool: 'query_forecast_snapshots', table: 'forecast_snapshots', label: 'Forecast snapshots' },
+  { kw: /\b(promo|promotion|discount|coupon|give.?away|roi|paying off|margin.*(spend|give))\b/i, tool: 'query_promo_roi', table: 'daily_glimpse_daily / ctrl_rows', label: 'Promo / Discount ROI' },
 ];
 const detectSource = text => DATA_SOURCES.find(s => s.kw.test(text || '')) || null;
 // Language that suggests SAGE couldn't get the data (→ a troubleshooting Task).

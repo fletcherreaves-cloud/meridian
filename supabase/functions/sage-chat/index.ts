@@ -131,6 +131,37 @@ Returns per-store MAPE averages for each source over the date range.`,
       required: ['start_date'],
     },
   },
+  {
+    name: 'query_promo_roi',
+    description: `Analyze whether PROMOTIONS and DISCOUNTS are paying for themselves, per store.
+Use for questions about: promo ROI, discount effectiveness, "are our promos working", "is store X's discounting worth it", loss-prevention on give-aways.
+Method (matched-day): for each store, promo-heavy days are compared against promo-light days WITHIN the same weekday (controls for the weekly pattern and for running promos on slow days). Reports the sales/guest lift vs the give-away, converted to gross profit at an incremental margin.
+Returns per lever (promo, discount): a district verdict + per-store rows with lift %, extra sales/day, extra give-away/day, gross-profit delta/day, and a verdict (pays / costs / neutral).
+Needs several weeks of daily data. This is a directional screen, not a randomized experiment — say so.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: {
+          type: 'string',
+          description: 'Start date YYYY-MM-DD (inclusive). Defaults to ~90 days ago. ROI needs a multi-week window.',
+        },
+        end_date: {
+          type: 'string',
+          description: 'End date YYYY-MM-DD (inclusive). Defaults to today.',
+        },
+        margin_rate: {
+          type: 'number',
+          description: 'Incremental contribution margin on the sales lift (0-1). Default 0.35.',
+        },
+        locs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Store loc IDs to filter. Omit for all stores.',
+        },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ── RBAC scoping ─────────────────────────────────────────────────────────────
@@ -144,6 +175,53 @@ function applyScope<T extends { loc: string }>(stores: T[], allowed: Set<string>
   return { stores: mine, restricted: true, hidden: stores.length - mine.length };
 }
 const SCOPE_NOTE = 'Access-restricted: per-store detail is limited to YOUR store(s). District totals/averages and your rank include all stores for context — but you must NEVER reveal, name, or infer another individual store’s figures.';
+
+// ── Matched-day promo/discount lift — port of src/engine/promo-roi.js ─────────
+function _median(a: number[]): number | null {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function _mean(a: number[]): number { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0; }
+
+type PRec = { loc: string; dow: number; sales: number; gc: number | null; int: number | null; spend: number };
+function matchedLift(records: PRec[], marginRate: number, minDays = 24, minPerCell = 2) {
+  const byLoc: Record<string, PRec[]> = {};
+  for (const r of records) { if (!(r.sales > 0) || r.int == null) continue; (byLoc[r.loc] ||= []).push(r); }
+  const byStore: Array<Record<string, unknown>> = [];
+  for (const loc of Object.keys(byLoc)) {
+    const rows = byLoc[loc];
+    if (rows.length < minDays) continue;
+    const med = _median(rows.map(r => r.int as number));
+    if (med == null) continue;
+    const cells: Record<number, { heavy: PRec[]; light: PRec[] }> = {};
+    for (const r of rows) { (cells[r.dow] ||= { heavy: [], light: [] }); ((r.int as number) > med ? cells[r.dow].heavy : cells[r.dow].light).push(r); }
+    let wSum = 0, exS = 0, exG = 0, exSp = 0, baseS = 0, nCells = 0;
+    for (const dow of Object.keys(cells)) {
+      const { heavy, light } = cells[+dow];
+      if (heavy.length < minPerCell || light.length < minPerCell) continue;
+      const hS = _mean(heavy.map(r => r.sales)), lS = _mean(light.map(r => r.sales));
+      const hG = _mean(heavy.map(r => r.gc ?? 0)), lG = _mean(light.map(r => r.gc ?? 0));
+      const hSp = _mean(heavy.map(r => r.spend)), lSp = _mean(light.map(r => r.spend));
+      const w = heavy.length + light.length; wSum += w; nCells++;
+      exS += (hS - lS) * w; exG += (hG - lG) * w; exSp += (hSp - lSp) * w; baseS += lS * w;
+    }
+    if (!wSum || nCells < 1) continue;
+    const extraSales = exS / wSum, extraSpend = exSp / wSum, base = baseS / wSum;
+    const gp = extraSales * marginRate - extraSpend;
+    const verdict = extraSpend <= 0 ? 'n/a' : gp > Math.max(5, 0.02 * Math.abs(extraSpend)) ? 'pays' : gp < -Math.max(5, 0.02 * Math.abs(extraSpend)) ? 'costs' : 'neutral';
+    byStore.push({ loc, name: STORE_NAMES[loc] || `Store ${loc}`, days: rows.length,
+      lift_pct: base > 0 ? +(extraSales / base * 100).toFixed(1) : null,
+      extra_sales_per_day: Math.round(extraSales), extra_giveaway_per_day: Math.round(extraSpend),
+      gross_profit_delta_per_day: Math.round(gp), verdict });
+  }
+  let dW = 0, dS = 0, dSp = 0, dGp = 0;
+  for (const s of byStore) { const w = s.days as number; dW += w; dS += (s.extra_sales_per_day as number) * w; dSp += (s.extra_giveaway_per_day as number) * w; dGp += (s.gross_profit_delta_per_day as number) * w; }
+  const district = dW ? { stores: byStore.length, extra_sales_per_day: Math.round(dS / dW), extra_giveaway_per_day: Math.round(dSp / dW), gross_profit_delta_per_day: Math.round(dGp / dW), verdict: (dSp / dW) <= 0 ? 'n/a' : (dGp / dW) > 0 ? 'pays' : (dGp / dW) < 0 ? 'costs' : 'neutral' } : null;
+  byStore.sort((a, b) => (a.gross_profit_delta_per_day as number) - (b.gross_profit_delta_per_day as number));
+  return { district, byStore };
+}
 
 // `allowed` = the caller's accessible store set (null = full access). When set,
 // tools query ALL stores (for district context) but expose per-store detail only
@@ -327,6 +405,48 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       stores: sc.stores,
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
       note: 'mape = mean absolute % error. Lower = better. Sources: ai=Meridian AI, ly=last-year-adj, blend=(ai+ly)/2, di=dialed-in, qsr=QSRSoft scheduled projection.',
+    });
+  }
+
+  if (name === 'query_promo_roi') {
+    const today = new Date().toISOString().slice(0, 10);
+    const endDate = (input.end_date as string) || today;
+    const startDate = (input.start_date as string) || new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+    const marginRate = typeof input.margin_rate === 'number' ? input.margin_rate : 0.35;
+
+    const [g, c] = await Promise.all([
+      sb.from('daily_glimpse_daily').select('loc,date,all_net_sales,gc,promo_amt,promo_pct').gte('date', startDate).lte('date', endDate).limit(100000),
+      sb.from('ctrl_rows').select('loc,date,disc_pct,disc_amt').gte('date', startDate).lte('date', endDate).limit(100000),
+    ]);
+    if (g.error) return `Database error: ${g.error.message}`;
+    if (!g.data?.length) return `No Daily Glimpse promo data found for ${startDate} to ${endDate}. Promo/discount ROI needs several weeks of daily data.`;
+
+    const dow = (d: string) => new Date(d + 'T00:00:00').getDay();
+    const promoRecs: PRec[] = [];
+    const salesByKey: Record<string, { sales: number; gc: number | null; dow: number }> = {};
+    for (const r of g.data) {
+      const k = normLoc(r.loc) + '|' + r.date;
+      salesByKey[k] = { sales: r.all_net_sales || 0, gc: r.gc ?? null, dow: dow(r.date) };
+      promoRecs.push({ loc: normLoc(r.loc), dow: dow(r.date), sales: r.all_net_sales || 0, gc: r.gc ?? null, int: r.promo_pct ?? null, spend: r.promo_amt || 0 });
+    }
+    const discRecs: PRec[] = [];
+    for (const r of c.data || []) {
+      const s = salesByKey[normLoc(r.loc) + '|' + r.date];
+      if (!s) continue; // discount rows need same-day sales from glimpse
+      discRecs.push({ loc: normLoc(r.loc), dow: s.dow, sales: s.sales, gc: s.gc, int: r.disc_pct ?? null, spend: r.disc_amt || 0 });
+    }
+
+    const promo = matchedLift(promoRecs, marginRate);
+    const discount = matchedLift(discRecs, marginRate);
+    const scP = applyScope(promo.byStore as Array<{ loc: string }>, allowed);
+    const scD = applyScope(discount.byStore as Array<{ loc: string }>, allowed);
+    return JSON.stringify({
+      date_range: `${startDate} to ${endDate}`,
+      margin_rate: marginRate,
+      promo: { district: promo.district, stores: scP.stores },
+      discount: { district: discount.district, stores: scD.stores },
+      ...(scP.restricted ? { access: 'restricted', scope_note: SCOPE_NOTE } : {}),
+      note: 'Matched-day lift — promo-heavy vs promo-light days within each weekday. verdict: pays=sales lift covers the give-away, costs=it does not, neutral=~break-even, n/a=no extra give-away. extra_sales/giveaway/gross_profit are per heavy day, $. This is a directional screen, NOT a randomized experiment — state that caveat when answering.',
     });
   }
 
@@ -537,6 +657,7 @@ Deno.serve(async (req: Request) => {
             const label = tu.name === 'query_daily_activity'    ? 'sales & DT data'
                         : tu.name === 'query_lifelenz_labor'   ? 'labor schedules'
                         : tu.name === 'query_forecast_snapshots' ? 'forecast accuracy'
+                        : tu.name === 'query_promo_roi'         ? 'promo/discount ROI'
                         : tu.name.replace(/_/g, ' ');
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Querying ${label}…` })}\n\n`));
 
