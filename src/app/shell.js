@@ -203,13 +203,17 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       can('analytics.store') && navLabel('PERFORMANCE'),
       pis('analytics.district', 'Org Summary',        '📊', ()=>onOpenModal('operator-summary'), false),
       pis('analytics.store',    'Store Scorecard',    '⇈', ()=>onOpenModal('ranking'),           false),
-      pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),     false),
       // Planning hub (Notes 24): Targets · Monthly Projections · Pace · Yearly · Smart Targets, tabbed
       pis('analytics.store',    'Planning',           '🎯', ()=>onOpenModal('planning'),          false),
       // ── LABOR & SCHEDULING ─────────────────────────────────────
       // Scheduling hub (Notes 24): Labor Analytics · Scheduling · Schedule Summary · Labor Analysis · Skills, tabbed
       can('analytics.store') && navLabel('LABOR & SCHEDULING'),
       pis('analytics.store',    'Scheduling',         '🗓', ()=>onOpenModal('sched-hub'),         false),
+      // ── PEOPLE / HR (Notes 24) ─────────────────────────────────
+      (can('reviews.view')||can('analytics.store')) && navLabel('PEOPLE / HR'),
+      pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),      false),
+      pis('analytics.store',    'Visit Readiness',    '🛡️', ()=>onOpenModal('visit-readiness'),    false),
+      pis('analytics.store',    'Graded Visits',      '📋', ()=>onOpenModal('graded-visits'),      false),
       // ── OPERATIONS ─────────────────────────────────────────────
       can('analytics.store') && navLabel('OPERATIONS'),
       pis('analytics.store',    'Food Cost',          '🥗', ()=>onOpenModal('fob-analysis'),     false),
@@ -222,8 +226,6 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       can('analytics.store') && navLabel('ANALYTICS'),
       pis('analytics.store',    'Signals',            '📡', ()=>onOpenModal('signals'),            false),
       pis('analytics.store',    'DT Speed of Service','🚗', ()=>onOpenModal('dt-sos'),             false),
-      pis('analytics.store',    'Graded Visits',      '📋', ()=>onOpenModal('graded-visits'),      false),
-      pis('analytics.store',    'Visit Readiness',    '🛡️', ()=>onOpenModal('visit-readiness'),    false),
       navItem('SAGE',                                  '🧠', ()=>onOpenModal('sage'),               false),
       navItem('Feature Requests',                      '💡', ()=>onOpenModal('feature-requests'),   false),
       navItem('Task Queue',                             '⚡', ()=>onOpenModal('task-queue'),         false),

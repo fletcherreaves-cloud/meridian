@@ -165,9 +165,12 @@ function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose })
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.515';
+const MERIDIAN_VERSION    = '4.516';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.516', date:'2026-07-24', changes:[
+    'New "People / HR" sidebar section that groups the people-facing panels together — Performance Reviews, Visit Readiness, and Graded Visits — instead of scattering them across Performance and Analytics. Same panels, just easier to find as a set (room to grow as coaching tools are added).',
+  ]},
   {version:'4.515', date:'2026-07-24', changes:[
     'New: a "Scheduling" hub under a new "Labor & Scheduling" sidebar section, merging five labor panels — Labor Analytics, Scheduling, Weekly Schedule Summary, Labor Analysis, and Employee Skills — into one place with tabs across the top (companion to the Planning hub). Each tab loads on demand, and your role controls which tabs appear. Old links still work — anything that opened e.g. Schedule Summary now opens Scheduling on that tab.',
   ]},
