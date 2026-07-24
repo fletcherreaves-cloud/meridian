@@ -85,9 +85,13 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.511';
+const MERIDIAN_VERSION    = '4.512';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.512', date:'2026-07-24', changes:[
+    'New: a profile menu (the round avatar at the top-right) that gathers the account + utility actions that used to crowd the top bar — theme (light/dark), Save session to file, Help & guide, User management, Show/Hide Test Kitchen, Change password, and Sign out — under one tap, with your email and role shown at the top. Several of these were previously unreachable on mobile.',
+    'Mobile fix: the All / OK / FL location scope pills are now shown in the top bar on phones (they were desktop-only before), so you can switch state focus without a laptop. Settings (⚙) and Load (↑) stay in the bar; everything else moved into the profile menu to declutter.',
+  ]},
   {version:'4.511', date:'2026-07-24', changes:[
     'New: Panel Index in the Knowledge Base (📖) — a live, plain-language map of every panel grouped like the sidebar, so you (or a new user) can see at a glance what each panel does and where a workflow lives. Open Knowledge Base → "App Guide" → Panel Index.',
   ]},

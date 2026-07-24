@@ -3,6 +3,7 @@ import * as React from 'react';
 import { sName, sNameC } from '../constants.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
+import { supabase } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -291,6 +292,62 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   ));
 }
 
+// ── Profile menu (top-right avatar) ─────────────────────────────────
+// Consolidates account + utility actions that used to crowd the top bar (and were
+// unreachable on mobile): identity/role, theme, save session, help, user management,
+// Test Kitchen toggle, change password, sign out. Standard SaaS profile-menu pattern.
+function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode }) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  useEffect(() => {
+    let live = true;
+    try { supabase?.auth?.getUser?.().then(({ data }) => { if (live) setEmail(data?.user?.email || ''); }); } catch { /* no auth */ }
+    return () => { live = false; };
+  }, []);
+  const roleLabel = userRole ? (userRole[0].toUpperCase() + userRole.slice(1)) : 'User';
+  const initial = ((email || 'U').trim()[0] || 'U').toUpperCase();
+  const item = (icon, label, onClick) => btn({
+    onClick: () => { setOpen(false); onClick && onClick(); },
+    style: { display:'flex', alignItems:'center', gap:9, width:'100%', textAlign:'left',
+      padding:'8px 12px', fontSize:'11px', color:'var(--text)', background:'transparent',
+      border:'none', cursor:'pointer', whiteSpace:'nowrap' },
+    onMouseEnter:e=>e.currentTarget.style.background='rgba(255,255,255,.05)',
+    onMouseLeave:e=>e.currentTarget.style.background='transparent',
+  }, span({ style:{ width:15, textAlign:'center', flexShrink:0 } }, icon), label);
+
+  return div({ style:{ position:'relative', flexShrink:0 } },
+    btn({ onClick:()=>setOpen(o=>!o), title:'Account',
+      style:{ width:26, height:26, borderRadius:'50%', border:'.5px solid var(--bdr)',
+        background:'var(--surf2)', color:'var(--amber)', fontSize:'11px', fontWeight:800,
+        cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 } },
+      initial),
+    open && div(null,
+      div({ onClick:()=>setOpen(false), style:{ position:'fixed', inset:0, zIndex:80 } }),
+      div({ style:{ position:'absolute', top:'calc(100% + 6px)', right:0, zIndex:81, minWidth:212,
+        background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:8,
+        boxShadow:'0 8px 32px rgba(0,0,0,.4)', overflow:'hidden', padding:'4px 0' } },
+        div({ style:{ padding:'10px 12px', borderBottom:'.5px solid var(--bdr)' } },
+          div({ style:{ fontSize:'11px', fontWeight:700, color:'var(--text)', overflow:'hidden',
+            textOverflow:'ellipsis', maxWidth:186 } }, email || 'Signed in'),
+          div({ style:{ fontSize:'9px', color:'var(--text3)', marginTop:2 } },
+            'Role: ', span({ style:{ color:'var(--amber)', fontWeight:700 } }, roleLabel))
+        ),
+        item(settings.colorMode==='dark'?'☀':'🌙', settings.colorMode==='dark'?'Light mode':'Dark mode', ()=>{
+          const next = settings.colorMode==='dark'?'light':'dark';
+          document.documentElement.setAttribute('data-mode', next);
+        }),
+        onSaveSession && item('💾', 'Save session to file', onSaveSession),
+        onOpenModal && item('❔', 'Help & guide', ()=>onOpenModal('help')),
+        onOpenAdmin && item('👥', 'User management', onOpenAdmin),
+        onToggleBeta && item('⚗', betaMode ? 'Show Test Kitchen' : 'Hide Test Kitchen', onToggleBeta),
+        div({ style:{ borderTop:'.5px solid var(--bdr)', margin:'4px 0' } }),
+        div({ style:{ padding:'2px 8px' } }, h(ChangePasswordBtn, { style:{ width:'100%', justifyContent:'flex-start', fontSize:'10px', padding:'6px 6px' } })),
+        div({ style:{ padding:'2px 8px 6px' } }, h(SignOutBtn, { style:{ width:'100%', justifyContent:'flex-start', fontSize:'10px', padding:'6px 6px' } }))
+      )
+    )
+  );
+}
+
 // ── App Topbar (slim contextual header) ─────────────────────────────
 function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChange, locScope, onScopeChange,
                     onOpenModal, onLoadFiles, onSaveSession, loadMsg, setView,
@@ -370,8 +427,8 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           background:'rgba(245,188,0,.06)',marginRight:4},
         title:'Open Pre-Forecast Brief — analysis of the upcoming projection period',
         onClick:()=>onOpenModal&&onOpenModal('proj-brief')},'📋 Pre-Brief'),
-      // Scope filter — OK / FL / All
-      !isMb&&div({style:{display:'flex',gap:1,marginRight:4}},
+      // Scope filter — OK / FL / All (now visible on mobile too — Notes 24 #1)
+      div({style:{display:'flex',gap:1,marginRight:isMb?0:4}},
         ...[['all','All'],['ok','OK'],['fl','FL']].map(([s,l])=>
           btn({key:s,className:'btn btn-sm',
             style:{fontSize:'9px',padding:'2px 7px',
@@ -393,35 +450,13 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           padding:'4px 8px',fontSize:'9px',color:'var(--text2)',whiteSpace:'nowrap',
           zIndex:50}},loadMsg)
       ),
-      !isMb&&btn({className:'btn btn-sm',title:'Save session to file',style:{fontSize:'10px'},
-        onClick:onSaveSession},'💾'),
+      // Settings stays in the bar (frequent, one tap); everything else moved into the profile menu
       (!perm||perm('settings.view'))&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
+        title:'Settings',
         onClick:()=>onOpenModal('settings')},'⚙'),
-      !isMb&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
-        onClick:()=>onOpenModal('help')},'?'),
-      // Dark mode toggle
-      !isMb&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
-        title:'Toggle light/dark mode',
-        onClick:()=>{
-          const next=settings.colorMode==='dark'?'light':'dark';
-          document.documentElement.setAttribute('data-mode',next);
-        }},settings.colorMode==='dark'?'☀':'🌙'),
-      // Admin panel — visibility controlled by App.js (onOpenAdmin is null if not permitted)
-      onOpenAdmin&&btn({className:'btn btn-sm',
-        title:'User Management',style:{fontSize:'10px'},
-        onClick:onOpenAdmin},'👤'),
-      // Beta mode toggle — admins only (onToggleBeta is null if not permitted)
-      onToggleBeta&&btn({className:'btn btn-sm',
-        title:betaMode?'Test Kitchen hidden — click to show experimental panels':'Test Kitchen visible — click to hide experimental panels',
-        style:{fontSize:'9px',padding:'2px 7px',
-          background:!betaMode?'rgba(168,85,247,.15)':'transparent',
-          color:!betaMode?'#a855f7':'var(--text3)',
-          borderColor:!betaMode?'rgba(168,85,247,.4)':'rgba(255,255,255,.1)',
-          fontWeight:!betaMode?700:400},
-        onClick:onToggleBeta},'⚗'),
-      // Auth controls (only render when Supabase auth is active)
-      h(ChangePasswordBtn, {style:{fontSize:'9px',padding:'3px 8px'}}),
-      h(SignOutBtn, {style:{fontSize:'9px',padding:'3px 8px'}})
+      // Profile menu — consolidates theme, save session, help, user mgmt, Test Kitchen,
+      // change password, sign out (previously ~7 buttons, several unreachable on mobile)
+      h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode})
     )
   );
 }
