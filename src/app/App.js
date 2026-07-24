@@ -127,9 +127,13 @@ function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.513';
+const MERIDIAN_VERSION    = '4.514';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.514', date:'2026-07-24', changes:[
+    'SAGE Prompt Library: the ★ Save button is now always clickable — if the box is empty it tells you why instead of looking dead (fixes "Save wasn\'t enabled"). Added a ★ Save prompt button under every SAGE answer that drops the exact question that produced it into the library. And a new "This chat\'s prompts" checklist lets you multi-select the questions you asked in a session and either save each one or combine them into a single saved prompt.',
+    'At-A-Glance "Sales & Guest Counts" tile: restored the vs-LY figures that went blank on devices without a manual Operations Report upload. Guest-count vs LY now falls back to the auto DAR last-year transactions (it previously only read manual uploads), and sales vs LY also reads the emailed Sales Ledger\'s last-year column — so the tile shows real year-over-year again from the cloud streams, not just when a spreadsheet was loaded. (Channel Mix still needs the emailed Sales Ledger stream to be flowing — if that section is empty, the Sales Ledger email isn\'t landing.)',
+  ]},
   {version:'4.513', date:'2026-07-24', changes:[
     'New: a single "Planning" panel that merges the five forward-looking views — Targets, Monthly Projections, Pace to Target, Yearly Projections, and Smart Targets — into one place with tabs across the top, replacing five separate sidebar entries. Same tools, less sidebar clutter, and related planning work now lives side by side. Each tab loads on demand (so opening Planning is fast and the heavy Smart-Targets backtest only runs when you click its tab). Old links still work — anything that used to jump to e.g. Smart Targets now opens Planning on that tab.',
   ]},

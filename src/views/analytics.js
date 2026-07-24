@@ -6942,8 +6942,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const l=String(r.loc); if(!allLocs.includes(l)) continue;
       const cur=(r.allNetSales||r.sales)||0, curG=r.gc||0;
       const lk=l+'|'+_iso(addD(r.date,-364));
-      let ly=lySalesByLocDate[lk]; if((ly==null||ly<=0)&&r.lySales>0) ly=r.lySales;
-      const lyG=lyGcByLocDate[lk];
+      // LY sources, in order: matched 364-day-back manual row → row's own LY field.
+      // Cloud-fresh devices have no manual laborRows, so the row's own LY (DAR
+      // ly_product_sales / ly_transactions, or Sales-Ledger all_net_sales_ly) is what
+      // keeps vs-LY populated instead of blanking out.
+      let ly=lySalesByLocDate[lk]; if((ly==null||ly<=0)&&(r.lySales>0||r.allNetSalesLY>0)) ly=r.lySales>0?r.lySales:r.allNetSalesLY;
+      let lyG=lyGcByLocDate[lk]; if((lyG==null||lyG<=0)&&r.lyGc>0) lyG=r.lyGc;
       if(cur>0&&ly>0){ mCurS[l]=(mCurS[l]||0)+cur; mLyS[l]=(mLyS[l]||0)+ly; }
       if(curG>0&&lyG>0){ mCurG[l]=(mCurG[l]||0)+curG; mLyG[l]=(mLyG[l]||0)+lyG; }
     }
