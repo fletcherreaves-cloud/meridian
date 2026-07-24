@@ -266,11 +266,24 @@ function buildStore(loc,ds,settings){
   const now4=new Date(Date.now());
   let pSales=0,pLY=0;
   if(ds&&ds.loaded){
-    // pLY must mirror pSales's exact window width (28 days) shifted back one year —
-    // missing upper bound here previously summed ~392 days of LY sales against
-    // pSales's 28 days, producing a uniform ~93% "decline" on every store that
-    // was a unit-window mismatch, not a real signal.
-    for(const r of locRows(ds.laborByLoc, ds.laborRows, loc)){if(r.date>=cut4)pSales+=r.sales||r.projSales||0;const lyDt=addD(r.date,364);if(lyDt>=cut4&&lyDt<=now4&&r.sales>0)pLY+=r.sales;}
+    // MATCHED-DAY vs-LY (fix: "everyone ~26-33% down"). The old code summed the FULL
+    // current 28-day window for pSales but pLY only over whatever last-year days happened
+    // to exist in the data — so partial LY coverage read as a uniform ~30% "decline" on
+    // every store (a coverage artifact, not a real trend). Now a day counts on BOTH sides
+    // only when it has real sales this year AND a comparable last-year value, so pSales and
+    // pLY always span the identical calendar days (apples-to-apples). LY for a current day =
+    // the actual row 364d back, else that row's own lySales (auto/DAR streams). This is the
+    // shared pipeline, so it corrects Org Summary + every per-store vs-LY at once.
+    const rows=locRows(ds.laborByLoc, ds.laborRows, loc);
+    const _iso=d=>(d instanceof Date?d:new Date(d)).toISOString().slice(0,10);
+    const lyByCur={};   // last-year sales, keyed by the CURRENT date they compare to
+    for(const r of rows){ if(!r.date||!(r.sales>0))continue; const lyDt=addD(r.date,364); if(lyDt>=cut4&&lyDt<=now4) lyByCur[_iso(lyDt)]=(lyByCur[_iso(lyDt)]||0)+r.sales; }
+    for(const r of rows){
+      if(!(r.date>=cut4))continue;
+      const cur=r.sales||r.projSales||0; if(!(cur>0))continue;
+      let ly=lyByCur[_iso(r.date)]; if((ly==null||ly<=0)&&r.lySales>0)ly=r.lySales;
+      if(ly>0){ pSales+=cur; pLY+=ly; }   // matched day only
+    }
   }else{
     function sr(n){const s=loc.split('').reduce((a,c)=>a*31+c.charCodeAt(0),0);const x=Math.sin(s*(n+1))*10000;return x-Math.floor(x);}
     const ap=(t.tOepe<=75?2800000:t.tOepe<=110?2100000:t.tOepe<=125?1750000:1400000)/52;

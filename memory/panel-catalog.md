@@ -6,7 +6,7 @@ metadata:
   type: project
 ---
 
-# Meridian Panel Catalog (live) — as of v4.517 (2026-07-24)
+# Meridian Panel Catalog (live) — as of v4.518 (2026-07-24)
 
 > **Now also in-app:** a user-friendly version ships as the **"Panel Index"** Knowledge Base
 > article (`KB_ARTICLES.panel_index` in `src/engine/forecast.js`, category "App Guide", v4.511).
@@ -37,7 +37,7 @@ Permission keys: `analytics.store/district/labor/brief/forecasting/ai/dashboard`
 
 ## PERFORMANCE
 - **Org Summary** (`operator-summary`, analytics.district) — org/district-level rollup scorecard. *derived*. ✅
-- **Store Scorecard** (`ranking`, analytics.store) — per-store ranking across KPIs. *derived*. ✅
+- **Rankings** (`ranking`, analytics.store) — rank stores OR rolled-up groups (Patch/Operator/State) across any KPI; group rollups pool member rows (rate=row-mean, sales/GC=summed, score=member-mean). Renamed from "Store Scorecard" + groups added v4.523 (Notes 25 #5). *derived*. ✅
 - *(Performance Reviews moved → **PEOPLE / HR** section, v4.516)*
 - **Planning** (`planning`, analytics.store) — ✅ **MERGED HUB (v4.513)**. One nav entry, five lazy tabs (only the active tab mounts): **Targets** (`unified-targets` → tab `targets`, monthly_targets), **Monthly** (`monthly-proj` → `monthly`, forecast engine + patch rollups), **Pace** (`pace-target` → `pace`, MTD vs official + run-rate), **Yearly** (`yearly-proj` → `yearly`, annual), **Smart** (`smart-targets-v2` → `smart`, median-of-simple + backtest, multi-metric). Hub = `PlanningHubPanel` in `src/app/App.js`; each panel gained an `embedded` prop that drops its own full-screen overlay so it fills the hub body. **Legacy modal ids still resolve** (they now deep-link to the matching tab), so At-A-Glance tiles / SAGE links keep working.
 
@@ -87,15 +87,20 @@ by id and is restored by uncommenting one line. Pruned so far:
 vs Actuals, Forecast Models, DI Calibration/Compare, Forecast Accuracy, Fcst Reference, LifeLenz
 Gap/Bridge) — standing owner directive to protect the engineered models.
 
-**Awaiting owner OK before pruning** (store/analytics + AI experiments — reachable, low-traffic,
-candidates to hide next once confirmed): Record Days, Revenue, Inventory, Performance Calc, Metric
-Correlations, Store Compare, GM Letters, Channel Intel, DAR Analysis, Product Mix, District Lens,
-Anomaly Scan, Why Engine, Priority Actions.
+**Hidden by default via Panel Manager (v4.518):** the 14 store/analytics + AI experiments —
+Record Days, Revenue, Inventory, Performance Calc, Metric Correlations, Store Compare, GM Letters,
+Channel Intel, DAR Analysis, Product Mix, District Lens, Anomaly Scan, Why Engine, Priority Actions —
+are now driven by the `OPTIONAL_PANELS` registry in `src/constants.js` and toggled per-panel in
+**Admin → Panel Manager** (`panel-manager`, `PanelManagerPanel` in App.js). Visibility persists to
+localStorage (`mf.optionalPanelVis`); default = hidden. Components + modal routing untouched → any
+can be shown again from the manager. This is also the seed of the Notes 24 #6 per-tenant feature-flag
+registry.
 
 ## ADMIN
 - **Settings** (`settings`, settings.view) — app settings; **target home for retired top-bar items** (Notes 24). ✅
 - **Changelog** (`about`) — version history (MERIDIAN_CHANGELOG in App.js). ✅
 - **Knowledge Base** (`kb`) — in-app docs/help; **extend into the docs repository** (Notes 24 #3a). ✅
+- **Panel Manager** (`panel-manager`, settings.view) — show/hide + reference for the optional/experimental panels; per-panel toggles persisted to localStorage. *`OPTIONAL_PANELS` registry*. ✅ (v4.518)
 - **Data Manager** (`data-manager`, data.upload) — uploads + in-app Sync buttons (dispatch pull workflows). *all sources*. ✅
 - **Save Session** / **Restore Session** — session file save/load; **move into profile menu** (Notes 24 #1). ✅
 - **Help** (`help`) — help modal. ✅

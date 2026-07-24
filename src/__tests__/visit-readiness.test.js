@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeVisitReadiness, READINESS_WEIGHTS } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 // Two real loc IDs that exist in DEFAULT_TARGETS.
@@ -105,5 +105,70 @@ describe('visit-readiness', () => {
     expect(res.district.readiness).toBeGreaterThan(0);
     expect(res.district.atRisk).toBeGreaterThanOrEqual(1);
     expect(res.weights).toEqual(READINESS_WEIGHTS);
+  });
+
+  it('writes a plain-language "why" that names the worst drivers for an at-risk store', () => {
+    const res = computeVisitReadiness(mkDs(badRows(BAD)));
+    const b = res.stores.find(s => s.loc === BAD);
+    expect(typeof b.why).toBe('string');
+    expect(b.why).toMatch(/At risk/i);
+    // Should reference a driver label + "vs" + "target"
+    expect(b.why).toMatch(/vs .* target/i);
+  });
+
+  it('a ready store\'s why reads clean (no big gaps)', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD)));
+    const g = res.stores.find(s => s.loc === GOOD);
+    expect(g.why).toMatch(/Ready/i);
+  });
+
+  it('calibration: needs >=3 visits, else reports n and null r', () => {
+    const ds = mkDs(goodRows(GOOD), badRows(BAD));
+    ds.gradedVisits = [{ store: GOOD, dateISO: '2026-06-15', reportType: 'CFV', score: 90, pass: true }];
+    const res = computeVisitReadiness(ds);
+    expect(res.calibration.n).toBe(1);
+    expect(res.calibration.r).toBeNull();
+  });
+
+  it('analyzeGradedVisits: buckets outcomes by known variables + per-store frequency', () => {
+    const visits = [
+      { store: '3708', dateISO: '2026-06-05', reportType: 'CFV', score: 92, pass: true,  daypart: 'Breakfast', weekpart: 'Weekday', channel: 'Drive Thru' }, // Fri
+      { store: '3708', dateISO: '2026-06-19', reportType: 'CFV', score: 70, pass: false, daypart: 'Lunch',     weekpart: 'Weekday', channel: 'In-Store' },  // Fri
+      { store: '5183', dateISO: '2026-06-06', reportType: 'CFV', score: 88, pass: true,  daypart: 'Breakfast', weekpart: 'Weekend', channel: 'Drive Thru' }, // Sat
+      { store: '5183', dateISO: '2026-06-13', reportType: 'RGR', score: 95, pass: true,  daypart: 'Dinner',    weekpart: 'Weekday', channel: 'In-Store' },  // Sat
+    ];
+    const all = analyzeGradedVisits(visits);
+    expect(all.overall.n).toBe(4);
+    expect(all.overall.passRate).toBeCloseTo(0.75, 2);
+    expect(all.channel.find(c => c.key === 'Drive Thru').n).toBe(2);
+    expect(all.byType.find(t => t.key === 'CFV').n).toBe(3);
+    // Per-store cadence: 3708 has two visits 14 days apart.
+    const s = all.freq.find(f => f.store === '3708');
+    expect(s.n).toBe(2);
+    expect(s.avgGapDays).toBe(14);
+    // Type filter narrows to CFV only.
+    const cfv = analyzeGradedVisits(visits, { type: 'CFV' });
+    expect(cfv.overall.n).toBe(3);
+  });
+
+  it('analyzeGradedVisits: empty input is safe', () => {
+    const r = analyzeGradedVisits([]);
+    expect(r.overall.n).toBe(0);
+    expect(r.dow).toEqual([]);
+    expect(r.freq).toEqual([]);
+  });
+
+  it('calibration: positive rank correlation when predictions track actual visit scores', () => {
+    // Three stores whose actual visit scores mirror their (good→bad) predicted order.
+    const A = '3708', B = '5183', C = Object.keys(DEFAULT_TARGETS).filter(l => /^\d+$/.test(l) && l !== A && l !== B)[0];
+    const ds = mkDs(goodRows(A), badRows(B), goodRows(C));
+    ds.gradedVisits = [
+      { store: A, dateISO: '2026-06-10', reportType: 'CFV', score: 92, pass: true },   // good pred, high actual
+      { store: C, dateISO: '2026-06-11', reportType: 'CFV', score: 85, pass: true },   // good pred, high actual
+      { store: B, dateISO: '2026-06-12', reportType: 'CFV', score: 60, pass: false },  // bad pred, low actual
+    ];
+    const res = computeVisitReadiness(ds);
+    expect(res.calibration.n).toBe(3);
+    expect(res.calibration.r).toBeGreaterThan(0);
   });
 });

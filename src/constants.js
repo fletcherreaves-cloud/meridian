@@ -523,4 +523,35 @@ const QSR_DAR_FIELDS = {
   ly_unhealthy_cnt:     {label:'LY Unhealthy Orders',desc:'Last year unhealthy order count for this slot',                      unit:'#'},
 };
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE };
+// ── Optional / experimental panels (Test Kitchen) — visibility registry ───────
+// Notes 24 prune + feature-registry: these low-traffic experiment panels are HIDDEN
+// from the sidebar by default and toggled back on per-panel in the in-app Panel Manager
+// (Admin → Panel Manager). Nothing is deleted — each panel's component + modal routing
+// stay intact; hiding only removes the nav entry. `id` = onOpenModal id. The forecast /
+// engineered-diagnostic cluster is deliberately NOT here (standing directive: always shown).
+const OPTIONAL_PANELS = [
+  { id:'record-day',    label:'Record Days',        icon:'🏆', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Best-ever sales / volume record days per store.' },
+  { id:'revintel',      label:'Revenue',            icon:'◈',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Revenue intelligence deep-dive by store/segment.' },
+  { id:'inventory',     label:'Inventory',          icon:'📦', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Inventory analysis workbench.' },
+  { id:'perf-calc',     label:'Performance Calc',   icon:'🧮', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Ad-hoc performance / score calculator.' },
+  { id:'corr-explorer', label:'Metric Correlations',icon:'🔗', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Explore correlation between any two metrics (also in the Signals Scanner).' },
+  { id:'compare',       label:'Store Compare',      icon:'⇄',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Side-by-side comparison of two or more stores.' },
+  { id:'gm-brief',      label:'GM Letters',         icon:'👨‍💼', perm:'analytics.store',   cat:'Store & Analytics', blurb:'Auto-drafted GM coaching letters.' },
+  { id:'channel-intel', label:'Channel Intel',      icon:'📊', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Channel-mix intelligence (DT / digital / delivery / kiosk).' },
+  { id:'dar-daypart',   label:'DAR Analysis',       icon:'⏱', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Daypart-level DAR (daily activity) analysis.' },
+  { id:'pmix',          label:'Product Mix',        icon:'🍔', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Product-mix breakdown by store/period.' },
+  { id:'district-lens', label:'District Lens',      icon:'🌐', perm:'analytics.district', cat:'Store & Analytics', blurb:'District-wide lens / rollup view.' },
+  { id:'aiscan',        label:'Anomaly Scan',       icon:'🔍', perm:'analytics.ai',       cat:'AI', blurb:'AI anomaly scan across metrics.' },
+  { id:'why-engine',    label:'Why Engine',         icon:'🔬', perm:'analytics.ai',       cat:'AI', blurb:'Root-cause "why" explainer for a metric move.' },
+  { id:'priority-brief',label:'Priority Actions',   icon:'🎯', perm:'analytics.brief',    cat:'AI', blurb:'AI-ranked priority actions for the period.' },
+];
+const PANEL_VIS_KEY = 'mf.optionalPanelVis';   // localStorage {id: true} — absent/false = hidden
+function loadPanelVis() {
+  try { const raw = localStorage.getItem(PANEL_VIS_KEY); return raw ? (JSON.parse(raw) || {}) : {}; }
+  catch { return {}; }
+}
+function savePanelVis(vis) {
+  try { localStorage.setItem(PANEL_VIS_KEY, JSON.stringify(vis || {})); } catch { /* ignore */ }
+}
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };

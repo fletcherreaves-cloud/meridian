@@ -2072,6 +2072,7 @@ function ExportDropdown({rows, columns, title, filename, extraHTML, btnClassName
 
 function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetric, onSelectStore, onClose}) {
   const [metric, setMetric] = useState(defaultMetric||'score');
+  const [groupDim, setGroupDim] = useState('store');   // store | patch | operator | state (Notes 25 #5)
   // Sync if defaultMetric changes (when opened from different nav sources)
   React.useEffect(()=>{if(defaultMetric)setMetric(defaultMetric);},[defaultMetric]);
   // Pre-compute GC vs LY per store using dateRange
@@ -2116,7 +2117,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     {id:'park',     l:'DT Parked%',        fn:s=>s.p.park||0,                     fmt:v=>v>0?fP(v,1):'—',    higherBetter:null},
     {id:'labor',    l:'Labor %',           fn:s=>s.p.laborPct||0,                 fmt:v=>v>0?fP(v,1):'—',    higherBetter:false},
     {id:'t2w',      l:'2-Wk vs LY',            fn:s=>s.p.t2w||0,                      fmt:v=>fPct(v),            higherBetter:true},
-    {id:'gc',       l:'GC vs LY',              fn:s=>gcVsLYMap[String(s.loc)]??-999,  fmt:v=>v>-999?(v>=0?'+':'')+(v*100).toFixed(1)+'%':'—', higherBetter:true},
+    {id:'gc',       l:'GC vs LY',              fn:s=>s._gc!==undefined?(s._gc==null?-999:s._gc):(gcVsLYMap[String(s.loc)]??-999),  fmt:v=>v>-999?(v>=0?'+':'')+(v*100).toFixed(1)+'%':'—', higherBetter:true},
     {id:'cashOS',   l:'Cash O/S',          fn:s=>Math.abs(s.p.cashOSPct||0),      fmt:v=>fP(v,3),            higherBetter:false},
     {id:'tRedA',    l:'T-Red After%',      fn:s=>s.p.tRedAPct||0,                 fmt:v=>fP(v,3),            higherBetter:false},
     {id:'ot',       l:'OT Hours',          fn:s=>s.p.otHrs||0,                    fmt:v=>v>0?v.toFixed(1):'—', higherBetter:false},
@@ -2162,7 +2163,43 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     p:{...s.p,...(localStats[String(s.loc)]||{})}
   })),[stores,localStats]);
 
-  const sorted=[...augStores]
+  // ── Group rollups (Notes 25 #5) ──────────────────────────────────────────
+  // When grouping, pool each group's member-store ROWS and aggregate the same way a
+  // single store is computed (rate = row-mean over the pooled rows, sales/GC = summed,
+  // score = mean of member indices) — so groups and stores are computed consistently
+  // and we never "average an average" of pre-rolled store rates. GC vs LY is summed.
+  const groups=React.useMemo(()=>{
+    if(groupDim==='store') return null;
+    const keyOf=s=> groupDim==='patch'? (s.sup||(INV_ORG_COORDS[s.loc]||{}).sup||'')
+      : groupDim==='operator'? (s.operator||(INV_ORG_COORDS[s.loc]||{}).operator||'')
+      : groupDim==='state'? ((INV_ORG_COORDS[s.loc]||{}).state||'')
+      : '';
+    const map={};
+    augStores.forEach(s=>{ const k=keyOf(s); if(!k)return; (map[k]=map[k]||[]).push(s); });
+    const a=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&v>0);return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
+    const az=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
+    const mean=arr=>{const v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
+    const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
+    return Object.entries(map).map(([name,members])=>{
+      const locs=new Set(members.map(mm=>String(mm.loc)));
+      const inDR=r=>locs.has(String(r.loc))&&r.date>=DR.s&&r.date<=DR.e;
+      const cR=(ds.ctrlRows||[]).filter(inDR);
+      const lR=(ds.laborRows||[]).filter(r=>inDR(r)&&r.sales>0);
+      const oR=(ds.opsRows||[]).filter(inDR);
+      const curGc=(ds.laborRows||[]).filter(r=>inDR(r)&&r.gc>0).reduce((x,r)=>x+r.gc,0);
+      const lyGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=lyS&&r.date<=lyE&&r.gc>0).reduce((x,r)=>x+r.gc,0);
+      return {
+        loc:'__grp__'+name, name, city:members.length+' store'+(members.length>1?'s':''), isGroup:true, n:members.length,
+        opsScore:mean(members.map(mm=>mm.opsScore))||0, ctrlScore:mean(members.map(mm=>mm.ctrlScore))||0,
+        _gc: lyGc>10?(curGc-lyGc)/lyGc:null,
+        p:{ laborPct:a(cR,'laborPct')||a(lR,'laborPct'), tpph:a(cR,'tpph')||a(lR,'tpph'), oepe:a(oR,'oepe'), kvst:a(oR,'kvst'),
+            park:a(oR,'park'), otHrs:az(lR,'otHrs'), cashOSPct:az(cR,'cashOSPct'), tRedAPct:az(cR,'tRedAPct'), discPct:az(cR,'discPct'),
+            r2p:a(oR,'r2p'), sales:lR.reduce((x,r)=>x+(r.sales||0),0), t2w:mean(members.map(mm=>mm.p.t2w)) },
+      };
+    });
+  },[groupDim,augStores,ds,DR.s,DR.e]);
+
+  const sorted=[...(groups||augStores)]
     .sort((a,b)=>{
       const va=m.fn(a),vb=m.fn(b);
       // Nulls / zeros sort to bottom regardless of direction
@@ -2209,6 +2246,17 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
             onDateChange&&onDateChange({...r,preset:p.id,label:p.l});
           }},p.l))
       ),
+      // Group-by dimension (Notes 25 #5): rank stores or rolled-up groups
+      div({style:{padding:'6px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:5,alignItems:'center',background:'var(--surf2)'}},
+        span({style:{fontSize:'8px',color:'var(--text3)',marginRight:2}},'Rank by:'),
+        ...[['store','Stores'],['patch','Patch'],['operator','Operator'],['state','State']].map(([id,l])=>
+          btn({key:id,className:'btn btn-sm',
+            style:{fontSize:'9px',padding:'2px 9px',
+              background:groupDim===id?'rgba(245,188,0,.14)':'transparent',
+              color:groupDim===id?'var(--gold)':'var(--text3)',
+              borderColor:groupDim===id?'rgba(245,188,0,.4)':'rgba(255,255,255,.1)'},
+            onClick:()=>setGroupDim(id)},l))
+      ),
       div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:4,flexWrap:'wrap'}},
         METRICS.map(mx=>btn({key:mx.id,className:'sbtn'+(metric===mx.id?' on':''),onClick:()=>setMetric(mx.id),style:{fontSize:'10px'}},mx.l.split('(')[0].trim()))
       ),
@@ -2216,12 +2264,12 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
         sorted.map((s,i)=>{
           const val=m.fn(s);const fmt=m.fmt(val);
           const color=i===0?'#f59e0b':i<3?'#34d399':i>=sorted.length-3?'#f87171':'var(--text)';
-          return div({key:s.loc,style:{display:'flex',alignItems:'center',gap:12,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',cursor:'pointer',background:'transparent'},
-            onClick:()=>{onSelectStore(s);onClose();}},
+          return div({key:s.loc,style:{display:'flex',alignItems:'center',gap:12,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',cursor:s.isGroup?'default':'pointer',background:'transparent'},
+            onClick:s.isGroup?undefined:()=>{onSelectStore(s);onClose();}},
             div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:700,color,minWidth:24,textAlign:'right'}},i+1),
             div({style:{flex:1}},
-              div({style:{fontWeight:600,fontSize:'12px'}},s.name),
-              div({style:{fontSize:'9px',color:'var(--text3)'}},s.city+' · #'+s.loc)
+              div({style:{fontWeight:600,fontSize:'12px'}},s.isGroup?(s.name+(groupDim==='state'?(s.name==='OK'?' — Oklahoma':s.name==='FL'?' — Florida':''):'')):s.name),
+              div({style:{fontSize:'9px',color:'var(--text3)'}},s.isGroup?s.city:(s.city+' · #'+s.loc))
             ),
             div({style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:700,color}},fmt)
           );
