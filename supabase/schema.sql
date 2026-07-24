@@ -460,6 +460,41 @@ create policy "lifelenz_schedule: public write" on public.lifelenz_schedule
 create index if not exists lifelenz_schedule_date_idx
   on public.lifelenz_schedule (date desc);
 
+-- ── LifeLenz per-job (business-role / station) hours + cost, per store-week ───
+-- The right-panel "per-job" breakdown on the LifeLenz weekly-schedule screen
+-- (Drive Thru / Grill / Lobby / Maintenance / …) — one row per store × week ×
+-- business role. Source: ShiftsForSchedulePeriod GraphQL, pre-aggregated by
+-- scripts/lifelenz-pull.mjs using src/engine/lifelenz-shift-jobs.js (zero-drift
+-- with the client engine). week_start is the WEDNESDAY that anchors the LifeLenz
+-- business week (WEEK_START_DOW=3), matching the Weekly Schedule Summary panel.
+create table if not exists public.lifelenz_job_hours (
+  loc              text not null,          -- store number, e.g. '0006838'
+  week_start       date not null,          -- Wednesday anchor of the business week
+  business_role_id text not null,          -- LifeLenz businessRoleId (station)
+  role_name        text,                   -- resolved station name (Drive Thru, …)
+  category         text,                   -- Variable | Floor | Fixed
+  code             text,                   -- LifeLenz short code (D, G, L, …)
+  hours            float,                  -- Σ pivotMetrics.seconds / 3600
+  cost             float,                  -- Σ pivotMetrics.earnings ($)
+  reg_hours        float,                  -- regular-pay hours
+  ot_hours         float,                  -- overtime-pay hours
+  n_shifts         integer,                -- committed shifts touching this role
+  updated_at       timestamptz default now(),
+  primary key (loc, week_start, business_role_id)
+);
+
+alter table public.lifelenz_job_hours enable row level security;
+
+-- Public read/write — operational, no PII; matches the lifelenz_schedule pattern.
+create policy "lifelenz_job_hours: public read" on public.lifelenz_job_hours
+  for select using (true);
+
+create policy "lifelenz_job_hours: public write" on public.lifelenz_job_hours
+  for all using (true);
+
+create index if not exists lifelenz_job_hours_week_idx
+  on public.lifelenz_job_hours (week_start desc);
+
 -- ── SMG VOICE Operator Performance (monthly PDF reports) ─────────────────────
 -- One row per store × period × report_type.
 -- Source: McDonalds_VOICE_Operator_Performance_<operatorId>.PDF

@@ -49,7 +49,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -85,9 +85,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.506';
+const MERIDIAN_VERSION    = '4.507';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.507', date:'2026-07-24', changes:[
+    'New: per-station hours & cost breakdown in the Weekly Schedule Summary. Expand any store and, below the daily grid, you now see where its scheduled hours and labor dollars go by LifeLenz station — Drive Thru, Grill, Lobby, Maintenance, Opening, and the rest — each tagged Variable / Floor / Fixed, with shift count, regular vs overtime hours, cost, and $/hr, plus a category summary and a total row. Pulled automatically from LifeLenz (ShiftsForSchedulePeriod) into a new cloud table so it\'s the same on every device; it fills in after the daily LifeLenz sync.',
+  ]},
   {version:'4.506', date:'2026-07-24', changes:[
     'Weekly Schedule Summary now shows Fixed Hours and Floor Hours as SEPARATE segments — Fixed %, Floor %, and a combined Fixed+Floor % — instead of one lumped Fixed Labor %. Each is scheduled hours in that segment ÷ total scheduled hours. Color flags apply the standard: each segment should run 10–15% (green in-band, amber outside), and the combined Fixed+Floor must stay at or under 25% of total scheduled hours (green ok, red over the cap). Applies at both the store and district level, rolled up as a true ratio of aggregate hours.',
   ]},
@@ -1187,6 +1190,16 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${lfzRows.length} LifeLenz schedule rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);}
+      try{
+        const jobRows = await loadLifeLenzJobHours();
+        if(jobRows.length>0){
+          setDs(prev=>{
+            if(!prev) return prev;
+            return {...prev, jobHours: jobRows};
+          });
+          console.log(`[Meridian] ✓ Loaded ${jobRows.length} LifeLenz per-job rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] LifeLenz job-hours load failed:',e);}
       // ── FOB / Ops / Controls / DAR ──────────────────────────────────────────
       const _mkIdx2=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
       try{

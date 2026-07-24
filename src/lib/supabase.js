@@ -385,6 +385,38 @@ export async function loadLifeLenzSchedule({ daysBack = 1825, daysFwd = 30 } = {
   }));
 }
 
+// Load LifeLenz per-job (station) hours+cost rows — one per store × week × role.
+// Pre-aggregated server-side by scripts/lifelenz-pull.mjs (ShiftsForSchedulePeriod).
+// Default window covers ~1 year of weeks. Returns camelCase rows keyed for the
+// Weekly Schedule Summary panel; loc is left zero-padded (panel normalizes).
+export async function loadLifeLenzJobHours({ weeksBack = 60, weeksFwd = 4 } = {}) {
+  if (!supabase) return [];
+  const start = new Date(); start.setDate(start.getDate() - weeksBack * 7);
+  const end   = new Date(); end.setDate(end.getDate() + weeksFwd * 7);
+  const fmt  = d => d.toISOString().slice(0, 10);
+  const data = await fetchAll((lo, hi) => supabase
+    .from('lifelenz_job_hours')
+    .select('*')
+    .gte('week_start', fmt(start))
+    .lte('week_start', fmt(end))
+    .order('week_start', { ascending: false })
+    .range(lo, hi));
+  if (!data || !data.length) return [];
+  return data.map(r => ({
+    loc:            r.loc,
+    weekStart:      r.week_start,          // 'YYYY-MM-DD' Wednesday anchor
+    businessRoleId: r.business_role_id,
+    name:           r.role_name,
+    category:       r.category,
+    code:           r.code,
+    hours:          r.hours,
+    cost:           r.cost,
+    regHours:       r.reg_hours,
+    otHours:        r.ot_hours,
+    nShifts:        r.n_shifts,
+  }));
+}
+
 // Save labor rows to Supabase for cross-device persistence and DI calibration history
 export async function saveLaborRows(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

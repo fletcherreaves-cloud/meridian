@@ -156,18 +156,39 @@ report's Proj-VLH (variable) vs Fix-Guide-Hrs (fixed) vs Floor columns. The (not
 `businessRoles` query would carry `businessRoleCategoryId` linking each role UUID to one of these —
 letting per-job rollups also roll up by Variable/Fixed/Floor.
 
-## Build plan (not yet started)
+## Build status — SHIPPED v4.507 (2026-07-24)
 
-1. **Pull**: extend `scripts/lifelenz-pull.mjs` (or new `scripts/lifelenz-shifts-pull.mjs`)
-   to POST `ShiftsForSchedulePeriod` per schedule per week (paginate), group pivotMetrics by
-   businessRoleId, resolve jobTitle names via `GetPaginatedJobTitles`.
-2. **Table**: `lifelenz_job_hours` (loc, week_start, business_role_id, role_name, job_title,
-   hours, cost, reg_hours, ot_hours, n_shifts) PK (loc, week_start, business_role_id).
-   Ask "does this belong in Supabase?" → yes (cloud-fresh, per-device).
-3. **Surface**: per-job breakdown rows under each store in `ScheduleSummaryPanel` (expand).
-4. **Role-name config**: `LIFELENZ_BUSINESS_ROLES` const seeded with the confirmed map above;
-   backfill from a `businessRoles` capture when available.
-5. (Optional) `ScheduleComplianceWarnings` → a compliance/minor-law feed.
+✅ **1. Pull** — extended `scripts/lifelenz-pull.mjs` (NOT a separate script — reuses the one
+auth + `getStoreSchedules` discovery). After the CSV upsert it runs `pullJobHours(token,
+schedules, start, end)`: for every store schedule × every Wednesday-anchored week in the pull
+range it POSTs `ShiftsForSchedulePeriod` (paginated), rolls up via the SAME engine
+(`rollupShiftsByRole` from `src/engine/lifelenz-shift-jobs.js` — zero drift), and upserts.
+**Fully best-effort/non-fatal**: wrapped so any failure logs + returns [] and can NEVER cost
+the (already-committed) CSV pull. Escape hatch `LIFELENZ_SKIP_JOBS=1`. First-failure logs the
+GraphQL error verbatim then goes quiet (avoids 27×N noise).
+✅ **2. Table** — `lifelenz_job_hours` (loc, week_start, business_role_id, role_name, category,
+code, hours, cost, reg_hours, ot_hours, n_shifts) PK (loc, week_start, business_role_id) in
+`supabase/schema.sql`. **week_start = the WEDNESDAY anchor** (WEEK_START_DOW=3) so keys line up
+with the Schedule Summary panel's weekKey. ⚠️ **User must run this SQL block** in the Supabase
+editor (fails soft — app works without it, per-station section just shows "not yet pulled").
+✅ **3. Loader** — `loadLifeLenzJobHours({weeksBack,weeksFwd})` in `src/lib/supabase.js`
+(paginated); App.js startup sets `ds.jobHours`.
+✅ **4. Surface** — `ScheduleSummaryPanel` expanded store view now renders `StationBreakdown`
+below the daily grid: per-station Station/Cat/Shifts/Reg/OT/Hours/Cost/$per-hr, category
+summary (Variable/Floor/Fixed hrs) + total row. Indexed by `_normLoc(loc)+'|'+weekKey`.
+✅ **Role-name config** — `LIFELENZ_BUSINESS_ROLES` already authoritative (all 34 roles).
+
+⚠️ **GraphQL query is RECONSTRUCTED from this memory doc, not the raw captured cURL** (the
+capture wasn't retained). `SHIFTS_QUERY` in the pull requests only the fields the rollup needs
+(`shifts(businessId,scheduleId,startDateTime,endDateTime,shiftType,includePayRates,after){edges{node{id shiftType assignedEmploymentId scheduleId pivotMetrics{businessRoleId jobTitleId earnings seconds payType}}} pageInfo{endCursor hasNextPage}}`).
+If the first Action run logs a `[job-hours] fetch failed … GraphQL errors …`, the field
+names/types need a tweak — grab the exact query text from a fresh `ShiftsForSchedulePeriod`
+DevTools capture and reconcile. Everything downstream (table/loader/UI) is already correct.
+
+Still open / optional:
+- Per-EMPLOYEE breakdown (engine `rollupShiftsByEmployee` ready) — would need the roster from
+  `GetSchedulableEmploymentsForPeriod` pulled too; not wired yet.
+- (Optional) `ScheduleComplianceWarnings` → a compliance/minor-law feed.
 
 ⚠️ The `x-auth-token` values pasted in the DevTools captures are LIVE session tokens — treat
 as sensitive, NEVER hardcode; the pull reads `LIFELENZ_TOKEN` from env like the existing job.

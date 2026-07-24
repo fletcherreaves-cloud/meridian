@@ -194,11 +194,12 @@ wk of Wed Jul 22 2026; test `src/__tests__/schedule-summary.test.js`):**
 hrs) and labeled "(hrs)" — confirm against a store vs LifeLenz's own Fixed Lbr% before
 treating as authoritative (LifeLenz may use a cost-based denominator).
 
-**STILL TO PULL (needs a DevTools capture):** the right-panel **per-job hours+cost
-breakdown** (Beverage Specialist / Drive Thru / Grill / Window / Floor / …, with #shifts,
-hours, $cost). Not in the `labor_analysis_actuals_report` CSV — it's a separate LifeLenz
-request. Get the URL + response JSON from the schedule-week page's Network tab, then wire
-it into the pull + a new table/column.
+**✅ PER-JOB BREAKDOWN SHIPPED (v4.507):** the right-panel per-job hours+cost breakdown
+(Drive Thru / Grill / Lobby / Maintenance / …, #shifts, reg/OT hours, $cost, $/hr) is now
+pulled from LifeLenz `ShiftsForSchedulePeriod` into the `lifelenz_job_hours` table and shown
+in the Weekly Schedule Summary expanded store view. Details + the ⚠️ reconstructed-GraphQL
+caveat in `memory/project-lifelenz-schedule-jobs.md`. (User: run the `lifelenz_job_hours` SQL
+block in `supabase/schema.sql`.)
 
 ### Fixed / Floor standard — viewed SEPARATELY (owner-confirmed 2026-07-24, v4.506)
 

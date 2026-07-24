@@ -19,9 +19,14 @@
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
+// Zero-drift: the SAME per-station rollup the client uses (src/engine). The pull
+// pre-aggregates ShiftsForSchedulePeriod → per-role hours/cost so the client just
+// reads the rollup (raw shifts are never stored).
+import { rollupShiftsByRole } from '../src/engine/lifelenz-shift-jobs.js';
 
 const BASE         = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID  = '01979dbf-a166-759b-8702-aba9915c578e';
+const SKIP_JOBS    = process.env.LIFELENZ_SKIP_JOBS === '1'; // escape hatch for the per-job pull
 const DAYS_BACK    = parseInt(process.env.LIFELENZ_DAYS_BACK    || '30', 10);
 const SAFETY_DAYS  = parseInt(process.env.LIFELENZ_SAFETY_DAYS  || '3',  10);
 const DAYS_FWD     = parseInt(process.env.LIFELENZ_DAYS_FWD     || '14', 10);
@@ -657,6 +662,133 @@ async function upsertRows(rows) {
   return rows.length;
 }
 
+// ── Per-job (business-role / station) hours+cost — ShiftsForSchedulePeriod ──
+// Separate GraphQL endpoint from the CSV report. Fully best-effort: any failure
+// logs and returns [] so it can NEVER break the (already-committed) CSV pull.
+const GQL_URL = `${BASE}/manager/graphql`;
+
+// LifeLenz business week starts WEDNESDAY (WEEK_START_DOW=3) — must match
+// src/engine/schedule-summary.js so week_start keys line up with the panel.
+function weekStartWed(d) {
+  const x = new Date(d); x.setHours(12, 0, 0, 0);
+  const diff = (x.getDay() - 3 + 7) % 7;
+  x.setDate(x.getDate() - diff);
+  return x;
+}
+function weeksInRange(start, end) {
+  const out = []; let cur = weekStartWed(start); const last = weekStartWed(end);
+  while (cur <= last) { out.push(new Date(cur)); cur = addDay(cur, 7); }
+  return out;
+}
+// Schedule name → 7-char zero-padded store number (matches lifelenz_schedule.loc).
+function locFromName(name) {
+  const m = String(name || '').match(/\b(\d{4,7})\b/);
+  return m ? m[1].padStart(7, '0') : null;
+}
+
+// Reconstructed from the DevTools capture (memory/project-lifelenz-schedule-jobs.md).
+// Requests only the fields the rollup needs. If LifeLenz renames a field/type the
+// server returns a GraphQL error, which we log verbatim so it's a one-line fix.
+const SHIFTS_QUERY = `query ShiftsForSchedulePeriod($businessId: ID!, $scheduleId: ID!, $startDateTime: String!, $endDateTime: String!, $shiftType: [String!], $includePayRates: Boolean, $after: String) {
+  shifts(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, shiftType: $shiftType, includePayRates: $includePayRates, after: $after) {
+    edges { node { id shiftType assignedEmploymentId scheduleId pivotMetrics { businessRoleId jobTitleId earnings seconds payType } } }
+    pageInfo { endCursor hasNextPage }
+  }
+}`;
+
+// Fetch ALL shift edges for one schedule + week (paginated).
+async function fetchShiftsForSchedule(token, scheduleId, weekStart) {
+  const startISO = `${toISO(weekStart)}T00:00:00`;
+  const endISO   = `${toISO(addDay(weekStart, 7))}T00:00:00`;
+  const edges = [];
+  let after = null, guard = 0;
+  do {
+    const body = {
+      operationName: 'ShiftsForSchedulePeriod',
+      variables: {
+        businessId: BUSINESS_ID, scheduleId,
+        startDateTime: startISO, endDateTime: endISO,
+        shiftType: ['offer', 'offer_to_all', 'roster', 'time_off', 'open'],
+        includePayRates: true, after,
+      },
+      query: SHIFTS_QUERY,
+    };
+    const resp = await fetch(`${GQL_URL}?ShiftsForSchedulePeriod`, {
+      method: 'POST',
+      headers: { ...apiHeaders(token, scheduleId), 'X-Version': '1.75.50' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new Error(`GraphQL ${resp.status}: ${t.slice(0, 200)}`);
+    }
+    const json = await resp.json();
+    if (json.errors && json.errors.length) {
+      throw new Error('GraphQL errors: ' + JSON.stringify(json.errors).slice(0, 300));
+    }
+    const conn = json?.data?.shifts;
+    const batch = conn?.edges || [];
+    edges.push(...batch);
+    const pi = conn?.pageInfo;
+    after = pi && pi.hasNextPage ? pi.endCursor : null;
+  } while (after && ++guard < 50);
+  return edges;
+}
+
+// Roll one store-week's shifts into per-role rows for lifelenz_job_hours.
+function jobRowsFor(loc, weekStart, scheduleId, edges) {
+  const byRole = rollupShiftsByRole({ edges }, { scheduleId });
+  const wk = toISO(weekStart);
+  const now = new Date().toISOString();
+  return byRole
+    .filter(r => r.hours > 0 || r.cost > 0)
+    .map(r => ({
+      loc, week_start: wk, business_role_id: r.businessRoleId,
+      role_name: r.name, category: r.category, code: r.code,
+      hours: r.hours, cost: r.cost, reg_hours: r.regHours, ot_hours: r.otHours,
+      n_shifts: r.nShifts, updated_at: now,
+    }));
+}
+
+async function upsertJobRows(rows) {
+  if (!rows.length) return 0;
+  const { error } = await supabase
+    .from('lifelenz_job_hours')
+    .upsert(rows, { onConflict: 'loc,week_start,business_role_id' });
+  if (error) { console.warn('[job-hours] upsert error:', error.message); return 0; }
+  return rows.length;
+}
+
+// Pull per-job hours for every store schedule across the weeks spanning [start,end].
+async function pullJobHours(token, schedules, start, end) {
+  const weeks = weeksInRange(start, end);
+  console.log(`[job-hours] pulling ${weeks.length} week(s) × ${schedules.length} store(s)…`);
+  let total = 0, saved = 0, gqlFailed = false;
+  for (const schedule of schedules) {
+    const scheduleId = schedule.id || schedule.scheduleId;
+    const loc = locFromName(schedule.name || schedule.scheduleName || scheduleId);
+    if (!loc) { console.log(`  [job-hours] ${schedule.name}: no store number in name, skipping`); continue; }
+    let storeRows = [];
+    for (const wk of weeks) {
+      try {
+        const edges = await fetchShiftsForSchedule(token, scheduleId, wk);
+        storeRows.push(...jobRowsFor(loc, wk, scheduleId, edges));
+      } catch (e) {
+        // Log the FIRST failure loudly (likely a query-shape mismatch to fix once),
+        // then stay quiet to avoid 27×N noise. Never fatal.
+        if (!gqlFailed) { console.warn(`[job-hours] fetch failed (${schedule.name} wk ${toISO(wk)}): ${e.message}`); gqlFailed = true; }
+      }
+    }
+    if (storeRows.length) {
+      const n = await upsertJobRows(storeRows);
+      total += storeRows.length; saved += n;
+      console.log(`  [job-hours] ${loc}: ${n} role-rows across ${weeks.length} wk`);
+    }
+  }
+  console.log(`[job-hours] ✓ ${saved}/${total} role-rows saved${gqlFailed ? ' (some fetches failed — see first warning)' : ''}`);
+  return saved;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────
 async function main() {
   // Date range: START_DATE override bypasses gap detection (used for historical backfills).
@@ -773,6 +905,18 @@ async function main() {
   }
 
   console.log(`[lifelenz-pull] ✓ done — ${totalSaved}/${totalRows} rows saved to Supabase`);
+
+  // 4. Per-job (station) hours+cost — additive, best-effort, never fatal. Runs
+  // AFTER the CSV upsert so a failure here can't cost us the schedule data.
+  if (SKIP_JOBS) {
+    console.log('[job-hours] skipped (LIFELENZ_SKIP_JOBS=1)');
+  } else {
+    try {
+      await pullJobHours(token, schedules, start, end);
+    } catch (e) {
+      console.warn('[job-hours] pull failed (non-fatal):', e.message);
+    }
+  }
 }
 
 main().catch(err => {
