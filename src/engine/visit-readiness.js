@@ -62,6 +62,76 @@ const FOODSAFETY = [
 
 const RECENT_DAYS = 45;
 
+// ── Explainability helpers ────────────────────────────────────────────────────
+// Human-readable value for a "why" sentence (the view formats its own cells).
+function _fmtVal(v, unit) {
+  if (v == null) return '—';
+  if (unit === 'pct') { const p = Math.abs(v) <= 1.5 ? v * 100 : v; return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; }
+  if (unit === 's') return Math.round(v) + 's';
+  if (unit === 'hrs') return v.toFixed(1) + 'h';
+  return String(Math.round(v * 10) / 10);
+}
+// Plain-language explanation of why a store landed where it did — from its worst drivers.
+function buildWhy(store) {
+  const b = store.band;
+  const bandWord = b === 'at-risk' ? 'At risk' : b === 'watch' ? 'On watch' : 'Ready';
+  const bad = (store.topDrivers || []).filter(d => d.score < 0.85).slice(0, 3);
+  if (!bad.length) {
+    const lead = b === 'ready' ? 'Every measured area is at or near target.' : 'No single metric stands out — the gap is spread across several areas.';
+    return `${bandWord}. ${lead}`;
+  }
+  const phrases = bad.map(d => `${d.label} at ${_fmtVal(d.actual, d.unit)} vs ${_fmtVal(d.target, d.unit)} target`);
+  const gapList = phrases.length === 1 ? phrases[0]
+    : phrases.slice(0, -1).join(', ') + ' and ' + phrases[phrases.length - 1];
+  const fs = store.fsFlag === 'elevated' ? ' Food-safety proxies (waste/holding) are also elevated.'
+    : store.fsFlag === 'watch' ? ' Food-safety proxies are worth a look.' : '';
+  return `${bandWord} — the biggest gaps are ${gapList}.${fs}`;
+}
+
+// Spearman rank correlation (Pearson on ranks) — robust to the different scales of
+// predicted readiness (0-100) vs an actual graded-visit score. Returns null if n<3.
+function _spearman(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return null;
+  const rank = arr => {
+    const idx = arr.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+    const r = new Array(n);
+    for (let i = 0; i < n;) { // average ties
+      let j = i; while (j + 1 < n && idx[j + 1][0] === idx[i][0]) j++;
+      const avg = (i + j) / 2 + 1;
+      for (let k = i; k <= j; k++) r[idx[k][1]] = avg;
+      i = j + 1;
+    }
+    return r;
+  };
+  const rx = rank(xs), ry = rank(ys);
+  const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+  const mx = mean(rx), my = mean(ry);
+  let num = 0, dx = 0, dy = 0;
+  for (let i = 0; i < n; i++) { const a = rx[i] - mx, b = ry[i] - my; num += a * b; dx += a * a; dy += b * b; }
+  return (dx && dy) ? +(num / Math.sqrt(dx * dy)).toFixed(2) : null;
+}
+
+// Validate predicted readiness against the ACTUAL graded-visit scores the engine loads.
+// Trust signal: do stores we rate lower actually score lower on their real visits?
+export function calibrateReadiness(stores) {
+  const rows = stores
+    .filter(s => s.lastVisit && s.lastVisit.score != null)
+    .map(s => ({ loc: s.loc, predicted: s.readiness, band: s.band, actual: +s.lastVisit.score, pass: s.lastVisit.pass, type: s.lastVisit.type, dateISO: s.lastVisit.dateISO }));
+  const n = rows.length;
+  const r = _spearman(rows.map(x => x.predicted), rows.map(x => x.actual));
+  // Direction agreement: a store we did NOT rate "ready" should score below the group's
+  // median actual (and vice-versa) — a simple, scale-free hit-rate.
+  let hits = null, hitRate = null;
+  if (n >= 3) {
+    const med = [...rows.map(x => x.actual)].sort((a, b) => a - b)[Math.floor(n / 2)];
+    hits = rows.filter(x => (x.band === 'ready') === (x.actual >= med)).length;
+    hitRate = +(hits / n).toFixed(2);
+  }
+  const strength = r == null ? null : Math.abs(r) >= 0.6 ? 'strong' : Math.abs(r) >= 0.3 ? 'moderate' : 'weak';
+  return { n, r, strength, hits, hitRate, rows: rows.sort((a, b) => a.predicted - b.predicted) };
+}
+
 // Per-store recent value for a (source, field): daily → mean over last RECENT_DAYS;
 // monthly → the single latest-dated value. Returns { [loc]: value }.
 function valuesByLoc(ds, source, field, monthly) {
@@ -136,6 +206,61 @@ function subScore(ds, specs, loc, cache) {
   return { score: +(sum / n * 100).toFixed(1), drivers, n };
 }
 
+// ── CFV / graded-visit statistic tracker (Notes 25 #2) ────────────────────────
+// Breaks actual graded-visit outcomes down by "known variables" — day-of-week,
+// daypart, weekpart, channel, report type — plus per-store frequency/cadence, so
+// patterns in when/where visits go well or poorly surface (e.g. Fridays underperform,
+// or breakfast DT is the weak channel). Pure over ds.gradedVisits; no side effects.
+const _DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+export function analyzeGradedVisits(gradedVisits, opts = {}) {
+  const type = opts.type || 'all';
+  const visits = (gradedVisits || []).filter(v =>
+    v && v.score != null && (type === 'all' || (v.reportType || 'CFV') === type));
+  const n = visits.length;
+
+  // Generic bucket: group by a key function → {key, n, passRate, avgScore}, biggest first.
+  const byVar = (keyFn) => {
+    const m = {};
+    for (const v of visits) {
+      const k = keyFn(v);
+      if (k == null || k === '') continue;
+      const o = (m[k] || (m[k] = { n: 0, pass: 0, scoreSum: 0 }));
+      o.n++; if (v.pass) o.pass++; o.scoreSum += v.score;
+    }
+    return Object.entries(m)
+      .map(([key, o]) => ({ key, n: o.n, passRate: o.n ? o.pass / o.n : null, avgScore: o.n ? +(o.scoreSum / o.n).toFixed(1) : null }))
+      .sort((a, b) => b.n - a.n);
+  };
+  // DOW keeps calendar order, not count order.
+  const dowRaw = byVar(v => { const d = new Date(v.dateISO || v.date); return isNaN(+d) ? null : _DOW[d.getDay()]; });
+  const dow = _DOW.map(d => dowRaw.find(x => x.key === d)).filter(Boolean);
+
+  // Per-store frequency / cadence.
+  const byStore = {};
+  for (const v of visits) { const s = _normLoc(v.store || v.loc); if (!s) continue; (byStore[s] || (byStore[s] = [])).push(v); }
+  const freq = Object.entries(byStore).map(([store, vs]) => {
+    const days = vs.map(v => _ms(v.dateISO || v.date)).filter(x => !isNaN(x)).sort((a, b) => a - b);
+    const gaps = []; for (let i = 1; i < days.length; i++) gaps.push((days[i] - days[i - 1]) / 864e5);
+    return {
+      store, n: vs.length,
+      avgGapDays: gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
+      daysSinceLast: days.length ? Math.round((Date.now() - days[days.length - 1]) / 864e5) : null,
+      passRate: vs.length ? vs.filter(v => v.pass).length / vs.length : null,
+    };
+  }).sort((a, b) => b.n - a.n);
+
+  return {
+    overall: { n, passRate: n ? visits.filter(v => v.pass).length / n : null, avgScore: n ? +(visits.reduce((a, v) => a + v.score, 0) / n).toFixed(1) : null },
+    dow,
+    daypart: byVar(v => v.daypart),
+    weekpart: byVar(v => v.weekpart),
+    channel: byVar(v => v.channel),
+    byType: byVar(v => v.reportType || 'CFV'),
+    freq,
+    types: [...new Set((gradedVisits || []).map(v => v && (v.reportType || 'CFV')).filter(Boolean))],
+  };
+}
+
 // ── Public: per-store + district readiness ────────────────────────────────────
 export function computeVisitReadiness(ds, opts = {}) {
   const weights = opts.weights || READINESS_WEIGHTS;
@@ -174,13 +299,15 @@ export function computeVisitReadiness(ds, opts = {}) {
     const allDrivers = [...speed.drivers, ...accuracy.drivers, ...quality.drivers, ...leadership.drivers]
       .sort((a, b) => a.score - b.score).slice(0, 4);
 
-    stores.push({
+    const store = {
       loc, readiness, coverage, subs,
       band: readiness >= 85 ? 'ready' : readiness >= 70 ? 'watch' : 'at-risk',
       fsFlag, fsScore: fs.score,
       topDrivers: allDrivers,
       lastVisit: lastVisitByLoc[loc] || null,
-    });
+    };
+    store.why = buildWhy(store);   // plain-language explanation (explainability & trust)
+    stores.push(store);
   }
 
   stores.sort((a, b) => a.readiness - b.readiness); // most at-risk first
@@ -202,5 +329,8 @@ export function computeVisitReadiness(ds, opts = {}) {
     },
   } : null;
 
-  return { stores, district, weights, gapNote: 'Cleanliness has no reliable daily-data proxy and is excluded from the score.' };
+  // Model check: how well predicted readiness tracks the actual graded-visit scores.
+  const calibration = calibrateReadiness(stores);
+
+  return { stores, district, weights, calibration, gapNote: 'Cleanliness has no reliable daily-data proxy and is excluded from the score.' };
 }

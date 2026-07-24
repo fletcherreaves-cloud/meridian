@@ -1515,12 +1515,35 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
       color:'var(--text3)',borderTop:'.5px solid var(--bdr)',borderBottom:'.5px solid var(--bdr)',
       background:'rgba(255,255,255,.02)'}},(label)));
 
+    // What actual report/source feeds each Data Type (Notes 25 #8) — shown as a hover
+    // tooltip + fine print so it's clear where each row's data originates.
+    const SRC_INFO = {
+      laborRows:      'QSRSoft "Labor Analysis" (or Operations Report) — daily sales, GC, labor %, TPPH per store',
+      opsRows:        'QSRSoft Operations Report (Excel) — daily ops: OEPE, KVS, DT park, R2P',
+      ctrlRows:       'QSRSoft Controls / DAR export — cash O/S, T-Reds, refunds, discounts',
+      fobRows:        'QSRSoft FOB / Food Cost (EOM) — food-cost & waste actuals',
+      darRows:        'QSRSoft Daily Activity Report (DAR) — hourly sales / DT / labor (auto-pulled)',
+      peaksRows:      'QSRSoft "3 Peaks — Service" report',
+      peaksSalesRows: 'QSRSoft "3 Peaks — Sales" report',
+      auditRows:      'Register Audit export',
+      glimpseRows:    'Emailed QSRSoft "Daily Glimpse" — channel mix, OEPE/KVS, controls',
+      cashRows:       'Emailed QSRSoft "Cash Sheet" — 3PO, cash O/S, refunds',
+      exceptionRows:  'Emailed QSRSoft "Labor Exceptions"',
+      smgRows:        'SMG VOICE comments PDF drop',
+      deliveryRows:   '3PD / delivery-mix export',
+      weatherRows:    'Open-Meteo weather API (auto-fetched)',
+      qsrFobRows:     'QSRSoft FOB (auto-pulled, GitHub Actions)',
+      schedRows:      'LifeLenz schedule (auto-synced daily)',
+      monthlyTargets: 'Monthly Targets Excel drop',
+    };
   const dataRow = (key, label, c, colorVar, altIdx, badges) => {
     const hasData = c.count>0;
     const sd = hasData ? staleDays(c) : null;
-    return h('tr',{key,style:{background:altIdx?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
-      h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
-        hasData&&staleDot(c), label, badges||null),
+    const src = SRC_INFO[String(key).replace('-cloud','')];
+    return h('tr',{key,title:src||label,style:{background:altIdx?'rgba(255,255,255,.015)':'transparent',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+      h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)'}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:4}}, hasData&&staleDot(c), label, badges||null),
+        src&&h('div',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',marginTop:1,lineHeight:1.3,maxWidth:230,whiteSpace:'normal'}},src)),
       h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?(colorVar||'var(--amber)'):'var(--text3)',fontWeight:hasData?700:400}},
         hasData?c.count.toLocaleString():'—'),
       h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData&&c.from?c.from:'—'),

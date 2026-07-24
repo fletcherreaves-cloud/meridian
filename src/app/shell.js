@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { sName, sNameC } from '../constants.js';
+import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
 import { supabase } from '../lib/supabase.js';
@@ -88,7 +88,7 @@ function DatePicker({value, onChange}) {
   );
 }
 
-function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm, betaMode}) {
+function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm, betaMode, panelVis}) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
@@ -202,7 +202,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // ── PERFORMANCE ────────────────────────────────────────────
       can('analytics.store') && navLabel('PERFORMANCE'),
       pis('analytics.district', 'Org Summary',        '📊', ()=>onOpenModal('operator-summary'), false),
-      pis('analytics.store',    'Store Scorecard',    '⇈', ()=>onOpenModal('ranking'),           false),
+      pis('analytics.store',    'Rankings',           '🏆', ()=>onOpenModal('ranking'),           false),
       // Planning hub (Notes 24): Targets · Monthly Projections · Pace · Yearly · Smart Targets, tabbed
       pis('analytics.store',    'Planning',           '🎯', ()=>onOpenModal('planning'),          false),
       // ── LABOR & SCHEDULING ─────────────────────────────────────
@@ -251,26 +251,17 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pi('analytics.forecasting', 'DI Compare',         '⚡', ()=>onOpenModal('dicompare'),     false),
       pi('analytics.forecasting', 'Fcst Reference',     '📐', ()=>onOpenModal('fcst-ref'),      false),
       pi('analytics.forecasting', 'LifeLenz Bridge',    '🌉', ()=>onOpenModal('lifelenz-bridge'),false),
-      pi('analytics.ai',          'Anomaly Scan',       '🔍', ()=>onOpenModal('aiscan'),        false),
-      pi('analytics.ai',          'Why Engine',         '🔬', ()=>onOpenModal('why-engine'),    false),
-      pi('analytics.brief',       'Priority Actions',   '🎯', ()=>onOpenModal('priority-brief'),false),
-      pi('analytics.store',       'Record Days',        '🏆', ()=>onOpenModal('record-day'),    false),
-      pi('analytics.store',       'Revenue',            '◈',  ()=>onOpenModal('revintel'),      false),
-      pi('analytics.store',       'Inventory',          '📦', ()=>onOpenModal('inventory'),     false),
-      pi('analytics.store',       'Performance Calc',   '🧮', ()=>onOpenModal('perf-calc'),     false),
-      pi('analytics.store',       'Metric Correlations','🔗', ()=>onOpenModal('corr-explorer'), false),
-      pi('analytics.store',       'Store Compare',      '⇄',  ()=>onOpenModal('compare'),       false),
-      pi('analytics.store',       'GM Letters',         '👨‍💼',()=>onOpenModal('gm-brief'),      false),
-      pi('analytics.store',       'Channel Intel',      '📊', ()=>onOpenModal('channel-intel'), false),
-      pi('analytics.store',       'DAR Analysis',       '⏱', ()=>onOpenModal('dar-daypart'),   false),
-      pi('analytics.store',       'Product Mix',        '🍔', ()=>onOpenModal('pmix'),          false),
-      pi('analytics.district',    'District Lens',      '🌐', ()=>onOpenModal('district-lens'), false),
+      // Optional / experimental panels (registry-driven) — hidden by default, toggled back
+      // on per-panel in Admin → Panel Manager. Nothing deleted; modal routing stays in App.js.
+      ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
+        .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
       // PRUNED — overlaps "Events & Tags" (recurring-rule calendar). Recall: uncomment.
       // (Still reachable via onOpenModal('calendar-manager'); recurring rules also live in Events & Tags.)
       // pi('analytics.dashboard',   'Calendar Manager',   '📅', ()=>onOpenModal('calendar-manager'),false),
       // ── ADMIN ──────────────────────────────────────────────────
       navLabel('ADMIN'),
       pis('settings.view', 'Settings',     '⚙', ()=>onOpenModal('settings'),               false),
+      pis('settings.view', 'Panel Manager','🧩', ()=>onOpenModal('panel-manager'),          false),
       navItem('Changelog',       'ℹ️', ()=>onOpenModal('about'),                false),
       navItem('Knowledge Base',  '📖', ()=>onOpenModal('kb'),                   false),
       pis('data.upload',   'Data Manager', '🗄', ()=>onOpenModal('data-manager'),           false),
