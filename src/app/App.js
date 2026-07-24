@@ -82,9 +82,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.496';
+const MERIDIAN_VERSION    = '4.497';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.497', date:'2026-07-24', changes:[
+    'Fix: the "This Week — District Projection" table on the home screen had its OK/FL state tags inverted — every Florida store was labeled OK and every Oklahoma store FL. Root cause was a local org-mapping helper that was backwards relative to the rest of the app (canonical: MCDOK = Oklahoma, Emerald Arches = Florida). Labels now match each store\'s real state.',
+  ]},
   {version:'4.496', date:'2026-07-24', changes:[
     'Signals Scanner — smarter results: near-identical metric pairs are now suppressed (the same measure pulled from two sources — e.g. manual Sales vs cloud Sales — or the same event as count/$/%). Those always correlate ~1.0 and were crowding out the real discoveries; the scanner now surfaces genuine cross-metric relationships instead.',
   ]},

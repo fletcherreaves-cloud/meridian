@@ -207,8 +207,9 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 ## Organization Context
 
 - **~27 stores total:** ~6 Florida + ~20 Oklahoma
-- **FL stores (MCDOK):** Freeport, Mossy Head, Cottondale, Bonifay, DeFuniak Springs, Chipley-St.Rd.77, Ponce de Leon
-- **OK stores (Emerald Arches):** Tishomingo, Holdenville, Harrah, Tecumseh, Elgin, Marietta, Sulphur, Pauls Valley, Duncan, Ardmore, OKC-I-240/Sooner, Lindsay, Madill, Purcell, Seminole, Atoka, Ada, Durant, Chickasha, and others
+- **FL stores (Emerald Arches):** Freeport, Mossy Head, Cottondale, Bonifay, DeFuniak Springs, Chipley-St.Rd.77, Ponce de Leon
+- **OK stores (MCDOK):** Tishomingo, Holdenville, Harrah, Tecumseh, Elgin, Marietta, Sulphur, Pauls Valley, Duncan, Ardmore, OKC-I-240/Sooner, Lindsay, Madill, Purcell, Seminole, Atoka, Ada, Durant, Chickasha, and others
+  - Canonical mapping (`getStoreOrg`, `constants.js`): **MCDOK = Oklahoma, Emerald Arches = Florida.** (An earlier draft of this doc — and an `orgOf` helper in analytics.js — had these swapped; fixed v4.497.)
 - **LifeLenz Business ID:** `01979dbf-a166-759b-8702-aba9915c578e`
 - **Supabase URL:** from `VITE_SUPABASE_URL` env var
 - **User:** Fletcher Reaves (fletcher.reaves@mcreaves.com) — owner, developer, primary user
