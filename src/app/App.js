@@ -9,7 +9,7 @@ const ReactDOM = { createRoot }
 
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather } from '../constants.js';
+import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
@@ -164,10 +164,57 @@ function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose })
       div({ style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, active)));
 }
 
+// ── Panel Manager ────────────────────────────────────────────────────────────
+// Notes 24 feature-registry: an in-app reference + toggle for the optional/experimental
+// panels hidden from the sidebar. Lists each with a blurb; the switch shows/hides its nav
+// entry (persisted to localStorage). Nothing is deleted — hidden panels keep their modal
+// routing. Also the future basis for per-tenant module flags.
+function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose }) {
+  const shownCount = OPTIONAL_PANELS.filter(p => vis && vis[p.id]).length;
+  const cats = [...new Set(OPTIONAL_PANELS.map(p => p.cat))];
+  const sw = (on) => div({ style:{ width:34, height:19, borderRadius:99, background:on?'var(--amber)':'rgba(255,255,255,.14)', position:'relative', transition:'background .15s', flexShrink:0 } },
+    div({ style:{ position:'absolute', top:2, left:on?17:2, width:15, height:15, borderRadius:'50%', background:'#fff', transition:'left .15s' } }));
+  const row = (p) => {
+    const on = !!(vis && vis[p.id]);
+    const allowed = !p.perm || !perm || perm(p.perm);
+    return div({ key:p.id, onClick:()=>allowed&&onToggle(p.id),
+      style:{ display:'flex', alignItems:'flex-start', gap:10, padding:'9px 12px', borderRadius:8, cursor:allowed?'pointer':'default', opacity:allowed?1:0.4,
+        border:'.5px solid var(--bdr)', background:on?'rgba(245,188,0,.06)':'var(--surf2)' } },
+      span({ style:{ fontSize:16, width:20, textAlign:'center', flexShrink:0 } }, p.icon),
+      div({ style:{ flex:1, minWidth:0 } },
+        div({ style:{ fontSize:12, fontWeight:700, color:'var(--text)' } }, p.label,
+          span({ style:{ fontSize:9, color:'var(--text3)', fontWeight:500, marginLeft:6 } }, on?'shown':'hidden')),
+        div({ style:{ fontSize:10, color:'var(--text3)', marginTop:2, lineHeight:1.4 } }, p.blurb)),
+      allowed ? sw(on) : span({ style:{ fontSize:9, color:'var(--text3)' } }, 'no access'));
+  };
+  return div({ style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.82)', zIndex:460, display:'flex', flexDirection:'column', paddingTop:20 } },
+    div({ style:{ flex:'0 0 20px', cursor:'pointer' }, onClick:onClose }),
+    div({ style:{ flex:1, background:'var(--surf)', maxWidth:720, margin:'0 auto', width:'calc(100% - 24px)', borderRadius:'var(--rl) var(--rl) 0 0', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 -8px 40px rgba(0,0,0,.4)' } },
+      div({ style:{ padding:'10px 16px', borderBottom:'.5px solid var(--bdr)', flexShrink:0, background:'var(--surf2)', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' } },
+        span({ style:{ fontSize:18 } }, '🧩'),
+        div({ style:{ flex:1, minWidth:160 } },
+          div({ style:{ fontSize:14, fontWeight:800, color:'var(--text)' } }, 'Panel Manager'),
+          div({ style:{ fontSize:9, color:'var(--text3)' } }, 'Show or hide optional / experimental panels in the sidebar. '+shownCount+' of '+OPTIONAL_PANELS.length+' shown. Hidden panels are never deleted — toggle any back on anytime.')),
+        btn({ className:'btn btn-sm', style:{ fontSize:10 }, onClick:onShowAll }, 'Show all'),
+        btn({ className:'btn btn-sm', style:{ fontSize:10 }, onClick:onHideAll }, 'Hide all'),
+        btn({ className:'btn btn-sm', style:{ color:'var(--text3)' }, onClick:onClose }, '✕')),
+      div({ style:{ flex:1, overflowY:'auto', padding:'12px 16px' } },
+        ...cats.map(c => div({ key:c, style:{ marginBottom:14 } },
+          div({ style:{ fontSize:9, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 } }, c),
+          div({ style:{ display:'flex', flexDirection:'column', gap:6 } },
+            ...OPTIONAL_PANELS.filter(p => p.cat === c).map(row)))),
+        div({ style:{ fontSize:9, color:'var(--text3)', marginTop:4, lineHeight:1.5, borderTop:'.5px solid var(--bdr)', paddingTop:10 } },
+          'These are lower-traffic experiments trimmed from the sidebar to reduce clutter (Notes 24). The forecast / engineered-model diagnostic tools are always shown and are not listed here.')))
+  );
+}
+
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.517';
+const MERIDIAN_VERSION    = '4.518';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.518', date:'2026-07-24', changes:[
+    'New: Panel Manager (Admin → Panel Manager 🧩) — one place that lists every optional / experimental panel with a short description of what it does, and a switch to show or hide each one in the sidebar. Fourteen lower-traffic experiments (Record Days, Revenue, Inventory, Performance Calc, Metric Correlations, Store Compare, GM Letters, Channel Intel, DAR Analysis, Product Mix, District Lens, Anomaly Scan, Why Engine, Priority Actions) are now hidden by default to declutter the sidebar — flip any back on here anytime (your choices are remembered on this device). Nothing was deleted, and the forecast / diagnostic model tools are untouched. "Show all" / "Hide all" toggles the whole set at once.',
+  ]},
   {version:'4.517', date:'2026-07-24', changes:[
     'Test Kitchen tidy-up (reversible): removed two redundant sidebar entries — "Proj Workflow" (an exact duplicate of "Projections") and "Calendar Manager" (its recurring rules already live in Events & Tags). Nothing was deleted — both panels still open and are one uncomment away from returning; the forecast/diagnostic model tools are untouched.',
   ]},
@@ -791,6 +838,10 @@ function App() {
   const [planningTab, setPlanningTab] = useState('targets');
   const [showSchedHub, setShowSchedHub] = useState(false);         // Notes 24 Scheduling hub
   const [schedTab, setSchedTab] = useState('scheduling');
+  const [showPanelManager, setShowPanelManager] = useState(false); // Notes 24 Panel Manager
+  const [panelVis, setPanelVis] = useState(loadPanelVis);          // {id:bool} optional-panel visibility
+  const togglePanelVis = (id) => setPanelVis(v => { const n = { ...v, [id]: !v[id] }; savePanelVis(n); return n; });
+  const setAllPanelVis = (on) => setPanelVis(() => { const n = {}; OPTIONAL_PANELS.forEach(p => { n[p.id] = on; }); savePanelVis(n); return n; });
   const [showPerfCalc,    setShowPerfCalc]    = useState(false);
   const [showCorrExplorer,setShowCorrExplorer]= useState(false);
   const [showDistrictLens,setShowDistrictLens]= useState(false);
@@ -1972,7 +2023,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showSchedHub;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showSchedHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -1992,7 +2043,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);setShowPanelManager(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -2027,6 +2078,7 @@ function App() {
       loadMsg,
       perm,
       betaMode,
+      panelVis,
       onLoadFiles: () => document.getElementById('file-input-main')&&document.getElementById('file-input-main').click(),
       onSaveSession: handleSaveSession,
       onRestoreSession: handleRestoreSession,
@@ -2058,6 +2110,7 @@ function App() {
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
+        if(modal==='panel-manager')  perm('settings.view')&&setShowPanelManager(true);
         if(modal==='perf-reviews')   perm('reviews.view')&&setShowPerfReviews(true);
         if(modal==='proj')           perm('analytics.forecasting')&&setShowProj(true);
         if(modal==='proj-brief')     perm('analytics.forecasting')&&setShowProjBriefSA(true);
@@ -2191,6 +2244,8 @@ function App() {
     showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
     // Scheduling hub (Notes 24): Labor Analytics / Scheduling / Schedule Summary / Labor Analysis / Skills as lazy tabs
     showSchedHub&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>setShowSchedHub(false)}),
+    // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels
+    showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false)}),
     showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
     showCorrExplorer&&h(MetricCorrelationExplorer,{stores,ds,settings,onClose:()=>setShowCorrExplorer(false)}),
     showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
