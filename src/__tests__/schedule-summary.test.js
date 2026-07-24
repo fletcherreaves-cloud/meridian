@@ -1,0 +1,59 @@
+import { describe, it, expect } from 'vitest';
+import { computeScheduleSummary, weekStartOf, WEEK_START_DOW } from '../engine/schedule-summary.js';
+
+// Real store week from the LifeLenz screenshot — DeFuniak Springs (0006838),
+// week of Wed Jul 22 → Tue Jul 28 2026. Per-day scheduled/forecast HOURS (decimal),
+// forecast sales, labor % (percent), and GC distributed to sum 7,191.
+const DAYS = [
+  { dt: '2026-07-22', sched: 171,   fcst: 189.75, sales: 10774.97, laborPct: 24.34, gc: 1027 },
+  { dt: '2026-07-23', sched: 201,   fcst: 210.5,  sales: 11901.83, laborPct: 24.92, gc: 1027 },
+  { dt: '2026-07-24', sched: 222,   fcst: 231.5,  sales: 14611.22, laborPct: 23.30, gc: 1027 },
+  { dt: '2026-07-25', sched: 226.5, fcst: 228,    sales: 14518.98, laborPct: 23.78, gc: 1027 },
+  { dt: '2026-07-26', sched: 274.5, fcst: 247.75, sales: 16929.17, laborPct: 23.78, gc: 1027 },
+  { dt: '2026-07-27', sched: 187,   fcst: 195.75, sales: 11134.49, laborPct: 25.95, gc: 1028 },
+  { dt: '2026-07-28', sched: 178.5, fcst: 185.5,  sales: 9980.06,  laborPct: 26.57, gc: 1028 },
+];
+const rows = DAYS.map(d => ({
+  loc: '0006838', date: new Date(d.dt + 'T12:00:00'),
+  schVLH: d.sched, schFixHrs: 0, schFloor: 0,       // scheduled hours total on schVLH
+  projVLH: d.fcst, fixGuideHrs: 0, projFloor: 0,    // forecast hours total on projVLH
+  fcstSales: d.sales, laborPct: d.laborPct, fcstTCs: d.gc,
+}));
+
+describe('schedule-summary — reconciles to the LifeLenz screenshot band', () => {
+  const res = computeScheduleSummary(rows);
+  const wk = res.weeks[0];
+  const s = wk.stores.find(x => x.loc === '6838');
+
+  it('has one week and the store', () => {
+    expect(res.weeks.length).toBe(1);
+    expect(s).toBeTruthy();
+  });
+  it('Sales Forecast = $89,850.72', () => { expect(s.fcstSales).toBeCloseTo(89850.72, 2); });
+  it('GC Forecast = 7,191', () => { expect(s.fcstGC).toBe(7191); });
+  it('Scheduled Hours = 1460.5 (1460:30)', () => { expect(s.schedHrs).toBeCloseTo(1460.5, 5); });
+  it('Forecast Hours = 1488.75 (1488:45)', () => { expect(s.fcstHrs).toBeCloseTo(1488.75, 5); });
+  it('Scheduled minus Forecast = -28.25 hrs (28:15 under)', () => { expect(s.hrsDiff).toBeCloseTo(-28.25, 5); });
+  it('Labor % (dollar-weighted) = 24.50%', () => { expect(s.laborPct).toBeCloseTo(24.50, 2); });
+  it('Schd TPMH = 4.92', () => { expect(s.tpmh).toBeCloseTo(4.92, 2); });
+  it('daily over/unders match (Wed -18.75, Sun +26.75)', () => {
+    expect(s.days[0].hrsDiff).toBeCloseTo(171 - 189.75, 5);   // -18.75 = -18:45
+    expect(s.days[4].hrsDiff).toBeCloseTo(274.5 - 247.75, 5); // +26.75 = +26:45
+    expect(s.days.length).toBe(7);
+  });
+});
+
+describe('schedule-summary — grouping + district', () => {
+  it('groups the week on the Wednesday anchor', () => {
+    expect(WEEK_START_DOW).toBe(3);
+    expect(weekStartOf(new Date('2026-07-28T12:00:00')).toISOString().slice(0, 10)).toBe('2026-07-22');
+    expect(weekStartOf(new Date('2026-07-22T12:00:00')).toISOString().slice(0, 10)).toBe('2026-07-22');
+  });
+  it('rolls a district total across stores (dollar/hour weighted)', () => {
+    const two = [...rows, ...rows.map(r => ({ ...r, loc: '0005985' }))];
+    const wk = computeScheduleSummary(two).weeks[0];
+    expect(wk.district.nStores).toBe(2);
+    expect(wk.district.fcstSales).toBeCloseTo(89850.72 * 2, 1);
+    expect(wk.district.laborPct).toBeCloseTo(24.50, 2); // identical stores → same weighted %
+  });
+});
