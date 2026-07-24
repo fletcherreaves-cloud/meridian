@@ -2421,7 +2421,7 @@ function PerformanceCalculator({stores, ds, settings, onClose}) {
   );
 }
 
-function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
+function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
   const {useState:uSt, useMemo:uM} = React;
   const [selLoc, setSelLoc] = uSt('all');
   const [selCat, setSelCat] = uSt('all');
@@ -2664,11 +2664,11 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
   const visMetrics = METRICS.filter(m=>selCat==='all'||m.cat===selCat);
   const thS={padding:'5px 8px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap'};
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:16}},
-    div({style:{flex:'0 0 16px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',
-      borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',
-      boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
+  const OUTER = embedded ? {position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'} : {position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:16};
+  const CARD = embedded ? {flex:1,minHeight:0,background:'var(--surf)',width:'100%',display:'flex',flexDirection:'column',overflow:'hidden'} : {flex:1,background:'var(--surf)',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'};
+  return div({style:OUTER},
+    !embedded&&div({style:{flex:'0 0 16px',cursor:'pointer'},onClick:onClose}),
+    div({style:CARD},
       // ── Header ──────────────────────────────────────────────────────
       div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
         background:'var(--surf2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
@@ -2689,7 +2689,7 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose}) {
             h('option',{key:l,value:l},sNameC(l))
           )
         ),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
+        !embedded&&btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       // ── Category tabs ───────────────────────────────────────────────
       div({style:{display:'flex',gap:0,borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)'}},

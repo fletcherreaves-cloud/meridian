@@ -6,7 +6,7 @@ metadata:
   type: project
 ---
 
-# Meridian Panel Catalog (live) — as of v4.511 (2026-07-24)
+# Meridian Panel Catalog (live) — as of v4.517 (2026-07-24)
 
 > **Now also in-app:** a user-friendly version ships as the **"Panel Index"** Knowledge Base
 > article (`KB_ARTICLES.panel_index` in `src/engine/forecast.js`, category "App Guide", v4.511).
@@ -38,19 +38,18 @@ Permission keys: `analytics.store/district/labor/brief/forecasting/ai/dashboard`
 ## PERFORMANCE
 - **Org Summary** (`operator-summary`, analytics.district) — org/district-level rollup scorecard. *derived*. ✅
 - **Store Scorecard** (`ranking`, analytics.store) — per-store ranking across KPIs. *derived*. ✅
+- *(Performance Reviews moved → **PEOPLE / HR** section, v4.516)*
+- **Planning** (`planning`, analytics.store) — ✅ **MERGED HUB (v4.513)**. One nav entry, five lazy tabs (only the active tab mounts): **Targets** (`unified-targets` → tab `targets`, monthly_targets), **Monthly** (`monthly-proj` → `monthly`, forecast engine + patch rollups), **Pace** (`pace-target` → `pace`, MTD vs official + run-rate), **Yearly** (`yearly-proj` → `yearly`, annual), **Smart** (`smart-targets-v2` → `smart`, median-of-simple + backtest, multi-metric). Hub = `PlanningHubPanel` in `src/app/App.js`; each panel gained an `embedded` prop that drops its own full-screen overlay so it fills the hub body. **Legacy modal ids still resolve** (they now deep-link to the matching tab), so At-A-Glance tiles / SAGE links keep working.
+
+## LABOR & SCHEDULING
+- **Scheduling** (`sched-hub`, analytics.store) — ✅ **MERGED HUB (v4.515)**. One nav entry, five lazy tabs (only the active tab mounts; RBAC-filtered by tab perm): **Labor Analytics** (`labor-analytics` → tab `analytics`, analytics.labor — TPPH/labor%/OT/Act-vs-Need, ctrlRows/DAR), **Scheduling** (`scheduling` → `scheduling`, LifeLenz intelligence), **Schedule Summary** (`sched-summary` → `summary`, LifeLenz weekly band + Fixed%/Floor%/F+F% + per-station hours & cost, `lifelenz_schedule`+`lifelenz_job_hours`), **Labor Analysis** (`labor-analysis` → `analysis`, weekly FLH/Band-1 VLH/Fixed/Floor from `lifelenz_schedule`), **Skills** (`skills-matrix` → `skills`, per-employee cross-training matrix, LifeLenz `employmentRoles`). Hub = `SchedulingHubPanel` in `src/app/App.js`; each panel gained an `embedded` prop. **Legacy modal ids still resolve** to the matching tab.
+
+## PEOPLE / HR (Notes 24, v4.516)
 - **Performance Reviews** (`perf-reviews`, reviews.view) — modular weighted GM/mgr reviews; scoring engine (the seed for a future general form-builder). *Supabase*. ✅
-- **Targets** (`unified-targets`, analytics.store) — monthly targets, Supabase-persisted. *monthly_targets*. ✅ **[Planning-hub merge]**
-- **Monthly Projections** (`monthly-proj`) — per-store monthly projection + patch rollups. *forecast engine*. ✅ **[Planning-hub]**
-- **Pace to Target** (`pace-target`) — MTD actual vs official target + pace/run-rate. *actuals + targets*. ✅ **[Planning-hub]**
-- **Yearly Projections** (`yearly-proj`) — annual projection view. *forecast engine*. ✅ **[Planning-hub]**
-- **Smart Targets** (`smart-targets-v2`) — median-of-simple recommended targets + backtest; multi-metric. *`src/features/smart-targets`*. ✅ **[Planning-hub]**
-- **Labor Analysis** (`labor-analysis`, analytics.store) — weekly FLH/Band-1 (VLH/Fixed/Floor) derived from `lifelenz_schedule`; dollar-weighted subtotals. *`src/engine/labor-analysis.js`*. ✅ **[Scheduling-hub]**
-- **Employee Skill Levels** (`skills-matrix`) — per-employee cross-training/skill matrix. *LifeLenz `employmentRoles`*. ✅ **[Scheduling-hub]**
+- **Visit Readiness** (`visit-readiness`, analytics.store) — predicted PACE readiness score (Speed35/Acc30/Qual20/Lead15) + food-safety flag + drivers. *`src/engine/visit-readiness.js`*. ✅
+- **Graded Visits** (`graded-visits`, analytics.store) — PACE graded-visit data/parser (CFV/RGR/EcoSure). *graded-visits parser*. ✅
 
 ## OPERATIONS
-- **Labor Analytics** (`labor-analytics`, analytics.labor) — TPPH, labor%, OT, Act-vs-Need (Controls/Billable-Sales). *ctrlRows/DAR*. ✅ **[Scheduling-hub]**
-- **Scheduling** (`scheduling`, analytics.store) — scheduling intelligence panel. *LifeLenz*. ✅ **[Scheduling-hub]**
-- **Schedule Summary** (`sched-summary`) — LifeLenz weekly band across ALL stores (Labor%, Sales/GC fcst, Sched vs Fcst hrs, TPMH, **Fixed%/Floor%/F+F%**) + **per-station hours & cost** (expand). *`lifelenz_schedule` + `lifelenz_job_hours`*. ✅ **[Scheduling-hub]** (v4.506–4.509)
 - **Food Cost** (`fob-analysis`, analytics.store) — FOB/food-cost analysis. *qsr_fob / FOB Excel*. ✅
 - **End of Month** (`fob-eom`) — per-store EOM inventory troubleshooter. *FOB*. ✅
 - **EOM Supervisor** (`eom-summary`, analytics.district) — supervisor EOM rollup. *FOB*. ✅
@@ -61,8 +60,7 @@ Permission keys: `analytics.store/district/labor/brief/forecasting/ai/dashboard`
 ## ANALYTICS
 - **Signals** (`signals`, analytics.store) — LiveOps tracking-to-plan ($+guests), baseline anomalies, Speed-of-Service, Signal Lab, **Scanner** (auto-correlation, FDR guardrails), metric registry (`src/engine/signal-registry.js`). *qsr_daily_activity + cloud streams*. ✅
 - **DT Speed of Service** (`dt-sos`) — drive-thru SOS by station/daypart. *DAR*. ✅
-- **Graded Visits** (`graded-visits`) — PACE graded-visit data/parser (CFV/RGR/EcoSure). *graded-visits parser*. ✅
-- **Visit Readiness** (`visit-readiness`) — predicted PACE readiness score (Speed35/Acc30/Qual20/Lead15) + food-safety flag + drivers. *`src/engine/visit-readiness.js`*. ✅
+- *(Graded Visits + Visit Readiness moved → **PEOPLE / HR** section, v4.516)*
 - **SAGE** (`sage`) — AI advisor (Opus, streaming, live tools, RBAC-scoped); minimizable, history, prompt library + scheduling. *`sage-chat` edge fn*. ✅
 - **Feature Requests** (`feature-requests`) — Supabase-backed roadmap/requests. *feature_requests*. ✅ ⚠️ *(owner adds items here; Claude can't read from repo)*
 - **Task Queue** (`task-queue`) — data-pull/issue ticket queue. *Supabase*. ✅ ⚠️ *(same)*
@@ -78,6 +76,22 @@ Forecast/projection cluster (heavy overlap — candidates to merge into Planning
 - Store/analytics experiments: **Record Days** (`record-day`) · **Revenue** (`revintel`) · **Inventory** (`inventory`) · **Performance Calc** (`perf-calc`) · **Metric Correlations** (`corr-explorer`) · **Store Compare** (`compare`) · **GM Letters** (`gm-brief`) · **Channel Intel** (`channel-intel`) · **DAR Analysis** (`dar-daypart`) · **Product Mix** (`pmix`) · **District Lens** (`district-lens`) · **Calendar Manager** (`calendar-manager`, dashboard).
 → Action: triage each as **promote / merge / retire**; several duplicate shipped panels (e.g. `proj` ×2, Inventory also implied in Ops, Calendar Manager overlaps Events & Tags).
 
+### 🔁 Pruned-from-nav RECALL LIST (v4.517) — reversible, nothing deleted
+Only the **nav line** was removed (commented in place in `src/app/shell.js`); each panel's
+component + `onOpenModal('<id>')` routing in `App.js` is **fully intact**, so it still opens
+by id and is restored by uncommenting one line. Pruned so far:
+- **Proj Workflow** (`proj`) — exact duplicate of **Projections** (same modal id).
+- **Calendar Manager** (`calendar-manager`) — overlaps **Events & Tags**; recurring rules live there.
+
+**NOT pruned (protected):** the entire forecast/engineered-diagnostic cluster (Projections, Proj
+vs Actuals, Forecast Models, DI Calibration/Compare, Forecast Accuracy, Fcst Reference, LifeLenz
+Gap/Bridge) — standing owner directive to protect the engineered models.
+
+**Awaiting owner OK before pruning** (store/analytics + AI experiments — reachable, low-traffic,
+candidates to hide next once confirmed): Record Days, Revenue, Inventory, Performance Calc, Metric
+Correlations, Store Compare, GM Letters, Channel Intel, DAR Analysis, Product Mix, District Lens,
+Anomaly Scan, Why Engine, Priority Actions.
+
 ## ADMIN
 - **Settings** (`settings`, settings.view) — app settings; **target home for retired top-bar items** (Notes 24). ✅
 - **Changelog** (`about`) — version history (MERIDIAN_CHANGELOG in App.js). ✅
@@ -89,8 +103,8 @@ Forecast/projection cluster (heavy overlap — candidates to merge into Planning
 ---
 
 ## Consolidation shortlist (cross-ref Notes 24)
-1. **Planning hub** ← Targets + Monthly Projections + Pace to Target + Yearly Projections + Smart Targets (+ Test-Kitchen forecast cluster as advanced tabs). Kills the biggest overlap.
-2. **Scheduling hub** ← Labor Analysis + Scheduling + Schedule Summary + Labor Analytics + Employee Skill Levels → new **Labor & Scheduling** category.
-3. **People/HR** ← Performance Reviews + Visit Readiness + Graded Visits (+ future coaching).
+1. ✅ **Planning hub** (v4.513) ← Targets + Monthly Projections + Pace to Target + Yearly Projections + Smart Targets, now one nav entry + five lazy tabs. **DONE.** (Still open: optionally fold the Test-Kitchen forecast cluster in as advanced tabs.)
+2. ✅ **Scheduling hub** (v4.515) ← Labor Analytics + Scheduling + Schedule Summary + Labor Analysis + Skills → new **Labor & Scheduling** category. **DONE.**
+3. ✅ **People/HR** (v4.516) ← Performance Reviews + Visit Readiness + Graded Visits (+ future coaching). **DONE** (nav grouping; not a tabbed hub — these stay distinct panels).
 4. **Prune Test Kitchen**: dedupe `proj` ×2; fold Calendar Manager into Events & Tags; promote or retire the forecast-diagnostic panels.
 5. **Docs**: grow Knowledge Base into the on-demand docs repository; surface THIS catalog in-app as the "Panel Index."

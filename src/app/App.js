@@ -84,10 +84,110 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
+// ── Planning hub ─────────────────────────────────────────────────────────────
+// Notes 24 IA merge: one nav entry ("Planning") tabbing across the five
+// forward-looking, same-mental-model panels (Targets / Monthly / Pace / Yearly /
+// Smart Targets) instead of five separate nav items + five modals. Each tab lazily
+// mounts its existing, tested panel in `embedded` mode (fills the hub body — no
+// second full-screen overlay). Only the active tab mounts, so heavy data loads on
+// demand and switching remounts (matches the lazy-tab plan in notes-24).
+const PLANNING_TABS = [
+  { id: 'targets', label: 'Targets',     icon: '◉' },
+  { id: 'monthly', label: 'Monthly',     icon: '📅' },
+  { id: 'pace',    label: 'Pace',        icon: '🏁' },
+  { id: 'yearly',  label: 'Yearly',      icon: '📆' },
+  { id: 'smart',   label: 'Smart',       icon: '🧭' },
+];
+function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, onClose }) {
+  const [tab, setTab] = useState(initialTab && PLANNING_TABS.some(t => t.id === initialTab) ? initialTab : 'targets');
+  const common = { ds, stores, settings, onClose, embedded: true };
+  const active =
+    tab === 'targets' ? h(UnifiedTargetsPanel, common) :
+    tab === 'monthly' ? h(MonthlyProjectionsPanel, { ...common, customSignalDefs }) :
+    tab === 'pace'    ? h(PaceToTargetPanel, common) :
+    tab === 'yearly'  ? h(YearlyProjectionsPanel, common) :
+                        h(SmartTargetsPanel, common);
+  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16 } },
+    div({ style: { flex: '0 0 16px', cursor: 'pointer' }, onClick: onClose }),
+    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1200, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+      // Hub header: title + tab strip + single close
+      div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+        span({ style: { fontSize: 13, fontWeight: 800, color: 'var(--amber)', letterSpacing: '-.2px', flexShrink: 0 } }, 'Planning'),
+        div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1, minWidth: 0 } },
+          ...PLANNING_TABS.map(t => btn({ key: t.id, onClick: () => setTab(t.id),
+            title: t.label,
+            style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+              border: '1px solid ' + (tab === t.id ? 'var(--amber)' : 'var(--bdr)'),
+              background: tab === t.id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
+              color: tab === t.id ? 'var(--amber)' : 'var(--text2)' } },
+            span({ style: { fontSize: 12 } }, t.icon), t.label))),
+        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)', flexShrink: 0 }, onClick: onClose }, '✕')),
+      // Active tab body (only the active panel mounts)
+      div({ style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, active)));
+}
+
+// ── Scheduling hub ───────────────────────────────────────────────────────────
+// Notes 24 IA merge (companion to the Planning hub): one "Scheduling" entry tabbing
+// across the labor/scheduling panels — Labor Analytics, Scheduling, Weekly Schedule
+// Summary, Labor Analysis, Employee Skills — each lazily mounted in `embedded` mode.
+const SCHED_TABS = [
+  { id: 'analytics', label: 'Labor Analytics', icon: '👷', perm: 'analytics.labor' },
+  { id: 'scheduling', label: 'Scheduling',     icon: '📋', perm: 'analytics.store' },
+  { id: 'summary',   label: 'Schedule Summary', icon: '🗓', perm: 'analytics.store' },
+  { id: 'analysis',  label: 'Labor Analysis',  icon: '🧮', perm: 'analytics.store' },
+  { id: 'skills',    label: 'Skills',          icon: '🎓', perm: 'analytics.store' },
+];
+function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose }) {
+  const allowed = SCHED_TABS.filter(t => !perm || perm(t.perm));
+  const first = (allowed[0] && allowed[0].id) || 'scheduling';
+  const [tab, setTab] = useState(initialTab && allowed.some(t => t.id === initialTab) ? initialTab : first);
+  const common = { ds, stores, settings, onClose, embedded: true };
+  const active =
+    tab === 'analytics' ? h(LaborAnalyticsPanel, common) :
+    tab === 'scheduling' ? h(SchedulingPanel, common) :
+    tab === 'summary'   ? h(ScheduleSummaryPanel, common) :
+    tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
+                          h(SkillsMatrixPanel, common);
+  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16 } },
+    div({ style: { flex: '0 0 16px', cursor: 'pointer' }, onClick: onClose }),
+    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1600, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+      div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+        span({ style: { fontSize: 13, fontWeight: 800, color: 'var(--amber)', letterSpacing: '-.2px', flexShrink: 0 } }, 'Labor & Scheduling'),
+        div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1, minWidth: 0 } },
+          ...allowed.map(t => btn({ key: t.id, onClick: () => setTab(t.id), title: t.label,
+            style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+              border: '1px solid ' + (tab === t.id ? 'var(--amber)' : 'var(--bdr)'),
+              background: tab === t.id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
+              color: tab === t.id ? 'var(--amber)' : 'var(--text2)' } },
+            span({ style: { fontSize: 12 } }, t.icon), t.label))),
+        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)', flexShrink: 0 }, onClick: onClose }, '✕')),
+      div({ style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, active)));
+}
+
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.511';
+const MERIDIAN_VERSION    = '4.517';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.517', date:'2026-07-24', changes:[
+    'Test Kitchen tidy-up (reversible): removed two redundant sidebar entries — "Proj Workflow" (an exact duplicate of "Projections") and "Calendar Manager" (its recurring rules already live in Events & Tags). Nothing was deleted — both panels still open and are one uncomment away from returning; the forecast/diagnostic model tools are untouched.',
+  ]},
+  {version:'4.516', date:'2026-07-24', changes:[
+    'New "People / HR" sidebar section that groups the people-facing panels together — Performance Reviews, Visit Readiness, and Graded Visits — instead of scattering them across Performance and Analytics. Same panels, just easier to find as a set (room to grow as coaching tools are added).',
+  ]},
+  {version:'4.515', date:'2026-07-24', changes:[
+    'New: a "Scheduling" hub under a new "Labor & Scheduling" sidebar section, merging five labor panels — Labor Analytics, Scheduling, Weekly Schedule Summary, Labor Analysis, and Employee Skills — into one place with tabs across the top (companion to the Planning hub). Each tab loads on demand, and your role controls which tabs appear. Old links still work — anything that opened e.g. Schedule Summary now opens Scheduling on that tab.',
+  ]},
+  {version:'4.514', date:'2026-07-24', changes:[
+    'SAGE Prompt Library: the ★ Save button is now always clickable — if the box is empty it tells you why instead of looking dead (fixes "Save wasn\'t enabled"). Added a ★ Save prompt button under every SAGE answer that drops the exact question that produced it into the library. And a new "This chat\'s prompts" checklist lets you multi-select the questions you asked in a session and either save each one or combine them into a single saved prompt.',
+    'At-A-Glance "Sales & Guest Counts" tile: restored the vs-LY figures that went blank on devices without a manual Operations Report upload. Guest-count vs LY now falls back to the auto DAR last-year transactions (it previously only read manual uploads), and sales vs LY also reads the emailed Sales Ledger\'s last-year column — so the tile shows real year-over-year again from the cloud streams, not just when a spreadsheet was loaded. (Channel Mix still needs the emailed Sales Ledger stream to be flowing — if that section is empty, the Sales Ledger email isn\'t landing.)',
+  ]},
+  {version:'4.513', date:'2026-07-24', changes:[
+    'New: a single "Planning" panel that merges the five forward-looking views — Targets, Monthly Projections, Pace to Target, Yearly Projections, and Smart Targets — into one place with tabs across the top, replacing five separate sidebar entries. Same tools, less sidebar clutter, and related planning work now lives side by side. Each tab loads on demand (so opening Planning is fast and the heavy Smart-Targets backtest only runs when you click its tab). Old links still work — anything that used to jump to e.g. Smart Targets now opens Planning on that tab.',
+  ]},
+  {version:'4.512', date:'2026-07-24', changes:[
+    'New: a profile menu (the round avatar at the top-right) that gathers the account + utility actions that used to crowd the top bar — theme (light/dark), Save session to file, Help & guide, User management, Show/Hide Test Kitchen, Change password, and Sign out — under one tap, with your email and role shown at the top. Several of these were previously unreachable on mobile.',
+    'Mobile fix: the All / OK / FL location scope pills are now shown in the top bar on phones (they were desktop-only before), so you can switch state focus without a laptop. Settings (⚙) and Load (↑) stay in the bar; everything else moved into the profile menu to declutter.',
+  ]},
   {version:'4.511', date:'2026-07-24', changes:[
     'New: Panel Index in the Knowledge Base (📖) — a live, plain-language map of every panel grouped like the sidebar, so you (or a new user) can see at a glance what each panel does and where a workflow lives. Open Knowledge Base → "App Guide" → Panel Index.',
   ]},
@@ -687,6 +787,10 @@ function App() {
   const [rankingDefault, setRankingDefault] = useState('score');
   const [showTargets, setShowTargets]  = useState(false);
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
+  const [showPlanningHub, setShowPlanningHub] = useState(false);   // Notes 24 Planning hub
+  const [planningTab, setPlanningTab] = useState('targets');
+  const [showSchedHub, setShowSchedHub] = useState(false);         // Notes 24 Scheduling hub
+  const [schedTab, setSchedTab] = useState('scheduling');
   const [showPerfCalc,    setShowPerfCalc]    = useState(false);
   const [showCorrExplorer,setShowCorrExplorer]= useState(false);
   const [showDistrictLens,setShowDistrictLens]= useState(false);
@@ -1868,7 +1972,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showSchedHub;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -1888,7 +1992,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -1934,9 +2038,11 @@ function App() {
         }
         if(modal==='aiscan')         perm('analytics.ai')&&setShowAIScan(p=>!p);
         if(modal==='why-engine')     perm('analytics.ai')&&setShowWhyEngine(true);
-        if(modal==='labor-analytics') perm('analytics.labor')&&setShowLaborAnalytics(true);
+        // Scheduling hub (Notes 24): one modal, tabs. Legacy per-panel ids deep-link to the right tab.
+        if(modal==='sched-hub')       perm('analytics.store')&&(setSchedTab('scheduling'),setShowSchedHub(true));
+        if(modal==='labor-analytics') perm('analytics.labor')&&(setSchedTab('analytics'),setShowSchedHub(true));
         if(modal==='delivery-mix')    perm('analytics.store')&&setShowDeliveryMix(true);
-        if(modal==='scheduling')      perm('analytics.store')&&setShowScheduling(true);
+        if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),setShowSchedHub(true));
         if(modal==='morning-brief')  perm('analytics.brief')&&setShowMorningBrief(true);
         if(modal==='eom-summary')    perm('analytics.district')&&setShowEOMSummary(true);
         if(modal==='brief')          perm('analytics.brief')&&(()=>{
@@ -1946,7 +2052,9 @@ function App() {
         })();
         if(modal==='priority-brief') perm('analytics.brief')&&setShowPriorityBrief(true);
         if(modal==='operator-summary')  perm('analytics.district')&&setShowOperatorSummary(true);
-        if(modal==='monthly-proj')      perm('analytics.store')&&setShowMonthlyProj(true);
+        // Planning hub (Notes 24): one modal, five tabs. Legacy per-panel ids deep-link to the right tab.
+        if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
+        if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),setShowPlanningHub(true));
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
@@ -1955,11 +2063,11 @@ function App() {
         if(modal==='proj-brief')     perm('analytics.forecasting')&&setShowProjBriefSA(true);
         if(modal==='dialedin')       perm('analytics.forecasting')&&setShowDialedIn(true);
         if(modal==='pvsa')           perm('analytics.forecasting')&&setShowPVSA(true);
-        if(modal==='pace-target')    perm('analytics.store')&&setShowPace(true);
-        if(modal==='yearly-proj')    perm('analytics.store')&&setShowYearly(true);
+        if(modal==='pace-target')    perm('analytics.store')&&(setPlanningTab('pace'),setShowPlanningHub(true));
+        if(modal==='yearly-proj')    perm('analytics.store')&&(setPlanningTab('yearly'),setShowPlanningHub(true));
         if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
         if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
-        if(modal==='sched-summary')  perm('analytics.store')&&setShowSchedSum(true);
+        if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),setShowSchedHub(true));
         if(modal==='dicompare')      perm('analytics.forecasting')&&setShowDICompare(true);
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
@@ -1992,11 +2100,11 @@ function App() {
         if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
         if(modal==='perf-calc')      perm('analytics.store')&&setShowPerfCalc(true);
         if(modal==='corr-explorer')  perm('analytics.store')&&setShowCorrExplorer(true);
-        if(modal==='unified-targets') perm('analytics.store')&&setShowUnifiedTargets(true);
+        if(modal==='unified-targets') perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
         if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
-        if(modal==='smart-targets-v2')perm('analytics.store')&&setShowSmartTargetsV2(true);
-        if(modal==='labor-analysis')  perm('analytics.store')&&setShowLaborAnalysis(true);
-        if(modal==='skills-matrix')   perm('analytics.store')&&setShowSkillsMatrix(true);
+        if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
+        if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),setShowSchedHub(true));
+        if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),setShowSchedHub(true));
         if(modal==='sage')              setShowSage(true);
         if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='task-queue')        setShowTaskQueue(true);
@@ -2079,7 +2187,10 @@ function App() {
     showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true)}),
     showRanking  &&h(RankingView,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,onSelectStore:s=>{goStore(s);setShowRanking(false);},onClose:()=>setShowRanking(false)}),
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
-    showUnifiedTargets&&h(UnifiedTargetsPanel,{stores,ds,settings,onClose:()=>setShowUnifiedTargets(false)}),
+    // Planning hub (Notes 24): Targets / Monthly / Pace / Yearly / Smart Targets as lazy tabs
+    showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
+    // Scheduling hub (Notes 24): Labor Analytics / Scheduling / Schedule Summary / Labor Analysis / Skills as lazy tabs
+    showSchedHub&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>setShowSchedHub(false)}),
     showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
     showCorrExplorer&&h(MetricCorrelationExplorer,{stores,ds,settings,onClose:()=>setShowCorrExplorer(false)}),
     showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
@@ -2090,15 +2201,8 @@ function App() {
     showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false),
       onOpenStoreConfig:()=>{setShowDataManager(false);setShowStoreVlhConfig(true);}}),
     showStoreVlhConfig&&h(StoreVlhConfigPanel,{onClose:()=>setShowStoreVlhConfig(false)}),
-    showMonthlyProj&&h(MonthlyProjectionsPanel,{ds,stores,settings,customSignalDefs,onClose:()=>setShowMonthlyProj(false)}),
-    showSmartTargetsV2&&h(SmartTargetsPanel,{ds,stores,settings,onClose:()=>setShowSmartTargetsV2(false)}),
-    showLaborAnalysis&&h(LaborAnalysisPanel,{ds,settings,onClose:()=>setShowLaborAnalysis(false)}),
-    showPace&&h(PaceToTargetPanel,{ds,stores,settings,onClose:()=>setShowPace(false)}),
-    showYearly&&h(YearlyProjectionsPanel,{ds,stores,settings,onClose:()=>setShowYearly(false)}),
     showPromoRoi&&h(PromoRoiPanel,{ds,onClose:()=>setShowPromoRoi(false)}),
     showVisitReady&&h(VisitReadinessPanel,{ds,onClose:()=>setShowVisitReady(false)}),
-    showSchedSum&&h(ScheduleSummaryPanel,{ds,onClose:()=>setShowSchedSum(false)}),
-    showSkillsMatrix&&h(SkillsMatrixPanel,{ds,onClose:()=>setShowSkillsMatrix(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
@@ -2120,9 +2224,7 @@ function App() {
     showFOB&&h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>setShowFOB(false)}),
     showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],onClose:()=>setShowSMGVoice(false)}),
-    showLaborAnalytics&&h(LaborAnalyticsPanel,{stores,ds,settings,onClose:()=>setShowLaborAnalytics(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
-    showScheduling&&h(SchedulingPanel,{ds,settings,onClose:()=>setShowScheduling(false)}),
     showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 16px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
         span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em'}},'📡 Signals'),

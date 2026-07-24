@@ -6,7 +6,7 @@ import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
-const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb } = React;
+const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb, useMemo: uMemo } = React;
 
 const amber = '#f59e0b';
 const muted = '#6b7280';
@@ -770,22 +770,54 @@ function LogIssueModal({ question, answer, conversation, onClose }) {
         h('button', { onClick: doSave, disabled: saving, style: { padding: '6px 16px', borderRadius: 6, border: 'none', background: amber, color: '#000', fontSize: 11, fontWeight: 800, cursor: saving ? 'default' : 'pointer' } }, saving ? '…' : 'Create'))));
 }
 
-function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRefresh }) {
+function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClose, onUse, onRun, onRefresh }) {
   // Editable draft — NO longer gated on the SAGE composer having text. Prefilled from
   // the composer when it has text, but you can always type/paste a prompt to save here.
   const [draft, setDraft] = uSt((currentInput || '').trim());
   const [title, setTitle] = uSt('');
   const [msg, setMsg] = uSt('');
   const [busy, setBusy] = uSt(false);
+  const [sel, setSel] = uSt(() => new Set());   // indices of this chat's prompts selected for combine/save
   const canSave = (draft || '').trim().length > 0;
+  // Save is always clickable — validate on click and surface WHY it can't save,
+  // instead of a silently-disabled button (the "Save was not enabled" report).
   const saveCurrent = async () => {
-    if (!canSave) return;
+    if (!canSave) { setMsg('⚠ Type or paste a prompt above first'); return; }
     setBusy(true); setMsg('Saving…');
-    const res = await saveSagePrompt({ title: (title.trim() || draft.trim().slice(0, 48)), promptText: draft.trim(), createdBy: 'Fletcher' });
-    setBusy(false);
-    if (res == null || (res.errors && res.errors.length)) { setMsg('⚠ ' + ((res && res.errors && res.errors[0]) || 'Save failed — is the table created?')); return; }
-    setTitle(''); setDraft(''); setMsg('✓ Saved'); onRefresh();
-    setTimeout(() => setMsg(''), 1500);
+    try {
+      const res = await saveSagePrompt({ title: (title.trim() || draft.trim().slice(0, 48)), promptText: draft.trim(), createdBy: 'Fletcher' });
+      if (res == null || (res.errors && res.errors.length)) { setMsg('⚠ ' + ((res && res.errors && res.errors[0]) || 'Save failed — is the sage_prompts table created?')); return; }
+      setTitle(''); setDraft(''); setMsg('✓ Saved'); onRefresh();
+      setTimeout(() => setMsg(''), 1500);
+    } catch (e) {
+      setMsg('⚠ ' + (e?.message || 'Save failed'));
+    } finally { setBusy(false); }
+  };
+  // Distinct prompts used in THIS chat (newest first), for multi-select save/combine.
+  const chatPrompts = uMemo(() => {
+    const seen = new Set(), out = [];
+    for (let i = sessionPrompts.length - 1; i >= 0; i--) {
+      const p = (sessionPrompts[i] || '').trim();
+      if (p && !seen.has(p)) { seen.add(p); out.push(p); }
+    }
+    return out;
+  }, [sessionPrompts]);
+  const toggleSel = i => setSel(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
+  const selectedTexts = () => chatPrompts.filter((_, i) => sel.has(i));
+  const combineIntoDraft = () => {
+    const picks = selectedTexts(); if (!picks.length) { setMsg('⚠ Select at least one prompt below'); return; }
+    setDraft(picks.map((p, i) => (picks.length > 1 ? `${i + 1}. ${p}` : p)).join('\n\n'));
+    setMsg('Combined ' + picks.length + ' prompt' + (picks.length > 1 ? 's' : '') + ' — edit a title & Save');
+  };
+  const saveSelectedSeparately = async () => {
+    const picks = selectedTexts(); if (!picks.length) { setMsg('⚠ Select at least one prompt below'); return; }
+    setBusy(true); setMsg('Saving ' + picks.length + '…');
+    try {
+      for (const p of picks) await saveSagePrompt({ title: p.slice(0, 48), promptText: p, createdBy: 'Fletcher' });
+      setSel(new Set()); setMsg('✓ Saved ' + picks.length); onRefresh();
+      setTimeout(() => setMsg(''), 1500);
+    } catch (e) { setMsg('⚠ ' + (e?.message || 'Save failed')); }
+    finally { setBusy(false); }
   };
   const del = async (id) => { await deleteSagePrompt(id); onRefresh(); };
   const [schedFor, setSchedFor] = uSt(null);   // prompt id whose schedule editor is open
@@ -806,8 +838,19 @@ function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRe
         h('textarea', { value: draft, onChange: e => setDraft(e.target.value), placeholder: 'Type or paste a prompt to save…', rows: 3, style: { ...fld, resize: 'vertical', minHeight: 54, lineHeight: 1.4 } }),
         h('div', { style: { display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' } },
           h('input', { value: title, onChange: e => setTitle(e.target.value), placeholder: 'Optional title…', style: { ...fld, flex: 1 } }),
-          h('button', { onClick: saveCurrent, disabled: !canSave || busy, style: { padding: '7px 14px', borderRadius: 6, border: 'none', background: canSave ? amber : 'rgba(245,158,11,.15)', color: canSave ? '#000' : 'rgba(245,158,11,.4)', fontSize: 11, fontWeight: 800, cursor: canSave ? 'pointer' : 'default', whiteSpace: 'nowrap' } }, '★ Save'))),
+          // Always clickable — saveCurrent validates and explains, so an empty draft never leaves a dead-looking button.
+          h('button', { onClick: saveCurrent, disabled: busy, style: { padding: '7px 14px', borderRadius: 6, border: 'none', background: canSave ? amber : 'rgba(245,158,11,.25)', color: canSave ? '#000' : 'rgba(245,158,11,.85)', fontSize: 11, fontWeight: 800, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap', opacity: busy ? 0.6 : 1 } }, busy ? '…' : '★ Save'))),
       msg && h('div', { style: { fontSize: 10, color: msg.startsWith('⚠') ? red : grn, marginBottom: 8 } }, msg),
+      // This chat's prompts — multi-select to save individually or combine into one saved prompt.
+      chatPrompts.length > 0 && h('div', { style: { marginBottom: 8, border: '1px solid rgba(255,255,255,.08)', borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.02)' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 } },
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, flex: 1 } }, 'This chat\'s prompts' + (sel.size ? ' · ' + sel.size + ' selected' : '')),
+          h('button', { onClick: combineIntoDraft, disabled: busy, title: 'Combine the selected prompts into the box above to edit & save as one', style: { fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: 'transparent', color: muted, cursor: 'pointer', whiteSpace: 'nowrap' } }, '⧉ Combine → edit'),
+          h('button', { onClick: saveSelectedSeparately, disabled: busy, title: 'Save each selected prompt as its own library entry', style: { fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 5, border: 'none', background: amber, color: '#000', cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' } }, '★ Save each')),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 150, overflowY: 'auto' } },
+          ...chatPrompts.map((p, i) => h('label', { key: i, style: { display: 'flex', alignItems: 'flex-start', gap: 7, fontSize: 11, color: 'var(--text,#f1f5f9)', cursor: 'pointer', padding: '3px 2px' } },
+            h('input', { type: 'checkbox', checked: sel.has(i), onChange: () => toggleSel(i), style: { marginTop: 2, accentColor: amber, cursor: 'pointer' } }),
+            h('span', { style: { flex: 1, lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } }, p))))),
       h('div', { style: { borderTop: '1px solid rgba(255,255,255,.08)', margin: '8px 0' } }),
       !prompts.length
         ? h('div', { style: { fontSize: 11, color: muted, textAlign: 'center', padding: '20px 0' } }, 'No saved prompts yet.')
@@ -837,7 +880,7 @@ function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRe
 }
 
 // ── Message bubble ────────────────────────────────────────────────────────────
-function MsgBubble({ msg, streaming, onLog }) {
+function MsgBubble({ msg, streaming, onLog, onSavePrompt }) {
   const isUser = msg.role === 'user';
   const [copied, setCopied] = uSt(false);
 
@@ -912,6 +955,7 @@ function MsgBubble({ msg, streaming, onLog }) {
     h('button', { onClick: handleEmail, style: btnStyle(false) }, 'Email'),
     h('button', { onClick: handlePDF,   style: btnStyle(false) }, 'PDF'),
     h('button', { onClick: handleExcel, style: btnStyle(false) }, 'Excel'),
+    onSavePrompt && h('button', { onClick: onSavePrompt, title: 'Save the question that produced this answer to your prompt library', style: btnStyle(false) }, '★ Save prompt'),
     onLog && h('button', { onClick: onLog, title: 'Log this as an issue → Task or Feature Request (with a troubleshooting prompt)', style: btnStyle(false) }, '🐞 Log'),
   );
 
@@ -990,6 +1034,8 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   const [error, setError]       = uSt(null);
   const [logTarget, setLogTarget] = uSt(null);   // {question, answer} for the issue-logger modal
   const [promptLibOpen, setPromptLibOpen] = uSt(false);
+  const [promptLibSeed, setPromptLibSeed] = uSt('');   // prefill for the library (from a response's ★ Save prompt)
+  const openPromptLib = (seed) => { setPromptLibSeed(seed || ''); setPromptLibOpen(true); };
   const [prompts, setPrompts]   = uSt([]);        // saved SAGE prompts
   const threadRef = uRef(null);
   const abortRef  = uRef(null);
@@ -1180,6 +1226,9 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
       messages.map((msg, i) => h(MsgBubble, { key: i, msg, streaming: false,
         onLog: msg.role === 'assistant'
           ? () => setLogTarget(buildLogTarget(messages, i))
+          : null,
+        onSavePrompt: msg.role === 'assistant'
+          ? () => openPromptLib(buildLogTarget(messages, i).question || '')
           : null })),
 
       // Streaming assistant message
@@ -1270,11 +1319,12 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
     // top and swallow every click/tap — the "opens but nothing responds" bug).
     logTarget && createPortal(h(LogIssueModal, { question: logTarget.question, answer: logTarget.answer, conversation: logTarget.conversation, onClose: () => setLogTarget(null) }), document.body),
     promptLibOpen && createPortal(h(PromptLibraryModal, {
-      prompts, currentInput: input,
-      onClose: () => setPromptLibOpen(false),
+      prompts, currentInput: promptLibSeed || input,
+      sessionPrompts: messages.filter(m => m.role === 'user' && (m.content || '').trim()).map(m => m.content.trim()),
+      onClose: () => { setPromptLibOpen(false); setPromptLibSeed(''); },
       onRefresh: refreshPrompts,
-      onUse: (t) => { setInput(t); setPromptLibOpen(false); },
-      onRun: (t) => { setPromptLibOpen(false); sendMessage(t); },
+      onUse: (t) => { setInput(t); setPromptLibOpen(false); setPromptLibSeed(''); },
+      onRun: (t) => { setPromptLibOpen(false); setPromptLibSeed(''); sendMessage(t); },
     }), document.body),
     sessionsOpen && createPortal(h(SessionsModal, {
       sessions, onClose: () => setSessionsOpen(false), onReopen: reopenSession, onDelete: deleteSession,

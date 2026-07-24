@@ -6942,8 +6942,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const l=String(r.loc); if(!allLocs.includes(l)) continue;
       const cur=(r.allNetSales||r.sales)||0, curG=r.gc||0;
       const lk=l+'|'+_iso(addD(r.date,-364));
-      let ly=lySalesByLocDate[lk]; if((ly==null||ly<=0)&&r.lySales>0) ly=r.lySales;
-      const lyG=lyGcByLocDate[lk];
+      // LY sources, in order: matched 364-day-back manual row → row's own LY field.
+      // Cloud-fresh devices have no manual laborRows, so the row's own LY (DAR
+      // ly_product_sales / ly_transactions, or Sales-Ledger all_net_sales_ly) is what
+      // keeps vs-LY populated instead of blanking out.
+      let ly=lySalesByLocDate[lk]; if((ly==null||ly<=0)&&(r.lySales>0||r.allNetSalesLY>0)) ly=r.lySales>0?r.lySales:r.allNetSalesLY;
+      let lyG=lyGcByLocDate[lk]; if((lyG==null||lyG<=0)&&r.lyGc>0) lyG=r.lyGc;
       if(cur>0&&ly>0){ mCurS[l]=(mCurS[l]||0)+cur; mLyS[l]=(mLyS[l]||0)+ly; }
       if(curG>0&&lyG>0){ mCurG[l]=(mCurG[l]||0)+curG; mLyG[l]=(mLyG[l]||0)+lyG; }
     }
@@ -9629,7 +9633,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
       h('tbody',null,...withPace.map(r=>rowEl(r,false)),rowEl({label:'District Total',tgt:tgtSum,act:actSum,pace:totPace,vs:totVs},true))));
 }
 
-function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs}) {
+function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDefs, embedded}) {
   const {useState, useEffect, useMemo} = React;
   const [periods,      setPeriods]      = useState([]);
   const [selPeriod,    setSelPeriod]    = useState(null); // {year, month} or null = use ds
@@ -9843,7 +9847,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     setSheetOpen(false);
   };
 
-  return div({style:{position:'fixed',inset:0,zIndex:300,background:'var(--bg)',
+  return div({style:embedded?{position:'relative',flex:1,minHeight:0,background:'var(--bg)',display:'flex',flexDirection:'column',overflow:'hidden'}:{position:'fixed',inset:0,zIndex:300,background:'var(--bg)',
     display:'flex',flexDirection:'column',overflow:'hidden'}},
 
     // Header
@@ -9959,7 +9963,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
             color:sheetGroup?'#fff':'var(--text3)',border:'none'}},
           sheetLoading?'Loading…':'Open Report')
       ),
-      btn({onClick:onClose,style:{marginLeft:4,padding:'4px 12px',background:'var(--surf)',
+      !embedded&&btn({onClick:onClose,style:{marginLeft:4,padding:'4px 12px',background:'var(--surf)',
         border:'1px solid var(--bdr)',borderRadius:4,color:'var(--text)',cursor:'pointer',fontSize:12}},'✕ Close')
     ),
 

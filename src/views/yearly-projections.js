@@ -58,7 +58,7 @@ function aggregate(rows) {
   };
 }
 
-export function YearlyProjectionsPanel({ ds, stores, settings, onClose }) {
+export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded }) {
   const { useState, useMemo, useEffect } = React;
   const now = new Date();
   const thisYear = now.getFullYear();
@@ -127,9 +127,11 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose }) {
 
   const stepBtn = (label, dy) => h('button', { onClick: () => setYear(y => y + dy), style: { padding: '1px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, label);
 
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1000, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+  const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };
+  const CARD = embedded ? { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: 1, background: 'var(--surf)', maxWidth: 1000, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' };
+  return div({ style: OUTER },
+    !embedded && div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
+    div({ style: CARD },
       // Header
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '📆'),
@@ -139,7 +141,7 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose }) {
             span({ style: { fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, year),
             stepBtn('›', 1)),
           div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Annual official target (Σ monthly_targets) vs actual product sales · YTD-to-date (current month prorated) · Projected FY = actual banked + remaining plan.')),
-        h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+        !embedded && h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
         loading

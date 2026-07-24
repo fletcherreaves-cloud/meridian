@@ -134,7 +134,7 @@ const METRICS = [
 
 const confColor = c => c === 'High' ? '#10b981' : c === 'Med' ? '#f59e0b' : '#ef4444';
 
-export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
+export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   const { useState, useMemo, useEffect, useRef } = React;
   const [metricKey, setMetricKey] = useState('sales');
   const [scope, setScope] = useState('all');
@@ -508,9 +508,11 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
     w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
   };
 
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+  const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };
+  const CARD = embedded ? { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' };
+  return div({ style: OUTER },
+    !embedded && div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
+    div({ style: CARD },
       // Header
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '🧭'),
@@ -533,7 +535,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose }) {
         applyMsg ? span({ style: { fontSize: 10, fontWeight: 600, color: applyMsg.startsWith('⚠') ? '#ef4444' : '#10b981' } }, applyMsg) : null,
         btn({ onClick: exportCSV, disabled: !shown.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '⬇ CSV'),
         btn({ onClick: printReport, disabled: !shown.length, title: 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '🖨 Print'),
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+        !embedded && btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },

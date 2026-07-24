@@ -83,7 +83,7 @@ const COLS = [
   { k: 'combined25', h: 'Combined @25%', f: num1 },
 ];
 
-export function LaborAnalysisPanel({ ds, settings, onClose }) {
+export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
   const { useState, useMemo, useEffect } = React;
   const [tab, setTab] = useState('report');       // 'report' | 'config'
   const [flhHours, setFlhHours] = useState('lifelenz'); // FLH template hours basis: 'lifelenz' (F) | 'target' (O)
@@ -288,9 +288,11 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
 
   const tabBtn = (id, label) => btn({ onClick: () => setTab(id), style: { padding: '4px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: tab === id ? 'var(--amber)' : 'var(--surf)', color: tab === id ? '#111' : 'var(--text2)', fontSize: 11, fontWeight: 700, cursor: 'pointer' } }, label);
 
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1500, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
+  const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };
+  const CARD = embedded ? { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: 1, background: 'var(--surf)', maxWidth: 1500, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' };
+  return div({ style: OUTER },
+    !embedded && div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
+    div({ style: CARD },
       div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         span({ style: { fontSize: 18 } }, '🧮'),
         div({ style: { flex: 1, minWidth: 180 } },
@@ -311,7 +313,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose }) {
         tab === 'report' ? btn({ onClick: printFLHWorksheets, disabled: !shown.length, title: 'Print the per-store Fixed-Labor-Hours planning worksheet (one page per store in scope)', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--amber)', background: 'var(--surf)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: shown.length ? 'pointer' : 'default' } }, '🗒 FLH Worksheet' + (shown.length > 1 ? ' ×' + shown.length : '')) : null,
         tab === 'config' ? span({ style: { fontSize: 10, color: 'var(--text3)' } }, saveMsg) : null,
         tab === 'config' ? btn({ onClick: saveConfig, disabled: !Object.keys(edit).length, style: { padding: '3px 11px', borderRadius: 6, border: '1px solid var(--amber)', background: Object.keys(edit).length ? 'var(--amber)' : 'var(--surf)', color: Object.keys(edit).length ? '#111' : 'var(--text3)', fontSize: 11, fontWeight: 700, cursor: Object.keys(edit).length ? 'pointer' : 'default' } }, 'Save config') : null,
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+        !embedded && btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       div({ style: { flex: 1, overflow: 'auto', padding: '12px 16px' } },
         loading
