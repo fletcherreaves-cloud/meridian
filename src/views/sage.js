@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
@@ -687,7 +688,29 @@ function buildTroubleshootPrompt(question, answer, src) {
   ].join('\n');
 }
 
-function LogIssueModal({ question, answer, onClose }) {
+// Thin affirmations ("yes please", "go ahead") aren't the real prompt — when the
+// user logs an answer that followed one, we want the SUBSTANTIVE prompt behind it.
+const AFFIRM_RE = /^\s*(yes|yep|yeah|ya|sure|ok(ay)?|k|go ahead|do it|please|yes[,! ]*please|sounds good|proceed|continue|correct|right|agreed|absolutely|👍|👌)\b[\s.!]*$/i;
+// Build the log context for the assistant message at index i: the substantive user
+// prompt (walking back past affirmations) + the last few turns of the exchange, so a
+// multi-prompt session is captured accurately — not just a "Yes, please" follow-up.
+function buildLogTarget(messages, i) {
+  const answer = (messages[i] && messages[i].content) || '';
+  const immediate = (messages[i - 1] && messages[i - 1].role === 'user') ? messages[i - 1].content : '';
+  let primary = immediate;
+  if (!immediate || AFFIRM_RE.test(immediate.trim()) || immediate.trim().length < 12) {
+    for (let j = i - 2; j >= 0; j--) {
+      const m = messages[j];
+      if (m.role === 'user' && !AFFIRM_RE.test((m.content || '').trim()) && (m.content || '').trim().length >= 12) { primary = m.content; break; }
+    }
+  }
+  const conversation = messages.slice(Math.max(0, i - 5), i + 1)
+    .map(m => (m.role === 'user' ? 'You: ' : 'SAGE: ') + (m.content || '').replace(/\s+/g, ' ').trim())
+    .join('\n');
+  return { question: primary || immediate, immediate, conversation, answer };
+}
+
+function LogIssueModal({ question, answer, conversation, onClose }) {
   const src = detectSource((question || '') + ' ' + (answer || ''));
   const [dest, setDest] = uSt(looksLikeFailure(answer) ? 'task' : 'fr');
   const [title, setTitle] = uSt(('SAGE data issue: ' + (question || '').trim()).slice(0, 80));
@@ -696,9 +719,10 @@ function LogIssueModal({ question, answer, onClose }) {
   const context = [
     'Reported from SAGE.',
     src ? 'Likely source: ' + src.label + ' (tool ' + src.tool + ', table ' + src.table + ').' : 'Source: unknown.',
-    '', 'Q: ' + (question || '(unknown)'),
+    '', 'Prompt: ' + (question || '(unknown)'),
+    conversation ? '\nConversation:\n' + conversation : '',
     '', 'SAGE said: ' + (answer || '').replace(/\s+/g, ' ').trim().slice(0, 600),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   const [notes, setNotes] = uSt(troubleshoot);
   const [saving, setSaving] = uSt(false);
   const [msg, setMsg] = uSt('');
@@ -723,7 +747,7 @@ function LogIssueModal({ question, answer, onClose }) {
   const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
   const seg = (val, label, hint) => h('button', { onClick: () => setDest(val), title: hint, style: { flex: 1, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (dest === val ? amber : 'rgba(255,255,255,.12)'), background: dest === val ? 'rgba(245,158,11,.14)' : 'transparent', color: dest === val ? amber : muted } }, label);
 
-  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
+  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
     h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '🐞 Log this as an issue'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Turn SAGE’s response into a tracked ticket with a ready-to-run troubleshooting prompt.' + (src ? ' Detected source: ' + src.label + '.' : '')),
@@ -769,7 +793,7 @@ function PromptLibraryModal({ prompts, currentInput, onClose, onUse, onRun, onRe
   const clearSched = async (p) => { await updateSagePromptSchedule(p.id, { enabled: false }); setSchedFor(null); onRefresh(); };
   const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
   const miniSel = { fontSize: 10.5, padding: '3px 6px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 5, color: 'var(--text,#f1f5f9)', colorScheme: 'dark' };
-  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
+  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
     h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '📚 Prompt library'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Save prompts you run often; use, re-run, or schedule them to run automatically. Scheduled results land on the At-A-Glance “Scheduled Runs” tile.'),
@@ -1105,7 +1129,7 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
       // Messages
       messages.map((msg, i) => h(MsgBubble, { key: i, msg, streaming: false,
         onLog: msg.role === 'assistant'
-          ? () => setLogTarget({ question: (messages[i - 1] && messages[i - 1].role === 'user') ? messages[i - 1].content : '', answer: msg.content })
+          ? () => setLogTarget(buildLogTarget(messages, i))
           : null })),
 
       // Streaming assistant message
@@ -1191,14 +1215,16 @@ export function SagePanel({ ds, signals, customSignalDefs }) {
       'Powered by Claude Opus 4.8 with adaptive thinking · Messages are sent to Anthropic via Supabase Edge Function',
     ),
 
-    // Modals
-    logTarget && h(LogIssueModal, { question: logTarget.question, answer: logTarget.answer, onClose: () => setLogTarget(null) }),
-    promptLibOpen && h(PromptLibraryModal, {
+    // Modals — portaled to document.body so they escape the SAGE overlay's
+    // z-index:360 stacking context (otherwise app layers at 400/600/2000 sit on
+    // top and swallow every click/tap — the "opens but nothing responds" bug).
+    logTarget && createPortal(h(LogIssueModal, { question: logTarget.question, answer: logTarget.answer, conversation: logTarget.conversation, onClose: () => setLogTarget(null) }), document.body),
+    promptLibOpen && createPortal(h(PromptLibraryModal, {
       prompts, currentInput: input,
       onClose: () => setPromptLibOpen(false),
       onRefresh: refreshPrompts,
       onUse: (t) => { setInput(t); setPromptLibOpen(false); },
       onRun: (t) => { setPromptLibOpen(false); sendMessage(t); },
-    }),
+    }), document.body),
   );
 }
