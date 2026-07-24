@@ -219,6 +219,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.district', 'EOM Supervisor',     '📊', ()=>onOpenModal('eom-summary'),      false),
       pis('analytics.store',    'Guest Voice',        '💬', ()=>onOpenModal('smg-voice'),        false, ds&&ds.smgRows&&ds.smgRows.length?ds.smgRows.length:null),
       pis('analytics.store',    '3PO Delivery',       '🛵', ()=>onOpenModal('delivery-mix'),     false),
+      pis('analytics.store',    'Promo / Discount ROI','🎟️', ()=>onOpenModal('promo-roi'),        false),
       // ── ANALYTICS ──────────────────────────────────────────────
       can('analytics.store') && navLabel('ANALYTICS'),
       pis('analytics.store',    'Signals',            '📡', ()=>onOpenModal('signals'),            false),
