@@ -2084,17 +2084,26 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
   const [activePreset, setActivePreset] = React.useState('l4w');
   const DR = rankRange;
   const gcVsLYMap=React.useMemo(()=>{
+    // Matched-day + auto-first GC vs LY. Old code compared current-window GC (empty when
+    // recent manual uploads are missing) against a full LY window → a false -100% on every
+    // store. Now current GC comes from manual laborRows OR the auto DAR (qsrActSummaryRows),
+    // LY from the 364d-back row or the DAR's own lyGc, and a day counts only when BOTH years
+    // have guests — so it's apples-to-apples (null when there's genuinely no comparable data).
     const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
+    const isoD=d=>(d instanceof Date?d:new Date(d)).toISOString().slice(0,10);
     const res={};
     (stores||[]).forEach(s=>{
-      const cur=(ds.laborRows||[]).filter(r=>String(r.loc)===String(s.loc)&&r.date>=DR.s&&r.date<=DR.e&&r.gc>0);
-      const ly=(ds.laborRows||[]).filter(r=>String(r.loc)===String(s.loc)&&r.date>=lyS&&r.date<=lyE&&r.gc>0);
-      const gc=cur.reduce((a,r)=>a+(r.gc||0),0);
-      const gcLY=ly.reduce((a,r)=>a+(r.gc||0),0);
-      res[String(s.loc)]=gcLY>10?(gc-gcLY)/gcLY:null;
+      const loc=String(s.loc);
+      const curByDate={}, lyByDate={};
+      for(const r of (ds.laborRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=DR.s&&r.date<=DR.e&&r.gc>0)curByDate[isoD(r.date)]=r.gc; }
+      for(const r of (ds.qsrActSummaryRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=DR.s&&r.date<=DR.e){ const k=isoD(r.date); if(r.gc>0&&curByDate[k]==null)curByDate[k]=r.gc; if(r.lyGc>0)lyByDate[k]=r.lyGc; } }
+      for(const r of (ds.laborRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=lyS&&r.date<=lyE&&r.gc>0){ const k=isoD(addDR(r.date,364)); if(lyByDate[k]==null)lyByDate[k]=r.gc; } }
+      let gc=0,gcLY=0;
+      for(const k in curByDate){ const ly=lyByDate[k]; if(ly>0){ gc+=curByDate[k]; gcLY+=ly; } }
+      res[loc]=gcLY>10?(gc-gcLY)/gcLY:null;
     });
     return res;
-  },[stores,ds.laborRows,DR.s,DR.e]);
+  },[stores,ds.laborRows,ds.qsrActSummaryRows,DR.s,DR.e]);
 
   // Quick date presets for Rankings
   const DR_PRESETS=[
