@@ -39,6 +39,7 @@ import { LaborAnalysisPanel } from '../views/labor-analysis.js';
 import { PaceToTargetPanel } from '../views/pace-to-target.js';
 import { YearlyProjectionsPanel } from '../views/yearly-projections.js';
 import { PromoRoiPanel } from '../views/promo-roi.js';
+import { VisitReadinessPanel } from '../views/visit-readiness.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
@@ -83,9 +84,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.500';
+const MERIDIAN_VERSION    = '4.501';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.501', date:'2026-07-24', changes:[
+    'New: Visit Readiness (Analytics → 🛡️). Estimates how each store would fare on a 2026 PACE graded visit (Customer First / Running Great Restaurants / EcoSure Food Safety) from the operational metrics you already track — so you coach the at-risk stores before the (mostly unannounced) visit lands. A 0–100 readiness score weighted Speed 35% / Accuracy 30% / Quality 20% / Leadership 15% (each metric scored against that store\'s own target), a separate Food-Safety risk flag from waste/holding proxies, per-store top risk drivers (actual vs target), and last actual visit score when available. Ranked most-at-risk first. Transparent early-warning estimate, not a predicted percentage; Cleanliness is an acknowledged data gap.',
+  ]},
   {version:'4.500', date:'2026-07-24', changes:[
     'SAGE can now answer promo/discount ROI questions directly — ask "are our promos paying off?" or "is Durant\'s discounting worth it?" and it runs the same matched-day analysis as the Promo/Discount ROI panel (server-side, RBAC-scoped) and explains the verdict. (Activates after a sage-chat edge-function redeploy.)',
   ]},
@@ -685,6 +689,7 @@ function App() {
   const [showPace,     setShowPace]    = useState(false); // Pace to Target
   const [showYearly,   setShowYearly]  = useState(false); // Yearly Projections
   const [showPromoRoi, setShowPromoRoi]= useState(false); // Promo / Discount ROI
+  const [showVisitReady,setShowVisitReady]=useState(false); // Visit Readiness
   const [showDICompare,setShowDICompare]= useState(false);
   const [showHelp,     setShowHelp]    = useState(false);
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
@@ -1812,7 +1817,7 @@ function App() {
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
-    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||
+    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix;
@@ -1905,6 +1910,7 @@ function App() {
         if(modal==='pace-target')    perm('analytics.store')&&setShowPace(true);
         if(modal==='yearly-proj')    perm('analytics.store')&&setShowYearly(true);
         if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
+        if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
         if(modal==='dicompare')      perm('analytics.forecasting')&&setShowDICompare(true);
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
@@ -2041,6 +2047,7 @@ function App() {
     showPace&&h(PaceToTargetPanel,{ds,stores,settings,onClose:()=>setShowPace(false)}),
     showYearly&&h(YearlyProjectionsPanel,{ds,stores,settings,onClose:()=>setShowYearly(false)}),
     showPromoRoi&&h(PromoRoiPanel,{ds,onClose:()=>setShowPromoRoi(false)}),
+    showVisitReady&&h(VisitReadinessPanel,{ds,onClose:()=>setShowVisitReady(false)}),
     showSkillsMatrix&&h(SkillsMatrixPanel,{ds,onClose:()=>setShowSkillsMatrix(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
