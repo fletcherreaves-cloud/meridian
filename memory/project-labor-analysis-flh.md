@@ -167,3 +167,35 @@ the weekly Band-1 is just an aggregation of it — cloud-fresh on every device.
 2. Hours-of-operation **normalization rule**: stores fill different day-band
    schemes; a close value of `0` appears to mean midnight/24-hr — confirm.
 3. Which day-band scheme is canonical for reporting hours/day (BF–BL)?
+
+---
+
+## Weekly Schedule Summary (v4.504, 2026-07-24)
+
+Surfaces the LifeLenz weekly-schedule "top section" band across ALL stores (LifeLenz
+shows one at a time). **No new pull** — derived from `lifelenz_schedule` (already
+synced daily by `scripts/lifelenz-pull.mjs` via the `labor_analysis_actuals_report`
+CSV). `src/engine/schedule-summary.js` rolls daily rows into per-store-week band;
+`src/views/schedule-summary.js` is the panel (Operations → 🗓 Schedule Summary).
+
+**Reconciliation (verified to the penny/minute vs a real store week — DeFuniak 0006838,
+wk of Wed Jul 22 2026; test `src/__tests__/schedule-summary.test.js`):**
+- Sales Forecast = Σ daily `fcstSales` ($89,850.72 ✓)
+- GC Forecast = Σ daily `fcstTCs` (7,191 ✓)
+- Scheduled Hrs = Σ (`schVLH`+`schFixHrs`+`schFloor`) (1460:30 ✓)
+- Forecast Hrs = Σ (`projVLH`+`fixGuideHrs`+`projFloor`) (1488:45 ✓)
+- Labor % = **dollar-weighted** Σ(`laborPct`×`fcstSales`)/Σ`fcstSales` (24.50% ✓)
+- Schd TPMH = GC forecast ÷ scheduled hrs (4.92 ✓)
+- Daily over/under = daily sched − forecast hrs (all 7 ✓)
+
+**LifeLenz business week begins WEDNESDAY** (`WEEK_START_DOW=3`) for this org.
+**laborPct unit** is passed through weighting unchanged (frac-or-%; UI normalizes with
+`Math.abs(v)<=1.5 ? *100`). **Fixed Lbr %** is computed hours-based (Σ`schFixHrs`/Σ sched
+hrs) and labeled "(hrs)" — confirm against a store vs LifeLenz's own Fixed Lbr% before
+treating as authoritative (LifeLenz may use a cost-based denominator).
+
+**STILL TO PULL (needs a DevTools capture):** the right-panel **per-job hours+cost
+breakdown** (Beverage Specialist / Drive Thru / Grill / Window / Floor / …, with #shifts,
+hours, $cost). Not in the `labor_analysis_actuals_report` CSV — it's a separate LifeLenz
+request. Get the URL + response JSON from the schedule-week page's Network tab, then wire
+it into the pull + a new table/column.

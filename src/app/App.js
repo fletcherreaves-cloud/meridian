@@ -40,6 +40,7 @@ import { PaceToTargetPanel } from '../views/pace-to-target.js';
 import { YearlyProjectionsPanel } from '../views/yearly-projections.js';
 import { PromoRoiPanel } from '../views/promo-roi.js';
 import { VisitReadinessPanel } from '../views/visit-readiness.js';
+import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
@@ -84,9 +85,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.503';
+const MERIDIAN_VERSION    = '4.504';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.504', date:'2026-07-24', changes:[
+    'New: Weekly Schedule Summary (Operations → 🗓). The LifeLenz weekly-schedule "top section" — Labor % Sales, Sales & GC Forecast, Scheduled vs Forecast hours with the daily over/unders, Schd TPMH, Fixed Labor % — but across ALL stores at once (LifeLenz only shows one at a time), with a week stepper and per-store daily grid. Derived from the lifelenz_schedule data already synced daily — verified to reconcile to the LifeLenz screen to the penny and the minute. (The per-job hours/cost breakdown is a separate LifeLenz endpoint, not yet pulled.)',
+  ]},
   {version:'4.503', date:'2026-07-24', changes:[
     'SAGE is now minimizable. Hit "—" and SAGE collapses to a floating pill (bottom-right) while the session keeps running — so you can pull up other Meridian data at the same time. The pill glows red while SAGE is thinking and green when the answer\'s ready; click it to jump back in. A matching status dot sits in the SAGE header.',
     'SAGE conversation history: every chat is archived when you start a new one, and a 🕘 History button lets you reopen or delete past conversations — so closed sessions and previous searches are always recoverable.',
@@ -698,6 +702,7 @@ function App() {
   const [showYearly,   setShowYearly]  = useState(false); // Yearly Projections
   const [showPromoRoi, setShowPromoRoi]= useState(false); // Promo / Discount ROI
   const [showVisitReady,setShowVisitReady]=useState(false); // Visit Readiness
+  const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   const [showDICompare,setShowDICompare]= useState(false);
   const [showHelp,     setShowHelp]    = useState(false);
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
@@ -1827,7 +1832,7 @@ function App() {
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
-    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||
+    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix;
@@ -1921,6 +1926,7 @@ function App() {
         if(modal==='yearly-proj')    perm('analytics.store')&&setShowYearly(true);
         if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
         if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
+        if(modal==='sched-summary')  perm('analytics.store')&&setShowSchedSum(true);
         if(modal==='dicompare')      perm('analytics.forecasting')&&setShowDICompare(true);
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
@@ -2058,6 +2064,7 @@ function App() {
     showYearly&&h(YearlyProjectionsPanel,{ds,stores,settings,onClose:()=>setShowYearly(false)}),
     showPromoRoi&&h(PromoRoiPanel,{ds,onClose:()=>setShowPromoRoi(false)}),
     showVisitReady&&h(VisitReadinessPanel,{ds,onClose:()=>setShowVisitReady(false)}),
+    showSchedSum&&h(ScheduleSummaryPanel,{ds,onClose:()=>setShowSchedSum(false)}),
     showSkillsMatrix&&h(SkillsMatrixPanel,{ds,onClose:()=>setShowSkillsMatrix(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
