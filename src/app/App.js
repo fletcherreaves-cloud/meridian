@@ -38,6 +38,7 @@ import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
 import { PaceToTargetPanel } from '../views/pace-to-target.js';
 import { YearlyProjectionsPanel } from '../views/yearly-projections.js';
+import { PromoRoiPanel } from '../views/promo-roi.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 import { SagePanel } from '../views/sage.js';
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
@@ -82,9 +83,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.498';
+const MERIDIAN_VERSION    = '4.499';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.499', date:'2026-07-24', changes:[
+    'New: Promo / Discount ROI (Operations → 🎟️). Answers "are our promos and discounts paying for themselves?" with a matched-day analysis — each store\'s promo-heavy days are compared against its promo-light days within the same weekday (controls for the weekly pattern and for running promos on slow days), and the sales/guest lift is weighed against the give-away at a configurable incremental margin. Per-store verdicts (Pays / Costs / Neutral) sorted worst-ROI first, plus a district rollup. Reads the auto-synced Daily Glimpse (promo) and Controls (discount) streams. Directional — a screen for where to dig, not a randomized trial.',
+  ]},
   {version:'4.498', date:'2026-07-24', changes:[
     'Fix: the home "Sales vs Last Year" and "Guest Count vs Last Year" figures were wildly inflated (district +532%, FL +2390%) because they averaged each store\'s year-over-year % — so a brand-new store with a near-zero last-year baseline (e.g. Ponce de Leon, opened 03/2026) dominated the average. They\'re now true comp-store comparisons: dollar/guest-weighted (Σ this year − Σ last year) ÷ Σ last year, including only stores with a real prior-year baseline (last year ≥ 20% of current). New/ramping stores still count in the sales totals, just not in the vs-LY comparison. Tiles relabeled "vs LY (comp)". The Today\'s Movers strip got the same guard so a new store can no longer top it with a nonsense "+2390%".',
   ]},
@@ -677,6 +681,7 @@ function App() {
   const [showPVSA,     setShowPVSA]    = useState(false);
   const [showPace,     setShowPace]    = useState(false); // Pace to Target
   const [showYearly,   setShowYearly]  = useState(false); // Yearly Projections
+  const [showPromoRoi, setShowPromoRoi]= useState(false); // Promo / Discount ROI
   const [showDICompare,setShowDICompare]= useState(false);
   const [showHelp,     setShowHelp]    = useState(false);
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
@@ -1804,7 +1809,7 @@ function App() {
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
-    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||
+    showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
     showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix;
@@ -1896,6 +1901,7 @@ function App() {
         if(modal==='pvsa')           perm('analytics.forecasting')&&setShowPVSA(true);
         if(modal==='pace-target')    perm('analytics.store')&&setShowPace(true);
         if(modal==='yearly-proj')    perm('analytics.store')&&setShowYearly(true);
+        if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
         if(modal==='dicompare')      perm('analytics.forecasting')&&setShowDICompare(true);
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
@@ -2031,6 +2037,7 @@ function App() {
     showLaborAnalysis&&h(LaborAnalysisPanel,{ds,settings,onClose:()=>setShowLaborAnalysis(false)}),
     showPace&&h(PaceToTargetPanel,{ds,stores,settings,onClose:()=>setShowPace(false)}),
     showYearly&&h(YearlyProjectionsPanel,{ds,stores,settings,onClose:()=>setShowYearly(false)}),
+    showPromoRoi&&h(PromoRoiPanel,{ds,onClose:()=>setShowPromoRoi(false)}),
     showSkillsMatrix&&h(SkillsMatrixPanel,{ds,onClose:()=>setShowSkillsMatrix(false)}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
