@@ -85,9 +85,14 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.507';
+const MERIDIAN_VERSION    = '4.508';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.508', date:'2026-07-24', changes:[
+    'Fix: the At-A-Glance "Sales & Guest Counts" tile showed a wildly inflated "vs LY" (e.g. +330%). Current-period sales were summed over the whole window but last-year sales only over whatever days happened to have data — so when last year covered just a fraction of the current days, the ratio exploded. vs LY (sales, guests, and avg check, district + OK/FL) is now a matched-day comparison: each store contributes only days where BOTH this year and last year have real data, so the percentages are true year-over-year again.',
+    'Fix: the At-A-Glance "This Week — District Projection" table left Actual, vs LY, and Acc% blank all week. Actuals were only read from manual labor uploads; the current week\'s live numbers arrive via the auto-synced daily activity (DAR), which the projection wasn\'t reading. It now fills each completed day\'s Actual (and real last-year sales) from the auto-synced stream when a manual upload isn\'t present — so Actual/vs LY/Acc% populate as the week fills in. (Note: the header "vs LY %" can still read ~0% for stores on the adaptive-ensemble model — a separate, deeper item.)',
+    'Fix: SAGE\'s 📚 Prompts library felt "dead" — nothing was clickable — whenever the SAGE composer was empty. The Save controls were gated on there being text in the composer, so with an empty composer and no saved prompts yet, everything was disabled. The modal now has its own prompt box (pre-filled from the composer when it has text): type or paste any prompt and save it directly, no composer text required.',
+  ]},
   {version:'4.507', date:'2026-07-24', changes:[
     'New: per-station hours & cost breakdown in the Weekly Schedule Summary. Expand any store and, below the daily grid, you now see where its scheduled hours and labor dollars go by LifeLenz station — Drive Thru, Grill, Lobby, Maintenance, Opening, and the rest — each tagged Variable / Floor / Fixed, with shift count, regular vs overtime hours, cost, and $/hr, plus a category summary and a total row. Pulled automatically from LifeLenz (ShiftsForSchedulePeriod) into a new cloud table so it\'s the same on every device; it fills in after the daily LifeLenz sync.',
   ]},

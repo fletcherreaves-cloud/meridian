@@ -6910,31 +6910,52 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // of current — drops brand-new / still-ramping stores from the COMPARISON, not
     // from the sales totals), and divide the aggregates. Returned as a FRACTION to
     // match the tile's *100 render.
+    // MATCHED-DAY vs-LY (v4.508). The prior code summed current$ over the whole current
+    // window but LY$ over whatever LY days happened to have data — with no day-matching.
+    // When the current window covered many days but LY covered only a sparse subset, the
+    // ratio exploded (a store whose LY spanned ~23% of the current days read ~+330%). Fix:
+    // build per-(loc,date) LY maps, then accumulate current AND LY together per store
+    // ONLY on days where BOTH sides have real data, so coverage is identical day-for-day.
+    const _iso=d=>(d instanceof Date?d:new Date(d)).toISOString().slice(0,10);
     const lyS=addD(dateRange.s,-364),lyE=addD(dateRange.e,-364);
     const labLY=(ds?.laborRows||[]).filter(r=>r.date>=lyS&&r.date<=lyE&&allLocs.includes(String(r.loc))&&r.gc>0);
-    const lySalesByLoc={}, lyGcByLoc={};
-    if(labLY.length){ for(const r of labLY){ const k=String(r.loc); lySalesByLoc[k]=(lySalesByLoc[k]||0)+(r.sales||0); lyGcByLoc[k]=(lyGcByLoc[k]||0)+(r.gc||0); } }
-    else { for(const r of labInRange){ const k=String(r.loc); if(r.lySales>0){ lySalesByLoc[k]=(lySalesByLoc[k]||0)+r.lySales; } } }
-    const curSalesByLoc=l=>(sumOf(byLoc(l),'allNetSales')||sumOf(byLoc(l),'sales'));
-    // Ratio-of-aggregates over comp stores. base=per-loc last-year map, cur=per-loc
-    // current accessor. A store is comp when LY ≥ 20% of current (real baseline).
-    const compVsLY=(locSet,baseMap,curFn)=>{
+    const lySalesByLocDate={}, lyGcByLocDate={};
+    for(const r of labLY){ const k=String(r.loc)+'|'+_iso(r.date); lySalesByLocDate[k]=(lySalesByLocDate[k]||0)+(r.sales||0); lyGcByLocDate[k]=(lyGcByLocDate[k]||0)+(r.gc||0); }
+    // Per-store matched-day sums (sales + GC). LY for a current day = the actual LY
+    // laborRow 364d back, else that row's own lySales field (cloud-only devices).
+    const mCurS={}, mLyS={}, mCurG={}, mLyG={};
+    for(const r of labInRange){
+      const l=String(r.loc); if(!allLocs.includes(l)) continue;
+      const cur=(r.allNetSales||r.sales)||0, curG=r.gc||0;
+      const lk=l+'|'+_iso(addD(r.date,-364));
+      let ly=lySalesByLocDate[lk]; if((ly==null||ly<=0)&&r.lySales>0) ly=r.lySales;
+      const lyG=lyGcByLocDate[lk];
+      if(cur>0&&ly>0){ mCurS[l]=(mCurS[l]||0)+cur; mLyS[l]=(mLyS[l]||0)+ly; }
+      if(curG>0&&lyG>0){ mCurG[l]=(mCurG[l]||0)+curG; mLyG[l]=(mLyG[l]||0)+lyG; }
+    }
+    // Ratio-of-aggregates over comp stores. Matched days keep coverage equal, so the
+    // LY≥20%-of-current guard now only drops genuine new/ramping stores from the COMP.
+    const compVsLY=(locSet,curMap,lyMap)=>{
       let cur=0, base=0;
-      for(const l of locSet){ const c=curFn(l), b=baseMap[String(l)]||0; if(b<=0||b<0.2*c) continue; cur+=c; base+=b; }
+      for(const l of locSet){ const c=curMap[String(l)]||0, b=lyMap[String(l)]||0; if(b<=0||b<0.2*c) continue; cur+=c; base+=b; }
       return base>0 ? (cur-base)/base : null;   // FRACTION
     };
-    const salesVsLY=compVsLY(allLocs,lySalesByLoc,curSalesByLoc);
-    const okSalesVsLY=compVsLY(okLocs,lySalesByLoc,curSalesByLoc);
-    const flSalesVsLY=compVsLY(flLocs,lySalesByLoc,curSalesByLoc);
+    const salesVsLY=compVsLY(allLocs,mCurS,mLyS);
+    const okSalesVsLY=compVsLY(okLocs,mCurS,mLyS);
+    const flSalesVsLY=compVsLY(flLocs,mCurS,mLyS);
+    // Display totals stay FULL current-window sums (these are actuals, not comps).
+    const curSalesByLoc=l=>(sumOf(byLoc(l),'allNetSales')||sumOf(byLoc(l),'sales'));
     const okSales=okLocs.reduce((a,l)=>a+curSalesByLoc(l),0);
     const flSales=flLocs.reduce((a,l)=>a+curSalesByLoc(l),0);
-    // GC vs LY — same comp treatment (was also inflated by new stores).
-    const gcVsLY=Object.keys(lyGcByLoc).length?compVsLY(allLocs,lyGcByLoc,l=>sumOf(byLoc(l),'gc')):null;
-    // Avg check vs LY (district-level; avg check is baseline-stable so no comp filter).
-    const totGCLY=labLY.reduce((a,r)=>a+(r.gc||0),0);
-    const totSalesLY=labLY.reduce((a,r)=>a+(r.sales||0),0);
+    // GC vs LY — same matched-day comp.
+    const gcVsLY=Object.keys(mLyG).length?compVsLY(allLocs,mCurG,mLyG):null;
+    // Avg check vs LY — per-guest ratio, both sides over matched days.
+    const totSalesLY=Object.values(mLyS).reduce((a,b)=>a+b,0);
+    const totGCLY=Object.values(mLyG).reduce((a,b)=>a+b,0);
+    const curMS=Object.values(mCurS).reduce((a,b)=>a+b,0), curMG=Object.values(mCurG).reduce((a,b)=>a+b,0);
     const avgCheckLY=totGCLY>0?totSalesLY/totGCLY:0;
-    const avgCheckVsLY=avgCheckLY>0?(avgChk-avgCheckLY)/avgCheckLY:null;
+    const avgChkMatched=curMG>0?curMS/curMG:avgChk;
+    const avgCheckVsLY=avgCheckLY>0?(avgChkMatched-avgCheckLY)/avgCheckLY:null;
     return{totSales,totGC,avgChk,channels:chData,salesVsLY,gcVsLY,avgCheckVsLY,okSales,flSales,okSalesVsLY,flSalesVsLY};
   },[labInRange,channelRows,allLocs,okLocs,flLocs,ds?.laborRows,dateRange]);
 
@@ -7321,11 +7342,28 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const _eventFactors=settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{};
     const cfg={...settings,_userEvents:userEvents||{},_eventFactors};
     const _allLocs=(stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
+    // Cloud actuals supplement: the forecast engine reads actuals ONLY from manually
+    // uploaded laborRows (laborIdx), so the current partial week — whose actuals arrive
+    // in the auto-synced qsrActSummaryRows (DAR) — showed blank Actual/vs LY/Acc% all
+    // week. Index the cloud daily sales/LY per (normLoc, dayKey) and fill any day the
+    // manual path left at 0 (freshest-wins: manual is never overridden). ly is upgraded
+    // to the cloud row's REAL last-year sales when present (fixes vs-LY on filled days).
+    const _nl=l=>String(parseInt(String(l).replace(/\D/g,''),10)||'');
+    const _cloudAct={}, _cloudLY={};
+    for(const r of (ds.qsrActSummaryRows||[])){
+      if(!r||r.loc==null||!r.date)continue;
+      const k=_nl(r.loc)+'|'+dKey(r.date);
+      const s=(r.allNetSales||r.sales)||0;
+      if(s>0&&_cloudAct[k]==null)_cloudAct[k]=s;
+      if(r.lySales>0&&_cloudLY[k]==null)_cloudLY[k]=r.lySales;
+    }
     const storeProjs=_allLocs.map(loc=>{
       const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
       const rowDays=weekDays.map(d=>{
         const r=forecastDay(loc,d,ds,cfg,null,t);
-        return{fc:r.forecast||0,act:r.actual||0,ly:r.lyAdj||0};
+        let act=r.actual||0, ly=r.lyAdj||0;
+        if(act<=0){ const ck=_nl(loc)+'|'+dKey(d); const ca=_cloudAct[ck]; if(ca>0){ act=ca; const cly=_cloudLY[ck]; if(cly>0)ly=cly; } }
+        return{fc:r.forecast||0,act,ly};
       });
       const wkTotal=rowDays.reduce((a,r)=>a+r.fc,0);
       const lyTotal=rowDays.reduce((a,r)=>a+r.ly,0);
@@ -7334,7 +7372,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       return{loc,name:STORE_NAMES[String(loc)]||loc,wkTotal,lyTotal,actualTotal,vsLY,org:orgOf(loc),rowDays};
     }).sort((a,b)=>b.wkTotal-a.wkTotal);
     return{storeProjs,weekDays,wsKey};
-  },[ds?.laborRows?.length,stores,settings,userEvents]);
+  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,stores,settings,userEvents]);
 
   // ── RENDER ────────────────────────────────────────────────────
   return div({style:{display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'},
