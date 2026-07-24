@@ -135,7 +135,7 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
 | Smart Targets | ✅ | |
 | Data Manager | ✅ | |
 | SAGE AI | ✅ | Claude Opus 4.8, live tool use (sales/DT/labor/forecast accuracy), streaming |
-| Signals | ✅ | LiveOps tab (qsr_daily_activity): Tracking-to-Plan **$ AND guest-count** (proj_sales_dollars + proj_total_transactions, with a traffic-vs-sales divergence flag), Baseline Anomalies (mean_sales), intraday labor-gap column; Speed of Service panel (all stations: DT/front-counter/kitchen-MFY/beverage); custom signal engine |
+| Signals | ✅ | LiveOps tab (qsr_daily_activity): Tracking-to-Plan **$ AND guest-count** (proj_sales_dollars + proj_total_transactions, with a traffic-vs-sales divergence flag), Baseline Anomalies (mean_sales), intraday labor-gap column; Speed of Service panel (all stations: DT/front-counter/kitchen-MFY/beverage); custom signal engine (Signal Lab); **🔎 Scanner** (v4.495): auto-correlation across all metric pairs — Pearson r + Spearman, effect-size floor + Benjamini–Hochberg FDR guardrails, "move together" framing, one-click promote to Signal Lab + predefined seed signals. **Metric registry** (`src/engine/signal-registry.js`) covers Controls loss-prevention (T-Reds Before/After %+count, cash/cashless refunds, promo, disc, POS-over $, cash O/S $) and now reads **cloud streams** (glimpse/cash/salesLedger/qsrActSummary) as `(Cloud)` metric groups, not just manual uploads |
 | FOB / Food Cost | ✅ | FOBAnalysisPanel + FOBEOMPanel (per-store inventory troubleshooter) |
 | Feature Requests | ✅ | Supabase-backed, pre-seeded with roadmap history |
 

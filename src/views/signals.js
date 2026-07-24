@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
-import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel } from '../engine/signal-registry.js';
+import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS } from '../engine/signal-registry.js';
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
@@ -989,6 +989,144 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
   );
 }
 
+// ── Auto-Correlation Scanner tab ────────────────────────────────────────────
+function ScannerTab({ ds, onTrack }) {
+  const [gran, setGran] = uSt('daily');
+  const [minAbsR, setMinAbsR] = uSt(0.4);
+  const [scopeLoc, setScopeLoc] = uSt(null);
+  const [running, setRunning] = uSt(false);
+  const [scan, setScan] = uSt(null);
+  const [tracked, setTracked] = uSt({});
+
+  const availLocs = uM(() => {
+    const locs = new Set();
+    [...(ds?.glimpseRows || []), ...(ds?.salesLedgerRows || []), ...(ds?.qsrActSummaryRows || []), ...(ds?.laborRows || []), ...(ds?.ctrlRows || [])].forEach(r => { if (r.loc) locs.add(normLoc(r.loc)); });
+    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
+  }, [ds]);
+
+  const runScan = () => {
+    setRunning(true); setScan(null);
+    // Defer so the "Scanning…" state paints before the (synchronous) sweep.
+    setTimeout(() => {
+      try { setScan(scanAllPairs(ds, { granularity: gran, minAbsR, scopeLoc })); }
+      catch (e) { setScan({ error: e.message, results: [] }); }
+      setRunning(false);
+    }, 30);
+  };
+
+  const seeded = uM(() => {
+    if (!ds) return [];
+    return SEEDED_SIGNALS.map(s => {
+      let sig = null;
+      try { sig = computeCustomSignal({ ...s, scope: scopeLoc || 'district' }, ds); } catch {}
+      return { ...s, sig };
+    });
+  }, [ds, scopeLoc]);
+
+  const handleTrack = async (row) => {
+    const key = row.xKey + '|' + row.yKey;
+    if (tracked[key]) return;
+    const def = {
+      name: `${row.xLabel} → ${row.yLabel}`.slice(0, 120),
+      xMetric: row.xKey, yMetric: row.yKey, granularity: gran, scope: scopeLoc || 'district',
+      xCondition: 'all', xReference: 'median', yCondition: 'all', yReference: 'median',
+      latest_r: row.r, latest_n: row.n,
+      history: [{ date: new Date().toISOString().slice(0, 10), r: row.r, n: row.n }],
+      status: 'active', promoted_to: [],
+    };
+    setTracked(t => ({ ...t, [key]: 'saving' }));
+    const saved = await saveCustomSignal(def);
+    if (saved) { onTrack?.({ ...def, id: saved.id, votes: 0 }); setTracked(t => ({ ...t, [key]: 'done' })); }
+    else setTracked(t => ({ ...t, [key]: 'error' }));
+  };
+
+  const fmtR = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2);
+  const fmtQ = q => q == null ? '—' : q < 0.001 ? '<0.001' : q.toFixed(3);
+  const rColor = r => { const a = Math.abs(r || 0); return a >= 0.6 ? grn : a >= 0.4 ? amber : muted; };
+
+  const SEL = { padding: '4px 8px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#e5e7eb', fontSize: 11, cursor: 'pointer' };
+  const results = scan?.results || [];
+  const shown = results.slice(0, 40);
+
+  return h('div', null,
+    // Intro
+    h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
+      '🔎 Auto-Correlation Scanner — cycles every metric pair across the loaded data and surfaces the strongest relationships. ',
+      'Results show which metrics ', h('b', null, 'move together'), ' — this is association, ', h('b', null, 'not cause-and-effect'), '. ',
+      'Guardrails: a minimum sample size, an effect-size floor, and a Benjamini–Hochberg false-discovery correction so pairs that only look strong by chance are flagged out.'),
+
+    // Controls
+    h('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' } },
+      h('div', { style: { display: 'flex', gap: 6 } },
+        pillBtn(gran === 'daily', () => setGran('daily'), 'Daily'),
+        pillBtn(gran === 'monthly', () => setGran('monthly'), 'Monthly'),
+      ),
+      h('label', { style: { fontSize: 11, color: muted, display: 'flex', alignItems: 'center', gap: 4 } }, 'Min |r|',
+        h('select', { value: String(minAbsR), onChange: e => setMinAbsR(parseFloat(e.target.value)), style: SEL },
+          ['0.3', '0.4', '0.5', '0.6'].map(v => h('option', { key: v, value: v }, v)))),
+      availLocs.length > 1 && h('select', { value: scopeLoc || '', onChange: e => setScopeLoc(e.target.value || null), style: { ...SEL, color: scopeLoc ? amber : muted } },
+        h('option', { value: '' }, 'All stores'),
+        availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))),
+      h('button', { onClick: runScan, disabled: running || !ds, style: {
+        marginLeft: 'auto', padding: '6px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: running ? 'default' : 'pointer',
+        border: `1px solid ${amber}`, background: running ? 'transparent' : 'rgba(245,158,11,.14)', color: amber, opacity: running ? 0.6 : 1,
+      } }, running ? 'Scanning…' : '▶ Run scan'),
+    ),
+
+    // Summary
+    scan && !scan.error && h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } },
+      `${scan.metricsUsed} metrics with data · ${scan.tested} pairs tested · ${results.length} above |r| ${minAbsR} · `,
+      h('span', { style: { color: grn, fontWeight: 700 } }, `${scan.fdrCount} survive FDR (q<${scan.alpha})`),
+      results.length > 40 ? ` · showing top 40` : ''),
+    scan?.error && h('div', { style: { fontSize: 12, color: red, marginBottom: 12 } }, 'Scan error: ' + scan.error),
+    scan && !scan.error && !results.length && h('div', { style: { textAlign: 'center', padding: 32, color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+      scan.metricsUsed < 2 ? 'Not enough loaded metrics to correlate — sync or upload more data.' : `No pairs cleared |r| ≥ ${minAbsR}. Try lowering the threshold.`),
+
+    // Result rows
+    shown.map((row, i) => h('div', { key: i, style: {
+      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6,
+      background: surf2, border: `1px solid ${row.fdrSig ? 'rgba(16,185,129,.25)' : bdr}`, borderRadius: 8, flexWrap: 'wrap',
+    } },
+      h('div', { style: { flex: 1, minWidth: 220 } },
+        h('div', { style: { fontSize: 13, fontWeight: 600 } }, `${row.xLabel}  →  ${row.yLabel}`),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, `${row.xCat} · ${row.yCat} · n=${row.n} · q=${fmtQ(row.qValue)}`),
+      ),
+      row.crossDomain && h('span', { style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(96,165,250,.12)', color: blue } }, 'cross-domain'),
+      row.divergent && h('span', { title: 'Pearson and Spearman disagree — likely nonlinear or outlier-driven', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,.12)', color: amber } }, '⚠ nonlinear'),
+      row.fdrSig && h('span', { style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: grn } }, 'FDR ✓'),
+      h('div', { style: { textAlign: 'right', minWidth: 96 } },
+        h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(row.r), fontFamily: 'monospace' } }, `r ${fmtR(row.r)}`),
+        h('div', { style: { fontSize: 10, color: muted, fontFamily: 'monospace' } }, `ρ ${fmtR(row.rho)}`),
+      ),
+      h('button', {
+        onClick: () => handleTrack(row), disabled: !!tracked[row.xKey + '|' + row.yKey],
+        style: { padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: `1px solid ${bdr}`, background: 'transparent',
+          color: tracked[row.xKey + '|' + row.yKey] === 'done' ? grn : tracked[row.xKey + '|' + row.yKey] === 'error' ? red : muted },
+      }, tracked[row.xKey + '|' + row.yKey] === 'done' ? '✓ Tracked' : tracked[row.xKey + '|' + row.yKey] === 'saving' ? '…' : tracked[row.xKey + '|' + row.yKey] === 'error' ? 'Retry' : '+ Track'),
+    )),
+
+    // Predefined signals
+    h('div', { style: { marginTop: 24, marginBottom: 10, fontSize: 11, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.07em' } }, 'Predefined signals'),
+    h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Curated pairings that compute automatically from whatever data is loaded — a starting point before you scan.'),
+    seeded.map(s => {
+      const sig = s.sig; const r = sig?.r; const n = sig?.n || 0;
+      return h('div', { key: s.id, style: { padding: '10px 12px', marginBottom: 6, background: surf2, border: `1px solid ${bdr}`, borderRadius: 8, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' } },
+        h('div', { style: { flex: 1, minWidth: 220 } },
+          h('div', { style: { fontSize: 13, fontWeight: 600 } }, s.name),
+          h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, s.rationale),
+        ),
+        h('div', { style: { textAlign: 'right', minWidth: 90 } },
+          r != null && n >= 5
+            ? h('div', null,
+                h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(r), fontFamily: 'monospace' } }, `r ${fmtR(r)}`),
+                h('div', { style: { fontSize: 10, color: muted } }, `${s.granularity} · n=${n}`))
+            : h('div', { style: { fontSize: 11, color: muted } }, 'no data yet'),
+        ),
+      );
+    }),
+  );
+}
+
 export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange, darRows, refreshDar }) {
   const [tab, setTab] = uSt('liveops');
   const [expanded, setExpanded] = uSt(null);
@@ -1097,7 +1235,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     h('div', { style: { marginBottom: 16 } },
       h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'Intelligence'),
       h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 900, letterSpacing: '-.03em' } }, 'Signals'),
-      h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Cross-metric correlation analysis. Built-in signals run automatically; define your own in Signal Lab.'),
+      h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Cross-metric correlation analysis. Built-in signals run automatically; define your own in Signal Lab; or auto-discover them in the 🔎 Scanner.'),
     ),
 
     // Tab bar
@@ -1105,6 +1243,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       h('button', { onClick: () => setTab('liveops'), style: TAB_STYLE(tab === 'liveops') }, '⚡ Live Ops'),
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
+      h('button', { onClick: () => setTab('scanner'), style: TAB_STYLE(tab === 'scanner') }, '🔎 Scanner'),
       h('button', { onClick: () => setTab('graveyard'), style: TAB_STYLE(tab === 'graveyard', true) }, `⚰ Graveyard${graveyardCount ? ` (${graveyardCount})` : ''}`),
     ),
 
@@ -1165,6 +1304,9 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
         onPromote: handlePromote, onRetire: handleRetire, onVote: handleVote, onDelete: handleDelete,
       })),
     ),
+
+    // ── SCANNER TAB ───────────────────────────────────────────────────────────
+    tab === 'scanner' && h(ScannerTab, { ds, onTrack: handleNewSignal }),
 
     // ── GRAVEYARD TAB ─────────────────────────────────────────────────────────
     tab === 'graveyard' && h(GraveyardTab, { defs: localDefs, onRestore: handleRestore }),
