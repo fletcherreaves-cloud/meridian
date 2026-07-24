@@ -83,9 +83,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.499';
+const MERIDIAN_VERSION    = '4.500';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.500', date:'2026-07-24', changes:[
+    'SAGE can now answer promo/discount ROI questions directly — ask "are our promos paying off?" or "is Durant\'s discounting worth it?" and it runs the same matched-day analysis as the Promo/Discount ROI panel (server-side, RBAC-scoped) and explains the verdict. (Activates after a sage-chat edge-function redeploy.)',
+  ]},
   {version:'4.499', date:'2026-07-24', changes:[
     'New: Promo / Discount ROI (Operations → 🎟️). Answers "are our promos and discounts paying for themselves?" with a matched-day analysis — each store\'s promo-heavy days are compared against its promo-light days within the same weekday (controls for the weekly pattern and for running promos on slow days), and the sales/guest lift is weighed against the give-away at a configurable incremental margin. Per-store verdicts (Pays / Costs / Neutral) sorted worst-ROI first, plus a district rollup. Reads the auto-synced Daily Glimpse (promo) and Controls (discount) streams. Directional — a screen for where to dig, not a randomized trial.',
   ]},
