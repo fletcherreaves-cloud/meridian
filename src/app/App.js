@@ -82,9 +82,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.497';
+const MERIDIAN_VERSION    = '4.498';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.498', date:'2026-07-24', changes:[
+    'Fix: the home "Sales vs Last Year" and "Guest Count vs Last Year" figures were wildly inflated (district +532%, FL +2390%) because they averaged each store\'s year-over-year % — so a brand-new store with a near-zero last-year baseline (e.g. Ponce de Leon, opened 03/2026) dominated the average. They\'re now true comp-store comparisons: dollar/guest-weighted (Σ this year − Σ last year) ÷ Σ last year, including only stores with a real prior-year baseline (last year ≥ 20% of current). New/ramping stores still count in the sales totals, just not in the vs-LY comparison. Tiles relabeled "vs LY (comp)". The Today\'s Movers strip got the same guard so a new store can no longer top it with a nonsense "+2390%".',
+  ]},
   {version:'4.497', date:'2026-07-24', changes:[
     'Fix: the "This Week — District Projection" table on the home screen had its OK/FL state tags inverted — every Florida store was labeled OK and every Oklahoma store FL. Root cause was a local org-mapping helper that was backwards relative to the rest of the app (canonical: MCDOK = Oklahoma, Emerald Arches = Florida). Labels now match each store\'s real state.',
   ]},
