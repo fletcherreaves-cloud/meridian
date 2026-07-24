@@ -72,6 +72,13 @@ Arches"). `businessRoles(businessId, excludeInactiveRoles:false)` → all 34 rol
 authoritative source for `LIFELENZ_BUSINESS_ROLES` in src/engine/lifelenz-shift-jobs.js** (see the
 role-map note below). Static config — refetch only if roles are added.
 
+### `GetOpeningHours` ✅ useful cross-check (not pulled yet) — `openingHours(businessId, scheduleId,
+startDate, endDate, includeDeleted)` → `nodes[]{ id, scheduleId, type (RegularOpeningHour),
+startDate, endDate, days.details[]{ dayOfWeek, time[]{ startTime, endTime } } }`. LifeLenz's
+authoritative hours-of-operation per store (e.g. DeFuniak = 05:00–23:00 all 7 days = 18h/day). Use to
+**validate the Labor-Analysis Band-5 hours-of-op config** (`store_labor_config` open/close per weekday,
+see project-labor-analysis-flh.md) — a mismatch = data-integrity flag. Also feeds hours-open×VLH sanity.
+
 ### minor — `GetActiveAvailabilitiesMaxHours` (nice-to-have, not pulled) — `availabilities(businessId,
 employmentIds, status:[active], types:[…], startDate, endDate)` → per-employee availability records
 `{ id, employmentId, type, maxDurationPerWeek, startDate, endDate }`. For this org almost all are
