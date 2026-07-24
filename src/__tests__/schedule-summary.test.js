@@ -43,6 +43,27 @@ describe('schedule-summary — reconciles to the LifeLenz screenshot band', () =
   });
 });
 
+describe('schedule-summary — labor% ignores partial-day / garbage / null days', () => {
+  // Wed+Thu completed (24% / 26%), Fri = today mid-day partial (409.74% on tiny sales),
+  // Sat future (null). The weekly figure must weight only the two completed days.
+  const rows = [
+    { loc: '0001', date: new Date('2026-07-22T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, laborPct: 24,     fcstTCs: 1000 },
+    { loc: '0001', date: new Date('2026-07-23T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, laborPct: 26,     fcstTCs: 1000 },
+    { loc: '0001', date: new Date('2026-07-24T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 500,   laborPct: 409.74, fcstTCs: 50   },
+    { loc: '0001', date: new Date('2026-07-25T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, laborPct: null,   fcstTCs: 1000 },
+  ];
+  const s = computeScheduleSummary(rows).weeks[0].stores[0];
+
+  it('weekly labor% = dollar-weighted over the two completed days = 25.00%', () => {
+    // (24*10000 + 26*10000) / 20000 = 25 — the 409.74% partial day would otherwise blow it up
+    expect(s.laborPct).toBeCloseTo(25, 5);
+  });
+  it('the partial (409.74%) and future (null) days show blank in the daily grid', () => {
+    expect(s.days.find(d => d.date.getDate() === 24).laborPct).toBe(null);
+    expect(s.days.find(d => d.date.getDate() === 25).laborPct).toBe(null);
+  });
+});
+
 describe('schedule-summary — grouping + district', () => {
   it('groups the week on the Wednesday anchor', () => {
     expect(WEEK_START_DOW).toBe(3);

@@ -85,9 +85,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.504';
+const MERIDIAN_VERSION    = '4.505';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.505', date:'2026-07-24', changes:[
+    'Fix: Weekly Schedule Summary labor % was reading far too high (e.g. a store showing 72% instead of ~24%). The daily labor % is an ACTUAL figure — null on future days and temporarily enormous on the current, partial day (labor has accrued but the day’s sales haven’t landed yet, so a mid-day read can be 400%+). That single partial day was dominating the weekly dollar-weighted average. Now the weekly labor % is dollar-weighted over the completed days only; future/partial/garbage days are dropped and show blank in the daily grid.',
+  ]},
   {version:'4.504', date:'2026-07-24', changes:[
     'New: Weekly Schedule Summary (Operations → 🗓). The LifeLenz weekly-schedule "top section" — Labor % Sales, Sales & GC Forecast, Scheduled vs Forecast hours with the daily over/unders, Schd TPMH, Fixed Labor % — but across ALL stores at once (LifeLenz only shows one at a time), with a week stepper and per-store daily grid. Derived from the lifelenz_schedule data already synced daily — verified to reconcile to the LifeLenz screen to the penny and the minute. (The per-job hours/cost breakdown is a separate LifeLenz endpoint, not yet pulled.)',
   ]},

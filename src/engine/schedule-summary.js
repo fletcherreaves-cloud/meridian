@@ -26,9 +26,21 @@ const _wkKey = d => weekStartOf(d).toISOString().slice(0, 10);
 const schedHrsOf = r => _n(r.schVLH) + _n(r.schFixHrs) + _n(r.schFloor);
 const fcstHrsOf  = r => _n(r.projVLH) + _n(r.fixGuideHrs) + _n(r.projFloor);
 
+// Daily labor % is an ACTUAL figure: null on future days, and wildly high on the
+// CURRENT (partial) day — labor has accrued but the day's sales haven't landed yet,
+// so a mid-day pull can read 400%+. Normalize to percent scale and drop nulls +
+// out-of-band partial/garbage days so they don't dominate the weekly dollar-weighted
+// average. Real QSR weekly labor % lives ~15–35%; anything >70% is a partial day.
+const LABOR_PCT_MIN = 3, LABOR_PCT_MAX = 70;
+function normLaborPct(raw) {
+  if (raw == null || !isFinite(raw)) return null;
+  const f = Math.abs(raw) <= 1.5 ? raw * 100 : raw; // accept fraction (0.245) or percent (24.5)
+  return (f >= LABOR_PCT_MIN && f <= LABOR_PCT_MAX) ? f : null;
+}
+
 // Roll a set of daily rows (one store, one week) into the band.
 function rollup(loc, rows) {
-  let fcstSales = 0, fcstGC = 0, schedHrs = 0, fcstHrs = 0, fixHrs = 0, laborDollars = 0;
+  let fcstSales = 0, fcstGC = 0, schedHrs = 0, fcstHrs = 0, fixHrs = 0, laborPctW = 0, laborSalesW = 0;
   const days = rows
     .slice()
     .sort((a, b) => a.date - b.date)
@@ -36,15 +48,17 @@ function rollup(loc, rows) {
       const sH = schedHrsOf(r), fH = fcstHrsOf(r);
       fcstSales += _n(r.fcstSales); fcstGC += _n(r.fcstTCs);
       schedHrs += sH; fcstHrs += fH; fixHrs += _n(r.schFixHrs);
-      laborDollars += _n(r.laborPct) * _n(r.fcstSales); // weight by sales; unit of laborPct (frac or %) passes through unchanged
-      return { date: r.date, schedHrs: sH, fcstHrs: fH, hrsDiff: sH - fH, laborPct: r.laborPct, fcstSales: r.fcstSales, fcstGC: r.fcstTCs };
+      const lp = normLaborPct(r.laborPct); // % scale, or null for future/partial/garbage days
+      if (lp != null) { laborPctW += lp * _n(r.fcstSales); laborSalesW += _n(r.fcstSales); }
+      return { date: r.date, schedHrs: sH, fcstHrs: fH, hrsDiff: sH - fH, laborPct: lp, fcstSales: r.fcstSales, fcstGC: r.fcstTCs };
     });
   return {
     loc,
     fcstSales, fcstGC,
     schedHrs, fcstHrs, hrsDiff: schedHrs - fcstHrs,
-    // Dollar-weighted labor % (Σ labor$ / Σ sales$) — never a straight average of daily %s.
-    laborPct: fcstSales > 0 ? laborDollars / fcstSales : null,
+    // Dollar-weighted labor % over the completed (valid) days only — never a straight
+    // average of daily %s, and never contaminated by the current partial day. % scale.
+    laborPct: laborSalesW > 0 ? laborPctW / laborSalesW : null,
     tpmh: schedHrs > 0 ? fcstGC / schedHrs : null,
     // Fixed labor as a share of scheduled hours (hours-based). Labeled as such in UI.
     fixedLaborPct: schedHrs > 0 ? fixHrs / schedHrs : null,
@@ -68,12 +82,13 @@ export function computeScheduleSummary(schedRows, opts = {}) {
     const stores = Object.keys(byWeek[wk]).map(loc => rollup(loc, byWeek[wk][loc]));
     stores.sort((a, b) => (b.hrsDiff) - (a.hrsDiff)); // most over-scheduled first
     // District rollup (dollar/hour weighted).
-    let dSales = 0, dGC = 0, dSched = 0, dFcst = 0, dFix = 0, dLaborD = 0;
-    for (const s of stores) { dSales += s.fcstSales; dGC += s.fcstGC; dSched += s.schedHrs; dFcst += s.fcstHrs; dLaborD += (s.laborPct || 0) * s.fcstSales; dFix += (s.fixedLaborPct || 0) * s.schedHrs; }
+    let dSales = 0, dGC = 0, dSched = 0, dFcst = 0, dFix = 0, dLaborD = 0, dLaborSales = 0;
+    for (const s of stores) { dSales += s.fcstSales; dGC += s.fcstGC; dSched += s.schedHrs; dFcst += s.fcstHrs; if (s.laborPct != null) { dLaborD += s.laborPct * s.fcstSales; dLaborSales += s.fcstSales; } dFix += (s.fixedLaborPct || 0) * s.schedHrs; }
     const district = {
       nStores: stores.length,
       fcstSales: dSales, fcstGC: dGC, schedHrs: dSched, fcstHrs: dFcst, hrsDiff: dSched - dFcst,
-      laborPct: dSales > 0 ? dLaborD / dSales : null,
+      // District labor % dollar-weighted over stores that have a valid weekly labor %.
+      laborPct: dLaborSales > 0 ? dLaborD / dLaborSales : null,
       tpmh: dSched > 0 ? dGC / dSched : null,
       fixedLaborPct: dSched > 0 ? dFix / dSched : null,
     };
