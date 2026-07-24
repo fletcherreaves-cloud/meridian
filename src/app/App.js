@@ -84,9 +84,13 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.501';
+const MERIDIAN_VERSION    = '4.502';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.502', date:'2026-07-24', changes:[
+    'Fix: SAGE\'s 📚 Prompts library (and the 🐞 Log modal) opened but ignored all clicks/typing — the modals were trapped inside SAGE\'s stacking context and covered by other app layers. They now render at the top level (portal) above everything, so they\'re fully interactive.',
+    'Fix: the 🐞 Log button was capturing the wrong prompt — if you\'d answered a SAGE suggestion with "Yes, please", that thin reply became the logged context. It now walks back to the actual substantive prompt and captures the last few turns of the conversation, so multi-prompt sessions log accurately.',
+  ]},
   {version:'4.501', date:'2026-07-24', changes:[
     'New: Visit Readiness (Analytics → 🛡️). Estimates how each store would fare on a 2026 PACE graded visit (Customer First / Running Great Restaurants / EcoSure Food Safety) from the operational metrics you already track — so you coach the at-risk stores before the (mostly unannounced) visit lands. A 0–100 readiness score weighted Speed 35% / Accuracy 30% / Quality 20% / Leadership 15% (each metric scored against that store\'s own target), a separate Food-Safety risk flag from waste/holding proxies, per-store top risk drivers (actual vs target), and last actual visit score when available. Ranked most-at-risk first. Transparent early-warning estimate, not a predicted percentage; Cleanliness is an acknowledged data gap.',
   ]},
