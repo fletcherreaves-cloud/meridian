@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.521';
+const MERIDIAN_VERSION    = '4.522';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.522', date:'2026-07-24', changes:[
+    'Fix (systematic): the "vs LY" comparison was showing almost every store down ~26–33% — inaccurate. The shared pipeline summed the full current 4-week window for this year but last year only over whatever days happened to be in the data, so any gap in last-year coverage looked like a real ~30% decline. It now uses a matched-day comparison: a day only counts when BOTH this year and last year have real sales for it, so the two sides always span the identical calendar days (apples to apples). This corrects the Org Summary district vs-LY AND every per-store vs-LY at once. Where there genuinely isn\'t comparable last-year data, it now honestly shows "unavailable" instead of a false decline.',
+  ]},
   {version:'4.521', date:'2026-07-24', changes:[
     'Visit Readiness — new "📄 Coaching report" button on each expanded store: prints (or saves to PDF) a clean one-pager you can hand or send to that store. It shows the readiness score + band, the plain-language "Why", a ranked "Recommended focus" (the specific gaps to close, biggest-impact first), the score breakdown by area, a full metric-vs-target table, and the last actual visit — in the app\'s workbook style.',
   ]},

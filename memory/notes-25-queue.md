@@ -30,10 +30,14 @@ probably related and easy to complete."
 
 ## 4. Org Summary — key metrics + ⚠️ systematic vs-LY bug  🔴 IMPORTANT
 - Add high-level, high-impact metrics: **FOB, Digital % of Sales**, etc. (suggestions welcome).
-- ⚠️ **vs-LY calc looks WRONG** — showing everyone **26–33% down**, which is not accurate.
-  - "Evaluate how we derive this number, compare apples-to-apples, **fix it systematically**."
-  - Owner notes this is **seen in other areas too** → likely a shared derivation (matched-day coverage,
-    or product-sales-vs-net-sales unit mismatch, or LY window). HIGH trust impact. Investigate the shared path.
+- ✅ **vs-LY calc FIXED (v4.522)** — was showing everyone **26–33% down**. Root cause: the shared
+  `buildStore` pipeline (`src/engine/pipeline.js`) summed the full current 28-day window for `pSales`
+  but `pLY` only over whatever last-year days existed in the data → partial LY coverage read as a
+  uniform ~30% decline. Fixed with **matched-day** (a day counts on both sides only when it has real
+  sales this year AND a comparable LY value). One shared fix → corrects Org Summary + every per-store
+  vs-LY (analytics.js, coaching.js, store-dash.js, store-analytics.js all read the same pSales/pLY).
+  Remaining nicety: pipeline reads manual `laborRows` only — could also draw LY from the DAR
+  `qsrActSummaryRows.lySales` so cloud-only devices show YoY without a manual upload (follow-up).
 
 ## 5. Store Scorecard → rename "Rankings" + add groups  🟢 QUICK-ISH
 - Relabel **Store Scorecard → Rankings**.
