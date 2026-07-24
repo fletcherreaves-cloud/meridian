@@ -5,7 +5,7 @@
 // coaches the right stores before the (mostly unannounced) visit. Transparent: every
 // score shows its driving metrics (actual vs the store's own target).
 import * as React from 'react';
-import { computeVisitReadiness } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -90,6 +90,59 @@ function CalibrationCard({ cal }) {
           : 'Estimate is currently inverted vs actuals — investigate before trusting it.')));
 }
 
+// CFV / graded-visit statistic tracker (Notes 25 #2): actual outcomes broken down by
+// known variables (day-of-week, daypart, weekpart, channel) + per-store cadence.
+function VisitPatterns({ ds }) {
+  const { useMemo, useState } = React;
+  const [type, setType] = useState('all');
+  const [open, setOpen] = useState(false);
+  const gv = ds?.gradedVisits || ds?.graded_visits || [];
+  const a = useMemo(() => analyzeGradedVisits(gv, { type }), [gv, type]);
+  if (!gv.length) return null;
+  const pr = v => v == null ? '—' : Math.round(v * 100) + '%';
+  const prCol = v => v == null ? '#6b7280' : v >= 0.85 ? '#10b981' : v >= 0.6 ? '#f59e0b' : '#ef4444';
+  const bar = (v, col) => h('div', { style: { width: 46, height: 5, borderRadius: 3, background: 'var(--bdr)', display: 'inline-block', verticalAlign: 'middle' } },
+    h('div', { style: { width: (v == null ? 0 : Math.max(2, v * 100)) + '%', height: '100%', background: col, borderRadius: 3 } }));
+  // A labeled breakdown block: rows of {key, n, passRate, avgScore}.
+  const block = (title, rows) => rows.length ? h('div', { style: { flex: '1 1 220px', minWidth: 200 } },
+    h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, title),
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
+      ...rows.map(r => h('div', { key: r.key, style: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5 } },
+        h('span', { style: { flex: 1, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.key),
+        h('span', { style: { color: 'var(--text3)', width: 30, textAlign: 'right', fontFamily: 'var(--mono)' } }, 'n' + r.n),
+        bar(r.passRate, prCol(r.passRate)),
+        h('span', { style: { fontFamily: 'var(--mono)', color: prCol(r.passRate), width: 34, textAlign: 'right' } }, pr(r.passRate)),
+        h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 34, textAlign: 'right' } }, r.avgScore == null ? '—' : r.avgScore))))) : null;
+  return h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, marginTop: 14, overflow: 'hidden' } },
+    h('div', { onClick: () => setOpen(o => !o), style: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', background: 'var(--surf2)' } },
+      h('span', { style: { fontSize: 13 } }, '📊'),
+      h('div', { style: { flex: 1 } },
+        h('div', { style: { fontSize: 12, fontWeight: 700 } }, 'Visit Patterns',
+          h('span', { style: { fontSize: 10, color: 'var(--text3)', fontWeight: 500, marginLeft: 6 } }, a.overall.n + ' actual visits · ' + pr(a.overall.passRate) + ' pass' + (a.overall.avgScore != null ? ' · avg ' + a.overall.avgScore : ''))),
+        h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, 'Actual CFV/RGR outcomes by day-of-week, daypart, channel + per-store cadence')),
+      h('span', { style: { color: 'var(--text3)', fontSize: 11 } }, open ? '▲' : '▼')),
+    open && h('div', { style: { padding: '10px 12px' } },
+      // Type filter
+      h('div', { style: { display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' } },
+        ...['all', ...a.types].map(t => h('button', { key: t, onClick: () => setType(t),
+          style: { padding: '2px 9px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer',
+            border: '1px solid ' + (type === t ? 'var(--amber)' : 'var(--bdr)'),
+            background: type === t ? 'rgba(245,188,0,.14)' : 'var(--surf)', color: type === t ? 'var(--amber)' : 'var(--text3)' } },
+          t === 'all' ? 'All types' : t))),
+      h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 8, fontFamily: 'var(--mono)' } }, 'columns: n · pass-rate · avg-score'),
+      h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18 } },
+        block('Day of week', a.dow), block('Daypart', a.daypart), block('Weekpart', a.weekpart), block('Channel', a.channel)),
+      a.freq.length ? h('div', { style: { marginTop: 14 } },
+        h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Frequency by store (visits · avg days between · days since last · pass)'),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
+          ...a.freq.map(f => h('div', { key: f.store, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 } },
+            h('span', { style: { flex: 1, color: 'var(--text2)' } }, sName(f.store)),
+            h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 24, textAlign: 'right' } }, f.n),
+            h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 42, textAlign: 'right' } }, f.avgGapDays == null ? '—' : f.avgGapDays + 'd'),
+            h('span', { style: { fontFamily: 'var(--mono)', color: f.daysSinceLast != null && f.daysSinceLast > 60 ? '#f59e0b' : 'var(--text3)', width: 42, textAlign: 'right' } }, f.daysSinceLast == null ? '—' : f.daysSinceLast + 'd'),
+            h('span', { style: { fontFamily: 'var(--mono)', color: prCol(f.passRate), width: 40, textAlign: 'right' } }, pr(f.passRate)))))) : null));
+}
+
 export function VisitReadinessPanel({ ds, onClose }) {
   const { useMemo, useState } = React;
   const res = useMemo(() => computeVisitReadiness(ds), [ds]);
@@ -133,6 +186,8 @@ export function VisitReadinessPanel({ ds, onClose }) {
 
           h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
             res.stores.map(s => h(StoreRow, { key: s.loc, s, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
+
+          h(VisitPatterns, { ds }),
 
           h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6, marginTop: 8 } },
             '⚙ ', res.gapNote, ' Scores are a directional early-warning from leading indicators, not a predicted visit percentage. Validate against actual CFV/RGR outcomes as they accumulate (shown per store when available).')))));

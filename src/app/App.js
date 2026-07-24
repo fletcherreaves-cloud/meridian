@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.519';
+const MERIDIAN_VERSION    = '4.520';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.520', date:'2026-07-24', changes:[
+    'Visit Readiness — new "Visit Patterns" section (bottom of the panel): a statistic tracker over your ACTUAL graded visits broken down by the known variables — day of week, daypart, weekpart, and channel (each showing count, pass-rate, and average score) — plus a per-store frequency table (how many visits, average days between them, days since the last, and pass rate). Filter by CFV / RGR / all. Surfaces patterns like "Friday lunch visits underperform" or "this store hasn\'t been visited in 90 days."',
+  ]},
   {version:'4.519', date:'2026-07-24', changes:[
     'Visit Readiness — explainability & trust: expanding a store now shows a plain-language "Why" line that names the specific gaps driving its score (e.g. "At risk — the biggest gaps are OEPE at 210s vs 165s target and SMG accuracy at 92% vs 95%"). New "Model check" card at the top validates the estimate against your ACTUAL graded-visit scores — a rank-correlation + direction-match hit-rate across the stores that have had a recent CFV/RGR/EcoSure visit — so you can see whether stores rated lower really do score lower in real life (and it says plainly when there aren\'t enough visits yet to trust it).',
   ]},

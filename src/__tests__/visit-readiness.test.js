@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeVisitReadiness, READINESS_WEIGHTS } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 // Two real loc IDs that exist in DEFAULT_TARGETS.
@@ -128,6 +128,34 @@ describe('visit-readiness', () => {
     const res = computeVisitReadiness(ds);
     expect(res.calibration.n).toBe(1);
     expect(res.calibration.r).toBeNull();
+  });
+
+  it('analyzeGradedVisits: buckets outcomes by known variables + per-store frequency', () => {
+    const visits = [
+      { store: '3708', dateISO: '2026-06-05', reportType: 'CFV', score: 92, pass: true,  daypart: 'Breakfast', weekpart: 'Weekday', channel: 'Drive Thru' }, // Fri
+      { store: '3708', dateISO: '2026-06-19', reportType: 'CFV', score: 70, pass: false, daypart: 'Lunch',     weekpart: 'Weekday', channel: 'In-Store' },  // Fri
+      { store: '5183', dateISO: '2026-06-06', reportType: 'CFV', score: 88, pass: true,  daypart: 'Breakfast', weekpart: 'Weekend', channel: 'Drive Thru' }, // Sat
+      { store: '5183', dateISO: '2026-06-13', reportType: 'RGR', score: 95, pass: true,  daypart: 'Dinner',    weekpart: 'Weekday', channel: 'In-Store' },  // Sat
+    ];
+    const all = analyzeGradedVisits(visits);
+    expect(all.overall.n).toBe(4);
+    expect(all.overall.passRate).toBeCloseTo(0.75, 2);
+    expect(all.channel.find(c => c.key === 'Drive Thru').n).toBe(2);
+    expect(all.byType.find(t => t.key === 'CFV').n).toBe(3);
+    // Per-store cadence: 3708 has two visits 14 days apart.
+    const s = all.freq.find(f => f.store === '3708');
+    expect(s.n).toBe(2);
+    expect(s.avgGapDays).toBe(14);
+    // Type filter narrows to CFV only.
+    const cfv = analyzeGradedVisits(visits, { type: 'CFV' });
+    expect(cfv.overall.n).toBe(3);
+  });
+
+  it('analyzeGradedVisits: empty input is safe', () => {
+    const r = analyzeGradedVisits([]);
+    expect(r.overall.n).toBe(0);
+    expect(r.dow).toEqual([]);
+    expect(r.freq).toEqual([]);
   });
 
   it('calibration: positive rank correlation when predictions track actual visit scores', () => {

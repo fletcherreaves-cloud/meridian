@@ -206,6 +206,61 @@ function subScore(ds, specs, loc, cache) {
   return { score: +(sum / n * 100).toFixed(1), drivers, n };
 }
 
+// ── CFV / graded-visit statistic tracker (Notes 25 #2) ────────────────────────
+// Breaks actual graded-visit outcomes down by "known variables" — day-of-week,
+// daypart, weekpart, channel, report type — plus per-store frequency/cadence, so
+// patterns in when/where visits go well or poorly surface (e.g. Fridays underperform,
+// or breakfast DT is the weak channel). Pure over ds.gradedVisits; no side effects.
+const _DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+export function analyzeGradedVisits(gradedVisits, opts = {}) {
+  const type = opts.type || 'all';
+  const visits = (gradedVisits || []).filter(v =>
+    v && v.score != null && (type === 'all' || (v.reportType || 'CFV') === type));
+  const n = visits.length;
+
+  // Generic bucket: group by a key function → {key, n, passRate, avgScore}, biggest first.
+  const byVar = (keyFn) => {
+    const m = {};
+    for (const v of visits) {
+      const k = keyFn(v);
+      if (k == null || k === '') continue;
+      const o = (m[k] || (m[k] = { n: 0, pass: 0, scoreSum: 0 }));
+      o.n++; if (v.pass) o.pass++; o.scoreSum += v.score;
+    }
+    return Object.entries(m)
+      .map(([key, o]) => ({ key, n: o.n, passRate: o.n ? o.pass / o.n : null, avgScore: o.n ? +(o.scoreSum / o.n).toFixed(1) : null }))
+      .sort((a, b) => b.n - a.n);
+  };
+  // DOW keeps calendar order, not count order.
+  const dowRaw = byVar(v => { const d = new Date(v.dateISO || v.date); return isNaN(+d) ? null : _DOW[d.getDay()]; });
+  const dow = _DOW.map(d => dowRaw.find(x => x.key === d)).filter(Boolean);
+
+  // Per-store frequency / cadence.
+  const byStore = {};
+  for (const v of visits) { const s = _normLoc(v.store || v.loc); if (!s) continue; (byStore[s] || (byStore[s] = [])).push(v); }
+  const freq = Object.entries(byStore).map(([store, vs]) => {
+    const days = vs.map(v => _ms(v.dateISO || v.date)).filter(x => !isNaN(x)).sort((a, b) => a - b);
+    const gaps = []; for (let i = 1; i < days.length; i++) gaps.push((days[i] - days[i - 1]) / 864e5);
+    return {
+      store, n: vs.length,
+      avgGapDays: gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
+      daysSinceLast: days.length ? Math.round((Date.now() - days[days.length - 1]) / 864e5) : null,
+      passRate: vs.length ? vs.filter(v => v.pass).length / vs.length : null,
+    };
+  }).sort((a, b) => b.n - a.n);
+
+  return {
+    overall: { n, passRate: n ? visits.filter(v => v.pass).length / n : null, avgScore: n ? +(visits.reduce((a, v) => a + v.score, 0) / n).toFixed(1) : null },
+    dow,
+    daypart: byVar(v => v.daypart),
+    weekpart: byVar(v => v.weekpart),
+    channel: byVar(v => v.channel),
+    byType: byVar(v => v.reportType || 'CFV'),
+    freq,
+    types: [...new Set((gradedVisits || []).map(v => v && (v.reportType || 'CFV')).filter(Boolean))],
+  };
+}
+
 // ── Public: per-store + district readiness ────────────────────────────────────
 export function computeVisitReadiness(ds, opts = {}) {
   const weights = opts.weights || READINESS_WEIGHTS;
