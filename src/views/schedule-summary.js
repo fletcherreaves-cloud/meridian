@@ -6,7 +6,7 @@
 // derived from the lifelenz_schedule data Meridian already syncs daily. Verified to
 // reconcile to the LifeLenz screen (src/__tests__/schedule-summary.test.js).
 import * as React from 'react';
-import { computeScheduleSummary } from '../engine/schedule-summary.js';
+import { computeScheduleSummary, FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX } from '../engine/schedule-summary.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -19,6 +19,10 @@ const pct = v => v == null ? '—' : ((Math.abs(v) <= 1.5 ? v * 100 : v)).toFixe
 const fracPct = v => v == null ? '—' : (v * 100).toFixed(2) + '%'; // always a fraction (hours ratio)
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const diffColor = d => d == null ? 'var(--text3)' : d > 0.5 ? '#f59e0b' : d < -0.5 ? '#60a5fa' : '#10b981';
+// Fixed/Floor standard flags: each segment green in [10%,15%], amber outside; combined
+// green ≤25%, red if it breaches the 25% cap. (Fractions in, per engine.)
+const segColor = v => v == null ? 'var(--text3)' : (v >= FIXED_FLOOR_SEG_MIN && v <= FIXED_FLOOR_SEG_MAX) ? '#10b981' : '#f59e0b';
+const combColor = v => v == null ? 'var(--text3)' : (v > FIXED_FLOOR_COMBINED_MAX) ? '#ef4444' : '#10b981';
 
 function StoreRow({ s, expanded, onToggle }) {
   const td = (c, col, mono) => h('td', { style: { textAlign: 'right', padding: '6px 8px', fontSize: 11, fontFamily: mono ? 'var(--mono)' : 'inherit', color: col || 'var(--text)', whiteSpace: 'nowrap' } }, c);
@@ -32,8 +36,10 @@ function StoreRow({ s, expanded, onToggle }) {
       td(hm(s.fcstHrs), 'var(--text3)', true),
       td((s.hrsDiff >= 0 ? '+' : '') + hm(s.hrsDiff), diffColor(s.hrsDiff), true),
       td(s.tpmh == null ? '—' : s.tpmh.toFixed(2), null, true),
-      td(fracPct(s.fixedLaborPct), 'var(--text3)', true)),
-    expanded && h('tr', null, h('td', { colSpan: 9, style: { padding: '0 8px 10px 26px', background: 'rgba(255,255,255,.02)' } },
+      td(fracPct(s.fixedLaborPct), segColor(s.fixedLaborPct), true),
+      td(fracPct(s.floorLaborPct), segColor(s.floorLaborPct), true),
+      td(fracPct(s.combinedFixedFloorPct), combColor(s.combinedFixedFloorPct), true)),
+    expanded && h('tr', null, h('td', { colSpan: 11, style: { padding: '0 8px 10px 26px', background: 'rgba(255,255,255,.02)' } },
       h('table', { style: { width: '100%', borderCollapse: 'collapse', marginTop: 4 } },
         h('thead', null, h('tr', { style: { color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase' } },
           ...['Day', 'Sched', 'Forecast', 'Over/Under', 'Labor %', 'Fcst Sales'].map((t, i) => h('th', { key: i, style: { textAlign: i ? 'right' : 'left', padding: '3px 8px', fontWeight: 700 } }, t)))),
@@ -85,17 +91,19 @@ export function ScheduleSummaryPanel({ ds, onClose }) {
             stat('GC Forecast', (d.fcstGC || 0).toLocaleString()),
             stat('Sched vs Fcst', (d.hrsDiff >= 0 ? '+' : '') + hm(d.hrsDiff), diffColor(d.hrsDiff)),
             stat('Schd TPMH', d.tpmh == null ? '—' : d.tpmh.toFixed(2)),
-            stat('Fixed Lbr % (hrs)', fracPct(d.fixedLaborPct))),
+            stat('Fixed % (hrs)', fracPct(d.fixedLaborPct), segColor(d.fixedLaborPct)),
+            stat('Floor % (hrs)', fracPct(d.floorLaborPct), segColor(d.floorLaborPct)),
+            stat('Fixed+Floor %', fracPct(d.combinedFixedFloorPct), combColor(d.combinedFixedFloorPct))),
 
           h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
             h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 620 } },
               h('thead', null, h('tr', null,
                 h('th', { style: { textAlign: 'left', padding: '6px 8px', fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', position: 'sticky', top: 0, background: 'var(--surf2)' } }, 'Store'),
-                th('Sales Fcst'), th('GC Fcst'), th('Labor %'), th('Sched'), th('Forecast'), th('Over/Under'), th('TPMH'), th('Fixed %'))),
+                th('Sales Fcst'), th('GC Fcst'), th('Labor %'), th('Sched'), th('Forecast'), th('Over/Under'), th('TPMH'), th('Fixed %'), th('Floor %'), th('F+F %'))),
               h('tbody', null, wk.stores.map(s => h(StoreRow, { key: s.loc, s, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))))),
 
           h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6, marginTop: 8 } },
-            '⚙ Over/Under = Scheduled − Forecast hours (blue = under, amber = over). Labor % is dollar-weighted across the week. Fixed % is scheduled fixed hours ÷ total scheduled hours. Click a store for its daily grid. The per-job hours/cost breakdown from LifeLenz is not yet pulled.')))));
+            '⚙ Over/Under = Scheduled − Forecast hours (blue = under, amber = over). Labor % is dollar-weighted across the week. Fixed % and Floor % are each that segment\'s scheduled hours ÷ total scheduled hours — target 10–15% each (green in-band, amber outside); F+F % is the combined Fixed+Floor share and must stay ≤25% (green ok, red over cap). Click a store for its daily grid. The per-job hours/cost breakdown from LifeLenz is not yet pulled.')))));
 }
 
 const navBtn = { width: 26, height: 24, borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 };

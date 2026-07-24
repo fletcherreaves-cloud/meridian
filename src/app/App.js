@@ -85,9 +85,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.505';
+const MERIDIAN_VERSION    = '4.506';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.506', date:'2026-07-24', changes:[
+    'Weekly Schedule Summary now shows Fixed Hours and Floor Hours as SEPARATE segments — Fixed %, Floor %, and a combined Fixed+Floor % — instead of one lumped Fixed Labor %. Each is scheduled hours in that segment ÷ total scheduled hours. Color flags apply the standard: each segment should run 10–15% (green in-band, amber outside), and the combined Fixed+Floor must stay at or under 25% of total scheduled hours (green ok, red over the cap). Applies at both the store and district level, rolled up as a true ratio of aggregate hours.',
+  ]},
   {version:'4.505', date:'2026-07-24', changes:[
     'Fix: Weekly Schedule Summary labor % was reading far too high (e.g. a store showing 72% instead of ~24%). The daily labor % is an ACTUAL figure — null on future days and temporarily enormous on the current, partial day (labor has accrued but the day’s sales haven’t landed yet, so a mid-day read can be 400%+). That single partial day was dominating the weekly dollar-weighted average. Now the weekly labor % is dollar-weighted over the completed days only; future/partial/garbage days are dropped and show blank in the daily grid.',
   ]},

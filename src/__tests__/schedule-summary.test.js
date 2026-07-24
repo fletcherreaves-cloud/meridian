@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { computeScheduleSummary, weekStartOf, WEEK_START_DOW } from '../engine/schedule-summary.js';
+import {
+  computeScheduleSummary, weekStartOf, WEEK_START_DOW,
+  FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX,
+} from '../engine/schedule-summary.js';
 
 // Real store week from the LifeLenz screenshot — DeFuniak Springs (0006838),
 // week of Wed Jul 22 → Tue Jul 28 2026. Per-day scheduled/forecast HOURS (decimal),
@@ -61,6 +64,63 @@ describe('schedule-summary — labor% ignores partial-day / garbage / null days'
   it('the partial (409.74%) and future (null) days show blank in the daily grid', () => {
     expect(s.days.find(d => d.date.getDate() === 24).laborPct).toBe(null);
     expect(s.days.find(d => d.date.getDate() === 25).laborPct).toBe(null);
+  });
+});
+
+describe('schedule-summary — Fixed / Floor viewed separately vs the standard', () => {
+  // One store, one day. Total scheduled = VLH 76 + Fixed 12 + Floor 12 = 100h.
+  //   Fixed % = 12/100 = 12% (in the 10–15% band)
+  //   Floor % = 12/100 = 12% (in band)
+  //   Combined = 24% (≤ 25% cap)
+  const rows = [
+    { loc: '0001', date: new Date('2026-07-22T12:00:00'), schVLH: 76, schFixHrs: 12, schFloor: 12,
+      projVLH: 76, fixGuideHrs: 12, projFloor: 12, fcstSales: 10000, laborPct: 24, fcstTCs: 1000 },
+  ];
+  const s = computeScheduleSummary(rows).weeks[0].stores[0];
+
+  it('constants define the 10–15% segment band and 25% combined cap', () => {
+    expect(FIXED_FLOOR_SEG_MIN).toBeCloseTo(0.10, 6);
+    expect(FIXED_FLOOR_SEG_MAX).toBeCloseTo(0.15, 6);
+    expect(FIXED_FLOOR_COMBINED_MAX).toBeCloseTo(0.25, 6);
+  });
+  it('total scheduled hours include VLH + Fixed + Floor', () => {
+    expect(s.schedHrs).toBeCloseTo(100, 6);
+    expect(s.fixHrs).toBeCloseTo(12, 6);
+    expect(s.floorHrs).toBeCloseTo(12, 6);
+  });
+  it('Fixed % and Floor % are each that segment ÷ total scheduled hours (kept separate)', () => {
+    expect(s.fixedLaborPct).toBeCloseTo(0.12, 6);
+    expect(s.floorLaborPct).toBeCloseTo(0.12, 6);
+  });
+  it('Combined Fixed+Floor % is their sum over total scheduled hours', () => {
+    expect(s.combinedFixedFloorPct).toBeCloseTo(0.24, 6);
+    expect(s.combinedFixedFloorPct).toBeLessThanOrEqual(FIXED_FLOOR_COMBINED_MAX);
+  });
+
+  it('breaches the 25% combined cap when Fixed+Floor run heavy', () => {
+    const heavy = [
+      { loc: '0002', date: new Date('2026-07-22T12:00:00'), schVLH: 60, schFixHrs: 22, schFloor: 18,
+        projVLH: 60, fixGuideHrs: 22, projFloor: 18, fcstSales: 10000, laborPct: 24, fcstTCs: 1000 },
+    ];
+    const h2 = computeScheduleSummary(heavy).weeks[0].stores[0];
+    expect(h2.fixedLaborPct).toBeCloseTo(0.22, 6);  // > 15% band → amber in UI
+    expect(h2.floorLaborPct).toBeCloseTo(0.18, 6);  // > 15% band → amber in UI
+    expect(h2.combinedFixedFloorPct).toBeCloseTo(0.40, 6);
+    expect(h2.combinedFixedFloorPct).toBeGreaterThan(FIXED_FLOOR_COMBINED_MAX); // red in UI
+  });
+
+  it('district rolls Fixed/Floor as ratio-of-aggregates (not an average of store %s)', () => {
+    const two = [
+      ...rows,
+      { loc: '0003', date: new Date('2026-07-22T12:00:00'), schVLH: 180, schFixHrs: 8, schFloor: 12,
+        projVLH: 180, fixGuideHrs: 8, projFloor: 12, fcstSales: 20000, laborPct: 24, fcstTCs: 2000 },
+    ];
+    const dist = computeScheduleSummary(two).weeks[0].district;
+    // Σ sched = 100 + 200 = 300; Σ fixed = 12 + 8 = 20; Σ floor = 12 + 12 = 24.
+    expect(dist.schedHrs).toBeCloseTo(300, 6);
+    expect(dist.fixedLaborPct).toBeCloseTo(20 / 300, 6);
+    expect(dist.floorLaborPct).toBeCloseTo(24 / 300, 6);
+    expect(dist.combinedFixedFloorPct).toBeCloseTo(44 / 300, 6);
   });
 });
 

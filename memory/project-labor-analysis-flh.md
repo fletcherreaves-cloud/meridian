@@ -199,3 +199,24 @@ breakdown** (Beverage Specialist / Drive Thru / Grill / Window / Floor / …, wi
 hours, $cost). Not in the `labor_analysis_actuals_report` CSV — it's a separate LifeLenz
 request. Get the URL + response JSON from the schedule-week page's Network tab, then wire
 it into the pull + a new table/column.
+
+### Fixed / Floor standard — viewed SEPARATELY (owner-confirmed 2026-07-24, v4.506)
+
+Owner: *"Floor Hours and Fixed Hours viewed separately. It did not always used to be
+that way. Fixed Hours and Floor Hours should each be scheduled between 10%–15% for each
+segment, BUT no more than 25% of total hours scheduled."*
+
+- **Denominator = total scheduled hours** = `Σ(schVLH + schFixHrs + schFloor)` — the same
+  total already used for Scheduled Hrs and Fixed %.
+- **Fixed %** = `Σ schFixHrs / total sched` → target band **10–15%**.
+- **Floor %** = `Σ schFloor / total sched` → target band **10–15%**.
+- **Combined (Fixed + Floor) %** = `Σ(schFixHrs+schFloor) / total sched` → hard cap
+  **≤ 25%**.
+- Constants live in `src/engine/schedule-summary.js`: `FIXED_FLOOR_SEG_MIN=0.10`,
+  `FIXED_FLOOR_SEG_MAX=0.15`, `FIXED_FLOOR_COMBINED_MAX=0.25`. Both store rows and the
+  district roll up as **ratio-of-aggregates** (Σseg / Σsched), never a mean of store %s.
+- **Panel** (`src/views/schedule-summary.js`): three columns/tiles — **Fixed %**, **Floor %**,
+  **F+F %**. Each segment is **green in-band (10–15%), amber outside**; combined is
+  **green ≤25%, red over the cap**. Replaces the single "Fixed Lbr % (hrs)" tile.
+- The ~0.17pp gap once seen vs LifeLenz's own Fixed Lbr% (our 12.44% vs their 12.61% on
+  DeFuniak) is rounding at the display layer — the hours-based math is correct.
