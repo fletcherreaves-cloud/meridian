@@ -6366,7 +6366,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // every store to MCDOK and left the FL pill empty). OK: = Oklahoma stores,
   // FL: = Florida (panhandle) stores — matching the pill labels.
   const stateOf = loc => (INV_ORG_COORDS[String(loc)]||{}).state;
-  const orgOf = loc => stateOf(loc)==='FL' ? 'MCDOK' : 'Emerald Arches';
+  // Canonical org mapping (matches getStoreOrg in constants.js): MCDOK = Oklahoma,
+  // Emerald Arches = Florida panhandle. This was previously inverted, which made the
+  // projection table tag every FL store "OK" and every OK store "FL".
+  const orgOf = loc => stateOf(loc)==='FL' ? 'Emerald Arches' : 'MCDOK';
   const okLocs = allLocs.filter(l=>stateOf(l)==='OK');
   const flLocs = allLocs.filter(l=>stateOf(l)==='FL');
 
