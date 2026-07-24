@@ -46,6 +46,7 @@ export const METRIC_CATEGORIES = [
       { key: 'empMeal',     label: 'Emp Meal %',                source: 'fobRows',    field: 'empMeal',        granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
       { key: 'statVar',     label: 'Stat Variance %',           source: 'fobRows',    field: 'statVar',        granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
       { key: 'unexplained', label: 'Unexplained Diff %',        source: 'fobRows',    field: 'unexplained',    granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
+      { key: 'discCoupon',  label: 'Disc Coupon %',             source: 'fobRows',    field: 'discCoupon',     granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
       { key: 'pLFoodPct',   label: 'P&L Food Cost %',          source: 'fobRows',    field: 'pLFoodPct',      granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
       { key: 'pLPaperPct',  label: 'P&L Paper Cost %',         source: 'fobRows',    field: 'pLPaperPct',     granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
     ],
@@ -54,11 +55,25 @@ export const METRIC_CATEGORIES = [
     key: 'controls', label: 'Controls', color: '#fb923c',
     metrics: [
       { key: 'discPct',     label: 'Discount %',                source: 'ctrlRows',   field: 'discPct',        granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'discCnt',     label: 'Discount (count)',           source: 'ctrlRows',   field: 'discCnt',        granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'discAmt',     label: 'Discount ($)',               source: 'ctrlRows',   field: 'discAmt',        granularity: ['daily','monthly'], better: 'lower',  unit: '$',    aggregate: 'sum' },
+      { key: 'promoPct',    label: 'Promo %',                   source: 'ctrlRows',   field: 'promoPct',       granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'promoCnt',    label: 'Promo (count)',              source: 'ctrlRows',   field: 'promoCnt',       granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'promoAmt',    label: 'Promo ($)',                  source: 'ctrlRows',   field: 'promoAmt',       granularity: ['daily','monthly'], better: 'lower',  unit: '$',    aggregate: 'sum' },
       { key: 'cashOSPct',   label: 'Cash Over/Short %',         source: 'ctrlRows',   field: 'cashOSPct',      granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'cashOSAmt',   label: 'Cash Over/Short ($)',       source: 'ctrlRows',   field: 'cashOSAmt',      granularity: ['daily','monthly'], better: 'lower',  unit: '$',    aggregate: 'sum' },
       { key: 'drawerOpens', label: 'Drawer Opens (count)',       source: 'ctrlRows',   field: 'drawerOpens',    granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'posOverCnt',  label: 'POS Override (count)',       source: 'ctrlRows',   field: 'posOverCnt',     granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'posOverAmt',  label: 'POS Override ($)',           source: 'ctrlRows',   field: 'posOverAmt',     granularity: ['daily','monthly'], better: 'lower',  unit: '$',    aggregate: 'sum' },
       { key: 'manualRefAmt',label: 'Manual Refund ($)',          source: 'ctrlRows',   field: 'manualRefAmt',   granularity: ['daily','monthly'], better: 'lower',  unit: '$',    aggregate: 'sum' },
-      { key: 'posOverCnt',  label: 'POS Override Count',         source: 'ctrlRows',   field: 'posOverCnt',     granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
-      { key: 'tRedBPct',    label: 'Red B %',                   source: 'ctrlRows',   field: 'tRedBPct',       granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'cashRefCnt',  label: 'Cash Refund (count)',        source: 'ctrlRows',   field: 'cashRefCnt',     granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'cashRefAmt',  label: 'Cash Refund ($)',            source: 'ctrlRows',   field: 'cashRefAmt',     granularity: ['daily','monthly'], better: 'lower',  unit: '$',    aggregate: 'sum' },
+      { key: 'cashlessRefCnt',label:'Cashless Refund (count)',   source: 'ctrlRows',   field: 'cashlessRefCnt', granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'cashlessRefAmt',label:'Cashless Refund ($)',       source: 'ctrlRows',   field: 'cashlessRefAmt', granularity: ['daily','monthly'], better: 'lower',  unit: '$',    aggregate: 'sum' },
+      { key: 'tRedBPct',    label: 'T-Reds Before Total %',     source: 'ctrlRows',   field: 'tRedBPct',       granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'tRedBCnt',    label: 'T-Reds Before Total (count)',source: 'ctrlRows',  field: 'tRedBCnt',       granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'tRedAPct',    label: 'T-Reds After Total %',      source: 'ctrlRows',   field: 'tRedAPct',       granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'tRedACnt',    label: 'T-Reds After Total (count)', source: 'ctrlRows',   field: 'tRedACnt',       granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
     ],
   },
   {
@@ -70,6 +85,64 @@ export const METRIC_CATEGORIES = [
       { key: 'accuracyB2B', label: 'Accuracy B2B %',           source: 'smgFullscale', field: 'accuracyB2B',  granularity: ['monthly'],        better: 'higher', unit: 'pct' },
       { key: 'dtProblem',   label: 'DT Problem %',             source: 'smgFullscale', field: 'dtProblem',    granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
       { key: 'overallProblem',label:'Overall Problem %',        source: 'smgFullscale', field: 'overallProblem',granularity: ['monthly'],       better: 'lower',  unit: 'pct' },
+    ],
+  },
+  // ── Cloud / auto-emailed streams ────────────────────────────────────────────
+  // These read from the daily-synced Supabase tables (fresh on every device),
+  // not manual uploads. Prefixed keys keep them distinct from the manual metrics
+  // above so existing saved signals are untouched. See memory/project-data-redundancy.md.
+  {
+    key: 'glimpse', label: 'Daily Glimpse (Cloud)', color: '#38bdf8',
+    metrics: [
+      { key: 'glSales',      label: 'Net Sales $ · cloud',       source: 'glimpseRows', field: 'allNetSales',    granularity: ['daily','monthly'], better: 'higher', unit: '$' },
+      { key: 'glGC',         label: 'Guest Count · cloud',       source: 'glimpseRows', field: 'gc',             granularity: ['daily','monthly'], better: 'higher', unit: 'guests' },
+      { key: 'glLaborPct',   label: 'Labor % · cloud',           source: 'glimpseRows', field: 'laborPct',       granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'glPromoPct',   label: 'Promo % · cloud',           source: 'glimpseRows', field: 'promoPct',       granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'glPromoAmt',   label: 'Promo $ · cloud',           source: 'glimpseRows', field: 'promoAmt',       granularity: ['daily','monthly'], better: 'lower',  unit: '$', aggregate: 'sum' },
+      { key: 'glPosOverCnt', label: 'POS Override count · cloud', source: 'glimpseRows', field: 'posOverCnt',     granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'glPosOverAmt', label: 'POS Override $ · cloud',    source: 'glimpseRows', field: 'posOverAmt',     granularity: ['daily','monthly'], better: 'lower',  unit: '$', aggregate: 'sum' },
+      { key: 'glCashOSPct',  label: 'Cash Over/Short % · cloud', source: 'glimpseRows', field: 'cashOSPct',      granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'glTRedVoid',   label: 'T-Red Voids (count) · cloud',source: 'glimpseRows', field: 'tRedVoidCnt',   granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'glTRedDel',    label: 'T-Red Deletes (count) · cloud',source: 'glimpseRows',field:'tRedDeletedCnt',granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'glOepe',       label: 'OEPE (sec) · cloud',        source: 'glimpseRows', field: 'oepe',           granularity: ['daily','monthly'], better: 'lower',  unit: 'sec' },
+      { key: 'glKvst',       label: 'KVS Time (sec) · cloud',    source: 'glimpseRows', field: 'kvst',           granularity: ['daily','monthly'], better: 'lower',  unit: 'sec' },
+      { key: 'glParkedPct',  label: 'DT Park Rate % · cloud',    source: 'glimpseRows', field: 'parkedPct',      granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'glDigitalPct', label: 'Digital % of Sales · cloud', source: 'glimpseRows', field: 'digitalPctSales',granularity: ['daily','monthly'], better: null,    unit: 'pct' },
+      { key: 'glAppPct',     label: 'App % of Sales · cloud',    source: 'glimpseRows', field: 'appPctSales',    granularity: ['daily','monthly'], better: null,     unit: 'pct' },
+    ],
+  },
+  {
+    key: 'cash', label: 'Cash Sheet (Cloud)', color: '#22d3ee',
+    metrics: [
+      { key: 'csCashRefCnt', label: 'Cash Refund (count) · cloud',source: 'cashRows',  field: 'cashRefCnt',     granularity: ['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'csCashRefAmt', label: 'Cash Refund $ · cloud',     source: 'cashRows',   field: 'cashRefAmt',     granularity: ['daily','monthly'], better: 'lower',  unit: '$', aggregate: 'sum' },
+      { key: 'csCashlessRefCnt',label:'Cashless Refund (count) · cloud',source:'cashRows',field:'cashlessRefCnt',granularity:['daily','monthly'], better: 'lower',  unit: 'count', aggregate: 'sum' },
+      { key: 'csCashlessRefAmt',label:'Cashless Refund $ · cloud',source:'cashRows',   field: 'cashlessRefAmt', granularity: ['daily','monthly'], better: 'lower',  unit: '$', aggregate: 'sum' },
+      { key: 'cs3poSales',   label: '3PO Sales $ · cloud',       source: 'cashRows',   field: 'total3poSales',  granularity: ['daily','monthly'], better: null,     unit: '$', aggregate: 'sum' },
+      { key: 'csCashOSPct',  label: 'Cash Over/Short % · cloud', source: 'cashRows',   field: 'cashOSPct',      granularity: ['daily','monthly'], better: 'lower',  unit: 'pct' },
+      { key: 'csPosOverAmt', label: 'POS Override $ · cloud',    source: 'cashRows',   field: 'posOverAmt',     granularity: ['daily','monthly'], better: 'lower',  unit: '$', aggregate: 'sum' },
+    ],
+  },
+  {
+    key: 'ledger', label: 'Sales Ledger (Cloud)', color: '#818cf8',
+    metrics: [
+      { key: 'slSales',      label: 'Net Sales $ · cloud',       source: 'salesLedgerRows', field: 'allNetSales', granularity: ['daily','monthly'], better: 'higher', unit: '$' },
+      { key: 'slSalesVsLY',  label: 'Sales vs LY % · cloud',     source: 'salesLedgerRows', field: 'salesVsLYPct',granularity: ['daily','monthly'], better: 'higher', unit: 'pct' },
+      { key: 'slDtPct',      label: 'DT % of Sales · cloud',     source: 'salesLedgerRows', field: 'dtPctTotal',  granularity: ['daily','monthly'], better: null,     unit: 'pct' },
+      { key: 'slDelivPct',   label: 'Delivery % of Sales · cloud',source:'salesLedgerRows', field: 'delivPctTotal',granularity: ['daily','monthly'], better: null,   unit: 'pct' },
+      { key: 'slMopPct',     label: 'MOP % of Sales · cloud',    source: 'salesLedgerRows', field: 'mopPctTotal', granularity: ['daily','monthly'], better: null,     unit: 'pct' },
+      { key: 'slKioskPct',   label: 'Kiosk % of Sales · cloud',  source: 'salesLedgerRows', field: 'kioskPctTotal',granularity: ['daily','monthly'], better: null,    unit: 'pct' },
+      { key: 'slFcPct',      label: 'Front Counter % · cloud',   source: 'salesLedgerRows', field: 'fcPctTotal',  granularity: ['daily','monthly'], better: null,     unit: 'pct' },
+    ],
+  },
+  {
+    key: 'daractivity', label: 'DAR Summary (Cloud)', color: '#2dd4bf',
+    metrics: [
+      { key: 'qaSales',      label: 'Product Sales $ · cloud',   source: 'qsrActSummaryRows', field: 'sales',    granularity: ['daily','monthly'], better: 'higher', unit: '$' },
+      { key: 'qaGC',         label: 'Guest Count · cloud',       source: 'qsrActSummaryRows', field: 'gc',       granularity: ['daily','monthly'], better: 'higher', unit: 'guests' },
+      { key: 'qaSalesVsLY',  label: 'Sales vs LY % · cloud',     source: 'qsrActSummaryRows', field: 'salesVsLYPct',granularity: ['daily','monthly'], better: 'higher', unit: 'pct' },
+      { key: 'qaActHrs',     label: 'Actual Labor Hrs · cloud',  source: 'qsrActSummaryRows', field: 'actHrs',   granularity: ['daily','monthly'], better: null,     unit: 'hrs', aggregate: 'sum' },
+      { key: 'qaNeedHrs',    label: 'Needed Labor Hrs · cloud',  source: 'qsrActSummaryRows', field: 'needHrs',  granularity: ['daily','monthly'], better: null,     unit: 'hrs', aggregate: 'sum' },
     ],
   },
 ];
@@ -291,3 +364,167 @@ export function getProjectionInfluence(customSig, def, currentXValue) {
   const delta = predictedY - my;
   return { signal: customSig, predictedY, delta, baselineY: my };
 }
+
+// ── Auto-correlation scanner ──────────────────────────────────────────────────
+// Cycles every metric PAIR across the loaded data, computes Pearson + Spearman,
+// and surfaces only pairs that clear an effect-size bar AND survive a
+// multiple-comparisons (Benjamini–Hochberg FDR) correction — because scanning
+// ~hundreds of pairs guarantees some will look "significant" by chance alone.
+// Framing is ALWAYS "move together," never causation.
+
+// Spearman rank correlation = Pearson on the rank-transformed values.
+// Catches monotone-but-nonlinear relationships and is robust to outliers.
+export function spearman(pairs) {
+  const n = pairs.length;
+  if (n < 5) return null;
+  const rankOf = (getter) => {
+    const arr = pairs.map((p, i) => ({ v: getter(p), i })).sort((a, b) => a.v - b.v);
+    const ranks = new Array(n);
+    let i = 0;
+    while (i < n) {
+      let j = i;
+      while (j + 1 < n && arr[j + 1].v === arr[i].v) j++;
+      const avg = (i + j) / 2 + 1; // 1-based average rank for ties
+      for (let k = i; k <= j; k++) ranks[arr[k].i] = avg;
+      i = j + 1;
+    }
+    return ranks;
+  };
+  const xr = rankOf(p => p.x);
+  const yr = rankOf(p => p.y);
+  return pearson(xr.map((x, i) => ({ x, y: yr[i] })));
+}
+
+// Standard-normal CDF via an Abramowitz–Stegun erf approximation.
+function _erf(x) {
+  const s = x < 0 ? -1 : 1; const ax = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * ax);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-ax * ax);
+  return s * y;
+}
+function _normCdf(z) { return 0.5 * (1 + _erf(z / Math.SQRT2)); }
+
+// Two-sided p-value for a Pearson r under H0: rho = 0.
+// t = r·√((n−2)/(1−r²)); approximated by the normal tail (accurate for n ≳ 30,
+// which is our scanner minimum). Small-sample monthly scans are directional only.
+export function pValueFromR(r, n) {
+  if (r == null || n == null || n < 4) return null;
+  const rr = Math.min(0.999999, Math.max(-0.999999, r));
+  const t = rr * Math.sqrt((n - 2) / (1 - rr * rr));
+  const p = 2 * (1 - _normCdf(Math.abs(t)));
+  return Math.max(0, Math.min(1, p));
+}
+
+// Benjamini–Hochberg FDR. Mutates each item: sets .qValue and .fdrSig (survives
+// FDR at `alpha`). Denominator = number of tests actually run (all pairs scored),
+// so the correction reflects the true search space, not just what we surface.
+export function benjaminiHochberg(items, alpha = 0.05) {
+  const withP = items.filter(it => it.p != null);
+  const m = withP.length;
+  if (!m) return items;
+  const sorted = [...withP].sort((a, b) => a.p - b.p);
+  let kMax = 0;
+  for (let i = 0; i < m; i++) if (sorted[i].p <= ((i + 1) / m) * alpha) kMax = i + 1;
+  const threshP = kMax > 0 ? sorted[kMax - 1].p : -1;
+  let minq = 1;
+  for (let i = m - 1; i >= 0; i--) {
+    const q = Math.min(1, sorted[i].p * m / (i + 1));
+    minq = Math.min(minq, q);
+    sorted[i].qValue = minq;
+  }
+  for (const it of withP) it.fdrSig = it.p <= threshP;
+  return items;
+}
+
+// scanAllPairs — the auto-scanner.
+// opts: { granularity:'daily'|'monthly', minN, minAbsR, scopeLoc, alpha }
+// Returns { granularity, minN, minAbsR, alpha, metricsUsed, tested, fdrCount, results }
+// results: [{ xKey,yKey,xLabel,yLabel,xCat,yCat, r, rho, n, p, qValue, fdrSig,
+//             divergent, crossDomain }] sorted by |r| desc (surfaced pairs only).
+export function scanAllPairs(ds, opts = {}) {
+  const gran = opts.granularity || 'daily';
+  const minN = opts.minN || (gran === 'daily' ? 30 : 6);
+  const minAbsR = opts.minAbsR != null ? opts.minAbsR : 0.35;
+  const scopeLoc = opts.scopeLoc || null;
+  const alpha = opts.alpha || 0.05;
+  if (!ds) return { granularity: gran, minN, minAbsR, alpha, metricsUsed: 0, tested: 0, fdrCount: 0, results: [] };
+
+  const keyFn = gran === 'daily' ? _dKey : _mKey;
+
+  // Pre-extract each usable metric once → { loc_period : value }.
+  const valMap = {};
+  for (const cat of METRIC_CATEGORIES) {
+    for (const m of cat.metrics) {
+      if (!m.granularity.includes(gran)) continue;
+      const src = ds[m.source];
+      if (!src || !src.length) continue;
+      const vals = extractMetricValues(m.key, ds, gran, scopeLoc);
+      if (vals.length < minN) continue;
+      const map = {};
+      for (const v of vals) map[_normLoc(v.loc) + '_' + keyFn(v.date)] = v.value;
+      valMap[m.key] = map;
+    }
+  }
+
+  const keys = Object.keys(valMap);
+  const all = [];
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      const a = keys[i], b = keys[j];
+      const ma = valMap[a], mb = valMap[b];
+      // Intersect on shared loc_period keys; iterate the smaller map.
+      const iter = Object.keys(ma).length <= Object.keys(mb).length ? ma : mb;
+      const pairs = [];
+      for (const k in iter) {
+        const av = ma[k], bv = mb[k];
+        if (av != null && bv != null && !isNaN(av) && !isNaN(bv)) pairs.push({ x: av, y: bv });
+      }
+      if (pairs.length < minN) continue;
+      const r = pearson(pairs);
+      if (r == null) continue;
+      const am = findMetric(a), bm = findMetric(b);
+      all.push({
+        xKey: a, yKey: b, xLabel: am.label, yLabel: bm.label,
+        xCat: am.categoryLabel, yCat: bm.categoryLabel,
+        r, n: pairs.length, p: pValueFromR(r, pairs.length),
+        crossDomain: am.category !== bm.category,
+        _pairs: pairs,
+      });
+    }
+  }
+
+  // FDR across the full test space, THEN surface by effect size.
+  benjaminiHochberg(all, alpha);
+  const results = all
+    .filter(t => Math.abs(t.r) >= minAbsR)
+    .map(t => {
+      const rho = spearman(t._pairs);
+      const out = { ...t, rho, divergent: rho != null && Math.abs(t.r - rho) >= 0.25 };
+      delete out._pairs;
+      return out;
+    })
+    .sort((x, y) => Math.abs(y.r) - Math.abs(x.r));
+
+  return {
+    granularity: gran, minN, minAbsR, alpha,
+    metricsUsed: keys.length,
+    tested: all.length,
+    fdrCount: all.filter(t => t.fdrSig).length,
+    results,
+  };
+}
+
+// ── Predefined "obvious" signals ──────────────────────────────────────────────
+// Curated correlations that ship with the app so Signals has value on day one,
+// before anyone builds a custom one. Computed live via computeCustomSignal(ds).
+// Keys reference the metric registry above; each falls back gracefully to no
+// data when its source isn't loaded.
+export const SEEDED_SIGNALS = [
+  { id: 'seed-park-oepe',   name: 'DT Park Rate → OEPE',              xMetric: 'parkPct',  yMetric: 'oepe',      granularity: 'daily',   seeded: true, rationale: 'More pull-forwards usually track with a slower drive-thru total experience.' },
+  { id: 'seed-labor-tpph',  name: 'Labor % → TPPH',                   xMetric: 'laborPct', yMetric: 'tpph',      granularity: 'daily',   seeded: true, rationale: 'Throughput per labor hour vs how much labor you are spending.' },
+  { id: 'seed-tredb-cashos',name: 'T-Reds Before Total % → Cash Over/Short %', xMetric: 'tRedBPct', yMetric: 'cashOSPct', granularity: 'daily', seeded: true, rationale: 'A classic loss-prevention pairing — reductions before total vs drawer variance.' },
+  { id: 'seed-disc-sales',  name: 'Discount % → Net Sales',           xMetric: 'discPct',  yMetric: 'sales',     granularity: 'daily',   seeded: true, rationale: 'Do heavier discount days move top-line sales, or just give margin away?' },
+  { id: 'seed-gc-sales',    name: 'Guest Count → Net Sales',          xMetric: 'gc',       yMetric: 'sales',     granularity: 'daily',   seeded: true, rationale: 'Sanity anchor — traffic should strongly track sales; a weak r flags a check-average story.' },
+  { id: 'seed-promo-gc',    name: 'Promo % → Guest Count',            xMetric: 'promoPct', yMetric: 'gc',        granularity: 'daily',   seeded: true, rationale: 'Are promotions actually pulling traffic in?' },
+  { id: 'seed-fob-base',    name: 'FOB % → Base Food %',              xMetric: 'fobPct',   yMetric: 'baseFoodPct',granularity:'monthly', seeded: true, rationale: 'How much of food-over-base is driven by base food cost vs controllable waste.' },
+];

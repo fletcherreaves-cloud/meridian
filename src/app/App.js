@@ -82,9 +82,14 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.494';
-const MERIDIAN_BUILD_DATE = '2026-07-23';
+const MERIDIAN_VERSION    = '4.495';
+const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.495', date:'2026-07-24', changes:[
+    'Signals — new 🔎 Scanner tab: auto-correlation engine that cycles every metric pair and surfaces the strongest relationships, ranked by Pearson r with a Spearman cross-check. Guardrails keep it honest — a minimum sample size, an effect-size floor, and a Benjamini–Hochberg false-discovery correction so pairs that only look strong by chance are flagged out. Results are framed as "move together," never cause-and-effect; any discovery can be one-click promoted into Signal Lab. Ships with a set of predefined "obvious" signals so the panel has value before you scan.',
+    'Signals — expanded metric library: the Controls family now includes T-Reds Before AND After Total (% and count), regular cash + cashless refunds, the full promo group, discount count/$, POS override $, and cash over/short $ — plus the cryptic "Red B %" is now correctly labeled "T-Reds Before Total %". Food Cost adds Disc Coupon %.',
+    'Signals — the correlation engine can now read the daily-synced cloud streams (Daily Glimpse, Cash Sheet, Sales Ledger, DAR summary), not just manual uploads, so signals compute off cloud-fresh data on every device. These appear as new "(Cloud)" metric groups.',
+  ]},
   {version:'4.494', date:'2026-07-23', changes:[
     'SAGE is now RBAC-aware: what SAGE can see and recommend is scoped to each user\'s role and accessible stores. A restricted user sees their own store detail plus district totals and their rank — but never another store\'s individual figures. Owner/admin access is unchanged. (Activates after a sage-chat edge-function redeploy.)',
   ]},
