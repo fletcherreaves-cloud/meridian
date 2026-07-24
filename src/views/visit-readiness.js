@@ -49,6 +49,8 @@ function StoreRow({ s, expanded, onToggle }) {
         sub('Quality', s.subs.quality.score), sub('Leadership', s.subs.leadership.score)),
       h('span', { style: { color: 'var(--text3)', fontSize: 11 } }, expanded ? '▲' : '▼')),
     expanded && h('div', { style: { padding: '4px 12px 12px 56px' } },
+      s.why && h('div', { style: { fontSize: 11, color: 'var(--text)', lineHeight: 1.5, marginBottom: 9, padding: '8px 10px', background: b.c + '10', border: '.5px solid ' + b.c + '33', borderRadius: 6 } },
+        h('span', { style: { fontWeight: 700, color: b.c } }, 'Why: '), s.why),
       h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 } }, 'Top risk drivers (actual vs target)'),
       s.topDrivers.map(d => h('div', { key: d.key, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, padding: '2px 0' } },
         h('span', { style: { flex: 1, color: 'var(--text2)' } }, d.label),
@@ -56,6 +58,36 @@ function StoreRow({ s, expanded, onToggle }) {
         h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'tgt ' + fmt(d.target, d.unit)),
         h(Bar, { score: d.score * 100, w: 44 }))),
       !s.topDrivers.length && h('div', { style: { fontSize: 11, color: 'var(--text3)' } }, 'No metric data loaded for this store.')));
+}
+
+// Model-check card: does predicted readiness track the ACTUAL graded-visit scores?
+// Builds trust by validating the estimate against real outcomes as they accumulate.
+function CalibrationCard({ cal }) {
+  if (!cal) return null;
+  const strengthCol = cal.strength === 'strong' ? '#10b981' : cal.strength === 'moderate' ? '#f59e0b' : '#ef4444';
+  if (!cal.n || cal.n < 3) {
+    return h('div', { style: { fontSize: 10, color: 'var(--text3)', lineHeight: 1.5, margin: '0 0 12px', padding: '9px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
+      h('span', { style: { fontWeight: 700, color: 'var(--text2)' } }, 'Model check: '),
+      `only ${cal.n || 0} store${cal.n === 1 ? '' : 's'} with a recent graded visit — not enough yet to validate the estimate. It self-checks against actual CFV/RGR/EcoSure scores as they land.`);
+  }
+  const rC = cal.r == null ? 'var(--text3)' : cal.r >= 0.3 ? '#10b981' : cal.r <= -0.1 ? '#ef4444' : '#f59e0b';
+  return h('div', { style: { margin: '0 0 12px', padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
+    h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 6 } },
+      h('span', { style: { fontSize: 11, fontWeight: 800, color: 'var(--text)' } }, 'Model check'),
+      h('span', { style: { fontSize: 10, color: 'var(--text3)' } }, `predicted readiness vs actual visit score, ${cal.n} stores with a recent visit`)),
+    h('div', { style: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' } },
+      h('div', null,
+        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: rC } }, cal.r == null ? '—' : cal.r.toFixed(2)),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'rank corr' + (cal.strength ? ' (' + cal.strength + ')' : ''))),
+      cal.hitRate != null && h('div', null,
+        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: cal.hitRate >= 0.6 ? '#10b981' : '#f59e0b' } }, Math.round(cal.hitRate * 100) + '%'),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${cal.hits}/${cal.n})`)),
+      h('div', { style: { flex: 1, minWidth: 180, fontSize: 9.5, color: 'var(--text3)', lineHeight: 1.5 } },
+        cal.r == null ? 'Correlation needs more visits.'
+          : cal.r >= 0.6 ? 'Strong agreement — stores rated lower really do score lower on real visits.'
+          : cal.r >= 0.3 ? 'Moderate agreement — the estimate leans the right way; keep validating.'
+          : cal.r >= 0 ? 'Weak agreement so far — treat as directional only.'
+          : 'Estimate is currently inverted vs actuals — investigate before trusting it.')));
 }
 
 export function VisitReadinessPanel({ ds, onClose }) {
@@ -96,6 +128,8 @@ export function VisitReadinessPanel({ ds, onClose }) {
             stat('FS elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
             stat('Speed', Math.round(d.subs.speed || 0), scoreColor(d.subs.speed)),
             stat('Accuracy', Math.round(d.subs.accuracy || 0), scoreColor(d.subs.accuracy))),
+
+          h(CalibrationCard, { cal: res.calibration }),
 
           h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
             res.stores.map(s => h(StoreRow, { key: s.loc, s, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),

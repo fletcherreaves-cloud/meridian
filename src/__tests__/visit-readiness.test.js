@@ -106,4 +106,41 @@ describe('visit-readiness', () => {
     expect(res.district.atRisk).toBeGreaterThanOrEqual(1);
     expect(res.weights).toEqual(READINESS_WEIGHTS);
   });
+
+  it('writes a plain-language "why" that names the worst drivers for an at-risk store', () => {
+    const res = computeVisitReadiness(mkDs(badRows(BAD)));
+    const b = res.stores.find(s => s.loc === BAD);
+    expect(typeof b.why).toBe('string');
+    expect(b.why).toMatch(/At risk/i);
+    // Should reference a driver label + "vs" + "target"
+    expect(b.why).toMatch(/vs .* target/i);
+  });
+
+  it('a ready store\'s why reads clean (no big gaps)', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD)));
+    const g = res.stores.find(s => s.loc === GOOD);
+    expect(g.why).toMatch(/Ready/i);
+  });
+
+  it('calibration: needs >=3 visits, else reports n and null r', () => {
+    const ds = mkDs(goodRows(GOOD), badRows(BAD));
+    ds.gradedVisits = [{ store: GOOD, dateISO: '2026-06-15', reportType: 'CFV', score: 90, pass: true }];
+    const res = computeVisitReadiness(ds);
+    expect(res.calibration.n).toBe(1);
+    expect(res.calibration.r).toBeNull();
+  });
+
+  it('calibration: positive rank correlation when predictions track actual visit scores', () => {
+    // Three stores whose actual visit scores mirror their (good→bad) predicted order.
+    const A = '3708', B = '5183', C = Object.keys(DEFAULT_TARGETS).filter(l => /^\d+$/.test(l) && l !== A && l !== B)[0];
+    const ds = mkDs(goodRows(A), badRows(B), goodRows(C));
+    ds.gradedVisits = [
+      { store: A, dateISO: '2026-06-10', reportType: 'CFV', score: 92, pass: true },   // good pred, high actual
+      { store: C, dateISO: '2026-06-11', reportType: 'CFV', score: 85, pass: true },   // good pred, high actual
+      { store: B, dateISO: '2026-06-12', reportType: 'CFV', score: 60, pass: false },  // bad pred, low actual
+    ];
+    const res = computeVisitReadiness(ds);
+    expect(res.calibration.n).toBe(3);
+    expect(res.calibration.r).toBeGreaterThan(0);
+  });
 });

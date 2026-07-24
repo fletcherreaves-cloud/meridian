@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.518';
+const MERIDIAN_VERSION    = '4.519';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.519', date:'2026-07-24', changes:[
+    'Visit Readiness — explainability & trust: expanding a store now shows a plain-language "Why" line that names the specific gaps driving its score (e.g. "At risk — the biggest gaps are OEPE at 210s vs 165s target and SMG accuracy at 92% vs 95%"). New "Model check" card at the top validates the estimate against your ACTUAL graded-visit scores — a rank-correlation + direction-match hit-rate across the stores that have had a recent CFV/RGR/EcoSure visit — so you can see whether stores rated lower really do score lower in real life (and it says plainly when there aren\'t enough visits yet to trust it).',
+  ]},
   {version:'4.518', date:'2026-07-24', changes:[
     'New: Panel Manager (Admin → Panel Manager 🧩) — one place that lists every optional / experimental panel with a short description of what it does, and a switch to show or hide each one in the sidebar. Fourteen lower-traffic experiments (Record Days, Revenue, Inventory, Performance Calc, Metric Correlations, Store Compare, GM Letters, Channel Intel, DAR Analysis, Product Mix, District Lens, Anomaly Scan, Why Engine, Priority Actions) are now hidden by default to declutter the sidebar — flip any back on here anytime (your choices are remembered on this device). Nothing was deleted, and the forecast / diagnostic model tools are untouched. "Show all" / "Hide all" toggles the whole set at once.',
   ]},
