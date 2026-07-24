@@ -22,6 +22,65 @@ const fmt = (v, unit) => {
 };
 const scoreColor = s => s == null ? '#6b7280' : s >= 85 ? '#10b981' : s >= 70 ? '#f59e0b' : '#ef4444';
 
+// ── Actionable per-store coaching report (Notes 23 #10 / Notes 25) ─────────────
+// A print/PDF one-pager the owner can send a store: where it stands, WHY, and the
+// specific corrections ranked by impact. Matches the app's workbook aesthetic.
+function storeReportHTML(s) {
+  const esc = t => String(t == null ? '' : t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const b = BAND[s.band], fs = FS[s.fsFlag];
+  const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const subRow = (label, sub) => {
+    const sc = sub.score;
+    return `<tr><td>${label}</td><td class="n" style="color:${scoreColor(sc)};font-weight:700">${sc == null ? '—' : Math.round(sc)}</td>
+      <td>${(sub.drivers || []).map(d => esc(d.label.split('(')[0].trim())).join(', ') || '—'}</td></tr>`;
+  };
+  const driverRow = d => {
+    const good = d.score >= 0.85;
+    return `<tr><td>${esc(d.label)}</td><td class="n">${esc(fmt(d.actual, d.unit))}</td><td class="n">${esc(fmt(d.target, d.unit))}</td>
+      <td class="${good ? 'ok' : d.score >= 0.6 ? 'warn' : 'bad'}">${good ? 'On target' : d.score >= 0.6 ? 'Close' : 'Off target'}</td></tr>`;
+  };
+  // Recommended focus = the worst 3 drivers, phrased as actions.
+  const focus = (s.topDrivers || []).filter(d => d.score < 0.85).slice(0, 3)
+    .map(d => `<li><b>${esc(d.label.split('(')[0].trim())}</b> — currently ${esc(fmt(d.actual, d.unit))}, target ${esc(fmt(d.target, d.unit))}. Close this gap to lift readiness.</li>`).join('');
+  const lv = s.lastVisit ? `Last actual visit: ${esc(s.lastVisit.type || 'visit')} ${Math.round(s.lastVisit.score)}%${s.lastVisit.pass === false ? ' (did not pass)' : s.lastVisit.pass ? ' (pass)' : ''}${s.lastVisit.dateISO ? ' · ' + esc(s.lastVisit.dateISO) : ''}` : 'No recent actual graded visit on record.';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(sName(s.loc))} — Visit Readiness</title><style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:760px;margin:32px auto;font-size:12px;line-height:1.5}
+    h1{font-size:20px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}
+    .score{display:inline-block;font-size:34px;font-weight:800;color:${b.c};line-height:1}
+    .band{display:inline-block;padding:3px 10px;border-radius:5px;color:#fff;background:${b.c};font-weight:700;font-size:12px;vertical-align:super;margin-left:8px}
+    .fs{display:inline-block;padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px;margin-left:6px;border:1px solid ${fs.c};color:${fs.c}}
+    .why{background:#fff8e1;border:1px solid #f5bc00;border-radius:6px;padding:10px 12px;margin:12px 0}
+    h2{font-size:14px;border-bottom:2px solid #f5bc00;padding-bottom:4px;margin:20px 0 8px}
+    table{border-collapse:collapse;width:100%;margin:6px 0}th{background:#f5bc00;color:#111;text-align:left;padding:5px 9px;font-size:11px}
+    td{border:1px solid #ddd;padding:5px 9px}.n{text-align:right;font-variant-numeric:tabular-nums}
+    td.ok{color:#0a7d38;font-weight:700}td.warn{color:#b26a00;font-weight:700}td.bad{color:#c0261b;font-weight:700}
+    ol{margin:6px 0 6px 18px}li{margin:4px 0}.foot{color:#888;font-size:10px;margin-top:18px;border-top:1px solid #eee;padding-top:8px}
+    @media print{body{margin:16px}}
+  </style></head><body>
+    <h1>${esc(sName(s.loc))} <span style="color:#999;font-weight:400;font-size:13px">#${esc(s.loc)}</span></h1>
+    <div class="sub">Visit Readiness coaching report · ${date}</div>
+    <div><span class="score">${Math.round(s.readiness)}</span><span class="band">${b.l}</span><span class="fs">${fs.l.replace('FS', 'Food safety:')}</span>
+      ${s.coverage < 1 ? `<span style="color:#999;font-size:11px;margin-left:8px">${Math.round(s.coverage * 100)}% data coverage</span>` : ''}</div>
+    <div class="why"><b>Why:</b> ${esc(s.why || '')}</div>
+    <h2>Recommended focus</h2>
+    ${focus ? `<ol>${focus}</ol>` : '<p>No material gaps — hold the standard and stay visit-ready.</p>'}
+    <h2>Score breakdown</h2>
+    <table><tr><th>Area (weight)</th><th>Score</th><th>Measured on</th></tr>
+      ${subRow('Speed (35%)', s.subs.speed)}${subRow('Accuracy (30%)', s.subs.accuracy)}${subRow('Quality (20%)', s.subs.quality)}${subRow('Leadership (15%)', s.subs.leadership)}</table>
+    <h2>Metric detail (vs your store target)</h2>
+    <table><tr><th>Metric</th><th>Actual</th><th>Target</th><th>Status</th></tr>${(s.topDrivers || []).map(driverRow).join('')}</table>
+    <p style="margin-top:10px">${lv}</p>
+    <div class="foot">Meridian · Readiness is a directional early-warning from daily operating metrics (Speed 35 / Accuracy 30 / Quality 20 / Leadership 15), each scored against this store's own target — not an official predicted visit score. Cleanliness has no daily-data proxy and is excluded.</div>
+  </body></html>`;
+}
+function printStoreReport(s) {
+  const win = window.open('', '_blank', 'width=820,height=760');
+  if (!win) return;
+  win.document.write(storeReportHTML(s));
+  win.document.close(); win.focus();
+  setTimeout(() => win.print(), 350);
+}
+
 function Bar({ score, w = 60 }) {
   return h('div', { style: { width: w, height: 6, borderRadius: 3, background: 'var(--bdr)', overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' } },
     h('div', { style: { width: (score == null ? 0 : Math.max(2, score)) + '%', height: '100%', background: scoreColor(score) } }));
@@ -49,8 +108,10 @@ function StoreRow({ s, expanded, onToggle }) {
         sub('Quality', s.subs.quality.score), sub('Leadership', s.subs.leadership.score)),
       h('span', { style: { color: 'var(--text3)', fontSize: 11 } }, expanded ? '▲' : '▼')),
     expanded && h('div', { style: { padding: '4px 12px 12px 56px' } },
-      s.why && h('div', { style: { fontSize: 11, color: 'var(--text)', lineHeight: 1.5, marginBottom: 9, padding: '8px 10px', background: b.c + '10', border: '.5px solid ' + b.c + '33', borderRadius: 6 } },
-        h('span', { style: { fontWeight: 700, color: b.c } }, 'Why: '), s.why),
+      h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 9 } },
+        s.why && h('div', { style: { flex: 1, fontSize: 11, color: 'var(--text)', lineHeight: 1.5, padding: '8px 10px', background: b.c + '10', border: '.5px solid ' + b.c + '33', borderRadius: 6 } },
+          h('span', { style: { fontWeight: 700, color: b.c } }, 'Why: '), s.why),
+        h('button', { className: 'btn btn-sm', title: 'Print / PDF a coaching one-pager for this store', style: { fontSize: 10, flexShrink: 0, whiteSpace: 'nowrap' }, onClick: (e) => { e.stopPropagation(); printStoreReport(s); } }, '📄 Coaching report')),
       h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 } }, 'Top risk drivers (actual vs target)'),
       s.topDrivers.map(d => h('div', { key: d.key, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, padding: '2px 0' } },
         h('span', { style: { flex: 1, color: 'var(--text2)' } }, d.label),

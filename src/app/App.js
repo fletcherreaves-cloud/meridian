@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.520';
+const MERIDIAN_VERSION    = '4.521';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.521', date:'2026-07-24', changes:[
+    'Visit Readiness — new "📄 Coaching report" button on each expanded store: prints (or saves to PDF) a clean one-pager you can hand or send to that store. It shows the readiness score + band, the plain-language "Why", a ranked "Recommended focus" (the specific gaps to close, biggest-impact first), the score breakdown by area, a full metric-vs-target table, and the last actual visit — in the app\'s workbook style.',
+  ]},
   {version:'4.520', date:'2026-07-24', changes:[
     'Visit Readiness — new "Visit Patterns" section (bottom of the panel): a statistic tracker over your ACTUAL graded visits broken down by the known variables — day of week, daypart, weekpart, and channel (each showing count, pass-rate, and average score) — plus a per-store frequency table (how many visits, average days between them, days since the last, and pass rate). Filter by CFV / RGR / all. Surfaces patterns like "Friday lunch visits underperform" or "this store hasn\'t been visited in 90 days."',
   ]},
