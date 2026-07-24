@@ -6758,7 +6758,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const ms=r=>r.date instanceof Date?r.date.getTime():new Date(r.date).getTime();
     const maxMs=Math.max(...rows.map(ms));
     const day=rows.filter(r=>ms(r)===maxMs);
-    const ly=day.filter(r=>r.salesVsLYPct!=null).sort((a,b)=>b.salesVsLYPct-a.salesVsLYPct);
+    // Comp guard: a store only ranks as a "mover" if it had a real last-year
+    // baseline that day (≥$1k) and a sane YoY swing (≤200%). Without this a new
+    // store with a near-zero LY baseline pins the top with a nonsense "+2390%".
+    const ly=day.filter(r=>r.salesVsLYPct!=null&&(r.lySales||0)>=1000&&Math.abs(r.salesVsLYPct)<=200).sort((a,b)=>b.salesVsLYPct-a.salesVsLYPct);
     if(!ly.length&&!day.length) return null;
     const up=ly.slice(0,3).filter(r=>r.salesVsLYPct>0);
     const down=ly.slice(-3).reverse().filter(r=>r.salesVsLYPct<0);
@@ -6897,17 +6900,38 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const pct=chTot>0&&s>0?s/chTot:null;
       return{...ch,sales:s,pct,okAvgPct:null,flAvgPct:null};
     });
-    const salesVsLY=avgOf(labScoped,'salesVsLYPct');
-    const okSalesVsLY=avgOf(labInRange.filter(r=>okLocs.includes(String(r.loc))),'salesVsLYPct');
-    const flSalesVsLY=avgOf(labInRange.filter(r=>flLocs.includes(String(r.loc))),'salesVsLYPct');
-    const okSales=okLocs.reduce((a,l)=>a+(sumOf(byLoc(l),'allNetSales')||sumOf(byLoc(l),'sales')),0);
-    const flSales=flLocs.reduce((a,l)=>a+(sumOf(byLoc(l),'allNetSales')||sumOf(byLoc(l),'sales')),0);
-    // GC vs LY: shift dateRange back 364 days, query ds.laborRows directly
+    // vs-LY as a dollar/guest-weighted RATIO-OF-AGGREGATES over COMP stores only.
+    // The old code averaged each store-day's salesVsLYPct — one new store with a
+    // near-zero last-year baseline (e.g. a store opened this year) then dominated the
+    // mean and produced nonsense like "+2390%" (and "+403%" on guest count). Instead:
+    // sum REAL current$ and REAL last-year$ per store (last year = the same calendar
+    // window 364 days back, from laborRows; cloud-only devices fall back to each
+    // row's lySales), keep only stores with a genuine prior-year baseline (LY ≥ 20%
+    // of current — drops brand-new / still-ramping stores from the COMPARISON, not
+    // from the sales totals), and divide the aggregates. Returned as a FRACTION to
+    // match the tile's *100 render.
     const lyS=addD(dateRange.s,-364),lyE=addD(dateRange.e,-364);
     const labLY=(ds?.laborRows||[]).filter(r=>r.date>=lyS&&r.date<=lyE&&allLocs.includes(String(r.loc))&&r.gc>0);
+    const lySalesByLoc={}, lyGcByLoc={};
+    if(labLY.length){ for(const r of labLY){ const k=String(r.loc); lySalesByLoc[k]=(lySalesByLoc[k]||0)+(r.sales||0); lyGcByLoc[k]=(lyGcByLoc[k]||0)+(r.gc||0); } }
+    else { for(const r of labInRange){ const k=String(r.loc); if(r.lySales>0){ lySalesByLoc[k]=(lySalesByLoc[k]||0)+r.lySales; } } }
+    const curSalesByLoc=l=>(sumOf(byLoc(l),'allNetSales')||sumOf(byLoc(l),'sales'));
+    // Ratio-of-aggregates over comp stores. base=per-loc last-year map, cur=per-loc
+    // current accessor. A store is comp when LY ≥ 20% of current (real baseline).
+    const compVsLY=(locSet,baseMap,curFn)=>{
+      let cur=0, base=0;
+      for(const l of locSet){ const c=curFn(l), b=baseMap[String(l)]||0; if(b<=0||b<0.2*c) continue; cur+=c; base+=b; }
+      return base>0 ? (cur-base)/base : null;   // FRACTION
+    };
+    const salesVsLY=compVsLY(allLocs,lySalesByLoc,curSalesByLoc);
+    const okSalesVsLY=compVsLY(okLocs,lySalesByLoc,curSalesByLoc);
+    const flSalesVsLY=compVsLY(flLocs,lySalesByLoc,curSalesByLoc);
+    const okSales=okLocs.reduce((a,l)=>a+curSalesByLoc(l),0);
+    const flSales=flLocs.reduce((a,l)=>a+curSalesByLoc(l),0);
+    // GC vs LY — same comp treatment (was also inflated by new stores).
+    const gcVsLY=Object.keys(lyGcByLoc).length?compVsLY(allLocs,lyGcByLoc,l=>sumOf(byLoc(l),'gc')):null;
+    // Avg check vs LY (district-level; avg check is baseline-stable so no comp filter).
     const totGCLY=labLY.reduce((a,r)=>a+(r.gc||0),0);
-    const gcVsLY=totGCLY>10?(totGC-totGCLY)/totGCLY:null;
-    // Avg check vs LY
     const totSalesLY=labLY.reduce((a,r)=>a+(r.sales||0),0);
     const avgCheckLY=totGCLY>0?totSalesLY/totGCLY:0;
     const avgCheckVsLY=avgCheckLY>0?(avgChk-avgCheckLY)/avgCheckLY:null;
@@ -7564,13 +7588,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           const park=sv?.park;
 
           const signals=[
-            {icon:'💰',label:'Sales vs Last Year',
+            {icon:'💰',label:'Sales vs LY (comp)',
              val:svLY!=null?(svLY>=0?'+':'')+(svLY*100).toFixed(1)+'%':'—',
              sub:sl?'$'+(sl.totSales/1000).toFixed(0)+'K total · '+(sl.totGC||0).toLocaleString()+' guests':'Load Operations Report',
              col:svLY==null?'var(--text3)':svLY>=0.01?'#10b981':svLY>=-0.03?'#f59e0b':'#ef4444',
              dot:svLY==null?'—':svLY>=0?'🟢':svLY>=-0.03?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('ranking:t2w')},
-            {icon:'👥',label:'Guest Count vs Last Year',
+            {icon:'👥',label:'Guest Count vs LY (comp)',
              val:gcVLY!=null?(gcVLY>=0?'+':'')+(gcVLY*100).toFixed(1)+'%':'—',
              sub:gcVLY!=null?'Check Avg: $'+(sl?.avgChk||0).toFixed(2)+(sl?.avgCheckVsLY!=null?' ('+(sl.avgCheckVsLY>=0?'+':'')+(sl.avgCheckVsLY*100).toFixed(1)+'% vs LY)':''):'No LY guest count data',
              col:gcVLY==null?'var(--text3)':gcVLY>=0?'#10b981':gcVLY>=-0.03?'#f59e0b':'#ef4444',
