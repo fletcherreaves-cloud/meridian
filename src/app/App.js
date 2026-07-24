@@ -209,9 +209,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.527';
+const MERIDIAN_VERSION    = '4.528';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.528', date:'2026-07-24', changes:[
+    'Profile menu now has "↑ Load files" — and the Load button was removed from the top bar to declutter it (Notes 27 #8). Same file-upload flow, just tucked into the avatar menu.',
+    'Data Manager: the auto-synced sources (LifeLenz Schedule, QSRSoft FOB / eBOS / Daily Activity) now also carry a one-line description of what they pull and on what cadence — matching the source labels added to the manual/emailed sources (Notes 27 #9).',
+  ]},
   {version:'4.527', date:'2026-07-24', changes:[
     'Fix: Visit Readiness couldn\'t see your graded visits — the Graded Visits panel loaded them into its own state, but Visit Readiness reads them from the shared data set, which was never populated. So Model Check said "0 stores with a recent visit" and the Visit Patterns section stayed hidden even though 60 visits were loaded. Graded visits now load into the shared data at startup (same Supabase source), so Visit Readiness sees them — Model Check gets real numbers, the per-store "last visit" shows, and Visit Patterns (day/daypart/channel + cadence) appears.',
   ]},

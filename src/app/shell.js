@@ -293,7 +293,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
 // Consolidates account + utility actions that used to crowd the top bar (and were
 // unreachable on mobile): identity/role, theme, save session, help, user management,
 // Test Kitchen toggle, change password, sign out. Standard SaaS profile-menu pattern.
-function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode }) {
+function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   useEffect(() => {
@@ -333,6 +333,7 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdm
           const next = settings.colorMode==='dark'?'light':'dark';
           document.documentElement.setAttribute('data-mode', next);
         }),
+        onLoadFiles && (!perm||perm('data.upload')) && item('↑', 'Load files', onLoadFiles),
         onSaveSession && item('💾', 'Save session to file', onSaveSession),
         onOpenModal && item('❔', 'Help & guide', ()=>onOpenModal('help')),
         onOpenAdmin && item('👥', 'User management', onOpenAdmin),
@@ -438,11 +439,9 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       ),
       // Date range picker — controls all views
       h(DatePicker,{value:dateRange,onChange:onDateChange}),
-      // Load files — hidden for roles without data.upload
-      (!perm||perm('data.upload'))&&div({style:{position:'relative'}},
-        btn({className:'btn btn-sm',style:{fontSize:'10px'},
-          onClick:onLoadFiles},'↑ Load'),
-        loadMsg&&div({style:{position:'absolute',top:'calc(100% + 4px)',right:0,
+      // Load-status toast (the Load button itself now lives in the profile menu — Notes 27 #8)
+      loadMsg&&div({style:{position:'relative'}},
+        div({style:{position:'absolute',top:'calc(100% + 4px)',right:0,
           background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
           padding:'4px 8px',fontSize:'9px',color:'var(--text2)',whiteSpace:'nowrap',
           zIndex:50}},loadMsg)
@@ -451,9 +450,9 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       (!perm||perm('settings.view'))&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
         title:'Settings',
         onClick:()=>onOpenModal('settings')},'⚙'),
-      // Profile menu — consolidates theme, save session, help, user mgmt, Test Kitchen,
-      // change password, sign out (previously ~7 buttons, several unreachable on mobile)
-      h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode})
+      // Profile menu — consolidates Load, theme, save session, help, user mgmt, Test Kitchen,
+      // change password, sign out (previously crowded the top bar / unreachable on mobile)
+      h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm})
     )
   );
 }
