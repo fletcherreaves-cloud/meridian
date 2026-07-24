@@ -6,7 +6,17 @@ metadata:
   type: project
 ---
 
-# Meridian Panel Catalog (live) — as of v4.509 (2026-07-24)
+# Meridian Panel Catalog (live) — as of v4.511 (2026-07-24)
+
+> **Now also in-app:** a user-friendly version ships as the **"Panel Index"** Knowledge Base
+> article (`KB_ARTICLES.panel_index` in `src/engine/forecast.js`, category "App Guide", v4.511).
+> Keep the two roughly in sync — THIS file is the exhaustive dev reference (modal ids / perms /
+> sources); the KB article is the plain-language user synopsis.
+
+> **Task B (per-station hours+cost) VERIFIED IN PROD 2026-07-24:** LifeLenz per-job pull ran
+> clean — **1079/1079 role-rows saved across 27 stores × 4 weeks, zero GraphQL errors** after
+> the query fix (v4.509). DeFuniak spot-check sane (Drive Thru 535.25h/$7,916/82 shifts, correct
+> Variable/Floor/Fixed categories). `trigger-dar-sync` edge fn redeployed → Sync buttons fixed.
 
 **How to read:** `Label` (`modalId`, `perm-key`) — purpose · *source* · status.
 Nav lives in `src/app/shell.js`; modal routing in `src/app/App.js`.
