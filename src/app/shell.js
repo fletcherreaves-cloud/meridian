@@ -234,10 +234,16 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pi('analytics.district',    'District View',    '⊞', ()=>{setView('district');},   view==='district'),
       pi('analytics.store',       'Store One-Pager',  '📄', ()=>onOpenModal('one-pager'),        false),
       // ── TEST KITCHEN ───────────────────────────────────────────
+      // PRUNE (Notes 24, v4.517): only NAV entries are trimmed here — every panel's
+      // component + modal routing in App.js is left intact, so a pruned panel is still
+      // reachable via onOpenModal('<id>') and is restored by uncommenting its line below.
+      // Recall list is also kept in memory/panel-catalog.md. The forecast/engineered
+      // diagnostic cluster is deliberately NOT pruned (standing owner directive: protect it).
       !betaMode && navLabel('⚗ TEST KITCHEN'),
       pi('analytics.forecasting', 'Projections',        '▦',  ()=>onOpenModal('proj'),          false),
       pi('analytics.forecasting', 'Proj vs Actuals',    '◑',  ()=>onOpenModal('pvsa'),          false),
-      pi('analytics.forecasting', 'Proj Workflow',      '🔒', ()=>onOpenModal('proj'),          false),
+      // PRUNED — exact duplicate of "Projections" (same 'proj' modal). Recall: uncomment.
+      // pi('analytics.forecasting', 'Proj Workflow',      '🔒', ()=>onOpenModal('proj'),          false),
       pi('analytics.forecasting', 'Forecast Models',    '🎯', ()=>onOpenModal('model-assign'),  false),
       pi('analytics.forecasting', 'DI Calibration',     '◎',  ()=>onOpenModal('dialedin'),      false),
       pi('analytics.forecasting', 'Forecast Accuracy',  '🎯', ()=>onOpenModal('fcst-accuracy'), false),
@@ -259,7 +265,9 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pi('analytics.store',       'DAR Analysis',       '⏱', ()=>onOpenModal('dar-daypart'),   false),
       pi('analytics.store',       'Product Mix',        '🍔', ()=>onOpenModal('pmix'),          false),
       pi('analytics.district',    'District Lens',      '🌐', ()=>onOpenModal('district-lens'), false),
-      pi('analytics.dashboard',   'Calendar Manager',   '📅', ()=>onOpenModal('calendar-manager'),false),
+      // PRUNED — overlaps "Events & Tags" (recurring-rule calendar). Recall: uncomment.
+      // (Still reachable via onOpenModal('calendar-manager'); recurring rules also live in Events & Tags.)
+      // pi('analytics.dashboard',   'Calendar Manager',   '📅', ()=>onOpenModal('calendar-manager'),false),
       // ── ADMIN ──────────────────────────────────────────────────
       navLabel('ADMIN'),
       pis('settings.view', 'Settings',     '⚙', ()=>onOpenModal('settings'),               false),

@@ -6,7 +6,7 @@ metadata:
   type: project
 ---
 
-# Meridian Panel Catalog (live) — as of v4.516 (2026-07-24)
+# Meridian Panel Catalog (live) — as of v4.517 (2026-07-24)
 
 > **Now also in-app:** a user-friendly version ships as the **"Panel Index"** Knowledge Base
 > article (`KB_ARTICLES.panel_index` in `src/engine/forecast.js`, category "App Guide", v4.511).
@@ -75,6 +75,22 @@ Forecast/projection cluster (heavy overlap — candidates to merge into Planning
 - AI: **Anomaly Scan** (`aiscan`) · **Why Engine** (`why-engine`) · **Priority Actions** (`priority-brief`).
 - Store/analytics experiments: **Record Days** (`record-day`) · **Revenue** (`revintel`) · **Inventory** (`inventory`) · **Performance Calc** (`perf-calc`) · **Metric Correlations** (`corr-explorer`) · **Store Compare** (`compare`) · **GM Letters** (`gm-brief`) · **Channel Intel** (`channel-intel`) · **DAR Analysis** (`dar-daypart`) · **Product Mix** (`pmix`) · **District Lens** (`district-lens`) · **Calendar Manager** (`calendar-manager`, dashboard).
 → Action: triage each as **promote / merge / retire**; several duplicate shipped panels (e.g. `proj` ×2, Inventory also implied in Ops, Calendar Manager overlaps Events & Tags).
+
+### 🔁 Pruned-from-nav RECALL LIST (v4.517) — reversible, nothing deleted
+Only the **nav line** was removed (commented in place in `src/app/shell.js`); each panel's
+component + `onOpenModal('<id>')` routing in `App.js` is **fully intact**, so it still opens
+by id and is restored by uncommenting one line. Pruned so far:
+- **Proj Workflow** (`proj`) — exact duplicate of **Projections** (same modal id).
+- **Calendar Manager** (`calendar-manager`) — overlaps **Events & Tags**; recurring rules live there.
+
+**NOT pruned (protected):** the entire forecast/engineered-diagnostic cluster (Projections, Proj
+vs Actuals, Forecast Models, DI Calibration/Compare, Forecast Accuracy, Fcst Reference, LifeLenz
+Gap/Bridge) — standing owner directive to protect the engineered models.
+
+**Awaiting owner OK before pruning** (store/analytics + AI experiments — reachable, low-traffic,
+candidates to hide next once confirmed): Record Days, Revenue, Inventory, Performance Calc, Metric
+Correlations, Store Compare, GM Letters, Channel Intel, DAR Analysis, Product Mix, District Lens,
+Anomaly Scan, Why Engine, Priority Actions.
 
 ## ADMIN
 - **Settings** (`settings`, settings.view) — app settings; **target home for retired top-bar items** (Notes 24). ✅
