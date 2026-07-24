@@ -178,12 +178,30 @@ below the daily grid: per-station Station/Cat/Shifts/Reg/OT/Hours/Cost/$per-hr, 
 summary (Variable/Floor/Fixed hrs) + total row. Indexed by `_normLoc(loc)+'|'+weekKey`.
 ✅ **Role-name config** — `LIFELENZ_BUSINESS_ROLES` already authoritative (all 34 roles).
 
-⚠️ **GraphQL query is RECONSTRUCTED from this memory doc, not the raw captured cURL** (the
-capture wasn't retained). `SHIFTS_QUERY` in the pull requests only the fields the rollup needs
-(`shifts(businessId,scheduleId,startDateTime,endDateTime,shiftType,includePayRates,after){edges{node{id shiftType assignedEmploymentId scheduleId pivotMetrics{businessRoleId jobTitleId earnings seconds payType}}} pageInfo{endCursor hasNextPage}}`).
-If the first Action run logs a `[job-hours] fetch failed … GraphQL errors …`, the field
-names/types need a tweak — grab the exact query text from a fresh `ShiftsForSchedulePeriod`
-DevTools capture and reconcile. Everything downstream (table/loader/UI) is already correct.
+✅ **GraphQL query VERIFIED against the real DevTools capture (2026-07-24).** The initial
+reconstruction had wrong variable types that would have failed every call — corrected in
+`SHIFTS_QUERY`:
+- `startDateTime` / `endDateTime` are **`ISO8601DateTime!`** (NOT `String!`) — and must be
+  sent as canonical UTC with ms + Z (`2026-07-22T00:00:00.000Z`); a bare `…T00:00:00` is
+  rejected by the scalar.
+- `shiftType` is **`[ShiftTypeEnum!]`** (NOT `[String!]`). Values passed:
+  `["offer","offer_to_all","roster","time_off","open"]`.
+- **`includePayRates` is NOT a `shifts()` argument** — in the real query it only gates the
+  `earnings` field via `@include(if: $includePayRates)`. We request `earnings` plain (the
+  owner token is authorized), so the var/arg is dropped entirely.
+- Headers on the real request: `x-auth-token`, `x-lifelenz-device: webadmin`,
+  `x-schedule-id`, `x-version: 1.75.50`, `x-user-journey: Display Schedule Week` (and an
+  `x-user-id` we can't derive for the service account — omitted, and the CSV pull works the
+  same way without it).
+
+**Response confirmed the engine filters are correct + exposed one edge case:** the week for
+DeFuniak (`01979dc0-a7cb-…`) returns 227 edges including **shared-store bleed** from Ponce de
+Leon `019c9ad6-63ef-…` (filtered by scheduleId ✓), **open** shifts (null earnings, excluded by
+shiftType ✓), and a **REJECTED roster shift** (`shiftType:'roster'`, `assignedEmploymentId:null`,
+`earnings:null`, non-zero `seconds`). The last would have added phantom $0 hours, so
+`_committed` now also requires a truthy `assignedEmploymentId`. `isAbsent:true` shifts (e.g.
+"Late Notice – Unexcused") keep their scheduled hours (planned = scheduled). Pay math sanity:
+`$16/hr × 4h = 14400s = $64`, `payType:'overtime'` seen on real OT segments.
 
 Still open / optional:
 - Per-EMPLOYEE breakdown (engine `rollupShiftsByEmployee` ready) — would need the roster from

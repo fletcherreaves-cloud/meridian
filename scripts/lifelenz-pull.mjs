@@ -686,20 +686,25 @@ function locFromName(name) {
   return m ? m[1].padStart(7, '0') : null;
 }
 
-// Reconstructed from the DevTools capture (memory/project-lifelenz-schedule-jobs.md).
-// Requests only the fields the rollup needs. If LifeLenz renames a field/type the
-// server returns a GraphQL error, which we log verbatim so it's a one-line fix.
-const SHIFTS_QUERY = `query ShiftsForSchedulePeriod($businessId: ID!, $scheduleId: ID!, $startDateTime: String!, $endDateTime: String!, $shiftType: [String!], $includePayRates: Boolean, $after: String) {
-  shifts(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, shiftType: $shiftType, includePayRates: $includePayRates, after: $after) {
-    edges { node { id shiftType assignedEmploymentId scheduleId pivotMetrics { businessRoleId jobTitleId earnings seconds payType } } }
+// Verified against the real ShiftsForSchedulePeriod DevTools capture (2026-07-24).
+// Variable TYPES matter: startDateTime/endDateTime are ISO8601DateTime! and shiftType
+// is [ShiftTypeEnum!] — a String!/[String!] mismatch makes the server reject the query.
+// includePayRates is NOT a shifts() argument; it only gates the earnings field via an
+// @include directive, so we request earnings plain (the owner token is authorized for it).
+const SHIFTS_QUERY = `query ShiftsForSchedulePeriod($businessId: ID!, $scheduleId: ID!, $startDateTime: ISO8601DateTime!, $endDateTime: ISO8601DateTime!, $shiftType: [ShiftTypeEnum!], $after: String) {
+  shifts(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, shiftType: $shiftType, after: $after) {
+    edges { node { id shiftType assignedEmploymentId scheduleId isAbsent pivotMetrics { businessRoleId jobTitleId earnings seconds payType } } }
     pageInfo { endCursor hasNextPage }
   }
 }`;
 
 // Fetch ALL shift edges for one schedule + week (paginated).
 async function fetchShiftsForSchedule(token, scheduleId, weekStart) {
-  const startISO = `${toISO(weekStart)}T00:00:00`;
-  const endISO   = `${toISO(addDay(weekStart, 7))}T00:00:00`;
+  // ISO8601DateTime! — send canonical UTC with milliseconds + Z (the scalar rejects a
+  // bare 'YYYY-MM-DDTHH:MM:SS'). Midnight-UTC Wednesday boundaries are contiguous week
+  // to week (no gap, no double-count) and align with the panel's Wednesday week key.
+  const startISO = `${toISO(weekStart)}T00:00:00.000Z`;
+  const endISO   = `${toISO(addDay(weekStart, 7))}T00:00:00.000Z`;
   const edges = [];
   let after = null, guard = 0;
   do {
@@ -709,13 +714,13 @@ async function fetchShiftsForSchedule(token, scheduleId, weekStart) {
         businessId: BUSINESS_ID, scheduleId,
         startDateTime: startISO, endDateTime: endISO,
         shiftType: ['offer', 'offer_to_all', 'roster', 'time_off', 'open'],
-        includePayRates: true, after,
+        after,
       },
       query: SHIFTS_QUERY,
     };
     const resp = await fetch(`${GQL_URL}?ShiftsForSchedulePeriod`, {
       method: 'POST',
-      headers: { ...apiHeaders(token, scheduleId), 'X-Version': '1.75.50' },
+      headers: { ...apiHeaders(token, scheduleId), 'X-Version': '1.75.50', 'X-User-Journey': 'Display Schedule Week' },
       body: JSON.stringify(body),
     });
     if (!resp.ok) {

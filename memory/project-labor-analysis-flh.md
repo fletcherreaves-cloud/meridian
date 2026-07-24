@@ -197,9 +197,11 @@ treating as authoritative (LifeLenz may use a cost-based denominator).
 **✅ PER-JOB BREAKDOWN SHIPPED (v4.507):** the right-panel per-job hours+cost breakdown
 (Drive Thru / Grill / Lobby / Maintenance / …, #shifts, reg/OT hours, $cost, $/hr) is now
 pulled from LifeLenz `ShiftsForSchedulePeriod` into the `lifelenz_job_hours` table and shown
-in the Weekly Schedule Summary expanded store view. Details + the ⚠️ reconstructed-GraphQL
-caveat in `memory/project-lifelenz-schedule-jobs.md`. (User: run the `lifelenz_job_hours` SQL
-block in `supabase/schema.sql`.)
+in the Weekly Schedule Summary expanded store view. Details in
+`memory/project-lifelenz-schedule-jobs.md` (GraphQL query VERIFIED against the real capture
+2026-07-24 — ISO8601DateTime!/ShiftTypeEnum! types, earnings via @include not a shifts() arg;
+rejected/unassigned roster shifts excluded). (User: run the `lifelenz_job_hours` SQL block in
+`supabase/schema.sql`.)
 
 ### Fixed / Floor standard — viewed SEPARATELY (owner-confirmed 2026-07-24, v4.506)
 
