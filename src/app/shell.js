@@ -202,7 +202,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // ── PERFORMANCE ────────────────────────────────────────────
       can('analytics.store') && navLabel('PERFORMANCE'),
       pis('analytics.district', 'Org Summary',        '📊', ()=>onOpenModal('operator-summary'), false),
-      pis('analytics.store',    'Store Scorecard',    '⇈', ()=>onOpenModal('ranking'),           false),
+      pis('analytics.store',    'Rankings',           '🏆', ()=>onOpenModal('ranking'),           false),
       // Planning hub (Notes 24): Targets · Monthly Projections · Pace · Yearly · Smart Targets, tabbed
       pis('analytics.store',    'Planning',           '🎯', ()=>onOpenModal('planning'),          false),
       // ── LABOR & SCHEDULING ─────────────────────────────────────

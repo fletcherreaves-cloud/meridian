@@ -37,7 +37,7 @@ Permission keys: `analytics.store/district/labor/brief/forecasting/ai/dashboard`
 
 ## PERFORMANCE
 - **Org Summary** (`operator-summary`, analytics.district) — org/district-level rollup scorecard. *derived*. ✅
-- **Store Scorecard** (`ranking`, analytics.store) — per-store ranking across KPIs. *derived*. ✅
+- **Rankings** (`ranking`, analytics.store) — rank stores OR rolled-up groups (Patch/Operator/State) across any KPI; group rollups pool member rows (rate=row-mean, sales/GC=summed, score=member-mean). Renamed from "Store Scorecard" + groups added v4.523 (Notes 25 #5). *derived*. ✅
 - *(Performance Reviews moved → **PEOPLE / HR** section, v4.516)*
 - **Planning** (`planning`, analytics.store) — ✅ **MERGED HUB (v4.513)**. One nav entry, five lazy tabs (only the active tab mounts): **Targets** (`unified-targets` → tab `targets`, monthly_targets), **Monthly** (`monthly-proj` → `monthly`, forecast engine + patch rollups), **Pace** (`pace-target` → `pace`, MTD vs official + run-rate), **Yearly** (`yearly-proj` → `yearly`, annual), **Smart** (`smart-targets-v2` → `smart`, median-of-simple + backtest, multi-metric). Hub = `PlanningHubPanel` in `src/app/App.js`; each panel gained an `embedded` prop that drops its own full-screen overlay so it fills the hub body. **Legacy modal ids still resolve** (they now deep-link to the matching tab), so At-A-Glance tiles / SAGE links keep working.
 
