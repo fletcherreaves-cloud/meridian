@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.524';
+const MERIDIAN_VERSION    = '4.525';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.525', date:'2026-07-24', changes:[
+    'Changelog / About footer refreshed to match reality: the architecture and data-source lines were badly out of date (they still said "single-file HTML · React 18 · IndexedDB" and, incorrectly, "all data stored locally · no cloud upload"). They now describe the real stack — Vite + React 19, Supabase cloud-first with row-level security, the auto-pull + emailed data sources — and the "Rows Validated" stat is now a live count of rows actually loaded.',
+  ]},
   {version:'4.524', date:'2026-07-24', changes:[
     'Data Manager now shows where each Data Type comes from — a small source line under each row (and a hover tooltip) naming the actual report or feed behind it (e.g. Labor Analysis ← QSRSoft "Labor Analysis"/Operations Report; Daily Glimpse ← emailed QSRSoft Daily Glimpse; Daily Activity ← auto-pulled DAR). Makes it obvious what to run/upload when something is missing.',
   ]},
@@ -2519,7 +2522,9 @@ function App() {
         div({style:{padding:'20px 24px',overflowY:'auto',maxHeight:'80vh'}},
           // Stats row
           div({style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'10px',marginBottom:'24px'}},
-            [['27','Stores'],['5','Forecast Models'],['40,262','Rows Validated'],['9','Correlation Rules']]
+            [['27','Stores'],['5','Forecast Models'],
+             [(['laborRows','qsrActSummaryRows','ctrlRows','opsRows','fobRows','qsrFobRows','glimpseRows','cashRows','salesLedgerRows','schedRows','smgRows','darRows'].reduce((a,k)=>a+((ds&&ds[k]&&ds[k].length)||0),0)).toLocaleString(),'Rows Loaded'],
+             ['9','Correlation Rules']]
               .map(([v,l])=>div({style:{background:'rgba(245,158,11,.06)',border:'1px solid rgba(245,158,11,.15)',
                 borderRadius:'8px',padding:'12px',textAlign:'center'}},
                 div({style:{fontFamily:"'Syne',sans-serif",fontSize:'22px',fontWeight:800,color:'var(--amber)'}},v),
@@ -2543,11 +2548,11 @@ function App() {
           // Data sources info
           div({style:{borderTop:'.5px solid var(--bdr)',paddingTop:'16px',marginTop:'8px'}},
             div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:'1.8'}},
-              '⚡ Architecture: Single-file HTML · React 18 UMD · IndexedDB storage · Open-Meteo weather API'),
+              '⚡ Architecture: Vite + React 19 · Supabase (Postgres + magic-link auth + Deno Edge Functions) · Dexie/OPFS cache · Vercel · Open-Meteo weather API'),
             div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:'1.8',marginTop:'4px'}},
-              '📊 Data sources: QSRSoft (manual export) · Lifelenz (Labor Analysis) · 3 Peaks · Register Audit · FOB · Inventory'),
+              '📊 Data sources: QSRSoft (auto-pull DAR/eBOS/FOB + emailed Glimpse/Cash/Sales-Ledger) · LifeLenz (auto-sync schedule + per-job) · SMG VOICE · 3 Peaks · Register Audit · manual upload fallback'),
             div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:'1.8',marginTop:'4px'}},
-              '🔒 All data stored locally in your browser · No cloud upload · No external data transmission')
+              '🔒 Cloud-first: data saved to Supabase and loaded on any device, row-level-security scoped per role / accessible locations · magic-link sign-in')
           )
         )
       )
