@@ -1283,13 +1283,27 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   // On-demand pull triggers (dispatch GitHub Actions via trigger-dar-sync fn)
   const [syncBusy, setSyncBusy] = uSt(null);   // workflow key currently dispatching
   const [syncNote, setSyncNote] = uSt(null);   // { wf, msg, err }
+  // What each Sync button SHOULD trigger, and a distinctive keyword the server's
+  // confirmation must contain. If you click one stream but the server's message names a
+  // DIFFERENT stream, the trigger-dar-sync Edge Function is stale/misrouted — flag it
+  // loudly instead of silently trusting it (it once always fired DAR regardless of key).
+  const SYNC_LABEL = { dar:'QSRSoft Daily Activity', ebos:'eBOS Purchases', fob:'FOB / P&L Cost', lifelenz:'LifeLenz Schedule' };
+  const SYNC_KW    = { dar:'daily activity', ebos:'ebos', fob:'fob', lifelenz:'lifelenz' };
   const doSync = async (wf) => {
     setSyncBusy(wf); setSyncNote(null);
     const r = await triggerSync(wf, {});
     setSyncBusy(null);
-    setSyncNote(r && r.error
-      ? { wf, msg: r.error, err:true }
-      : { wf, msg: (r && r.message) || 'Sync started — data refreshes in ~10 min.', err:false });
+    const want = SYNC_LABEL[wf] || wf;
+    if (r && r.error) { setSyncNote({ wf, msg: `✗ ${want}: ${r.error}`, err:true }); return; }
+    const srv = ((r && r.message) || '').trim();
+    const lower = srv.toLowerCase();
+    // Mismatch only when the message clearly names a DIFFERENT known stream (avoids false
+    // positives on a generic "Sync started" message that names nothing).
+    const namesOther = Object.entries(SYNC_KW).some(([k, kw]) => k !== wf && lower.includes(kw));
+    const mismatch = !!srv && SYNC_KW[wf] && !lower.includes(SYNC_KW[wf]) && namesOther;
+    setSyncNote(mismatch
+      ? { wf, err:true, msg: `⚠ You clicked ${want}, but the server started a different sync — "${srv}". The trigger-dar-sync Edge Function is likely stale; redeploy it (supabase functions deploy trigger-dar-sync).` }
+      : { wf, err:false, msg: `✓ ${want} — ${srv || 'sync started; data refreshes in ~10 min.'}` });
   };
   const syncBtn = (wf) => h('button',{
     onClick:()=>doSync(wf), disabled:syncBusy===wf, title:'Pull fresh data now',

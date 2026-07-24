@@ -85,9 +85,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.509';
+const MERIDIAN_VERSION    = '4.510';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.510', date:'2026-07-24', changes:[
+    'Data Manager Sync buttons now confirm which stream actually got triggered. If you click one source (e.g. LifeLenz Schedule) but the server starts a different sync, the toast warns you loudly instead of silently trusting it — the tell-tale sign the sync Edge Function needs a redeploy. Each toast also names the stream it dispatched.',
+  ]},
   {version:'4.509', date:'2026-07-24', changes:[
     'Per-station breakdown (v4.507) now uses the verified LifeLenz shift query, so the daily sync can actually pull it. Also excludes rejected/unassigned shifts so a dropped shift no longer adds phantom hours to a station. (No visible change until the data lands after the next LifeLenz sync.)',
   ]},
