@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.523';
+const MERIDIAN_VERSION    = '4.524';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.524', date:'2026-07-24', changes:[
+    'Data Manager now shows where each Data Type comes from — a small source line under each row (and a hover tooltip) naming the actual report or feed behind it (e.g. Labor Analysis ← QSRSoft "Labor Analysis"/Operations Report; Daily Glimpse ← emailed QSRSoft Daily Glimpse; Daily Activity ← auto-pulled DAR). Makes it obvious what to run/upload when something is missing.',
+  ]},
   {version:'4.523', date:'2026-07-24', changes:[
     'Rankings (renamed from "Store Scorecard") now ranks GROUPS too, not just stores — a new "Rank by" toggle switches between Stores, Patch, Operator, and State. Group rows are computed correctly (member rows pooled and aggregated the same way a single store is — rates as a row-mean, sales and guest counts summed, scores as the member average — never averaging pre-rolled averages), so you can see which patch or operator leads on any KPI.',
   ]},
