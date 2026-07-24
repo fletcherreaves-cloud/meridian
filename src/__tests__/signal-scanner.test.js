@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  spearman, pValueFromR, benjaminiHochberg, scanAllPairs, SEEDED_SIGNALS, METRIC_CATEGORIES, findMetric,
+  spearman, pValueFromR, benjaminiHochberg, scanAllPairs, SEEDED_SIGNALS, METRIC_CATEGORIES, findMetric, metricConcept,
 } from '../engine/signal-registry.js';
 
 describe('signal scanner — Spearman', () => {
@@ -90,6 +90,39 @@ describe('signal scanner — scanAllPairs', () => {
     const res = scanAllPairs({}, { granularity: 'daily' });
     expect(res.results).toEqual([]);
     expect(res.metricsUsed).toBe(0);
+  });
+
+  it('suppresses same-concept (tautological) pairs', () => {
+    // Manual sales + cloud sales (same concept) plus an unrelated metric.
+    const rows = [];
+    for (const loc of ['3708', '5183']) {
+      for (let k = 0; k < 35; k++) {
+        rows.push({ loc, date: days[k], allNetSales: 1000 + k * 5, gc: 900 + k * 4, laborPct: 0.25 });
+      }
+    }
+    // ledger sales (slSales) and DAR sales (qaSales) share concept 'net_sales'.
+    const res = scanAllPairs({ salesLedgerRows: rows, qsrActSummaryRows: rows.map(r => ({ ...r, sales: r.allNetSales })) },
+      { granularity: 'daily', minAbsR: 0.3, minN: 20 });
+    // No surfaced pair may be two net_sales metrics.
+    const tautology = res.results.find(r => metricConcept(r.xKey) === metricConcept(r.yKey));
+    expect(tautology).toBeUndefined();
+  });
+});
+
+describe('signal scanner — concept map', () => {
+  it('groups manual and cloud versions of the same measure', () => {
+    expect(metricConcept('sales')).toBe(metricConcept('slSales'));
+    expect(metricConcept('sales')).toBe(metricConcept('qaSales'));
+    expect(metricConcept('oepe')).toBe(metricConcept('glOepe'));
+    expect(metricConcept('promoPct')).toBe(metricConcept('promoAmt')); // count/$/% collapse
+  });
+  it('keeps genuinely different measures in different concepts', () => {
+    expect(metricConcept('sales')).not.toBe(metricConcept('gc'));
+    expect(metricConcept('laborPct')).not.toBe(metricConcept('oepe'));
+    expect(metricConcept('promoPct')).not.toBe(metricConcept('discPct'));
+  });
+  it('defaults ungrouped keys to their own key', () => {
+    expect(metricConcept('r2p')).toBe('r2p');
   });
 });
 

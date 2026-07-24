@@ -82,9 +82,12 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.495';
+const MERIDIAN_VERSION    = '4.496';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.496', date:'2026-07-24', changes:[
+    'Signals Scanner — smarter results: near-identical metric pairs are now suppressed (the same measure pulled from two sources — e.g. manual Sales vs cloud Sales — or the same event as count/$/%). Those always correlate ~1.0 and were crowding out the real discoveries; the scanner now surfaces genuine cross-metric relationships instead.',
+  ]},
   {version:'4.495', date:'2026-07-24', changes:[
     'Signals — new 🔎 Scanner tab: auto-correlation engine that cycles every metric pair and surfaces the strongest relationships, ranked by Pearson r with a Spearman cross-check. Guardrails keep it honest — a minimum sample size, an effect-size floor, and a Benjamini–Hochberg false-discovery correction so pairs that only look strong by chance are flagged out. Results are framed as "move together," never cause-and-effect; any discovery can be one-click promoted into Signal Lab. Ships with a set of predefined "obvious" signals so the panel has value before you scan.',
     'Signals — expanded metric library: the Controls family now includes T-Reds Before AND After Total (% and count), regular cash + cashless refunds, the full promo group, discount count/$, POS override $, and cash over/short $ — plus the cryptic "Red B %" is now correctly labeled "T-Reds Before Total %". Food Cost adds Disc Coupon %.',

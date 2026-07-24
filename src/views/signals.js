@@ -1053,7 +1053,8 @@ function ScannerTab({ ds, onTrack }) {
     h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
       '🔎 Auto-Correlation Scanner — cycles every metric pair across the loaded data and surfaces the strongest relationships. ',
       'Results show which metrics ', h('b', null, 'move together'), ' — this is association, ', h('b', null, 'not cause-and-effect'), '. ',
-      'Guardrails: a minimum sample size, an effect-size floor, and a Benjamini–Hochberg false-discovery correction so pairs that only look strong by chance are flagged out.'),
+      'Guardrails: a minimum sample size, an effect-size floor, and a Benjamini–Hochberg false-discovery correction so pairs that only look strong by chance are flagged out. ',
+      'Near-identical pairs (the same metric from two sources, or the same event as count/$/%) are hidden so real cross-metric relationships surface.'),
 
     // Controls
     h('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' } },

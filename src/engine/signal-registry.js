@@ -157,6 +157,40 @@ for (const cat of METRIC_CATEGORIES) {
 
 export function findMetric(key) { return METRIC_FLAT[key] || null; }
 
+// ── Concept grouping (scanner de-duplication) ─────────────────────────────────
+// Several metrics measure the SAME underlying quantity — the identical number
+// pulled from a different source (manual vs cloud), or the same event expressed
+// as count / $ / %. Correlating those against each other is a tautology (r≈1)
+// that clutters the scanner. Metrics sharing a concept are never paired with one
+// another; every CROSS-concept relationship is still surfaced.
+const METRIC_CONCEPT = {
+  // net sales — manual, glimpse, ledger, DAR
+  sales: 'net_sales', glSales: 'net_sales', slSales: 'net_sales', qaSales: 'net_sales',
+  // guest count
+  gc: 'guest_count', glGC: 'guest_count', qaGC: 'guest_count',
+  // sales vs LY
+  salesVsLY: 'sales_vs_ly', slSalesVsLY: 'sales_vs_ly', qaSalesVsLY: 'sales_vs_ly',
+  // labor %
+  laborPct: 'labor_pct', glLaborPct: 'labor_pct',
+  // service timings
+  oepe: 'oepe', glOepe: 'oepe',
+  kvst: 'kvst', glKvst: 'kvst',
+  parkPct: 'park_pct', glParkedPct: 'park_pct',
+  // channel mix
+  dtMixPct: 'dt_pct', slDtPct: 'dt_pct',
+  // controls families — collapse count/$/% + manual/cloud into one concept each
+  promoPct: 'promo', promoCnt: 'promo', promoAmt: 'promo', glPromoPct: 'promo', glPromoAmt: 'promo',
+  discPct: 'discount', discCnt: 'discount', discAmt: 'discount',
+  cashOSPct: 'cash_os', cashOSAmt: 'cash_os', glCashOSPct: 'cash_os', csCashOSPct: 'cash_os',
+  posOverCnt: 'pos_over', posOverAmt: 'pos_over', glPosOverCnt: 'pos_over', glPosOverAmt: 'pos_over', csPosOverAmt: 'pos_over',
+  cashRefCnt: 'cash_ref', cashRefAmt: 'cash_ref', csCashRefCnt: 'cash_ref', csCashRefAmt: 'cash_ref',
+  cashlessRefCnt: 'cashless_ref', cashlessRefAmt: 'cashless_ref', csCashlessRefCnt: 'cashless_ref', csCashlessRefAmt: 'cashless_ref',
+  tRedBPct: 'tred_before', tRedBCnt: 'tred_before',
+  tRedAPct: 'tred_after', tRedACnt: 'tred_after',
+};
+// The concept for a metric key (defaults to the key itself when ungrouped).
+export function metricConcept(key) { return METRIC_CONCEPT[key] || key; }
+
 // ── Period helpers ────────────────────────────────────────────────────────────
 function _normLoc(l) { return String(parseInt(String(l||'').replace(/\D/g,''),10)||''); }
 function _mKey(d) {
@@ -471,6 +505,9 @@ export function scanAllPairs(ds, opts = {}) {
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
       const a = keys[i], b = keys[j];
+      // Skip same-concept pairs (identical quantity from another source, or the
+      // same event as count/$/%) — those are tautologies, not discoveries.
+      if (metricConcept(a) === metricConcept(b)) continue;
       const ma = valMap[a], mb = valMap[b];
       // Intersect on shared loc_period keys; iterate the smaller map.
       const iter = Object.keys(ma).length <= Object.keys(mb).length ? ma : mb;
