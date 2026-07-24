@@ -82,9 +82,48 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.389';
-const MERIDIAN_BUILD_DATE = '2026-07-09';
+const MERIDIAN_VERSION    = '4.494';
+const MERIDIAN_BUILD_DATE = '2026-07-23';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.494', date:'2026-07-23', changes:[
+    'SAGE is now RBAC-aware: what SAGE can see and recommend is scoped to each user\'s role and accessible stores. A restricted user sees their own store detail plus district totals and their rank — but never another store\'s individual figures. Owner/admin access is unchanged. (Activates after a sage-chat edge-function redeploy.)',
+  ]},
+  {version:'4.492', date:'2026-07-23', changes:[
+    'Yearly Projections: new view that rolls the 12 official monthly sales targets into an annual picture per store — Annual Target, YTD Actual, YTD-vs-plan (current month prorated), Projected Full Year, and FY-vs-target — with OK/FL/grand subtotals and a year stepper. Nav: PLANNING → Yearly Projections.',
+  ]},
+  {version:'4.491', date:'2026-07-23', changes:[
+    'Signals: tracking-to-plan now shows guest-count pace alongside dollar pace, with a traffic-vs-sales divergence flag — guests running ahead of sales warns of a check-average slip before it shows up in the dollars.',
+  ]},
+  {version:'4.490', date:'2026-07-23', changes:[
+    'Pace to Target: new view — current-month MTD actual sales vs the official monthly target, with run-rate pace and % ahead/behind, plus a Store / Patch / Operator toggle. Nav: PLANNING → Pace to Target.',
+  ]},
+  {version:'4.489', date:'2026-07-23', changes:[
+    'Smart Targets: added a FOB % metric (matching the At-A-Glance food-cost formula) and an "Apply as Official" action — per-store or all-shown — that writes the Smart number into the official monthly targets for the upcoming month, feeding Projections.',
+  ]},
+  {version:'4.488', date:'2026-07-23', changes:[
+    'SAGE: saved-prompt library (📚 Prompts) — save, run, and schedule your go-to questions to auto-run daily or weekly, with results surfaced on a new "SAGE Scheduled Runs" At-A-Glance tile.',
+  ]},
+  {version:'4.487', date:'2026-07-23', changes:[
+    'SAGE: every answer now has a 🐞 Log action that turns it into a tracked Task or Feature Request — auto-suggesting the destination, capturing the question + answer, and drafting a ready-to-paste troubleshooting prompt.',
+  ]},
+  {version:'4.486', date:'2026-07-23', changes:[
+    'Smart Targets: per-store known-event adjustments — exclude one-off days (holidays, outages, remodels) from the learning window, and add a signed event delta to the target.',
+  ]},
+  {version:'4.485', date:'2026-07-23', changes:[
+    'Labor Analysis: weekly Fixed-Labor-Hours inputs now derive automatically from the daily LifeLenz schedule (cloud-fresh on every device); a manual MBI upload only gap-fills stores the auto source doesn\'t cover. Added week navigation and an Auto/Manual source chip.',
+  ]},
+  {version:'4.484', date:'2026-07-23', changes:[
+    'Smart Targets: added Labor % (sales-weighted) and DT Speed / OEPE (car-weighted) as target metrics, alongside Sales.',
+  ]},
+  {version:'4.483', date:'2026-07-23', changes:[
+    'Smart Targets model: a 27-store backtest found simple trailing methods beat the engineered models for monthly store sales, so the recommended number is now the median of three simple methods (T3M/T6W/T3W · recent-3wk · 3-mo-avg). The engineered models are preserved as on-demand diagnostics, and the backtest was deepened.',
+  ]},
+  {version:'4.482', date:'2026-07-22', changes:[
+    'New Smart Targets, Labor Analysis (Fixed-Labor-Hours), and Employee Skill Levels panels. The LifeLenz People pull is now token-independent (captures the login session\'s own token), so it no longer breaks on monthly token expiry.',
+  ]},
+  {version:'4.426', date:'2026-07-20', changes:[
+    'Data-Refresh sprint: emailed QSRSoft reports (Sales Ledger, Daily Glimpse, Cash Sheet) now parse server-side into Supabase, so channel mix / 3PO / OEPE / KVS / controls are cloud-fresh on every device. At-A-Glance tiles use freshest-wins (manual upload overrides same-day; auto fills the gap), the FOB tile is dollar-weighted, and there\'s a "movers" strip, in-app Sync buttons, and an intraday DAR pull.',
+  ]},
   {version:'4.389', date:'2026-07-09', changes:[
     'Task Queue: mobile-first panel for autonomous + manual work tracking. Two tabs — Queue (add/prioritize/status) and AI Notes (drop session context). Tier 1/2/3 safety classification, priority 🔴🟡🟢, status lifecycle. Fixed ⊕ FAB, bottom-sheet add form. Supabase-backed (tasks + session_notes tables). Nav: ANALYTICS → Task Queue.',
   ]},

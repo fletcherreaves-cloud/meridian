@@ -19,10 +19,10 @@ const STEPS = [
     tip: 'This tour takes about 2 minutes. You can skip any time and re-open from Help.',
   },
   {
-    icon: '📂',
-    title: 'Step 1 — Load Your Data',
-    body: 'Every session starts with loading your data. Click "↑ Load" in the top bar, or drag files directly onto the app. Start with your QSRSoft Operations Report — it unlocks most panels immediately.',
-    tip: 'Pro tip: load multiple files at once. Meridian auto-detects each file type by name.',
+    icon: '☁️',
+    title: 'Step 1 — Your Data (Cloud-First)',
+    body: 'Meridian is cloud-first: your LifeLenz labor and QSRSoft sales/DAR data sync automatically every morning, and everything you\'ve saved loads from the cloud on login — no re-uploading when you switch phone, laptop, or browser. Manual upload ("↑ Load" in the top bar, or drag files on) is a fallback for reports that aren\'t automated yet, or to fill a gap before the next sync.',
+    tip: 'Manual uploads never override auto-synced data — they only fill a store/date the cloud doesn\'t cover yet. Meridian auto-detects each file type by name.',
     highlight: 'load',
   },
   {
@@ -82,9 +82,15 @@ const STEPS = [
     highlight: 'settings',
   },
   {
+    icon: '🧭',
+    title: 'Step 10 — Intelligence & AI',
+    body: 'Beyond the daily workflow, Meridian has a planning + AI layer. Smart Targets learns a defensible sales / labor % / FOB target per store; Pace to Target and Yearly Projections track actuals vs those targets; Signals surfaces live operational alerts and correlations; and SAGE is a Claude-powered advisor you can ask anything about your district.',
+    tip: 'Ask SAGE a question, save it (📚 Prompts), even schedule it to run automatically — and turn any answer into a tracked task with the 🐞 Log button.',
+  },
+  {
     icon: '✅',
     title: 'You\'re Ready',
-    body: 'That\'s the core workflow. Load data → Check Command Center → Run Priority Brief → Deep-dive any store. The sidebar has more panels as you grow: Scheduling Intel, Delivery Mix, Rankings, Labor Analytics, and more.',
+    body: 'That\'s the core workflow. Data syncs automatically → Check the Command Center → Run the Priority Brief → Deep-dive any store. The sidebar has much more: Smart Targets, Pace to Target, Yearly Projections, Signals, SAGE, Labor Analysis, Scheduling, Delivery Mix, and more.',
     tip: 'This guide is always available from the "?" Help button in the top bar.',
   },
 ];
