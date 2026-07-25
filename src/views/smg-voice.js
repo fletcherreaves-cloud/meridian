@@ -3,8 +3,102 @@
 // Data source: ds.smgRows[] — parsed from SMG VOICE PDF comment reports
 // Row shape: { loc, storeName, reportStart, reportEnd, commentDate, visitDate, nsn, text, satisfactionLabel, score }
 import * as React from 'react';
+import { INV_ORG_COORDS } from '../constants';
+import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 
 const h = React.createElement;
+
+// ── Location scope + grouping (matches the app-standard filter: analytics.js
+// District Priority Brief). Filter chain: All / 🟠 OK / 🔵 FL / supervisor
+// patch, plus a Store dropdown. Org data from INV_ORG_COORDS (keyed un-padded);
+// VOICE rows carry zero-padded NSNs, so normalize both to the integer form.
+const _normLoc = loc => String(parseInt(loc, 10) || loc);
+const _orgOf   = loc => INV_ORG_COORDS[_normLoc(loc)] || {};
+
+// orgFilter: 'all' | 'ok' | 'fl' | <supervisor patch name>
+function orgMatch(orgFilter, loc) {
+  if (!orgFilter || orgFilter === 'all') return true;
+  const o = _orgOf(loc);
+  if (orgFilter === 'ok') return o.state === 'OK';
+  if (orgFilter === 'fl') return o.state === 'FL';
+  return (o.sup || '') === orgFilter; // supervisor patch
+}
+function orgDesc(orgFilter, storeSel, nameOf) {
+  if (storeSel && storeSel !== 'all') return (nameOf && nameOf(storeSel)) || ('Store ' + storeSel);
+  if (!orgFilter || orgFilter === 'all') return 'All Locations';
+  if (orgFilter === 'ok') return 'Oklahoma';
+  if (orgFilter === 'fl') return 'Florida';
+  return orgFilter; // patch (supervisor)
+}
+
+// App-standard filter bar: All / OK / FL / patch pills (amber, per analytics)
+// + a Store dropdown. `locs` = every loc in the active tab's data.
+function VoiceFilterBar({ locs, orgFilter, setOrgFilter, storeSel, setStoreSel, nameOf }) {
+  const present = [...new Set((locs || []).map(_normLoc))];
+  if (present.length <= 1) return null;
+  const hasOK = present.some(l => _orgOf(l).state === 'OK');
+  const hasFL = present.some(l => _orgOf(l).state === 'FL');
+  const patches = [...new Set(present.map(l => _orgOf(l).sup).filter(Boolean))].sort();
+  const filters = ['all', ...(hasOK ? ['ok'] : []), ...(hasFL ? ['fl'] : []), ...patches];
+  const storeOpts = present.filter(l => orgMatch(orgFilter, l)).sort((a, b) => +a - +b);
+
+  const fLabel = f => f === 'all' ? 'All' : f === 'ok' ? '🟠 OK' : f === 'fl' ? '🔵 FL' : f.split(' ').slice(-1)[0];
+  const pill = f => h('button', { key: f, onClick: () => { setOrgFilter(f); if (storeSel !== 'all' && !orgMatch(f, storeSel)) setStoreSel('all'); },
+    style: { padding: '3px 9px', borderRadius: 99, fontSize: 9, cursor: 'pointer',
+      border: '.5px solid ' + (orgFilter === f ? 'rgba(245,158,11,.4)' : 'var(--bdr)'),
+      background: orgFilter === f ? 'var(--adim,rgba(245,158,11,.12))' : 'transparent',
+      color: orgFilter === f ? 'var(--amber,#f59e0b)' : 'var(--text2)', whiteSpace: 'nowrap' } }, fLabel(f));
+
+  return h('div', { style: { padding: '6px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 } },
+    h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text3)' } }, 'Filter:'),
+    ...filters.map(pill),
+    h('select', { value: storeSel, onChange: e => setStoreSel(e.target.value),
+      style: { marginLeft: 4, fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' } },
+      h('option', { value: 'all' }, `All stores (${storeOpts.length})`),
+      storeOpts.map(l => h('option', { key: l, value: l }, `${l} — ${nameOf ? nameOf(l) : l}`)),
+    ),
+  );
+}
+
+// ── CSV export + print (shared) ─────────────────────────────────────────────
+const _csvCell = v => {
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+function exportCSV(filename, headers, rows) {
+  const lines = [headers.map(_csvCell).join(','), ...rows.map(r => r.map(_csvCell).join(','))];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function printReport(title, subtitle, headers, rows) {
+  const th = headers.map(x => `<th>${x}</th>`).join('');
+  const trs = rows.map(r => `<tr>${r.map(c => `<td>${c == null ? '' : c}</td>`).join('')}</tr>`).join('');
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.write(`<!doctype html><html><head><title>${title}</title><style>
+    body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;color:#111}
+    h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:14px}
+    table{border-collapse:collapse;width:100%;font-size:11px}
+    th,td{border:1px solid #ccc;padding:4px 7px;text-align:center}
+    th{background:#f3f4f6;text-transform:uppercase;font-size:9px;letter-spacing:.4px}
+    td:first-child,th:first-child{text-align:left}
+    </style></head><body><h1>${title}</h1><div class="sub">${subtitle}</div>
+    <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></body></html>`);
+  w.document.close(); w.focus();
+  setTimeout(() => w.print(), 300);
+}
+// Small toolbar of Export/Print buttons; caller supplies the data builders.
+function ExportButtons({ onCsv, onPrint }) {
+  const s = { padding: '4px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' };
+  return h('div', { style: { display: 'flex', gap: 6 } },
+    h('button', { onClick: onCsv, style: s, title: 'Export current view to CSV' }, '⬇ CSV'),
+    h('button', { onClick: onPrint, style: s, title: 'Print current view' }, '🖨 Print'),
+  );
+}
 
 // ── Settings storage ───────────────────────────────────────────────────────────
 const SMG_SETTINGS_KEY = 'mf_smg_settings_v2';
@@ -298,21 +392,22 @@ function SmgSettingsEditor({ settings, onChange, fsRows }) {
 }
 
 // ── FullScale score table ──────────────────────────────────────────────────────
-function FullScalePanel({ fsRows, stores }) {
+function FullScalePanel({ fsRows, stores, inScope, storeSel }) {
   const { useState, useMemo } = React;
   const [settings, setSettings] = useState(() => loadSmgSettings());
   const [showSettings, setShowSettings] = useState(false);
 
   const FS_METRICS = useMemo(() => buildFsMetrics(settings), [settings]);
+  const scoped = useMemo(() => fsRows.filter(r => (!inScope || inScope(r.loc)) && (!storeSel || storeSel === 'all' || _normLoc(r.loc) === _normLoc(storeSel))), [fsRows, inScope, storeSel]);
 
   // Group by year-month
   const periods = useMemo(() => {
     const seen = new Set();
-    return fsRows
+    return scoped
       .map(r => ({ key:`${r.year}-${String(r.month).padStart(2,'0')}`, year:r.year, month:r.month, label: new Date(r.year, r.month-1).toLocaleDateString('en-US',{month:'long',year:'numeric'}) }))
       .filter(p => { if(seen.has(p.key)) return false; seen.add(p.key); return true; })
       .sort((a,b) => b.key.localeCompare(a.key));
-  }, [fsRows]);
+  }, [scoped]);
 
   const [selPeriod, setSelPeriod] = useState('');
   // Always resolve to a valid period even when data loads after mount
@@ -323,8 +418,8 @@ function FullScalePanel({ fsRows, stores }) {
 
   const periodRows = useMemo(() => {
     const [yr, mo] = (activePeriod||'').split('-').map(Number);
-    return fsRows.filter(r => r.year===yr && r.month===mo);
-  }, [fsRows, activePeriod]);
+    return scoped.filter(r => r.year===yr && r.month===mo);
+  }, [scoped, activePeriod]);
 
   const sorted = useMemo(() => [...periodRows].sort((a,b) => (b.osatTop2||0) - (a.osatTop2||0)), [periodRows]);
 
@@ -342,10 +437,10 @@ function FullScalePanel({ fsRows, stores }) {
     return s ? (s.name||s.loc) : loc;
   };
 
-  if (!fsRows.length) return h('div', {style:{padding:40,textAlign:'center',color:'var(--text3)'}},
+  if (!scoped.length) return h('div', {style:{padding:40,textAlign:'center',color:'var(--text3)'}},
     h('div',{style:{fontSize:32,marginBottom:12}},'📊'),
-    h('div',{style:{fontWeight:700,fontSize:14,marginBottom:8,color:'var(--text)'}},'No FullScale Data Loaded'),
-    h('div',{style:{fontSize:12,lineHeight:1.6}},'Drop a FullScale_Report.xlsx file onto Meridian to load aggregate SMG scores.')
+    h('div',{style:{fontWeight:700,fontSize:14,marginBottom:8,color:'var(--text)'}}, fsRows.length ? 'No FullScale Data In Scope' : 'No FullScale Data Loaded'),
+    h('div',{style:{fontSize:12,lineHeight:1.6}}, fsRows.length ? 'No stores in the selected scope have FullScale scores.' : 'Drop a FullScale_Report.xlsx file onto Meridian to load aggregate SMG scores.')
   );
 
   if (!sorted.length) return h('div',{style:{padding:40,textAlign:'center',color:'var(--text3)'}},'No data for selected period.');
@@ -366,22 +461,34 @@ function FullScalePanel({ fsRows, stores }) {
     h('div', {style:{overflowY:'auto',flex:1,padding:16}},
       // Toolbar row: period selector + settings toggle
       h('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}},
-        periods.length > 1 && h('div', {style:{display:'flex',gap:6,flexWrap:'wrap',flex:1}},
-          h('span',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',alignSelf:'center',marginRight:4}},'PERIOD:'),
-          ...periods.map(p => h('button', {key:p.key, onClick:()=>setSelPeriod(p.key),
-            style:{padding:'3px 10px',borderRadius:20,border:'.5px solid var(--bdr)',
-              background:p.key===activePeriod?'var(--accent)':'transparent',
-              color:p.key===activePeriod?'#fff':'var(--text)',
-              cursor:'pointer',fontSize:10,fontWeight:p.key===activePeriod?700:400}},
-            p.label
-          ))
+        periods.length >= 1 && h('div', {style:{display:'flex',gap:6,alignItems:'center',flex:1}},
+          h('span',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',marginRight:4}},'PERIOD:'),
+          h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
+            style:{padding:'4px 8px',borderRadius:6,border:'.5px solid var(--bdr)',background:'var(--bg)',color:'var(--text)',fontSize:11,cursor:'pointer',fontWeight:700}},
+            periods.map(p => h('option', { key:p.key, value:p.key }, p.label)))
         ),
-        h('button', { onClick:()=>setShowSettings(v=>!v),
-          title:'Edit score thresholds',
-          style:{padding:'4px 10px',borderRadius:6,border:'1px solid var(--bdr)',
-            background:showSettings?'var(--amber)':'var(--surf)',
-            color:showSettings?'#000':'var(--text3)',cursor:'pointer',fontSize:11,marginLeft:'auto'}},
-          '⚙ Thresholds')
+        h('div', { style:{ display:'flex', gap:6, alignItems:'center', marginLeft:'auto' } },
+          h(ExportButtons, {
+            onCsv: () => {
+              const headers = ['Rank', 'Store', 'NSN', ...FS_METRICS.map(m => m.label)];
+              const body = sorted.map((r, i) => [i + 1, sName(r.loc), r.loc, ...FS_METRICS.map(m => m.fmt(r[m.key]))]);
+              body.unshift(['', 'District Average', '', ...FS_METRICS.map(m => m.fmt(distAvg[m.key]))]);
+              exportCSV(`VOICE_Scorecard_${activePeriod}.csv`, headers, body);
+            },
+            onPrint: () => {
+              const headers = ['Rank', 'Store', ...FS_METRICS.map(m => m.label)];
+              const body = sorted.map((r, i) => [i + 1, sName(r.loc), ...FS_METRICS.map(m => m.fmt(r[m.key]))]);
+              body.unshift(['', 'District Average', ...FS_METRICS.map(m => m.fmt(distAvg[m.key]))]);
+              printReport('VOICE Scorecard (FullScale)', `${periods.find(p => p.key === activePeriod)?.label || activePeriod} · ${sorted.length} stores`, headers, body);
+            },
+          }),
+          h('button', { onClick:()=>setShowSettings(v=>!v),
+            title:'Edit score thresholds',
+            style:{padding:'4px 10px',borderRadius:6,border:'1px solid var(--bdr)',
+              background:showSettings?'var(--amber)':'var(--surf)',
+              color:showSettings?'#000':'var(--text3)',cursor:'pointer',fontSize:11}},
+            '⚙ Thresholds')
+        )
       ),
 
       // Legend
@@ -456,14 +563,15 @@ function vpColor(val, m) {
   return val <= (m.yellowAbove || 5) ? '#10b981' : val <= (m.redAbove || 10) ? '#f59e0b' : '#ef4444';
 }
 
-function VoicePerfPanel({ rows, stores }) {
+function VoicePerfPanel({ rows, stores, inScope, storeSel }) {
   const { useState, useMemo } = React;
+  const scoped = rows.filter(r => (!inScope || inScope(r.loc)) && (!storeSel || storeSel === 'all' || _normLoc(r.loc) === _normLoc(storeSel)));
 
   // Available periods
   const periods = useMemo(() => {
     const seen = new Set();
-    return rows.map(r => r.period).filter(p => { if (seen.has(p)) return false; seen.add(p); return true; }).sort().reverse();
-  }, [rows]);
+    return scoped.map(r => r.period).filter(p => { if (seen.has(p)) return false; seen.add(p); return true; }).sort().reverse();
+  }, [scoped]);
 
   const [selPeriod, setSelPeriod]   = useState('');
   const [selType, setSelType]       = useState('monthly');
@@ -471,10 +579,21 @@ function VoicePerfPanel({ rows, stores }) {
 
   const activePeriod = selPeriod && periods.includes(selPeriod) ? selPeriod : (periods[0] || '');
 
-  const filtered = useMemo(() =>
-    rows.filter(r => r.period === activePeriod && r.report_type === selType),
-    [rows, activePeriod, selType]
-  );
+  // One physical store can appear 2–3× in a period: it's covered by multiple
+  // operator reports (THORLEY / LOPEZ-THORLEY / MORNHINWEG overlap stores), and
+  // a re-uploaded month lands new rows if the filename → operator_id differs.
+  // Collapse to one row per store, keeping the most-populated (dupes are often
+  // all-dashes). Metric fill count breaks ties; operator_name is preserved.
+  const filtered = useMemo(() => {
+    const byLoc = {};
+    for (const r of scoped) {
+      if (r.period !== activePeriod || r.report_type !== selType) continue;
+      const k = String(parseInt(r.loc, 10) || r.loc);
+      const score = VP_METRICS.reduce((n, m) => n + (r[m.key] != null ? 1 : 0), 0);
+      if (!byLoc[k] || score > byLoc[k]._score) byLoc[k] = { ...r, _score: score };
+    }
+    return Object.values(byLoc);
+  }, [scoped, activePeriod, selType]);
 
   const sorted = useMemo(() => {
     const m = VP_METRICS.find(x => x.key === sortMetric);
@@ -499,8 +618,14 @@ function VoicePerfPanel({ rows, stores }) {
   }, [filtered]);
 
   const sName = loc => {
-    const s = (stores || []).find(s => String(s.loc) === String(loc));
-    return s ? (s.name || s.loc) : loc;
+    // VOICE rows carry zero-padded NSNs ('03708'); the store list is keyed '3708'.
+    // Normalize both to the integer form so leading-zero stores resolve instead of
+    // showing the raw NSN, then fall back to the report's own store name.
+    const norm = String(parseInt(loc, 10) || loc);
+    const s = (stores || []).find(s => String(parseInt(s.loc, 10) || s.loc) === norm);
+    if (s && s.name) return s.name;
+    const row = rows.find(r => String(r.loc) === String(loc) && r.loc_name);
+    return (row && row.loc_name) || loc;
   };
 
   const periodFmt = p => {
@@ -533,10 +658,9 @@ function VoicePerfPanel({ rows, stores }) {
     // Toolbar
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
       h('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' } }, 'Period:'),
-      ...periods.slice(0, 6).map(p => h('button', { key: p, onClick: () => setSelPeriod(p),
-        style: { padding: '3px 10px', borderRadius: 20, border: '.5px solid var(--bdr)', cursor: 'pointer', fontSize: 10, fontWeight: p === activePeriod ? 700 : 400,
-          background: p === activePeriod ? 'var(--accent)' : 'transparent', color: p === activePeriod ? '#fff' : 'var(--text)' } }, periodFmt(p))
-      ),
+      h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
+          style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
+          periods.map(p => h('option', { key: p, value: p }, periodFmt(p)))),
       h('div', { style: { display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
         Object.entries(TYPE_LABELS).map(([t, label]) =>
           h('button', { key: t, onClick: () => setSelType(t), style: {
@@ -545,6 +669,20 @@ function VoicePerfPanel({ rows, stores }) {
         )
       ),
       h('span', { style: { marginLeft: 'auto', fontSize: 10, color: 'var(--text3)' } }, `${filtered.length} stores · ${activePeriod}`),
+      h(ExportButtons, {
+        onCsv: () => {
+          const headers = ['Store', 'NSN', 'Operator', ...VP_METRICS.map(m => m.label)];
+          const body = sorted.map(r => [sName(r.loc), r.loc, r.operator_name || '', ...VP_METRICS.map(m => r[m.key] != null ? r[m.key] + '%' : '')]);
+          body.unshift(['District Average', '', '', ...VP_METRICS.map(m => distAvg[m.key] != null ? distAvg[m.key] + '%' : '')]);
+          exportCSV(`VOICE_Performance_${activePeriod}_${selType}.csv`, headers, body);
+        },
+        onPrint: () => {
+          const headers = ['Store', ...VP_METRICS.map(m => m.label)];
+          const body = sorted.map(r => [sName(r.loc), ...VP_METRICS.map(m => m && r[m.key] != null ? r[m.key] + '%' : '—')]);
+          body.unshift(['District Average', ...VP_METRICS.map(m => distAvg[m.key] != null ? distAvg[m.key] + '%' : '—')]);
+          printReport(`VOICE Performance — ${TYPE_LABELS[selType]}`, `${periodFmt(activePeriod)} · ${filtered.length} stores`, headers, body);
+        },
+      }),
     ),
     // Table
     h('div', { style: { overflowY: 'auto', flex: 1, padding: '0 16px 16px' } },
@@ -580,68 +718,264 @@ function VoicePerfPanel({ rows, stores }) {
   );
 }
 
+// ── Opportunities Panel ─────────────────────────────────────────────────────
+// Ranks stores by biggest CSAT opportunity (absolute detractors), with per-store
+// top themes and a district theme roll-up. Data = the scoped comment rows.
+function OpportunitiesPanel({ result, scopeText }) {
+  const { stores, district } = result;
+  if (!stores.length) return h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } },
+    h('div', { style: { fontSize: 32, marginBottom: 12 } }, '🎯'),
+    h('div', { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: 'var(--text)' } }, 'No Comments In Scope'),
+    h('div', { style: { fontSize: 12, lineHeight: 1.6 } }, 'Load or backfill guest comments to rank store opportunities.')
+  );
+
+  const th = { padding: '7px 8px', textAlign: 'center', fontSize: 9, fontWeight: 700, color: 'var(--text3)',
+    textTransform: 'uppercase', letterSpacing: '.3px', borderBottom: '2px solid var(--bdr)', whiteSpace: 'nowrap' };
+  const chip = (label, tone) => h('span', { key: label, style: {
+    fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap',
+    background: (tone || '#ef4444') + '1f', color: tone || '#ef4444' } }, label);
+
+  return h('div', { style: { overflowY: 'auto', flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 } },
+    // District summary
+    h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' } },
+      h('div', { style: { display: 'flex', flexDirection: 'column' } },
+        h('div', { style: { fontSize: 22, fontWeight: 800, color: '#ef4444', lineHeight: 1 } }, district.neg),
+        h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, 'Detractors'),
+      ),
+      h('div', { style: { fontSize: 11, color: 'var(--text2)', maxWidth: 320, lineHeight: 1.5 } },
+        `${district.neg} unhappy of ${district.total} comments (${Math.round(district.negRate * 100)}%) across ${stores.length} stores in ${scopeText}. `,
+        'Ranked by detractors — the most real guests to win back first.'),
+      district.themes.length ? h('div', { style: { marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', maxWidth: 380, justifyContent: 'flex-end' } },
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', fontWeight: 700 } }, 'Top issues:'),
+        ...district.themes.slice(0, 5).map(t => chip(`${t.label} ${t.count}`))) : null,
+    ),
+    // Ranking table
+    h('div', { style: { overflowX: 'auto' } },
+      h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+        h('thead', null, h('tr', { style: { background: 'var(--surf2)' } },
+          h('th', { style: { ...th, textAlign: 'left', minWidth: 150 } }, 'Store'),
+          h('th', { style: th }, 'Comments'),
+          h('th', { style: th }, 'Detractors'),
+          h('th', { style: th }, 'Neg %'),
+          h('th', { style: th }, 'Avg'),
+          h('th', { style: { ...th, textAlign: 'left', minWidth: 220 } }, 'Top Issues (in negative comments)'),
+        )),
+        h('tbody', null, stores.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)', background: i % 2 ? 'rgba(255,255,255,.015)' : 'transparent' } },
+          h('td', { style: { padding: '6px 8px' } },
+            h('span', { style: { fontWeight: 700, color: 'var(--text3)', marginRight: 4 } }, '#' + (i + 1)),
+            h('span', { style: { fontWeight: 600 } }, s.name),
+          ),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', color: 'var(--text2)' } }, s.total),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', fontWeight: 800, color: s.neg ? '#ef4444' : 'var(--text3)' } }, s.neg),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', color: s.negRate >= 0.1 ? '#ef4444' : s.negRate >= 0.05 ? '#f59e0b' : 'var(--text2)', fontWeight: 700 } },
+            `${Math.round(s.negRate * 100)}%`,
+            s.thin ? h('span', { title: `Thin sample (< ${MIN_N} comments) — rate is noisy`, style: { fontSize: 8, color: 'var(--text3)', marginLeft: 3 } }, '⚠') : null),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: s.avgScore >= 4.5 ? '#28a870' : s.avgScore >= 3.5 ? '#e8a040' : '#d94f4f' } }, s.avgScore != null ? s.avgScore.toFixed(2) : '—'),
+          h('td', { style: { padding: '6px 8px' } },
+            s.topThemes.length
+              ? h('div', { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } }, s.topThemes.slice(0, 4).map(t => chip(`${t.label} ${t.count}`)))
+              : h('span', { style: { color: 'var(--text3)', fontSize: 10 } }, s.neg ? 'No themed pattern' : '—')),
+        ))),
+      ),
+    ),
+    h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } },
+      `Detractors = Dissatisfied + Highly Dissatisfied comments. Ranked by absolute detractors so a high-volume store outranks a 1-of-1. ⚠ flags stores with < ${MIN_N} comments (rate is noisy). Themes are keyword clusters over the negative comments.`),
+  );
+}
+
+// ── Daypart (Time-of-Day) heatmap ───────────────────────────────────────────
+// Per-store CSAT broken out by daypart. Reuses VP_METRICS (same 8 metrics +
+// good/bad thresholds). storeSel picks the store; 'all' averages across the
+// in-scope stores (mean of store %s — no response-count denominators exist in
+// this report, same caveat as the Performance tab, labelled honestly).
+const DAYPARTS_ORDER = ['5am-11am', '11am-2pm', '2pm-4pm', '4pm-9pm', '9pm-12am', '12am-5am'];
+const DAYPART_LABEL = { '5am-11am': 'Breakfast', '11am-2pm': 'Lunch', '2pm-4pm': 'Afternoon', '4pm-9pm': 'Dinner', '9pm-12am': 'Late Eve', '12am-5am': 'Overnight' };
+function DaypartPanel({ rows, stores, inScope, storeSel, nameOf }) {
+  const { useState, useMemo } = React;
+  const scoped = useMemo(() => (rows || []).filter(r => (!inScope || inScope(r.loc))), [rows, inScope]);
+  const [selType, setSelType] = useState('monthly');
+  const [selPeriod, setSelPeriod] = useState('');
+
+  const periods = useMemo(() => [...new Set(scoped.map(r => r.period).filter(Boolean))].sort().reverse(), [scoped]);
+  const activePeriod = selPeriod && periods.includes(selPeriod) ? selPeriod : (periods[0] || '');
+
+  // Rows for the active window; if a store is picked, just that store, else all in scope.
+  const windowRows = useMemo(() => scoped.filter(r =>
+    r.report_type === selType && r.period === activePeriod &&
+    (!storeSel || storeSel === 'all' || String(parseInt(r.loc, 10) || r.loc) === String(parseInt(storeSel, 10) || storeSel))
+  ), [scoped, selType, activePeriod, storeSel]);
+
+  const storeCount = useMemo(() => new Set(windowRows.map(r => String(parseInt(r.loc, 10) || r.loc))).size, [windowRows]);
+
+  // metric × daypart → value (single store: the value; all: mean of store values).
+  const grid = useMemo(() => {
+    const g = {};
+    for (const m of VP_METRICS) {
+      g[m.key] = {};
+      for (const dp of DAYPARTS_ORDER) {
+        const vals = windowRows.filter(r => r.daypart === dp && Number.isFinite(r[m.key])).map(r => r[m.key]);
+        g[m.key][dp] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+      }
+    }
+    return g;
+  }, [windowRows]);
+
+  const TYPE_LABELS = { monthly: 'Monthly', trailing90: 'Trailing 90d', ytd: 'Year-to-Date' };
+  const titleStore = storeSel && storeSel !== 'all' ? (nameOf ? nameOf(storeSel) : storeSel) : `District avg · ${storeCount} store${storeCount === 1 ? '' : 's'}`;
+
+  if (!rows || !rows.length) return h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } },
+    h('div', { style: { fontSize: 32, marginBottom: 12 } }, '🕐'),
+    h('div', { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: 'var(--text)' } }, 'No Daypart Data Loaded'),
+    h('div', { style: { fontSize: 12, lineHeight: 1.6 } }, 'Upload a per-store VOICE Performance PDF (the one with a "Time of Day Performance" grid) to see satisfaction by daypart.')
+  );
+
+  const th = { padding: '7px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text3)', borderBottom: '2px solid var(--bdr)', whiteSpace: 'nowrap' };
+  // Key by (metric, daypart) — NOT by value — so repeated %s across dayparts
+  // don't collide into stray duplicate cells past the 6 columns.
+  const cell = (val, m, d) => {
+    const col = vpColor(val, m);
+    return h('td', { key: m.key + '|' + d, style: { padding: '7px 8px', textAlign: 'center', fontSize: 12, fontWeight: 700,
+      color: col, background: col === 'var(--text3)' ? 'transparent' : col + '22', borderRight: '1px solid var(--bdr)' } },
+      val != null ? val + '%' : '—');
+  };
+  const pfmt = p => { if (!p) return ''; const [y, m] = p.split('-'); return new Date(+y, +m - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); };
+
+  return h('div', { style: { display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' } },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 12, fontWeight: 700 } }, titleStore),
+      h('div', { style: { display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
+        Object.entries(TYPE_LABELS).map(([t, label]) => h('button', { key: t, onClick: () => setSelType(t),
+          style: { padding: '3px 10px', border: 'none', borderRadius: 6, fontSize: 10, fontWeight: selType === t ? 700 : 400, cursor: 'pointer',
+            background: selType === t ? 'var(--accent)' : 'transparent', color: selType === t ? '#fff' : 'var(--text2)' } }, label))),
+      periods.length > 0 && h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
+        style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
+        periods.map(p => h('option', { key: p, value: p }, pfmt(p)))),
+      storeSel === 'all' && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'Pick a store in the filter bar to drill in'),
+      h('div', { style: { marginLeft: 'auto' } }, h(ExportButtons, {
+        onCsv: () => exportCSV(`VOICE_Daypart_${(titleStore).replace(/[^a-z0-9]+/gi, '_')}_${activePeriod}.csv`,
+          ['Metric', ...DAYPARTS_ORDER.map(d => `${DAYPART_LABEL[d]} (${d})`)],
+          VP_METRICS.map(m => [m.label, ...DAYPARTS_ORDER.map(d => grid[m.key][d] != null ? grid[m.key][d] + '%' : '')])),
+        onPrint: () => printReport(`VOICE Dayparts — ${titleStore}`, `${TYPE_LABELS[selType]} · ${activePeriod}`,
+          ['Metric', ...DAYPARTS_ORDER.map(d => DAYPART_LABEL[d])],
+          VP_METRICS.map(m => [m.label, ...DAYPARTS_ORDER.map(d => grid[m.key][d] != null ? grid[m.key][d] + '%' : '—')])),
+      })),
+    ),
+    h('div', { style: { overflow: 'auto', flex: 1, padding: 16 } },
+      !windowRows.length
+        ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } }, `No daypart data for ${TYPE_LABELS[selType]} · ${activePeriod || '—'}.`)
+        : h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
+          h('thead', null, h('tr', { style: { background: 'var(--surf2)' } },
+            h('th', { style: { ...th, textAlign: 'left', minWidth: 150 } }, 'Metric'),
+            ...DAYPARTS_ORDER.map(d => h('th', { key: d, style: th }, DAYPART_LABEL[d], h('br'), h('span', { style: { fontSize: 8, fontWeight: 400, opacity: .7 } }, d))))),
+          h('tbody', null, VP_METRICS.map(m => h('tr', { key: m.key, style: { borderBottom: '1px solid var(--bdr)' } },
+            h('td', { style: { padding: '7px 8px', fontSize: 11, fontWeight: 600, borderRight: '1px solid var(--bdr)' } },
+              m.label, h('span', { style: { fontSize: 8, color: 'var(--text3)', marginLeft: 4 } }, m.better === 'higher' ? '↑' : '↓')),
+            ...DAYPARTS_ORDER.map(d => cell(grid[m.key][d], m, d))))),
+        ),
+      h('div', { style: { fontSize: 9, color: 'var(--text3)', marginTop: 10, lineHeight: 1.5 } },
+        'Green = at/above standard, amber = watch, red = below. ↑ = higher is better, ↓ = lower is better. ' +
+        (storeSel === 'all' ? 'District view averages each daypart across the in-scope stores (no response-count weighting available in this report).' : '')),
+    ),
+  );
+}
+
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
+export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillComments, onClose }) {
   const rows = (ds && ds.smgRows) || [];
+  const [bf, setBf] = React.useState(null); // {running} | {found,comments,saved}
+  const runBackfill = async () => {
+    if (!onBackfillComments || (bf && bf.running)) return;
+    setBf({ running: true });
+    try { setBf(await onBackfillComments()); }
+    catch (e) { setBf({ error: String(e) }); }
+  };
   const fsRows = (ds && ds.smgFullscale) || [];
   const vpRows = voicePerf || [];
+  const dpRows = voiceDaypart || [];
   // Default to performance tab if available, then fullscale, then comments
   const [tab, setTab] = React.useState(() => vpRows.length > 0 ? 'performance' : fsRows.length > 0 ? 'fullscale' : 'comments');
   React.useEffect(() => {
     if (vpRows.length > 0) setTab(t => t === 'comments' && !rows.length ? 'performance' : t);
     else if (fsRows.length > 0) setTab(t => t === 'comments' && rows.length === 0 ? 'fullscale' : t);
   }, [vpRows.length, fsRows.length]);
-  const [selLoc, setSelLoc] = React.useState('__all__');
   const [filterLabel, setFilterLabel] = React.useState('__all__');
   const [sortBy, setSortBy] = React.useState('date-desc');
 
-  // Build per-store aggregates
+  // ── Location filter (app-standard: All / OK / FL / patch + store dropdown) ───
+  const [orgFilter, setOrgFilter] = React.useState('all');
+  const [storeSel, setStoreSel]   = React.useState('all'); // 'all' | normalized loc
+  const inScope = React.useCallback(loc => orgMatch(orgFilter, loc), [orgFilter]);
+  const nameOf = React.useCallback(loc => {
+    const n = String(parseInt(loc, 10) || loc);
+    const s = (stores || []).find(x => String(parseInt(x.loc, 10) || x.loc) === n);
+    if (s && s.name) return s.name;
+    const r = rows.find(r => String(parseInt(r.loc, 10) || r.loc) === n && r.storeName);
+    return (r && r.storeName) || loc;
+  }, [stores, rows]);
+  // Comments in the active org scope — every comment-tab aggregate derives from
+  // this so the district average recomputes for the filtered level. The store
+  // dropdown (storeSel) narrows the comment FEED only, not the district roll-up.
+  const scopedRows = React.useMemo(() => rows.filter(r => inScope(r.loc)), [rows, inScope]);
+  // Loc universe feeding the scope bar depends on the active tab's dataset.
+  const scopeLocs = React.useMemo(() => {
+    const src = tab === 'performance' ? vpRows : tab === 'fullscale' ? fsRows : tab === 'daypart' ? dpRows : rows;
+    return [...new Set(src.map(r => r.loc))];
+  }, [tab, vpRows, fsRows, dpRows, rows]);
+  // Opportunity ranking (org-scoped comments) — computed only when the tab is open.
+  const oppResult = React.useMemo(() =>
+    tab === 'opportunities' ? rankCommentOpportunities(scopedRows, { storeName: nameOf }) : null,
+    [tab, scopedRows, nameOf]);
+
+  // Build per-store aggregates (scoped — District Average recomputes for scope)
   const storeMap = React.useMemo(() => {
     const m = {};
-    rows.forEach(r => {
+    scopedRows.forEach(r => {
       const k = String(parseInt(r.loc, 10) || r.loc);
       if (!m[k]) m[k] = { loc: k, name: r.storeName || r.loc, rows: [], scoreSum: 0, scoreCount: 0 };
       m[k].rows.push(r);
-      if (r.score != null) { m[k].scoreSum += r.score; m[k].scoreCount++; }
+      if (Number.isFinite(r.score)) { m[k].scoreSum += r.score; m[k].scoreCount++; }
     });
     Object.values(m).forEach(s => { s.avgScore = s.scoreCount ? s.scoreSum / s.scoreCount : null; });
     return m;
-  }, [rows]);
+  }, [scopedRows]);
 
   const storeList = React.useMemo(() =>
     Object.values(storeMap).sort((a, b) => (a.avgScore||0) - (b.avgScore||0)),
     [storeMap]
   );
 
-  const distScore = rows.filter(r => r.score != null);
+  // Count-weighted (per-comment) district mean — never an average of store means.
+  const distScore = scopedRows.filter(r => Number.isFinite(r.score));
   const distAvg   = distScore.length ? distScore.reduce((s,r) => s + r.score, 0) / distScore.length : null;
 
-  const allDates = rows.map(r => r.reportStart).filter(Boolean);
+  const allDates = scopedRows.map(r => r.reportStart).filter(Boolean);
   const periodLabel = allDates.length
-    ? [...new Set(allDates)].sort().slice(0, 1)[0] + ' – ' + [...new Set(rows.map(r => r.reportEnd).filter(Boolean))].sort().slice(-1)[0]
+    ? [...new Set(allDates)].sort().slice(0, 1)[0] + ' – ' + [...new Set(scopedRows.map(r => r.reportEnd).filter(Boolean))].sort().slice(-1)[0]
     : null;
 
   const visibleRows = React.useMemo(() => {
-    let r = selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows || []);
+    let r = storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows || []);
     if (filterLabel !== '__all__') r = r.filter(x => (x.satisfactionLabel||'').toLowerCase() === filterLabel);
     r = [...r];
-    if (sortBy === 'date-desc') r.sort((a,b) => (b.visitDate||'').localeCompare(a.visitDate||''));
-    else if (sortBy === 'date-asc') r.sort((a,b) => (a.visitDate||'').localeCompare(b.visitDate||''));
+    // Coerce to String — cloud-loaded rows can return visit_date as a non-string
+    // (Date/number), and localeCompare only exists on strings.
+    if (sortBy === 'date-desc') r.sort((a,b) => String(b.visitDate||'').localeCompare(String(a.visitDate||'')));
+    else if (sortBy === 'date-asc') r.sort((a,b) => String(a.visitDate||'').localeCompare(String(b.visitDate||'')));
     else if (sortBy === 'score-asc') r.sort((a,b) => (a.score||0) - (b.score||0));
     else if (sortBy === 'score-desc') r.sort((a,b) => (b.score||0) - (a.score||0));
     return r;
-  }, [rows, selLoc, filterLabel, sortBy, storeMap]);
+  }, [scopedRows, storeSel, filterLabel, sortBy, storeMap]);
 
   const labelCounts = React.useMemo(() => {
-    const src = selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows || []);
+    const src = storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows || []);
     const c = {};
     ALL_LABELS.forEach(l => { c[l] = 0; });
     src.forEach(r => { const k = (r.satisfactionLabel||'').toLowerCase(); if (c[k] !== undefined) c[k]++; });
     return c;
-  }, [rows, selLoc, storeMap]);
+  }, [scopedRows, storeSel, storeMap]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
-  if (!rows.length && !fsRows.length && !vpRows.length) return h('div', {
+  if (!rows.length && !fsRows.length && !vpRows.length && !dpRows.length) return h('div', {
     style: { position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
     onClick: e => { if (e.target === e.currentTarget) onClose(); }
   },
@@ -673,7 +1007,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
             periodLabel && h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 10 } }, periodLabel),
           ),
           h('div', { style: { display: 'flex', gap: 2, marginLeft: 16, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
-            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments']].map(([t, label]) =>
+            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments'], ['opportunities','🎯 Opportunities'], ['daypart','🕐 Dayparts']].map(([t, label]) =>
               h('button', { key: t, onClick: () => setTab(t), style: {
                 padding: '4px 12px', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: tab===t ? 700 : 400,
                 background: tab===t ? 'var(--accent)' : 'transparent',
@@ -683,27 +1017,50 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
           ),
         ),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          h('select', {
-            value: selLoc, onChange: e => { setSelLoc(e.target.value); setFilterLabel('__all__'); },
-            style: { fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' }
-          },
-            h('option', { value: '__all__' }, `All Stores (${rows.length} comments)`),
-            storeList.map(s => h('option', { key: s.loc, value: s.loc },
-              `${s.name} (${s.rows.length})`
-            ))
-          ),
+          onBackfillComments && h('button', {
+            onClick: runBackfill, disabled: !!(bf && bf.running),
+            title: 'Pull every comment PDF the poller stored in Supabase, parse, and cloud-persist',
+            style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--amber,#f59e0b)', background: 'rgba(245,158,11,.10)', cursor: (bf && bf.running) ? 'default' : 'pointer', fontSize: 12, color: 'var(--amber,#f59e0b)', fontWeight: 700 }
+          }, bf && bf.running ? '⟳ Backfilling…' : bf && bf.saved != null ? `✓ ${bf.saved} saved` : '⟳ Backfill from storage'),
           h('button', { onClick: onClose, style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' } }, '✕'),
         ),
       ),
+      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 16px', fontSize: 11, color: bf.error ? '#f87171' : 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
+        `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`,
+        bf.error ? ` · save error: ${bf.error}` : ''),
+
+      // ── Shared filter bar (All / OK / FL / patch + store dropdown) ───────────
+      h(VoiceFilterBar, { locs: scopeLocs, orgFilter, setOrgFilter, storeSel, setStoreSel, nameOf }),
 
       // ── Body: Performance tab ────────────────────────────────────────────────
       tab === 'performance' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
-        h(VoicePerfPanel, { rows: vpRows, stores })
+        h(VoicePerfPanel, { rows: vpRows, stores, inScope, storeSel })
       ),
 
       // ── Body: FullScale tab ──────────────────────────────────────────────────
       tab === 'fullscale' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
-        h(FullScalePanel, { fsRows, stores })
+        h(FullScalePanel, { fsRows, stores, inScope, storeSel })
+      ),
+
+      // ── Body: Opportunities tab ──────────────────────────────────────────────
+      tab === 'opportunities' && oppResult && h('div', { style: { display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0 } },
+          h('span', { style: { fontSize: 11, color: 'var(--text3)' } }, `${oppResult.stores.length} stores · ranked by detractors`),
+          h('div', { style: { marginLeft: 'auto' } }, h(ExportButtons, {
+            onCsv: () => exportCSV(`VOICE_Opportunities_${orgDesc(orgFilter, storeSel, nameOf).replace(/[^a-z0-9]+/gi, '_')}.csv`,
+              ['Rank', 'Store', 'NSN', 'Comments', 'Detractors', 'Neg %', 'Avg', 'Top Issues'],
+              oppResult.stores.map((s, i) => [i + 1, s.name, s.loc, s.total, s.neg, Math.round(s.negRate * 100) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
+            onPrint: () => printReport('VOICE Store Opportunities', `${orgDesc(orgFilter, storeSel, nameOf)} · ${oppResult.stores.length} stores`,
+              ['Rank', 'Store', 'Comments', 'Detractors', 'Neg %', 'Avg', 'Top Issues'],
+              oppResult.stores.map((s, i) => [i + 1, s.name, s.total, s.neg, Math.round(s.negRate * 100) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
+          })),
+        ),
+        h(OpportunitiesPanel, { result: oppResult, scopeText: orgDesc(orgFilter, storeSel, nameOf) }),
+      ),
+
+      // ── Body: Daypart tab ────────────────────────────────────────────────────
+      tab === 'daypart' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
+        h(DaypartPanel, { rows: dpRows, stores, inScope, storeSel, nameOf })
       ),
 
       // ── Body: Comments tab ───────────────────────────────────────────────────
@@ -716,16 +1073,16 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
               distAvg != null && h(DistScoreBadge, { score: distAvg }),
               h('span', { style: { fontSize: 11, color: 'var(--text3)' } }, '/ 5.0'),
             ),
-            h(ScoreDistBar, { rows }),
-            h('div', { style: { fontSize: 10, color: 'var(--text3)', marginTop: 4 } }, `${rows.length} total comments · ${storeList.length} stores`),
+            h(ScoreDistBar, { rows: scopedRows }),
+            h('div', { style: { fontSize: 10, color: 'var(--text3)', marginTop: 4 } }, `${scopedRows.length} total comments · ${storeList.length} stores`),
           ),
           h('div', { style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 16px 6px' } }, 'By Store — Best → Worst'),
           [...storeList].reverse().map(s => {
-            const active = selLoc === s.loc;
+            const active = storeSel === s.loc;
             const col = s.avgScore >= 4.5 ? '#28a870' : s.avgScore >= 3.5 ? '#e8a040' : '#d94f4f';
             return h('div', {
               key: s.loc,
-              onClick: () => { setSelLoc(active ? '__all__' : s.loc); setFilterLabel('__all__'); },
+              onClick: () => { setStoreSel(active ? 'all' : s.loc); setFilterLabel('__all__'); },
               style: { padding: '8px 16px', cursor: 'pointer', borderLeft: active ? `3px solid var(--accent)` : '3px solid transparent',
                 background: active ? 'var(--hover)' : 'transparent', transition: 'background .15s' }
             },
@@ -744,7 +1101,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
         h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
             h('span', { style: { fontSize: 11, color: 'var(--text3)', marginRight: 2 } }, 'Filter:'),
-            [['__all__', `All (${(selLoc==='__all__' ? rows : (storeMap[selLoc]?.rows||[])).length})`],
+            [['__all__', `All (${(storeSel==='all' ? scopedRows : (storeMap[storeSel]?.rows||[])).length})`],
              ...ALL_LABELS.map(l => [l, `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')} (${labelCounts[l]})`])
             ].map(([val, lbl]) =>
               h('button', { key: val, onClick: () => setFilterLabel(val),
@@ -763,14 +1120,22 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
                 h('option', { value: 'score-asc' }, 'Worst first'),
                 h('option', { value: 'score-desc' }, 'Best first'),
               ),
+              h(ExportButtons, {
+                onCsv: () => exportCSV(`VOICE_Comments_${orgDesc(orgFilter, storeSel, nameOf).replace(/[^a-z0-9]+/gi,'_')}.csv`,
+                  ['Store', 'NSN', 'Visit Date', 'Comment Date', 'Satisfaction', 'Score', 'Comment'],
+                  visibleRows.map(r => [nameOf(r.loc), r.loc, r.visitDate || '', r.commentDate || '', r.satisfactionLabel || '', Number.isFinite(r.score) ? r.score : '', r.text || ''])),
+                onPrint: () => printReport('VOICE Guest Comments', `${orgDesc(orgFilter, storeSel, nameOf)} · ${visibleRows.length} comments`,
+                  ['Store', 'Visit', 'Satisfaction', 'Comment'],
+                  visibleRows.map(r => [nameOf(r.loc), r.visitDate || '', r.satisfactionLabel || '', r.text || ''])),
+              }),
             ),
           ),
           h('div', { style: { padding: '8px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0 } },
-            h(ScoreDistBar, { rows: selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows||[]) }),
+            h(ScoreDistBar, { rows: storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows||[]) }),
             h('div', { style: { display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' } },
               ALL_LABELS.map(l => {
                 const c = labelCounts[l];
-                const total = (selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows||[])).length;
+                const total = (storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows||[])).length;
                 if (!c) return null;
                 return h('span', { key: l, style: { fontSize: 10, color: scoreColor(l).text } },
                   `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')}: ${c} (${Math.round(c/total*100)}%)`
@@ -788,7 +1153,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
                       borderRadius: 8, padding: '10px 14px', background: c.bg + '55' } },
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' } },
                       h(ScoreBadge, { label: r.satisfactionLabel }),
-                      selLoc === '__all__' && h('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--text2)' } }, r.storeName || r.loc),
+                      storeSel === 'all' && h('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--text2)' } }, r.storeName || r.loc),
                       h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' } },
                         r.visitDate ? `Visit: ${r.visitDate}` : '',
                         r.commentDate && r.commentDate !== r.visitDate ? ` · Comment: ${r.commentDate}` : '',

@@ -231,7 +231,7 @@ function forecastAdaptiveDI(laborRows, laborIdx, loc, date, params){
 // Signals: EWMA-DOW + LY-Adjusted + Short-term momentum + Monthly seasonality
 // Weekend weights lean heavily on LY (captures seasonal patterns better)
 // District avg 9.29% MAPE vs Lifelenz 9.51% — same Sep 2025–May 2026 window
-function forecastAdaptiveEnsemble(laborRows, laborIdx, loc, date){
+function forecastAdaptiveEnsemble(laborRows, laborIdx, loc, date, fixedParams){
   const str = String(loc);
   const isWeekend = (date.getDay()===0||date.getDay()===6);
   const byDate = {};
@@ -303,8 +303,14 @@ function forecastAdaptiveEnsemble(laborRows, laborIdx, loc, date){
   })();
 
   // Blend weights — weekend lean on LY (seasonal anchor)
-  // Read recalibrated DI params if available (auto-updated on file load)
-  const _storedParams=(()=>{try{const s=JSON.parse(localStorage.getItem('mf_ae_params')||'{}');return s.params||{};}catch{return{};}})();
+  // Read recalibrated DI params if available (auto-updated on file load).
+  // fixedParams (v4.537): skip the localStorage-recalibrated params and use the
+  // static defaults instead. Those recalibrated params are grid-fit on the store's
+  // FULL history, so in a backtest they carry a mild in-sample lookahead through
+  // the DI sub-signal (~13% of the blend). A strictly leak-free re-validation (the
+  // Period-Total Scoreboard) passes fixedParams=true so AE is graded ex-ante with
+  // no window-fit params — closing the last asterisk on an AE win.
+  const _storedParams=fixedParams?{}:(()=>{try{const s=JSON.parse(localStorage.getItem('mf_ae_params')||'{}');return s.params||{};}catch{return{};}})();
   const _diP=_storedParams[str]||AE_DI_PARAMS[str]||{w2:0.4,w4:0.35,w6:0.25,alpha:0.20};
 
   // Signal 5: Adaptive DI — genuinely incorporated using calibrated per-store params
@@ -1344,7 +1350,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   const _locLaborRows = locRows(ds.laborByLoc, ds.laborRows, loc);
   // Route new models: Adaptive Ensemble and EWMA short-circuit here
   if(_assignedModel==='ae'){
-    const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date);
+    const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date,settings&&settings._aeStrictParams);
     if(_aeFcst&&_aeFcst>0){
       const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
       const _aeORow=fetchRow(ds.opsIdx,loc,date);const _aeCtrlRow=fetchRow(ds.ctrlIdx,loc,date);

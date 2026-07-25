@@ -74,3 +74,33 @@ scanAllPairs, registry integrity). Full suite 188 pass. Build clean.
 - Freshest-wins is only *partially* satisfied: cloud metrics are ADDED, manual metrics are
   still primary for existing keys. Promoting cloud to primary (or a per-metric fallback) is a
   future call — deferred to avoid changing behavior of saved signals.
+
+## CSAT Drivers — corrected finding after the VOICE backfill (2026-07-25, v4.557)
+
+Ran the CSAT scan after the VOICE Performance monthly backfill (n=42 → full history)
+and after de-duping the VOICE rows. Result set: 660 driver×outcome pairs →
+**0 dependable, 1 likely-real, 3 worth-watching, 524 too-weak.** A humbling, honest
+result — trust it.
+
+**Verdicts (headline number is the WITHIN-store r; "pooled" on the card is the naive
+cross-sectional and is NOT what tiers use):**
+
+- **FOB % → Overall/Fries Quality B2B (VOICE): DEAD.** The v4.483-era "strong" finding
+  (within −0.54 / −0.55, n=42, 19 stores) collapsed to **+0.01 / −0.07** with the fuller
+  dataset. It was a small-sample artifact. Both saved drivers dismissed. The decay monitor
+  did its job — caught a false positive before it became a belief.
+- **Base Food % (food cost) → OSAT 5★: REAL within-store negative, within −0.39, and it
+  REPLICATES out-of-sample.** This is the most solid CSAT driver we have. (Its *pooled*
+  number is +0.10 — the between-store cross-section goes the other way; we trust the
+  within-store sign.) Saved. Also negative vs DT Sat / In-Restaurant Sat but those don't
+  replicate → weaker.
+- **OEPE (service speed, sec) → In-Restaurant Sat: REAL, within −0.31, replicates.** Slower
+  in-store service → lower in-restaurant satisfaction. Second genuine lever. Saved.
+
+**Process note / mistake to not repeat:** the card's headline `r` was already the
+within-store r and the tiers already keyed on it, but the label was a bare `r` and the
+footnote said "|r|" — which led to mis-reading "pooled" as the within-store measure and
+briefly calling Base Food a "between-store mirage" (backwards). Fixed in v4.557 by labeling
+the headline "strength" and rewriting the whole panel in plain English (Dependable / Likely
+real / Worth watching / Too weak; describeDriver() in csat-signals.js). Tiering math
+unchanged.

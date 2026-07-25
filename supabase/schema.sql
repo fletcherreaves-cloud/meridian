@@ -520,8 +520,37 @@ create table if not exists public.smg_voice_performance (
   snack_wrap_b2b  smallint,               -- Snack Wrap Quality B2B % (NULL = N/A)
   source_file     text,
   created_at      timestamptz default now(),
-  unique(period, report_type, operator_id, loc)
+  -- Identity is the STORE within a period, not the operator: a store is covered by
+  -- several overlapping operator reports and a re-upload under a different filename
+  -- carries a different operator_id. operator_* is descriptive metadata only.
+  unique(period, report_type, loc)
 );
+
+-- ── Migration (safe to re-run): re-key existing table from
+-- (period, report_type, operator_id, loc) → (period, report_type, loc).
+-- 1) Collapse duplicate rows, keeping the most-populated per store (tie → newest).
+delete from public.smg_voice_performance where id in (
+  select id from (
+    select id, row_number() over (
+      partition by period, report_type, loc
+      order by (
+        (dt_sat is not null)::int + (dt_dissat is not null)::int +
+        (ir_sat is not null)::int + (ir_dissat is not null)::int +
+        (accuracy_b2b is not null)::int + (quality_b2b is not null)::int +
+        (fries_b2b is not null)::int + (snack_wrap_b2b is not null)::int
+      ) desc, id desc
+    ) as rn
+    from public.smg_voice_performance
+  ) t where t.rn > 1
+);
+-- 2) Swap the unique constraint.
+alter table public.smg_voice_performance
+  drop constraint if exists smg_voice_performance_period_report_type_operator_id_loc_key;
+do $$ begin
+  alter table public.smg_voice_performance
+    add constraint smg_voice_performance_period_report_type_loc_key
+    unique (period, report_type, loc);
+exception when duplicate_table then null; when duplicate_object then null; end $$;
 
 alter table public.smg_voice_performance enable row level security;
 
@@ -536,6 +565,34 @@ create index if not exists smg_voice_perf_period_idx
 
 create index if not exists smg_voice_perf_loc_idx
   on public.smg_voice_performance (loc, period desc);
+
+-- ── SMG VOICE Daypart / Time-of-Day (per-store) ──────────────────────────────
+-- One row per store × report window × daypart from the per-store VOICE
+-- Performance PDF's "Time of Day Performance" grid. Powers the Daypart deep-dive
+-- heatmap. Identity = (period, report_type, loc, daypart).
+create table if not exists public.smg_voice_daypart (
+  id              bigserial primary key,
+  period          text not null,          -- '2026-05'
+  report_type     text not null,          -- 'monthly' | 'trailing90' | 'ytd'
+  loc             text not null,          -- '03708'
+  daypart         text not null,          -- '5am-11am' … '12am-5am'
+  loc_name        text,
+  dt_sat          smallint,               -- Drive Thru Overall Satisfaction %
+  dt_dissat       smallint,               -- Drive Thru Dissatisfaction B2B %
+  ir_sat          smallint,               -- In Restaurant Satisfaction %
+  ir_dissat       smallint,               -- In Restaurant Dissatisfaction B2B %
+  accuracy_b2b    smallint,               -- Accuracy B2B %
+  quality_b2b     smallint,               -- Overall Quality B2B %
+  fries_b2b       smallint,               -- Fries Quality B2B %
+  snack_wrap_b2b  smallint,               -- Snack Wrap Quality B2B %
+  source_file     text,
+  created_at      timestamptz default now(),
+  unique(period, report_type, loc, daypart)
+);
+alter table public.smg_voice_daypart enable row level security;
+create policy "smg_voice_daypart: public read"  on public.smg_voice_daypart for select using (true);
+create policy "smg_voice_daypart: public write" on public.smg_voice_daypart for all using (true);
+create index if not exists smg_voice_daypart_loc_idx on public.smg_voice_daypart (loc, period desc, report_type);
 
 -- ── Labor Analysis Rows (daily per-store data for forecasting / DI calibration) ──
 -- Each row = one store's daily metrics from a QSRSoft Labor Analysis report.
@@ -1205,3 +1262,64 @@ alter table public.employee_skills enable row level security;
 
 create policy "employee_skills: public read"  on public.employee_skills for select using (true);
 create policy "employee_skills: public write" on public.employee_skills for all using (true);
+
+-- ── saved_correlations (v4.540) ─────────────────────────────────────────────
+-- Curated knowledge base of validated CSAT/correlation drivers, with decay
+-- tracking. The CSAT Drivers scan's ★ Track writes here; the saved list shows
+-- each driver's saved strength vs the latest scan so weakening ones surface.
+create table if not exists public.saved_correlations (
+  id             uuid primary key default gen_random_uuid(),
+  kind           text default 'csat',
+  outcome_key    text not null,
+  outcome_label  text,
+  driver_key     text not null,
+  driver_label   text,
+  granularity    text default 'monthly',
+  scope          text default 'district',
+  within_r       numeric,
+  pooled_r       numeric,
+  partial_r      numeric,
+  spearman       numeric,
+  n              integer,
+  eff_n          integer,
+  q_value        numeric,
+  tier           text,
+  direction      text,
+  note           text,
+  status         text default 'watching',   -- watching | confirmed | dismissed
+  history        jsonb default '[]'::jsonb,  -- [{date, withinR, n, tier}]
+  created_by     uuid,
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now(),
+  unique (kind, outcome_key, driver_key, granularity, scope)
+);
+
+alter table public.saved_correlations enable row level security;
+create policy "saved_correlations: public read"  on public.saved_correlations for select using (true);
+create policy "saved_correlations: public write" on public.saved_correlations for all using (true);
+
+-- ── smg_comments (v4.546) ───────────────────────────────────────────────────
+-- Cloud-persist SMG VOICE customer comments (previously device-local OPFS only,
+-- so they never showed cross-device / on preview). Feeds the Guest Voice Comments
+-- tab and a per-location opportunity ranking. dedup_key makes re-uploads
+-- idempotent.
+create table if not exists public.smg_comments (
+  id                 uuid primary key default gen_random_uuid(),
+  loc                text,
+  store_name         text,
+  comment_date       date,
+  visit_date         date,
+  nsn                text,
+  satisfaction_label text,
+  score              numeric,
+  text               text,
+  report_start       date,
+  report_end         date,
+  source_file        text,
+  dedup_key          text unique,
+  created_at         timestamptz default now()
+);
+alter table public.smg_comments enable row level security;
+create policy "smg_comments: public read"  on public.smg_comments for select using (true);
+create policy "smg_comments: public write" on public.smg_comments for all using (true);
+create index if not exists smg_comments_loc_date_idx on public.smg_comments (loc, comment_date);

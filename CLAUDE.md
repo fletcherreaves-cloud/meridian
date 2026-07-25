@@ -184,10 +184,15 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 **✅ Simple Models propagated engine-wide (v4.532):** the T3M/T6W/T3W trailing family (the Smart-Targets winner) is now a first-class forecast model `'simple'` inside `forecastDay` — so it auto-flows to Monthly Projections / Forecast Accuracy / Proj-vs-Actuals / forecast table, competes in the Model Assignment backtest (`MODELS_TO_TEST`) for per-store re-validation, and appears as a Simple column in Forecast Accuracy + a per-store override. Day-level = robust trailing daily rate (reused `weightedRecencyProjection`) × same-DOW shape, strictly leak-free. Engineered models preserved. See `memory/simple-models-propagation.md`.
 
+**✅ Signals weather + day-of-week correlations shipped (v4.533)** — see Signals panel row + `memory/notes-28-queue.md` #3/#4.
+**✅ Phase-2 bugs fixed (DONE — do NOT resurface):** Projections weekly-view crash on location expand, Signals won't close on mobile, Market Intelligence weather stopped showing. All three resolved.
+
+**✅ Period-Total Scoreboard shipped (v4.534)** — Model Assignment panel → **📊 Period-Total Scoreboard** (read-only, `runPeriodTotalBacktest` in `backtest.js`). Re-validates the Simple-wins finding on the metric it was *discovered* on: grades simple/dow/ae/ewma/di on rolling 28-day **period totals** (not daily MAPE), strictly leak-free (Back Test mode; Simple already asOf=start). Per-store winner + district tally + median-Simple-vs-best-engineered verdict banner. **Why it matters:** the daily Model-Assignment/Forecast-Accuracy backtests grade *daily* MAPE (day-level noise + exact DOW placement dominate — the engineered models' home turf), whereas the v4.483 discovery graded *totals* where day errors cancel. This closes that gap so "does Simple still sweep?" is answered like-for-like. Simple's daily-level branch is unchanged: same `weightedRecencyProjection` reused verbatim + a same-DOW shape multiplier (required to forecast a single day; sums back to the winning monthly total). Also **v4.534:** Simple filter chip + distribution count in the Model Assignment top bar.
+
 **Next candidate areas:**
-- Signals: weather + day-of-week correlations in the Scanner (Notes 28 #3/#4) — next big item.
-- Phase-2 bugs: Projections weekly-view crash on location expand; Signals won't close on mobile; Market Intelligence weather stopped showing.
-- FR: TPPH auto-target calc; Projections vs Actuals. "As of [date]" labels on tiles.
+- FR: TPPH auto-target calc. "As of [date]" labels on tiles.
+- Model Assignment: persist backtest results/overrides to Supabase (currently localStorage — device-local). **← next up (1b).**
+- Product Mix pull → Pricing Engine + Filet-O-Fish-Fridays correlation (Notes 25 #1 / 28 #5).
 - SAGE conversation persistence; multi-tenant deployment.
 
 ---

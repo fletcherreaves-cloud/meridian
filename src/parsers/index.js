@@ -162,12 +162,18 @@ function detectType(filename, wb){
   const dr=dm?{from:dm[1],to:dm[2]}:null;
   // SMG VOICE Operator Performance Report — must come before the generic 'voice' check below
   if(ext==='pdf'&&/^mcdonalds_voice_operator_performance_\d+/i.test(fn))return{type:'voice-performance',label:'SMG VOICE Performance Report',dr,confidence:'high'};
-  // SMG VOICE Customer Comment Report (PDF filename pattern: eu065119100...)
-  if(ext==='pdf'&&/^eu\d{10,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
+  // SMG VOICE reports share the eu###### filename prefix — the Customer Comment
+  // report (16 digits, e.g. eu0651191000015842) AND the manually-exported Operator
+  // Performance report (6 digits + _N, e.g. eu065119_1). Route BOTH here; the PDF
+  // upload path then content-sniffs (tries the Performance parser first, falls back
+  // to comment). The old /^eu\d{10,}/ missed the 6-digit operator exports, so they
+  // fell through to "Unrecognized PDF" and never loaded.
+  if(ext==='pdf'&&/^eu\d{5,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Report',dr,confidence:'high'};
   if(ext==='pdf'&&(fn.includes('voice')||fn.includes('comment report')||fn.includes('customer comment')))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
   if(ext==='xlsx'&&(fn.includes('fullscale')||fn.includes('full_scale')||fn.includes('full scale')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
-  // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph" sheet
-  if(ext==='xlsx'&&wb&&wb.SheetNames&&wb.SheetNames.some(s=>s.toLowerCase().includes('small graph')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
+  // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph",
+  // "Large Graph", or "Data Only" sheet (whichever export layout was chosen).
+  if(ext==='xlsx'&&wb&&wb.SheetNames&&wb.SheetNames.some(s=>{const l=s.toLowerCase();return l.includes('small graph')||l.includes('large graph')||l.includes('data only');}))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
   // Mesonet: all-digit filename
   if(/^\d+$/.test(fn)&&(ext==='csv'||ext==='txt'))return{type:'weather',label:'WeatherData (Mesonet)',dr,confidence:'high'};
   // Combined Meridian workbook
@@ -1641,6 +1647,41 @@ function parseSMGFullScale(wb) {
     console.warn('[parseSMGFullScale] Could not parse date from report title; using current month:', year, month);
   }
 
+  // ── "Data Only" layout (v4.538) — the clean one-row-per-store export ───────
+  // Far more robust than Small/Large Graph. Fixed columns:
+  //   0 Restaurant · 1 OSAT n · 2-6 OSAT 5★→1★ · 7 B2B n · 8 problem% · 9 no-
+  //   problem%(=osatB2B) · 10 acc n · 11 problem% · 12 no-problem%(=accuracyB2B)
+  //   · 13 DT n · 14 DT problem%(=dtProblem) · 15 no-prob · 16 overall n · 17
+  //   overall problem%(=overallProblem) · 18 no-prob.  Suppressed cells = "**".
+  // Detected by a store row carrying a fractional OSAT-5★ in col 2 (Small Graph
+  // instead puts a 1-5 rating in col 1 and the metrics out around col 22).
+  const _num01 = v => (typeof v === 'number' && v >= 0 && v <= 1) ? v : null;
+  const _fsi = bestRows.findIndex(r => r && typeof r[0] === 'string' && STORE_PAT.test(r[0]));
+  if (_fsi >= 0 && typeof bestRows[_fsi][2] === 'number' && bestRows[_fsi][2] > 0 && bestRows[_fsi][2] <= 1) {
+    const out = [];
+    for (const row of bestRows) {
+      if (!row || typeof row[0] !== 'string') continue;
+      const sm = row[0].match(STORE_PAT);
+      if (!sm) continue; // skips "Combined" district total and header rows
+      const osat5 = _num01(row[2]), osat4 = _num01(row[3]), osat3 = _num01(row[4]),
+            osat2 = _num01(row[5]), osat1 = _num01(row[6]);
+      const anyOsat = [osat5, osat4, osat3, osat2, osat1].some(v => v != null);
+      out.push({
+        loc: String(parseInt(sm[1], 10)), storeName: sm[2].trim(),
+        reportStart, reportEnd, year, month,
+        osatTop2:       anyOsat ? (osat5 || 0) + (osat4 || 0) : null,
+        osat5:          osat5,
+        osatAvg:        anyOsat ? 5*(osat5||0) + 4*(osat4||0) + 3*(osat3||0) + 2*(osat2||0) + 1*(osat1||0) : null,
+        osatB2B:        _num01(row[9]),
+        accuracyB2B:    _num01(row[12]),
+        dtProblem:      _num01(row[14]),
+        overallProblem: _num01(row[17]),
+      });
+    }
+    console.log(`[parseSMGFullScale] Data-Only layout: parsed ${out.length} stores for ${year}-${month}`);
+    return out;
+  }
+
   // ── Auto-detect metric columns by scanning the first complete 5-row block ──
   // Look for the first store block and find columns that have numeric % values.
   // SMG FullScale rows: col 0 = store/rating label, col 1 = rating (1-5),
@@ -1826,8 +1867,92 @@ async function parseSMGVoicePDF(file) {
       }
       if (!satisfactionLabel) continue; // skip rows without satisfaction label
     }
+    // Trust the label→score map; only accept a parsed numeric if it's a sane 0–5
+    // (parseFloat on a stray "." or timestamp yields NaN → poisons the average).
+    const mapScore = SCORE_MAP[satisfactionLabel.toLowerCase()] || null;
+    if (!Number.isFinite(score) || score < 0 || score > 5) score = mapScore;
+    // The column layout prepends the raw score + NSN to the comment cell
+    // ("5.0000 05183 Angala is super quick") — strip that leading token pair so
+    // the text is just the guest comment.
+    commentText = commentText.replace(/^\s*\d(?:\.\d+)?\s+\d{5,6}\s+/, '').trim();
     rows.push({ loc: currentLoc, storeName: currentStoreName, reportStart, reportEnd,
       commentDate, visitDate, nsn, text: commentText, satisfactionLabel, score });
+  }
+  return rows;
+}
+
+// ── SMG VOICE Performance — per-store Time-of-Day (daypart) report ────────────
+// Each page = one store × one report window (Monthly / Trailing-90 / YTD) and
+// carries a "Time of Day Performance" grid: 8 metrics × 6 dayparts. Filename
+// family overlaps the operator-level report (eu065119…), so callers must route
+// by CONTENT — a daypart page contains "Time of Day Performance". Returns one
+// row per (loc, period, report_type, daypart) with the 8 metric values.
+export const VOICE_DAYPARTS = ['5am-11am', '11am-2pm', '2pm-4pm', '4pm-9pm', '9pm-12am', '12am-5am'];
+const _VDP_METRICS = [
+  ['Drive Thru Overall Satisfaction', 'dt_sat'],
+  ['Drive Thru Dissatisfaction',      'dt_dissat'],
+  ['In Restaurant Satisfaction',      'ir_sat'],
+  ['In Restaurant Dissatisfaction',   'ir_dissat'],
+  ['Accuracy B2B',                    'accuracy_b2b'],
+  ['Overall Quality B2B',             'quality_b2b'],
+  ['Fries Quality B2B',               'fries_b2b'],
+  ['Snack Wrap Quality B2B',          'snack_wrap_b2b'],
+];
+const _VDP_MONTHS = { january:1, february:2, march:3, april:4, may:5, june:6, july:7, august:8, september:9, october:10, november:11, december:12 };
+const _vdpNum = t => { t = (t || '').trim(); if (/^n\/?a$/i.test(t)) return null; const m = t.match(/-?\d+/); return m ? +m[0] : null; };
+
+// Detect from already-extracted page lines whether this is a daypart report.
+export function isVoiceDaypartReport(lines) {
+  return (lines || []).some(l => /Time of Day Performance/i.test(l));
+}
+
+async function parseVoiceDaypartPDF(file) {
+  const pdfjsLib = await import('pdfjs-dist');
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+  }
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const rows = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const lineMap = new Map();
+    for (const item of content.items) {
+      const y = Math.round(item.transform[5] / 3) * 3;
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y).push({ x: item.transform[4], str: item.str });
+    }
+    const lines = [...lineMap.entries()].sort((a, b) => b[0] - a[0])
+      .map(([, its]) => its.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (!isVoiceDaypartReport(lines)) continue;
+
+    const hdr = lines.find(l => /Restaurant:/.test(l)) || '';
+    const nsnM = hdr.match(/Restaurant:\s*(.+?)\s*-\s*(\d{4,6})\s*$/);
+    if (!nsnM) continue;
+    const report_type = lines.some(l => /Monthly Report/i.test(l)) ? 'monthly'
+      : lines.some(l => /Trailing 90/i.test(l)) ? 'trailing90'
+      : lines.some(l => /Year-to-Date/i.test(l)) ? 'ytd' : null;
+    if (!report_type) continue;
+    const perM = hdr.match(/([A-Za-z]+)\s+(20\d\d)/);
+    const period = perM && _VDP_MONTHS[perM[1].toLowerCase()]
+      ? `${perM[2]}-${String(_VDP_MONTHS[perM[1].toLowerCase()]).padStart(2, '0')}` : null;
+    const loc = String(nsnM[2]).padStart(5, '0');
+    const storeName = nsnM[1].trim();
+
+    // Build a daypart → {metrics} matrix from the 8 metric rows (each has 6 values).
+    const byDaypart = VOICE_DAYPARTS.map(dp => ({ loc, storeName, period, report_type, daypart: dp }));
+    let anyData = false;
+    for (const [label, key] of _VDP_METRICS) {
+      const ln = lines.find(l => l.startsWith(label));
+      if (!ln) continue;
+      const toks = (ln.slice(label.length).match(/N\/A|-?\d+%?/gi) || []).slice(-6);
+      toks.forEach((t, i) => {
+        if (i < 6) { const v = _vdpNum(t); byDaypart[i][key] = v; if (v != null) anyData = true; }
+      });
+    }
+    if (anyData) rows.push(...byDaypart);
   }
   return rows;
 }
@@ -2002,4 +2127,4 @@ function parsePeopleSkillsWb(wb){
   return parsePeopleSkills(parseRaw(wb, wb.SheetNames[0]));
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs };
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs };

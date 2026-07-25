@@ -2,7 +2,8 @@
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS } from '../engine/signal-registry.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync } from '../lib/supabase.js';
+import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -53,12 +54,12 @@ function thresholdLabel(r, n, expectedDir) {
 function StatusChip({ r, n, confirmed, expectedDir }) {
   const thr = thresholdLabel(r, n, expectedDir);
   if (thr === 'No effect')
-    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(107,114,128,.15)', color: muted } }, 'No effect');
+    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(107,114,128,.15)', color: muted } }, 'No real link');
   if (thr === 'Out of range')
-    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(16,185,129,.12)', color: grn } }, '↑ Out of range');
+    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(16,185,129,.12)', color: grn } }, '✓ Strong link');
   if (confirmed)
-    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.12)', color: amber } }, '~ Within tolerance');
-  return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.08)', color: amber } }, '~ Plausible');
+    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.12)', color: amber } }, '~ Some link');
+  return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.08)', color: amber } }, '~ Possible link');
 }
 
 function CorrelationBar({ r }) {
@@ -113,21 +114,20 @@ function SignalCard({ sig, expanded, onToggle }) {
         sig.note && h('div', { style: { fontSize: 10, color: amber, marginTop: 2 } }, '⚠ ' + sig.note),
       ),
       h('div', { style: { textAlign: 'right', flexShrink: 0 } },
-        h('div', { style: { fontSize: 10, color: muted } }, 'n = ' + (sig.n || 0)),
-        h('div', { style: { fontSize: 10, color: muted, marginTop: 1 } }, !sig.r || Math.abs(sig.r) < 0.20 ? 'No signal' : sig.confirmed ? Math.abs(sig.r) >= 0.70 ? 'Strong' : 'Moderate' : 'Plausible'),
+        h('div', { style: { fontSize: 10, color: muted } }, (sig.n || 0) + ' data points'),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 1 } }, !sig.r || Math.abs(sig.r) < 0.20 ? 'No link' : sig.confirmed ? Math.abs(sig.r) >= 0.70 ? 'Strong link' : 'Some link' : 'Possible link'),
       ),
       h('span', { style: { fontSize: 13, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none' } }, '▾'),
     ),
     isExp && h('div', { style: { padding: '0 14px 12px', borderTop: `1px solid ${bdr}` } },
       h('div', { style: { display: 'flex', gap: 24, marginTop: 10, flexWrap: 'wrap' } },
         h('div', { style: { flex: 1, minWidth: 200 } },
-          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Correlation Strength'),
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'How tightly they move together'),
           h(CorrelationBar, { r: sig.r }),
           h('div', { style: { marginTop: 6, fontSize: 10, color: muted } },
-            'Direction: ',
-            h('span', null, sig.direction === 'negative' ? '↓ negative (inverse)' : '↑ positive (direct)'),
+            h('span', null, sig.direction === 'negative' ? '↓ When one goes up, the other goes down' : '↑ They rise and fall together'),
             sig.expectedDir && h('span', { style: { color: sig.direction === sig.expectedDir ? grn : red } },
-              ' — ' + (sig.direction === sig.expectedDir ? '✓ as expected' : '✗ unexpected direction')),
+              ' — ' + (sig.direction === sig.expectedDir ? '✓ as expected' : '✗ opposite of what we expected')),
           ),
         ),
         h('div', { style: { flex: 1, minWidth: 200 } },
@@ -142,10 +142,10 @@ function SignalCard({ sig, expanded, onToggle }) {
           h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Assessment'),
           h('div', { style: { fontSize: 11, lineHeight: 1.5 } },
             thr === 'Out of range'
-              ? `Signal confirmed and significant (|r| = ${Math.abs(sig.r).toFixed(2)}). This relationship is strong enough to act on — investigate root cause.`
+              ? `Strong, dependable link (strength ${Math.abs(sig.r).toFixed(2)} out of 1). Solid enough to dig into — worth looking for the root cause.`
               : thr === 'Within tolerance'
-              ? `Relationship detected but within acceptable range (|r| = ${Math.abs(sig.r).toFixed(2)}). Monitor for strengthening. More data improves confidence.`
-              : `No meaningful statistical relationship found yet (|r| = ${Math.abs(sig.r || 0).toFixed(2)}). These metrics may be independent, or more data is needed.`),
+              ? `There's a link, but a moderate one (strength ${Math.abs(sig.r).toFixed(2)} out of 1). Keep an eye on it — more data will firm it up.`
+              : `No real link yet (strength ${Math.abs(sig.r || 0).toFixed(2)} out of 1). These two may just be unrelated, or we need more data.`),
         ),
       ),
     ),
@@ -367,7 +367,7 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
     ),
     // Condition filters — only shown when metrics are selected
     (xMetric || yMetric) && h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, flexWrap: 'wrap', padding: '10px 12px', background: 'rgba(245,158,11,.04)', border: '1px solid rgba(245,158,11,.12)', borderRadius: 8 } },
-      h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: amber, letterSpacing: '.07em', width: '100%', marginBottom: 4 } }, 'Conditional filter (optional — narrows data before computing correlation)'),
+      h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: amber, letterSpacing: '.07em', width: '100%', marginBottom: 4 } }, 'Optional filter — narrows the data before checking the link'),
       xMetric && h(ConditionSelect, { metaMeta: xMeta, axisLabel: 'X', value: xCondition, onChange: setXCondition, reference: xReference, onReferenceChange: setXReference }),
       yMetric && h(ConditionSelect, { metaMeta: yMeta, axisLabel: 'Y', value: yCondition, onChange: setYCondition, reference: yReference, onReferenceChange: setYReference }),
     ),
@@ -527,7 +527,7 @@ function GraveyardTab({ defs, onRestore }) {
     return h('div', { style: { textAlign: 'center', padding: '48px 24px', color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
       h('div', { style: { fontSize: 28, marginBottom: 10 } }, '⚰'),
       h('div', { style: { fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, 'Graveyard is empty'),
-      'Signals with n ≥ 50 and |r| < 0.15 for 3 consecutive runs will be proposed for retirement.',
+      'A signal with plenty of data (50+ points) but almost no link (strength under 0.15) for 3 checks in a row gets flagged to retire.',
     );
 
   return h('div', null,
@@ -543,7 +543,7 @@ function GraveyardTab({ defs, onRestore }) {
           h('div', { style: { fontWeight: 600, fontSize: 12, color: muted, marginBottom: 3 } }, def.name),
           h('div', { style: { fontSize: 10, color: 'rgba(107,114,128,.6)' } },
             (xMeta?.label || def.xMetric) + ' → ' + (yMeta?.label || def.yMetric),
-            ' · final |r| = ' + (Math.abs(def.latest_r || 0)).toFixed(3) + ' (n = ' + (def.latest_n || 0) + ')'),
+            ' · final strength ' + (Math.abs(def.latest_r || 0)).toFixed(2) + ' · ' + (def.latest_n || 0) + ' data points'),
         ),
         h('button', { onClick: () => onRestore(def), style: { padding: '4px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 11, cursor: 'pointer' } }, 'Restore'),
       );
@@ -558,13 +558,13 @@ function PromoteModal({ def, sig, onConfirm, onCancel }) {
   const options = [
     { key: 'projections', label: '▦ Projections', desc: 'Show a signal influence callout when this X metric is in range' },
     { key: 'morning_brief', label: '🌅 Morning Brief', desc: 'Flag this relationship in the daily store summary' },
-    { key: 'sage', label: '🧠 SAGE', desc: 'Include this correlation in SAGE AI context when relevant' },
+    { key: 'sage', label: '🧠 SAGE', desc: 'Let the SAGE assistant use this link when it answers questions' },
   ];
   return h('div', { onClick: onCancel, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' } },
     h('div', { onClick: e => e.stopPropagation(), style: { width: 'min(420px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--surf,#1a1f2e)', borderRadius: 12, padding: 24, border: `1px solid ${bdr}`, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 700, marginBottom: 6 } }, '▲ Promote Signal'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 16, lineHeight: 1.5 } },
-        `"${def.name}" has a confirmed correlation (r = ${sig?.r?.toFixed(3) || '?'}). Promoting integrates it into Meridian's intelligence layer.`),
+        `"${def.name}" is a confirmed link (strength ${sig?.r != null ? Math.abs(sig.r).toFixed(2) : '?'} out of 1). Promoting puts it to work across Meridian.`),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 } },
         options.map(opt => h('div', { key: opt.key, onClick: () => toggle(opt.key), style: {
           padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
@@ -1051,10 +1051,9 @@ function ScannerTab({ ds, onTrack }) {
   return h('div', null,
     // Intro
     h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
-      '🔎 Auto-Correlation Scanner — cycles every metric pair across the loaded data and surfaces the strongest relationships. ',
-      'Results show which metrics ', h('b', null, 'move together'), ' — this is association, ', h('b', null, 'not cause-and-effect'), '. ',
-      'Guardrails: a minimum sample size, an effect-size floor, and a Benjamini–Hochberg false-discovery correction so pairs that only look strong by chance are flagged out. ',
-      'Near-identical pairs (the same metric from two sources, or the same event as count/$/%) are hidden so real cross-metric relationships surface.'),
+      '🔎 ', h('b', null, 'Find hidden connections in your numbers.'), ' Meridian compares every pair of metrics you track and surfaces the ones that ', h('b', null, 'move together'), ' — when one goes up, the other reliably goes up (or down) with it. ',
+      'This is a connection, ', h('b', null, 'not proof that one causes the other'), '. ',
+      'It only shows pairs backed by enough data, screens out coincidences, and hides near-duplicate pairs (the same number from two sources) so the real connections stand out.'),
 
     // Controls
     h('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' } },
@@ -1062,9 +1061,9 @@ function ScannerTab({ ds, onTrack }) {
         pillBtn(gran === 'daily', () => setGran('daily'), 'Daily'),
         pillBtn(gran === 'monthly', () => setGran('monthly'), 'Monthly'),
       ),
-      h('label', { style: { fontSize: 11, color: muted, display: 'flex', alignItems: 'center', gap: 4 } }, 'Min |r|',
+      h('label', { style: { fontSize: 11, color: muted, display: 'flex', alignItems: 'center', gap: 4 } }, 'Min strength',
         h('select', { value: String(minAbsR), onChange: e => setMinAbsR(parseFloat(e.target.value)), style: SEL },
-          ['0.3', '0.4', '0.5', '0.6'].map(v => h('option', { key: v, value: v }, v)))),
+          [['0.3', '0.3 · moderate+'], ['0.4', '0.4 · clear+'], ['0.5', '0.5 · strong+'], ['0.6', '0.6 · very strong']].map(([v, lbl]) => h('option', { key: v, value: v }, lbl)))),
       availLocs.length > 1 && h('select', { value: scopeLoc || '', onChange: e => setScopeLoc(e.target.value || null), style: { ...SEL, color: scopeLoc ? amber : muted } },
         h('option', { value: '' }, 'All stores'),
         availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))),
@@ -1076,12 +1075,12 @@ function ScannerTab({ ds, onTrack }) {
 
     // Summary
     scan && !scan.error && h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } },
-      `${scan.metricsUsed} metrics with data · ${scan.tested} pairs tested · ${results.length} above |r| ${minAbsR} · `,
-      h('span', { style: { color: grn, fontWeight: 700 } }, `${scan.fdrCount} survive FDR (q<${scan.alpha})`),
-      results.length > 40 ? ` · showing top 40` : ''),
+      `Compared ${scan.tested} pairs across ${scan.metricsUsed} metrics · ${results.length} move together strongly · `,
+      h('span', { style: { color: grn, fontWeight: 700 } }, `${scan.fdrCount} unlikely to be a fluke`),
+      results.length > 40 ? ` · showing the top 40` : ''),
     scan?.error && h('div', { style: { fontSize: 12, color: red, marginBottom: 12 } }, 'Scan error: ' + scan.error),
     scan && !scan.error && !results.length && h('div', { style: { textAlign: 'center', padding: 32, color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
-      scan.metricsUsed < 2 ? 'Not enough loaded metrics to correlate — sync or upload more data.' : `No pairs cleared |r| ≥ ${minAbsR}. Try lowering the threshold.`),
+      scan.metricsUsed < 2 ? 'Not enough data loaded to compare yet — sync or upload more.' : `Nothing reached strength ${minAbsR}. Try lowering the minimum.`),
 
     // Result rows
     shown.map((row, i) => h('div', { key: i, style: {
@@ -1089,15 +1088,17 @@ function ScannerTab({ ds, onTrack }) {
       background: surf2, border: `1px solid ${row.fdrSig ? 'rgba(16,185,129,.25)' : bdr}`, borderRadius: 8, flexWrap: 'wrap',
     } },
       h('div', { style: { flex: 1, minWidth: 220 } },
-        h('div', { style: { fontSize: 13, fontWeight: 600 } }, `${row.xLabel}  →  ${row.yLabel}`),
-        h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, `${row.xCat} · ${row.yCat} · n=${row.n} · q=${fmtQ(row.qValue)}`),
+        h('div', { style: { fontSize: 13, fontWeight: 600 } }, `${row.xLabel}  &  ${row.yLabel}`),
+        h('div', { style: { fontSize: 11, color: row.r >= 0 ? grn : '#f87171', marginTop: 2 } },
+          row.r >= 0 ? 'rise and fall together' : 'when one goes up, the other goes down'),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, `${row.xCat} · ${row.yCat} · based on ${row.n} data points`),
       ),
-      row.crossDomain && h('span', { style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(96,165,250,.12)', color: blue } }, 'cross-domain'),
-      row.divergent && h('span', { title: 'Pearson and Spearman disagree — likely nonlinear or outlier-driven', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,.12)', color: amber } }, '⚠ nonlinear'),
-      row.fdrSig && h('span', { style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: grn } }, 'FDR ✓'),
+      row.crossDomain && h('span', { title: 'These two come from different parts of the business', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(96,165,250,.12)', color: blue } }, 'different areas'),
+      row.divergent && h('span', { title: 'The link isn\'t a straight line — bigger swings matter more than small ones', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,.12)', color: amber } }, 'not a straight line'),
+      row.fdrSig && h('span', { title: 'Passed the coincidence check — unlikely to be a fluke', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: grn } }, 'not a fluke ✓'),
       h('div', { style: { textAlign: 'right', minWidth: 96 } },
-        h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(row.r), fontFamily: 'monospace' } }, `r ${fmtR(row.r)}`),
-        h('div', { style: { fontSize: 10, color: muted, fontFamily: 'monospace' } }, `ρ ${fmtR(row.rho)}`),
+        h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(row.r), fontFamily: 'monospace' } }, fmtR(row.r)),
+        h('div', { style: { fontSize: 9, color: muted } }, 'strength'),
       ),
       h('button', {
         onClick: () => handleTrack(row), disabled: !!tracked[row.xKey + '|' + row.yKey],
@@ -1119,12 +1120,231 @@ function ScannerTab({ ds, onTrack }) {
         h('div', { style: { textAlign: 'right', minWidth: 90 } },
           r != null && n >= 5
             ? h('div', null,
-                h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(r), fontFamily: 'monospace' } }, `r ${fmtR(r)}`),
-                h('div', { style: { fontSize: 10, color: muted } }, `${s.granularity} · n=${n}`))
+                h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(r), fontFamily: 'monospace' } }, fmtR(r)),
+                h('div', { style: { fontSize: 9, color: muted } }, `strength · ${n} points`))
             : h('div', { style: { fontSize: 11, color: muted } }, 'no data yet'),
         ),
       );
     }),
+  );
+}
+
+// ── CSAT Drivers tab (v4.535) ───────────────────────────────────────────────
+// Laser-focused: what moves customer satisfaction? Uses scanCsatDrivers — the
+// WITHIN-STORE correlation is the headline (each store centered on its own mean,
+// so store-to-store baseline differences can't masquerade as a driver), with a
+// volume-controlled partial and honest tiers. SMG data is monthly, so this runs
+// at monthly grain; the engine is grain-agnostic for a future weekly stream.
+const CSAT_TIER_META = {
+  'slam-dunk': { label: 'Slam-dunk', color: grn,   bg: 'rgba(16,185,129,.14)', bd: 'rgba(16,185,129,.4)' },
+  'strong':    { label: 'Strong',    color: amber, bg: 'rgba(245,158,11,.14)', bd: 'rgba(245,158,11,.4)' },
+  'watch':     { label: 'Watch',     color: blue,  bg: 'rgba(96,165,250,.12)', bd: 'rgba(96,165,250,.3)' },
+  'noise':     { label: 'Noise',     color: muted, bg: 'rgba(255,255,255,.03)', bd: bdr },
+};
+function CsatDriversTab({ ds, onTrack }) {
+  const [scopeLoc, setScopeLoc] = uSt(null);
+  const [running, setRunning] = uSt(false);
+  const [scan, setScan] = uSt(null);
+  const [outcomeFilter, setOutcomeFilter] = uSt('all');
+  const [tierFilter, setTierFilter] = uSt('signal'); // 'signal' hides noise, 'all' shows it
+  const [signFilter, setSignFilter] = uSt('all');     // all | pos | neg
+  const [tracked, setTracked] = uSt({});
+  const [saved, setSaved] = uSt([]);                  // saved-driver KB (Supabase)
+
+  uE(() => { loadSavedCorrelations().then(setSaved).catch(() => {}); }, []);
+  const curScope = scopeLoc || 'district';
+  const isSaved = (driverKey, outcomeKey) => saved.some(s => s.driverKey === driverKey && s.outcomeKey === outcomeKey && s.scope === curScope);
+
+  const hasSmg = (ds?.smgFullscale || []).length > 0;
+  const availLocs = uM(() => {
+    const locs = new Set();
+    (ds?.smgFullscale || []).forEach(r => { if (r.loc) locs.add(normLoc(r.loc)); });
+    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
+  }, [ds]);
+
+  const runScan = () => {
+    setRunning(true); setScan(null);
+    setTimeout(() => {
+      try { setScan(scanCsatDrivers(ds, { scopeLoc })); }
+      catch (e) { setScan({ error: e.message, results: [] }); }
+      setRunning(false);
+    }, 30);
+  };
+
+  // ★ Track → save to the CSAT-driver KB (saved_correlations), preserving the
+  // within-store / partial / tier metrics so decay can be tracked over time.
+  const handleTrack = async (r) => {
+    const key = r.driverKey + '|' + r.csatKey;
+    if (tracked[key]) return;
+    setTracked(t => ({ ...t, [key]: 'saving' }));
+    const existing = saved.find(s => s.driverKey === r.driverKey && s.outcomeKey === r.csatKey && s.scope === curScope);
+    const rec = await saveSavedCorrelation({
+      kind: 'csat', outcomeKey: r.csatKey, outcomeLabel: r.csatLabel,
+      driverKey: r.driverKey, driverLabel: r.driverLabel,
+      granularity: 'monthly', scope: curScope,
+      withinR: r.withinR, pooledR: r.pooledR, partialR: r.partialR, spearman: r.spearman,
+      n: r.n, effN: r.effN, qValue: r.qValue, tier: r.tier, direction: r.direction,
+      history: existing ? existing.history : [],
+    });
+    if (rec) { setTracked(t => ({ ...t, [key]: 'done' })); loadSavedCorrelations().then(setSaved).catch(() => {}); }
+    else setTracked(t => ({ ...t, [key]: 'error' }));
+  };
+
+  const setSavedStatus = async (s, status) => {
+    setSaved(list => list.map(x => x.id === s.id ? { ...x, status } : x));
+    await updateSavedCorrelation(s.id, { status });
+  };
+  const removeSaved = async (s) => {
+    setSaved(list => list.filter(x => x.id !== s.id));
+    await deleteSavedCorrelation(s.id);
+  };
+
+  const fmtR = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2);
+  const fmtQ = q => q == null ? '—' : q < 0.001 ? '<0.001' : q.toFixed(3);
+  const SEL = { padding: '4px 8px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#e5e7eb', fontSize: 11, cursor: 'pointer' };
+
+  const results = scan?.results || [];
+  const filtered = results.filter(r => {
+    if (tierFilter === 'signal' && r.tier === 'noise') return false;
+    if (outcomeFilter !== 'all' && r.csatKey !== outcomeFilter) return false;
+    if (signFilter === 'pos' && !(r.withinR > 0)) return false;
+    if (signFilter === 'neg' && !(r.withinR < 0)) return false;
+    return true;
+  });
+  const groups = {};
+  filtered.forEach(r => { (groups[r.csatKey] = groups[r.csatKey] || []).push(r); });
+  const tc = scan?.tierCounts || {};
+
+  const row = (r) => {
+    const tm = CSAT_TIER_META[r.tier] || CSAT_TIER_META.noise;
+    const key = r.driverKey + '|' + r.csatKey;
+    const st = tracked[key];
+    const alreadySaved = st === 'done' || isSaved(r.driverKey, r.csatKey);
+    const signDisagree = r.spearman != null && r.withinR != null && Math.sign(r.spearman) !== Math.sign(r.withinR);
+    const plain = describeDriver(r);
+    const good = plain.goodBad.includes('favor');
+    return h('div', { key, style: {
+      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6,
+      background: surf2, border: `1px solid ${tm.bd}`, borderRadius: 8, flexWrap: 'wrap',
+    } },
+      h('div', { style: { flex: 1, minWidth: 260 } },
+        // Plain-English headline — what moves with what, in operator language.
+        h('div', { style: { fontSize: 13, fontWeight: 700, lineHeight: 1.4 } }, plain.headline,
+          h('span', { style: { color: good ? grn : '#f87171', fontWeight: 600 } }, ' ' + plain.goodBad)),
+        // How much to trust it — plain words, no stats.
+        h('div', { style: { fontSize: 11, color: muted, marginTop: 3, lineHeight: 1.5 } },
+          plain.trust + ' ' + plain.coverage + (signDisagree ? " (The link isn't a straight line — bigger swings matter more than small ones.)" : '')),
+        // Tiny reference line for power users; the plain text above is the point.
+        h('div', { style: { fontSize: 9, color: muted, marginTop: 3, opacity: .65 } },
+          `${r.driverLabel} → ${r.csatLabel} · strength ${fmtR(r.withinR)} (−1…+1) · ${r.n} store-months`),
+      ),
+      h('span', { title: 'Plain-English confidence: Dependable > Likely real > Worth watching > Too weak to trust', style: { fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: tm.bg, color: tm.color, whiteSpace: 'nowrap' } }, plain.tierWord),
+      h('button', {
+        onClick: () => handleTrack(r), disabled: alreadySaved || st === 'saving',
+        style: { padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: alreadySaved ? 'default' : 'pointer', border: `1px solid ${bdr}`, background: 'transparent',
+          color: alreadySaved ? grn : st === 'error' ? red : muted },
+      }, alreadySaved ? '✓ Saved' : st === 'saving' ? '…' : st === 'error' ? 'Retry' : '★ Save'),
+    );
+  };
+
+  return h('div', null,
+    // Intro / honesty box
+    h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
+      '😊 ', h('b', null, 'What actually moves your customer satisfaction?'), ' Meridian compares every operational number you track — speed, labor, food cost, controls — against each SMG guest score, and tells you in plain terms which ones move together. ',
+      'It checks each store against its ', h('b', null, 'own history'), ' (so a naturally high-scoring store can\'t look like a "driver"), then ', h('b', null, 're-tests every pattern on data it hasn\'t seen'), ' and labels how much to trust it: ',
+      h('b', { style: { color: grn } }, 'Dependable'), ' → ', h('b', null, 'Likely real'), ' → ', h('b', null, 'Worth watching'), ' → ', h('span', { style: { color: muted } }, 'Too weak'), '. ',
+      h('b', null, 'These are patterns we noticed, not proof that one causes the other.')),
+
+    // Saved-driver KB with decay tracking
+    saved.length > 0 && h('div', { style: { marginBottom: 16, padding: '10px 12px', background: 'rgba(245,188,0,.04)', border: '1px solid rgba(245,188,0,.2)', borderRadius: 8 } },
+      h('div', { style: { fontSize: 11, fontWeight: 700, color: amber, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 } }, `⭐ Saved drivers (${saved.length})`),
+      saved.map(s => {
+        const cur = scan && (scan.results || []).find(r => r.driverKey === s.driverKey && r.csatKey === s.outcomeKey);
+        const curR = cur ? cur.withinR : null;
+        const dd = (curR != null && s.withinR != null) ? +(Math.abs(curR) - Math.abs(s.withinR)).toFixed(2) : null;
+        const decay = dd == null ? null : dd <= -0.1 ? { t: '▼ faded', c: red } : dd >= 0.1 ? { t: '▲ strengthened', c: grn } : { t: '— holding', c: muted };
+        const savedDate = (s.history && s.history.length) ? s.history[s.history.length - 1].date : '';
+        return h('div', { key: s.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px', borderTop: `1px solid ${bdr}`, flexWrap: 'wrap' } },
+          h('div', { style: { flex: 1, minWidth: 200 } },
+            h('div', { style: { fontSize: 12, fontWeight: 600, opacity: s.status === 'dismissed' ? 0.5 : 1 } }, `${s.driverLabel} → ${s.outcomeLabel}`),
+            h('div', { style: { fontSize: 10, color: muted } }, `when saved: strength ${fmtR(s.withinR)} · ${tierWord(s.tier)}${savedDate ? ' · ' + savedDate : ''}`),
+          ),
+          curR != null
+            ? h('div', { style: { textAlign: 'right', minWidth: 84, fontFamily: 'monospace', fontSize: 11 } },
+                `now ${fmtR(curR)}`, decay && h('div', { style: { fontSize: 9, color: decay.c } }, decay.t))
+            : h('span', { style: { fontSize: 9, color: muted } }, 'run scan to check'),
+          h('div', { style: { display: 'flex', gap: 3 } },
+            ['watching', 'confirmed', 'dismissed'].map(stt => h('button', { key: stt, onClick: () => setSavedStatus(s, stt),
+              style: { fontSize: 8, padding: '2px 5px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${bdr}`,
+                background: s.status === stt ? (stt === 'confirmed' ? 'rgba(16,185,129,.15)' : stt === 'dismissed' ? 'rgba(255,255,255,.05)' : 'rgba(96,165,250,.15)') : 'transparent',
+                color: s.status === stt ? (stt === 'confirmed' ? grn : stt === 'dismissed' ? muted : blue) : muted } }, stt))),
+          h('button', { onClick: () => removeSaved(s), title: 'Remove', style: { fontSize: 12, padding: '2px 6px', cursor: 'pointer', border: 'none', background: 'transparent', color: muted } }, '✕'),
+        );
+      })
+    ),
+
+    // Controls
+    h('div', { style: { display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' } },
+      availLocs.length > 1 && h('select', { value: scopeLoc || '', onChange: e => setScopeLoc(e.target.value || null), style: { ...SEL, color: scopeLoc ? amber : muted } },
+        h('option', { value: '' }, 'All stores (within-store pooled)'),
+        availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))),
+      h('button', { onClick: runScan, disabled: running || !hasSmg, style: {
+        marginLeft: 'auto', padding: '6px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (running || !hasSmg) ? 'default' : 'pointer',
+        border: `1px solid ${amber}`, background: running ? 'transparent' : 'rgba(245,158,11,.14)', color: amber, opacity: (running || !hasSmg) ? 0.55 : 1,
+      } }, running ? 'Scanning…' : '▶ Run CSAT scan'),
+    ),
+
+    // Result filters (only once we have a scan)
+    scan && !scan.error && !!results.length && h('div', { style: { display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' } },
+      h('label', { style: { fontSize: 11, color: muted, display: 'flex', alignItems: 'center', gap: 4 } }, 'Outcome',
+        h('select', { value: outcomeFilter, onChange: e => setOutcomeFilter(e.target.value), style: SEL },
+          h('option', { value: 'all' }, 'All'),
+          (scan.csatOutcomes || []).map(k => h('option', { key: k, value: k }, findMetric(k)?.label || k)))),
+      h('div', { style: { display: 'flex', gap: 6 } },
+        pillBtn(signFilter === 'all', () => setSignFilter('all'), 'Both'),
+        pillBtn(signFilter === 'pos', () => setSignFilter('pos'), '↑ Positive'),
+        pillBtn(signFilter === 'neg', () => setSignFilter('neg'), '↓ Negative'),
+      ),
+      h('div', { style: { display: 'flex', gap: 6 } },
+        pillBtn(tierFilter === 'signal', () => setTierFilter('signal'), 'Signal only'),
+        pillBtn(tierFilter === 'all', () => setTierFilter('all'), 'Include noise'),
+      ),
+    ),
+
+    // Summary
+    scan && !scan.error && h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } },
+      `Checked ${scan.tested} number-pairs across ${scan.driversTested} operational metrics and ${(scan.csatOutcomes || []).length} guest scores · `,
+      h('span', { style: { color: grn, fontWeight: 700 } }, `${tc['slam-dunk'] || 0} dependable`), ' · ',
+      h('span', { style: { color: amber, fontWeight: 700 } }, `${tc.strong || 0} likely real`), ' · ',
+      h('span', { style: { color: blue, fontWeight: 700 } }, `${tc.watch || 0} worth watching`),
+      `  ·  ${tc.noise || 0} too weak (hidden)`),
+    scan?.error && h('div', { style: { fontSize: 12, color: red, marginBottom: 12 } }, 'Scan error: ' + scan.error),
+
+    // Empty states
+    !hasSmg && h('div', { style: { textAlign: 'center', padding: 40, color: muted, fontSize: 13, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+      h('div', { style: { fontSize: 26, marginBottom: 10 } }, '📥'),
+      h('div', { style: { fontWeight: 700, marginBottom: 6 } }, 'No SMG CSAT data loaded'),
+      'Upload an SMG FullScale report (Guest Voice) — monthly OSAT / B2B / Accuracy — to scan what drives it.'),
+    scan && !scan.error && hasSmg && !filtered.length && h('div', { style: { textAlign: 'center', padding: 32, color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+      results.length ? 'No drivers in the selected tiers/filters. Try "Include noise" or clear the outcome filter.'
+        : 'No drivers cleared the sample floor yet — more months of SMG history will surface relationships.'),
+
+    // Grouped results
+    (scan?.csatOutcomes || []).filter(k => groups[k]?.length).map(k => h('div', { key: k, style: { marginBottom: 18 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: amber, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 } },
+        (findMetric(k)?.label || k),
+        h('span', { style: { fontSize: 10, fontWeight: 600, color: muted } }, `${groups[k].length} driver${groups[k].length !== 1 ? 's' : ''}`)),
+      groups[k].map(row),
+    )),
+
+    // Footer note
+    scan && !scan.error && !!filtered.length && h('div', { style: { marginTop: 8, fontSize: 10, color: muted, lineHeight: 1.6 } },
+      '★ Save keeps a pattern in your watch-list; Meridian re-checks it every time new data lands and warns you if it fades. ',
+      'What the confidence labels mean: ', h('b', { style: { color: grn } }, 'Dependable'), ' = strong and confirmed on data it hadn\'t seen. ',
+      h('b', null, 'Likely real'), ' = strong, just needs one more confirmation. ',
+      h('b', null, 'Worth watching'), ' = an early lead worth keeping an eye on. ',
+      h('span', { style: { color: muted } }, 'Too weak'), ' = probably just noise, don\'t act on it. ',
+      'The “strength” number runs −1 to +1: the further from 0, the tighter the two move together.'),
   );
 }
 
@@ -1236,7 +1456,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     h('div', { style: { marginBottom: 16 } },
       h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'Intelligence'),
       h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 900, letterSpacing: '-.03em' } }, 'Signals'),
-      h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Cross-metric correlation analysis. Built-in signals run automatically; define your own in Signal Lab; or auto-discover them in the 🔎 Scanner.'),
+      h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Find which of your numbers move together. Built-in links run automatically; build your own in Signal Lab; or let the 🔎 Scanner surface them for you.'),
     ),
 
     // Tab bar
@@ -1245,6 +1465,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
       h('button', { onClick: () => setTab('scanner'), style: TAB_STYLE(tab === 'scanner') }, '🔎 Scanner'),
+      h('button', { onClick: () => setTab('csat'), style: TAB_STYLE(tab === 'csat') }, '😊 CSAT Drivers'),
       h('button', { onClick: () => setTab('graveyard'), style: TAB_STYLE(tab === 'graveyard', true) }, `⚰ Graveyard${graveyardCount ? ` (${graveyardCount})` : ''}`),
     ),
 
@@ -1282,21 +1503,21 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       ),
       displaySignals.map(sig => h(SignalCard, { key: sig.id, sig, expanded, onToggle: () => setExpanded(expanded === sig.id ? null : sig.id) })),
       h('div', { style: { marginTop: 16, fontSize: 10, color: muted, lineHeight: 1.6 } },
-        '⚙ Signals use Pearson r. Out of range = |r| ≥ 0.50 (n ≥ 20), Within tolerance = |r| 0.30–0.49, No effect = |r| < 0.30. Recomputes after every upload.',
+        '⚙ "Strength" runs 0 to 1 — the higher, the more tightly the two move together. Strong link = 0.50+ (with 20+ data points), Some link = 0.30–0.49, No real link = under 0.30. Recomputes after every upload.',
       ),
     ),
 
     // ── SIGNAL LAB TAB ────────────────────────────────────────────────────────
     tab === 'lab' && h('div', null,
       h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
-        '🧪 Signal Lab — define custom correlations between any two metrics in your data. ',
-        'Saved signals recompute automatically after every upload and accumulate history over time. ',
-        'Strong signals (|r| ≥ 0.50, n ≥ 20) can be promoted to Projections, Morning Brief, and SAGE.'),
+        '🧪 Signal Lab — pick any two of your numbers and Meridian tracks whether they move together. ',
+        'Saved signals re-check themselves after every upload and build up history over time. ',
+        'Once a link proves strong (strength 0.50+ with 20+ data points), you can put it to work in Projections, the Morning Brief, and SAGE.'),
       h(SignalBuilder, { ds, onSave: handleNewSignal, existingDefs: localDefs }),
       activeDefs.length === 0 && h('div', { style: { textAlign: 'center', padding: '32px 24px', color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
         h('div', { style: { fontSize: 24, marginBottom: 10 } }, '🔬'),
         h('div', { style: { fontWeight: 700, marginBottom: 6 } }, 'No custom signals yet'),
-        'Use the builder above to define your first custom correlation.',
+        'Use the builder above to set up your first one.',
       ),
       activeDefs.length > 0 && h('div', { style: { marginBottom: 12, fontSize: 11, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.07em' } }, `Your signals (${activeDefs.length})`),
       activeDefs.map(def => h(CustomSignalCard, {
@@ -1308,6 +1529,9 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
 
     // ── SCANNER TAB ───────────────────────────────────────────────────────────
     tab === 'scanner' && h(ScannerTab, { ds, onTrack: handleNewSignal }),
+
+    // ── CSAT DRIVERS TAB ──────────────────────────────────────────────────────
+    tab === 'csat' && h(CsatDriversTab, { ds, onTrack: handleNewSignal }),
 
     // ── GRAVEYARD TAB ─────────────────────────────────────────────────────────
     tab === 'graveyard' && h(GraveyardTab, { defs: localDefs, onRestore: handleRestore }),

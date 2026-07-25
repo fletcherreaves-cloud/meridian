@@ -227,13 +227,18 @@ export async function saveSmgFullscale(rows) {
 
 export async function loadSmgFullscale({ year, month } = {}) {
   if (!supabase) return [];
-  let q = supabase.from('smg_fullscale').select('*').order('year', {ascending:false}).order('month', {ascending:false});
-  if (year)  q = q.eq('year',  year);
-  if (month) q = q.eq('month', month);
-  const { data, error } = await q;
-  if (error || !data) { console.warn('[smg_fullscale] load error:', error); return []; }
+  // Paginate — a full 2020→now backfill (~27 stores × 60+ months ≈ 1,700 rows)
+  // exceeds Supabase's 1000-row default cap; a single query would silently drop
+  // ~40% of the history. fetchAll pages through everything.
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('smg_fullscale').select('*')
+      .order('year', {ascending:false}).order('month', {ascending:false});
+    if (year)  q = q.eq('year',  year);
+    if (month) q = q.eq('month', month);
+    return q.range(from, to);
+  });
   // Normalize back to camelCase
-  return data.map(r => ({
+  return (data || []).map(r => ({
     loc:            r.loc,
     year:           r.year,
     month:          r.month,
@@ -253,16 +258,30 @@ export async function loadSmgFullscale({ year, month } = {}) {
 // rows: array of { period, report_type, operator_id, operator_name, loc, loc_name,
 //                  dt_sat, dt_dissat, ir_sat, ir_dissat, accuracy_b2b, quality_b2b,
 //                  fries_b2b, snack_wrap_b2b, source_file }
+// Row identity = (period, report_type, loc). operator_* is metadata only.
+const _VP_METRIC_KEYS = ['dt_sat','dt_dissat','ir_sat','ir_dissat','accuracy_b2b','quality_b2b','fries_b2b','snack_wrap_b2b'];
+const _vpFill = r => _VP_METRIC_KEYS.reduce((n, k) => n + (r[k] != null ? 1 : 0), 0);
+
 export async function saveVoicePerf(rows) {
   if (!supabase || !rows.length) return { saved: 0, errors: [] };
-  const upsert = rows
-    .filter(r => r.period && r.report_type && r.operator_id && r.loc)
-    .map(r => ({
+  // Identity is (period, report_type, loc) — the STORE, not the operator. A store
+  // is covered by several overlapping operator reports and a re-upload under a
+  // different filename yields a different operator_id; keying on operator_id let
+  // those land as duplicate rows. Org grouping is derived from loc via our own
+  // wiring, so operator_id/name are kept only as descriptive metadata.
+  // Collapse the batch to one row per (period, report_type, loc), keeping the
+  // most-populated (a Postgres upsert also can't touch the same key twice).
+  const byKey = {};
+  for (const r of rows) {
+    if (!r.period || !r.report_type || !r.loc) continue;
+    const loc = String(r.loc);
+    const k = `${r.period}|${r.report_type}|${loc}`;
+    const cand = {
       period:          r.period,
       report_type:     r.report_type,
-      operator_id:     r.operator_id,
+      operator_id:     r.operator_id || null,
       operator_name:   r.operator_name || null,
-      loc:             String(r.loc),
+      loc,
       loc_name:        r.loc_name || null,
       dt_sat:          r.dt_sat ?? null,
       dt_dissat:       r.dt_dissat ?? null,
@@ -273,11 +292,14 @@ export async function saveVoicePerf(rows) {
       fries_b2b:       r.fries_b2b ?? null,
       snack_wrap_b2b:  r.snack_wrap_b2b ?? null,
       source_file:     r.source_file || null,
-    }));
+    };
+    if (!byKey[k] || _vpFill(cand) > _vpFill(byKey[k])) byKey[k] = cand;
+  }
+  const upsert = Object.values(byKey);
   if (!upsert.length) return { saved: 0, errors: [] };
   const { error } = await supabase
     .from('smg_voice_performance')
-    .upsert(upsert, { onConflict: 'period,report_type,operator_id,loc' });
+    .upsert(upsert, { onConflict: 'period,report_type,loc' });
   if (error) { console.warn('[voice_perf] save error:', error); return { saved: 0, errors: [error.message] }; }
   console.log(`[voice_perf] saved ${upsert.length} rows`);
   return { saved: upsert.length, errors: [] };
@@ -285,12 +307,49 @@ export async function saveVoicePerf(rows) {
 
 export async function loadVoicePerf() {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  // Paginate — a full backfill (months × ~27 stores × 3 report types) blows past
+  // Supabase's 1000-row cap; a single query would silently drop the older history.
+  const data = await fetchAll((from, to) => supabase
     .from('smg_voice_performance')
     .select('*')
-    .order('period', { ascending: false });
-  if (error || !data) { console.warn('[voice_perf] load error:', error); return []; }
-  return data;
+    .order('period', { ascending: false })
+    .range(from, to));
+  return data || [];
+}
+
+// ── SMG VOICE Daypart (Time-of-Day) persistence ──────────────────────────────
+// One row per (period, report_type, loc, daypart) with 8 metric %s. Identity is
+// the store's daypart within a period/window — operator label is irrelevant.
+const _VDP_KEYS = ['dt_sat','dt_dissat','ir_sat','ir_dissat','accuracy_b2b','quality_b2b','fries_b2b','snack_wrap_b2b'];
+export async function saveVoiceDaypart(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, error: null };
+  const byKey = {};
+  for (const r of rows) {
+    if (!r.period || !r.report_type || !r.loc || !r.daypart) continue;
+    const loc = String(r.loc);
+    const k = `${r.period}|${r.report_type}|${loc}|${r.daypart}`;
+    byKey[k] = {
+      period: r.period, report_type: r.report_type, loc, daypart: r.daypart,
+      loc_name: r.storeName || r.loc_name || null,
+      ..._VDP_KEYS.reduce((o, m) => (o[m] = r[m] ?? null, o), {}),
+      source_file: r.source_file || null,
+    };
+  }
+  const upsert = Object.values(byKey);
+  if (!upsert.length) return { saved: 0, error: null };
+  const { error } = await supabase.from('smg_voice_daypart').upsert(upsert, { onConflict: 'period,report_type,loc,daypart' });
+  if (error) { console.warn('[voice_daypart] save error:', error); return { saved: 0, error: error.message }; }
+  console.log(`[voice_daypart] saved ${upsert.length} rows`);
+  return { saved: upsert.length, error: null };
+}
+
+export async function loadVoiceDaypart() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase
+    .from('smg_voice_daypart').select('*')
+    .order('period', { ascending: false })
+    .range(from, to));
+  return (data || []).map(r => ({ ...r, storeName: r.loc_name }));
 }
 
 // ── LifeLenz Schedule persistence ────────────────────────────────────────────
@@ -1084,6 +1143,170 @@ export async function appendCustomSignalHistory(id, r, n, existingHistory) {
   await supabase.from('custom_signals').update({
     latest_r: r, latest_n: n, history,
   }).eq('id', id);
+}
+
+// ── Saved correlations (CSAT driver KB, v4.540) ───────────────────────────────
+export async function loadSavedCorrelations() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('saved_correlations').select('*')
+    .order('within_r', { ascending: false });
+  if (error) { console.warn('[saved_correlations] load error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, kind: r.kind,
+    outcomeKey: r.outcome_key, outcomeLabel: r.outcome_label,
+    driverKey: r.driver_key, driverLabel: r.driver_label,
+    granularity: r.granularity, scope: r.scope,
+    withinR: r.within_r, pooledR: r.pooled_r, partialR: r.partial_r, spearman: r.spearman,
+    n: r.n, effN: r.eff_n, qValue: r.q_value, tier: r.tier, direction: r.direction,
+    note: r.note, status: r.status, history: r.history || [],
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  }));
+}
+
+// Upsert a saved driver (keyed by kind+outcome+driver+granularity+scope), appending
+// a dated snapshot to its history so strength-over-time (decay) can be charted.
+export async function saveSavedCorrelation(d) {
+  if (!supabase) return null;
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const point = { date: new Date().toISOString().slice(0,10), withinR: d.withinR ?? null, n: d.n ?? null, tier: d.tier ?? null };
+  const row = {
+    kind: d.kind || 'csat',
+    outcome_key: d.outcomeKey, outcome_label: d.outcomeLabel,
+    driver_key: d.driverKey, driver_label: d.driverLabel,
+    granularity: d.granularity || 'monthly', scope: d.scope || 'district',
+    within_r: d.withinR ?? null, pooled_r: d.pooledR ?? null, partial_r: d.partialR ?? null, spearman: d.spearman ?? null,
+    n: d.n ?? null, eff_n: d.effN ?? null, q_value: d.qValue ?? null, tier: d.tier ?? null, direction: d.direction ?? null,
+    note: d.note ?? null, status: d.status || 'watching',
+    history: [...(d.history || []), point].slice(-50),
+    created_by: uid || null, updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('saved_correlations')
+    .upsert([row], { onConflict: 'kind,outcome_key,driver_key,granularity,scope' })
+    .select().single();
+  if (error) { console.warn('[saved_correlations] save error:', error); return null; }
+  return data;
+}
+
+export async function updateSavedCorrelation(id, patch) {
+  if (!supabase) return false;
+  const row = { updated_at: new Date().toISOString() };
+  if (patch.status != null) row.status = patch.status;
+  if (patch.note != null) row.note = patch.note;
+  const { error } = await supabase.from('saved_correlations').update(row).eq('id', id);
+  if (error) { console.warn('[saved_correlations] update error:', error); return false; }
+  return true;
+}
+
+export async function deleteSavedCorrelation(id) {
+  if (!supabase) return false;
+  const { error } = await supabase.from('saved_correlations').delete().eq('id', id);
+  if (error) { console.warn('[saved_correlations] delete error:', error); return false; }
+  return true;
+}
+
+// ── SMG VOICE comments (cloud-persist, v4.546) ────────────────────────────────
+function _cmtISO(d) {
+  if (!d) return null;
+  if (d instanceof Date) return isNaN(+d) ? null : d.toISOString().slice(0, 10);
+  const s = String(d).trim();
+  // ISO already?
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // M/D/YYYY
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { const yr = m[3].length === 2 ? '20' + m[3] : m[3]; return `${yr}-${String(+m[1]).padStart(2,'0')}-${String(+m[2]).padStart(2,'0')}`; }
+  const dt = new Date(s); return isNaN(+dt) ? null : dt.toISOString().slice(0, 10);
+}
+
+// Strip NUL + C0/C1 control chars (keeping \n and \t) that Postgres `text`
+// columns reject. Non-string input passes through untouched.
+function _pgSafeText(s) {
+  if (s == null) return s;
+  return String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+}
+
+export async function saveSmgComments(rows) {
+  if (!supabase || !rows?.length) return { saved: 0 };
+  // Build rows DEDUPED by dedup_key within this batch. A Postgres upsert throws
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time" when the same
+  // key appears twice in one call — which happens constantly with generic comments
+  // ("Friendly service"). That single throw nukes the whole batch → 0 saved. So we
+  // collapse in-batch duplicates here, enrich the key with visit_date + score to
+  // avoid merging genuinely distinct comments, and chunk so one bad slice can't
+  // sink everything.
+  const byKey = new Map();
+  for (const r of rows) {
+    // Postgres `text` cannot hold a NUL byte (U+0000). PDF extraction leaves
+    // stray NUL + other control chars in comment text; PostgREST serializes
+    // them into a JSON escape Postgres rejects ("unsupported Unicode escape
+    // sequence", SQLSTATE 22P05), which zeroes the whole batch. _pgSafeText
+    // strips NUL + C0/C1 controls (keeping newlines/tabs) from every string
+    // field so one bad comment can't sink the save.
+    const txt = _pgSafeText(r.text || '').trim();
+    if (!txt) continue;
+    const cd = _cmtISO(r.commentDate) || _cmtISO(r.visitDate);
+    const vd = _cmtISO(r.visitDate);
+    const sc = (typeof r.score === 'number' && Number.isFinite(r.score)) ? r.score : null;
+    const dedup_key = `${String(r.loc ?? r.nsn ?? '')}|${cd || ''}|${vd || ''}|${sc ?? ''}|${txt.slice(0, 140)}`;
+    if (byKey.has(dedup_key)) continue;
+    byKey.set(dedup_key, {
+      loc: String(r.loc ?? r.nsn ?? ''), store_name: _pgSafeText(r.storeName) || null,
+      comment_date: cd, visit_date: vd, nsn: r.nsn || null,
+      satisfaction_label: _pgSafeText(r.satisfactionLabel) || null, score: sc,
+      text: txt, report_start: _cmtISO(r.reportStart), report_end: _cmtISO(r.reportEnd),
+      source_file: _pgSafeText(r.sourceFile || r.source_file) || null, dedup_key,
+    });
+  }
+  let upsert = [...byKey.values()];
+  if (!upsert.length) return { saved: 0 };
+
+  // Constraint-independent idempotency: rather than rely on `onConflict:'dedup_key'`
+  // (which fails outright if the table was created without the UNIQUE index and
+  // silently zeroes the whole save), fetch the dedup_keys already in the table,
+  // drop the ones we already have, and plain-INSERT the rest. Re-uploads stay
+  // idempotent whether or not the unique index exists.
+  try {
+    const existing = new Set();
+    const seen = await fetchAll((from, to) => supabase
+      .from('smg_comments').select('dedup_key').range(from, to));
+    for (const r of (seen || [])) if (r && r.dedup_key) existing.add(r.dedup_key);
+    if (existing.size) upsert = upsert.filter(r => !existing.has(r.dedup_key));
+  } catch (e) {
+    // If the pre-fetch fails, fall through to insert and let the constraint (if
+    // any) dedupe — better to attempt the save than abort.
+    console.warn('[smg_comments] existing-key prefetch failed:', e);
+  }
+  if (!upsert.length) return { saved: 0, error: null };
+
+  let saved = 0, lastErr = null;
+  for (let i = 0; i < upsert.length; i += 500) {
+    const chunk = upsert.slice(i, i + 500);
+    const { error } = await supabase.from('smg_comments').insert(chunk);
+    if (error) { lastErr = error; console.warn('[smg_comments] save error:', error); }
+    else saved += chunk.length;
+  }
+  return { saved, error: lastErr ? lastErr.message : null };
+}
+
+export async function loadSmgComments({ daysBack = 365 } = {}) {
+  if (!supabase) return [];
+  const cutoff = new Date(Date.now() - daysBack * 86400000).toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase
+    .from('smg_comments').select('*')
+    .gte('comment_date', cutoff)
+    .order('comment_date', { ascending: false })
+    .range(from, to));
+  // Keep dates as ISO strings (not Date objects) to match parser output — the
+  // comment panel sorts and renders them as strings, and a Date here both
+  // breaks localeCompare and prints as an ugly full datetime.
+  return (data || []).map(r => ({
+    loc: r.loc, storeName: r.store_name,
+    commentDate: r.comment_date || null,
+    visitDate: r.visit_date || null,
+    nsn: r.nsn, satisfactionLabel: r.satisfaction_label, score: r.score,
+    text: r.text, reportStart: r.report_start, reportEnd: r.report_end,
+  }));
 }
 
 // ── On-demand sync triggers ───────────────────────────────────────────────────

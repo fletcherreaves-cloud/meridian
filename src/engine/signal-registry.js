@@ -85,6 +85,14 @@ export const METRIC_CATEGORIES = [
       { key: 'accuracyB2B', label: 'Accuracy B2B %',           source: 'smgFullscale', field: 'accuracyB2B',  granularity: ['monthly'],        better: 'higher', unit: 'pct' },
       { key: 'dtProblem',   label: 'DT Problem %',             source: 'smgFullscale', field: 'dtProblem',    granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
       { key: 'overallProblem',label:'Overall Problem %',        source: 'smgFullscale', field: 'overallProblem',granularity: ['monthly'],       better: 'lower',  unit: 'pct' },
+      // VOICE Performance report (monthly point-in-time) — richer outcomes the
+      // FullScale export doesn't carry: DT vs In-Restaurant satisfaction split
+      // and product-quality B2B rates. Source ds.smgVoicePerf, report_type=monthly.
+      { key: 'vpDtSat',     label: 'DT Satisfaction % (VOICE)', source: 'smgVoicePerf', field: 'dt_sat',        granularity: ['monthly'],        better: 'higher', unit: 'pct' },
+      { key: 'vpIrSat',     label: 'In-Restaurant Sat % (VOICE)',source:'smgVoicePerf', field: 'ir_sat',        granularity: ['monthly'],        better: 'higher', unit: 'pct' },
+      { key: 'vpQualityB2B',label: 'Overall Quality B2B % (VOICE)',source:'smgVoicePerf',field:'quality_b2b',  granularity: ['monthly'],        better: 'higher', unit: 'pct' },
+      { key: 'vpFriesB2B',  label: 'Fries Quality B2B % (VOICE)',source:'smgVoicePerf', field: 'fries_b2b',     granularity: ['monthly'],        better: 'higher', unit: 'pct' },
+      { key: 'vpSnackB2B',  label: 'Snack Wrap B2B % (VOICE)', source: 'smgVoicePerf', field: 'snack_wrap_b2b', granularity: ['monthly'],        better: 'higher', unit: 'pct' },
     ],
   },
   // ── Cloud / auto-emailed streams ────────────────────────────────────────────
@@ -292,6 +300,25 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
     return rows
       .filter(r => r[field] != null && !isNaN(r[field]) && r.year && r.month)
       .map(r => ({ loc: _normLoc(r.loc), date: _smgDate(r), value: r[field] }));
+  }
+
+  if (meta.source === 'smgVoicePerf') {
+    // Point-in-time Monthly only — skip trailing90/ytd rolling windows so a
+    // month's value is comparable to the other monthly streams. period='YYYY-MM'.
+    // A store can appear under several operator reports (overlapping stores) or
+    // as a re-upload duplicate — collapse to one point per (loc, month) so it
+    // isn't counted 2–3× in a correlation.
+    const byKey = {};
+    rows
+      .filter(r => r && r.report_type === 'monthly' && r[field] != null && !isNaN(r[field]) && typeof r.period === 'string')
+      .forEach(r => {
+        const [y, m] = r.period.split('-').map(Number);
+        const date = new Date(y, (m || 1) - 1, 1);
+        if (!(date instanceof Date) || isNaN(+date)) return;
+        const loc = _normLoc(r.loc);
+        byKey[loc + '|' + r.period] = { loc, date, value: r[field] };
+      });
+    return Object.values(byKey);
   }
 
   if (granularity === 'daily') {
