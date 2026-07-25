@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS } from '../engine/signal-registry.js';
-import { scanCsatDrivers, CSAT_OUTCOME_KEYS } from '../engine/csat-signals.js';
+import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
@@ -1221,25 +1221,24 @@ function CsatDriversTab({ ds, onTrack }) {
     const st = tracked[key];
     const alreadySaved = st === 'done' || isSaved(r.driverKey, r.csatKey);
     const signDisagree = r.spearman != null && r.withinR != null && Math.sign(r.spearman) !== Math.sign(r.withinR);
+    const plain = describeDriver(r);
+    const good = plain.goodBad.includes('favor');
     return h('div', { key, style: {
       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6,
       background: surf2, border: `1px solid ${tm.bd}`, borderRadius: 8, flexWrap: 'wrap',
     } },
-      h('div', { style: { flex: 1, minWidth: 240 } },
-        h('div', { style: { fontSize: 13, fontWeight: 600 } }, r.driverLabel),
-        h('div', { style: { fontSize: 11, color: /\(helps\)/.test(r.direction || '') ? grn : '#f87171', marginTop: 2 } }, r.direction || ''),
-        h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } },
-          `${r.driverCat} · n=${r.n} · effN=${r.effN} · ${r.locsUsed} stores · q=${fmtQ(r.qValue)}`),
+      h('div', { style: { flex: 1, minWidth: 260 } },
+        // Plain-English headline — what moves with what, in operator language.
+        h('div', { style: { fontSize: 13, fontWeight: 700, lineHeight: 1.4 } }, plain.headline,
+          h('span', { style: { color: good ? grn : '#f87171', fontWeight: 600 } }, ' ' + plain.goodBad)),
+        // How much to trust it — plain words, no stats.
+        h('div', { style: { fontSize: 11, color: muted, marginTop: 3, lineHeight: 1.5 } },
+          plain.trust + ' ' + plain.coverage + (signDisagree ? " (The link isn't a straight line — bigger swings matter more than small ones.)" : '')),
+        // Tiny reference line for power users; the plain text above is the point.
+        h('div', { style: { fontSize: 9, color: muted, marginTop: 3, opacity: .65 } },
+          `${r.driverLabel} → ${r.csatLabel} · strength ${fmtR(r.withinR)} (−1…+1) · ${r.n} store-months`),
       ),
-      r.replicated === true && h('span', { title: 'Holds out-of-sample (split-half)', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: grn } }, 'replicates ✓'),
-      r.replicated === false && h('span', { title: 'Did NOT replicate on the held-out half', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,.10)', color: red } }, 'no replicate'),
-      signDisagree && h('span', { title: 'Pearson and Spearman disagree — likely nonlinear or outlier-driven', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,.12)', color: amber } }, '⚠ nonlinear'),
-      h('span', { style: { fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: tm.bg, color: tm.color } }, tm.label),
-      h('div', { style: { textAlign: 'right', minWidth: 120 } },
-        h('div', { style: { fontSize: 15, fontWeight: 800, color: tm.color, fontFamily: 'monospace' } }, `r ${fmtR(r.withinR)}`),
-        h('div', { style: { fontSize: 9, color: muted, fontFamily: 'monospace' } },
-          `pooled ${fmtR(r.pooledR)} · ×vol ${fmtR(r.partialR)}`),
-      ),
+      h('span', { title: 'Plain-English confidence: Dependable > Likely real > Worth watching > Too weak to trust', style: { fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: tm.bg, color: tm.color, whiteSpace: 'nowrap' } }, plain.tierWord),
       h('button', {
         onClick: () => handleTrack(r), disabled: alreadySaved || st === 'saving',
         style: { padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: alreadySaved ? 'default' : 'pointer', border: `1px solid ${bdr}`, background: 'transparent',
@@ -1251,10 +1250,10 @@ function CsatDriversTab({ ds, onTrack }) {
   return h('div', null,
     // Intro / honesty box
     h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
-      '😊 CSAT Drivers — what moves customer satisfaction? Scans every operational metric against each SMG outcome (OSAT, B2B, Accuracy, Problem rates). ',
-      'The headline ', h('b', null, 'within-store r'), ' centers each store on its own average first, so a store\'s baseline can\'t masquerade as a driver — it answers ', h('b', null, '"when a store improves X, does its CSAT move?"'), ' ',
-      h('b', null, '×vol'), ' is the same relationship after controlling for guest count (kills volume tautologies). ',
-      'SMG is ', h('b', null, 'monthly'), ', so samples are thin — tiers are tuned for that, and most findings will start in Watch until more history lands. Association, ', h('b', null, 'not proof of cause'), '.'),
+      '😊 ', h('b', null, 'What actually moves your customer satisfaction?'), ' Meridian compares every operational number you track — speed, labor, food cost, controls — against each SMG guest score, and tells you in plain terms which ones move together. ',
+      'It checks each store against its ', h('b', null, 'own history'), ' (so a naturally high-scoring store can\'t look like a "driver"), then ', h('b', null, 're-tests every pattern on data it hasn\'t seen'), ' and labels how much to trust it: ',
+      h('b', { style: { color: grn } }, 'Dependable'), ' → ', h('b', null, 'Likely real'), ' → ', h('b', null, 'Worth watching'), ' → ', h('span', { style: { color: muted } }, 'Too weak'), '. ',
+      h('b', null, 'These are patterns we noticed, not proof that one causes the other.')),
 
     // Saved-driver KB with decay tracking
     saved.length > 0 && h('div', { style: { marginBottom: 16, padding: '10px 12px', background: 'rgba(245,188,0,.04)', border: '1px solid rgba(245,188,0,.2)', borderRadius: 8 } },
@@ -1263,12 +1262,12 @@ function CsatDriversTab({ ds, onTrack }) {
         const cur = scan && (scan.results || []).find(r => r.driverKey === s.driverKey && r.csatKey === s.outcomeKey);
         const curR = cur ? cur.withinR : null;
         const dd = (curR != null && s.withinR != null) ? +(Math.abs(curR) - Math.abs(s.withinR)).toFixed(2) : null;
-        const decay = dd == null ? null : dd <= -0.1 ? { t: '▼ weakened', c: red } : dd >= 0.1 ? { t: '▲ stronger', c: grn } : { t: '— stable', c: muted };
+        const decay = dd == null ? null : dd <= -0.1 ? { t: '▼ faded', c: red } : dd >= 0.1 ? { t: '▲ strengthened', c: grn } : { t: '— holding', c: muted };
         const savedDate = (s.history && s.history.length) ? s.history[s.history.length - 1].date : '';
         return h('div', { key: s.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px', borderTop: `1px solid ${bdr}`, flexWrap: 'wrap' } },
           h('div', { style: { flex: 1, minWidth: 200 } },
             h('div', { style: { fontSize: 12, fontWeight: 600, opacity: s.status === 'dismissed' ? 0.5 : 1 } }, `${s.driverLabel} → ${s.outcomeLabel}`),
-            h('div', { style: { fontSize: 10, color: muted } }, `saved r ${fmtR(s.withinR)} · ${s.tier || '—'}${savedDate ? ' · ' + savedDate : ''}`),
+            h('div', { style: { fontSize: 10, color: muted } }, `when saved: strength ${fmtR(s.withinR)} · ${tierWord(s.tier)}${savedDate ? ' · ' + savedDate : ''}`),
           ),
           curR != null
             ? h('div', { style: { textAlign: 'right', minWidth: 84, fontFamily: 'monospace', fontSize: 11 } },
@@ -1314,11 +1313,11 @@ function CsatDriversTab({ ds, onTrack }) {
 
     // Summary
     scan && !scan.error && h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } },
-      `${scan.driversTested} drivers × ${(scan.csatOutcomes || []).length} CSAT outcomes · ${scan.tested} pairs · `,
-      h('span', { style: { color: grn, fontWeight: 700 } }, `${tc['slam-dunk'] || 0} slam-dunk`), ' · ',
-      h('span', { style: { color: amber, fontWeight: 700 } }, `${tc.strong || 0} strong`), ' · ',
-      h('span', { style: { color: blue, fontWeight: 700 } }, `${tc.watch || 0} watch`),
-      `  ·  ${tc.noise || 0} noise (hidden)`),
+      `Checked ${scan.tested} number-pairs across ${scan.driversTested} operational metrics and ${(scan.csatOutcomes || []).length} guest scores · `,
+      h('span', { style: { color: grn, fontWeight: 700 } }, `${tc['slam-dunk'] || 0} dependable`), ' · ',
+      h('span', { style: { color: amber, fontWeight: 700 } }, `${tc.strong || 0} likely real`), ' · ',
+      h('span', { style: { color: blue, fontWeight: 700 } }, `${tc.watch || 0} worth watching`),
+      `  ·  ${tc.noise || 0} too weak (hidden)`),
     scan?.error && h('div', { style: { fontSize: 12, color: red, marginBottom: 12 } }, 'Scan error: ' + scan.error),
 
     // Empty states
@@ -1340,8 +1339,12 @@ function CsatDriversTab({ ds, onTrack }) {
 
     // Footer note
     scan && !scan.error && !!filtered.length && h('div', { style: { marginTop: 8, fontSize: 10, color: muted, lineHeight: 1.6 } },
-      '★ Track saves a driver to Signal Lab (recomputes on every upload). A dedicated saved-driver library with decay alerts is coming. ',
-      'Tiers: Slam-dunk = |within r| ≥ .5, survives FDR q≤.01 + volume partial + out-of-sample. Strong = |r| ≥ .4, q≤.05. Watch = |r| ≥ .3.'),
+      '★ Save keeps a pattern in your watch-list; Meridian re-checks it every time new data lands and warns you if it fades. ',
+      'What the confidence labels mean: ', h('b', { style: { color: grn } }, 'Dependable'), ' = strong and confirmed on data it hadn\'t seen. ',
+      h('b', null, 'Likely real'), ' = strong, just needs one more confirmation. ',
+      h('b', null, 'Worth watching'), ' = an early lead worth keeping an eye on. ',
+      h('span', { style: { color: muted } }, 'Too weak'), ' = probably just noise, don\'t act on it. ',
+      'The “strength” number runs −1 to +1: the further from 0, the tighter the two move together.'),
   );
 }
 

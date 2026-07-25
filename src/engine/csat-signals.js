@@ -115,6 +115,39 @@ function _directionText(driverMeta, csatMeta, r) {
   return `higher ${driverMeta.label} → ${csatUp} ${csatMeta.label} (${helps ? 'helps' : 'hurts'})`;
 }
 
+// ── Plain-English, operator-facing translation of a driver result ────────────
+// Turns the stats (within r, tier, replication, sample) into sentences a GM can
+// read without knowing what a correlation is. Deliberately no jargon.
+const _strengthWord = w => Math.abs(w) >= 0.5 ? 'strong' : Math.abs(w) >= 0.4 ? 'clear' : Math.abs(w) >= 0.3 ? 'moderate' : 'slight';
+
+export function tierWord(tier) {
+  return tier === 'slam-dunk' ? 'Dependable'
+    : tier === 'strong' ? 'Likely real'
+    : tier === 'watch' ? 'Worth watching'
+    : 'Too weak to trust';
+}
+
+export function describeDriver(r) {
+  const w = r.withinR ?? 0;
+  const outcomeDown = w < 0;
+  const strength = _strengthWord(w);
+  const helps = / helps\)/.test(r.direction || '') || /\(helps/.test(r.direction || '');
+  // What moves with what, in plain terms.
+  const headline = `When ${r.driverLabel} goes up, ${r.csatLabel} tends to go ${outcomeDown ? 'DOWN' : 'UP'}.`;
+  const goodBad = helps ? 'That works in your favor.' : 'That pulls the guest score the wrong way.';
+  // How much to trust it.
+  let trust;
+  if (r.tier === 'slam-dunk') trust = `This is a ${strength}, dependable pattern — it held up when we re-checked it on data it had never seen.`;
+  else if (r.tier === 'strong') trust = `This is a ${strength} pattern that is very likely real.`;
+  else if (r.tier === 'watch') trust = r.replicated
+    ? `A ${strength} pattern that held up on a fresh test — worth keeping an eye on.`
+    : `An early ${strength} pattern — it hasn't been re-confirmed on new data yet, so treat it as a lead, not a fact.`;
+  else trust = `A ${strength} pattern that's probably just noise — don't act on it yet.`;
+  const coverage = `Seen across ${r.locsUsed} store${r.locsUsed === 1 ? '' : 's'}.`;
+  const caveat = `This is a pattern we noticed, not proof that one causes the other.`;
+  return { headline, goodBad, trust, coverage, caveat, tierWord: tierWord(r.tier) };
+}
+
 // Split points into an earlier and later half by period and check the within-store
 // correlation replicates (same sign, both |r| ≥ .2). Needs enough points on both
 // sides or returns null (not enough to judge).
