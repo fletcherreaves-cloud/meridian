@@ -655,8 +655,10 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     let r = selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows || []);
     if (filterLabel !== '__all__') r = r.filter(x => (x.satisfactionLabel||'').toLowerCase() === filterLabel);
     r = [...r];
-    if (sortBy === 'date-desc') r.sort((a,b) => (b.visitDate||'').localeCompare(a.visitDate||''));
-    else if (sortBy === 'date-asc') r.sort((a,b) => (a.visitDate||'').localeCompare(b.visitDate||''));
+    // Coerce to String — cloud-loaded rows can return visit_date as a non-string
+    // (Date/number), and localeCompare only exists on strings.
+    if (sortBy === 'date-desc') r.sort((a,b) => String(b.visitDate||'').localeCompare(String(a.visitDate||'')));
+    else if (sortBy === 'date-asc') r.sort((a,b) => String(a.visitDate||'').localeCompare(String(b.visitDate||'')));
     else if (sortBy === 'score-asc') r.sort((a,b) => (a.score||0) - (b.score||0));
     else if (sortBy === 'score-desc') r.sort((a,b) => (b.score||0) - (a.score||0));
     return r;

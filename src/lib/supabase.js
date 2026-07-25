@@ -1262,10 +1262,13 @@ export async function loadSmgComments({ daysBack = 365 } = {}) {
     .gte('comment_date', cutoff)
     .order('comment_date', { ascending: false })
     .range(from, to));
+  // Keep dates as ISO strings (not Date objects) to match parser output — the
+  // comment panel sorts and renders them as strings, and a Date here both
+  // breaks localeCompare and prints as an ugly full datetime.
   return (data || []).map(r => ({
     loc: r.loc, storeName: r.store_name,
-    commentDate: r.comment_date ? new Date(r.comment_date + 'T00:00:00') : null,
-    visitDate: r.visit_date ? new Date(r.visit_date + 'T00:00:00') : null,
+    commentDate: r.comment_date || null,
+    visitDate: r.visit_date || null,
     nsn: r.nsn, satisfactionLabel: r.satisfaction_label, score: r.score,
     text: r.text, reportStart: r.report_start, reportEnd: r.report_end,
   }));
