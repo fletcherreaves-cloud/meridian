@@ -8,6 +8,7 @@ import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest } from '../engine/backtest.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
+import { metricAvg } from '../engine/metric-source.js';
 import { ExportDropdown } from './store-dash.js';
 
 const h=React.createElement;
@@ -1105,11 +1106,12 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         const sales     = autoFirstTotal(ds, loc, range, 'sales');   // full current period (display)
         const _mv       = matchedVsLY(ds, loc, range, 'sales');      // matched-day comparison
         const matchedCur= _mv.cur, lySales = _mv.ly, vsLY = _mv.pct;
-        const laborPct   = _avg(cRows,'laborPct')||_avg(lRows,'laborPct');
-        const tpph       = _avg(cRows,'tpph')||_avg(lRows,'tpph');
-        const oepe       = _avg(oRows,'oepe')||_avg(cRows,'oepe')||_avg(lRows,'oepe');
+        // Rate metrics via the shared auto-first resolver (manual → Glimpse) so recent windows fill.
+        const laborPct   = metricAvg(ds,loc,range,'laborPct');
+        const tpph       = metricAvg(ds,loc,range,'tpph');
+        const oepe       = metricAvg(ds,loc,range,'oepe');
         const otHrs      = _avg(lRows,'otHrs')||(_avg(cRows,'otHrs')!=null?(_avg(cRows,'otHrs')/rangeDays):null);
-        const cashOS     = _avgZ(cRows,'cashOSPct');
+        const cashOS     = metricAvg(ds,loc,range,'cashOSPct');
         const baseFoodPct= _avg(fRows,'baseFoodPct');
         const totFoodPct = _avg(fRows,'pLFoodPct');
         return{loc,tgt,sales,lySales,matchedCur,vsLY,laborPct,tpph,oepe,otHrs,cashOS,baseFoodPct,totFoodPct,days:rangeDays,

@@ -8,6 +8,7 @@ import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache 
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
+import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { ModelHealthBadge } from './analytics.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol } from '../utils/fmt.js';
@@ -2132,26 +2133,25 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
   // This memo recomputes all key metrics from ds filtered by the CURRENT DR
   // so the period selector actually changes what the rankings show.
   const localStats = React.useMemo(()=>{
+    // All metrics now source auto-first via the shared resolver (engine/metric-source.js) —
+    // manual Ops/Controls first, then the auto DAR / Daily Glimpse — so a recent window that
+    // lacks a manual upload fills from the synced streams instead of showing "—"/-100%.
     const res={};
-    const a=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&v>0);return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
-    const az=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
     (stores||[]).forEach(s=>{
       const loc=String(s.loc);
-      const cR=(ds.ctrlRows||[]).filter(r=>String(r.loc)===loc&&r.date>=DR.s&&r.date<=DR.e);
-      const lR=(ds.laborRows||[]).filter(r=>String(r.loc)===loc&&r.date>=DR.s&&r.date<=DR.e&&r.sales>0);
-      const oR=(ds.opsRows||[]).filter(r=>String(r.loc)===loc&&r.date>=DR.s&&r.date<=DR.e);
       res[loc]={
-        laborPct: a(cR,'laborPct') || a(lR,'laborPct'),
-        tpph:     a(cR,'tpph')     || a(lR,'tpph'),
-        oepe:     a(oR,'oepe'),
-        kvst:     a(oR,'kvst'),
-        park:     a(oR,'park'),
-        otHrs:    az(lR,'otHrs'),
-        cashOSPct:az(cR,'cashOSPct'),
-        tRedAPct: az(cR,'tRedAPct'),
-        discPct:  az(cR,'discPct'),
-        r2p:      a(oR,'r2p'),
-        sales:    lR.reduce((a,r)=>a+(r.sales||0),0),
+        laborPct: metricAvg(ds,loc,DR,'laborPct'),
+        tpph:     metricAvg(ds,loc,DR,'tpph'),
+        oepe:     metricAvg(ds,loc,DR,'oepe'),
+        kvst:     metricAvg(ds,loc,DR,'kvst'),
+        park:     metricAvg(ds,loc,DR,'park'),
+        otHrs:    metricAvg(ds,loc,DR,'otHrs'),
+        cashOSPct:metricAvg(ds,loc,DR,'cashOSPct'),
+        tRedAPct: metricAvg(ds,loc,DR,'tRedAPct'),
+        discPct:  metricAvg(ds,loc,DR,'discPct'),
+        r2p:      metricAvg(ds,loc,DR,'r2p'),
+        // sales total: sum of the freshest daily value per day (manual, else auto DAR).
+        sales:    Object.values(_msSeries(ds,loc,DR,'sales')).reduce((a,b)=>a+b,0),
       };
     });
     return res;
