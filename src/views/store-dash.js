@@ -7,6 +7,7 @@ import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, ge
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
+import { matchedVsLY } from '../engine/vs-ly.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { ModelHealthBadge } from './analytics.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol } from '../utils/fmt.js';
@@ -2084,23 +2085,13 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
   const [activePreset, setActivePreset] = React.useState('l4w');
   const DR = rankRange;
   const gcVsLYMap=React.useMemo(()=>{
-    // Matched-day + auto-first GC vs LY. Old code compared current-window GC (empty when
-    // recent manual uploads are missing) against a full LY window → a false -100% on every
-    // store. Now current GC comes from manual laborRows OR the auto DAR (qsrActSummaryRows),
-    // LY from the 364d-back row or the DAR's own lyGc, and a day counts only when BOTH years
-    // have guests — so it's apples-to-apples (null when there's genuinely no comparable data).
-    const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
-    const isoD=d=>(d instanceof Date?d:new Date(d)).toISOString().slice(0,10);
+    // GC vs LY via the shared auto-first + matched-day helper (engine/vs-ly.js) — same
+    // ONE implementation used by Org Summary etc. Null when there's no comparable LY data
+    // (instead of the old false -100% from empty current guests vs a full last year).
     const res={};
     (stores||[]).forEach(s=>{
-      const loc=String(s.loc);
-      const curByDate={}, lyByDate={};
-      for(const r of (ds.laborRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=DR.s&&r.date<=DR.e&&r.gc>0)curByDate[isoD(r.date)]=r.gc; }
-      for(const r of (ds.qsrActSummaryRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=DR.s&&r.date<=DR.e){ const k=isoD(r.date); if(r.gc>0&&curByDate[k]==null)curByDate[k]=r.gc; if(r.lyGc>0)lyByDate[k]=r.lyGc; } }
-      for(const r of (ds.laborRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=lyS&&r.date<=lyE&&r.gc>0){ const k=isoD(addDR(r.date,364)); if(lyByDate[k]==null)lyByDate[k]=r.gc; } }
-      let gc=0,gcLY=0;
-      for(const k in curByDate){ const ly=lyByDate[k]; if(ly>0){ gc+=curByDate[k]; gcLY+=ly; } }
-      res[loc]=gcLY>10?(gc-gcLY)/gcLY:null;
+      const mv=matchedVsLY(ds,String(s.loc),DR,'gc');
+      res[String(s.loc)]=mv.ly>10?mv.pct:null;
     });
     return res;
   },[stores,ds.laborRows,ds.qsrActSummaryRows,DR.s,DR.e]);

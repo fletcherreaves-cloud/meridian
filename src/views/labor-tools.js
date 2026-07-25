@@ -7,6 +7,7 @@ import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest } from '../engine/backtest.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
+import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { ExportDropdown } from './store-dash.js';
 
 const h=React.createElement;
@@ -1099,20 +1100,11 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         const cRows=(ds.ctrlRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         const oRows=(ds.opsRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         const fRows=(ds.fobRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
-        // ── Sales + vs-LY: auto-first current + MATCHED-DAY comparison (fix: everyone ~-32%) ──
-        // The old code summed the full current window for sales but the full LY window for lySales
-        // with no day-matching, so when the current period was missing recent days (they land in the
-        // auto DAR, not manual laborRows) LY looked ~30% bigger on every store. Now: current daily
-        // sales come from manual laborRows first, else the auto DAR (qsrActSummaryRows) — so recent
-        // days aren't missing — and vs-LY only counts a day when BOTH years have real sales for it.
-        const curByDate={}, lyByDate={};
-        for(const r of (ds.laborRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=range.s&&r.date<=range.e&&r.sales>0) curByDate[isoD(r.date)]=r.sales; }
-        for(const r of (ds.qsrActSummaryRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=range.s&&r.date<=range.e){ const k=isoD(r.date); const v=r.sales||r.allNetSales||0; if(v>0&&curByDate[k]==null)curByDate[k]=v; const ly=r.lySales||0; if(ly>0)lyByDate[k]=ly; } }
-        for(const r of (ds.laborRows||[])){ if(String(r.loc)!==loc)continue; if(r.date>=lyS&&r.date<=lyE&&r.sales>0){ const k=isoD(addDx(r.date,364)); if(lyByDate[k]==null)lyByDate[k]=r.sales; } }
-        const sales = Object.values(curByDate).reduce((a,b)=>a+b,0);   // full current period (display)
-        let matchedCur=0, lySales=0;                                    // matched-day, for the vs-LY comparison
-        for(const k in curByDate){ const ly=lyByDate[k]; if(ly>0){ matchedCur+=curByDate[k]; lySales+=ly; } }
-        const vsLY = lySales>0 ? (matchedCur-lySales)/lySales : null;
+        // Sales + vs-LY via the shared auto-first + matched-day helper (engine/vs-ly.js) —
+        // ONE implementation for every current-vs-LY comparison (fixes the "everyone ~-32%").
+        const sales     = autoFirstTotal(ds, loc, range, 'sales');   // full current period (display)
+        const _mv       = matchedVsLY(ds, loc, range, 'sales');      // matched-day comparison
+        const matchedCur= _mv.cur, lySales = _mv.ly, vsLY = _mv.pct;
         const laborPct   = _avg(cRows,'laborPct')||_avg(lRows,'laborPct');
         const tpph       = _avg(cRows,'tpph')||_avg(lRows,'tpph');
         const oepe       = _avg(oRows,'oepe')||_avg(cRows,'oepe')||_avg(lRows,'oepe');

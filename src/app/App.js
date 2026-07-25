@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.528';
+const MERIDIAN_VERSION    = '4.529';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.529', date:'2026-07-24', changes:[
+    'Under the hood: the "current vs last year" math (auto-first sourcing + matched-day comparison) is now ONE shared helper (engine/vs-ly.js) instead of being re-written separately in each panel — which is exactly why the vs-LY bug kept reappearing in different places. Org Summary and Rankings now call the shared helper; future changes are global. Covered by its own tests.',
+  ]},
   {version:'4.528', date:'2026-07-24', changes:[
     'Profile menu now has "↑ Load files" — and the Load button was removed from the top bar to declutter it (Notes 27 #8). Same file-upload flow, just tucked into the avatar menu.',
     'Data Manager: the auto-synced sources (LifeLenz Schedule, QSRSoft FOB / eBOS / Daily Activity) now also carry a one-line description of what they pull and on what cadence — matching the source labels added to the manual/emailed sources (Notes 27 #9).',
