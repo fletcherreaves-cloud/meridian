@@ -5,7 +5,7 @@ import { avg6, forecastDay, getModelAssignment, saveModelOverride } from '../eng
 import { addD, sodOf } from '../utils/date.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
-import { runModelAssignmentBacktest, runPeriodTotalBacktest } from '../engine/backtest.js';
+import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { metricAvg } from '../engine/metric-source.js';
@@ -661,7 +661,21 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
   const [running, setRunning] = React.useState(false);
   const [prog,    setProg]    = React.useState(null);
   const [result,  setResult]  = React.useState(null);
+  const [applied, setApplied] = React.useState(null); // {applied, changes} after Apply
   const cancelRef = React.useRef({current:false});
+
+  const applyWinners = () => {
+    if (!result) return;
+    const engWins = (result.winnerCounts && (result.winnerCounts.ae||0)+(result.winnerCounts.ewma||0)+(result.winnerCounts.di||0)+(result.winnerCounts.dow||0)) || 0;
+    if (!window.confirm(
+      'Apply the period-total winners to the Monthly + Yearly lock assignments?\n\n' +
+      'These locks are judged on the 28-day TOTAL, where these winners (mostly AE) '+
+      'beat the daily-graded picks. Weekly stays on its daily-optimal model. '+
+      'Your manual overrides are preserved. You can re-run the daily backtest to revert.'
+    )) return;
+    const res = applyPeriodTotalWinners(result);
+    setApplied(res);
+  };
 
   const ML = {simple:'✨ Simple',dow:'📊 DOW',ae:'🤖 AE',ewma:'📈 EWMA',di:'🎯 DI'};
   const mCol = {simple:'#f5bc00',dow:'#a78bfa',ae:'#34d399',ewma:'#c084fc',di:'#f59e0b'};
@@ -703,8 +717,13 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
             'Grades each model on 28-day TOTALS — the metric Simple was discovered on. Read-only; changes no assignments.')
         ),
         !running && result && btn({className:'btn btn-sm',
+          style:{fontSize:'8px',fontWeight:700,background:applied?'rgba(16,185,129,.14)':'rgba(52,211,153,.12)',
+            border:'.5px solid '+(applied?'rgba(16,185,129,.4)':'rgba(52,211,153,.35)'),color:applied?'#10b981':'#34d399'},
+          title:'Write these totals-winners into the Monthly + Yearly lock assignments (per store). Preserves manual overrides; Weekly unchanged.',
+          onClick:applyWinners}, applied?`✓ Applied ${applied.applied}`:'📌 Apply to Monthly + Yearly locks'),
+        !running && result && btn({className:'btn btn-sm',
           style:{fontSize:'8px',background:'rgba(245,188,0,.10)',border:'.5px solid rgba(245,188,0,.3)',color:'#f5bc00'},
-          onClick:run},'↻ Re-run'),
+          onClick:()=>{setApplied(null);run();}},'↻ Re-run'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
 
@@ -808,7 +827,7 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
         div({style:{padding:'6px 16px',borderTop:'.5px solid var(--bdr)',flexShrink:0,fontSize:'7.5px',
           color:'var(--text3)',background:'var(--surf2)'}},
           'MAPE on 28-day totals (lower = better). Green cell = per-store winner. ',
-          'This is a diagnostic — it does not change any model assignment. Simple is graded strictly leak-free (asOf = window start-of-day); engineered models run in Back Test mode so they are ex-ante too, and AE is graded on its static default params (no full-history-fit blend weights) so its win carries no in-sample lookahead.')
+          'Diagnostic by default (changes nothing). "📌 Apply to Monthly + Yearly locks" writes these per-store totals-winners into those lock assignments — the locks judged on the total, where these winners beat the daily-graded picks — preserving manual overrides and leaving Weekly on its daily-optimal model. Simple is graded strictly leak-free (asOf = window start-of-day); engineered models run in Back Test mode so they are ex-ante too, and AE is graded on its static default params (no full-history-fit blend weights) so its win carries no in-sample lookahead.')
       )
     )
   );

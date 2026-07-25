@@ -800,4 +800,44 @@ async function runPeriodTotalBacktest(ds, settings, userEvents, onProgress, opts
   };
 }
 
-export { detectCleanDataStart, runModelAssignmentBacktest, runPeriodTotalBacktest, calibrateStore };
+// Apply the Period-Total Scoreboard's per-store winners to the given horizon
+// assignments — default Monthly + Yearly, the locks whose accuracy is judged on
+// the TOTAL, not day-level MAPE. This is how the v4.483/v4.537 finding (AE beats
+// Simple on 28-day totals) reaches the monthly/yearly projections: they route
+// through getModelAssignment(loc, horizon), so writing the totals-winner there
+// makes the lock use it. Per-store (AE where AE wins, EWMA where it wins, …).
+// Preserves manual overrides; overwrites prior AUTO (daily-backtest) entries,
+// since for a monthly lock the totals-graded winner supersedes the daily-graded
+// one. Weekly is deliberately left alone (daily accuracy is right for it).
+function applyPeriodTotalWinners(result, opts = {}) {
+  if (!result || !result.perStore) return { applied: 0, changes: [] };
+  const horizons = opts.horizons || ['monthly', 'yearly'];
+  const existing = (()=>{try{return JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY)||'{}')}catch{return{}}})();
+  const merged = {...existing};
+  const changes = [];
+  let applied = 0;
+  for (const [loc, s] of Object.entries(result.perStore)) {
+    if (!s || !s.winner) continue;
+    const pm = s.perModel[s.winner];
+    for (const hz of horizons) {
+      const cur = merged[loc] && merged[loc][hz];
+      if (cur && !cur.backtestDate) continue; // preserve a deliberate manual override
+      const priorModel = (cur && cur.model)
+        || (DEFAULT_MODEL_ASSIGNMENTS[loc] && DEFAULT_MODEL_ASSIGNMENTS[loc][hz] && DEFAULT_MODEL_ASSIGNMENTS[loc][hz].model)
+        || 'dow';
+      if (!merged[loc]) merged[loc] = {};
+      merged[loc][hz] = {
+        model: s.winner, mape: pm ? pm.mape : null,
+        ref: `📊 Period-total ${result.runDate}: ${String(s.winner).toUpperCase()} ${pm ? pm.mape : '?'}% (${result.folds}×${result.periodDays}d totals)`,
+        backtestDate: result.runDate, periodTotal: true,
+      };
+      if (priorModel !== s.winner) changes.push({ loc, storeName: s.storeName, hz, from: priorModel, to: s.winner, mape: pm ? pm.mape : null });
+      applied++;
+    }
+  }
+  try { localStorage.setItem(MODEL_ASSIGNMENT_KEY, JSON.stringify(merged)); } catch(e) {}
+  _masgnInvalidate();
+  return { applied, changes };
+}
+
+export { detectCleanDataStart, runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners, calibrateStore };

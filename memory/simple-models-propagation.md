@@ -138,3 +138,19 @@ SIMPLE" change list, but `getModelAssignment` kept serving **stale/DEFAULT**
 assignments (table + every live forecast showed AE) until a full page reload.
 Fix: import and call the exported `_masgnInvalidate()` after the write. Regression
 test in `__tests__/model-assignment-cache.test.js`.
+
+## v4.539 — AE wired to Monthly/Yearly locks (the totals decision, owner-approved)
+Strict Scoreboard re-run (AE on static params) confirmed the verdict unchanged: AE
+wins 23/27 on 28-day totals, median AE 2.7% vs Simple 4.5%. Owner green-lit acting.
+Implemented `applyPeriodTotalWinners(result, {horizons:['monthly','yearly']})` in
+backtest.js + a "📌 Apply to Monthly + Yearly locks" button on the Period-Total
+Scoreboard. It writes the per-store totals-winner into the Monthly + Yearly model
+assignments (so the monthly/yearly projections, which route through
+getModelAssignment(loc,horizon), use the totals-optimal model — mostly AE, EWMA on
+a few). Preserves manual overrides; overwrites prior daily-backtest auto entries;
+**leaves Weekly alone** (daily accuracy is right for the ~10-day lock). Invalidates
+the assignment cache so it takes effect immediately. Reversible: re-run the daily
+backtest. NOT automatic — explicit owner action, transparent ref string
+("📊 Period-total <date>: AE 2.3% (6×28d totals)"). Simple stays a first-class
+model and still wins daily for several stores. Tests in
+`__tests__/model-assignment-cache.test.js`.
