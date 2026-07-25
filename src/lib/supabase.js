@@ -227,13 +227,18 @@ export async function saveSmgFullscale(rows) {
 
 export async function loadSmgFullscale({ year, month } = {}) {
   if (!supabase) return [];
-  let q = supabase.from('smg_fullscale').select('*').order('year', {ascending:false}).order('month', {ascending:false});
-  if (year)  q = q.eq('year',  year);
-  if (month) q = q.eq('month', month);
-  const { data, error } = await q;
-  if (error || !data) { console.warn('[smg_fullscale] load error:', error); return []; }
+  // Paginate — a full 2020→now backfill (~27 stores × 60+ months ≈ 1,700 rows)
+  // exceeds Supabase's 1000-row default cap; a single query would silently drop
+  // ~40% of the history. fetchAll pages through everything.
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('smg_fullscale').select('*')
+      .order('year', {ascending:false}).order('month', {ascending:false});
+    if (year)  q = q.eq('year',  year);
+    if (month) q = q.eq('month', month);
+    return q.range(from, to);
+  });
   // Normalize back to camelCase
-  return data.map(r => ({
+  return (data || []).map(r => ({
     loc:            r.loc,
     year:           r.year,
     month:          r.month,
