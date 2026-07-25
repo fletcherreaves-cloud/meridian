@@ -8,6 +8,17 @@ import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 
 const h = React.createElement;
 
+// Narrow-viewport flag so the panel can go full-screen + stack on phones.
+function useIsMobile(bp = 700) {
+  const [m, setM] = React.useState(() => typeof window !== 'undefined' && window.innerWidth < bp);
+  React.useEffect(() => {
+    const on = () => setM(window.innerWidth < bp);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, [bp]);
+  return m;
+}
+
 // ── Location scope + grouping (matches the app-standard filter: analytics.js
 // District Priority Brief). Filter chain: All / 🟠 OK / 🔵 FL / supervisor
 // patch, plus a Store dropdown. Org data from INV_ORG_COORDS (keyed un-padded);
@@ -881,6 +892,7 @@ function DaypartPanel({ rows, stores, inScope, storeSel, nameOf }) {
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillComments, onClose }) {
+  const isMobile = useIsMobile();
   const rows = (ds && ds.smgRows) || [];
   const [bf, setBf] = React.useState(null); // {running} | {found,comments,saved}
   const runBackfill = async () => {
@@ -991,27 +1003,27 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
 
   // ── Main panel ─────────────────────────────────────────────────────────────
   return h('div', {
-    style: { position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
+    style: { position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 },
     onClick: e => { if (e.target === e.currentTarget) onClose(); }
   },
     h('div', {
-      style: { background: 'var(--bg)', border: '1px solid var(--bdr)', borderRadius: 14, width: '100%', maxWidth: 1060, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+      style: { background: 'var(--bg)', border: isMobile ? 'none' : '1px solid var(--bdr)', borderRadius: isMobile ? 0 : 14, width: '100%', maxWidth: isMobile ? '100%' : 1060, height: isMobile ? '100dvh' : 'auto', maxHeight: isMobile ? '100dvh' : '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
     },
 
       // ── Header ──────────────────────────────────────────────────────────────
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid var(--bdr)', flexShrink: 0 } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '10px 12px' : '14px 20px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap', gap: 8 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0, flex: isMobile ? '1 1 100%' : 'initial' } },
           h('span', { style: { fontSize: 20 } }, '💬'),
           h('div', null,
             h('span', { style: { fontWeight: 700, fontSize: 16 } }, 'SMG VOICE'),
-            periodLabel && h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 10 } }, periodLabel),
+            periodLabel && !isMobile && h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 10 } }, periodLabel),
           ),
-          h('div', { style: { display: 'flex', gap: 2, marginLeft: 16, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
+          h('div', { style: { display: 'flex', gap: 2, marginLeft: isMobile ? 0 : 16, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)', overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' } },
             [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments'], ['opportunities','🎯 Opportunities'], ['daypart','🕐 Dayparts']].map(([t, label]) =>
               h('button', { key: t, onClick: () => setTab(t), style: {
                 padding: '4px 12px', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: tab===t ? 700 : 400,
                 background: tab===t ? 'var(--accent)' : 'transparent',
-                color: tab===t ? '#fff' : 'var(--text2)', cursor: 'pointer',
+                color: tab===t ? '#fff' : 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
               }}, label)
             )
           ),
@@ -1066,7 +1078,10 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
       // ── Body: Comments tab ───────────────────────────────────────────────────
       tab === 'comments' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden' } },
 
-        h('div', { style: { width: 240, flexShrink: 0, borderRight: '1px solid var(--bdr)', overflowY: 'auto', padding: '12px 0' } },
+        // The per-store "By Store" rail is desktop-only; on mobile it would eat
+        // half a narrow screen, and the filter-bar store dropdown covers the
+        // same drill-in. Feed takes the full width instead.
+        !isMobile && h('div', { style: { width: 240, flexShrink: 0, borderRight: '1px solid var(--bdr)', overflowY: 'auto', padding: '12px 0' } },
           h('div', { style: { padding: '8px 16px 14px', borderBottom: '1px solid var(--bdr)', marginBottom: 8 } },
             h('div', { style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 } }, 'District Average'),
             h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 } },
