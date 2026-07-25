@@ -184,10 +184,14 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 **✅ Simple Models propagated engine-wide (v4.532):** the T3M/T6W/T3W trailing family (the Smart-Targets winner) is now a first-class forecast model `'simple'` inside `forecastDay` — so it auto-flows to Monthly Projections / Forecast Accuracy / Proj-vs-Actuals / forecast table, competes in the Model Assignment backtest (`MODELS_TO_TEST`) for per-store re-validation, and appears as a Simple column in Forecast Accuracy + a per-store override. Day-level = robust trailing daily rate (reused `weightedRecencyProjection`) × same-DOW shape, strictly leak-free. Engineered models preserved. See `memory/simple-models-propagation.md`.
 
+**✅ Signals weather + day-of-week correlations shipped (v4.533)** — see Signals panel row + `memory/notes-28-queue.md` #3/#4.
+**✅ Phase-2 bugs fixed (DONE — do NOT resurface):** Projections weekly-view crash on location expand, Signals won't close on mobile, Market Intelligence weather stopped showing. All three resolved.
+
 **Next candidate areas:**
-- Signals: weather + day-of-week correlations in the Scanner (Notes 28 #3/#4) — next big item.
-- Phase-2 bugs: Projections weekly-view crash on location expand; Signals won't close on mobile; Market Intelligence weather stopped showing.
-- FR: TPPH auto-target calc; Projections vs Actuals. "As of [date]" labels on tiles.
+- FR: TPPH auto-target calc. "As of [date]" labels on tiles.
+- Model Assignment: persist backtest results/overrides to Supabase (currently localStorage — device-local).
+- Simple Models: period-total (monthly) scoring view to re-validate the "simple wins" finding on the metric it was discovered on (current backtests grade daily MAPE).
+- Product Mix pull → Pricing Engine + Filet-O-Fish-Fridays correlation (Notes 25 #1 / 28 #5).
 - SAGE conversation persistence; multi-tenant deployment.
 
 ---

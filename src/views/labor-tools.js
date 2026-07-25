@@ -545,6 +545,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
         div({style:{display:'flex',gap:8}},
           ...HORIZONS.map(h=>div({key:h.id,style:{fontSize:'8.5px',color:'var(--text3)'}},
             h.icon+' '+h.l+': ',
+            distro[h.id].simple? span({style:{color:'#f5bc00'}},(distro[h.id].simple||0)+' Simple ') : null,
             distro[h.id].ae  ? span({style:{color:'#34d399'}},(distro[h.id].ae||0)+' AE ') : null,
             distro[h.id].ewma? span({style:{color:'#c084fc'}},(distro[h.id].ewma||0)+' EWMA ') : null,
             distro[h.id].di  ? span({style:{color:'#f59e0b'}},(distro[h.id].di||0)+' DI ') : null,
@@ -556,7 +557,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
           h('input',{type:'text',placeholder:'Search…',value:search,onChange:e=>setSearch(e.target.value),
             style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
               color:'var(--text)',fontSize:'9px',padding:'2px 6px',width:140}}),
-          ...['all','ae','ewma','di','ly','dow','override'].map(f=>btn({key:f,className:'btn btn-sm',
+          ...['all','simple','ae','ewma','di','ly','dow','override'].map(f=>btn({key:f,className:'btn btn-sm',
             style:{fontSize:'8px',background:filter===f?'var(--adim)':'transparent',
               color:filter===f?'var(--amber)':'var(--text3)'},onClick:()=>setFilter(f)},
             f==='override'?'Overridden':f==='all'?'All':(ML[f]||f)))
@@ -574,6 +575,8 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
             !visLocs.length&&h('tr',null,h('td',{colSpan:4,style:{padding:'28px 14px',textAlign:'center',color:'var(--text3)',fontSize:'9px'}},
               filter==='ewma'
                 ? '📈 No stores are currently assigned EWMA. The backtest tested EWMA for all stores but AE or DOW won everywhere. To manually assign EWMA to a store, select "All" filter, then click the EWMA button in any store\'s row.'
+                : filter==='simple'
+                ? '✨ No stores are currently assigned Simple. Run the backtest (top-right) to let the Simple trailing model compete for each store/horizon — it gets assigned wherever it wins on held-out actuals. Or select "All" and click the SIMPLE button on any store row to assign it manually.'
                 : filter==='override'
                   ? 'No manual overrides set. Click the model buttons on any store row to override.'
                   : 'No stores match this filter.'

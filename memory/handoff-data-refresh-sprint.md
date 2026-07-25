@@ -66,7 +66,9 @@ Run `node scripts/tasks.mjs list --tier=1` to get live state. Open items:
 | `f0592536` | Digital Sales on AAG — rewire to auto data source | P2 |
 | `c3c6194c` | Settings sync: audit localStorage-only settings for Supabase migration | P3 |
 
-CLAUDE.md lists these as "Phase-2 bugs": Projections weekly-view crash (`611d40cc`), Signals won't close on mobile (`b3ee8ccb`), Market Intelligence weather stopped showing (`68edc307`).
+✅ **DONE (confirmed by owner 2026-07-25) — do NOT resurface:** the three "Phase-2 bugs" —
+Projections weekly-view crash (`611d40cc`), Signals won't close on mobile (`b3ee8ccb`),
+Market Intelligence weather stopped showing (`68edc307`) — are all fixed and closed.
 
 ---
 
