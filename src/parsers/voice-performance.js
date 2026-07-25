@@ -30,10 +30,13 @@ function parsePct(str) {
 
 export async function parseVoicePerformancePDF(arrayBuffer, filename = '') {
   // Lazy-load pdfjs-dist — it's large; only pay the cost when parsing PDFs.
-  const pdfjsLib = await import('pdfjs-dist');
+  // Use the LEGACY build: it's transpiled + polyfilled for older Safari (the
+  // modern build calls Promise.withResolvers etc., which throws "undefined is
+  // not a function" on iOS < 17.4).
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.mjs',
+      'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
       import.meta.url
     ).toString();
   }

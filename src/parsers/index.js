@@ -1766,11 +1766,13 @@ function parseSMGFullScale(wb) {
 }
 
 async function parseSMGVoicePDF(file) {
-  const pdfjsLib = await import('pdfjs-dist');
-  // pdfjs needs a worker; use the bundled legacy worker via URL
+  // LEGACY build — transpiled + polyfilled so it runs on older iOS Safari
+  // (the modern build uses Promise.withResolvers etc. → "undefined is not a
+  // function" on iOS < 17.4).
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url
+      'pdfjs-dist/legacy/build/pdf.worker.min.mjs', import.meta.url
     ).toString();
   }
   const arrayBuffer = await file.arrayBuffer();
@@ -1907,9 +1909,9 @@ export function isVoiceDaypartReport(lines) {
 }
 
 async function parseVoiceDaypartPDF(file) {
-  const pdfjsLib = await import('pdfjs-dist');
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs'); // legacy = polyfilled for older iOS Safari
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.min.mjs', import.meta.url).toString();
   }
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
