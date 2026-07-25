@@ -877,9 +877,10 @@ function UploadSummaryModal({ report, onClose }) {
       skipped && skipped.length ? h('div', { style: { fontSize: 11, color: 'var(--text3)', marginTop: 10 } }, `Skipped ${skipped.length} period-summary file(s).`) : null,
       errored && errored.length ? h('div', { style: { fontSize: 11, color: '#f87171', marginTop: 6, lineHeight: 1.5 } },
         h('div', { style: { fontWeight: 700, marginBottom: 2 } }, `Could not read ${errored.length} file(s):`),
-        errored.map((e, i) => h('div', { key: i, style: { marginTop: 2 } },
+        errored.map((e, i) => h('div', { key: i, style: { marginTop: 4 } },
           `${typeof e === 'string' ? e : e.name}`,
-          (e && e.msg) ? h('span', { style: { color: 'var(--text3)' } }, ` — ${e.msg}`) : null))) : null,
+          (e && e.msg) ? h('span', { style: { color: 'var(--text3)' } }, ` — ${e.msg}`) : null,
+          (e && e.stack) ? h('div', { style: { color: 'var(--text3)', fontSize: 9, fontFamily: 'monospace', marginTop: 1, wordBreak: 'break-all' } }, e.stack) : null))) : null,
       h('div', { style: { marginTop: 16, textAlign: 'right' } },
         h('button', { onClick: onClose, style: { padding: '7px 16px', borderRadius: 8, border: '1px solid var(--bdr)', background: 'var(--accent,#f5bc00)', color: '#000', fontWeight: 700, cursor: 'pointer', fontSize: 12 } }, 'Done')),
     ),
@@ -2027,7 +2028,8 @@ function App() {
         }
       }catch(e){
         console.error('File parse error:',file.name,e);
-        _errored.push({name:file.name, msg:String((e&&(e.message||e.name))||e).slice(0,160)});
+        const _st=String((e&&e.stack)||'').split('\n').slice(0,3).map(s=>s.trim().replace(/https?:\/\/[^ )]*\//g,'')).join(' ‹ ').slice(0,240);
+        _errored.push({name:file.name, msg:String((e&&(e.message||e.name))||e).slice(0,160), stack:_st});
         setLoadMsg('⚠ Error reading '+file.name);
       }
     }
