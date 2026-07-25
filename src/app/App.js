@@ -851,6 +851,37 @@ function DataPolicyBanner() {
   );
 }
 
+// Content-based upload summary — shows what each batch actually parsed to, keyed
+// by report type + the months detected inside the PDFs (filenames are useless
+// here: SMG bakes every export as "eu065119 (N).pdf"). Surfaces received-vs-
+// errored so same-name collisions (browser delivered fewer files than dropped)
+// are obvious.
+function UploadSummaryModal({ report, onClose }) {
+  const { received, loaded, errored, skipped, lines } = report;
+  const collision = received > loaded + (errored?.length || 0) + (skipped?.length || 0);
+  const row = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,.08)', fontSize: 12 };
+  return h('div', { onClick: e => { if (e.target === e.currentTarget) onClose(); },
+    style: { position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
+    h('div', { style: { background: 'var(--bg,#0f1117)', border: '1px solid var(--bdr,rgba(255,255,255,.1))', borderRadius: 14, width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto', padding: 22 } },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
+        h('div', { style: { fontSize: 15, fontWeight: 800 } }, '📥 Upload summary'),
+        h('button', { onClick: onClose, style: { border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 } }, '✕')),
+      h('div', { style: { fontSize: 12, color: 'var(--text2)', marginBottom: 10 } },
+        `Received ${received} file${received === 1 ? '' : 's'} · parsed ${loaded}`,
+        errored && errored.length ? ` · ${errored.length} errored` : ''),
+      collision && h('div', { style: { fontSize: 11, color: '#f59e0b', background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.5 } },
+        `⚠ Fewer files were delivered than you likely selected — the browser collapsed some identically-named "eu065119 (N).pdf" files. Upload one folder (and a few files) at a time so every month lands.`),
+      (lines || []).map((l, i) => h('div', { key: i, style: row },
+        h('div', { style: { fontWeight: 600 } }, l.label, h('span', { style: { color: 'var(--text3)', fontWeight: 400 } }, `  ·  ${l.files} file${l.files === 1 ? '' : 's'}`)),
+        h('div', { style: { color: 'var(--text3)', textAlign: 'right', maxWidth: 220 } }, l.months && l.months.length ? l.months.join(', ') : '—'))),
+      skipped && skipped.length ? h('div', { style: { fontSize: 11, color: 'var(--text3)', marginTop: 10 } }, `Skipped ${skipped.length} period-summary file(s).`) : null,
+      errored && errored.length ? h('div', { style: { fontSize: 11, color: '#f87171', marginTop: 6 } }, `Could not read: ${errored.join(', ')}`) : null,
+      h('div', { style: { marginTop: 16, textAlign: 'right' } },
+        h('button', { onClick: onClose, style: { padding: '7px 16px', borderRadius: 8, border: '1px solid var(--bdr)', background: 'var(--accent,#f5bc00)', color: '#000', fontWeight: 700, cursor: 'pointer', fontSize: 12 } }, 'Done')),
+    ),
+  );
+}
+
 function App() {
   const [ds, setDs]               = useState(null);
   const [view, setView]           = useState('command'); // command | district | store | org
@@ -987,6 +1018,7 @@ function App() {
   const [showGradedVisits, setShowGradedVisits] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
+  const [uploadReport, setUploadReport]= useState(null); // per-batch content summary
   const [isDragging, setIsDragging]    = useState(false);
   const dragCounter                    = useRef(0);
   const [sessionRestoring, setSessionRestoring] = useState(false);
@@ -1837,6 +1869,7 @@ function App() {
     let currentDS=dsRef.current||buildDS([]);
     const loaded=[];
     const _skipped=[]; // period-summary Operations Reports refused (no daily dates)
+    const _errored=[]; // files that threw during parse (surfaced in the upload summary)
     const _toDs=r=>r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10);
     const _prevDarKeys   =new Set((currentDS.darRows      ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
     // Track rows parsed in this upload batch so we always upsert them to Supabase (overwrites stale data for corrected re-uploads)
@@ -1885,8 +1918,10 @@ function App() {
             if(dpRows.length>0){
               const res=await saveVoiceDaypart(dpRows);
               currentDS={...currentDS,voiceDaypart:[...(currentDS.voiceDaypart||[]),...dpRows]};
+              const dpPeriods=[...new Set(dpRows.map(r=>r.period).filter(Boolean))].sort();
+              const dpStores=new Set(dpRows.map(r=>String(parseInt(r.loc,10)||r.loc))).size;
               console.log(`[Meridian] VOICE Daypart: ${dpRows.length} rows from ${file.name} (saved ${res.saved})`);
-              loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report'}});
+              loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report'},periods:dpPeriods,stores:dpStores});
               continue;
             }
             // Otherwise try the Performance parser; if it finds no perf rows, it's
@@ -1898,7 +1933,7 @@ function App() {
               await saveVoicePerf(vpRows);
               currentDS={...currentDS,smgVoicePerf:[...(currentDS.smgVoicePerf||[]),...vpRows]};
               console.log(`[Meridian] VOICE Performance (eu### content match): ${vpRows.length} rows from ${file.name}`);
-              loaded.push({name:file.name,type:{...typeInfo,type:'voice-performance',label:'SMG VOICE Performance Report'}});
+              loaded.push({name:file.name,type:{...typeInfo,type:'voice-performance',label:'SMG VOICE Performance Report'},periods:[...new Set(vpRows.map(r=>r.period).filter(Boolean))].sort()});
             } else {
               const smgRows=await parseSMGVoicePDF(file);
               if(smgRows.length>0){
@@ -1988,6 +2023,7 @@ function App() {
         }
       }catch(e){
         console.error('File parse error:',file.name,e);
+        _errored.push(file.name);
         setLoadMsg('⚠ Error reading '+file.name);
       }
     }
@@ -2031,6 +2067,25 @@ function App() {
     const names=loaded.map(f=>f.name.replace(/\.[^.]+$/,'').split(' ').slice(0,3).join(' ')).join(', ');
     const _skipMsg=_skipped.length?'  ⚠ Skipped '+_skipped.length+' period-summary file'+(_skipped.length>1?'s':'')+' (no daily dates — upload the daily Operations Report instead)':'';
     setLoadMsg((loaded.length?'✓ '+names+' loaded · '+currentDS.storeIds.length+' stores':'⚠ No files loaded')+_skipMsg);
+    // ── Content-based upload summary ─────────────────────────────────────────
+    // SMG bakes every export as "eu065119 (N).pdf" — the name carries no month
+    // or type — so summarize by CONTENT: group by report type, list the distinct
+    // months each file resolved to, and flag received-vs-errored so same-name
+    // collisions (fewer files delivered than dropped) are visible.
+    try{
+      const _fmtP=p=>{ if(!p) return '?'; const [y,m]=p.split('-'); return new Date(+y,+m-1).toLocaleDateString('en-US',{month:'short',year:'numeric'}); };
+      const groups={};
+      for(const f of loaded){
+        const label=f.type?.label||f.type?.type||'Other';
+        (groups[label]=groups[label]||{files:0,periods:new Set()}).files++;
+        for(const p of (f.periods||[])) groups[label].periods.add(p);
+      }
+      const lines=Object.entries(groups).map(([label,g])=>{
+        const months=[...g.periods].sort().map(_fmtP);
+        return { label, files:g.files, months };
+      });
+      setUploadReport({ received:fileArr.length, loaded:loaded.length, errored:_errored.slice(), skipped:_skipped.slice(), lines });
+    }catch(e){ console.warn('[upload-summary]',e); }
     // ── Persist to IndexedDB (survives refresh) ──────────────────────────
     (async()=>{
       try{
@@ -2430,6 +2485,7 @@ function App() {
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showDev      &&h(DevDashboard,{ds,settings,stores,userEvents,onClose:()=>setShowDev(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
+    uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),
     showLocIntel&&h(LocationIntelligence,{allStores:stores,ds,settings,scope:'district',onClose:()=>setShowLocIntel(false)}),
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
