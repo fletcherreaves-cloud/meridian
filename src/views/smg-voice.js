@@ -830,12 +830,15 @@ function DaypartPanel({ rows, stores, inScope, storeSel, nameOf }) {
   );
 
   const th = { padding: '7px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text3)', borderBottom: '2px solid var(--bdr)', whiteSpace: 'nowrap' };
-  const cell = (val, m) => {
+  // Key by (metric, daypart) — NOT by value — so repeated %s across dayparts
+  // don't collide into stray duplicate cells past the 6 columns.
+  const cell = (val, m, d) => {
     const col = vpColor(val, m);
-    return h('td', { key: m.key + val, style: { padding: '7px 8px', textAlign: 'center', fontSize: 12, fontWeight: 700,
+    return h('td', { key: m.key + '|' + d, style: { padding: '7px 8px', textAlign: 'center', fontSize: 12, fontWeight: 700,
       color: col, background: col === 'var(--text3)' ? 'transparent' : col + '22', borderRight: '1px solid var(--bdr)' } },
       val != null ? val + '%' : '—');
   };
+  const pfmt = p => { if (!p) return ''; const [y, m] = p.split('-'); return new Date(+y, +m - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); };
 
   return h('div', { style: { display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' } },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
@@ -846,7 +849,7 @@ function DaypartPanel({ rows, stores, inScope, storeSel, nameOf }) {
             background: selType === t ? 'var(--accent)' : 'transparent', color: selType === t ? '#fff' : 'var(--text2)' } }, label))),
       periods.length > 0 && h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
         style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
-        periods.map(p => h('option', { key: p, value: p }, p))),
+        periods.map(p => h('option', { key: p, value: p }, pfmt(p)))),
       storeSel === 'all' && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'Pick a store in the filter bar to drill in'),
       h('div', { style: { marginLeft: 'auto' } }, h(ExportButtons, {
         onCsv: () => exportCSV(`VOICE_Daypart_${(titleStore).replace(/[^a-z0-9]+/gi, '_')}_${activePeriod}.csv`,
@@ -867,7 +870,7 @@ function DaypartPanel({ rows, stores, inScope, storeSel, nameOf }) {
           h('tbody', null, VP_METRICS.map(m => h('tr', { key: m.key, style: { borderBottom: '1px solid var(--bdr)' } },
             h('td', { style: { padding: '7px 8px', fontSize: 11, fontWeight: 600, borderRight: '1px solid var(--bdr)' } },
               m.label, h('span', { style: { fontSize: 8, color: 'var(--text3)', marginLeft: 4 } }, m.better === 'higher' ? '↑' : '↓')),
-            ...DAYPARTS_ORDER.map(d => cell(grid[m.key][d], m))))),
+            ...DAYPARTS_ORDER.map(d => cell(grid[m.key][d], m, d))))),
         ),
       h('div', { style: { fontSize: 9, color: 'var(--text3)', marginTop: 10, lineHeight: 1.5 } },
         'Green = at/above standard, amber = watch, red = below. ↑ = higher is better, ↓ = lower is better. ' +
