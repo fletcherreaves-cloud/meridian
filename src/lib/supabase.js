@@ -1184,6 +1184,13 @@ function _cmtISO(d) {
   const dt = new Date(s); return isNaN(+dt) ? null : dt.toISOString().slice(0, 10);
 }
 
+// Strip NUL + C0/C1 control chars (keeping \n and \t) that Postgres `text`
+// columns reject. Non-string input passes through untouched.
+function _pgSafeText(s) {
+  if (s == null) return s;
+  return String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+}
+
 export async function saveSmgComments(rows) {
   if (!supabase || !rows?.length) return { saved: 0 };
   // Build rows DEDUPED by dedup_key within this batch. A Postgres upsert throws
@@ -1195,7 +1202,13 @@ export async function saveSmgComments(rows) {
   // sink everything.
   const byKey = new Map();
   for (const r of rows) {
-    const txt = (r.text || '').trim();
+    // Postgres `text` cannot hold a NUL byte (U+0000). PDF extraction leaves
+    // stray NUL + other control chars in comment text; PostgREST serializes
+    // them into a JSON escape Postgres rejects ("unsupported Unicode escape
+    // sequence", SQLSTATE 22P05), which zeroes the whole batch. _pgSafeText
+    // strips NUL + C0/C1 controls (keeping newlines/tabs) from every string
+    // field so one bad comment can't sink the save.
+    const txt = _pgSafeText(r.text || '').trim();
     if (!txt) continue;
     const cd = _cmtISO(r.commentDate) || _cmtISO(r.visitDate);
     const vd = _cmtISO(r.visitDate);
@@ -1203,11 +1216,11 @@ export async function saveSmgComments(rows) {
     const dedup_key = `${String(r.loc ?? r.nsn ?? '')}|${cd || ''}|${vd || ''}|${sc ?? ''}|${txt.slice(0, 140)}`;
     if (byKey.has(dedup_key)) continue;
     byKey.set(dedup_key, {
-      loc: String(r.loc ?? r.nsn ?? ''), store_name: r.storeName || null,
+      loc: String(r.loc ?? r.nsn ?? ''), store_name: _pgSafeText(r.storeName) || null,
       comment_date: cd, visit_date: vd, nsn: r.nsn || null,
-      satisfaction_label: r.satisfactionLabel || null, score: sc,
+      satisfaction_label: _pgSafeText(r.satisfactionLabel) || null, score: sc,
       text: txt, report_start: _cmtISO(r.reportStart), report_end: _cmtISO(r.reportEnd),
-      source_file: r.sourceFile || r.source_file || null, dedup_key,
+      source_file: _pgSafeText(r.sourceFile || r.source_file) || null, dedup_key,
     });
   }
   let upsert = [...byKey.values()];
