@@ -1538,6 +1538,19 @@ function App() {
           console.log('[Meridian] ✓ Loaded AE calibration params from Supabase');
         }
       }catch(e){console.warn('[Meridian] AE params load failed:',e);}
+      try{
+        // Cloud-persisted model assignments (v4.544): hydrate the device-local
+        // cache from Supabase so backtest winners + manual overrides follow the
+        // user across devices. Cloud is source of truth; local writes push back
+        // (see labor-tools ModelAssignmentPanel). Then invalidate so
+        // getModelAssignment re-reads the fresh blob.
+        const remoteMA=await loadUserSetting('model_assignments');
+        if(remoteMA&&typeof remoteMA==='object'&&Object.keys(remoteMA).length>0){
+          try{localStorage.setItem(MODEL_ASSIGNMENT_KEY,JSON.stringify(remoteMA));}catch{}
+          _masgnInvalidate();
+          console.log('[Meridian] ✓ Loaded model assignments from Supabase');
+        }
+      }catch(e){console.warn('[Meridian] model assignments load failed:',e);}
     })();
   },[]);
 

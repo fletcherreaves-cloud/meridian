@@ -6,7 +6,17 @@ import { addD, sodOf } from '../utils/date.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
+import { saveUserSetting } from '../lib/supabase.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
+
+// Cloud-persist model assignments (v4.544): after any local write (backtest,
+// apply-winners, manual override, reset), push the whole blob to Supabase as a
+// per-user setting so it follows the user across devices. Fire-and-forget; the
+// device-local localStorage cache remains the fast read path (hydrated from cloud
+// on startup in App.js).
+function _pushModelAssignments() {
+  try { saveUserSetting('model_assignments', JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY) || '{}')); } catch {}
+}
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { ExportDropdown } from './store-dash.js';
@@ -401,6 +411,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
       );
       if (!cancelRef.current) {
         setBtSummary(result);
+        _pushModelAssignments(); // sync backtest winners to cloud
         refresh(); // re-render table with updated assignments
       }
     } catch(e) {
@@ -437,12 +448,13 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
     return ['weekly','monthly','yearly'].some(h=>(getModelAssignment(l,h,settings).model||'dow')===filter);
   });
 
-  const handleOvr = (loc,hz,m) => { saveModelOverride(loc,hz,m); refresh(); };
+  const handleOvr = (loc,hz,m) => { saveModelOverride(loc,hz,m); _pushModelAssignments(); refresh(); };
   const clearOvr  = (loc,hz) => {
     try{const o=JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY)||'{}');
       if(o[loc]){delete o[loc][hz];if(!Object.keys(o[loc]).length)delete o[loc];}
       localStorage.setItem(MODEL_ASSIGNMENT_KEY,JSON.stringify(o));
       _masgnInvalidate();}catch{}
+    _pushModelAssignments();
     refresh();
   };
 
@@ -674,6 +686,7 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
       'Your manual overrides are preserved. You can re-run the daily backtest to revert.'
     )) return;
     const res = applyPeriodTotalWinners(result);
+    _pushModelAssignments(); // sync the applied monthly/yearly winners to cloud
     setApplied(res);
   };
 
