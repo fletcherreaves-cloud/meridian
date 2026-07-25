@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
-import { calibrateStore } from '../engine/backtest.js';
+import { calibrateStore, runPeriodTotalBacktest } from '../engine/backtest.js';
 
 const LOC = '3708';
 
@@ -155,5 +155,50 @@ describe('calibrateStore — successful calibration', () => {
     if (result._why) return;
     expect(result.recentOnlyFlag).toBe(false);
     expect(result.windowApplied).toBe(false);
+  });
+});
+
+// ── runPeriodTotalBacktest (Period-Total Scoreboard, v4.534) ────────────────
+
+describe('runPeriodTotalBacktest — guards', () => {
+  it('returns null with no data', async () => {
+    expect(await runPeriodTotalBacktest(null, BASE_SETTINGS, {})).toBe(null);
+    expect(await runPeriodTotalBacktest({ laborRows: [] }, BASE_SETTINGS, {})).toBe(null);
+  });
+});
+
+describe('runPeriodTotalBacktest — scoring', () => {
+  it('scores the store with history and grades Simple on period totals', async () => {
+    const ds = buildDs();
+    const res = await runPeriodTotalBacktest(ds, BASE_SETTINGS, {});
+    expect(res).toBeTruthy();
+    expect(res.periodDays).toBe(28);
+    expect(res.models).toContain('simple');
+    // The one store with a full two-band fixture must score.
+    expect(res.storesScored).toBeGreaterThanOrEqual(1);
+    const s = res.perStore[LOC];
+    expect(s).toBeTruthy();
+    expect(s.perModel.simple).toBeTruthy();
+    expect(isFinite(s.perModel.simple.mape)).toBe(true);
+    expect(s.perModel.simple.mape).toBeGreaterThan(0);
+    // A winner is a real model key, and the tally counts it.
+    expect(res.models).toContain(s.winner);
+    expect(res.winnerCounts[s.winner]).toBeGreaterThanOrEqual(1);
+  });
+
+  it('grades period totals (median MAPEs are finite when scored)', async () => {
+    const ds = buildDs();
+    const res = await runPeriodTotalBacktest(ds, BASE_SETTINGS, {});
+    if (!res.storesScored) return;
+    if (res.medianSimpleMape != null) expect(isFinite(res.medianSimpleMape)).toBe(true);
+    if (res.medianBestEngMape != null) expect(isFinite(res.medianBestEngMape)).toBe(true);
+  });
+
+  it('honors a cancelRef (aborts the run early)', async () => {
+    const ds = buildDs();
+    const cancelRef = { current: true }; // pre-cancelled
+    const res = await runPeriodTotalBacktest(ds, BASE_SETTINGS, {}, null, { cancelRef });
+    expect(res).toBeTruthy();
+    expect(res.storesScored).toBe(0); // loop breaks before scoring any store
   });
 });

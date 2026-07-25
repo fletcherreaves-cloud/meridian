@@ -71,3 +71,31 @@ assignment. Manual per-store override picker gained a **SIMPLE** button.
 Simple gets **assigned** only where it earns it in the backtest. Don't hard-default stores to Simple
 without the head-to-head — the whole point is the data picks per store, and the engineered models
 stay protected and one click away.
+
+## v4.534 — Period-Total Scoreboard (re-validation on the discovery metric)
+Owner asked (2026-07-25): "did we alter Simple when merging it engine-wide, and if so were the
+alterations safe? It doesn't look like the across-the-board wins we saw at discovery."
+
+**Answer / what we confirmed:**
+- Core math **unaltered** — `forecastSimple` reuses `weightedRecencyProjection` verbatim (same
+  90/42/21-day windows, .2/.3/.5 recency weights, anomaly exclusion).
+- **One addition:** a same-DOW shape multiplier (`_dowShape`, clamped [0.5,1.8], leak-free). It is
+  *required* to forecast a single day (the discovery averaged DOW away over a month). Conservative:
+  a month of daily-Simple forecasts sums back to trailing-rate × days = the winning monthly total.
+- **Why the wins look muted:** the discovery (`backtestProjectors`) graded **28-day period TOTALS**;
+  the Model-Assignment backtest + Forecast-Accuracy panel grade **daily MAPE**. Different tests —
+  daily rewards exact DOW placement + absorbs no day-level noise (the engineered models' home turf);
+  totals let day errors cancel (Simple's home turf). Not a regression, a different metric.
+
+**Shipped:** `runPeriodTotalBacktest(ds, settings, userEvents, onProgress, {periodDays:28, folds:6,
+minCoverageFrac:0.6, cancelRef})` in `engine/backtest.js` — **read-only** (writes NO assignments).
+Rolls contiguous 28-day windows per store, sums each model's leak-free daily forecasts over the
+window's data-covered days, MAPE vs the actual total for the same days. Runs in **Back Test mode** so
+engineered models are ex-ante too (Simple is already strictly asOf=window start). Returns per-store
+winner + `winnerCounts` tally + `medianSimpleMape` / `medianBestEngMape`. UI: Model Assignment panel →
+**📊 Period-Total Scoreboard** overlay (`PeriodTotalScoreboard` in `views/labor-tools.js`), verdict
+banner ("Simple sweeps" when it wins ≥60% of scored stores). Tests in `__tests__/backtest.test.js`.
+
+**Interpreting it:** if Simple sweeps here → discovery re-validated at the level it was found, and the
+daily panels are simply a harder/different question. If it does NOT sweep here → genuine signal that
+the period-total edge has narrowed; investigate before leaning further on Simple for monthly locks.

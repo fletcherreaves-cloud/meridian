@@ -5,7 +5,7 @@ import { avg6, forecastDay, getModelAssignment, saveModelOverride } from '../eng
 import { addD, sodOf } from '../utils/date.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
-import { runModelAssignmentBacktest } from '../engine/backtest.js';
+import { runModelAssignmentBacktest, runPeriodTotalBacktest } from '../engine/backtest.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { metricAvg } from '../engine/metric-source.js';
@@ -369,6 +369,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
   const [btRunning, setBtRunning] = React.useState(false);
   const [btProg,    setBtProg]    = React.useState(null);  // {storesDone,storesTotal,storeName,hz,model,status}
   const [btSummary, setBtSummary] = React.useState(null);  // result from runModelAssignmentBacktest
+  const [showScore, setShowScore] = React.useState(false); // Period-Total Scoreboard overlay
   const cancelRef = React.useRef(false);
   const refresh = () => setTick(t=>t+1);
 
@@ -474,6 +475,15 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
             cursor:(!ds||!ds.laborRows||!ds.laborRows.length)?'not-allowed':'pointer'},
           onClick: btRunning ? cancelBacktest : runBacktest},
           btRunning ? '⏹ Cancel' : '🔄 Re-run Backtest'),
+        btn({className:'btn btn-sm',
+          style:{fontSize:'8px',background:'rgba(245,188,0,.10)',border:'.5px solid rgba(245,188,0,.3)',
+            color:'#f5bc00',
+            opacity:(!ds||!ds.laborRows||!ds.laborRows.length)?0.4:1,
+            cursor:(!ds||!ds.laborRows||!ds.laborRows.length)?'not-allowed':'pointer'},
+          title:'Grade every model on 28-day PERIOD TOTALS (the metric the Simple model was discovered on) instead of daily MAPE — read-only, changes no assignments.',
+          disabled:btRunning,
+          onClick:()=>{ if(ds&&ds.laborRows&&ds.laborRows.length) setShowScore(true); }},
+          '📊 Period-Total Scoreboard'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       // ── Backtest progress view (replaces table while running) ────────────
@@ -639,6 +649,167 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
         '🔄 = auto-backtest result  · ✎ = manual override  · ↺ reset restores backtest/default  · ',
         'Re-run Backtest updates all non-manual assignments with live forecastDay data · ',
         '"outlier days excluded" = worst ~5% of daily errors trimmed before averaging — a single bad-data day no longer skews the winner')
+    ),
+    showScore && h(PeriodTotalScoreboard, {ds, settings, userEvents, onClose:()=>setShowScore(false)})
+  );
+}
+
+// ── Period-Total Scoreboard (v4.534) ────────────────────────────────────────
+// Re-validates "Simple wins" on 28-day PERIOD TOTALS (the metric of the v4.483
+// discovery) rather than daily MAPE. Read-only diagnostic — writes no assignments.
+function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
+  const [running, setRunning] = React.useState(false);
+  const [prog,    setProg]    = React.useState(null);
+  const [result,  setResult]  = React.useState(null);
+  const cancelRef = React.useRef({current:false});
+
+  const ML = {simple:'✨ Simple',dow:'📊 DOW',ae:'🤖 AE',ewma:'📈 EWMA',di:'🎯 DI'};
+  const mCol = {simple:'#f5bc00',dow:'#a78bfa',ae:'#34d399',ewma:'#c084fc',di:'#f59e0b'};
+  const mapeCol = v => v==null?'var(--text3)':v<6?'#10b981':v<8?'#34d399':v<10?'#f59e0b':v<14?'#f97316':'#ef4444';
+
+  const run = async () => {
+    cancelRef.current.current = false;
+    setRunning(true); setResult(null);
+    setProg({storesDone:0, storesTotal:Object.keys(STORE_NAMES).length, storeName:'Starting…', status:''});
+    try {
+      const res = await runPeriodTotalBacktest(ds, settings, userEvents,
+        (info)=>{ if(!cancelRef.current.current) setProg({...info}); },
+        {cancelRef:cancelRef.current});
+      if(!cancelRef.current.current) setResult(res);
+    } catch(e){ alert('Scoreboard error: '+String(e)); }
+    setRunning(false); setProg(null);
+  };
+  const cancel = () => { cancelRef.current.current = true; setRunning(false); setProg(null); };
+
+  const thS={padding:'5px 8px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',
+    letterSpacing:'.4px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',textAlign:'center'};
+
+  const rows = result ? Object.entries(result.perStore)
+    .sort((a,b)=>a[1].storeName.localeCompare(b[1].storeName)) : [];
+
+  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.86)',zIndex:475,
+    display:'flex',flexDirection:'column',paddingTop:20}},
+    div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
+    div({style:{flex:1,background:'var(--surf)',maxWidth:1080,margin:'0 auto',width:'calc(100% - 32px)',
+      borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',
+      boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
+      // Header
+      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
+        background:'var(--surf2)',display:'flex',alignItems:'center',gap:10}},
+        span({style:{fontSize:'18px'}},'📊'),
+        div({style:{flex:1}},
+          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Period-Total Model Scoreboard'),
+          div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
+            'Grades each model on 28-day TOTALS — the metric Simple was discovered on. Read-only; changes no assignments.')
+        ),
+        !running && result && btn({className:'btn btn-sm',
+          style:{fontSize:'8px',background:'rgba(245,188,0,.10)',border:'.5px solid rgba(245,188,0,.3)',color:'#f5bc00'},
+          onClick:run},'↻ Re-run'),
+        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
+      ),
+
+      // Intro / run screen
+      !running && !result && div({style:{flex:1,display:'flex',flexDirection:'column',
+        alignItems:'center',justifyContent:'center',padding:'32px 28px',gap:16,textAlign:'center'}},
+        div({style:{fontSize:'13px',fontWeight:700,color:'var(--amber)'}},'Re-validate the Simple model on its home turf'),
+        div({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.7,maxWidth:560}},
+          'The Model Assignment backtest and Forecast Accuracy panel grade ',
+          span({style:{color:'var(--text)'}},'daily'),
+          ' MAPE — how close each individual day is. Day-level noise and exact day-of-week placement dominate there, which is the game the engineered models (DOW / DI / AE) were built to win. ',
+          span({style:{color:'#f5bc00',fontWeight:700}},'The v4.483 discovery graded 28-day TOTALS'),
+          ', where day-level errors cancel. This scoreboard grades the total too — the like-for-like test — so you can see whether Simple still sweeps.'),
+        div({style:{fontSize:'9px',color:'var(--text3)',lineHeight:1.6,maxWidth:560}},
+          'For each store it rolls 6 contiguous 28-day windows, sums each model\'s leak-free daily forecasts over the window\'s data days, and compares to the actual total for those same days. Runs in Back Test mode so every model is strictly ex-ante. ~30–90s.'),
+        btn({className:'btn',
+          style:{marginTop:8,fontSize:'11px',fontWeight:700,padding:'8px 20px',
+            background:'rgba(245,188,0,.14)',border:'.5px solid rgba(245,188,0,.4)',color:'#f5bc00'},
+          onClick:run},'▶ Run Scoreboard')
+      ),
+
+      // Progress
+      running && prog && div({style:{flex:1,display:'flex',flexDirection:'column',
+        alignItems:'center',justifyContent:'center',padding:'32px 24px',gap:16}},
+        div({style:{fontSize:'14px',fontWeight:700,color:'#f5bc00'}},'📊 Scoring period totals…'),
+        div({style:{width:'100%',maxWidth:480}},
+          div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
+            span(null,`Store ${prog.storesDone} of ${prog.storesTotal}`),
+            span(null,prog.storesTotal?Math.round(prog.storesDone/prog.storesTotal*100)+'%':'—')),
+          div({style:{height:6,background:'var(--surf)',borderRadius:99,overflow:'hidden'}},
+            div({style:{height:'100%',width:(prog.storesTotal?Math.round(prog.storesDone/prog.storesTotal*100)+'%':'0%'),
+              background:'#f5bc00',borderRadius:99,transition:'width .3s'}}))
+        ),
+        div({style:{textAlign:'center',fontSize:'9.5px',color:'var(--text2)',lineHeight:1.7}},
+          prog.storeName && span({style:{fontWeight:700,color:'var(--text)'}},prog.storeName),
+          prog.model && span({style:{color:'#f5bc00'}},' · '+(ML[prog.model]||prog.model)),
+          prog.fold && span({style:{color:'var(--text3)'}},` · window ${prog.fold}/${prog.folds}`)),
+        btn({className:'btn btn-sm',
+          style:{marginTop:8,background:'rgba(248,113,113,.1)',border:'.5px solid rgba(248,113,113,.3)',color:'#f87171',fontSize:'9px'},
+          onClick:cancel},'⏹ Cancel')
+      ),
+
+      // Results
+      !running && result && div({style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}},
+        // Verdict banner
+        (()=>{
+          const sw=result.simpleWins, tot=result.storesScored;
+          const swept = tot>0 && sw/tot>=0.6;
+          const gap = (result.medianBestEngMape!=null && result.medianSimpleMape!=null)
+            ? +(result.medianBestEngMape - result.medianSimpleMape).toFixed(1) : null;
+          return div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
+            background:swept?'rgba(16,185,129,.08)':'rgba(245,158,11,.08)'}},
+            div({style:{fontSize:'12px',fontWeight:800,color:swept?'#10b981':'var(--amber)'}},
+              swept ? '✅ Simple sweeps on period totals' : '⚖️ Mixed — Simple does not dominate period totals'),
+            div({style:{fontSize:'10px',color:'var(--text2)',marginTop:3,lineHeight:1.6}},
+              span({style:{fontWeight:700,color:'#f5bc00'}},`Simple won ${sw}/${tot} stores`),
+              ' on 28-day totals',
+              result.medianSimpleMape!=null ? span(null,' · median Simple ',
+                span({style:{color:mapeCol(result.medianSimpleMape),fontWeight:700}},result.medianSimpleMape+'%')) : null,
+              result.medianBestEngMape!=null ? span(null,' vs median best-engineered ',
+                span({style:{color:mapeCol(result.medianBestEngMape),fontWeight:700}},result.medianBestEngMape+'%')) : null,
+              gap!=null ? span({style:{color:gap>0?'#10b981':'#ef4444',fontWeight:700}},` (${gap>0?'−':'+'}${Math.abs(gap)} pts ${gap>0?'better':'worse'})`) : null),
+            div({style:{fontSize:'8.5px',color:'var(--text3)',marginTop:4}},
+              'Winner tally: '+result.models.map(m=>`${ML[m]||m} ${result.winnerCounts[m]||0}`).join('  ·  ')+
+              `  ·  ${result.folds}×${result.periodDays}-day windows · ${result.runDate}`)
+          );
+        })(),
+        // Per-store table
+        div({style:{flex:1,overflowY:'auto'}},
+          h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+            h('thead',null,h('tr',{style:{position:'sticky',top:0,background:'var(--surf2)',zIndex:2}},
+              h('th',{style:{...thS,textAlign:'left',paddingLeft:14,width:200}},'Store'),
+              h('th',{style:{...thS}},'Winner'),
+              ...result.models.map(m=>h('th',{key:m,style:{...thS,borderLeft:'.5px solid rgba(255,255,255,.06)'}},ML[m]||m)),
+              h('th',{style:{...thS}},'Windows')
+            )),
+            h('tbody',null,
+              !rows.length && h('tr',null,h('td',{colSpan:result.models.length+3,style:{padding:'28px',textAlign:'center',color:'var(--text3)'}},'No stores had enough history to score.')),
+              ...rows.map(([loc,s],ri)=>{
+                return h('tr',{key:loc,style:{borderTop:ri>0?'.5px solid rgba(255,255,255,.06)':'none'}},
+                  h('td',{style:{padding:'6px 8px 6px 14px',fontWeight:700,color:'var(--text)'}},s.storeName),
+                  h('td',{style:{padding:'6px 8px',textAlign:'center'}},
+                    s.winner ? span({style:{display:'inline-block',fontSize:'9px',fontWeight:800,padding:'2px 8px',
+                      borderRadius:99,background:(mCol[s.winner]||'#888')+'22',color:mCol[s.winner]||'#888',whiteSpace:'nowrap'}},ML[s.winner]||s.winner)
+                      : span({style:{color:'var(--text3)'}},'—')),
+                  ...result.models.map(m=>{
+                    const pm=s.perModel[m];
+                    const isWin = s.winner===m;
+                    return h('td',{key:m,style:{padding:'6px 8px',textAlign:'center',
+                      borderLeft:'.5px solid rgba(255,255,255,.06)',
+                      background:isWin?(mCol[m]||'#888')+'14':'transparent'}},
+                      pm ? span({style:{color:mapeCol(pm.mape),fontWeight:isWin?800:600}},pm.mape+'%')
+                        : span({style:{color:'var(--text3)'}},'·'));
+                  }),
+                  h('td',{style:{padding:'6px 8px',textAlign:'center',color:'var(--text3)'}},s.folds||0)
+                );
+              })
+            )
+          )
+        ),
+        div({style:{padding:'6px 16px',borderTop:'.5px solid var(--bdr)',flexShrink:0,fontSize:'7.5px',
+          color:'var(--text3)',background:'var(--surf2)'}},
+          'MAPE on 28-day totals (lower = better). Green cell = per-store winner. ',
+          'This is a diagnostic — it does not change any model assignment. Simple is graded strictly leak-free (asOf = window start-of-day); engineered models run in Back Test mode so they are ex-ante too.')
+      )
     )
   );
 }

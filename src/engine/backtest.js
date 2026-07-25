@@ -650,4 +650,143 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   }
 }
 
-export { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore };
+// ── Period-Total Model Scoreboard (v4.534) ──────────────────────────────────
+// Re-validates the Smart-Targets discovery (v4.483: the simple trailing family —
+// T3M/T6W/T3W — beat every engineered model for MONTHLY store-sales TOTALS, ~5%
+// MAPE vs 8–14%) on the exact metric it was found on: the 28-day PERIOD TOTAL,
+// but now routed through the live forecastDay pipeline so any drift shows.
+//
+// Why this exists: runModelAssignmentBacktest (and the Forecast Accuracy panel)
+// grade per-DAY MAPE — a different, harder question where day-level noise and
+// exact DOW placement dominate, and where the engineered models (DOW/DI/AE) were
+// purpose-built to win. The discovery graded the SUM, where day-level errors
+// cancel. This function grades the SUM too, so "does Simple still sweep?" can be
+// answered on like-for-like terms. For each store it rolls `folds` contiguous
+// 28-day windows, sums each model's leak-free daily forecasts over the window's
+// data-covered days, and compares to the actual total for those same days.
+//
+// Read-only: unlike runModelAssignmentBacktest this writes NOTHING — model
+// assignments and localStorage are untouched. It is purely a diagnostic.
+//
+// Leak-free: forced into Back Test mode so eDt=date for the engineered models
+// (otherwise their trend windows anchor at the latest actual and would peek past
+// the window); 'simple' is already strictly asOf=start-of-day inside
+// forecastSimple, so if anything it is held to a stricter standard here.
+async function runPeriodTotalBacktest(ds, settings, userEvents, onProgress, opts={}) {
+  if (!ds || !ds.laborRows || !ds.laborRows.length) return null;
+  const { periodDays = 28, folds = 6, minCoverageFrac = 0.6, cancelRef = null } = opts;
+
+  const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
+  // Same competitor set as the daily backtest — simple first for display order.
+  const MODELS_TO_TEST = ['simple','dow','ae','ewma','di'];
+  const btSettings = {...settings, mode:'Back Test', _userEvents: userEvents||{}};
+  const runDateStr = new Date().toISOString().slice(0,10);
+
+  const perStore = {};        // loc → {storeName, winner, perModel, ranked, folds}
+  const winnerCounts = {};    // model → # stores where it had the lowest period-total MAPE
+  let storesDone = 0;
+
+  for (const loc of LOCS) {
+    if (cancelRef && cancelRef.current) break;
+    const storeName = STORE_NAMES[loc] || loc;
+
+    // Deduped, date-sorted rows with real sales
+    const seen = new Set();
+    const storeRows = (ds.laborRows||[]).filter(r => {
+      if (String(r.loc) !== String(loc) || !(r.sales > 0)) return false;
+      const k = dKey(r.date); if (seen.has(k)) return false; seen.add(k); return true;
+    }).sort((a,b) => a.date - b.date);
+
+    if (storeRows.length < periodDays) {
+      storesDone++;
+      if (onProgress) onProgress({storesDone, storesTotal:LOCS.length, storeName, status:`skip (${storeRows.length}<${periodDays} days)`});
+      continue;
+    }
+
+    const tgt   = (ds.targets && ds.targets[loc]) || DEFAULT_TARGETS[loc] || {};
+    const hasDI = !!(settings.dialedInEnabled && settings.dialedIn && settings.dialedIn[loc]);
+    const actByIso = new Map();
+    for (const r of storeRows) actByIso.set(dKey(r.date), r.sales);
+
+    // Anchor: day AFTER the latest row (exclusive end), roll windows backward.
+    const anchor = addD(storeRows[storeRows.length-1].date, 1);
+
+    const errs = {}; MODELS_TO_TEST.forEach(m => errs[m] = []);
+    let usedFolds = 0;
+
+    for (let f = 0; f < folds; f++) {
+      if (cancelRef && cancelRef.current) break;
+      const end   = addD(anchor, -f * periodDays);   // exclusive
+      const start = addD(end, -periodDays);          // inclusive
+
+      // Days in this window that actually have data — grade forecast and actual
+      // over the SAME day set so the totals are strictly comparable.
+      const days = [];
+      for (let d = new Date(start); d < end; d = addD(d, 1)) {
+        if (actByIso.get(dKey(d)) > 0) days.push(new Date(d));
+      }
+      if (days.length < periodDays * minCoverageFrac) continue; // sparse window → skip
+      const actTotal = days.reduce((a,d) => a + actByIso.get(dKey(d)), 0);
+      if (!(actTotal > 0)) continue;
+      usedFolds++;
+
+      for (const model of MODELS_TO_TEST) {
+        if (model === 'di' && !hasDI) continue; // DI not calibrated for this store
+        if (onProgress) onProgress({storesDone, storesTotal:LOCS.length, storeName, model, fold:f+1, folds, status:'running'});
+
+        let fcTotal = 0, valid = 0;
+        for (let i = 0; i < days.length; i++) {
+          try {
+            const fc = forecastDay(loc, days[i], ds, btSettings, null, tgt, 'monthly', model);
+            if (fc && fc.forecast > 0) { fcTotal += fc.forecast; valid++; }
+          } catch(e) { /* skip a day the model can't forecast */ }
+          if (i % 14 === 13) await new Promise(r => setTimeout(r, 0)); // keep UI responsive
+        }
+        // Only score the window if the model covered ~all its days — otherwise a
+        // half-covered forecast total would look artificially low vs the actual.
+        if (fcTotal > 0 && valid >= days.length * 0.9) {
+          errs[model].push(Math.abs(fcTotal - actTotal) / actTotal * 100);
+        }
+      }
+    }
+
+    // Aggregate per model
+    const perModel = {};
+    for (const m of MODELS_TO_TEST) {
+      if (errs[m].length) {
+        const mean = errs[m].reduce((a,v) => a+v, 0) / errs[m].length;
+        perModel[m] = { mape:+mean.toFixed(1), n:errs[m].length, accuracy:+Math.max(0,100-mean).toFixed(1) };
+      }
+    }
+    const ranked = Object.entries(perModel).sort((a,b) => a[1].mape - b[1].mape).map(([m,v]) => ({model:m, ...v}));
+    const winner = ranked.length ? ranked[0].model : null;
+    if (winner) winnerCounts[winner] = (winnerCounts[winner]||0) + 1;
+
+    perStore[loc] = { storeName, winner, perModel, ranked, folds:usedFolds };
+
+    storesDone++;
+    await new Promise(r => setTimeout(r, 0));
+    if (onProgress) onProgress({storesDone, storesTotal:LOCS.length, storeName, status:'done'});
+  }
+
+  const scored = Object.values(perStore).filter(s => s.winner);
+  const storesScored = scored.length;
+  const simpleWins = winnerCounts.simple || 0;
+  // District-level medians for the headline verdict (median = robust to a couple
+  // of odd stores, same spirit as the Smart-Targets median-of-simple rule).
+  const _median = arr => { if(!arr.length) return null; const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2 ? s[m] : +( (s[m-1]+s[m])/2 ).toFixed(1); };
+  const simpleMapes = scored.map(s => s.perModel.simple && s.perModel.simple.mape).filter(v => v!=null);
+  const bestEngMapes = scored.map(s => {
+    const eng = Object.entries(s.perModel).filter(([m]) => m!=='simple').map(([,v]) => v.mape);
+    return eng.length ? Math.min(...eng) : null;
+  }).filter(v => v!=null);
+
+  return {
+    perStore, winnerCounts, storesScored, simpleWins,
+    medianSimpleMape: _median(simpleMapes),
+    medianBestEngMape: _median(bestEngMapes),
+    periodDays, folds, models:MODELS_TO_TEST, runDate:runDateStr,
+  };
+}
+
+export { detectCleanDataStart, runModelAssignmentBacktest, runPeriodTotalBacktest, calibrateStore };

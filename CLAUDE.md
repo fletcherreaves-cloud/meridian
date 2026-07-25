@@ -187,10 +187,11 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 **✅ Signals weather + day-of-week correlations shipped (v4.533)** — see Signals panel row + `memory/notes-28-queue.md` #3/#4.
 **✅ Phase-2 bugs fixed (DONE — do NOT resurface):** Projections weekly-view crash on location expand, Signals won't close on mobile, Market Intelligence weather stopped showing. All three resolved.
 
+**✅ Period-Total Scoreboard shipped (v4.534)** — Model Assignment panel → **📊 Period-Total Scoreboard** (read-only, `runPeriodTotalBacktest` in `backtest.js`). Re-validates the Simple-wins finding on the metric it was *discovered* on: grades simple/dow/ae/ewma/di on rolling 28-day **period totals** (not daily MAPE), strictly leak-free (Back Test mode; Simple already asOf=start). Per-store winner + district tally + median-Simple-vs-best-engineered verdict banner. **Why it matters:** the daily Model-Assignment/Forecast-Accuracy backtests grade *daily* MAPE (day-level noise + exact DOW placement dominate — the engineered models' home turf), whereas the v4.483 discovery graded *totals* where day errors cancel. This closes that gap so "does Simple still sweep?" is answered like-for-like. Simple's daily-level branch is unchanged: same `weightedRecencyProjection` reused verbatim + a same-DOW shape multiplier (required to forecast a single day; sums back to the winning monthly total). Also **v4.534:** Simple filter chip + distribution count in the Model Assignment top bar.
+
 **Next candidate areas:**
 - FR: TPPH auto-target calc. "As of [date]" labels on tiles.
-- Model Assignment: persist backtest results/overrides to Supabase (currently localStorage — device-local).
-- Simple Models: period-total (monthly) scoring view to re-validate the "simple wins" finding on the metric it was discovered on (current backtests grade daily MAPE).
+- Model Assignment: persist backtest results/overrides to Supabase (currently localStorage — device-local). **← next up (1b).**
 - Product Mix pull → Pricing Engine + Filet-O-Fish-Fridays correlation (Notes 25 #1 / 28 #5).
 - SAGE conversation persistence; multi-tenant deployment.
 
