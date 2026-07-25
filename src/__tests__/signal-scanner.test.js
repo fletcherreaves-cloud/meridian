@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   spearman, pValueFromR, benjaminiHochberg, scanAllPairs, SEEDED_SIGNALS, METRIC_CATEGORIES, findMetric, metricConcept,
+  extractMetricValues, computeCustomSignal,
 } from '../engine/signal-registry.js';
 
 describe('signal scanner — Spearman', () => {
@@ -123,6 +124,80 @@ describe('signal scanner — concept map', () => {
   });
   it('defaults ungrouped keys to their own key', () => {
     expect(metricConcept('r2p')).toBe('r2p');
+  });
+});
+
+describe('signal scanner — weather metrics', () => {
+  const days = Array.from({ length: 30 }, (_, i) => new Date(2026, 0, 1 + i));
+  const weatherRows = days.map((d, k) => ({
+    loc: '3708', date: d,
+    tmax: 60 + k,          // always > 0
+    tmin: 40 + k,
+    davg: 50 + k,
+    rain: k % 3 === 0 ? 0 : 0.2,  // dry every 3rd day → real zeros
+    wspd: 5 + (k % 4),
+  }));
+
+  it('rainfall keeps its zero (dry) days — allowZero', () => {
+    const vals = extractMetricValues('wxRain', { weatherRows }, 'daily');
+    // 30 days, none dropped: the dry days (rain=0) must survive.
+    expect(vals.length).toBe(30);
+    expect(vals.some(v => v.value === 0)).toBe(true);
+  });
+
+  it('temperature drops 0 as a missing-data proxy (no allowZero)', () => {
+    const withMissing = weatherRows.map((r, i) => i === 0 ? { ...r, tmax: 0 } : r);
+    const vals = extractMetricValues('wxTmax', { weatherRows: withMissing }, 'daily');
+    expect(vals.length).toBe(29); // the tmax=0 row is dropped
+  });
+
+  it('surfaces a weather↔sales relationship in the scanner', () => {
+    // sales tracks temperature deterministically.
+    const laborRows = days.map((d, k) => ({ loc: '3708', date: d, sales: (60 + k) * 100, gc: 500 + k }));
+    const res = scanAllPairs({ weatherRows, laborRows }, { granularity: 'daily', minAbsR: 0.3, minN: 20 });
+    const wxPair = res.results.find(r => (r.xKey === 'wxTmax' && r.yKey === 'sales') || (r.xKey === 'sales' && r.yKey === 'wxTmax'));
+    expect(wxPair).toBeTruthy();
+    expect(Math.abs(wxPair.r)).toBeGreaterThan(0.9);
+  });
+
+  it('does not pair temperature metrics with each other (temp concept)', () => {
+    expect(metricConcept('wxTmax')).toBe(metricConcept('wxTavg'));
+    const res = scanAllPairs({ weatherRows }, { granularity: 'daily', minAbsR: 0.1, minN: 20 });
+    const tempPair = res.results.find(r =>
+      ['wxTmax', 'wxTmin', 'wxTavg'].includes(r.xKey) && ['wxTmax', 'wxTmin', 'wxTavg'].includes(r.yKey));
+    expect(tempPair).toBeUndefined();
+  });
+});
+
+describe('signal scanner — calendar (day-of-week) factors', () => {
+  const days = Array.from({ length: 42 }, (_, i) => new Date(2026, 0, 1 + i)); // 6 weeks
+  const laborRows = days.map(d => {
+    const wknd = (d.getDay() === 0 || d.getDay() === 6);
+    return { loc: '3708', date: d, sales: wknd ? 14000 : 10000, gc: wknd ? 1400 : 1000 };
+  });
+
+  it('synthesizes a 0/1 weekend flag over the real data universe', () => {
+    const vals = extractMetricValues('calWeekend', { laborRows }, 'daily');
+    expect(vals.length).toBe(42);
+    const weekendCount = vals.filter(v => v.value === 1).length;
+    expect(weekendCount).toBe(12); // 6 weeks × 2 weekend days
+  });
+
+  it('calendar metrics only exist at daily granularity', () => {
+    expect(extractMetricValues('calWeekend', { laborRows }, 'monthly')).toEqual([]);
+  });
+
+  it('a weekend→sales custom signal captures the lift as a strong correlation', () => {
+    const sig = computeCustomSignal({ id: 't', xMetric: 'calWeekend', yMetric: 'sales', granularity: 'daily', scope: 'district' }, { laborRows });
+    expect(sig.n).toBe(42);
+    expect(sig.r).toBeGreaterThan(0.9); // weekend=1 lines up with the higher sales
+  });
+
+  it('never pairs two calendar factors with each other', () => {
+    const res = scanAllPairs({ laborRows }, { granularity: 'daily', minAbsR: 0.1, minN: 20 });
+    const calPair = res.results.find(r =>
+      findMetric(r.xKey)?.category === 'calendar' && findMetric(r.yKey)?.category === 'calendar');
+    expect(calPair).toBeUndefined();
   });
 });
 

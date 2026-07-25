@@ -43,11 +43,18 @@ metadata:
   - (append…)
 
 ## 3. Signals — add WEATHER to correlations
-- `ds.weatherRows` (Open-Meteo, auto) exists but isn't in the Signals correlation Scanner. Add it
-  as a metric source so weather↔sales/traffic correlations surface. Value-add.
+- ✅ **DONE (v4.533).** `weatherRows` (tmax/tmin/davg/rain/wspd) is now a `weather` metric group in
+  `signal-registry.js` → auto-appears in the Scanner + Signal Lab (both are registry-driven).
+  Rainfall carries `allowZero` (dry days kept — else only rainy days correlate). Temps concept-
+  grouped (`temp`) so high/low/avg don't tautologically pair. Seeds: High Temp→Sales, Rainfall→GC.
 
 ## 4. Signals — common-sense day-of-week logic in correlations
-- Add day-of-week (and similar calendar) factors to correlations, not just raw metric pairs.
+- ✅ **DONE (v4.533).** New `calendar` metric group — synthetic 0/1 flags per (loc,date):
+  `calWeekend`, `calFri`, `calMon`. Source `'__calendar'` → `extractMetricValues` special-cases it,
+  generating values over the union of days in the real daily streams (`_calendarUniverse`), so they
+  intersect cleanly with any metric. Daily-only (a monthly weekend-fraction is ~constant). Scanner
+  guards calendar×calendar pairs. Seeds: Weekend→Sales, Friday→Sales (Friday = the Filet-O-Fish
+  anchor for #5). Point-biserial r reads as the day's lift. Tests in `signal-scanner.test.js`.
 
 ## 5. Product-mix correlations (future, needs Product Mix pull — Notes 25 #1)
 - Fun fact / test case: **Filet-O-Fish sells more on Fridays and around Easter.** Once product-mix
