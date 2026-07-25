@@ -7,6 +7,7 @@ import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest } from '../engine/backtest.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
+import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { ExportDropdown } from './store-dash.js';
 
 const h=React.createElement;
@@ -1088,6 +1089,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
     const _avg =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _avgZ=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _sum =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0):0;};
+    const isoD =d=>(d instanceof Date?d:new Date(d)).toISOString().slice(0,10);
     const rangeDays=Math.max(1,Math.floor((range.e.getTime()-range.s.getTime())/86400000)+1);
     const lyS=addDx(range.s,-364), lyE=addDx(range.e,-364);
 
@@ -1098,9 +1100,11 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         const cRows=(ds.ctrlRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         const oRows=(ds.opsRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         const fRows=(ds.fobRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
-        const lyRows=(ds.laborRows||[]).filter(r=>r.date>=lyS&&r.date<=lyE&&r.sales>0&&String(r.loc)===loc);
-        const sales      = _sum(lRows,'sales');
-        const lySales    = _sum(lyRows,'sales');
+        // Sales + vs-LY via the shared auto-first + matched-day helper (engine/vs-ly.js) —
+        // ONE implementation for every current-vs-LY comparison (fixes the "everyone ~-32%").
+        const sales     = autoFirstTotal(ds, loc, range, 'sales');   // full current period (display)
+        const _mv       = matchedVsLY(ds, loc, range, 'sales');      // matched-day comparison
+        const matchedCur= _mv.cur, lySales = _mv.ly, vsLY = _mv.pct;
         const laborPct   = _avg(cRows,'laborPct')||_avg(lRows,'laborPct');
         const tpph       = _avg(cRows,'tpph')||_avg(lRows,'tpph');
         const oepe       = _avg(oRows,'oepe')||_avg(cRows,'oepe')||_avg(lRows,'oepe');
@@ -1108,12 +1112,13 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         const cashOS     = _avgZ(cRows,'cashOSPct');
         const baseFoodPct= _avg(fRows,'baseFoodPct');
         const totFoodPct = _avg(fRows,'pLFoodPct');
-        return{loc,tgt,sales,lySales,laborPct,tpph,oepe,otHrs,cashOS,baseFoodPct,totFoodPct,days:rangeDays,
+        return{loc,tgt,sales,lySales,matchedCur,vsLY,laborPct,tpph,oepe,otHrs,cashOS,baseFoodPct,totFoodPct,days:rangeDays,
           storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
       });
-      const totSales=storeData.reduce((a,s)=>a+s.sales,0);
-      const totLY   =storeData.reduce((a,s)=>a+s.lySales,0);
-      const vsLY    =totSales>0&&totLY>0?(totSales-totLY)/totLY:null;
+      const totSales=storeData.reduce((a,s)=>a+s.sales,0);          // full current (display)
+      const totMatchedCur=storeData.reduce((a,s)=>a+(s.matchedCur||0),0);
+      const totLY   =storeData.reduce((a,s)=>a+s.lySales,0);        // matched-day LY
+      const vsLY    =totLY>0?(totMatchedCur-totLY)/totLY:null;      // apples-to-apples
       const wAvg=f=>{let tS=0,tV=0;for(const s of storeData){if(s[f]!=null&&s.sales>0){tS+=s.sales;tV+=s[f]*s.sales;}}return tS>0?tV/tS:null;};
       const simAvg=f=>{const v=storeData.map(s=>s[f]).filter(v=>v!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
       return{op:g.op,state:g.state,sups:g.sups,storeCount:g.locs.length,
@@ -1201,7 +1206,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
                 '<thead><tr>'+['Store','Sales','LY Sales','vs LY','Labor%','Tgt','Base Food','Tot Food','TPPH','OEPE','OT/Day'].map((h,i)=>
                   '<th style="'+thS+(i===0?';text-align:left':'')+'">'+h+'</th>').join('')+'</tr></thead>'+
                 '<tbody>'+op.stores.filter(s=>s.sales>0).map((s,i)=>{
-                  const vsLY=s.sales>0&&s.lySales>0?((s.sales-s.lySales)/s.lySales):null;
+                  const vsLY=s.vsLY;   // matched-day (precomputed)
                   return '<tr style="background:'+(i%2?'#fafafa':'#fff')+'">'+
                     '<td style="'+tdS+';font-weight:600">'+s.storeName+'</td>'+
                     '<td style="'+tdSr+'">'+( s.sales>0?f$(s.sales):'—')+'</td>'+
@@ -1319,7 +1324,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
                   .map((c,i)=>th({key:i,style:{...thS,textAlign:c[1],paddingLeft:i===0?14:8}},c[0]))
                 )),
                 h('tbody',null,...op.stores.filter(s=>s.sales>0).map((s,i)=>{
-                  const vsLY=s.sales>0&&s.lySales>0?(s.sales-s.lySales)/s.lySales:null;
+                  const vsLY=s.vsLY;   // matched-day (precomputed)
                   return tr({key:s.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
                     td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',whiteSpace:'nowrap',fontSize:'8.5px'}},s.storeName),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text2)'}},s.sales>0?f$(s.sales):'—'),

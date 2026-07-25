@@ -7,6 +7,7 @@ import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, ge
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
+import { matchedVsLY } from '../engine/vs-ly.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { ModelHealthBadge } from './analytics.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol } from '../utils/fmt.js';
@@ -2084,17 +2085,16 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
   const [activePreset, setActivePreset] = React.useState('l4w');
   const DR = rankRange;
   const gcVsLYMap=React.useMemo(()=>{
-    const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
+    // GC vs LY via the shared auto-first + matched-day helper (engine/vs-ly.js) — same
+    // ONE implementation used by Org Summary etc. Null when there's no comparable LY data
+    // (instead of the old false -100% from empty current guests vs a full last year).
     const res={};
     (stores||[]).forEach(s=>{
-      const cur=(ds.laborRows||[]).filter(r=>String(r.loc)===String(s.loc)&&r.date>=DR.s&&r.date<=DR.e&&r.gc>0);
-      const ly=(ds.laborRows||[]).filter(r=>String(r.loc)===String(s.loc)&&r.date>=lyS&&r.date<=lyE&&r.gc>0);
-      const gc=cur.reduce((a,r)=>a+(r.gc||0),0);
-      const gcLY=ly.reduce((a,r)=>a+(r.gc||0),0);
-      res[String(s.loc)]=gcLY>10?(gc-gcLY)/gcLY:null;
+      const mv=matchedVsLY(ds,String(s.loc),DR,'gc');
+      res[String(s.loc)]=mv.ly>10?mv.pct:null;
     });
     return res;
-  },[stores,ds.laborRows,DR.s,DR.e]);
+  },[stores,ds.laborRows,ds.qsrActSummaryRows,DR.s,DR.e]);
 
   // Quick date presets for Rankings
   const DR_PRESETS=[

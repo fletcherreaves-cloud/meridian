@@ -49,7 +49,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -209,9 +209,23 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.525';
+const MERIDIAN_VERSION    = '4.529';
 const MERIDIAN_BUILD_DATE = '2026-07-24';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.529', date:'2026-07-24', changes:[
+    'Under the hood: the "current vs last year" math (auto-first sourcing + matched-day comparison) is now ONE shared helper (engine/vs-ly.js) instead of being re-written separately in each panel — which is exactly why the vs-LY bug kept reappearing in different places. Org Summary and Rankings now call the shared helper; future changes are global. Covered by its own tests.',
+  ]},
+  {version:'4.528', date:'2026-07-24', changes:[
+    'Profile menu now has "↑ Load files" — and the Load button was removed from the top bar to declutter it (Notes 27 #8). Same file-upload flow, just tucked into the avatar menu.',
+    'Data Manager: the auto-synced sources (LifeLenz Schedule, QSRSoft FOB / eBOS / Daily Activity) now also carry a one-line description of what they pull and on what cadence — matching the source labels added to the manual/emailed sources (Notes 27 #9).',
+  ]},
+  {version:'4.527', date:'2026-07-24', changes:[
+    'Fix: Visit Readiness couldn\'t see your graded visits — the Graded Visits panel loaded them into its own state, but Visit Readiness reads them from the shared data set, which was never populated. So Model Check said "0 stores with a recent visit" and the Visit Patterns section stayed hidden even though 60 visits were loaded. Graded visits now load into the shared data at startup (same Supabase source), so Visit Readiness sees them — Model Check gets real numbers, the per-store "last visit" shows, and Visit Patterns (day/daypart/channel + cadence) appears.',
+  ]},
+  {version:'4.526', date:'2026-07-24', changes:[
+    'Fix (the real Org Summary this time): the "everyone ~-32% vs LY" was coming from the Org Summary panel\'s OWN sales/LY calc (a different code path than the one patched in v4.522). It summed the full current window for sales but the full last-year window for LY with no day-matching — so when the current period is missing its most recent days (those land in the auto DAR, not a manual Operations Report), last year looks ~30% bigger on every store. Now the current sales pull is auto-first (manual upload OR the auto-synced DAR, so recent days aren\'t missing) and vs-LY is matched-day (a day counts only when BOTH years have real sales). Applies to the Company / Org / Operator / Patch rollups and the per-store rows.',
+    'Fix: the same artifact made Rankings show "-100%" on GC vs LY (current guests empty vs a full last-year). Now matched-day + auto-first (reads the DAR guest counts) — shows a true YoY or "—" when there is genuinely no comparable data.',
+  ]},
   {version:'4.525', date:'2026-07-24', changes:[
     'Changelog / About footer refreshed to match reality: the architecture and data-source lines were badly out of date (they still said "single-file HTML · React 18 · IndexedDB" and, incorrectly, "all data stored locally · no cloud upload"). They now describe the real stack — Vite + React 19, Supabase cloud-first with row-level security, the auto-pull + emailed data sources — and the "Rows Validated" stat is now a live count of rows actually loaded.',
   ]},
@@ -1390,6 +1404,15 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${jobRows.length} LifeLenz per-job rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] LifeLenz job-hours load failed:',e);}
+      try{
+        // Graded visits — same Supabase source the Graded Visits panel uses, loaded into
+        // ds.gradedVisits so Visit Readiness (Model check, Visit Patterns, last-visit) sees them.
+        const gv = await loadGradedVisits();
+        if(gv.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev, gradedVisits: gv};});
+          console.log(`[Meridian] ✓ Loaded ${gv.length} graded visits from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Graded visits load failed:',e);}
       // ── FOB / Ops / Controls / DAR ──────────────────────────────────────────
       const _mkIdx2=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
       try{
