@@ -1881,6 +1881,82 @@ async function parseSMGVoicePDF(file) {
   return rows;
 }
 
+// ── SMG VOICE Performance — per-store Time-of-Day (daypart) report ────────────
+// Each page = one store × one report window (Monthly / Trailing-90 / YTD) and
+// carries a "Time of Day Performance" grid: 8 metrics × 6 dayparts. Filename
+// family overlaps the operator-level report (eu065119…), so callers must route
+// by CONTENT — a daypart page contains "Time of Day Performance". Returns one
+// row per (loc, period, report_type, daypart) with the 8 metric values.
+export const VOICE_DAYPARTS = ['5am-11am', '11am-2pm', '2pm-4pm', '4pm-9pm', '9pm-12am', '12am-5am'];
+const _VDP_METRICS = [
+  ['Drive Thru Overall Satisfaction', 'dt_sat'],
+  ['Drive Thru Dissatisfaction',      'dt_dissat'],
+  ['In Restaurant Satisfaction',      'ir_sat'],
+  ['In Restaurant Dissatisfaction',   'ir_dissat'],
+  ['Accuracy B2B',                    'accuracy_b2b'],
+  ['Overall Quality B2B',             'quality_b2b'],
+  ['Fries Quality B2B',               'fries_b2b'],
+  ['Snack Wrap Quality B2B',          'snack_wrap_b2b'],
+];
+const _VDP_MONTHS = { january:1, february:2, march:3, april:4, may:5, june:6, july:7, august:8, september:9, october:10, november:11, december:12 };
+const _vdpNum = t => { t = (t || '').trim(); if (/^n\/?a$/i.test(t)) return null; const m = t.match(/-?\d+/); return m ? +m[0] : null; };
+
+// Detect from already-extracted page lines whether this is a daypart report.
+export function isVoiceDaypartReport(lines) {
+  return (lines || []).some(l => /Time of Day Performance/i.test(l));
+}
+
+async function parseVoiceDaypartPDF(file) {
+  const pdfjsLib = await import('pdfjs-dist');
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+  }
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const rows = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const lineMap = new Map();
+    for (const item of content.items) {
+      const y = Math.round(item.transform[5] / 3) * 3;
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y).push({ x: item.transform[4], str: item.str });
+    }
+    const lines = [...lineMap.entries()].sort((a, b) => b[0] - a[0])
+      .map(([, its]) => its.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (!isVoiceDaypartReport(lines)) continue;
+
+    const hdr = lines.find(l => /Restaurant:/.test(l)) || '';
+    const nsnM = hdr.match(/Restaurant:\s*(.+?)\s*-\s*(\d{4,6})\s*$/);
+    if (!nsnM) continue;
+    const report_type = lines.some(l => /Monthly Report/i.test(l)) ? 'monthly'
+      : lines.some(l => /Trailing 90/i.test(l)) ? 'trailing90'
+      : lines.some(l => /Year-to-Date/i.test(l)) ? 'ytd' : null;
+    if (!report_type) continue;
+    const perM = hdr.match(/([A-Za-z]+)\s+(20\d\d)/);
+    const period = perM && _VDP_MONTHS[perM[1].toLowerCase()]
+      ? `${perM[2]}-${String(_VDP_MONTHS[perM[1].toLowerCase()]).padStart(2, '0')}` : null;
+    const loc = String(nsnM[2]).padStart(5, '0');
+    const storeName = nsnM[1].trim();
+
+    // Build a daypart → {metrics} matrix from the 8 metric rows (each has 6 values).
+    const byDaypart = VOICE_DAYPARTS.map(dp => ({ loc, storeName, period, report_type, daypart: dp }));
+    let anyData = false;
+    for (const [label, key] of _VDP_METRICS) {
+      const ln = lines.find(l => l.startsWith(label));
+      if (!ln) continue;
+      const toks = (ln.slice(label.length).match(/N\/A|-?\d+%?/gi) || []).slice(-6);
+      toks.forEach((t, i) => {
+        if (i < 6) { const v = _vdpNum(t); byDaypart[i][key] = v; if (v != null) anyData = true; }
+      });
+    }
+    if (anyData) rows.push(...byDaypart);
+  }
+  return rows;
+}
+
 // ── MBI Labor Analysis (weekly Fixed-Labor-Hours worksheet) ──────────────────
 // Parses the owner's "MBI - Labor Analysis" sheet into two streams:
 //   • weekly Band-1 LifeLenz inputs per store  → lifelenz_labor_week
@@ -2051,4 +2127,4 @@ function parsePeopleSkillsWb(wb){
   return parsePeopleSkills(parseRaw(wb, wb.SheetNames[0]));
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs };
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs };

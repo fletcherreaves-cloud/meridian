@@ -317,6 +317,41 @@ export async function loadVoicePerf() {
   return data || [];
 }
 
+// ── SMG VOICE Daypart (Time-of-Day) persistence ──────────────────────────────
+// One row per (period, report_type, loc, daypart) with 8 metric %s. Identity is
+// the store's daypart within a period/window — operator label is irrelevant.
+const _VDP_KEYS = ['dt_sat','dt_dissat','ir_sat','ir_dissat','accuracy_b2b','quality_b2b','fries_b2b','snack_wrap_b2b'];
+export async function saveVoiceDaypart(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, error: null };
+  const byKey = {};
+  for (const r of rows) {
+    if (!r.period || !r.report_type || !r.loc || !r.daypart) continue;
+    const loc = String(r.loc);
+    const k = `${r.period}|${r.report_type}|${loc}|${r.daypart}`;
+    byKey[k] = {
+      period: r.period, report_type: r.report_type, loc, daypart: r.daypart,
+      loc_name: r.storeName || r.loc_name || null,
+      ..._VDP_KEYS.reduce((o, m) => (o[m] = r[m] ?? null, o), {}),
+      source_file: r.source_file || null,
+    };
+  }
+  const upsert = Object.values(byKey);
+  if (!upsert.length) return { saved: 0, error: null };
+  const { error } = await supabase.from('smg_voice_daypart').upsert(upsert, { onConflict: 'period,report_type,loc,daypart' });
+  if (error) { console.warn('[voice_daypart] save error:', error); return { saved: 0, error: error.message }; }
+  console.log(`[voice_daypart] saved ${upsert.length} rows`);
+  return { saved: upsert.length, error: null };
+}
+
+export async function loadVoiceDaypart() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase
+    .from('smg_voice_daypart').select('*')
+    .order('period', { ascending: false })
+    .range(from, to));
+  return (data || []).map(r => ({ ...r, storeName: r.loc_name }));
+}
+
 // ── LifeLenz Schedule persistence ────────────────────────────────────────────
 // rows: array of parsed LifeLenz rows (loc, date:Date, fcstSales, schVLH, etc.)
 export async function saveLifeLenzSchedule(rows) {

@@ -49,7 +49,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -61,7 +61,7 @@ import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance,
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
-import { detectType, parseSMGVoicePDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily } from '../parsers/index.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 import {
   fetchForecastWeather,
@@ -1402,6 +1402,13 @@ function App() {
         }
       }catch(e){console.warn('[Meridian] VOICE Performance load failed:',e);}
       try{
+        const dpRows = await loadVoiceDaypart();
+        if(dpRows.length>0){
+          setDs(prev=>prev?{...prev, voiceDaypart: dpRows}:prev);
+          console.log(`[Meridian] ✓ Loaded ${dpRows.length} VOICE Daypart rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] VOICE Daypart load failed:',e);}
+      try{
         // Cloud-persisted SMG comments (v4.546) — previously OPFS-only/device-local.
         const cmts = await loadSmgComments();
         if(cmts.length>0){
@@ -1869,11 +1876,21 @@ function App() {
             }
             loaded.push({name:file.name,type:typeInfo});
           } else if(typeInfo.type==='smg-voice'){
-            // eu###### filenames cover BOTH the customer-comment report AND the
-            // VOICE Performance report — SMG reuses the ID prefix. Content decides:
-            // try the Performance parser first; if it finds no perf rows, it's a
-            // comment report and we fall back. (Fixes performance exports being
-            // silently mis-parsed as comments and never reaching smg_voice_performance.)
+            // eu###### filenames cover THREE reports — customer comments, the
+            // operator VOICE Performance table, AND the per-store daypart
+            // (Time-of-Day) report — so content decides. Daypart pages are
+            // unmistakable ("Time of Day Performance"); try that first.
+            let dpRows=[];
+            try{ dpRows=await parseVoiceDaypartPDF(file); }catch(e){ dpRows=[]; }
+            if(dpRows.length>0){
+              const res=await saveVoiceDaypart(dpRows);
+              currentDS={...currentDS,voiceDaypart:[...(currentDS.voiceDaypart||[]),...dpRows]};
+              console.log(`[Meridian] VOICE Daypart: ${dpRows.length} rows from ${file.name} (saved ${res.saved})`);
+              loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report'}});
+              continue;
+            }
+            // Otherwise try the Performance parser; if it finds no perf rows, it's
+            // a comment report and we fall back.
             const {parseVoicePerformancePDF}=await import('../parsers/voice-performance.js');
             let vpRows=[];
             try{ vpRows=await parseVoicePerformancePDF(await file.arrayBuffer(),file.name); }catch(e){ vpRows=[]; }
@@ -2418,7 +2435,7 @@ function App() {
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
     showFOB&&h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>setShowFOB(false)}),
     showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
-    showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
+    showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 16px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},

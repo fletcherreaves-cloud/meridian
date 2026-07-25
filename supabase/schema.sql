@@ -566,6 +566,34 @@ create index if not exists smg_voice_perf_period_idx
 create index if not exists smg_voice_perf_loc_idx
   on public.smg_voice_performance (loc, period desc);
 
+-- ── SMG VOICE Daypart / Time-of-Day (per-store) ──────────────────────────────
+-- One row per store × report window × daypart from the per-store VOICE
+-- Performance PDF's "Time of Day Performance" grid. Powers the Daypart deep-dive
+-- heatmap. Identity = (period, report_type, loc, daypart).
+create table if not exists public.smg_voice_daypart (
+  id              bigserial primary key,
+  period          text not null,          -- '2026-05'
+  report_type     text not null,          -- 'monthly' | 'trailing90' | 'ytd'
+  loc             text not null,          -- '03708'
+  daypart         text not null,          -- '5am-11am' … '12am-5am'
+  loc_name        text,
+  dt_sat          smallint,               -- Drive Thru Overall Satisfaction %
+  dt_dissat       smallint,               -- Drive Thru Dissatisfaction B2B %
+  ir_sat          smallint,               -- In Restaurant Satisfaction %
+  ir_dissat       smallint,               -- In Restaurant Dissatisfaction B2B %
+  accuracy_b2b    smallint,               -- Accuracy B2B %
+  quality_b2b     smallint,               -- Overall Quality B2B %
+  fries_b2b       smallint,               -- Fries Quality B2B %
+  snack_wrap_b2b  smallint,               -- Snack Wrap Quality B2B %
+  source_file     text,
+  created_at      timestamptz default now(),
+  unique(period, report_type, loc, daypart)
+);
+alter table public.smg_voice_daypart enable row level security;
+create policy "smg_voice_daypart: public read"  on public.smg_voice_daypart for select using (true);
+create policy "smg_voice_daypart: public write" on public.smg_voice_daypart for all using (true);
+create index if not exists smg_voice_daypart_loc_idx on public.smg_voice_daypart (loc, period desc, report_type);
+
 -- ── Labor Analysis Rows (daily per-store data for forecasting / DI calibration) ──
 -- Each row = one store's daily metrics from a QSRSoft Labor Analysis report.
 -- Persisted here so history accumulates across browser cache clears and devices.

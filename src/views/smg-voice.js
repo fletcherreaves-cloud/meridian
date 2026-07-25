@@ -783,8 +783,101 @@ function OpportunitiesPanel({ result, scopeText }) {
   );
 }
 
+// ── Daypart (Time-of-Day) heatmap ───────────────────────────────────────────
+// Per-store CSAT broken out by daypart. Reuses VP_METRICS (same 8 metrics +
+// good/bad thresholds). storeSel picks the store; 'all' averages across the
+// in-scope stores (mean of store %s — no response-count denominators exist in
+// this report, same caveat as the Performance tab, labelled honestly).
+const DAYPARTS_ORDER = ['5am-11am', '11am-2pm', '2pm-4pm', '4pm-9pm', '9pm-12am', '12am-5am'];
+const DAYPART_LABEL = { '5am-11am': 'Breakfast', '11am-2pm': 'Lunch', '2pm-4pm': 'Afternoon', '4pm-9pm': 'Dinner', '9pm-12am': 'Late Eve', '12am-5am': 'Overnight' };
+function DaypartPanel({ rows, stores, inScope, storeSel, nameOf }) {
+  const { useState, useMemo } = React;
+  const scoped = useMemo(() => (rows || []).filter(r => (!inScope || inScope(r.loc))), [rows, inScope]);
+  const [selType, setSelType] = useState('monthly');
+  const [selPeriod, setSelPeriod] = useState('');
+
+  const periods = useMemo(() => [...new Set(scoped.map(r => r.period).filter(Boolean))].sort().reverse(), [scoped]);
+  const activePeriod = selPeriod && periods.includes(selPeriod) ? selPeriod : (periods[0] || '');
+
+  // Rows for the active window; if a store is picked, just that store, else all in scope.
+  const windowRows = useMemo(() => scoped.filter(r =>
+    r.report_type === selType && r.period === activePeriod &&
+    (!storeSel || storeSel === 'all' || String(parseInt(r.loc, 10) || r.loc) === String(parseInt(storeSel, 10) || storeSel))
+  ), [scoped, selType, activePeriod, storeSel]);
+
+  const storeCount = useMemo(() => new Set(windowRows.map(r => String(parseInt(r.loc, 10) || r.loc))).size, [windowRows]);
+
+  // metric × daypart → value (single store: the value; all: mean of store values).
+  const grid = useMemo(() => {
+    const g = {};
+    for (const m of VP_METRICS) {
+      g[m.key] = {};
+      for (const dp of DAYPARTS_ORDER) {
+        const vals = windowRows.filter(r => r.daypart === dp && Number.isFinite(r[m.key])).map(r => r[m.key]);
+        g[m.key][dp] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+      }
+    }
+    return g;
+  }, [windowRows]);
+
+  const TYPE_LABELS = { monthly: 'Monthly', trailing90: 'Trailing 90d', ytd: 'Year-to-Date' };
+  const titleStore = storeSel && storeSel !== 'all' ? (nameOf ? nameOf(storeSel) : storeSel) : `District avg · ${storeCount} store${storeCount === 1 ? '' : 's'}`;
+
+  if (!rows || !rows.length) return h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } },
+    h('div', { style: { fontSize: 32, marginBottom: 12 } }, '🕐'),
+    h('div', { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: 'var(--text)' } }, 'No Daypart Data Loaded'),
+    h('div', { style: { fontSize: 12, lineHeight: 1.6 } }, 'Upload a per-store VOICE Performance PDF (the one with a "Time of Day Performance" grid) to see satisfaction by daypart.')
+  );
+
+  const th = { padding: '7px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text3)', borderBottom: '2px solid var(--bdr)', whiteSpace: 'nowrap' };
+  const cell = (val, m) => {
+    const col = vpColor(val, m);
+    return h('td', { key: m.key + val, style: { padding: '7px 8px', textAlign: 'center', fontSize: 12, fontWeight: 700,
+      color: col, background: col === 'var(--text3)' ? 'transparent' : col + '22', borderRight: '1px solid var(--bdr)' } },
+      val != null ? val + '%' : '—');
+  };
+
+  return h('div', { style: { display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' } },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 12, fontWeight: 700 } }, titleStore),
+      h('div', { style: { display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
+        Object.entries(TYPE_LABELS).map(([t, label]) => h('button', { key: t, onClick: () => setSelType(t),
+          style: { padding: '3px 10px', border: 'none', borderRadius: 6, fontSize: 10, fontWeight: selType === t ? 700 : 400, cursor: 'pointer',
+            background: selType === t ? 'var(--accent)' : 'transparent', color: selType === t ? '#fff' : 'var(--text2)' } }, label))),
+      periods.length > 0 && h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
+        style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
+        periods.map(p => h('option', { key: p, value: p }, p))),
+      storeSel === 'all' && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'Pick a store in the filter bar to drill in'),
+      h('div', { style: { marginLeft: 'auto' } }, h(ExportButtons, {
+        onCsv: () => exportCSV(`VOICE_Daypart_${(titleStore).replace(/[^a-z0-9]+/gi, '_')}_${activePeriod}.csv`,
+          ['Metric', ...DAYPARTS_ORDER.map(d => `${DAYPART_LABEL[d]} (${d})`)],
+          VP_METRICS.map(m => [m.label, ...DAYPARTS_ORDER.map(d => grid[m.key][d] != null ? grid[m.key][d] + '%' : '')])),
+        onPrint: () => printReport(`VOICE Dayparts — ${titleStore}`, `${TYPE_LABELS[selType]} · ${activePeriod}`,
+          ['Metric', ...DAYPARTS_ORDER.map(d => DAYPART_LABEL[d])],
+          VP_METRICS.map(m => [m.label, ...DAYPARTS_ORDER.map(d => grid[m.key][d] != null ? grid[m.key][d] + '%' : '—')])),
+      })),
+    ),
+    h('div', { style: { overflow: 'auto', flex: 1, padding: 16 } },
+      !windowRows.length
+        ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } }, `No daypart data for ${TYPE_LABELS[selType]} · ${activePeriod || '—'}.`)
+        : h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
+          h('thead', null, h('tr', { style: { background: 'var(--surf2)' } },
+            h('th', { style: { ...th, textAlign: 'left', minWidth: 150 } }, 'Metric'),
+            ...DAYPARTS_ORDER.map(d => h('th', { key: d, style: th }, DAYPART_LABEL[d], h('br'), h('span', { style: { fontSize: 8, fontWeight: 400, opacity: .7 } }, d))))),
+          h('tbody', null, VP_METRICS.map(m => h('tr', { key: m.key, style: { borderBottom: '1px solid var(--bdr)' } },
+            h('td', { style: { padding: '7px 8px', fontSize: 11, fontWeight: 600, borderRight: '1px solid var(--bdr)' } },
+              m.label, h('span', { style: { fontSize: 8, color: 'var(--text3)', marginLeft: 4 } }, m.better === 'higher' ? '↑' : '↓')),
+            ...DAYPARTS_ORDER.map(d => cell(grid[m.key][d], m))))),
+        ),
+      h('div', { style: { fontSize: 9, color: 'var(--text3)', marginTop: 10, lineHeight: 1.5 } },
+        'Green = at/above standard, amber = watch, red = below. ↑ = higher is better, ↓ = lower is better. ' +
+        (storeSel === 'all' ? 'District view averages each daypart across the in-scope stores (no response-count weighting available in this report).' : '')),
+    ),
+  );
+}
+
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClose }) {
+export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillComments, onClose }) {
   const rows = (ds && ds.smgRows) || [];
   const [bf, setBf] = React.useState(null); // {running} | {found,comments,saved}
   const runBackfill = async () => {
@@ -795,6 +888,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
   };
   const fsRows = (ds && ds.smgFullscale) || [];
   const vpRows = voicePerf || [];
+  const dpRows = voiceDaypart || [];
   // Default to performance tab if available, then fullscale, then comments
   const [tab, setTab] = React.useState(() => vpRows.length > 0 ? 'performance' : fsRows.length > 0 ? 'fullscale' : 'comments');
   React.useEffect(() => {
@@ -821,9 +915,9 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
   const scopedRows = React.useMemo(() => rows.filter(r => inScope(r.loc)), [rows, inScope]);
   // Loc universe feeding the scope bar depends on the active tab's dataset.
   const scopeLocs = React.useMemo(() => {
-    const src = tab === 'performance' ? vpRows : tab === 'fullscale' ? fsRows : rows;
+    const src = tab === 'performance' ? vpRows : tab === 'fullscale' ? fsRows : tab === 'daypart' ? dpRows : rows;
     return [...new Set(src.map(r => r.loc))];
-  }, [tab, vpRows, fsRows, rows]);
+  }, [tab, vpRows, fsRows, dpRows, rows]);
   // Opportunity ranking (org-scoped comments) — computed only when the tab is open.
   const oppResult = React.useMemo(() =>
     tab === 'opportunities' ? rankCommentOpportunities(scopedRows, { storeName: nameOf }) : null,
@@ -878,7 +972,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
   }, [scopedRows, storeSel, storeMap]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
-  if (!rows.length && !fsRows.length && !vpRows.length) return h('div', {
+  if (!rows.length && !fsRows.length && !vpRows.length && !dpRows.length) return h('div', {
     style: { position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
     onClick: e => { if (e.target === e.currentTarget) onClose(); }
   },
@@ -910,7 +1004,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
             periodLabel && h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 10 } }, periodLabel),
           ),
           h('div', { style: { display: 'flex', gap: 2, marginLeft: 16, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
-            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments'], ['opportunities','🎯 Opportunities']].map(([t, label]) =>
+            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments'], ['opportunities','🎯 Opportunities'], ['daypart','🕐 Dayparts']].map(([t, label]) =>
               h('button', { key: t, onClick: () => setTab(t), style: {
                 padding: '4px 12px', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: tab===t ? 700 : 400,
                 background: tab===t ? 'var(--accent)' : 'transparent',
@@ -959,6 +1053,11 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
           })),
         ),
         h(OpportunitiesPanel, { result: oppResult, scopeText: orgDesc(orgFilter, storeSel, nameOf) }),
+      ),
+
+      // ── Body: Daypart tab ────────────────────────────────────────────────────
+      tab === 'daypart' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
+        h(DaypartPanel, { rows: dpRows, stores, inScope, storeSel, nameOf })
       ),
 
       // ── Body: Comments tab ───────────────────────────────────────────────────
