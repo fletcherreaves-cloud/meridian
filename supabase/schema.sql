@@ -1205,3 +1205,38 @@ alter table public.employee_skills enable row level security;
 
 create policy "employee_skills: public read"  on public.employee_skills for select using (true);
 create policy "employee_skills: public write" on public.employee_skills for all using (true);
+
+-- ── saved_correlations (v4.540) ─────────────────────────────────────────────
+-- Curated knowledge base of validated CSAT/correlation drivers, with decay
+-- tracking. The CSAT Drivers scan's ★ Track writes here; the saved list shows
+-- each driver's saved strength vs the latest scan so weakening ones surface.
+create table if not exists public.saved_correlations (
+  id             uuid primary key default gen_random_uuid(),
+  kind           text default 'csat',
+  outcome_key    text not null,
+  outcome_label  text,
+  driver_key     text not null,
+  driver_label   text,
+  granularity    text default 'monthly',
+  scope          text default 'district',
+  within_r       numeric,
+  pooled_r       numeric,
+  partial_r      numeric,
+  spearman       numeric,
+  n              integer,
+  eff_n          integer,
+  q_value        numeric,
+  tier           text,
+  direction      text,
+  note           text,
+  status         text default 'watching',   -- watching | confirmed | dismissed
+  history        jsonb default '[]'::jsonb,  -- [{date, withinR, n, tier}]
+  created_by     uuid,
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now(),
+  unique (kind, outcome_key, driver_key, granularity, scope)
+);
+
+alter table public.saved_correlations enable row level security;
+create policy "saved_correlations: public read"  on public.saved_correlations for select using (true);
+create policy "saved_correlations: public write" on public.saved_correlations for all using (true);

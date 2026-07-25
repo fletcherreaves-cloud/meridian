@@ -1091,6 +1091,67 @@ export async function appendCustomSignalHistory(id, r, n, existingHistory) {
   }).eq('id', id);
 }
 
+// ── Saved correlations (CSAT driver KB, v4.540) ───────────────────────────────
+export async function loadSavedCorrelations() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('saved_correlations').select('*')
+    .order('within_r', { ascending: false });
+  if (error) { console.warn('[saved_correlations] load error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, kind: r.kind,
+    outcomeKey: r.outcome_key, outcomeLabel: r.outcome_label,
+    driverKey: r.driver_key, driverLabel: r.driver_label,
+    granularity: r.granularity, scope: r.scope,
+    withinR: r.within_r, pooledR: r.pooled_r, partialR: r.partial_r, spearman: r.spearman,
+    n: r.n, effN: r.eff_n, qValue: r.q_value, tier: r.tier, direction: r.direction,
+    note: r.note, status: r.status, history: r.history || [],
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  }));
+}
+
+// Upsert a saved driver (keyed by kind+outcome+driver+granularity+scope), appending
+// a dated snapshot to its history so strength-over-time (decay) can be charted.
+export async function saveSavedCorrelation(d) {
+  if (!supabase) return null;
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const point = { date: new Date().toISOString().slice(0,10), withinR: d.withinR ?? null, n: d.n ?? null, tier: d.tier ?? null };
+  const row = {
+    kind: d.kind || 'csat',
+    outcome_key: d.outcomeKey, outcome_label: d.outcomeLabel,
+    driver_key: d.driverKey, driver_label: d.driverLabel,
+    granularity: d.granularity || 'monthly', scope: d.scope || 'district',
+    within_r: d.withinR ?? null, pooled_r: d.pooledR ?? null, partial_r: d.partialR ?? null, spearman: d.spearman ?? null,
+    n: d.n ?? null, eff_n: d.effN ?? null, q_value: d.qValue ?? null, tier: d.tier ?? null, direction: d.direction ?? null,
+    note: d.note ?? null, status: d.status || 'watching',
+    history: [...(d.history || []), point].slice(-50),
+    created_by: uid || null, updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('saved_correlations')
+    .upsert([row], { onConflict: 'kind,outcome_key,driver_key,granularity,scope' })
+    .select().single();
+  if (error) { console.warn('[saved_correlations] save error:', error); return null; }
+  return data;
+}
+
+export async function updateSavedCorrelation(id, patch) {
+  if (!supabase) return false;
+  const row = { updated_at: new Date().toISOString() };
+  if (patch.status != null) row.status = patch.status;
+  if (patch.note != null) row.note = patch.note;
+  const { error } = await supabase.from('saved_correlations').update(row).eq('id', id);
+  if (error) { console.warn('[saved_correlations] update error:', error); return false; }
+  return true;
+}
+
+export async function deleteSavedCorrelation(id) {
+  if (!supabase) return false;
+  const { error } = await supabase.from('saved_correlations').delete().eq('id', id);
+  if (error) { console.warn('[saved_correlations] delete error:', error); return false; }
+  return true;
+}
+
 // ── On-demand sync triggers ───────────────────────────────────────────────────
 // Dispatch any data-pull workflow from the app. `workflow` is one of
 // 'dar' | 'ebos' | 'fob' | 'lifelenz'; `inputs` optionally overrides that

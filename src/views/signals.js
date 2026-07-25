@@ -3,7 +3,7 @@ import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS } from '../engine/signal-registry.js';
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS } from '../engine/csat-signals.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -1149,6 +1149,11 @@ function CsatDriversTab({ ds, onTrack }) {
   const [tierFilter, setTierFilter] = uSt('signal'); // 'signal' hides noise, 'all' shows it
   const [signFilter, setSignFilter] = uSt('all');     // all | pos | neg
   const [tracked, setTracked] = uSt({});
+  const [saved, setSaved] = uSt([]);                  // saved-driver KB (Supabase)
+
+  uE(() => { loadSavedCorrelations().then(setSaved).catch(() => {}); }, []);
+  const curScope = scopeLoc || 'district';
+  const isSaved = (driverKey, outcomeKey) => saved.some(s => s.driverKey === driverKey && s.outcomeKey === outcomeKey && s.scope === curScope);
 
   const hasSmg = (ds?.smgFullscale || []).length > 0;
   const availLocs = uM(() => {
@@ -1166,21 +1171,32 @@ function CsatDriversTab({ ds, onTrack }) {
     }, 30);
   };
 
-  const handleTrack = async (row) => {
-    const key = row.driverKey + '|' + row.csatKey;
+  // ★ Track → save to the CSAT-driver KB (saved_correlations), preserving the
+  // within-store / partial / tier metrics so decay can be tracked over time.
+  const handleTrack = async (r) => {
+    const key = r.driverKey + '|' + r.csatKey;
     if (tracked[key]) return;
-    const def = {
-      name: `${row.driverLabel} → ${row.csatLabel}`.slice(0, 120),
-      xMetric: row.driverKey, yMetric: row.csatKey, granularity: 'monthly', scope: scopeLoc || 'district',
-      xCondition: 'all', xReference: 'median', yCondition: 'all', yReference: 'median',
-      latest_r: row.withinR, latest_n: row.n,
-      history: [{ date: new Date().toISOString().slice(0, 10), r: row.withinR, n: row.n }],
-      status: 'active', promoted_to: [],
-    };
     setTracked(t => ({ ...t, [key]: 'saving' }));
-    const saved = await saveCustomSignal(def);
-    if (saved) { onTrack?.({ ...def, id: saved.id, votes: 0 }); setTracked(t => ({ ...t, [key]: 'done' })); }
+    const existing = saved.find(s => s.driverKey === r.driverKey && s.outcomeKey === r.csatKey && s.scope === curScope);
+    const rec = await saveSavedCorrelation({
+      kind: 'csat', outcomeKey: r.csatKey, outcomeLabel: r.csatLabel,
+      driverKey: r.driverKey, driverLabel: r.driverLabel,
+      granularity: 'monthly', scope: curScope,
+      withinR: r.withinR, pooledR: r.pooledR, partialR: r.partialR, spearman: r.spearman,
+      n: r.n, effN: r.effN, qValue: r.qValue, tier: r.tier, direction: r.direction,
+      history: existing ? existing.history : [],
+    });
+    if (rec) { setTracked(t => ({ ...t, [key]: 'done' })); loadSavedCorrelations().then(setSaved).catch(() => {}); }
     else setTracked(t => ({ ...t, [key]: 'error' }));
+  };
+
+  const setSavedStatus = async (s, status) => {
+    setSaved(list => list.map(x => x.id === s.id ? { ...x, status } : x));
+    await updateSavedCorrelation(s.id, { status });
+  };
+  const removeSaved = async (s) => {
+    setSaved(list => list.filter(x => x.id !== s.id));
+    await deleteSavedCorrelation(s.id);
   };
 
   const fmtR = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2);
@@ -1203,6 +1219,7 @@ function CsatDriversTab({ ds, onTrack }) {
     const tm = CSAT_TIER_META[r.tier] || CSAT_TIER_META.noise;
     const key = r.driverKey + '|' + r.csatKey;
     const st = tracked[key];
+    const alreadySaved = st === 'done' || isSaved(r.driverKey, r.csatKey);
     const signDisagree = r.spearman != null && r.withinR != null && Math.sign(r.spearman) !== Math.sign(r.withinR);
     return h('div', { key, style: {
       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6,
@@ -1224,10 +1241,10 @@ function CsatDriversTab({ ds, onTrack }) {
           `pooled ${fmtR(r.pooledR)} · ×vol ${fmtR(r.partialR)}`),
       ),
       h('button', {
-        onClick: () => handleTrack(r), disabled: !!st,
-        style: { padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: `1px solid ${bdr}`, background: 'transparent',
-          color: st === 'done' ? grn : st === 'error' ? red : muted },
-      }, st === 'done' ? '✓ Tracked' : st === 'saving' ? '…' : st === 'error' ? 'Retry' : '★ Track'),
+        onClick: () => handleTrack(r), disabled: alreadySaved || st === 'saving',
+        style: { padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: alreadySaved ? 'default' : 'pointer', border: `1px solid ${bdr}`, background: 'transparent',
+          color: alreadySaved ? grn : st === 'error' ? red : muted },
+      }, alreadySaved ? '✓ Saved' : st === 'saving' ? '…' : st === 'error' ? 'Retry' : '★ Save'),
     );
   };
 
@@ -1238,6 +1255,34 @@ function CsatDriversTab({ ds, onTrack }) {
       'The headline ', h('b', null, 'within-store r'), ' centers each store on its own average first, so a store\'s baseline can\'t masquerade as a driver — it answers ', h('b', null, '"when a store improves X, does its CSAT move?"'), ' ',
       h('b', null, '×vol'), ' is the same relationship after controlling for guest count (kills volume tautologies). ',
       'SMG is ', h('b', null, 'monthly'), ', so samples are thin — tiers are tuned for that, and most findings will start in Watch until more history lands. Association, ', h('b', null, 'not proof of cause'), '.'),
+
+    // Saved-driver KB with decay tracking
+    saved.length > 0 && h('div', { style: { marginBottom: 16, padding: '10px 12px', background: 'rgba(245,188,0,.04)', border: '1px solid rgba(245,188,0,.2)', borderRadius: 8 } },
+      h('div', { style: { fontSize: 11, fontWeight: 700, color: amber, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 } }, `⭐ Saved drivers (${saved.length})`),
+      saved.map(s => {
+        const cur = scan && (scan.results || []).find(r => r.driverKey === s.driverKey && r.csatKey === s.outcomeKey);
+        const curR = cur ? cur.withinR : null;
+        const dd = (curR != null && s.withinR != null) ? +(Math.abs(curR) - Math.abs(s.withinR)).toFixed(2) : null;
+        const decay = dd == null ? null : dd <= -0.1 ? { t: '▼ weakened', c: red } : dd >= 0.1 ? { t: '▲ stronger', c: grn } : { t: '— stable', c: muted };
+        const savedDate = (s.history && s.history.length) ? s.history[s.history.length - 1].date : '';
+        return h('div', { key: s.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px', borderTop: `1px solid ${bdr}`, flexWrap: 'wrap' } },
+          h('div', { style: { flex: 1, minWidth: 200 } },
+            h('div', { style: { fontSize: 12, fontWeight: 600, opacity: s.status === 'dismissed' ? 0.5 : 1 } }, `${s.driverLabel} → ${s.outcomeLabel}`),
+            h('div', { style: { fontSize: 10, color: muted } }, `saved r ${fmtR(s.withinR)} · ${s.tier || '—'}${savedDate ? ' · ' + savedDate : ''}`),
+          ),
+          curR != null
+            ? h('div', { style: { textAlign: 'right', minWidth: 84, fontFamily: 'monospace', fontSize: 11 } },
+                `now ${fmtR(curR)}`, decay && h('div', { style: { fontSize: 9, color: decay.c } }, decay.t))
+            : h('span', { style: { fontSize: 9, color: muted } }, 'run scan to check'),
+          h('div', { style: { display: 'flex', gap: 3 } },
+            ['watching', 'confirmed', 'dismissed'].map(stt => h('button', { key: stt, onClick: () => setSavedStatus(s, stt),
+              style: { fontSize: 8, padding: '2px 5px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${bdr}`,
+                background: s.status === stt ? (stt === 'confirmed' ? 'rgba(16,185,129,.15)' : stt === 'dismissed' ? 'rgba(255,255,255,.05)' : 'rgba(96,165,250,.15)') : 'transparent',
+                color: s.status === stt ? (stt === 'confirmed' ? grn : stt === 'dismissed' ? muted : blue) : muted } }, stt))),
+          h('button', { onClick: () => removeSaved(s), title: 'Remove', style: { fontSize: 12, padding: '2px 6px', cursor: 'pointer', border: 'none', background: 'transparent', color: muted } }, '✕'),
+        );
+      })
+    ),
 
     // Controls
     h('div', { style: { display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' } },
