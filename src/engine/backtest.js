@@ -3,7 +3,7 @@ import { addD, dKey, dowOf } from '../utils/date.js';
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, DEF_SETTINGS, MODEL_ASSIGNMENT_KEY, STORE_NAMES } from '../constants.js';
 import { forecastDay, getModelAssignment, saveModelOverride, compute6wk, calcOpsF, getDOWTrend,
-  effectivePlusUp, fetchLY, getStoreOrg, getDOWSpecificTrend, getWxAdj } from '../engine/forecast.js';
+  effectivePlusUp, fetchLY, getStoreOrg, getDOWSpecificTrend, getWxAdj, _masgnInvalidate } from '../engine/forecast.js';
 import { TH } from '../utils/fmt.js';
 
 // CALIBRATE STORE — Per-store grid search for optimal forecast params
@@ -341,7 +341,15 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
     }
   }
 
-  try { localStorage.setItem(MODEL_ASSIGNMENT_KEY, JSON.stringify(merged)); _masgnCache=merged; } catch(e) {}
+  // Persist, then invalidate forecast.js's in-memory assignment cache so
+  // getModelAssignment re-reads the fresh winners immediately. (Previously this
+  // did `_masgnCache=merged`, but _masgnCache is module-private to forecast.js and
+  // not imported here — in an ES module that assignment throws a ReferenceError
+  // that the try/catch silently swallowed, leaving the whole app serving STALE /
+  // DEFAULT assignments until a full page reload. That's why a backtest could
+  // report "65 → SIMPLE" while the table and every live forecast still showed AE.)
+  try { localStorage.setItem(MODEL_ASSIGNMENT_KEY, JSON.stringify(merged)); } catch(e) {}
+  _masgnInvalidate();
 
   return { results:allResults, changes, changedCount, runDate:runDateStr };
 }

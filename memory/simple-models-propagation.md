@@ -99,3 +99,42 @@ banner ("Simple sweeps" when it wins ≥60% of scored stores). Tests in `__tests
 **Interpreting it:** if Simple sweeps here → discovery re-validated at the level it was found, and the
 daily panels are simply a harder/different question. If it does NOT sweep here → genuine signal that
 the period-total edge has narrowed; investigate before leaning further on Simple for monthly locks.
+
+## v4.536 — Scoreboard verdict + a real bug it flagged (2026-07-25)
+Ran the Period-Total Scoreboard on production data. Result: **"Mixed — Simple does
+not dominate period totals. Simple won 0/27; median Simple 4.5% vs best-engineered
+2.7%."** Winner tally: **AE 23, EWMA 4, Simple 0, DOW 0, DI 0.**
+
+**Reconciliation (nothing regressed):**
+- Simple ≈ 4.5% median — *matches the v4.483 discovery's ~5%*. Simple is stable.
+- DOW ≈ 11% median — this IS the discovery's "engineered 8–14%". Simple beats it,
+  exactly as found. The discovery's bake-off (`backtestProjectors`) only compared
+  Simple vs the **projector family** (Composite/Momentum/Regression/Ensemble/DOW).
+- **AE (Adaptive Ensemble) ≈ 2.9% median — was NEVER in that bake-off.** The
+  Scoreboard is the first Simple-vs-AE head-to-head on totals, and **AE wins.**
+- Daily vs total, per store (Ada): Simple **4.1% daily** but 2.9% total; AE **8.2%
+  daily** but **2.3% total**. AE's day errors are large but *unbiased → cancel over
+  28 days*; Simple's are small but *biased → accumulate*. So the **daily**
+  Model-Assignment backtest picks Simple; the **totals** metric (what monthly
+  targets care about) picks AE. The daily backtest was steering us wrong for
+  monthly targets — which is exactly why the Scoreboard exists.
+- **AE leak check:** forecastAdaptiveEnsemble's signals (EWMA/LY/momentum/seasonal,
+  ~85%+) all strictly filter `d<date`; forecastAdaptiveDI too. Only asterisk: AE's
+  DI blend params (`mf_ae_params`) are grid-fit on full history — a ~13%-weight
+  in-sample edge, too small to explain the 1.6pt gap. AE's win holds. (Can re-run
+  with fixed default params to make it ironclad.)
+
+**Open decision (do NOT change silently):** for MONTHLY SALES targets, AE looks
+better than median-of-Simple. Smart Targets currently recommends median-of-Simple.
+Pending owner sign-off before shifting the Smart-Targets monthly-sales default
+toward AE. Engineered models were always preserved, so this is additive.
+
+## v4.536 — BUG FIXED: backtest results ignored until reload
+`runModelAssignmentBacktest` ended with `_masgnCache=merged`, but `_masgnCache` is
+module-private to forecast.js and **not imported** into backtest.js → in an ES
+module that assignment throws a ReferenceError the `try/catch` swallowed. Net
+effect: the daily backtest wrote winners to localStorage and showed the "65 →
+SIMPLE" change list, but `getModelAssignment` kept serving **stale/DEFAULT**
+assignments (table + every live forecast showed AE) until a full page reload.
+Fix: import and call the exported `_masgnInvalidate()` after the write. Regression
+test in `__tests__/model-assignment-cache.test.js`.
