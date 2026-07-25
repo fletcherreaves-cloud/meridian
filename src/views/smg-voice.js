@@ -581,8 +581,15 @@ function VoicePerfPanel({ rows, stores }) {
 }
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
+export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClose }) {
   const rows = (ds && ds.smgRows) || [];
+  const [bf, setBf] = React.useState(null); // {running} | {found,comments,saved}
+  const runBackfill = async () => {
+    if (!onBackfillComments || (bf && bf.running)) return;
+    setBf({ running: true });
+    try { setBf(await onBackfillComments()); }
+    catch (e) { setBf({ error: String(e) }); }
+  };
   const fsRows = (ds && ds.smgFullscale) || [];
   const vpRows = voicePerf || [];
   // Default to performance tab if available, then fullscale, then comments
@@ -692,9 +699,16 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onClose }) {
               `${s.name} (${s.rows.length})`
             ))
           ),
+          onBackfillComments && h('button', {
+            onClick: runBackfill, disabled: !!(bf && bf.running),
+            title: 'Pull every comment PDF the poller stored in Supabase, parse, and cloud-persist',
+            style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--amber,#f59e0b)', background: 'rgba(245,158,11,.10)', cursor: (bf && bf.running) ? 'default' : 'pointer', fontSize: 12, color: 'var(--amber,#f59e0b)', fontWeight: 700 }
+          }, bf && bf.running ? '⟳ Backfilling…' : bf && bf.saved != null ? `✓ ${bf.saved} saved` : '⟳ Backfill from storage'),
           h('button', { onClick: onClose, style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' } }, '✕'),
         ),
       ),
+      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 16px', fontSize: 11, color: 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
+        `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`),
 
       // ── Body: Performance tab ────────────────────────────────────────────────
       tab === 'performance' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },

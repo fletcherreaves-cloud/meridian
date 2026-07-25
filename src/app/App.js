@@ -1786,6 +1786,43 @@ function App() {
     } catch {}
   };
 
+  // One-time backfill (v4.546): pull every SMG comment PDF the Gmail poller
+  // already stored in the qsr-reports bucket (keyed by eu###### filename in
+  // pending_reports), parse, and cloud-persist — no manual downloading. Idempotent
+  // (saveSmgComments upserts by dedup_key). Returns {found, comments, saved}.
+  const backfillSmgComments = useCallback(async()=>{
+    if(!supabase) return {found:0,comments:0,saved:0};
+    const {data:recs,error}=await supabase.from('pending_reports')
+      .select('id,filename,storage_path')
+      .ilike('filename','eu065%')
+      .order('uploaded_at',{ascending:true})
+      .limit(3000);
+    if(error||!recs?.length) return {found:0,comments:0,saved:0};
+    const allRows=[];
+    for(const rec of recs){
+      try{
+        const {data:blob,error:dl}=await supabase.storage.from('qsr-reports').download(rec.storage_path);
+        if(dl||!blob) continue;
+        const arr=await blob.arrayBuffer();
+        const file=new File([arr],rec.filename,{type:'application/pdf'});
+        const rows=await parseSMGVoicePDF(file);
+        if(rows.length) allRows.push(...rows.map(r=>({...r,sourceFile:rec.filename})));
+      }catch(e){ /* skip a file that won't parse */ }
+    }
+    let saved=0;
+    if(allRows.length){
+      const res=await saveSmgComments(allRows);
+      saved=res.saved||0;
+      setDs(prev=>{
+        if(!prev) return prev;
+        const seen=new Set((prev.smgRows||[]).map(r=>`${r.loc}|${r.commentDate instanceof Date?r.commentDate.toISOString().slice(0,10):r.commentDate}|${(r.text||'').slice(0,60)}`));
+        const merged=[...(prev.smgRows||[]),...allRows.filter(r=>!seen.has(`${r.loc}|${r.commentDate instanceof Date?r.commentDate.toISOString().slice(0,10):r.commentDate}|${(r.text||'').slice(0,60)}`))];
+        return {...prev,smgRows:merged};
+      });
+    }
+    return {found:recs.length, comments:allRows.length, saved};
+  },[]);
+
   const handleFiles = useCallback(async(files)=>{
     if(!files||!files.length) return;
     const fileArr=Array.from(files);
@@ -2381,7 +2418,7 @@ function App() {
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
     showFOB&&h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>setShowFOB(false)}),
     showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
-    showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],onClose:()=>setShowSMGVoice(false)}),
+    showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 16px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
