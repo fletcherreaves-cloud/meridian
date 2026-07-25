@@ -105,12 +105,14 @@ export function csatTier(r) {
 // "higher OEPE → lower OSAT (hurts CSAT)".
 function _directionText(driverMeta, csatMeta, r) {
   if (r == null) return '';
-  const dir = r >= 0 ? 'higher' : 'lower';
+  // Always phrase as raising the driver; the outcome then moves the SAME way for
+  // r>0 and the OPPOSITE way for r<0. (The old code set both to "lower" for r<0,
+  // which reads as a positive relationship — the exact inverse of the truth.)
   const csatUp = r >= 0 ? 'higher' : 'lower';
   // Is a higher CSAT metric good? OSAT/B2B/Accuracy: higher better; Problem: lower better.
   const csatGood = csatMeta.better === 'higher';
   const helps = (csatUp === 'higher') === csatGood; // does the co-move help CSAT?
-  return `${dir} ${driverMeta.label} → ${csatUp} ${csatMeta.label} (${helps ? 'helps' : 'hurts'})`;
+  return `higher ${driverMeta.label} → ${csatUp} ${csatMeta.label} (${helps ? 'helps' : 'hurts'})`;
 }
 
 // Split points into an earlier and later half by period and check the within-store

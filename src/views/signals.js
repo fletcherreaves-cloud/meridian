@@ -1227,7 +1227,7 @@ function CsatDriversTab({ ds, onTrack }) {
     } },
       h('div', { style: { flex: 1, minWidth: 240 } },
         h('div', { style: { fontSize: 13, fontWeight: 600 } }, r.driverLabel),
-        h('div', { style: { fontSize: 11, color: r.withinR < 0 ? '#f87171' : grn, marginTop: 2 } }, r.direction || ''),
+        h('div', { style: { fontSize: 11, color: /\(helps\)/.test(r.direction || '') ? grn : '#f87171', marginTop: 2 } }, r.direction || ''),
         h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } },
           `${r.driverCat} · n=${r.n} · effN=${r.effN} · ${r.locsUsed} stores · q=${fmtQ(r.qValue)}`),
       ),

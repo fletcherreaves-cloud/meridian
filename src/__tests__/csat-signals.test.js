@@ -86,8 +86,9 @@ describe('scanCsatDrivers', () => {
     // Survives the volume partial and lands in an actionable tier.
     expect(oepe.partialR).not.toBeNull();
     expect(['strong', 'slam-dunk']).toContain(oepe.tier);
-    // Direction text names the hurt-to-CSAT framing.
-    expect(oepe.direction).toMatch(/OEPE/);
+    // Direction text: negative within-r reads "higher X → lower CSAT (hurts)".
+    expect(oepe.direction).toMatch(/higher .*OEPE.*→ lower .*OSAT/i);
+    expect(oepe.direction).toMatch(/hurts/);
   });
 
   it('drops zero-variance drivers instead of emitting bogus correlations', () => {
