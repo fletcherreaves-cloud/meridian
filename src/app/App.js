@@ -209,9 +209,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.532';
+const MERIDIAN_VERSION    = '4.533';
 const MERIDIAN_BUILD_DATE = '2026-07-25';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.533', date:'2026-07-25', changes:[
+    'Signals can now correlate against WEATHER and DAY-OF-WEEK, not just business metrics. The auto-pulled weather (high/low/avg temp, rainfall, wind) is now a metric group in the Scanner and Signal Lab — so "warmer days → more sales?" or "rain → drive-thru mix" surface automatically. Rainfall correctly keeps its dry (zero) days so it correlates real weather, not just rainy ones.',
+    'New "Calendar" factors — Weekend, Friday, Monday (0/1 flags per day) — let you correlate the common-sense weekly patterns: does this store actually run hotter on weekends? Is there a Friday lift? (Friday is broken out on purpose as the anchor for the eventual Filet-O-Fish-Fridays product-mix check.) Four new seeded signals ship on: Weekend→Sales, High Temp→Sales, Rainfall→Guests, Friday→Sales.',
+    'Under the hood: temperature metrics are concept-grouped (high/low/avg won\'t clutter the scanner by "correlating" with each other), and two calendar factors never pair with each other — every cross-relationship to real business metrics still surfaces, with the same effect-size + false-discovery guardrails as before.',
+  ]},
   {version:'4.532', date:'2026-07-25', changes:[
     'Simple Models are now first-class across the whole forecasting engine — not just Smart Targets. The trailing-average family that beat every engineered model on store totals (T3M/T6W/T3W, the "simple wins" finding) is now a selectable forecast model ("✨ Simple") everywhere forecasts are produced: Monthly Projections, the forecast table, Forecast Accuracy, Proj-vs-Actuals, and Model Assignment. Under the hood it reuses the exact same proven math as Smart Targets (one implementation, not a copy).',
     'How it works day-to-day: Simple takes the store\'s robust trailing daily rate (3-month / 6-week / 3-week blend, most weight on recent, outlier days dropped) and shapes it to the weekday — so a single day still respects Saturday-vs-Tuesday, while a full month sums back to the exact trailing method that won. It reads only data BEFORE the day it forecasts (strictly leak-free), so any backtest win is real.',

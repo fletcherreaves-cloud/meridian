@@ -145,7 +145,47 @@ export const METRIC_CATEGORIES = [
       { key: 'qaNeedHrs',    label: 'Needed Labor Hrs · cloud',  source: 'qsrActSummaryRows', field: 'needHrs',  granularity: ['daily','monthly'], better: null,     unit: 'hrs', aggregate: 'sum' },
     ],
   },
+  // ── Weather (auto — Open-Meteo → weatherRows) ───────────────────────────────
+  // Daily station weather per store. Lets the Scanner surface weather↔sales/traffic
+  // relationships (Notes 28 #3). Temps drop 0 as missing (0°F never happens in
+  // FL/OK); rain keeps 0 (a real "no-rain" day — dropping it would only correlate
+  // rainy days, which is exactly the wrong thing to do).
+  {
+    key: 'weather', label: 'Weather', color: '#7dd3fc',
+    metrics: [
+      { key: 'wxTmax', label: 'High Temp (°F)',   source: 'weatherRows', field: 'tmax', granularity: ['daily','monthly'], better: null, unit: '°F' },
+      { key: 'wxTmin', label: 'Low Temp (°F)',    source: 'weatherRows', field: 'tmin', granularity: ['daily','monthly'], better: null, unit: '°F' },
+      { key: 'wxTavg', label: 'Avg Temp (°F)',    source: 'weatherRows', field: 'davg', granularity: ['daily','monthly'], better: null, unit: '°F' },
+      { key: 'wxRain', label: 'Rainfall (in)',    source: 'weatherRows', field: 'rain', granularity: ['daily','monthly'], better: null, unit: 'in', allowZero: true },
+      { key: 'wxWind', label: 'Wind Speed (mph)', source: 'weatherRows', field: 'wspd', granularity: ['daily','monthly'], better: null, unit: 'mph' },
+    ],
+  },
+  // ── Calendar (synthesized from the date — no source table) ───────────────────
+  // Day-of-week / calendar factors so common-sense patterns surface in the Scanner
+  // and Signal Lab (Notes 28 #4), not just raw metric pairs. Each is a 0/1 flag per
+  // (loc, date), so a Pearson vs sales/traffic reads as the day's lift (point-
+  // biserial). Friday is broken out on purpose — the Filet-O-Fish-Fridays anchor
+  // for the eventual product-mix correlation (Notes 28 #5). Daily-only: a weekend
+  // flag averaged over a month is ~constant and meaningless.
+  {
+    key: 'calendar', label: 'Calendar', color: '#fbbf24',
+    metrics: [
+      { key: 'calWeekend', label: 'Weekend (Sat/Sun)', source: '__calendar', field: 'weekend', granularity: ['daily'], better: null, unit: 'flag', allowZero: true },
+      { key: 'calFri',     label: 'Friday',            source: '__calendar', field: 'friday',  granularity: ['daily'], better: null, unit: 'flag', allowZero: true },
+      { key: 'calMon',     label: 'Monday',            source: '__calendar', field: 'monday',  granularity: ['daily'], better: null, unit: 'flag', allowZero: true },
+    ],
+  },
 ];
+
+// Calendar field synthesizers (date → 0/1 flag). Keyed by the metric's `field`.
+const CAL_FIELDS = {
+  weekend: d => (d.getDay() === 0 || d.getDay() === 6) ? 1 : 0,
+  friday:  d => d.getDay() === 5 ? 1 : 0,
+  monday:  d => d.getDay() === 1 ? 1 : 0,
+};
+// Daily-grained real sources whose (loc, date) coverage defines the universe a
+// calendar metric is generated over, so it intersects cleanly with any metric.
+const _CAL_SRC = ['laborRows','opsRows','ctrlRows','glimpseRows','salesLedgerRows','qsrActSummaryRows','cashRows','weatherRows'];
 
 // Flat lookup by key
 export const METRIC_FLAT = {};
@@ -187,6 +227,9 @@ const METRIC_CONCEPT = {
   cashlessRefCnt: 'cashless_ref', cashlessRefAmt: 'cashless_ref', csCashlessRefCnt: 'cashless_ref', csCashlessRefAmt: 'cashless_ref',
   tRedBPct: 'tred_before', tRedBCnt: 'tred_before',
   tRedAPct: 'tred_after', tRedACnt: 'tred_after',
+  // temperature — high/low/avg all measure the same thing (r≈0.9 among themselves);
+  // group so they never pair with each other, but still pair with everything else.
+  wxTmax: 'temp', wxTmin: 'temp', wxTavg: 'temp',
 };
 // The concept for a metric key (defaults to the key itself when ungrouped).
 export function metricConcept(key) { return METRIC_CONCEPT[key] || key; }
@@ -205,11 +248,43 @@ function _smgDate(r) { return new Date(r.year, (r.month||1)-1, 1); }
 
 // ── Extraction ────────────────────────────────────────────────────────────────
 // Returns [{loc, date, value}] for a given metric key, ds, granularity, optional scopeLoc
+// The (loc, date) universe a calendar metric is synthesized over — the union of
+// days present across the real daily streams, deduped, optionally scoped to one loc.
+function _calendarUniverse(ds, scopeLoc) {
+  const seen = new Set(); const out = [];
+  const scope = scopeLoc ? _normLoc(scopeLoc) : null;
+  for (const key of _CAL_SRC) {
+    const src = ds[key];
+    if (!src || !src.length) continue;
+    for (const r of src) {
+      if (!r.date) continue;
+      const loc = _normLoc(r.loc);
+      if (scope && loc !== scope) continue;
+      const dt = r.date instanceof Date ? r.date : new Date(String(r.date));
+      if (isNaN(+dt)) continue;
+      const k = loc + '_' + _dKey(dt);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ loc, date: dt });
+    }
+  }
+  return out;
+}
+
 export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
   const meta = findMetric(metricKey);
   if (!meta) return [];
   const field = meta.field;
   const altField = meta.altField;
+
+  // Calendar metrics have no source table — synthesize a 0/1 flag per (loc, date).
+  if (meta.source === '__calendar') {
+    if (granularity !== 'daily') return [];
+    const fn = CAL_FIELDS[field];
+    if (!fn) return [];
+    return _calendarUniverse(ds, scopeLoc).map(u => ({ loc: u.loc, date: u.date, value: fn(u.date) }));
+  }
+
   const src = ds[meta.source] || [];
   const rows = scopeLoc ? src.filter(r => _normLoc(r.loc) === _normLoc(scopeLoc)) : src;
 
@@ -224,7 +299,9 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
       .filter(r => r.date)
       .flatMap(r => {
         const v = r[field] != null ? r[field] : (altField ? r[altField] : null);
-        if (v == null || isNaN(v) || v === 0) return [];
+        // Drop 0 as a missing-data proxy — EXCEPT where 0 is a legitimate value
+        // (rainfall on a dry day, a calendar flag that's off), flagged allowZero.
+        if (v == null || isNaN(v) || (v === 0 && !meta.allowZero)) return [];
         return [{ loc: _normLoc(r.loc), date: r.date, value: v }];
       });
   }
@@ -508,6 +585,9 @@ export function scanAllPairs(ds, opts = {}) {
       // Skip same-concept pairs (identical quantity from another source, or the
       // same event as count/$/%) — those are tautologies, not discoveries.
       if (metricConcept(a) === metricConcept(b)) continue;
+      // Skip calendar×calendar (weekend vs Friday etc.) — both are date-derived,
+      // correlating them says nothing about the business.
+      if (findMetric(a).category === 'calendar' && findMetric(b).category === 'calendar') continue;
       const ma = valMap[a], mb = valMap[b];
       // Intersect on shared loc_period keys; iterate the smaller map.
       const iter = Object.keys(ma).length <= Object.keys(mb).length ? ma : mb;
@@ -564,4 +644,8 @@ export const SEEDED_SIGNALS = [
   { id: 'seed-gc-sales',    name: 'Guest Count → Net Sales',          xMetric: 'gc',       yMetric: 'sales',     granularity: 'daily',   seeded: true, rationale: 'Sanity anchor — traffic should strongly track sales; a weak r flags a check-average story.' },
   { id: 'seed-promo-gc',    name: 'Promo % → Guest Count',            xMetric: 'promoPct', yMetric: 'gc',        granularity: 'daily',   seeded: true, rationale: 'Are promotions actually pulling traffic in?' },
   { id: 'seed-fob-base',    name: 'FOB % → Base Food %',              xMetric: 'fobPct',   yMetric: 'baseFoodPct',granularity:'monthly', seeded: true, rationale: 'How much of food-over-base is driven by base food cost vs controllable waste.' },
+  { id: 'seed-weekend-sales',name:'Weekend → Net Sales',              xMetric: 'calWeekend',yMetric: 'sales',    granularity: 'daily',   seeded: true, rationale: 'The obvious one — do Sat/Sun run hotter? A weak or negative r on a given store is itself a flag.' },
+  { id: 'seed-temp-sales',  name: 'High Temp → Net Sales',            xMetric: 'wxTmax',   yMetric: 'sales',     granularity: 'daily',   seeded: true, rationale: 'Does warmer weather move the top line? Watch for the divergent Spearman flag — the effect is often nonlinear.' },
+  { id: 'seed-rain-gc',     name: 'Rainfall → Guest Count',           xMetric: 'wxRain',   yMetric: 'gc',        granularity: 'daily',   seeded: true, rationale: 'Rain days vs traffic — does weather pull guests, and does the drive-thru pick up the slack?' },
+  { id: 'seed-fri-sales',   name: 'Friday → Net Sales',               xMetric: 'calFri',   yMetric: 'sales',     granularity: 'daily',   seeded: true, rationale: 'Friday lift — the anchor for the eventual Filet-O-Fish-Fridays product-mix check.' },
 ];
