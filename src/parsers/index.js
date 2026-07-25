@@ -162,8 +162,13 @@ function detectType(filename, wb){
   const dr=dm?{from:dm[1],to:dm[2]}:null;
   // SMG VOICE Operator Performance Report — must come before the generic 'voice' check below
   if(ext==='pdf'&&/^mcdonalds_voice_operator_performance_\d+/i.test(fn))return{type:'voice-performance',label:'SMG VOICE Performance Report',dr,confidence:'high'};
-  // SMG VOICE Customer Comment Report (PDF filename pattern: eu065119100...)
-  if(ext==='pdf'&&/^eu\d{10,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
+  // SMG VOICE reports share the eu###### filename prefix — the Customer Comment
+  // report (16 digits, e.g. eu0651191000015842) AND the manually-exported Operator
+  // Performance report (6 digits + _N, e.g. eu065119_1). Route BOTH here; the PDF
+  // upload path then content-sniffs (tries the Performance parser first, falls back
+  // to comment). The old /^eu\d{10,}/ missed the 6-digit operator exports, so they
+  // fell through to "Unrecognized PDF" and never loaded.
+  if(ext==='pdf'&&/^eu\d{5,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Report',dr,confidence:'high'};
   if(ext==='pdf'&&(fn.includes('voice')||fn.includes('comment report')||fn.includes('customer comment')))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
   if(ext==='xlsx'&&(fn.includes('fullscale')||fn.includes('full_scale')||fn.includes('full scale')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
   // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph",
