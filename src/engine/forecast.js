@@ -275,6 +275,20 @@ function getForecastWeather(loc, date) {
   return _wxCache[loc+'_'+dKey(date)] || null;
 }
 
+// Auto-first fallback index over the DAR summary (qsrActSummaryRows), lazily built and
+// cached on the ds object. Lets forecast/actual reads fall back to the auto-synced DAR for
+// completed days that never got a manual Operations Report upload (fixes the forecast table's
+// blank current-week Actual / GC columns — Notes 27 #2). Rebuilt automatically when ds changes
+// (setDs makes a new object, so the non-enumerable cache is absent on the new one).
+function _qsrActIdx(ds){
+  if(!ds) return null;
+  if(!ds._qsrActIdx){
+    const idx={};
+    for(const r of (ds.qsrActSummaryRows||[])){ if(!r.loc||!r.date)continue; const k=r.loc+'_'+dKey(r.date); (idx[k]||(idx[k]=[])).push(r); }
+    try{ Object.defineProperty(ds,'_qsrActIdx',{value:idx,enumerable:false,configurable:true}); }catch{ ds._qsrActIdx=idx; }
+  }
+  return ds._qsrActIdx;
+}
 function fetchRow(idx,loc,date,field){
   if(!idx)return field?0:null; // ops/ctrl/weather indices are optional — absent = no row
   const rows=idx[loc+'_'+dKey(date)];
@@ -1277,7 +1291,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(_assignedModel==='ae'){
     const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date);
     if(_aeFcst&&_aeFcst>0){
-      const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})();
+      const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
       const _aeORow=fetchRow(ds.opsIdx,loc,date);const _aeCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
       const _aeIsFuture=date>sodOf(new Date());
       return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:0,varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
@@ -1289,7 +1303,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(_assignedModel==='ewma'){
     const _ewmaFcst=forecastEWMA(_locLaborRows,ds.laborIdx,loc,date);
     if(_ewmaFcst&&_ewmaFcst>0){
-      const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})();
+      const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
       const _ewmaORow=fetchRow(ds.opsIdx,loc,date);const _ewmaCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
       return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:0,varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
         oepe:_ewmaORow?(_ewmaORow.oepe||0):0,tpph:_ewmaCtrlRow?(_ewmaCtrlRow.tpph||0):0,labor:_ewmaCtrlRow?(_ewmaCtrlRow.laborPct||0):0,
@@ -1376,15 +1390,16 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   const forecast = Math.round(lyAdjH * opsFactor * (1+wAdj) * (1+trendFactor) * (1+_evFactor) * (1+_plusFrac));
   const isHol = !!holidayInfo;
   if(settings.cascade&&isFuture&&casc)casc[loc+'_'+dKey(date)]=forecast;
-  const actual=!isFuture?fetchRow(ds.laborIdx,loc,date,'sales'):0;
+  // Auto-first: manual Operations Report actual, else the auto-synced DAR (qsrActSummaryRows).
+  const actual=!isFuture?(fetchRow(ds.laborIdx,loc,date,'sales')||fetchRow(_qsrActIdx(ds),loc,date,'sales')):0;
   const goal=lyAdjH*(1+(t.tGrowth||.05));
   const varPct=actual>0?(actual-forecast)/actual:null;
   const pass=varPct!==null?Math.abs(varPct)<=(settings.tolerance||5)/100:null;
   const oRow=fetchRow(ds.opsIdx,loc,date);const cRow=fetchRow(ds.ctrlIdx,loc,date);
   // Daypart forecast (from 3 Peaks data if available)
   const dayparts=isFuture?forecastDayparts(loc,date,ds,settings):null;
-  const actualGC = !isFuture ? fetchRow(ds.laborIdx, loc, date, 'gc') : 0;
-  const lyGC     = fetchRow(ds.laborIdx, loc, addD(date,-364), 'gc') || 0;
+  const actualGC = !isFuture ? (fetchRow(ds.laborIdx, loc, date, 'gc')||fetchRow(_qsrActIdx(ds),loc,date,'gc')) : 0;
+  const lyGC     = fetchRow(ds.laborIdx, loc, addD(date,-364), 'gc') || fetchRow(_qsrActIdx(ds),loc,addD(date,-364),'gc') || 0;
   const forecastGC = lyGC>0 ? Math.round(lyGC*(1+(t.tGrowth||.05))*(opsFactor)) : 0;
   // ── Enhancement 2: GC × AvgCheck parallel model (must be after lyGC is declared) ─
   const lyAvgCheck = lyGC > 0 && lyRaw > 0 ? lyRaw / lyGC : 0;

@@ -209,9 +209,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.529';
-const MERIDIAN_BUILD_DATE = '2026-07-24';
+const MERIDIAN_VERSION    = '4.530';
+const MERIDIAN_BUILD_DATE = '2026-07-25';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.530', date:'2026-07-25', changes:[
+    'Fix: the forecast table (District View + Store Analytics) left the current week\'s completed-day Actual and GC columns blank. The forecast engine read actuals from manual Operations Report uploads only, so recent days that had only auto-synced (DAR) data showed nothing. Actuals + guest counts now fall back to the auto DAR when a manual upload isn\'t present — so completed days of the current week fill in (Actual, GC, and the AI-vs-Actual variance) as the daily sync lands. (OEPE / TPPH / Labor% for past days still come from the Ops/Controls uploads.)',
+  ]},
   {version:'4.529', date:'2026-07-24', changes:[
     'Under the hood: the "current vs last year" math (auto-first sourcing + matched-day comparison) is now ONE shared helper (engine/vs-ly.js) instead of being re-written separately in each panel — which is exactly why the vs-LY bug kept reappearing in different places. Org Summary and Rankings now call the shared helper; future changes are global. Covered by its own tests.',
   ]},
