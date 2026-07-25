@@ -2403,7 +2403,12 @@ function App() {
       }),
 
       // Hidden file input wired to the sidebar Load button
-      h('input',{id:'file-input-main',type:'file',multiple:true,accept:'.xlsx,.xlsm,.xls,.csv',
+      // accept covers every type handleFiles routes: spreadsheets, SMG/VOICE
+      // PDFs (comments / performance / daypart), and graded-visit HTML. iOS's
+      // Files picker HARD-restricts to this list (no "All files" override), so
+      // omitting .pdf silently greys out every PDF on iPhone.
+      h('input',{id:'file-input-main',type:'file',multiple:true,
+        accept:'.xlsx,.xlsm,.xls,.csv,.pdf,.html,.htm,application/pdf,text/html',
         style:{display:'none'},
         onChange:e=>handleFiles(Array.from(e.target.files||[]))}),
       // Hidden file input for session restore
