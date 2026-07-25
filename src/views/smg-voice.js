@@ -707,8 +707,9 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
           h('button', { onClick: onClose, style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' } }, '✕'),
         ),
       ),
-      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 16px', fontSize: 11, color: 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
-        `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`),
+      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 16px', fontSize: 11, color: bf.error ? '#f87171' : 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
+        `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`,
+        bf.error ? ` · save error: ${bf.error}` : ''),
 
       // ── Body: Performance tab ────────────────────────────────────────────────
       tab === 'performance' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },

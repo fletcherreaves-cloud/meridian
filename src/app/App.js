@@ -1809,10 +1809,10 @@ function App() {
         if(rows.length) allRows.push(...rows.map(r=>({...r,sourceFile:rec.filename})));
       }catch(e){ /* skip a file that won't parse */ }
     }
-    let saved=0;
+    let saved=0, saveErr=null;
     if(allRows.length){
       const res=await saveSmgComments(allRows);
-      saved=res.saved||0;
+      saved=res.saved||0; saveErr=res.error||null;
       setDs(prev=>{
         if(!prev) return prev;
         const seen=new Set((prev.smgRows||[]).map(r=>`${r.loc}|${r.commentDate instanceof Date?r.commentDate.toISOString().slice(0,10):r.commentDate}|${(r.text||'').slice(0,60)}`));
@@ -1820,7 +1820,7 @@ function App() {
         return {...prev,smgRows:merged};
       });
     }
-    return {found:recs.length, comments:allRows.length, saved};
+    return {found:recs.length, comments:allRows.length, saved, error:saveErr};
   },[]);
 
   const handleFiles = useCallback(async(files)=>{

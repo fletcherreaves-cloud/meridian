@@ -1169,23 +1169,40 @@ function _cmtISO(d) {
 
 export async function saveSmgComments(rows) {
   if (!supabase || !rows?.length) return { saved: 0 };
-  const upsert = rows.map(r => {
-    const cd = _cmtISO(r.commentDate) || _cmtISO(r.visitDate);
+  // Build rows DEDUPED by dedup_key within this batch. A Postgres upsert throws
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time" when the same
+  // key appears twice in one call — which happens constantly with generic comments
+  // ("Friendly service"). That single throw nukes the whole batch → 0 saved. So we
+  // collapse in-batch duplicates here, enrich the key with visit_date + score to
+  // avoid merging genuinely distinct comments, and chunk so one bad slice can't
+  // sink everything.
+  const byKey = new Map();
+  for (const r of rows) {
     const txt = (r.text || '').trim();
-    return {
+    if (!txt) continue;
+    const cd = _cmtISO(r.commentDate) || _cmtISO(r.visitDate);
+    const vd = _cmtISO(r.visitDate);
+    const sc = (typeof r.score === 'number' && Number.isFinite(r.score)) ? r.score : null;
+    const dedup_key = `${String(r.loc ?? r.nsn ?? '')}|${cd || ''}|${vd || ''}|${sc ?? ''}|${txt.slice(0, 140)}`;
+    if (byKey.has(dedup_key)) continue;
+    byKey.set(dedup_key, {
       loc: String(r.loc ?? r.nsn ?? ''), store_name: r.storeName || null,
-      comment_date: cd, visit_date: _cmtISO(r.visitDate), nsn: r.nsn || null,
-      satisfaction_label: r.satisfactionLabel || null,
-      score: (typeof r.score === 'number' ? r.score : null),
+      comment_date: cd, visit_date: vd, nsn: r.nsn || null,
+      satisfaction_label: r.satisfactionLabel || null, score: sc,
       text: txt, report_start: _cmtISO(r.reportStart), report_end: _cmtISO(r.reportEnd),
-      source_file: r.sourceFile || r.source_file || null,
-      dedup_key: `${String(r.loc ?? r.nsn ?? '')}|${cd || ''}|${txt.slice(0, 160)}`,
-    };
-  }).filter(r => r.text);
+      source_file: r.sourceFile || r.source_file || null, dedup_key,
+    });
+  }
+  const upsert = [...byKey.values()];
   if (!upsert.length) return { saved: 0 };
-  const { error } = await supabase.from('smg_comments').upsert(upsert, { onConflict: 'dedup_key' });
-  if (error) { console.warn('[smg_comments] save error:', error); return { saved: 0, error: error.message }; }
-  return { saved: upsert.length };
+  let saved = 0, lastErr = null;
+  for (let i = 0; i < upsert.length; i += 500) {
+    const chunk = upsert.slice(i, i + 500);
+    const { error } = await supabase.from('smg_comments').upsert(chunk, { onConflict: 'dedup_key' });
+    if (error) { lastErr = error; console.warn('[smg_comments] save error:', error); }
+    else saved += chunk.length;
+  }
+  return { saved, error: lastErr ? lastErr.message : null };
 }
 
 export async function loadSmgComments({ daysBack = 365 } = {}) {
