@@ -520,8 +520,37 @@ create table if not exists public.smg_voice_performance (
   snack_wrap_b2b  smallint,               -- Snack Wrap Quality B2B % (NULL = N/A)
   source_file     text,
   created_at      timestamptz default now(),
-  unique(period, report_type, operator_id, loc)
+  -- Identity is the STORE within a period, not the operator: a store is covered by
+  -- several overlapping operator reports and a re-upload under a different filename
+  -- carries a different operator_id. operator_* is descriptive metadata only.
+  unique(period, report_type, loc)
 );
+
+-- ── Migration (safe to re-run): re-key existing table from
+-- (period, report_type, operator_id, loc) → (period, report_type, loc).
+-- 1) Collapse duplicate rows, keeping the most-populated per store (tie → newest).
+delete from public.smg_voice_performance where id in (
+  select id from (
+    select id, row_number() over (
+      partition by period, report_type, loc
+      order by (
+        (dt_sat is not null)::int + (dt_dissat is not null)::int +
+        (ir_sat is not null)::int + (ir_dissat is not null)::int +
+        (accuracy_b2b is not null)::int + (quality_b2b is not null)::int +
+        (fries_b2b is not null)::int + (snack_wrap_b2b is not null)::int
+      ) desc, id desc
+    ) as rn
+    from public.smg_voice_performance
+  ) t where t.rn > 1
+);
+-- 2) Swap the unique constraint.
+alter table public.smg_voice_performance
+  drop constraint if exists smg_voice_performance_period_report_type_operator_id_loc_key;
+do $$ begin
+  alter table public.smg_voice_performance
+    add constraint smg_voice_performance_period_report_type_loc_key
+    unique (period, report_type, loc);
+exception when duplicate_table then null; when duplicate_object then null; end $$;
 
 alter table public.smg_voice_performance enable row level security;
 

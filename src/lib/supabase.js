@@ -258,16 +258,30 @@ export async function loadSmgFullscale({ year, month } = {}) {
 // rows: array of { period, report_type, operator_id, operator_name, loc, loc_name,
 //                  dt_sat, dt_dissat, ir_sat, ir_dissat, accuracy_b2b, quality_b2b,
 //                  fries_b2b, snack_wrap_b2b, source_file }
+// Row identity = (period, report_type, loc). operator_* is metadata only.
+const _VP_METRIC_KEYS = ['dt_sat','dt_dissat','ir_sat','ir_dissat','accuracy_b2b','quality_b2b','fries_b2b','snack_wrap_b2b'];
+const _vpFill = r => _VP_METRIC_KEYS.reduce((n, k) => n + (r[k] != null ? 1 : 0), 0);
+
 export async function saveVoicePerf(rows) {
   if (!supabase || !rows.length) return { saved: 0, errors: [] };
-  const upsert = rows
-    .filter(r => r.period && r.report_type && r.operator_id && r.loc)
-    .map(r => ({
+  // Identity is (period, report_type, loc) — the STORE, not the operator. A store
+  // is covered by several overlapping operator reports and a re-upload under a
+  // different filename yields a different operator_id; keying on operator_id let
+  // those land as duplicate rows. Org grouping is derived from loc via our own
+  // wiring, so operator_id/name are kept only as descriptive metadata.
+  // Collapse the batch to one row per (period, report_type, loc), keeping the
+  // most-populated (a Postgres upsert also can't touch the same key twice).
+  const byKey = {};
+  for (const r of rows) {
+    if (!r.period || !r.report_type || !r.loc) continue;
+    const loc = String(r.loc);
+    const k = `${r.period}|${r.report_type}|${loc}`;
+    const cand = {
       period:          r.period,
       report_type:     r.report_type,
-      operator_id:     r.operator_id,
+      operator_id:     r.operator_id || null,
       operator_name:   r.operator_name || null,
-      loc:             String(r.loc),
+      loc,
       loc_name:        r.loc_name || null,
       dt_sat:          r.dt_sat ?? null,
       dt_dissat:       r.dt_dissat ?? null,
@@ -278,11 +292,14 @@ export async function saveVoicePerf(rows) {
       fries_b2b:       r.fries_b2b ?? null,
       snack_wrap_b2b:  r.snack_wrap_b2b ?? null,
       source_file:     r.source_file || null,
-    }));
+    };
+    if (!byKey[k] || _vpFill(cand) > _vpFill(byKey[k])) byKey[k] = cand;
+  }
+  const upsert = Object.values(byKey);
   if (!upsert.length) return { saved: 0, errors: [] };
   const { error } = await supabase
     .from('smg_voice_performance')
-    .upsert(upsert, { onConflict: 'period,report_type,operator_id,loc' });
+    .upsert(upsert, { onConflict: 'period,report_type,loc' });
   if (error) { console.warn('[voice_perf] save error:', error); return { saved: 0, errors: [error.message] }; }
   console.log(`[voice_perf] saved ${upsert.length} rows`);
   return { saved: upsert.length, errors: [] };
@@ -1193,12 +1210,31 @@ export async function saveSmgComments(rows) {
       source_file: r.sourceFile || r.source_file || null, dedup_key,
     });
   }
-  const upsert = [...byKey.values()];
+  let upsert = [...byKey.values()];
   if (!upsert.length) return { saved: 0 };
+
+  // Constraint-independent idempotency: rather than rely on `onConflict:'dedup_key'`
+  // (which fails outright if the table was created without the UNIQUE index and
+  // silently zeroes the whole save), fetch the dedup_keys already in the table,
+  // drop the ones we already have, and plain-INSERT the rest. Re-uploads stay
+  // idempotent whether or not the unique index exists.
+  try {
+    const existing = new Set();
+    const seen = await fetchAll((from, to) => supabase
+      .from('smg_comments').select('dedup_key').range(from, to));
+    for (const r of (seen || [])) if (r && r.dedup_key) existing.add(r.dedup_key);
+    if (existing.size) upsert = upsert.filter(r => !existing.has(r.dedup_key));
+  } catch (e) {
+    // If the pre-fetch fails, fall through to insert and let the constraint (if
+    // any) dedupe — better to attempt the save than abort.
+    console.warn('[smg_comments] existing-key prefetch failed:', e);
+  }
+  if (!upsert.length) return { saved: 0, error: null };
+
   let saved = 0, lastErr = null;
   for (let i = 0; i < upsert.length; i += 500) {
     const chunk = upsert.slice(i, i + 500);
-    const { error } = await supabase.from('smg_comments').upsert(chunk, { onConflict: 'dedup_key' });
+    const { error } = await supabase.from('smg_comments').insert(chunk);
     if (error) { lastErr = error; console.warn('[smg_comments] save error:', error); }
     else saved += chunk.length;
   }
