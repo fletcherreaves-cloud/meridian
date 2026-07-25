@@ -11,11 +11,16 @@ metadata:
 ## 1. 🔷 Projections / forecasting — where are we post "Simple Models" discovery?
 - Owner: the T3M/T6W/T3W simple-trailing family beating every engineered model (v4.483) was a
   **huge finding**. Did we propagate it beyond Smart Targets?
-- **STATUS (Claude):** Simple Models are the DEFAULT only in **Smart Targets** (median-of-simple).
-  The broader projection ecosystem (Monthly/Yearly Projections, Forecast Models/Assign, DI
-  Calibration, Forecast Accuracy, LifeLenz Gap, Proj-vs-Actuals) still runs the engineered
-  models. → **Not yet propagated.** This is Notes 26 #6 ("Simple Models across all projection
-  streams") — a real workstream.
+- **STATUS (Claude):** ✅ **DONE (v4.532).** Simple is now a first-class forecast model
+  (`'simple'`) inside the single `forecastDay` engine, so it propagates automatically to every
+  stream that routes through it: Monthly Projections, Forecast Accuracy, Proj-vs-Actuals, and the
+  forecast table. Day-level definition = the robust trailing daily rate (`weightedRecencyProjection`,
+  **reused verbatim from smart-targets.js** — no copy) × a same-DOW shape, strictly pre-`asOf`
+  (leak-free). Added to `MODELS_TO_TEST` so the Model Assignment backtest **competes + re-validates**
+  Simple vs DOW/AE/EWMA/DI per store/horizon; Forecast Accuracy gained a Simple column + district
+  tile; manual per-store override picker gained a SIMPLE button. Yearly Projections already Smart-fed
+  (no change). Engineered models preserved intact (standing directive). Tests in `forecast.test.js`
+  (positive/tagged, DOW-shape, leak-free). See `memory/simple-models-propagation.md`.
 - ⚠️ **Ripple warning (owner):** changing the projection model cascades through Model
   comparisons, accuracy tests, calibration tests, Proj-vs-Actuals, etc. Must **re-run backtests +
   forward tests** to re-validate the theory before/after. Plan the change + the re-validation

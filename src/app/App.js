@@ -209,9 +209,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.531';
+const MERIDIAN_VERSION    = '4.532';
 const MERIDIAN_BUILD_DATE = '2026-07-25';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.532', date:'2026-07-25', changes:[
+    'Simple Models are now first-class across the whole forecasting engine — not just Smart Targets. The trailing-average family that beat every engineered model on store totals (T3M/T6W/T3W, the "simple wins" finding) is now a selectable forecast model ("✨ Simple") everywhere forecasts are produced: Monthly Projections, the forecast table, Forecast Accuracy, Proj-vs-Actuals, and Model Assignment. Under the hood it reuses the exact same proven math as Smart Targets (one implementation, not a copy).',
+    'How it works day-to-day: Simple takes the store\'s robust trailing daily rate (3-month / 6-week / 3-week blend, most weight on recent, outlier days dropped) and shapes it to the weekday — so a single day still respects Saturday-vs-Tuesday, while a full month sums back to the exact trailing method that won. It reads only data BEFORE the day it forecasts (strictly leak-free), so any backtest win is real.',
+    'Re-validation built in (per the ripple warning): the Model Assignment backtest now competes Simple head-to-head against DOW / AE / EWMA / DI on each store\'s own held-out actuals — re-run it and Simple gets auto-assigned wherever it actually wins, engineered models stay assigned where they win. Nothing was removed; every existing model is preserved. Forecast Accuracy adds a "Simple" column (+ district card) so you can see Simple vs AI vs LY MAPE side-by-side, and you can hand-pick Simple per store/horizon in Model Assignment.',
+  ]},
   {version:'4.531', date:'2026-07-25', changes:[
     'Recent-window metrics fill in from the auto streams: OEPE, KVS, Labor %, TPPH and the loss-prevention numbers were showing "—" (or "-100%") on recent periods when a manual Operations Report / Controls upload hadn\'t landed yet. They now fall back to the emailed Daily Glimpse / auto DAR — so Rankings, Org Summary, and the forecast table populate on the current week instead of going blank.',
     'Under the hood (the part that keeps this from ever creeping back): all of that metric sourcing now runs through ONE shared resolver with a per-metric source-priority list — manual first, then auto — instead of each screen reading the raw data its own way. Paired with the shared vs-LY helper from earlier, this is now the single global system for where operating numbers come from; any future data-source change is one edit and every screen benefits.',

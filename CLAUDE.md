@@ -182,7 +182,10 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 **⭐ North-star & roadmap (2026-07-21):** see `memory/vision-and-roadmap.md` — accuracy-integrity system (P0), Smart Targets Model v2 for all metrics (P1), Projections current-month actuals + DT weekly-trend (P1), UX coherence pass + panel scorecard (P2), Graded-Visit Predictor for CFV/RGR/Ecosure + novel composite indices (P3), multi-user then multi-tenant deployment (P4). Standing rules: correct math, never average averages, dollar-weight aggregates, self-audit every report.
 
+**✅ Simple Models propagated engine-wide (v4.532):** the T3M/T6W/T3W trailing family (the Smart-Targets winner) is now a first-class forecast model `'simple'` inside `forecastDay` — so it auto-flows to Monthly Projections / Forecast Accuracy / Proj-vs-Actuals / forecast table, competes in the Model Assignment backtest (`MODELS_TO_TEST`) for per-store re-validation, and appears as a Simple column in Forecast Accuracy + a per-store override. Day-level = robust trailing daily rate (reused `weightedRecencyProjection`) × same-DOW shape, strictly leak-free. Engineered models preserved. See `memory/simple-models-propagation.md`.
+
 **Next candidate areas:**
+- Signals: weather + day-of-week correlations in the Scanner (Notes 28 #3/#4) — next big item.
 - Phase-2 bugs: Projections weekly-view crash on location expand; Signals won't close on mobile; Market Intelligence weather stopped showing.
 - FR: TPPH auto-target calc; Projections vs Actuals. "As of [date]" labels on tiles.
 - SAGE conversation persistence; multi-tenant deployment.
