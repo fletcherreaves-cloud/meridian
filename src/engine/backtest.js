@@ -139,7 +139,11 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
     {id:'monthly', lookbackWeeks:26,  minN:28,  label:'Monthly'},
     {id:'yearly',  lookbackWeeks:null,minN:80,  label:'Yearly'},
   ];
-  const MODELS_TO_TEST = ['dow','ae','ewma','di'];
+  // 'simple' (v4.532): the trailing-average family that won the Smart Targets
+  // period-total backtest, now competing per store/horizon on held-out daily
+  // actuals through the identical forecastDay pipeline. Engineered models stay in
+  // the pool — nothing is removed; the winner is whatever the data picks.
+  const MODELS_TO_TEST = ['dow','ae','ewma','di','simple'];
 
   const now        = new Date();
   const cutoff14   = new Date(now.getTime() - 14*864e5);

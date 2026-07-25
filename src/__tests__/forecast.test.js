@@ -142,6 +142,40 @@ describe('forecastDay — forceModel', () => {
     expect(typeof ewma.forecast).toBe('number');
     expect(typeof ae.forecast).toBe('number');
   });
+
+  it('simple model returns a positive forecast tagged modelUsed=simple', () => {
+    const pastDate = makeDate(10);
+    const r = forecastDay(LOC, pastDate, ds, BASE_SETTINGS, null, null, 'weekly', 'simple');
+    expect(r.forecast).toBeGreaterThan(0);
+    expect(r.modelUsed).toBe('simple');
+  });
+
+  it('simple respects same-DOW shape (Saturday > Sunday given the seeded DOW pattern)', () => {
+    // Seeded DOW_MULT: Sun=0.8, Sat=1.2 — the simple model multiplies the trailing
+    // daily rate by a same-DOW shape, so a Saturday must project higher than a Sunday.
+    const findDow = (dow, minDaysAgo) => {
+      for (let i = minDaysAgo; i < minDaysAgo + 7; i++) {
+        const d = makeDate(i);
+        if (d.getDay() === dow) return d;
+      }
+      return makeDate(minDaysAgo);
+    };
+    const sat = forecastDay(LOC, findDow(6, 8), ds, BASE_SETTINGS, null, null, 'weekly', 'simple');
+    const sun = forecastDay(LOC, findDow(0, 8), ds, BASE_SETTINGS, null, null, 'weekly', 'simple');
+    expect(sat.forecast).toBeGreaterThan(sun.forecast);
+  });
+
+  it('simple is leak-free — projects a completed day without reading its own actual', () => {
+    // The forecast anchors strictly to data BEFORE the date, so injecting an
+    // extreme actual on the target day must not move the forecast.
+    const target = makeDate(20);
+    const before = forecastDay(LOC, target, ds, BASE_SETTINGS, null, null, 'weekly', 'simple').forecast;
+    const dk = target.toISOString().slice(0, 10);
+    const row = ds.laborRows.find(r => r.loc === LOC && r.date.toISOString().slice(0, 10) === dk);
+    if (row) row.sales = 999999; // poison the same-day actual
+    const after = forecastDay(LOC, target, ds, BASE_SETTINGS, null, null, 'weekly', 'simple').forecast;
+    expect(after).toBe(before);
+  });
 });
 
 describe('forecastDay — result shape', () => {

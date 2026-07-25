@@ -3037,6 +3037,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     {key:'ly',  label:'LY Adjusted', col:'#94a3b8', desc:'Pure LY ×holiday adj'},
     {key:'ai',  label:'AI Forecast',  col:'#60a5fa', desc:'Full model: trend+ops+weather+events — or AE/EWMA when assigned (see badge)'},
     {key:'blend',label:'Blend',       col:'#34d399', desc:'Simple avg of LY and AI'},
+    {key:'simple',label:'Simple',     col:'#2dd4bf', desc:'Trailing-average family (T3M/T6W/T3W × same-DOW shape) — the method that won Smart Targets, backtested here on daily actuals'},
     {key:'di',  label:'Dialed-In',    col:'#f5bc00', desc:'DI calibration backtested fresh over this date range'},
   ];
 
@@ -3071,7 +3072,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // trend composite) produced it. Tallied per-row rather than assumed
     // constant per-store, since assignments could in principle change mid-
     // backtest-window even though that's rare in practice.
-    locs.forEach(loc=>{acc[String(loc)]={ly:[],ai:[],blend:[],di:[],qsr:[]};aiModelTally[String(loc)]={};});
+    locs.forEach(loc=>{acc[String(loc)]={ly:[],ai:[],blend:[],simple:[],di:[],qsr:[]};aiModelTally[String(loc)]={};});
     const snapshots=[];
 
     // Pre-fetch QSRSoft daily projections from qsr_daily_activity for the selected window.
@@ -3114,6 +3115,11 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
           if(lyE!=null&&lyE<150){acc[ls].ly.push({v:lyE,dow});snapshots.push({loc:ls,dt:dk,source:'ly',forecast_sales:+f.lyAdj.toFixed(2),actual_sales:+act.toFixed(2),mape:+lyE.toFixed(4)});}
           if(aiE!=null&&aiE<150){acc[ls].ai.push({v:aiE,dow});snapshots.push({loc:ls,dt:dk,source:'ai',forecast_sales:+f.forecast.toFixed(2),actual_sales:+act.toFixed(2),mape:+aiE.toFixed(4)});}
           if(blE!=null&&blE<150){acc[ls].blend.push({v:blE,dow});snapshots.push({loc:ls,dt:dk,source:'blend',forecast_sales:+((f.lyAdj+f.forecast)/2).toFixed(2),actual_sales:+act.toFixed(2),mape:+blE.toFixed(4)});}
+          // Simple model (v4.532) — forced through the identical pipeline via forceModel='simple',
+          // so the trailing-average family competes on the SAME held-out daily actuals as LY/AI/Blend/DI.
+          const fSimple=forecastDay(ls,r.date,ds,{...settings,_userEvents:userEvents},null,t,null,'simple');
+          const spE=(fSimple&&fSimple.forecast>0&&fSimple.modelUsed==='simple')?Math.abs(act-fSimple.forecast)/act*100:null;
+          if(spE!=null&&spE<150){acc[ls].simple.push({v:spE,dow});snapshots.push({loc:ls,dt:dk,source:'simple',forecast_sales:+fSimple.forecast.toFixed(2),actual_sales:+act.toFixed(2),mape:+spE.toFixed(4)});}
           const qsrP=qsrProjLookup[ls]?.[dateKey(r.date)];
           const qsrE=(qsrP!=null&&qsrP>0&&act>0)?Math.abs(act-qsrP)/act*100:null;
           if(qsrE!=null&&qsrE<150){acc[ls].qsr.push({v:qsrE,dow});snapshots.push({loc:ls,dt:dk,source:'qsr',forecast_sales:+qsrP.toFixed(2),actual_sales:+act.toFixed(2),mape:+qsrE.toFixed(4)});}
@@ -3144,7 +3150,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     const byStore={};
     locs.forEach(loc=>{
       const ls=String(loc);
-      const d=acc[ls]||{ly:[],ai:[],blend:[],di:[],qsr:[]};
+      const d=acc[ls]||{ly:[],ai:[],blend:[],simple:[],di:[],qsr:[]};
       // diM now freshly backtested over the selected window (see loop above),
       // not a stale calibration-time snapshot. Falls back to the old static
       // settings.dialedIn[ls] read only if DI was disabled/uncalibrated for
@@ -3155,8 +3161,10 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
       const lyM=avg(d.ly.map(x=>x.v));
       const aiM=avg(d.ai.map(x=>x.v));
       const blM=avg(d.blend.map(x=>x.v));
+      const spM=d.simple.length?avg(d.simple.map(x=>x.v)):null;
       const qsrM=avg(d.qsr.map(x=>x.v));
       const candidates=[['LY Adjusted',lyM],['AI Forecast',aiM],['Blend',blM]];
+      if(spM!=null) candidates.push(['Simple',spM]);
       if(diM!=null) candidates.push(['Dialed-In',diM]);
       const valid=candidates.filter(([,v])=>v!=null);
       const best=valid.length?valid.reduce((a,b)=>a[1]<b[1]?a:b)[0]:'—';
@@ -3177,16 +3185,18 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
         const bestD=cands.length?cands.reduce((a,b)=>a[1]<b[1]?a:b)[0]:'—';
         return{dow,ly:lyD,ai:aiD,blend:blD,best:bestD};
       });
-      byStore[ls]={lyMape:lyM,aiMape:aiM,blendMape:blM,diMape:diM,qsrMape:qsrM,best,dayCount:d.ai.length,dowRows,aiModelUsed};
+      byStore[ls]={lyMape:lyM,aiMape:aiM,blendMape:blM,simpleMape:spM,diMape:diM,qsrMape:qsrM,best,dayCount:d.ai.length,dowRows,aiModelUsed};
     });
 
     // District aggregates
     const allLY=locs.flatMap(l=>(acc[String(l)]?.ly||[]));
     const allAI=locs.flatMap(l=>(acc[String(l)]?.ai||[]));
     const allBL=locs.flatMap(l=>(acc[String(l)]?.blend||[]));
+    const allSP=locs.flatMap(l=>(acc[String(l)]?.simple||[]));
     const allDI=locs.flatMap(l=>(acc[String(l)]?.di||[]));
     const allQSR=locs.flatMap(l=>(acc[String(l)]?.qsr||[]));
     const distQSR=avg(allQSR.map(x=>x.v));
+    const distSP=allSP.length?avg(allSP.map(x=>x.v)):null;
     const distLY=avg(allLY.map(x=>x.v)),distAI=avg(allAI.map(x=>x.v)),distBL=avg(allBL.map(x=>x.v));
     // distDI now aggregated from the SAME live per-row backtest collected in
     // the loop above (allDI), matching exactly how LY/AI/Blend are aggregated
@@ -3201,6 +3211,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
       return diVals.length?avg(diVals):null;
     })();
     const distCands=[['LY Adjusted',distLY],['AI Forecast',distAI],['Blend',distBL]];
+    if(distSP!=null) distCands.push(['Simple',distSP]);
     if(distDI!=null) distCands.push(['Dialed-In',distDI]);
     const distBest=distCands.filter(([,v])=>v!=null).reduce((a,b)=>a[1]<b[1]?a:b,['—',999])[0];
 
@@ -3213,21 +3224,21 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     });
 
     const rl=range.s.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'\u2013'+range.e.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    setResults({byStore,dist:{ly:distLY,ai:distAI,blend:distBL,di:distDI,qsr:distQSR,best:distBest},
+    setResults({byStore,dist:{ly:distLY,ai:distAI,blend:distBL,simple:distSP,di:distDI,qsr:distQSR,best:distBest},
       dowBest,totalDays:rows.length,locCount:locs.length,periodLabel:curP.l,rangeLabel:rl});
     setRunning(false);
   },[selPeriod,selLoc,allLocs,ds,settings,curP,cStart,cEnd]);
 
   // Sorted stores for display
   const sorted=results?[...allLocs.filter(l=>results.byStore[String(l)])].sort((a,b)=>{
-    const get=l=>results.byStore[String(l)]?.[sortCol==='ly'?'lyMape':sortCol==='blend'?'blendMape':sortCol==='di'?'diMape':sortCol==='qsr'?'qsrMape':'aiMape']??999;
+    const get=l=>results.byStore[String(l)]?.[sortCol==='ly'?'lyMape':sortCol==='blend'?'blendMape':sortCol==='simple'?'simpleMape':sortCol==='di'?'diMape':sortCol==='qsr'?'qsrMape':'aiMape']??999;
     return get(a)-get(b);
   }):[];
 
   // Export CSV
   const exportCSV=()=>{
     if(!results) return;
-    const hdr=['Store#','Store Name','Days','LY Adj MAPE','AI Forecast MAPE','AI Model Used','Blend MAPE','Dialed-In MAPE','Sched Proj MAPE (LifeLenz)','Best Model'];
+    const hdr=['Store#','Store Name','Days','LY Adj MAPE','AI Forecast MAPE','AI Model Used','Blend MAPE','Simple MAPE','Dialed-In MAPE','Sched Proj MAPE (LifeLenz)','Best Model'];
     const rows=sorted.map(loc=>{
       const s=results.byStore[String(loc)];
       const nm=sNameC(String(loc));
@@ -3236,6 +3247,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
         s.aiMape!=null?s.aiMape.toFixed(2)+'%':'—',
         s.aiModelUsed&&s.aiModelUsed!=='dow'?(MODEL_CODE_LABELS[s.aiModelUsed]||s.aiModelUsed):'DOW Trend',
         s.blendMape!=null?s.blendMape.toFixed(2)+'%':'—',
+        s.simpleMape!=null?s.simpleMape.toFixed(2)+'%':'—',
         s.diMape!=null?s.diMape.toFixed(2)+'%':'—',
         s.qsrMape!=null?s.qsrMape.toFixed(2)+'%':'—',
         s.best];
@@ -3370,6 +3382,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             {label:'AI Forecast MAPE',    val:mapeFmt(results.dist.ai),  col:mapeCol(results.dist.ai),   bg:results.dist.ai<5?'rgba(16,185,129,.06)':results.dist.ai<8?'rgba(245,158,11,.06)':'rgba(239,68,68,.06)'},
             {label:'LY Adjusted MAPE',    val:mapeFmt(results.dist.ly),  col:mapeCol(results.dist.ly),   bg:'rgba(255,255,255,.02)'},
             {label:'Blend MAPE',          val:mapeFmt(results.dist.blend),col:mapeCol(results.dist.blend),bg:'rgba(255,255,255,.02)'},
+            results.dist.simple!=null&&{label:'Simple MAPE',val:mapeFmt(results.dist.simple),col:mapeCol(results.dist.simple),bg:'rgba(45,212,191,.05)',sub:'vs AI: '+(results.dist.ai!=null&&results.dist.simple!=null?(results.dist.simple-results.dist.ai>0?'+':'')+((results.dist.simple-results.dist.ai)).toFixed(1)+'pp':'—')},
             results.dist.di!=null&&{label:'Dialed-In MAPE',val:mapeFmt(results.dist.di),col:mapeCol(results.dist.di),bg:'rgba(245,188,0,.04)'},
             results.dist.qsr!=null&&{label:'Sched Proj MAPE (LifeLenz)',val:mapeFmt(results.dist.qsr),col:mapeCol(results.dist.qsr),bg:'rgba(148,163,184,.04)',sub:'vs Meridian AI: '+(results.dist.ai!=null&&results.dist.qsr!=null?(results.dist.qsr-results.dist.ai>0?'+':'')+((results.dist.qsr-results.dist.ai)).toFixed(1)+'pp':'—')},
             {label:'Period / Records',val:results.periodLabel,sub:results.rangeLabel+' · '+results.totalDays.toLocaleString()+' days',col:'#a5b4fc',bg:'rgba(165,180,252,.04)'},
@@ -3392,7 +3405,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             span(null,'Click column headers to sort · Best model per row highlighted in gold'),
             div({style:{marginLeft:'auto',display:'flex',gap:6}},
               span(null,'Sort by:'),
-              ...[['ai','AI'],['ly','LY Adj'],['blend','Blend'],['di','DI'],['qsr','Sched']].map(([k,l])=>
+              ...[['ai','AI'],['ly','LY Adj'],['blend','Blend'],['simple','Simple'],['di','DI'],['qsr','Sched']].map(([k,l])=>
                 span({key:k,style:{cursor:'pointer',fontWeight:sortCol===k?700:400,
                   color:sortCol===k?'var(--gold)':'var(--text3)',padding:'0 4px'},
                   onClick:()=>setSortCol(k)},l))
@@ -3412,7 +3425,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             h('tbody',null, sorted.map((loc,i)=>{
               const s=results.byStore[String(loc)];if(!s) return null;
               const nm=sNameC(String(loc));
-              const vals={ly:s.lyMape,ai:s.aiMape,blend:s.blendMape,di:s.diMape};
+              const vals={ly:s.lyMape,ai:s.aiMape,blend:s.blendMape,simple:s.simpleMape,di:s.diMape};
               return tr({key:loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
                 td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--gold)'}},''+nm),
                 td({style:{padding:'5px 8px',textAlign:'center',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},''+s.dayCount),

@@ -182,7 +182,7 @@ const AE_DI_PARAMS = {
   '43701':{w2:0.60,w4:0.25,w6:0.15,alpha:0.35},
 };
 
-const MODEL_CODE_LABELS={'di':'🎯 Dialed-In','ly':'📅 LY Adj','dow':'📊 DOW Trend','ewma':'📈 EWMA','ae':'🤖 Adaptive Ensemble','addi':'🎯 DI+'};
+const MODEL_CODE_LABELS={'di':'🎯 Dialed-In','ly':'📅 LY Adj','dow':'📊 DOW Trend','ewma':'📈 EWMA','ae':'🤖 Adaptive Ensemble','addi':'🎯 DI+','simple':'✨ Simple (T3M/T6W/T3W)'};
 
 
 // ── Store coordinates for weather API (all 27 locations) ─────────────────────

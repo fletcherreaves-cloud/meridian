@@ -417,7 +417,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
     {id:'monthly',l:'Monthly',icon:'🗓',sub:'15th prior'},
     {id:'yearly', l:'Yearly', icon:'📆',sub:'~Dec 1'},
   ];
-  const ML = {di:'🎯 DI',ly:'📅 LY',dow:'📊 DOW',ewma:'📈 EWMA',ae:'🤖 AE',addi:'🎯 DI+'};
+  const ML = {di:'🎯 DI',ly:'📅 LY',dow:'📊 DOW',ewma:'📈 EWMA',ae:'🤖 AE',addi:'🎯 DI+',simple:'✨ Simple'};
   const mc = v=>v==null?'var(--text3)':v<6?'#10b981':v<8?'#34d399':v<10?'#f59e0b':v<14?'#f97316':'#ef4444';
 
   const ovr = React.useMemo(()=>{try{return JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY)||'{}')}catch{return{}}},[tick]);
@@ -596,7 +596,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
                   const isBtResult  = !!(ovrEntry &&  ovrEntry.backtestDate);
                   const m    = asgn.model||'dow';
                   // Model colors: AE=green, EWMA=purple, DI=amber, LY=blue, DOW=violet
-                  const mCol = m==='ae'?'#34d399':m==='ewma'?'#c084fc':m==='di'?'#f59e0b':m==='ly'?'#60a5fa':'#a78bfa';
+                  const mCol = m==='ae'?'#34d399':m==='ewma'?'#c084fc':m==='di'?'#f59e0b':m==='ly'?'#60a5fa':m==='simple'?'#f5bc00':'#a78bfa';
                   // Prefer ref from the live assignment (includes backtest ref), fall back to default
                   const ref  = asgn.ref || (def[hz.id] && def[hz.id].ref) || '';
                   return h('td',{key:hz.id,style:{padding:'8px 8px 3px',textAlign:'center',
@@ -613,11 +613,11 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
                       marginBottom:3,maxWidth:160,margin:'0 auto'}},
                       (ref||'—').slice(0,54)+(ref.length>54?'…':'')),
                     div({style:{display:'flex',gap:3,justifyContent:'center',flexWrap:'wrap'}},
-                      ...(['ae','ewma','di','ly','dow'].filter(opt=>opt!==m).map(opt=>
+                      ...(['simple','ae','ewma','di','ly','dow'].filter(opt=>opt!==m).map(opt=>
                         btn({key:opt,style:{fontSize:'7px',padding:'1px 5px',borderRadius:4,
                           background:'rgba(255,255,255,.05)',border:'.5px solid rgba(255,255,255,.1)',
                           color:'var(--text3)',cursor:'pointer'},onClick:()=>handleOvr(loc,hz.id,opt)},
-                          opt.toUpperCase())
+                          opt==='simple'?'SIMPLE':opt.toUpperCase())
                       )),
                       isManualOvr&&btn({style:{fontSize:'7px',padding:'1px 5px',borderRadius:4,
                         background:'rgba(248,113,113,.1)',border:'.5px solid rgba(248,113,113,.3)',

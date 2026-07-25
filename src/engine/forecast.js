@@ -13,6 +13,7 @@ import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
 import { metricDaily } from './metric-source.js';
+import { weightedRecencyProjection, robustBaseline, _isNum as _stIsNum } from './smart-targets.js';
 
 // ── Model assignment cache  (v4.208 — performance) ──────────────────────────
 // getModelAssignment() is called from forecastDay() itself — the single most
@@ -145,6 +146,59 @@ function forecastEWMA(laborRows, laborIdx, loc, date, alpha){
   const weights=peers.map((_,i)=>alpha*Math.pow(1-alpha,i));
   const tw=weights.reduce((a,b)=>a+b,0);
   return weights.reduce((sum,w,i)=>sum+w*peers[i].v,0)/tw;
+}
+
+// ── Simple trailing-average model (v4.532) ───────────────────────────────────
+// The trailing family that beat every engineered model for period totals in the
+// Smart Targets backtest (v4.483 — T3M/T6W/T3W, simple wins ~5% MAPE vs 8–14%).
+// Propagated here as a first-class day-level forecast so the whole projection
+// ecosystem (Monthly Projections, Forecast Accuracy, Model Assign, Proj-vs-
+// Actuals — all route through forecastDay) can use it and re-validate it via
+// backtest. The daily engine needs weekday granularity that a pure period total
+// doesn't, so: take the robust blended trailing DAILY RATE
+// (weightedRecencyProjection, reused verbatim — one implementation, per the
+// consolidation rule) and multiply by a same-DOW SHAPE. A full month of these
+// sums back to (trailing daily rate × days) — i.e. the winning monthly method —
+// while any single day still respects its weekday. Strictly pre-`asOf` (leak-
+// free), matching the ae/ewma information horizon so any win is credible.
+function _dowShape(series, asOf, dow, days){
+  const end = asOf instanceof Date ? new Date(asOf) : new Date(asOf);
+  if(Number.isNaN(+end)) return 1;
+  const start = new Date(end); start.setDate(start.getDate()-days);
+  const all=[], same=[];
+  for(const r of series||[]){
+    const dt = r.date instanceof Date ? r.date : new Date(r.date);
+    if(Number.isNaN(+dt)) continue;
+    if(dt>=start && dt<end && _stIsNum(r.value)){
+      all.push(r.value);
+      if(dt.getDay()===dow) same.push(r.value);
+    }
+  }
+  if(same.length<2 || all.length<7) return 1;              // too thin to shape → leave flat
+  const allB = robustBaseline(all).baseline, sameB = robustBaseline(same).baseline;
+  if(!(allB>0) || !_stIsNum(sameB)) return 1;
+  // Clamp so a thin same-DOW sample can't blow up (a weekend can legitimately run
+  // ~1.4× a weekday; beyond that is almost certainly noise, not signal).
+  return Math.max(0.5, Math.min(1.8, sameB/allB));
+}
+
+// Returns {sales, gc} or null (thin history → caller falls through to the engineered pipeline).
+function forecastSimple(locLaborRows, loc, date, asOf){
+  const _series = (fld) => (locLaborRows||[])
+    .filter(r=>r && r.date instanceof Date && !r.isPeriodSummary && r[fld]>0)
+    .map(r=>({date:r.date, value:r[fld]}));
+  const sSeries = _series('sales');
+  if(sSeries.length<14) return null;                        // not enough trailing history to be "simple-proven"
+  const wr = weightedRecencyProjection(sSeries, {asOf, targetDays:1});
+  if(!wr || !_stIsNum(wr.dailyRate) || wr.dailyRate<=0) return null;
+  const sales = wr.dailyRate * _dowShape(sSeries, asOf, date.getDay(), 90);
+  let gc = 0;
+  const gSeries = _series('gc');
+  if(gSeries.length>=14){
+    const g = weightedRecencyProjection(gSeries, {asOf, targetDays:1});
+    if(g && _stIsNum(g.dailyRate) && g.dailyRate>0) gc = g.dailyRate * _dowShape(gSeries, asOf, date.getDay(), 90);
+  }
+  return { sales, gc };
 }
 
 // ── Adaptive DI: EWMA-windowed DI blend with per-store calibration ────────────
@@ -1311,6 +1365,24 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
         actualGC:0,forecastGC:0,lyGC:0,noLYData:false,modelUsed:'ewma'};
     }
   }
+  if(_assignedModel==='simple'){
+    // Anchor to the START of `date` (not eDt) so the trailing windows never see the
+    // day being forecast or anything after it — strictly leak-free, so any backtest
+    // win is credible. windowRate normalizes rows to midnight, so a start-of-day
+    // bound cleanly excludes the target day itself.
+    const _sf=forecastSimple(_locLaborRows,loc,date,sodOf(date));
+    if(_sf&&_sf.sales>0){
+      const _sVal=Math.round(_sf.sales);
+      const _sFut=date>sodOf(new Date());
+      const _sAct=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales')):0;
+      const _sActGC=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?(rr[0].gc||0):0;})()||fetchRow(_qsrActIdx(ds),loc,date,'gc')):0;
+      return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_sVal,t4:_sVal,t6:_sVal,
+        actual:_sAct,goal:0,varPct:_sAct>0?(_sAct-_sVal)/_sAct:null,pass:null,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
+        oepe:_sFut?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_sFut?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_sFut?0:(metricDaily(ds,loc,date,'laborPct')||0),
+        actualGC:_sActGC,forecastGC:Math.round(_sf.gc||0),lyGC:0,noLYData:!lyRaw,modelUsed:'simple'};
+    }
+    // thin history → fall through to the engineered dow pipeline below
+  }
   const cal = (_assignedModel==='di'&&_hasDI) ? settings.dialedIn[loc] : null;
   const tw = cal ? {t2:cal.t2,t4:cal.t4||.25,t6:cal.t6} : (settings.trendWeights||{t2:.5,t4:.3,t6:.2});
   const calOpsMult = cal ? cal.opsMult : 1.0;
@@ -1422,7 +1494,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     // fallback to default trend weights when DI was requested/assigned but
     // this store has no calibration on file. Previously only the AE/EWMA
     // short-circuit branches set this; the main pipeline never did.
-    modelUsed: cal ? 'di' : (_assignedModel==='dow' ? 'dow' : _assignedModel)};
+    modelUsed: cal ? 'di' : (_assignedModel==='dow'||_assignedModel==='simple' ? 'dow' : _assignedModel)};
 }
 
 function forecastRange(loc,startDate,endDate,ds,settings){
