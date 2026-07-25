@@ -3,8 +3,110 @@
 // Data source: ds.smgRows[] — parsed from SMG VOICE PDF comment reports
 // Row shape: { loc, storeName, reportStart, reportEnd, commentDate, visitDate, nsn, text, satisfactionLabel, score }
 import * as React from 'react';
+import { INV_ORG_COORDS } from '../constants';
 
 const h = React.createElement;
+
+// ── Location scope + grouping (shared across all three tabs) ─────────────────
+// Standard scope chain per feedback-selector-ui-standard: All → State → Operator
+// → Store. Org data comes from INV_ORG_COORDS (keyed by un-padded loc); VOICE
+// rows carry zero-padded NSNs, so normalize both to the integer form.
+const _normLoc = loc => String(parseInt(loc, 10) || loc);
+const _orgOf   = loc => INV_ORG_COORDS[_normLoc(loc)] || {};
+const STATE_LABEL = { OK: 'Oklahoma', FL: 'Florida' };
+
+// scope = { level: 'all'|'state'|'op'|'store', key }
+function scopeMatch(scope, loc) {
+  if (!scope || scope.level === 'all') return true;
+  const o = _orgOf(loc);
+  if (scope.level === 'state') return o.state === scope.key;
+  if (scope.level === 'op')    return (o.op || 'Other') === scope.key;
+  if (scope.level === 'store') return _normLoc(loc) === _normLoc(scope.key);
+  return true;
+}
+function scopeLabel(scope, nameOf) {
+  if (!scope || scope.level === 'all') return 'All Locations';
+  if (scope.level === 'state') return STATE_LABEL[scope.key] || scope.key;
+  if (scope.level === 'op')    return scope.key;
+  if (scope.level === 'store') return (nameOf && nameOf(scope.key)) || ('Store ' + scope.key);
+  return 'All Locations';
+}
+
+// Pill-style scope bar. `locs` = every loc present in the active tab's data;
+// pills are built only from locs that actually have data so empty groups don't
+// clutter. Emits scope {level,key}.
+function ScopeBar({ locs, scope, setScope, nameOf }) {
+  const present = [...new Set((locs || []).map(_normLoc))];
+  if (present.length <= 1) return null;
+  const states = [...new Set(present.map(l => _orgOf(l).state).filter(Boolean))].sort();
+  const ops    = [...new Set(present.map(l => _orgOf(l).op   || 'Other').filter(Boolean))].sort();
+  // Stores shown in the Store row respect the active state/op scope.
+  const storeLocs = present.filter(l => {
+    if (scope.level === 'state') return _orgOf(l).state === scope.key;
+    if (scope.level === 'op')    return (_orgOf(l).op || 'Other') === scope.key;
+    return true;
+  }).sort((a, b) => +a - +b);
+
+  const pill = (label, active, onClick) => h('button', { key: label, onClick,
+    style: { padding: '3px 10px', borderRadius: 20, border: active ? '1px solid var(--accent)' : '.5px solid var(--bdr)',
+      background: active ? 'var(--accent)' : 'transparent', color: active ? '#fff' : 'var(--text3)',
+      cursor: 'pointer', fontSize: 10, fontWeight: active ? 700 : 400, whiteSpace: 'nowrap' } }, label);
+
+  const cnt = pred => present.filter(pred).length;
+  return h('div', { style: { padding: '6px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 } },
+    h('div', { style: { display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text3)', marginRight: 2 } }, 'Scope:'),
+      pill(`All (${present.length})`, scope.level === 'all', () => setScope({ level: 'all', key: null })),
+      ...states.map(st => pill(`${STATE_LABEL[st] || st} (${cnt(l => _orgOf(l).state === st)})`, scope.level === 'state' && scope.key === st, () => setScope({ level: 'state', key: st }))),
+      ...(ops.length > 1 ? ops.map(op => pill(`${op.split('/')[0]} (${cnt(l => (_orgOf(l).op || 'Other') === op)})`, scope.level === 'op' && scope.key === op, () => setScope({ level: 'op', key: op }))) : []),
+    ),
+    h('div', { style: { display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text3)', marginRight: 2 } }, 'Store:'),
+      ...storeLocs.map(l => pill(nameOf ? `${l} ${(nameOf(l) || '').slice(0, 18)}` : l, scope.level === 'store' && _normLoc(scope.key) === l,
+        () => setScope(scope.level === 'store' && _normLoc(scope.key) === l ? { level: 'all', key: null } : { level: 'store', key: l }))),
+    ),
+  );
+}
+
+// ── CSV export + print (shared) ─────────────────────────────────────────────
+const _csvCell = v => {
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+function exportCSV(filename, headers, rows) {
+  const lines = [headers.map(_csvCell).join(','), ...rows.map(r => r.map(_csvCell).join(','))];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function printReport(title, subtitle, headers, rows) {
+  const th = headers.map(x => `<th>${x}</th>`).join('');
+  const trs = rows.map(r => `<tr>${r.map(c => `<td>${c == null ? '' : c}</td>`).join('')}</tr>`).join('');
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.write(`<!doctype html><html><head><title>${title}</title><style>
+    body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;color:#111}
+    h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:14px}
+    table{border-collapse:collapse;width:100%;font-size:11px}
+    th,td{border:1px solid #ccc;padding:4px 7px;text-align:center}
+    th{background:#f3f4f6;text-transform:uppercase;font-size:9px;letter-spacing:.4px}
+    td:first-child,th:first-child{text-align:left}
+    </style></head><body><h1>${title}</h1><div class="sub">${subtitle}</div>
+    <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></body></html>`);
+  w.document.close(); w.focus();
+  setTimeout(() => w.print(), 300);
+}
+// Small toolbar of Export/Print buttons; caller supplies the data builders.
+function ExportButtons({ onCsv, onPrint }) {
+  const s = { padding: '4px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', cursor: 'pointer', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' };
+  return h('div', { style: { display: 'flex', gap: 6 } },
+    h('button', { onClick: onCsv, style: s, title: 'Export current view to CSV' }, '⬇ CSV'),
+    h('button', { onClick: onPrint, style: s, title: 'Print current view' }, '🖨 Print'),
+  );
+}
 
 // ── Settings storage ───────────────────────────────────────────────────────────
 const SMG_SETTINGS_KEY = 'mf_smg_settings_v2';
@@ -298,21 +400,22 @@ function SmgSettingsEditor({ settings, onChange, fsRows }) {
 }
 
 // ── FullScale score table ──────────────────────────────────────────────────────
-function FullScalePanel({ fsRows, stores }) {
+function FullScalePanel({ fsRows, stores, inScope }) {
   const { useState, useMemo } = React;
   const [settings, setSettings] = useState(() => loadSmgSettings());
   const [showSettings, setShowSettings] = useState(false);
 
   const FS_METRICS = useMemo(() => buildFsMetrics(settings), [settings]);
+  const scoped = useMemo(() => inScope ? fsRows.filter(r => inScope(r.loc)) : fsRows, [fsRows, inScope]);
 
   // Group by year-month
   const periods = useMemo(() => {
     const seen = new Set();
-    return fsRows
+    return scoped
       .map(r => ({ key:`${r.year}-${String(r.month).padStart(2,'0')}`, year:r.year, month:r.month, label: new Date(r.year, r.month-1).toLocaleDateString('en-US',{month:'long',year:'numeric'}) }))
       .filter(p => { if(seen.has(p.key)) return false; seen.add(p.key); return true; })
       .sort((a,b) => b.key.localeCompare(a.key));
-  }, [fsRows]);
+  }, [scoped]);
 
   const [selPeriod, setSelPeriod] = useState('');
   // Always resolve to a valid period even when data loads after mount
@@ -323,8 +426,8 @@ function FullScalePanel({ fsRows, stores }) {
 
   const periodRows = useMemo(() => {
     const [yr, mo] = (activePeriod||'').split('-').map(Number);
-    return fsRows.filter(r => r.year===yr && r.month===mo);
-  }, [fsRows, activePeriod]);
+    return scoped.filter(r => r.year===yr && r.month===mo);
+  }, [scoped, activePeriod]);
 
   const sorted = useMemo(() => [...periodRows].sort((a,b) => (b.osatTop2||0) - (a.osatTop2||0)), [periodRows]);
 
@@ -342,10 +445,10 @@ function FullScalePanel({ fsRows, stores }) {
     return s ? (s.name||s.loc) : loc;
   };
 
-  if (!fsRows.length) return h('div', {style:{padding:40,textAlign:'center',color:'var(--text3)'}},
+  if (!scoped.length) return h('div', {style:{padding:40,textAlign:'center',color:'var(--text3)'}},
     h('div',{style:{fontSize:32,marginBottom:12}},'📊'),
-    h('div',{style:{fontWeight:700,fontSize:14,marginBottom:8,color:'var(--text)'}},'No FullScale Data Loaded'),
-    h('div',{style:{fontSize:12,lineHeight:1.6}},'Drop a FullScale_Report.xlsx file onto Meridian to load aggregate SMG scores.')
+    h('div',{style:{fontWeight:700,fontSize:14,marginBottom:8,color:'var(--text)'}}, fsRows.length ? 'No FullScale Data In Scope' : 'No FullScale Data Loaded'),
+    h('div',{style:{fontSize:12,lineHeight:1.6}}, fsRows.length ? 'No stores in the selected scope have FullScale scores.' : 'Drop a FullScale_Report.xlsx file onto Meridian to load aggregate SMG scores.')
   );
 
   if (!sorted.length) return h('div',{style:{padding:40,textAlign:'center',color:'var(--text3)'}},'No data for selected period.');
@@ -376,12 +479,28 @@ function FullScalePanel({ fsRows, stores }) {
             p.label
           ))
         ),
-        h('button', { onClick:()=>setShowSettings(v=>!v),
-          title:'Edit score thresholds',
-          style:{padding:'4px 10px',borderRadius:6,border:'1px solid var(--bdr)',
-            background:showSettings?'var(--amber)':'var(--surf)',
-            color:showSettings?'#000':'var(--text3)',cursor:'pointer',fontSize:11,marginLeft:'auto'}},
-          '⚙ Thresholds')
+        h('div', { style:{ display:'flex', gap:6, alignItems:'center', marginLeft:'auto' } },
+          h(ExportButtons, {
+            onCsv: () => {
+              const headers = ['Rank', 'Store', 'NSN', ...FS_METRICS.map(m => m.label)];
+              const body = sorted.map((r, i) => [i + 1, sName(r.loc), r.loc, ...FS_METRICS.map(m => m.fmt(r[m.key]))]);
+              body.unshift(['', 'District Average', '', ...FS_METRICS.map(m => m.fmt(distAvg[m.key]))]);
+              exportCSV(`VOICE_Scorecard_${activePeriod}.csv`, headers, body);
+            },
+            onPrint: () => {
+              const headers = ['Rank', 'Store', ...FS_METRICS.map(m => m.label)];
+              const body = sorted.map((r, i) => [i + 1, sName(r.loc), ...FS_METRICS.map(m => m.fmt(r[m.key]))]);
+              body.unshift(['', 'District Average', ...FS_METRICS.map(m => m.fmt(distAvg[m.key]))]);
+              printReport('VOICE Scorecard (FullScale)', `${periods.find(p => p.key === activePeriod)?.label || activePeriod} · ${sorted.length} stores`, headers, body);
+            },
+          }),
+          h('button', { onClick:()=>setShowSettings(v=>!v),
+            title:'Edit score thresholds',
+            style:{padding:'4px 10px',borderRadius:6,border:'1px solid var(--bdr)',
+              background:showSettings?'var(--amber)':'var(--surf)',
+              color:showSettings?'#000':'var(--text3)',cursor:'pointer',fontSize:11}},
+            '⚙ Thresholds')
+        )
       ),
 
       // Legend
@@ -456,14 +575,15 @@ function vpColor(val, m) {
   return val <= (m.yellowAbove || 5) ? '#10b981' : val <= (m.redAbove || 10) ? '#f59e0b' : '#ef4444';
 }
 
-function VoicePerfPanel({ rows, stores }) {
+function VoicePerfPanel({ rows, stores, inScope }) {
   const { useState, useMemo } = React;
+  const scoped = inScope ? rows.filter(r => inScope(r.loc)) : rows;
 
   // Available periods
   const periods = useMemo(() => {
     const seen = new Set();
-    return rows.map(r => r.period).filter(p => { if (seen.has(p)) return false; seen.add(p); return true; }).sort().reverse();
-  }, [rows]);
+    return scoped.map(r => r.period).filter(p => { if (seen.has(p)) return false; seen.add(p); return true; }).sort().reverse();
+  }, [scoped]);
 
   const [selPeriod, setSelPeriod]   = useState('');
   const [selType, setSelType]       = useState('monthly');
@@ -478,14 +598,14 @@ function VoicePerfPanel({ rows, stores }) {
   // all-dashes). Metric fill count breaks ties; operator_name is preserved.
   const filtered = useMemo(() => {
     const byLoc = {};
-    for (const r of rows) {
+    for (const r of scoped) {
       if (r.period !== activePeriod || r.report_type !== selType) continue;
       const k = String(parseInt(r.loc, 10) || r.loc);
       const score = VP_METRICS.reduce((n, m) => n + (r[m.key] != null ? 1 : 0), 0);
       if (!byLoc[k] || score > byLoc[k]._score) byLoc[k] = { ...r, _score: score };
     }
     return Object.values(byLoc);
-  }, [rows, activePeriod, selType]);
+  }, [scoped, activePeriod, selType]);
 
   const sorted = useMemo(() => {
     const m = VP_METRICS.find(x => x.key === sortMetric);
@@ -568,6 +688,20 @@ function VoicePerfPanel({ rows, stores }) {
         )
       ),
       h('span', { style: { marginLeft: 'auto', fontSize: 10, color: 'var(--text3)' } }, `${filtered.length} stores · ${activePeriod}`),
+      h(ExportButtons, {
+        onCsv: () => {
+          const headers = ['Store', 'NSN', 'Operator', ...VP_METRICS.map(m => m.label)];
+          const body = sorted.map(r => [sName(r.loc), r.loc, r.operator_name || '', ...VP_METRICS.map(m => r[m.key] != null ? r[m.key] + '%' : '')]);
+          body.unshift(['District Average', '', '', ...VP_METRICS.map(m => distAvg[m.key] != null ? distAvg[m.key] + '%' : '')]);
+          exportCSV(`VOICE_Performance_${activePeriod}_${selType}.csv`, headers, body);
+        },
+        onPrint: () => {
+          const headers = ['Store', ...VP_METRICS.map(m => m.label)];
+          const body = sorted.map(r => [sName(r.loc), ...VP_METRICS.map(m => m && r[m.key] != null ? r[m.key] + '%' : '—')]);
+          body.unshift(['District Average', ...VP_METRICS.map(m => distAvg[m.key] != null ? distAvg[m.key] + '%' : '—')]);
+          printReport(`VOICE Performance — ${TYPE_LABELS[selType]}`, `${periodFmt(activePeriod)} · ${filtered.length} stores`, headers, body);
+        },
+      }),
     ),
     // Table
     h('div', { style: { overflowY: 'auto', flex: 1, padding: '0 16px 16px' } },
@@ -625,10 +759,29 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
   const [filterLabel, setFilterLabel] = React.useState('__all__');
   const [sortBy, setSortBy] = React.useState('date-desc');
 
-  // Build per-store aggregates
+  // ── Location scope (All → State → Operator → Store), shared across tabs ──────
+  const [scope, setScope] = React.useState({ level: 'all', key: null });
+  const inScope = React.useCallback(loc => scopeMatch(scope, loc), [scope]);
+  const nameOf = React.useCallback(loc => {
+    const n = String(parseInt(loc, 10) || loc);
+    const s = (stores || []).find(x => String(parseInt(x.loc, 10) || x.loc) === n);
+    if (s && s.name) return s.name;
+    const r = rows.find(r => String(parseInt(r.loc, 10) || r.loc) === n && r.storeName);
+    return (r && r.storeName) || loc;
+  }, [stores, rows]);
+  // Comments in the active scope — every comment-tab aggregate derives from this
+  // so the district average recomputes for the filtered level automatically.
+  const scopedRows = React.useMemo(() => rows.filter(r => inScope(r.loc)), [rows, inScope]);
+  // Loc universe feeding the scope bar depends on the active tab's dataset.
+  const scopeLocs = React.useMemo(() => {
+    const src = tab === 'performance' ? vpRows : tab === 'fullscale' ? fsRows : rows;
+    return [...new Set(src.map(r => r.loc))];
+  }, [tab, vpRows, fsRows, rows]);
+
+  // Build per-store aggregates (scoped — District Average recomputes for scope)
   const storeMap = React.useMemo(() => {
     const m = {};
-    rows.forEach(r => {
+    scopedRows.forEach(r => {
       const k = String(parseInt(r.loc, 10) || r.loc);
       if (!m[k]) m[k] = { loc: k, name: r.storeName || r.loc, rows: [], scoreSum: 0, scoreCount: 0 };
       m[k].rows.push(r);
@@ -636,23 +789,24 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     });
     Object.values(m).forEach(s => { s.avgScore = s.scoreCount ? s.scoreSum / s.scoreCount : null; });
     return m;
-  }, [rows]);
+  }, [scopedRows]);
 
   const storeList = React.useMemo(() =>
     Object.values(storeMap).sort((a, b) => (a.avgScore||0) - (b.avgScore||0)),
     [storeMap]
   );
 
-  const distScore = rows.filter(r => Number.isFinite(r.score));
+  // Count-weighted (per-comment) district mean — never an average of store means.
+  const distScore = scopedRows.filter(r => Number.isFinite(r.score));
   const distAvg   = distScore.length ? distScore.reduce((s,r) => s + r.score, 0) / distScore.length : null;
 
-  const allDates = rows.map(r => r.reportStart).filter(Boolean);
+  const allDates = scopedRows.map(r => r.reportStart).filter(Boolean);
   const periodLabel = allDates.length
-    ? [...new Set(allDates)].sort().slice(0, 1)[0] + ' – ' + [...new Set(rows.map(r => r.reportEnd).filter(Boolean))].sort().slice(-1)[0]
+    ? [...new Set(allDates)].sort().slice(0, 1)[0] + ' – ' + [...new Set(scopedRows.map(r => r.reportEnd).filter(Boolean))].sort().slice(-1)[0]
     : null;
 
   const visibleRows = React.useMemo(() => {
-    let r = selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows || []);
+    let r = selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows || []);
     if (filterLabel !== '__all__') r = r.filter(x => (x.satisfactionLabel||'').toLowerCase() === filterLabel);
     r = [...r];
     // Coerce to String — cloud-loaded rows can return visit_date as a non-string
@@ -662,15 +816,15 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     else if (sortBy === 'score-asc') r.sort((a,b) => (a.score||0) - (b.score||0));
     else if (sortBy === 'score-desc') r.sort((a,b) => (b.score||0) - (a.score||0));
     return r;
-  }, [rows, selLoc, filterLabel, sortBy, storeMap]);
+  }, [scopedRows, selLoc, filterLabel, sortBy, storeMap]);
 
   const labelCounts = React.useMemo(() => {
-    const src = selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows || []);
+    const src = selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows || []);
     const c = {};
     ALL_LABELS.forEach(l => { c[l] = 0; });
     src.forEach(r => { const k = (r.satisfactionLabel||'').toLowerCase(); if (c[k] !== undefined) c[k]++; });
     return c;
-  }, [rows, selLoc, storeMap]);
+  }, [scopedRows, selLoc, storeMap]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
   if (!rows.length && !fsRows.length && !vpRows.length) return h('div', {
@@ -715,11 +869,11 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
           ),
         ),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          h('select', {
+          tab === 'comments' && h('select', {
             value: selLoc, onChange: e => { setSelLoc(e.target.value); setFilterLabel('__all__'); },
             style: { fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' }
           },
-            h('option', { value: '__all__' }, `All Stores (${rows.length} comments)`),
+            h('option', { value: '__all__' }, `All in scope (${scopedRows.length} comments)`),
             storeList.map(s => h('option', { key: s.loc, value: s.loc },
               `${s.name} (${s.rows.length})`
             ))
@@ -736,14 +890,17 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
         `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`,
         bf.error ? ` · save error: ${bf.error}` : ''),
 
+      // ── Shared scope bar (All → State → Operator → Store) ────────────────────
+      h(ScopeBar, { locs: scopeLocs, scope, setScope, nameOf }),
+
       // ── Body: Performance tab ────────────────────────────────────────────────
       tab === 'performance' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
-        h(VoicePerfPanel, { rows: vpRows, stores })
+        h(VoicePerfPanel, { rows: vpRows, stores, inScope })
       ),
 
       // ── Body: FullScale tab ──────────────────────────────────────────────────
       tab === 'fullscale' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
-        h(FullScalePanel, { fsRows, stores })
+        h(FullScalePanel, { fsRows, stores, inScope })
       ),
 
       // ── Body: Comments tab ───────────────────────────────────────────────────
@@ -756,8 +913,8 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
               distAvg != null && h(DistScoreBadge, { score: distAvg }),
               h('span', { style: { fontSize: 11, color: 'var(--text3)' } }, '/ 5.0'),
             ),
-            h(ScoreDistBar, { rows }),
-            h('div', { style: { fontSize: 10, color: 'var(--text3)', marginTop: 4 } }, `${rows.length} total comments · ${storeList.length} stores`),
+            h(ScoreDistBar, { rows: scopedRows }),
+            h('div', { style: { fontSize: 10, color: 'var(--text3)', marginTop: 4 } }, `${scopedRows.length} total comments · ${storeList.length} stores`),
           ),
           h('div', { style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 16px 6px' } }, 'By Store — Best → Worst'),
           [...storeList].reverse().map(s => {
@@ -784,7 +941,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
         h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
             h('span', { style: { fontSize: 11, color: 'var(--text3)', marginRight: 2 } }, 'Filter:'),
-            [['__all__', `All (${(selLoc==='__all__' ? rows : (storeMap[selLoc]?.rows||[])).length})`],
+            [['__all__', `All (${(selLoc==='__all__' ? scopedRows : (storeMap[selLoc]?.rows||[])).length})`],
              ...ALL_LABELS.map(l => [l, `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')} (${labelCounts[l]})`])
             ].map(([val, lbl]) =>
               h('button', { key: val, onClick: () => setFilterLabel(val),
@@ -803,14 +960,22 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
                 h('option', { value: 'score-asc' }, 'Worst first'),
                 h('option', { value: 'score-desc' }, 'Best first'),
               ),
+              h(ExportButtons, {
+                onCsv: () => exportCSV(`VOICE_Comments_${scopeLabel(scope, nameOf).replace(/[^a-z0-9]+/gi,'_')}.csv`,
+                  ['Store', 'NSN', 'Visit Date', 'Comment Date', 'Satisfaction', 'Score', 'Comment'],
+                  visibleRows.map(r => [nameOf(r.loc), r.loc, r.visitDate || '', r.commentDate || '', r.satisfactionLabel || '', Number.isFinite(r.score) ? r.score : '', r.text || ''])),
+                onPrint: () => printReport('VOICE Guest Comments', `${scopeLabel(scope, nameOf)} · ${visibleRows.length} comments`,
+                  ['Store', 'Visit', 'Satisfaction', 'Comment'],
+                  visibleRows.map(r => [nameOf(r.loc), r.visitDate || '', r.satisfactionLabel || '', r.text || ''])),
+              }),
             ),
           ),
           h('div', { style: { padding: '8px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0 } },
-            h(ScoreDistBar, { rows: selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows||[]) }),
+            h(ScoreDistBar, { rows: selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows||[]) }),
             h('div', { style: { display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' } },
               ALL_LABELS.map(l => {
                 const c = labelCounts[l];
-                const total = (selLoc === '__all__' ? rows : (storeMap[selLoc]?.rows||[])).length;
+                const total = (selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows||[])).length;
                 if (!c) return null;
                 return h('span', { key: l, style: { fontSize: 10, color: scoreColor(l).text } },
                   `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')}: ${c} (${Math.round(c/total*100)}%)`
