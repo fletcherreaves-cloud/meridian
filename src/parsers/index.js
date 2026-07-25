@@ -166,8 +166,9 @@ function detectType(filename, wb){
   if(ext==='pdf'&&/^eu\d{10,}/i.test(fn))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
   if(ext==='pdf'&&(fn.includes('voice')||fn.includes('comment report')||fn.includes('customer comment')))return{type:'smg-voice',label:'SMG VOICE Comment Report',dr,confidence:'high'};
   if(ext==='xlsx'&&(fn.includes('fullscale')||fn.includes('full_scale')||fn.includes('full scale')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
-  // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph" sheet
-  if(ext==='xlsx'&&wb&&wb.SheetNames&&wb.SheetNames.some(s=>s.toLowerCase().includes('small graph')))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
+  // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph",
+  // "Large Graph", or "Data Only" sheet (whichever export layout was chosen).
+  if(ext==='xlsx'&&wb&&wb.SheetNames&&wb.SheetNames.some(s=>{const l=s.toLowerCase();return l.includes('small graph')||l.includes('large graph')||l.includes('data only');}))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
   // Mesonet: all-digit filename
   if(/^\d+$/.test(fn)&&(ext==='csv'||ext==='txt'))return{type:'weather',label:'WeatherData (Mesonet)',dr,confidence:'high'};
   // Combined Meridian workbook
@@ -1639,6 +1640,41 @@ function parseSMGFullScale(wb) {
     year  = now.getFullYear();
     month = now.getMonth() + 1;
     console.warn('[parseSMGFullScale] Could not parse date from report title; using current month:', year, month);
+  }
+
+  // ── "Data Only" layout (v4.538) — the clean one-row-per-store export ───────
+  // Far more robust than Small/Large Graph. Fixed columns:
+  //   0 Restaurant · 1 OSAT n · 2-6 OSAT 5★→1★ · 7 B2B n · 8 problem% · 9 no-
+  //   problem%(=osatB2B) · 10 acc n · 11 problem% · 12 no-problem%(=accuracyB2B)
+  //   · 13 DT n · 14 DT problem%(=dtProblem) · 15 no-prob · 16 overall n · 17
+  //   overall problem%(=overallProblem) · 18 no-prob.  Suppressed cells = "**".
+  // Detected by a store row carrying a fractional OSAT-5★ in col 2 (Small Graph
+  // instead puts a 1-5 rating in col 1 and the metrics out around col 22).
+  const _num01 = v => (typeof v === 'number' && v >= 0 && v <= 1) ? v : null;
+  const _fsi = bestRows.findIndex(r => r && typeof r[0] === 'string' && STORE_PAT.test(r[0]));
+  if (_fsi >= 0 && typeof bestRows[_fsi][2] === 'number' && bestRows[_fsi][2] > 0 && bestRows[_fsi][2] <= 1) {
+    const out = [];
+    for (const row of bestRows) {
+      if (!row || typeof row[0] !== 'string') continue;
+      const sm = row[0].match(STORE_PAT);
+      if (!sm) continue; // skips "Combined" district total and header rows
+      const osat5 = _num01(row[2]), osat4 = _num01(row[3]), osat3 = _num01(row[4]),
+            osat2 = _num01(row[5]), osat1 = _num01(row[6]);
+      const anyOsat = [osat5, osat4, osat3, osat2, osat1].some(v => v != null);
+      out.push({
+        loc: String(parseInt(sm[1], 10)), storeName: sm[2].trim(),
+        reportStart, reportEnd, year, month,
+        osatTop2:       anyOsat ? (osat5 || 0) + (osat4 || 0) : null,
+        osat5:          osat5,
+        osatAvg:        anyOsat ? 5*(osat5||0) + 4*(osat4||0) + 3*(osat3||0) + 2*(osat2||0) + 1*(osat1||0) : null,
+        osatB2B:        _num01(row[9]),
+        accuracyB2B:    _num01(row[12]),
+        dtProblem:      _num01(row[14]),
+        overallProblem: _num01(row[17]),
+      });
+    }
+    console.log(`[parseSMGFullScale] Data-Only layout: parsed ${out.length} stores for ${year}-${month}`);
+    return out;
   }
 
   // ── Auto-detect metric columns by scanning the first complete 5-row block ──
