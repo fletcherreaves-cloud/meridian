@@ -7,63 +7,54 @@ import { INV_ORG_COORDS } from '../constants';
 
 const h = React.createElement;
 
-// ── Location scope + grouping (shared across all three tabs) ─────────────────
-// Standard scope chain per feedback-selector-ui-standard: All → State → Operator
-// → Store. Org data comes from INV_ORG_COORDS (keyed by un-padded loc); VOICE
-// rows carry zero-padded NSNs, so normalize both to the integer form.
+// ── Location scope + grouping (matches the app-standard filter: analytics.js
+// District Priority Brief). Filter chain: All / 🟠 OK / 🔵 FL / supervisor
+// patch, plus a Store dropdown. Org data from INV_ORG_COORDS (keyed un-padded);
+// VOICE rows carry zero-padded NSNs, so normalize both to the integer form.
 const _normLoc = loc => String(parseInt(loc, 10) || loc);
 const _orgOf   = loc => INV_ORG_COORDS[_normLoc(loc)] || {};
-const STATE_LABEL = { OK: 'Oklahoma', FL: 'Florida' };
 
-// scope = { level: 'all'|'state'|'op'|'store', key }
-function scopeMatch(scope, loc) {
-  if (!scope || scope.level === 'all') return true;
+// orgFilter: 'all' | 'ok' | 'fl' | <supervisor patch name>
+function orgMatch(orgFilter, loc) {
+  if (!orgFilter || orgFilter === 'all') return true;
   const o = _orgOf(loc);
-  if (scope.level === 'state') return o.state === scope.key;
-  if (scope.level === 'op')    return (o.op || 'Other') === scope.key;
-  if (scope.level === 'store') return _normLoc(loc) === _normLoc(scope.key);
-  return true;
+  if (orgFilter === 'ok') return o.state === 'OK';
+  if (orgFilter === 'fl') return o.state === 'FL';
+  return (o.sup || '') === orgFilter; // supervisor patch
 }
-function scopeLabel(scope, nameOf) {
-  if (!scope || scope.level === 'all') return 'All Locations';
-  if (scope.level === 'state') return STATE_LABEL[scope.key] || scope.key;
-  if (scope.level === 'op')    return scope.key;
-  if (scope.level === 'store') return (nameOf && nameOf(scope.key)) || ('Store ' + scope.key);
-  return 'All Locations';
+function orgDesc(orgFilter, storeSel, nameOf) {
+  if (storeSel && storeSel !== 'all') return (nameOf && nameOf(storeSel)) || ('Store ' + storeSel);
+  if (!orgFilter || orgFilter === 'all') return 'All Locations';
+  if (orgFilter === 'ok') return 'Oklahoma';
+  if (orgFilter === 'fl') return 'Florida';
+  return orgFilter; // patch (supervisor)
 }
 
-// Pill-style scope bar. `locs` = every loc present in the active tab's data;
-// pills are built only from locs that actually have data so empty groups don't
-// clutter. Emits scope {level,key}.
-function ScopeBar({ locs, scope, setScope, nameOf }) {
+// App-standard filter bar: All / OK / FL / patch pills (amber, per analytics)
+// + a Store dropdown. `locs` = every loc in the active tab's data.
+function VoiceFilterBar({ locs, orgFilter, setOrgFilter, storeSel, setStoreSel, nameOf }) {
   const present = [...new Set((locs || []).map(_normLoc))];
   if (present.length <= 1) return null;
-  const states = [...new Set(present.map(l => _orgOf(l).state).filter(Boolean))].sort();
-  const ops    = [...new Set(present.map(l => _orgOf(l).op   || 'Other').filter(Boolean))].sort();
-  // Stores shown in the Store row respect the active state/op scope.
-  const storeLocs = present.filter(l => {
-    if (scope.level === 'state') return _orgOf(l).state === scope.key;
-    if (scope.level === 'op')    return (_orgOf(l).op || 'Other') === scope.key;
-    return true;
-  }).sort((a, b) => +a - +b);
+  const hasOK = present.some(l => _orgOf(l).state === 'OK');
+  const hasFL = present.some(l => _orgOf(l).state === 'FL');
+  const patches = [...new Set(present.map(l => _orgOf(l).sup).filter(Boolean))].sort();
+  const filters = ['all', ...(hasOK ? ['ok'] : []), ...(hasFL ? ['fl'] : []), ...patches];
+  const storeOpts = present.filter(l => orgMatch(orgFilter, l)).sort((a, b) => +a - +b);
 
-  const pill = (label, active, onClick) => h('button', { key: label, onClick,
-    style: { padding: '3px 10px', borderRadius: 20, border: active ? '1px solid var(--accent)' : '.5px solid var(--bdr)',
-      background: active ? 'var(--accent)' : 'transparent', color: active ? '#fff' : 'var(--text3)',
-      cursor: 'pointer', fontSize: 10, fontWeight: active ? 700 : 400, whiteSpace: 'nowrap' } }, label);
+  const fLabel = f => f === 'all' ? 'All' : f === 'ok' ? '🟠 OK' : f === 'fl' ? '🔵 FL' : f.split(' ').slice(-1)[0];
+  const pill = f => h('button', { key: f, onClick: () => { setOrgFilter(f); if (storeSel !== 'all' && !orgMatch(f, storeSel)) setStoreSel('all'); },
+    style: { padding: '3px 9px', borderRadius: 99, fontSize: 9, cursor: 'pointer',
+      border: '.5px solid ' + (orgFilter === f ? 'rgba(245,158,11,.4)' : 'var(--bdr)'),
+      background: orgFilter === f ? 'var(--adim,rgba(245,158,11,.12))' : 'transparent',
+      color: orgFilter === f ? 'var(--amber,#f59e0b)' : 'var(--text2)', whiteSpace: 'nowrap' } }, fLabel(f));
 
-  const cnt = pred => present.filter(pred).length;
-  return h('div', { style: { padding: '6px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 } },
-    h('div', { style: { display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' } },
-      h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text3)', marginRight: 2 } }, 'Scope:'),
-      pill(`All (${present.length})`, scope.level === 'all', () => setScope({ level: 'all', key: null })),
-      ...states.map(st => pill(`${STATE_LABEL[st] || st} (${cnt(l => _orgOf(l).state === st)})`, scope.level === 'state' && scope.key === st, () => setScope({ level: 'state', key: st }))),
-      ...(ops.length > 1 ? ops.map(op => pill(`${op.split('/')[0]} (${cnt(l => (_orgOf(l).op || 'Other') === op)})`, scope.level === 'op' && scope.key === op, () => setScope({ level: 'op', key: op }))) : []),
-    ),
-    h('div', { style: { display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' } },
-      h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text3)', marginRight: 2 } }, 'Store:'),
-      ...storeLocs.map(l => pill(nameOf ? `${l} ${(nameOf(l) || '').slice(0, 18)}` : l, scope.level === 'store' && _normLoc(scope.key) === l,
-        () => setScope(scope.level === 'store' && _normLoc(scope.key) === l ? { level: 'all', key: null } : { level: 'store', key: l }))),
+  return h('div', { style: { padding: '6px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 } },
+    h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text3)' } }, 'Filter:'),
+    ...filters.map(pill),
+    h('select', { value: storeSel, onChange: e => setStoreSel(e.target.value),
+      style: { marginLeft: 4, fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' } },
+      h('option', { value: 'all' }, `All stores (${storeOpts.length})`),
+      storeOpts.map(l => h('option', { key: l, value: l }, `${l} — ${nameOf ? nameOf(l) : l}`)),
     ),
   );
 }
@@ -400,13 +391,13 @@ function SmgSettingsEditor({ settings, onChange, fsRows }) {
 }
 
 // ── FullScale score table ──────────────────────────────────────────────────────
-function FullScalePanel({ fsRows, stores, inScope }) {
+function FullScalePanel({ fsRows, stores, inScope, storeSel }) {
   const { useState, useMemo } = React;
   const [settings, setSettings] = useState(() => loadSmgSettings());
   const [showSettings, setShowSettings] = useState(false);
 
   const FS_METRICS = useMemo(() => buildFsMetrics(settings), [settings]);
-  const scoped = useMemo(() => inScope ? fsRows.filter(r => inScope(r.loc)) : fsRows, [fsRows, inScope]);
+  const scoped = useMemo(() => fsRows.filter(r => (!inScope || inScope(r.loc)) && (!storeSel || storeSel === 'all' || _normLoc(r.loc) === _normLoc(storeSel))), [fsRows, inScope, storeSel]);
 
   // Group by year-month
   const periods = useMemo(() => {
@@ -469,15 +460,11 @@ function FullScalePanel({ fsRows, stores, inScope }) {
     h('div', {style:{overflowY:'auto',flex:1,padding:16}},
       // Toolbar row: period selector + settings toggle
       h('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}},
-        periods.length > 1 && h('div', {style:{display:'flex',gap:6,flexWrap:'wrap',flex:1}},
-          h('span',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',alignSelf:'center',marginRight:4}},'PERIOD:'),
-          ...periods.map(p => h('button', {key:p.key, onClick:()=>setSelPeriod(p.key),
-            style:{padding:'3px 10px',borderRadius:20,border:'.5px solid var(--bdr)',
-              background:p.key===activePeriod?'var(--accent)':'transparent',
-              color:p.key===activePeriod?'#fff':'var(--text)',
-              cursor:'pointer',fontSize:10,fontWeight:p.key===activePeriod?700:400}},
-            p.label
-          ))
+        periods.length >= 1 && h('div', {style:{display:'flex',gap:6,alignItems:'center',flex:1}},
+          h('span',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',marginRight:4}},'PERIOD:'),
+          h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
+            style:{padding:'4px 8px',borderRadius:6,border:'.5px solid var(--bdr)',background:'var(--bg)',color:'var(--text)',fontSize:11,cursor:'pointer',fontWeight:700}},
+            periods.map(p => h('option', { key:p.key, value:p.key }, p.label)))
         ),
         h('div', { style:{ display:'flex', gap:6, alignItems:'center', marginLeft:'auto' } },
           h(ExportButtons, {
@@ -575,9 +562,9 @@ function vpColor(val, m) {
   return val <= (m.yellowAbove || 5) ? '#10b981' : val <= (m.redAbove || 10) ? '#f59e0b' : '#ef4444';
 }
 
-function VoicePerfPanel({ rows, stores, inScope }) {
+function VoicePerfPanel({ rows, stores, inScope, storeSel }) {
   const { useState, useMemo } = React;
-  const scoped = inScope ? rows.filter(r => inScope(r.loc)) : rows;
+  const scoped = rows.filter(r => (!inScope || inScope(r.loc)) && (!storeSel || storeSel === 'all' || _normLoc(r.loc) === _normLoc(storeSel)));
 
   // Available periods
   const periods = useMemo(() => {
@@ -670,16 +657,9 @@ function VoicePerfPanel({ rows, stores, inScope }) {
     // Toolbar
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
       h('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' } }, 'Period:'),
-      // Up to 8 months → pill buttons; more (backfills go back years) → a dropdown
-      // so every loaded month is reachable, not just the most recent six.
-      periods.length <= 8
-        ? periods.map(p => h('button', { key: p, onClick: () => setSelPeriod(p),
-            style: { padding: '3px 10px', borderRadius: 20, border: '.5px solid var(--bdr)', cursor: 'pointer', fontSize: 10, fontWeight: p === activePeriod ? 700 : 400,
-              background: p === activePeriod ? 'var(--accent)' : 'transparent', color: p === activePeriod ? '#fff' : 'var(--text)' } }, periodFmt(p)))
-        : h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
-            style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
-            periods.map(p => h('option', { key: p, value: p }, periodFmt(p)))),
-      periods.length > 8 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `${periods.length} months`),
+      h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
+          style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
+          periods.map(p => h('option', { key: p, value: p }, periodFmt(p)))),
       h('div', { style: { display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
         Object.entries(TYPE_LABELS).map(([t, label]) =>
           h('button', { key: t, onClick: () => setSelType(t), style: {
@@ -755,13 +735,13 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     if (vpRows.length > 0) setTab(t => t === 'comments' && !rows.length ? 'performance' : t);
     else if (fsRows.length > 0) setTab(t => t === 'comments' && rows.length === 0 ? 'fullscale' : t);
   }, [vpRows.length, fsRows.length]);
-  const [selLoc, setSelLoc] = React.useState('__all__');
   const [filterLabel, setFilterLabel] = React.useState('__all__');
   const [sortBy, setSortBy] = React.useState('date-desc');
 
-  // ── Location scope (All → State → Operator → Store), shared across tabs ──────
-  const [scope, setScope] = React.useState({ level: 'all', key: null });
-  const inScope = React.useCallback(loc => scopeMatch(scope, loc), [scope]);
+  // ── Location filter (app-standard: All / OK / FL / patch + store dropdown) ───
+  const [orgFilter, setOrgFilter] = React.useState('all');
+  const [storeSel, setStoreSel]   = React.useState('all'); // 'all' | normalized loc
+  const inScope = React.useCallback(loc => orgMatch(orgFilter, loc), [orgFilter]);
   const nameOf = React.useCallback(loc => {
     const n = String(parseInt(loc, 10) || loc);
     const s = (stores || []).find(x => String(parseInt(x.loc, 10) || x.loc) === n);
@@ -769,8 +749,9 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     const r = rows.find(r => String(parseInt(r.loc, 10) || r.loc) === n && r.storeName);
     return (r && r.storeName) || loc;
   }, [stores, rows]);
-  // Comments in the active scope — every comment-tab aggregate derives from this
-  // so the district average recomputes for the filtered level automatically.
+  // Comments in the active org scope — every comment-tab aggregate derives from
+  // this so the district average recomputes for the filtered level. The store
+  // dropdown (storeSel) narrows the comment FEED only, not the district roll-up.
   const scopedRows = React.useMemo(() => rows.filter(r => inScope(r.loc)), [rows, inScope]);
   // Loc universe feeding the scope bar depends on the active tab's dataset.
   const scopeLocs = React.useMemo(() => {
@@ -806,7 +787,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     : null;
 
   const visibleRows = React.useMemo(() => {
-    let r = selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows || []);
+    let r = storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows || []);
     if (filterLabel !== '__all__') r = r.filter(x => (x.satisfactionLabel||'').toLowerCase() === filterLabel);
     r = [...r];
     // Coerce to String — cloud-loaded rows can return visit_date as a non-string
@@ -816,15 +797,15 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     else if (sortBy === 'score-asc') r.sort((a,b) => (a.score||0) - (b.score||0));
     else if (sortBy === 'score-desc') r.sort((a,b) => (b.score||0) - (a.score||0));
     return r;
-  }, [scopedRows, selLoc, filterLabel, sortBy, storeMap]);
+  }, [scopedRows, storeSel, filterLabel, sortBy, storeMap]);
 
   const labelCounts = React.useMemo(() => {
-    const src = selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows || []);
+    const src = storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows || []);
     const c = {};
     ALL_LABELS.forEach(l => { c[l] = 0; });
     src.forEach(r => { const k = (r.satisfactionLabel||'').toLowerCase(); if (c[k] !== undefined) c[k]++; });
     return c;
-  }, [scopedRows, selLoc, storeMap]);
+  }, [scopedRows, storeSel, storeMap]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
   if (!rows.length && !fsRows.length && !vpRows.length) return h('div', {
@@ -869,15 +850,6 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
           ),
         ),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          tab === 'comments' && h('select', {
-            value: selLoc, onChange: e => { setSelLoc(e.target.value); setFilterLabel('__all__'); },
-            style: { fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' }
-          },
-            h('option', { value: '__all__' }, `All in scope (${scopedRows.length} comments)`),
-            storeList.map(s => h('option', { key: s.loc, value: s.loc },
-              `${s.name} (${s.rows.length})`
-            ))
-          ),
           onBackfillComments && h('button', {
             onClick: runBackfill, disabled: !!(bf && bf.running),
             title: 'Pull every comment PDF the poller stored in Supabase, parse, and cloud-persist',
@@ -890,17 +862,17 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
         `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`,
         bf.error ? ` · save error: ${bf.error}` : ''),
 
-      // ── Shared scope bar (All → State → Operator → Store) ────────────────────
-      h(ScopeBar, { locs: scopeLocs, scope, setScope, nameOf }),
+      // ── Shared filter bar (All / OK / FL / patch + store dropdown) ───────────
+      h(VoiceFilterBar, { locs: scopeLocs, orgFilter, setOrgFilter, storeSel, setStoreSel, nameOf }),
 
       // ── Body: Performance tab ────────────────────────────────────────────────
       tab === 'performance' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
-        h(VoicePerfPanel, { rows: vpRows, stores, inScope })
+        h(VoicePerfPanel, { rows: vpRows, stores, inScope, storeSel })
       ),
 
       // ── Body: FullScale tab ──────────────────────────────────────────────────
       tab === 'fullscale' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
-        h(FullScalePanel, { fsRows, stores, inScope })
+        h(FullScalePanel, { fsRows, stores, inScope, storeSel })
       ),
 
       // ── Body: Comments tab ───────────────────────────────────────────────────
@@ -918,11 +890,11 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
           ),
           h('div', { style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 16px 6px' } }, 'By Store — Best → Worst'),
           [...storeList].reverse().map(s => {
-            const active = selLoc === s.loc;
+            const active = storeSel === s.loc;
             const col = s.avgScore >= 4.5 ? '#28a870' : s.avgScore >= 3.5 ? '#e8a040' : '#d94f4f';
             return h('div', {
               key: s.loc,
-              onClick: () => { setSelLoc(active ? '__all__' : s.loc); setFilterLabel('__all__'); },
+              onClick: () => { setStoreSel(active ? 'all' : s.loc); setFilterLabel('__all__'); },
               style: { padding: '8px 16px', cursor: 'pointer', borderLeft: active ? `3px solid var(--accent)` : '3px solid transparent',
                 background: active ? 'var(--hover)' : 'transparent', transition: 'background .15s' }
             },
@@ -941,7 +913,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
         h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
             h('span', { style: { fontSize: 11, color: 'var(--text3)', marginRight: 2 } }, 'Filter:'),
-            [['__all__', `All (${(selLoc==='__all__' ? scopedRows : (storeMap[selLoc]?.rows||[])).length})`],
+            [['__all__', `All (${(storeSel==='all' ? scopedRows : (storeMap[storeSel]?.rows||[])).length})`],
              ...ALL_LABELS.map(l => [l, `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')} (${labelCounts[l]})`])
             ].map(([val, lbl]) =>
               h('button', { key: val, onClick: () => setFilterLabel(val),
@@ -961,21 +933,21 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
                 h('option', { value: 'score-desc' }, 'Best first'),
               ),
               h(ExportButtons, {
-                onCsv: () => exportCSV(`VOICE_Comments_${scopeLabel(scope, nameOf).replace(/[^a-z0-9]+/gi,'_')}.csv`,
+                onCsv: () => exportCSV(`VOICE_Comments_${orgDesc(orgFilter, storeSel, nameOf).replace(/[^a-z0-9]+/gi,'_')}.csv`,
                   ['Store', 'NSN', 'Visit Date', 'Comment Date', 'Satisfaction', 'Score', 'Comment'],
                   visibleRows.map(r => [nameOf(r.loc), r.loc, r.visitDate || '', r.commentDate || '', r.satisfactionLabel || '', Number.isFinite(r.score) ? r.score : '', r.text || ''])),
-                onPrint: () => printReport('VOICE Guest Comments', `${scopeLabel(scope, nameOf)} · ${visibleRows.length} comments`,
+                onPrint: () => printReport('VOICE Guest Comments', `${orgDesc(orgFilter, storeSel, nameOf)} · ${visibleRows.length} comments`,
                   ['Store', 'Visit', 'Satisfaction', 'Comment'],
                   visibleRows.map(r => [nameOf(r.loc), r.visitDate || '', r.satisfactionLabel || '', r.text || ''])),
               }),
             ),
           ),
           h('div', { style: { padding: '8px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0 } },
-            h(ScoreDistBar, { rows: selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows||[]) }),
+            h(ScoreDistBar, { rows: storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows||[]) }),
             h('div', { style: { display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' } },
               ALL_LABELS.map(l => {
                 const c = labelCounts[l];
-                const total = (selLoc === '__all__' ? scopedRows : (storeMap[selLoc]?.rows||[])).length;
+                const total = (storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows||[])).length;
                 if (!c) return null;
                 return h('span', { key: l, style: { fontSize: 10, color: scoreColor(l).text } },
                   `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')}: ${c} (${Math.round(c/total*100)}%)`
@@ -993,7 +965,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
                       borderRadius: 8, padding: '10px 14px', background: c.bg + '55' } },
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' } },
                       h(ScoreBadge, { label: r.satisfactionLabel }),
-                      selLoc === '__all__' && h('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--text2)' } }, r.storeName || r.loc),
+                      storeSel === 'all' && h('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--text2)' } }, r.storeName || r.loc),
                       h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 'auto' } },
                         r.visitDate ? `Visit: ${r.visitDate}` : '',
                         r.commentDate && r.commentDate !== r.visitDate ? ` · Comment: ${r.commentDate}` : '',
