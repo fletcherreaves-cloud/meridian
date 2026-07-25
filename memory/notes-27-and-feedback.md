@@ -20,11 +20,23 @@ Fixed so far:
 - ✅ buildStore pipeline pSales/pLY (v4.522)
 - ✅ **Org Summary** `OperatorSummaryPanel` (labor-tools.js) — the one in the screenshots (v4.526)
 - ✅ **Rankings** GC vs LY (-100%) (v4.526)
-- ⏳ TODO SWEEP: every remaining vs-LY / current-window metric. Best done as a **shared helper**
-  `matchedVsLY(ds, locs, range)` + `autoFirstDaily(ds, loc, range)` used everywhere, so there's
-  ONE correct implementation. Candidates: Rankings other metrics (labor%/oepe/tpph/etc. show "—"
-  on Last Week — need DAR/auto sources), District View store-dash tiles + forecast table
-  (Notes 27 #2), store-dash/store-analytics vs-LY.
+- ✅ **Shared helper `src/engine/vs-ly.js`** (v4.529): `autoFirstDaily` / `matchedVsLY` /
+  `autoFirstTotal` — ONE implementation ('sales' | 'gc'), 6 tests. Org Summary + Rankings gcVsLYMap
+  migrated to it. **This is the consolidation** (Notes 28 #2). Future vs-LY changes are global.
+
+⏳ REMAINING sweep (per-day ACTUALS auto-first — a deeper slice than vs-LY):
+- **District View / store forecast table** (Notes 27 #2): the "Actual/GC/OEPE/TPPH/Labor%/AI-vs-Act"
+  columns are empty for the current week's completed days. Source = the `weekDays`/`wk` builder that
+  feeds `ForecastTable` (defined `src/views/store-dash.js:604`; called `src/views/store-analytics.js:2185`
+  with `weekDays:wk`). Find where each day row's `.actual`/`.actualGC` are set and make them auto-first
+  (fall back to DAR `qsrActSummaryRows` sales/gc when manual `laborRows` lacks the recent day). The
+  `wk` builder was not quickly located — start there next.
+- **Rankings other metrics** (labor%/oepe/tpph/etc.) show "—" on Last Week — these have no auto source
+  in `RankingView.localStats` (they read ctrl/ops/laborRows only). GC + sales can be auto-first now;
+  labor%/oepe/tpph need DAR/glimpse equivalents wired (bigger — DAR summary lacks oepe/kvst in the
+  laborRows shape). Honest "—" for now (not -100%).
+- Migrate At-A-Glance salesSec + buildStore pipeline to the shared helper too (currently correct but
+  duplicated — finish the consolidation).
 
 ## Preview feedback (numbered as owner sent)
 1. **Org Summary — no change seen** → ROOT CAUSE above; fixed the actual panel v4.526.
