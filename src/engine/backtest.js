@@ -321,6 +321,11 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
 
       // Preserve deliberate manual overrides (written by saveModelOverride, no backtestDate)
       if (existingEntry && !existingEntry.backtestDate) continue;
+      // Preserve Period-Total Scoreboard applications on the Monthly/Yearly locks:
+      // those are judged on the TOTAL (the right metric for a lock), so a later
+      // daily-graded re-run must NOT silently clobber them back to daily-optimal.
+      // Re-applying the Scoreboard (or a manual override / reset) still updates them.
+      if (existingEntry && existingEntry.periodTotal && hz.id !== 'weekly') continue;
 
       // Track assignment changes for the summary card
       const priorModel =
