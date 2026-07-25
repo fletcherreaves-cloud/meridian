@@ -12,6 +12,7 @@ function normSlice(s){return PEAK_SLICES[s.toLowerCase().trim()]||s.toLowerCase(
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
+import { metricDaily } from './metric-source.js';
 
 // ── Model assignment cache  (v4.208 — performance) ──────────────────────────
 // getModelAssignment() is called from forecastDay() itself — the single most
@@ -1410,9 +1411,11 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   return{date,loc,ly:lyRaw,lyAdj,t2,t4,t6,wTrend,m1,m2,forecast,forecastGCA,trendFactor,_evFactor,actual,goal,varPct,pass,isFuture,noLYData,
     opsFactor,wAdj,actualGC,lyGC,forecastGC,
     isHol, holiday:holidayInfo, holidayLyAdj,
-    oepe:isFuture?p.oepe:(oRow?oRow.oepe||p.oepe:p.oepe),
-    tpph:isFuture?p.tpph:(cRow?cRow.tpph||p.tpph:p.tpph),
-    labor:isFuture?p.laborPct:(cRow?cRow.laborPct||p.laborPct:p.laborPct),
+    // Auto-first per-day metrics (manual Ops/Controls → Daily Glimpse) via the shared resolver,
+    // so completed days that only have auto-synced data still populate. Fall back to the 6-wk avg.
+    oepe:isFuture?p.oepe:(metricDaily(ds,loc,date,'oepe')||p.oepe),
+    tpph:isFuture?p.tpph:(metricDaily(ds,loc,date,'tpph')||p.tpph),
+    labor:isFuture?p.laborPct:(metricDaily(ds,loc,date,'laborPct')||p.laborPct),
     dayparts,
     // modelUsed (v4.195): distinguishes a genuinely DI-calibrated result (cal
     // was non-null, real settings.dialedIn[loc] data applied) from a silent

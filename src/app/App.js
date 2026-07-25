@@ -209,9 +209,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.530';
+const MERIDIAN_VERSION    = '4.531';
 const MERIDIAN_BUILD_DATE = '2026-07-25';
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.531', date:'2026-07-25', changes:[
+    'Recent-window metrics fill in from the auto streams: OEPE, KVS, Labor %, TPPH and the loss-prevention numbers were showing "—" (or "-100%") on recent periods when a manual Operations Report / Controls upload hadn\'t landed yet. They now fall back to the emailed Daily Glimpse / auto DAR — so Rankings, Org Summary, and the forecast table populate on the current week instead of going blank.',
+    'Under the hood (the part that keeps this from ever creeping back): all of that metric sourcing now runs through ONE shared resolver with a per-metric source-priority list — manual first, then auto — instead of each screen reading the raw data its own way. Paired with the shared vs-LY helper from earlier, this is now the single global system for where operating numbers come from; any future data-source change is one edit and every screen benefits.',
+  ]},
   {version:'4.530', date:'2026-07-25', changes:[
     'Fix: the forecast table (District View + Store Analytics) left the current week\'s completed-day Actual and GC columns blank. The forecast engine read actuals from manual Operations Report uploads only, so recent days that had only auto-synced (DAR) data showed nothing. Actuals + guest counts now fall back to the auto DAR when a manual upload isn\'t present — so completed days of the current week fill in (Actual, GC, and the AI-vs-Actual variance) as the daily sync lands. (OEPE / TPPH / Labor% for past days still come from the Ops/Controls uploads.)',
   ]},
