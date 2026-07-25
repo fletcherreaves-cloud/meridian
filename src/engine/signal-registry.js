@@ -305,13 +305,20 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
   if (meta.source === 'smgVoicePerf') {
     // Point-in-time Monthly only — skip trailing90/ytd rolling windows so a
     // month's value is comparable to the other monthly streams. period='YYYY-MM'.
-    return rows
+    // A store can appear under several operator reports (overlapping stores) or
+    // as a re-upload duplicate — collapse to one point per (loc, month) so it
+    // isn't counted 2–3× in a correlation.
+    const byKey = {};
+    rows
       .filter(r => r && r.report_type === 'monthly' && r[field] != null && !isNaN(r[field]) && typeof r.period === 'string')
-      .map(r => {
+      .forEach(r => {
         const [y, m] = r.period.split('-').map(Number);
-        return { loc: _normLoc(r.loc), date: new Date(y, (m || 1) - 1, 1), value: r[field] };
-      })
-      .filter(v => v.date instanceof Date && !isNaN(+v.date));
+        const date = new Date(y, (m || 1) - 1, 1);
+        if (!(date instanceof Date) || isNaN(+date)) return;
+        const loc = _normLoc(r.loc);
+        byKey[loc + '|' + r.period] = { loc, date, value: r[field] };
+      });
+    return Object.values(byKey);
   }
 
   if (granularity === 'daily') {

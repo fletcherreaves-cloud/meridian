@@ -471,10 +471,21 @@ function VoicePerfPanel({ rows, stores }) {
 
   const activePeriod = selPeriod && periods.includes(selPeriod) ? selPeriod : (periods[0] || '');
 
-  const filtered = useMemo(() =>
-    rows.filter(r => r.period === activePeriod && r.report_type === selType),
-    [rows, activePeriod, selType]
-  );
+  // One physical store can appear 2–3× in a period: it's covered by multiple
+  // operator reports (THORLEY / LOPEZ-THORLEY / MORNHINWEG overlap stores), and
+  // a re-uploaded month lands new rows if the filename → operator_id differs.
+  // Collapse to one row per store, keeping the most-populated (dupes are often
+  // all-dashes). Metric fill count breaks ties; operator_name is preserved.
+  const filtered = useMemo(() => {
+    const byLoc = {};
+    for (const r of rows) {
+      if (r.period !== activePeriod || r.report_type !== selType) continue;
+      const k = String(parseInt(r.loc, 10) || r.loc);
+      const score = VP_METRICS.reduce((n, m) => n + (r[m.key] != null ? 1 : 0), 0);
+      if (!byLoc[k] || score > byLoc[k]._score) byLoc[k] = { ...r, _score: score };
+    }
+    return Object.values(byLoc);
+  }, [rows, activePeriod, selType]);
 
   const sorted = useMemo(() => {
     const m = VP_METRICS.find(x => x.key === sortMetric);
