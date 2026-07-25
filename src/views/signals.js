@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS } from '../engine/signal-registry.js';
+import { scanCsatDrivers, CSAT_OUTCOME_KEYS } from '../engine/csat-signals.js';
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 
@@ -1128,6 +1129,177 @@ function ScannerTab({ ds, onTrack }) {
   );
 }
 
+// ── CSAT Drivers tab (v4.535) ───────────────────────────────────────────────
+// Laser-focused: what moves customer satisfaction? Uses scanCsatDrivers — the
+// WITHIN-STORE correlation is the headline (each store centered on its own mean,
+// so store-to-store baseline differences can't masquerade as a driver), with a
+// volume-controlled partial and honest tiers. SMG data is monthly, so this runs
+// at monthly grain; the engine is grain-agnostic for a future weekly stream.
+const CSAT_TIER_META = {
+  'slam-dunk': { label: 'Slam-dunk', color: grn,   bg: 'rgba(16,185,129,.14)', bd: 'rgba(16,185,129,.4)' },
+  'strong':    { label: 'Strong',    color: amber, bg: 'rgba(245,158,11,.14)', bd: 'rgba(245,158,11,.4)' },
+  'watch':     { label: 'Watch',     color: blue,  bg: 'rgba(96,165,250,.12)', bd: 'rgba(96,165,250,.3)' },
+  'noise':     { label: 'Noise',     color: muted, bg: 'rgba(255,255,255,.03)', bd: bdr },
+};
+function CsatDriversTab({ ds, onTrack }) {
+  const [scopeLoc, setScopeLoc] = uSt(null);
+  const [running, setRunning] = uSt(false);
+  const [scan, setScan] = uSt(null);
+  const [outcomeFilter, setOutcomeFilter] = uSt('all');
+  const [tierFilter, setTierFilter] = uSt('signal'); // 'signal' hides noise, 'all' shows it
+  const [signFilter, setSignFilter] = uSt('all');     // all | pos | neg
+  const [tracked, setTracked] = uSt({});
+
+  const hasSmg = (ds?.smgFullscale || []).length > 0;
+  const availLocs = uM(() => {
+    const locs = new Set();
+    (ds?.smgFullscale || []).forEach(r => { if (r.loc) locs.add(normLoc(r.loc)); });
+    return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
+  }, [ds]);
+
+  const runScan = () => {
+    setRunning(true); setScan(null);
+    setTimeout(() => {
+      try { setScan(scanCsatDrivers(ds, { scopeLoc })); }
+      catch (e) { setScan({ error: e.message, results: [] }); }
+      setRunning(false);
+    }, 30);
+  };
+
+  const handleTrack = async (row) => {
+    const key = row.driverKey + '|' + row.csatKey;
+    if (tracked[key]) return;
+    const def = {
+      name: `${row.driverLabel} → ${row.csatLabel}`.slice(0, 120),
+      xMetric: row.driverKey, yMetric: row.csatKey, granularity: 'monthly', scope: scopeLoc || 'district',
+      xCondition: 'all', xReference: 'median', yCondition: 'all', yReference: 'median',
+      latest_r: row.withinR, latest_n: row.n,
+      history: [{ date: new Date().toISOString().slice(0, 10), r: row.withinR, n: row.n }],
+      status: 'active', promoted_to: [],
+    };
+    setTracked(t => ({ ...t, [key]: 'saving' }));
+    const saved = await saveCustomSignal(def);
+    if (saved) { onTrack?.({ ...def, id: saved.id, votes: 0 }); setTracked(t => ({ ...t, [key]: 'done' })); }
+    else setTracked(t => ({ ...t, [key]: 'error' }));
+  };
+
+  const fmtR = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2);
+  const fmtQ = q => q == null ? '—' : q < 0.001 ? '<0.001' : q.toFixed(3);
+  const SEL = { padding: '4px 8px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#e5e7eb', fontSize: 11, cursor: 'pointer' };
+
+  const results = scan?.results || [];
+  const filtered = results.filter(r => {
+    if (tierFilter === 'signal' && r.tier === 'noise') return false;
+    if (outcomeFilter !== 'all' && r.csatKey !== outcomeFilter) return false;
+    if (signFilter === 'pos' && !(r.withinR > 0)) return false;
+    if (signFilter === 'neg' && !(r.withinR < 0)) return false;
+    return true;
+  });
+  const groups = {};
+  filtered.forEach(r => { (groups[r.csatKey] = groups[r.csatKey] || []).push(r); });
+  const tc = scan?.tierCounts || {};
+
+  const row = (r) => {
+    const tm = CSAT_TIER_META[r.tier] || CSAT_TIER_META.noise;
+    const key = r.driverKey + '|' + r.csatKey;
+    const st = tracked[key];
+    const signDisagree = r.spearman != null && r.withinR != null && Math.sign(r.spearman) !== Math.sign(r.withinR);
+    return h('div', { key, style: {
+      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6,
+      background: surf2, border: `1px solid ${tm.bd}`, borderRadius: 8, flexWrap: 'wrap',
+    } },
+      h('div', { style: { flex: 1, minWidth: 240 } },
+        h('div', { style: { fontSize: 13, fontWeight: 600 } }, r.driverLabel),
+        h('div', { style: { fontSize: 11, color: r.withinR < 0 ? '#f87171' : grn, marginTop: 2 } }, r.direction || ''),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } },
+          `${r.driverCat} · n=${r.n} · effN=${r.effN} · ${r.locsUsed} stores · q=${fmtQ(r.qValue)}`),
+      ),
+      r.replicated === true && h('span', { title: 'Holds out-of-sample (split-half)', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: grn } }, 'replicates ✓'),
+      r.replicated === false && h('span', { title: 'Did NOT replicate on the held-out half', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,.10)', color: red } }, 'no replicate'),
+      signDisagree && h('span', { title: 'Pearson and Spearman disagree — likely nonlinear or outlier-driven', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,.12)', color: amber } }, '⚠ nonlinear'),
+      h('span', { style: { fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: tm.bg, color: tm.color } }, tm.label),
+      h('div', { style: { textAlign: 'right', minWidth: 120 } },
+        h('div', { style: { fontSize: 15, fontWeight: 800, color: tm.color, fontFamily: 'monospace' } }, `r ${fmtR(r.withinR)}`),
+        h('div', { style: { fontSize: 9, color: muted, fontFamily: 'monospace' } },
+          `pooled ${fmtR(r.pooledR)} · ×vol ${fmtR(r.partialR)}`),
+      ),
+      h('button', {
+        onClick: () => handleTrack(r), disabled: !!st,
+        style: { padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: `1px solid ${bdr}`, background: 'transparent',
+          color: st === 'done' ? grn : st === 'error' ? red : muted },
+      }, st === 'done' ? '✓ Tracked' : st === 'saving' ? '…' : st === 'error' ? 'Retry' : '★ Track'),
+    );
+  };
+
+  return h('div', null,
+    // Intro / honesty box
+    h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
+      '😊 CSAT Drivers — what moves customer satisfaction? Scans every operational metric against each SMG outcome (OSAT, B2B, Accuracy, Problem rates). ',
+      'The headline ', h('b', null, 'within-store r'), ' centers each store on its own average first, so a store\'s baseline can\'t masquerade as a driver — it answers ', h('b', null, '"when a store improves X, does its CSAT move?"'), ' ',
+      h('b', null, '×vol'), ' is the same relationship after controlling for guest count (kills volume tautologies). ',
+      'SMG is ', h('b', null, 'monthly'), ', so samples are thin — tiers are tuned for that, and most findings will start in Watch until more history lands. Association, ', h('b', null, 'not proof of cause'), '.'),
+
+    // Controls
+    h('div', { style: { display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' } },
+      availLocs.length > 1 && h('select', { value: scopeLoc || '', onChange: e => setScopeLoc(e.target.value || null), style: { ...SEL, color: scopeLoc ? amber : muted } },
+        h('option', { value: '' }, 'All stores (within-store pooled)'),
+        availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))),
+      h('button', { onClick: runScan, disabled: running || !hasSmg, style: {
+        marginLeft: 'auto', padding: '6px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (running || !hasSmg) ? 'default' : 'pointer',
+        border: `1px solid ${amber}`, background: running ? 'transparent' : 'rgba(245,158,11,.14)', color: amber, opacity: (running || !hasSmg) ? 0.55 : 1,
+      } }, running ? 'Scanning…' : '▶ Run CSAT scan'),
+    ),
+
+    // Result filters (only once we have a scan)
+    scan && !scan.error && !!results.length && h('div', { style: { display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' } },
+      h('label', { style: { fontSize: 11, color: muted, display: 'flex', alignItems: 'center', gap: 4 } }, 'Outcome',
+        h('select', { value: outcomeFilter, onChange: e => setOutcomeFilter(e.target.value), style: SEL },
+          h('option', { value: 'all' }, 'All'),
+          (scan.csatOutcomes || []).map(k => h('option', { key: k, value: k }, findMetric(k)?.label || k)))),
+      h('div', { style: { display: 'flex', gap: 6 } },
+        pillBtn(signFilter === 'all', () => setSignFilter('all'), 'Both'),
+        pillBtn(signFilter === 'pos', () => setSignFilter('pos'), '↑ Positive'),
+        pillBtn(signFilter === 'neg', () => setSignFilter('neg'), '↓ Negative'),
+      ),
+      h('div', { style: { display: 'flex', gap: 6 } },
+        pillBtn(tierFilter === 'signal', () => setTierFilter('signal'), 'Signal only'),
+        pillBtn(tierFilter === 'all', () => setTierFilter('all'), 'Include noise'),
+      ),
+    ),
+
+    // Summary
+    scan && !scan.error && h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } },
+      `${scan.driversTested} drivers × ${(scan.csatOutcomes || []).length} CSAT outcomes · ${scan.tested} pairs · `,
+      h('span', { style: { color: grn, fontWeight: 700 } }, `${tc['slam-dunk'] || 0} slam-dunk`), ' · ',
+      h('span', { style: { color: amber, fontWeight: 700 } }, `${tc.strong || 0} strong`), ' · ',
+      h('span', { style: { color: blue, fontWeight: 700 } }, `${tc.watch || 0} watch`),
+      `  ·  ${tc.noise || 0} noise (hidden)`),
+    scan?.error && h('div', { style: { fontSize: 12, color: red, marginBottom: 12 } }, 'Scan error: ' + scan.error),
+
+    // Empty states
+    !hasSmg && h('div', { style: { textAlign: 'center', padding: 40, color: muted, fontSize: 13, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+      h('div', { style: { fontSize: 26, marginBottom: 10 } }, '📥'),
+      h('div', { style: { fontWeight: 700, marginBottom: 6 } }, 'No SMG CSAT data loaded'),
+      'Upload an SMG FullScale report (Guest Voice) — monthly OSAT / B2B / Accuracy — to scan what drives it.'),
+    scan && !scan.error && hasSmg && !filtered.length && h('div', { style: { textAlign: 'center', padding: 32, color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
+      results.length ? 'No drivers in the selected tiers/filters. Try "Include noise" or clear the outcome filter.'
+        : 'No drivers cleared the sample floor yet — more months of SMG history will surface relationships.'),
+
+    // Grouped results
+    (scan?.csatOutcomes || []).filter(k => groups[k]?.length).map(k => h('div', { key: k, style: { marginBottom: 18 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: amber, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 } },
+        (findMetric(k)?.label || k),
+        h('span', { style: { fontSize: 10, fontWeight: 600, color: muted } }, `${groups[k].length} driver${groups[k].length !== 1 ? 's' : ''}`)),
+      groups[k].map(row),
+    )),
+
+    // Footer note
+    scan && !scan.error && !!filtered.length && h('div', { style: { marginTop: 8, fontSize: 10, color: muted, lineHeight: 1.6 } },
+      '★ Track saves a driver to Signal Lab (recomputes on every upload). A dedicated saved-driver library with decay alerts is coming. ',
+      'Tiers: Slam-dunk = |within r| ≥ .5, survives FDR q≤.01 + volume partial + out-of-sample. Strong = |r| ≥ .4, q≤.05. Watch = |r| ≥ .3.'),
+  );
+}
+
 export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange, darRows, refreshDar }) {
   const [tab, setTab] = uSt('liveops');
   const [expanded, setExpanded] = uSt(null);
@@ -1245,6 +1417,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
       h('button', { onClick: () => setTab('scanner'), style: TAB_STYLE(tab === 'scanner') }, '🔎 Scanner'),
+      h('button', { onClick: () => setTab('csat'), style: TAB_STYLE(tab === 'csat') }, '😊 CSAT Drivers'),
       h('button', { onClick: () => setTab('graveyard'), style: TAB_STYLE(tab === 'graveyard', true) }, `⚰ Graveyard${graveyardCount ? ` (${graveyardCount})` : ''}`),
     ),
 
@@ -1308,6 +1481,9 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
 
     // ── SCANNER TAB ───────────────────────────────────────────────────────────
     tab === 'scanner' && h(ScannerTab, { ds, onTrack: handleNewSignal }),
+
+    // ── CSAT DRIVERS TAB ──────────────────────────────────────────────────────
+    tab === 'csat' && h(CsatDriversTab, { ds, onTrack: handleNewSignal }),
 
     // ── GRAVEYARD TAB ─────────────────────────────────────────────────────────
     tab === 'graveyard' && h(GraveyardTab, { defs: localDefs, onRestore: handleRestore }),
