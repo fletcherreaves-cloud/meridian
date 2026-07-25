@@ -1240,3 +1240,29 @@ create table if not exists public.saved_correlations (
 alter table public.saved_correlations enable row level security;
 create policy "saved_correlations: public read"  on public.saved_correlations for select using (true);
 create policy "saved_correlations: public write" on public.saved_correlations for all using (true);
+
+-- ── smg_comments (v4.546) ───────────────────────────────────────────────────
+-- Cloud-persist SMG VOICE customer comments (previously device-local OPFS only,
+-- so they never showed cross-device / on preview). Feeds the Guest Voice Comments
+-- tab and a per-location opportunity ranking. dedup_key makes re-uploads
+-- idempotent.
+create table if not exists public.smg_comments (
+  id                 uuid primary key default gen_random_uuid(),
+  loc                text,
+  store_name         text,
+  comment_date       date,
+  visit_date         date,
+  nsn                text,
+  satisfaction_label text,
+  score              numeric,
+  text               text,
+  report_start       date,
+  report_end         date,
+  source_file        text,
+  dedup_key          text unique,
+  created_at         timestamptz default now()
+);
+alter table public.smg_comments enable row level security;
+create policy "smg_comments: public read"  on public.smg_comments for select using (true);
+create policy "smg_comments: public write" on public.smg_comments for all using (true);
+create index if not exists smg_comments_loc_date_idx on public.smg_comments (loc, comment_date);

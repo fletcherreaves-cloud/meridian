@@ -49,7 +49,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -1402,6 +1402,19 @@ function App() {
         }
       }catch(e){console.warn('[Meridian] VOICE Performance load failed:',e);}
       try{
+        // Cloud-persisted SMG comments (v4.546) — previously OPFS-only/device-local.
+        const cmts = await loadSmgComments();
+        if(cmts.length>0){
+          setDs(prev=>{
+            if(!prev) return prev;
+            const seen=new Set((prev.smgRows||[]).map(r=>`${r.loc}|${r.commentDate instanceof Date?r.commentDate.toISOString().slice(0,10):r.commentDate}|${(r.text||'').slice(0,60)}`));
+            const merged=[...(prev.smgRows||[]), ...cmts.filter(r=>!seen.has(`${r.loc}|${r.commentDate instanceof Date?r.commentDate.toISOString().slice(0,10):r.commentDate}|${(r.text||'').slice(0,60)}`))];
+            return {...prev, smgRows: merged};
+          });
+          console.log(`[Meridian] ✓ Loaded ${cmts.length} SMG comments from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] SMG comments load failed:',e);}
+      try{
         const lfzRows = await loadLifeLenzSchedule();
         if(lfzRows.length>0){
           setDs(prev=>{
@@ -1837,6 +1850,7 @@ function App() {
               if(smgRows.length>0){
                 currentDS={...currentDS,smgRows:[...(currentDS.smgRows||[]),...smgRows]};
                 console.log(`[Meridian] SMG VOICE: ${smgRows.length} comments from ${file.name}`);
+                saveSmgComments(smgRows.map(r=>({...r,sourceFile:file.name}))).catch(()=>{}); // cloud-persist (v4.546)
               }
               loaded.push({name:file.name,type:typeInfo});
               if(supabase&&!file._pendingId&&!file._manualSyncId)

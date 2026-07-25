@@ -1154,6 +1154,57 @@ export async function deleteSavedCorrelation(id) {
   return true;
 }
 
+// ── SMG VOICE comments (cloud-persist, v4.546) ────────────────────────────────
+function _cmtISO(d) {
+  if (!d) return null;
+  if (d instanceof Date) return isNaN(+d) ? null : d.toISOString().slice(0, 10);
+  const s = String(d).trim();
+  // ISO already?
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // M/D/YYYY
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { const yr = m[3].length === 2 ? '20' + m[3] : m[3]; return `${yr}-${String(+m[1]).padStart(2,'0')}-${String(+m[2]).padStart(2,'0')}`; }
+  const dt = new Date(s); return isNaN(+dt) ? null : dt.toISOString().slice(0, 10);
+}
+
+export async function saveSmgComments(rows) {
+  if (!supabase || !rows?.length) return { saved: 0 };
+  const upsert = rows.map(r => {
+    const cd = _cmtISO(r.commentDate) || _cmtISO(r.visitDate);
+    const txt = (r.text || '').trim();
+    return {
+      loc: String(r.loc ?? r.nsn ?? ''), store_name: r.storeName || null,
+      comment_date: cd, visit_date: _cmtISO(r.visitDate), nsn: r.nsn || null,
+      satisfaction_label: r.satisfactionLabel || null,
+      score: (typeof r.score === 'number' ? r.score : null),
+      text: txt, report_start: _cmtISO(r.reportStart), report_end: _cmtISO(r.reportEnd),
+      source_file: r.sourceFile || r.source_file || null,
+      dedup_key: `${String(r.loc ?? r.nsn ?? '')}|${cd || ''}|${txt.slice(0, 160)}`,
+    };
+  }).filter(r => r.text);
+  if (!upsert.length) return { saved: 0 };
+  const { error } = await supabase.from('smg_comments').upsert(upsert, { onConflict: 'dedup_key' });
+  if (error) { console.warn('[smg_comments] save error:', error); return { saved: 0, error: error.message }; }
+  return { saved: upsert.length };
+}
+
+export async function loadSmgComments({ daysBack = 365 } = {}) {
+  if (!supabase) return [];
+  const cutoff = new Date(Date.now() - daysBack * 86400000).toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase
+    .from('smg_comments').select('*')
+    .gte('comment_date', cutoff)
+    .order('comment_date', { ascending: false })
+    .range(from, to));
+  return (data || []).map(r => ({
+    loc: r.loc, storeName: r.store_name,
+    commentDate: r.comment_date ? new Date(r.comment_date + 'T00:00:00') : null,
+    visitDate: r.visit_date ? new Date(r.visit_date + 'T00:00:00') : null,
+    nsn: r.nsn, satisfactionLabel: r.satisfaction_label, score: r.score,
+    text: r.text, reportStart: r.report_start, reportEnd: r.report_end,
+  }));
+}
+
 // ── On-demand sync triggers ───────────────────────────────────────────────────
 // Dispatch any data-pull workflow from the app. `workflow` is one of
 // 'dar' | 'ebos' | 'fob' | 'lifelenz'; `inputs` optionally overrides that
