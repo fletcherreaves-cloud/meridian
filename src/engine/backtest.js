@@ -687,7 +687,10 @@ async function runPeriodTotalBacktest(ds, settings, userEvents, onProgress, opts
   const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
   // Same competitor set as the daily backtest — simple first for display order.
   const MODELS_TO_TEST = ['simple','dow','ae','ewma','di'];
-  const btSettings = {...settings, mode:'Back Test', _userEvents: userEvents||{}};
+  // _aeStrictParams: grade AE on its STATIC default blend params, not the
+  // localStorage params grid-fit on full history — so AE carries no in-sample
+  // lookahead. Makes an AE win here airtight (v4.537).
+  const btSettings = {...settings, mode:'Back Test', _userEvents: userEvents||{}, _aeStrictParams: true};
   const runDateStr = new Date().toISOString().slice(0,10);
 
   const perStore = {};        // loc → {storeName, winner, perModel, ranked, folds}

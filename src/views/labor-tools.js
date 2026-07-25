@@ -808,7 +808,7 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
         div({style:{padding:'6px 16px',borderTop:'.5px solid var(--bdr)',flexShrink:0,fontSize:'7.5px',
           color:'var(--text3)',background:'var(--surf2)'}},
           'MAPE on 28-day totals (lower = better). Green cell = per-store winner. ',
-          'This is a diagnostic — it does not change any model assignment. Simple is graded strictly leak-free (asOf = window start-of-day); engineered models run in Back Test mode so they are ex-ante too.')
+          'This is a diagnostic — it does not change any model assignment. Simple is graded strictly leak-free (asOf = window start-of-day); engineered models run in Back Test mode so they are ex-ante too, and AE is graded on its static default params (no full-history-fit blend weights) so its win carries no in-sample lookahead.')
       )
     )
   );
