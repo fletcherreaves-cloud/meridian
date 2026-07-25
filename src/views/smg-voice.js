@@ -632,7 +632,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
       const k = String(parseInt(r.loc, 10) || r.loc);
       if (!m[k]) m[k] = { loc: k, name: r.storeName || r.loc, rows: [], scoreSum: 0, scoreCount: 0 };
       m[k].rows.push(r);
-      if (r.score != null) { m[k].scoreSum += r.score; m[k].scoreCount++; }
+      if (Number.isFinite(r.score)) { m[k].scoreSum += r.score; m[k].scoreCount++; }
     });
     Object.values(m).forEach(s => { s.avgScore = s.scoreCount ? s.scoreSum / s.scoreCount : null; });
     return m;
@@ -643,7 +643,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     [storeMap]
   );
 
-  const distScore = rows.filter(r => r.score != null);
+  const distScore = rows.filter(r => Number.isFinite(r.score));
   const distAvg   = distScore.length ? distScore.reduce((s,r) => s + r.score, 0) / distScore.length : null;
 
   const allDates = rows.map(r => r.reportStart).filter(Boolean);

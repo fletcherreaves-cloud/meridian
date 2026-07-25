@@ -1867,6 +1867,14 @@ async function parseSMGVoicePDF(file) {
       }
       if (!satisfactionLabel) continue; // skip rows without satisfaction label
     }
+    // Trust the label→score map; only accept a parsed numeric if it's a sane 0–5
+    // (parseFloat on a stray "." or timestamp yields NaN → poisons the average).
+    const mapScore = SCORE_MAP[satisfactionLabel.toLowerCase()] || null;
+    if (!Number.isFinite(score) || score < 0 || score > 5) score = mapScore;
+    // The column layout prepends the raw score + NSN to the comment cell
+    // ("5.0000 05183 Angala is super quick") — strip that leading token pair so
+    // the text is just the guest comment.
+    commentText = commentText.replace(/^\s*\d(?:\.\d+)?\s+\d{5,6}\s+/, '').trim();
     rows.push({ loc: currentLoc, storeName: currentStoreName, reportStart, reportEnd,
       commentDate, visitDate, nsn, text: commentText, satisfactionLabel, score });
   }
