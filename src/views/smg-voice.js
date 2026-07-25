@@ -4,6 +4,7 @@
 // Row shape: { loc, storeName, reportStart, reportEnd, commentDate, visitDate, nsn, text, satisfactionLabel, score }
 import * as React from 'react';
 import { INV_ORG_COORDS } from '../constants';
+import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 
 const h = React.createElement;
 
@@ -717,6 +718,71 @@ function VoicePerfPanel({ rows, stores, inScope, storeSel }) {
   );
 }
 
+// ── Opportunities Panel ─────────────────────────────────────────────────────
+// Ranks stores by biggest CSAT opportunity (absolute detractors), with per-store
+// top themes and a district theme roll-up. Data = the scoped comment rows.
+function OpportunitiesPanel({ result, scopeText }) {
+  const { stores, district } = result;
+  if (!stores.length) return h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } },
+    h('div', { style: { fontSize: 32, marginBottom: 12 } }, '🎯'),
+    h('div', { style: { fontWeight: 700, fontSize: 14, marginBottom: 8, color: 'var(--text)' } }, 'No Comments In Scope'),
+    h('div', { style: { fontSize: 12, lineHeight: 1.6 } }, 'Load or backfill guest comments to rank store opportunities.')
+  );
+
+  const th = { padding: '7px 8px', textAlign: 'center', fontSize: 9, fontWeight: 700, color: 'var(--text3)',
+    textTransform: 'uppercase', letterSpacing: '.3px', borderBottom: '2px solid var(--bdr)', whiteSpace: 'nowrap' };
+  const chip = (label, tone) => h('span', { key: label, style: {
+    fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap',
+    background: (tone || '#ef4444') + '1f', color: tone || '#ef4444' } }, label);
+
+  return h('div', { style: { overflowY: 'auto', flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 } },
+    // District summary
+    h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' } },
+      h('div', { style: { display: 'flex', flexDirection: 'column' } },
+        h('div', { style: { fontSize: 22, fontWeight: 800, color: '#ef4444', lineHeight: 1 } }, district.neg),
+        h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, 'Detractors'),
+      ),
+      h('div', { style: { fontSize: 11, color: 'var(--text2)', maxWidth: 320, lineHeight: 1.5 } },
+        `${district.neg} unhappy of ${district.total} comments (${Math.round(district.negRate * 100)}%) across ${stores.length} stores in ${scopeText}. `,
+        'Ranked by detractors — the most real guests to win back first.'),
+      district.themes.length ? h('div', { style: { marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', maxWidth: 380, justifyContent: 'flex-end' } },
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', fontWeight: 700 } }, 'Top issues:'),
+        ...district.themes.slice(0, 5).map(t => chip(`${t.label} ${t.count}`))) : null,
+    ),
+    // Ranking table
+    h('div', { style: { overflowX: 'auto' } },
+      h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+        h('thead', null, h('tr', { style: { background: 'var(--surf2)' } },
+          h('th', { style: { ...th, textAlign: 'left', minWidth: 150 } }, 'Store'),
+          h('th', { style: th }, 'Comments'),
+          h('th', { style: th }, 'Detractors'),
+          h('th', { style: th }, 'Neg %'),
+          h('th', { style: th }, 'Avg'),
+          h('th', { style: { ...th, textAlign: 'left', minWidth: 220 } }, 'Top Issues (in negative comments)'),
+        )),
+        h('tbody', null, stores.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)', background: i % 2 ? 'rgba(255,255,255,.015)' : 'transparent' } },
+          h('td', { style: { padding: '6px 8px' } },
+            h('span', { style: { fontWeight: 700, color: 'var(--text3)', marginRight: 4 } }, '#' + (i + 1)),
+            h('span', { style: { fontWeight: 600 } }, s.name),
+          ),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', color: 'var(--text2)' } }, s.total),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', fontWeight: 800, color: s.neg ? '#ef4444' : 'var(--text3)' } }, s.neg),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', color: s.negRate >= 0.1 ? '#ef4444' : s.negRate >= 0.05 ? '#f59e0b' : 'var(--text2)', fontWeight: 700 } },
+            `${Math.round(s.negRate * 100)}%`,
+            s.thin ? h('span', { title: `Thin sample (< ${MIN_N} comments) — rate is noisy`, style: { fontSize: 8, color: 'var(--text3)', marginLeft: 3 } }, '⚠') : null),
+          h('td', { style: { padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: s.avgScore >= 4.5 ? '#28a870' : s.avgScore >= 3.5 ? '#e8a040' : '#d94f4f' } }, s.avgScore != null ? s.avgScore.toFixed(2) : '—'),
+          h('td', { style: { padding: '6px 8px' } },
+            s.topThemes.length
+              ? h('div', { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } }, s.topThemes.slice(0, 4).map(t => chip(`${t.label} ${t.count}`)))
+              : h('span', { style: { color: 'var(--text3)', fontSize: 10 } }, s.neg ? 'No themed pattern' : '—')),
+        ))),
+      ),
+    ),
+    h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } },
+      `Detractors = Dissatisfied + Highly Dissatisfied comments. Ranked by absolute detractors so a high-volume store outranks a 1-of-1. ⚠ flags stores with < ${MIN_N} comments (rate is noisy). Themes are keyword clusters over the negative comments.`),
+  );
+}
+
 // ── Main panel ─────────────────────────────────────────────────────────────────
 export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClose }) {
   const rows = (ds && ds.smgRows) || [];
@@ -758,6 +824,10 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
     const src = tab === 'performance' ? vpRows : tab === 'fullscale' ? fsRows : rows;
     return [...new Set(src.map(r => r.loc))];
   }, [tab, vpRows, fsRows, rows]);
+  // Opportunity ranking (org-scoped comments) — computed only when the tab is open.
+  const oppResult = React.useMemo(() =>
+    tab === 'opportunities' ? rankCommentOpportunities(scopedRows, { storeName: nameOf }) : null,
+    [tab, scopedRows, nameOf]);
 
   // Build per-store aggregates (scoped — District Average recomputes for scope)
   const storeMap = React.useMemo(() => {
@@ -840,7 +910,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
             periodLabel && h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 10 } }, periodLabel),
           ),
           h('div', { style: { display: 'flex', gap: 2, marginLeft: 16, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
-            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments']].map(([t, label]) =>
+            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments'], ['opportunities','🎯 Opportunities']].map(([t, label]) =>
               h('button', { key: t, onClick: () => setTab(t), style: {
                 padding: '4px 12px', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: tab===t ? 700 : 400,
                 background: tab===t ? 'var(--accent)' : 'transparent',
@@ -873,6 +943,22 @@ export function SMGVoicePanel({ ds, stores, voicePerf, onBackfillComments, onClo
       // ── Body: FullScale tab ──────────────────────────────────────────────────
       tab === 'fullscale' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },
         h(FullScalePanel, { fsRows, stores, inScope, storeSel })
+      ),
+
+      // ── Body: Opportunities tab ──────────────────────────────────────────────
+      tab === 'opportunities' && oppResult && h('div', { style: { display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0 } },
+          h('span', { style: { fontSize: 11, color: 'var(--text3)' } }, `${oppResult.stores.length} stores · ranked by detractors`),
+          h('div', { style: { marginLeft: 'auto' } }, h(ExportButtons, {
+            onCsv: () => exportCSV(`VOICE_Opportunities_${orgDesc(orgFilter, storeSel, nameOf).replace(/[^a-z0-9]+/gi, '_')}.csv`,
+              ['Rank', 'Store', 'NSN', 'Comments', 'Detractors', 'Neg %', 'Avg', 'Top Issues'],
+              oppResult.stores.map((s, i) => [i + 1, s.name, s.loc, s.total, s.neg, Math.round(s.negRate * 100) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
+            onPrint: () => printReport('VOICE Store Opportunities', `${orgDesc(orgFilter, storeSel, nameOf)} · ${oppResult.stores.length} stores`,
+              ['Rank', 'Store', 'Comments', 'Detractors', 'Neg %', 'Avg', 'Top Issues'],
+              oppResult.stores.map((s, i) => [i + 1, s.name, s.total, s.neg, Math.round(s.negRate * 100) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
+          })),
+        ),
+        h(OpportunitiesPanel, { result: oppResult, scopeText: orgDesc(orgFilter, storeSel, nameOf) }),
       ),
 
       // ── Body: Comments tab ───────────────────────────────────────────────────
