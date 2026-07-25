@@ -1,4 +1,5 @@
 // @ts-nocheck
+import './polyfills.js'; // MUST be first — older-iOS shims before any module (pdfjs) runs
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import './meridian.css';
