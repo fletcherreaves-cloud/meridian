@@ -1806,14 +1806,29 @@ function App() {
             }
             loaded.push({name:file.name,type:typeInfo});
           } else if(typeInfo.type==='smg-voice'){
-            const smgRows=await parseSMGVoicePDF(file);
-            if(smgRows.length>0){
-              currentDS={...currentDS,smgRows:[...(currentDS.smgRows||[]),...smgRows]};
-              console.log(`[Meridian] SMG VOICE: ${smgRows.length} comments from ${file.name}`);
+            // eu###### filenames cover BOTH the customer-comment report AND the
+            // VOICE Performance report — SMG reuses the ID prefix. Content decides:
+            // try the Performance parser first; if it finds no perf rows, it's a
+            // comment report and we fall back. (Fixes performance exports being
+            // silently mis-parsed as comments and never reaching smg_voice_performance.)
+            const {parseVoicePerformancePDF}=await import('../parsers/voice-performance.js');
+            let vpRows=[];
+            try{ vpRows=await parseVoicePerformancePDF(await file.arrayBuffer(),file.name); }catch(e){ vpRows=[]; }
+            if(vpRows.length>0){
+              await saveVoicePerf(vpRows);
+              currentDS={...currentDS,smgVoicePerf:[...(currentDS.smgVoicePerf||[]),...vpRows]};
+              console.log(`[Meridian] VOICE Performance (eu### content match): ${vpRows.length} rows from ${file.name}`);
+              loaded.push({name:file.name,type:{...typeInfo,type:'voice-performance',label:'SMG VOICE Performance Report'}});
+            } else {
+              const smgRows=await parseSMGVoicePDF(file);
+              if(smgRows.length>0){
+                currentDS={...currentDS,smgRows:[...(currentDS.smgRows||[]),...smgRows]};
+                console.log(`[Meridian] SMG VOICE: ${smgRows.length} comments from ${file.name}`);
+              }
+              loaded.push({name:file.name,type:typeInfo});
+              if(supabase&&!file._pendingId&&!file._manualSyncId)
+                uploadReportFile(file,'smg-voice').then(rec=>_markSynced(rec?.id)).catch(()=>{});
             }
-            loaded.push({name:file.name,type:typeInfo});
-            if(supabase&&!file._pendingId&&!file._manualSyncId)
-              uploadReportFile(file,'smg-voice').then(rec=>_markSynced(rec?.id)).catch(()=>{});
           } else {
             console.warn('[Meridian] Unrecognized PDF:',file.name);
           }

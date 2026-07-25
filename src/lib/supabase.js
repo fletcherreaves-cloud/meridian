@@ -290,12 +290,14 @@ export async function saveVoicePerf(rows) {
 
 export async function loadVoicePerf() {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  // Paginate — a full backfill (months × ~27 stores × 3 report types) blows past
+  // Supabase's 1000-row cap; a single query would silently drop the older history.
+  const data = await fetchAll((from, to) => supabase
     .from('smg_voice_performance')
     .select('*')
-    .order('period', { ascending: false });
-  if (error || !data) { console.warn('[voice_perf] load error:', error); return []; }
-  return data;
+    .order('period', { ascending: false })
+    .range(from, to));
+  return data || [];
 }
 
 // ── LifeLenz Schedule persistence ────────────────────────────────────────────
