@@ -48,3 +48,33 @@ if (!Array.prototype.findLast) {
 if (typeof globalThis.structuredClone !== 'function') {
   globalThis.structuredClone = function structuredClone(v) { return v == null ? v : JSON.parse(JSON.stringify(v)); };
 }
+
+// ReadableStream async iteration — THE iOS fix. Safari (even iOS 26) still does
+// not implement ReadableStream.prototype[Symbol.asyncIterator], so pdfjs's
+// `for await (const value of readableStream)` in getTextContent throws
+// "undefined is not a function". Works on Chrome/Firefox → desktop was fine.
+if (typeof ReadableStream !== 'undefined' && typeof Symbol !== 'undefined' && Symbol.asyncIterator
+    && !ReadableStream.prototype[Symbol.asyncIterator]) {
+  const asyncIterator = function ({ preventCancel = false } = {}) {
+    const reader = this.getReader();
+    return {
+      next() {
+        return reader.read().then(
+          result => { if (result.done) reader.releaseLock(); return result; },
+          err => { reader.releaseLock(); throw err; }
+        );
+      },
+      return(value) {
+        if (preventCancel) { reader.releaseLock(); return Promise.resolve({ done: true, value }); }
+        const p = reader.cancel(value);
+        reader.releaseLock();
+        return p.then(() => ({ done: true, value }));
+      },
+      [Symbol.asyncIterator]() { return this; },
+    };
+  };
+  try {
+    ReadableStream.prototype[Symbol.asyncIterator] = asyncIterator;
+    if (!ReadableStream.prototype.values) ReadableStream.prototype.values = asyncIterator;
+  } catch (_) { /* read-only in some engines — best effort */ }
+}
