@@ -54,12 +54,12 @@ function thresholdLabel(r, n, expectedDir) {
 function StatusChip({ r, n, confirmed, expectedDir }) {
   const thr = thresholdLabel(r, n, expectedDir);
   if (thr === 'No effect')
-    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(107,114,128,.15)', color: muted } }, 'No effect');
+    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(107,114,128,.15)', color: muted } }, 'No real link');
   if (thr === 'Out of range')
-    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(16,185,129,.12)', color: grn } }, '↑ Out of range');
+    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(16,185,129,.12)', color: grn } }, '✓ Strong link');
   if (confirmed)
-    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.12)', color: amber } }, '~ Within tolerance');
-  return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.08)', color: amber } }, '~ Plausible');
+    return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.12)', color: amber } }, '~ Some link');
+  return h('span', { style: { fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '99px', background: 'rgba(245,158,11,.08)', color: amber } }, '~ Possible link');
 }
 
 function CorrelationBar({ r }) {
@@ -114,21 +114,20 @@ function SignalCard({ sig, expanded, onToggle }) {
         sig.note && h('div', { style: { fontSize: 10, color: amber, marginTop: 2 } }, '⚠ ' + sig.note),
       ),
       h('div', { style: { textAlign: 'right', flexShrink: 0 } },
-        h('div', { style: { fontSize: 10, color: muted } }, 'n = ' + (sig.n || 0)),
-        h('div', { style: { fontSize: 10, color: muted, marginTop: 1 } }, !sig.r || Math.abs(sig.r) < 0.20 ? 'No signal' : sig.confirmed ? Math.abs(sig.r) >= 0.70 ? 'Strong' : 'Moderate' : 'Plausible'),
+        h('div', { style: { fontSize: 10, color: muted } }, (sig.n || 0) + ' data points'),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 1 } }, !sig.r || Math.abs(sig.r) < 0.20 ? 'No link' : sig.confirmed ? Math.abs(sig.r) >= 0.70 ? 'Strong link' : 'Some link' : 'Possible link'),
       ),
       h('span', { style: { fontSize: 13, color: muted, transition: 'transform .2s', transform: isExp ? 'rotate(180deg)' : 'none' } }, '▾'),
     ),
     isExp && h('div', { style: { padding: '0 14px 12px', borderTop: `1px solid ${bdr}` } },
       h('div', { style: { display: 'flex', gap: 24, marginTop: 10, flexWrap: 'wrap' } },
         h('div', { style: { flex: 1, minWidth: 200 } },
-          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Correlation Strength'),
+          h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'How tightly they move together'),
           h(CorrelationBar, { r: sig.r }),
           h('div', { style: { marginTop: 6, fontSize: 10, color: muted } },
-            'Direction: ',
-            h('span', null, sig.direction === 'negative' ? '↓ negative (inverse)' : '↑ positive (direct)'),
+            h('span', null, sig.direction === 'negative' ? '↓ When one goes up, the other goes down' : '↑ They rise and fall together'),
             sig.expectedDir && h('span', { style: { color: sig.direction === sig.expectedDir ? grn : red } },
-              ' — ' + (sig.direction === sig.expectedDir ? '✓ as expected' : '✗ unexpected direction')),
+              ' — ' + (sig.direction === sig.expectedDir ? '✓ as expected' : '✗ opposite of what we expected')),
           ),
         ),
         h('div', { style: { flex: 1, minWidth: 200 } },
@@ -143,10 +142,10 @@ function SignalCard({ sig, expanded, onToggle }) {
           h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: muted, marginBottom: 6 } }, 'Assessment'),
           h('div', { style: { fontSize: 11, lineHeight: 1.5 } },
             thr === 'Out of range'
-              ? `Signal confirmed and significant (|r| = ${Math.abs(sig.r).toFixed(2)}). This relationship is strong enough to act on — investigate root cause.`
+              ? `Strong, dependable link (strength ${Math.abs(sig.r).toFixed(2)} out of 1). Solid enough to dig into — worth looking for the root cause.`
               : thr === 'Within tolerance'
-              ? `Relationship detected but within acceptable range (|r| = ${Math.abs(sig.r).toFixed(2)}). Monitor for strengthening. More data improves confidence.`
-              : `No meaningful statistical relationship found yet (|r| = ${Math.abs(sig.r || 0).toFixed(2)}). These metrics may be independent, or more data is needed.`),
+              ? `There's a link, but a moderate one (strength ${Math.abs(sig.r).toFixed(2)} out of 1). Keep an eye on it — more data will firm it up.`
+              : `No real link yet (strength ${Math.abs(sig.r || 0).toFixed(2)} out of 1). These two may just be unrelated, or we need more data.`),
         ),
       ),
     ),
@@ -368,7 +367,7 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
     ),
     // Condition filters — only shown when metrics are selected
     (xMetric || yMetric) && h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, flexWrap: 'wrap', padding: '10px 12px', background: 'rgba(245,158,11,.04)', border: '1px solid rgba(245,158,11,.12)', borderRadius: 8 } },
-      h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: amber, letterSpacing: '.07em', width: '100%', marginBottom: 4 } }, 'Conditional filter (optional — narrows data before computing correlation)'),
+      h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: amber, letterSpacing: '.07em', width: '100%', marginBottom: 4 } }, 'Optional filter — narrows the data before checking the link'),
       xMetric && h(ConditionSelect, { metaMeta: xMeta, axisLabel: 'X', value: xCondition, onChange: setXCondition, reference: xReference, onReferenceChange: setXReference }),
       yMetric && h(ConditionSelect, { metaMeta: yMeta, axisLabel: 'Y', value: yCondition, onChange: setYCondition, reference: yReference, onReferenceChange: setYReference }),
     ),
@@ -528,7 +527,7 @@ function GraveyardTab({ defs, onRestore }) {
     return h('div', { style: { textAlign: 'center', padding: '48px 24px', color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
       h('div', { style: { fontSize: 28, marginBottom: 10 } }, '⚰'),
       h('div', { style: { fontWeight: 700, color: 'var(--text)', marginBottom: 6 } }, 'Graveyard is empty'),
-      'Signals with n ≥ 50 and |r| < 0.15 for 3 consecutive runs will be proposed for retirement.',
+      'A signal with plenty of data (50+ points) but almost no link (strength under 0.15) for 3 checks in a row gets flagged to retire.',
     );
 
   return h('div', null,
@@ -544,7 +543,7 @@ function GraveyardTab({ defs, onRestore }) {
           h('div', { style: { fontWeight: 600, fontSize: 12, color: muted, marginBottom: 3 } }, def.name),
           h('div', { style: { fontSize: 10, color: 'rgba(107,114,128,.6)' } },
             (xMeta?.label || def.xMetric) + ' → ' + (yMeta?.label || def.yMetric),
-            ' · final |r| = ' + (Math.abs(def.latest_r || 0)).toFixed(3) + ' (n = ' + (def.latest_n || 0) + ')'),
+            ' · final strength ' + (Math.abs(def.latest_r || 0)).toFixed(2) + ' · ' + (def.latest_n || 0) + ' data points'),
         ),
         h('button', { onClick: () => onRestore(def), style: { padding: '4px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, fontSize: 11, cursor: 'pointer' } }, 'Restore'),
       );
@@ -559,13 +558,13 @@ function PromoteModal({ def, sig, onConfirm, onCancel }) {
   const options = [
     { key: 'projections', label: '▦ Projections', desc: 'Show a signal influence callout when this X metric is in range' },
     { key: 'morning_brief', label: '🌅 Morning Brief', desc: 'Flag this relationship in the daily store summary' },
-    { key: 'sage', label: '🧠 SAGE', desc: 'Include this correlation in SAGE AI context when relevant' },
+    { key: 'sage', label: '🧠 SAGE', desc: 'Let the SAGE assistant use this link when it answers questions' },
   ];
   return h('div', { onClick: onCancel, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' } },
     h('div', { onClick: e => e.stopPropagation(), style: { width: 'min(420px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--surf,#1a1f2e)', borderRadius: 12, padding: 24, border: `1px solid ${bdr}`, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 700, marginBottom: 6 } }, '▲ Promote Signal'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 16, lineHeight: 1.5 } },
-        `"${def.name}" has a confirmed correlation (r = ${sig?.r?.toFixed(3) || '?'}). Promoting integrates it into Meridian's intelligence layer.`),
+        `"${def.name}" is a confirmed link (strength ${sig?.r != null ? Math.abs(sig.r).toFixed(2) : '?'} out of 1). Promoting puts it to work across Meridian.`),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 } },
         options.map(opt => h('div', { key: opt.key, onClick: () => toggle(opt.key), style: {
           padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
@@ -1052,10 +1051,9 @@ function ScannerTab({ ds, onTrack }) {
   return h('div', null,
     // Intro
     h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
-      '🔎 Auto-Correlation Scanner — cycles every metric pair across the loaded data and surfaces the strongest relationships. ',
-      'Results show which metrics ', h('b', null, 'move together'), ' — this is association, ', h('b', null, 'not cause-and-effect'), '. ',
-      'Guardrails: a minimum sample size, an effect-size floor, and a Benjamini–Hochberg false-discovery correction so pairs that only look strong by chance are flagged out. ',
-      'Near-identical pairs (the same metric from two sources, or the same event as count/$/%) are hidden so real cross-metric relationships surface.'),
+      '🔎 ', h('b', null, 'Find hidden connections in your numbers.'), ' Meridian compares every pair of metrics you track and surfaces the ones that ', h('b', null, 'move together'), ' — when one goes up, the other reliably goes up (or down) with it. ',
+      'This is a connection, ', h('b', null, 'not proof that one causes the other'), '. ',
+      'It only shows pairs backed by enough data, screens out coincidences, and hides near-duplicate pairs (the same number from two sources) so the real connections stand out.'),
 
     // Controls
     h('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' } },
@@ -1063,9 +1061,9 @@ function ScannerTab({ ds, onTrack }) {
         pillBtn(gran === 'daily', () => setGran('daily'), 'Daily'),
         pillBtn(gran === 'monthly', () => setGran('monthly'), 'Monthly'),
       ),
-      h('label', { style: { fontSize: 11, color: muted, display: 'flex', alignItems: 'center', gap: 4 } }, 'Min |r|',
+      h('label', { style: { fontSize: 11, color: muted, display: 'flex', alignItems: 'center', gap: 4 } }, 'Min strength',
         h('select', { value: String(minAbsR), onChange: e => setMinAbsR(parseFloat(e.target.value)), style: SEL },
-          ['0.3', '0.4', '0.5', '0.6'].map(v => h('option', { key: v, value: v }, v)))),
+          [['0.3', '0.3 · moderate+'], ['0.4', '0.4 · clear+'], ['0.5', '0.5 · strong+'], ['0.6', '0.6 · very strong']].map(([v, lbl]) => h('option', { key: v, value: v }, lbl)))),
       availLocs.length > 1 && h('select', { value: scopeLoc || '', onChange: e => setScopeLoc(e.target.value || null), style: { ...SEL, color: scopeLoc ? amber : muted } },
         h('option', { value: '' }, 'All stores'),
         availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))),
@@ -1077,12 +1075,12 @@ function ScannerTab({ ds, onTrack }) {
 
     // Summary
     scan && !scan.error && h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } },
-      `${scan.metricsUsed} metrics with data · ${scan.tested} pairs tested · ${results.length} above |r| ${minAbsR} · `,
-      h('span', { style: { color: grn, fontWeight: 700 } }, `${scan.fdrCount} survive FDR (q<${scan.alpha})`),
-      results.length > 40 ? ` · showing top 40` : ''),
+      `Compared ${scan.tested} pairs across ${scan.metricsUsed} metrics · ${results.length} move together strongly · `,
+      h('span', { style: { color: grn, fontWeight: 700 } }, `${scan.fdrCount} unlikely to be a fluke`),
+      results.length > 40 ? ` · showing the top 40` : ''),
     scan?.error && h('div', { style: { fontSize: 12, color: red, marginBottom: 12 } }, 'Scan error: ' + scan.error),
     scan && !scan.error && !results.length && h('div', { style: { textAlign: 'center', padding: 32, color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
-      scan.metricsUsed < 2 ? 'Not enough loaded metrics to correlate — sync or upload more data.' : `No pairs cleared |r| ≥ ${minAbsR}. Try lowering the threshold.`),
+      scan.metricsUsed < 2 ? 'Not enough data loaded to compare yet — sync or upload more.' : `Nothing reached strength ${minAbsR}. Try lowering the minimum.`),
 
     // Result rows
     shown.map((row, i) => h('div', { key: i, style: {
@@ -1090,15 +1088,17 @@ function ScannerTab({ ds, onTrack }) {
       background: surf2, border: `1px solid ${row.fdrSig ? 'rgba(16,185,129,.25)' : bdr}`, borderRadius: 8, flexWrap: 'wrap',
     } },
       h('div', { style: { flex: 1, minWidth: 220 } },
-        h('div', { style: { fontSize: 13, fontWeight: 600 } }, `${row.xLabel}  →  ${row.yLabel}`),
-        h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, `${row.xCat} · ${row.yCat} · n=${row.n} · q=${fmtQ(row.qValue)}`),
+        h('div', { style: { fontSize: 13, fontWeight: 600 } }, `${row.xLabel}  &  ${row.yLabel}`),
+        h('div', { style: { fontSize: 11, color: row.r >= 0 ? grn : '#f87171', marginTop: 2 } },
+          row.r >= 0 ? 'rise and fall together' : 'when one goes up, the other goes down'),
+        h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, `${row.xCat} · ${row.yCat} · based on ${row.n} data points`),
       ),
-      row.crossDomain && h('span', { style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(96,165,250,.12)', color: blue } }, 'cross-domain'),
-      row.divergent && h('span', { title: 'Pearson and Spearman disagree — likely nonlinear or outlier-driven', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,.12)', color: amber } }, '⚠ nonlinear'),
-      row.fdrSig && h('span', { style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: grn } }, 'FDR ✓'),
+      row.crossDomain && h('span', { title: 'These two come from different parts of the business', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(96,165,250,.12)', color: blue } }, 'different areas'),
+      row.divergent && h('span', { title: 'The link isn\'t a straight line — bigger swings matter more than small ones', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,.12)', color: amber } }, 'not a straight line'),
+      row.fdrSig && h('span', { title: 'Passed the coincidence check — unlikely to be a fluke', style: { fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,.12)', color: grn } }, 'not a fluke ✓'),
       h('div', { style: { textAlign: 'right', minWidth: 96 } },
-        h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(row.r), fontFamily: 'monospace' } }, `r ${fmtR(row.r)}`),
-        h('div', { style: { fontSize: 10, color: muted, fontFamily: 'monospace' } }, `ρ ${fmtR(row.rho)}`),
+        h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(row.r), fontFamily: 'monospace' } }, fmtR(row.r)),
+        h('div', { style: { fontSize: 9, color: muted } }, 'strength'),
       ),
       h('button', {
         onClick: () => handleTrack(row), disabled: !!tracked[row.xKey + '|' + row.yKey],
@@ -1120,8 +1120,8 @@ function ScannerTab({ ds, onTrack }) {
         h('div', { style: { textAlign: 'right', minWidth: 90 } },
           r != null && n >= 5
             ? h('div', null,
-                h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(r), fontFamily: 'monospace' } }, `r ${fmtR(r)}`),
-                h('div', { style: { fontSize: 10, color: muted } }, `${s.granularity} · n=${n}`))
+                h('div', { style: { fontSize: 15, fontWeight: 800, color: rColor(r), fontFamily: 'monospace' } }, fmtR(r)),
+                h('div', { style: { fontSize: 9, color: muted } }, `strength · ${n} points`))
             : h('div', { style: { fontSize: 11, color: muted } }, 'no data yet'),
         ),
       );
@@ -1456,7 +1456,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     h('div', { style: { marginBottom: 16 } },
       h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'Intelligence'),
       h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 900, letterSpacing: '-.03em' } }, 'Signals'),
-      h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Cross-metric correlation analysis. Built-in signals run automatically; define your own in Signal Lab; or auto-discover them in the 🔎 Scanner.'),
+      h('div', { style: { fontSize: 12, color: muted, marginTop: 4 } }, 'Find which of your numbers move together. Built-in links run automatically; build your own in Signal Lab; or let the 🔎 Scanner surface them for you.'),
     ),
 
     // Tab bar
@@ -1503,21 +1503,21 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       ),
       displaySignals.map(sig => h(SignalCard, { key: sig.id, sig, expanded, onToggle: () => setExpanded(expanded === sig.id ? null : sig.id) })),
       h('div', { style: { marginTop: 16, fontSize: 10, color: muted, lineHeight: 1.6 } },
-        '⚙ Signals use Pearson r. Out of range = |r| ≥ 0.50 (n ≥ 20), Within tolerance = |r| 0.30–0.49, No effect = |r| < 0.30. Recomputes after every upload.',
+        '⚙ "Strength" runs 0 to 1 — the higher, the more tightly the two move together. Strong link = 0.50+ (with 20+ data points), Some link = 0.30–0.49, No real link = under 0.30. Recomputes after every upload.',
       ),
     ),
 
     // ── SIGNAL LAB TAB ────────────────────────────────────────────────────────
     tab === 'lab' && h('div', null,
       h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 16, padding: '10px 14px', background: surf2, border: `1px solid ${bdr}`, borderRadius: 8 } },
-        '🧪 Signal Lab — define custom correlations between any two metrics in your data. ',
-        'Saved signals recompute automatically after every upload and accumulate history over time. ',
-        'Strong signals (|r| ≥ 0.50, n ≥ 20) can be promoted to Projections, Morning Brief, and SAGE.'),
+        '🧪 Signal Lab — pick any two of your numbers and Meridian tracks whether they move together. ',
+        'Saved signals re-check themselves after every upload and build up history over time. ',
+        'Once a link proves strong (strength 0.50+ with 20+ data points), you can put it to work in Projections, the Morning Brief, and SAGE.'),
       h(SignalBuilder, { ds, onSave: handleNewSignal, existingDefs: localDefs }),
       activeDefs.length === 0 && h('div', { style: { textAlign: 'center', padding: '32px 24px', color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
         h('div', { style: { fontSize: 24, marginBottom: 10 } }, '🔬'),
         h('div', { style: { fontWeight: 700, marginBottom: 6 } }, 'No custom signals yet'),
-        'Use the builder above to define your first custom correlation.',
+        'Use the builder above to set up your first one.',
       ),
       activeDefs.length > 0 && h('div', { style: { marginBottom: 12, fontSize: 11, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.07em' } }, `Your signals (${activeDefs.length})`),
       activeDefs.map(def => h(CustomSignalCard, {
