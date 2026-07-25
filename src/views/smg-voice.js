@@ -499,8 +499,14 @@ function VoicePerfPanel({ rows, stores }) {
   }, [filtered]);
 
   const sName = loc => {
-    const s = (stores || []).find(s => String(s.loc) === String(loc));
-    return s ? (s.name || s.loc) : loc;
+    // VOICE rows carry zero-padded NSNs ('03708'); the store list is keyed '3708'.
+    // Normalize both to the integer form so leading-zero stores resolve instead of
+    // showing the raw NSN, then fall back to the report's own store name.
+    const norm = String(parseInt(loc, 10) || loc);
+    const s = (stores || []).find(s => String(parseInt(s.loc, 10) || s.loc) === norm);
+    if (s && s.name) return s.name;
+    const row = rows.find(r => String(r.loc) === String(loc) && r.loc_name);
+    return (row && row.loc_name) || loc;
   };
 
   const periodFmt = p => {
@@ -533,10 +539,16 @@ function VoicePerfPanel({ rows, stores }) {
     // Toolbar
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap' } },
       h('span', { style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' } }, 'Period:'),
-      ...periods.slice(0, 6).map(p => h('button', { key: p, onClick: () => setSelPeriod(p),
-        style: { padding: '3px 10px', borderRadius: 20, border: '.5px solid var(--bdr)', cursor: 'pointer', fontSize: 10, fontWeight: p === activePeriod ? 700 : 400,
-          background: p === activePeriod ? 'var(--accent)' : 'transparent', color: p === activePeriod ? '#fff' : 'var(--text)' } }, periodFmt(p))
-      ),
+      // Up to 8 months → pill buttons; more (backfills go back years) → a dropdown
+      // so every loaded month is reachable, not just the most recent six.
+      periods.length <= 8
+        ? periods.map(p => h('button', { key: p, onClick: () => setSelPeriod(p),
+            style: { padding: '3px 10px', borderRadius: 20, border: '.5px solid var(--bdr)', cursor: 'pointer', fontSize: 10, fontWeight: p === activePeriod ? 700 : 400,
+              background: p === activePeriod ? 'var(--accent)' : 'transparent', color: p === activePeriod ? '#fff' : 'var(--text)' } }, periodFmt(p)))
+        : h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
+            style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
+            periods.map(p => h('option', { key: p, value: p }, periodFmt(p)))),
+      periods.length > 8 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `${periods.length} months`),
       h('div', { style: { display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
         Object.entries(TYPE_LABELS).map(([t, label]) =>
           h('button', { key: t, onClick: () => setSelType(t), style: {
