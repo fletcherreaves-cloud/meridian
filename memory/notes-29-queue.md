@@ -8,6 +8,17 @@ metadata:
 
 # Notes 29 (owner, 2026-07-26)
 
+> ⏰ **STANDING REMINDER (owner asked me to keep raising this — 2026-07-26):**
+> **EOM Dashboard two-modes / year-round count progress.** Right now Count Progress + Last-Count only
+> populate in the last-3-days count window (the On-Hand pull is gated to those days). Owner's idea: run
+> a **"during-the-month progress & results" mode** year-round (populate last-count date + a rolling count %
+> from whatever On-Hand data exists) alongside the **"EOM count-completion" mode** as originally designed.
+> **Feasibility note:** needs the On-Hand pull to run more often than last-3-days (it's cheap — could go
+> daily, or the daily variance pull could grab a light On-Hand snapshot) so `last_counted` stays fresh.
+> My recommendation to give him: keep count-completion % as the EOM-window metric (only meaningful then),
+> but surface **last-count freshness + FOB/diagnosis results year-round** (results already are, via variance).
+> **→ Raise this every session until resolved.**
+
 > **STANDING DIRECTIVE (owner, verbatim intent):** *"For Inventory (EOM) and Performance
 > Reviews, these need to be prioritized and kept top of mind. Steer me toward them. Pre-study
 > both using any available resources you have — even outside the project — pulling from other
