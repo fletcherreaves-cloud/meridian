@@ -31,6 +31,8 @@
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
+// Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
+import { computeCountProgress, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -192,6 +194,46 @@ async function upsertRows(rows) {
   return saved;
 }
 
+// Existing per-store status rows for the period (preserve diagnosis/comms/notified_90).
+async function loadExistingStatus(period) {
+  const { data, error } = await supabase.from('eom_count_status').select('*').eq('period', period);
+  if (error) { console.warn('[eom_count_status] load error:', error.message); return {}; }
+  const m = {}; (data || []).forEach(r => { m[String(r.loc)] = r; });
+  return m;
+}
+
+// Build the per-store status row from the app's engine (zero drift), preserving
+// human-set fields and firing the ~90% "believes done" trigger exactly once.
+function buildStatusRow(loc, period, ohRows, prev) {
+  const p = computeCountProgress(ohRows, { period, asOf: new Date() });
+  const believes = p.itemsTotal > 0 && p.pctCounted >= BELIEVES_DONE_PCT;
+  const alreadyNotified = prev?.notified_90 === true;
+  const fireNow = believes && !alreadyNotified;
+  return {
+    loc, period,
+    items_total:      p.itemsTotal,
+    items_counted:    p.itemsCounted,
+    pct_counted:      p.pctCounted,
+    food_done:        !!p.byClass.food?.done,
+    condiment_done:   !!p.byClass.condiment?.done,
+    paper_done:       !!p.byClass.paper?.done,
+    nonproduct_done:  !!p.byClass.nonproduct?.done,
+    last_activity_at: p.lastActivityAt instanceof Date ? p.lastActivityAt.toISOString() : (prev?.last_activity_at ?? null),
+    notified_90:      alreadyNotified || fireNow,
+    notified_at:      fireNow ? new Date().toISOString() : (prev?.notified_at ?? null),
+    // preserve human-set fields
+    diagnosis_status: prev?.diagnosis_status ?? 'pending',
+    comms_status:     prev?.comms_status ?? 'none',
+    comms_recipient:  prev?.comms_recipient ?? null,
+    comms_sent_at:    prev?.comms_sent_at ?? null,
+    comms_note:       prev?.comms_note ?? null,
+    fob_pct:          prev?.fob_pct ?? null,
+    total_fc_pct:     prev?.total_fc_pct ?? null,
+    updated_at:       new Date().toISOString(),
+    _fireNow:         fireNow, // internal, stripped before upsert
+  };
+}
+
 async function main() {
   if (!inCountWindow()) {
     console.log('[onhand-pull] outside the last-3-days count window — skipping (ONHAND_FORCE=1 to override)');
@@ -200,9 +242,11 @@ async function main() {
   const dateStr = businessDate();
   const period  = periodFor(dateStr);
   let token = await resolveEbosToken();
+  const prevStatus = await loadExistingStatus(period);
   console.log(`[onhand-pull] date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${STORE_NSNS.length} stores`);
 
   let totalSaved = 0, storesWithData = 0, authFailed = false;
+  const statusRows = [];
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
     const rows = [];
@@ -219,9 +263,32 @@ async function main() {
     const byWrin = new Map();
     for (const r of rows) byWrin.set(r.wrin, r);
     const deduped = [...byWrin.values()];
-    if (deduped.length) { totalSaved += await upsertRows(deduped); storesWithData++; }
+    if (deduped.length) {
+      totalSaved += await upsertRows(deduped);
+      storesWithData++;
+      const loc = String(nsn).padStart(7, '0');
+      // engine expects camelCase (lastCounted as Date); map from the DB-shaped rows
+      const ohForEngine = deduped.map(r => ({
+        wrin: r.wrin, cls: r.cls, onHandAmt: r.on_hand_amt, unitPrice: r.unit_price, totalUnits: r.total_units,
+        cases: r.cases, packs: r.packs, loose: r.loose,
+        lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : null,
+        lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : null,
+      }));
+      const st = buildStatusRow(loc, period, ohForEngine, prevStatus[loc]);
+      if (st._fireNow) console.log(`  🔔 ${nsn}: crossed ${Math.round(BELIEVES_DONE_PCT * 100)}% — store believes count is done`);
+      delete st._fireNow;
+      statusRows.push(st);
+    }
     if (DEBUG) console.log(`  ${nsn}: ${deduped.length} items`);
   }
+
+  // Upsert per-store status (count %, class-done flags, ~90% notify trigger).
+  if (statusRows.length) {
+    const { error } = await supabase.from('eom_count_status').upsert(statusRows, { onConflict: 'loc,period' });
+    if (error) console.warn('[eom_count_status] upsert error:', error.message);
+    else console.log(`[onhand-pull] status upserted for ${statusRows.length} stores`);
+  }
+
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);
   if (authFailed) process.exit(1);
 }

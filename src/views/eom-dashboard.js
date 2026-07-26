@@ -157,6 +157,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return { n, done, avg };
   }, [rows]);
 
+  // "Ready for review" = store believes it's done counting AND you haven't started
+  // diagnosing yet (diagnosis still 'pending'). Moving diagnosis off 'pending' clears it.
+  const readyForReview = useMemo(
+    () => rows.filter(r => r.prog.believesDone && r.diagnosis === 'pending'),
+    [rows]);
+
   const updateStatus = useCallback(async (loc, patch) => {
     setSaving(loc);
     const cur = statusMap[loc] || {};
@@ -193,6 +199,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         div({ key: i, style: { flex: '1 1 160px', background: '#131722', border: '1px solid #1e293b', borderRadius: '8px', padding: '12px 14px' } },
           div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
           div({ style: { fontSize: '22px', fontWeight: 700, color: 'var(--text1)', marginTop: '4px' } }, String(val))))),
+
+    // "ready for review" notification banner
+    readyForReview.length > 0 && div({
+      style: {
+        display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px',
+        padding: '10px 14px', borderRadius: '8px',
+        background: 'rgba(74,222,128,.08)', border: '1px solid rgba(74,222,128,.4)',
+      },
+    },
+      span({ style: { fontSize: '18px' } }, '🔔'),
+      div(null,
+        div({ style: { fontWeight: 700, color: '#4ade80', fontSize: '13px' } },
+          `${readyForReview.length} store${readyForReview.length !== 1 ? 's' : ''} ready for review`),
+        div({ style: { fontSize: '12px', color: 'var(--text2)', marginTop: '2px' } },
+          readyForReview.map(r => r.name).join(', ') + ' — count ≥90%. Set Diagnosis to "In review" to begin.'))),
 
     loading ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
