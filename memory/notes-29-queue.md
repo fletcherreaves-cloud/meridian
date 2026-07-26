@@ -20,6 +20,24 @@ metadata:
 
 ## 1. 🥇 INVENTORY / EOM (Food Cost) — Priority 1, next several days
 
+**🔑 OWNER'S DOMAIN CONTEXT (from Notes 29, authoritative — this is how EOM actually works):**
+- **EOM = a 3-day process, the last 3 calendar days of each month.**
+- **Days 3-out and 2-out:** every location is required to count all **Food, Condiment, and Paper**
+  classes. Can be done on either of those two days, and partially split across both if they choose.
+- **Non-Product class:** must be counted on the **last day of the month** (day 1-out).
+- **FOB (Food Over Base) covers the Food + Condiment classes ONLY.** It is "the meat of what we
+  strive to control each month" = **24–28% of every revenue dollar.** Outside that band typically
+  signals an operational issue (so 24–28% is the healthy target range, not a hard bound).
+- **On-Hand Inventory is the count-progress signal:** pulling it (hourly, last 3 days) tells us if/when
+  a store has finished counting. At **~90–95% complete the store generally believes they're done** —
+  that's the trigger to notify the owner to begin review. **Incomplete counts are a primary driver of
+  false food-cost variance** (undercounted ending inventory → overstated usage → worse variance).
+- **Diagnosis fuel:** Variance Stat **Loss / Yields** identifies items needing follow-up; combine with
+  the other reports. Goal = results that are **easy to understand and pointed to execute at store level.**
+- **CoachQ = QSRSoft's own AI.** Owner wants (a) recommended FOB-diagnosis prompts surfaced in the panel,
+  and (b) to explore Meridian tapping CoachQ directly — learn context, initiate prompts, or at least
+  view/parse previous CoachQ prompts. "A great marriage." *(Exploratory — feasibility unknown, investigate.)*
+
 **Context already in the codebase (do not rebuild):**
 - `src/views/fob-eom.js` — "FOB EOM Check" panel (built 2026-06-30). See `memory/project-fob-context.md`
   for the full domain model. FOB = Food Over Base (~24–28% of revenue), 6 controllable components
