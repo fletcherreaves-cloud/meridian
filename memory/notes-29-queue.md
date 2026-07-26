@@ -65,6 +65,12 @@ metadata:
   ⚠️ **To go live this month:** add a **`QSRSOFT_EBOS_TOKEN`** GitHub secret (or rely on QSRSOFT_TOKEN SSO
   exchange, which already works for the eBOS ledger), then run the workflow (`workflow_dispatch`, force=1)
   to smoke-test before the 29th. CONFIRM the type codes C/P/N actually return data (F verified).
+- ✅ **EOM Dashboard BUILT (v4.575)** — `src/views/eom-dashboard.js`, nav **"EOM Dashboard" 📦** (OPERATIONS
+  group, under EOM Supervisor; modal `eom-dashboard`, perm `analytics.district`). All-stores table: count-progress
+  bar + per-class (F/C/P/N) chips, last-count date, FOB % (dollar-weighted MTD from qsr_fob) + FOB $, and
+  **editable Diagnosis + Communication status** (persist to `eom_count_status`). Summary tiles (stores reporting /
+  believe-done / avg complete / window open). Period selector (current + prior 3). Renders empty-state until the
+  On-Hand pull populates `qsr_onhand`. Build + 303 tests green.
 - ⏭️ **NEXT (still to build):** clone the pull for **Variance Stat / Inventory Summary** (same eBOS host —
   capture their `/api/inv/{nsn}/...` endpoints), notification delivery, the **EOM dashboard view + nav**,
   comms generator, CoachQ prompts. Diagnosis decision-tree = co-map with owner (joint session).
