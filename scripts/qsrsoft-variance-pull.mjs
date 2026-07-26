@@ -70,19 +70,29 @@ function periodRange(period) {
 }
 
 // ── eBOS auth ladder (mirrors qsrsoft-onhand-pull.mjs) ────────────────────────
-async function getEbosTokenViaSso(qsrsoftToken) {
+// The exchange host api.sso.myqsrsoft.com authenticates with the COGNITO ID token
+// (RS256, iss=cognito-idp.us-east-1…, token_use=id, ~1h TTL) in x-auth-token — NOT
+// the api.reports.myqsrsoft.com reporting token. It returns the short-lived eBOS
+// token used for prod.ebos.qsrsoft.com/api/inv calls.
+async function getEbosTokenViaSso(cognitoToken) {
   const url = `https://api.sso.myqsrsoft.com/token/ebosByOrg?orgId=${EBOS_ORG_ID}`;
   const resp = await fetch(url, {
     headers: {
-      'X-Auth-Token': qsrsoftToken, 'Accept': 'application/json',
+      'X-Auth-Token': cognitoToken, 'Accept': 'application/json',
       'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/',
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
     },
   });
-  if (!resp.ok) { console.log(`[auth] SSO exchange HTTP ${resp.status}`); return null; }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    console.log(`[auth] SSO exchange HTTP ${resp.status}${DEBUG && body ? ` — ${body.slice(0, 200)}` : ''}`);
+    return null;
+  }
   const data = await resp.json();
-  return data.token || data.accessToken || data.access_token || data.ebosByOrg
-      || data.ebosToken || data.x_auth_token || (typeof data === 'string' ? data : null) || null;
+  const tok = data.token || data.accessToken || data.access_token || data.ebosByOrg
+      || data.ebosToken || data.x_auth_token || data.xAuthToken || (typeof data === 'string' ? data : null) || null;
+  if (!tok && DEBUG) console.log('[auth] SSO exchange OK but no token field — keys:', Object.keys(data || {}).join(', '));
+  return tok;
 }
 async function getEbosTokenViaPlaywright() {
   const u = process.env.QSRSOFT_USERNAME, p = process.env.QSRSOFT_PASSWORD;
@@ -118,9 +128,11 @@ async function resolveEbosToken() {
   // Prefer minting a FRESH eBOS token via the SSO exchange — eBOS tokens are
   // very short-lived, so a stored QSRSOFT_EBOS_TOKEN is almost always stale by
   // the time CI runs. The static token is a last-ditch fallback, not the default.
-  const reporting = (process.env.QSRSOFT_TOKEN || '').trim();
-  if (reporting) {
-    const t = await getEbosTokenViaSso(reporting);
+  // The exchange needs the COGNITO ID token (QSRSOFT_COGNITO_TOKEN, ~1h TTL);
+  // fall back to QSRSOFT_TOKEN only for backward-compat.
+  const cognito = (process.env.QSRSOFT_COGNITO_TOKEN || process.env.QSRSOFT_TOKEN || '').trim();
+  if (cognito) {
+    const t = await getEbosTokenViaSso(cognito);
     if (t) { console.log('[auth] ✓ eBOS token via SSO exchange (fresh)'); return t; }
     console.log('[auth] SSO exchange did not return a token — trying fallbacks');
   }
