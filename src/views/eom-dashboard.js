@@ -26,6 +26,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
 const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(0) + '%';
+const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%'; // FOB % — 2 decimals
 const money = v => (v == null || isNaN(v)) ? '—' : '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 // Recent period options (current month + prior 3), as 'YYYY-MM'.
@@ -181,7 +182,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       return {
         loc,
         name: nm(loc),
-        org: getStoreOrg(loc),
+        org: getStoreOrg(unpad(loc)),
         prog,
         fobPct: f.fobPct ?? null,
         fob$: f.fob ?? null,
@@ -355,7 +356,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
               r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—'),
-            h('td', { style: { padding: '8px 10px', fontWeight: 600, color: 'var(--text)' } }, pct(r.fobPct)),
+            h('td', { style: { padding: '8px 10px', fontWeight: 600, color: 'var(--text)' } }, pct2(r.fobPct)),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)' } }, money(r.fob$)),
             h('td', { style: { padding: '8px 10px' } },
               div({ style: { display: 'flex', gap: '6px', alignItems: 'center' } },
