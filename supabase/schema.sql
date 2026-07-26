@@ -1454,6 +1454,26 @@ create policy "qsr_transfers: public read"  on public.qsr_transfers for select u
 create policy "qsr_transfers: public write" on public.qsr_transfers for all using (true);
 create index if not exists qsr_transfers_period_idx on public.qsr_transfers (period, loc);
 
+-- Raw-item forensic register (raw_detail/{itemId}) — the transaction-by-transaction
+-- "life of the product" for a flagged WRIN, so the Diagnose drill-down can attribute
+-- a variance to the count event where it occurred (early-cascaded vs late-recountable).
+-- Pulled only for the actionable WRINs (|$| >= threshold) per store to bound volume.
+-- history = jsonb array of mapped events (dt, source, qtyChange, variance, difference, manager, isCount).
+create table if not exists public.qsr_raw_item_detail (
+  loc         text    not null,
+  period      text    not null,
+  wrin        text    not null,
+  descr       text,
+  item_class  text,
+  history     jsonb   not null default '[]'::jsonb,
+  updated_at  timestamptz default now(),
+  primary key (loc, period, wrin)
+);
+alter table public.qsr_raw_item_detail enable row level security;
+create policy "qsr_raw_item_detail: public read"  on public.qsr_raw_item_detail for select using (true);
+create policy "qsr_raw_item_detail: public write" on public.qsr_raw_item_detail for all using (true);
+create index if not exists qsr_raw_item_detail_period_idx on public.qsr_raw_item_detail (period, loc);
+
 -- Per-store EOM status row (dashboard + notification + comms verification)
 create table if not exists public.eom_count_status (
   loc              text    not null,

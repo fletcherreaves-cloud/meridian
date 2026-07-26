@@ -2231,6 +2231,34 @@ export async function loadQsrTransfers({ period } = {}) {
   }));
 }
 
+// ── EOM Raw-item forensic register (raw_detail) ───────────────────────────────
+export async function saveQsrRawItemDetail(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:        String(r.loc),
+    period:     String(r.period),
+    wrin:       String(r.wrin),
+    descr:      r.descr ?? null,
+    item_class: r.itemClass ?? r.item_class ?? null,
+    history:    Array.isArray(r.history) ? r.history : [],
+  })).filter(r => r.wrin);
+  return _chunkUpsert('qsr_raw_item_detail', up, 'loc,period,wrin');
+}
+
+export async function loadQsrRawItemDetail({ period, loc } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_raw_item_detail').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    if (loc) q = q.eq('loc', String(loc));
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, descr: r.descr, itemClass: r.item_class,
+    history: Array.isArray(r.history) ? r.history : [], updatedAt: r.updated_at,
+  }));
+}
+
 // ── Inventory Summary & Usage ─────────────────────────────────────────────────
 export async function saveQsrInventorySummary(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };
