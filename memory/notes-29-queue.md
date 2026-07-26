@@ -38,6 +38,24 @@ metadata:
   and (b) to explore Meridian tapping CoachQ directly — learn context, initiate prompts, or at least
   view/parse previous CoachQ prompts. "A great marriage." *(Exploratory — feasibility unknown, investigate.)*
 
+**🏗️ BUILD STATUS (Claude, 2026-07-26 — foundation shipped, unblocked pieces only):**
+- ✅ **Supabase tables** (schema.sql): `qsr_onhand`, `qsr_variance_stat`, `qsr_inventory_summary`
+  (keyed `(loc, period, wrin)`, period='YYYY-MM'), plus `eom_count_status` (per-store dashboard row:
+  count %, class-done flags, notified_90, diagnosis_status, comms_status/recipient/sent_at) and
+  `eom_notification_settings` (flexible jsonb). ⚠️ **Owner must run these SQL blocks** (append at end of schema.sql).
+- ✅ **Loaders/savers** (src/lib/supabase.js): save/load for all 5 tables (mirror the qsr_fob pattern).
+- ✅ **Engine** (src/engine/eom-inventory.js) + **17 passing tests**: `computeCountProgress` (counts items
+  whose last_counted/last_submitted falls in the last-3-days window; per-class + FOB-only completion;
+  `believesDone` at 90%), `diagnoseIncompleteCount` (uncounted items ranked by $ at risk, rolled up by class),
+  `rankVarianceFollowups` (recount-up vs verify-overcount, mirrors fob-eom priority heuristic), `buildStoreStatus`.
+- ✅ **Pull skeleton** `scripts/qsrsoft-onhand-pull.mjs` + workflow `.github/workflows/qsrsoft-onhand-pull.yml`
+  (hourly cron, in-script last-3-days gate, per-store loop, token→Playwright auth ladder). ⚠️ **BLOCKED on 2
+  TODOs only:** `TODO(endpoint)` = the On-Hand request URL/params, `TODO(fields)` = the response JSON field
+  names — both come from the owner's DevTools capture. Target columns already correct.
+- ⏭️ **NOT yet built (needs endpoint or teaching):** the real pull mapping (endpoint), Variance-Stat/Summary
+  pull scripts (same skeleton, clone once On-Hand proven), notification delivery, the EOM dashboard view/nav,
+  comms generator, CoachQ prompts. Diagnosis decision-tree = co-map with owner (joint session).
+
 **Context already in the codebase (do not rebuild):**
 - `src/views/fob-eom.js` — "FOB EOM Check" panel (built 2026-06-30). See `memory/project-fob-context.md`
   for the full domain model. FOB = Food Over Base (~24–28% of revenue), 6 controllable components

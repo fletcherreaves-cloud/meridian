@@ -1,0 +1,64 @@
+name: QSRSoft On-Hand Pull (EOM count-progress)
+
+# Hourly, but the script itself skips unless we're in the last 3 days of the month
+# (GitHub cron can't express "last N days of month"). During the count window this
+# gives ~hourly snapshots so we can see when each store finishes counting.
+# Manual runs can force any time via the `force` input.
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # top of every hour (UTC); in-script window gate does the filtering
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run even outside the last-3-days window (1 = on)'
+        required: false
+        default: '1'
+      period:
+        description: 'Override period being counted (YYYY-MM, default: current month)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft On-Hand Inventory
+        run: node scripts/qsrsoft-onhand-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          ONHAND_FORCE:              ${{ github.event.inputs.force  || '0' }}
+          ONHAND_PERIOD:             ${{ github.event.inputs.period || ''  }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onhand-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
