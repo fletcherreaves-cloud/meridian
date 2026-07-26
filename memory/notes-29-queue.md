@@ -1,0 +1,125 @@
+---
+name: notes-29-queue
+description: Owner "Notes 29" (2026-07-26). Two prioritized workstreams — Inventory/EOM (Food Cost) and Performance Reviews — with a standing directive to keep both top-of-mind, pre-study them against industry best practice, and steer the owner toward them. Plus a "maybe crazy" gamification idea logged for later.
+metadata:
+  node_type: memory
+  type: project
+---
+
+# Notes 29 (owner, 2026-07-26)
+
+> **STANDING DIRECTIVE (owner, verbatim intent):** *"For Inventory (EOM) and Performance
+> Reviews, these need to be prioritized and kept top of mind. Steer me toward them. Pre-study
+> both using any available resources you have — even outside the project — pulling from other
+> industry data to make them best-in-class / high-value. Ask when uncertain of expectations."*
+> → On every session, if the owner is idle or between tasks, nudge toward EOM or Perf Reviews.
+> → Do NOT over-build blind: these are ambiguous in places. Present pre-studied plans and ask
+>   targeted questions before writing code (owner explicitly said "Ask when uncertain").
+
+---
+
+## 1. 🥇 INVENTORY / EOM (Food Cost) — Priority 1, next several days
+
+**Context already in the codebase (do not rebuild):**
+- `src/views/fob-eom.js` — "FOB EOM Check" panel (built 2026-06-30). See `memory/project-fob-context.md`
+  for the full domain model. FOB = Food Over Base (~24–28% of revenue), 6 controllable components
+  (Completed Waste, Raw Waste, Condiments, Emp/Mgr Meals, Variance Stat, Unexplained). Already parses
+  6 QSRSoft report types (Contributors, On Hand Inventory, Inventory Summary & Usage, Inventory History,
+  Variance Stat, Total P&L Cost). Analysis tabs: Priority Recount (≥$50 neg variance), Case Count Review
+  (≥4 cases & >9 days supply), Count Compliance (last 3 days), Operational Issues, Files.
+- Core diagnostic logic already encoded: **undercount ending inventory → usage overstated → variance
+  worse.** Find large-negative-variance items with low on-hand → correct the count up.
+- `qsr_fob` table already feeds At-A-Glance FOB tile (dollar-weighted MTD + last completed month).
+
+**What Notes 29 asks for (the build list):**
+1. **Wire QSRSoft data pulls onto the Inventory screen** — automate the reports the owner reviews at EOM:
+   Variance Stat / Yields, Food Over Base, Physical Inventory, Waste, On-Hand Inventory. (Auto-first,
+   freshest-wins, standing rule — cloud stream primary, manual upload fallback only.)
+2. **Teach-then-automate:** owner will "teach how I analyze this data currently" → encode that workflow →
+   automate → produce a **detailed report + action-item summary** routed to the appropriate person(s).
+   *(AMBIGUOUS — owner has not yet walked through their current analysis. Must capture this before deep
+   build. This is the primary open question for the whole workstream.)*
+3. **Auto-pull On-Hand Inventory hourly on the last 3 days of the month** (count window).
+4. **Notification when a store completes ~90–95% of its count.**
+5. **Auto-diagnose incomplete counts** using Variance Stat Loss/Yields (flag items likely miscounted).
+6. **A repository / context generator for communications** — canned + data-filled messages to GMs/sups.
+7. **EOM dashboard** — all locations' count-progress + FOB + Components (percents AND dollars) using the
+   FOB table template + per-store diagnosis status + communication-verification (who was told what).
+8. **CoachQ:** add CoachQ recommended prompts; explore tapping QSRSoft's CoachQ AI directly.
+
+**Pre-study crib (industry best-practice for a QSR EOM food-cost close — to make this best-in-class):**
+- Theoretical vs actual usage variance is THE food-cost KPI; component attribution (waste vs portioning
+  vs count error vs theft) is what turns a % into an action.
+- Count integrity is the #1 source of false variance — validate counts before trusting the variance
+  (days-of-supply sanity, zero-on-hand on high-velocity SKUs, unit/case confusion). Meridian already does
+  a version of this — extend it.
+- Perpetual/hourly count capture in the final days lets you catch a store that's counting wrong WHILE they
+  can still fix it, not after the period locks. This is the differentiator vs QSRSoft's own tooling.
+- Close-loop accountability: a diagnosis is only valuable if it becomes a specific message to a specific
+  person with a deadline, and you can later verify it landed. Hence #6 + #7's comms-verification.
+
+**OPEN QUESTIONS to ask owner before building (do not guess):**
+- Q1: Walk me through your current EOM analysis step-by-step (which report first, what you look for, the
+  decision tree). This is the #2 "teach me" item and gates everything.
+- Q2: Who receives the action-item summary, and through what channel (in-app, email, text)?
+- Q3: Count-progress % — is there a QSRSoft field/endpoint that reports count completion, or must we
+  infer it from On-Hand rows present vs the store's SKU master?
+- Q4: For the 90–95% notification — notify whom, how?
+
+---
+
+## 2. 🥈 PERFORMANCE REVIEWS — Priority (alongside EOM)
+
+**Context already in the codebase:** `src/engine/review-engine.js` + `src/views/performance-reviews.js`
+(nav "Perf Reviews" 📋), config in localStorage `mf_review_config_v1`. See `memory/project-perf-reviews.md`.
+Current model: overall = metrics 70% / behavioral 30%; category weights (rgr/sales/profit/people);
+per-role competencies (GM/AM/AS/OM); `rateMetric`→1–4; reviews in `mf_perf_reviews_v1`.
+
+**What Notes 29 asks for:**
+1. **Customizable + savable templates** with custom names.
+2. **Customizable weights** — add / remove / modify / reorder; **must total 100%** (enforce).
+3. **Dynamic rating thresholds wired to the weights** (thresholds/blocks scale as weights change).
+4. **Drag-to-rearrange competencies.**
+5. **Editable job-title options**, arranged by hierarchy low→high role.
+6. **Verify** the rating-threshold blocks/scales from the **original Excel** are fully implemented
+   (audit current impl vs the source workbook).
+
+**Pre-study crib (best-practice performance-review design):**
+- Weighted competency models are standard; the make-or-break is (a) weights that sum to 100 and are
+  transparent to the reviewee, and (b) anchored rating scales (behaviorally-anchored rating scales / BARS)
+  so a "3" means the same thing across reviewers. Meridian's 1–4 metric rating is a start — the templates
+  should carry explicit anchor text per level.
+- Template + versioning matters: a review done under last quarter's template must stay reproducible even
+  after weights change → **store the resolved template snapshot on each saved review**, don't just
+  reference the live config (or historical reviews silently re-score).
+- Role hierarchy ordering (GM > AM > AS …) should drive default templates AND the job-title picker.
+
+**OPEN QUESTIONS to ask owner:**
+- Q1: Should saved reviews snapshot their template (recommended) so changing weights never re-scores
+  history? (Strong recommend yes.)
+- Q2: Do you have the original Excel handy to diff against (for #6), or should I audit against
+  `memory/project-perf-reviews.md`'s recorded scales?
+- Q3: Templates global (shared across all reviewers) or per-user? (Multi-tenant future implies per-org.)
+
+---
+
+## 3. 💡 "Maybe a crazy idea" — GAMIFICATION (logged for later, NOT scheduled)
+
+Owner idea, parked intentionally. A points/engagement system for GMs + Supervisors:
+- Award points for: knowing your metrics, using SAGE, completing daily challenges, opening the app,
+  reading the Daily Brief, and **auto-awarding for acting on identified opportunities** (e.g. correcting
+  a bad inventory count that Meridian flagged — closes the loop with EOM workstream #5/#7).
+- A scoreboard; rewards TBD.
+- Ties naturally into EOM (reward count-correction) and the accuracy-integrity north-star (reward good
+  data hygiene). Revisit once EOM + Perf Reviews land. Do not build unprompted.
+
+---
+
+## Outstanding items still needing OWNER action (unrelated to Notes 29 — reported 2026-07-26)
+- **Supabase SQL blocks** (each fails soft; app works without): `forecast_snapshots` (still unconfirmed),
+  `smart_target_adjustments` (v4.486), `sage_prompts` + `sage_prompt_runs` schedule cols (v4.487/488 —
+  safe to re-run the whole SAGE block).
+- **SAGE RBAC redeploy:** `supabase functions deploy sage-chat --no-verify-jwt` (RBAC hard-filter won't
+  take effect until redeployed).
+- **SAGE auto-scheduling:** create a runner Supabase user + GitHub secrets `SAGE_RUNNER_EMAIL`,
+  `SAGE_RUNNER_PASSWORD`, `VITE_SUPABASE_ANON_KEY` (else the hourly scheduler simply never fires).
