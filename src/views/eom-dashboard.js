@@ -215,6 +215,75 @@ function ItemJourneyView({ journey: j }) {
       '✓ Verified = read directly from the item ledger.  💡 Likely = a data-backed read to confirm on-site.'));
 }
 
+// The 6 controllable FOB components (keys match fobByStore output).
+const FOB_COMPONENTS = [
+  ['comp', 'Comp Waste'], ['raw', 'Raw Waste'], ['cond', 'Condiments'],
+  ['emp', 'Emp/Mgr'], ['statv', 'Stat Var'], ['unex', 'Unexplained'],
+];
+
+// FOB multi-location variance matrix (feature seed-fob-p): side-by-side component
+// breakdown across stores, so the owner can see WHERE food-cost overruns originate.
+// District comparison is dollar-weighted (Σ$ ÷ Σsales — never average averages).
+// Outlier = a store's component runs >1.5× the district rate (and is material);
+// each store's single biggest component is flagged ▸ as its primary driver.
+function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
+  const withFob = rows.filter(r => r.components && r.components.sales > 0);
+  const tot = { sales: 0, fob: 0 }; FOB_COMPONENTS.forEach(([k]) => tot[k] = 0);
+  withFob.forEach(r => { const c = r.components; tot.sales += c.sales; tot.fob += c.fob || 0; FOB_COMPONENTS.forEach(([k]) => tot[k] += c[k] || 0); });
+  const distPct = k => tot.sales ? tot[k] / tot.sales : 0;
+  const ratePct = (c, k) => (c[k] || 0) / (c.sales || 1);
+  const isOutlier = (c, k) => { const p = ratePct(c, k); return p > distPct(k) * 1.5 && p > 0.001; };
+  const driverOf = c => FOB_COMPONENTS.map(([k]) => [k, ratePct(c, k)]).sort((a, b) => b[1] - a[1])[0][0];
+  const cell = (c, k) => showDollars ? money(c[k] || 0) : pct2(ratePct(c, k));
+
+  const sorted = withFob.slice().sort((a, b) => {
+    if (sortKey === 'name') return a.name.localeCompare(b.name);
+    if (sortKey === 'fob') return (b.components.fobPct || 0) - (a.components.fobPct || 0);
+    return ratePct(b.components, sortKey) - ratePct(a.components, sortKey);
+  });
+  if (withFob.length === 0) return div({ style: { padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: '13px' } }, 'No FOB data for the stores in this filter yet.');
+
+  const th = (key, label, tip) => h('th', {
+    key, title: tip || `Sort by ${label}`, onClick: () => onSort(key),
+    style: { padding: '7px 8px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap', cursor: 'pointer', textAlign: key === 'name' ? 'left' : 'right', color: sortKey === key ? '#f5bc00' : 'var(--text3)' },
+  }, label + (sortKey === key ? ' ▾' : ''));
+
+  return div(null,
+    h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+      h('thead', null, h('tr', { style: { fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.03em' } },
+        th('name', 'Store'), th('fob', 'FOB %', 'Σ components ÷ sales'),
+        ...FOB_COMPONENTS.map(([k, label]) => th(k, label)))),
+      h('tbody', null,
+        sorted.map(r => {
+          const c = r.components;
+          const drv = driverOf(c);
+          return h('tr', { key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
+            h('td', { style: { padding: '6px 8px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } },
+              r.name, span({ style: { fontSize: '9px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '5px' } }, r.org === 'emerald' ? 'FL' : 'OK')),
+            h('td', { style: { padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, pct2(c.fobPct)),
+            ...FOB_COMPONENTS.map(([k]) => {
+              const out = isOutlier(c, k);
+              return h('td', {
+                key: k,
+                title: out ? `${(ratePct(c, k) * 100).toFixed(2)}% vs district ${(distPct(k) * 100).toFixed(2)}% — running hot` : '',
+                style: {
+                  padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                  color: out ? '#f87171' : 'var(--text2)', fontWeight: out ? 700 : 400,
+                  background: out ? 'rgba(248,113,113,.08)' : 'transparent',
+                },
+              }, k === drv && span({ title: 'biggest component for this store', style: { color: '#f5bc00', marginRight: '3px' } }, '▸'), cell(c, k));
+            }));
+        }),
+        // district dollar-weighted average row
+        h('tr', { style: { borderTop: '2px solid var(--bdr2)', background: 'var(--surf2)' } },
+          h('td', { style: { padding: '7px 8px', color: 'var(--text)', fontWeight: 700 } }, `District (${withFob.length})`),
+          h('td', { style: { padding: '7px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, pct2(tot.sales ? tot.fob / tot.sales : null)),
+          ...FOB_COMPONENTS.map(([k]) => h('td', { key: k, style: { padding: '7px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } },
+            showDollars ? money(tot[k]) : pct2(distPct(k))))))),
+    div({ style: { fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic', marginTop: '8px' } },
+      '▸ = store’s largest component.  Red = running >1.5× the district rate (dollar-weighted).  Click a column to sort.'));
+}
+
 export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const periods = useMemo(() => recentPeriods(4), []);
   const [period, setPeriod] = useState(periods[0]);
@@ -232,6 +301,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [diag, setDiag] = useState(null); // { name, result, report } for the diagnosis modal
   const [diagCopied, setDiagCopied] = useState(false);
   const [journeys, setJourneys] = useState(null); // { loc, name, list, selectedWrin } item-journey modal
+  const [fobOpen, setFobOpen] = useState(false); // FOB multi-location variance matrix modal
+  const [fobDollars, setFobDollars] = useState(false); // matrix: show $ vs % of sales
+  const [fobSort, setFobSort] = useState('fob'); // matrix sort column
   const [scope, setScope] = useState('all'); // 'all' | 'FL' | 'OK' — state filter
   const [oneStore, setOneStore] = useState(''); // '' = all stores in scope, else a single loc
   const [mode, setMode] = useState(() => defaultModeFor(periods[0])); // 'eom' | 'progress'
@@ -517,6 +589,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
         }, periods.map(p => h('option', { key: p, value: p }, p))),
         h('button', {
+          onClick: () => setFobOpen(true), title: 'Side-by-side FOB component breakdown across stores — spot where overruns originate',
+          disabled: rows.length === 0,
+          style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '📊 FOB breakdown'),
+        h('button', {
           onClick: exportCSV, title: 'Download the all-stores table as CSV',
           disabled: rows.length === 0,
           style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
@@ -758,6 +835,29 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               // selected item's journey
               h(ItemJourneyView, { journey: sel }))))
     })(),
+
+    // FOB multi-location variance matrix modal
+    fobOpen && div({
+      onClick: () => setFobOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({
+        onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '900px', maxHeight: '88vh', overflow: 'auto', padding: '18px' },
+      },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 FOB component breakdown — ${period}`),
+          h('button', { onClick: () => setFobOpen(false), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' } },
+          div({ style: { fontSize: '12px', color: 'var(--text3)' } },
+            `${rows.length} store${rows.length !== 1 ? 's' : ''} in view · where each store's food-cost dollars are leaking`),
+          div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+            [[false, '% of sales'], [true, '$']].map(([v, label]) =>
+              h('button', {
+                key: String(v), onClick: () => setFobDollars(v),
+                style: { background: fobDollars === v ? '#f5bc00' : 'var(--surf3)', color: fobDollars === v ? '#0f1117' : 'var(--text2)', border: 'none', padding: '5px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' },
+              }, label)))),
+        h(FobVarianceMatrix, { rows, showDollars: fobDollars, sortKey: fobSort, onSort: setFobSort }))),
 
     // flow-editor modal — reorder/toggle checks + tune thresholds (persists to cloud)
     flowOpen && div({
