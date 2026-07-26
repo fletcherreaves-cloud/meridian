@@ -13,7 +13,7 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -231,23 +231,29 @@ function computeFOBMetrics(fobRows, allTargets, selLoc, selMonth){
   const tgtLocs=selLoc!=='all'?[selLoc]:Object.keys(locTotals);
   const result={totalSales,rowCount:rows.length,locCount:Object.keys(locTotals).length};
   FOB_COMP.forEach(c=>{
-    // Weighted actual
-    const wPct=totalSales>0?rows.reduce((a,r)=>a+(r[c.key]||0)*r.sales,0)/totalSales:0;
+    // Weighted actual — null-aware: rows that don't report this metric (e.g. cloud
+    // qsr_fob rows carry no Total Food Cost %) are excluded from the weighting, and
+    // if NO row reports it the metric is null (rendered "—") rather than a false 0.
+    const contrib=rows.filter(r=>r[c.key]!=null);
+    const cSales=contrib.reduce((a,r)=>a+r.sales,0);
+    const wPct=cSales>0?contrib.reduce((a,r)=>a+r[c.key]*r.sales,0)/cSales:null;
     // Weighted target (use store-specific targets weighted by sales)
     const wTgt=totalSales>0?tgtLocs.reduce((a,loc)=>{
       const s=locTotals[loc]?.sales||0;
       const t=(allTargets&&allTargets[loc]&&allTargets[loc][c.tgt])||0;
       return a+t*s;
     },0)/totalSales:0;
-    const diffPct=wPct-wTgt; // positive = over target (unfavorable for cost metrics)
-    const diffDollar=diffPct*totalSales;
-    // Per-location breakdown
+    const diffPct=wPct==null?null:wPct-wTgt; // positive = over target (unfavorable for cost metrics)
+    const diffDollar=diffPct==null?null:diffPct*totalSales;
+    // Per-location breakdown (also null-aware)
     const locBreakdown=Object.entries(locTotals).map(([loc,d])=>{
-      const lPct=d.sales>0?d.rows.reduce((a,r)=>a+(r[c.key]||0)*r.sales,0)/d.sales:0;
+      const lc=d.rows.filter(r=>r[c.key]!=null);
+      const lcSales=lc.reduce((a,r)=>a+r.sales,0);
+      const lPct=lcSales>0?lc.reduce((a,r)=>a+r[c.key]*r.sales,0)/lcSales:null;
       const lTgt=(allTargets&&allTargets[loc]&&allTargets[loc][c.tgt])||wTgt;
-      return{loc,pct:lPct,tgt:lTgt,diff:lPct-lTgt,dollar:(lPct-lTgt)*d.sales,sales:d.sales};
-    }).sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff)); // sorted by biggest variance
-    result[c.key]={actual:wPct,target:wTgt,diffPct,diffDollar,actualDollar:wPct*totalSales,locBreakdown};
+      return{loc,pct:lPct,tgt:lTgt,diff:lPct==null?null:lPct-lTgt,dollar:lPct==null?null:(lPct-lTgt)*d.sales,sales:d.sales};
+    }).sort((a,b)=>Math.abs(b.diff||0)-Math.abs(a.diff||0)); // sorted by biggest variance
+    result[c.key]={actual:wPct,target:wTgt,diffPct,diffDollar,actualDollar:wPct==null?null:wPct*totalSales,locBreakdown,hasData:wPct!=null};
   });
   return result;
 }
@@ -2750,6 +2756,42 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   const [selMonth,setSelMonth]=React.useState('');
   const [expandedRow,setExpandedRow]=React.useState(null);
   const [showAllLocs,setShowAllLocs]=React.useState(false);
+
+  // ── Cloud-first FOB source (Note 9) — qsr_fob auto stream. Provides the 6
+  // controllable components + FOB% + Base Food% + Discounts% exactly (same math as
+  // the At-A-Glance / EOM dashboard: Σ$ ÷ Σsales). Total Food Cost % is NOT in this
+  // feed, so cloud rows carry pLFoodPct=null and fall back to the Ops Report upload.
+  const [qsrFobRows,setQsrFobRows]=React.useState(null); // null=loading
+  React.useEffect(()=>{let live=true;loadQsrFob().then(r=>{if(live)setQsrFobRows(r||[]);}).catch(()=>{if(live)setQsrFobRows([]);});return()=>{live=false;};},[]);
+  const cloudFobRows=React.useMemo(()=>(qsrFobRows||[]).map(r=>{
+    const sales=+r.prodSalesAmt||0; if(sales<=0) return null;
+    const dstr=typeof r.date==='string'?r.date:(r.date&&r.date.toISOString?r.date.toISOString().slice(0,10):null);
+    if(!dstr) return null;
+    const comp=+r.compWasteAmt||0,raw=+r.rawWasteAmt||0,cond=+r.condimentsAmt||0,emp=+r.empMgrMealsAmt||0,statv=+r.statVarianceAmt||0,unex=+r.unexplainedAmt||0;
+    return {loc:String(r.loc).replace(/^0+/,'')||String(r.loc),date:new Date(dstr+'T00:00:00'),sales,
+      compWaste:comp/sales,rawWaste:raw/sales,condiment:cond/sales,empMeal:emp/sales,statVar:statv/sales,unexplained:unex/sales,
+      fobPct:(comp+raw+cond+emp+statv+unex)/sales,baseFoodPct:(+r.totalBaseFood||0)/sales,discCoupon:(+r.discountCouponsAmt||0)/sales,
+      pLFoodPct:null,_cloud:true};
+  }).filter(Boolean),[qsrFobRows]);
+  // Effective rows: cloud-first, with Total Food Cost % backfilled from a matching
+  // Ops-Report upload (same loc+month), and manual rows kept as fallback fill where
+  // the cloud doesn't cover a (loc, month) yet.
+  const fobRowsEff=React.useMemo(()=>{
+    const manual=ds.fobRows||[];
+    if(!cloudFobRows.length) return manual;
+    const monthOf=r=>r.date&&r.date.toISOString?r.date.toISOString().slice(0,7):null;
+    const manByKey={};
+    manual.forEach(r=>{const k=String(r.loc)+'|'+monthOf(r);if(k&&!manByKey[k])manByKey[k]=r;});
+    const cloudKeys=new Set();
+    const out=cloudFobRows.map(r=>{
+      const k=String(r.loc)+'|'+monthOf(r);cloudKeys.add(k);
+      const man=manByKey[k];
+      return (man&&man.pLFoodPct!=null&&man.pLFoodPct!==0)?{...r,pLFoodPct:man.pLFoodPct}:r;
+    });
+    manual.forEach(r=>{const k=String(r.loc)+'|'+monthOf(r);if(!cloudKeys.has(k))out.push(r);});
+    return out;
+  },[cloudFobRows,ds.fobRows]);
+  const fobHasCloud=cloudFobRows.length>0;
   // For market-level filters resolve to the set of locs, then pass 'all' to computeFOBMetrics
   // with a pre-filtered fobRows slice so location breakdown still works per-store
   const fobActiveLocs=React.useMemo(()=>{
@@ -2762,9 +2804,9 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   // Available months from fobRows
   const months=React.useMemo(()=>{
     const ms=new Set();
-    (ds.fobRows||[]).filter(r=>r.sales>0).forEach(r=>{if(r.date)ms.add(r.date.toISOString().slice(0,7));});
+    (fobRowsEff||[]).filter(r=>r.sales>0).forEach(r=>{if(r.date)ms.add(r.date.toISOString().slice(0,7));});
     return[...ms].sort().reverse();
-  },[ds.fobRows]);
+  },[fobRowsEff]);
 
   // Auto-select most recent month
   React.useEffect(()=>{if(months.length&&!selMonth)setSelMonth(months[0]);},[months]);
@@ -2779,22 +2821,24 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   const metrics=React.useMemo(()=>{
     // For OK/FL market filters, pre-filter fobRows to active locs then pass 'all'
     const filtRows=(selLoc==='ok'||selLoc==='fl')
-      ? (ds.fobRows||[]).filter(r=>fobActiveLocs.includes(String(r.loc)))
-      : ds.fobRows;
+      ? (fobRowsEff||[]).filter(r=>fobActiveLocs.includes(String(r.loc)))
+      : fobRowsEff;
     const effLoc=(selLoc==='ok'||selLoc==='fl')?'all':selLoc;
     return computeFOBMetrics(filtRows,allTargets,effLoc,selMonth);
-  },[ds.fobRows,allTargets,selLoc,selMonth,fobActiveLocs]);
+  },[fobRowsEff,allTargets,selLoc,selMonth,fobActiveLocs]);
   const auditResult=React.useMemo(()=>fobAudit(metrics),[metrics]);
 
-  const pFmt=v=>(v>=0?'+':'')+(v*100).toFixed(2)+'%';
-  const pFmtA=v=>(v*100).toFixed(2)+'%';
-  const dFmt=v=>'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pFmt=v=>v==null?'—':(v>=0?'+':'')+(v*100).toFixed(2)+'%';
+  const pFmtA=v=>v==null?'—':(v*100).toFixed(2)+'%';
+  const dFmt=v=>v==null?'—':'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fCol=(diffPct,lower)=>{
     if(lower){return diffPct>0.005?'#ef4444':diffPct>0.001?'#f59e0b':'#10b981';}
     return Math.abs(diffPct)<0.001?'var(--text)':'var(--text2)';
   };
   const statusBadge=(c,m)=>{
     if(!m||!m[c.key]) return null;
+    if(m[c.key].actual==null) return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:600,
+      background:'rgba(148,163,184,.12)',color:'#94a3b8',border:'.5px solid rgba(148,163,184,.25)'},title:'Not in the cloud feed — upload an Operations Report for this metric'},'— No data');
     if(c.actionable===false) return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:600,
       background:'rgba(148,163,184,.12)',color:'#94a3b8',border:'.5px solid rgba(148,163,184,.25)'}},'— Reference');
     const{diffPct}=m[c.key];
@@ -2817,8 +2861,9 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     const aboveCount=FOB_COMP.filter(c=>c.lower&&metrics[c.key]&&metrics[c.key].diffPct>0.001).length;
     return div({style:{display:'flex',gap:8,padding:'10px 16px',flexWrap:'wrap',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)'}},
       ...[
-        {label:'Total Food Cost',val:pFmtA(tc.actual),sub:tc.diffPct>0?'▲ '+pFmt(tc.diffPct)+' vs target':'✓ '+pFmt(Math.abs(tc.diffPct))+' under',
-         col:fCol(tc.diffPct,true),bg:tc.diffPct>0.005?'rgba(239,68,68,.06)':'rgba(16,185,129,.06)'},
+        {label:'Total Food Cost',val:pFmtA(tc.actual),
+         sub:tc.actual==null?'needs Ops Report':tc.diffPct>0?'▲ '+pFmt(tc.diffPct)+' vs target':'✓ '+pFmt(Math.abs(tc.diffPct))+' under',
+         col:tc.actual==null?'#94a3b8':fCol(tc.diffPct,true),bg:tc.actual==null?'rgba(148,163,184,.04)':tc.diffPct>0.005?'rgba(239,68,68,.06)':'rgba(16,185,129,.06)'},
         {label:'Food Over Base',val:pFmtA(fob.actual),sub:fob.diffPct>0?'▲ '+pFmt(fob.diffPct)+' vs target':'✓ '+pFmt(Math.abs(fob.diffPct))+' under',
          col:fCol(fob.diffPct,true),bg:fob.diffPct>0.003?'rgba(245,158,11,.06)':'rgba(16,185,129,.06)'},
         {label:'Base Food',val:pFmtA(bfood.actual),
@@ -2887,11 +2932,11 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     ].filter(Boolean);
   };
 
-  if(!ds||!(ds.fobRows||[]).length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
+  if(!ds||!(fobRowsEff||[]).length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
       div({style:{fontSize:40,marginBottom:12}},'🥗'),
-      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No FOB Data Loaded'),
-      div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load an Operations Report file. The FOB sheet is parsed automatically.'),
+      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},qsrFobRows===null?'Loading FOB data…':'No FOB Data Yet'),
+      div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},qsrFobRows===null?'Checking the cloud FOB stream…':'The cloud FOB stream (qsr_fob) is empty for now — or load an Operations Report file (its FOB sheet parses automatically) for Total Food Cost detail.'),
       btn({className:'btn btn-sm',onClick:onClose},'Close')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
@@ -2903,6 +2948,8 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
       div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
         background:'var(--surf2)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
         div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🥗 FOB Analysis'),
+        fobHasCloud&&span({title:'FOB components fed by the auto qsr_fob cloud stream (no upload needed). Total Food Cost % still comes from an Operations Report upload.',
+          style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'☁ Cloud auto'),
         // Month selector
         div({style:{display:'flex',flexDirection:'column',gap:1}},
           div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Period'),
