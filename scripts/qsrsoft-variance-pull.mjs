@@ -127,18 +127,30 @@ async function getEbosTokenViaPlaywright() {
     }).catch(e => ({ err: e.message }));
     console.log('[pw] form controls:', JSON.stringify(controls).slice(0, 900));
 
-    const userSel = 'input[name="username"], input#signInFormUsername, input[name="email"], input[type="email"], #username, #email';
-    const passSel = 'input[name="password"], input#signInFormPassword, input[type="password"], #password';
-    const subSel  = 'input[name="signInSubmitButton"], button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Sign in"), button:has-text("Login"), a:has-text("Sign in")';
-    const foundUser = await page.waitForSelector(userSel, { timeout: 20000 }).then(() => true).catch(() => false);
-    if (!foundUser) { console.log('[pw] ✗ no username field found — login UI not recognized (see form-controls dump + screenshot)'); await shot(page, '02-no-login'); }
+    const userSel = 'input[name="username"], input[name="email"], input[type="email"], #username, #email';
+    const passSel = 'input[name="password"], input[type="password"], #password';
+    const userEl = await page.waitForSelector(userSel, { timeout: 20000 }).catch(() => null);
+    if (!userEl) { console.log('[pw] ✗ no username field found — login UI not recognized'); await shot(page, '02-no-login'); }
     else {
-      console.log('[pw] filling credentials…');
-      await page.fill(userSel, u); await page.fill(passSel, p).catch(() => {});
+      console.log('[pw] filling credentials (char-by-char for React/Amplify)…');
+      const passEl = await page.$(passSel);
+      // Type char-by-char so Amplify's controlled inputs fire onChange (page.fill can leave the form "empty")
+      await userEl.click({ clickCount: 3 }); await userEl.pressSequentially(u, { delay: 12 });
+      if (passEl) { await passEl.click({ clickCount: 3 }); await passEl.pressSequentially(p, { delay: 12 }); }
       await shot(page, '02-filled');
-      await page.click(subSel).catch(async () => { await page.keyboard.press('Enter'); });
+      // Click the EXACT "Sign in" button — not "Sign in with McD eID" / "Email Link"
+      const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+      const clicked = await signIn.click({ timeout: 8000 }).then(() => true).catch(() => false);
+      if (!clicked) { console.log('[pw] exact Sign in button not clickable — pressing Enter in password'); await (passEl || userEl).press('Enter').catch(() => {}); }
       await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
-      console.log(`[pw] post-login at: ${page.url()} — title: "${await page.title().catch(() => '?')}"`);
+      await new Promise(r => setTimeout(r, 2500));
+      const stillLogin = await page.$(passSel).then(Boolean);
+      const errText = await page.evaluate(() => {
+        const hit = [...document.querySelectorAll('[role=alert], .amplify-alert, [class*=error], [class*=Error], [data-amplify-error]')]
+          .map(e => (e.innerText || '').trim()).filter(Boolean);
+        return hit.slice(0, 3);
+      }).catch(() => []);
+      console.log(`[pw] post-login at: ${page.url()} — title: "${await page.title().catch(() => '?')}" — stillOnLogin: ${stillLogin}${errText.length ? ` — page messages: ${JSON.stringify(errText)}` : ''}`);
       await shot(page, '03-post-login');
     }
     // Trigger an eBOS request by navigating to inventory pages
