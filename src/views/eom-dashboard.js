@@ -27,6 +27,36 @@ const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
 const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(0) + '%';
 const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%'; // FOB % — 2 decimals
+
+// Trigger a client-side file download (matches the app's export pattern).
+function downloadFile(content, filename, mime = 'text/csv') {
+  try {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 300);
+  } catch (e) { console.error('download failed', e); }
+}
+const csvCell = v => v == null ? '""' : (typeof v === 'number' ? v : '"' + String(v).replace(/"/g, '""') + '"');
+
+// Open the diagnosis report in a print window (→ PDF via the browser print dialog).
+function printDiagnosis(name, period, reportText) {
+  const w = window.open('', '_blank', 'width=800,height=900');
+  if (!w) return;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>EOM Diagnosis — ${esc(name)} ${esc(period)}</title>
+    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;line-height:1.5}
+    h1{font-size:17px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:16px}
+    pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55}
+    @media print{@page{margin:0.6in}}</style></head><body>
+    <h1>EOM Food-Cost Diagnosis — ${esc(name)}</h1>
+    <div class="sub">Period ${esc(period)} · generated ${new Date().toLocaleString()}</div>
+    <pre>${esc(reportText)}</pre></body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
 const money = v => (v == null || isNaN(v)) ? '—' : '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 // Recent period options (current month + prior 3), as 'YYYY-MM'.
@@ -261,6 +291,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     try { await navigator.clipboard.writeText(diag.report); setDiagCopied(true); } catch { setDiagCopied(false); }
   }, [diag]);
 
+  // District CSV export of the (filtered) all-stores table.
+  const exportCSV = useCallback(() => {
+    const cols = [
+      ['Store', r => r.name], ['State', r => (r.org === 'emerald' ? 'FL' : 'OK')],
+      ['Count %', r => r.prog.pctCounted != null ? (r.prog.pctCounted * 100).toFixed(0) : ''],
+      ['FOB %', r => r.fobPct != null ? (r.fobPct * 100).toFixed(2) : ''],
+      ['FOB $', r => r.fob$ != null ? Math.round(r.fob$) : ''],
+      ['Diagnosis', r => DIAG_LABEL[r.diagnosis] || r.diagnosis],
+      ['Communication', r => COMMS_LABEL[r.comms] || r.comms],
+    ];
+    const header = cols.map(c => csvCell(c[0])).join(',');
+    const body = rows.map(r => cols.map(c => csvCell(c[1](r))).join(',')).join('\n');
+    downloadFile(header + '\n' + body, `eom-dashboard-${period}.csv`, 'text/csv');
+  }, [rows, period]);
+
   const summary = useMemo(() => {
     const n = rows.length;
     const done = rows.filter(r => r.prog.believesDone).length;
@@ -299,6 +344,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           value: period, onChange: e => setPeriod(e.target.value),
           style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
         }, periods.map(p => h('option', { key: p, value: p }, p))),
+        h('button', {
+          onClick: exportCSV, title: 'Download the all-stores table as CSV',
+          disabled: rows.length === 0,
+          style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '⬇ CSV'),
         onClose && h('button', { onClick: onClose, style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '20px', cursor: 'pointer' } }, '✕'))),
 
     // location picker — state pills (All / OK / FL) + single-store dropdown
@@ -423,7 +473,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         div({ style: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' } },
           h('button', {
             onClick: copyDraft,
-            style: { background: '#f5bc00', color: 'var(--surf3)', border: 'none', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
+            style: { background: '#f5bc00', color: '#1a1400', border: 'none', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
           }, copied ? '✓ Copied' : 'Copy message'),
           h('button', {
             onClick: () => { updateStatus(draft.loc, { commsStatus: 'sent', commsSentAt: new Date().toISOString() }); setDraft(null); },
@@ -466,8 +516,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         div({ style: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' } },
           h('button', {
             onClick: copyDiag,
-            style: { background: '#f5bc00', color: 'var(--surf3)', border: 'none', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
+            style: { background: '#f5bc00', color: '#1a1400', border: 'none', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
           }, diagCopied ? '✓ Copied' : 'Copy report'),
+          h('button', {
+            onClick: () => printDiagnosis(diag.name, period, diag.report),
+            style: { background: 'none', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
+          }, '🖨 Print / PDF'),
           h('button', {
             onClick: () => { updateStatus(diag.loc, { diagnosisStatus: 'diagnosed' }); setDiag(null); },
             style: { background: 'none', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
