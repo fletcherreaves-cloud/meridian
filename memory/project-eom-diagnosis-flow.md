@@ -163,6 +163,26 @@ LINE ITEM; rows of the same transfer share `id` + `header_total_amt`:
 - **Full context + gut feel:** one finding leads to another. The engine should **link related findings**
   (e.g. a Variance flag → its Raw-Items count-timing → the manager who entered it → that manager's waste pattern).
 
+## ✅ eBOS AUTH — SOLVED (2026-07-26): headless Playwright Amplify login mints per-request
+The `prod.ebos.qsrsoft.com/api/inv/...` calls need an **eBOS token** (HS256) that is **minted
+per-request from a live browser session** — there is NO stored token or single mint endpoint to
+replicate, and eBOS tokens die in ~minutes. What we learned the hard way:
+- **`api.sso.myqsrsoft.com`** authenticates with the **Cognito ID token** (RS256, `iss=cognito-idp.us-east-1`,
+  `token_use=id`, ~1h TTL) in `x-auth-token` — NOT the `api.reports` reporting token.
+- But the `/token/ebosByOrg` exchange returns **403 "explicit deny in an identity-based policy"** — wrong/denied
+  route. Do NOT keep chasing the SSO exchange; it was a dead end.
+- **WORKING PATH = Playwright headless login.** `getEbosTokenViaPlaywright()` in `scripts/qsrsoft-variance-pull.mjs`:
+  - v3.myqsrsoft.com login is an **AWS Amplify** form (`input[name=username]` "Email", `input[name=password]`,
+    buttons: "Sign in" / "Forgot password" / "Sign in with McD eID" / "Sign in with Email Link").
+  - **Must type creds char-by-char via a Locator's `pressSequentially`** (NOT `page.fill`, NOT ElementHandle —
+    Amplify's React inputs need real onChange) and click the **exact** `getByRole('button',{name:'Sign in',exact:true})`.
+  - After submit the SPA logs in **asynchronously** — `stillOnLogin` reads true right after, but navigating the
+    inventory routes fires a `prod.ebos` request ~20s later whose `x-auth-token` header IS the eBOS token → capture it.
+  - Auth reached via QSRSOFT_USERNAME/PASSWORD secrets. **Confirmed 2026-07-26: 1/1 store → 220 variance · 111 waste ·
+    15 transfer rows.** No manual token needed; mints fresh every run.
+- **TODO (task #60):** mirror this working Playwright login into `qsrsoft-onhand-pull.mjs` + `qsrsoft-ebos-pull.mjs`
+  (they still use the dead SSO-first ladder). Drop the QSRSOFT_EBOS_TOKEN / QSRSOFT_COGNITO_TOKEN rungs (both dead ends).
+
 ## New data pulls needed (beyond On-Hand — capture endpoints on prod.ebos.qsrsoft.com)
 | Report | Why | Status |
 |---|---|---|
