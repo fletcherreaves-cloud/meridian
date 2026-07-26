@@ -2066,3 +2066,266 @@ export async function loadEmployeeSkills() {
   }
   return out;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EOM Inventory streams (Notes 29) — auto-pulled QSRSoft inventory reports.
+// period = 'YYYY-MM'. Row shapes mirror src/views/fob-eom.js parsers.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _toISO = v => v == null ? null : (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+const _fromISO = v => v == null ? null : new Date(String(v).slice(0, 10) + 'T00:00:00');
+
+async function _chunkUpsert(table, rows, onConflict) {
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const { error } = await supabase.from(table).upsert(rows.slice(i, i + CHUNK), { onConflict });
+    if (error) { console.warn(`[${table}] save error:`, error.message); errors.push(error.message); }
+    else saved += Math.min(CHUNK, rows.length - i);
+  }
+  console.log(`[${table}] saved ${saved} rows`);
+  return { saved, errors };
+}
+
+// ── On-Hand Inventory ─────────────────────────────────────────────────────────
+export async function saveQsrOnHand(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:            String(r.loc),
+    period:         String(r.period),
+    wrin:           String(r.wrin),
+    descr:          r.descr ?? r.desc ?? null,
+    cls:            r.cls ?? null,
+    cases:          r.cases ?? null,
+    packs:          r.packs ?? null,
+    loose:          r.loose ?? null,
+    total_units:    r.totalUnits ?? null,
+    unit_price:     r.unitPrice ?? null,
+    on_hand_amt:    r.onHandAmt ?? null,
+    last_counted:   _toISO(r.lastCounted),
+    last_submitted: _toISO(r.lastSubmitted),
+  }));
+  return _chunkUpsert('qsr_onhand', up, 'loc,period,wrin');
+}
+
+export async function loadQsrOnHand({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_onhand').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, descr: r.descr, cls: r.cls,
+    cases: r.cases, packs: r.packs, loose: r.loose, totalUnits: r.total_units,
+    unitPrice: r.unit_price, onHandAmt: r.on_hand_amt,
+    lastCounted: _fromISO(r.last_counted), lastSubmitted: _fromISO(r.last_submitted),
+    updatedAt: r.updated_at,
+  }));
+}
+
+// ── Variance Stat / Yields ────────────────────────────────────────────────────
+export async function saveQsrVarianceStat(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:        String(r.loc),
+    period:     String(r.period),
+    wrin:       String(r.wrin),
+    cls:        r.cls ?? null,
+    descr:      r.descr ?? r.desc ?? null,
+    raw_waste:  r.rawWaste ?? null,
+    comp_waste: r.compWaste ?? null,
+    exp_usage:  r.expUsage ?? null,
+    act_usage:  r.actUsage ?? null,
+    variance:   r.variance ?? null,
+    dol_diff:   r.dolDiff ?? null,
+    yield_val:  r.yield ?? r.yieldVal ?? null,
+    pct_sales:  r.pctOfSales ?? r.pctSales ?? null,
+    raw_item_id: r.rawItemId ?? null,
+  }));
+  return _chunkUpsert('qsr_variance_stat', up, 'loc,period,wrin');
+}
+
+export async function loadQsrVarianceStat({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_variance_stat').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage,
+    actUsage: r.act_usage, variance: r.variance, dolDiff: r.dol_diff,
+    yield: r.yield_val, pctOfSales: r.pct_sales, rawItemId: r.raw_item_id, updatedAt: r.updated_at,
+  }));
+}
+
+// ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────
+export async function saveQsrWaste(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:      String(r.loc),
+    period:   String(r.period),
+    event_id: r.eventId ?? r.id,
+    busn_dt:  _toISO(r.dt ?? r.busnDt),
+    busn_tm:  r.tm ?? r.busnTm ?? null,
+    wtype:    r.type ?? r.wtype ?? null,
+    amount:   r.amount ?? null,
+    manager:  r.manager ?? null,
+    wsource:  r.source ?? r.wsource ?? null,
+    edited:   !!r.edited,
+    reason:   r.reason ?? null,
+  })).filter(r => r.event_id != null);
+  return _chunkUpsert('qsr_waste', up, 'loc,event_id');
+}
+
+export async function loadQsrWaste({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_waste').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, eventId: r.event_id, dt: r.busn_dt, tm: r.busn_tm,
+    type: r.wtype, amount: r.amount, manager: r.manager, source: r.wsource,
+    edited: r.edited, reason: r.reason, updatedAt: r.updated_at,
+  }));
+}
+
+// ── EOM Transfers (transfers) ─────────────────────────────────────────────────
+export async function saveQsrTransfers(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:          String(r.loc),
+    period:       String(r.period),
+    transfer_id:  r.transferId ?? r.id,
+    wrin:         String(r.wrin),
+    dir:          r.dir ?? null,
+    counterparty: r.counterpartyNsn ?? r.counterparty ?? null,
+    busn_dt:      _toISO(r.dt ?? r.busnDt),
+    status:       r.status ?? null,
+    line_amt:     r.lineAmt ?? null,
+    transfer_amt: r.transferTotal ?? r.transferAmt ?? null,
+    manager:      r.manager ?? null,
+    descr:        r.descr ?? null,
+    cls:          r.cls ?? null,
+    units:        r.units ?? null,
+  })).filter(r => r.transfer_id != null && r.wrin);
+  return _chunkUpsert('qsr_transfers', up, 'loc,transfer_id,wrin');
+}
+
+export async function loadQsrTransfers({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_transfers').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, transferId: r.transfer_id, wrin: r.wrin, dir: r.dir,
+    counterpartyNsn: r.counterparty, dt: r.busn_dt, status: r.status, lineAmt: r.line_amt,
+    transferTotal: r.transfer_amt, manager: r.manager, descr: r.descr, cls: r.cls, units: r.units,
+    updatedAt: r.updated_at,
+  }));
+}
+
+// ── Inventory Summary & Usage ─────────────────────────────────────────────────
+export async function saveQsrInventorySummary(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:           String(r.loc),
+    period:        String(r.period),
+    wrin:          String(r.wrin),
+    descr:         r.descr ?? r.desc ?? null,
+    cls:           r.cls ?? null,
+    uom:           r.uom ?? null,
+    case_sz:       r.caseSz ?? null,
+    cost:          r.cost ?? null,
+    start_inv:     r.startInv ?? null,
+    purchases:     r.purchases ?? null,
+    end_inv:       r.endInv ?? null,
+    actual_usage:  r.actualUsage ?? null,
+    usage_per_day: r.usagePerDay ?? null,
+    days_supply:   r.daysSupply ?? null,
+    rng:           r.range ?? r.rng ?? null,
+  }));
+  return _chunkUpsert('qsr_inventory_summary', up, 'loc,period,wrin');
+}
+
+export async function loadQsrInventorySummary({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_inventory_summary').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, descr: r.descr, cls: r.cls,
+    uom: r.uom, caseSz: r.case_sz, cost: r.cost, startInv: r.start_inv,
+    purchases: r.purchases, endInv: r.end_inv, actualUsage: r.actual_usage,
+    usagePerDay: r.usage_per_day, daysSupply: r.days_supply, range: r.rng, updatedAt: r.updated_at,
+  }));
+}
+
+// ── Per-store EOM status (dashboard + notification + comms verification) ───────
+export async function saveEomCountStatus(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:              String(r.loc),
+    period:           String(r.period),
+    items_total:      r.itemsTotal ?? null,
+    items_counted:    r.itemsCounted ?? null,
+    pct_counted:      r.pctCounted ?? null,
+    food_done:        r.foodDone ?? false,
+    condiment_done:   r.condimentDone ?? false,
+    paper_done:       r.paperDone ?? false,
+    nonproduct_done:  r.nonproductDone ?? false,
+    last_activity_at: r.lastActivityAt instanceof Date ? r.lastActivityAt.toISOString() : (r.lastActivityAt ?? null),
+    notified_90:      r.notified90 ?? false,
+    notified_at:      r.notifiedAt instanceof Date ? r.notifiedAt.toISOString() : (r.notifiedAt ?? null),
+    diagnosis_status: r.diagnosisStatus ?? 'pending',
+    comms_status:     r.commsStatus ?? 'none',
+    comms_recipient:  r.commsRecipient ?? null,
+    comms_sent_at:    r.commsSentAt instanceof Date ? r.commsSentAt.toISOString() : (r.commsSentAt ?? null),
+    comms_note:       r.commsNote ?? null,
+    fob_pct:          r.fobPct ?? null,
+    total_fc_pct:     r.totalFcPct ?? null,
+    updated_at:       new Date().toISOString(),
+  }));
+  return _chunkUpsert('eom_count_status', up, 'loc,period');
+}
+
+export async function loadEomCountStatus({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('eom_count_status').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, itemsTotal: r.items_total, itemsCounted: r.items_counted,
+    pctCounted: r.pct_counted, foodDone: r.food_done, condimentDone: r.condiment_done,
+    paperDone: r.paper_done, nonproductDone: r.nonproduct_done, lastActivityAt: r.last_activity_at,
+    notified90: r.notified_90, notifiedAt: r.notified_at, diagnosisStatus: r.diagnosis_status,
+    commsStatus: r.comms_status, commsRecipient: r.comms_recipient, commsSentAt: r.comms_sent_at,
+    commsNote: r.comms_note, fobPct: r.fob_pct, totalFcPct: r.total_fc_pct, updatedAt: r.updated_at,
+  }));
+}
+
+// ── EOM notification settings (flexible jsonb) ─────────────────────────────────
+export async function loadEomNotificationSettings(key = 'default') {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('eom_notification_settings').select('*').eq('key', key).maybeSingle();
+  if (error) { console.warn('[eom_notification_settings] load error:', error.message); return null; }
+  return data ? { key: data.key, settings: data.settings || {}, updatedAt: data.updated_at } : null;
+}
+
+export async function saveEomNotificationSettings(settings, key = 'default') {
+  if (!supabase) return { saved: 0, errors: ['no supabase'] };
+  const { error } = await supabase.from('eom_notification_settings')
+    .upsert({ key, settings: settings || {}, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) { console.warn('[eom_notification_settings] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: 1, errors: [] };
+}

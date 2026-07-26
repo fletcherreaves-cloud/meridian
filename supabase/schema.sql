@@ -1323,3 +1323,172 @@ alter table public.smg_comments enable row level security;
 create policy "smg_comments: public read"  on public.smg_comments for select using (true);
 create policy "smg_comments: public write" on public.smg_comments for all using (true);
 create index if not exists smg_comments_loc_date_idx on public.smg_comments (loc, comment_date);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EOM Inventory / Food-Cost automation (Notes 29, 2026-07-26)
+-- Auto-pulled QSRSoft inventory reports for the End-Of-Month close.
+-- `period` = the EOM month as 'YYYY-MM' (the month being counted/closed).
+-- On-Hand is pulled hourly on the last 3 days of the month → count-progress
+-- signal. Variance Stat + Inventory Summary/Usage feed the diagnosis engine.
+-- Row shapes mirror the client-side parsers in src/views/fob-eom.js exactly.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- On-Hand Inventory — the count-progress signal (last_counted / last_submitted)
+create table if not exists public.qsr_onhand (
+  loc            text    not null,
+  period         text    not null,          -- 'YYYY-MM' EOM month
+  wrin           text    not null,
+  descr          text,
+  cls            text,                       -- inventory class (Food/Condiment/Paper/Non-Product)
+  cases          numeric,
+  packs          numeric,
+  loose          numeric,
+  total_units    numeric,
+  unit_price     numeric,
+  on_hand_amt    numeric,
+  last_counted   date,                       -- when the item was last physically counted
+  last_submitted date,                       -- when the count was submitted
+  updated_at     timestamptz default now(),
+  primary key (loc, period, wrin)
+);
+alter table public.qsr_onhand enable row level security;
+create policy "qsr_onhand: public read"  on public.qsr_onhand for select using (true);
+create policy "qsr_onhand: public write" on public.qsr_onhand for all using (true);
+create index if not exists qsr_onhand_period_idx on public.qsr_onhand (period, loc);
+
+-- Variance Stat / Yields — diagnosis fuel (items needing follow-up)
+create table if not exists public.qsr_variance_stat (
+  loc         text    not null,
+  period      text    not null,
+  wrin        text    not null,
+  cls         text,
+  descr       text,
+  raw_waste   numeric,
+  comp_waste  numeric,
+  exp_usage   numeric,
+  act_usage   numeric,
+  variance    numeric,
+  dol_diff    numeric,                       -- $ difference (the actionable number)
+  updated_at  timestamptz default now(),
+  primary key (loc, period, wrin)
+);
+alter table public.qsr_variance_stat enable row level security;
+create policy "qsr_variance_stat: public read"  on public.qsr_variance_stat for select using (true);
+create policy "qsr_variance_stat: public write" on public.qsr_variance_stat for all using (true);
+create index if not exists qsr_variance_stat_period_idx on public.qsr_variance_stat (period, loc);
+
+-- Inventory Summary & Usage — usage / days-supply context for recount tips
+create table if not exists public.qsr_inventory_summary (
+  loc           text    not null,
+  period        text    not null,
+  wrin          text    not null,
+  descr         text,
+  cls           text,
+  uom           text,
+  case_sz       numeric,
+  cost          numeric,
+  start_inv     numeric,
+  purchases     numeric,
+  end_inv       numeric,
+  actual_usage  numeric,
+  usage_per_day numeric,
+  days_supply   numeric,
+  rng           text,                        -- 'range' flag from the report
+  updated_at    timestamptz default now(),
+  primary key (loc, period, wrin)
+);
+alter table public.qsr_inventory_summary enable row level security;
+create policy "qsr_inventory_summary: public read"  on public.qsr_inventory_summary for select using (true);
+create policy "qsr_inventory_summary: public write" on public.qsr_inventory_summary for all using (true);
+create index if not exists qsr_inventory_summary_period_idx on public.qsr_inventory_summary (period, loc);
+
+-- Variance Stat extra columns (yield-band cause overlay + raw-item drill link).
+-- Safe to re-run; alter-add-column no-ops if the column already exists.
+alter table public.qsr_variance_stat add column if not exists yield_val    numeric;
+alter table public.qsr_variance_stat add column if not exists pct_sales    numeric;
+alter table public.qsr_variance_stat add column if not exists raw_item_id  bigint;
+
+-- Waste events (raw_waste_promo) — per-entry, manager-attributed. PK is the eBOS
+-- event id so re-pulls are idempotent. type: 'raw' | 'completed'.
+create table if not exists public.qsr_waste (
+  loc         text    not null,
+  period      text    not null,
+  event_id    bigint  not null,
+  busn_dt     date,
+  busn_tm     text,
+  wtype       text,                            -- 'raw' | 'completed'
+  amount      numeric,                         -- $ value
+  manager     text,                            -- eID
+  wsource     text,                            -- 'BOS' | 'MobileApp'
+  edited      boolean default false,
+  reason      text,
+  updated_at  timestamptz default now(),
+  primary key (loc, event_id)
+);
+alter table public.qsr_waste enable row level security;
+create policy "qsr_waste: public read"  on public.qsr_waste for select using (true);
+create policy "qsr_waste: public write" on public.qsr_waste for all using (true);
+create index if not exists qsr_waste_period_idx on public.qsr_waste (period, loc);
+
+-- Transfers (transfers) — one row per line item; transfer_id groups a transfer.
+create table if not exists public.qsr_transfers (
+  loc           text    not null,
+  period        text    not null,
+  transfer_id   bigint  not null,
+  wrin          text    not null,
+  dir           text,                          -- 'In' | 'Out'
+  counterparty  text,                          -- other store NSN
+  busn_dt       date,
+  status        text,                          -- 'approved' | 'rejected'
+  line_amt      numeric,
+  transfer_amt  numeric,                       -- whole-transfer header total
+  manager       text,
+  descr         text,
+  cls           text,
+  units         numeric,
+  updated_at    timestamptz default now(),
+  primary key (loc, transfer_id, wrin)
+);
+alter table public.qsr_transfers enable row level security;
+create policy "qsr_transfers: public read"  on public.qsr_transfers for select using (true);
+create policy "qsr_transfers: public write" on public.qsr_transfers for all using (true);
+create index if not exists qsr_transfers_period_idx on public.qsr_transfers (period, loc);
+
+-- Per-store EOM status row (dashboard + notification + comms verification)
+create table if not exists public.eom_count_status (
+  loc              text    not null,
+  period           text    not null,
+  items_total      integer,
+  items_counted    integer,
+  pct_counted      numeric,
+  food_done        boolean default false,
+  condiment_done   boolean default false,
+  paper_done       boolean default false,
+  nonproduct_done  boolean default false,
+  last_activity_at timestamptz,             -- max(last_counted/last_submitted) across items
+  notified_90      boolean default false,   -- has the ~90-95% "believes done" alert fired
+  notified_at      timestamptz,
+  diagnosis_status text    default 'pending',   -- pending | in_review | diagnosed | cleared
+  comms_status     text    default 'none',      -- none | drafted | sent | verified
+  comms_recipient  text,
+  comms_sent_at    timestamptz,
+  comms_note       text,
+  fob_pct          numeric,                 -- snapshot for dashboard convenience
+  total_fc_pct     numeric,
+  updated_at       timestamptz default now(),
+  primary key (loc, period)
+);
+alter table public.eom_count_status enable row level security;
+create policy "eom_count_status: public read"  on public.eom_count_status for select using (true);
+create policy "eom_count_status: public write" on public.eom_count_status for all using (true);
+
+-- Flexible notification settings (jsonb — channels, recipients, thresholds).
+-- Single owner today (key='default'); keyed for future per-user flexibility.
+create table if not exists public.eom_notification_settings (
+  key        text primary key,             -- 'default' or a user id
+  settings   jsonb   not null default '{}'::jsonb,
+  updated_at timestamptz default now()
+);
+alter table public.eom_notification_settings enable row level security;
+create policy "eom_notification_settings: public read"  on public.eom_notification_settings for select using (true);
+create policy "eom_notification_settings: public write" on public.eom_notification_settings for all using (true);
