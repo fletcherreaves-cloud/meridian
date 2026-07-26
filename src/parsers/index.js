@@ -1920,6 +1920,7 @@ async function parseVoiceDaypartPDF(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const rows = [];
+  let sawDaypartPage = false;
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
@@ -1933,6 +1934,7 @@ async function parseVoiceDaypartPDF(file) {
       .map(([, its]) => its.sort((a, b) => a.x - b.x).map(i => i.str).join(' ').replace(/\s+/g, ' ').trim())
       .filter(Boolean);
     if (!isVoiceDaypartReport(lines)) continue;
+    sawDaypartPage = true;
 
     const hdr = lines.find(l => /Restaurant:/.test(l)) || '';
     const nsnM = hdr.match(/Restaurant:\s*(.+?)\s*-\s*(\d{4,6})\s*$/);
@@ -1960,6 +1962,10 @@ async function parseVoiceDaypartPDF(file) {
     }
     if (anyData) rows.push(...byDaypart);
   }
+  // isDaypart flags "this file IS a daypart report" even when zero rows parsed
+  // (e.g. the older 2024–25 metric layout my label list doesn't cover yet), so
+  // the caller can route it here and NOT fall through to the Performance parser.
+  rows.isDaypart = sawDaypartPage;
   return rows;
 }
 
