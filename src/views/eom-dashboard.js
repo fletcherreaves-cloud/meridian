@@ -18,6 +18,7 @@ import {
   buildIncompleteCountMessage,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
+import { buildItemJourney, buildStoreJourneys, LANE_META } from '../engine/eom-item-journey.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -61,6 +62,24 @@ function printDiagnosis(name, period, reportText) {
 const money = v => (v == null || isNaN(v)) ? '—' : '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 // Recent period options (current month + prior 3), as 'YYYY-MM'.
+// Two modes (Notes 29 owner idea): 'eom' = count-completion tracking (only
+// meaningful in the last-3-day window); 'progress' = year-round view emphasizing
+// last-count freshness + FOB/diagnosis results. Default: EOM only when we're
+// actually in the current month's count window, else Progress.
+function defaultModeFor(period) {
+  const now = new Date();
+  const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if (period !== cur) return 'progress';
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return now.getDate() >= lastDay - 2 ? 'eom' : 'progress';
+}
+const daysAgo = (dt) => {
+  if (!dt) return null;
+  const t = typeof dt === 'number' ? dt : Date.parse(dt);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+};
+
 function recentPeriods(n = 4) {
   const out = [];
   const now = new Date();
@@ -131,6 +150,71 @@ function ProgressBar({ value }) {
     span({ style: { fontSize: '12px', fontWeight: 700, color, minWidth: '34px', textAlign: 'right' } }, pct(p)));
 }
 
+const VERDICT_TONE = { good: '#4ade80', warn: '#f5bc00', bad: '#f87171', neutral: 'var(--text3)' };
+const jMoney = (n) => `$${Math.round(Math.abs(n || 0)).toLocaleString()}`;
+
+// One item's count-cycle "journey": verdict banner → flow summary → verified
+// timeline → signals (facts vs clearly-labeled inferences). The visual guide that
+// lets a GM see the path of an item and where it went wrong, backed only by ledger
+// facts we can point to.
+function ItemJourneyView({ journey: j }) {
+  if (!j) return null;
+  const inWindow = (when) => j.windowStart != null && when != null && when >= j.windowStart;
+  const flowChips = [['received', j.totals.received], ['used', j.totals.used], ['waste', j.totals.waste], ['transfer', j.totals.transfer]]
+    .filter(([, q]) => q > 0.0001);
+  return div({ style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+    // verdict banner
+    div({ style: { padding: '10px 12px', borderRadius: '8px', background: 'var(--surf2)', borderLeft: `4px solid ${VERDICT_TONE[j.verdict.tone]}` } },
+      div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13.5px' } }, j.descr || j.wrin),
+      div({ style: { fontSize: '11px', color: 'var(--text3)', margin: '1px 0 5px' } },
+        [j.wrin && `WRIN ${j.wrin}`, j.itemClass, j.uom].filter(Boolean).join('  ·  ')),
+      div({ style: { fontSize: '13px', color: VERDICT_TONE[j.verdict.tone], fontWeight: 600 } }, j.verdict.text)),
+
+    // flow summary — where the units came from / went
+    flowChips.length > 0 && div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+      flowChips.map(([lane, q]) => span({
+        key: lane, title: LANE_META[lane].hint,
+        style: { fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '5px', border: `1px solid ${LANE_META[lane].color}`, color: LANE_META[lane].color, background: 'var(--surf3)' },
+      }, `${LANE_META[lane].label}: ${Math.round(q).toLocaleString()}`))),
+
+    // timeline — every ledger event, chronological, count window shaded
+    div(null,
+      div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'Count-cycle timeline'),
+      j.events.length === 0
+        ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'No ledger movement recorded for this item this period.')
+        : div({ style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
+          j.events.map((e, i) => {
+            const m = LANE_META[e.lane];
+            const win = inWindow(e.when);
+            return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px', background: e.isCount ? 'var(--surf2)' : 'transparent', border: e.isCount ? `1px solid ${m.color}55` : '1px solid transparent' } },
+              span({ style: { width: '9px', height: '9px', borderRadius: e.isCount ? '2px' : '50%', background: m.color, flexShrink: 0, transform: e.isCount ? 'rotate(45deg)' : 'none' } }),
+              span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '82px', fontVariantNumeric: 'tabular-nums' } },
+                e.dt || '—', win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
+              span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
+              span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
+                e.isCount
+                  ? `count${e.manager ? ` · ${e.manager}` : ''}`
+                  : `${e.qty > 0 ? '+' : ''}${Math.round(e.qty).toLocaleString()}${e.invoice ? ` · ${e.invoice}` : ''}`),
+              e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1 && span({
+                style: { fontSize: '12px', fontWeight: 700, color: e.dollars < 0 ? '#f87171' : '#4ade80', minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
+              }, `${e.dollars < 0 ? '-' : '+'}${jMoney(e.dollars)}`));
+          }))),
+
+    // signals — facts first (verified), then inferences (clearly labeled)
+    j.signals.length > 0 && div(null,
+      div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'What the data shows'),
+      div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
+        j.signals.map((s, i) => div({
+          key: i,
+          style: { fontSize: '12.5px', color: 'var(--text)', padding: '6px 9px', borderRadius: '6px', background: 'var(--surf3)', borderLeft: `3px solid ${s.kind === 'fact' ? '#4ade80' : '#38bdf8'}` },
+        },
+          span({ style: { fontWeight: 700, color: s.kind === 'fact' ? '#4ade80' : '#38bdf8', marginRight: '6px' } },
+            s.kind === 'fact' ? '✓ Verified' : '💡 Likely — check'),
+          s.text)))),
+    div({ style: { fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic' } },
+      '✓ Verified = read directly from the item ledger.  💡 Likely = a data-backed read to confirm on-site.'));
+}
+
 export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const periods = useMemo(() => recentPeriods(4), []);
   const [period, setPeriod] = useState(periods[0]);
@@ -147,8 +231,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [rawDetail, setRawDetail] = useState([]);
   const [diag, setDiag] = useState(null); // { name, result, report } for the diagnosis modal
   const [diagCopied, setDiagCopied] = useState(false);
+  const [journeys, setJourneys] = useState(null); // { loc, name, list, selectedWrin } item-journey modal
   const [scope, setScope] = useState('all'); // 'all' | 'FL' | 'OK' — state filter
   const [oneStore, setOneStore] = useState(''); // '' = all stores in scope, else a single loc
+  const [mode, setMode] = useState(() => defaultModeFor(periods[0])); // 'eom' | 'progress'
+  // Re-default the mode when the period changes (manual toggle still overrides after).
+  useEffect(() => { setMode(defaultModeFor(period)); }, [period]);
   const [diagCfg, setDiagCfg] = useState(null); // saved check overrides (or null = defaults)
   const [flowOpen, setFlowOpen] = useState(false); // flow-editor modal
   const [flowDraft, setFlowDraft] = useState([]); // editable copy while the modal is open
@@ -321,6 +409,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     setDiag({ loc, name, result, report: formatDiagnosisReport(result) });
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
 
+  // Open the visual Item Journeys for a store (worst-net-variance first).
+  const openJourneys = useCallback((loc, name) => {
+    const list = buildStoreJourneys(rawByLoc[loc] || [], { period, asOf: new Date() });
+    setJourneys({ loc, name, list, selectedWrin: list[0]?.wrin || null });
+  }, [rawByLoc, period]);
+
   // ── Flow editor ──
   const openFlow = useCallback(() => {
     setFlowDraft(checksConfig(activeChecks));
@@ -403,8 +497,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       div(null,
         h('h2', { style: { margin: 0, fontSize: '20px', color: 'var(--text)' } }, '📦 EOM Dashboard'),
         span({ style: { fontSize: '12px', color: 'var(--text3)' } },
-          `Inventory count progress + FOB status · window: last ${3} days (from the ${countWindowStart(period).getDate()}${daysInPeriod(period) ? '' : ''})`)),
+          mode === 'eom'
+            ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
+            : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')),
       div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+        // mode toggle — EOM count-completion vs year-round progress
+        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+          [['eom', 'EOM Count'], ['progress', 'Year-Round']].map(([k, label]) =>
+            h('button', {
+              key: k, onClick: () => setMode(k),
+              title: k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
+              style: {
+                background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
+                border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+              },
+            }, label))),
         h('select', {
           value: period, onChange: e => setPeriod(e.target.value),
           style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
@@ -490,7 +597,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
             h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
-              r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—'),
+              r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—',
+              mode === 'progress' && r.prog.lastActivityAt && (() => {
+                const a = daysAgo(r.prog.lastActivityAt);
+                return a == null ? null : span({ style: { fontSize: '10px', color: a > 40 ? '#f87171' : 'var(--text3)', marginLeft: '5px' } }, a === 0 ? 'today' : `${a}d ago`);
+              })()),
             h('td', { style: { padding: '8px 10px', fontWeight: 600, color: 'var(--text)' } }, pct2(r.fobPct)),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)' } }, money(r.fob$)),
             h('td', { style: { padding: '8px 10px' } },
@@ -595,10 +706,58 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             onClick: () => printDiagnosis(diag.name, period, diag.report),
             style: { background: 'none', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, '🖨 Print / PDF'),
+          (rawByLoc[diag.loc] || []).length > 0 && h('button', {
+            title: 'See the count-cycle path of each item — where the variance was realized',
+            onClick: () => openJourneys(diag.loc, diag.name),
+            style: { background: 'none', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
+          }, '📊 Item journeys'),
           h('button', {
             onClick: () => { updateStatus(diag.loc, { diagnosisStatus: 'diagnosed' }); setDiag(null); },
             style: { background: 'none', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, 'Mark diagnosed')))),
+
+    // item-journey modal — the visual count-cycle guide (worst items first)
+    journeys && (() => {
+      const sel = journeys.list.find(j => j.wrin === journeys.selectedWrin) || journeys.list[0];
+      return div({
+        onClick: () => setJourneys(null),
+        style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+      },
+        div({
+          onClick: e => e.stopPropagation(),
+          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '88vh', overflow: 'auto', padding: '18px' },
+        },
+          div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
+            div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 Item journeys — ${journeys.name}`),
+            h('button', { onClick: () => setJourneys(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+          div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } },
+            `${journeys.list.length} item${journeys.list.length !== 1 ? 's' : ''} pulled for ${period}, worst net-variance first. Pick an item to trace its count cycle.`),
+
+          journeys.list.length === 0
+            ? div({ style: { fontSize: '13px', color: 'var(--text3)', padding: '20px', textAlign: 'center' } }, 'No raw-item detail pulled for this store this period.')
+            : div(null,
+              // item picker — worst-first chips
+              div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
+                journeys.list.slice(0, 24).map(j => {
+                  const active = j.wrin === (sel && sel.wrin);
+                  const tone = VERDICT_TONE[j.verdict.tone];
+                  return h('button', {
+                    key: j.wrin,
+                    onClick: () => setJourneys(s => ({ ...s, selectedWrin: j.wrin })),
+                    title: j.verdict.text,
+                    style: {
+                      background: active ? 'var(--surf3)' : 'transparent', color: 'var(--text)',
+                      border: `1px solid ${active ? tone : 'var(--bdr2)'}`, borderRadius: '6px',
+                      padding: '4px 8px', fontSize: '11.5px', cursor: 'pointer', fontWeight: active ? 700 : 500,
+                      display: 'flex', alignItems: 'center', gap: '5px',
+                    },
+                  },
+                    span({ style: { width: '7px', height: '7px', borderRadius: '50%', background: tone } }),
+                    (j.descr || j.wrin), Math.abs(j.netCountDollars) >= 1 && span({ style: { color: 'var(--text3)' } }, jMoney(j.netCountDollars)));
+                })),
+              // selected item's journey
+              h(ItemJourneyView, { journey: sel }))))
+    })(),
 
     // flow-editor modal — reorder/toggle checks + tune thresholds (persists to cloud)
     flowOpen && div({

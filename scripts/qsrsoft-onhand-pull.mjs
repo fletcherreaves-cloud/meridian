@@ -61,12 +61,30 @@ function periodFor(dateStr) {
   return process.env.ONHAND_PERIOD || dateStr.slice(0, 7); // 'YYYY-MM'
 }
 
-// True only in the last 3 calendar days of the month (unless forced).
+// True only in the last 3 calendar days of the month.
 function inCountWindow() {
-  if (FORCE) return true;
   const now = new Date();
   const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
   return now.getUTCDate() >= lastDay - 2;
+}
+
+// Year-round "progress mode" snapshot: outside the count window we still take ONE
+// light On-Hand pull per day (at PROGRESS_SNAPSHOT_HOUR UTC) so `last_counted`
+// freshness stays current all month — feeding the dashboard's year-round Progress
+// mode. Inside the window we keep the hourly cadence (count-completion tracking).
+// Owner's two-modes idea (Notes 29); the workflow fires hourly and this gate picks
+// which hours actually do work. ONHAND_PROGRESS=0 disables the daily snapshot.
+const PROGRESS_SNAPSHOT_HOUR = Number(process.env.ONHAND_PROGRESS_HOUR ?? 10);
+const PROGRESS_ENABLED = process.env.ONHAND_PROGRESS !== '0';
+function isProgressSnapshotHour() {
+  return PROGRESS_ENABLED && new Date().getUTCHours() === PROGRESS_SNAPSHOT_HOUR;
+}
+// Should this invocation do a pull at all, and in which mode?
+function runMode() {
+  if (FORCE) return 'forced';
+  if (inCountWindow()) return 'count-window';   // hourly, last 3 days
+  if (isProgressSnapshotHour()) return 'progress'; // one daily snapshot, year-round
+  return null;                                   // skip
 }
 
 // ── eBOS auth: SSO token exchange (mirrors qsrsoft-ebos-pull.mjs) ──────────────
@@ -235,15 +253,16 @@ function buildStatusRow(loc, period, ohRows, prev) {
 }
 
 async function main() {
-  if (!inCountWindow()) {
-    console.log('[onhand-pull] outside the last-3-days count window — skipping (ONHAND_FORCE=1 to override)');
+  const mode = runMode();
+  if (!mode) {
+    console.log(`[onhand-pull] skipping — outside count window and not the daily progress-snapshot hour (${PROGRESS_SNAPSHOT_HOUR}:00 UTC). ONHAND_FORCE=1 to override.`);
     return;
   }
   const dateStr = businessDate();
   const period  = periodFor(dateStr);
   let token = await resolveEbosToken();
   const prevStatus = await loadExistingStatus(period);
-  console.log(`[onhand-pull] date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${STORE_NSNS.length} stores`);
+  console.log(`[onhand-pull] mode=${mode} · date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${STORE_NSNS.length} stores`);
 
   let totalSaved = 0, storesWithData = 0, authFailed = false;
   const statusRows = [];
