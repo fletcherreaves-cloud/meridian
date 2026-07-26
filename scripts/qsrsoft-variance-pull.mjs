@@ -129,19 +129,21 @@ async function getEbosTokenViaPlaywright() {
 
     const userSel = 'input[name="username"], input[name="email"], input[type="email"], #username, #email';
     const passSel = 'input[name="password"], input[type="password"], #password';
-    const userEl = await page.waitForSelector(userSel, { timeout: 20000 }).catch(() => null);
-    if (!userEl) { console.log('[pw] ✗ no username field found — login UI not recognized'); await shot(page, '02-no-login'); }
+    const foundUser = await page.waitForSelector(userSel, { timeout: 20000 }).then(() => true).catch(() => false);
+    if (!foundUser) { console.log('[pw] ✗ no username field found — login UI not recognized'); await shot(page, '02-no-login'); }
     else {
       console.log('[pw] filling credentials (char-by-char for React/Amplify)…');
-      const passEl = await page.$(passSel);
-      // Type char-by-char so Amplify's controlled inputs fire onChange (page.fill can leave the form "empty")
-      await userEl.click({ clickCount: 3 }); await userEl.pressSequentially(u, { delay: 12 });
-      if (passEl) { await passEl.click({ clickCount: 3 }); await passEl.pressSequentially(p, { delay: 12 }); }
+      // Locators (not ElementHandles) — pressSequentially types char-by-char so Amplify's
+      // controlled inputs fire onChange (page.fill can leave the form "empty").
+      const userLoc = page.locator(userSel).first();
+      const passLoc = page.locator(passSel).first();
+      await userLoc.click({ clickCount: 3 }); await userLoc.pressSequentially(u, { delay: 12 });
+      await passLoc.click({ clickCount: 3 }).catch(() => {}); await passLoc.pressSequentially(p, { delay: 12 }).catch(() => {});
       await shot(page, '02-filled');
       // Click the EXACT "Sign in" button — not "Sign in with McD eID" / "Email Link"
       const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
       const clicked = await signIn.click({ timeout: 8000 }).then(() => true).catch(() => false);
-      if (!clicked) { console.log('[pw] exact Sign in button not clickable — pressing Enter in password'); await (passEl || userEl).press('Enter').catch(() => {}); }
+      if (!clicked) { console.log('[pw] exact Sign in button not clickable — pressing Enter in password'); await passLoc.press('Enter').catch(() => {}); }
       await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
       await new Promise(r => setTimeout(r, 2500));
       const stillLogin = await page.$(passSel).then(Boolean);
