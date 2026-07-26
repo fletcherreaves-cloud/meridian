@@ -173,6 +173,9 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - **Ops Report guard**: refuses period-summary uploads (no daily dates) — daily rows are the source of truth.
 - **OK/FL market pills fixed**: were defaulting all stores to MCDOK (FL pill empty); now split by `INV_ORG_COORDS.state` (OK=20 Oklahoma, FL=7 Florida).
 
+⏰ **STANDING REMINDER (owner asked me to keep raising this — 2026-07-26 night):**
+**Set Supabase network permissions for the Claude Code environment** so the agent can read the live `tasks` / `feature_requests` / `qsr_*` tables directly (currently the env egress policy 403s `supabase.co`). Fix = claude.ai/code → this environment → **Network access** → allowlist the Supabase host (`<VITE_SUPABASE_URL host>`). Needed before any session hand-off so the next session can triage the live Task Queue. **→ Raise at the start of every session until done.**
+
 ⚠️ **Pending user action:**
 - **SQL blocks** from `supabase/schema.sql` (each fails soft — app works without them, just won't persist): **`forecast_snapshots`** (still not confirmed), **`smart_target_adjustments`** (v4.486), **`sage_prompts`** (v4.487; v4.488 adds `alter ... add column` schedule cols + **`sage_prompt_runs`** — safe to re-run the whole SAGE block). The 3 email-report tables are already created.
 - **SAGE RBAC (v4.494)** needs a **`sage-chat` redeploy** to take effect: `supabase functions deploy sage-chat --no-verify-jwt`. The edge fn now reads the caller's `profiles.role`/`accessible_locs` server-side and **hard-filters every data tool** to their accessible stores (district totals + the user's rank stay visible for context; other stores' individual figures are hidden), plus an authoritative access-control preamble. `accessible_locs` null/empty = full access (the owner) → no behavior change; an array = restricted. Client unchanged.

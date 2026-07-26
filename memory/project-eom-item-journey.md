@@ -122,6 +122,16 @@ dashboard looked empty even though FOB + diagnosis are cloud-fresh all month.
 
 ---
 
+## 3b. ⏰ Notes 30 (owner, 2026-07-26 night) — NEXT SESSION queue
+
+**A. Item Journey enhancements (EOM Dashboard → 🔬 Diagnose → 📊 Item journeys):**
+1. **Show the actual item quantity variance** on the timeline/verdict (not just $). **Bonus:** convert to **cases** where appropriate (use `case_sz`/UOM from `qsr_inventory_summary` or the raw-item UOM).
+2. **Add column headers** to the timeline (Date · Type · Qty/Detail · $).
+3. **Match the over/under variance qty to the current Variance Stat report — must tie out EXACT.** The journey's netCountDollars / count difference should reconcile to `qsr_variance_stat.dol_diff` (and unit variance to `variance`) for the same WRIN+period. Verify and, if off, fix the attribution (likely a sign or aggregation mismatch). This is a trust-critical reconciliation.
+4. **Make the flow chips (Received / Used / Waste / Transfer) clickable** → drill to the actual underlying events for review (the ledger rows already exist in `history`; render a filtered event list per lane on click).
+
+**B. Dashboard data gap (screenshot 2026-07, Year-Round mode):** Count Progress, By Class, and Last Count all show 0% / "—" for every store; Count Window = "not yet". Root cause to CONFIRM next session: `qsr_onhand` has no rows for 2026-07 yet — On-Hand only pulled inside the last-3-day window, and the new year-round daily snapshot (`runMode()` in qsrsoft-onhand-pull.mjs, v4.542) **may not have run yet** (just shipped; also the July window opens the 29th). Verify the daily snapshot actually fires and populates `qsr_onhand` so Year-Round mode shows last-count freshness before the window. If the snapshot works but the table's still empty, check the pull's auth/period. FOB $/% populate fine (qsr_fob is flowing), so the dashboard itself is healthy — this is purely an On-Hand data-availability question.
+
 ## 4. Next candidates (for when the owner returns to EOM)
 - **Complete-count (whole-store) journey** once `qsr_inventory_summary` is pulled —
   same fact/inference visual, but rolled to the class/store level (the "by complete
