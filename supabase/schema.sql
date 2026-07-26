@@ -1402,6 +1402,58 @@ create policy "qsr_inventory_summary: public read"  on public.qsr_inventory_summ
 create policy "qsr_inventory_summary: public write" on public.qsr_inventory_summary for all using (true);
 create index if not exists qsr_inventory_summary_period_idx on public.qsr_inventory_summary (period, loc);
 
+-- Variance Stat extra columns (yield-band cause overlay + raw-item drill link).
+-- Safe to re-run; alter-add-column no-ops if the column already exists.
+alter table public.qsr_variance_stat add column if not exists yield_val    numeric;
+alter table public.qsr_variance_stat add column if not exists pct_sales    numeric;
+alter table public.qsr_variance_stat add column if not exists raw_item_id  bigint;
+
+-- Waste events (raw_waste_promo) — per-entry, manager-attributed. PK is the eBOS
+-- event id so re-pulls are idempotent. type: 'raw' | 'completed'.
+create table if not exists public.qsr_waste (
+  loc         text    not null,
+  period      text    not null,
+  event_id    bigint  not null,
+  busn_dt     date,
+  busn_tm     text,
+  wtype       text,                            -- 'raw' | 'completed'
+  amount      numeric,                         -- $ value
+  manager     text,                            -- eID
+  wsource     text,                            -- 'BOS' | 'MobileApp'
+  edited      boolean default false,
+  reason      text,
+  updated_at  timestamptz default now(),
+  primary key (loc, event_id)
+);
+alter table public.qsr_waste enable row level security;
+create policy "qsr_waste: public read"  on public.qsr_waste for select using (true);
+create policy "qsr_waste: public write" on public.qsr_waste for all using (true);
+create index if not exists qsr_waste_period_idx on public.qsr_waste (period, loc);
+
+-- Transfers (transfers) — one row per line item; transfer_id groups a transfer.
+create table if not exists public.qsr_transfers (
+  loc           text    not null,
+  period        text    not null,
+  transfer_id   bigint  not null,
+  wrin          text    not null,
+  dir           text,                          -- 'In' | 'Out'
+  counterparty  text,                          -- other store NSN
+  busn_dt       date,
+  status        text,                          -- 'approved' | 'rejected'
+  line_amt      numeric,
+  transfer_amt  numeric,                       -- whole-transfer header total
+  manager       text,
+  descr         text,
+  cls           text,
+  units         numeric,
+  updated_at    timestamptz default now(),
+  primary key (loc, transfer_id, wrin)
+);
+alter table public.qsr_transfers enable row level security;
+create policy "qsr_transfers: public read"  on public.qsr_transfers for select using (true);
+create policy "qsr_transfers: public write" on public.qsr_transfers for all using (true);
+create index if not exists qsr_transfers_period_idx on public.qsr_transfers (period, loc);
+
 -- Per-store EOM status row (dashboard + notification + comms verification)
 create table if not exists public.eom_count_status (
   loc              text    not null,

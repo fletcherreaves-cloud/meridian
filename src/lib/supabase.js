@@ -2139,6 +2139,9 @@ export async function saveQsrVarianceStat(rows) {
     act_usage:  r.actUsage ?? null,
     variance:   r.variance ?? null,
     dol_diff:   r.dolDiff ?? null,
+    yield_val:  r.yield ?? r.yieldVal ?? null,
+    pct_sales:  r.pctOfSales ?? r.pctSales ?? null,
+    raw_item_id: r.rawItemId ?? null,
   }));
   return _chunkUpsert('qsr_variance_stat', up, 'loc,period,wrin');
 }
@@ -2153,7 +2156,78 @@ export async function loadQsrVarianceStat({ period } = {}) {
   return (data || []).map(r => ({
     loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage,
-    actUsage: r.act_usage, variance: r.variance, dolDiff: r.dol_diff, updatedAt: r.updated_at,
+    actUsage: r.act_usage, variance: r.variance, dolDiff: r.dol_diff,
+    yield: r.yield_val, pctOfSales: r.pct_sales, rawItemId: r.raw_item_id, updatedAt: r.updated_at,
+  }));
+}
+
+// ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────
+export async function saveQsrWaste(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:      String(r.loc),
+    period:   String(r.period),
+    event_id: r.eventId ?? r.id,
+    busn_dt:  _toISO(r.dt ?? r.busnDt),
+    busn_tm:  r.tm ?? r.busnTm ?? null,
+    wtype:    r.type ?? r.wtype ?? null,
+    amount:   r.amount ?? null,
+    manager:  r.manager ?? null,
+    wsource:  r.source ?? r.wsource ?? null,
+    edited:   !!r.edited,
+    reason:   r.reason ?? null,
+  })).filter(r => r.event_id != null);
+  return _chunkUpsert('qsr_waste', up, 'loc,event_id');
+}
+
+export async function loadQsrWaste({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_waste').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, eventId: r.event_id, dt: r.busn_dt, tm: r.busn_tm,
+    type: r.wtype, amount: r.amount, manager: r.manager, source: r.wsource,
+    edited: r.edited, reason: r.reason, updatedAt: r.updated_at,
+  }));
+}
+
+// ── EOM Transfers (transfers) ─────────────────────────────────────────────────
+export async function saveQsrTransfers(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const up = rows.map(r => ({
+    loc:          String(r.loc),
+    period:       String(r.period),
+    transfer_id:  r.transferId ?? r.id,
+    wrin:         String(r.wrin),
+    dir:          r.dir ?? null,
+    counterparty: r.counterpartyNsn ?? r.counterparty ?? null,
+    busn_dt:      _toISO(r.dt ?? r.busnDt),
+    status:       r.status ?? null,
+    line_amt:     r.lineAmt ?? null,
+    transfer_amt: r.transferTotal ?? r.transferAmt ?? null,
+    manager:      r.manager ?? null,
+    descr:        r.descr ?? null,
+    cls:          r.cls ?? null,
+    units:        r.units ?? null,
+  })).filter(r => r.transfer_id != null && r.wrin);
+  return _chunkUpsert('qsr_transfers', up, 'loc,transfer_id,wrin');
+}
+
+export async function loadQsrTransfers({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_transfers').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, transferId: r.transfer_id, wrin: r.wrin, dir: r.dir,
+    counterpartyNsn: r.counterparty, dt: r.busn_dt, status: r.status, lineAmt: r.line_amt,
+    transferTotal: r.transfer_amt, manager: r.manager, descr: r.descr, cls: r.cls, units: r.units,
+    updatedAt: r.updated_at,
   }));
 }
 
