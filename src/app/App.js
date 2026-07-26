@@ -1924,13 +1924,22 @@ function App() {
             // unmistakable ("Time of Day Performance"); try that first.
             let dpRows=[];
             try{ dpRows=await parseVoiceDaypartPDF(file); }catch(e){ dpRows=[]; }
-            if(dpRows.length>0){
-              const res=await saveVoiceDaypart(dpRows);
-              currentDS={...currentDS,voiceDaypart:[...(currentDS.voiceDaypart||[]),...dpRows]};
-              const dpPeriods=[...new Set(dpRows.map(r=>r.period).filter(Boolean))].sort();
-              const dpStores=new Set(dpRows.map(r=>String(parseInt(r.loc,10)||r.loc))).size;
-              console.log(`[Meridian] VOICE Daypart: ${dpRows.length} rows from ${file.name} (saved ${res.saved}${res.error?', err '+res.error:''})`);
-              loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report'},periods:dpPeriods,stores:dpStores,saved:res.saved,saveErr:res.error||null});
+            // A file with a "Time of Day Performance" grid IS a daypart report —
+            // route it here and NEVER fall through to the Performance parser,
+            // even when 0 rows parse (older 2024–25 metric layout isn't covered
+            // yet). Otherwise it lands mislabeled in the Performance tab.
+            if(dpRows.isDaypart || dpRows.length>0){
+              if(dpRows.length>0){
+                const res=await saveVoiceDaypart(dpRows);
+                currentDS={...currentDS,voiceDaypart:[...(currentDS.voiceDaypart||[]),...dpRows]};
+                const dpPeriods=[...new Set(dpRows.map(r=>r.period).filter(Boolean))].sort();
+                const dpStores=new Set(dpRows.map(r=>String(parseInt(r.loc,10)||r.loc))).size;
+                console.log(`[Meridian] VOICE Daypart: ${dpRows.length} rows from ${file.name} (saved ${res.saved}${res.error?', err '+res.error:''})`);
+                loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report'},periods:dpPeriods,stores:dpStores,saved:res.saved,saveErr:res.error||null});
+              } else {
+                console.warn(`[Meridian] VOICE Daypart (unsupported metric layout, not saved): ${file.name}`);
+                loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report (older format — not yet supported)'}});
+              }
               continue;
             }
             // Otherwise try the Performance parser; if it finds no perf rows, it's
