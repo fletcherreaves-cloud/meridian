@@ -140,16 +140,16 @@ export function summarizeTransfers(lines = [], { largeAmt = 100 } = {}) {
   const byClass = {};
   const byId = {};
   for (const l of lines) {
-    const signed = l.dir === 'Out' ? -l.lineAmt : l.lineAmt;
-    if (l.dir === 'Out') outTotal += l.lineAmt; else inTotal += l.lineAmt;
+    const id = l.id ?? l.transferId; // tolerate DB-loaded rows (transferId) + freshly-mapped (id)
+    const lineAmt = Number(l.lineAmt) || 0;
+    if (l.dir === 'Out') outTotal += lineAmt; else inTotal += lineAmt;
     const c = (byClass[l.cls] = byClass[l.cls] || { cls: l.cls, in: 0, out: 0 });
-    if (l.dir === 'Out') c.out += l.lineAmt; else c.in += l.lineAmt;
-    const t = (byId[l.id] = byId[l.id] || {
-      id: l.id, dir: l.dir, dt: l.dt, status: l.status, manager: l.manager,
-      counterpartyNsn: l.counterpartyNsn, total: l.transferTotal, lines: 0,
+    if (l.dir === 'Out') c.out += lineAmt; else c.in += lineAmt;
+    const t = (byId[id] = byId[id] || {
+      id, dir: l.dir, dt: l.dt, status: l.status, manager: l.manager,
+      counterpartyNsn: l.counterpartyNsn, total: Number(l.transferTotal) || 0, lines: 0,
     });
     t.lines += 1;
-    void signed;
   }
   const transfers = Object.values(byId);
   const flagged = transfers.filter((t) => t.status !== 'approved' || t.total >= largeAmt);

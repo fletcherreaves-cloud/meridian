@@ -10,11 +10,13 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
+  loadQsrVarianceStat, loadQsrWaste, loadQsrTransfers,
 } from '../lib/supabase.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
   buildIncompleteCountMessage,
 } from '../engine/eom-inventory.js';
+import { runDiagnosis, formatDiagnosisReport } from '../engine/eom-diagnosis.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -107,17 +109,28 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [saving, setSaving] = useState('');
   const [draft, setDraft] = useState(null); // { loc, name, subject, body } for the comms modal
   const [copied, setCopied] = useState(false);
+  const [variance, setVariance] = useState([]);
+  const [waste, setWaste] = useState([]);
+  const [transfers, setTransfers] = useState([]);
+  const [diag, setDiag] = useState(null); // { name, result, report } for the diagnosis modal
+  const [diagCopied, setDiagCopied] = useState(false);
 
   const load = useCallback(async (p) => {
     setLoading(true);
     try {
-      const [oh, fob, st] = await Promise.all([
+      const [oh, fob, st, vr, wa, tr] = await Promise.all([
         loadQsrOnHand({ period: p }),
         loadQsrFob().catch(() => []),
         loadEomCountStatus({ period: p }).catch(() => []),
+        loadQsrVarianceStat({ period: p }).catch(() => []),
+        loadQsrWaste({ period: p }).catch(() => []),
+        loadQsrTransfers({ period: p }).catch(() => []),
       ]);
       setOnHand(oh || []);
       setFobRows(fob || []);
+      setVariance(vr || []);
+      setWaste(wa || []);
+      setTransfers(tr || []);
       const m = {}; (st || []).forEach(r => { m[String(r.loc)] = r; });
       setStatusMap(m);
     } finally { setLoading(false); }
@@ -131,6 +144,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     for (const r of onHand) { (m[String(r.loc)] || (m[String(r.loc)] = [])).push(r); }
     return m;
   }, [onHand]);
+
+  // Diagnosis inputs grouped by loc (variance / waste / transfers streams).
+  const groupByLoc = (arr) => {
+    const m = {};
+    for (const r of (arr || [])) { (m[String(r.loc)] || (m[String(r.loc)] = [])).push(r); }
+    return m;
+  };
+  const varByLoc = useMemo(() => groupByLoc(variance), [variance]);
+  const wasteByLoc = useMemo(() => groupByLoc(waste), [waste]);
+  const xferByLoc = useMemo(() => groupByLoc(transfers), [transfers]);
+
+  // Which stores have any diagnosis input beyond on-hand (variance/waste/transfers).
+  const hasDiagData = useMemo(() => {
+    const s = new Set([...Object.keys(varByLoc), ...Object.keys(wasteByLoc), ...Object.keys(xferByLoc)]);
+    return s;
+  }, [varByLoc, wasteByLoc, xferByLoc]);
 
   // Compute progress + FOB per store.
   const rows = useMemo(() => {
@@ -169,6 +198,36 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const text = `${draft.subject}\n\n${draft.body}`;
     try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopied(false); }
   }, [draft]);
+
+  // Run the full diagnosis engine for one store from the cloud streams.
+  const openDiag = useCallback((loc, name, components) => {
+    const c = components || {};
+    const result = runDiagnosis({
+      store: loc, storeName: name, period, asOf: new Date(),
+      data: {
+        // FOB components → engine keys (targets come from monthly_targets later; band floor for now)
+        fob: c.sales ? {
+          sales: c.sales, compWaste: c.comp, rawWaste: c.raw, condiments: c.cond,
+          empMgrMeals: c.emp, statVariance: c.statv, unexplained: c.unex,
+        } : null,
+        onHand: (byLoc[loc] || []).map(r => ({
+          wrin: r.wrin, cls: r.cls, descr: r.descr, onHandAmt: r.on_hand_amt ?? r.onHandAmt,
+          lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : (r.lastCounted || null),
+          lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : (r.lastSubmitted || null),
+        })),
+        variance: varByLoc[loc] || [],
+        waste: wasteByLoc[loc] || [],
+        transfers: xferByLoc[loc] || [],
+      },
+    });
+    setDiagCopied(false);
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result) });
+  }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc]);
+
+  const copyDiag = useCallback(async () => {
+    if (!diag) return;
+    try { await navigator.clipboard.writeText(diag.report); setDiagCopied(true); } catch { setDiagCopied(false); }
+  }, [diag]);
 
   const summary = useMemo(() => {
     const n = rows.length;
@@ -254,11 +313,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             h('td', { style: { padding: '8px 10px', fontWeight: 600, color: 'var(--text1)' } }, pct(r.fobPct)),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)' } }, money(r.fob$)),
             h('td', { style: { padding: '8px 10px' } },
-              h('select', {
-                value: r.diagnosis, disabled: saving === r.loc,
-                onChange: e => updateStatus(r.loc, { diagnosisStatus: e.target.value }),
-                style: { background: '#0f1117', color: statusColor(r.diagnosis), border: `1px solid ${statusColor(r.diagnosis)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
-              }, DIAG_OPTS.map(o => h('option', { key: o, value: o }, DIAG_LABEL[o])))),
+              div({ style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+                h('select', {
+                  value: r.diagnosis, disabled: saving === r.loc,
+                  onChange: e => updateStatus(r.loc, { diagnosisStatus: e.target.value }),
+                  style: { background: '#0f1117', color: statusColor(r.diagnosis), border: `1px solid ${statusColor(r.diagnosis)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
+                }, DIAG_OPTS.map(o => h('option', { key: o, value: o }, DIAG_LABEL[o]))),
+                h('button', {
+                  title: hasDiagData.has(r.loc) ? 'Run the FOB / food-cost diagnosis' : 'No variance/waste/transfer data pulled for this period yet',
+                  onClick: () => openDiag(r.loc, r.name, r.components),
+                  disabled: !hasDiagData.has(r.loc) && !(r.components && r.components.sales),
+                  style: {
+                    background: 'none', border: '1px solid #334155', borderRadius: '5px',
+                    color: hasDiagData.has(r.loc) ? '#38bdf8' : 'var(--text3)',
+                    cursor: hasDiagData.has(r.loc) ? 'pointer' : 'not-allowed', fontSize: '12px', padding: '3px 7px',
+                  },
+                }, '🔬 Diagnose'))),
             h('td', { style: { padding: '8px 10px' } },
               div({ style: { display: 'flex', gap: '6px', alignItems: 'center' } },
                 h('select', {
@@ -302,7 +372,51 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           }, 'Mark as sent'),
           !draft.hasGaps && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.')))),
 
+    // diagnosis modal — the detailed report + action items (owner downloads/attaches to email)
+    diag && div({
+      onClick: () => setDiag(null),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({
+        onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid #334155', borderRadius: '10px', width: '100%', maxWidth: '720px', maxHeight: '85vh', overflow: 'auto', padding: '18px' },
+      },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
+          div({ style: { fontWeight: 700, color: 'var(--text1)' } }, `🔬 Food-Cost Diagnosis — ${diag.name}`),
+          h('button', { onClick: () => setDiag(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+        div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } }, diag.result.summary),
+
+        // action items (medium+ severity) up top
+        diag.result.actionItems.length > 0 && div({ style: { marginBottom: '12px' } },
+          div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'Action items'),
+          div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
+            diag.result.actionItems.map((a, i) =>
+              div({ key: i, style: { fontSize: '12.5px', color: 'var(--text1)', padding: '6px 9px', background: '#0f1117', borderRadius: '6px', borderLeft: `3px solid ${a.startsWith('[CRITICAL') ? '#f87171' : a.startsWith('[HIGH') ? '#f5bc00' : '#38bdf8'}` } }, a)))),
+
+        // full report text
+        div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Full report'),
+        h('textarea', {
+          readOnly: true, value: diag.report,
+          style: { width: '100%', minHeight: '260px', background: '#0f1117', color: 'var(--text1)', border: '1px solid #1e293b', borderRadius: '6px', padding: '10px', fontSize: '12px', fontFamily: 'ui-monospace, monospace', lineHeight: 1.5, resize: 'vertical' },
+        }),
+
+        // pending checks (awaiting a data pull for this period)
+        diag.result.pending.length > 0 && div({ style: { marginTop: '10px', fontSize: '11px', color: 'var(--text3)' } },
+          'Awaiting data: ' + diag.result.pending.map(p => p.label).join(' · ')),
+
+        div({ style: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' } },
+          h('button', {
+            onClick: copyDiag,
+            style: { background: '#f5bc00', color: '#0f1117', border: 'none', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
+          }, diagCopied ? '✓ Copied' : 'Copy report'),
+          h('button', {
+            onClick: () => { updateStatus(diag.loc, { diagnosisStatus: 'diagnosed' }); setDiag(null); },
+            style: { background: 'none', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
+          }, 'Mark diagnosed')))),
+
     div({ style: { marginTop: '14px', fontSize: '11px', color: 'var(--text3)' } },
       'Count progress is inferred from each item\'s last-counted / last-submitted date landing inside the count window. ',
-      'FOB % is dollar-weighted MTD (Σ components ÷ Σ product sales). Diagnosis & Communication status save to the cloud.'));
+      'FOB % is dollar-weighted MTD (Σ components ÷ Σ product sales). 🔬 Diagnose runs the food-cost decision tree ',
+      '(top-5 variance, ±$50, incomplete count, waste patterns, transfers) on the cloud-pulled streams. ',
+      'Diagnosis & Communication status save to the cloud.'));
 }
