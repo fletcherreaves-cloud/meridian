@@ -1,0 +1,231 @@
+// @ts-nocheck
+// ── EOM Dashboard ─────────────────────────────────────────────────────────────
+// All-stores End-Of-Month view (Notes 29): each location's inventory count
+// progress + finalization status, its FOB $/% snapshot, a diagnosis status, and
+// communication-verification. Count progress is engine-derived from the auto-pulled
+// qsr_onhand stream (last_counted/last_submitted inside the last-3-days window);
+// FOB comes from the qsr_fob stream (dollar-weighted, MTD). Diagnosis + comms state
+// persist to eom_count_status so the owner can track who was told what.
+import * as React from 'react';
+import { STORE_NAMES, getStoreOrg } from '../constants.js';
+import {
+  loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
+} from '../lib/supabase.js';
+import {
+  computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
+} from '../engine/eom-inventory.js';
+
+const { useState, useEffect, useMemo, useCallback } = React;
+const h = React.createElement;
+const div = (p, ...c) => h('div', p, ...c);
+const span = (p, ...c) => h('span', p, ...c);
+
+const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
+const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
+const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(0) + '%';
+const money = v => (v == null || isNaN(v)) ? '—' : '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+// Recent period options (current month + prior 3), as 'YYYY-MM'.
+function recentPeriods(n = 4) {
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(periodKey(d));
+  }
+  return out;
+}
+
+const DIAG_OPTS = ['pending', 'in_review', 'diagnosed', 'cleared'];
+const COMMS_OPTS = ['none', 'drafted', 'sent', 'verified'];
+const DIAG_LABEL = { pending: 'Pending', in_review: 'In review', diagnosed: 'Diagnosed', cleared: 'Cleared' };
+const COMMS_LABEL = { none: 'Not sent', drafted: 'Drafted', sent: 'Sent', verified: 'Verified' };
+const statusColor = (v) => ({
+  pending: '#64748b', in_review: '#f5bc00', diagnosed: '#38bdf8', cleared: '#4ade80',
+  none: '#64748b', drafted: '#f5bc00', sent: '#38bdf8', verified: '#4ade80',
+}[v] || '#64748b');
+
+// FOB $/% snapshot for the period, dollar-weighted (Σcomponents / ΣprodSales) — MTD.
+// FOB components (per fob-eom / analytics): comp waste + raw waste + condiments +
+// emp/mgr meals + stat variance + unexplained. FOB% = FOB$ / product sales$.
+function fobByStore(fobRows, period) {
+  const acc = {};
+  for (const r of (fobRows || [])) {
+    const p = typeof r.date === 'string' ? r.date.slice(0, 7)
+      : (r.date instanceof Date ? periodKey(r.date) : String(r.date || '').slice(0, 7));
+    if (p !== period) continue;
+    const loc = String(r.loc);
+    const a = acc[loc] || (acc[loc] = { sales: 0, fob: 0, comp: 0, raw: 0, cond: 0, emp: 0, statv: 0, unex: 0 });
+    a.sales += r.prodSalesAmt || 0;
+    a.comp += r.compWasteAmt || 0;
+    a.raw += r.rawWasteAmt || 0;
+    a.cond += r.condimentsAmt || 0;
+    a.emp += r.empMgrMealsAmt || 0;
+    a.statv += r.statVarianceAmt || 0;
+    a.unex += r.unexplainedAmt || 0;
+  }
+  for (const loc of Object.keys(acc)) {
+    const a = acc[loc];
+    a.fob = a.comp + a.raw + a.cond + a.emp + a.statv + a.unex;
+    a.fobPct = a.sales ? a.fob / a.sales : null;
+  }
+  return acc;
+}
+
+function ClassChips({ byClass }) {
+  const order = [['food', 'F'], ['condiment', 'C'], ['paper', 'P'], ['nonproduct', 'N']];
+  return div({ style: { display: 'flex', gap: '4px' } },
+    order.map(([k, label]) => {
+      const b = byClass[k];
+      if (!b || !b.total) return null;
+      const color = b.done ? '#4ade80' : b.pct >= 0.5 ? '#f5bc00' : '#64748b';
+      return span({
+        key: k,
+        title: `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})`,
+        style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color },
+      }, `${label} ${pct(b.pct)}`);
+    }));
+}
+
+function ProgressBar({ value }) {
+  const p = Math.max(0, Math.min(1, value || 0));
+  const color = p >= BELIEVES_DONE_PCT ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#f87171';
+  return div({ style: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: '140px' } },
+    div({ style: { flex: 1, height: '8px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' } },
+      div({ style: { width: `${p * 100}%`, height: '100%', background: color } })),
+    span({ style: { fontSize: '12px', fontWeight: 700, color, minWidth: '34px', textAlign: 'right' } }, pct(p)));
+}
+
+export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
+  const periods = useMemo(() => recentPeriods(4), []);
+  const [period, setPeriod] = useState(periods[0]);
+  const [loading, setLoading] = useState(true);
+  const [onHand, setOnHand] = useState([]);
+  const [fobRows, setFobRows] = useState([]);
+  const [statusMap, setStatusMap] = useState({}); // loc -> saved eom_count_status
+  const [saving, setSaving] = useState('');
+
+  const load = useCallback(async (p) => {
+    setLoading(true);
+    try {
+      const [oh, fob, st] = await Promise.all([
+        loadQsrOnHand({ period: p }),
+        loadQsrFob().catch(() => []),
+        loadEomCountStatus({ period: p }).catch(() => []),
+      ]);
+      setOnHand(oh || []);
+      setFobRows(fob || []);
+      const m = {}; (st || []).forEach(r => { m[String(r.loc)] = r; });
+      setStatusMap(m);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(period); }, [period, load]);
+
+  // Group on-hand rows by store loc, compute progress per store.
+  const rows = useMemo(() => {
+    const byLoc = {};
+    for (const r of onHand) { (byLoc[String(r.loc)] || (byLoc[String(r.loc)] = [])).push(r); }
+    const fob = fobByStore(fobRows, period);
+    const asOf = new Date();
+    const out = Object.keys(byLoc).map(loc => {
+      const prog = computeCountProgress(byLoc[loc], { period, asOf });
+      const f = fob[loc] || {};
+      const st = statusMap[loc] || {};
+      return {
+        loc,
+        name: nm(loc),
+        org: getStoreOrg(loc),
+        prog,
+        fobPct: f.fobPct ?? null,
+        fob$: f.fob ?? null,
+        components: f,
+        diagnosis: st.diagnosisStatus || 'pending',
+        comms: st.commsStatus || 'none',
+        commsRecipient: st.commsRecipient || '',
+      };
+    });
+    // stores with unfinished counts first, then by name
+    out.sort((a, b) => (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
+    return out;
+  }, [onHand, fobRows, statusMap, period]);
+
+  const summary = useMemo(() => {
+    const n = rows.length;
+    const done = rows.filter(r => r.prog.believesDone).length;
+    const avg = n ? rows.reduce((s, r) => s + r.prog.pctCounted, 0) / n : 0;
+    return { n, done, avg };
+  }, [rows]);
+
+  const updateStatus = useCallback(async (loc, patch) => {
+    setSaving(loc);
+    const cur = statusMap[loc] || {};
+    const next = { ...cur, loc, period, ...patch };
+    setStatusMap(m => ({ ...m, [loc]: next }));
+    try { await saveEomCountStatus([next]); } finally { setSaving(''); }
+  }, [statusMap, period]);
+
+  const inWindow = useMemo(() => {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    return d >= countWindowStart(period);
+  }, [period]);
+
+  return div({ style: { padding: '20px', maxWidth: '1200px', margin: '0 auto' } },
+    // header
+    div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' } },
+      div(null,
+        h('h2', { style: { margin: 0, fontSize: '20px', color: 'var(--text1)' } }, '📦 EOM Dashboard'),
+        span({ style: { fontSize: '12px', color: 'var(--text3)' } },
+          `Inventory count progress + FOB status · window: last ${3} days (from the ${countWindowStart(period).getDate()}${daysInPeriod(period) ? '' : ''})`)),
+      div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+        h('select', {
+          value: period, onChange: e => setPeriod(e.target.value),
+          style: { background: '#0f1117', color: 'var(--text1)', border: '1px solid #334155', borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
+        }, periods.map(p => h('option', { key: p, value: p }, p))),
+        onClose && h('button', { onClick: onClose, style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '20px', cursor: 'pointer' } }, '✕'))),
+
+    // summary tiles
+    div({ style: { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' } },
+      [['Stores reporting', summary.n],
+       ['Believe done (≥90%)', `${summary.done}/${summary.n}`],
+       ['Avg count complete', pct(summary.avg)],
+       ['Count window', inWindow ? 'OPEN' : 'not yet']].map(([label, val], i) =>
+        div({ key: i, style: { flex: '1 1 160px', background: '#131722', border: '1px solid #1e293b', borderRadius: '8px', padding: '12px 14px' } },
+          div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
+          div({ style: { fontSize: '22px', fontWeight: 700, color: 'var(--text1)', marginTop: '4px' } }, String(val))))),
+
+    loading ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+      : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
+          `No On-Hand data for ${period} yet. The hourly On-Hand pull populates this during the count window (last 3 days of the month).`)
+      : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' } },
+        h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '11px', textTransform: 'uppercase' } },
+          ['Store', 'Count progress', 'By class', 'Last count', 'FOB %', 'FOB $', 'Diagnosis', 'Communication'].map((c, i) =>
+            h('th', { key: i, style: { padding: '8px 10px', borderBottom: '1px solid #1e293b', whiteSpace: 'nowrap' } }, c)))),
+        h('tbody', null, rows.map(r =>
+          h('tr', { key: r.loc, style: { borderBottom: '1px solid #12161f' } },
+            h('td', { style: { padding: '8px 10px' } },
+              div({ style: { fontWeight: 600, color: 'var(--text1)' } }, r.name),
+              span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK')),
+            h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
+            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass })),
+            h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
+              r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—'),
+            h('td', { style: { padding: '8px 10px', fontWeight: 600, color: 'var(--text1)' } }, pct(r.fobPct)),
+            h('td', { style: { padding: '8px 10px', color: 'var(--text2)' } }, money(r.fob$)),
+            h('td', { style: { padding: '8px 10px' } },
+              h('select', {
+                value: r.diagnosis, disabled: saving === r.loc,
+                onChange: e => updateStatus(r.loc, { diagnosisStatus: e.target.value }),
+                style: { background: '#0f1117', color: statusColor(r.diagnosis), border: `1px solid ${statusColor(r.diagnosis)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
+              }, DIAG_OPTS.map(o => h('option', { key: o, value: o }, DIAG_LABEL[o])))),
+            h('td', { style: { padding: '8px 10px' } },
+              h('select', {
+                value: r.comms, disabled: saving === r.loc,
+                onChange: e => updateStatus(r.loc, { commsStatus: e.target.value }),
+                style: { background: '#0f1117', color: statusColor(r.comms), border: `1px solid ${statusColor(r.comms)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
+              }, COMMS_OPTS.map(o => h('option', { key: o, value: o }, COMMS_LABEL[o])))))))),
+
+    div({ style: { marginTop: '14px', fontSize: '11px', color: 'var(--text3)' } },
+      'Count progress is inferred from each item\'s last-counted / last-submitted date landing inside the count window. ',
+      'FOB % is dollar-weighted MTD (Σ components ÷ Σ product sales). Diagnosis & Communication status save to the cloud.'));
+}

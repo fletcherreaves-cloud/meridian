@@ -33,6 +33,7 @@ import { AdminPanel } from '../views/admin.js';
 import { SMGVoicePanel } from '../views/smg-voice.js';
 import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
+import { EOMDashboardPanel } from '../views/eom-dashboard.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
@@ -966,6 +967,7 @@ function App() {
   const [showBrief,    setShowBrief]   = useState(false);
   const [showMorningBrief, setShowMorningBrief] = useState(false); // Morning Brief panel
   const [showEOMSummary,   setShowEOMSummary]   = useState(false); // EOM Supervisor Summary
+  const [showEOMDash,      setShowEOMDash]      = useState(false); // EOM Dashboard (count progress + FOB)
   const [showAbout, setShowAbout] = useState(false); // About/Changelog modal
   const [showPVSA,     setShowPVSA]    = useState(false);
   const [showPace,     setShowPace]    = useState(false); // Pace to Target
@@ -2273,7 +2275,7 @@ function App() {
       setShowFOB(false);setShowFcstAccuracy(false);setShowDtSoS(false);setShowGradedVisits(false);setShowGMBrief(false);setShowHelp(false);
       setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
-      setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
+      setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowEOMDash(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
@@ -2331,6 +2333,7 @@ function App() {
         if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),setShowSchedHub(true));
         if(modal==='morning-brief')  perm('analytics.brief')&&setShowMorningBrief(true);
         if(modal==='eom-summary')    perm('analytics.district')&&setShowEOMSummary(true);
+        if(modal==='eom-dashboard')  perm('analytics.district')&&setShowEOMDash(true);
         if(modal==='brief')          perm('analytics.brief')&&(()=>{
           if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
           else setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null});
@@ -2796,6 +2799,12 @@ function App() {
           h('button',{onClick:()=>setShowEOMSummary(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
         div({style:{overflowY:'auto',maxHeight:'88vh'}},
           h(EOMSupervisorPanel,{ds,settings,supabase}))
+      )
+    ),
+        showEOMDash&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
+      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1240,position:'relative'}},
+        div({style:{overflowY:'auto',maxHeight:'92vh'}},
+          h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}))
       )
     ),
         showAudit&&selStore&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
