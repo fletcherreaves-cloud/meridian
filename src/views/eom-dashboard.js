@@ -258,11 +258,36 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       (!oneStore || r.loc === oneStore));
   }, [allRows, scope, oneStore]);
 
-  const openDraft = useCallback((loc, name) => {
-    const msg = buildIncompleteCountMessage(name, byLoc[loc] || [], { period, asOf: new Date() });
+  const openDraft = useCallback((loc, name, components) => {
+    // Run the same diagnosis the 🔬 button uses, so the draft carries a real
+    // "what to fix" action plan — not just the recount nudge (which is empty
+    // off the count window). Freshest-wins cloud streams feed both.
+    let actionItems = [], diagSummary = '', diagDollars = 0;
+    if (hasDiagData.has(loc) || (components && components.sales)) {
+      try {
+        const dg = runDiagnosis({
+          store: loc, storeName: name, period, asOf: new Date(), checks: activeChecks,
+          data: {
+            fob: components && components.sales ? {
+              sales: components.sales, compWaste: components.comp, rawWaste: components.raw,
+              condiments: components.cond, empMgrMeals: components.emp,
+              statVariance: components.statv, unexplained: components.unex,
+            } : null,
+            variance: varByLoc[loc] || [],
+            waste: wasteByLoc[loc] || [],
+            transfers: xferByLoc[loc] || [],
+            rawItems: rawByLoc[loc] || [],
+          },
+        });
+        actionItems = dg.actionItems; diagSummary = dg.summary; diagDollars = dg.totalDollars;
+      } catch { /* diagnosis is best-effort; fall back to the recount nudge */ }
+    }
+    const msg = buildIncompleteCountMessage(name, byLoc[loc] || [], {
+      period, asOf: new Date(), actionItems, diagSummary, diagDollars,
+    });
     setCopied(false);
-    setDraft({ loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps });
-  }, [byLoc, period]);
+    setDraft({ loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps, hasPlan: msg.hasPlan });
+  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, hasDiagData, activeChecks, period]);
 
   const copyDraft = useCallback(async () => {
     if (!draft) return;
@@ -493,8 +518,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   style: { background: 'var(--surf3)', color: statusColor(r.comms), border: `1px solid ${statusColor(r.comms)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
                 }, COMMS_OPTS.map(o => h('option', { key: o, value: o }, COMMS_LABEL[o]))),
                 h('button', {
-                  title: 'Draft a recount message from the uncounted items',
-                  onClick: () => openDraft(r.loc, r.name),
+                  title: 'Draft a store message — recount gaps + the food-cost diagnosis action plan',
+                  onClick: () => openDraft(r.loc, r.name, r.components),
                   style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: '5px', color: 'var(--text2)', cursor: 'pointer', fontSize: '12px', padding: '3px 7px' },
                 }, '✉️ Draft'))))))),
 
@@ -508,7 +533,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '640px', maxHeight: '85vh', overflow: 'auto', padding: '18px' },
       },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `✉️ Recount message — ${draft.name}`),
+          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `✉️ Store message — ${draft.name}`),
           h('button', { onClick: () => setDraft(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
         div({ style: { fontSize: '13px', color: 'var(--text)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: 'var(--surf3)', borderRadius: '6px', border: '1px solid var(--bdr)' } }, draft.subject),
@@ -526,7 +551,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             onClick: () => { updateStatus(draft.loc, { commsStatus: 'sent', commsSentAt: new Date().toISOString() }); setDraft(null); },
             style: { background: 'none', color: '#4ade80', border: '1px solid #4ade80', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, 'Mark as sent'),
-          !draft.hasGaps && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.')))),
+          !draft.hasGaps && draft.hasPlan && span({ style: { fontSize: '12px', color: '#38bdf8' } }, 'No count gaps — this is the food-cost action plan.'),
+          !draft.hasGaps && !draft.hasPlan && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.')))),
 
     // diagnosis modal — the detailed report + action items (owner downloads/attaches to email)
     diag && div({
