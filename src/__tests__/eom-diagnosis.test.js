@@ -14,7 +14,7 @@ describe('runDiagnosis — editable check registry', () => {
         targets: { compWaste: 0.01, statVariance: 0.0125 }, // 1% / 1.25%
       },
     });
-    // fob-components ran; variance/raw/waste/transfers pending (no data)
+    // fob-components ran; variance/raw/waste/transfers have no data → pending (no data)
     expect(res.ran.find(r => r.id === 'fob-components')).toBeTruthy();
     expect(res.pending.map(p => p.id)).toEqual(expect.arrayContaining(['variance-top5', 'raw-items-timing', 'waste-patterns', 'transfers']));
     // statVariance 2% vs 1.25% target → flagged
@@ -64,6 +64,41 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).toMatch(/Ada/);
     expect(rpt).toMatch(/Beef/);
     expect(rpt).toMatch(/awaiting data/i);
+  });
+});
+
+describe('newly-lit checks consume mapped eBOS data', () => {
+  it('waste-patterns flags a disproportionate manager', () => {
+    const waste = [
+      { type: 'raw', amount: 400, manager: 'Big W', edited: false },
+      { type: 'completed', amount: 50, manager: 'Small W', edited: false },
+    ];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { waste } });
+    const f = res.findings.find(x => x.checkId === 'waste-patterns');
+    expect(f).toBeTruthy();
+    expect(f.data.manager).toBe('Big W');
+  });
+
+  it('transfers flags an unapproved transfer', () => {
+    const transfers = [
+      { id: 9, type: 'Out', trans_nsn: 6972, store_busn_dt: '07/20/2026', status: 'rejected', total_amt: 30, header_total_amt: 30, invty_class_cd: 'F' },
+    ];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { transfers } });
+    const f = res.findings.find(x => x.checkId === 'transfers');
+    expect(f).toBeTruthy();
+    expect(f.data.status).toBe('rejected');
+  });
+
+  it('raw-items-timing attributes a variance to its count date and judges recount value', () => {
+    const rawItems = [{
+      wrin: '00005-086', descr: 'BEEF',
+      counts: [{ dt: '2026-07-05', difference: -900, variance: -2000, manager: 'Cinthya a', isCount: true }],
+    }];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { rawItems } });
+    const f = res.findings.find(x => x.checkId === 'raw-items-timing');
+    expect(f).toBeTruthy();
+    expect(f.data.late).toBe(false); // 07-05 is early → recount won't recover
+    expect(f.detail).toMatch(/won't recover/i);
   });
 });
 

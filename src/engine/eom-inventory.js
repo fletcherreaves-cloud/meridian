@@ -62,7 +62,12 @@ export function inCountWindow(period, asOf) {
 // ── Class normalisation ───────────────────────────────────────────────────────
 // QSRSoft class labels vary; normalise to our four buckets.
 export function normClass(cls) {
-  const s = String(cls || '').toLowerCase();
+  const raw = String(cls || '').trim();
+  // eBOS single-letter class codes: F=Food, C=Condiment, P=Paper, N/S/M/L=Non-Product buckets.
+  if (/^[FCPNSML]$/.test(raw)) {
+    return ({ F: 'food', C: 'condiment', P: 'paper' })[raw] || 'nonproduct';
+  }
+  const s = raw.toLowerCase();
   if (/non[-\s]?product|nonprod|non prod|supplies|operating/.test(s)) return 'nonproduct';
   if (/condiment/.test(s)) return 'condiment';
   if (/paper/.test(s)) return 'paper';

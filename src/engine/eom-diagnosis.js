@@ -11,15 +11,18 @@
 // "one thing leads to another"), applies a per-manager risk overlay, and assembles
 // a detailed report + a summarized action-item list.
 //
-// Data it consumes (per store, per period), as available:
-//   fob        — qsr_fob rows (FOB components $ vs target)         ✅ have
-//   onHand     — qsr_onhand rows (incomplete-count)               ✅ have
-//   variance   — qsr_variance_stat rows (top-5 by $, ±$50)        ⏳ pull pending
-//   rawItems   — raw-item register (count timing, variance-at-count) ⏳ pull pending
-//   waste      — waste rollup (manager/date/$, raw vs completed)   ⏳ pull pending
-//   transfers  — transfers                                        ⏳ pull pending
-//   purchases  — qsr_ebos_daily (verify posted / not pending)     ✅ have (status check TBD)
+// Data it consumes (per store, per period), as available — all via eom-parsers.js
+// mappers so the pull script and the client normalize identically:
+//   fob        — qsr_fob rows (FOB components $ vs target)              ✅ have
+//   onHand     — qsr_onhand rows (incomplete-count)                    ✅ have
+//   variance   — mapVarianceRows() (top-5 by $, ±$50)                  ✅ endpoint confirmed
+//   yields     — mapYieldGroups() (yield-band cause overlay)           ✅ endpoint confirmed
+//   rawItems   — [mapRawItemHistory()] (count timing, variance-at-count) ✅ endpoint confirmed
+//   waste      — mapWasteEvents() (manager/$, raw vs completed)        ✅ endpoint confirmed
+//   transfers  — mapTransferLines() (In/Out, unposted)                ✅ endpoint confirmed
+//   purchases  — qsr_ebos_daily (verify posted / not pending)         ✅ have (status check TBD)
 import { normClass, diagnoseIncompleteCount } from './eom-inventory.js';
+import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus } from './eom-parsers.js';
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
@@ -63,10 +66,13 @@ export const DEFAULT_CHECKS = [
     // ALWAYS review at least the top 5 items by $ difference (default sort).
     run: (ctx) => {
       const rows = (ctx.data.variance || []).slice().sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0));
-      return rows.slice(0, ctx.params.topN ?? 5).map(v =>
-        mkFinding('variance-top5', Math.abs(v.dolDiff) >= 300 ? SEVERITY.critical : Math.abs(v.dolDiff) >= 100 ? SEVERITY.high : SEVERITY.medium,
+      return rows.slice(0, ctx.params.topN ?? 5).map(v => {
+        const f = mkFinding('variance-top5', Math.abs(v.dolDiff) >= 300 ? SEVERITY.critical : Math.abs(v.dolDiff) >= 100 ? SEVERITY.high : SEVERITY.medium,
           `Variance: ${v.descr || v.wrin}`, `$${Math.round(v.dolDiff)} difference (${normClass(v.cls)})`,
-          Math.abs(v.dolDiff || 0), { wrin: v.wrin, cls: normClass(v.cls) }));
+          Math.abs(v.dolDiff || 0), { wrin: v.wrin, cls: normClass(v.cls), rawItemId: v.rawItemId });
+        attachYieldCause(f, v, ctx.data.yields);
+        return f;
+      });
     },
   },
   {
@@ -93,12 +99,98 @@ export const DEFAULT_CHECKS = [
         diag.uncountedValue, { uncounted: diag.uncounted.slice(0, 20) })];
     },
   },
-  // ── Declared but pending their data pulls (light up when captured) ──
-  { id: 'raw-items-timing', label: 'Raw Items — count timing & variance-at-count', order: 25, enabled: true, requires: ['rawItems'], pending: true, run: () => [] },
-  { id: 'waste-patterns', label: 'Waste — manager/pencil-whip patterns', order: 50, enabled: true, requires: ['waste'], pending: true, run: () => [] },
+  {
+    // Raw Items forensic register — attribute a flagged variance to the COUNT event
+    // where it occurred, and judge whether recounting NOW still helps (a big variance
+    // on an EARLY-period count already cascaded all month → recount won't recover it).
+    id: 'raw-items-timing', label: 'Raw Items — count timing & variance-at-count', order: 25, enabled: true,
+    requires: ['rawItems'], params: { minDollar: 50 },
+    run: (ctx) => {
+      const details = ctx.data.rawItems || []; // array of mapRawItemHistory() results
+      const out = [];
+      const windowStart = countWindowStartTs(ctx.period);
+      for (const d of details) {
+        const counts = (d.counts || []).filter(c => Math.abs(c.difference || 0) >= (ctx.params.minDollar ?? 50));
+        for (const c of counts) {
+          const ts = Date.parse(c.dt || '') || null;
+          const late = ts != null && windowStart != null ? ts >= windowStart : null;
+          const sev = Math.abs(c.difference) >= 500 ? SEVERITY.high : SEVERITY.medium;
+          const f = mkFinding('raw-items-timing', sev,
+            `Count variance: ${d.descr || d.wrin}`,
+            `$${Math.round(c.difference)} at the ${c.dt} count${late === false ? ' (EARLY in period — recounting now won\'t recover it)' : late ? ' (late — recount may help)' : ''}`,
+            Math.abs(c.difference || 0), { wrin: d.wrin, rawItemId: d.wrin, manager: c.manager, countDate: c.dt, late });
+          if (c.manager) f.links.push({ type: 'count-entry', manager: c.manager, note: `counted by ${c.manager} on ${c.dt}` });
+          out.push(f);
+        }
+      }
+      return out;
+    },
+  },
+  {
+    // Waste — per-manager $ share, edited entries, disproportionate contributors.
+    id: 'waste-patterns', label: 'Waste — manager/pencil-whip patterns', order: 50, enabled: true,
+    requires: ['waste'], params: { shareFlag: 0.4, minTotal: 100 },
+    run: (ctx) => {
+      const { total, byManager } = summarizeWasteByManager(ctx.data.waste || []);
+      if (!total) return [];
+      const out = [];
+      const shareFlag = ctx.params.shareFlag ?? 0.4;
+      for (const m of byManager) {
+        const editedFlag = m.edited > 0;
+        const shareHot = byManager.length > 1 && m.share >= shareFlag && m.total >= (ctx.params.minTotal ?? 100);
+        if (!shareHot && !editedFlag) continue;
+        const f = mkFinding('waste-patterns', shareHot ? SEVERITY.medium : SEVERITY.info,
+          `Waste concentration: ${m.manager}`,
+          `$${Math.round(m.total)} (${Math.round(m.share * 100)}% of period waste) across ${m.count} entries${editedFlag ? ` · ${m.edited} edited` : ''}`,
+          m.total, { manager: m.manager, share: m.share, edited: m.edited });
+        out.push(f);
+      }
+      return out;
+    },
+  },
   { id: 'purchases-posted', label: 'Purchases — all invoices posted (none pending)', order: 60, enabled: true, requires: ['purchases'], pending: true, run: () => [] },
-  { id: 'transfers', label: 'Transfers', order: 70, enabled: true, requires: ['transfers'], pending: true, run: () => [] },
+  {
+    // Transfers — large / not-approved transfers that shift the variance picture.
+    id: 'transfers', label: 'Transfers', order: 70, enabled: true,
+    requires: ['transfers'], params: { largeAmt: 100 },
+    run: (ctx) => {
+      const { flagged, netAmt } = summarizeTransfers(ctx.data.transfers || [], { largeAmt: ctx.params.largeAmt });
+      return flagged.map(t => mkFinding('transfers',
+        t.status !== 'approved' ? SEVERITY.medium : SEVERITY.info,
+        `Transfer ${t.dir} ${t.status !== 'approved' ? `(${t.status})` : ''} — store ${t.counterpartyNsn}`,
+        `$${Math.round(t.total)} on ${t.dt}${t.status !== 'approved' ? ' — NOT posted, verify' : ''} (period net $${Math.round(netAmt)})`,
+        t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn }));
+    },
+  },
 ];
+
+// ── Yield-band cause overlay ──────────────────────────────────────────────────
+// The Yields tab "points to a cause" (procedure / calibration) without adding $.
+// If a flagged item's actual yield falls outside its concept-group band, link it.
+function attachYieldCause(finding, varianceRow, yieldsLookup) {
+  if (!yieldsLookup || varianceRow.yield == null) return;
+  const band = yieldBandFor(varianceRow.wrin, yieldsLookup);
+  if (!band) return;
+  const status = yieldStatus(varianceRow.yield, band);
+  if (status === 'below' || status === 'above') {
+    finding.links.push({
+      type: 'yield-cause',
+      note: `yield ${varianceRow.yield.toFixed(1)} is ${status} the ${band.group} band (${band.lo}–${band.hi}) → likely ${status === 'below' ? 'over-portioning / cook loss' : 'calibration / under-portioning'}`,
+    });
+  }
+}
+
+// Timestamp of the first day of the EOM count window (period last-3-days) for
+// judging whether a count-variance happened early (cascaded) or late (recountable).
+function countWindowStartTs(period) {
+  if (!period) return null;
+  const [y, m] = String(period).split('-').map(Number);
+  if (!y || !m) return null;
+  const last = new Date(y, m, 0); // last day of month
+  const start = new Date(y, m - 1, last.getDate() - 2); // last 3 days
+  start.setHours(0, 0, 0, 0);
+  return start.getTime();
+}
 
 function mkFinding(checkId, severity, title, detail, dollars, data = {}) {
   return { checkId, severity, severityWord: sevWord(severity), title, detail, dollars: Number(dollars) || 0, links: [], data };
