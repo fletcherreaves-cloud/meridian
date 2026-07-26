@@ -254,7 +254,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 
   const actionItems = findings
     .filter(f => f.severity >= SEVERITY.medium)
-    .map(f => `[${f.severityWord.toUpperCase()}] ${f.title} — ${f.detail}`);
+    .map(f => `[${f.severityWord.toUpperCase()}] ${f.title}${f.data?.wrin ? ` (WRIN ${f.data.wrin})` : ''} — ${f.detail}`);
 
   return {
     store, storeName, period,
@@ -273,7 +273,8 @@ export function formatDiagnosisReport(result) {
   const lines = [`EOM Food-Cost Diagnosis — ${result.storeName || result.store} · ${result.period}`, ''];
   if (!result.findings.length) lines.push('No findings surfaced.');
   for (const f of result.findings) {
-    lines.push(`• [${f.severityWord.toUpperCase()}] ${f.title}`);
+    const wrin = f.data?.wrin ? `  ·  WRIN ${f.data.wrin}` : '';
+    lines.push(`• [${f.severityWord.toUpperCase()}] ${f.title}${wrin}`);
     lines.push(`    ${f.detail}${f.dollars ? `  (~$${Math.round(f.dollars)})` : ''}`);
     f.links.forEach(l => lines.push(`    ↳ ${l.note || l.type}`));
   }

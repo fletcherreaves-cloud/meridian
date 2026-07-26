@@ -452,8 +452,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             : 'No stores match this filter — try All.')
       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' } },
         h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '11px', textTransform: 'uppercase' } },
-          ['Store', 'Count progress', 'By class', 'Last count', 'FOB %', 'FOB $', 'Diagnosis', 'Communication'].map((c, i) =>
-            h('th', { key: i, style: { padding: '8px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, c)))),
+          [['Store'], ['Count progress'], ['By class'], ['Last count'],
+           ['FOB %', 'Food-Over-Base as a % of product sales, MTD, dollar-weighted (Σ FOB $ ÷ Σ product sales)'],
+           ['FOB $', 'Total Food-Over-Base dollars for the period MTD — the sum of the 6 controllable components: completed waste + raw waste + condiments + emp/mgr meals + stat variance + unexplained'],
+           ['Diagnosis'], ['Communication']].map(([c, tip], i) =>
+            h('th', { key: i, title: tip || '', style: { padding: '8px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap', cursor: tip ? 'help' : 'default' } }, c)))),
         h('tbody', null, rows.map(r =>
           h('tr', { key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
             h('td', { style: { padding: '8px 10px' } },
