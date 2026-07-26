@@ -48,12 +48,25 @@ metadata:
   whose last_counted/last_submitted falls in the last-3-days window; per-class + FOB-only completion;
   `believesDone` at 90%), `diagnoseIncompleteCount` (uncounted items ranked by $ at risk, rolled up by class),
   `rankVarianceFollowups` (recount-up vs verify-overcount, mirrors fob-eom priority heuristic), `buildStoreStatus`.
-- ✅ **Pull skeleton** `scripts/qsrsoft-onhand-pull.mjs` + workflow `.github/workflows/qsrsoft-onhand-pull.yml`
-  (hourly cron, in-script last-3-days gate, per-store loop, token→Playwright auth ladder). ⚠️ **BLOCKED on 2
-  TODOs only:** `TODO(endpoint)` = the On-Hand request URL/params, `TODO(fields)` = the response JSON field
-  names — both come from the owner's DevTools capture. Target columns already correct.
-- ⏭️ **NOT yet built (needs endpoint or teaching):** the real pull mapping (endpoint), Variance-Stat/Summary
-  pull scripts (same skeleton, clone once On-Hand proven), notification delivery, the EOM dashboard view/nav,
+- ✅ **On-Hand pull WIRED (endpoint confirmed 2026-07-26)** — `scripts/qsrsoft-onhand-pull.mjs` +
+  `.github/workflows/qsrsoft-onhand-pull.yml` (hourly cron, in-script last-3-days gate). Real endpoint +
+  eBOS auth ladder + real field mapping in place; field mapping is unit-tested against the actual
+  store-3708 response (see eom-inventory.test.js "real QSRSoft On-Hand shape"). **Confirmed endpoint:**
+  ```
+  GET prod.ebos.qsrsoft.com/api/inv/{nsn}/on_hand/rawitems?date=YYYY-MM-DD&type={F|C|P|N}&recipe=all&non_zero_on_hand=false&duplicate=false
+  Headers: X-Auth-Token (eBOS token), X-Current-Nsn: {nsn}
+  Auth ladder: QSRSOFT_EBOS_TOKEN → SSO exchange from QSRSOFT_TOKEN → Playwright (same as qsrsoft-ebos-pull.mjs)
+  Response: { on_hand_records:[{ full_wrin, long_desc, invty_class, invty_class_cd, case_count,
+              inner_pack_count, loose_count, total_units, unit_price, on_hand_amt, nonRoundedOnHandAmt,
+              last_counted "MM/DD/YYYY HH:MM", last_submitted }], total_on_hand_amt }
+  ```
+  `type` = inventory class filter (F=Food captured; C/P/N iterated). Sample last_counted = 07/21–07/24 on
+  the 26th (pre-window) → progress reads 0 until the store recounts in the 29–31 window (correct).
+  ⚠️ **To go live this month:** add a **`QSRSOFT_EBOS_TOKEN`** GitHub secret (or rely on QSRSOFT_TOKEN SSO
+  exchange, which already works for the eBOS ledger), then run the workflow (`workflow_dispatch`, force=1)
+  to smoke-test before the 29th. CONFIRM the type codes C/P/N actually return data (F verified).
+- ⏭️ **NEXT (still to build):** clone the pull for **Variance Stat / Inventory Summary** (same eBOS host —
+  capture their `/api/inv/{nsn}/...` endpoints), notification delivery, the **EOM dashboard view + nav**,
   comms generator, CoachQ prompts. Diagnosis decision-tree = co-map with owner (joint session).
 
 **Context already in the codebase (do not rebuild):**

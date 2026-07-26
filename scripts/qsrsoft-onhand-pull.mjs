@@ -1,43 +1,43 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-onhand-pull.mjs — QSRSoft On-Hand Inventory sync (EOM count-progress)
 //
-// ⚠️  SKELETON — awaiting endpoint capture (Notes 29, 2026-07-26).
-//     Two things must be filled in from a DevTools capture before this runs:
-//       (1) TODO(endpoint): the On-Hand request URL + query params (fetchOnHand)
-//       (2) TODO(fields):   the exact JSON field names in the response (mapOnHandRow)
-//     To capture: v3.myqsrsoft.com → open On-Hand Inventory for one store →
-//       DevTools → Network → click the api.reports.myqsrsoft.com request →
-//       copy the full Request URL (incl. query string) and the Response JSON shape,
-//       plus the X-Auth-Token header. On-Hand is a PER-LOCATION call.
+// Pulls the On-Hand raw-items report from prod.ebos.qsrsoft.com for all 27 stores.
+// On-Hand is the count-progress signal: each item's last_counted / last_submitted
+// date tells us if/when it was counted. During the last 3 days of the month we pull
+// hourly so we can see when each store finishes its EOM count.
 //
-// What On-Hand gives us: the count-progress signal. Each item carries a
-// "last counted" / "last submitted" date; a store is ~done when ~90-95% of items
-// have been counted inside the current count window (last 3 days of the month).
-//
-// Cadence: hourly on the last 3 days of the month (gated in-script, since GitHub
-// cron can't express "last N days of month"). Force any time with ONHAND_FORCE=1.
+// Endpoint (confirmed 2026-07-26):
+//   GET /api/inv/{nsn}/on_hand/rawitems?date=YYYY-MM-DD&type={F|C|P|N}&recipe=all
+//       &non_zero_on_hand=false&duplicate=false
+//   → { on_hand_records: [...], total_on_hand_amt }
+//   `type` is the inventory-class filter (F=Food, C=Condiment, P=Paper, N=Non-Product);
+//   pulled per class and tagged by the row's own invty_class.
 //
 // Required env:
 //   VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Auth (one of):
-//   QSRSOFT_TOKEN  — pre-captured X-Auth-Token (fastest)
-//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright login fallback
+// Auth — same eBOS ladder as scripts/qsrsoft-ebos-pull.mjs (prod.ebos host), tried in order:
+//   QSRSOFT_EBOS_TOKEN  — pre-captured eBOS X-Auth-Token (fastest)
+//   QSRSOFT_TOKEN       — reporting token → exchanged for an eBOS token via SSO (no browser)
+//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback (captures eBOS token from the session)
 // Optional:
 //   ONHAND_FORCE=1        — run even outside the last-3-days window
-//   ONHAND_PERIOD=YYYY-MM — override the period being counted (default: current month)
-//   ONHAND_ENDPOINT=...   — override the On-Hand base URL (until hard-coded below)
+//   ONHAND_PERIOD=YYYY-MM — override the period label (default: current month)
+//   ONHAND_DATE=YYYY-MM-DD— override the business date queried (default: today UTC)
+//   ONHAND_TYPES=F,C,P,N  — inventory class types to pull (default: F,C,P,N)
 //   QSRSOFT_DEBUG=1
+//
+// Token refresh: v3.myqsrsoft.com → Inventory → On Hand Inventory → DevTools → Network →
+//   any prod.ebos.qsrsoft.com/api/inv/ request → copy X-Auth-Token → update QSRSOFT_EBOS_TOKEN secret.
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 
-const API_BASE   = 'https://api.reports.myqsrsoft.com';
-const ORG_ID     = 'a546d4ef-684a-4f25-8bc0-6580af068875';
-const ENTERPRISE = 'McDonalds';
-const DEBUG      = process.env.QSRSOFT_DEBUG === '1';
-const FORCE      = process.env.ONHAND_FORCE === '1';
+const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
+const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
+const DEBUG       = process.env.QSRSOFT_DEBUG === '1';
+const FORCE       = process.env.ONHAND_FORCE === '1';
+const TYPES       = (process.env.ONHAND_TYPES || 'F,C,P,N').split(',').map(s => s.trim()).filter(Boolean);
 
-// All 27 store NSNs (confirmed 2026-07-06).
 const STORE_NSNS = [
   3708, 5183, 5985, 6178, 6838, 6972,
   10034, 10422, 10915, 11657, 13113, 18213,
@@ -48,13 +48,15 @@ const STORE_NSNS = [
 
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-// ── Period + count-window gate ────────────────────────────────────────────────
+// ── Date + count-window helpers ───────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2, '0');
+const fmtDate = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 
-function currentPeriod() {
-  if (process.env.ONHAND_PERIOD) return process.env.ONHAND_PERIOD;
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
+function businessDate() {
+  return process.env.ONHAND_DATE || fmtDate(new Date());
+}
+function periodFor(dateStr) {
+  return process.env.ONHAND_PERIOD || dateStr.slice(0, 7); // 'YYYY-MM'
 }
 
 // True only in the last 3 calendar days of the month (unless forced).
@@ -65,97 +67,116 @@ function inCountWindow() {
   return now.getUTCDate() >= lastDay - 2;
 }
 
-// ── Playwright login (mirrors scripts/qsrsoft-pull.mjs; per-script copy is the convention) ──
-async function getAuthTokenPlaywright() {
+// ── eBOS auth: SSO token exchange (mirrors qsrsoft-ebos-pull.mjs) ──────────────
+async function getEbosTokenViaSso(qsrsoftToken) {
+  const url = `https://api.sso.myqsrsoft.com/token/ebosByOrg?orgId=${EBOS_ORG_ID}`;
+  const resp = await fetch(url, {
+    headers: {
+      'X-Auth-Token': qsrsoftToken, 'Accept': 'application/json',
+      'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+    },
+  });
+  if (!resp.ok) { console.log(`[auth] SSO exchange HTTP ${resp.status}`); return null; }
+  const data = await resp.json();
+  const token = data.token || data.accessToken || data.access_token || data.ebosByOrg
+             || data.ebosToken || data.x_auth_token || (typeof data === 'string' ? data : null);
+  if (!token) console.log('[auth] SSO response keys:', Object.keys(data).join(', '));
+  return token || null;
+}
+
+// Playwright fallback — capture an eBOS token from the live inventory session.
+async function getEbosTokenViaPlaywright() {
   const u = process.env.QSRSOFT_USERNAME, p = process.env.QSRSOFT_PASSWORD;
   if (!u || !p) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD for Playwright fallback'); return null; }
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' });
+  const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' });
   const page = await context.newPage();
-  let authToken = null;
-  page.on('request', req => { const t = req.headers()['x-auth-token']; if (t && t.length > 20 && !authToken) authToken = t; });
-  page.on('response', resp => { try { const t = resp.headers()['x-auth-token']; if (t && !authToken) authToken = t; } catch {} });
+  let ebosToken = null;
+  // capture the token off any prod.ebos.qsrsoft.com request the app fires
+  page.on('request', req => {
+    if (ebosToken) return;
+    if (req.url().includes('prod.ebos.qsrsoft.com')) {
+      const t = req.headers()['x-auth-token'];
+      if (t && t.length > 20) ebosToken = t;
+    }
+  });
   try {
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
-    const userSel = ['input[name="username"]','input[name="email"]','input[type="email"]','#username','#email','input[autocomplete="username"]'].join(', ');
+    const userSel = ['input[name="username"]','input[name="email"]','input[type="email"]','#username','#email'].join(', ');
     const passSel = 'input[type="password"], input[name="password"], #password';
     const subSel  = 'button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")';
     await page.waitForSelector(userSel, { timeout: 20000 });
     await page.fill(userSel, u); await page.fill(passSel, p); await page.click(subSel);
     await page.waitForLoadState('networkidle', { timeout: 30000 });
-    if (!authToken) {
-      authToken = await page.evaluate(() => {
-        for (const s of [localStorage, sessionStorage]) for (let i = 0; i < s.length; i++) {
-          const v = s.getItem(s.key(i));
-          if (v && /^[A-Za-z0-9\-._~+/]+=*$/.test(v) && v.length > 40 && v.length < 1000) return v;
-        }
-        return null;
-      });
+    // navigate to the On-Hand inventory page so an eBOS request fires
+    if (!ebosToken) {
+      await page.goto('https://v3.myqsrsoft.com/inventory/on-hand', { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 4000));
     }
-    if (!authToken) { await page.goto('https://v3.myqsrsoft.com/reports', { waitUntil: 'networkidle', timeout: 20000 }).catch(()=>{}); await new Promise(r => setTimeout(r, 3000)); }
   } catch (e) { console.error('[auth] Playwright error:', e.message); } finally { await browser.close(); }
-  if (!authToken) console.error('[auth] ✗ could not capture token — refresh QSRSOFT_TOKEN manually (DevTools → Network → X-Auth-Token)');
-  return authToken;
+  if (!ebosToken) console.error('[auth] ✗ could not capture eBOS token — refresh QSRSOFT_EBOS_TOKEN manually');
+  return ebosToken;
 }
 
-async function resolveToken() {
-  let token = process.env.QSRSOFT_TOKEN || null;
-  if (!token) token = await getAuthTokenPlaywright();
-  if (!token) { console.error('[onhand-pull] ✗ no token'); process.exit(1); }
-  return token;
+async function resolveEbosToken() {
+  const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
+  if (envToken) { console.log('[auth] using QSRSOFT_EBOS_TOKEN'); return envToken; }
+  const reporting = (process.env.QSRSOFT_TOKEN || '').trim();
+  if (reporting) {
+    const t = await getEbosTokenViaSso(reporting);
+    if (t) { console.log('[auth] ✓ eBOS token via SSO exchange'); return t; }
+  }
+  const t = await getEbosTokenViaPlaywright();
+  if (!t) { console.error('[onhand-pull] ✗ no eBOS token'); process.exit(1); }
+  return t;
 }
 
-// ── Fetch one store's On-Hand report ──────────────────────────────────────────
-// TODO(endpoint): replace the URL + params below with the captured request.
-// The FOB pull (scripts/qsrsoft-pull.mjs:230) is the reference for the header set.
-async function fetchOnHand(token, nsn, period) {
-  const base = process.env.ONHAND_ENDPOINT
-    || `${API_BASE}/reporting/v2/inventory/on-hand`; // TODO(endpoint): confirm exact path
+// ── Fetch one store's On-Hand items for one class type ────────────────────────
+async function fetchOnHand(token, nsn, dateStr, type) {
   const params = new URLSearchParams({
-    nsn:            String(nsn),
-    orgId:          ORG_ID,
-    enterpriseName: ENTERPRISE,
-    period,                                            // TODO(endpoint): confirm period param name/format
+    date: dateStr, type, recipe: 'all', non_zero_on_hand: 'false', duplicate: 'false',
   });
-  const url = `${base}?${params}`;
-  if (DEBUG) console.log('[onhand] GET', url.slice(0, 120) + '…');
+  const url = `${EBOS_BASE}/api/inv/${nsn}/on_hand/rawitems?${params}`;
+  if (DEBUG) console.log('[onhand] GET', url);
   const resp = await fetch(url, {
     headers: {
-      'X-Auth-Token': token, 'Accept': 'application/json',
+      'X-Auth-Token': token, 'X-Current-Nsn': String(nsn), 'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate, br, zstd',
       'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/',
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
     },
   });
   if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 200)}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 160)}`);
   const data = await resp.json();
-  return data.result || data.rows || data || []; // TODO(endpoint): confirm the array wrapper key
+  return Array.isArray(data?.on_hand_records) ? data.on_hand_records : [];
 }
 
-// Map a raw On-Hand item to the qsr_onhand table (columns are known; source names TODO).
+const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+// "07/21/2026 08:59" → "2026-07-21"
+function toISODate(v) {
+  if (!v) return null;
+  const m = String(v).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? `${m[3]}-${pad2(+m[1])}-${pad2(+m[2])}` : null;
+}
+
+// Map a raw On-Hand record → qsr_onhand row (fields confirmed 2026-07-26).
 function mapOnHandRow(item, nsn, period) {
-  const loc = String(nsn).padStart(7, '0');
-  const asISO = v => {
-    if (!v) return null;
-    const m = String(v).match(/(\d{2})\/(\d{2})\/(\d{4})/); // MM/DD/YYYY (as seen in the Excel export)
-    if (m) return `${m[3]}-${m[1]}-${m[2]}`;
-    const d = new Date(v); return isNaN(d) ? null : d.toISOString().slice(0, 10);
-  };
-  // TODO(fields): confirm the JSON field names against the captured response.
-  // Target columns mirror parseOnHand() in src/views/fob-eom.js.
   return {
-    loc, period,
-    wrin:           String(item.wrin ?? item.itemId ?? '').trim(),
-    descr:          item.description ?? item.desc ?? null,
-    cls:            item.class ?? item.cls ?? null,
-    cases:          item.cases ?? null,
-    packs:          item.packs ?? null,
-    loose:          item.loose ?? null,
-    total_units:    item.totalUnits ?? item.total ?? null,
-    unit_price:     item.unitPrice ?? item.price ?? null,
-    on_hand_amt:    item.onHandAmt ?? item.amount ?? null,
-    last_counted:   asISO(item.lastCounted ?? item.lastCountedDate),
-    last_submitted: asISO(item.lastSubmitted ?? item.lastSubmittedDate),
+    loc:            String(nsn).padStart(7, '0'),
+    period,
+    wrin:           String(item.full_wrin || '').trim(),
+    descr:          item.long_desc ?? null,
+    cls:            item.invty_class ?? null,          // "Food" / "Condiment" / "Paper" / "Non-Product"
+    cases:          num(item.case_count),
+    packs:          num(item.inner_pack_count),
+    loose:          num(item.loose_count),
+    total_units:    num(item.total_units),
+    unit_price:     num(item.unit_price),
+    on_hand_amt:    Number.isFinite(item.nonRoundedOnHandAmt) ? item.nonRoundedOnHandAmt : num(item.on_hand_amt),
+    last_counted:   toISODate(item.last_counted),
+    last_submitted: toISODate(item.last_submitted),
     updated_at:     new Date().toISOString(),
   };
 }
@@ -176,30 +197,33 @@ async function main() {
     console.log('[onhand-pull] outside the last-3-days count window — skipping (ONHAND_FORCE=1 to override)');
     return;
   }
-  const period = currentPeriod();
-  let token = await resolveToken();
-  console.log(`[onhand-pull] period ${period} × ${STORE_NSNS.length} stores`);
+  const dateStr = businessDate();
+  const period  = periodFor(dateStr);
+  let token = await resolveEbosToken();
+  console.log(`[onhand-pull] date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${STORE_NSNS.length} stores`);
 
-  let totalSaved = 0, storesWithData = 0;
+  let totalSaved = 0, storesWithData = 0, authFailed = false;
   for (const nsn of STORE_NSNS) {
-    try {
-      const items = await fetchOnHand(token, nsn, period);
-      if (!items.length) { if (DEBUG) console.log(`  ${nsn}: no data`); continue; }
-      const rows = items.map(it => mapOnHandRow(it, nsn, period)).filter(r => /\d{4,}/.test(r.wrin));
-      totalSaved += await upsertRows(rows);
-      storesWithData++;
-      if (DEBUG) console.log(`  ${nsn}: ${rows.length} items`);
-    } catch (e) {
-      if (e.message.startsWith('AUTH_FAILED')) {
-        console.warn('[onhand-pull] token expired mid-run — re-auth…');
-        token = await getAuthTokenPlaywright();
-        if (!token) { console.error('[onhand-pull] ✗ re-auth failed'); process.exit(1); }
-        continue; // retry this store next loop iteration would need re-queue; simplest: skip, next run catches it
+    if (authFailed) break;
+    const rows = [];
+    for (const type of TYPES) {
+      try {
+        const items = await fetchOnHand(token, nsn, dateStr, type);
+        rows.push(...items.map(it => mapOnHandRow(it, nsn, period)).filter(r => r.wrin));
+      } catch (e) {
+        if (e.message.startsWith('AUTH_FAILED')) { authFailed = true; console.error('[onhand-pull] auth failed — refresh QSRSOFT_EBOS_TOKEN'); break; }
+        console.warn(`  ${nsn} type ${type}: ${e.message}`);
       }
-      console.warn(`  ${nsn}: ${e.message}`);
     }
+    // de-dup by wrin within the store (a wrin should map to one class)
+    const byWrin = new Map();
+    for (const r of rows) byWrin.set(r.wrin, r);
+    const deduped = [...byWrin.values()];
+    if (deduped.length) { totalSaved += await upsertRows(deduped); storesWithData++; }
+    if (DEBUG) console.log(`  ${nsn}: ${deduped.length} items`);
   }
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);
+  if (authFailed) process.exit(1);
 }
 
 main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });

@@ -155,6 +155,41 @@ describe('rankVarianceFollowups', () => {
   });
 });
 
+describe('real QSRSoft On-Hand shape (captured 2026-07-26)', () => {
+  // Rows as loadQsrOnHand returns them (post-DB-round-trip camelCase): the script maps
+  // full_wrin→wrin, long_desc→descr, invty_class→cls, case_count→cases, nonRoundedOnHandAmt→onHandAmt,
+  // last_counted→Date. This mirrors the actual eu065119 / store-3708 response.
+  const mk = (wrin, cls, lastCounted, onHandAmt) => ({
+    loc: '0003708', period: '2026-07', wrin, descr: wrin + ' desc', cls,
+    cases: 3, packs: 0, loose: 5, totalUnits: 100, unitPrice: 0.5, onHandAmt,
+    lastCounted, lastSubmitted: lastCounted,
+  });
+  it('pre-window (all counted 07/21-07/24) → 0% for the July close', () => {
+    const rows = [
+      mk('00001-705', 'Food', d(2026, 7, 21), 405.9),
+      mk('00005-086', 'Food', d(2026, 7, 24), 1355.2),
+      mk('00407-958', 'Food', d(2026, 7, 24), 2374.5),
+    ];
+    const p = computeCountProgress(rows, { period: '2026-07', asOf: d(2026, 7, 26) });
+    expect(p.itemsTotal).toBe(3);
+    expect(p.pctCounted).toBe(0); // last counts predate the 29th window → nothing counted yet
+    expect(p.believesDone).toBe(false);
+  });
+  it('mid-window: items recounted on the 30th register as counted', () => {
+    const rows = [
+      mk('00001-705', 'Food', d(2026, 7, 30), 405.9),   // recounted
+      mk('00005-086', 'Food', d(2026, 7, 30), 1355.2),  // recounted
+      mk('00407-958', 'Food', d(2026, 7, 24), 2374.5),  // still stale
+    ];
+    const p = computeCountProgress(rows, { period: '2026-07', asOf: d(2026, 7, 30) });
+    expect(p.itemsCounted).toBe(2);
+    expect(p.pctCounted).toBeCloseTo(2 / 3, 5);
+    // the stale high-value item surfaces as the top uncounted diagnosis
+    const diag = diagnoseIncompleteCount(rows, { period: '2026-07', asOf: d(2026, 7, 30) });
+    expect(diag.uncounted[0].wrin).toBe('00407-958');
+  });
+});
+
 describe('buildStoreStatus', () => {
   it('fires shouldNotify when believesDone AND in window', () => {
     const rows = Array.from({ length: 10 }, (_, i) => ({ wrin: 's' + i, cls: 'Food', lastCounted: d(2026, 7, 30) }));
