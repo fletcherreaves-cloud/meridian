@@ -11,12 +11,13 @@ import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
+  loadEomDiagConfig, saveEomDiagConfig,
 } from '../lib/supabase.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
   buildIncompleteCountMessage,
 } from '../engine/eom-inventory.js';
-import { runDiagnosis, formatDiagnosisReport } from '../engine/eom-diagnosis.js';
+import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -148,6 +149,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [diagCopied, setDiagCopied] = useState(false);
   const [scope, setScope] = useState('all'); // 'all' | 'FL' | 'OK' — state filter
   const [oneStore, setOneStore] = useState(''); // '' = all stores in scope, else a single loc
+  const [diagCfg, setDiagCfg] = useState(null); // saved check overrides (or null = defaults)
+  const [flowOpen, setFlowOpen] = useState(false); // flow-editor modal
+  const [flowDraft, setFlowDraft] = useState([]); // editable copy while the modal is open
+  const [flowSaving, setFlowSaving] = useState(false);
+
+  // Load the editable diagnosis-flow config once on mount.
+  useEffect(() => { loadEomDiagConfig().then(c => { if (c) setDiagCfg(c); }).catch(() => {}); }, []);
+  // The active check registry (defaults + saved overrides), passed to runDiagnosis.
+  const activeChecks = useMemo(() => applyChecksConfig(diagCfg || []), [diagCfg]);
 
   const load = useCallback(async (p) => {
     setLoading(true);
@@ -264,7 +274,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const openDiag = useCallback((loc, name, components) => {
     const c = components || {};
     const result = runDiagnosis({
-      store: loc, storeName: name, period, asOf: new Date(),
+      store: loc, storeName: name, period, asOf: new Date(), checks: activeChecks,
       data: {
         // FOB components → engine keys (targets come from monthly_targets later; band floor for now)
         fob: c.sales ? {
@@ -284,7 +294,37 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     });
     setDiagCopied(false);
     setDiag({ loc, name, result, report: formatDiagnosisReport(result) });
-  }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc]);
+  }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
+
+  // ── Flow editor ──
+  const openFlow = useCallback(() => {
+    setFlowDraft(checksConfig(activeChecks));
+    setFlowOpen(true);
+  }, [activeChecks]);
+  const flowSet = useCallback((id, patch) => {
+    setFlowDraft(d => d.map(c => c.id === id ? { ...c, ...patch, params: { ...c.params, ...(patch.params || {}) } } : c));
+  }, []);
+  const flowMove = useCallback((id, dir) => {
+    setFlowDraft(d => {
+      const arr = d.slice().sort((a, b) => a.order - b.order);
+      const i = arr.findIndex(c => c.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) return d;
+      const oi = arr[i].order, oj = arr[j].order;
+      arr[i] = { ...arr[i], order: oj }; arr[j] = { ...arr[j], order: oi };
+      return arr;
+    });
+  }, []);
+  const flowSave = useCallback(async () => {
+    setFlowSaving(true);
+    const cfg = flowDraft.map(c => ({ id: c.id, order: c.order, enabled: c.enabled, params: c.params }));
+    setDiagCfg(cfg);
+    try { await saveEomDiagConfig(cfg); } finally { setFlowSaving(false); setFlowOpen(false); }
+  }, [flowDraft]);
+  const flowReset = useCallback(async () => {
+    setDiagCfg(null); setFlowOpen(false);
+    try { await saveEomDiagConfig([]); } catch {}
+  }, []);
 
   const copyDiag = useCallback(async () => {
     if (!diag) return;
@@ -349,6 +389,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           disabled: rows.length === 0,
           style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '⬇ CSV'),
+        h('button', {
+          onClick: openFlow, title: 'Edit the diagnosis flow — reorder/toggle checks and tune thresholds',
+          style: { background: 'var(--surf3)', color: 'var(--text2)', border: `1px solid ${diagCfg ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' },
+        }, diagCfg ? '⚙ Flow *' : '⚙ Flow'),
         onClose && h('button', { onClick: onClose, style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '20px', cursor: 'pointer' } }, '✕'))),
 
     // location picker — state pills (All / OK / FL) + single-store dropdown
@@ -526,6 +570,55 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             onClick: () => { updateStatus(diag.loc, { diagnosisStatus: 'diagnosed' }); setDiag(null); },
             style: { background: 'none', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, 'Mark diagnosed')))),
+
+    // flow-editor modal — reorder/toggle checks + tune thresholds (persists to cloud)
+    flowOpen && div({
+      onClick: () => setFlowOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({
+        onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '620px', maxHeight: '85vh', overflow: 'auto', padding: '18px' },
+      },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)' } }, '⚙ Edit diagnosis flow'),
+          h('button', { onClick: () => setFlowOpen(false), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+        div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '12px' } },
+          'Reorder, enable/disable, and tune each check. Applies to every store’s 🔬 Diagnose. Saved to the cloud.'),
+
+        div({ style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+          flowDraft.slice().sort((a, b) => a.order - b.order).map((c, i, arr) => {
+            const PARAM_LABEL = { threshold: '±$', topN: 'Top N', shareFlag: 'Mgr share', band: 'FOB band', minValue: 'Min $', minDollar: 'Min $', largeAmt: 'Large $' };
+            const paramKeys = Object.keys(c.params || {});
+            return div({ key: c.id, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: '7px', opacity: c.enabled ? 1 : 0.55 } },
+              // reorder
+              div({ style: { display: 'flex', flexDirection: 'column' } },
+                h('button', { onClick: () => flowMove(c.id, -1), disabled: i === 0, style: { background: 'none', border: 'none', color: 'var(--text3)', cursor: i === 0 ? 'default' : 'pointer', fontSize: '10px', lineHeight: 1, padding: 0 } }, '▲'),
+                h('button', { onClick: () => flowMove(c.id, 1), disabled: i === arr.length - 1, style: { background: 'none', border: 'none', color: 'var(--text3)', cursor: i === arr.length - 1 ? 'default' : 'pointer', fontSize: '10px', lineHeight: 1, padding: 0 } }, '▼')),
+              // enable toggle
+              h('input', { type: 'checkbox', checked: c.enabled, onChange: e => flowSet(c.id, { enabled: e.target.checked }), style: { cursor: 'pointer' } }),
+              // label
+              div({ style: { flex: 1, fontSize: '12.5px', color: 'var(--text)', fontWeight: 600 } },
+                c.label, c.pending && span({ style: { fontSize: '10px', color: 'var(--text3)', fontWeight: 400, marginLeft: '6px' } }, '(awaiting data)')),
+              // tunable params
+              ...paramKeys.map(k => div({ key: k, style: { display: 'flex', alignItems: 'center', gap: '4px' } },
+                span({ style: { fontSize: '10px', color: 'var(--text3)' } }, PARAM_LABEL[k] || k),
+                h('input', {
+                  type: 'number', value: c.params[k],
+                  onChange: e => flowSet(c.id, { params: { [k]: k === 'band' || k === 'shareFlag' ? parseFloat(e.target.value) : Number(e.target.value) } }),
+                  style: { width: '58px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '5px', padding: '3px 5px', fontSize: '12px' },
+                }))));
+          })),
+
+        div({ style: { display: 'flex', gap: '10px', marginTop: '14px', alignItems: 'center' } },
+          h('button', {
+            onClick: flowSave, disabled: flowSaving,
+            style: { background: '#f5bc00', color: '#1a1400', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
+          }, flowSaving ? 'Saving…' : 'Save flow'),
+          h('button', {
+            onClick: flowReset,
+            style: { background: 'none', color: 'var(--text3)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
+          }, 'Reset to defaults')))),
 
     div({ style: { marginTop: '14px', fontSize: '11px', color: 'var(--text3)' } },
       'Count progress is inferred from each item\'s last-counted / last-submitted date landing inside the count window. ',
