@@ -71,9 +71,21 @@ metadata:
   **editable Diagnosis + Communication status** (persist to `eom_count_status`). Summary tiles (stores reporting /
   believe-done / avg complete / window open). Period selector (current + prior 3). Renders empty-state until the
   On-Hand pull populates `qsr_onhand`. Build + 303 tests green.
-- ⏭️ **NEXT (still to build):** clone the pull for **Variance Stat / Inventory Summary** (same eBOS host —
-  capture their `/api/inv/{nsn}/...` endpoints), notification delivery, the **EOM dashboard view + nav**,
-  comms generator, CoachQ prompts. Diagnosis decision-tree = co-map with owner (joint session).
+- ✅ **Notification loop CLOSED (v4.576)** — the On-Hand pull now **imports the app's engine**
+  (`computeCountProgress`, pure ESM, zero drift) and upserts `eom_count_status` per store each run:
+  count %, class-done flags, and the **~90% "believes done" trigger fires once** (notified_90/notified_at,
+  preserves human-set diagnosis/comms). Dashboard shows a **🔔 "ready for review" banner** (believesDone
+  AND diagnosis still 'pending'; clears when you set it to In-review).
+- ✅ **Incomplete-count comms generator (v4.577)** — `buildIncompleteCountMessage` (engine, tested):
+  for a store that believes it's done but has high-value items on an old count date, generates a
+  ready-to-send recount message (subject + body, by-class summary, $ at risk). Dashboard **✉️ Draft**
+  per store → modal with Copy + "Mark as sent" (sets comms_status). This is the COUNT-PHASE comms;
+  the VARIANCE-diagnosis comms come after the owner's teach-me notes.
+- ⏸️ **PAUSE POINT (2026-07-26 eve):** everything in EOM that does NOT need owner input is now wired.
+  Remaining work is GATED on: (1) **owner's diagnosis-process notes** (in progress — for the variance
+  decision-tree + report/action-item generator), and (2) **Variance Stat + Inventory Summary endpoint
+  captures** (same eBOS `/api/inv/{nsn}/...` host — clone the On-Hand pull once captured). Also queued:
+  CoachQ curated prompts, notification-settings UI (table ready). Perf Reviews = next unblocked workstream.
 
 **Context already in the codebase (do not rebuild):**
 - `src/views/fob-eom.js` — "FOB EOM Check" panel (built 2026-06-30). See `memory/project-fob-context.md`
