@@ -133,11 +133,26 @@ Owner idea, parked intentionally. A points/engagement system for GMs + Superviso
 
 ---
 
-## Outstanding items still needing OWNER action (unrelated to Notes 29 — reported 2026-07-26)
-- **Supabase SQL blocks** (each fails soft; app works without): `forecast_snapshots` (still unconfirmed),
-  `smart_target_adjustments` (v4.486), `sage_prompts` + `sage_prompt_runs` schedule cols (v4.487/488 —
-  safe to re-run the whole SAGE block).
-- **SAGE RBAC redeploy:** `supabase functions deploy sage-chat --no-verify-jwt` (RBAC hard-filter won't
-  take effect until redeployed).
-- **SAGE auto-scheduling:** create a runner Supabase user + GitHub secrets `SAGE_RUNNER_EMAIL`,
-  `SAGE_RUNNER_PASSWORD`, `VITE_SUPABASE_ANON_KEY` (else the hourly scheduler simply never fires).
+## Outstanding infra items — ALL RESOLVED (owner confirmed 2026-07-26)
+- ✅ **Supabase SQL blocks** — owner ran them; all returned "already exists." Nothing pending.
+- ✅ **SAGE RBAC redeploy** — done (`sage-chat` redeployed). RBAC hard-filter is live.
+- ✅ **SAGE auto-scheduling runner** — runner user + secrets set up previously. Scheduler can fire.
+→ No outstanding infra debt as of 2026-07-26. Clean slate for EOM + Perf Reviews.
+
+## Sequencing + method decisions (owner, 2026-07-26)
+- **EOM FIRST** (owner picked EOM over Perf-Reviews-first). Perf Reviews queued next.
+- **"Teach me the EOM analysis" = a JOINT session** ("we will plan to do this together"), method =
+  a **combination of chat walk-through + other methods** (real reports, worked examples). Do NOT
+  build the diagnosis decision-tree solo — co-map it with the owner.
+- **Perf Reviews:** build with **template-snapshot on each saved review** (no silent re-score when
+  weights change) — owner approved, "no objection."
+
+## EOM open questions still to resolve with owner (gating / need answers)
+- **Q-A [GATE]:** On-Hand in QSRSoft Network tab — **JSON API call** (→ JSON mapper, clone qsrsoft-pull.mjs)
+  **or Excel/CSV download** (→ reuse fob-eom.js parsers server-side, email-parse pattern)? Determines pull plumbing.
+- **Q-B [GATE]:** capture the **On-Hand endpoint** (URL + query params + X-Auth-Token) from DevTools —
+  first, since it's the count-progress signal + this-month time-sensitive. Then the other 4 reports.
+- **Q-C:** 90–95% count-complete notification — **notify whom, via what channel** (in-app / email / push)?
+- **Q-D:** action-item summaries + store comms — **recipients + channel** (copy-paste / email / in-app)?
+- **Q-E:** count-progress % — does QSRSoft expose a "% counted" field, or infer completion from On-Hand
+  rows-present vs the store's item master?
