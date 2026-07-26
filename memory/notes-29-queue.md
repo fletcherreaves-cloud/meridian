@@ -81,11 +81,29 @@ metadata:
   ready-to-send recount message (subject + body, by-class summary, $ at risk). Dashboard **✉️ Draft**
   per store → modal with Copy + "Mark as sent" (sets comms_status). This is the COUNT-PHASE comms;
   the VARIANCE-diagnosis comms come after the owner's teach-me notes.
-- ⏸️ **PAUSE POINT (2026-07-26 eve):** everything in EOM that does NOT need owner input is now wired.
-  Remaining work is GATED on: (1) **owner's diagnosis-process notes** (in progress — for the variance
-  decision-tree + report/action-item generator), and (2) **Variance Stat + Inventory Summary endpoint
-  captures** (same eBOS `/api/inv/{nsn}/...` host — clone the On-Hand pull once captured). Also queued:
-  CoachQ curated prompts, notification-settings UI (table ready). Perf Reviews = next unblocked workstream.
+- ✅ **DIAGNOSIS ENGINE + ALL ENDPOINTS SHIPPED (v4.535–537, 2026-07-26 eve).** Owner supplied the
+  diagnosis-process notes AND rapid-fired the full eBOS endpoint set; both are now wired:
+  - **Endpoints CONFIRMED + recorded** (`memory/project-eom-diagnosis-flow.md`, tokens redacted): Variance
+    Stat `stat_variance/monthly/{date}` + `/daily` + `/yields`; Waste `raw_waste_promo`; Transfers
+    `transfers`; Raw-item DETAIL `raw_detail/{itemId}` (forensic count-timing register) + catalog `raw_detail/rawitem`.
+  - **`src/engine/eom-parsers.js`** — pure mappers (client + pull share, zero drift): mapVarianceRows (Food/Paper
+    carry $, Condiment unit-only), mapYieldGroups + yield-band cause, mapWasteEvents + per-manager summary,
+    mapTransferLines + summary, mapRawItemHistory (count events w/ variance/difference/manager). +16 tests.
+  - **`eom-diagnosis.js`** checks LIT UP: variance-top5 (+ yield-band cause link), variance-50, incomplete-count,
+    **waste-patterns** (per-manager $ share + edited flags), **raw-items-timing** (attributes variance to its
+    count date, judges recount value: early=cascaded, late=recountable), **transfers** (unposted/large).
+    normClass now maps eBOS single-letter class codes (F/C/P/N/S/M/L).
+  - **Data pipeline**: `qsr_waste` + `qsr_transfers` tables + variance yield_val/pct_sales/raw_item_id cols
+    (schema.sql); save/load in supabase.js; **`scripts/qsrsoft-variance-pull.mjs`** + daily workflow
+    (10:30 UTC) pulls variance/yields/waste/transfers for all 27 stores via the eBOS auth ladder.
+  - **EOM Dashboard 🔬 Diagnose** button per store → runs runDiagnosis() on the cloud streams → modal with
+    action items (severity-ranked) + full report (copy/attach to email) + pending-checks note + Mark diagnosed.
+- ⏸️ **REMAINING (task #60, mostly polish/owner-action):** Inventory-Summary/Physical-Inventory endpoint still
+  to capture (table ready); wire monthly_targets into fob-components + variance "over target" (currently a
+  0.25% floor); raw-items-timing on-demand drill (pull raw_detail for a flagged WRIN from the Diagnose modal);
+  store yield BAND (not just actual) so the yield-cause overlay fires from DB data; CoachQ curated prompts;
+  notification-settings UI (table ready). **Owner action:** run the qsr_waste/qsr_transfers/variance-alter SQL;
+  add `QSRSOFT_EBOS_TOKEN` secret (or rely on QSRSOFT_TOKEN SSO). **Perf Reviews = next unblocked workstream (task #59).**
 
 **Context already in the codebase (do not rebuild):**
 - `src/views/fob-eom.js` — "FOB EOM Check" panel (built 2026-06-30). See `memory/project-fob-context.md`
