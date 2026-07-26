@@ -13,6 +13,7 @@ import {
 } from '../lib/supabase.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
+  buildIncompleteCountMessage,
 } from '../engine/eom-inventory.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
@@ -104,6 +105,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [fobRows, setFobRows] = useState([]);
   const [statusMap, setStatusMap] = useState({}); // loc -> saved eom_count_status
   const [saving, setSaving] = useState('');
+  const [draft, setDraft] = useState(null); // { loc, name, subject, body } for the comms modal
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async (p) => {
     setLoading(true);
@@ -122,10 +125,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
   useEffect(() => { load(period); }, [period, load]);
 
-  // Group on-hand rows by store loc, compute progress per store.
+  // On-hand rows grouped by store loc (reused for progress + comms drafting).
+  const byLoc = useMemo(() => {
+    const m = {};
+    for (const r of onHand) { (m[String(r.loc)] || (m[String(r.loc)] = [])).push(r); }
+    return m;
+  }, [onHand]);
+
+  // Compute progress + FOB per store.
   const rows = useMemo(() => {
-    const byLoc = {};
-    for (const r of onHand) { (byLoc[String(r.loc)] || (byLoc[String(r.loc)] = [])).push(r); }
     const fob = fobByStore(fobRows, period);
     const asOf = new Date();
     const out = Object.keys(byLoc).map(loc => {
@@ -148,7 +156,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // stores with unfinished counts first, then by name
     out.sort((a, b) => (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
     return out;
-  }, [onHand, fobRows, statusMap, period]);
+  }, [byLoc, fobRows, statusMap, period]);
+
+  const openDraft = useCallback((loc, name) => {
+    const msg = buildIncompleteCountMessage(name, byLoc[loc] || [], { period, asOf: new Date() });
+    setCopied(false);
+    setDraft({ loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps });
+  }, [byLoc, period]);
+
+  const copyDraft = useCallback(async () => {
+    if (!draft) return;
+    const text = `${draft.subject}\n\n${draft.body}`;
+    try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopied(false); }
+  }, [draft]);
 
   const summary = useMemo(() => {
     const n = rows.length;
@@ -240,11 +260,47 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 style: { background: '#0f1117', color: statusColor(r.diagnosis), border: `1px solid ${statusColor(r.diagnosis)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
               }, DIAG_OPTS.map(o => h('option', { key: o, value: o }, DIAG_LABEL[o])))),
             h('td', { style: { padding: '8px 10px' } },
-              h('select', {
-                value: r.comms, disabled: saving === r.loc,
-                onChange: e => updateStatus(r.loc, { commsStatus: e.target.value }),
-                style: { background: '#0f1117', color: statusColor(r.comms), border: `1px solid ${statusColor(r.comms)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
-              }, COMMS_OPTS.map(o => h('option', { key: o, value: o }, COMMS_LABEL[o])))))))),
+              div({ style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+                h('select', {
+                  value: r.comms, disabled: saving === r.loc,
+                  onChange: e => updateStatus(r.loc, { commsStatus: e.target.value }),
+                  style: { background: '#0f1117', color: statusColor(r.comms), border: `1px solid ${statusColor(r.comms)}`, borderRadius: '5px', padding: '3px 6px', fontSize: '12px', fontWeight: 600 },
+                }, COMMS_OPTS.map(o => h('option', { key: o, value: o }, COMMS_LABEL[o]))),
+                h('button', {
+                  title: 'Draft a recount message from the uncounted items',
+                  onClick: () => openDraft(r.loc, r.name),
+                  style: { background: 'none', border: '1px solid #334155', borderRadius: '5px', color: 'var(--text2)', cursor: 'pointer', fontSize: '12px', padding: '3px 7px' },
+                }, '✉️ Draft'))))))),
+
+    // comms draft modal
+    draft && div({
+      onClick: () => setDraft(null),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({
+        onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid #334155', borderRadius: '10px', width: '100%', maxWidth: '640px', maxHeight: '85vh', overflow: 'auto', padding: '18px' },
+      },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
+          div({ style: { fontWeight: 700, color: 'var(--text1)' } }, `✉️ Recount message — ${draft.name}`),
+          h('button', { onClick: () => setDraft(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+        div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
+        div({ style: { fontSize: '13px', color: 'var(--text1)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: '#0f1117', borderRadius: '6px', border: '1px solid #1e293b' } }, draft.subject),
+        div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Message'),
+        h('textarea', {
+          readOnly: true, value: draft.body,
+          style: { width: '100%', minHeight: '240px', background: '#0f1117', color: 'var(--text1)', border: '1px solid #1e293b', borderRadius: '6px', padding: '10px', fontSize: '12.5px', fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' },
+        }),
+        div({ style: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' } },
+          h('button', {
+            onClick: copyDraft,
+            style: { background: '#f5bc00', color: '#0f1117', border: 'none', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
+          }, copied ? '✓ Copied' : 'Copy message'),
+          h('button', {
+            onClick: () => { updateStatus(draft.loc, { commsStatus: 'sent', commsSentAt: new Date().toISOString() }); setDraft(null); },
+            style: { background: 'none', color: '#4ade80', border: '1px solid #4ade80', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
+          }, 'Mark as sent'),
+          !draft.hasGaps && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.')))),
 
     div({ style: { marginTop: '14px', fontSize: '11px', color: 'var(--text3)' } },
       'Count progress is inferred from each item\'s last-counted / last-submitted date landing inside the count window. ',

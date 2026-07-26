@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   periodKey, daysInPeriod, countWindowStart, lastDayOfPeriod, inCountWindow,
   normClass, computeCountProgress, diagnoseIncompleteCount, rankVarianceFollowups,
-  buildStoreStatus, FOB_CLASSES, BELIEVES_DONE_PCT,
+  buildStoreStatus, buildIncompleteCountMessage, FOB_CLASSES, BELIEVES_DONE_PCT,
 } from '../engine/eom-inventory.js';
 
 const d = (y, m, day) => { const x = new Date(y, m - 1, day); x.setHours(0, 0, 0, 0); return x; };
@@ -187,6 +187,31 @@ describe('real QSRSoft On-Hand shape (captured 2026-07-26)', () => {
     // the stale high-value item surfaces as the top uncounted diagnosis
     const diag = diagnoseIncompleteCount(rows, { period: '2026-07', asOf: d(2026, 7, 30) });
     expect(diag.uncounted[0].wrin).toBe('00407-958');
+  });
+});
+
+describe('buildIncompleteCountMessage', () => {
+  const period = '2026-07';
+  it('lists uncounted high-value items and totals them', () => {
+    const rows = [
+      { wrin: '00005-086', cls: 'Food', descr: '100% PURE BEEF', onHandAmt: 1355, lastCounted: null },
+      { wrin: '00407-958', cls: 'Food', descr: 'Chicken McNuggets', onHandAmt: 2374, lastCounted: null },
+      { wrin: '00013-350', cls: 'Condiment', descr: 'CHEESE', onHandAmt: 336, lastCounted: d(2026, 7, 30) }, // counted
+    ];
+    const msg = buildIncompleteCountMessage('Tishomingo', rows, { period, asOf: d(2026, 7, 30) });
+    expect(msg.hasGaps).toBe(true);
+    expect(msg.count).toBe(2);
+    expect(msg.subject).toMatch(/2 items need recount/);
+    expect(msg.body).toMatch(/Chicken McNuggets/);
+    expect(msg.body).toMatch(/100% PURE BEEF/);
+    expect(msg.body).not.toMatch(/CHEESE/); // already counted
+    expect(Math.round(msg.totalValue)).toBe(3729);
+  });
+  it('all counted → clean "complete" message, hasGaps false', () => {
+    const rows = [{ wrin: '1', cls: 'Food', descr: 'X', onHandAmt: 500, lastCounted: d(2026, 7, 30) }];
+    const msg = buildIncompleteCountMessage('Ada', rows, { period, asOf: d(2026, 7, 30) });
+    expect(msg.hasGaps).toBe(false);
+    expect(msg.body).toMatch(/no outstanding/i);
   });
 });
 

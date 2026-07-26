@@ -245,6 +245,48 @@ export function buildCountTip({ oh, s = {}, dol = 0 }) {
   return `Counted ${counted}. ${tip}`;
 }
 
+// ── Communication generator: incomplete-count nudge ──────────────────────────
+// For a store that believes it's finished but still has high-value items on an old
+// count date, produce a ready-to-send message listing exactly what to recount.
+// `storeName` is display text; `minValue` filters out trivial-dollar items.
+export function buildIncompleteCountMessage(storeName, onHandRows, { period, asOf, minValue = 25, maxItems = 20 } = {}) {
+  const diag = diagnoseIncompleteCount(onHandRows, { period, asOf, minValue });
+  if (!diag.uncountedCount) {
+    return {
+      hasGaps: false,
+      subject: `EOM count — ${storeName}: looks complete`,
+      body: `${storeName}: your inventory count shows no outstanding high-value items. Nice work — go ahead and finalize.`,
+      uncounted: [],
+    };
+  }
+  const items = diag.uncounted.slice(0, maxItems);
+  const byClass = diag.byClass.map(c => `${_titleClass(c.cls)}: ${c.count} item${c.count !== 1 ? 's' : ''} (~$${Math.round(c.valueAtRisk).toLocaleString()})`).join(' · ');
+  const lines = items.map(u => `  • ${u.descr || u.wrin} — ~$${Math.round(u.valueAtRisk).toLocaleString()} on hand${u.cls ? ` [${_titleClass(u.cls)}]` : ''}`);
+  const more = diag.uncountedCount > items.length ? `\n  …and ${diag.uncountedCount - items.length} more.` : '';
+  const body =
+`${storeName} — EOM count review
+
+Before you finalize, these ${diag.uncountedCount} items (~$${Math.round(diag.uncountedValue).toLocaleString()}) are still showing an old count date. Uncounted ending inventory inflates usage and hurts your food-cost variance, so please physically recount and resubmit them:
+
+${lines.join('\n')}${more}
+
+Summary by class — ${byClass}
+
+Recount, resubmit, and reply when done. Thank you!`;
+  return {
+    hasGaps: true,
+    subject: `EOM count — ${storeName}: ${diag.uncountedCount} items need recount (~$${Math.round(diag.uncountedValue).toLocaleString()})`,
+    body,
+    uncounted: items,
+    totalValue: diag.uncountedValue,
+    count: diag.uncountedCount,
+  };
+}
+
+function _titleClass(k) {
+  return { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product', other: 'Other' }[k] || k;
+}
+
 // ── Store status roll-up (for the EOM dashboard + notification trigger) ────────
 // Combines count progress with a FOB snapshot into one dashboard row per store.
 export function buildStoreStatus({ loc, period, onHandRows, fobSnapshot, asOf } = {}) {
