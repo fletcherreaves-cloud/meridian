@@ -10,7 +10,7 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
-  loadQsrVarianceStat, loadQsrWaste, loadQsrTransfers,
+  loadQsrVarianceStat, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
 } from '../lib/supabase.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
@@ -113,6 +113,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [variance, setVariance] = useState([]);
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
+  const [rawDetail, setRawDetail] = useState([]);
   const [diag, setDiag] = useState(null); // { name, result, report } for the diagnosis modal
   const [diagCopied, setDiagCopied] = useState(false);
   const [scope, setScope] = useState('all'); // 'all' | 'FL' | 'OK' — state filter
@@ -121,19 +122,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const load = useCallback(async (p) => {
     setLoading(true);
     try {
-      const [oh, fob, st, vr, wa, tr] = await Promise.all([
+      const [oh, fob, st, vr, wa, tr, rd] = await Promise.all([
         loadQsrOnHand({ period: p }),
         loadQsrFob().catch(() => []),
         loadEomCountStatus({ period: p }).catch(() => []),
         loadQsrVarianceStat({ period: p }).catch(() => []),
         loadQsrWaste({ period: p }).catch(() => []),
         loadQsrTransfers({ period: p }).catch(() => []),
+        loadQsrRawItemDetail({ period: p }).catch(() => []),
       ]);
       setOnHand(oh || []);
       setFobRows(fob || []);
       setVariance(vr || []);
       setWaste(wa || []);
       setTransfers(tr || []);
+      setRawDetail(rd || []);
       const m = {}; (st || []).forEach(r => { m[String(r.loc)] = r; });
       setStatusMap(m);
     } finally { setLoading(false); }
@@ -157,6 +160,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const varByLoc = useMemo(() => groupByLoc(variance), [variance]);
   const wasteByLoc = useMemo(() => groupByLoc(waste), [waste]);
   const xferByLoc = useMemo(() => groupByLoc(transfers), [transfers]);
+  // Raw-item registers grouped by loc; reshape for the engine (counts = inventory events).
+  const rawByLoc = useMemo(() => {
+    const m = {};
+    for (const r of (rawDetail || [])) {
+      const counts = (r.history || []).filter(h => h.isCount);
+      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, counts });
+    }
+    return m;
+  }, [rawDetail]);
 
   // Which stores have any diagnosis input beyond on-hand (variance/waste/transfers).
   const hasDiagData = useMemo(() => {
@@ -237,11 +249,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         variance: varByLoc[loc] || [],
         waste: wasteByLoc[loc] || [],
         transfers: xferByLoc[loc] || [],
+        rawItems: rawByLoc[loc] || [],
       },
     });
     setDiagCopied(false);
     setDiag({ loc, name, result, report: formatDiagnosisReport(result) });
-  }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc]);
+  }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc]);
 
   const copyDiag = useCallback(async () => {
     if (!diag) return;

@@ -33,7 +33,7 @@ import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
-  mapWasteEvents, mapTransferLines,
+  mapWasteEvents, mapTransferLines, mapRawItemHistory,
 } from '../src/engine/eom-parsers.js';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
@@ -202,6 +202,22 @@ async function ebosGet(token, nsn, path) {
   return Array.isArray(data) ? data : [];
 }
 
+// raw_detail returns an OBJECT (not an array) — fetch it as-is.
+async function ebosGetObj(token, nsn, path) {
+  const url = `${EBOS_BASE}/api/inv/${nsn}/${path}`;
+  if (DEBUG) console.log('[GET]', url);
+  const resp = await fetch(url, {
+    headers: {
+      'X-Auth-Token': token, 'X-Current-Nsn': String(nsn), 'Accept': 'application/json',
+      'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+    },
+  });
+  if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
 // "07/20/2026" or "2026-07-20" → "2026-07-20"
 function toISO(v) {
   if (!v) return null;
@@ -229,7 +245,7 @@ async function main() {
   const token = await resolveEbosToken();
   console.log(`[variance-pull] period ${period} (${first}…${last}) × ${STORE_NSNS.length} stores`);
 
-  let vSaved = 0, wSaved = 0, tSaved = 0, storesOk = 0, authFailed = false;
+  let vSaved = 0, wSaved = 0, tSaved = 0, rSaved = 0, storesOk = 0, authFailed = false;
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
     const loc = String(nsn).padStart(7, '0');
@@ -270,15 +286,34 @@ async function main() {
       })).filter(r => r.transfer_id != null && r.wrin);
       tSaved += await upsert('qsr_transfers', xferRows, 'loc,transfer_id,wrin');
 
+      // Raw-item forensic register — only for actionable WRINs (|$| >= 50, has an itemId),
+      // top ~20 by |$| to bound request volume. Feeds the Diagnose count-timing drill-down.
+      const actionable = varRows
+        .filter(v => v.rawItemId != null && Math.abs(v.dolDiff || 0) >= 50)
+        .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0))
+        .slice(0, 20);
+      const detailRows = [];
+      for (const v of actionable) {
+        try {
+          const detail = await ebosGetObj(token, nsn, `raw_detail/${v.rawItemId}?${range}`);
+          const m = mapRawItemHistory(detail);
+          detailRows.push({ loc, period, wrin: v.wrin, descr: m.descr || v.descr, item_class: m.itemClass || v.classCode, history: m.history });
+        } catch (e) {
+          if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+          if (DEBUG) console.warn(`    raw_detail ${v.wrin}: ${e.message}`);
+        }
+      }
+      rSaved += await upsert('qsr_raw_item_detail', detailRows.filter(r => r.wrin), 'loc,period,wrin');
+
       storesOk++;
-      if (DEBUG) console.log(`  ${nsn}: ${varRows.length} var · ${wasteRows.length} waste · ${xferRows.length} xfer`);
+      if (DEBUG) console.log(`  ${nsn}: ${varRows.length} var · ${wasteRows.length} waste · ${xferRows.length} xfer · ${detailRows.length} raw-detail`);
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) { authFailed = true; console.error('[variance-pull] auth failed — refresh QSRSOFT_EBOS_TOKEN'); break; }
       console.warn(`  ${nsn}: ${e.message}`);
     }
   }
 
-  console.log(`[variance-pull] ✓ ${storesOk}/${STORE_NSNS.length} stores · ${vSaved} variance · ${wSaved} waste · ${tSaved} transfer rows for ${period}`);
+  console.log(`[variance-pull] ✓ ${storesOk}/${STORE_NSNS.length} stores · ${vSaved} variance · ${wSaved} waste · ${tSaved} transfer · ${rSaved} raw-detail rows for ${period}`);
   if (authFailed) process.exit(1);
 }
 
