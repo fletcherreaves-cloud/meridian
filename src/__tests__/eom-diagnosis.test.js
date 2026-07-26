@@ -117,3 +117,27 @@ describe('registry is editable data', () => {
     expect(DEFAULT_CHECKS.every(c => 'id' in c && 'order' in c && 'enabled' in c)).toBe(true);
   });
 });
+
+describe('editable-flow config (checksConfig / applyChecksConfig)', () => {
+  it('checksConfig exposes tunable shape without run functions', async () => {
+    const { checksConfig } = await import('../engine/eom-diagnosis.js');
+    const cfg = checksConfig();
+    expect(cfg.every(c => 'id' in c && 'order' in c && 'enabled' in c && 'params' in c)).toBe(true);
+    expect(cfg.some(c => 'run' in c)).toBe(false);
+  });
+  it('applyChecksConfig merges overrides (enabled/order/params) and preserves run()', async () => {
+    const { applyChecksConfig } = await import('../engine/eom-diagnosis.js');
+    const merged = applyChecksConfig([
+      { id: 'variance-50', enabled: false, order: 5, params: { threshold: 75 } },
+    ]);
+    const v50 = merged.find(c => c.id === 'variance-50');
+    expect(v50.enabled).toBe(false);
+    expect(v50.order).toBe(5);
+    expect(v50.params.threshold).toBe(75);
+    expect(typeof v50.run).toBe('function'); // run preserved
+    // a disabled check is skipped by runDiagnosis
+    const res = runDiagnosis({ store: 's', period: '2026-07', checks: merged,
+      data: { variance: [{ wrin: 'z', descr: 'Z', dolDiff: 60, cls: 'Food' }] } });
+    expect(res.findings.some(f => f.checkId === 'variance-50')).toBe(false);
+  });
+});

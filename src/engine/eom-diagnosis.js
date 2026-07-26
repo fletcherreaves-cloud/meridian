@@ -192,6 +192,29 @@ function countWindowStartTs(period) {
   return start.getTime();
 }
 
+// ── Editable-flow support ─────────────────────────────────────────────────────
+// The owner's directive: the diagnosis flow must be editable as techniques are
+// learned. checksConfig() exposes the tunable shape of the registry; applyChecksConfig()
+// merges a saved override (order / enabled / params) back onto DEFAULT_CHECKS while
+// PRESERVING each check's run() function — so a settings UI can persist plain JSON.
+export function checksConfig(checks = DEFAULT_CHECKS) {
+  return checks.map(c => ({ id: c.id, label: c.label, order: c.order, enabled: c.enabled !== false, params: { ...(c.params || {}) }, pending: !!c.pending }));
+}
+export function applyChecksConfig(saved, base = DEFAULT_CHECKS) {
+  const byId = {};
+  for (const s of (saved || [])) byId[s.id] = s;
+  return base.map(c => {
+    const o = byId[c.id];
+    if (!o) return c;
+    return {
+      ...c,
+      enabled: o.enabled !== false,
+      order: o.order != null ? o.order : c.order,
+      params: { ...(c.params || {}), ...(o.params || {}) },
+    };
+  }).sort((a, b) => a.order - b.order);
+}
+
 function mkFinding(checkId, severity, title, detail, dollars, data = {}) {
   return { checkId, severity, severityWord: sevWord(severity), title, detail, dollars: Number(dollars) || 0, links: [], data };
 }

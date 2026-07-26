@@ -2357,3 +2357,14 @@ export async function saveEomNotificationSettings(settings, key = 'default') {
   if (error) { console.warn('[eom_notification_settings] save error:', error.message); return { saved: 0, errors: [error.message] }; }
   return { saved: 1, errors: [] };
 }
+
+// ── EOM diagnosis flow config (editable check registry) ───────────────────────
+// Reuses the eom_notification_settings jsonb table under key 'diag_config' so no
+// new table/SQL is needed. settings = { checks: [{id, order, enabled, params}] }.
+export async function loadEomDiagConfig() {
+  const row = await loadEomNotificationSettings('diag_config');
+  return Array.isArray(row?.settings?.checks) ? row.settings.checks : null;
+}
+export async function saveEomDiagConfig(checks) {
+  return saveEomNotificationSettings({ checks: checks || [] }, 'diag_config');
+}
