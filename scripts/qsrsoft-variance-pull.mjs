@@ -115,13 +115,17 @@ async function getEbosTokenViaPlaywright() {
   return ebosToken;
 }
 async function resolveEbosToken() {
-  const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
-  if (envToken) { console.log('[auth] using QSRSOFT_EBOS_TOKEN'); return envToken; }
+  // Prefer minting a FRESH eBOS token via the SSO exchange — eBOS tokens are
+  // very short-lived, so a stored QSRSOFT_EBOS_TOKEN is almost always stale by
+  // the time CI runs. The static token is a last-ditch fallback, not the default.
   const reporting = (process.env.QSRSOFT_TOKEN || '').trim();
   if (reporting) {
     const t = await getEbosTokenViaSso(reporting);
-    if (t) { console.log('[auth] ✓ eBOS token via SSO exchange'); return t; }
+    if (t) { console.log('[auth] ✓ eBOS token via SSO exchange (fresh)'); return t; }
+    console.log('[auth] SSO exchange did not return a token — trying fallbacks');
   }
+  const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
+  if (envToken) { console.log('[auth] falling back to static QSRSOFT_EBOS_TOKEN (may be stale)'); return envToken; }
   const t = await getEbosTokenViaPlaywright();
   if (!t) { console.error('[variance-pull] ✗ no eBOS token'); process.exit(1); }
   return t;
