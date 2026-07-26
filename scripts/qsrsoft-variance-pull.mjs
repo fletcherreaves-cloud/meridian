@@ -97,31 +97,59 @@ async function getEbosTokenViaSso(cognitoToken) {
 async function getEbosTokenViaPlaywright() {
   const u = process.env.QSRSOFT_USERNAME, p = process.env.QSRSOFT_PASSWORD;
   if (!u || !p) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD for Playwright fallback'); return null; }
+  const fs = await import('node:fs');
+  try { fs.mkdirSync('screenshots', { recursive: true }); } catch {}
+  const shot = async (page, name) => { try { await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true }); console.log(`[pw] 📸 ${name}`); } catch (e) { console.log(`[pw] screenshot ${name} failed: ${e.message}`); } };
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' });
   const page = await context.newPage();
   let ebosToken = null;
-  page.on('request', req => {
+  const grab = (t, where) => { if (!ebosToken && t && t.length > 40) { ebosToken = t; console.log(`[pw] ✓ captured eBOS token from ${where}`); } };
+  // Widen capture: any *.ebos.qsrsoft.com request header, and any response body carrying an HS256 token.
+  page.on('request', req => { if (req.url().includes('ebos.qsrsoft.com')) grab(req.headers()['x-auth-token'], 'request header'); });
+  page.on('response', async resp => {
     if (ebosToken) return;
-    if (req.url().includes('prod.ebos.qsrsoft.com')) {
-      const t = req.headers()['x-auth-token'];
-      if (t && t.length > 20) ebosToken = t;
-    }
+    const url = resp.url();
+    if (!/sso\.myqsrsoft|ebos\.qsrsoft|token/i.test(url)) return;
+    try { const body = await resp.text(); const m = body.match(/eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9[\w.\-]+/); if (m) grab(m[0], `response ${url.slice(0, 80)}`); } catch {}
   });
   try {
-    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
-    const userSel = ['input[name="username"]','input[name="email"]','input[type="email"]','#username','#email'].join(', ');
-    const passSel = 'input[type="password"], input[name="password"], #password';
-    const subSel  = 'button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")';
-    await page.waitForSelector(userSel, { timeout: 20000 });
-    await page.fill(userSel, u); await page.fill(passSel, p); await page.click(subSel);
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
-    if (!ebosToken) {
-      await page.goto('https://v3.myqsrsoft.com/inventory/variance', { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 4000));
+    console.log('[pw] goto v3.myqsrsoft.com …');
+    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});
+    console.log(`[pw] landed at: ${page.url()} — title: "${await page.title().catch(() => '?')}"`);
+    await shot(page, '01-landing');
+    // Dump the actual form controls present so we can see the real login UI (Cognito Hosted UI, SAML, custom…)
+    const controls = await page.evaluate(() => {
+      const inputs = [...document.querySelectorAll('input')].map(i => ({ name: i.name, id: i.id, type: i.type, ph: i.placeholder }));
+      const btns = [...document.querySelectorAll('button, input[type=submit], a[role=button]')].map(b => ({ t: (b.innerText || b.value || '').trim().slice(0, 30), id: b.id, type: b.type }));
+      return { url: location.href, inputs, btns };
+    }).catch(e => ({ err: e.message }));
+    console.log('[pw] form controls:', JSON.stringify(controls).slice(0, 900));
+
+    const userSel = 'input[name="username"], input#signInFormUsername, input[name="email"], input[type="email"], #username, #email';
+    const passSel = 'input[name="password"], input#signInFormPassword, input[type="password"], #password';
+    const subSel  = 'input[name="signInSubmitButton"], button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Sign in"), button:has-text("Login"), a:has-text("Sign in")';
+    const foundUser = await page.waitForSelector(userSel, { timeout: 20000 }).then(() => true).catch(() => false);
+    if (!foundUser) { console.log('[pw] ✗ no username field found — login UI not recognized (see form-controls dump + screenshot)'); await shot(page, '02-no-login'); }
+    else {
+      console.log('[pw] filling credentials…');
+      await page.fill(userSel, u); await page.fill(passSel, p).catch(() => {});
+      await shot(page, '02-filled');
+      await page.click(subSel).catch(async () => { await page.keyboard.press('Enter'); });
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+      console.log(`[pw] post-login at: ${page.url()} — title: "${await page.title().catch(() => '?')}"`);
+      await shot(page, '03-post-login');
     }
+    // Trigger an eBOS request by navigating to inventory pages
+    for (const url of ['https://v3.myqsrsoft.com/inventory/variance', 'https://v3.myqsrsoft.com/inventory', 'https://v3.myqsrsoft.com/']) {
+      if (ebosToken) break;
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 5000));
+    }
+    if (!ebosToken) await shot(page, '04-no-token');
   } catch (e) { console.error('[auth] Playwright error:', e.message); } finally { await browser.close(); }
-  if (!ebosToken) console.error('[auth] ✗ could not capture eBOS token — refresh QSRSOFT_EBOS_TOKEN manually');
+  if (!ebosToken) console.error('[auth] ✗ Playwright could not capture an eBOS token (see screenshots artifact + form-controls dump above)');
   return ebosToken;
 }
 async function resolveEbosToken() {
