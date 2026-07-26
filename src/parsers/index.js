@@ -1900,7 +1900,11 @@ const _VDP_METRICS = [
   ['Fries Quality B2B',               'fries_b2b'],
   ['Snack Wrap Quality B2B',          'snack_wrap_b2b'],
 ];
-const _VDP_MONTHS = { january:1, february:2, march:3, april:4, may:5, june:6, july:7, august:8, september:9, october:10, november:11, december:12 };
+// Keyed by 3-letter abbreviation — the reports print "Mar 2026", "Jun 2026" etc.
+// (Only "May" matched the old full-name map, which is why every non-May month
+// silently parsed to a null period and never saved.) slice(0,3) also handles
+// full names ("March" → "mar").
+const _VDP_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
 const _vdpNum = t => { t = (t || '').trim(); if (/^n\/?a$/i.test(t)) return null; const m = t.match(/-?\d+/); return m ? +m[0] : null; };
 
 // Detect from already-extracted page lines whether this is a daypart report.
@@ -1938,8 +1942,8 @@ async function parseVoiceDaypartPDF(file) {
       : lines.some(l => /Year-to-Date/i.test(l)) ? 'ytd' : null;
     if (!report_type) continue;
     const perM = hdr.match(/([A-Za-z]+)\s+(20\d\d)/);
-    const period = perM && _VDP_MONTHS[perM[1].toLowerCase()]
-      ? `${perM[2]}-${String(_VDP_MONTHS[perM[1].toLowerCase()]).padStart(2, '0')}` : null;
+    const _mo = perM ? _VDP_MONTHS[perM[1].slice(0, 3).toLowerCase()] : null;
+    const period = _mo ? `${perM[2]}-${String(_mo).padStart(2, '0')}` : null;
     const loc = String(nsnM[2]).padStart(5, '0');
     const storeName = nsnM[1].trim();
 
