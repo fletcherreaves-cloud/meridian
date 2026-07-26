@@ -13,6 +13,23 @@ const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 
 const MANUAL_STORE_KEY = (y, m) => `meridian_eom_manual_${y}_${m}`;
 
+// ── Copy / CSV helpers (local; mirrors the eom-dashboard pattern) ──────────────
+function downloadFile(content, filename, mime = 'text/csv') {
+  try {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 300);
+  } catch { /* no-op */ }
+}
+const csvCell = (v) => {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
 // ── Formatting helpers ────────────────────────────────────────────────────────
 const fmtD = (v) => v != null ? Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2}) : '';
 const fmtMoney = (v, parens = true) => {
@@ -605,6 +622,36 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
   // Rollup
   const rollup = uM(() => computeRollup(storeData), [storeData]);
 
+  // ── OP Supplies export (Note 5): every store's current op-supplies (eBOS MTD +
+  // projected), sorted low→high by store number, for pasting into projections. ──
+  const [opCopied, setOpCopied] = uSt(false);
+  const opSupplyRows = uM(() =>
+    storeData.slice()
+      .sort((a, b) => (+a.loc || 0) - (+b.loc || 0))
+      .map(s => ({ num: s.locStr, name: s.name, act: s.actOpSup, proj: s.projOpSup })),
+    [storeData]);
+  const OP_COLS = [
+    ['Store #', r => r.num],
+    ['Store', r => r.name],
+    ['OP Supplies MTD $', r => r.act != null ? r.act.toFixed(2) : ''],
+    ['Projected OP Supply $', r => r.proj != null ? Number(r.proj).toFixed(2) : ''],
+  ];
+  const buildOpTable = (delim) => {
+    const head = OP_COLS.map(c => c[0]).join(delim);
+    const body = opSupplyRows.map(r => OP_COLS.map(c => {
+      const v = c[1](r);
+      return delim === ',' ? csvCell(v) : String(v ?? '');
+    }).join(delim)).join('\n');
+    return head + '\n' + body;
+  };
+  const copyOpSupplies = uCB(async () => {
+    try { await navigator.clipboard.writeText(buildOpTable('\t')); setOpCopied(true); setTimeout(() => setOpCopied(false), 2000); }
+    catch { setOpCopied(false); }
+  }, [opSupplyRows]);
+  const exportOpCsv = uCB(() =>
+    downloadFile(buildOpTable(','), `op-supplies-${selYear}-${String(selMonth).padStart(2, '0')}.csv`),
+    [opSupplyRows, selYear, selMonth]);
+
   // Update manual for one store field
   const onManualChange = uCB((loc, field, value) => {
     setManual(prev => {
@@ -695,6 +742,25 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
         ),
 
         h('div', { style: { marginLeft: 'auto', display: 'flex', gap: '6px' } },
+          // OP Supplies copy / CSV (Note 5) — current op-supplies per store for projections
+          h('button', {
+            onClick: copyOpSupplies, disabled: opSupplyRows.length === 0,
+            title: 'Copy every store’s current OP Supplies (MTD + projected), sorted by store number — paste into Excel',
+            style: {
+              background: opCopied ? 'rgba(16,185,129,.18)' : 'rgba(255,255,255,.06)',
+              border: '1px solid rgba(255,255,255,.14)', color: opCopied ? grn : 'var(--text,#111827)',
+              borderRadius: '7px', padding: '6px 12px', cursor: opSupplyRows.length ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 600,
+            }
+          }, opCopied ? '✓ Copied' : '📋 Copy OP Supplies'),
+          h('button', {
+            onClick: exportOpCsv, disabled: opSupplyRows.length === 0,
+            title: 'Download OP Supplies per store as CSV, sorted by store number',
+            style: {
+              background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)',
+              color: 'var(--text,#111827)', borderRadius: '7px', padding: '6px 12px',
+              cursor: opSupplyRows.length ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 600,
+            }
+          }, '⬇ CSV'),
           // Print button
           h('button', {
             onClick: () => window.print(),

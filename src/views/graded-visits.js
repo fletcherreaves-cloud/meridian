@@ -3,6 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
 import { parseGradedVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
+import { analyzeGradedVisits } from '../engine/visit-readiness.js';
 
 const h = React.createElement;
 const ALL_LOCS = Object.keys(STORE_NAMES);
@@ -18,6 +19,26 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 const PASS = 80; // CFV pass threshold (%)
+
+// Visit-pattern "top statistics" bar (Note 2): most-likely daypart / channel / day /
+// weekpart for the current filter. Reads analyzeGradedVisits() output (arrays sorted
+// biggest-first). Each chip shows the mode + n + pass-rate so small samples read honestly.
+function VisitPatternBar({ patterns }) {
+  if (!patterns || !patterns.overall || !patterns.overall.n) return null;
+  const chip = (label, top) => {
+    if (!top || top.key == null) return null;
+    return span({ key: label, style: { fontSize: 11, padding: '4px 9px', borderRadius: 6, background: 'var(--surf2)', border: '.5px solid var(--bdr)', display: 'inline-flex', gap: 6, alignItems: 'center' } },
+      span({ style: { color: 'var(--text3)' } }, label + ':'),
+      span({ style: { fontWeight: 700, color: 'var(--text)' } }, String(top.key)),
+      span({ style: { color: 'var(--text3)', fontSize: 10 } }, `n=${top.n}${top.passRate != null ? ` · ${Math.round(top.passRate * 100)}% pass` : ''}`));
+  };
+  return div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 2px' } },
+    span({ style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, 'Most likely visit →'),
+    chip('Daypart', patterns.daypart && patterns.daypart[0]),
+    chip('Channel', patterns.channel && patterns.channel[0]),
+    chip('Day', patterns.dow && patterns.dow[0]),
+    chip('Weekpart', patterns.weekpart && patterns.weekpart[0]));
+}
 const scoreColor = s => s == null ? 'var(--text3)' : s >= PASS ? '#10b981' : s >= 70 ? '#f59e0b' : '#ef4444';
 const fmtPct = v => v == null ? '—' : (Math.round(v * 10) / 10) + '%';
 const niceDate = iso => { if (!iso) return '—'; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
@@ -127,6 +148,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
     return { n: filtered.length, passes, passRate: scored.length ? passes / scored.length * 100 : null, avg };
   }, [filtered]);
   const storesWithData = useMemo(() => [...new Set(visits.map(v => String(v.store)))].sort(), [visits]);
+  // Visit-pattern top stats (Note 2): most-probable daypart / channel / day-of-week
+  // for the current filter (respects type + location). Reuses the readiness engine.
+  const patterns = useMemo(() => analyzeGradedVisits(filtered), [filtered]);
   const scopeLabel = selLoc === 'all' ? 'All Stores' : selLoc === 'fl' ? 'Florida' : selLoc === 'ok' ? 'Oklahoma'
     : selLoc.startsWith('__patch__') ? selLoc.slice(9) : storeLabel(selLoc);
 
@@ -581,6 +605,9 @@ export function GradedVisitsPanel({ ds, onClose }) {
                 card('Visits', String(stats.n)),
                 card('Pass Rate', stats.passRate != null ? Math.round(stats.passRate) + '%' : '—', scoreColor(stats.passRate)),
                 card('Avg Score', stats.avg != null ? fmtPct(stats.avg) : '—', scoreColor(stats.avg))),
+
+              // Visit-pattern top stats (Note 2)
+              h(VisitPatternBar, { key: 'patterns', patterns }),
 
               // Visits table
               div({ key: 'tbl', style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
