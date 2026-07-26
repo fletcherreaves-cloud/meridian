@@ -857,7 +857,7 @@ function DataPolicyBanner() {
 // errored so same-name collisions (browser delivered fewer files than dropped)
 // are obvious.
 function UploadSummaryModal({ report, onClose }) {
-  const { received, loaded, errored, skipped, lines } = report;
+  const { received, loaded, errored, skipped, lines, saveErrs } = report;
   const collision = received > loaded + (errored?.length || 0) + (skipped?.length || 0);
   const row = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,.08)', fontSize: 12 };
   return h('div', { onClick: e => { if (e.target === e.currentTarget) onClose(); },
@@ -871,6 +871,10 @@ function UploadSummaryModal({ report, onClose }) {
         errored && errored.length ? ` · ${errored.length} errored` : ''),
       collision && h('div', { style: { fontSize: 11, color: '#f59e0b', background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.5 } },
         `⚠ Fewer files were delivered than you likely selected — the browser collapsed some identically-named "eu065119 (N).pdf" files. Upload one folder (and a few files) at a time so every month lands.`),
+      saveErrs && saveErrs.length ? h('div', { style: { fontSize: 11, color: '#f87171', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.5 } },
+        h('div', { style: { fontWeight: 700, marginBottom: 2 } }, '⚠ Parsed, but NOT saved to the cloud'),
+        `These will vanish on reload / other devices. Cause: ${saveErrs.join('; ')}. `,
+        /relation|does not exist|schema cache|find the table/i.test(saveErrs.join(' ')) ? 'Run the smg_voice_daypart SQL block in Supabase, then re-upload.' : '') : null,
       (lines || []).map((l, i) => h('div', { key: i, style: row },
         h('div', { style: { fontWeight: 600 } }, l.label, h('span', { style: { color: 'var(--text3)', fontWeight: 400 } }, `  ·  ${l.files} file${l.files === 1 ? '' : 's'}`)),
         h('div', { style: { color: 'var(--text3)', textAlign: 'right', maxWidth: 220 } }, l.months && l.months.length ? l.months.join(', ') : '—'))),
@@ -1925,8 +1929,8 @@ function App() {
               currentDS={...currentDS,voiceDaypart:[...(currentDS.voiceDaypart||[]),...dpRows]};
               const dpPeriods=[...new Set(dpRows.map(r=>r.period).filter(Boolean))].sort();
               const dpStores=new Set(dpRows.map(r=>String(parseInt(r.loc,10)||r.loc))).size;
-              console.log(`[Meridian] VOICE Daypart: ${dpRows.length} rows from ${file.name} (saved ${res.saved})`);
-              loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report'},periods:dpPeriods,stores:dpStores});
+              console.log(`[Meridian] VOICE Daypart: ${dpRows.length} rows from ${file.name} (saved ${res.saved}${res.error?', err '+res.error:''})`);
+              loaded.push({name:file.name,type:{...typeInfo,type:'voice-daypart',label:'SMG VOICE Daypart Report'},periods:dpPeriods,stores:dpStores,saved:res.saved,saveErr:res.error||null});
               continue;
             }
             // Otherwise try the Performance parser; if it finds no perf rows, it's
@@ -2090,7 +2094,10 @@ function App() {
         const months=[...g.periods].sort().map(_fmtP);
         return { label, files:g.files, months };
       });
-      setUploadReport({ received:fileArr.length, loaded:loaded.length, errored:_errored.slice(), skipped:_skipped.slice(), lines });
+      // Cloud-save problems (e.g. a missing Supabase table) — parsing succeeds
+      // but the data never persists, so the panel only shows the current session.
+      const saveErrs=[...new Set(loaded.filter(f=>f.saveErr).map(f=>f.saveErr))];
+      setUploadReport({ received:fileArr.length, loaded:loaded.length, errored:_errored.slice(), skipped:_skipped.slice(), lines, saveErrs });
     }catch(e){ console.warn('[upload-summary]',e); }
     // ── Persist to IndexedDB (survives refresh) ──────────────────────────
     (async()=>{
