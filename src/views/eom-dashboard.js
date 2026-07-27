@@ -178,27 +178,39 @@ function ItemJourneyView({ journey: j }) {
       }, `${LANE_META[lane].label}: ${Math.round(q).toLocaleString()}`))),
 
     // timeline — every ledger event, chronological, count window shaded
-    div(null,
-      div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'Count-cycle timeline'),
-      j.events.length === 0
-        ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'No ledger movement recorded for this item this period.')
-        : div({ style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
-          j.events.map((e, i) => {
-            const m = LANE_META[e.lane];
-            const win = inWindow(e.when);
-            return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px', background: e.isCount ? 'var(--surf2)' : 'transparent', border: e.isCount ? `1px solid ${m.color}55` : '1px solid transparent' } },
-              span({ style: { width: '9px', height: '9px', borderRadius: e.isCount ? '2px' : '50%', background: m.color, flexShrink: 0, transform: e.isCount ? 'rotate(45deg)' : 'none' } }),
-              span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '82px', fontVariantNumeric: 'tabular-nums' } },
-                e.dt || '—', win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
-              span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
-              span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
-                e.isCount
-                  ? `count${e.manager ? ` · ${e.manager}` : ''}`
-                  : `${e.qty > 0 ? '+' : ''}${Math.round(e.qty).toLocaleString()}${e.invoice ? ` · ${e.invoice}` : ''}`),
-              e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1 && span({
-                style: { fontSize: '12px', fontWeight: 700, color: e.dollars < 0 ? '#f87171' : '#4ade80', minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
-              }, `${e.dollars < 0 ? '-' : '+'}${jMoney(e.dollars)}`));
-          }))),
+    (() => {
+      const qtyLabel = 'Qty' + (j.uom ? ` (${j.uom})` : '');
+      const hcell = (t, w, right) => span({ style: { fontSize: '9.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 700, minWidth: w, flex: w == null ? 1 : undefined, textAlign: right ? 'right' : 'left' } }, t);
+      const fmtQty = (n) => `${n > 0 ? '+' : ''}${Math.round(n).toLocaleString()}`;
+      return div(null,
+        div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } },
+          'Count-cycle timeline',
+          j.netCountUnits != null && Math.abs(j.netCountUnits) >= 0.5 && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '8px', color: j.netCountUnits < 0 ? '#f87171' : '#4ade80', fontWeight: 700 } },
+            `net count variance ${fmtQty(j.netCountUnits)}${j.uom ? ` ${j.uom}` : ' units'}`)),
+        j.events.length === 0
+          ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'No ledger movement recorded for this item this period.')
+          : div(null,
+            // column headers
+            div({ style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '2px 8px 4px', borderBottom: '1px solid var(--bdr)' } },
+              span({ style: { width: '9px', flexShrink: 0 } }), hcell('Date', '82px'), hcell('Type', '68px'), hcell('Detail', null), hcell(qtyLabel, '70px', true), hcell('$ variance', '62px', true)),
+            div({ style: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' } },
+              j.events.map((e, i) => {
+                const m = LANE_META[e.lane];
+                const win = inWindow(e.when);
+                const qtyVal = e.isCount ? e.unitVar : e.qty; // count rows show the counted unit variance
+                return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px', background: e.isCount ? 'var(--surf2)' : 'transparent', border: e.isCount ? `1px solid ${m.color}55` : '1px solid transparent' } },
+                  span({ style: { width: '9px', height: '9px', borderRadius: e.isCount ? '2px' : '50%', background: m.color, flexShrink: 0, transform: e.isCount ? 'rotate(45deg)' : 'none' } }),
+                  span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '82px', fontVariantNumeric: 'tabular-nums' } },
+                    e.dt || '—', win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
+                  span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
+                  span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
+                    e.isCount ? `count${e.manager ? ` · ${e.manager}` : ''}` : (e.invoice || '')),
+                  span({ style: { fontSize: '12px', minWidth: '70px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: e.isCount ? 700 : 500, color: qtyVal == null ? 'var(--text3)' : e.isCount ? (qtyVal < 0 ? '#f87171' : '#4ade80') : 'var(--text2)' } },
+                    qtyVal == null ? '—' : fmtQty(qtyVal)),
+                  span({ style: { fontSize: '12px', fontWeight: 700, minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? (e.dollars < 0 ? '#f87171' : '#4ade80') : 'var(--text3)' } },
+                    (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? `${e.dollars < 0 ? '-' : '+'}${jMoney(e.dollars)}` : '—'));
+              }))));
+    })(),
 
     // signals — facts first (verified), then inferences (clearly labeled)
     j.signals.length > 0 && div(null,
