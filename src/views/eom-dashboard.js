@@ -158,10 +158,13 @@ const jMoney = (n) => `$${Math.round(Math.abs(n || 0)).toLocaleString()}`;
 // lets a GM see the path of an item and where it went wrong, backed only by ledger
 // facts we can point to.
 function ItemJourneyView({ journey: j }) {
+  const [laneFilter, setLaneFilter] = useState(null); // click a flow chip to drill into that lane's events
   if (!j) return null;
   const inWindow = (when) => j.windowStart != null && when != null && when >= j.windowStart;
   const flowChips = [['received', j.totals.received], ['used', j.totals.used], ['waste', j.totals.waste], ['transfer', j.totals.transfer]]
     .filter(([, q]) => q > 0.0001);
+  const shownEvents = laneFilter ? j.events.filter(e => e.lane === laneFilter) : j.events;
+  const toggleLane = (lane) => setLaneFilter(f => f === lane ? null : lane);
   return div({ style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
     // verdict banner
     div({ style: { padding: '10px 12px', borderRadius: '8px', background: 'var(--surf2)', borderLeft: `4px solid ${VERDICT_TONE[j.verdict.tone]}` } },
@@ -170,35 +173,68 @@ function ItemJourneyView({ journey: j }) {
         [j.wrin && `WRIN ${j.wrin}`, j.itemClass, j.uom].filter(Boolean).join('  ·  ')),
       div({ style: { fontSize: '13px', color: VERDICT_TONE[j.verdict.tone], fontWeight: 600 } }, j.verdict.text)),
 
-    // flow summary — where the units came from / went
-    flowChips.length > 0 && div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-      flowChips.map(([lane, q]) => span({
-        key: lane, title: LANE_META[lane].hint,
-        style: { fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '5px', border: `1px solid ${LANE_META[lane].color}`, color: LANE_META[lane].color, background: 'var(--surf3)' },
-      }, `${LANE_META[lane].label}: ${Math.round(q).toLocaleString()}`))),
+    // Variance Stat report reconciliation (Note 30 A3) — the authoritative figure,
+    // shown alongside a tie-out check against the count-cycle timeline total.
+    (j.reportDollars != null || j.reportUnits != null) && (() => {
+      const rd = j.reportDollars, ru = j.reportUnits, jd = j.netCountDollars;
+      const diff = (rd != null && jd != null) ? Math.abs(rd - jd) : null;
+      const ties = diff != null && diff < 1;
+      return div({ style: { padding: '8px 12px', borderRadius: '8px', background: 'var(--surf3)', border: '1px solid var(--bdr)' } },
+        div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' } },
+          span({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Variance Stat report'),
+          rd != null && span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? '#f87171' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`),
+          ru != null && Math.abs(ru) >= 0.5 && span({ style: { fontSize: '12px', color: 'var(--text2)' } }, `${ru > 0 ? '+' : ''}${Math.round(ru).toLocaleString()}${j.uom ? ` ${j.uom}` : ' units'}`)),
+        diff != null && div({ style: { fontSize: '11px', marginTop: '3px', color: ties ? '#4ade80' : '#f5bc00' } },
+          ties ? '✓ Timeline reconciles exactly to the report.'
+            : `⚠ Timeline count total is ${jd < 0 ? '-' : '+'}${jMoney(jd)} — differs by ${jMoney(diff)}; the raw-item ledger may not cover every count for this item.`));
+    })(),
+
+    // flow summary — clickable chips drill the timeline into that lane's events
+    flowChips.length > 0 && div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' } },
+      flowChips.map(([lane, q]) => {
+        const active = laneFilter === lane;
+        return h('button', {
+          key: lane, title: `${LANE_META[lane].hint} — click to see these events`, onClick: () => toggleLane(lane),
+          style: { fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '5px', cursor: 'pointer', border: `1px solid ${LANE_META[lane].color}`, color: active ? '#0f1117' : LANE_META[lane].color, background: active ? LANE_META[lane].color : 'var(--surf3)' },
+        }, `${LANE_META[lane].label}: ${Math.round(q).toLocaleString()}`);
+      }),
+      laneFilter && h('button', { onClick: () => setLaneFilter(null), style: { fontSize: '11px', color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' } }, 'clear')),
 
     // timeline — every ledger event, chronological, count window shaded
-    div(null,
-      div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'Count-cycle timeline'),
-      j.events.length === 0
-        ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'No ledger movement recorded for this item this period.')
-        : div({ style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
-          j.events.map((e, i) => {
-            const m = LANE_META[e.lane];
-            const win = inWindow(e.when);
-            return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px', background: e.isCount ? 'var(--surf2)' : 'transparent', border: e.isCount ? `1px solid ${m.color}55` : '1px solid transparent' } },
-              span({ style: { width: '9px', height: '9px', borderRadius: e.isCount ? '2px' : '50%', background: m.color, flexShrink: 0, transform: e.isCount ? 'rotate(45deg)' : 'none' } }),
-              span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '82px', fontVariantNumeric: 'tabular-nums' } },
-                e.dt || '—', win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
-              span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
-              span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
-                e.isCount
-                  ? `count${e.manager ? ` · ${e.manager}` : ''}`
-                  : `${e.qty > 0 ? '+' : ''}${Math.round(e.qty).toLocaleString()}${e.invoice ? ` · ${e.invoice}` : ''}`),
-              e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1 && span({
-                style: { fontSize: '12px', fontWeight: 700, color: e.dollars < 0 ? '#f87171' : '#4ade80', minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
-              }, `${e.dollars < 0 ? '-' : '+'}${jMoney(e.dollars)}`));
-          }))),
+    (() => {
+      const qtyLabel = 'Qty' + (j.uom ? ` (${j.uom})` : '');
+      const hcell = (t, w, right) => span({ style: { fontSize: '9.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 700, minWidth: w, flex: w == null ? 1 : undefined, textAlign: right ? 'right' : 'left' } }, t);
+      const fmtQty = (n) => `${n > 0 ? '+' : ''}${Math.round(n).toLocaleString()}`;
+      return div(null,
+        div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } },
+          laneFilter ? `${LANE_META[laneFilter].label} events` : 'Count-cycle timeline',
+          laneFilter && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '6px', color: 'var(--text3)' } }, `(${shownEvents.length})`),
+          !laneFilter && j.netCountUnits != null && Math.abs(j.netCountUnits) >= 0.5 && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '8px', color: j.netCountUnits < 0 ? '#f87171' : '#4ade80', fontWeight: 700 } },
+            `net count variance ${fmtQty(j.netCountUnits)}${j.uom ? ` ${j.uom}` : ' units'}`)),
+        shownEvents.length === 0
+          ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, laneFilter ? `No ${LANE_META[laneFilter].label.toLowerCase()} events for this item.` : 'No ledger movement recorded for this item this period.')
+          : div(null,
+            // column headers
+            div({ style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '2px 8px 4px', borderBottom: '1px solid var(--bdr)' } },
+              span({ style: { width: '9px', flexShrink: 0 } }), hcell('Date', '82px'), hcell('Type', '68px'), hcell('Detail', null), hcell(qtyLabel, '70px', true), hcell('$ variance', '62px', true)),
+            div({ style: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' } },
+              shownEvents.map((e, i) => {
+                const m = LANE_META[e.lane];
+                const win = inWindow(e.when);
+                const qtyVal = e.isCount ? e.unitVar : e.qty; // count rows show the counted unit variance
+                return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px', background: e.isCount ? 'var(--surf2)' : 'transparent', border: e.isCount ? `1px solid ${m.color}55` : '1px solid transparent' } },
+                  span({ style: { width: '9px', height: '9px', borderRadius: e.isCount ? '2px' : '50%', background: m.color, flexShrink: 0, transform: e.isCount ? 'rotate(45deg)' : 'none' } }),
+                  span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '82px', fontVariantNumeric: 'tabular-nums' } },
+                    e.dt || '—', win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
+                  span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
+                  span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
+                    e.isCount ? `count${e.manager ? ` · ${e.manager}` : ''}` : (e.invoice || '')),
+                  span({ style: { fontSize: '12px', minWidth: '70px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: e.isCount ? 700 : 500, color: qtyVal == null ? 'var(--text3)' : e.isCount ? (qtyVal < 0 ? '#f87171' : '#4ade80') : 'var(--text2)' } },
+                    qtyVal == null ? '—' : fmtQty(qtyVal)),
+                  span({ style: { fontSize: '12px', fontWeight: 700, minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? (e.dollars < 0 ? '#f87171' : '#4ade80') : 'var(--text3)' } },
+                    (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? `${e.dollars < 0 ? '-' : '+'}${jMoney(e.dollars)}` : '—'));
+              }))));
+    })(),
 
     // signals — facts first (verified), then inferences (clearly labeled)
     j.signals.length > 0 && div(null,
@@ -410,6 +446,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return out;
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData]);
 
+  // Freshest business date across the EOM streams feeding this view (As-of stamp).
+  const dataAsOf = useMemo(() => {
+    const ms = [];
+    const push = (v) => { if (!v) return; const t = v instanceof Date ? v.getTime() : Date.parse(v); if (!Number.isNaN(t)) ms.push(t); };
+    (onHand || []).forEach(r => { push(r.lastCounted); push(r.lastSubmitted); });
+    (waste || []).forEach(r => push(r.dt));
+    (transfers || []).forEach(r => push(r.dt));
+    (fobRows || []).forEach(r => push(r.date));
+    const now = Date.now();
+    const valid = ms.filter(t => t <= now);
+    return valid.length ? new Date(Math.max(...valid)) : null;
+  }, [onHand, waste, transfers, fobRows]);
+
   // Apply the location filter (state pills + optional single-store).
   const rows = useMemo(() => {
     const stateOf = (org) => org === 'emerald' ? 'FL' : 'OK';
@@ -482,10 +531,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
 
   // Open the visual Item Journeys for a store (worst-net-variance first).
+  // Enrich each with the authoritative Variance Stat report figure for the same
+  // WRIN+period so the journey can be reconciled EXACT to the report (Note 30 A3).
   const openJourneys = useCallback((loc, name) => {
     const list = buildStoreJourneys(rawByLoc[loc] || [], { period, asOf: new Date() });
-    setJourneys({ loc, name, list, selectedWrin: list[0]?.wrin || null });
-  }, [rawByLoc, period]);
+    const vmap = {}; (varByLoc[loc] || []).forEach(v => { vmap[String(v.wrin)] = v; });
+    const enriched = list.map(j => {
+      const v = vmap[String(j.wrin)];
+      return v ? { ...j, reportDollars: v.dolDiff, reportUnits: v.unitVar } : j;
+    });
+    setJourneys({ loc, name, list: enriched, selectedWrin: enriched[0]?.wrin || null });
+  }, [rawByLoc, varByLoc, period]);
 
   // ── Flow editor ──
   const openFlow = useCallback(() => {
@@ -571,7 +627,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         span({ style: { fontSize: '12px', color: 'var(--text3)' } },
           mode === 'eom'
             ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
-            : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')),
+            : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)',
+          dataAsOf && span({ style: { marginLeft: '8px', color: 'var(--text2)' }, title: 'Freshest business date across the loaded EOM streams (on-hand, FOB, waste, transfers)' },
+            `· data as of ${dataAsOf.toLocaleDateString()}`))),
       div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
         // mode toggle — EOM count-completion vs year-round progress
         div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
@@ -833,7 +891,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                     (j.descr || j.wrin), Math.abs(j.netCountDollars) >= 1 && span({ style: { color: 'var(--text3)' } }, jMoney(j.netCountDollars)));
                 })),
               // selected item's journey
-              h(ItemJourneyView, { journey: sel }))))
+              h(ItemJourneyView, { key: sel && sel.wrin, journey: sel }))))
     })(),
 
     // FOB multi-location variance matrix modal

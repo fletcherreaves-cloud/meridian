@@ -70,6 +70,7 @@ export function buildItemJourney(detail = {}, { period, asOf } = {}) {
   );
 
   const netCountDollars = counts.reduce((s, c) => s + (c.dollars || 0), 0);
+  const netCountUnits = counts.reduce((s, c) => s + (c.unitVar || 0), 0);
 
   // ── Signals: facts first, then clearly-labeled inferences ───────────────────
   const signals = [];
@@ -150,6 +151,7 @@ export function buildItemJourney(detail = {}, { period, asOf } = {}) {
     totals,
     wasteShare,
     netCountDollars,
+    netCountUnits,
     breakPoint,
     verdict,
     signals,
