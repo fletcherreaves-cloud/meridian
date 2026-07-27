@@ -6,7 +6,7 @@
 // data — reusable blanks). This panel lists them, previews on-screen (dark theme),
 // and prints a clean black-on-white sheet with checkboxes to mark by hand.
 import * as React from 'react';
-import { normalizeForm, buildFormPrintHTML } from '../engine/forms-model.js';
+import { normalizeForm, buildFormPrintHTML, sectionColor, CARD_COLOR } from '../engine/forms-model.js';
 
 const h = React.createElement;
 const { useMemo, useState, useEffect } = React;
@@ -25,19 +25,19 @@ function asModel(json, meta) {
 const slugOf = s => String(s || 'form').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'form';
 
 // Open a print window → the browser print dialog also offers "Save as PDF".
-function openPrint(model, storeLabel) {
+function openPrint(model, storeLabel, style) {
   const w = window.open('', '_blank', 'width=850,height=1000');
   if (!w) return;
-  w.document.write(buildFormPrintHTML(model, { storeLabel }));
+  w.document.write(buildFormPrintHTML(model, { storeLabel, style }));
   w.document.close();
   w.focus();
   setTimeout(() => { try { w.print(); } catch { /* window closed */ } }, 350);
 }
 
 // Download the blank form as a standalone .html file.
-function downloadHTML(model, storeLabel) {
+function downloadHTML(model, storeLabel, style) {
   try {
-    const blob = new Blob([buildFormPrintHTML(model, { storeLabel })], { type: 'text/html;charset=utf-8' });
+    const blob = new Blob([buildFormPrintHTML(model, { storeLabel, style })], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `${slugOf(model.title)}.html`;
@@ -150,6 +150,8 @@ export function FormsPrintPanel({ onClose }) {
 }
 
 function FormPreview({ model }) {
+  const [compact, setCompact] = useState(false);   // false = QSRSoft styled (default)
+  const style = compact ? 'compact' : 'qsrsoft';
   const btn = { padding: '6px 12px', borderRadius: 7, border: '1px solid var(--accent,#f5bc00)', background: 'var(--accent,#f5bc00)', color: '#111', cursor: 'pointer', fontSize: 12, fontWeight: 800 };
   const ghost = { padding: '6px 12px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12, fontWeight: 700 };
   return div({},
@@ -159,37 +161,46 @@ function FormPreview({ model }) {
         div({ style: { fontSize: 11, color: 'var(--text2)', marginTop: 2 } },
           `${model.itemCount} items · ${(model.sections || []).length} sections` + (model.lastEditedAt ? ` · edited ${String(model.lastEditedAt).slice(0, 10)}` : '')),
       ),
-      div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-        h('button', { onClick: () => openPrint(model, ''), style: btn, title: 'Print — the dialog also offers Save as PDF' }, '🖨 Print / PDF'),
-        h('button', { onClick: () => downloadHTML(model, ''), style: ghost, title: 'Download a standalone .html file' }, '⬇ HTML'),
+      div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+        h('label', { style: { fontSize: 11, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }, title: 'Ink-light black-on-white version' },
+          h('input', { type: 'checkbox', checked: compact, onChange: e => setCompact(e.target.checked) }), 'Compact B&W'),
+        h('button', { onClick: () => openPrint(model, '', style), style: btn, title: 'Print — the dialog also offers Save as PDF' }, '🖨 Print / PDF'),
+        h('button', { onClick: () => downloadHTML(model, '', style), style: ghost, title: 'Download a standalone .html file' }, '⬇ HTML'),
       ),
     ),
-    (model.sections || []).map((sec, si) =>
-      div({ key: si, style: { marginBottom: 14 } },
-        sec.title ? div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: '#111', background: 'var(--accent,#f5bc00)', padding: '4px 8px', borderRadius: 4 } }, sec.title) : null,
+    // On-screen preview mirrors the QSRSoft look: colored section banners + navy cards.
+    (model.sections || []).map((sec, si) => {
+      const c = sectionColor(sec.color);
+      return div({ key: si, style: { marginBottom: 12 } },
+        sec.title ? div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: c.fg, background: c.bg, padding: '5px 9px', borderRadius: 4, marginBottom: 5 } }, sec.title) : null,
         (sec.items || []).map((it, ii) => h(PreviewItem, { key: ii, it })),
-      ),
-    ),
+      );
+    }),
   );
 }
 
 function PreviewItem({ it }) {
-  const rowBase = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '5px 6px', borderBottom: '.5px solid var(--bdr)', fontSize: 12.5, color: 'var(--text)' };
+  const card = { background: CARD_COLOR.bg, color: CARD_COLOR.fg, borderRadius: 6, padding: '7px 9px', marginBottom: 5 };
+  const title = { fontWeight: 600, marginBottom: it.kind === 'section' ? 0 : 5, fontSize: 12.5 };
+  const optRow = { background: '#fff', color: '#111', border: '1px solid #cbd2e0', borderRadius: 4, padding: '3px 8px', marginTop: 3, display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 };
+  const circle = { width: 11, height: 11, border: '1.5px solid #333', borderRadius: '50%', flex: 'none', display: 'inline-block' };
   if (it.kind === 'check') {
-    const opts = (it.options && it.options.length ? it.options : ['Complete', 'Needs Action', 'Action Taken']);
-    return div({ style: rowBase },
-      span({ style: { flex: 1 } }, it.title),
-      span({ style: { color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: 11 } }, opts.map((o, i) => span({ key: i, style: { marginLeft: i ? 10 : 0 } }, '☐ ' + o))),
+    const opts = (it.options && it.options.length ? it.options : ['Complete', 'Action Needed']);
+    return div({ style: card },
+      div({ style: title }, it.title),
+      opts.map((o, i) => div({ key: i, style: optRow }, span({ style: circle }), o)),
     );
   }
   if (it.kind === 'field') {
-    return div({ style: rowBase },
-      span({ style: { flex: 1 } }, it.title),
-      span({ style: { color: 'var(--text2)', fontSize: 11 } }, it.field === 'time' ? '⌚ ____' : '📅 ______'),
+    return div({ style: card },
+      div({ style: title }, it.title),
+      div({ style: { background: '#fff', borderRadius: 4, height: 18, maxWidth: it.field === 'time' ? 110 : 160 } }),
     );
   }
-  return div({ style: { ...rowBase, flexDirection: 'column', gap: 4 } },
-    span({}, it.title),
-    span({ style: { borderBottom: '1px solid var(--bdr)', height: (it.lines > 1 ? it.lines * 16 : 14) } }),
+  const lines = Math.max(1, it.lines || 1);
+  return div({ style: card },
+    div({ style: title }, it.title),
+    div({ style: { background: '#fff', borderRadius: 4, padding: '4px 6px' } },
+      Array.from({ length: lines }, (_, i) => div({ key: i, style: { borderBottom: '1px solid #999', height: 18, marginTop: i ? 6 : 0 } }))),
   );
 }

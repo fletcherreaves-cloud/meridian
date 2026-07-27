@@ -49,19 +49,37 @@ describe('normalizeForm', () => {
 });
 
 describe('buildFormPrintHTML', () => {
-  it('produces a self-contained doc with escaped titles and checkboxes', () => {
+  it('QSRSoft style (default): escaped titles, colored section banner, option labels', () => {
     const f = normalizeForm(RAW, { formId: 'F', title: 'Pre-Shift <Test>' });
     const html = buildFormPrintHTML(f, { storeLabel: 'Store & Co <1>' });
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('Pre-Shift &lt;Test&gt;');   // title escaped
     expect(html).toContain('Store &amp; Co &lt;1&gt;'); // store label escaped
-    expect(html).toContain('&#9744;');                  // checkbox glyph
-    expect(html).toContain('Outside Guest Area:');      // section header
+    expect(html).toContain('Outside Guest Area:');      // section banner
+    expect(html).toContain('Complete');                 // option label present
+    expect(html).toContain('class="card"');             // navy item card
   });
 
-  it('handles empty input without throwing', () => {
+  it('carries the section color through the model and into the banner', () => {
+    // header settings.color 'success-high' → green banner background
+    const withColor = [{ id: 'h', formId: 'F', title: 'Kitchen', type: 'header', order: 1, settings: { color: 'success-high' } },
+                       { id: 'r', formId: 'F', title: 'x', type: 'radio', order: 2, options: [{ title: 'Complete' }] }];
+    const f = normalizeForm(withColor, { title: 'T' });
+    expect(f.sections[0].color).toBe('success-high');
+    expect(buildFormPrintHTML(f)).toContain('#1f8a4c'); // success-high bg
+  });
+
+  it('compact style stays black-on-white with checkbox glyphs', () => {
+    const f = normalizeForm(RAW, { formId: 'F', title: 'T' });
+    const html = buildFormPrintHTML(f, { style: 'compact' });
+    expect(html).toContain('&#9744;');             // checkbox glyph
+    expect(html).toContain('Outside Guest Area:');
+  });
+
+  it('handles empty input without throwing (both styles)', () => {
     const f = normalizeForm([], { title: 'Empty' });
     expect(f.sections).toEqual([]);
     expect(() => buildFormPrintHTML(f)).not.toThrow();
+    expect(() => buildFormPrintHTML(f, { style: 'compact' })).not.toThrow();
   });
 });
