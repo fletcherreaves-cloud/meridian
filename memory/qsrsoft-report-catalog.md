@@ -46,15 +46,44 @@ to panels as we go, so the value compounds instead of being a one-time dump.
 - **LifeLenz** (labor/scheduling) → `lifelenz_*`. **SMG VOICE** (CSAT) → `smg_*`.
 - **Forms library** (Pre-Shift/Travel Path templates) → `public/forms/*` (this session).
 
-## Catalog (POPULATE from owner screenshots)
-> Awaiting screenshots of the QSRSoft reports menu (names grouped by category; columns/
-> date-params where visible). Fill the table below, one row per report, then tag + note a
-> candidate Meridian use. Known-early untapped leads from prior notes:
-> **Product Mix** (→ Pricing Engine + Filet-O-Fish-Friday correlation), pricing, deposits.
+## BEST catalog request: "Report Finder"
+The Reports nav has a top **Report Finder** — a search over the whole report catalog.
+Grab its Network request (Fetch/XHR, likely `api.reports.myqsrsoft.com`, path with
+`report`/`finder`/`catalog`/`list`/`definitions`) → the full report list in one JSON
+(names/categories/ids/params). Fallback: the Reports menu/config load (the nav tree of
+all categories + children appears preloaded — expanding "Cash" showed 12 instantly).
+
+## Catalog (partial — from screenshots 2026-07-27; complete via Report Finder JSON)
+Reports categories seen (left-nav): **Business Unit, Cash, Food, Labor, Digital, Product,
+People, Payroll, Sales, Service, Shift** (+ top-level **C&I**). Only Business Unit + Cash
+children captured so far; the rest await the Report Finder JSON.
 
 | Category | Report name | Status | Maps to / candidate Meridian use |
 |---|---|---|---|
-| _tbd_ | _tbd_ | ⬜ | _tbd_ |
+| Business Unit | BU Consolidated Sales | 🟡 | district rollups (have via DAR/ledger) — confirm cols |
+| Business Unit | Voice Rankings | 🟡 | SMG VOICE ranks — have smg_*; confirm ranking parity |
+| Cash | Cash Sheet | ✅ | `cash_sheet_daily` (emailed pull) |
+| Cash | Cash Statistics | 🟡 | cash trends — confirm columns vs cash_sheet |
+| Cash | Deposits | ⬜ | deposit reconciliation / cash-handling loss-prevention |
+| Cash | Tax Details | ⬜ | tax breakdown — possible finance panel |
+| Cash | Tax Exempt | ⬜ | tax-exempt tracking (fraud/audit angle) |
+| Cash | Other Receipts | ⬜ | misc receipts — controls |
+| Cash | Register Audit | 🟡 | `src/utils/register-audit.js` exists — confirm coverage |
+| Cash | Gift Card Summary | ⬜ | gift-card liability/activity |
+| Cash | Cashless | 🟡 | glimpse controls has cashless refunds — confirm |
+| Cash | Adyen | ⬜ | payment-processor detail (Adyen) — settlement/chargebacks |
+| Cash | Billable Sales | ⬜ | billable vs gross sales |
+| Cash | Safe Counts | ⬜ | safe count compliance — cash controls / EOM |
+
+### Other high-value surfaces seen on the QSRSoft home (inspiration, not reports per se)
+- **"Did you know?" alert cards** (tabs Default/Prod-Inv/People/Shift/Security/C&I):
+  Product Outage, Open Late/Close Early, Suspicious Activity, Potential OT, Modified
+  Punches. → mirrors Meridian's **Attention Now / Signals** — good idea bank for new
+  detectors (esp. Suspicious Activity = loss-prevention, Modified Punches = labor integrity).
+- **Leaderboard "Goal-den Momentum"** (Overall Rank vs 340 restaurants, Vs-Last-Week,
+  FIFA UPT+/-, GC/Day+/-, OEPE+/-, RMHC% GC, Upsized%), **Round Up** by POS area,
+  **Voice Rankings** → ranking/gamification patterns for our leaderboards.
+- **CoachQ** = QSRSoft's AI assistant (cf. our SAGE).
 
 ## Handling notes
 - Screenshots of report **structure** (names/columns/params) are the value — not row data.
