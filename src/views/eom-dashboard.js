@@ -422,6 +422,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return out;
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData]);
 
+  // Freshest business date across the EOM streams feeding this view (As-of stamp).
+  const dataAsOf = useMemo(() => {
+    const ms = [];
+    const push = (v) => { if (!v) return; const t = v instanceof Date ? v.getTime() : Date.parse(v); if (!Number.isNaN(t)) ms.push(t); };
+    (onHand || []).forEach(r => { push(r.lastCounted); push(r.lastSubmitted); });
+    (waste || []).forEach(r => push(r.dt));
+    (transfers || []).forEach(r => push(r.dt));
+    (fobRows || []).forEach(r => push(r.date));
+    const now = Date.now();
+    const valid = ms.filter(t => t <= now);
+    return valid.length ? new Date(Math.max(...valid)) : null;
+  }, [onHand, waste, transfers, fobRows]);
+
   // Apply the location filter (state pills + optional single-store).
   const rows = useMemo(() => {
     const stateOf = (org) => org === 'emerald' ? 'FL' : 'OK';
@@ -583,7 +596,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         span({ style: { fontSize: '12px', color: 'var(--text3)' } },
           mode === 'eom'
             ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
-            : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')),
+            : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)',
+          dataAsOf && span({ style: { marginLeft: '8px', color: 'var(--text2)' }, title: 'Freshest business date across the loaded EOM streams (on-hand, FOB, waste, transfers)' },
+            `· data as of ${dataAsOf.toLocaleDateString()}`))),
       div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
         // mode toggle — EOM count-completion vs year-round progress
         div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
