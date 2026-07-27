@@ -158,10 +158,13 @@ const jMoney = (n) => `$${Math.round(Math.abs(n || 0)).toLocaleString()}`;
 // lets a GM see the path of an item and where it went wrong, backed only by ledger
 // facts we can point to.
 function ItemJourneyView({ journey: j }) {
+  const [laneFilter, setLaneFilter] = useState(null); // click a flow chip to drill into that lane's events
   if (!j) return null;
   const inWindow = (when) => j.windowStart != null && when != null && when >= j.windowStart;
   const flowChips = [['received', j.totals.received], ['used', j.totals.used], ['waste', j.totals.waste], ['transfer', j.totals.transfer]]
     .filter(([, q]) => q > 0.0001);
+  const shownEvents = laneFilter ? j.events.filter(e => e.lane === laneFilter) : j.events;
+  const toggleLane = (lane) => setLaneFilter(f => f === lane ? null : lane);
   return div({ style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
     // verdict banner
     div({ style: { padding: '10px 12px', borderRadius: '8px', background: 'var(--surf2)', borderLeft: `4px solid ${VERDICT_TONE[j.verdict.tone]}` } },
@@ -186,12 +189,16 @@ function ItemJourneyView({ journey: j }) {
             : `⚠ Timeline count total is ${jd < 0 ? '-' : '+'}${jMoney(jd)} — differs by ${jMoney(diff)}; the raw-item ledger may not cover every count for this item.`));
     })(),
 
-    // flow summary — where the units came from / went
-    flowChips.length > 0 && div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-      flowChips.map(([lane, q]) => span({
-        key: lane, title: LANE_META[lane].hint,
-        style: { fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '5px', border: `1px solid ${LANE_META[lane].color}`, color: LANE_META[lane].color, background: 'var(--surf3)' },
-      }, `${LANE_META[lane].label}: ${Math.round(q).toLocaleString()}`))),
+    // flow summary — clickable chips drill the timeline into that lane's events
+    flowChips.length > 0 && div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' } },
+      flowChips.map(([lane, q]) => {
+        const active = laneFilter === lane;
+        return h('button', {
+          key: lane, title: `${LANE_META[lane].hint} — click to see these events`, onClick: () => toggleLane(lane),
+          style: { fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '5px', cursor: 'pointer', border: `1px solid ${LANE_META[lane].color}`, color: active ? '#0f1117' : LANE_META[lane].color, background: active ? LANE_META[lane].color : 'var(--surf3)' },
+        }, `${LANE_META[lane].label}: ${Math.round(q).toLocaleString()}`);
+      }),
+      laneFilter && h('button', { onClick: () => setLaneFilter(null), style: { fontSize: '11px', color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' } }, 'clear')),
 
     // timeline — every ledger event, chronological, count window shaded
     (() => {
@@ -200,17 +207,18 @@ function ItemJourneyView({ journey: j }) {
       const fmtQty = (n) => `${n > 0 ? '+' : ''}${Math.round(n).toLocaleString()}`;
       return div(null,
         div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } },
-          'Count-cycle timeline',
-          j.netCountUnits != null && Math.abs(j.netCountUnits) >= 0.5 && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '8px', color: j.netCountUnits < 0 ? '#f87171' : '#4ade80', fontWeight: 700 } },
+          laneFilter ? `${LANE_META[laneFilter].label} events` : 'Count-cycle timeline',
+          laneFilter && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '6px', color: 'var(--text3)' } }, `(${shownEvents.length})`),
+          !laneFilter && j.netCountUnits != null && Math.abs(j.netCountUnits) >= 0.5 && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '8px', color: j.netCountUnits < 0 ? '#f87171' : '#4ade80', fontWeight: 700 } },
             `net count variance ${fmtQty(j.netCountUnits)}${j.uom ? ` ${j.uom}` : ' units'}`)),
-        j.events.length === 0
-          ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'No ledger movement recorded for this item this period.')
+        shownEvents.length === 0
+          ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, laneFilter ? `No ${LANE_META[laneFilter].label.toLowerCase()} events for this item.` : 'No ledger movement recorded for this item this period.')
           : div(null,
             // column headers
             div({ style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '2px 8px 4px', borderBottom: '1px solid var(--bdr)' } },
               span({ style: { width: '9px', flexShrink: 0 } }), hcell('Date', '82px'), hcell('Type', '68px'), hcell('Detail', null), hcell(qtyLabel, '70px', true), hcell('$ variance', '62px', true)),
             div({ style: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' } },
-              j.events.map((e, i) => {
+              shownEvents.map((e, i) => {
                 const m = LANE_META[e.lane];
                 const win = inWindow(e.when);
                 const qtyVal = e.isCount ? e.unitVar : e.qty; // count rows show the counted unit variance
@@ -883,7 +891,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                     (j.descr || j.wrin), Math.abs(j.netCountDollars) >= 1 && span({ style: { color: 'var(--text3)' } }, jMoney(j.netCountDollars)));
                 })),
               // selected item's journey
-              h(ItemJourneyView, { journey: sel }))))
+              h(ItemJourneyView, { key: sel && sel.wrin, journey: sel }))))
     })(),
 
     // FOB multi-location variance matrix modal
