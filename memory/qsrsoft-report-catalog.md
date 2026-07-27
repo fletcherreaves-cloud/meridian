@@ -14,6 +14,17 @@ lets us spot: (a) streams we don't pull yet → automation candidates, (b) colum
 missing inside streams we do pull, (c) untapped correlations for Signals/Scanner, (d) new
 panel ideas. Names give *hypotheses*; names + columns give near-certainty.
 
+## Preferred capture method (better than screenshots)
+Mirror the forms flow: instead of screenshotting each report, grab the **one network
+request** that lists the report catalog (DevTools → Network, open the Reports / Report
+Builder section → the reports-list/menu API call, likely on `api.reports.myqsrsoft.com`
+or `v3.myqsrsoft.com`) and paste that JSON. It's complete, structured (names/categories/
+ids/params), and re-pullable — and it directly sets up automation (any report we want
+becomes a pull via the same pattern as `scripts/qsrsoft-forms-pull.mjs`). **Complement**
+with a few screenshots of the reports whose *columns/output* matter (the list gives the
+menu; per-report column detail needs the report's own metadata, like forms-list vs
+forms-questions). Agent can't hit the API from here (egress blocked) → owner grabs it.
+
 ## STANDING HABIT (do not forget)
 When we open, build, or enhance **any panel**, consult this catalog first and ask:
 "Is there a QSRSoft report that would feed or enrich this area?" Cross off / link reports
