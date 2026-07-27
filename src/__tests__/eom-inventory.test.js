@@ -211,7 +211,36 @@ describe('buildIncompleteCountMessage', () => {
     const rows = [{ wrin: '1', cls: 'Food', descr: 'X', onHandAmt: 500, lastCounted: d(2026, 7, 30) }];
     const msg = buildIncompleteCountMessage('Ada', rows, { period, asOf: d(2026, 7, 30) });
     expect(msg.hasGaps).toBe(false);
+    expect(msg.hasPlan).toBe(false);
     expect(msg.body).toMatch(/no outstanding/i);
+  });
+  it('off-window / no gaps but diagnosis findings → carries the action plan (fixes empty body)', () => {
+    const actionItems = [
+      '[CRITICAL] 100% PURE BEEF variance (WRIN 00005-086) — off by ~$420; recount before close.',
+      '[HIGH] Waste concentrated with one manager — review shift logs.',
+    ];
+    const msg = buildIncompleteCountMessage('Ada', [], {
+      period, asOf: d(2026, 7, 15), actionItems, diagSummary: '2 findings', diagDollars: 640,
+    });
+    expect(msg.hasGaps).toBe(false);
+    expect(msg.hasPlan).toBe(true);
+    expect(msg.subject).toMatch(/2 items to review/);
+    expect(msg.body).toMatch(/action plan/i);
+    expect(msg.body).toMatch(/100% PURE BEEF/);
+    expect(msg.body).toMatch(/WRIN 00005-086/);
+    expect(msg.body).not.toMatch(/no outstanding/i); // not the empty "looks complete" note
+  });
+  it('recount gaps AND findings → both the recount list and the appended action plan', () => {
+    const rows = [{ wrin: '00005-086', cls: 'Food', descr: '100% PURE BEEF', onHandAmt: 1355, lastCounted: null }];
+    const actionItems = ['[HIGH] Onion variance (WRIN 00019-001) — off by ~$110.'];
+    const msg = buildIncompleteCountMessage('Tishomingo', rows, {
+      period, asOf: d(2026, 7, 30), actionItems, diagDollars: 110,
+    });
+    expect(msg.hasGaps).toBe(true);
+    expect(msg.hasPlan).toBe(true);
+    expect(msg.body).toMatch(/need to recount|recount and resubmit|physically recount/i);
+    expect(msg.body).toMatch(/action plan/i);
+    expect(msg.body).toMatch(/Onion variance/);
   });
 });
 

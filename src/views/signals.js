@@ -997,6 +997,8 @@ function ScannerTab({ ds, onTrack }) {
   const [running, setRunning] = uSt(false);
   const [scan, setScan] = uSt(null);
   const [tracked, setTracked] = uSt({});
+  const [sel, setSel] = uSt({}); // multi-select map: { 'xKey|yKey': true }
+  const keyOf = (row) => row.xKey + '|' + row.yKey;
 
   const availLocs = uM(() => {
     const locs = new Set();
@@ -1038,6 +1040,14 @@ function ScannerTab({ ds, onTrack }) {
     const saved = await saveCustomSignal(def);
     if (saved) { onTrack?.({ ...def, id: saved.id, votes: 0 }); setTracked(t => ({ ...t, [key]: 'done' })); }
     else setTracked(t => ({ ...t, [key]: 'error' }));
+  };
+
+  const toggleSel = (key) => setSel(s => { const n = { ...s }; if (n[key]) delete n[key]; else n[key] = true; return n; });
+  // Bulk-track every selected, not-yet-tracked row (Note 8).
+  const trackSelected = async () => {
+    const rows = (scan?.results || []).slice(0, 40).filter(r => sel[keyOf(r)] && !tracked[keyOf(r)]);
+    for (const r of rows) { await handleTrack(r); } // sequential — avoids hammering Supabase
+    setSel({});
   };
 
   const fmtR = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2);
@@ -1082,11 +1092,30 @@ function ScannerTab({ ds, onTrack }) {
     scan && !scan.error && !results.length && h('div', { style: { textAlign: 'center', padding: 32, color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
       scan.metricsUsed < 2 ? 'Not enough data loaded to compare yet — sync or upload more.' : `Nothing reached strength ${minAbsR}. Try lowering the minimum.`),
 
+    // Bulk-select action bar (Note 8) — appears once results are shown
+    shown.length > 0 && (() => {
+      const selCount = shown.filter(r => sel[keyOf(r)]).length;
+      const allSel = selCount === shown.length && selCount > 0;
+      return h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 11, color: muted } },
+        h('label', { style: { display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' } },
+          h('input', { type: 'checkbox', checked: allSel,
+            onChange: () => setSel(allSel ? {} : Object.fromEntries(shown.map(r => [keyOf(r), true]))),
+            style: { cursor: 'pointer' } }),
+          allSel ? 'Deselect all' : 'Select all shown'),
+        selCount > 0 && h('span', null, `${selCount} selected`),
+        selCount > 0 && h('button', {
+          onClick: trackSelected,
+          style: { padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${amber}`, background: 'rgba(245,158,11,.14)', color: amber },
+        }, `+ Track ${selCount} selected`));
+    })(),
+
     // Result rows
     shown.map((row, i) => h('div', { key: i, style: {
       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6,
-      background: surf2, border: `1px solid ${row.fdrSig ? 'rgba(16,185,129,.25)' : bdr}`, borderRadius: 8, flexWrap: 'wrap',
+      background: surf2, border: `1px solid ${sel[keyOf(row)] ? amber : row.fdrSig ? 'rgba(16,185,129,.25)' : bdr}`, borderRadius: 8, flexWrap: 'wrap',
     } },
+      h('input', { type: 'checkbox', checked: !!sel[keyOf(row)], onChange: () => toggleSel(keyOf(row)),
+        title: 'Select to bulk-track', style: { cursor: 'pointer', flexShrink: 0 } }),
       h('div', { style: { flex: 1, minWidth: 220 } },
         h('div', { style: { fontSize: 13, fontWeight: 600 } }, `${row.xLabel}  &  ${row.yLabel}`),
         h('div', { style: { fontSize: 11, color: row.r >= 0 ? grn : '#f87171', marginTop: 2 } },

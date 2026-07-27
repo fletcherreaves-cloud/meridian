@@ -250,20 +250,64 @@ export function buildCountTip({ oh, s = {}, dol = 0 }) {
   return `Counted ${counted}. ${tip}`;
 }
 
-// ── Communication generator: incomplete-count nudge ──────────────────────────
+// ── Communication generator: incomplete-count nudge + diagnosis action plan ───
 // For a store that believes it's finished but still has high-value items on an old
-// count date, produce a ready-to-send message listing exactly what to recount.
+// count date, produce a ready-to-send message listing exactly what to recount — and,
+// when the diagnosis engine has surfaced findings, fold those into the body as a
+// concrete "what to fix" action plan (WRIN-level ±$50 variance, waste patterns, etc.).
+// This is what makes the draft useful OFF the count window: even when the count looks
+// complete (no On-Hand gaps), a populated `actionItems` still produces a real message.
 // `storeName` is display text; `minValue` filters out trivial-dollar items.
-export function buildIncompleteCountMessage(storeName, onHandRows, { period, asOf, minValue = 25, maxItems = 20 } = {}) {
+// `actionItems` = diagnosis result `.actionItems` (medium+ severity strings);
+// `diagSummary` = diagnosis `.summary`; `diagDollars` = `.totalDollars`.
+export function buildIncompleteCountMessage(storeName, onHandRows, {
+  period, asOf, minValue = 25, maxItems = 20,
+  actionItems = [], diagSummary = '', diagDollars = 0, planMax = 12,
+} = {}) {
   const diag = diagnoseIncompleteCount(onHandRows, { period, asOf, minValue });
-  if (!diag.uncountedCount) {
+  const hasGaps = !!diag.uncountedCount;
+  const planItems = (actionItems || []).slice(0, planMax);
+  const hasPlan = planItems.length > 0;
+  const morePlan = (actionItems || []).length > planItems.length
+    ? `\n  …and ${actionItems.length - planItems.length} more finding${actionItems.length - planItems.length !== 1 ? 's' : ''}.` : '';
+  const planSection = hasPlan
+    ? `Food-cost diagnosis — action plan${diagDollars ? ` (~$${Math.round(diagDollars).toLocaleString()} at stake)` : ''}:
+
+${planItems.map(a => `  • ${a}`).join('\n')}${morePlan}`
+    : '';
+
+  // Nothing to say: count looks complete AND no diagnosis findings.
+  if (!hasGaps && !hasPlan) {
     return {
-      hasGaps: false,
+      hasGaps: false, hasPlan: false,
       subject: `EOM count — ${storeName}: looks complete`,
-      body: `${storeName}: your inventory count shows no outstanding high-value items. Nice work — go ahead and finalize.`,
+      body: `${storeName}: your inventory count shows no outstanding high-value items and the food-cost diagnosis is clean. Nice work — go ahead and finalize.`,
       uncounted: [],
     };
   }
+
+  // Count complete but diagnosis flagged issues (the common OFF-window case) →
+  // deliver the action plan on its own instead of an empty "looks complete" note.
+  if (!hasGaps && hasPlan) {
+    const body =
+`${storeName} — EOM food-cost review
+
+Your inventory count looks complete, but the food-cost diagnosis flagged the following to review and correct before this period closes:
+
+${planSection}
+
+Please review each item, correct at the source where you can (recount + resubmit, re-log waste to the right manager/day, approve or reject the transfer), and reply with what you find. Thank you!`;
+    return {
+      hasGaps: false, hasPlan: true,
+      subject: `EOM food-cost — ${storeName}: ${actionItems.length} item${actionItems.length !== 1 ? 's' : ''} to review${diagDollars ? ` (~$${Math.round(diagDollars).toLocaleString()})` : ''}`,
+      body,
+      uncounted: [],
+      totalValue: diagDollars,
+      count: actionItems.length,
+    };
+  }
+
+  // Uncounted high-value items → recount nudge, with the action plan appended when present.
   const items = diag.uncounted.slice(0, maxItems);
   const byClass = diag.byClass.map(c => `${_titleClass(c.cls)}: ${c.count} item${c.count !== 1 ? 's' : ''} (~$${Math.round(c.valueAtRisk).toLocaleString()})`).join(' · ');
   const lines = items.map(u => `  • ${u.descr || u.wrin} — ~$${Math.round(u.valueAtRisk).toLocaleString()} on hand${u.cls ? ` [${_titleClass(u.cls)}]` : ''}`);
@@ -275,11 +319,11 @@ Before you finalize, these ${diag.uncountedCount} items (~$${Math.round(diag.unc
 
 ${lines.join('\n')}${more}
 
-Summary by class — ${byClass}
+Summary by class — ${byClass}${hasPlan ? `\n\n${planSection}` : ''}
 
 Recount, resubmit, and reply when done. Thank you!`;
   return {
-    hasGaps: true,
+    hasGaps: true, hasPlan,
     subject: `EOM count — ${storeName}: ${diag.uncountedCount} items need recount (~$${Math.round(diag.uncountedValue).toLocaleString()})`,
     body,
     uncounted: items,
