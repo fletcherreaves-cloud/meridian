@@ -397,6 +397,9 @@ export function blankReview(name, role, loc, year, half, cfg) {
     id: reviewId(name, year, half),
     name, role, loc, year, half,
     status: 'draft',
+    // Snapshot the template this review is built against (Phase A) so later template
+    // edits never silently re-score it. Refreshed via an explicit "apply template".
+    templateSnapshot: deepCopy(cfg || DEFAULT_REVIEW_CONFIG),
     kpis: { months },
     behavioralRatings,
     comments: {
@@ -412,6 +415,15 @@ export function blankReview(name, role, loc, year, half, cfg) {
     createdAt: new Date().toISOString().slice(0,10),
     updatedAt: new Date().toISOString().slice(0,10),
   };
+}
+
+// ── Template snapshot (Phase A) ──────────────────────────────────────────────
+// A review carries the resolved template it was built against in `templateSnapshot`
+// so that editing the live template NEVER silently re-scores historical reviews
+// (owner-approved). Scoring resolves the effective config to the review's snapshot
+// when present, else the passed-in live config (back-compat for pre-snapshot reviews).
+export function resolveReviewConfig(review, cfg) {
+  return (review && review.templateSnapshot) || cfg;
 }
 
 // ── Scoring ────────────────────────────────────────────────────────────────────
@@ -456,6 +468,7 @@ function scoreBehavCategory(ratingArr) {
 }
 
 export function computeScores(review, cfg) {
+  cfg = resolveReviewConfig(review, cfg); // score against the review's template snapshot when present
   const months = review.kpis?.months || {};
   const half = review.half;
   const qMap = half==='H1' ? {q1:[1,2,3],q2:[4,5,6]} : {q3:[7,8,9],q4:[10,11,12]};
@@ -511,6 +524,7 @@ export function computeScores(review, cfg) {
 // Returns a full step-by-step breakdown of how scores are computed for the review's half period.
 // Used by ScoreBreakdownPanel to show transparent, verifiable math to the reviewer.
 export function computeScoreBreakdown(review, cfg) {
+  cfg = resolveReviewConfig(review, cfg); // match computeScores — use the review's snapshot
   const months = review.kpis?.months || {};
   const half = review.half;
   const halfMonthNums = half === 'H1' ? [1,2,3,4,5,6] : [7,8,9,10,11,12];
