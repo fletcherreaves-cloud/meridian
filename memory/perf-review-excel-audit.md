@@ -54,6 +54,19 @@ Format: **metric** — Excel band (4/3/2/1) vs app `t:[t4,t3,t2]`.
    (95–100 / 85–94.99 / 80–84.99 / ≤79.99); app treats as % **of target**. Confirm
    whether these should score on the absolute % (a 92% EcoSure → 3) rather than % of a target.
 
+## ✅ OWNER DECISIONS (2026-07-27)
+- **FOB / Labor thresholds = absolute percentage-POINTS** of the metric (e.g. "FOB%
+  within 0.15 pts of the target FOB%"), NOT relative %. → FOB should score on FOB%
+  (fob$ ÷ sales) vs target FOB%, `unit:'abs'`, `t:[-0.15, 0.15, 0.45]`; Labor same
+  basis `t:[-0.26, 0.25, 0.75]` (in labor-% points). **NOTE:** FOB currently scores
+  off `field:'fobDollar'` — this is a metric-definition fix (switch to FOB%), not just
+  a threshold change. Confirm the app's stored scale (0.25 vs 25) before finalizing t[].
+- **Naming:** DROP "MFR" (previous org). Corrected template = **"Official 2025"**.
+- **2026 PACE template:** approved — BUT the workbook's "2026 PACE" column is only
+  partially filled (RGR-only: OEPE .25 / OSAT .50 / R2P .15 / DelivWait .05 / new
+  Delivery Star .05 = 1.0; no Sales/Profit/People PACE weights). **BLOCKED** pending
+  the finalized full 2026 weighting from the owner.
+
 ## Recommendation / next
 - The **weights are correct** — no action.
 - The **thresholds** above are the Phase-D deliverable: present to owner, get decisions
