@@ -9,10 +9,12 @@
 import * as React from 'react';
 import { STORE_NAMES } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
+import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { buildAttentionFeed, SEV_META } from '../engine/attention-feed.js';
+import { loadGradedVisits, loadSavedCorrelations } from '../lib/supabase.js';
 
 const h = React.createElement;
-const { useMemo } = React;
+const { useMemo, useState, useEffect } = React;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
@@ -42,6 +44,21 @@ const NAV_MODAL = { fob: 'fob-analysis', signals: 'signals', analytics: 'eom-das
 export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, onClose }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
 
+  // Phase-2 inputs load async (graded visits → readiness; saved correlations → decay).
+  const [gradedVisits, setGradedVisits] = useState(ds?.gradedVisits || null);
+  const [savedCorr, setSavedCorr] = useState(null);
+  useEffect(() => {
+    let live = true;
+    if (!ds?.gradedVisits) loadGradedVisits().then(v => { if (live) setGradedVisits(v || []); }).catch(() => { if (live) setGradedVisits([]); });
+    loadSavedCorrelations().then(c => { if (live) setSavedCorr(c || []); }).catch(() => { if (live) setSavedCorr([]); });
+    return () => { live = false; };
+  }, [ds]);
+
+  const visitStores = useMemo(() => {
+    if (!gradedVisits) return [];
+    try { return computeVisitReadiness({ ...ds, gradedVisits }); } catch { return []; }
+  }, [ds, gradedVisits]);
+
   const feed = useMemo(() => {
     // Freshest business date across the auto streams → data age in days.
     const tMs = Date.now();
@@ -55,8 +72,8 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
     const salesLY = allLocs.map(loc => { const m = matchedVsLY(ds, [loc], dateRange); return { loc, cur: m.cur, ly: m.ly }; })
       .filter(r => r.ly > 0);
 
-    return buildAttentionFeed({ fobByStore, salesLY, ageDays, storeName: nm, max: 20 });
-  }, [ds, allLocs, dateRange]);
+    return buildAttentionFeed({ fobByStore, salesLY, ageDays, visitStores, savedCorrelations: savedCorr || [], storeName: nm, max: 20 });
+  }, [ds, allLocs, dateRange, visitStores, savedCorr]);
 
   const counts = feed.reduce((a, i) => { a[i.severity] = (a[i.severity] || 0) + 1; return a; }, {});
   const go = (item) => {
@@ -103,5 +120,5 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
             })),
 
       div({ style: { padding: '8px 20px', borderTop: '.5px solid var(--bdr)', fontSize: '9.5px', color: 'var(--text3)', fontStyle: 'italic' } },
-        'Fuses food-cost outliers · behind-LY · sync health. Visit-readiness + signal decay coming next.')));
+        'Fuses food-cost outliers · behind-LY · sync health · visit-readiness & food-safety risk · fading saved signals.')));
 }

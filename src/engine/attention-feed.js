@@ -93,6 +93,49 @@ export function slowDT(rows = [], storeName = String, { minOver = 15 } = {}) {
   return out;
 }
 
+// Visit-readiness risk — stores at risk of failing a graded visit, or carrying an
+// elevated food-safety flag. `stores` = computeVisitReadiness() output rows.
+export function visitRisk(stores = [], storeName = String) {
+  const out = [];
+  for (const s of (stores || [])) {
+    if (!s || !s.loc) continue;
+    if (s.fsFlag === 'elevated') out.push({
+      id: 'fs-' + s.loc, severity: 'crit', category: 'Food Safety', icon: '🧊',
+      title: `${storeName(s.loc)} — food-safety risk elevated`,
+      detail: `Waste / holding proxies elevated${s.fsScore != null ? ` (score ${Math.round(s.fsScore)})` : ''}`,
+      dollars: 0, loc: s.loc, nav: 'analytics',
+    });
+    if (s.band === 'at-risk') out.push({
+      id: 'visit-' + s.loc, severity: 'warn', category: 'Visit Readiness', icon: '🎓',
+      title: `${storeName(s.loc)} — visit-readiness at risk`,
+      detail: `Readiness ${Math.round(s.readiness)}/100 (at-risk) — coach before the next CFV/RGR`,
+      dollars: 0, loc: s.loc, nav: 'analytics',
+    });
+  }
+  return out;
+}
+
+// Signal decay — saved correlations (watching/confirmed) whose stored history shows
+// the relationship weakening: latest |within_r| well below its historical peak.
+export function signalDecay(saved = [], { dropFrac = 0.35 } = {}) {
+  const out = [];
+  for (const c of (saved || [])) {
+    if (!c || (c.status !== 'watching' && c.status !== 'confirmed')) continue;
+    const hist = (c.history || []).filter(h => h && h.withinR != null);
+    if (hist.length < 2) continue;
+    const peak = Math.max(...hist.map(h => Math.abs(h.withinR)));
+    const latest = Math.abs(hist[hist.length - 1].withinR);
+    if (peak > 0 && latest < peak * (1 - dropFrac)) out.push({
+      id: 'decay-' + (c.outcomeKey || '') + '-' + (c.driverKey || ''), severity: 'info',
+      category: 'Signal Decay', icon: '🔗',
+      title: `Fading link: ${c.driverLabel} → ${c.outcomeLabel}`,
+      detail: `Strength ${latest.toFixed(2)} now vs ${peak.toFixed(2)} peak — re-check this saved signal`,
+      dollars: 0, nav: 'signals',
+    });
+  }
+  return out;
+}
+
 // Rank + cap. Severity desc, then |dollars| desc.
 export function rankAttention(items = [], { max = 15 } = {}) {
   return (items || []).filter(Boolean)
@@ -101,12 +144,14 @@ export function rankAttention(items = [], { max = 15 } = {}) {
 }
 
 // Convenience aggregator.
-export function buildAttentionFeed({ fobByStore, salesLY, dtRows, ageDays, storeName = String, max = 15 } = {}) {
+export function buildAttentionFeed({ fobByStore, salesLY, dtRows, ageDays, visitStores, savedCorrelations, storeName = String, max = 15 } = {}) {
   const items = [
     ...staleData(ageDays),
     ...fobOutliers(fobByStore || {}, storeName),
     ...salesBehindLY(salesLY || [], storeName),
     ...slowDT(dtRows || [], storeName),
+    ...visitRisk(visitStores || [], storeName),
+    ...signalDecay(savedCorrelations || []),
   ];
   return rankAttention(items, { max });
 }

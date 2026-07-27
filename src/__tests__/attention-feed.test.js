@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, rankAttention, buildAttentionFeed, SEV } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -49,6 +49,35 @@ describe('slowDT', () => {
     const items = slowDT(rows, nm);
     expect(items).toHaveLength(1);
     expect(items[0].loc).toBe('a');
+  });
+});
+
+describe('visitRisk', () => {
+  it('flags elevated food-safety (crit) and at-risk readiness (warn)', () => {
+    const stores = [
+      { loc: 'a', band: 'ready', fsFlag: 'low', readiness: 90, fsScore: 80 },
+      { loc: 'b', band: 'at-risk', fsFlag: 'watch', readiness: 62, fsScore: 60 },
+      { loc: 'c', band: 'watch', fsFlag: 'elevated', readiness: 74, fsScore: 45 },
+    ];
+    const items = visitRisk(stores, nm);
+    expect(items.find(i => i.loc === 'c' && i.category === 'Food Safety').severity).toBe('crit');
+    expect(items.find(i => i.loc === 'b' && i.category === 'Visit Readiness').severity).toBe('warn');
+    expect(items.some(i => i.loc === 'a')).toBe(false);
+  });
+});
+
+describe('signalDecay', () => {
+  it('flags a saved correlation whose strength dropped well below its peak', () => {
+    const saved = [
+      { status: 'confirmed', outcomeKey: 'o', driverKey: 'd', outcomeLabel: 'OSAT', driverLabel: 'Speed',
+        history: [{ withinR: 0.62 }, { withinR: 0.55 }, { withinR: 0.30 }] }, // 0.30 < 0.62*0.65 → decaying
+      { status: 'confirmed', outcomeKey: 'o2', driverKey: 'd2', outcomeLabel: 'X', driverLabel: 'Y',
+        history: [{ withinR: 0.5 }, { withinR: 0.48 }] }, // holding
+      { status: 'dismissed', outcomeKey: 'o3', driverKey: 'd3', history: [{ withinR: 0.9 }, { withinR: 0.1 }] }, // dismissed → ignored
+    ];
+    const items = signalDecay(saved);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toMatch(/Speed → OSAT/);
   });
 });
 
