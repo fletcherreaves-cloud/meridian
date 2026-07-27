@@ -2003,8 +2003,6 @@ function StoreVlhConfigPanel({onClose}) {
 // Each store card links to the full store dashboard via onSelectStore callback.
 // ─────────────────────────────────────────────────────────────────────────────
 function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore, onClose}) {
-  console.log('[PERF] DistrictPriorityBrief render start, stores.length=', stores&&stores.length);
-  const _mountT0=performance.now();
   const {useState:uSt, useMemo:uM} = React;
   const [orgFilter, setOrgFilter] = uSt('all');
   const [expanded,  setExpanded]  = uSt({});
@@ -2058,7 +2056,6 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
         : 'green';
       return{...s, crits, watches:effectiveWatches, oks, vsLY, tier, calGap, storedMape};
     });
-    console.log('[PERF] tiered computation ('+out.length+' stores):', (performance.now()-_t0).toFixed(1)+'ms');
     return out;
   },[stores,orgFilter]);
 
@@ -2100,11 +2097,9 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
       scheduling:'⚠️ Floor management compliance — correct schedule-building process before addressing labor%',
     };
     const focus = topIssue&&topIssue[1]>0 ? focusMap[topIssue[0]] : '✅ District is largely on target — reinforce what\'s working';
-    console.log('[PERF] pulse computation:', (performance.now()-_t0).toFixed(1)+'ms');
     return{totS,vsLY,focus,redN:red.length,amberN:amber.length,greenN:green.length,n:tiered.length};
   },[tiered,red,amber,green]);
 
-  console.log('[PERF] DistrictPriorityBrief total render-body time:', (performance.now()-_mountT0).toFixed(1)+'ms');
 
 
   // ── Finding formatter ──────────────────────────────────────────────────────

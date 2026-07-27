@@ -1520,9 +1520,12 @@ const _mkDate = (dt) => new Date(dt + 'T00:00:00');
 export async function loadGlimpse(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
-  const { data, error } = await supabase.from('daily_glimpse_daily')
-    .select('*').gte('date', cutoff.toISOString().slice(0, 10)).order('date');
-  if (error) { console.warn('loadGlimpse:', error.message); return []; }
+  const iso = cutoff.toISOString().slice(0, 10);
+  // Paginate: 27 stores × 45-60 days exceeds Supabase's 1000-row default cap.
+  // A plain select would keep only the OLDEST 1000 (ascending order) and silently
+  // drop the newest days — the exact data these freshest-wins tiles need.
+  const data = await fetchAll((from, to) => supabase.from('daily_glimpse_daily')
+    .select('*').gte('date', iso).order('date').range(from, to));
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
@@ -1543,9 +1546,9 @@ export async function loadGlimpse(daysBack = 45) {
 export async function loadCash(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
-  const { data, error } = await supabase.from('cash_sheet_daily')
-    .select('*').gte('date', cutoff.toISOString().slice(0, 10)).order('date');
-  if (error) { console.warn('loadCash:', error.message); return []; }
+  const iso = cutoff.toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase.from('cash_sheet_daily')
+    .select('*').gte('date', iso).order('date').range(from, to));
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, gc: r.gc, avgCheck: r.avg_check,
@@ -1567,9 +1570,9 @@ export async function loadCash(daysBack = 45) {
 export async function loadSalesLedger(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
-  const { data, error } = await supabase.from('sales_ledger_daily')
-    .select('*').gte('date', cutoff.toISOString().slice(0, 10)).order('date');
-  if (error) { console.warn('loadSalesLedger:', error.message); return []; }
+  const iso = cutoff.toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase.from('sales_ledger_daily')
+    .select('*').gte('date', iso).order('date').range(from, to));
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     sales: r.all_net_sales, allNetSales: r.all_net_sales, allNetSalesLY: r.all_net_sales_ly, salesVsLYPct: r.sales_vs_ly_pct,

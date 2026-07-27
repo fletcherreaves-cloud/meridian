@@ -1017,8 +1017,6 @@ window.onerror = function(msg, src, line, col, err) {
 };
 
 // SECTION 1: CONFIG & STORE NAMES
-const APP_VERSION = 'v5.37a';
-const APP_BUILD   = '2026-05-02';
 // STORE_NAMES, sName, sNameC → imported from ./constants.js
 
 

@@ -211,9 +211,17 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.533';
-const MERIDIAN_BUILD_DATE = '2026-07-25';
+const MERIDIAN_VERSION    = '4.556';
+const MERIDIAN_BUILD_DATE = '2026-07-27';
+if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.556', date:'2026-07-27', changes:[
+    'Precautionary hardening batch: fixed a data-completeness bug where the Daily Glimpse / Cash / Sales-Ledger loaders could silently drop the newest ~3 weeks of data on large date ranges (Supabase 1000-row cap) — At-A-Glance tiles now always see the full window. Fixed the Calendar Manager Florida/Oklahoma pills (FL pill was empty). Refreshed this version/changelog and removed stale debug logging.',
+    'EOM: Item Journey visual guide (per-item count-cycle timeline with verified-fact vs likely-inference signals, qty + $ variance, reconciled exactly to the Variance Stat report, click-through flow chips), two modes (EOM count-completion + year-round progress), FOB multi-location variance matrix, and the comms draft now carries the full food-cost action plan.',
+    'New: "What Needs My Attention Now" (🎯) — one ranked cross-domain triage fusing FOB outliers, behind-last-year, sync health, drive-thru speed, visit-readiness/food-safety risk, and fading saved signals.',
+    'FOB Analysis is now cloud-first (works with no upload). Graded Visits shows a most-likely daypart/channel bar. EOM Supervisor exports OP Supplies per store. Signals Scanner supports multi-select bulk-tracking.',
+    'Performance Reviews: named, savable, org-shared templates with hard 100%-weight enforcement, plus template-snapshot isolation so changing a template never re-scores finished reviews. (More coming: drag-reorder + editable job titles.)',
+  ]},
   {version:'4.533', date:'2026-07-25', changes:[
     'Signals can now correlate against WEATHER and DAY-OF-WEEK, not just business metrics. The auto-pulled weather (high/low/avg temp, rainfall, wind) is now a metric group in the Scanner and Signal Lab — so "warmer days → more sales?" or "rain → drive-thru mix" surface automatically. Rainfall correctly keeps its dry (zero) days so it correlates real weather, not just rainy ones.',
     'New "Calendar" factors — Weekend, Friday, Monday (0/1 flags per day) — let you correlate the common-sense weekly patterns: does this store actually run hotter on weekends? Is there a Friday lift? (Friday is broken out on purpose as the anchor for the eventual Filet-O-Fish-Fridays product-mix check.) Four new seeded signals ship on: Weekend→Sales, High Temp→Sales, Rainfall→Guests, Friday→Sales.',
@@ -2124,8 +2132,6 @@ function App() {
         // (runs async in background — yields between stores to stay non-blocking)
         (async()=>{
           try{
-            const _aeT0=performance.now();
-            console.log('[AE] recalibration starting');
             const recalib={};
             const locList=currentDS.storeIds||[];
             for(const loc of locList){
@@ -2165,7 +2171,6 @@ function App() {
             }
             // Store recalibrated params
             try{const aeBlob={params:recalib,ts:Date.now()};localStorage.setItem('mf_ae_params',JSON.stringify(aeBlob));saveUserSetting('ae_params',aeBlob).catch(()=>{});}catch{}
-            console.log('[AE] complete:', Object.keys(recalib).length,'stores in',(performance.now()-_aeT0).toFixed(0)+'ms');
           }catch(e){console.warn('AE recalibration failed:',e);}
         })();
         // Use in-memory data for coverage — avoids re-reading 123k rows from IDB
