@@ -4,7 +4,7 @@ import { STORE_NAMES, sName, getKB } from '../constants.js';
 import { runWhyEngineScan } from '../engine/why.js';
 import { compute6wk } from '../engine/forecast.js';
 import { buildBrief, buildStore } from '../engine/pipeline.js';
-import { TH } from '../utils/fmt.js';
+import { TH, escapeHtml as esc } from '../utils/fmt.js';
 
 const h    = React.createElement;
 const div  = (props, ...c) => h('div',    props, ...c);
@@ -274,9 +274,12 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
       .then(()=>{setCopiedFlag(true);setTimeout(()=>setCopiedFlag(false),2000);});
   };
   const doPrint = (loc,text) => {
-    const storeName=STORE_NAMES[loc]||loc;
+    const storeName=esc(STORE_NAMES[loc]||loc);
     const now=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-    const formatted=text.replace(/\[([A-Z\s]+)\]/g,'<strong style="color:#0f172a;font-size:12px;letter-spacing:.05em;text-transform:uppercase">$1</strong>').replace(/\n\n/g,'</p><p style="margin-top:14px">');
+    // Escape the AI-generated letter first, THEN apply the intended markdown-style
+    // HTML transforms (bracket-headers + paragraph breaks) — the regexes still match
+    // since [ ] and \n are not HTML-escaped, so this can't corrupt the layout.
+    const formatted=esc(text).replace(/\[([A-Z\s]+)\]/g,'<strong style="color:#0f172a;font-size:12px;letter-spacing:.05em;text-transform:uppercase">$1</strong>').replace(/\n\n/g,'</p><p style="margin-top:14px">');
     const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Coaching Letter — '+storeName+'</title>'+
 '<style>body{font-family:\'Georgia\',serif;max-width:620px;margin:40px auto;color:#111;line-height:1.7;font-size:15px}'+
 'h1{font-size:22px;font-weight:800;margin-bottom:4px;font-family:\'Arial Black\',sans-serif}'+

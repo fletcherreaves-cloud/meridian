@@ -1,4 +1,12 @@
 // @ts-nocheck
+// Escape a value for safe interpolation into print/export HTML built via
+// document.write (audit C3). Covers the five HTML-significant chars so it is
+// safe in both text and single/double-quoted attribute contexts. null/undefined
+// render as an empty string (not the literal "null"/"undefined").
+export const escapeHtml = s => (s == null ? '' : String(s))
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 export const f$   = n => '$' + Math.round(n || 0).toLocaleString();
 export const fPct = (n, d=1) => ((n||0) >= 0 ? '+' : '') + (((n||0)*100).toFixed(d)) + '%';
 export const fP   = (n, d=2) => (n||0) ? ((n*100).toFixed(d) + '%') : '—';

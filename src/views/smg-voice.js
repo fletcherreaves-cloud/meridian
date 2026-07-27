@@ -4,6 +4,7 @@
 // Row shape: { loc, storeName, reportStart, reportEnd, commentDate, visitDate, nsn, text, satisfactionLabel, score }
 import * as React from 'react';
 import { INV_ORG_COORDS } from '../constants';
+import { escapeHtml as esc } from '../utils/fmt';
 import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 
 const h = React.createElement;
@@ -86,18 +87,18 @@ function exportCSV(filename, headers, rows) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function printReport(title, subtitle, headers, rows) {
-  const th = headers.map(x => `<th>${x}</th>`).join('');
-  const trs = rows.map(r => `<tr>${r.map(c => `<td>${c == null ? '' : c}</td>`).join('')}</tr>`).join('');
+  const th = headers.map(x => `<th>${esc(x)}</th>`).join('');
+  const trs = rows.map(r => `<tr>${r.map(c => `<td>${c == null ? '' : esc(c)}</td>`).join('')}</tr>`).join('');
   const w = window.open('', '_blank');
   if (!w) return;
-  w.document.write(`<!doctype html><html><head><title>${title}</title><style>
+  w.document.write(`<!doctype html><html><head><title>${esc(title)}</title><style>
     body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;color:#111}
     h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:14px}
     table{border-collapse:collapse;width:100%;font-size:11px}
     th,td{border:1px solid #ccc;padding:4px 7px;text-align:center}
     th{background:#f3f4f6;text-transform:uppercase;font-size:9px;letter-spacing:.4px}
     td:first-child,th:first-child{text-align:left}
-    </style></head><body><h1>${title}</h1><div class="sub">${subtitle}</div>
+    </style></head><body><h1>${esc(title)}</h1><div class="sub">${esc(subtitle)}</div>
     <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></body></html>`);
   w.document.close(); w.focus();
   setTimeout(() => w.print(), 300);

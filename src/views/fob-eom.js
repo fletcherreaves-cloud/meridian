@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import * as XLSX from 'xlsx';
+import { escapeHtml as esc } from '../utils/fmt.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h     = React.createElement;
@@ -633,7 +634,9 @@ function PrintReport({analysis, storeName, period, selClasses}) {
     ];
     const win = window.open('','_blank');
     if (!win) return;
-    win.document.write('<pre style="font-family:monospace;font-size:12px;padding:24px;white-space:pre-wrap">'+lines.join('\n')+'</pre>');
+    // The report is plain text (item descriptions/WRINs from external QSRSoft data);
+    // escape the whole block once so a stray < & > in an item name can't corrupt the <pre>.
+    win.document.write('<pre style="font-family:monospace;font-size:12px;padding:24px;white-space:pre-wrap">'+esc(lines.join('\n'))+'</pre>');
     win.document.close();
     win.print();
   };

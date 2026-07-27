@@ -67,10 +67,17 @@ recover" only clears err → deterministic errors re-throw → stuck. Fix = per-
 - **C2 — Perf-review ratings stored by positional index** (`performance-reviews.js:766`, read
   review-engine.js:564/667). Reordering/insert/deactivate mid-cycle mis-maps ratings. **→ Phase C stable-IDs
   fixes this; do NOT ship drag-reorder without it.**
-- **C3 — Print/export XSS sinks.** Unescaped interpolation in `document.write` HTML across sage.js:918
-  (mdToHTML 609-642), performance-reviews.js:1313/1470/1650, smg-voice.js:93, store-dash.js, analytics.js:1216,
-  eom-dashboard.js:51, graded-visits.js, etc. In-panel React render is safe (no dangerouslySetInnerHTML). Escape
-  all interpolated values (employee names / SMG comments / SAGE output). Stored-XSS vector in multi-operator future.
+- **C3 — Print/export XSS sinks. ✅ FIXED (2026-07-27, PR #73).** Shared `escapeHtml` added to
+  `src/utils/fmt.js` (5-char, attribute-safe, null→''). Every free-text interpolation escaped in the print/export
+  `document.write` builders: smg-voice.js `printReport` (customer comments), sage.js `mdToHTML` (escape each text
+  segment before wrapping — ** and ` survive so bold/code still render), coaching.js `doPrint` (LLM letter escaped
+  before markdown transforms), performance-reviews.js all 3 print fns (names, narrative comments, devRows, wage
+  notes, competency text, editable labels, orgLogo/orgLabel attrs), location-intel.js (districtName + AI narrative),
+  fob-eom.js (whole `<pre>` block — external item descriptions), store-dash.js `ExportDropdown.toHTML` (arbitrary
+  cells + title), analytics.js store one-pager (kb.notes/tags, operator/supervisor), group-sheet (`buildSection`
+  title covers group+store), email-report (opName, settings.storeNames). ALREADY-SAFE (verified, untouched):
+  graded-visits, visit-readiness, skills-matrix, labor-analysis, smart-targets, eom-dashboard (all had local esc),
+  analytics.js:4564 printCalendar (serializes existing DOM via outerHTML). Test: `escape-html.test.js` (6 cases).
 - **C4 — sage-chat trusts client-supplied system prompt** (`supabase/functions/sage-chat/index.ts:619`). Contained
   today (RBAC block appended server-side; tools hard-scoped by profiles) but build the base prompt server-side.
 - **C5 — reviews table write not scoped** (schema 143-147): any authenticated user can insert/overwrite any
