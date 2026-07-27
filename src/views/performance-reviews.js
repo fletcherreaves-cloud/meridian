@@ -5,6 +5,7 @@ import {
   getReviews, upsertReview, deleteReview, blankReview, autoPopulateKPIs,
   rateMetric, ratingColor, ratingBg, computeScores, computeScoreBreakdown,
   transitionReview, REVIEW_STATUSES,
+  getTemplates, saveTemplates, upsertTemplateInList, removeTemplateFromList, duplicateTemplateInList, validateTemplateWeights, syncTemplatesFromSupabase,
   RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS,
 } from '../engine/review-engine.js';
@@ -393,7 +394,51 @@ function CustomizePanel({cfg, onSave, onReset}) {
     });
   };
 
-  const save = () => { onSave(local); setSaved(true); setTimeout(()=>setSaved(false),2000); };
+  // ── Named templates (Phase B) ──────────────────────────────────────────────
+  const [templates, setTemplates] = useState(() => getTemplates());
+  const [selTpl, setSelTpl] = useState('');
+  useEffect(() => { syncTemplatesFromSupabase().then(() => setTemplates(getTemplates())).catch(() => {}); }, []);
+  const wv = validateTemplateWeights(local); // hard 100% enforcement
+  const dc = (x) => JSON.parse(JSON.stringify(x));
+
+  const save = () => {
+    if (!wv.ok) { alert('Weights must total 100% before saving.\n' + wv.errors.map(e => `• ${e.scope}: ${(e.sum * 100).toFixed(1)}%`).join('\n')); return; }
+    onSave(local); setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
+
+  const applyTemplate = (id) => {
+    setSelTpl(id);
+    const t = templates.find(x => x.id === id);
+    if (t) setLocal(dc(t.config));
+  };
+  const saveAsTemplate = () => {
+    if (!wv.ok) { alert('Weights must total 100% before saving a template.'); return; }
+    const name = (prompt('Template name:', '') || '').trim();
+    if (!name) return;
+    const { list, id } = upsertTemplateInList(templates, { name, config: dc(local) });
+    saveTemplates(list); setTemplates(list); setSelTpl(id);
+  };
+  const updateTemplate = () => {
+    if (!selTpl || !wv.ok) { if (!wv.ok) alert('Weights must total 100% before saving.'); return; }
+    const cur = templates.find(x => x.id === selTpl);
+    const { list } = upsertTemplateInList(templates, { id: selTpl, name: cur ? cur.name : 'Template', config: dc(local) });
+    saveTemplates(list); setTemplates(list);
+  };
+  const duplicateTpl = () => {
+    if (!selTpl) return;
+    const cur = templates.find(x => x.id === selTpl);
+    const name = (prompt('New template name:', (cur ? cur.name : 'Template') + ' copy') || '').trim();
+    if (!name) return;
+    const { list, id } = duplicateTemplateInList(templates, selTpl, name);
+    saveTemplates(list); setTemplates(list); setSelTpl(id);
+  };
+  const deleteTpl = () => {
+    if (!selTpl) return;
+    const cur = templates.find(x => x.id === selTpl);
+    if (!confirm(`Delete template "${cur ? cur.name : ''}"?`)) return;
+    const list = removeTemplateFromList(templates, selTpl);
+    saveTemplates(list); setTemplates(list); setSelTpl('');
+  };
 
   const doReset = () => {
     if (!confirm('Reset all customize settings to defaults?')) return;
@@ -417,12 +462,28 @@ function CustomizePanel({cfg, onSave, onReset}) {
           style:{padding:'8px 14px',border:'none',borderBottom:`2px solid ${section===s.key?AMBER:'transparent'}`,
             background:'none',color:section===s.key?AMBER:TEXT2,fontSize:11,fontWeight:section===s.key?700:400,cursor:'pointer'}},
           s.label))),
+    // Template picker bar (Phase B)
+    div({style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',
+      borderBottom:`1px solid ${BDR}`,background:S2,flexWrap:'wrap'}},
+      span({style:{fontSize:11,color:TEXT3,fontWeight:700}},'Template'),
+      h('select',{value:selTpl,onChange:e=>applyTemplate(e.target.value),
+        style:{background:'var(--surf3)',color:TEXT,border:`1px solid ${BDR}`,borderRadius:6,padding:'4px 8px',fontSize:11,maxWidth:220}},
+        h('option',{value:''},'— Working config —'),
+        ...templates.map(t=>h('option',{key:t.id,value:t.id},t.name))),
+      GhostBtn({onClick:saveAsTemplate,style:{fontSize:11}},'＋ Save as new'),
+      selTpl&&GhostBtn({onClick:updateTemplate,style:{fontSize:11}},'Update'),
+      selTpl&&GhostBtn({onClick:duplicateTpl,style:{fontSize:11}},'Duplicate'),
+      selTpl&&GhostBtn({onClick:deleteTpl,style:{fontSize:11,color:'#f87171'}},'Delete'),
+      span({style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:wv.ok?'#10b981':'#f87171'},
+        title:wv.ok?'Every weight group totals 100%':wv.errors.map(e=>`${e.scope}: ${(e.sum*100).toFixed(1)}%`).join(' · ')},
+        wv.ok?'✓ Weights 100%':`⚠ ${wv.errors[0].scope} = ${(wv.errors[0].sum*100).toFixed(1)}%`)),
     // Save bar
     div({style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',
       borderBottom:`1px solid ${BDR}`,background:S2}},
-      PrimaryBtn({onClick:save},saved?'Saved!':'Save Changes'),
+      PrimaryBtn({onClick:save,style:wv.ok?{}:{opacity:.5}},saved?'Saved!':'Save Changes'),
       GhostBtn({onClick:doReset,style:{fontSize:11,color:TEXT3}},'Reset to Defaults'),
-      saved&&span({style:{color:'#10b981',fontSize:11}},'Settings saved')),
+      saved&&span({style:{color:'#10b981',fontSize:11}},'Settings saved'),
+      !wv.ok&&span({style:{color:'#f87171',fontSize:11}},'Fix weight totals to save')),
     // Content
     div({style:{flex:1,overflowY:'auto',padding:16}},
       section==='org'        && h(OrgSection, {}),
