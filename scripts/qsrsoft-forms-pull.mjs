@@ -68,14 +68,16 @@ async function captureToken() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ userAgent: UA });
   const page = await context.newPage();
-  let token = null;
+  // Backup path: sniff the x-auth-token header off any *.home.myqsrsoft.com request.
+  let sniffed = null;
   page.on('request', req => {
-    if (token) return;
+    if (sniffed) return;
     if (req.url().includes('home.myqsrsoft.com')) {
       const t = req.headers()['x-auth-token'];
-      if (t && t.length > 20) token = t;
+      if (t && t.length > 20) sniffed = t;
     }
   });
+
   await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
   const userSel = ['input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email'].join(', ');
   const passSel = 'input[type="password"], input[name="password"], #password';
@@ -84,14 +86,47 @@ async function captureToken() {
     await page.waitForSelector(userSel, { timeout: 20000 });
     await page.fill(userSel, u); await page.fill(passSel, p); await page.click(subSel);
     await page.waitForLoadState('networkidle', { timeout: 30000 });
-  } catch (e) { if (DEBUG) console.log('[auth] login step:', e.message); }
-  // Navigate to the forms library so a forms.home request fires (belt + suspenders).
+  } catch (e) { console.log('[auth] login step:', e.message); }
+  await new Promise(r => setTimeout(r, 3000)); // let the SPA hydrate + persist tokens
+
+  // Primary path: the QSRSoft SPA (amazon-cognito-identity-js) persists the Cognito
+  // ID token — the exact `token_use:"id"` token the forms API wants — in localStorage
+  // under `CognitoIdentityServiceProvider.<clientId>.<user>.idToken`. Read it directly
+  // (robust; no network-timing race). Scan both web storages, newest-looking wins.
+  const readIdToken = () => page.evaluate(() => {
+    const scan = (store) => {
+      let hit = null;
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (/\.idToken$/.test(k)) { const v = store.getItem(k); if (v && v.length > 20) hit = v; }
+      }
+      return hit;
+    };
+    return scan(window.localStorage) || scan(window.sessionStorage) || null;
+  }).catch(() => null);
+
+  let token = await readIdToken();
   if (!token) {
+    // Nudge the app to (re)issue by opening the forms library, then re-read + sniff.
     await page.goto('https://v3.myqsrsoft.com/forms/manage', { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
     await new Promise(r => setTimeout(r, 4000));
+    token = await readIdToken() || sniffed;
   }
-  if (!token) { console.error('[auth] ✗ could not capture x-auth-token'); await browser.close(); process.exit(1); }
-  console.log('[auth] ✓ captured token');
+
+  if (!token) {
+    // Diagnostics: show which storage keys exist so we can adjust if the shape changed.
+    const keys = await page.evaluate(() => {
+      const ls = Object.keys(window.localStorage || {});
+      const ss = Object.keys(window.sessionStorage || {});
+      return { url: location.href, ls, ss };
+    }).catch(() => ({}));
+    console.error('[auth] ✗ could not capture ID token. url=' + (keys.url || '?'));
+    console.error('[auth]   localStorage keys: ' + (keys.ls || []).join(', ').slice(0, 800));
+    console.error('[auth]   sessionStorage keys: ' + (keys.ss || []).join(', ').slice(0, 400));
+    await browser.close();
+    process.exit(1);
+  }
+  console.log('[auth] ✓ captured ID token' + (token === sniffed ? ' (via header sniff)' : ' (via storage)'));
   return { token, page, browser };
 }
 
