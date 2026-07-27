@@ -11,7 +11,7 @@ import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { ModelHealthBadge } from './analytics.js';
-import { TH, f$, fPct, fP, fN, grade, gLbl, gCol } from '../utils/fmt.js';
+import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -2036,12 +2036,12 @@ function ExportDropdown({rows, columns, title, filename, extraHTML, btnClassName
     const now = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
     const tbl = extraHTML || (rows&&rows.length?
       '<table style="border-collapse:collapse;width:100%;font-size:11px">'+
-      '<thead><tr>'+cols.map(c=>'<th style="border:1px solid #ddd;padding:5px 8px;background:#f5f5f7;font-size:9px;text-transform:uppercase;letter-spacing:.4px">'+c.label+'</th>').join('')+'</tr></thead>'+
+      '<thead><tr>'+cols.map(c=>'<th style="border:1px solid #ddd;padding:5px 8px;background:#f5f5f7;font-size:9px;text-transform:uppercase;letter-spacing:.4px">'+esc(c.label)+'</th>').join('')+'</tr></thead>'+
       '<tbody>'+rows.map((r,i)=>'<tr style="background:'+(i%2?'#f9f9f9':'#fff')+'">'
-        +cols.map(c=>'<td style="border:1px solid #ddd;padding:4px 8px">'+(r[c.key]!=null?r[c.key]:'')+'</td>').join('')+'</tr>').join('')+
+        +cols.map(c=>'<td style="border:1px solid #ddd;padding:4px 8px">'+(r[c.key]!=null?esc(r[c.key]):'')+'</td>').join('')+'</tr>').join('')+
       '</tbody></table>':'<p>No data</p>');
     const html='<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'+
-      '<title>'+title+'</title>'+
+      '<title>'+esc(title)+'</title>'+
       '<style>body{font-family:system-ui,sans-serif;padding:24px;color:#1c1c1e}h1{font-size:20px;margin:0 0 4px}p.meta{font-size:11px;color:#666;margin:0 0 16px}'+
       '@media print{button{display:none}}</style></head><body>'+
       '<button onclick="window.print()" style="margin-bottom:16px;padding:6px 14px;background:#007aff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Print</button>'+

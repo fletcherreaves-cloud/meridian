@@ -35,6 +35,7 @@ import { FOBEOMPanel } from '../views/fob-eom.js';
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
 import { EOMDashboardPanel } from '../views/eom-dashboard.js';
 import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
+import { FormsPrintPanel } from '../views/forms-print.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
@@ -52,7 +53,7 @@ import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
-import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase } from '../engine/review-engine.js';
+import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
@@ -211,9 +212,17 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.533';
-const MERIDIAN_BUILD_DATE = '2026-07-25';
+const MERIDIAN_VERSION    = '4.556';
+const MERIDIAN_BUILD_DATE = '2026-07-27';
+if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.556', date:'2026-07-27', changes:[
+    'Precautionary hardening batch: fixed a data-completeness bug where the Daily Glimpse / Cash / Sales-Ledger loaders could silently drop the newest ~3 weeks of data on large date ranges (Supabase 1000-row cap) — At-A-Glance tiles now always see the full window. Fixed the Calendar Manager Florida/Oklahoma pills (FL pill was empty). Refreshed this version/changelog and removed stale debug logging.',
+    'EOM: Item Journey visual guide (per-item count-cycle timeline with verified-fact vs likely-inference signals, qty + $ variance, reconciled exactly to the Variance Stat report, click-through flow chips), two modes (EOM count-completion + year-round progress), FOB multi-location variance matrix, and the comms draft now carries the full food-cost action plan.',
+    'New: "What Needs My Attention Now" (🎯) — one ranked cross-domain triage fusing FOB outliers, behind-last-year, sync health, drive-thru speed, visit-readiness/food-safety risk, and fading saved signals.',
+    'FOB Analysis is now cloud-first (works with no upload). Graded Visits shows a most-likely daypart/channel bar. EOM Supervisor exports OP Supplies per store. Signals Scanner supports multi-select bulk-tracking.',
+    'Performance Reviews: named, savable, org-shared templates with hard 100%-weight enforcement, plus template-snapshot isolation so changing a template never re-scores finished reviews. (More coming: drag-reorder + editable job titles.)',
+  ]},
   {version:'4.533', date:'2026-07-25', changes:[
     'Signals can now correlate against WEATHER and DAY-OF-WEEK, not just business metrics. The auto-pulled weather (high/low/avg temp, rainfall, wind) is now a metric group in the Scanner and Signal Lab — so "warmer days → more sales?" or "rain → drive-thru mix" surface automatically. Rainfall correctly keeps its dry (zero) days so it correlates real weather, not just rainy ones.',
     'New "Calendar" factors — Weekend, Friday, Monday (0/1 flags per day) — let you correlate the common-sense weekly patterns: does this store actually run hotter on weekends? Is there a Friday lift? (Friday is broken out on purpose as the anchor for the eventual Filet-O-Fish-Fridays product-mix check.) Four new seeded signals ship on: Weekend→Sales, High Temp→Sales, Rainfall→Guests, Friday→Sales.',
@@ -991,6 +1000,7 @@ function App() {
   const [anomFilter, setAnomFilter]    = useState('all');
   const [showAttention, setShowAttention] = useState(false);
   const [showPriorities, setShowPriorities] = useState(false);
+  const [showFormsPrint, setShowFormsPrint] = useState(false);
   const [showKB, setShowKB] = useState(false);
   const [showSmartTargets, setShowSmartTargets] = useState(false);
   const [showLocIntel,     setShowLocIntel]     = useState(false);
@@ -1209,6 +1219,7 @@ function App() {
     }).catch(()=>{});
     syncReviewsFromSupabase(supabase).catch(()=>{});
     syncConfigFromSupabase(supabase).catch(()=>{});
+    syncTemplatesFromSupabase(supabase).catch(()=>{});
     // Sync org roles (role definitions + permissions) from Supabase
     syncOrgRolesFromSupabase(supabase).then(roles => { if (roles) setOrgRoles(roles); }).catch(()=>{});
     // Sync app settings from Supabase — Supabase wins over localStorage for any key it has
@@ -2123,8 +2134,6 @@ function App() {
         // (runs async in background — yields between stores to stay non-blocking)
         (async()=>{
           try{
-            const _aeT0=performance.now();
-            console.log('[AE] recalibration starting');
             const recalib={};
             const locList=currentDS.storeIds||[];
             for(const loc of locList){
@@ -2164,7 +2173,6 @@ function App() {
             }
             // Store recalibrated params
             try{const aeBlob={params:recalib,ts:Date.now()};localStorage.setItem('mf_ae_params',JSON.stringify(aeBlob));saveUserSetting('ae_params',aeBlob).catch(()=>{});}catch{}
-            console.log('[AE] complete:', Object.keys(recalib).length,'stores in',(performance.now()-_aeT0).toFixed(0)+'ms');
           }catch(e){console.warn('AE recalibration failed:',e);}
         })();
         // Use in-memory data for coverage — avoids re-reading 123k rows from IDB
@@ -2402,6 +2410,7 @@ function App() {
         if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
         if(modal==='priorities')     setShowPriorities(true);
+        if(modal==='forms-print')    setShowFormsPrint(true);
       }
     }),
 
@@ -2586,6 +2595,7 @@ function App() {
     showPriorities&&h(WhatNeedsAttentionPanel,{ds,stores,dateRange,
       onOpenModal:(m)=>{ if(m==='fob-analysis')setShowFOB(true); else if(m==='signals')setShowSignals(true); else if(m==='eom-dashboard')setShowEOMDash(true); },
       onClose:()=>setShowPriorities(false)}),
+    showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},

@@ -5,11 +5,13 @@ import {
   getReviews, upsertReview, deleteReview, blankReview, autoPopulateKPIs,
   rateMetric, ratingColor, ratingBg, computeScores, computeScoreBreakdown,
   transitionReview, REVIEW_STATUSES,
+  getTemplates, saveTemplates, upsertTemplateInList, removeTemplateFromList, duplicateTemplateInList, validateTemplateWeights, syncTemplatesFromSupabase,
   RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { hasPermission, getOrgRoles } from '../engine/permissions.js';
+import { escapeHtml as esc } from '../utils/fmt.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -393,7 +395,51 @@ function CustomizePanel({cfg, onSave, onReset}) {
     });
   };
 
-  const save = () => { onSave(local); setSaved(true); setTimeout(()=>setSaved(false),2000); };
+  // ── Named templates (Phase B) ──────────────────────────────────────────────
+  const [templates, setTemplates] = useState(() => getTemplates());
+  const [selTpl, setSelTpl] = useState('');
+  useEffect(() => { syncTemplatesFromSupabase().then(() => setTemplates(getTemplates())).catch(() => {}); }, []);
+  const wv = validateTemplateWeights(local); // hard 100% enforcement
+  const dc = (x) => JSON.parse(JSON.stringify(x));
+
+  const save = () => {
+    if (!wv.ok) { alert('Weights must total 100% before saving.\n' + wv.errors.map(e => `• ${e.scope}: ${(e.sum * 100).toFixed(1)}%`).join('\n')); return; }
+    onSave(local); setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
+
+  const applyTemplate = (id) => {
+    setSelTpl(id);
+    const t = templates.find(x => x.id === id);
+    if (t) setLocal(dc(t.config));
+  };
+  const saveAsTemplate = () => {
+    if (!wv.ok) { alert('Weights must total 100% before saving a template.'); return; }
+    const name = (prompt('Template name:', '') || '').trim();
+    if (!name) return;
+    const { list, id } = upsertTemplateInList(templates, { name, config: dc(local) });
+    saveTemplates(list); setTemplates(list); setSelTpl(id);
+  };
+  const updateTemplate = () => {
+    if (!selTpl || !wv.ok) { if (!wv.ok) alert('Weights must total 100% before saving.'); return; }
+    const cur = templates.find(x => x.id === selTpl);
+    const { list } = upsertTemplateInList(templates, { id: selTpl, name: cur ? cur.name : 'Template', config: dc(local) });
+    saveTemplates(list); setTemplates(list);
+  };
+  const duplicateTpl = () => {
+    if (!selTpl) return;
+    const cur = templates.find(x => x.id === selTpl);
+    const name = (prompt('New template name:', (cur ? cur.name : 'Template') + ' copy') || '').trim();
+    if (!name) return;
+    const { list, id } = duplicateTemplateInList(templates, selTpl, name);
+    saveTemplates(list); setTemplates(list); setSelTpl(id);
+  };
+  const deleteTpl = () => {
+    if (!selTpl) return;
+    const cur = templates.find(x => x.id === selTpl);
+    if (!confirm(`Delete template "${cur ? cur.name : ''}"?`)) return;
+    const list = removeTemplateFromList(templates, selTpl);
+    saveTemplates(list); setTemplates(list); setSelTpl('');
+  };
 
   const doReset = () => {
     if (!confirm('Reset all customize settings to defaults?')) return;
@@ -417,12 +463,28 @@ function CustomizePanel({cfg, onSave, onReset}) {
           style:{padding:'8px 14px',border:'none',borderBottom:`2px solid ${section===s.key?AMBER:'transparent'}`,
             background:'none',color:section===s.key?AMBER:TEXT2,fontSize:11,fontWeight:section===s.key?700:400,cursor:'pointer'}},
           s.label))),
+    // Template picker bar (Phase B)
+    div({style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',
+      borderBottom:`1px solid ${BDR}`,background:S2,flexWrap:'wrap'}},
+      span({style:{fontSize:11,color:TEXT3,fontWeight:700}},'Template'),
+      h('select',{value:selTpl,onChange:e=>applyTemplate(e.target.value),
+        style:{background:'var(--surf3)',color:TEXT,border:`1px solid ${BDR}`,borderRadius:6,padding:'4px 8px',fontSize:11,maxWidth:220}},
+        h('option',{value:''},'— Working config —'),
+        ...templates.map(t=>h('option',{key:t.id,value:t.id},t.name))),
+      GhostBtn({onClick:saveAsTemplate,style:{fontSize:11}},'＋ Save as new'),
+      selTpl&&GhostBtn({onClick:updateTemplate,style:{fontSize:11}},'Update'),
+      selTpl&&GhostBtn({onClick:duplicateTpl,style:{fontSize:11}},'Duplicate'),
+      selTpl&&GhostBtn({onClick:deleteTpl,style:{fontSize:11,color:'#f87171'}},'Delete'),
+      span({style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:wv.ok?'#10b981':'#f87171'},
+        title:wv.ok?'Every weight group totals 100%':wv.errors.map(e=>`${e.scope}: ${(e.sum*100).toFixed(1)}%`).join(' · ')},
+        wv.ok?'✓ Weights 100%':`⚠ ${wv.errors[0].scope} = ${(wv.errors[0].sum*100).toFixed(1)}%`)),
     // Save bar
     div({style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',
       borderBottom:`1px solid ${BDR}`,background:S2}},
-      PrimaryBtn({onClick:save},saved?'Saved!':'Save Changes'),
+      PrimaryBtn({onClick:save,style:wv.ok?{}:{opacity:.5}},saved?'Saved!':'Save Changes'),
       GhostBtn({onClick:doReset,style:{fontSize:11,color:TEXT3}},'Reset to Defaults'),
-      saved&&span({style:{color:'#10b981',fontSize:11}},'Settings saved')),
+      saved&&span({style:{color:'#10b981',fontSize:11}},'Settings saved'),
+      !wv.ok&&span({style:{color:'#f87171',fontSize:11}},'Fix weight totals to save')),
     // Content
     div({style:{flex:1,overflowY:'auto',padding:16}},
       section==='org'        && h(OrgSection, {}),
@@ -1165,7 +1227,7 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
       const r = rateMetric(actual, target, m);
       const col = r ? rCol(r) : '#9ca3af';
       return `<tr>
-        <td>${m.label}</td>
+        <td>${esc(m.label)}</td>
         <td style="text-align:center">${fmtVal(actual,m)}</td>
         <td style="text-align:center;color:#6b7280">${fmtVal(target,m)}</td>
         <td style="text-align:center">${fmtDev(actual,target,m.unit)}</td>
@@ -1173,7 +1235,7 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
       </tr>`;
     }).join('');
     return `
-      <h3>${cw?.label||catKey}</h3>
+      <h3>${esc(cw?.label||catKey)}</h3>
       <table>
         <tr><th>Metric</th><th style="text-align:center">Actual</th><th style="text-align:center">Target</th><th style="text-align:center">vs. Target</th><th style="text-align:center">Rating</th></tr>
         ${rows}
@@ -1183,7 +1245,7 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
   const lines = n => Array(n).fill('<div class="line"></div>').join('');
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>${review.name} — ${monthName} ${review.year} 1:1 Checkpoint</title>
+  <title>${esc(review.name)} — ${monthName} ${review.year} 1:1 Checkpoint</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:20px;max-width:800px;margin:0 auto}
@@ -1206,13 +1268,13 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
   <div class="hdr">
     <div>
       <div class="label">Monthly Performance Checkpoint — 1:1 Meeting</div>
-      <h1>${review.name}</h1>
-      <div style="font-size:11px;color:#374151;margin-top:2px">${review.role} · Store ${review.loc||'—'} · ${monthName} ${review.year}</div>
+      <h1>${esc(review.name)}</h1>
+      <div style="font-size:11px;color:#374151;margin-top:2px">${esc(review.role)} · Store ${esc(review.loc||'—')} · ${monthName} ${review.year}</div>
       <div style="font-size:9px;color:#6b7280;margin-top:2px">Prepared: ${today}</div>
     </div>
     <div style="text-align:right">
-      ${orgLogo?`<img src="${orgLogo}" style="height:28px;object-fit:contain;display:block;margin-bottom:3px">`:''}
-      <span style="font-size:10px;color:#6b7280">${orgLabel||''}</span>
+      ${orgLogo?`<img src="${esc(orgLogo)}" style="height:28px;object-fit:contain;display:block;margin-bottom:3px">`:''}
+      <span style="font-size:10px;color:#6b7280">${esc(orgLabel||'')}</span>
     </div>
   </div>
 
@@ -1238,11 +1300,11 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
   </div>
 
   <div class="ack">
-    <strong>Acknowledgment of Receipt:</strong> By signing below, <em>${review.name}</em> confirms this monthly performance checkpoint was received and discussed in a 1:1 meeting with their supervisor. A copy is retained in the performance file.
+    <strong>Acknowledgment of Receipt:</strong> By signing below, <em>${esc(review.name)}</em> confirms this monthly performance checkpoint was received and discussed in a 1:1 meeting with their supervisor. A copy is retained in the performance file.
   </div>
 
   <div class="sig-block">
-    <div><div class="sig-line">${review.name} — Signature &amp; Date</div></div>
+    <div><div class="sig-line">${esc(review.name)} — Signature &amp; Date</div></div>
     <div><div class="sig-line">Supervisor — Signature &amp; Date</div></div>
   </div>
 
@@ -1280,14 +1342,14 @@ function printBlankForm(review, cfg, orgLabel, orgLogo) {
       const tgtHint = m.dollar ? '$__________' : m.pctInput ? '_______ %' : '___________';
       const autoTag = m.src==='auto' ? `<span style="color:#9ca3af;font-size:8px"> ★auto</span>` : '';
       return `<tr>
-        <td>${m.label}${autoTag}</td>
+        <td>${esc(m.label)}${autoTag}</td>
         <td style="text-align:center;color:#6b7280;font-size:9px">${actHint}</td>
         <td style="text-align:center;color:#6b7280;font-size:9px">${tgtHint}</td>
         <td style="text-align:center">${ratingCircles}</td>
       </tr>`;
     }).join('');
     return `
-      <h3>${cw?.label||catKey} <span style="font-weight:400;font-size:9px;color:#9ca3af">${Math.round((cw?.weight||0)*100)}% of KPI score</span></h3>
+      <h3>${esc(cw?.label||catKey)} <span style="font-weight:400;font-size:9px;color:#9ca3af">${Math.round((cw?.weight||0)*100)}% of KPI score</span></h3>
       <table>
         <tr>
           <th>Metric</th>
@@ -1308,12 +1370,12 @@ function printBlankForm(review, cfg, orgLabel, orgLogo) {
     if (!items.length) return '';
     const rows = items.map((item,i) => `
       <tr>
-        <td>${i+1}. ${item.text}</td>
+        <td>${i+1}. ${esc(item.text)}</td>
         <td style="text-align:center;white-space:nowrap">${ratingCircles}</td>
         <td style="width:180px"></td>
       </tr>`).join('');
     return `
-      <h3>${printCatLabel(catKey)}</h3>
+      <h3>${esc(printCatLabel(catKey))}</h3>
       <table>
         <tr><th>Competency</th><th style="text-align:center;width:120px">Rating — circle one</th><th>Notes</th></tr>
         ${rows}
@@ -1323,7 +1385,7 @@ function printBlankForm(review, cfg, orgLabel, orgLogo) {
   const lines = n => Array(n).fill('<div class="line"></div>').join('');
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>${review.name} — ${halfLabel} ${review.year} — Blank Entry Form</title>
+  <title>${esc(review.name)} — ${halfLabel} ${review.year} — Blank Entry Form</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:20px;max-width:800px;margin:0 auto}
@@ -1349,13 +1411,13 @@ function printBlankForm(review, cfg, orgLabel, orgLogo) {
   <div class="hdr">
     <div>
       <div class="label">Performance Review — Manual Entry Form</div>
-      <h1>${review.name}</h1>
-      <div style="font-size:11px;color:#374151;margin-top:2px">${review.role} · Store ${review.loc||'—'} · ${halfLabel} ${review.year}</div>
+      <h1>${esc(review.name)}</h1>
+      <div style="font-size:11px;color:#374151;margin-top:2px">${esc(review.role)} · Store ${esc(review.loc||'—')} · ${halfLabel} ${review.year}</div>
       <div style="font-size:9px;color:#6b7280;margin-top:2px">Printed: ${today} · Enter completed data into Meridian</div>
     </div>
     <div style="text-align:right">
-      ${orgLogo?`<img src="${orgLogo}" style="height:28px;object-fit:contain;display:block;margin-bottom:3px">`:''}
-      <span style="font-size:10px;color:#6b7280">${orgLabel||''}</span>
+      ${orgLogo?`<img src="${esc(orgLogo)}" style="height:28px;object-fit:contain;display:block;margin-bottom:3px">`:''}
+      <span style="font-size:10px;color:#6b7280">${esc(orgLabel||'')}</span>
     </div>
   </div>
 
@@ -1399,7 +1461,7 @@ function printBlankForm(review, cfg, orgLabel, orgLogo) {
   </div>
 
   <div class="sig-block">
-    <div><div class="sig-line">${review.name} — Signature &amp; Date</div></div>
+    <div><div class="sig-line">${esc(review.name)} — Signature &amp; Date</div></div>
     <div><div class="sig-line">Supervisor — Signature &amp; Date</div></div>
   </div>
 
@@ -1438,9 +1500,9 @@ function printReview(review, cfg, orgLabel, orgLogo) {
 
   const devRows = (review.devPlan||[]).map(item=>`
     <tr>
-      <td>${item.area||'—'}</td>
-      <td>${item.action||'—'}</td>
-      <td style="text-align:center">${item.targetDate||'—'}</td>
+      <td>${esc(item.area||'—')}</td>
+      <td>${esc(item.action||'—')}</td>
+      <td style="text-align:center">${esc(item.targetDate||'—')}</td>
       <td style="text-align:center;font-weight:600;color:${item.status==='complete'?'#10b981':item.status==='in-progress'?'#2563eb':'#d97706'}">
         ${item.status==='in-progress'?'In Progress':item.status?item.status.charAt(0).toUpperCase()+item.status.slice(1):'Open'}</td>
     </tr>`).join('');
@@ -1456,7 +1518,7 @@ function printReview(review, cfg, orgLabel, orgLogo) {
         const r = review.behavioralRatings?.[q]?.[catKey]?.[i];
         return r!=null?`<td style="text-align:center;font-weight:700;color:${rCol(r)}">${r}</td>`:'<td style="text-align:center;color:#9ca3af">—</td>';
       }).join('');
-      return `<tr><td>${i+1}. ${item.text}</td>${qRatings}</tr>`;
+      return `<tr><td>${i+1}. ${esc(item.text)}</td>${qRatings}</tr>`;
     }).join('');
   };
 
@@ -1473,25 +1535,25 @@ function printReview(review, cfg, orgLabel, orgLogo) {
       <td>$${review.wage?.current||'—'}</td>
       <td>$${review.wage?.recommended||'—'}</td>
       <td>$${review.wage?.approved||'—'}</td>
-      <td>${review.wage?.effectiveDate||'—'}</td>
+      <td>${esc(review.wage?.effectiveDate||'—')}</td>
     </tr></table>
-    ${review.wage?.notes?`<p><strong>Notes:</strong> ${review.wage.notes}</p>`:''}`:''
+    ${review.wage?.notes?`<p><strong>Notes:</strong> ${esc(review.wage.notes)}</p>`:''}`:''
 
   const extraKeys = (cfg.extraCategories||[]).map(c=>c.key);
   const allCatSections = [...Object.keys(cfg.categoryWeights), ...extraKeys, 'admin'].map(cat=>`
-    <h3>${printCatLabel(cat)}</h3>
+    <h3>${esc(printCatLabel(cat))}</h3>
     <table>
       <tr><th>Competency</th>${qKeys.map(q=>`<th style="text-align:center">${qLabel(q)}</th>`).join('')}</tr>
       ${compRows(cat)}
     </table>
     ${qKeys.map(q=>{
       const c=review.comments?.[q]?.[cat];
-      return c?`<p><em>${qLabel(q)} Comments:</em> ${c}</p>`:'';
+      return c?`<p><em>${qLabel(q)} Comments:</em> ${esc(c)}</p>`:'';
     }).join('')}
   `).join('');
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>${review.name} — ${halfLabel} ${review.year} Performance Review</title>
+  <title>${esc(review.name)} — ${halfLabel} ${review.year} Performance Review</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:20px;max-width:900px;margin:0 auto}
@@ -1512,11 +1574,11 @@ function printReview(review, cfg, orgLabel, orgLogo) {
   </style></head><body>
   <div class="header-block">
     <div style="display:flex;align-items:center;gap:14px">
-      ${orgLogo?`<img src="${orgLogo}" alt="${orgLabel}" style="height:52px;object-fit:contain;flex-shrink:0">`:''}
+      ${orgLogo?`<img src="${esc(orgLogo)}" alt="${esc(orgLabel)}" style="height:52px;object-fit:contain;flex-shrink:0">`:''}
       <div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#9ca3af;text-transform:uppercase;margin-bottom:4px">${orgLabel} · Salaried Management Performance Review</div>
-        <h1>${review.name}</h1>
-        <div class="meta">${ROLE_LABELS[review.role]||review.role} · ${review.loc?`Store ${review.loc}`:'All Stores'} · ${halfLabel} ${review.year}</div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:#9ca3af;text-transform:uppercase;margin-bottom:4px">${esc(orgLabel)} · Salaried Management Performance Review</div>
+        <h1>${esc(review.name)}</h1>
+        <div class="meta">${esc(ROLE_LABELS[review.role]||review.role)} · ${review.loc?`Store ${esc(review.loc)}`:'All Stores'} · ${halfLabel} ${review.year}</div>
       </div>
     </div>
     <div style="text-align:right;font-size:10px;color:#6b7280">
@@ -1537,7 +1599,7 @@ function printReview(review, cfg, orgLabel, orgLogo) {
   ${Object.entries(cfg.categoryWeights).map(([cat,cw])=>{
     const metrics = (cfg.metrics[cat]||[]).filter(m=>m.scored);
     if(!metrics.length) return '';
-    return `<h3>${cw.label||cat} (${Math.round(cw.weight*100)}% category weight)</h3>
+    return `<h3>${esc(cw.label||cat)} (${Math.round(cw.weight*100)}% category weight)</h3>
     <table>
       <tr><th>Metric</th>${qKeys.map(q=>`<th style="text-align:center">${qLabel(q)} Avg</th>`).join('')}</tr>
       ${metrics.map(m=>{
@@ -1552,7 +1614,7 @@ function printReview(review, cfg, orgLabel, orgLogo) {
             ?`<td style="text-align:center;font-weight:700;color:${rCol(Math.round(avg))}">${avg.toFixed(1)}</td>`
             :'<td style="text-align:center;color:#9ca3af">—</td>';
         }).join('');
-        return `<tr><td>${m.label}</td>${qRatings}</tr>`;
+        return `<tr><td>${esc(m.label)}</td>${qRatings}</tr>`;
       }).join('')}
     </table>`;
   }).join('')}
@@ -1567,11 +1629,11 @@ function printReview(review, cfg, orgLabel, orgLogo) {
     ${devRows}
   </table>`:'<p style="color:#9ca3af">No development items recorded.</p>'}
 
-  ${review.comments?.midYear?.summary?`<h3>Mid-Year Summary</h3><div class="narrative">${review.comments.midYear.summary}</div>`:''}
-  ${review.comments?.midYear?.devPlan?`<h3>Mid-Year Development Plan</h3><div class="narrative">${review.comments.midYear.devPlan}</div>`:''}
-  ${review.comments?.eoy?.summary?`<h3>End of Year Summary</h3><div class="narrative">${review.comments.eoy.summary}</div>`:''}
-  ${review.comments?.eoy?.achievements?`<h3>Achievements</h3><div class="narrative">${review.comments.eoy.achievements}</div>`:''}
-  ${review.comments?.eoy?.nextYear?`<h3>Focus for Next Year</h3><div class="narrative">${review.comments.eoy.nextYear}</div>`:''}
+  ${review.comments?.midYear?.summary?`<h3>Mid-Year Summary</h3><div class="narrative">${esc(review.comments.midYear.summary)}</div>`:''}
+  ${review.comments?.midYear?.devPlan?`<h3>Mid-Year Development Plan</h3><div class="narrative">${esc(review.comments.midYear.devPlan)}</div>`:''}
+  ${review.comments?.eoy?.summary?`<h3>End of Year Summary</h3><div class="narrative">${esc(review.comments.eoy.summary)}</div>`:''}
+  ${review.comments?.eoy?.achievements?`<h3>Achievements</h3><div class="narrative">${esc(review.comments.eoy.achievements)}</div>`:''}
+  ${review.comments?.eoy?.nextYear?`<h3>Focus for Next Year</h3><div class="narrative">${esc(review.comments.eoy.nextYear)}</div>`:''}
 
   ${wageSection}
 

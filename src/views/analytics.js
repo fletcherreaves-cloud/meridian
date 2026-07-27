@@ -8,7 +8,7 @@ import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { EventEntryModal, EventRegistryModal } from '../features/calendar.js';
-import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
+import { TH, f$, fPct, fP, grade, escapeHtml as esc } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
@@ -1120,11 +1120,11 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div>
         <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">Store Performance Brief</div>
-        <div style="font-size:28px;font-weight:900;letter-spacing:-.5px">${store}</div>
+        <div style="font-size:28px;font-weight:900;letter-spacing:-.5px">${esc(store)}</div>
         <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">
-          <span style="font-size:12px;color:#94a3b8">Store #${selLoc}</span>
-          ${org?`<span style="font-size:12px;color:#94a3b8">Operator: ${org.op||'—'}</span>`:''}
-          ${org?`<span style="font-size:12px;color:#94a3b8">Supervisor: ${org.sup||'—'}</span>`:''}
+          <span style="font-size:12px;color:#94a3b8">Store #${esc(selLoc)}</span>
+          ${org?`<span style="font-size:12px;color:#94a3b8">Operator: ${esc(org.op||'—')}</span>`:''}
+          ${org?`<span style="font-size:12px;color:#94a3b8">Supervisor: ${esc(org.sup||'—')}</span>`:''}
           <span style="font-size:12px;color:#94a3b8">${org&&org.state==='FL'?'Emerald Arches (FL)':'MCDOK (OK)'}</span>
         </div>
       </div>
@@ -1200,8 +1200,8 @@ function StoreOnePager({stores, ds, settings, onClose}) {
   <!-- Context -->
   ${d.kb&&d.kb.notes?`<div style="padding:16px 32px;border-top:1px solid #e5e7eb">
     <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b7280;text-transform:uppercase;margin-bottom:6px">Store Context</div>
-    <div style="font-size:12px;color:#6b7280;line-height:1.6">${d.kb.notes}</div>
-    ${d.kb.tags&&d.kb.tags.length?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${d.kb.tags.map(t=>`<span style="font-size:11px;padding:2px 8px;border-radius:99px;background:#f1f5f9;color:#64748b">${t}</span>`).join('')}</div>`:''}
+    <div style="font-size:12px;color:#6b7280;line-height:1.6">${esc(d.kb.notes)}</div>
+    ${d.kb.tags&&d.kb.tags.length?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${d.kb.tags.map(t=>`<span style="font-size:11px;padding:2px 8px;border-radius:99px;background:#f1f5f9;color:#64748b">${esc(t)}</span>`).join('')}</div>`:''}
   </div>`:''}
 
   <!-- Footer -->
@@ -2003,8 +2003,6 @@ function StoreVlhConfigPanel({onClose}) {
 // Each store card links to the full store dashboard via onSelectStore callback.
 // ─────────────────────────────────────────────────────────────────────────────
 function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore, onClose}) {
-  console.log('[PERF] DistrictPriorityBrief render start, stores.length=', stores&&stores.length);
-  const _mountT0=performance.now();
   const {useState:uSt, useMemo:uM} = React;
   const [orgFilter, setOrgFilter] = uSt('all');
   const [expanded,  setExpanded]  = uSt({});
@@ -2058,7 +2056,6 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
         : 'green';
       return{...s, crits, watches:effectiveWatches, oks, vsLY, tier, calGap, storedMape};
     });
-    console.log('[PERF] tiered computation ('+out.length+' stores):', (performance.now()-_t0).toFixed(1)+'ms');
     return out;
   },[stores,orgFilter]);
 
@@ -2100,11 +2097,9 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
       scheduling:'⚠️ Floor management compliance — correct schedule-building process before addressing labor%',
     };
     const focus = topIssue&&topIssue[1]>0 ? focusMap[topIssue[0]] : '✅ District is largely on target — reinforce what\'s working';
-    console.log('[PERF] pulse computation:', (performance.now()-_t0).toFixed(1)+'ms');
     return{totS,vsLY,focus,redN:red.length,amberN:amber.length,greenN:green.length,n:tiered.length};
   },[tiered,red,amber,green]);
 
-  console.log('[PERF] DistrictPriorityBrief total render-body time:', (performance.now()-_mountT0).toFixed(1)+'ms');
 
 
   // ── Finding formatter ──────────────────────────────────────────────────────
@@ -9289,7 +9284,7 @@ function buildEmailReportHTML(mt, ds, settings, selPeriod) {
         : null;
 
       return `<tr>
-        <td style="${tdStyle}white-space:nowrap">${stName} <span style="color:#64748b;font-size:9px">(${loc})</span></td>
+        <td style="${tdStyle}white-space:nowrap">${esc(stName)} <span style="color:#64748b;font-size:9px">(${loc})</span></td>
         <td style="${tdRStyle}">${f$(t.tProdSales)}</td>
         ${hasActuals ? `<td style="${tdRStyle}color:${hasSales?'#e2e8f0':'#475569'}">${hasSales?f$(a.sales):'—'}</td>` : ''}
         <td style="${tdRStyle}">${fpct(t.tCrewLabor)}</td>
@@ -9304,7 +9299,7 @@ function buildEmailReportHTML(mt, ds, settings, selPeriod) {
     }).join('');
 
     const rollupRow = `<tr style="${rollStyle}">
-      <td style="${tdStyle}font-weight:700;color:#f59e0b">GROUP TOTAL — ${opName}</td>
+      <td style="${tdStyle}font-weight:700;color:#f59e0b">GROUP TOTAL — ${esc(opName)}</td>
       <td style="${tdRStyle}color:#f59e0b">${f$(rollup.tSales)}</td>
       ${hasActuals ? `<td style="${tdRStyle}color:#60a5fa">${rollup.aSales>0?f$(rollup.aSales):'—'}</td>` : ''}
       <td style="${tdRStyle}color:#f59e0b">${fpct(rollup.tCrewLabor)}</td>
@@ -9323,7 +9318,7 @@ function buildEmailReportHTML(mt, ds, settings, selPeriod) {
     groupsHTML += `
     <tr style="background:#1e293b">
       <td colspan="100%" style="padding:8px 12px;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.5px;text-transform:uppercase">
-        ${opName}
+        ${esc(opName)}
       </td>
     </tr>
     ${storeRows}
@@ -9571,7 +9566,7 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
       ? 'background:#172554;padding:9px 12px;font-weight:800;font-size:13px;color:#93c5fd;border:1px solid #1e3a8a;letter-spacing:.3px;'
       : 'background:#1e293b;padding:7px 12px;font-weight:700;font-size:11px;color:#cbd5e1;border:1px solid #334155;text-transform:uppercase;letter-spacing:.4px;';
 
-    return `<tr><td colspan="6" style="${hdrS}">${name}</td></tr>${rows}<tr><td colspan="6" style="height:8px;background:#0a0f1e;border:none"></td></tr>`;
+    return `<tr><td colspan="6" style="${hdrS}">${esc(name)}</td></tr>${rows}<tr><td colspan="6" style="height:8px;background:#0a0f1e;border:none"></td></tr>`;
   };
 
   const grpNT = rollupProj(groupLocs, mt_next||{});
@@ -9587,7 +9582,7 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<title>${groupName} — ${nextLabel} Restaurant Projections</title>
+<title>${esc(groupName)} — ${nextLabel} Restaurant Projections</title>
 <style>
   *{box-sizing:border-box}
   body{font-family:Arial,Helvetica,sans-serif;background:#0a0f1e;color:#e2e8f0;margin:0;padding:20px;max-width:940px}
@@ -9601,7 +9596,7 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
   }
 </style>
 </head><body>
-<h1>🍟 ${groupName}</h1>
+<h1>🍟 ${esc(groupName)}</h1>
 <div class="sub">${nextLabel} Restaurant Projections &nbsp;·&nbsp; Current Month: ${currLabel} &nbsp;·&nbsp; Results as of ${asOfDate} &nbsp;·&nbsp; Generated by Meridian</div>
 <table>
   <thead>

@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
+import { escapeHtml as esc } from '../utils/fmt.js';
 
 const h = React.createElement;
 const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb, useMemo: uMemo } = React;
@@ -619,23 +620,26 @@ function mdToHTML(text) {
       const dataRows = tLines.filter(l => !l.match(/^\|[\s\-:|]+\|$/));
       const cells = dataRows.map(r => r.split('|').filter((_,j,a)=>j>0&&j<a.length-1).map(c=>c.trim()));
       if (cells.length) {
-        const head = cells[0].map(c=>`<th>${c}</th>`).join('');
-        const body = cells.slice(1).map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('');
+        const head = cells[0].map(c=>`<th>${esc(c)}</th>`).join('');
+        const body = cells.slice(1).map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('');
         out.push(`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
       }
       continue;
     }
-    if (line.startsWith('## ')) out.push(`<h2>${line.slice(3)}</h2>`);
-    else if (line.startsWith('# ')) out.push(`<h1>${line.slice(2)}</h1>`);
-    else if (line.startsWith('### ')) out.push(`<h3>${line.slice(4)}</h3>`);
+    // Escape each text segment BEFORE wrapping it in tags. For the paragraph case
+    // the markdown transforms run on the escaped text — ** and ` are not escaped,
+    // so bold/code still render, but any literal < & > in SAGE's answer is inert.
+    if (line.startsWith('## ')) out.push(`<h2>${esc(line.slice(3))}</h2>`);
+    else if (line.startsWith('# ')) out.push(`<h1>${esc(line.slice(2))}</h1>`);
+    else if (line.startsWith('### ')) out.push(`<h3>${esc(line.slice(4))}</h3>`);
     else if (line.startsWith('---')) out.push('<hr/>');
-    else if (line.startsWith('■ ')) out.push(`<p class="t1"><strong>■</strong> ${line.slice(2)}</p>`);
-    else if (line.startsWith('▲ ')) out.push(`<p class="t2"><strong>▲</strong> ${line.slice(2)}</p>`);
-    else if (line.startsWith('○ ')) out.push(`<p class="t3"><strong>○</strong> ${line.slice(2)}</p>`);
-    else if (line.startsWith('- ')) out.push(`<li>${line.slice(2)}</li>`);
-    else if (/^\d+\.\s/.test(line)) out.push(`<li>${line.replace(/^\d+\.\s/,'')}</li>`);
+    else if (line.startsWith('■ ')) out.push(`<p class="t1"><strong>■</strong> ${esc(line.slice(2))}</p>`);
+    else if (line.startsWith('▲ ')) out.push(`<p class="t2"><strong>▲</strong> ${esc(line.slice(2))}</p>`);
+    else if (line.startsWith('○ ')) out.push(`<p class="t3"><strong>○</strong> ${esc(line.slice(2))}</p>`);
+    else if (line.startsWith('- ')) out.push(`<li>${esc(line.slice(2))}</li>`);
+    else if (/^\d+\.\s/.test(line)) out.push(`<li>${esc(line.replace(/^\d+\.\s/,''))}</li>`);
     else if (!line.trim()) out.push('<br/>');
-    else out.push(`<p>${line.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code>$1</code>')}</p>`);
+    else out.push(`<p>${esc(line).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code>$1</code>')}</p>`);
     i++;
   }
   return out.join('\n');

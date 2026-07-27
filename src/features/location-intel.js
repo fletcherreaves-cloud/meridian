@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { sName, sNameC, DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
 import { dKey, nDays } from '../utils/date.js';
-import { gCol } from '../utils/fmt.js';
+import { gCol, escapeHtml as esc } from '../utils/fmt.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -205,9 +205,9 @@ function liBuildRoadmap(stats){
   return opps.slice(0,5);
 }
 function liGenerateExportHTML(stats,roadmap,aiContent,mode,districtName){
-  var name=stats.name||'Location';
+  var name=esc(stats.name||'Location');
   var now=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  var dname=districtName||'MCDOK';
+  var dname=esc(districtName||'MCDOK');
   var fmtD=function(v){return v==null?'—':'$'+Math.round(v).toLocaleString();};
   var fmtP=function(v){return v==null?'—':(v>=0?'+':'')+(v*100).toFixed(1)+'%';};
   var css='*{box-sizing:border-box;margin:0;padding:0}'
@@ -340,7 +340,7 @@ function liGenerateExportHTML(stats,roadmap,aiContent,mode,districtName){
     +(corrHTML?'<div class="sec"><div class="sec-title">\uD83D\uDCC8 Operational Correlations</div>'+corrHTML+'</div>':'')
     +(dowHTML?'<div class="sec"><div class="sec-title">\uD83D\uDCC5 Day-of-Week Sales Patterns</div>'+dowHTML+'</div>':'')
     +(wxHTML?'<div class="sec"><div class="sec-title">\uD83C\uDF26 Weather Impact Analysis</div>'+wxHTML+'</div>':'')
-    +(mode==='ai'&&aiContent?'<div class="sec"><div class="sec-title">\uD83E\uDD16 AI Intelligence Brief</div><div class="ai-txt">'+aiContent+'</div></div>':'')
+    +(mode==='ai'&&aiContent?'<div class="sec"><div class="sec-title">\uD83E\uDD16 AI Intelligence Brief</div><div class="ai-txt">'+esc(aiContent)+'</div></div>':'')
     +'<div class="footer">Meridian \u00b7 Location Intelligence \u00b7 '+now+' \u00b7 Confidential \u2014 For internal use only</div>'
     +'</body></html>';
 }

@@ -3,7 +3,7 @@ import * as React from 'react';
 import { dKey, nDK } from '../utils/date.js';
 import { isHoliday, HOLIDAY_MAP } from '../utils/holidays.js';
 import { lookupMissEvent } from '../engine/why.js';
-import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, sName, sNameC } from '../constants.js';
+import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
@@ -65,8 +65,8 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const cancelSearchRef = uR(false);
 
   const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
-  const okLocs = LOCS.filter(l=>(STORE_COORDS[l]||{}).state!=='FL');
-  const flLocs = LOCS.filter(l=>(STORE_COORDS[l]||{}).state==='FL');
+  const okLocs = LOCS.filter(l=>(INV_ORG_COORDS[l]||{}).state!=='FL');
+  const flLocs = LOCS.filter(l=>(INV_ORG_COORDS[l]||{}).state==='FL');
   const scopeLocs = scope==='all'?LOCS:scope==='ok'?okLocs:scope==='fl'?flLocs:[scope];
 
   // ── Pull recurring-rule instances needing confirmation, merge into pending ──
@@ -586,8 +586,8 @@ function EventEntryModal({stores, settings, onTagEvent, onClose}) {
   const toggleLoc  = loc => setSelLocs(p=>p.includes(loc)?p.filter(x=>x!==loc):[...p,loc]);
   const toggleType = k   => setSelTypes(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k]);
   const allLocs    = stores&&stores.map(s=>s.loc)||[];
-  const okLocs     = STORE_COORDS?Object.entries(STORE_COORDS).filter(([,v])=>v.org!=='Emerald Arches').map(([k])=>k):[];
-  const flLocs     = STORE_COORDS?Object.entries(STORE_COORDS).filter(([,v])=>v.org==='Emerald Arches').map(([k])=>k):[];
+  const okLocs     = Object.entries(INV_ORG_COORDS).filter(([,v])=>v.state!=='FL').map(([k])=>k);
+  const flLocs     = Object.entries(INV_ORG_COORDS).filter(([,v])=>v.state==='FL').map(([k])=>k);
 
   const save = () => {
     if(!selLocs.length) return alert('Select at least one location.');

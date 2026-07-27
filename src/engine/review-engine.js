@@ -1,7 +1,8 @@
 // Performance Review Engine — config, storage, and scoring
 
-const REVIEW_CONFIG_KEY = 'mf_review_config_v1';
-const PERF_REVIEWS_KEY  = 'mf_perf_reviews_v1';
+const REVIEW_CONFIG_KEY    = 'mf_review_config_v1';
+const PERF_REVIEWS_KEY     = 'mf_perf_reviews_v1';
+const REVIEW_TEMPLATES_KEY = 'mf_review_templates_v1';
 
 export const CAT_KEYS   = ['rgr','sales','profit','people'];
 export const CAT_LABELS = { rgr:'Running Great Restaurants', sales:'Sales Drivers', profit:'Profitability', people:'People Staffing & Retention', admin:'Administration' };
@@ -362,6 +363,76 @@ export async function pushConfigToSupabase(sb, cfg, key = 'review_config') {
   }
 }
 
+// ── Named templates (Phase B) ─────────────────────────────────────────────────
+// A named, savable collection of review configs. Stored org-shared in org_config
+// (key 'review_templates') + mirrored to localStorage. Each template =
+// { id, name, config, updatedAt }. Pure list helpers below are unit-tested; the
+// get/save wrappers add persistence + Supabase mirroring.
+const _today = () => new Date().toISOString().slice(0, 10);
+
+export function makeTemplateId(name, existing = []) {
+  const base = ('tpl_' + String(name || 'template').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')) || 'tpl';
+  const ids = new Set((existing || []).map(t => t.id));
+  if (!ids.has(base)) return base;
+  let i = 2; while (ids.has(base + '_' + i)) i++;
+  return base + '_' + i;
+}
+
+// Pure: add or update a template in a list by id (assigns a slug id + timestamp).
+export function upsertTemplateInList(list, tpl) {
+  const id = tpl.id || makeTemplateId(tpl.name, list);
+  const t = { ...tpl, id, updatedAt: _today() };
+  const next = (list || []).filter(x => x.id !== id);
+  next.push(t);
+  return { list: next, id };
+}
+export function removeTemplateFromList(list, id) { return (list || []).filter(x => x.id !== id); }
+export function duplicateTemplateInList(list, id, newName) {
+  const src = (list || []).find(x => x.id === id);
+  if (!src) return { list: list || [], id: null };
+  return upsertTemplateInList(list, { name: newName || (src.name + ' copy'), config: deepCopy(src.config) });
+}
+
+// Hard-enforce 100%: every weight group must sum to 1.0 (± tol). Returns
+// { ok, errors:[{scope, sum}] }. The Customize UI blocks save when !ok.
+export function validateTemplateWeights(cfg, tol = 0.001) {
+  const errors = [];
+  const near1 = (x) => Math.abs(x - 1) <= tol;
+  const ov = (cfg?.overall?.metrics || 0) + (cfg?.overall?.behavioral || 0);
+  if (!near1(ov)) errors.push({ scope: 'overall', sum: ov });
+  const cw = Object.values(cfg?.categoryWeights || {}).reduce((a, c) => a + (c.weight || 0), 0);
+  if (!near1(cw)) errors.push({ scope: 'categoryWeights', sum: cw });
+  for (const [cat, metrics] of Object.entries(cfg?.metrics || {})) {
+    const scored = (metrics || []).filter(m => m.scored);
+    if (!scored.length) continue;
+    const sum = scored.reduce((a, m) => a + (m.weight || 0), 0);
+    if (!near1(sum)) errors.push({ scope: 'metrics.' + cat, sum });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function getTemplates() {
+  try { const a = JSON.parse(localStorage.getItem(REVIEW_TEMPLATES_KEY) || 'null'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+export function saveTemplates(list) {
+  try { localStorage.setItem(REVIEW_TEMPLATES_KEY, JSON.stringify(list || [])); } catch {}
+  if (_sb) pushTemplatesToSupabase(_sb, list || []);
+}
+export async function syncTemplatesFromSupabase(sb, key = 'review_templates') {
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from('org_config').select('data').eq('key', key).maybeSingle();
+    if (error || !data || !Array.isArray(data.data)) return;
+    try { localStorage.setItem(REVIEW_TEMPLATES_KEY, JSON.stringify(data.data)); } catch {}
+  } catch {}
+}
+export async function pushTemplatesToSupabase(sb, list, key = 'review_templates') {
+  if (!sb) return;
+  try { await sb.from('org_config').upsert({ key, data: list || [], updated_at: new Date().toISOString() }); }
+  catch (e) { console.error('Meridian: templates push failed', e); }
+}
+
 // ── Blank review builder ───────────────────────────────────────────────────────
 export function blankMonthKPIs(year, month) {
   return {
@@ -397,6 +468,9 @@ export function blankReview(name, role, loc, year, half, cfg) {
     id: reviewId(name, year, half),
     name, role, loc, year, half,
     status: 'draft',
+    // Snapshot the template this review is built against (Phase A) so later template
+    // edits never silently re-score it. Refreshed via an explicit "apply template".
+    templateSnapshot: deepCopy(cfg || DEFAULT_REVIEW_CONFIG),
     kpis: { months },
     behavioralRatings,
     comments: {
@@ -412,6 +486,15 @@ export function blankReview(name, role, loc, year, half, cfg) {
     createdAt: new Date().toISOString().slice(0,10),
     updatedAt: new Date().toISOString().slice(0,10),
   };
+}
+
+// ── Template snapshot (Phase A) ──────────────────────────────────────────────
+// A review carries the resolved template it was built against in `templateSnapshot`
+// so that editing the live template NEVER silently re-scores historical reviews
+// (owner-approved). Scoring resolves the effective config to the review's snapshot
+// when present, else the passed-in live config (back-compat for pre-snapshot reviews).
+export function resolveReviewConfig(review, cfg) {
+  return (review && review.templateSnapshot) || cfg;
 }
 
 // ── Scoring ────────────────────────────────────────────────────────────────────
@@ -456,6 +539,7 @@ function scoreBehavCategory(ratingArr) {
 }
 
 export function computeScores(review, cfg) {
+  cfg = resolveReviewConfig(review, cfg); // score against the review's template snapshot when present
   const months = review.kpis?.months || {};
   const half = review.half;
   const qMap = half==='H1' ? {q1:[1,2,3],q2:[4,5,6]} : {q3:[7,8,9],q4:[10,11,12]};
@@ -511,6 +595,7 @@ export function computeScores(review, cfg) {
 // Returns a full step-by-step breakdown of how scores are computed for the review's half period.
 // Used by ScoreBreakdownPanel to show transparent, verifiable math to the reviewer.
 export function computeScoreBreakdown(review, cfg) {
+  cfg = resolveReviewConfig(review, cfg); // match computeScores — use the review's snapshot
   const months = review.kpis?.months || {};
   const half = review.half;
   const halfMonthNums = half === 'H1' ? [1,2,3,4,5,6] : [7,8,9,10,11,12];
