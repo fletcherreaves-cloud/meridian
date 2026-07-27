@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveReviewConfig, computeScores, blankReview } from '../engine/review-engine.js';
+import { resolveReviewConfig, computeScores, blankReview,
+  makeTemplateId, upsertTemplateInList, removeTemplateFromList, duplicateTemplateInList, validateTemplateWeights } from '../engine/review-engine.js';
 
 // Minimal single-metric / single-competency template so the composite is easy to
 // reason about: metrics 100% = category rgr = metric m1; behavioral = one item.
@@ -42,6 +43,53 @@ describe('computeScores template-snapshot isolation', () => {
     const snap = mkCfg({ metrics: 0.5, behavioral: 0.5 });
     const s = computeScores(mkReview(snap), live);
     expect(s.half.overall).toBeCloseTo(4 * 0.5 + 2 * 0.5, 5); // 3.0 — history protected
+  });
+});
+
+describe('named-template CRUD (Phase B)', () => {
+  it('makeTemplateId slugifies and de-collides', () => {
+    expect(makeTemplateId('GM Standard')).toBe('tpl_gm_standard');
+    expect(makeTemplateId('GM Standard', [{ id: 'tpl_gm_standard' }])).toBe('tpl_gm_standard_2');
+  });
+  it('upsert adds then updates by id', () => {
+    let { list, id } = upsertTemplateInList([], { name: 'GM Standard', config: { a: 1 } });
+    expect(list).toHaveLength(1);
+    const r2 = upsertTemplateInList(list, { id, name: 'GM Standard', config: { a: 2 } });
+    expect(r2.list).toHaveLength(1);
+    expect(r2.list[0].config.a).toBe(2);
+  });
+  it('duplicate deep-copies the config under a new id', () => {
+    const { list, id } = upsertTemplateInList([], { name: 'Base', config: { nested: { x: 1 } } });
+    const dup = duplicateTemplateInList(list, id, 'Base copy');
+    expect(dup.list).toHaveLength(2);
+    const copy = dup.list.find(t => t.id === dup.id);
+    copy.config.nested.x = 99;
+    expect(list[0].config.nested.x).toBe(1); // original untouched → deep copy
+  });
+  it('remove drops by id', () => {
+    const { list, id } = upsertTemplateInList([], { name: 'X', config: {} });
+    expect(removeTemplateFromList(list, id)).toHaveLength(0);
+  });
+});
+
+describe('validateTemplateWeights (hard 100%)', () => {
+  const good = {
+    overall: { metrics: 0.7, behavioral: 0.3 },
+    categoryWeights: { rgr: { weight: 0.5 }, sales: { weight: 0.5 } },
+    metrics: { rgr: [{ weight: 0.6, scored: true }, { weight: 0.4, scored: true }], sales: [{ weight: 1, scored: true }] },
+  };
+  it('passes when every group sums to 1.0', () => {
+    expect(validateTemplateWeights(good).ok).toBe(true);
+  });
+  it('flags the exact group that is off', () => {
+    const bad = { ...good, overall: { metrics: 0.6, behavioral: 0.3 } };
+    const v = validateTemplateWeights(bad);
+    expect(v.ok).toBe(false);
+    expect(v.errors[0].scope).toBe('overall');
+  });
+  it('ignores unscored metrics in the category sum', () => {
+    const cfg = { ...good, metrics: { rgr: [{ weight: 1, scored: true }, { weight: 0.5, scored: false }], sales: [{ weight: 1, scored: true }] } };
+    expect(validateTemplateWeights(cfg).ok).toBe(true);
   });
 });
 
