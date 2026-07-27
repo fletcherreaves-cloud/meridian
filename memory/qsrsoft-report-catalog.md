@@ -113,11 +113,92 @@ Business Unit, Cash, Food, Labor, Digital, Product, People. Remaining categories
 | People | Emp Hours This Week | 🟡 | current-week hours |
 | People | Shift | ⬜ | shift-level people |
 | People | Rewards | ⬜ | Round-Up rewards / recognition |
-| Payroll | _(children TBD)_ | ⬜ | screenshot pending |
-| Sales | _(children TBD)_ | ⬜ | screenshot pending |
-| Service | _(children TBD)_ | ⬜ | screenshot pending |
-| Shift | _(children TBD)_ | ⬜ | screenshot pending |
-| C&I | _(children TBD)_ | ⬜ | screenshot pending |
+| Payroll | Employee Time Punches | ⬜ | punch detail — labor integrity |
+| Payroll | New Hires | ⬜ | onboarding/hiring lifecycle (pairs w/ Turnover) |
+| Payroll | Pay Period Activity | ⬜ | payroll activity |
+| Payroll | Pay Cycle Status | ⬜ | payroll ops status |
+| Payroll | Payroll Ledger | ⬜ | payroll detail (PII — RBAC-sensitive) |
+| Payroll | Emp Pay Details | ⬜ | wage detail (PII — RBAC-sensitive) |
+| Payroll | Overtime Audit | ⬜ | **OT audit — labor cost + compliance / loss-prevention** |
+| Payroll | Emp Hours Look Back | ⬜ | historical hours |
+| Payroll | Student Permit Status Check | ⬜ | **⚠️ minor-labor-law compliance — legal-risk alert** |
+| Sales | McDelivery | ⬜ | delivery channel |
+| Sales | Kiosk | 🟡 | kiosk channel mix (glimpse has channel) |
+| Sales | Sales Ledger | ✅ | `sales_ledger_daily` (emailed pull) |
+| Sales | Consolidated Sales | 🟡 | rollup — confirm vs our totals |
+| Sales | Sales - Point Of Order | ⬜ | order-origination (POO) channel split |
+| Sales | Sales Ledger Summary | 🟡 | summary of ledger |
+| Sales | Where Served | ⬜ | where-served (DT/FC/dine-in/curbside) mix |
+| Sales | Open Late Close Early | ⬜ | matches the alert card — ops compliance |
+| Sales | Store Hours | ⬜ | operating hours adherence |
+| Service | Service Times Statistics | 🟡 | DAR service timing — confirm parity |
+| Service | MOP Service Times | ⬜ | **Mobile-Order-Pay / curbside timing (OEPE)** |
+| Service | YYNN | ⬜ | **DT hospitality metric (Yes-Yes-No-No)** |
+| Service | VOICE | 🟡 | SMG VOICE (have smg_*) |
+| Service | DT Timer | 🟡 | DT times — have via DAR; confirm source |
+| Shift | 3D Trend | ⬜ | multi-dim trend |
+| Shift | Trends | ⬜ | shift trends |
+| Shift | Rank | ⬜ | shift ranking |
+| Shift | 3 Peaks | ⬜ | **peak-period analysis (throughput planning)** |
+| Shift | Daily Activity Report | ✅ | `qsr_daily_activity` (DAR) |
+| Shift | Focus On Service | ⬜ | service focus |
+| Shift | Operations Report | 🟡 | have Ops Report (manual upload) — confirm |
+| Shift | Shift Manager Summary | ⬜ | per-shift-manager rollup |
+| Shift | Peak Target and Tracking | ⬜ | **peak targeting (labor deploy vs demand)** |
+| Shift | Find My Peak | ⬜ | peak identification |
+| Shift | Time Slice Summary | ⬜ | **intraday time-slice throughput** |
+| Shift | Daily Glimpse | ✅ | `daily_glimpse_daily` (emailed pull) |
+| Shift | Punched Summary | ⬜ | punch summary |
+| Shift | Records | ⬜ | records |
+| C&I (top-level) | _(not expanded)_ | ⬜ | Cash & Inventory section — screenshot if useful |
+
+Separate top-level nav sections (not under Reports): **Forms** (done — printable forms),
+**C&I**, **Inventory**, **Workforce**.
+
+## Reports → Forms sub-category (audit trail, not templates)
+- **Form Completion Report** ⬜ — who-completed-which-form compliance (Pre-Shift/Travel Path
+  completion rates by store/shift → ties to our new Printable Forms + a compliance panel).
+- **Public Survey Report** ⬜.
+
+## Other top-level sections (not "Reports" — management/config + a few data-rich ones)
+- **Inventory** (data-rich, mostly ✅ via our pulls): Audit, Donation Supplies, Food Over
+  Base ✅, Inventory Analysis, Inventory Usage, Manual Vendors, **Menu Items** ⬜ (product/
+  pricing master — feeds a Pricing Engine), On Hand Inventory ✅, Physical Inventory ✅,
+  Purchases ✅, Raw Items ✅, Transfers ✅, Variance Stat/Yields ✅, Waste ✅, **WRIN
+  Management** ⬜ (item master).
+- **Workforce**: HR, Scheduling, Employee Portal, Payroll — the operational modules behind
+  the People/Payroll/Labor reports (LifeLenz-adjacent).
+- **Operations**: Forms, Equipment ⬜ (asset/maintenance — new domain), Customer Feedback,
+  Training ⬜ (crew certification — ties to skills matrix / perf reviews).
+- **Engagement**: Manage Rewards, Rewards, Surveys, **Recruiting** ⬜ (hiring funnel → pairs
+  with New Hires + Turnover), Manage Feedback.
+- **Communication**: TV, Resource Library. **Administration**: Users/Roles/Locations/Org/
+  Subscriptions/Business Unit (RBAC + org config — reference for our own RBAC/org_config).
+- **Security (loss-prevention — high value):** **Security Events**, **Suspicious Activity**,
+  **Any Transaction** ⬜ (register-level transaction search — powerful for controls/fraud),
+  **Store Rankings**, Camera Settings.
+
+## Home dashboard — KPI vocabulary & widgets (what QSRSoft leads with)
+Confirms Meridian already has analogs for much of this; use as a coverage/vocab check.
+- **Scorecards** (configurable, Actual / Avg Goal / Diff, Comp=Trading, period=MTD):
+  *Scorecard-KPIs* (OEPE, R2P, KVS Time Per GC, Total Labor%), *DFO Scorecard* (**Crew
+  3-Month Turnover 64.29%, Shift TTM Turnover 62.5%**, Overall Sat%, DT Acc Sat%),
+  *First Friday Scorecard* (STW GCRD, Overall Sat%, OEPE W/O Parked, Digital Order Pts %
+  of Total Sales), generic *Scorecard* (Overall Sat%, DT Acc%, OEPE W/O Parked, Digital
+  Usage). → mirrors Meridian Projections/Scorecards; DFO/First-Friday are named scorecard
+  templates (cf. our smart-targets/scorecard UX + the perf-review template work).
+- **Today**: Sales / Avg Check / GC's / DT Sales; OEPE W/O Park, R2P, Healthy Usage, KVS
+  Time/GC; Actual-vs-Needed, Actual-vs-Scheduled, Avg Rate, Punch Labor%.
+- **Snapshot** (Yest/WTD/MTD/LW/LM/YTD/TTM/T365): Labor (Crew Labor%, Avg Rate, **TPPH
+  4.84**, Total Labor%), Cash (**Over Ring, Red Before, Red After, Over Short** — controls),
+  PMIX (top items: units sold/used/promo), **Drive Thru HME** (OEPE W/O Park, %OEPE ≤120s,
+  Total Cars, Lane 1/2 Cars).
+- **Digital Snapshot**: Digital Hero KPIs (Digital App % of Sales, **Loyalty 90-Day Active
+  Customers**, GC/R/D, New Digital App Customers, McDelivery % of Sales), Digital Order Pts
+  by channel (Digital/Kiosk/MOP/McDelivery/GMA), **MOP Fulfillment** mix (Curb/Table/FC/DT).
+- **Day Parts / Peaks / Point of Order** tabs; **Round Up** donations (MTD/goal); **VOICE**
+  (Overall/Be Nice/Be Fast/Quality/Clean/Accuracy). Note **TPPH** is here → our backlog
+  "TPPH auto-target calc" has a source.
 
 ## Standout untapped candidates (early read)
 - **Product Mix / PMIX Discount / RFM Price Comparison** → Pricing Engine + product-level
@@ -138,6 +219,51 @@ Business Unit, Cash, Food, Labor, Digital, Product, People. Remaining categories
   FIFA UPT+/-, GC/Day+/-, OEPE+/-, RMHC% GC, Upsized%), **Round Up** by POS area,
   **Voice Rankings** → ranking/gamification patterns for our leaderboards.
 - **CoachQ** = QSRSoft's AI assistant (cf. our SAGE).
+
+## ⭐ Dashboard & Advanced-Analytics INSPIRATIONS (vision-level, from home + shift dashboards)
+These are concepts worth adopting, beyond raw pulls:
+1. **"Cashflow Opportunity" $-quantifier** (QSRSoft Consulting widget): translates gaps into
+   dollars — Excessive Crew Labor ($41K/store/6mo), Food Opportunity ($20K/store vs
+   best-in-class), GC Opportunity (Comp GC gap to BU). **⭐ Biggest idea:** a Meridian
+   "Opportunity $" layer that converts every deficit (labor, FOB, GC gap) into $ upside,
+   benchmarked to best-in-class. Squarely the "intelligence system" north star.
+2. **Comp = BU / Org / FO benchmarking** (every metric shown BU vs Org vs "Org vs BU"):
+   systematic peer/benchmark comparison, not just vs-LY/vs-target. → a benchmarking layer
+   for Meridian (store vs district vs best-in-class); revisits the peer-blend idea.
+3. **Base Food Analysis attribution** (Drivers: **PMIX / Pricing / Raw Cost / Interaction**):
+   a food-cost *bridge* decomposing base-food shift into drivers. → upgrade EOM/FOB from
+   "what" to "why" with an attribution waterfall. (Snapshot-Month Food = FOB%/Base Food%/
+   Stat Var%/Unexplained% Actual/Target/Diff — **confirms our EOM FOB diagnosis mirrors QSRSoft**.)
+4. **Product-level margin** (National cards: % of Total GC, Units/1K GC, Avg Check, **Avg
+   Margin Amt, Margin %** per item — FIFA Meals, Pies, Caesar Chicken, 2.0 deals, EVM $5/$8,
+   5%/15%): PMIX + margin = the Pricing Engine's raw material. **Units/1K GC** is their
+   normalization unit throughout.
+5. **Security Drill-Down Events** (Total Promo / POS Overring / Other Promo / Cash Refund,
+   ranked by $ and **$/1k GC, #/1k GC**): normalized loss-prevention event ranking → feeds
+   Signals/controls + Attention Now.
+6. **Shift Dashboard** (role-based): **Shift Runner Scorecard** grades Shift Prep = **Pre
+   Shift Checklist % + Travel Path %** (→ directly ties our new Printable Forms to a shift
+   score via Form Completion Report) alongside OEPE/R2P/KVS vs goal; **CoachQ** AI shift
+   narrative (SAGE analog); hourly DAR (STW GC vs Proj, Act Hrs vs Need, OEPE, KVS, R2P);
+   Working-Today + Employee Roster (per-employee score); Workflow (forms due by time).
+7. **Shared Links**: AtMcD, **PACE** (the graded-visit system Meridian's Visit Readiness
+   targets), MBSync, **RFM** (menu/price file), **Price Portal** — the external McD systems.
+
+## PRIORITIZED opportunity ranking (post-full-walkthrough)
+Tier 1 (high value, distinctive):
+- **Opportunity-$ quantifier** (labor/FOB/GC gap → dollars, benchmarked) — flagship.
+- **Product Mix + margin → Pricing Engine** (Product Mix/PMIX/RFM/Menu Items/National cards).
+- **Food-cost attribution bridge** (PMIX/Pricing/Raw/Interaction) on top of EOM/FOB.
+- **BU/Org benchmarking layer** (vs peer/best-in-class, not just LY/target).
+Tier 2 (clear gaps, well-scoped):
+- **People/retention panel** (Turnover Crew-3mo/Shift-TTM, New Hires, Recruiting) + **labor
+  integrity** (Overtime Audit, Modified Punches, Store Time Punches, Student Permit).
+- **Peak/throughput cluster** (3 Peaks, Peak Target & Tracking, Time Slice, Kitchen Capacity).
+- **Form Completion compliance** (Pre-Shift/Travel Path completion → Shift score; uses our forms).
+- **Security/controls** (Suspicious Activity, Any Transaction, Security events per-1k-GC).
+Tier 3 (enrichers):
+- Digital depth (MOP fulfillment mix, Loyalty 90-day active, Mobile Offer List → Promo ROI).
+- Schedule Variance (scheduled vs actual) for Labor Tools; Where-Served/Point-of-Order channel.
 
 ## Handling notes
 - Screenshots of report **structure** (names/columns/params) are the value — not row data.
