@@ -53,10 +53,10 @@ Grab its Network request (Fetch/XHR, likely `api.reports.myqsrsoft.com`, path wi
 (names/categories/ids/params). Fallback: the Reports menu/config load (the nav tree of
 all categories + children appears preloaded — expanding "Cash" showed 12 instantly).
 
-## Catalog (partial — from screenshots 2026-07-27; complete via Report Finder JSON)
-Reports categories seen (left-nav): **Business Unit, Cash, Food, Labor, Digital, Product,
-People, Payroll, Sales, Service, Shift** (+ top-level **C&I**). Only Business Unit + Cash
-children captured so far; the rest await the Report Finder JSON.
+## Catalog (from screenshots 2026-07-27; still need Payroll/Sales/Service/Shift/C&I children)
+Reports categories (left-nav): **Business Unit, Cash, Food, Labor, Digital, Product,
+People, Payroll, Sales, Service, Shift** (+ top-level **C&I**). Children below captured for
+Business Unit, Cash, Food, Labor, Digital, Product, People. Remaining categories TBD.
 
 | Category | Report name | Status | Maps to / candidate Meridian use |
 |---|---|---|---|
@@ -74,6 +74,60 @@ children captured so far; the rest await the Report Finder JSON.
 | Cash | Adyen | ⬜ | payment-processor detail (Adyen) — settlement/chargebacks |
 | Cash | Billable Sales | ⬜ | billable vs gross sales |
 | Cash | Safe Counts | ⬜ | safe count compliance — cash controls / EOM |
+| Food | Inventory | ✅ | `qsr_onhand` / physical inventory |
+| Food | Transfers & Purchases | ✅ | `qsr_transfers` + `qsr_ebos_daily` |
+| Food | Food Over Base | ✅ | `qsr_fob` (FOB) |
+| Food | Raw Item Counts | ✅ | `qsr_onhand` raw items (EOM count progress) |
+| Food | Raw Waste | ✅ | `qsr_waste` (raw) |
+| Food | Comp Waste | ✅ | `qsr_waste` (completed/assembled) — **Food category ~fully covered** |
+| Labor | All Hours | 🟡 | LifeLenz hours — confirm parity |
+| Labor | Labor Statistics | 🟡 | labor trend — confirm cols |
+| Labor | Labor Schedules | ✅ | `lifelenz_schedule` |
+| Labor | Labor Analysis | ✅ | Labor Analysis view (VLH band) |
+| Labor | Schedule Analysis Summary | 🟡 | schedule quality — confirm |
+| Labor | Schedule Variance | ⬜ | scheduled vs actual hours variance — labor-tools panel |
+| Labor | VLH Over/Under | 🟡 | we derive VLH gap — confirm this is the source |
+| Digital | At A Glance | 🟡 | digital summary |
+| Digital | Digital App | ⬜ | app orders/engagement |
+| Digital | Digital Usage | ⬜ | digital adoption trend |
+| Digital | Mobile Offer List | ⬜ | **offers/promos → ties to Promo/Discount ROI panel** |
+| Digital | Mobile P&L Detail | ⬜ | digital-channel P&L (3PO/MOP economics) |
+| Digital | GMA Delivery | ⬜ | delivery (McDelivery) detail |
+| Digital | National Employee Discount (NED) | ⬜ | employee-discount tracking — controls/loss-prevention |
+| Product | RFM Price Comparison | ⬜ | **pricing** (menu-file price compare) — Pricing Engine |
+| Product | Product Mix | ⬜ | **⭐ PMIX — Pricing Engine + Filet-O-Fish-Friday correlation (Notes 25/28)** |
+| Product | PMIX Discount | ⬜ | discount by product |
+| Product | Product Mix Trend | ⬜ | PMIX over time — demand shifts |
+| Product | Kitchen Capacity | ⬜ | **capacity vs demand — throughput/labor deploy; big** |
+| Product | Delivery Price Index | ⬜ | delivery pricing markup |
+| Product | Reported Product Outage | ⬜ | outage tracking (matches the "Product Outage" alert card) |
+| People | At A Glance | 🟡 | people summary |
+| People | Employee Roster | 🟡 | roster — cf. LifeLenz people/skills |
+| People | Birthdays and Anniversaries | ⬜ | recognition/engagement nudges |
+| People | Roster Statistics | ⬜ | staffing composition |
+| People | Turnover | ⬜ | **retention/turnover — major people KPI, no Meridian panel** |
+| People | Store Time Punches | ⬜ | punch detail — labor integrity |
+| People | Time Punch Export | ⬜ | payroll export |
+| People | Labor Exceptions | ⬜ | **OT/violations/exceptions — loss-prevention + compliance** |
+| People | Time and Attendance | ⬜ | attendance |
+| People | Emp Hours This Week | 🟡 | current-week hours |
+| People | Shift | ⬜ | shift-level people |
+| People | Rewards | ⬜ | Round-Up rewards / recognition |
+| Payroll | _(children TBD)_ | ⬜ | screenshot pending |
+| Sales | _(children TBD)_ | ⬜ | screenshot pending |
+| Service | _(children TBD)_ | ⬜ | screenshot pending |
+| Shift | _(children TBD)_ | ⬜ | screenshot pending |
+| C&I | _(children TBD)_ | ⬜ | screenshot pending |
+
+## Standout untapped candidates (early read)
+- **Product Mix / PMIX Discount / RFM Price Comparison** → Pricing Engine + product-level
+  demand (long-flagged; the catalog confirms the source reports exist).
+- **Kitchen Capacity** → throughput vs demand; pairs with labor deploy + speed of service.
+- **Turnover + Labor Exceptions + Store Time Punches** → a real People/retention panel +
+  labor-integrity signals (OT, modified punches, exceptions) — loss-prevention theme.
+- **Schedule Variance** → scheduled-vs-actual labor for Labor Tools.
+- **Mobile Offer List / Mobile P&L Detail** → feed Promo/Discount ROI + digital economics.
+- **Cash cluster** (Deposits, Safe Counts, Tax Exempt, NED) → cash-integrity / controls.
 
 ### Other high-value surfaces seen on the QSRSoft home (inspiration, not reports per se)
 - **"Did you know?" alert cards** (tabs Default/Prod-Inv/People/Shift/Security/C&I):
