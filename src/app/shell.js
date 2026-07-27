@@ -195,6 +195,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // ── DAILY ──────────────────────────────────────────────────
       navLabel('DAILY'),
       navItem('Home',              '⌂', ()=>setView('command'),         view==='command'),
+      navItem('Attention Now',     '🎯', ()=>onOpenModal('priorities'), false),
       navItem('Needs Attention',   '🔴', ()=>onOpenModal('attention'),  false, needsCount),
       pis('analytics.brief', 'Daily Brief',      '☀️', ()=>onOpenModal('morning-brief'), false),
       navItem('Date-Range Report', '📅', ()=>onOpenModal('report'),     false),
