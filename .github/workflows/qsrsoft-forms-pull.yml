@@ -1,0 +1,62 @@
+name: QSRSoft Forms Pull (printable templates)
+
+# On-demand capture of the Shift-Management form templates (Pre-Shift Checklists +
+# Travel Paths) → public/forms/*.json, committed back to the branch you run it from.
+# No schedule — these are blank templates that rarely change. Run it whenever a form
+# is edited in QSRSoft. Populates the in-app "Printable Forms" panel.
+
+on:
+  workflow_dispatch:
+    inputs:
+      forms_ids:
+        description: 'Comma-separated formIds to pull (blank = the 8 default Pre-Shift + Travel Path forms)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+permissions:
+  contents: write
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft form templates
+        run: node scripts/qsrsoft-forms-pull.mjs
+        env:
+          QSRSOFT_FORMS_TOKEN: ${{ secrets.QSRSOFT_FORMS_TOKEN }}
+          QSRSOFT_USERNAME:    ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:    ${{ secrets.QSRSOFT_PASSWORD }}
+          FORMS_IDS:           ${{ github.event.inputs.forms_ids || '' }}
+          QSRSOFT_DEBUG:       ${{ github.event.inputs.debug || '0' }}
+
+      - name: Commit updated templates
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/forms/
+          if git diff --cached --quiet; then
+            echo "No form changes to commit."
+          else
+            git commit -m "chore: refresh QSRSoft printable form templates [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "Committed refreshed public/forms/ to ${{ github.ref_name }}."
+          fi
