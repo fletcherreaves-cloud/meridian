@@ -170,6 +170,22 @@ function ItemJourneyView({ journey: j }) {
         [j.wrin && `WRIN ${j.wrin}`, j.itemClass, j.uom].filter(Boolean).join('  ·  ')),
       div({ style: { fontSize: '13px', color: VERDICT_TONE[j.verdict.tone], fontWeight: 600 } }, j.verdict.text)),
 
+    // Variance Stat report reconciliation (Note 30 A3) — the authoritative figure,
+    // shown alongside a tie-out check against the count-cycle timeline total.
+    (j.reportDollars != null || j.reportUnits != null) && (() => {
+      const rd = j.reportDollars, ru = j.reportUnits, jd = j.netCountDollars;
+      const diff = (rd != null && jd != null) ? Math.abs(rd - jd) : null;
+      const ties = diff != null && diff < 1;
+      return div({ style: { padding: '8px 12px', borderRadius: '8px', background: 'var(--surf3)', border: '1px solid var(--bdr)' } },
+        div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' } },
+          span({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Variance Stat report'),
+          rd != null && span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? '#f87171' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`),
+          ru != null && Math.abs(ru) >= 0.5 && span({ style: { fontSize: '12px', color: 'var(--text2)' } }, `${ru > 0 ? '+' : ''}${Math.round(ru).toLocaleString()}${j.uom ? ` ${j.uom}` : ' units'}`)),
+        diff != null && div({ style: { fontSize: '11px', marginTop: '3px', color: ties ? '#4ade80' : '#f5bc00' } },
+          ties ? '✓ Timeline reconciles exactly to the report.'
+            : `⚠ Timeline count total is ${jd < 0 ? '-' : '+'}${jMoney(jd)} — differs by ${jMoney(diff)}; the raw-item ledger may not cover every count for this item.`));
+    })(),
+
     // flow summary — where the units came from / went
     flowChips.length > 0 && div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
       flowChips.map(([lane, q]) => span({
@@ -507,10 +523,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
 
   // Open the visual Item Journeys for a store (worst-net-variance first).
+  // Enrich each with the authoritative Variance Stat report figure for the same
+  // WRIN+period so the journey can be reconciled EXACT to the report (Note 30 A3).
   const openJourneys = useCallback((loc, name) => {
     const list = buildStoreJourneys(rawByLoc[loc] || [], { period, asOf: new Date() });
-    setJourneys({ loc, name, list, selectedWrin: list[0]?.wrin || null });
-  }, [rawByLoc, period]);
+    const vmap = {}; (varByLoc[loc] || []).forEach(v => { vmap[String(v.wrin)] = v; });
+    const enriched = list.map(j => {
+      const v = vmap[String(j.wrin)];
+      return v ? { ...j, reportDollars: v.dolDiff, reportUnits: v.unitVar } : j;
+    });
+    setJourneys({ loc, name, list: enriched, selectedWrin: enriched[0]?.wrin || null });
+  }, [rawByLoc, varByLoc, period]);
 
   // ── Flow editor ──
   const openFlow = useCallback(() => {
