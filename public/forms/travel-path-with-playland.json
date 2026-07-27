@@ -1,0 +1,166 @@
+{
+  "formId": "fd2c551a-5859-449a-80c1-5bb980ce7704",
+  "title": "Travel Path With Playland",
+  "description": "Travel Path Checklist With Playland  / Tasks",
+  "category": "Shift Management Forms ",
+  "lastEditedAt": "2025-10-29T20:16:26.881Z",
+  "itemCount": 19,
+  "sections": [
+    {
+      "title": "Travel Path Checklist",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Name",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Start Time:",
+          "field": "time"
+        }
+      ]
+    },
+    {
+      "title": "Exterior Lot , Corral & DT",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Exterior Lot Clean: Trash Picked Up, Curbs Swept, Landscape Clean, Trash Can Not Full",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Corral and Backyard: Check Landscape, Parking Lot, Flag(s), Outside Lights, Trash Cans, Sidewalks, Outside Windows",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Drive-Thru Exterior: DT Lane, Menu Boards, COD, Both Windows cleaned, Check lights, Speaker Quality",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Lobby/Beverage Bar: Tables, Chairs, High Chairs, Floors clean, Windows clean, Doors free of fingerprints, Bar clean and stocked, Tea lid secured and within holding time, Trash can, Wet signs available",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "PlayPlace/Playland: Equipment clean/good repair, safety signs clean, wipe dispenser stocked, bathroom cleaned, windows clean, floor clean, tables clean",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Kiosks: Clean/ no fingerprints, receipt paper stocked, Kiosks working, Credit Card machines working, GELs engaging with Guests",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Restrooms: Floors clean, Mirrors clean, countertops clean, Urinals/toilets clean, hand soap working/stocked, toilet tissue stocked, baby liners stocked, Odor free, trash cans clean/change",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Front Counter & Drive Thru Interior: McDelivery Accepting Orders, Sanitized towels available, Sanitizer solution tests above standard, No towels laying around, Holding times adhered to (tea, coffee, syrups, etc) Counters clean, Floors clean, Card Reader working, 7 Head sets available, Runner Vest being used, Split function being used, bump bar working, coin charger being used, 3 Ws, Round up being asked",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Crew & Personal Hygiene: Crew healthy/ good personal hygiene, Clean uniforms, name tags, Crew meeting  guest expectations, Hand Washer timers in use & proper procedures",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Production & Assembly Areas: Food Safety followed, Floors clean, UHC Cabinet clean, Eproduction Followed, Holding times being used, Refrigerators Clean/Stock, Freezers Clean/Stock, Sanitized Towels available, Sanitizer solution tests above standard, No Towels lay around, Blue gloves stock, No Double Gloving, Grills Scraped & Steam Clean, Clear Gloves available, Fresh Beef prepped correctly, Cowbell working, Prep table stock, Times are in date, Thaw Pull Done & Dated, Wraps/Boxes stock",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fry Station Area: Oil Levels acceptable, Fry cartons stock, Salt Filled, Mirror clean,  No Fries on the Floor, Fry Hopper stock",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Prep Area: Clear Gloves worn when prepping products, Countertops clean, Label Maker Stock & Functional, E-Production being followed",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Back Office Area: Safe Locked, Overall Area Organized, Floors Clean",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Crew Room: Floors clean, Crew Room organized, Tables clean, Mirror clean",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Walk-in Cooler/Freezer: Cooler/Freezer Proper Temp, No Open Boxes(pies, steak, etc) All Boxes off floor, All Prepped items within hold times, No Expired products, Floors Clean",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Stock Room/Back Room:Stock room Organized, All Boxes on shelves, Floors clean & Dry, Back Door locked, No Trash on floor,  Back Sink clean & organized, Small Wares washed & sanitized, Soap stocked",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Basic Shift Management: Shift Huddle, Communicated Goals/Where we tending, DSPT followed, Communicate Labor, Check off Tasks on QSRsoft",
+          "options": [
+            "Complete",
+            "Action Needed"
+          ]
+        }
+      ]
+    }
+  ]
+}

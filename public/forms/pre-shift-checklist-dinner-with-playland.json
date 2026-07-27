@@ -1,0 +1,1656 @@
+{
+  "formId": "b601b8d9-1ae7-450e-b426-25b16cae0081",
+  "title": "Pre-Shift Checklist Dinner With Playland",
+  "description": "Dinner  Pre-Shift With Playland / Tasks",
+  "category": "Shift Management Forms ",
+  "lastEditedAt": "2025-10-30T00:25:16.389Z",
+  "itemCount": 176,
+  "sections": [
+    {
+      "title": "Dinner Pre-Shift Checklist",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Today's Date:",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Start Time",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Name",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Check each item in the areas listed below and make note of priorities in the section provided.",
+      "items": []
+    },
+    {
+      "title": "Outside Guest Area:",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Landscaping weed free",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "MOP signage in good condition",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT menu board clean/good repair",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Parking lot & DT lane clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Flag in good repair",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Under the DT Windows Cleaned",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Windows and Doors Cleaned",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Outside Lights On",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "COD clean & in good repair",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Guest & Lobby Area",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Windows clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Floors clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tables & chairs clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Trash emptied as needed",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Lights/ceiling in good repair",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Wet floor signs (4) available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tea within holding time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tea container lids secured",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All Kiosks ON and clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "GEL Assigned & Expectations Set",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Beverage Bar Cleaned & Stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Restrooms clean including mirrors",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "High Chairs are Cleaned & Available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Receipt paper stocked at kiosks/POS",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Restrooms stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Front Counter Area",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Card readers working",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Crew assigned to react and fill McDelivery orders",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Front Counter Area clean & sanitary",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Sanitized towel bucket tested & Ready",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Monitors and Bump Bars Working",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Test strips available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Trays clean & lined",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Oatmeal, Apples, Cranberries,Lemons (Check Dates)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coffee within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dessert/McFlurry, Shake Mix, Cones  toppings within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McCafe Syrups, Drizzles, Whip Cream, Whole Milk, Beans (Check Dates)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Shake/sundae mix full",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken",
+            "Option 4"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Iced Tea/Iced Coffee Liners (Dates & Times)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Check FCB Machine Clean/Stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Pies & Cookies within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Floors are Swept and Mopped",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Does all the refrigerator have Thermometers in them?",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Front Counter Stock",
+      "items": [
+        {
+          "kind": "check",
+          "title": "D Plus Bags, Large Carriers and Tamper-proof Stickers stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bags stocked correctly",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Counter cups stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cutlery/spoons stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All condiments stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Syrup, butter & jelly stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Apple/promo pies stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dessert cups stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McFlurry mix-ins stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cones stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Shake syrups stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dessert toppings full",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Milk/juice/water stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "OJ & lemonade concentrate stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coffee packets available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Oatmeal stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Receipt paper stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Drink Carriers stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Happy meal toys, boxes & under 3 toys stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "McCafe Area",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Smoothie/frappe/yogurt within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Espresso hoppers within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Whole milk within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Flavored syrups within hold times",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Whipped cream within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "McCafe Stock",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Ice hopper filled",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Espresso hoppers stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Flavored syrups stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Spoons stocked/clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Whipped cream stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Printer paper stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Drive Thru Area",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Presenter and Runner Knows the 3Ws",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Headset batteries charged",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Headset on DT crew and mgr.",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Park Car Runner Designated with a Vest on or Available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Set up for Peak to have Split Function with DT Order Taker(s) and Cashier",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "MOP curbside tray stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Crew asking Guest if they are using the Mobile App and Round Up",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coffee and Tea within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coin Charger in Place and in Use?",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Presenter is Greeting Guest by name(If has Receipt) or Greeting Guest with a Smile",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Windows clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All DT Monitors and Bump Bars Working",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Drive Thru/ABS Stock",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HLZ Area stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All condiments stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Straws/napkins stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cutlery/spoons stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All cups/lids stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "4 cup carriers stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Receipt paper stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Cart Switched to the Time Period of the Day (Stocked)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Milk/juice/water stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FRY STATION",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Oil level correct/acceptable",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Mirror/station clean",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "2 fry scoops available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fry bags & cartons stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fry freezer stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fry hopper stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HB Bags stocked/tongs available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Salt filled & available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HB wire rack and Divider available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Prep:",
+      "items": [
+        {
+          "kind": "check",
+          "title": "E-Production Working & Being Followed Tempering & Thaw Pull",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cheese prepped/Dated:(72 Hr American Cheese Open Sitcker)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Ketchup, Mustard, Sauce prepped & Dated",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dehydrated Onions/Shakers/Silvered Prepped & Dated",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Shredded Lettuce/Pickles Prepped & Dated(Check E-Production)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Buns Pulled/Prepped & Dated(Check E-Production)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Rolled Burritos are Staged for Next Day",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tomatoes/Crinkle Pickles a Min 3 Containers Prepped & Dated(Check E-Production)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fresh Beef Dated Correctly (2 Stickers 1 on Package 1 on Blue Container)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Production Area",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Food safety completed",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Test strips available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Towel Buckets Dated in Code with Sanitizer w/Strips",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Buns are Sealed and Covered",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Sanitized grill towels ready",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Floors are Swept & Mopped",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Targets communicated to all",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Gloves stocked - NO double Gloves",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "UHC times on & correct",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "UHC trays clean/good condition",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "UHC levels Followed by E-Production",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Spatulas and scrapers sharp",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Teflon in good condition",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Grill surface FREE of carbon",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Egg yolk tool available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Water container available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "UHC Cabinets & Moffat are Cleaned Daily",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Black and white hutzler available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cooked bacon within hold time",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Butter spray bottles working & available",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Trays/Utensils Positioned Correctly",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Both Side 1/2 Bump Bars Working",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "E-Production Working & Being Followed",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Both Side 1/2 Monitors Working",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Rolled Burritos in Correct Container & Dated",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Check All Fridges for Proper Levels are Stocked(Breakfast & Lunch)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cheese Tempered Under Table W/Correct Dates & Times (1-One Hr Tempering Sticker 3-Cheese Table Stickers)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Boxes/Wraps/Bases Stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Check All Freezers for Proper Levels are Stocked (Breakfast & Lunch)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cowbell Working, Crew are Reacting",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Table & Date Boards are in Code",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Does all the Freezer and refrigerator have Thermometers in them?",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Back Sink, Hand Wash Sinks & Tea Brewing Area:",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Hand sink- Hot Water, Soap & Paper Towels Stocked (Water 100 Degrees)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dishes Being Cleaned Every 4 Hours",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Sink Holds Water",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tea Brewing Cleaned &  stocked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Sink are set up 3 Compartment for doing Dishes (Wash/Raise/Sanitize) Or Warewash Stocked with the Right Detergent",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Walkin, Freezer & Dry Storage",
+      "items": [
+        {
+          "kind": "check",
+          "title": "All Products within code(Pull Expired Products for Waste)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CO2 levels checked",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Soda BIB level ready for peak",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Freezer/Cooler Floors Cleaned",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Check Coke Tank Levels",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "No Open Product (Pies, Steak) Left Open",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Freezer has no ice build up",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Play Place Area:",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Safety Signs are Cleaned",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Equipment Clean & Good Repair",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tables & Chairs Cleaned",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Doors & Windows Cleaned",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Alarm to Door Locked & Working",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Basic Shift Management",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Handwashing timer in use(Manager Ensuring Crew are Washing hands Correctly)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All employees healthy(No Illness that Would Need to Send Them Home)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DSPT Done 24 Hours in Advance",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Travel Paths are Planned to be Done Through out the Shift (Every Hour for non peaks, 30 Mins during Peak)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Secondary Duties Assigned",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Review crew secondary duties",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Communicated Where the Store is on Voice% to the Crew (Working on being Fast & Friendly)",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Safe Counted",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Targets communicated",
+          "options": [
+            "Complete",
+            "Needs Action",
+            "Action Taken"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Priorities",
+      "items": [
+        {
+          "kind": "text",
+          "title": "#1 Safety",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "#2 Quality & Services",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "#3 Comfort & Convenience",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "#4 Appearance",
+          "lines": 3
+        }
+      ]
+    }
+  ]
+}
