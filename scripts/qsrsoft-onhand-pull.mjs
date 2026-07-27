@@ -69,15 +69,22 @@ function inCountWindow() {
 }
 
 // Year-round "progress mode" snapshot: outside the count window we still take ONE
-// light On-Hand pull per day (at PROGRESS_SNAPSHOT_HOUR UTC) so `last_counted`
-// freshness stays current all month — feeding the dashboard's year-round Progress
-// mode. Inside the window we keep the hourly cadence (count-completion tracking).
+// light On-Hand pull per day (in a morning UTC WINDOW) so `last_counted` freshness
+// stays current all month — feeding the dashboard's year-round Progress mode.
+// Inside the count window we keep the hourly cadence (count-completion tracking).
 // Owner's two-modes idea (Notes 29); the workflow fires hourly and this gate picks
-// which hours actually do work. ONHAND_PROGRESS=0 disables the daily snapshot.
+// which hours actually do work. IMPORTANT: GitHub's scheduled runs are sparse and
+// delayed (gaps of hours are common), so requiring an EXACT hour would miss the
+// snapshot on days no run lands in that hour. We use a WINDOW [HOUR, HOUR+WINDOW)
+// so at least one sparse run catches it; the upsert is idempotent, so the handful
+// of possible extra pulls in-window are harmless. ONHAND_PROGRESS=0 disables it.
 const PROGRESS_SNAPSHOT_HOUR = Number(process.env.ONHAND_PROGRESS_HOUR ?? 10);
+const PROGRESS_SNAPSHOT_WINDOW = Number(process.env.ONHAND_PROGRESS_WINDOW ?? 4); // hours
 const PROGRESS_ENABLED = process.env.ONHAND_PROGRESS !== '0';
 function isProgressSnapshotHour() {
-  return PROGRESS_ENABLED && new Date().getUTCHours() === PROGRESS_SNAPSHOT_HOUR;
+  if (!PROGRESS_ENABLED) return false;
+  const h = new Date().getUTCHours();
+  return h >= PROGRESS_SNAPSHOT_HOUR && h < PROGRESS_SNAPSHOT_HOUR + PROGRESS_SNAPSHOT_WINDOW;
 }
 // Should this invocation do a pull at all, and in which mode?
 function runMode() {
