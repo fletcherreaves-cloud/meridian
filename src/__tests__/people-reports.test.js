@@ -236,6 +236,32 @@ describe('parseMcDelivery3POApi (JSON endpoint)', () => {
   });
 });
 
+import { parseShiftManagerSummary } from '../engine/people-reports.js';
+describe('parseShiftManagerSummary (JSON endpoint)', () => {
+  // Real /reports/mcd/shift/shiftManagerSummary resp[] rows: a Manager Total (kept),
+  // a daypart row for the same manager (dropped by onlyTotals), and an unassigned
+  // "No FL Manager" geid 0 (always dropped).
+  const payload = { resp: [
+    { nsn: 5985, timeSlice: '4am-11am', geid: 704535, managerName: 'STAFFORD, STEFANIE', transactions: 586, OEPE: 109 },
+    { nsn: 5985, timeSlice: 'Manager Total', geid: 704535, managerName: 'STAFFORD, STEFANIE', numShifts: 2, actualHours: 72.62, allNetSales: 5129.7, transactions: 493, avgCheck: 10.42, transPerPunchedHour: 6.78, OEPE: 128, R2P: 93, CTP: 50, dtTTL: 150, KVSTimePerTran: 34, punchedLaborPct: 0.19 },
+    { nsn: 3708, timeSlice: 'Manager Total', geid: 0, managerName: 'No FL Manager', transactions: 170, OEPE: 157 },
+  ] };
+  it('keeps Manager Total rows with a real geid, drops dayparts + unassigned', () => {
+    const rows = parseShiftManagerSummary(payload);
+    expect(rows).toHaveLength(1);                            // daypart + geid-0 dropped
+    expect(rows[0]).toMatchObject({
+      loc: '5985', geid: 704535, name: 'STAFFORD, STEFANIE', timeSlice: 'Manager Total',
+      numShifts: 2, actualHours: 72.62, netSales: 5129.7, transactions: 493,
+      tpph: 6.78, oepe: 128, r2p: 93, ctp: 50, dtTtl: 150, kvs: 34, laborPct: 0.19,
+    });
+  });
+  it('onlyTotals:false keeps daypart rows too (still drops geid 0)', () => {
+    const rows = parseShiftManagerSummary(payload, { onlyTotals: false });
+    expect(rows).toHaveLength(2);                            // daypart + total for 704535
+    expect(rows.every(r => r.geid === 704535)).toBe(true);
+  });
+});
+
 import { parseTurnoverWide } from '../engine/people-reports.js';
 describe('parseTurnoverWide (annual org rollup)', () => {
   it('pivots category rows × month columns', () => {
