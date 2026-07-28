@@ -103,3 +103,19 @@ describe('parseMcDelivery3PO + hmsToSec', () => {
     expect(m.ordersMissingItemsPct).toBeCloseTo(0.0633, 6);
   });
 });
+
+import { parseTurnoverWide } from '../engine/people-reports.js';
+describe('parseTurnoverWide (annual org rollup)', () => {
+  it('pivots category rows × month columns', () => {
+    const rows = [
+      [null, '2025-06', '2025-07', 'Total'],
+      ['Category', 'Value', 'Value', 'Value'],
+      ['Hires', 202, 215, 2551],
+      ['Terms < 90', 97, 103, 1290],
+    ];
+    const w = parseTurnoverWide(rows);
+    expect(w.months).toEqual(['2025-06', '2025-07', 'Total']);
+    expect(w.byCategory['Hires']['2025-06']).toBe(202);
+    expect(w.byCategory['Terms < 90']['Total']).toBe(1290);
+  });
+});

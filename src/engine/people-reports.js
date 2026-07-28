@@ -168,6 +168,24 @@ export function parseTurnover(rows) {
   return out;
 }
 
+// ── 3b. Turnover (WIDE org rollup) → { month: { category: value } } ───────────
+// The annual export is pivoted: row = category (Hires/Terms/…), column = month + Total,
+// org-wide (no per-loc). Useful for an org turnover trend; reviews use the per-loc monthly
+// format above. Row 1 = month headers (col0 blank), row 2 = "Value" labels, data from row 3.
+export function parseTurnoverWide(rows) {
+  if (!rows || rows.length < 3) return { months: [], byCategory: {} };
+  const monthsRow = rows[0] || [];
+  const months = monthsRow.slice(1).map(m => (m == null ? '' : String(m).trim())).filter(Boolean);
+  const byCategory = {};
+  for (let r = 2; r < rows.length; r++) {
+    const row = rows[r]; if (!row || row[0] == null) continue;
+    const cat = String(row[0]).trim(); if (!cat) continue;
+    byCategory[cat] = {};
+    months.forEach((mo, i) => { byCategory[cat][mo] = num(row[i + 1]); });
+  }
+  return { months, byCategory };
+}
+
 // ── 4. Digital App → per-loc (uses the clean "Digital App" summary sheet) ─────
 export function parseDigitalApp(rows) {
   if (!rows || rows.length < 2) return {};
