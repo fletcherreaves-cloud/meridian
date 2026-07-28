@@ -72,13 +72,23 @@ metadata:
 - **ALL FIVE QSRSoft review-feeding pulls now LIVE**: Roster Statistics, Employee Roster, Turnover,
   Digital App, McDelivery. 18 vitest cases green. All on main (dispatch/cron), Playwright fallback.
 
-## STILL OPEN (app-side + product)
-- **App-side wiring NOT done for Digital + McDelivery**: add loadDigitalAppMonthly / loadMcdeliveryMonthly
-  to src/lib/supabase.js, startup loaders → ds, and autoPopulateKPIs scoring of Digital App GC/R/D +
-  Delivery GC/R/D per loc/month (roster metrics already wired; these two are not yet).
-- **METRIC PROVENANCE (new standing directive — memory/feedback-metric-provenance.md)**: every metric
-  must be traceable to its verifiable source (system/report/endpoint/formula/as-of) via tooltip or a
-  lineage index; composed metrics show their math. Candidate: a metric-source registry like kpi-registry.js.
+## Notes 33 order (owner-approved): 1) wiring+provenance ✓ → 2) One-Pager bugs → 3) Perf-Review personnel/attribution + Shift Mgr Summary → 4) UX round
+- **#1 DONE (v4.549, commit 8fe0229 on branch — app code, rides PR #80, no main cherry-pick):**
+  Digital App GC/R/D + Delivery GC/R/D wired into reviews (supabase.js load/save, App.js startup →
+  ds.digitalAppRows/mcdeliveryRows, autoPopulateKPIs fills mo.digitalGCRD/deliveryGCRD, kpi-registry
+  entries — available via Customize, owner picks category/weight). **Metric provenance foundation**:
+  `src/engine/metric-provenance.js` (metric→{system,report,table,formula,grain}) surfaced through the
+  KPI ⓘ (explainThreshold appends the source line). Build clean, 437 tests.
+  - OPEN sub-item: if Digital/Delivery GC/R/D should score BY DEFAULT, owner picks category+weight →
+    add to DEFAULT_REVIEW_CONFIG.metrics (currently directory-available only, non-destructive).
+- **#3 Shift Manager Summary — dev capture RECEIVED + documented** in
+  memory/reference-shift-manager-summary.md (endpoint /reports/mcd/shift/shiftManagerSummary, resp[],
+  per-manager-on-duty daypart attribution, geid joins Employee Roster). Ready to build the pull +
+  shift_manager_monthly table + DM/shift-role review wiring when we reach #3.
+- **METRIC PROVENANCE directive** (memory/feedback-metric-provenance.md): foundation shipped; extend the
+  registry as new metrics land; deeper in-review tooltip UI (beyond the KPI ⓘ) is a future enhancement.
+- **NEXT: #2 One-Pager bug sweep** — R2P not populating, TPPH scale bug (0.1 vs 5.0 target), current-day
+  & week showing 0/blank, print truncation (top section only). See notes-33-queue.md B#4-8.
 - Consider consolidating the 5 people/digital/delivery pulls into one `qsrsoft-people-pull.mjs`
   (single Playwright auth) — each currently pays its own ~40s login.
 - Stray `src/engine/people-reports 2.js` (CloudDocs duplicate) — delete as cleanup.
