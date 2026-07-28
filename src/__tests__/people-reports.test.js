@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseEmployeeRoster, rosterCounts, shiftCertifiedByLoc, bucketForJob,
-  parseRosterStatistics, headcountFromStats, parseTurnover,
+  parseRosterStatistics, parseRosterStatisticsApi, headcountFromStats, parseTurnover,
   parseDigitalApp, parseMcDelivery3PO, hmsToSec,
 } from '../engine/people-reports.js';
 
@@ -58,6 +58,39 @@ describe('parseRosterStatistics + headcount', () => {
     expect(headcountFromStats(s)).toBe(64);                              // all → exact roster active
     expect(headcountFromStats(s, { include: ['crew'] })).toBe(55);       // crew only
     expect(headcountFromStats(s, { include: ['crew', 'shift'] })).toBe(62);
+  });
+});
+
+describe('parseRosterStatisticsApi (JSON endpoint)', () => {
+  // Real /reporting/v2/people/roster-statistics response for store 3708 — same
+  // numbers as the validated xlsx export, so the API path must yield the same record.
+  const payload = { result: {
+    resp: [{
+      nsn: 3708, crewSize: 63, swingSize: 7, managerSize: 2, crewActive: 55, swingActive: 7,
+      under18: 10, under17: 5, under16: 0, totalStaff: 72, totalActiveStaff: 64,
+      crewInactive: 8, swingInactive: 0, totalStaffInactive: 8, totalRosterActivePct: 0.8889,
+    }],
+    totals: { nsn: 'Grand Total', crewSize: 63, totalStaff: 72 },
+  } };
+  it('normalizes to the parseRosterStatistics shape and drops Grand Total', () => {
+    const byLoc = parseRosterStatisticsApi(payload);
+    expect(Object.keys(byLoc)).toEqual(['3708']);            // Grand Total skipped
+    expect(byLoc['3708']).toEqual({
+      crewStaff: 63, shiftStaff: 7, gmdmStaff: 2, crewActive: 55, shiftActive: 7,
+      rosterSize: 72, rosterActive: 64, under18: 10,
+    });
+  });
+  it('matches the xlsx parser + feeds headcountFromStats identically', () => {
+    const fromApi = parseRosterStatisticsApi(payload)['3708'];
+    const fromXlsx = parseRosterStatistics([
+      ['Loc', 'Crew (Staff size)', 'Shift (Staff size)', 'GM & DM (Staff size)', 'Crew Active', 'Shift Active', 'Roster Size', 'Roster Active', 'Under 18 (Staff size)'],
+      ['3708', 63, 7, 2, 55, 7, 72, 64, 10],
+    ])['3708'];
+    expect(fromApi).toEqual(fromXlsx);
+    expect(headcountFromStats(fromApi)).toBe(64);
+  });
+  it('accepts a bare resp array too', () => {
+    expect(parseRosterStatisticsApi(payload.result.resp)['3708'].rosterActive).toBe(64);
   });
 });
 

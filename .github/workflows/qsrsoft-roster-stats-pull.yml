@@ -1,0 +1,64 @@
+name: QSRSoft Roster Statistics Pull
+
+on:
+  schedule:
+    # Times anchored to US Central. GitHub cron is fixed UTC and does NOT observe
+    # DST, so these land ~1h earlier (Central) during winter (CST).
+    # 11:00 UTC = ~6:00 AM CDT — daily active-headcount snapshot into the current
+    # month's roster_statistics row (upsert overwrites, so re-running is safe).
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+    inputs:
+      period:
+        description: 'Month to pull (YYYY-MM). Default: current month (UTC).'
+        required: false
+        default: ''
+      stores:
+        description: 'Subset of NSNs, comma-separated. Default: all 27.'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Roster Statistics
+        run: node scripts/qsrsoft-roster-stats-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:      ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          ROSTER_PERIOD:              ${{ github.event.inputs.period || '' }}
+          ROSTER_STORES:              ${{ github.event.inputs.stores || '' }}
+          QSRSOFT_DEBUG:              ${{ github.event.inputs.debug  || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roster-stats-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

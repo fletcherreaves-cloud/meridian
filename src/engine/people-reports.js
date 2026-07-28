@@ -129,6 +129,42 @@ export function parseRosterStatistics(rows) {
   }
   return out;
 }
+// ── 2a. Roster Statistics (JSON API) → same shape as parseRosterStatistics ─────
+// The api.reports.myqsrsoft.com `/reporting/v2/people/roster-statistics` endpoint
+// returns camelCase JSON ({ result: { resp: [...per-store...], totals } }) rather
+// than the xlsx 2-D grid. Normalize it to the SAME per-loc record shape
+// parseRosterStatistics emits, so the Playwright auto-pull and the manual xlsx
+// upload converge on one downstream contract (headcountFromStats, the review
+// auto-populate, and saveRosterStatistics all consume this shape). API-key →
+// record mapping verified against the owner's 3708 export:
+//   crewSize 63 → crewStaff · swingSize 7 → shiftStaff · managerSize 2 → gmdmStaff
+//   crewActive 55 · swingActive 7 → shiftActive · totalStaff 72 → rosterSize
+//   totalActiveStaff 64 → rosterActive · under18 10   (63+7+2=72; 55+7+2=64)
+export function parseRosterStatisticsApi(payload) {
+  const arr = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.result?.resp) ? payload.result.resp
+    : Array.isArray(payload?.resp) ? payload.resp
+    : Array.isArray(payload?.result) ? payload.result : [];
+  const out = {};
+  for (const r of arr) {
+    if (!r) continue;
+    const nsn = r.nsn;
+    // Skip the "Grand Total" summary row (nsn is a label, not a store number).
+    if (nsn == null || !/^\d/.test(String(nsn))) continue;
+    out[unpad(nsn)] = {
+      crewStaff: num(r.crewSize),
+      shiftStaff: num(r.swingSize),
+      gmdmStaff: num(r.managerSize),
+      crewActive: num(r.crewActive),
+      shiftActive: num(r.swingActive),
+      rosterSize: num(r.totalStaff),
+      rosterActive: num(r.totalActiveStaff),
+      under18: num(r.under18),
+    };
+  }
+  return out;
+}
+
 // Configurable headcount: sum the chosen buckets from a Roster-Statistics record.
 // buckets default to all active hourly (crew + shift + gm&dm) = Roster Active.
 export function headcountFromStats(stat, { include = ['crew', 'shift', 'gmdm'] } = {}) {
