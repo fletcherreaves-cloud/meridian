@@ -12,6 +12,7 @@ import {
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { hasPermission, getOrgRoles } from '../engine/permissions.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
+import { KPI_REGISTRY, kpiByKey, explainThreshold, makeMetricFromKpi } from '../engine/kpi-registry.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -498,6 +499,40 @@ function CustomizePanel({cfg, onSave, onReset}) {
 
 function WeightsSection({local, set}) {
   const ov = local.overall;
+  // Results-category label resolves from the config (supports custom categories), then CAT_LABELS.
+  const catLabelOf = (cat) => local.categoryWeights[cat]?.label || CAT_LABELS[cat] || cat;
+
+  // ── Results category CRUD (Notes 30 #3 — add/remove/edit CATEGORIES) ─────────
+  const addResultsCategory = () => {
+    const label = (prompt('New results category name (e.g. "Guest Experience"):') || '').trim();
+    if (!label) return;
+    const key = 'rcat_' + label.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,20) + '_' + Date.now().toString(36);
+    set('categoryWeights', { ...local.categoryWeights, [key]: { label, weight: 0 } });
+    set('metrics', { ...local.metrics, [key]: [] });
+  };
+  const renameResultsCategory = (cat) => {
+    const label = (prompt('Rename category:', catLabelOf(cat)) || '').trim();
+    if (!label) return;
+    set(`categoryWeights.${cat}.label`, label);
+  };
+  const deleteResultsCategory = (cat) => {
+    if (!confirm(`Delete results category "${catLabelOf(cat)}"? Its metrics are removed from scoring (review data is kept). Redistribute its weight to the remaining categories to reach 100%.`)) return;
+    const cw = { ...local.categoryWeights }; delete cw[cat];
+    const mx = { ...local.metrics };         delete mx[cat];
+    set('categoryWeights', cw);
+    set('metrics', mx);
+  };
+
+  // ── KPI directory → dropdown (Notes 30 #3 — select a metric, not free-text) ──
+  const addKpiToCategory = (cat, key) => {
+    if (!key) return;
+    const kpi = kpiByKey(key);
+    if (!kpi) return;
+    const mets = local.metrics[cat] || [];
+    if (mets.some(m => m.key === kpi.key)) { alert(`"${kpi.label}" is already in ${catLabelOf(cat)}.`); return; }
+    set(`metrics.${cat}`, [...mets, makeMetricFromKpi(kpi, { weight: 0 })]);
+  };
+
   return div(null,
     // Overall split
     div({style:{marginBottom:20}},
@@ -519,7 +554,12 @@ function WeightsSection({local, set}) {
     ),
     // Category weights
     div({style:{marginBottom:20}},
-      div({style:{fontWeight:700,fontSize:12,marginBottom:10,color:TEXT}},'Results Category Weights'),
+      Row({style:{marginBottom:10,alignItems:'baseline',gap:8}},
+        div({style:{fontWeight:700,fontSize:12,color:TEXT}},'Results Category Weights'),
+        btn({onClick:addResultsCategory,
+          style:{padding:'3px 10px',border:`1px dashed ${BDR}`,borderRadius:R,background:'transparent',color:TEXT3,fontSize:11,cursor:'pointer'}},
+          '+ Category')
+      ),
       div({style:{display:'grid',gridTemplateColumns:'220px 80px 1fr',gap:'8px 12px',alignItems:'center'}},
         ...Object.entries(local.categoryWeights).flatMap(([key,cw])=>[
           lbl({style:{fontSize:12,color:TEXT2}},cw.label||key),
@@ -527,7 +567,12 @@ function WeightsSection({local, set}) {
             NumInput({value:Math.round(cw.weight*100), onChange:v=>set(`categoryWeights.${key}.weight`,(v||0)/100), style:{width:55}}),
             span({style:{fontSize:11,color:TEXT3}},'%')
           ),
-          span(null)
+          Row({style:{gap:6}},
+            btn({onClick:()=>renameResultsCategory(key),title:'Rename category',
+              style:{background:'none',border:'none',color:TEXT3,cursor:'pointer',fontSize:11}},'✎'),
+            btn({onClick:()=>deleteResultsCategory(key),title:'Delete category',
+              style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:13,lineHeight:1}},'×')
+          )
         ]),
         span(null),
         span({style:{fontSize:10,color:
@@ -539,7 +584,7 @@ function WeightsSection({local, set}) {
     ...Object.entries(local.metrics).map(([cat, mets]) =>
       div({style:{marginBottom:20},key:cat},
         Row({style:{marginBottom:8,alignItems:'baseline',gap:8}},
-          div({style:{fontWeight:700,fontSize:12,color:TEXT}},`${CAT_LABELS[cat]||cat} — Metric Weights`),
+          div({style:{fontWeight:700,fontSize:12,color:TEXT}},`${catLabelOf(cat)} — Metric Weights`),
           span({style:{fontSize:10,color:TEXT3}},'(uncheck Active to exclude a metric from scoring this period)')
         ),
         div({style:{display:'grid',gridTemplateColumns:'240px 80px 70px 1fr 28px',gap:'6px 12px',alignItems:'center',fontSize:11}},
@@ -557,7 +602,7 @@ function WeightsSection({local, set}) {
             inp({type:'checkbox',checked:m.scored, onChange:e=>set(`metrics.${cat}.${i}.scored`,e.target.checked)}),
             m.note ? span({style:{color:TEXT3,fontSize:10}},m.note) : span(null),
             btn({onClick:()=>{
-              if(!confirm(`Remove "${m.label}" from ${CAT_LABELS[cat]||cat} metrics? This only affects scoring — review data is kept.`)) return;
+              if(!confirm(`Remove "${m.label}" from ${catLabelOf(cat)} metrics? This only affects scoring — review data is kept.`)) return;
               const next = mets.filter((_,j)=>j!==i);
               set(`metrics.${cat}`, next);
             }, style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',fontSize:14,padding:'0 4px',lineHeight:1}},'×'),
@@ -567,13 +612,42 @@ function WeightsSection({local, set}) {
             Math.abs(mets.reduce((a,m)=>a+m.weight,0)-1)<0.01?'#10b981':'#ef4444'}},
             `Total: ${Math.round(mets.reduce((a,m)=>a+m.weight,0)*100)}%`),
           span(null), span(null)
-        )
+        ),
+        // KPI-directory dropdown: add a metric by selecting it (controls the source, not free-text)
+        h(KpiAddPicker, { cat, mets, onAdd:addKpiToCategory })
       )
     )
   );
 }
 
+// A dropdown fed from the shared KPI registry — pick a KPI to insert into a category.
+// Selecting a KPI seeds its source/unit/direction/default thresholds automatically.
+function KpiAddPicker({ cat, mets, onAdd }) {
+  const [val, setVal] = useState('');
+  const have = new Set((mets || []).map(m => m.key));
+  const groups = {};
+  for (const k of KPI_REGISTRY) { if (have.has(k.key)) continue; (groups[k.categoryLabel] || (groups[k.categoryLabel] = [])).push(k); }
+  return Row({style:{gap:8,marginTop:6,alignItems:'center'}},
+    span({style:{fontSize:10,color:TEXT3}},'Add KPI from directory:'),
+    sel({value:val, onChange:e=>{ onAdd(cat, e.target.value); setVal(''); },
+      style:{background:'var(--surf3)',color:TEXT,border:`1px solid ${BDR}`,borderRadius:6,padding:'4px 8px',fontSize:11,maxWidth:280}},
+      opt({value:''}, '— select a KPI —'),
+      ...Object.entries(groups).map(([g, ks]) =>
+        h('optgroup',{key:g,label:g},
+          ...ks.map(k => opt({key:k.key,value:k.key}, k.label))))
+    ),
+    span({style:{fontSize:10,color:TEXT3,fontStyle:'italic'}},'seeds source + default thresholds (weight starts at 0)')
+  );
+}
+
+// Plain-English "how it scores" sentence for ANY metric def — reuses the shared
+// registry explainer (adapts a review metric def into a registry-shaped kpi).
+function plainEnglishThreshold(m) {
+  return explainThreshold({ label:m.label, unit:m.unit, better:m.better, defaultT:m.t });
+}
+
 function ThresholdsSection({local, set}) {
+  const catLabelOf = (cat) => local.categoryWeights[cat]?.label || CAT_LABELS[cat] || cat;
   const explain = (m) => {
     const [t1, t2, t3] = m.t;
     const p = m.unit === 'pct';
@@ -582,6 +656,7 @@ function ThresholdsSection({local, set}) {
       return `4 ≥${f(t1)} · 3 ≥${f(t2)} · 2 ≥${f(t3)} · 1 else  (raise T1 → Exceeds harder; lower T3 → more reach Needs Imp)`;
     return `4 ≤${f(t1)} · 3 ≤${f(t2)} · 2 ≤${f(t3)} · 1 else  (lower T1 → Exceeds harder; raise T3 → more reach Needs Imp)`;
   };
+  const [openKey, setOpenKey] = useState(null); // metric whose plain-English panel is expanded
   return div(null,
     div({style:{fontSize:11,color:TEXT3,marginBottom:16,padding:'10px 14px',background:S2,borderRadius:R,border:`1px solid ${BDR}`,lineHeight:1.7}},
       div(null,span({style:{fontWeight:700}},'deviation = actual − target'),
@@ -590,13 +665,15 @@ function ThresholdsSection({local, set}) {
       div({style:{marginTop:4}},
         span({style:{fontWeight:700}},'Changing a threshold: '),
         'T1 sets the Exceeds boundary, T2 sets On Target, T3 sets Below. ',
-        'Positive threshold = actual must exceed target by that margin. Negative = actual can fall below target by that margin and still earn that rating.')
+        'Positive threshold = actual must exceed target by that margin. Negative = actual can fall below target by that margin and still earn that rating.'),
+      div({style:{marginTop:4,fontStyle:'italic'}},
+        'Click the ⓘ next to any metric for a plain-English description of exactly how its 1–4 rating is computed.')
     ),
     ...Object.entries(local.metrics).map(([cat, mets]) =>
       div({style:{marginBottom:24},key:cat},
         div({style:{fontWeight:700,fontSize:12,marginBottom:8,padding:'4px 0',
-          borderBottom:`1px solid ${BDR}`,color:TEXT}},CAT_LABELS[cat]||cat),
-        div({style:{display:'grid',gridTemplateColumns:'200px 40px 40px 80px 80px 80px 1fr',
+          borderBottom:`1px solid ${BDR}`,color:TEXT}},catLabelOf(cat)),
+        div({style:{display:'grid',gridTemplateColumns:'220px 40px 40px 80px 80px 80px 1fr',
           gap:'6px 8px',alignItems:'center',fontSize:11}},
           span({style:{color:TEXT3,fontWeight:700}},'Metric'),
           span({style:{color:TEXT3,fontWeight:700}},'Dir'),
@@ -605,15 +682,26 @@ function ThresholdsSection({local, set}) {
           span({style:{color:'#3b82f6',fontWeight:700}},'T2 (→3)'),
           span({style:{color:'#f59e0b',fontWeight:700}},'T3 (→2)'),
           span({style:{color:TEXT3,fontWeight:700}},'Current Meaning (dev from target)'),
-          ...mets.flatMap((m,i)=>[
-            span(null,m.label),
-            span({style:{color:TEXT3}},m.better==='higher'?'▲':'▼'),
-            span({style:{color:TEXT3}},m.unit),
-            NumInput({value:m.t[0], onChange:v=>set(`metrics.${cat}.${i}.t.0`,v??m.t[0]), style:{width:70}}),
-            NumInput({value:m.t[1], onChange:v=>set(`metrics.${cat}.${i}.t.1`,v??m.t[1]), style:{width:70}}),
-            NumInput({value:m.t[2], onChange:v=>set(`metrics.${cat}.${i}.t.2`,v??m.t[2]), style:{width:70}}),
-            span({style:{color:TEXT3,fontSize:10}},explain(m)),
-          ])
+          ...mets.flatMap((m,i)=>{
+            const rowKey = `${cat}.${i}`;
+            const open = openKey === rowKey;
+            return [
+              Row({style:{gap:5,alignItems:'center'}},
+                btn({onClick:()=>setOpenKey(open?null:rowKey),title:'Plain-English: how this metric scores',
+                  style:{background:'none',border:'none',color:open?AMBER:TEXT3,cursor:'pointer',fontSize:12,padding:0,lineHeight:1}},'ⓘ'),
+                span(null,m.label)),
+              span({style:{color:TEXT3}},m.better==='higher'?'▲':'▼'),
+              span({style:{color:TEXT3}},m.unit),
+              NumInput({value:m.t[0], onChange:v=>set(`metrics.${cat}.${i}.t.0`,v??m.t[0]), style:{width:70}}),
+              NumInput({value:m.t[1], onChange:v=>set(`metrics.${cat}.${i}.t.1`,v??m.t[1]), style:{width:70}}),
+              NumInput({value:m.t[2], onChange:v=>set(`metrics.${cat}.${i}.t.2`,v??m.t[2]), style:{width:70}}),
+              open
+                ? div({style:{gridColumn:'1 / -1',fontSize:11,color:TEXT2,lineHeight:1.6,padding:'8px 12px',
+                    margin:'2px 0 6px',background:S2,borderRadius:R,border:`1px solid ${BDR}`}},
+                    span({style:{fontWeight:700,color:AMBER}},`${m.label}: `), plainEnglishThreshold(m))
+                : span({style:{color:TEXT3,fontSize:10}},explain(m)),
+            ];
+          })
         )
       )
     )

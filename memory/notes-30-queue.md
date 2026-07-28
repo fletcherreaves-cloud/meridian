@@ -43,4 +43,16 @@ Scope carefully (write ops are riskier). Exploration first, then a guarded write
 
 ## Status
 Owner said "yes to all"; some items may already be in progress separately (dedupe on pickup).
-Leadership One-Pager scope + generic printable = building now (continuous with the current work).
+Leadership One-Pager scope + generic printable = DONE (#64, PR #79 merged).
+
+**#3 Perf Reviews — SHIPPED (slice 1):** `src/engine/kpi-registry.js` = the shared KPI directory
+(flattens DEFAULT_REVIEW_CONFIG.metrics + 4 extra operational KPIs: tpph/cashOSPct/tRedAPct/parkPct;
+`explainThreshold(kpi)` = plain-English "how it scores"; `makeMetricFromKpi`). Wired into Customize:
+Results-category add/rename/delete (Weights sub-tab), a KPI-directory **dropdown** per category
+(select-a-metric, not free-text — seeds source + default thresholds, weight starts 0), and a per-metric
+**ⓘ plain-English** threshold explainer in the Rating Thresholds sub-tab. Category label resolves from
+`categoryWeights[cat].label` so custom results categories render. Engine already iterates
+`categoryWeights`/`metrics[cat]` dynamically, so new categories flow through scoring. 12 new tests.
+**Remaining #3:** the banked threshold-VALUE corrections (perf-review-excel-audit.md ROUND 2 — OEPE
+%-of-target+120s floor, Shift-Certified gentle count step, FOB/Labor Bonus-Eligibility module,
+Total Profit Excel bands) are separate deliberate changes, not part of this authoring-UI slice.
