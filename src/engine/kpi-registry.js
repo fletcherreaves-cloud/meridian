@@ -17,9 +17,8 @@ const EXTRA_KPIS = [
   { key: 'cashOSPct',  label: 'Cash Over/Short %',           cat: 'profit', unit: 'abs', better: 'lower',  t: [0.0003, 0.001, 0.003], src: 'auto', field: 'cashOSPct', note: 'Loss-prevention — closer to 0 is better' },
   { key: 'tRedAPct',   label: 'T-Reds After %',              cat: 'profit', unit: 'abs', better: 'lower',  t: [0.002, 0.004, 0.006], src: 'auto', field: 'tRedAPct',  note: 'Transaction reductions after — lower is better' },
   { key: 'parkPct',    label: 'DT Park %',                   cat: 'rgr',    unit: 'abs', better: 'lower',  t: [-0.02, 0.02, 0.04], src: 'auto', field: 'park',      note: 'Lower parked % = better DT flow' },
-  // Digital / delivery growth (auto from QSRSoft; add to any category via Customize).
-  { key: 'digitalGCRD',  label: 'Digital App GC/R/D',        cat: 'rgr',    unit: 'abs', better: 'higher', t: [0, -3, -6], src: 'auto', field: 'digitalGCRD',  note: 'Digital App guest counts per restaurant-day (MOA + scanned offers + self-ID loyalty + internal delivery)' },
-  { key: 'deliveryGCRD', label: 'Delivery GC/R/D (3PO)',     cat: 'rgr',    unit: 'abs', better: 'higher', t: [0, -3, -6], src: 'auto', field: 'deliveryGCRD', note: '3PO delivery guest counts per restaurant-day (Combined Vendors)' },
+  // Note: Digital App GC/R/D (digitalGC) + Delivery GC/R/D (delivGC) are already default
+  // review metrics in the Sales Drivers category — auto-sourced + provenance-tagged there.
 ];
 
 // Build a normalized registry entry from a review metric def or an extra KPI.

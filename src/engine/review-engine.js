@@ -43,8 +43,8 @@ export const DEFAULT_REVIEW_CONFIG = {
     ],
     sales: [
       { key:'salesVsTgt', label:'Sales vs. Monthly Target',   weight:0.70, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'sales', tgtField:'salesTgt', dollar:true, note:'Auto from Labor Analysis' },
-      { key:'digitalGC',  label:'Digital App GC/Rest/Day',    weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'% vs store target' },
-      { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'% vs store target' },
+      { key:'digitalGC',  label:'Digital App GC/Rest/Day',    weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'digitalGC', note:'Auto: Digital App GC/R/D (cloud) vs store target' },
+      { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'delivGC',  note:'Auto: 3PO Delivery GC/R/D (cloud) vs store target' },
     ],
     profit: [
       { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report' },
@@ -823,10 +823,11 @@ export function autoPopulateKPIs(review, ds) {
     const tvr = turnoverM[m];
     if (tvr && tvr.turnover090Pct != null) mo.turnover90 = tvr.turnover090Pct;
     // Digital/Delivery GC/R/D (auto-first; only used if the review includes the metric)
+    // Sales Drivers: Digital App GC/R/D + Delivery GC/R/D (the review's own metric keys).
     const dig = digitalM[m];
-    if (dig && dig.appGcRd != null) mo.digitalGCRD = dig.appGcRd;
+    if (dig && dig.appGcRd != null) mo.digitalGC = dig.appGcRd;
     const dlv = deliveryM[m];
-    if (dlv && dlv.deliveryGcRd != null) mo.deliveryGCRD = dlv.deliveryGcRd;
+    if (dlv && dlv.deliveryGcRd != null) mo.delivGC = dlv.deliveryGcRd;
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
       if (sr.osat5 != null) mo.osat = sr.osat5;
