@@ -77,12 +77,14 @@ See [[session-handoff-2026-07-28]], [[feedback-metric-provenance]].
 - **B#6 TPPH scale — FIXED** (commit b69ccab). `loadQsrActSummary` derived TPPH from
   `(healthy_count+unhealthy_count)/punched_hours` — a KVS order-health count, not transactions →
   ~0.1 vs ~5 target. Now `transactions ÷ actual_punched_hours` (matches Shift Mgr transPerPunchedHour).
-- **B#5 R2P not populating** — ROOT: metric-source `r2p` has only `[['opsRows','r2p']]` (manual Ops
-  Report). No auto/cloud source, so it's blank whenever an Ops Report wasn't uploaded for the window.
-  The DAR (qsr_daily_activity) has `fc_untilserve` (front-counter until-serve) — the plausible R2P
-  source — but **need owner confirm fc_untilserve == R2P semantics** before wiring (accuracy principle:
-  don't label a near-miss field as R2P). Fix once confirmed: load fc_untilserve+fc_trans_cnt in
-  loadQsrActSummary, derive r2p, add `['qsrActSummaryRows','r2p']` to metric-source.
+- **B#5/B#7 R2P blank on current-day** — CONFIRMED (owner) the ONLY current-day gap is R2P; all else OK.
+  **R2P = Receipt to Print** (sec): starts when order is tendered / receipt prints, ends when the order is
+  bumped from the KVS bar (complete). Receipt ensures order → right customer. NOT fc_untilserve
+  (front-counter serve) — owner confirmed my fc_untilserve guess was WRONG (good that we asked). ROOT:
+  metric-source `r2p` = `[['opsRows','r2p']]` (manual Ops Report only) → blank until an Ops Report is
+  uploaded; today has none. **Owner is sourcing a current-day R2P feed** (capture/endpoint TBD). Fix once
+  we have it: add R2P to that source + wire into metric-source `r2p` as an auto fallback. DO NOT map
+  fc_untilserve → R2P.
 - **B#7 current-day blank / B#8 week mostly blank** — ROOT (two parts): (1) recent/current windows
   legitimately have little data (intraday today; the current week is mostly future days) — the emailed
   Glimpse/Ops/Controls lag; (2) the cloud-fresh DAR (qsrActSummaryRows) is wired ONLY for sales/gc/tpph,
