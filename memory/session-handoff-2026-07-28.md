@@ -44,6 +44,30 @@ metadata:
 - Cascade focus = I drafted; **owner refines**.
 - Monthly target wins over yearly (already the merge order).
 
+## PROGRESS — continued session (Roster Statistics pull SHIPPED, v4.545)
+- **Roster Statistics auto-pull is LIVE and confirmed** — 27/27 stores upserted to
+  `roster_statistics` for 2026-07 (GH Actions run 30387183521, success).
+- Files: `scripts/qsrsoft-roster-stats-pull.mjs`, `.github/workflows/qsrsoft-roster-stats-pull.yml`,
+  `parseRosterStatisticsApi()` in `src/engine/people-reports.js` (+3 vitest cases). Commit `c06c328`.
+- **REUSABLE PATTERN for the remaining People pulls** (Employee Roster, Turnover, Digital, McDelivery):
+  - Host/prefix: `GET https://api.reports.myqsrsoft.com/reporting/v2/people/<report>` —
+    params `nsd=d&nsn=<csv all 27>&orgId=<ORG>&enterpriseName=McDonalds&startDate=YYYY-MM-01&endDate=YYYY-MM-DD&weekStart=3`.
+    **One call returns all 27 stores.**
+  - Response envelope: `{ result: { resp: [ {nsn, …camelCase…} ], totals: {…Grand Total…} } }`.
+    The JSON keys DIFFER from the xlsx headers the `parse*` fns expect → each report needs a
+    `parse<Report>Api()` normalizer that maps the JSON to the SAME record shape as its xlsx parser
+    (see parseRosterStatisticsApi as the template). Skip the `totals`/"Grand Total" row.
+  - Auth reality in CI: stored `QSRSOFT_TOKEN` AND `QSRSOFT_COGNITO_TOKEN` both **401** (stale) —
+    the Playwright user/pass fallback logs in and captures a FRESH token from the report page's own
+    XHR (~40s/run). Works reliably. Refresh those two secrets only if faster runs are wanted.
+  - **DEPLOYMENT GOTCHA (important):** `workflow_dispatch` AND `schedule` only fire from the
+    DEFAULT branch (main). New pull workflows must be cherry-picked onto **main** (additive files:
+    the `parse*Api`+engine, the script, the yml — inert for the deployed app since main doesn't
+    import them yet) so cron runs + you can dispatch. Done for roster-stats; do the same for each.
+  - **STILL NEED per-report captures** (URL + JSON `result.resp[]` shape, AUTH REDACTED) for:
+    Employee Roster, Turnover, Digital App, McDelivery 3PO — endpoint paths + camelCase keys aren't
+    safely guessable. Ask the owner for one network capture per report.
+
 ## THE NEXT TASK — build the QSRSoft pull scripts (data still needs to LAND in the tables)
 Parsers + tables + review wiring are done. What's missing: getting data into the tables. Two paths:
 1. **Playwright auto-pull scripts** (the real deployment) — one per report, pattern in
