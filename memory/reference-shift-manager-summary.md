@@ -19,7 +19,8 @@ rather than reconstruct MOD×hourly ourselves.
 **Shape:** top-level `{ resp: [ ... ] }` (no result wrapper). One row per (nsn, timeSlice, manager).
 - `timeSlice` ∈ the 6 dayparts + **"Manager Total"** (the manager's roll-up for the day).
 - `geid` + `managerName` identify the manager. **geid joins to Employee Roster** (same id). `geid:0` /
-  `managerName:"No FL Manager"` = unassigned/float — treat as no-manager.
+  `managerName:"No FL Manager"` = **No FLOOR Manager scheduled** for that shift (NOT Florida — FL = Floor;
+  easy to confuse). Happens at any store; skipped (can't attribute to a person) → rolls into store-total.
 
 **Per-row metrics (manager-attributed):** actualHours · actualVsNeeded · actualVsScheduled ·
 allNetSales (+ dt/fc/instore splits + *CompAmt vs plan) · transactions · numShifts · avgCheck ·
