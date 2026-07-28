@@ -117,3 +117,24 @@ describe('autoPopulateKPIs op-supplies actual from eBOS (Notes 32 #4)', () => {
     expect(r.kpis.months[5].opSupplies).toBe(500);       // May
   });
 });
+
+describe('autoPopulateKPIs People metrics (Notes 32 #1/#2/#3)', () => {
+  it('fills headcount / shiftCert / turnover90 from monthly per-loc People rows', () => {
+    const ds = { loaded: true,
+      rosterStatsRows: [{ loc: '3708', month: '2026-06', rosterActive: 64, crewActive: 55 }],
+      rosterRoleCounts: [{ loc: '3708', month: '2026-06', shiftMgr: 8, crew: 55 }],
+      turnoverRows: [{ loc: '3708', month: '2026-06', turnover090Pct: 0.375 }],
+    };
+    const r = autoPopulateKPIs(review(), ds);
+    expect(r.kpis.months[6].headcount).toBe(64);      // Roster Active
+    expect(r.kpis.months[6].shiftCert).toBe(8);       // shiftMgr bucket
+    expect(r.kpis.months[6].turnover90).toBeCloseTo(0.375, 6);
+  });
+  it('ignores rows from a different year and leaves other months empty', () => {
+    const ds = { loaded: true,
+      rosterStatsRows: [{ loc: '3708', month: '2025-06', rosterActive: 99 }], // wrong year (review is 2026)
+    };
+    const r = autoPopulateKPIs(review(), ds);
+    expect(r.kpis.months[6].headcount).toBeUndefined();
+  });
+});

@@ -53,7 +53,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -1597,6 +1597,15 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${ebosRows.length} eBOS op-supplies rows`);
         }
       }catch(e){console.warn('[Meridian] eBOS op-supplies load failed:',e);}
+      // QSRSoft People reports (monthly per-loc) → Perf-Review People metrics (Notes 32):
+      // Roster Statistics (headcount), Employee Roster role counts (shift-cert), Turnover (0-90).
+      try{
+        const [rosterStatsRows,rosterRoleCounts,turnoverRows]=await Promise.all([loadRosterStatistics(),loadRosterRoleCounts(),loadTurnoverMonthly()]);
+        if(rosterStatsRows.length||rosterRoleCounts.length||turnoverRows.length){
+          setDs(prev=>{if(!prev)return prev;return{...prev,rosterStatsRows,rosterRoleCounts,turnoverRows};});
+          console.log(`[Meridian] ✓ Loaded People reports — rosterStats ${rosterStatsRows.length}, roleCounts ${rosterRoleCounts.length}, turnover ${turnoverRows.length}`);
+        }
+      }catch(e){console.warn('[Meridian] People reports load failed:',e);}
       // Server-parsed QSRSoft email reports (Daily Glimpse, Cash Sheet, Sales Ledger).
       // Cloud-first source of truth — override the device-local IDB rows only when
       // the Supabase tables have data, so freshness follows the app on any device.

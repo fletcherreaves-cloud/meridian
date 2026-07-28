@@ -752,6 +752,24 @@ export function autoPopulateKPIs(review, ds) {
   const fobM   = byMonth(ds.fobRows);
   const ebosM  = byMonth(ds.ebosRows); // eBOS daily op-supplies purchases (Notes 32 #4)
 
+  // People reports are monthly per-loc, keyed by 'YYYY-MM' — index by month number
+  // for this store/year (Notes 32 #1/#2/#3). Headcount ← Roster Statistics (authoritative
+  // active count), Shift-Cert ← Roster role counts (shiftMgr bucket), 0-90 ← Turnover.
+  const _ry = review.year || new Date().getFullYear();
+  const monthNum = pm => parseInt(String(pm || '').slice(5, 7));
+  const byLocMonth = (rows) => {
+    const m = {};
+    for (const r of (rows || [])) {
+      if (String(r.loc) !== String(loc) || !r.month) continue;
+      if (parseInt(String(r.month).slice(0, 4)) !== _ry) continue;
+      m[monthNum(r.month)] = r;
+    }
+    return m;
+  };
+  const rosterStatM = byLocMonth(ds.rosterStatsRows);
+  const roleCountM  = byLocMonth(ds.rosterRoleCounts);
+  const turnoverM   = byLocMonth(ds.turnoverRows);
+
   // SMG FullScale: index by year+month for this store to avoid cross-year collision
   const reviewYear = review.year || new Date().getFullYear();
   const smgFSByMonth = {};
@@ -794,6 +812,14 @@ export function autoPopulateKPIs(review, ds) {
       const op = sum(er,'opsPurchases');
       if (op!=null) mo.opSupplies = op;
     }
+    // People metrics (monthly per-loc, auto-first): Headcount ← Roster Statistics
+    // (Roster Active = all active hourly), Shift-Cert ← role counts, 0-90 ← Turnover.
+    const rst = rosterStatM[m];
+    if (rst && rst.rosterActive != null) mo.headcount = rst.rosterActive;
+    const rcc = roleCountM[m];
+    if (rcc && rcc.shiftMgr != null) mo.shiftCert = rcc.shiftMgr;
+    const tvr = turnoverM[m];
+    if (tvr && tvr.turnover090Pct != null) mo.turnover90 = tvr.turnover090Pct;
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
       if (sr.osat5 != null) mo.osat = sr.osat5;

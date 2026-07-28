@@ -1427,6 +1427,80 @@ export async function loadEbosMonthlyByStore(year, month) {
   return map;
 }
 
+// ── QSRSoft People reports → Perf-Review People metrics (Notes 32) ────────────
+// Monthly per-loc: Roster Statistics (headcount), Employee Roster role counts
+// (shift-cert), Turnover (0-90). All keyed (loc, period_month 'YYYY-MM'). Parsers in
+// src/engine/people-reports.js produce the record shapes these save; loaders return
+// flat rows tagged with `month` for the review auto-populate month lookup.
+export async function saveRosterStatistics(periodMonth, byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, s]) => ({
+    loc: String(loc), period_month: periodMonth,
+    crew_staff: s.crewStaff ?? null, shift_staff: s.shiftStaff ?? null, gmdm_staff: s.gmdmStaff ?? null,
+    crew_active: s.crewActive ?? null, shift_active: s.shiftActive ?? null,
+    roster_size: s.rosterSize ?? null, roster_active: s.rosterActive ?? null, under18: s.under18 ?? null,
+  }));
+  const { error } = await supabase.from('roster_statistics').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[roster_statistics] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadRosterStatistics() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('roster_statistics').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    crewStaff: r.crew_staff, shiftStaff: r.shift_staff, gmdmStaff: r.gmdm_staff,
+    crewActive: r.crew_active, shiftActive: r.shift_active, rosterSize: r.roster_size,
+    rosterActive: r.roster_active, under18: r.under18,
+  }));
+}
+
+export async function saveRosterRoleCounts(periodMonth, byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, c]) => ({
+    loc: String(loc), period_month: periodMonth,
+    crew: c.crew ?? null, shift_mgr: c.shiftMgr ?? null, gm: c.gm ?? null,
+    maintenance: c.maintenance ?? null, admin: c.admin ?? null, other: c.other ?? null, total: c.total ?? null,
+  }));
+  const { error } = await supabase.from('roster_role_counts').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[roster_role_counts] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadRosterRoleCounts() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('roster_role_counts').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    crew: r.crew, shiftMgr: r.shift_mgr, gm: r.gm, maintenance: r.maintenance, admin: r.admin, other: r.other, total: r.total,
+  }));
+}
+
+export async function saveTurnoverMonthly(byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, t]) => ({
+    loc: String(loc), period_month: t.month,
+    hires: t.hires ?? null, roster_size: t.rosterSize ?? null, terms: t.terms ?? null,
+    terms_under_90: t.termsUnder90 ?? null, retained_over_90: t.retainedOver90 ?? null,
+    retained_over_90_pct: t.retainedOver90Pct ?? null, monthly_annual_turnover: t.monthlyAnnualTurnover ?? null,
+    ttm_turnover: t.ttmTurnover ?? null, three_month_turnover: t.threeMonthTurnover ?? null,
+    turnover_090_pct: t.turnover090Pct ?? null,
+  }));
+  const { error } = await supabase.from('turnover_monthly').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[turnover_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadTurnoverMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('turnover_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    hires: r.hires, rosterSize: r.roster_size, terms: r.terms, termsUnder90: r.terms_under_90,
+    retainedOver90: r.retained_over_90, retainedOver90Pct: r.retained_over_90_pct,
+    monthlyAnnualTurnover: r.monthly_annual_turnover, ttmTurnover: r.ttm_turnover,
+    threeMonthTurnover: r.three_month_turnover, turnover090Pct: r.turnover_090_pct,
+  }));
+}
+
 // ── eBOS daily op-supplies rows (for ds — feeds Perf-Review opSupplies actual) ─
 // One row per (loc, date) carrying the day's operating-supplies purchases. Paginated —
 // 27 stores × a year exceeds the 1000-row cap. loc unpadded to match the rest of ds.
