@@ -6,7 +6,7 @@
 // actually moved (the accountability loop). Engines are pure + tested
 // (opportunity.js / one-pager.js); this panel wires ds→engines→Supabase.
 import * as React from 'react';
-import { STORE_NAMES } from '../constants.js';
+import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { escapeHtml, f$ } from '../utils/fmt.js';
 import { computeOpportunity, annualize, rankByOpportunity } from '../engine/opportunity.js';
 import { buildOnePager } from '../engine/one-pager.js';
@@ -46,8 +46,9 @@ const FOLLOW_META = {
 
 export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => unpad(s.loc)), [stores]);
-  const operators = (settings && settings.operators) || {};      // operator → stores (DO-level)
+  const operators = (settings && settings.operators) || {};      // operator (owner) → stores
   const supervisors = (settings && settings.supervisorGroups) || {}; // supervisor → stores
+  const stateLocs = (st) => allLocs.filter(l => (INV_ORG_COORDS[l] || {}).state === st);
   const [locs, setLocs] = useState(allLocs);
   const [scopeLabel, setScopeLabel] = useState('All stores');
   const [level, setLevel] = useState('org');
@@ -120,6 +121,7 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
           savedNote ? span({ style: { fontSize: 11, color: 'var(--text2)' } }, savedNote) : null,
           h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
           h('button', { onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems), style: btn }, '🖨 Print'),
+          h('button', { onClick: () => printBlankOnePager(page, period), style: btn, title: 'Open-ended discussion sheet (auto state, blank sections)' }, '📝 Discussion'),
           h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕'),
         ),
       ),
@@ -129,12 +131,13 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
             // Scope presets (tie to the org groupings in settings)
             div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
               span({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text2)' } }, 'Scope:'),
-              h('button', { onClick: () => applyScope('All stores', allLocs, 'org'), style: { padding: '4px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', border: '1px solid ' + (scopeLabel === 'All stores' ? 'var(--accent,#f5bc00)' : 'var(--bdr)'), background: 'var(--surf)', color: 'var(--text)', fontWeight: 700 } }, 'All'),
+              ...[['Org', 'All stores', allLocs, 'org'], ['OK', 'Oklahoma', stateLocs('OK'), 'org'], ['FL', 'Florida', stateLocs('FL'), 'org']].map(([lbl, sl, list, lv]) =>
+                h('button', { key: lbl, onClick: () => applyScope(sl, list, lv), style: { padding: '4px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', border: '1px solid ' + (scopeLabel === sl ? 'var(--accent,#f5bc00)' : 'var(--bdr)'), background: 'var(--surf)', color: 'var(--text)', fontWeight: 700 } }, lbl)),
               Object.keys(operators).length ? h('select', {
-                value: scopeLabel.startsWith('Operator: ') ? scopeLabel.slice(10) : '',
-                onChange: e => e.target.value && applyScope('Operator: ' + e.target.value, operators[e.target.value], 'do'),
+                value: scopeLabel.startsWith('Owner: ') ? scopeLabel.slice(7) : '',
+                onChange: e => e.target.value && applyScope('Owner: ' + e.target.value, operators[e.target.value], 'owner'),
                 style: { fontSize: 11, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
-              }, [h('option', { key: '', value: '' }, 'Operator (DO)…'), ...Object.keys(operators).map(o => h('option', { key: o, value: o }, o))]) : null,
+              }, [h('option', { key: '', value: '' }, 'Owner…'), ...Object.keys(operators).map(o => h('option', { key: o, value: o }, o))]) : null,
               Object.keys(supervisors).length ? h('select', {
                 value: scopeLabel.startsWith('Supervisor: ') ? scopeLabel.slice(12) : '',
                 onChange: e => e.target.value && applyScope('Supervisor: ' + e.target.value, supervisors[e.target.value], 'supervisor'),
@@ -256,6 +259,36 @@ function printOnePager(page, period, narrative, actions) {
     ${foll ? `<h2>Follow-up</h2><ul>${foll}</ul>` : ''}
     ${acts ? `<h2>Action plan</h2><ul>${acts}</ul>` : ''}
     ${narrative ? `<h2>Notes</h2><div>${esc(narrative)}</div>` : ''}
+    </body></html>`);
+  w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
+}
+
+// Generic OPEN-ENDED discussion one-pager: auto current-state for reference, but blank
+// sections for any pairing (Owner↔DO, DO↔Supervisor, Supervisor↔GM) to fill in together —
+// which forces both parties to look the numbers up and drive the conversation.
+function printBlankOnePager(page, period) {
+  const w = window.open('', '_blank', 'width=850,height=1000'); if (!w || !page) return;
+  const esc = escapeHtml;
+  const state = (page.currentState || []).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}</td>`).join('');
+  const opp = page.opportunity?.district || {};
+  const lines = (n) => Array.from({ length: n }, () => '<div class="wl"></div>').join('');
+  const sec = (t, n) => `<h2>${esc(t)}</h2>${lines(n)}`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Discussion One-Pager ${esc(period)}</title>
+    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:26px;font-size:12px}
+    h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:12px}
+    h2{font-size:12px;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #111;padding-bottom:3px;margin:16px 0 6px}
+    table{border-collapse:collapse;width:100%}td{border:1px solid #ccc;padding:5px 7px;text-align:center;font-size:11px}
+    .ref{font-size:11px;color:#333;margin:6px 0}.wl{border-bottom:1px solid #999;height:1.5em;margin-top:7px}
+    @media print{@page{margin:.5in}}</style></head><body>
+    <h1>Leadership One-Pager — Weekly Discussion</h1>
+    <div class="sub">Week ${esc(period)} · ${esc(page.scopeLabel || '')} · ______________ &nbsp;↔&nbsp; ______________</div>
+    <h2>Current state (reference)</h2><table><tr>${state}</tr></table>
+    <div class="ref">Opportunity on the table: <b>${esc(f$(page.opportunityTotal || 0))}</b> — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
+    ${sec('Wins to celebrate', 3)}
+    ${sec('Concerns / what needs attention', 4)}
+    ${sec('Action plan — what are we working on this week?', 5)}
+    ${sec("Follow-up — how did last week's items move?", 4)}
+    ${sec('Notes / commitments', 3)}
     </body></html>`);
   w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
 }
