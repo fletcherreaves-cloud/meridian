@@ -1,0 +1,78 @@
+name: QSRSoft Turnover Pull
+
+on:
+  schedule:
+    # 11:30 UTC = ~6:30 AM CDT — 15 min after employee-roster. Refreshes the trailing
+    # ~13-month per-store turnover window (0-90 metric). Upsert on (loc, period_month),
+    # so re-running is safe and keeps recent months current.
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+    inputs:
+      months:
+        description: 'Trailing months to pull (default 13).'
+        required: false
+        default: '13'
+      start:
+        description: 'Explicit window start YYYY-MM (overrides months).'
+        required: false
+        default: ''
+      end:
+        description: 'Window end YYYY-MM (default: current month).'
+        required: false
+        default: ''
+      jtc:
+        description: 'jtcType filter (default Crew).'
+        required: false
+        default: 'Crew'
+      stores:
+        description: 'Subset of NSNs, comma-separated. Default: all 27.'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Turnover
+        run: node scripts/qsrsoft-turnover-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:      ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          TURNOVER_MONTHS:            ${{ github.event.inputs.months || '13' }}
+          TURNOVER_START:             ${{ github.event.inputs.start  || '' }}
+          TURNOVER_END:               ${{ github.event.inputs.end    || '' }}
+          TURNOVER_JTC:               ${{ github.event.inputs.jtc    || 'Crew' }}
+          ROSTER_STORES:              ${{ github.event.inputs.stores || '' }}
+          QSRSOFT_DEBUG:              ${{ github.event.inputs.debug  || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: turnover-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

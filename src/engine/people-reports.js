@@ -247,6 +247,48 @@ export function parseTurnover(rows) {
   return out;
 }
 
+// ── 3a. Turnover (JSON API) → per-(loc, month) records for turnover_monthly ─────
+// The api.reports.myqsrsoft.com `/reporting/v2/people/turnover-report` endpoint
+// returns { result: { resp: [ {nsn, month, totalHire, terminations, term90,
+// retained90Days, retained90Pct, monthlyAnnualTurnOver, ttmTurnover,
+// threeMonthTurnover, …}, … per store × month … ], totals } }. With nsd=d each row
+// is one store-month (nsd=s aggregates every store to nsn "All Selected" — skipped
+// here). Returns a FLAT ARRAY (not keyed by loc) because the API is multi-month per
+// store, unlike the single-month xlsx parseTurnover. Feeds saveTurnoverMonthly's
+// row shape per record. 0-90 turnover = 1 − retained90Pct (== the report's term90Pct).
+// Key map: totalHire→hires · totalStaff→rosterSize · terminations→terms · term90→
+// termsUnder90 · retained90Days→retainedOver90 · monthlyAnnualTurnOver (capital O).
+export function parseTurnoverApi(payload) {
+  const arr = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.result?.resp) ? payload.result.resp
+    : Array.isArray(payload?.result) ? payload.result
+    : Array.isArray(payload?.resp) ? payload.resp : [];
+  const out = [];
+  for (const r of arr) {
+    if (!r) continue;
+    const nsn = r.nsn;
+    if (nsn == null || !/^\d/.test(String(nsn))) continue;      // skip "All Selected"/"Grand Total"
+    const month = String(r.month == null ? '' : r.month).trim();
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;                 // need a real YYYY-MM (totals month is "13")
+    const ret90 = num(r.retained90Pct);
+    out.push({
+      loc: unpad(nsn),
+      month,
+      hires: num(r.totalHire),
+      rosterSize: num(r.totalStaff),
+      terms: num(r.terminations),
+      termsUnder90: num(r.term90),
+      retainedOver90: num(r.retained90Days),
+      retainedOver90Pct: ret90,
+      monthlyAnnualTurnover: num(r.monthlyAnnualTurnOver),
+      ttmTurnover: num(r.ttmTurnover),
+      threeMonthTurnover: num(r.threeMonthTurnover),
+      turnover090Pct: ret90 == null ? null : 1 - ret90,
+    });
+  }
+  return out;
+}
+
 // ── 3b. Turnover (WIDE org rollup) → { month: { category: value } } ───────────
 // The annual export is pivoted: row = category (Hires/Terms/…), column = month + Total,
 // org-wide (no per-loc). Useful for an org turnover trend; reviews use the per-loc monthly
