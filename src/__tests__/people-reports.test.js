@@ -163,6 +163,31 @@ describe('parseMcDelivery3PO + hmsToSec', () => {
   });
 });
 
+import { parseTurnoverApi } from '../engine/people-reports.js';
+describe('parseTurnoverApi (JSON endpoint, per-loc × month)', () => {
+  // Real field keys from /reporting/v2/people/turnover-report result.resp[]; nsn set to a
+  // numeric store (nsd=d) plus the aggregate rows that must be skipped.
+  const payload = { result: {
+    resp: [
+      { nsn: '3708', month: '2026-06', totalHire: 16, totalStaff: 61, terminations: 16, term90: 6,
+        retained90Days: 10, term90Pct: 0.375, retained90Pct: 0.625, monthlyAnnualTurnOver: 3.1475,
+        ttmTurnover: 2.7049, threeMonthTurnover: 0.6429 },
+      { nsn: 'All Selected', month: '2026-06', totalHire: 211, retained90Pct: 0.6682 },     // skip (nsd=s row)
+    ],
+    totals: { nsn: 'Grand Total', month: '13', totalHire: 2551, retained90Pct: 0.4943 },     // skip
+  } };
+  it('maps store-month rows, derives 0-90 = 1 − retained90Pct, drops aggregates', () => {
+    const rows = parseTurnoverApi(payload);
+    expect(rows).toHaveLength(1);                         // "All Selected" + "Grand Total" dropped
+    expect(rows[0]).toMatchObject({
+      loc: '3708', month: '2026-06', hires: 16, rosterSize: 61, terms: 16,
+      termsUnder90: 6, retainedOver90: 10, retainedOver90Pct: 0.625,
+      monthlyAnnualTurnover: 3.1475, ttmTurnover: 2.7049, threeMonthTurnover: 0.6429,
+    });
+    expect(rows[0].turnover090Pct).toBeCloseTo(0.375, 6); // == the report's term90Pct
+  });
+});
+
 import { parseTurnoverWide } from '../engine/people-reports.js';
 describe('parseTurnoverWide (annual org rollup)', () => {
   it('pivots category rows × month columns', () => {
