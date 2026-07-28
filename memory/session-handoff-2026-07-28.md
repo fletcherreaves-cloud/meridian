@@ -87,8 +87,21 @@ metadata:
   shift_manager_monthly table + DM/shift-role review wiring when we reach #3.
 - **METRIC PROVENANCE directive** (memory/feedback-metric-provenance.md): foundation shipped; extend the
   registry as new metrics land; deeper in-review tooltip UI (beyond the KPI ⓘ) is a future enhancement.
-- **NEXT: #2 One-Pager bug sweep** — R2P not populating, TPPH scale bug (0.1 vs 5.0 target), current-day
-  & week showing 0/blank, print truncation (top section only). See notes-33-queue.md B#4-8.
+- **#2 One-Pager sweep — TPPH FIXED** (commit b69ccab, main path via #80): loadQsrActSummary used
+  (healthy+unhealthy)/hours; now transactions/hours. R2P/current-day/week/print findings in notes-33-queue
+  (need owner confirm on metric semantics + print design). See One-Pager sweep findings there.
+- **#3 Shift Manager Summary pull SHIPPED** (v4.550, branch fcfcec0 / main 46032ce): parseShiftManagerSummary,
+  scripts/qsrsoft-shift-manager-pull.mjs (monthly window, aggregate per (loc,geid), txn-weighted speed),
+  workflow (daily 12:15 UTC). **OWNER MUST RUN supabase/schema-shift-manager.sql** (shift_manager_monthly,
+  PK loc/period_month/geid) — then trigger the workflow. Ref: reference-shift-manager-summary.md.
+  OPEN: DM/shift-role REVIEW WIRING (link a review→geid, choose which manager-attributed metrics score) —
+  design decision pending.
+- **digitalGC/delivGC review wiring CORRECTED** (commit fcfcec0): the review's Sales Drivers category
+  already had digitalGC (Digital App GC/Rest/Day) + delivGC (Delivery GC/Rest/Day), src:manual. My #7
+  wiring had filled wrong keys (digitalGCRD/deliveryGCRD). Now autoPopulate sets mo.digitalGC/mo.delivGC,
+  both flipped src:auto, redundant kpi-registry entries removed, provenance re-keyed. So Digital/Delivery
+  GC/R/D now score BY DEFAULT in Sales Drivers (answers the earlier "which category/weight" open item —
+  owner already placed them: Sales 10% cat, 15%+15% within).
 - Consider consolidating the 5 people/digital/delivery pulls into one `qsrsoft-people-pull.mjs`
   (single Playwright auth) — each currently pays its own ~40s login.
 - Stray `src/engine/people-reports 2.js` (CloudDocs duplicate) — delete as cleanup.
