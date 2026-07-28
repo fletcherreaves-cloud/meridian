@@ -88,6 +88,49 @@ export function parseEmployeeRoster(rows) {
   }
   return out;
 }
+// ── 1a. Employee Roster (JSON API) → same records as parseEmployeeRoster ────────
+// The api.reports.myqsrsoft.com `/reporting/v2/people/employee-roster` endpoint
+// returns camelCase JSON (a FLAT `result: [...]` array — note: not result.resp like
+// roster-statistics), one object per employee. Normalize to the SAME record shape
+// parseEmployeeRoster emits so rosterCounts / shiftCertifiedByLoc / the review
+// auto-populate all consume one contract. The pull deliberately requests a trimmed
+// selectCols (job-code + status only) so PII (SSN/DOB/address) never leaves QSRSoft;
+// only these non-sensitive fields are read here, and only aggregate counts persist.
+// Key map (JSON → record): storeNum→loc · fullEmployeeName→name · storeStartDate/
+// storeEndDate→start/end · terminationEntryDate→terminationDate · jobTitleCode→
+// primaryCode · jobTitleCodeDescription→primaryDesc.
+export function parseEmployeeRosterApi(payload) {
+  const arr = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.result) ? payload.result
+    : Array.isArray(payload?.result?.resp) ? payload.result.resp : [];
+  const out = [];
+  for (const r of arr) {
+    if (!r) continue;
+    const loc = r.storeNum != null ? r.storeNum : r.homeLocation;
+    if (loc == null) continue;
+    const code = r.jobTitleCode;
+    const desc = r.jobTitleCodeDescription;
+    out.push({
+      loc: unpad(loc),
+      homeLocation: r.homeLocation,
+      geid: r.geid,
+      name: r.fullEmployeeName,
+      startDate: cleanDate(r.storeStartDate),
+      endDate: cleanDate(r.storeEndDate),
+      employmentStatus: (r.employmentStatus || '').toString().trim(),
+      locationType: r.locationType,
+      terminationDate: cleanDate(r.terminationEntryDate),
+      terminationReason: r.terminationReason,
+      primaryCode: num(code),
+      primaryDesc: (desc || '').toString().trim(),
+      jobCodeType: r.jobCodeType,
+      jobCodeStartDate: cleanDate(r.jobTitleCodeStartDate),
+      bucket: bucketForJob(code, desc),
+    });
+  }
+  return out;
+}
+
 // Exact "Active" (NOT substring — "Inactive" contains "active"), and no termination date.
 const isActive = e => /^active$/i.test(String(e.employmentStatus || '').trim()) && !e.terminationDate;
 // Per-loc role-bucket counts from roster records (active employees only by default).
