@@ -188,6 +188,54 @@ describe('parseTurnoverApi (JSON endpoint, per-loc × month)', () => {
   });
 });
 
+import { parseMcDelivery3POApi } from '../engine/people-reports.js';
+import { parseDigitalAppApi } from '../engine/people-reports.js';
+describe('parseDigitalAppApi (JSON endpoint, composed rollup)', () => {
+  // Real 3708 qtr-hr-sales components for 2026-07-27. Digital App = MOA + Scanned
+  // Offers (3) + Loyalty Self-ID Earn + Internal Delivery — reconciled to the xlsx
+  // export (Sales 2985.18, GCs 283, GC/R/D 283).
+  const payload = { result: [{
+    storeNum: 3708, numberOfStores: 1, numberOfDays: 1, qualifiedDay: 1, allNetSales: 10254.4,
+    mobileOrderAheadAllNetSales: 1690.3, scannedOfferOnlyRewardsAllNetSales: 61.09,
+    scannedOfferNoRewardsAllNetSales: 880.17, scannedOfferRewardsAndOfferAllNetSales: 0,
+    loyaltySelfIDEarnAllNetSales: 228.11, intDeliveryAllNetSales: 125.51,
+    mobileOrderAheadTransactions: 180, scannedOfferOnlyRewardsTransactions: 13,
+    scannedOfferNoRewardsTransactions: 61, scannedOfferRewardsAndOfferTransactions: 0,
+    loyaltySelfIDEarnTransactions: 23, intDeliveryTransactions: 6,
+  }] };
+  it('composes Digital App Sales/GCs and GC/R/D matching the QSRSoft rollup', () => {
+    const d = parseDigitalAppApi(payload)['3708'];
+    expect(d.sales).toBeCloseTo(2985.18, 2);
+    expect(d.gcs).toBe(283);
+    expect(d.avgCheck).toBeCloseTo(10.55, 2);
+    expect(d.pctOfSales).toBeCloseTo(0.2911, 4);
+    expect(d.gcPerRestDay).toBe(283);         // qualifiedDay = 1
+  });
+});
+
+describe('parseMcDelivery3POApi (JSON endpoint)', () => {
+  // Real /reports/mcd/sales/mcDeliveryReport resp[] — same store/values as the validated
+  // xlsx sample, so the API path must reproduce parseMcDelivery3PO's numbers.
+  const payload = { resp: [
+    { nsn: 3708, vendor: 'Combined Vendors', deliveryTransactions: 69, deliveryAllNetSales: 1182.92,
+      avgDeliveryTime: 12.26, avgRestaurantTime: 4.03, avgTotalTime: 16.291139240506325,
+      ordersMissingItemsPct: 0.0633, '3POTrans': 79, avgCSat: 4.5, entireOrderIncorrect: 0,
+      csat: 4.5, qualifiedReviews: 1 },
+  ], totals: { vendor: 'All Selected', deliveryTransactions: 175, '3POTrans': 187, avgCSat: 4.67 } };
+  it('maps 3PO GC + delivery-experience fields; minutes→seconds; drops totals', () => {
+    const m = parseMcDelivery3POApi(payload);
+    expect(Object.keys(m)).toEqual(['3708']);                 // "All Selected" totals dropped
+    expect(m['3708']).toMatchObject({
+      vendor: 'Combined Vendors', posMcDeliveryGC: 69, pos3poSales: 1182.92,
+      threePoGC: 79, csat: 4.5, incorrectOrders: 0, qualifiedReviews: 1,
+    });
+    expect(m['3708'].mcDeliveryTimeSec).toBe(736);            // 12.26 min → "0:12:16"
+    expect(m['3708'].restaurantTimeSec).toBe(242);            // 4.03 min → "0:04:02"
+    expect(m['3708'].totalExperienceTimeSec).toBe(977);       // 16.29 min → "0:16:17"
+    expect(m['3708'].ordersMissingItemsPct).toBeCloseTo(0.0633, 6);
+  });
+});
+
 import { parseTurnoverWide } from '../engine/people-reports.js';
 describe('parseTurnoverWide (annual org rollup)', () => {
   it('pivots category rows × month columns', () => {
