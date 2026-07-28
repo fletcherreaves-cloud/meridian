@@ -2599,7 +2599,7 @@ function App() {
       onOpenModal:(m)=>{ if(m==='fob-analysis')setShowFOB(true); else if(m==='signals')setShowSignals(true); else if(m==='eom-dashboard')setShowEOMDash(true); },
       onClose:()=>setShowPriorities(false)}),
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
-    showLeaderOnePager&&h(OnePagerPanel,{ds,stores,onClose:()=>setShowLeaderOnePager(false)}),
+    showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},

@@ -44,9 +44,14 @@ const FOLLOW_META = {
   'no-data': { label: '· No data',   color: 'var(--text2)' },
 };
 
-export function OnePagerPanel({ ds, stores, onClose }) {
+export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => unpad(s.loc)), [stores]);
+  const operators = (settings && settings.operators) || {};      // operator → stores (DO-level)
+  const supervisors = (settings && settings.supervisorGroups) || {}; // supervisor → stores
   const [locs, setLocs] = useState(allLocs);
+  const [scopeLabel, setScopeLabel] = useState('All stores');
+  const [level, setLevel] = useState('org');
+  const applyScope = (label, list, lvl) => { setScopeLabel(label); setLocs((list || []).map(unpad)); setLevel(lvl); };
   const [weekDate, setWeekDate] = useState(() => iso(new Date()));
   const [fobRows, setFobRows] = useState(null);
   const [priorItems, setPriorItems] = useState([]);
@@ -70,10 +75,10 @@ export function OnePagerPanel({ ds, stores, onClose }) {
     const currentState = buildCurrentState(ds, fobRows, locs, range);
     const metricNow = buildMetricNow(ds, fobRows, locs, range);
     return buildOnePager({
-      level: 'supervisor', locs, period, currentState, opportunity, attention: [],
+      level, scopeLabel, locs, period, currentState, opportunity, attention: [],
       priorActionItems: priorItems, metricNow, storeName: nm,
     });
-  }, [ds, fobRows, locs, range, period, priorItems]);
+  }, [ds, fobRows, locs, range, period, priorItems, level, scopeLabel]);
 
   const addAction = useCallback((a) => {
     setActions(prev => prev.some(x => x.title === a.title) ? prev
@@ -86,7 +91,7 @@ export function OnePagerPanel({ ds, stores, onClose }) {
   const save = useCallback(async () => {
     setSaving(true); setSavedNote('');
     try {
-      await saveOnePager({ level: 'supervisor', scope_key: scopeKey, scope_label: `${locs.length} stores`,
+      await saveOnePager({ level, scope_key: scopeKey, scope_label: scopeLabel,
         locs, period, narrative, snapshot: page ? { currentState: page.currentState, opportunity: page.opportunity } : null });
       for (const a of actions) {
         await saveActionItem({ scope_key: scopeKey, thread_key: (a.loc || 'all') + '|' + (a.metric_key || a.title),
@@ -121,7 +126,23 @@ export function OnePagerPanel({ ds, stores, onClose }) {
       !page
         ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text2)' } }, 'Loading…')
         : div({ style: { padding: 16, display: 'grid', gap: 16 } },
-            // Scope pills
+            // Scope presets (tie to the org groupings in settings)
+            div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
+              span({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text2)' } }, 'Scope:'),
+              h('button', { onClick: () => applyScope('All stores', allLocs, 'org'), style: { padding: '4px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', border: '1px solid ' + (scopeLabel === 'All stores' ? 'var(--accent,#f5bc00)' : 'var(--bdr)'), background: 'var(--surf)', color: 'var(--text)', fontWeight: 700 } }, 'All'),
+              Object.keys(operators).length ? h('select', {
+                value: scopeLabel.startsWith('Operator: ') ? scopeLabel.slice(10) : '',
+                onChange: e => e.target.value && applyScope('Operator: ' + e.target.value, operators[e.target.value], 'do'),
+                style: { fontSize: 11, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
+              }, [h('option', { key: '', value: '' }, 'Operator (DO)…'), ...Object.keys(operators).map(o => h('option', { key: o, value: o }, o))]) : null,
+              Object.keys(supervisors).length ? h('select', {
+                value: scopeLabel.startsWith('Supervisor: ') ? scopeLabel.slice(12) : '',
+                onChange: e => e.target.value && applyScope('Supervisor: ' + e.target.value, supervisors[e.target.value], 'supervisor'),
+                style: { fontSize: 11, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
+              }, [h('option', { key: '', value: '' }, 'Supervisor…'), ...Object.keys(supervisors).map(s => h('option', { key: s, value: s }, s))]) : null,
+              span({ style: { fontSize: 11, color: 'var(--text2)' } }, `${scopeLabel} · ${locs.length} store${locs.length === 1 ? '' : 's'}`),
+            ),
+            // Store pills (fine control)
             div({ style: { display: 'flex', gap: 5, flexWrap: 'wrap' } },
               (allLocs).map(l => {
                 const on = locs.includes(l);

@@ -67,6 +67,41 @@ Format: **metric** — Excel band (4/3/2/1) vs app `t:[t4,t3,t2]`.
   Delivery Star .05 = 1.0; no Sales/Profit/People PACE weights). **BLOCKED** pending
   the finalized full 2026 weighting from the owner.
 
+## ✅ OWNER DECISIONS ROUND 2 (2026-07-28) — implement these
+**A. FOB / Labor thresholds are PREVIOUS-ORG BONUS-ELIGIBILITY GATES, not base scoring.**
+- Labor **within −0.25% of target = bonus eligible**; FOB **within −0.15% of target = bonus
+  eligible**. Current org has NOT implemented this benefit yet but **likely will next year**.
+- → **Keep the math, but make it an OPTIONAL / unlockable module** (a toggle in the review
+  config). When off (today) it doesn't affect scoring; when the org adopts it, flip it on.
+  Model it as a separate **"Bonus Eligibility"** flag/section (Labor −0.25pts, FOB −0.15pts of
+  target), distinct from the 1–4 competency scoring.
+
+**B. Threshold decisions:**
+1. **OEPE** — ✅ switch to **% of target (±5% / 10%)** with the 120-sec absolute floor for a 4.
+2. **Voice OSAT** — **keep the lenient bands for now** (app's 4 = +5%; do NOT tighten to Excel's
+   +10%). Revisit later.
+3. **# Shift-Certified Managers** — ✅ absolute count, **BUT a store short just 1 must NOT be
+   grossly penalized**. Design a gentle step (owner open to ideas): **≥target = 4, target−1 = 3,
+   target−2 = 2, ≤target−3 = 1** (one band per manager short, no cliff; consider capping the
+   penalty for small rosters).
+4. **FS EcoSure / Audits / Tablet** — ⏳ OPEN. Need a real-world-sensible mechanism; the original
+   idea was "% of target → 1–4". Unsure it's right — **figure out together + TEST**. This same
+   "% of target → rating" convention is used elsewhere; validate it broadly. Keep current for now.
+5. **Retention Programs** — as designed (% of target bands) is fine, **but may not apply now**:
+   it was a **subjective/participation** metric (stores buying morale treats/events), opinion-based,
+   **not tied to a hard metric**. → keep but **flag as subjective/optional**; likely drop or make
+   optional in the current template.
+6. **Total Profit** — ✅ align to Excel bands.
+
+**C. PACE — refined understanding (2026-07-28):** the workbook's "2026 PACE" weights are **the
+weights McDonald's CORP applies to results when grading the OPERATOR (OO)** — i.e. how McD scores
+*our* business. These **change year to year**. Goal: know the current-year PACE weights and be able
+to **weight any metric that directly impacts PACE** in our internal reviews, so we're **functionally
+targeting the same performance McD expects of us**. → "2026 PACE" template = **configurable to mirror
+McD's current PACE weighting** (yearly-updatable). Owner is **sourcing the full current weights**
+(has RGR-category weights so far: OEPE .25 / OSAT .50 / R2P .15 / DelivWait .05 / Delivery Star .05;
+still needs Sales/Profit/People). BLOCKED on that source.
+
 ## Recommendation / next
 - The **weights are correct** — no action.
 - The **thresholds** above are the Phase-D deliverable: present to owner, get decisions
