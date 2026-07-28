@@ -1,4 +1,5 @@
 // Performance Review Engine — config, storage, and scoring
+import { DEFAULT_TARGETS } from '../constants.js';
 
 const REVIEW_CONFIG_KEY    = 'mf_review_config_v1';
 const PERF_REVIEWS_KEY     = 'mf_perf_reviews_v1';
@@ -682,10 +683,53 @@ export function computeScoreBreakdown(review, cfg) {
 }
 
 // ── Auto-populate KPIs from ds ─────────────────────────────────────────────────
+// Review metric key → the target field in the official-targets namespace
+// (DEFAULT_TARGETS / yearly / monthly). Only metrics whose ACTUAL is on the SAME scale as
+// the target are listed, so we never fill e.g. a % target against a $ actual. FOB is
+// intentionally omitted until the banked FOB metric-definition fix (score on FOB% not
+// fob$) lands. Metrics with NO entry here are the "no configured target → prompt the user
+// (optionally seed from Smart Targets)" cases surfaced by missingReviewTargets().
+export const REVIEW_METRIC_TARGET_FIELD = {
+  oepe: 'tOepe', r2p: 'tR2p', kvs: 'tKvst', labor: 'tLabor',
+  salesVsTgt: 'tProdSales', opSupplies: 'tOpSupply', tpph: 'tTpph',
+};
+
+// Merged official targets for a loc: DEFAULT_TARGETS < yearly (ds.targets) < monthly
+// (ds.monthlyTargets) — the established precedence (monthly wins), matching store-dash/analytics.
+export function mergedTargetsForLoc(ds, loc) {
+  const L = String(loc);
+  return {
+    ...(DEFAULT_TARGETS[L] || {}),
+    ...((ds && ds.targets && ds.targets[L]) || {}),
+    ...((ds && ds.monthlyTargets && ds.monthlyTargets[L]) || {}),
+  };
+}
+
+// Scored metrics (across the review's config categories) that have NO resolvable target —
+// neither already entered on any month nor available from the official-targets namespace.
+// Feeds a UI prompt: "set a target for X" (and a Smart-Targets seed where one exists).
+export function missingReviewTargets(review, cfg, ds) {
+  cfg = resolveReviewConfig(review, cfg);
+  const tgts = mergedTargetsForLoc(ds || {}, review.loc);
+  const months = review.kpis?.months || {};
+  const out = [];
+  for (const mets of Object.values(cfg.metrics || {})) {
+    for (const m of mets) {
+      if (!m.scored) continue;
+      const tf = REVIEW_METRIC_TARGET_FIELD[m.key];
+      const fromNamespace = tf != null && tgts[tf] != null;
+      const anyMonthHasTgt = Object.values(months).some(mo => mo && mo[m.key + 'Tgt'] != null);
+      if (!fromNamespace && !anyMonthHasTgt) out.push({ key: m.key, label: m.label });
+    }
+  }
+  return out;
+}
+
 export function autoPopulateKPIs(review, ds) {
   if (!ds?.loaded) return review;
   const loc = review.loc;
   const months = JSON.parse(JSON.stringify(review.kpis.months));
+  const officialTgts = mergedTargetsForLoc(ds, loc); // DEFAULT < yearly < monthly (monthly wins)
 
   const byMonth = (rows, locF='loc') => {
     const map={};
@@ -746,6 +790,14 @@ export function autoPopulateKPIs(review, ds) {
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
       if (sr.osat5 != null) mo.osat = sr.osat5;
+    }
+
+    // Target auto-fill from the official targets (Notes 32 A) — fill each mapped metric's
+    // target slot from DEFAULT < yearly < monthly (monthly wins) when the row-based fill
+    // above didn't already set it. Never overrides an existing target.
+    for (const [mk, tf] of Object.entries(REVIEW_METRIC_TARGET_FIELD)) {
+      const slot = mk + 'Tgt';
+      if (mo[slot] == null && officialTgts[tf] != null) mo[slot] = officialTgts[tf];
     }
   }
 
