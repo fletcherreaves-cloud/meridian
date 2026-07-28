@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
 import {
-  parseEmployeeRoster, rosterCounts, shiftCertifiedByLoc, bucketForJob,
+  parseEmployeeRoster, parseEmployeeRosterApi, rosterCounts, shiftCertifiedByLoc, bucketForJob,
   parseRosterStatistics, parseRosterStatisticsApi, headcountFromStats, parseTurnover,
   parseDigitalApp, parseMcDelivery3PO, hmsToSec,
 } from '../engine/people-reports.js';
@@ -41,6 +41,32 @@ describe('parseEmployeeRoster + counts', () => {
     expect(c['3708']).toMatchObject({ crew: 1, shiftMgr: 1, gm: 1, total: 3 }); // D excluded (terminated)
     expect(shiftCertifiedByLoc(parseEmployeeRoster(rows))['3708']).toBe(1);
     expect(shiftCertifiedByLoc(parseEmployeeRoster(rows), { includeGM: true })['3708']).toBe(2);
+  });
+});
+
+describe('parseEmployeeRosterApi (JSON endpoint)', () => {
+  // Synthetic rows (NO real PII) mirroring /reporting/v2/people/employee-roster shape.
+  // Covers every job-code family seen in the field so the shift-cert bucket is exact.
+  const payload = { result: [
+    { storeNum: 35064, homeLocation: 35064, geid: 1, fullEmployeeName: 'A Crew', storeStartDate: '2025-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', locationType: 'Home', terminationEntryDate: '0000-00-00', terminationReason: 'ACTIVE', jobTitleCode: '650', jobCodeType: 'Primary', jobTitleCodeDescription: 'CREW PERSON', jobTitleCodeStartDate: '2025-01-01' },
+    { storeNum: 35064, homeLocation: 35064, geid: 2, fullEmployeeName: 'B Swing', storeStartDate: '2024-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', locationType: 'Home', terminationEntryDate: '0000-00-00', terminationReason: 'ACTIVE', jobTitleCode: '647', jobCodeType: 'Primary', jobTitleCodeDescription: 'CERT. SWING MGR.', jobTitleCodeStartDate: '2025-01-01' },
+    { storeNum: 35064, homeLocation: 35064, geid: 3, fullEmployeeName: 'C Dept', storeStartDate: '2024-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', locationType: 'Home', terminationEntryDate: '0000-00-00', terminationReason: 'ACTIVE', jobTitleCode: '10002', jobCodeType: 'Primary', jobTitleCodeDescription: 'DEPT MGR II W/ CREW PUNCHES', jobTitleCodeStartDate: '2025-01-01' },
+    { storeNum: 35064, homeLocation: 35064, geid: 4, fullEmployeeName: 'D GM', storeStartDate: '2023-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', locationType: 'Home', terminationEntryDate: '0000-00-00', terminationReason: 'ACTIVE', jobTitleCode: '641', jobCodeType: 'Primary', jobTitleCodeDescription: 'GENERAL MANAGER', jobTitleCodeStartDate: '2023-01-01' },
+    { storeNum: 35064, homeLocation: 35064, geid: 5, fullEmployeeName: 'E Maint', storeStartDate: '2023-01-01', storeEndDate: '0000-00-00', employmentStatus: 'Active', locationType: 'Home', terminationEntryDate: '0000-00-00', terminationReason: 'ACTIVE', jobTitleCode: '671', jobCodeType: 'Primary', jobTitleCodeDescription: 'PRIMARY MAIN. PERSON', jobTitleCodeStartDate: '2023-01-01' },
+  ] };
+  it('normalizes JSON to the parseEmployeeRoster record shape', () => {
+    const recs = parseEmployeeRosterApi(payload);
+    expect(recs).toHaveLength(5);
+    expect(recs[0]).toMatchObject({ loc: '35064', primaryCode: 650, bucket: 'crew', endDate: null, terminationDate: null });
+    expect(recs[1].bucket).toBe('shiftMgr');   // 647 Cert Swing
+    expect(recs[2].bucket).toBe('shiftMgr');   // 10002 Dept Mgr II
+    expect(recs[3].bucket).toBe('gm');         // 641 GM
+    expect(recs[4].bucket).toBe('maintenance');// 671
+  });
+  it('rosterCounts yields shift-cert = Cert Swing + Dept Mgrs (GM excluded)', () => {
+    const c = rosterCounts(parseEmployeeRosterApi(payload));
+    expect(c['35064']).toMatchObject({ crew: 1, shiftMgr: 2, gm: 1, maintenance: 1, total: 5 });
+    expect(shiftCertifiedByLoc(parseEmployeeRosterApi(payload))['35064']).toBe(2);
   });
 });
 
