@@ -72,7 +72,41 @@ metadata:
   keep a **bulletproof handoff md** current; run the live FL FOB check in a fresh session later.
   Query + logic already captured in `session-handoff-2026-07-28.md`.
 
-## Status
-NEW — working through C (One-Pager fixes, code-diagnosable now) + A (perf-review target auto-fill)
-first since both are doable without live data. Per-metric wiring (A) proceeds where data already
-exists; blocked ones (EcoSure/Jolt/Pace Portal) parked with owner action noted.
+## Status (updated — PR #80, 413 tests green, deployed)
+**SHIPPED:**
+- **C One-Pager opportunity blow-up (v4.537):** root cause = weekly window mixed the monthly
+  FOB prodSales into netSales → avgCheck inflated ~4× → GC pillar exploded. Now window-consistent
+  (all pillars use the window's own sales/guests/days); FOB% tile uses fob rows' own base. R2P tile
+  = "manual upload only" (no cloud stream); TPPH derives from DAR hours.
+- **A target auto-fill (v4.538):** autoPopulateKPIs fills each mapped metric's TARGET from
+  DEFAULT<yearly<monthly (monthly wins). `missingReviewTargets()` + `mergedTargetsForLoc()` added.
+- **C cascade FOCUS (v4.539):** the level selector now re-emphasizes the page (focus banner +
+  reordered current-state + focus on prints). DRAFT per-level focus — OWNER TO REFINE (owner picked
+  "propose a draft"). Owner will refine; may upload JobRole descriptions later.
+
+**DECISIONS captured:** missing-targets → **Prompt + Smart-Targets seed** (owner-approved). Cascade
+focus → I drafted; owner refines.
+
+**NEXT SLICE (not yet built):**
+- **Missing-targets UI**: surface `missingReviewTargets()` in the ReviewEditor as a banner +
+  one-click **Smart-Targets seed** where available, manual entry otherwise. (Engine hook ready.)
+- **FOB metric-definition fix** (banked, perf-review-excel-audit ROUND 2): score foodOB on FOB%
+  not fob$ — unblocks FOB target auto-fill (currently omitted to avoid %-vs-$ mismatch).
+
+**PER-METRIC WIRING — BLOCKED ON OWNER SOURCING (they offered):**
+- Shift Certified Mgrs / Total Headcount — owner to source QSRSoft **report name + filters**.
+- 0-90 Day Crew Turnover — owner to source QSRSoft **report name**.
+- FS EcoSure — blocked on owner's EcoSure report access.
+- FS Completion T-60 — from **Jolt/Squabble** app; needs a dedicated session.
+- EPB2B (Pace Portal) — different site; auto-pull feasibility TBD.
+**PER-METRIC — DOABLE, NEEDS FIELD CONFIRMATION (defer until owner points to source):**
+- Op Supplies actual (owner says "we have this data now" — need the exact stream/field).
+- Total Profit vs Target = derive from Food-Over-Base + Labor% + Op Supplies (needs $ composition).
+- Digital App GC/Rest/Day + Delivery GC/Rest/Day — verify existing access; glimpse has
+  digital/app %-of-sales but not GC/rest/day directly → may need derivation.
+
+**B 1:1 Checkpoint:** owner satisfied the Print/PDF already shows review-cycle progress; no build
+now. **PROTECT the monthly-results aspect** if touched later.
+
+**D FL FOB live check:** domain allowlisted; needs a NEW session (egress applies at session start).
+Handoff query in `session-handoff-2026-07-28.md`.
