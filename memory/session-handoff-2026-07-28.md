@@ -51,13 +51,21 @@ metadata:
   2026-07 (run 30388186099). `parseEmployeeRosterApi()`, `scripts/qsrsoft-employee-roster-pull.mjs`,
   workflow. Commit `a0debaa`. **PII-safe**: trimmed selectCols (no SSN/DOB/address fetched); only
   aggregate integer counts persisted. Shape note: employee-roster is a FLAT `result:[]` (NOT result.resp).
-- **Two of three review People metrics now have live data: Headcount + Shift-Cert.** Remaining: Turnover.
-- Both cherry-picked to **main** (c8ae189, 75e852d) so cron/dispatch fire. Both rely on the Playwright
-  fallback (stored QSRSOFT_TOKEN + QSRSOFT_COGNITO_TOKEN are stale/401).
-- **NEXT: Turnover** (→ `turnover_monthly`, the 0-90 metric = 1−Retained>90%). Need its capture
-  (endpoint likely `/reporting/v2/people/turnover…` + JSON `result[]` shape). Then Digital App +
-  McDelivery 3PO (future delivery project, lower priority). Consider consolidating the 3 people pulls
-  into one `qsrsoft-people-pull.mjs` (single Playwright auth) once Turnover lands.
+- **Turnover auto-pull LIVE** (v4.547) — 343 store-month rows (27 stores × 13 months) → `turnover_monthly`
+  (run 30388953371). `parseTurnoverApi()`, `scripts/qsrsoft-turnover-pull.mjs`, workflow. Commits `c8d8a5b`
+  (branch), `1ffaab3` (main). Endpoint `/reporting/v2/people/turnover-report`, shape `result.resp[]`.
+  **Key param lesson:** `nsd=d` = per-store rows; `nsd=s` = org "All Selected" aggregate (skip). `dsd=m`
+  = monthly rows. `jtcType=Crew`. 0-90 = 1−retained90Pct (== report's term90Pct). Field keys: totalHire/
+  totalStaff/terminations/term90/retained90Days/retained90Pct/monthlyAnnualTurnOver(capital O)/ttmTurnover/
+  threeMonthTurnover. (The turnover page also fires a `/reporting/v2/people/new-hire-retention` XHR — unused.)
+- **ALL THREE review People metrics now LIVE: Headcount + Shift-Cert + 0-90 Turnover.** All cherry-picked
+  to **main** (c8ae189/75e852d/1ffaab3) so cron/dispatch fire. All use the Playwright fallback (stored
+  QSRSOFT_TOKEN + QSRSOFT_COGNITO_TOKEN are stale/401 — refresh for faster runs, not blocking).
+- **NEXT (owner corrected): Digital App + McDelivery 3PO ALSO feed review scoring** (not just the future
+  delivery project — that was noted only so we remember it). Parsers done (parseDigitalApp,
+  parseMcDelivery3PO). Need one capture each (endpoint likely `/reporting/v2/…`, + `result` shape) →
+  build parse*Api + pull → digital/delivery review metrics. Then consider consolidating all people pulls
+  into one `qsrsoft-people-pull.mjs` (single Playwright auth, ~40s once instead of per-report).
 - **REUSABLE PATTERN for the remaining People pulls** (Employee Roster, Turnover, Digital, McDelivery):
   - Host/prefix: `GET https://api.reports.myqsrsoft.com/reporting/v2/people/<report>` —
     params `nsd=d&nsn=<csv all 27>&orgId=<ORG>&enterpriseName=McDonalds&startDate=YYYY-MM-01&endDate=YYYY-MM-DD&weekStart=3`.
