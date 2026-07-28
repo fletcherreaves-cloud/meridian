@@ -769,6 +769,8 @@ export function autoPopulateKPIs(review, ds) {
   const rosterStatM = byLocMonth(ds.rosterStatsRows);
   const roleCountM  = byLocMonth(ds.rosterRoleCounts);
   const turnoverM   = byLocMonth(ds.turnoverRows);
+  const digitalM    = byLocMonth(ds.digitalAppRows);   // Digital App GC/R/D (Notes 32)
+  const deliveryM   = byLocMonth(ds.mcdeliveryRows);   // Delivery GC/R/D (Notes 32)
 
   // SMG FullScale: index by year+month for this store to avoid cross-year collision
   const reviewYear = review.year || new Date().getFullYear();
@@ -820,6 +822,11 @@ export function autoPopulateKPIs(review, ds) {
     if (rcc && rcc.shiftMgr != null) mo.shiftCert = rcc.shiftMgr;
     const tvr = turnoverM[m];
     if (tvr && tvr.turnover090Pct != null) mo.turnover90 = tvr.turnover090Pct;
+    // Digital/Delivery GC/R/D (auto-first; only used if the review includes the metric)
+    const dig = digitalM[m];
+    if (dig && dig.appGcRd != null) mo.digitalGCRD = dig.appGcRd;
+    const dlv = deliveryM[m];
+    if (dlv && dlv.deliveryGcRd != null) mo.deliveryGCRD = dlv.deliveryGcRd;
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
       if (sr.osat5 != null) mo.osat = sr.osat5;

@@ -1501,6 +1501,58 @@ export async function loadTurnoverMonthly() {
   }));
 }
 
+// ── Digital App + McDelivery 3PO (monthly per-loc) → review digital/delivery ───
+// GC/R/D metrics. Parsers in src/engine/people-reports.js; pulls upsert monthly.
+// loaders return flat rows tagged with `month` for the review auto-populate lookup.
+export async function saveDigitalAppMonthly(periodMonth, byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, d]) => ({
+    loc: String(loc), period_month: periodMonth,
+    app_sales: d.sales ?? null, app_gc: d.gcs ?? null, app_gc_rd: d.gcPerRestDay ?? null,
+    app_pct_sales: d.pctOfSales ?? null, avg_check: d.avgCheck ?? null, rest_days: d.restDays ?? null,
+  }));
+  const { error } = await supabase.from('digital_app_monthly').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[digital_app_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadDigitalAppMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('digital_app_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    appSales: r.app_sales, appGc: r.app_gc, appGcRd: r.app_gc_rd,
+    appPctSales: r.app_pct_sales, avgCheck: r.avg_check, restDays: r.rest_days,
+  }));
+}
+
+export async function saveMcdeliveryMonthly(periodMonth, byLoc, restDays = null) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, m]) => ({
+    loc: String(loc), period_month: periodMonth, vendor: m.vendor ?? null,
+    delivery_gc: m.threePoGC ?? null,
+    delivery_gc_rd: (m.threePoGC != null && restDays) ? m.threePoGC / restDays : (m.threePoGC ?? null),
+    pos_mcdelivery_gc: m.posMcDeliveryGC ?? null, pos_3po_sales: m.pos3poSales ?? null,
+    csat: m.csat ?? null, orders_missing_items_pct: m.ordersMissingItemsPct ?? null,
+    incorrect_orders: m.incorrectOrders ?? null, mcdelivery_time_sec: m.mcDeliveryTimeSec ?? null,
+    restaurant_time_sec: m.restaurantTimeSec ?? null, total_experience_time_sec: m.totalExperienceTimeSec ?? null,
+    rest_days: restDays ?? null,
+  }));
+  const { error } = await supabase.from('mcdelivery_monthly').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[mcdelivery_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadMcdeliveryMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('mcdelivery_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month, vendor: r.vendor,
+    deliveryGc: r.delivery_gc, deliveryGcRd: r.delivery_gc_rd, posMcDeliveryGc: r.pos_mcdelivery_gc,
+    pos3poSales: r.pos_3po_sales, csat: r.csat, ordersMissingItemsPct: r.orders_missing_items_pct,
+    incorrectOrders: r.incorrect_orders, mcDeliveryTimeSec: r.mcdelivery_time_sec,
+    restaurantTimeSec: r.restaurant_time_sec, totalExperienceTimeSec: r.total_experience_time_sec, restDays: r.rest_days,
+  }));
+}
+
 // ── eBOS daily op-supplies rows (for ds — feeds Perf-Review opSupplies actual) ─
 // One row per (loc, date) carrying the day's operating-supplies purchases. Paginated —
 // 27 stores × a year exceeds the 1000-row cap. loc unpadded to match the rest of ds.

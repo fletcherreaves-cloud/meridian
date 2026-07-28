@@ -8,14 +8,18 @@
 // flattened from DEFAULT_REVIEW_CONFIG (single source of truth), plus a small set
 // of extra operational KPIs available for future review-building.
 import { DEFAULT_REVIEW_CONFIG, CAT_LABELS } from './review-engine.js';
+import { provenanceFor, provenanceText } from './metric-provenance.js';
 
 // Extra operational KPIs (available from the metric universe) not already a review
 // metric — offered in the directory for building new reviews/categories.
 const EXTRA_KPIS = [
-  { key: 'tpph',      label: 'TPPH (Transactions/Prod Hr)', cat: 'profit', unit: 'abs', better: 'higher', t: [0.2, -0.3, -0.6], src: 'auto', field: 'tpph',      note: 'Higher TPPH = more productive labor' },
-  { key: 'cashOSPct', label: 'Cash Over/Short %',           cat: 'profit', unit: 'abs', better: 'lower',  t: [0.0003, 0.001, 0.003], src: 'auto', field: 'cashOSPct', note: 'Loss-prevention — closer to 0 is better' },
-  { key: 'tRedAPct',  label: 'T-Reds After %',              cat: 'profit', unit: 'abs', better: 'lower',  t: [0.002, 0.004, 0.006], src: 'auto', field: 'tRedAPct',  note: 'Transaction reductions after — lower is better' },
-  { key: 'parkPct',   label: 'DT Park %',                   cat: 'rgr',    unit: 'abs', better: 'lower',  t: [-0.02, 0.02, 0.04], src: 'auto', field: 'park',      note: 'Lower parked % = better DT flow' },
+  { key: 'tpph',       label: 'TPPH (Transactions/Prod Hr)', cat: 'profit', unit: 'abs', better: 'higher', t: [0.2, -0.3, -0.6], src: 'auto', field: 'tpph',      note: 'Higher TPPH = more productive labor' },
+  { key: 'cashOSPct',  label: 'Cash Over/Short %',           cat: 'profit', unit: 'abs', better: 'lower',  t: [0.0003, 0.001, 0.003], src: 'auto', field: 'cashOSPct', note: 'Loss-prevention — closer to 0 is better' },
+  { key: 'tRedAPct',   label: 'T-Reds After %',              cat: 'profit', unit: 'abs', better: 'lower',  t: [0.002, 0.004, 0.006], src: 'auto', field: 'tRedAPct',  note: 'Transaction reductions after — lower is better' },
+  { key: 'parkPct',    label: 'DT Park %',                   cat: 'rgr',    unit: 'abs', better: 'lower',  t: [-0.02, 0.02, 0.04], src: 'auto', field: 'park',      note: 'Lower parked % = better DT flow' },
+  // Digital / delivery growth (auto from QSRSoft; add to any category via Customize).
+  { key: 'digitalGCRD',  label: 'Digital App GC/R/D',        cat: 'rgr',    unit: 'abs', better: 'higher', t: [0, -3, -6], src: 'auto', field: 'digitalGCRD',  note: 'Digital App guest counts per restaurant-day (MOA + scanned offers + self-ID loyalty + internal delivery)' },
+  { key: 'deliveryGCRD', label: 'Delivery GC/R/D (3PO)',     cat: 'rgr',    unit: 'abs', better: 'higher', t: [0, -3, -6], src: 'auto', field: 'deliveryGCRD', note: '3PO delivery guest counts per restaurant-day (Combined Vendors)' },
 ];
 
 // Build a normalized registry entry from a review metric def or an extra KPI.
@@ -34,6 +38,7 @@ function entry(m, cat) {
     dollar: !!m.dollar,
     tgtField: m.tgtField || null,
     note: m.note || '',
+    provenance: provenanceFor(m.key),      // source lineage (Notes 33 transparency)
     inReview: cat != null && !m.__extra,   // already a default review metric?
   };
 }
@@ -67,8 +72,10 @@ export function explainThreshold(kpi) {
   const cmp = kpi.better === 'higher'
     ? `4 if actual ≥ target${signed(t4, kpi)}, 3 if ≥ target${signed(t3, kpi)}, 2 if ≥ target${signed(t2, kpi)}, else 1`
     : `4 if actual ≤ target${signed(t4, kpi)}, 3 if ≤ target${signed(t3, kpi)}, 2 if ≤ target${signed(t2, kpi)}, else 1`;
+  const prov = provenanceText(kpi.key);
   return `${dir}. Thresholds are in ${unitWord}. Scoring: ${cmp}. ` +
-    `(T4=${fmt(t4)}, T3=${fmt(t3)}, T2=${fmt(t2)}; the metric is compared to the store's target for this KPI.)`;
+    `(T4=${fmt(t4)}, T3=${fmt(t3)}, T2=${fmt(t2)}; the metric is compared to the store's target for this KPI.)` +
+    (prov ? `\n${prov}` : '');
 }
 function signed(v, kpi) {
   if (v == null) return '';
