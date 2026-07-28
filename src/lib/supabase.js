@@ -2371,3 +2371,55 @@ export async function loadEomDiagConfig() {
 export async function saveEomDiagConfig(checks) {
   return saveEomNotificationSettings({ checks: checks || [] }, 'diag_config');
 }
+
+// ── Leadership One-Pagers (weekly cascade) ────────────────────────────────────
+// one_pagers: the weekly page (scope + narrative). one_pager_action_items: action
+// items that persist week-to-week (thread_key stable across weeks) with a status and
+// the metric they target (for the "did it move?" follow-up loop). Both RBAC-scoped.
+export async function loadOnePagers({ limit = 60 } = {}) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('one_pagers').select('*').order('period', { ascending: false }).limit(limit);
+  if (error) { console.warn('[one_pagers] load error:', error.message); return []; }
+  return data || [];
+}
+
+export async function saveOnePager(row) {
+  if (!supabase) return null;
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const payload = { ...row, author_id: row.author_id || uid, updated_at: new Date().toISOString() };
+  // upsert on (level, scope_key, period) so re-saving a week overwrites in place
+  const { data, error } = await supabase
+    .from('one_pagers').upsert(payload, { onConflict: 'level,scope_key,period' }).select().single();
+  if (error) { console.warn('[one_pagers] save error:', error.message); return null; }
+  return data;
+}
+
+export async function loadActionItems({ scopeKey, includeResolved = true } = {}) {
+  if (!supabase) return [];
+  let q = supabase.from('one_pager_action_items').select('*').order('created_at', { ascending: true });
+  if (scopeKey) q = q.eq('scope_key', scopeKey);
+  if (!includeResolved) q = q.neq('status', 'done');
+  const { data, error } = await q;
+  if (error) { console.warn('[action_items] load error:', error.message); return []; }
+  return data || [];
+}
+
+export async function saveActionItem(item) {
+  if (!supabase) return null;
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const payload = { ...item, author_id: item.author_id || uid, updated_at: new Date().toISOString() };
+  const { data, error } = await supabase
+    .from('one_pager_action_items').upsert(payload).select().single();
+  if (error) { console.warn('[action_items] save error:', error.message); return null; }
+  return data;
+}
+
+export async function updateActionItem(id, updates) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('one_pager_action_items').update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id).select().single();
+  if (error) { console.warn('[action_items] update error:', error.message); return null; }
+  return data;
+}
