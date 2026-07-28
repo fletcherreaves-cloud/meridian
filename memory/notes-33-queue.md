@@ -70,3 +70,30 @@ ourselves). If the report doesn't attribute, fall back to joining LifeLenz MOD-b
 hourly metrics — heavier, note the caveats (overlapping shifts, salaried vs hourly).
 
 See [[session-handoff-2026-07-28]], [[feedback-metric-provenance]].
+
+---
+
+## One-Pager sweep — FINDINGS (2026-07-28 autonomous pass)
+- **B#6 TPPH scale — FIXED** (commit b69ccab). `loadQsrActSummary` derived TPPH from
+  `(healthy_count+unhealthy_count)/punched_hours` — a KVS order-health count, not transactions →
+  ~0.1 vs ~5 target. Now `transactions ÷ actual_punched_hours` (matches Shift Mgr transPerPunchedHour).
+- **B#5 R2P not populating** — ROOT: metric-source `r2p` has only `[['opsRows','r2p']]` (manual Ops
+  Report). No auto/cloud source, so it's blank whenever an Ops Report wasn't uploaded for the window.
+  The DAR (qsr_daily_activity) has `fc_untilserve` (front-counter until-serve) — the plausible R2P
+  source — but **need owner confirm fc_untilserve == R2P semantics** before wiring (accuracy principle:
+  don't label a near-miss field as R2P). Fix once confirmed: load fc_untilserve+fc_trans_cnt in
+  loadQsrActSummary, derive r2p, add `['qsrActSummaryRows','r2p']` to metric-source.
+- **B#7 current-day blank / B#8 week mostly blank** — ROOT (two parts): (1) recent/current windows
+  legitimately have little data (intraday today; the current week is mostly future days) — the emailed
+  Glimpse/Ops/Controls lag; (2) the cloud-fresh DAR (qsrActSummaryRows) is wired ONLY for sales/gc/tpph,
+  NOT for oepe/r2p/laborPct — so recent windows show sales but blank ops (the exact "recent windows look
+  empty" problem metric-source.js line 7-8 calls out). Fix: wire DAR-derived oepe (dt serve) + laborPct
+  (punched$ ÷ sales — needs actual_punched_dollars added to loadQsrActSummary) as FALLBACK sources.
+  **Need owner confirm**: OEPE from DAR dt_untilserve vs a true OEPE-peak field; and that punched$/sales
+  is the labor% they want. Both are additive fallbacks (won't regress existing windows).
+- **B#4 print "only top section" / B#10 list-locations** — NOT a truncation; printOnePager renders all
+  sections but the page is a SCOPE ROLLUP with no per-store rows. This is the B#10 feature: add a
+  per-location breakdown table (each store in the selected group) to screen + print. Design choice
+  (which columns) → build with owner. 
+- **Cleanup spotted**: stray CloudDocs duplicate files `src/**/* 2.js` (e.g. one-pager.test 2.js,
+  people-reports 2.js) — delete.
