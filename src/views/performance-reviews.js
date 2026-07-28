@@ -2169,7 +2169,7 @@ function StatusBadge({status}) {
   }}, cfg.label);
 }
 
-function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
+function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDelete}) {
   const [filterRole, setFilterRole]     = useState('all');
   const [filterYear, setFilterYear]     = useState('all');
   const [filterHalf, setFilterHalf]     = useState('all');
@@ -2236,7 +2236,7 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
       PrimaryBtn({onClick:()=>setShowNew(true)},'+ New Review')
     ),
     // New review form
-    showNew&&h(NewReviewForm,{stores,cfg,onCancel:()=>setShowNew(false),
+    showNew&&h(NewReviewForm,{stores,cfg,shiftManagerRows,onCancel:()=>setShowNew(false),
       onCreate:(r)=>{upsertReview(r);setShowNew(false);onNew();}}),
     // List
     div({style:{flex:1,overflowY:'auto'}},
@@ -2279,16 +2279,38 @@ function ReviewList({reviews, cfg, stores, onOpen, onNew, onDelete}) {
   );
 }
 
-function NewReviewForm({stores, cfg, onCancel, onCreate}) {
+function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
   const [name, setName]   = useState('');
   const [role, setRole]   = useState('GM');
   const [loc,  setLoc]    = useState(stores?.[0]?.loc||'');
   const [year, setYear]   = useState(new Date().getFullYear());
   const [half, setHalf]   = useState('H1');
+  const [geid, setGeid]   = useState('');   // manager attribution (Notes 33 A#3)
+
+  // Managers with attributed shift data at this store — pick one to attribute a
+  // DM/shift review to their own shifts. GMs are always store-total (no picker).
+  const managers = useMemo(() => {
+    const m = {};
+    for (const r of (shiftManagerRows || [])) {
+      if (String(r.loc) !== String(loc) || !r.geid) continue;
+      if (!m[r.geid] || (r.name && !m[r.geid].name)) m[r.geid] = { geid: r.geid, name: r.name || String(r.geid) };
+    }
+    return Object.values(m).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [shiftManagerRows, loc]);
+  const showMgr = role !== 'GM' && managers.length > 0;
+
+  // Selecting a manager sets the geid AND the name — ensures correct attribution.
+  const pickManager = (g) => {
+    setGeid(g);
+    const mgr = managers.find(x => String(x.geid) === String(g));
+    if (mgr && mgr.name) setName(mgr.name);
+  };
 
   const submit = () => {
     if (!name.trim()) { alert('Name is required'); return; }
-    onCreate(blankReview(name.trim(), role, loc, year, half, cfg));
+    const r = blankReview(name.trim(), role, loc, year, half, cfg);
+    r.geid = (showMgr && geid) ? Number(geid) : null;
+    onCreate(r);
   };
 
   const fieldStyle = {padding:'5px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
@@ -2308,9 +2330,17 @@ function NewReviewForm({stores, cfg, onCancel, onCreate}) {
     ),
     div(null,
       div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Primary Store'),
-      sel({value:loc,onChange:e=>setLoc(e.target.value),style:{...fieldStyle}},
+      sel({value:loc,onChange:e=>{setLoc(e.target.value);setGeid('');},style:{...fieldStyle}},
         opt({value:''},'All Stores'),
         ...(stores||[]).map(s=>opt({value:s.loc,key:s.loc},`${s.loc} — ${sName(s.loc)}`)))
+    ),
+    // Manager attribution (Notes 33 A#3): DM/shift roles can attribute the review to a
+    // specific manager's own shifts. GMs are store-total (picker hidden).
+    showMgr && div(null,
+      div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Manager (attribution)'),
+      sel({value:geid,onChange:e=>pickManager(e.target.value),style:{...fieldStyle,minWidth:150}},
+        opt({value:''},'— store total —'),
+        ...managers.map(m=>opt({value:String(m.geid),key:m.geid},m.name)))
     ),
     div(null,
       div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Year'),
@@ -2388,6 +2418,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
                 userRole, orgRoles,
                 onTransition:handleTransition})
             : h(ReviewList,{reviews, cfg, stores,
+                shiftManagerRows: ds?.shiftManagerRows || [],
                 onOpen:setEditing,
                 onNew:refresh,
                 onDelete:refresh})
