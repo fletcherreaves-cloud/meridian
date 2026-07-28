@@ -65,6 +65,31 @@ year) to backfill; then daily/monthly forward.
 - Food-Safety app: **FL = Jolt, OK = Squadle** (two vendors, same function). Confirm owner has
   all-locations data access; if not owner resolves, then wire. Needs a dedicated session per vendor.
 
+## ✅ PARSERS BUILT + validated against real sample exports (v4.542)
+`src/engine/people-reports.js` — pure, header-indexed, tested (`people-reports.test.js`) AND
+run against the actual owner workbooks:
+- **parseEmployeeRoster** → per-employee (loc, status, term date/reason, JTC code+desc+start,
+  bucket). `rosterCounts` (active by bucket), `shiftCertifiedByLoc` (shiftMgr bucket ± GM).
+  Job taxonomy `DEFAULT_JOB_BUCKETS` (configurable): crew 650/648 · shiftMgr 647(Cert Swing)+
+  845/846/10001/10002/20107(Dept Mgr) · gm 641/45/541/801 · maintenance 670/671 · admin 681,
+  with regex fallback for new codes.
+- **parseRosterStatistics** → per-loc crewActive/shiftActive/gmdmStaff/rosterActive.
+  `headcountFromStats` (configurable buckets; all → exact Roster Active).
+- **parseTurnover** → all columns + `turnover090Pct = 1 − Retained>90%` proxy.
+- **parseDigitalApp** (clean "Digital App" sheet) → sales/gcs. **parseMcDelivery3PO** → 3PO GC +
+  CSAT/missing-items/McDelivery·Restaurant·TotalExperience times (`hmsToSec` handles H:MM:SS AND
+  Excel day-fractions — xlsx raw-reads times as fractions).
+
+### 🔑 CROSS-CHECK FINDING (owner's #2 ask — which source is reliable?)
+Employee Roster lists EVERY employee as Employment Status "Active" (3708 crew = 63 = stats
+**Crew Staff**), while Roster Statistics separately computes **Crew Active = 55** (excludes 8 not
+punching / on leave). → **Headcount ← Roster Statistics** (authoritative active count).
+**Shift-Certified Mgrs ← Employee Roster** manager bucket (role identity + term/promotion detail).
+Shift count reconciles within ~1 (roster 8/7/14 by job-code vs stats shiftActive 7/7/13) — the
+active-definition + Dept-Mgr bucket boundary. Term/promotion history only the roster has.
+**OWNER TO CONFIRM:** (a) does "# Shift Certified Managers" = Cert Swing only, or + Dept Mgrs (current),
+or + GM? (b) 0-90 turnover canonical = `1−Retained>90%` (current proxy) or another column?
+
 ## Build order (when a pull session is available)
 1. Op Supplies into ds (#4) — smallest, data exists. 2. Employee Roster + Roster Statistics (#1/#2)
 — shared People pull, cross-checked, config headcount. 3. Turnover (#3). 4. Digital App (#6) +
