@@ -10,14 +10,21 @@ metadata:
 
 ## Branch / PR
 - Working branch: `claude/status-data-refresh-strategy-u88lz9`
-- **Open draft PR #80** — carries TWO slices (build clean, 403 tests green, Vercel deployed):
+- **Open draft PR #80** — carries these slices (build clean, 413 tests green, Vercel deployed):
   1. **Perf Reviews KPI directory** (v4.535, Notes 30 #3) — `src/engine/kpi-registry.js` +
      Customize panel wiring (add/rename/delete Results categories, KPI-select dropdown,
      ⓘ plain-English threshold explainer). 12 tests.
-  2. **One-Pager Notes 31** (v4.536) — see `notes-31-queue.md` (fully documented). Root-cause
-     fix: `metricSeries` accepts string OR Date ranges (cloud rows were being dropped) →
-     Labor/OEPE/GC/TPPH populate; FOB prodSales>0 guard; range pills Week/MTD/YTD/Custom +
-     YTD-alongside; timeframe labels; L/F/G spelled out; cascade dropdown O›D/D›S/S›G.
+  2. **One-Pager Notes 31** (v4.536) — see `notes-31-queue.md`. `metricSeries` accepts string OR
+     Date ranges; FOB prodSales>0 guard; range pills Week/MTD/YTD/Custom + YTD-alongside;
+     timeframe labels; L/F/G spelled out; cascade dropdown O›D/D›S/S›G.
+  3. **One-Pager window-consistency** (v4.537, Notes 32 C) — killed the weekly Opportunity
+     blow-up: `buildOnePagerInputs` no longer mixes the monthly FOB prodSales into a weekly
+     window (that inflated avgCheck → GC pillar). All pillars use the window's own sales/guests/
+     days; FOB% tile uses fob rows' own base (canonical). R2P tile says "manual only". See
+     `notes-32-queue.md`.
+  4. **Perf Reviews target auto-fill** (v4.538, Notes 32 A) — `autoPopulateKPIs` fills each mapped
+     metric's TARGET from DEFAULT<yearly<monthly (monthly wins); `missingReviewTargets()` +
+     `mergedTargetsForLoc()` in review-engine.js.
 
 ## ONE OPEN VERIFICATION (blocked on network)
 - **FL FOB reads ~14.88% (vs 3.99% target).** Guard + month/YTD range should normalize it, but
