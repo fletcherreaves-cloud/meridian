@@ -1553,6 +1553,22 @@ export async function loadMcdeliveryMonthly() {
   }));
 }
 
+// ── Shift Manager Summary (monthly per-manager) → DM/shift review attribution ──
+// Per (loc, geid) manager-on-duty attributed performance. Feeds the review-form
+// manager dropdown (name→geid) + autoPopulate for DM/shift roles (their own shifts;
+// GMs keep store-total). Speed metrics in seconds. Pull: qsrsoft-shift-manager-pull.
+export async function loadShiftManagerMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('shift_manager_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month, geid: r.geid, name: r.manager_name,
+    numShifts: r.num_shifts, actualHours: r.actual_hours,
+    actualVsScheduled: r.actual_vs_scheduled, actualVsNeeded: r.actual_vs_needed,
+    netSales: r.net_sales, transactions: r.transactions, avgCheck: r.avg_check, tpph: r.tpph,
+    oepe: r.oepe, r2p: r.r2p, ctp: r.ctp, dtTtl: r.dt_ttl, kvs: r.kvs, laborPct: r.labor_pct,
+  }));
+}
+
 // ── eBOS daily op-supplies rows (for ds — feeds Perf-Review opSupplies actual) ─
 // One row per (loc, date) carrying the day's operating-supplies purchases. Paginated —
 // 27 stores × a year exceeds the 1000-row cap. loc unpadded to match the rest of ds.

@@ -53,7 +53,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -1609,12 +1609,12 @@ function App() {
       // QSRSoft Digital App + McDelivery 3PO (monthly per-loc) → Perf-Review
       // Digital App GC/R/D + Delivery GC/R/D metrics (Notes 32).
       try{
-        const [digitalAppRows,mcdeliveryRows]=await Promise.all([loadDigitalAppMonthly(),loadMcdeliveryMonthly()]);
-        if(digitalAppRows.length||mcdeliveryRows.length){
-          setDs(prev=>{if(!prev)return prev;return{...prev,digitalAppRows,mcdeliveryRows};});
-          console.log(`[Meridian] ✓ Loaded Digital/Delivery — digital ${digitalAppRows.length}, mcdelivery ${mcdeliveryRows.length}`);
+        const [digitalAppRows,mcdeliveryRows,shiftManagerRows]=await Promise.all([loadDigitalAppMonthly(),loadMcdeliveryMonthly(),loadShiftManagerMonthly()]);
+        if(digitalAppRows.length||mcdeliveryRows.length||shiftManagerRows.length){
+          setDs(prev=>{if(!prev)return prev;return{...prev,digitalAppRows,mcdeliveryRows,shiftManagerRows};});
+          console.log(`[Meridian] ✓ Loaded Digital/Delivery/ShiftMgr — digital ${digitalAppRows.length}, mcdelivery ${mcdeliveryRows.length}, shiftMgr ${shiftManagerRows.length}`);
         }
-      }catch(e){console.warn('[Meridian] Digital/Delivery load failed:',e);}
+      }catch(e){console.warn('[Meridian] Digital/Delivery/ShiftMgr load failed:',e);}
       // Server-parsed QSRSoft email reports (Daily Glimpse, Cash Sheet, Sales Ledger).
       // Cloud-first source of truth — override the device-local IDB rows only when
       // the Supabase tables have data, so freshness follows the app on any device.

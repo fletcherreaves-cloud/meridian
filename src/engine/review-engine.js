@@ -468,6 +468,7 @@ export function blankReview(name, role, loc, year, half, cfg) {
   return {
     id: reviewId(name, year, half),
     name, role, loc, year, half,
+    geid: null,   // manager id for DM/shift attribution (Notes 33 A#3); set via the form dropdown
     status: 'draft',
     // Snapshot the template this review is built against (Phase A) so later template
     // edits never silently re-score it. Refreshed via an explicit "apply template".
@@ -771,6 +772,20 @@ export function autoPopulateKPIs(review, ds) {
   const turnoverM   = byLocMonth(ds.turnoverRows);
   const digitalM    = byLocMonth(ds.digitalAppRows);   // Digital App GC/R/D (Notes 32)
   const deliveryM   = byLocMonth(ds.mcdeliveryRows);   // Delivery GC/R/D (Notes 32)
+  // Shift-manager attribution (Notes 33 A#3): when a review is linked to a manager
+  // (review.geid) and the reviewee is NOT a GM, the operational metrics score on that
+  // manager's OWN shifts (Shift Manager Summary), not the store total. Everything else
+  // stays store-total. GMs own the whole store, so they always use store-total.
+  const mgrGeid = review.geid != null && review.geid !== '' ? Number(review.geid) : null;
+  const isGM = String(review.role || '') === 'GM';
+  const shiftMgrM = {};
+  if (mgrGeid && !isGM) {
+    for (const r of (ds.shiftManagerRows || [])) {
+      if (String(r.loc) !== String(loc) || Number(r.geid) !== mgrGeid || !r.month) continue;
+      if (parseInt(String(r.month).slice(0, 4)) !== _ry) continue;
+      shiftMgrM[monthNum(r.month)] = r;
+    }
+  }
 
   // SMG FullScale: index by year+month for this store to avoid cross-year collision
   const reviewYear = review.year || new Date().getFullYear();
@@ -828,6 +843,18 @@ export function autoPopulateKPIs(review, ds) {
     if (dig && dig.appGcRd != null) mo.digitalGC = dig.appGcRd;
     const dlv = deliveryM[m];
     if (dlv && dlv.deliveryGcRd != null) mo.delivGC = dlv.deliveryGcRd;
+    // Manager-attributed OVERRIDE (after the store fills): a DM/shift review's
+    // operational metrics use this manager's own shifts. Only the rate/time metrics
+    // that compare fairly to the store target (OEPE/R2P/KVS/Labor%); volume metrics
+    // (sales, digital, delivery) stay store-total (a shift lead isn't graded on the
+    // store's monthly sales target). See notes-33-queue A#3.
+    const smg = shiftMgrM[m];
+    if (smg) {
+      if (smg.oepe != null) mo.oepe = smg.oepe;
+      if (smg.r2p != null) mo.r2p = smg.r2p;
+      if (smg.kvs != null) mo.kvs = smg.kvs;
+      if (smg.laborPct != null) mo.labor = smg.laborPct;
+    }
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
       if (sr.osat5 != null) mo.osat = sr.osat5;
