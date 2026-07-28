@@ -44,11 +44,20 @@ metadata:
 - Cascade focus = I drafted; **owner refines**.
 - Monthly target wins over yearly (already the merge order).
 
-## PROGRESS — continued session (Roster Statistics pull SHIPPED, v4.545)
-- **Roster Statistics auto-pull is LIVE and confirmed** — 27/27 stores upserted to
-  `roster_statistics` for 2026-07 (GH Actions run 30387183521, success).
-- Files: `scripts/qsrsoft-roster-stats-pull.mjs`, `.github/workflows/qsrsoft-roster-stats-pull.yml`,
-  `parseRosterStatisticsApi()` in `src/engine/people-reports.js` (+3 vitest cases). Commit `c06c328`.
+## PROGRESS — continued session (Roster Statistics + Employee Roster pulls SHIPPED)
+- **Roster Statistics auto-pull LIVE** (v4.545) — 27/27 → `roster_statistics` 2026-07 (run 30387183521).
+  Files: `scripts/qsrsoft-roster-stats-pull.mjs`, workflow, `parseRosterStatisticsApi()`. Commit `c06c328`.
+- **Employee Roster auto-pull LIVE** (v4.546) — 1493 active employees → 27/27 → `roster_role_counts`
+  2026-07 (run 30388186099). `parseEmployeeRosterApi()`, `scripts/qsrsoft-employee-roster-pull.mjs`,
+  workflow. Commit `a0debaa`. **PII-safe**: trimmed selectCols (no SSN/DOB/address fetched); only
+  aggregate integer counts persisted. Shape note: employee-roster is a FLAT `result:[]` (NOT result.resp).
+- **Two of three review People metrics now have live data: Headcount + Shift-Cert.** Remaining: Turnover.
+- Both cherry-picked to **main** (c8ae189, 75e852d) so cron/dispatch fire. Both rely on the Playwright
+  fallback (stored QSRSOFT_TOKEN + QSRSOFT_COGNITO_TOKEN are stale/401).
+- **NEXT: Turnover** (→ `turnover_monthly`, the 0-90 metric = 1−Retained>90%). Need its capture
+  (endpoint likely `/reporting/v2/people/turnover…` + JSON `result[]` shape). Then Digital App +
+  McDelivery 3PO (future delivery project, lower priority). Consider consolidating the 3 people pulls
+  into one `qsrsoft-people-pull.mjs` (single Playwright auth) once Turnover lands.
 - **REUSABLE PATTERN for the remaining People pulls** (Employee Roster, Turnover, Digital, McDelivery):
   - Host/prefix: `GET https://api.reports.myqsrsoft.com/reporting/v2/people/<report>` —
     params `nsd=d&nsn=<csv all 27>&orgId=<ORG>&enterpriseName=McDonalds&startDate=YYYY-MM-01&endDate=YYYY-MM-DD&weekStart=3`.
