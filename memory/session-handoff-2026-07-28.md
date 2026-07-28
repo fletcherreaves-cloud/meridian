@@ -1,50 +1,90 @@
 ---
 name: session-handoff-2026-07-28
-description: Live-state handoff from the 2026-07-28 session (Perf Reviews KPI directory + One-Pager Notes 31). Read at the start of the next session to resume exactly where we left off — what's shipped, what's open, and the one live verification blocked on network access.
+description: MASTER handoff from the 2026-07-28 session (Notes 30/31/32 — Perf Reviews, Leadership One-Pager, QSRSoft People/Sales/Delivery data sourcing). Read FIRST at the next session start to resume without re-deriving. What shipped, what's pending, decisions locked, the exact next task (build the QSRSoft pull scripts), and the access/settings needed.
 metadata:
   node_type: memory
   type: project
 ---
 
-# Session handoff — 2026-07-28
+# MASTER SESSION HANDOFF — 2026-07-28
 
 ## Branch / PR
-- Working branch: `claude/status-data-refresh-strategy-u88lz9`
-- **Open draft PR #80** — carries these slices (build clean, 413 tests green, Vercel deployed):
-  1. **Perf Reviews KPI directory** (v4.535, Notes 30 #3) — `src/engine/kpi-registry.js` +
-     Customize panel wiring (add/rename/delete Results categories, KPI-select dropdown,
-     ⓘ plain-English threshold explainer). 12 tests.
-  2. **One-Pager Notes 31** (v4.536) — see `notes-31-queue.md`. `metricSeries` accepts string OR
-     Date ranges; FOB prodSales>0 guard; range pills Week/MTD/YTD/Custom + YTD-alongside;
-     timeframe labels; L/F/G spelled out; cascade dropdown O›D/D›S/S›G.
-  3. **One-Pager window-consistency** (v4.537, Notes 32 C) — killed the weekly Opportunity
-     blow-up: `buildOnePagerInputs` no longer mixes the monthly FOB prodSales into a weekly
-     window (that inflated avgCheck → GC pillar). All pillars use the window's own sales/guests/
-     days; FOB% tile uses fob rows' own base (canonical). R2P tile says "manual only". See
-     `notes-32-queue.md`.
-  4. **Perf Reviews target auto-fill** (v4.538, Notes 32 A) — `autoPopulateKPIs` fills each mapped
-     metric's TARGET from DEFAULT<yearly<monthly (monthly wins); `missingReviewTargets()` +
-     `mergedTargetsForLoc()` in review-engine.js.
+- Branch: `claude/status-data-refresh-strategy-u88lz9` · **open draft PR #80** (build clean, 429 tests green, Vercel deployed).
+- Read these memory files for full detail: `notes-30-queue.md`, `notes-31-queue.md`, `notes-32-queue.md`,
+  `perf-review-data-sourcing.md`, `perf-review-excel-audit.md`.
 
-## ONE OPEN VERIFICATION (blocked on network)
-- **FL FOB reads ~14.88% (vs 3.99% target).** Guard + month/YTD range should normalize it, but
-  need to confirm against live `qsr_fob` rows. Egress to `oiajpwdcihgvhofntjcn.supabase.co` is
-  still **403 (policy denial)** — the allowlist must be set on the ENVIRONMENT's Network access
-  at claude.ai/code (NOT the desktop app's Browser "Allowed sites"), and takes effect on a NEW
-  session. Once reachable, run (anon key in `.env.local`):
-  `GET {VITE_SUPABASE_URL}/rest/v1/qsr_fob?select=loc,date,prod_sales_amt,comp_waste_amt,raw_waste_amt,condiments_amt,emp_mgr_meals_amt,stat_variance_amt,unexplained_amt&order=date.desc`
-  Filter FL locs (INV_ORG_COORDS[loc].state==='FL'), dollar-weight Σcomponents ÷ Σprod_sales over
-  a full month. If FL still ~15% → real data issue (FL prod_sales understated or different mapping).
+## SHIPPED this session (all on PR #80)
+- **Perf Reviews KPI directory** (v4.535) — `src/engine/kpi-registry.js` + Customize wiring (add/rename/
+  delete Results categories, KPI dropdown, ⓘ plain-English thresholds).
+- **One-Pager Notes 31** (v4.536) — metricSeries accepts string OR Date ranges; FOB prodSales>0 guard;
+  Week/MTD/YTD/Custom range + YTD-alongside; timeframe labels; L/F/G spelled out; cascade tag.
+- **One-Pager window-consistency** (v4.537) — killed the weekly Opportunity blow-up (was mixing the
+  monthly FOB prodSales into a weekly avgCheck → GC pillar exploded). All pillars use the window's own
+  sales/guests/days; canonical FOB% tile.
+- **One-Pager cascade FOCUS** (v4.539) — level selector re-emphasizes the page (focus banner + reordered
+  state grid + prints). DRAFT per-level focus — **owner may refine / upload JobRole descriptions**.
+- **Perf Reviews target auto-fill** (v4.538) — autoPopulateKPIs fills each mapped metric's TARGET from
+  DEFAULT<yearly<monthly (monthly wins). `missingReviewTargets()` + `mergedTargetsForLoc()`.
+- **Op Supplies wired** (v4.541) — `loadEbosDaily`→ds.ebosRows; opSupplies actual = Σ ops_purchases.
+- **Total Profit derivation** (v4.540) — `deriveTotalProfitVsTarget()` (FOB%+Labor%+OpSupplies$). Engine
+  ready; NOT wired into autoPopulate yet (gated on FOB %-basis + it now has op-supplies).
+- **QSRSoft People/Digital/Delivery PARSERS** (v4.542/543) — `src/engine/people-reports.js`: Employee
+  Roster, Roster Statistics, Turnover (monthly + wide), Digital App, McDelivery 3PO. Header-indexed,
+  tested, **validated against the owner's real sample exports**. Job-code taxonomy configurable.
+- **People persistence + review wiring** (v4.544) — `supabase/schema-people-reports.sql` (**owner RAN it
+  — roster_statistics / roster_role_counts / turnover_monthly created**); save/load in supabase.js;
+  startup loaders → ds; autoPopulateKPIs fills Headcount / Shift-Cert / 0-90 Turnover per loc/month.
 
-## OPEN QUEUE (owner-approved, not yet built)
-- **#65** EOM: qty variance alongside $ everywhere + Item-Journey reconciles to Variance Stat report.
-- **#67** Explore writing Targets BACK to QSRSoft (two-way sync; research first; `datapass_access` lead).
-- **Perf Reviews threshold-VALUE corrections** (banked in `perf-review-excel-audit.md` ROUND 2):
-  OEPE %-of-target+120s floor; Shift-Certified gentle count step; FOB/Labor Bonus-Eligibility
-  module; Total Profit Excel bands. Separate deliberate changes (owner is reviewing perf reviews).
-- Notes 30 #1 (target write-back = #67), #2 (EOM = #65) — same items.
+## DECISIONS LOCKED (do not re-ask)
+- Shift-Certified Managers = **Cert Swing + Dept Mgrs** (shiftMgr bucket; GM excluded).
+- 0-90 Turnover = **1 − Retained>90%** (`turnover090Pct`).
+- Headcount source = **Roster Statistics** (Roster Active); Shift-Cert source = **Employee Roster** bucket
+  (they reconcile within ~1 — active-definition/bucket boundary).
+- Missing-targets UX = **prompt + Smart-Targets seed** (approved; NOT yet built).
+- Cascade focus = I drafted; **owner refines**.
+- Monthly target wins over yearly (already the merge order).
 
-## Standing reminders
-- Never write live creds (x-auth-token / Cognito JWT / passwords) to repo/memory/commits — redact.
-- Auto/emailed-first, freshest-wins; source via metric-source.js / vs-ly.js (never filter raw rows).
-- After merge, restart branch from main (same name), force-with-lease is fine for merged-only history.
+## THE NEXT TASK — build the QSRSoft pull scripts (data still needs to LAND in the tables)
+Parsers + tables + review wiring are done. What's missing: getting data into the tables. Two paths:
+1. **Playwright auto-pull scripts** (the real deployment) — one per report, pattern in
+   `scripts/qsrsoft-ebos-pull.mjs` / `qsrsoft-variance-pull.mjs`: Playwright logs into v3.myqsrsoft.com
+   (or exchanges a token via `api.sso.myqsrsoft.com/token/…`) → fetch each report endpoint per store →
+   parse with people-reports.js → upsert to Supabase (service-role). Then a `.github/workflows/*.yml`.
+2. **Manual upload routing** — add filename detection in `src/parsers/index.js` `detectType()` + a
+   dispatch branch in the App.js upload handler → parse → save. (Fallback; smaller.)
+
+**Reports still needing pulls (parsers done):** Employee Roster, Roster Statistics, Turnover (per-loc
+monthly + annual wide), Digital App (daily → monthly GC/R/D roll-up), McDelivery 3PO (3PO GC + CSAT/
+missing-items/times). Endpoints likely on `api.reports.myqsrsoft.com` — **need one captured network
+request per report (URL + method + payload, AUTH REDACTED)** to know the exact endpoint, OR infer from
+existing report pulls. Digital App backfill recommendation: seed MTD per month + daily forward.
+
+## ACCESS / SETTINGS for the next session
+- **QSRSoft: NO new access/secrets needed for the deployment path.** GitHub Secrets already exist
+  (QSRSOFT_TOKEN, QSRSOFT_USERNAME, QSRSOFT_PASSWORD, QSRSOFT_COGNITO_TOKEN, QSRSOFT_EBOS_TOKEN,
+  QSRSOFT_FORMS_TOKEN). Pulls run on **GitHub Actions runners** (not the agent sandbox), which already
+  reach QSRSoft. Build script → commit → trigger workflow via GitHub MCP → read job logs to debug.
+- **Optional:** to test-fetch QSRSoft live from inside the session, add these to Capabilities → network
+  egress allowlist (same place `*.supabase.co` was added): `*.myqsrsoft.com` (covers api.reports /
+  api.sso / forms.home / v3). NOT required if using the GitHub-Actions loop.
+- **Supabase egress** was allowlisted (`*.supabase.co`) — still pending the FL FOB live check (query in
+  this file's earlier note). Applies at session start → a fresh session picks it up.
+- **NEVER** write live creds (x-auth-token / Cognito JWT / passwords) to repo/memory/commits — redact.
+
+## STILL PENDING (no access needed)
+- Missing-targets prompt + Smart-Targets seed UI (approved).
+- FOB metric-definition fix (score FOB% not fob$) → unblocks Total-Profit wiring (perf-review-excel-audit
+  ROUND 2 has the banked threshold-value corrections too: OEPE %-of-target+120s floor, Shift-Certified
+  gentle count step, Bonus-Eligibility module, Total Profit Excel bands).
+- #65 EOM qty-variance + Item-Journey reconcile. #67 target write-back to QSRSoft.
+
+## FL FOB LIVE CHECK (carry-over)
+Weekly FOB was fragile; guard + month/YTD range added. Confirm on a full-month/YTD range: if FL still
+~15%, real qsr_fob data issue. Query: `GET {VITE_SUPABASE_URL}/rest/v1/qsr_fob?select=loc,date,
+prod_sales_amt,comp_waste_amt,raw_waste_amt,condiments_amt,emp_mgr_meals_amt,stat_variance_amt,
+unexplained_amt&order=date.desc` → FL locs (INV_ORG_COORDS[loc].state==='FL'), Σcomponents÷Σprod_sales.
+
+## UPLOADED FILES — DO NOT ASSUME THEY TRANSFER
+The 5 sample xlsx were uploaded to the previous session and are session-local; a new session will NOT
+have them. Parsers are validated so they're usually not needed again — but if a NEW column edge case
+appears, ask the owner to re-upload the relevant sample.
