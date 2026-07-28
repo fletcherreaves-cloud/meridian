@@ -61,11 +61,27 @@ metadata:
 - **ALL THREE review People metrics now LIVE: Headcount + Shift-Cert + 0-90 Turnover.** All cherry-picked
   to **main** (c8ae189/75e852d/1ffaab3) so cron/dispatch fire. All use the Playwright fallback (stored
   QSRSOFT_TOKEN + QSRSOFT_COGNITO_TOKEN are stale/401 — refresh for faster runs, not blocking).
-- **NEXT (owner corrected): Digital App + McDelivery 3PO ALSO feed review scoring** (not just the future
-  delivery project — that was noted only so we remember it). Parsers done (parseDigitalApp,
-  parseMcDelivery3PO). Need one capture each (endpoint likely `/reporting/v2/…`, + `result` shape) →
-  build parse*Api + pull → digital/delivery review metrics. Then consider consolidating all people pulls
-  into one `qsrsoft-people-pull.mjs` (single Playwright auth, ~40s once instead of per-report).
+- **Digital App + McDelivery auto-pulls LIVE** (v4.548) — Digital 27/27 → `digital_app_monthly`,
+  McDelivery 27/27 → `mcdelivery_monthly` for 2026-07 (runs 30390808866 / 30390810814). Owner RAN
+  `supabase/schema-digital-delivery.sql`. Commits `f48f365` (branch) / `4944a60` (main).
+  - **Digital App is a COMPOSED rollup** (qtr-hr-sales returns no rollup column): MOA + Scanned Offers
+    ×3 + Loyalty Self-ID Earn + Internal/GMA Delivery. Exact formula + reconciliation in
+    memory/reference-digital-app-formula.md. parseDigitalAppApi(). GC/R/D = GCs ÷ qualifiedDay.
+  - **McDelivery**: `/reports/mcd/sales/mcDeliveryReport` (top-level resp[]), decimal-min times ×60→sec.
+    parseMcDelivery3POApi(). Delivery GC/R/D = 3PO GC ÷ window rest-days.
+- **ALL FIVE QSRSoft review-feeding pulls now LIVE**: Roster Statistics, Employee Roster, Turnover,
+  Digital App, McDelivery. 18 vitest cases green. All on main (dispatch/cron), Playwright fallback.
+
+## STILL OPEN (app-side + product)
+- **App-side wiring NOT done for Digital + McDelivery**: add loadDigitalAppMonthly / loadMcdeliveryMonthly
+  to src/lib/supabase.js, startup loaders → ds, and autoPopulateKPIs scoring of Digital App GC/R/D +
+  Delivery GC/R/D per loc/month (roster metrics already wired; these two are not yet).
+- **METRIC PROVENANCE (new standing directive — memory/feedback-metric-provenance.md)**: every metric
+  must be traceable to its verifiable source (system/report/endpoint/formula/as-of) via tooltip or a
+  lineage index; composed metrics show their math. Candidate: a metric-source registry like kpi-registry.js.
+- Consider consolidating the 5 people/digital/delivery pulls into one `qsrsoft-people-pull.mjs`
+  (single Playwright auth) — each currently pays its own ~40s login.
+- Stray `src/engine/people-reports 2.js` (CloudDocs duplicate) — delete as cleanup.
 - **REUSABLE PATTERN for the remaining People pulls** (Employee Roster, Turnover, Digital, McDelivery):
   - Host/prefix: `GET https://api.reports.myqsrsoft.com/reporting/v2/people/<report>` —
     params `nsd=d&nsn=<csv all 27>&orgId=<ORG>&enterpriseName=McDonalds&startDate=YYYY-MM-01&endDate=YYYY-MM-DD&weekStart=3`.
