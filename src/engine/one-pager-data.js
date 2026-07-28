@@ -42,6 +42,14 @@ export function fobByRange(fobRows, range) {
 }
 
 // Per-store inputs for computeOpportunity(). `range` = { s, e } ISO date strings.
+// WINDOW-CONSISTENCY (Notes 32 C): every pillar uses the SAME window's sales, guests
+// and day-count. We deliberately do NOT fall back to the FOB row's prodSales for
+// netSales/avgCheck — that figure spans the FOB report's period (often a full month),
+// and mixing a monthly sales base into a weekly window inflates avgCheck (monthly $ ÷
+// weekly guests) which blows up the GC opportunity pillar (the "weekly = way too high"
+// bug). The food pillar applies the FOB% RATE to the window's own sales so a monthly
+// FOB row can't overstate a weekly food$. The canonical FOB% (for the header tile) still
+// uses the fob rows' own base, carried separately as fobProdSales.
 export function buildOnePagerInputs(ds, fobRows, locs, range) {
   const fob = fobByRange(fobRows, range);
   return (locs || []).map(loc => {
@@ -51,14 +59,15 @@ export function buildOnePagerInputs(ds, fobRows, locs, range) {
     const gc = sumSeries(ds, loc, range, 'gc');
     const f = fob[L] || {};
     const days = sales.days || gc.days || 0;
-    const netSales = sales.sum || f.prodSales || 0;
-    const prodSales = f.prodSales || netSales;
+    const netSales = sales.sum || 0;                     // window sales only — no monthly fallback
+    const avgCheck = (netSales > 0 && gc.sum > 0) ? netSales / gc.sum : (t.tAvgCheck ?? null);
     return {
       loc: L,
       netSales,
-      prodSales,
+      prodSales: netSales,               // food-opportunity base = the window's own sales
+      fobProdSales: f.prodSales ?? null, // canonical FOB% denominator (fob rows' own period base)
       days,
-      avgCheck: gc.sum ? netSales / gc.sum : (t.tAvgCheck ?? null),
+      avgCheck,
       laborPctActual: metricAvg(ds, loc, range, 'laborPct'),
       laborPctTarget: t.tLabor ?? null,
       fobPctActual: f.fobPct ?? null,
@@ -92,18 +101,24 @@ export function buildMetricNow(ds, fobRows, locs, range) {
 export function buildCurrentState(ds, fobRows, locs, range) {
   const inputs = buildOnePagerInputs(ds, fobRows, locs, range);
   const totSales = inputs.reduce((s, i) => s + (i.netSales || 0), 0);
-  const totProd = inputs.reduce((s, i) => s + (i.prodSales || 0), 0);
-  const totFob$ = Object.values(fobByRange(fobRows, range)).reduce((s, a) => s + (a.fob$ || 0), 0);
+  // Canonical FOB% = Σ components ÷ Σ (fob rows' OWN prodSales base) — never the window
+  // sales base (that would divide a fob-period numerator by a window denominator and
+  // inflate the %, the FL-14.88% class of bug). Sourced straight from fobByRange.
+  const fobAgg = Object.values(fobByRange(fobRows, range));
+  const totFob$ = fobAgg.reduce((s, a) => s + (a.fob$ || 0), 0);
+  const totFobProd = fobAgg.reduce((s, a) => s + (a.prodSales || 0), 0);
   const tgt = (field) => {
     const vals = locs.map(l => (DEFAULT_TARGETS[unpad(l)] || {})[field]).filter(v => v != null);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
   };
   return [
     { key: 'sales',    label: 'Net Sales',  actual: totSales, target: null, fmt: '$' },
-    { key: 'fobPct',   label: 'FOB %',      actual: totProd ? totFob$ / totProd : null, target: tgt('tFOBTarget'), fmt: '%', lowerBetter: true },
+    { key: 'fobPct',   label: 'FOB %',      actual: totFobProd ? totFob$ / totFobProd : null, target: tgt('tFOBTarget'), fmt: '%', lowerBetter: true },
     { key: 'laborPct', label: 'Labor %',    actual: metricAvg(ds, locs, range, 'laborPct'), target: tgt('tLabor'), fmt: '%', lowerBetter: true },
     { key: 'oepe',     label: 'OEPE',       actual: metricAvg(ds, locs, range, 'oepe'), target: tgt('tOepe'), fmt: 's', lowerBetter: true },
-    { key: 'r2p',      label: 'R2P',        actual: metricAvg(ds, locs, range, 'r2p'), target: tgt('tR2p'), fmt: 's', lowerBetter: true },
+    // R2P has no auto/cloud stream (manual Ops Report only) — manualOnly lets the UI
+    // explain a blank rather than read as "broken". TPPH derives from DAR hours.
+    { key: 'r2p',      label: 'R2P',        actual: metricAvg(ds, locs, range, 'r2p'), target: tgt('tR2p'), fmt: 's', lowerBetter: true, manualOnly: true },
     { key: 'tpph',     label: 'TPPH',       actual: metricAvg(ds, locs, range, 'tpph'), target: tgt('tTpph'), fmt: 'n' },
   ];
 }

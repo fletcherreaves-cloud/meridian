@@ -266,9 +266,11 @@ function StateGrid({ rows, rangeLabel, ytdLabel }) {
       (rows || []).map(r => {
         const off = r.target != null && r.actual != null;
         const bad = off && (r.lowerBetter ? r.actual > r.target : r.actual < r.target);
+        const blankManual = r.manualOnly && r.actual == null;
         return div({ key: r.key, style: { background: 'var(--surf)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px' } },
           div({ style: { fontSize: 10, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.3px' } }, r.label),
           div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, valFmt(r.actual, r.fmt)),
+          blankManual ? div({ style: { fontSize: 9, color: 'var(--text3,var(--text2))', fontStyle: 'italic' } }, 'manual upload only — no cloud feed') : null,
           r.ytd != null ? div({ style: { fontSize: 10, color: 'var(--text2)' } }, `${ytdLabel || 'YTD'}: ${valFmt(r.ytd, r.fmt)}`) : null,
           r.target != null ? div({ style: { fontSize: 10.5, color: bad ? '#ef4444' : '#10b981' } }, 'tgt ' + valFmt(r.target, r.fmt)) : null);
       })));
