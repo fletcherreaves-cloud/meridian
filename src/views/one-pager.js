@@ -36,6 +36,30 @@ const pctFmt = (v, lower) => v == null ? '—' : (v * 100).toFixed(1) + '%';
 const valFmt = (v, fmt) => v == null ? '—'
   : fmt === '$' ? f$(v) : fmt === '%' ? (v * 100).toFixed(2) + '%' : fmt === 's' ? Math.round(v) + 's' : (+v).toFixed(1);
 
+// ── Range modes (Notes 31 #1) ─────────────────────────────────────────────────
+// The selected window can be a week, month-to-date, year-to-date, or a custom span.
+// YTD is always computed alongside so the header KPIs show movement (range vs YTD).
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthRangeFrom(date) { const s = new Date(date.getFullYear(), date.getMonth(), 1); return { s: iso(s), e: iso(date) }; }
+function ytdRangeFrom(date)   { const s = new Date(date.getFullYear(), 0, 1);            return { s: iso(s), e: iso(date) }; }
+const daysInRange = (r) => Math.max(1, Math.round((new Date(r.e + 'T00:00:00') - new Date(r.s + 'T00:00:00')) / 86400000) + 1);
+// Annualization factor for a $ figure measured over the range (365 / days-in-range).
+const annualFactor = (r) => 365 / daysInRange(r);
+function rangeLabel(mode, range, anchor) {
+  if (mode === 'week')   return 'Week ' + isoWeekLabel(new Date(anchor));
+  if (mode === 'mtd')    return MONTH_NAMES[new Date(range.e + 'T00:00:00').getMonth()] + ' MTD';
+  if (mode === 'ytd')    return new Date(range.e + 'T00:00:00').getFullYear() + ' YTD';
+  return `${range.s} → ${range.e}`;
+}
+
+// Cascade level (who's talking to whom) — Notes 31 #6. Separate from data SCOPE.
+const CASCADE_LEVELS = [
+  { id: 'o_d', tag: 'O›D', label: 'Owner → DO' },
+  { id: 'd_s', tag: 'D›S', label: 'DO → Supervisor' },
+  { id: 's_g', tag: 'S›G', label: 'Supervisor → GM' },
+];
+const cascadeOf = id => CASCADE_LEVELS.find(c => c.id === id) || CASCADE_LEVELS[0];
+
 const FOLLOW_META = {
   achieved:  { label: '✓ Achieved',  color: '#10b981' },
   improving: { label: '↑ Improving', color: '#84cc16' },
@@ -54,6 +78,9 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const [level, setLevel] = useState('org');
   const applyScope = (label, list, lvl) => { setScopeLabel(label); setLocs((list || []).map(unpad)); setLevel(lvl); };
   const [weekDate, setWeekDate] = useState(() => iso(new Date()));
+  const [rangeMode, setRangeMode] = useState('week'); // week | mtd | ytd | custom
+  const [customRange, setCustomRange] = useState(() => weekRangeFrom(new Date()));
+  const [cascade, setCascade] = useState('d_s');      // cascade pairing (Notes 31 #6)
   const [fobRows, setFobRows] = useState(null);
   const [priorItems, setPriorItems] = useState([]);
   const [narrative, setNarrative] = useState('');
@@ -61,8 +88,16 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState('');
 
-  const range = useMemo(() => weekRangeFrom(new Date(weekDate)), [weekDate]);
-  const period = useMemo(() => isoWeekLabel(new Date(weekDate)), [weekDate]);
+  const anchor = useMemo(() => new Date(weekDate), [weekDate]);
+  const range = useMemo(() => (
+    rangeMode === 'week' ? weekRangeFrom(anchor)
+    : rangeMode === 'mtd' ? monthRangeFrom(anchor)
+    : rangeMode === 'ytd' ? ytdRangeFrom(anchor)
+    : customRange
+  ), [rangeMode, anchor, customRange]);
+  const ytd = useMemo(() => ytdRangeFrom(new Date(range.e + 'T00:00:00')), [range.e]);
+  const rLabel = useMemo(() => rangeLabel(rangeMode, range, weekDate), [rangeMode, range, weekDate]);
+  const period = useMemo(() => rangeMode === 'week' ? isoWeekLabel(anchor) : `${range.s}_${range.e}`, [rangeMode, anchor, range]);
   const scopeKey = useMemo(() => 'locs:' + [...locs].sort().join(','), [locs]);
 
   useEffect(() => { let live = true; loadQsrFob({}).then(r => { if (live) setFobRows(r || []); }).catch(() => setFobRows([])); return () => { live = false; }; }, []);
@@ -74,12 +109,17 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
     const inputs = buildOnePagerInputs(ds, fobRows, locs, range);
     const opportunity = computeOpportunity(inputs, { mode: 'target' });
     const currentState = buildCurrentState(ds, fobRows, locs, range);
+    // YTD companion for each header KPI so movement is visible (Notes 31 #1).
+    const ytdState = buildCurrentState(ds, fobRows, locs, ytd);
+    const ytdByKey = Object.fromEntries((ytdState || []).map(r => [r.key, r.actual]));
+    const currentStateWithYtd = (currentState || []).map(r => ({ ...r, ytd: ytdByKey[r.key] ?? null }));
     const metricNow = buildMetricNow(ds, fobRows, locs, range);
-    return buildOnePager({
-      level, scopeLabel, locs, period, currentState, opportunity, attention: [],
+    const built = buildOnePager({
+      level, scopeLabel, locs, period, currentState: currentStateWithYtd, opportunity, attention: [],
       priorActionItems: priorItems, metricNow, storeName: nm,
     });
-  }, [ds, fobRows, locs, range, period, priorItems, level, scopeLabel]);
+    return { ...built, rangeLabel: rLabel, ytdLabel: rangeLabel('ytd', ytd, range.e), annualFactor: annualFactor(range), cascade: cascadeOf(cascade) };
+  }, [ds, fobRows, locs, range, ytd, period, priorItems, level, scopeLabel, rLabel, cascade]);
 
   const addAction = useCallback((a) => {
     setActions(prev => prev.some(x => x.title === a.title) ? prev
@@ -113,17 +153,36 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
       // Header
       div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)', flexWrap: 'wrap' } },
         div({},
-          div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, '📋 Leadership One-Pager'),
-          div({ style: { fontSize: 11, color: 'var(--text2)', marginTop: 2 } }, `Week ${period} · ${locs.length} store${locs.length === 1 ? '' : 's'}`),
+          div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } },
+            '📋 Leadership One-Pager',
+            span({ style: { marginLeft: 8, fontSize: 11, fontWeight: 800, color: '#111', background: 'var(--accent,#f5bc00)', borderRadius: 5, padding: '1px 6px' }, title: cascadeOf(cascade).label }, cascadeOf(cascade).tag)),
+          div({ style: { fontSize: 11, color: 'var(--text2)', marginTop: 2 } }, `${rLabel} · ${locs.length} store${locs.length === 1 ? '' : 's'} · window ${range.s} → ${range.e}`),
         ),
         div({ style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
-          h('input', { type: 'date', value: weekDate, onChange: e => setWeekDate(e.target.value), style: { ...btn, padding: '5px 8px' } }),
+          // Cascade pairing (who → whom)
+          h('select', { value: cascade, onChange: e => setCascade(e.target.value), title: 'Cascade level', style: { ...btn, padding: '5px 8px', fontWeight: 700 } },
+            CASCADE_LEVELS.map(c => h('option', { key: c.id, value: c.id }, c.label))),
           savedNote ? span({ style: { fontSize: 11, color: 'var(--text2)' } }, savedNote) : null,
           h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
           h('button', { onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems), style: btn }, '🖨 Print'),
           h('button', { onClick: () => printBlankOnePager(page, period), style: btn, title: 'Open-ended discussion sheet (auto state, blank sections)' }, '📝 Discussion'),
           h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕'),
         ),
+      ),
+      // Range controls (Notes 31 #1) — mode pills + anchor/custom dates
+      div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '8px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },
+        span({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text2)' } }, 'Range:'),
+        ...[['week', 'Week'], ['mtd', 'Month-to-date'], ['ytd', 'Year-to-date'], ['custom', 'Custom']].map(([m, lbl]) =>
+          h('button', { key: m, onClick: () => setRangeMode(m), style: { padding: '4px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', border: '1px solid ' + (rangeMode === m ? 'var(--accent,#f5bc00)' : 'var(--bdr)'), background: rangeMode === m ? 'var(--accent-dim,rgba(245,188,0,.12))' : 'var(--surf)', color: 'var(--text)', fontWeight: 700 } }, lbl)),
+        rangeMode === 'custom'
+          ? span({ style: { display: 'flex', gap: 6, alignItems: 'center' } },
+              h('input', { type: 'date', value: customRange.s, onChange: e => setCustomRange(r => ({ ...r, s: e.target.value })), style: { ...btn, padding: '4px 6px' } }),
+              span({ style: { fontSize: 11, color: 'var(--text2)' } }, 'to'),
+              h('input', { type: 'date', value: customRange.e, onChange: e => setCustomRange(r => ({ ...r, e: e.target.value })), style: { ...btn, padding: '4px 6px' } }))
+          : span({ style: { display: 'flex', gap: 6, alignItems: 'center' } },
+              span({ style: { fontSize: 11, color: 'var(--text2)' } }, rangeMode === 'week' ? 'Week containing:' : 'As of:'),
+              h('input', { type: 'date', value: weekDate, onChange: e => setWeekDate(e.target.value), style: { ...btn, padding: '4px 6px' } })),
+        span({ style: { marginLeft: 'auto', fontSize: 10.5, color: 'var(--text3,var(--text2))' } }, 'Header KPIs show the selected range with YTD alongside for movement.'),
       ),
       !page
         ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text2)' } }, 'Loading…')
@@ -156,11 +215,11 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
             // Opportunity $ headline
             h(OppSection, { page }),
             // Current state grid
-            h(StateGrid, { rows: page.currentState }),
+            h(StateGrid, { rows: page.currentState, rangeLabel: page.rangeLabel, ytdLabel: page.ytdLabel }),
             // Follow-ups
             priorItems.length ? h(FollowUps, { items: page.followUps }) : null,
             // Suggested actions
-            h(Suggested, { acts: page.suggestedActions, onAdd: addAction }),
+            h(Suggested, { acts: page.suggestedActions, onAdd: addAction, rangeLabel: page.rangeLabel }),
             // Action plan (working)
             h(ActionPlan, { actions, setActionStatus, removeAction }),
             // Narrative
@@ -176,34 +235,43 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
 function OppSection({ page }) {
   const total = page.opportunityTotal || 0;
   const d = page.opportunity?.district || {};
+  const rLabel = page.rangeLabel || 'selected range';
+  const annual = annualize(total, page.annualFactor || 52);
   const top = rankByOpportunity(page.opportunity?.perStore || []).slice(0, 5).filter(p => p.total$ > 0);
-  const chip = (label, v) => div({ style: { flex: 1, minWidth: 120, background: 'var(--surf)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px' } },
+  const chip = (label, v, sub) => div({ style: { flex: 1, minWidth: 120, background: 'var(--surf)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px' } },
     div({ style: { fontSize: 10, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.3px' } }, label),
-    div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, f$(v)));
+    div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, f$(v)),
+    sub ? div({ style: { fontSize: 9.5, color: 'var(--text3,var(--text2))' } }, sub) : null);
   return div({ style: { border: '1px solid var(--accent,#f5bc00)', borderRadius: 10, padding: 12, background: 'var(--accent-dim,rgba(245,188,0,.06))' } },
     div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 8 } },
       div({ style: { fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text)' } }, '💰 Opportunity on the Table (vs target)'),
-      div({ style: { fontSize: 11, color: 'var(--text2)' } }, `~${f$(annualize(total, 52))}/yr annualized`)),
+      div({ style: { fontSize: 11, color: 'var(--text2)' } }, `$ are for the ${rLabel} · ~${f$(annual)}/yr annualized`)),
     div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: top.length ? 10 : 0 } },
-      chip('This week', total), chip('Labor', d.labor$), chip('Food', d.food$), chip('Guest count', d.gc$)),
+      chip(rLabel, total, 'total recoverable'), chip('Labor', d.labor$, 'excess labor $'), chip('Food (FOB)', d.food$, 'excess food $'), chip('Guest count', d.gc$, '$ = GC gap × avg check')),
     top.length ? div({},
-      div({ style: { fontSize: 10.5, color: 'var(--text2)', marginBottom: 4 } }, 'Biggest $ by store'),
+      div({ style: { display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text2)', marginBottom: 4 } },
+        span(null, 'Biggest $ by store'),
+        span(null, 'L = Labor · F = Food (FOB) · G = Guest count')),
       top.map(p => div({ key: p.loc, style: { display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', borderBottom: '.5px solid var(--bdr)' } },
         span({ style: { color: 'var(--text)' } }, nm(p.loc)),
         span({ style: { color: 'var(--text2)' } }, `${f$(p.total$)}  (L ${f$(p.labor$)} · F ${f$(p.food$)} · G ${f$(p.gc$)})`)))) : null,
   );
 }
 
-function StateGrid({ rows }) {
-  return div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 8 } },
-    (rows || []).map(r => {
-      const off = r.target != null && r.actual != null;
-      const bad = off && (r.lowerBetter ? r.actual > r.target : r.actual < r.target);
-      return div({ key: r.key, style: { background: 'var(--surf)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px' } },
-        div({ style: { fontSize: 10, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.3px' } }, r.label),
-        div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, valFmt(r.actual, r.fmt)),
-        r.target != null ? div({ style: { fontSize: 10.5, color: bad ? '#ef4444' : '#10b981' } }, 'tgt ' + valFmt(r.target, r.fmt)) : null);
-    }));
+function StateGrid({ rows, rangeLabel, ytdLabel }) {
+  return div({},
+    div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 5 } },
+      `Current state — ${rangeLabel || 'range'} (YTD alongside)`),
+    div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 8 } },
+      (rows || []).map(r => {
+        const off = r.target != null && r.actual != null;
+        const bad = off && (r.lowerBetter ? r.actual > r.target : r.actual < r.target);
+        return div({ key: r.key, style: { background: 'var(--surf)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px' } },
+          div({ style: { fontSize: 10, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.3px' } }, r.label),
+          div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } }, valFmt(r.actual, r.fmt)),
+          r.ytd != null ? div({ style: { fontSize: 10, color: 'var(--text2)' } }, `${ytdLabel || 'YTD'}: ${valFmt(r.ytd, r.fmt)}`) : null,
+          r.target != null ? div({ style: { fontSize: 10.5, color: bad ? '#ef4444' : '#10b981' } }, 'tgt ' + valFmt(r.target, r.fmt)) : null);
+      })));
 }
 
 function FollowUps({ items }) {
@@ -217,10 +285,11 @@ function FollowUps({ items }) {
     }));
 }
 
-function Suggested({ acts, onAdd }) {
+function Suggested({ acts, onAdd, rangeLabel }) {
   if (!acts || !acts.length) return null;
   return div({},
-    div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 5 } }, 'Suggested actions (approve to add)'),
+    div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 2 } }, 'Suggested actions (approve to add)'),
+    div({ style: { fontSize: 10, color: 'var(--text3,var(--text2))', marginBottom: 5 } }, `Recoverable $ are measured over the ${rangeLabel || 'selected range'} (not annualized).`),
     acts.map((a, i) => div({ key: i, style: { display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '6px 8px', borderBottom: '.5px solid var(--bdr)' } },
       div({}, div({ style: { fontSize: 12.5, fontWeight: 600, color: 'var(--text)' } }, a.title), div({ style: { fontSize: 11, color: 'var(--text2)' } }, a.detail)),
       h('button', { onClick: () => onAdd(a), style: { padding: '3px 10px', borderRadius: 6, border: '1px solid var(--accent,#f5bc00)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' } }, '+ Add'))));
@@ -242,20 +311,25 @@ function ActionPlan({ actions, setActionStatus, removeAction }) {
 function printOnePager(page, period, narrative, actions) {
   const w = window.open('', '_blank', 'width=850,height=1000'); if (!w || !page) return;
   const esc = escapeHtml;
-  const state = (page.currentState || []).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}</td>`).join('');
+  const rLabel = page.rangeLabel || period;
+  const ytdLabel = page.ytdLabel || 'YTD';
+  const casc = page.cascade || { tag: '', label: '' };
+  const state = (page.currentState || []).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}${r.ytd != null ? `<br><span style="color:#888;font-size:9px">${esc(ytdLabel)}: ${esc(valFmt(r.ytd, r.fmt))}</span>` : ''}</td>`).join('');
   const opp = page.opportunity?.district || {};
   const acts = (actions || []).map(a => `<li>${esc(a.title)}${a.status ? ` — <i>${esc(a.status)}</i>` : ''}</li>`).join('');
   const foll = (page.followUps || []).map(it => `<li>${esc(it.title)} — ${esc((it.follow?.status || '').toString())}</li>`).join('');
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>One-Pager ${esc(period)}</title>
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>One-Pager ${esc(rLabel)}</title>
     <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:26px;font-size:12px}
     h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:12px}
+    .tag{display:inline-block;background:#f5bc00;color:#111;font-weight:800;border-radius:4px;padding:1px 6px;font-size:11px;margin-left:6px}
     h2{font-size:12px;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #111;padding-bottom:3px;margin:16px 0 6px}
     table{border-collapse:collapse;width:100%}td{border:1px solid #ccc;padding:5px 7px;text-align:center;font-size:11px}
     .opp{font-size:15px;font-weight:800}ul{margin:4px 0;padding-left:18px}</style></head><body>
-    <h1>Leadership One-Pager</h1><div class="sub">Week ${esc(period)} · ${esc(page.scopeLabel || '')}</div>
+    <h1>Leadership One-Pager<span class="tag">${esc(casc.tag)}</span></h1>
+    <div class="sub">${esc(rLabel)} · ${esc(page.scopeLabel || '')} · ${esc(casc.label)}</div>
     <h2>Opportunity on the table (vs target)</h2>
-    <div class="opp">${esc(f$(page.opportunityTotal || 0))} this week — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
-    <h2>Current state</h2><table><tr>${state}</tr></table>
+    <div class="opp">${esc(f$(page.opportunityTotal || 0))} over the ${esc(rLabel)} — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
+    <h2>Current state — ${esc(rLabel)} (${esc(ytdLabel)} alongside)</h2><table><tr>${state}</tr></table>
     ${foll ? `<h2>Follow-up</h2><ul>${foll}</ul>` : ''}
     ${acts ? `<h2>Action plan</h2><ul>${acts}</ul>` : ''}
     ${narrative ? `<h2>Notes</h2><div>${esc(narrative)}</div>` : ''}
@@ -269,21 +343,24 @@ function printOnePager(page, period, narrative, actions) {
 function printBlankOnePager(page, period) {
   const w = window.open('', '_blank', 'width=850,height=1000'); if (!w || !page) return;
   const esc = escapeHtml;
+  const rLabel = page.rangeLabel || period;
+  const casc = page.cascade || { tag: '', label: '' };
   const state = (page.currentState || []).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}</td>`).join('');
   const opp = page.opportunity?.district || {};
   const lines = (n) => Array.from({ length: n }, () => '<div class="wl"></div>').join('');
   const sec = (t, n) => `<h2>${esc(t)}</h2>${lines(n)}`;
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Discussion One-Pager ${esc(period)}</title>
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Discussion One-Pager ${esc(rLabel)}</title>
     <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:26px;font-size:12px}
     h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:12px}
+    .tag{display:inline-block;background:#f5bc00;color:#111;font-weight:800;border-radius:4px;padding:1px 6px;font-size:11px;margin-left:6px}
     h2{font-size:12px;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #111;padding-bottom:3px;margin:16px 0 6px}
     table{border-collapse:collapse;width:100%}td{border:1px solid #ccc;padding:5px 7px;text-align:center;font-size:11px}
     .ref{font-size:11px;color:#333;margin:6px 0}.wl{border-bottom:1px solid #999;height:1.5em;margin-top:7px}
     @media print{@page{margin:.5in}}</style></head><body>
-    <h1>Leadership One-Pager — Weekly Discussion</h1>
-    <div class="sub">Week ${esc(period)} · ${esc(page.scopeLabel || '')} · ______________ &nbsp;↔&nbsp; ______________</div>
+    <h1>Leadership One-Pager — Discussion<span class="tag">${esc(casc.tag)}</span></h1>
+    <div class="sub">${esc(rLabel)} · ${esc(page.scopeLabel || '')} · ${esc(casc.label)} &nbsp;·&nbsp; ______________ &nbsp;↔&nbsp; ______________</div>
     <h2>Current state (reference)</h2><table><tr>${state}</tr></table>
-    <div class="ref">Opportunity on the table: <b>${esc(f$(page.opportunityTotal || 0))}</b> — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
+    <div class="ref">Opportunity on the table (${esc(rLabel)}): <b>${esc(f$(page.opportunityTotal || 0))}</b> — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
     ${sec('Wins to celebrate', 3)}
     ${sec('Concerns / what needs attention', 4)}
     ${sec('Action plan — what are we working on this week?', 5)}

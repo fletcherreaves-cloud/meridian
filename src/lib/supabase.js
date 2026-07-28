@@ -1470,6 +1470,10 @@ export async function loadQsrActSummary(daysBack = 35) {
   return Object.values(map).map(r => ({
     ...r,
     salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+    // Derived cloud TPPH = transactions (guest count) ÷ actual punched labor hours.
+    // Both come straight from the auto-pulled DAR, so TPPH is cloud-fresh on every
+    // device (manual Ops/Controls TPPH still wins first via metric-source ordering).
+    tpph: r.actHrs > 0 ? r.gc / r.actHrs : null,
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));

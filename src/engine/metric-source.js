@@ -28,7 +28,7 @@ export const METRIC_SOURCES = {
   r2p:       { mode: 'pos', srcs: [['opsRows', 'r2p']] },
   // Labor — Controls, else the Labor rows, else Daily Glimpse's labor %.
   laborPct:  { mode: 'pos', srcs: [['ctrlRows', 'laborPct'], ['laborRows', 'laborPct'], ['glimpseRows', 'laborPct']] },
-  tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph']] },
+  tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']] },
   otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
   cashOSPct: { mode: 'any', srcs: [['ctrlRows', 'cashOSPct'], ['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct']] },
@@ -68,17 +68,23 @@ export function metricDaily(ds, loc, date, key) {
 }
 
 // Per-(loc) daily value map over a range, auto-first per day. { dateKey: value }.
+// `range.s`/`range.e` may be Date objects OR "YYYY-MM-DD" strings, and row dates may be
+// Date objects (cloud streams via _mkDate) OR strings — normalize both sides to
+// "YYYY-MM-DD" before comparing so a Date-vs-string mix doesn't silently drop rows
+// (a Date >= a bare date-string coerces to NaN and is always false).
 export function metricSeries(ds, loc, range, key) {
   const spec = METRIC_SOURCES[key];
   const out = {};
   if (!ds || !spec) return out;
   const L = String(loc);
+  const rs = _dk(range.s), re = _dk(range.e);
   // Collect every date in range that any source has for this loc, then resolve auto-first.
   const dates = new Set();
   for (const [src] of spec.srcs) {
     for (const r of (ds?.[src] || [])) {
       if (String(r.loc) !== L || !r.date) continue;
-      if (r.date >= range.s && r.date <= range.e) dates.add(_dk(r.date));
+      const dk = _dk(r.date);
+      if (dk >= rs && dk <= re) dates.add(dk);
     }
   }
   for (const dk of dates) {

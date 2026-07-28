@@ -21,13 +21,19 @@ function sumSeries(ds, loc, range, key) {
 }
 
 // Canonical dollar-weighted FOB over a range, per loc: Σ components ÷ Σ prodSales.
+// Rows with no positive product-sales base are skipped entirely — a component-only
+// row (waste $ present, prodSales 0/null) would otherwise inflate the numerator
+// without adding to the denominator and blow the % up (the FL 14.88% anomaly). A
+// valid FOB contribution requires a real sales base for the same period.
 export function fobByRange(fobRows, range) {
   const acc = {};
   for (const r of (fobRows || [])) {
     if (!inRange(r.date, range)) continue;
+    const prod = r.prodSalesAmt || 0;
+    if (prod <= 0) continue;
     const loc = unpad(r.loc);
     const a = acc[loc] || (acc[loc] = { prodSales: 0, fob$: 0 });
-    a.prodSales += r.prodSalesAmt || 0;
+    a.prodSales += prod;
     a.fob$ += (r.compWasteAmt || 0) + (r.rawWasteAmt || 0) + (r.condimentsAmt || 0)
             + (r.empMgrMealsAmt || 0) + (r.statVarianceAmt || 0) + (r.unexplainedAmt || 0);
   }
