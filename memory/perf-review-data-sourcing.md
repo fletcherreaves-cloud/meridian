@@ -87,8 +87,9 @@ punching / on leave). → **Headcount ← Roster Statistics** (authoritative act
 **Shift-Certified Mgrs ← Employee Roster** manager bucket (role identity + term/promotion detail).
 Shift count reconciles within ~1 (roster 8/7/14 by job-code vs stats shiftActive 7/7/13) — the
 active-definition + Dept-Mgr bucket boundary. Term/promotion history only the roster has.
-**OWNER TO CONFIRM:** (a) does "# Shift Certified Managers" = Cert Swing only, or + Dept Mgrs (current),
-or + GM? (b) 0-90 turnover canonical = `1−Retained>90%` (current proxy) or another column?
+**OWNER CONFIRMED (2026-07-28):** (a) # Shift Certified Managers = **Cert Swing + Dept Mgrs**
+(the shiftMgr bucket default, GM excluded) → `shiftCertifiedByLoc(records)` as-is.
+(b) 0-90 turnover = **1 − Retained>90%** → `turnover090Pct` as-is. No parser changes needed.
 
 ## Build order (when a pull session is available)
 1. Op Supplies into ds (#4) — smallest, data exists. 2. Employee Roster + Roster Statistics (#1/#2)
