@@ -70,3 +70,36 @@ describe('missingReviewTargets — flags scored metrics with no resolvable targe
     expect(keys).not.toContain('labor');
   });
 });
+
+import { deriveTotalProfitVsTarget } from '../engine/review-engine.js';
+
+describe('deriveTotalProfitVsTarget (Notes 32 #5)', () => {
+  it('sums favorable/unfavorable controllable variances in dollars', () => {
+    const r = deriveTotalProfitVsTarget({
+      fobPctActual: 0.05, fobPctTarget: 0.04,     // 1pt OVER → unfavorable
+      laborPctActual: 0.21, laborPctTarget: 0.22, // 1pt UNDER → favorable
+      opSuppliesActual: 3200, opSuppliesTarget: 3000, // $200 over → unfavorable
+      netSales: 100000, prodSales: 100000,
+    });
+    expect(r.fob$).toBeCloseTo((0.04 - 0.05) * 100000, 5);   // -1000
+    expect(r.labor$).toBeCloseTo((0.22 - 0.21) * 100000, 5); // +1000
+    expect(r.opSupply$).toBeCloseTo(3000 - 3200, 5);          // -200
+    expect(r.total$).toBeCloseTo(-200, 5);
+    expect(r.components).toBe(3);
+  });
+
+  it('drops only the missing component (partial inputs)', () => {
+    const r = deriveTotalProfitVsTarget({
+      laborPctActual: 0.21, laborPctTarget: 0.22, netSales: 100000,
+    });
+    expect(r.fob$).toBeNull();
+    expect(r.opSupply$).toBeNull();
+    expect(r.labor$).toBeCloseTo(1000, 5);
+    expect(r.total$).toBeCloseTo(1000, 5);
+    expect(r.components).toBe(1);
+  });
+
+  it('returns null total when no component is computable', () => {
+    expect(deriveTotalProfitVsTarget({}).total$).toBeNull();
+  });
+});

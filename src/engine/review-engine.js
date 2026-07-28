@@ -804,6 +804,35 @@ export function autoPopulateKPIs(review, ds) {
   return { ...review, kpis:{ ...review.kpis, months } };
 }
 
+// ── Total Profit vs Target (derived — Notes 32 #5) ────────────────────────────
+// "Total Profit" for the review is derived from the Profitability category's OWN
+// controllables (no separate pull): how many DOLLARS the store beat/missed its targets
+// on FOB %, Labor %, and Op-Supplies $. Favorable (beat target) = positive.
+//   fob$     = (fobPctTarget  − fobPctActual)  × prodSales     (lower FOB%  than tgt ⇒ +)
+//   labor$   = (laborPctTarget − laborPctActual) × netSales    (lower labor% than tgt ⇒ +)
+//   opSupply$= (opSuppliesTarget − opSuppliesActual)           (under budget ⇒ +)
+//   total$   = Σ available components (a missing input drops only its own component)
+// Scored as a variance-to-target: month.totalProfit = total$, month.totalProfitTgt = 0,
+// better:'higher'. The target % / $ are the store's own official targets (auto-filled),
+// so the "target" side is built from the same pattern as the actuals.
+const _n = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+export function deriveTotalProfitVsTarget({
+  fobPctActual, fobPctTarget, laborPctActual, laborPctTarget,
+  opSuppliesActual, opSuppliesTarget, netSales, prodSales,
+} = {}) {
+  const ns = _n(netSales);
+  const ps = _n(prodSales) ?? ns;
+  const fA = _n(fobPctActual), fT = _n(fobPctTarget);
+  const lA = _n(laborPctActual), lT = _n(laborPctTarget);
+  const oA = _n(opSuppliesActual), oT = _n(opSuppliesTarget);
+  const fob$      = (fA != null && fT != null && ps != null) ? (fT - fA) * ps : null;
+  const labor$    = (lA != null && lT != null && ns != null) ? (lT - lA) * ns : null;
+  const opSupply$ = (oA != null && oT != null)               ? (oT - oA)      : null;
+  const parts = [fob$, labor$, opSupply$].filter(v => v != null);
+  const total$ = parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+  return { fob$, labor$, opSupply$, total$, components: parts.length };
+}
+
 // ── Util ───────────────────────────────────────────────────────────────────────
 function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
 
