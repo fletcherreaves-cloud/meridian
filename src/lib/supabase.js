@@ -1579,7 +1579,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
   const data = await fetchAll((from, to) => supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,product_sales,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
+    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
     .gte('dt', cutoffStr)
     .order('dt')
     .range(from, to));
@@ -1589,7 +1589,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     const key = loc + '_' + r.dt;
     if (!map[key]) map[key] = {
       loc, date: new Date(r.dt + 'T00:00:00'),
-      sales: 0, allNetSales: 0, gc: 0,
+      sales: 0, allNetSales: 0, gc: 0, txns: 0,
       _dtTotal: 0, _dtCars: 0,
       lySales: 0, lyGc: 0,
       actHrs: 0, needHrs: 0,
@@ -1598,6 +1598,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key].sales        += r.product_sales   || 0;
     map[key].allNetSales  += r.product_sales   || 0;
     map[key].gc           += (r.healthy_count  || 0) + (r.unhealthy_count || 0);
+    map[key].txns         += r.transactions    || 0;   // true transaction count (for TPPH)
     map[key]._dtTotal     += r.dt_untilserve   || 0;
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
     map[key].lySales      += r.ly_product_sales || 0;
@@ -1610,10 +1611,12 @@ export async function loadQsrActSummary(daysBack = 35) {
   return Object.values(map).map(r => ({
     ...r,
     salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
-    // Derived cloud TPPH = transactions (guest count) ÷ actual punched labor hours.
-    // Both come straight from the auto-pulled DAR, so TPPH is cloud-fresh on every
-    // device (manual Ops/Controls TPPH still wins first via metric-source ordering).
-    tpph: r.actHrs > 0 ? r.gc / r.actHrs : null,
+    // Derived cloud TPPH = TRANSACTIONS ÷ actual punched labor hours. Uses the DAR's
+    // real `transactions` count — NOT healthy+unhealthy (a KVS order-health count that
+    // massively understated TPPH, e.g. 0.1 vs a ~5 target). Matches the Shift Manager
+    // Summary's transPerPunchedHour. Both come from the auto-pulled DAR (cloud-fresh);
+    // manual Ops/Controls TPPH still wins first via metric-source ordering.
+    tpph: r.actHrs > 0 && r.txns > 0 ? r.txns / r.actHrs : null,
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));
