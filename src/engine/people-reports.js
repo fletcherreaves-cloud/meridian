@@ -424,3 +424,49 @@ export function parseMcDelivery3POApi(payload) {
   }
   return out;
 }
+
+// ── 6. Shift Manager Summary (JSON API) → per-(loc, manager) records ───────────
+// The api.reports.myqsrsoft.com `/reports/mcd/shift/shiftManagerSummary` endpoint
+// attributes operational metrics to the manager-on-duty per daypart. resp[] rows are
+// (nsn, timeSlice, geid, managerName, …metrics…); the "Manager Total" timeSlice is
+// that manager's roll-up. `geid` JOINS the Employee Roster (same id). geid 0 /
+// "No FL Manager" = unassigned/float (skipped). Isolates a DM/shift-manager's OWN
+// performance for reviews (GMs keep store-total). Speed metrics (OEPE/R2P/CTP/dtTTL/
+// KVS) are already in SECONDS. Default returns only the "Manager Total" rows.
+export function parseShiftManagerSummary(payload, { onlyTotals = true } = {}) {
+  const arr = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.resp) ? payload.resp
+    : Array.isArray(payload?.result?.resp) ? payload.result.resp
+    : Array.isArray(payload?.result) ? payload.result : [];
+  const out = [];
+  for (const r of arr) {
+    if (!r) continue;
+    const geid = num(r.geid);
+    if (!geid) continue;                                   // skip unassigned "No FL Manager" (geid 0)
+    const nsn = r.nsn;
+    if (nsn == null || !/^\d/.test(String(nsn))) continue;
+    const slice = String(r.timeSlice == null ? '' : r.timeSlice).trim();
+    if (onlyTotals && slice !== 'Manager Total') continue;
+    out.push({
+      loc: unpad(nsn),
+      geid,
+      name: (r.managerName || '').toString().trim(),
+      timeSlice: slice,
+      numShifts: num(r.numShifts),
+      actualHours: num(r.actualHours),
+      actualVsScheduled: num(r.actualVsScheduled),
+      actualVsNeeded: num(r.actualVsNeeded),
+      netSales: num(r.allNetSales),
+      transactions: num(r.transactions),
+      avgCheck: num(r.avgCheck),
+      tpph: num(r.transPerPunchedHour),                    // transactions per punched hour
+      oepe: num(r.OEPE),
+      r2p: num(r.R2P),
+      ctp: num(r.CTP),
+      dtTtl: num(r.dtTTL),
+      kvs: num(r.KVSTimePerTran),
+      laborPct: num(r.punchedLaborPct),
+    });
+  }
+  return out;
+}
