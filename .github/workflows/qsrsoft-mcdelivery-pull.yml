@@ -1,0 +1,56 @@
+name: QSRSoft McDelivery Pull
+
+on:
+  schedule:
+    # 12:00 UTC = ~7:00 AM CDT — refreshes the current month's Delivery GC/R/D + delivery
+    # experience per store. Upsert on (loc, period_month), so re-running keeps MTD current.
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      period:
+        description: 'Month to pull (YYYY-MM). Default: current month (UTC).'
+        required: false
+        default: ''
+      stores:
+        description: 'Subset of NSNs, comma-separated. Default: all 27.'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft McDelivery
+        run: node scripts/qsrsoft-mcdelivery-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:      ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          MCDELIVERY_PERIOD:          ${{ github.event.inputs.period || '' }}
+          ROSTER_STORES:              ${{ github.event.inputs.stores || '' }}
+          QSRSOFT_DEBUG:              ${{ github.event.inputs.debug  || '0' }}
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcdelivery-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

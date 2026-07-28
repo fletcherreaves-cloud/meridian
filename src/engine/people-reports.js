@@ -326,6 +326,44 @@ export function parseDigitalApp(rows) {
   return out;
 }
 
+// ── 4a. Digital App (JSON API) → same per-loc records as parseDigitalApp ────────
+// The api.reports.myqsrsoft.com `/reporting/v2/sales/qtr-hr-sales` endpoint (the
+// mobileApp report) returns granular components, NOT a "Digital App" rollup. QSRSoft
+// composes Digital App = Mobile Order Ahead + Scanned Offers (all 3 variants) +
+// Loyalty Self-ID Earn + Internal/GMA Delivery. Reconciled EXACTLY (sales AND GCs)
+// against the owner's 2026-07-27 export across 4 stores — e.g. 3708:
+//   Sales 1690.3+61.09+880.17+0+228.11+125.51 = 2985.18; GCs 180+13+61+0+23+6 = 283.
+// Review metric = Digital App GC/R/D = Digital App GCs ÷ qualified rest-days
+// (per-store, single day → restDays=1 → GC/R/D = GCs).
+const DIGITAL_SALES_FIELDS = ['mobileOrderAheadAllNetSales', 'scannedOfferOnlyRewardsAllNetSales', 'scannedOfferNoRewardsAllNetSales', 'scannedOfferRewardsAndOfferAllNetSales', 'loyaltySelfIDEarnAllNetSales', 'intDeliveryAllNetSales'];
+const DIGITAL_GC_FIELDS = ['mobileOrderAheadTransactions', 'scannedOfferOnlyRewardsTransactions', 'scannedOfferNoRewardsTransactions', 'scannedOfferRewardsAndOfferTransactions', 'loyaltySelfIDEarnTransactions', 'intDeliveryTransactions'];
+const sumFields = (r, fields) => { let s = 0, any = false; for (const f of fields) { const v = num(r[f]); if (v != null) { s += v; any = true; } } return any ? s : null; };
+export function parseDigitalAppApi(payload) {
+  const arr = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.result) ? payload.result
+    : Array.isArray(payload?.result?.resp) ? payload.result.resp
+    : Array.isArray(payload?.resp) ? payload.resp : [];
+  const out = {};
+  for (const r of arr) {
+    if (!r) continue;
+    const nsn = r.storeNum != null ? r.storeNum : r.nsn;
+    if (nsn == null || !/^\d/.test(String(nsn))) continue;   // skip aggregate/total rows
+    const sales = sumFields(r, DIGITAL_SALES_FIELDS);
+    const gcs = sumFields(r, DIGITAL_GC_FIELDS);
+    const total = num(r.allNetSales);
+    const restDays = num(r.qualifiedDay) != null ? num(r.qualifiedDay) : num(r.numberOfDays);
+    out[unpad(nsn)] = {
+      sales,
+      gcs,
+      avgCheck: (sales != null && gcs) ? sales / gcs : null,
+      pctOfSales: (sales != null && total) ? sales / total : null,
+      gcPerRestDay: (gcs != null && restDays) ? gcs / restDays : gcs,   // restDays=1 → = gcs
+      restDays,
+    };
+  }
+  return out;
+}
+
 // ── 5. McDelivery 3PO → per-loc (3PO GC + delivery-experience fields) ──────────
 export function parseMcDelivery3PO(rows) {
   if (!rows || rows.length < 2) return {};
@@ -345,6 +383,43 @@ export function parseMcDelivery3PO(rows) {
       mcDeliveryTimeSec: hmsToSec(cell(row, idx, 'McDelivery Time')),
       restaurantTimeSec: hmsToSec(cell(row, idx, 'Restaurant Time')),
       totalExperienceTimeSec: hmsToSec(cell(row, idx, 'Total Experience Time')),
+    };
+  }
+  return out;
+}
+
+// ── 5a. McDelivery 3PO (JSON API) → same per-loc records as parseMcDelivery3PO ──
+// The api.reports.myqsrsoft.com `/reports/mcd/sales/mcDeliveryReport` endpoint returns
+// { resp: [ {nsn, vendor, deliveryTransactions, deliveryAllNetSales, avgDeliveryTime,
+// avgRestaurantTime, avgTotalTime, ordersMissingItemsPct, "3POTrans", avgCSat,
+// entireOrderIncorrect, qualifiedReviews, …} ], totals } — top-level `resp` (NOT
+// result.resp). Times are DECIMAL MINUTES (×60 → seconds). Verified 1:1 against the
+// owner's 3708 sample: deliveryTransactions 69 = POS McDelivery GC, 3POTrans 79 =
+// 3PO GC, deliveryAllNetSales 1182.92, avgDeliveryTime 12.26 → 736s = "0:12:16",
+// avgCSat 4.5 = CSAT. Review metric = Delivery GC/R/D (3PO GC per restaurant-day).
+const minToSec = m => { const n = num(m); return n == null ? null : Math.round(n * 60); };
+export function parseMcDelivery3POApi(payload) {
+  const arr = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.resp) ? payload.resp
+    : Array.isArray(payload?.result?.resp) ? payload.result.resp
+    : Array.isArray(payload?.result) ? payload.result : [];
+  const out = {};
+  for (const r of arr) {
+    if (!r) continue;
+    const nsn = r.nsn;
+    if (nsn == null || !/^\d/.test(String(nsn))) continue;   // skip "All Selected" totals row
+    out[unpad(nsn)] = {
+      vendor: r.vendor,
+      posMcDeliveryGC: num(r.deliveryTransactions),
+      pos3poSales: num(r.deliveryAllNetSales),
+      threePoGC: num(r['3POTrans']),                          // → Delivery GC/Rest/Day
+      csat: num(r.avgCSat),
+      ordersMissingItemsPct: num(r.ordersMissingItemsPct),
+      incorrectOrders: num(r.entireOrderIncorrect),
+      mcDeliveryTimeSec: minToSec(r.avgDeliveryTime),
+      restaurantTimeSec: minToSec(r.avgRestaurantTime),
+      totalExperienceTimeSec: minToSec(r.avgTotalTime),
+      qualifiedReviews: num(r.qualifiedReviews),
     };
   }
   return out;
