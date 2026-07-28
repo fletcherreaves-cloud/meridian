@@ -52,13 +52,30 @@ function rangeLabel(mode, range, anchor) {
   return `${range.s} → ${range.e}`;
 }
 
-// Cascade level (who's talking to whom) — Notes 31 #6. Separate from data SCOPE.
+// Cascade level (who's talking to whom) — Notes 31 #6 / Notes 32 C. Separate from data
+// SCOPE. Each level carries a FOCUS that actually re-emphasizes the page: a headline of
+// what this conversation is about, the metric order for the current-state grid (what the
+// recipient is accountable for, first), and talking points. DRAFT — owner to refine.
 const CASCADE_LEVELS = [
-  { id: 'o_d', tag: 'O›D', label: 'Owner → DO' },
-  { id: 'd_s', tag: 'D›S', label: 'DO → Supervisor' },
-  { id: 's_g', tag: 'S›G', label: 'Supervisor → GM' },
+  { id: 'o_d', tag: 'O›D', label: 'Owner → DO',
+    focus: 'District P&L + PACE outcomes — the number the business is graded on.',
+    priority: ['sales', 'fobPct', 'laborPct', 'oepe', 'r2p', 'tpph'],
+    talk: 'Strategic: district sales vs plan/LY, FOB & labor rollup, PACE speed (OEPE/R2P), and the stores dragging the district.' },
+  { id: 'd_s', tag: 'D›S', label: 'DO → Supervisor',
+    focus: 'Patch performance — coach the bottom stores toward the district standard.',
+    priority: ['fobPct', 'laborPct', 'oepe', 'r2p', 'sales', 'tpph'],
+    talk: 'Patch rollup + store-by-store outliers: which stores miss FOB / labor / speed, and the action plan to move them.' },
+  { id: 's_g', tag: 'S›G', label: 'Supervisor → GM',
+    focus: "Store execution — the GM's own restaurant, shift by shift.",
+    priority: ['oepe', 'r2p', 'tpph', 'laborPct', 'fobPct', 'sales'],
+    talk: 'Tactical: speed of service (OEPE/R2P/KVS), labor %, food waste (FOB), guest counts — what to fix on the next shift.' },
 ];
 const cascadeOf = id => CASCADE_LEVELS.find(c => c.id === id) || CASCADE_LEVELS[0];
+// Reorder current-state rows by a cascade level's priority (unknown keys keep their order, appended).
+function orderByFocus(rows, priority) {
+  const idx = k => { const i = (priority || []).indexOf(k); return i === -1 ? 999 : i; };
+  return [...(rows || [])].sort((a, b) => idx(a.key) - idx(b.key));
+}
 
 const FOLLOW_META = {
   achieved:  { label: '✓ Achieved',  color: '#10b981' },
@@ -212,10 +229,12 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
                   style: { padding: '3px 8px', fontSize: 10.5, borderRadius: 12, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--accent,#f5bc00)' : 'var(--bdr)'), background: on ? 'var(--accent-dim,rgba(245,188,0,.12))' : 'var(--surf)', color: 'var(--text)' } }, nm(l));
               }),
             ),
+            // Cascade focus banner — what THIS level's conversation is about (Notes 32 C)
+            h(FocusBanner, { cascade: page.cascade }),
             // Opportunity $ headline
             h(OppSection, { page }),
-            // Current state grid
-            h(StateGrid, { rows: page.currentState, rangeLabel: page.rangeLabel, ytdLabel: page.ytdLabel }),
+            // Current state grid — ordered by the cascade level's focus priority
+            h(StateGrid, { rows: orderByFocus(page.currentState, page.cascade?.priority), rangeLabel: page.rangeLabel, ytdLabel: page.ytdLabel }),
             // Follow-ups
             priorItems.length ? h(FollowUps, { items: page.followUps }) : null,
             // Suggested actions
@@ -230,6 +249,16 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
           ),
     ),
   );
+}
+
+function FocusBanner({ cascade }) {
+  if (!cascade) return null;
+  return div({ style: { border: '1px solid var(--bdr)', borderLeft: '3px solid var(--accent,#f5bc00)', borderRadius: 8, padding: '8px 12px', background: 'var(--surf)' } },
+    div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      span({ style: { fontSize: 11, fontWeight: 800, color: '#111', background: 'var(--accent,#f5bc00)', borderRadius: 5, padding: '1px 6px' } }, cascade.tag),
+      span({ style: { fontSize: 12, fontWeight: 700, color: 'var(--text)' } }, cascade.label),
+      span({ style: { fontSize: 12, color: 'var(--text2)' } }, '— ' + (cascade.focus || ''))),
+    cascade.talk ? div({ style: { fontSize: 10.5, color: 'var(--text3,var(--text2))', marginTop: 4 } }, cascade.talk) : null);
 }
 
 function OppSection({ page }) {
@@ -316,7 +345,7 @@ function printOnePager(page, period, narrative, actions) {
   const rLabel = page.rangeLabel || period;
   const ytdLabel = page.ytdLabel || 'YTD';
   const casc = page.cascade || { tag: '', label: '' };
-  const state = (page.currentState || []).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}${r.ytd != null ? `<br><span style="color:#888;font-size:9px">${esc(ytdLabel)}: ${esc(valFmt(r.ytd, r.fmt))}</span>` : ''}</td>`).join('');
+  const state = orderByFocus(page.currentState, casc.priority).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}${r.ytd != null ? `<br><span style="color:#888;font-size:9px">${esc(ytdLabel)}: ${esc(valFmt(r.ytd, r.fmt))}</span>` : ''}</td>`).join('');
   const opp = page.opportunity?.district || {};
   const acts = (actions || []).map(a => `<li>${esc(a.title)}${a.status ? ` — <i>${esc(a.status)}</i>` : ''}</li>`).join('');
   const foll = (page.followUps || []).map(it => `<li>${esc(it.title)} — ${esc((it.follow?.status || '').toString())}</li>`).join('');
@@ -329,6 +358,7 @@ function printOnePager(page, period, narrative, actions) {
     .opp{font-size:15px;font-weight:800}ul{margin:4px 0;padding-left:18px}</style></head><body>
     <h1>Leadership One-Pager<span class="tag">${esc(casc.tag)}</span></h1>
     <div class="sub">${esc(rLabel)} · ${esc(page.scopeLabel || '')} · ${esc(casc.label)}</div>
+    ${casc.focus ? `<div style="font-size:11px;color:#333;margin:2px 0 10px;padding:5px 9px;border-left:3px solid #f5bc00;background:#faf7ea">Focus: ${esc(casc.focus)}${casc.talk ? `<br><span style="color:#666">${esc(casc.talk)}</span>` : ''}</div>` : ''}
     <h2>Opportunity on the table (vs target)</h2>
     <div class="opp">${esc(f$(page.opportunityTotal || 0))} over the ${esc(rLabel)} — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
     <h2>Current state — ${esc(rLabel)} (${esc(ytdLabel)} alongside)</h2><table><tr>${state}</tr></table>
@@ -347,7 +377,7 @@ function printBlankOnePager(page, period) {
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || period;
   const casc = page.cascade || { tag: '', label: '' };
-  const state = (page.currentState || []).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}</td>`).join('');
+  const state = orderByFocus(page.currentState, casc.priority).map(r => `<td><b>${esc(r.label)}</b><br>${esc(valFmt(r.actual, r.fmt))}${r.target != null ? ` <span style="color:#666">/ ${esc(valFmt(r.target, r.fmt))}</span>` : ''}</td>`).join('');
   const opp = page.opportunity?.district || {};
   const lines = (n) => Array.from({ length: n }, () => '<div class="wl"></div>').join('');
   const sec = (t, n) => `<h2>${esc(t)}</h2>${lines(n)}`;
@@ -361,6 +391,7 @@ function printBlankOnePager(page, period) {
     @media print{@page{margin:.5in}}</style></head><body>
     <h1>Leadership One-Pager — Discussion<span class="tag">${esc(casc.tag)}</span></h1>
     <div class="sub">${esc(rLabel)} · ${esc(page.scopeLabel || '')} · ${esc(casc.label)} &nbsp;·&nbsp; ______________ &nbsp;↔&nbsp; ______________</div>
+    ${casc.focus ? `<div style="font-size:11px;color:#333;margin:2px 0 10px;padding:5px 9px;border-left:3px solid #f5bc00;background:#faf7ea">Focus: ${esc(casc.focus)}</div>` : ''}
     <h2>Current state (reference)</h2><table><tr>${state}</tr></table>
     <div class="ref">Opportunity on the table (${esc(rLabel)}): <b>${esc(f$(page.opportunityTotal || 0))}</b> — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
     ${sec('Wins to celebrate', 3)}
