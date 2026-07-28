@@ -1427,6 +1427,20 @@ export async function loadEbosMonthlyByStore(year, month) {
   return map;
 }
 
+// ── eBOS daily op-supplies rows (for ds — feeds Perf-Review opSupplies actual) ─
+// One row per (loc, date) carrying the day's operating-supplies purchases. Paginated —
+// 27 stores × a year exceeds the 1000-row cap. loc unpadded to match the rest of ds.
+export async function loadEbosDaily(daysBack = 400) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const iso = cutoff.toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase.from('qsr_ebos_daily')
+    .select('loc,date,ops_purchases').gte('date', iso).order('date').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), date: _mkDate(r.date), opsPurchases: r.ops_purchases ?? 0,
+  }));
+}
+
 // ── QSRSoft daily-activity aggregated summary ─────────────────────────────────
 // Returns one row per (loc, date) with sales/GC/DT totals summed across hour slots.
 // Used by AtAGlance as a zero-upload fallback when laborRows is empty.

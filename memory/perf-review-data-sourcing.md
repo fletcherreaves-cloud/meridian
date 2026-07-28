@@ -38,11 +38,11 @@ year) to backfill; then daily/monthly forward.
   **"TTM Turnover"** or **"YTD Turnover"** (confirm which). Process ALL results (incl. ones not
   listed) and make them available for whichever metric is desired.
 
-## 4. Op Supplies → Op Supplies vs Budget  ✅ DATA ALREADY PULLED
-- Source: **`qsr_ebos_daily.ops_purchases`** (auto-pulled daily). `loadEbosMonthlyByStore(year,month)`
-  already sums Σ ops_purchases per store. TARGET = `tOpSupply` (already in DEFAULT_TARGETS, auto-fills).
-- **TO WIRE:** load monthly ebos ops_purchases into `ds` (it is NOT currently in ds — loaded
-  on-demand only) so autoPopulateKPIs can fill the `opSupplies` ACTUAL. Small startup-loader + wiring.
+## 4. Op Supplies → Op Supplies vs Budget  ✅ WIRED (v4.541)
+- Source: **`qsr_ebos_daily.ops_purchases`** (auto-pulled daily). `loadEbosDaily(400)` → `ds.ebosRows`
+  (loaded at startup, App.js). autoPopulateKPIs sums the month's opsPurchases → `mo.opSupplies`
+  ACTUAL; TARGET = `tOpSupply` (auto-fills). Op-Supplies now scores end-to-end from cloud data.
+- This also lights up Total Profit's op-supplies component once #5 is wired (gated on FOB-% basis).
 
 ## 5. Total Profit vs Target  ✅ DERIVED (no new pull) — BUILT v4.540
 - Math from the category's own items: FOB% + Labor% + Op-Supplies $. Both ACTUAL and TARGET built

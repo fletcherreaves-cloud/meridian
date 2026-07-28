@@ -103,3 +103,17 @@ describe('deriveTotalProfitVsTarget (Notes 32 #5)', () => {
     expect(deriveTotalProfitVsTarget({}).total$).toBeNull();
   });
 });
+
+describe('autoPopulateKPIs op-supplies actual from eBOS (Notes 32 #4)', () => {
+  it('sums the month eBOS ops_purchases into opSupplies + auto-fills the target', () => {
+    const ds = { loaded: true, ebosRows: [
+      { loc: '3708', date: new Date('2026-06-05T00:00:00'), opsPurchases: 1200 },
+      { loc: '3708', date: new Date('2026-06-20T00:00:00'), opsPurchases: 900 },
+      { loc: '3708', date: new Date('2026-05-10T00:00:00'), opsPurchases: 500 }, // other month
+    ] };
+    const r = autoPopulateKPIs(review(), ds);
+    expect(r.kpis.months[6].opSupplies).toBe(2100);      // June only
+    expect(r.kpis.months[6].opSuppliesTgt).toBeCloseTo(2938.76, 1); // tOpSupply auto-fill
+    expect(r.kpis.months[5].opSupplies).toBe(500);       // May
+  });
+});

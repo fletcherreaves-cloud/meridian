@@ -750,6 +750,7 @@ export function autoPopulateKPIs(review, ds) {
   const laborM = byMonth(ds.laborRows);
   const opsM   = byMonth(ds.opsRows);
   const fobM   = byMonth(ds.fobRows);
+  const ebosM  = byMonth(ds.ebosRows); // eBOS daily op-supplies purchases (Notes 32 #4)
 
   // SMG FullScale: index by year+month for this store to avoid cross-year collision
   const reviewYear = review.year || new Date().getFullYear();
@@ -765,6 +766,7 @@ export function autoPopulateKPIs(review, ds) {
     const lr = laborM[m]||[];
     const or = opsM[m]||[];
     const fr = fobM[m]||[];
+    const er = ebosM[m]||[];
     const sr = smgFSByMonth[m];
 
     if (lr.length) {
@@ -786,6 +788,11 @@ export function autoPopulateKPIs(review, ds) {
     if (fr.length) {
       const fd = sum(fr,'fobDollar');
       if (fd!=null) mo.foodOB = fd;
+    }
+    if (er.length) {
+      // Op Supplies actual = Σ the month's daily op-supplies purchases (auto-pulled eBOS).
+      const op = sum(er,'opsPurchases');
+      if (op!=null) mo.opSupplies = op;
     }
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
