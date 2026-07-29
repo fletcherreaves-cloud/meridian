@@ -2289,10 +2289,14 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
 
   // Managers with attributed shift data at this store — pick one to attribute a
   // DM/shift review to their own shifts. GMs are always store-total (no picker).
+  // Padding-agnostic loc key — ds.storeIds (form loc) and shift_manager_monthly.loc can
+  // carry different zero-padding; strip leading zeros on BOTH sides so they match.
+  const normLoc = v => String(v == null ? '' : v).replace(/^0+/, '') || String(v == null ? '' : v);
   const managers = useMemo(() => {
+    const want = normLoc(loc);
     const m = {};
     for (const r of (shiftManagerRows || [])) {
-      if (String(r.loc) !== String(loc) || !r.geid) continue;
+      if (normLoc(r.loc) !== want || !r.geid) continue;
       if (!m[r.geid] || (r.name && !m[r.geid].name)) m[r.geid] = { geid: r.geid, name: r.name || String(r.geid) };
     }
     return Object.values(m).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
