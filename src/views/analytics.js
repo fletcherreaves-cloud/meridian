@@ -13,7 +13,7 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -6458,6 +6458,51 @@ function SageRunsTile() {
       r.ok ? ((r.resultMd || '').replace(/[#*|`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140) || '—') : ('⚠ ' + (r.error || 'failed')))))));
 }
 
+// EOM Count-progress tile — surfaces the EOM Scoreboard front-and-center during the last 3
+// days of the month (Notes 34). Computes the same buckets as the dashboard scoreboard from
+// eom_count_status alone (no on-hand load); click opens the EOM Dashboard (Scoreboard tab).
+function EOMScoreboardTile({ onOpenModal }) {
+  const now = new Date();
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const inWindow = now.getDate() >= lastDay - 2;   // last 3 days of the month
+  const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [rows, setRows] = React.useState(null);
+  React.useEffect(() => {
+    if (!inWindow) return;
+    let live = true;
+    loadEomCountStatus({ period }).then(r => { if (live) setRows(r || []); }).catch(() => { if (live) setRows([]); });
+    return () => { live = false; };
+  }, [inWindow, period]);
+  if (!inWindow) return null;
+
+  const bucketOf = r => {
+    const pct = r.pctCounted ?? 0;
+    if ((r.commsStatus || 'none') !== 'none') return 'comms';
+    if ((r.diagnosisStatus || 'pending') !== 'pending') return 'reviewed';
+    if (pct >= 0.9) return 'ready';
+    if (pct > 0.01) return 'counting';
+    return 'notstarted';
+  };
+  const PILL = { notstarted: ['Not started', '#6b7280'], counting: ['Counting', '#38bdf8'], ready: ['Ready for you', '#f5bc00'], reviewed: ['Reviewed', '#4ade80'], comms: ['Comms sent', '#a78bfa'] };
+  const tally = { notstarted: 0, counting: 0, ready: 0, reviewed: 0, comms: 0 };
+  for (const r of (rows || [])) tally[bucketOf(r)]++;
+  const readyN = tally.ready;
+
+  const card = (...kids) => h('div', { onClick: () => onOpenModal && onOpenModal('eom-dashboard'), style: { background: 'var(--surf2,#151821)', border: '.5px solid ' + (readyN > 0 ? 'rgba(245,188,0,.5)' : 'var(--bdr,#2a2f3a)'), borderRadius: 12, overflow: 'hidden', cursor: 'pointer' }, title: 'Open the EOM Dashboard scoreboard' }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '📦'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'EOM Count Progress'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Last 3 days of the month · tap to open the scoreboard')),
+    readyN > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: '#111', background: '#f5bc00', borderRadius: 10, padding: '2px 8px' } }, readyN + ' ready') : null);
+  if (rows === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  if (!rows.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'Counts populate as stores work through the last-3-day window (the On-Hand pull runs ~8a/10a/2p CT).'));
+  return card(head, h('div', { style: { padding: '10px 14px', display: 'flex', gap: 6, flexWrap: 'wrap' } },
+    ...['ready', 'counting', 'reviewed', 'comms', 'notstarted'].map(k => h('div', { key: k, style: { flex: '1 1 70px', border: '.5px solid var(--bdr,#2a2f3a)', borderLeft: '3px solid ' + PILL[k][1], borderRadius: 8, padding: '6px 8px' } },
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.3px' } }, PILL[k][0]),
+      h('div', { style: { fontSize: 18, fontWeight: 800, color: k === 'ready' && tally[k] > 0 ? '#f5bc00' : 'var(--text,#e8eaed)' } }, String(tally[k]))))));
+}
+
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   const today = new Date();
   const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
@@ -7695,6 +7740,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       !noData&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(380px,100%),1fr))',gap:10}},
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
+        h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
 
         // ── PROJECTIONS SECTION ──
