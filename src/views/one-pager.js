@@ -21,17 +21,15 @@ const span = (p, ...c) => h('span', p, ...c);
 const unpad = l => String(l || '').replace(/^0+/, '') || String(l || '');
 const nm = l => STORE_NAMES[unpad(l)] || unpad(l);
 
-// ── date / ISO-week helpers ───────────────────────────────────────────────────
+// ── date / work-week helpers ──────────────────────────────────────────────────
+// The work week is configurable (settings.weekStartDay; 0=Sun 1=Mon … 3=Wed).
+// McDonald's standard = WEDNESDAY–Tuesday, so every report week here honors that
+// setting instead of assuming Mon–Sun (standing rule — see memory).
+const WW_START = 3; // default Wednesday
 const iso = d => d.toISOString().slice(0, 10);
-function mondayOf(date) { const d = new Date(date); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd); d.setHours(0, 0, 0, 0); return d; }
-function weekRangeFrom(date) { const s = mondayOf(date); const e = new Date(s); e.setDate(e.getDate() + 6); return { s: iso(s), e: iso(e) }; }
-function isoWeekLabel(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3);
-  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const week = 1 + Math.round(((d - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-}
+// Start of the work week (the most recent `wsd`-weekday on or before `date`).
+function weekStartOf(date, wsd = WW_START) { const d = new Date(date); d.setHours(0, 0, 0, 0); const diff = (d.getDay() - wsd + 7) % 7; d.setDate(d.getDate() - diff); return d; }
+function weekRangeFrom(date, wsd = WW_START) { const s = weekStartOf(date, wsd); const e = new Date(s); e.setDate(e.getDate() + 6); return { s: iso(s), e: iso(e) }; }
 
 const pctFmt = (v, lower) => v == null ? '—' : (v * 100).toFixed(1) + '%';
 const valFmt = (v, fmt) => v == null ? '—'
@@ -47,7 +45,7 @@ const daysInRange = (r) => Math.max(1, Math.round((new Date(r.e + 'T00:00:00') -
 // Annualization factor for a $ figure measured over the range (365 / days-in-range).
 const annualFactor = (r) => 365 / daysInRange(r);
 function rangeLabel(mode, range, anchor) {
-  if (mode === 'week')   return 'Week ' + isoWeekLabel(new Date(anchor));
+  if (mode === 'week')   { const p = range.s.split('-'); return 'Week of ' + MONTH_NAMES[(+p[1] || 1) - 1] + ' ' + (+p[2]); }
   if (mode === 'mtd')    return MONTH_NAMES[new Date(range.e + 'T00:00:00').getMonth()] + ' MTD';
   if (mode === 'ytd')    return new Date(range.e + 'T00:00:00').getFullYear() + ' YTD';
   return `${range.s} → ${range.e}`;
@@ -106,16 +104,18 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState('');
 
+  const wsd = (settings && settings.weekStartDay != null) ? settings.weekStartDay : WW_START; // McDonald's work week (Wed=3)
   const anchor = useMemo(() => new Date(weekDate), [weekDate]);
   const range = useMemo(() => (
-    rangeMode === 'week' ? weekRangeFrom(anchor)
+    rangeMode === 'week' ? weekRangeFrom(anchor, wsd)
     : rangeMode === 'mtd' ? monthRangeFrom(anchor)
     : rangeMode === 'ytd' ? ytdRangeFrom(anchor)
     : customRange
-  ), [rangeMode, anchor, customRange]);
+  ), [rangeMode, anchor, customRange, wsd]);
   const ytd = useMemo(() => ytdRangeFrom(new Date(range.e + 'T00:00:00')), [range.e]);
   const rLabel = useMemo(() => rangeLabel(rangeMode, range, weekDate), [rangeMode, range, weekDate]);
-  const period = useMemo(() => rangeMode === 'week' ? isoWeekLabel(anchor) : `${range.s}_${range.e}`, [rangeMode, anchor, range]);
+  // Period key is the work-week start date (Wed) for week mode — stable + unique per work week.
+  const period = useMemo(() => rangeMode === 'week' ? `wk-${range.s}` : `${range.s}_${range.e}`, [rangeMode, range]);
   const scopeKey = useMemo(() => 'locs:' + [...locs].sort().join(','), [locs]);
 
   useEffect(() => { let live = true; loadQsrFob({}).then(r => { if (live) setFobRows(r || []); }).catch(() => setFobRows([])); return () => { live = false; }; }, []);

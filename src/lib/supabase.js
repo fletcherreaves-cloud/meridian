@@ -1607,17 +1607,29 @@ export async function loadQsrActSummary(daysBack = 35) {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   // Paginate — qsr_daily_activity has ~675 rows/day, so a single query hits the
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
-  // Order NEWEST-first: this is a large multi-page read, and if a free-tier egress cutoff
-  // truncates it mid-pagination, we must keep the RECENT days (what every current-window
-  // tile/form needs) rather than the oldest. Ascending order silently dropped the newest
-  // ~2 weeks under throttling (the "data stuck at an old date" bug). Aggregation is by
-  // (loc,dt) so row order doesn't affect the result — only which rows survive truncation.
-  const data = await fetchAll((from, to) => supabase
-    .from('qsr_daily_activity')
-    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
-    .gte('dt', cutoffStr)
-    .order('dt', { ascending: false })
-    .range(from, to), 1000, 'qsrActSummary');
+  // PARALLEL pagination (count → fire every page at once) instead of ~39 sequential
+  // round-trips — this was the slow "took a while" current-data load. Ordered NEWEST-first
+  // + Promise.allSettled so a partial failure (free-tier egress throttle) still keeps the
+  // RECENT days every current-window tile/form needs, and one bad page can't reject the whole
+  // load. Aggregation is by (loc,dt) so page order doesn't affect the result.
+  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
+  const PAGE = 1000;
+  const { count } = await supabase.from('qsr_daily_activity')
+    .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
+  const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
+  const reqs = [];
+  for (let p = 0; p < pages; p++) {
+    reqs.push(supabase.from('qsr_daily_activity').select(SELECT).gte('dt', cutoffStr)
+      .order('dt', { ascending: false }).order('loc').order('hour_slot')
+      .range(p * PAGE, p * PAGE + PAGE - 1));
+  }
+  const settled = await Promise.allSettled(reqs);
+  const data = []; let failedPages = 0;
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
+    else failedPages++;
+  }
+  if (failedPages) console.warn(`[Meridian] loadQsrActSummary: ${failedPages}/${pages} page(s) failed (egress throttle?) — newest-first keeps recent days`);
   const map = {};
   for (const r of data || []) {
     const loc = String(parseInt(r.loc, 10)); // strip zero-padding ("0003708" → "3708")
