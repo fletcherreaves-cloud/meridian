@@ -344,15 +344,26 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const focus = V.filter(v => !isLocked(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff));
   const context = V.filter(v => isLocked(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff));
   const noWaste = v => v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01;
+  // Actual-vs-standard yield % from the row's own yield band (CoachQ-style over-portioning
+  // fingerprint). std = band midpoint; over-portioned = actual below the band's low end.
+  const yieldPct = v => {
+    const a = Number(v.yield), lo = Number(v.yieldLo), hi = Number(v.yieldHi);
+    if (!(a > 0) || !isFinite(lo) || !isFinite(hi) || (lo + hi) <= 0) return null;
+    return a / ((lo + hi) / 2);
+  };
+  const overPortioned = v => { const p = yieldPct(v); return p != null && Number(v.yield) < Number(v.yieldLo); };
   // Compact chips (current state first) — rendered as pills by mdToHtml.
   const chipsFor = v => {
     const c = [v.dolDiff < 0 ? `{{bad|SHORT ${money(Math.abs(v.dolDiff))}}}` : `{{info|OVER ${money(Math.abs(v.dolDiff))}}}`];
     if ((recountByWrin[v.wrin] || '').startsWith('recount may')) c.push('{{warn|recount-worthy}}');
-    if (yieldByWrin[v.wrin]) c.push('{{warn|yield off?}}');
+    const yp = yieldPct(v);
+    if (overPortioned(v)) c.push(`{{bad|over-portioned ${Math.round(yp * 100)}% of std}}`);
+    else if (yieldByWrin[v.wrin]) c.push('{{warn|yield off?}}');
     if (noWaste(v)) c.push('{{warn|no waste logged}}');
     return c.join(' ');
   };
-  const actionFor = v => yieldByWrin[v.wrin] ? 'check yield setting, then recount'
+  const actionFor = v => overPortioned(v) ? `over-portioning — audit the station recipe/portion (running ${Math.round(yieldPct(v) * 100)}% of standard yield)`
+    : yieldByWrin[v.wrin] ? 'check yield setting, then recount'
     : noWaste(v) ? 'verify waste logging, then recount'
     : (recountByWrin[v.wrin] || '').startsWith('recount may') ? 'recount now — still recoverable'
     : 'recount + verify counts';
@@ -393,6 +404,17 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     L.push('## 🛠️ Systemic patterns', '');
     systemic.forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
     L.push('');
+  }
+
+  // ── Portioning watch — actual-vs-standard yield (CoachQ-style over-portioning fingerprint) ──
+  const portio = V.filter(v => overPortioned(v)).sort((a, b) => (yieldPct(a) || 1) - (yieldPct(b) || 1));
+  if (portio.length) {
+    L.push('## 🎚️ Portioning watch — running below standard yield', '');
+    portio.slice(0, 12).forEach(v => {
+      const std = (Number(v.yieldLo) + Number(v.yieldHi)) / 2;
+      L.push(`- **${v.descr || v.wrin}** — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (**${Math.round(yieldPct(v) * 100)}% of std**${v.dolDiff != null ? `, ${money(v.dolDiff)}` : ''})`);
+    });
+    L.push('_Low actual-vs-standard yield = more product used per serving than the recipe allows — audit the station\'s portion/recipe, not the count._', '');
   }
 
   // ── Count integrity — WHY items read "uncounted" (Notes: Durant #5985) ──

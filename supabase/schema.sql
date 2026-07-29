@@ -1407,6 +1407,10 @@ create index if not exists qsr_inventory_summary_period_idx on public.qsr_invent
 alter table public.qsr_variance_stat add column if not exists yield_val    numeric;
 alter table public.qsr_variance_stat add column if not exists pct_sales    numeric;
 alter table public.qsr_variance_stat add column if not exists raw_item_id  bigint;
+-- Yield STANDARD band (lo/hi) → lets the diagnosis show actual-vs-standard yield %
+-- (CoachQ-style over-portioning fingerprint). Backfills on the next variance pull.
+alter table public.qsr_variance_stat add column if not exists yield_lo     numeric;
+alter table public.qsr_variance_stat add column if not exists yield_hi     numeric;
 
 -- Waste events (raw_waste_promo) — per-entry, manager-attributed. PK is the eBOS
 -- event id so re-pulls are idempotent. type: 'raw' | 'completed'.

@@ -2385,6 +2385,8 @@ export async function saveQsrVarianceStat(rows) {
     yield_val:  r.yield ?? r.yieldVal ?? null,
     pct_sales:  r.pctOfSales ?? r.pctSales ?? null,
     raw_item_id: r.rawItemId ?? null,
+    yield_lo:   r.yieldLo ?? r.yieldBand?.lo ?? null,
+    yield_hi:   r.yieldHi ?? r.yieldBand?.hi ?? null,
   }));
   return _chunkUpsert('qsr_variance_stat', up, 'loc,period,wrin');
 }
@@ -2400,7 +2402,8 @@ export async function loadQsrVarianceStat({ period } = {}) {
     loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage,
     actUsage: r.act_usage, variance: r.variance, dolDiff: r.dol_diff,
-    yield: r.yield_val, pctOfSales: r.pct_sales, rawItemId: r.raw_item_id, updatedAt: r.updated_at,
+    yield: r.yield_val, yieldLo: r.yield_lo, yieldHi: r.yield_hi,
+    pctOfSales: r.pct_sales, rawItemId: r.raw_item_id, updatedAt: r.updated_at,
   }));
 }
 
