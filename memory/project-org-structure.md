@@ -38,7 +38,23 @@ Adding an FL supervisor: **Brad Denley 7→3 stores**, new **Mary + 4 stores** (
 current 7: `6178,6838,10034,35242,37566,38609,43701`. Owner to do it in-app after v4.570 deploys.
 **Effective date to record: 2026-07-29** (see tenure-attribution note below — capture the date now).
 
-## 🎯 FUTURE (owner-endorsed direction, 2026-07-29): tenure-based / date-effective attribution
+## ✅ SHIPPED (v4.571, 2026-07-29): effective-dated / tenure-based assignments
+Start-only timeline model in `constants.js`: assignment row `{ loc, supervisor, start }`; a
+store's supervisor on a date = the row with the LATEST `start` ≤ that date (blank start = since
+always; the next assignment implicitly ends the prior). Resolver **`whoRan(loc,date)`** +
+**`groupsAt(date)`**; **`supervisorGroups()` now derives from the timeline at today** so all
+panels show the current org and historical rollups stay honest across a mid-history change.
+Persisted in `settings.orgAssignments` (+ a today-derived flat `supervisorGroups` kept in sync
+for the direct readers) → Supabase `org_config`. App.js seeds the timeline from the flat map
+(open-start) when none saved. Editor: **Management → Supervisor Assignments** — current-as-of-
+today, an Assign/Reassign form (supervisor + store IDs + editable effective date), and an
+editable assignment history (per-row date + remove). Tests: `src/__tests__/org-assignments.test.js`.
+- **DONE = Tier 1 (history + effective dates) with the current map derived time-correctly.**
+- **STILL FUTURE = Tier 2/3:** make the review/analysis rollups query `whoRan` per (loc, period)
+  for fully time-aware HISTORICAL attribution (today they use the current derived map); prorate
+  mid-period changes by day-weight. GM-level tenure can reuse Roster `storeStartDate`.
+
+## 🎯 Original direction note (owner-endorsed, 2026-07-29): tenure-based / date-effective attribution
 Owner asked whether attribution should follow the TENURE of stores a leader was in charge of
 (vs today's flat map applied retroactively). **Verdict: yes, as a "responsibility timeline" layer.**
 Unifies three existing to-dos into one system: supervisor patch changes, GM store→store moves
