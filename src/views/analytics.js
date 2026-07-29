@@ -6642,16 +6642,25 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // back to most recent 30 days of loaded data so tiles always show content.
   const effectiveDateRange = React.useMemo(()=>{
     if(!dateRange?.s) return dateRange;
-    const hasData=(ds?.laborRows||[]).some(r=>r.date&&r.date>=dateRange.s&&r.date<=dateRange.e);
+    // Auto-aware (Notes: Jul-2026). The old check only looked at manual laborRows, so once
+    // manual uploads stopped it fell back to a 30-day window ending at the LAST MANUAL date
+    // (~Jul 15) — pinning every At-A-Glance tile to "as of 7/15" even though the auto DAR /
+    // emailed streams were current. Now treat the selected range as populated when ANY
+    // current-window stream (manual OR auto DAR OR Daily Glimpse) has a day in it, and if it
+    // genuinely has none, anchor the fallback to the FRESHEST date across all of them.
+    const _t=d=>d instanceof Date?d.getTime():new Date(d).getTime();
+    const inSel=r=>r.date&&_t(r.date)>=_t(dateRange.s)&&_t(r.date)<=_t(dateRange.e);
+    const streams=[ds?.laborRows,ds?.qsrActSummaryRows,ds?.glimpseRows];
+    const hasData=streams.some(arr=>(arr||[]).some(inSel));
     if(hasData)return{...dateRange,isFallback:false};
-    const dates=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
+    const dates=streams.flatMap(arr=>(arr||[]).map(r=>r.date)).filter(Boolean).map(_t).filter(t=>!isNaN(t));
     if(!dates.length)return{...dateRange,isFallback:false};
     const maxD=new Date(Math.max(...dates));
     const minD=new Date(maxD);minD.setDate(minD.getDate()-29);minD.setHours(0,0,0,0);
     const toD=new Date(maxD);toD.setHours(23,59,59,999);
     return{s:minD,e:toD,isFallback:true,
       fallbackLabel:maxD.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
-  },[dateRange,ds?.laborRows?.length]);
+  },[dateRange,ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.glimpseRows?.length]);
 
   const labInRange = React.useMemo(()=>{
     // FRESHEST-PER-DAY merge, not all-or-nothing (Notes: Jul-2026 "reverts to old date" bug).
