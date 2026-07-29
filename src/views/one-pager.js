@@ -588,8 +588,8 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     { label: 'Voice B2B (Accuracy)',   v: ra.accB2B,           t: 0.95,                     fmt: '%', dir: 'higher' },
     // Store-level (Supervisor→GM) adds kitchen speed/health — noise at district/patch.
     ...(isStore ? [
-      { label: 'KVS Time per GC',      v: ra.kvsPerGc,         t: (cs.kvst && cs.kvst.target) ?? null, fmt: 's', dir: 'lower' },
-      { label: 'KVS Healthy Usage',    v: null,                t: null,                     fmt: '%', dir: 'higher' },
+      { label: 'KVS Time per GC',      v: ra.kvsPerGc,         t: ra.kvsTimeTarget,         fmt: 's', dir: 'lower' },
+      { label: 'KVS Healthy Usage',    v: ra.kvsHealthy,       t: ra.kvsHealthyTarget,      fmt: '%', dir: 'higher' },
     ] : []),
   ];
   const scBody = scDefs.map(r => {

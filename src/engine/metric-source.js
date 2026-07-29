@@ -32,6 +32,9 @@ export const METRIC_SOURCES = {
   // OEPE column) so current-day / recent windows populate before the Glimpse email lands.
   oepe:      { mode: 'pos', srcs: [['opsRows', 'oepe'], ['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe']] },
   kvst:      { mode: 'pos', srcs: [['opsRows', 'kvst'], ['glimpseRows', 'kvst']] },
+  // KVS Healthy Usage (2nd-side) as a 0–1 fraction — manual Ops calls it `kvsu`, the emailed
+  // Daily Glimpse calls it `kvsHealthy`; bridge both so the One-Pager KVS rows populate.
+  kvsHealthy: { mode: 'pos', srcs: [['opsRows', 'kvsu'], ['glimpseRows', 'kvsHealthy']] },
   park:      { mode: 'pos', srcs: [['opsRows', 'park'], ['glimpseRows', 'parkedPct']] },
   // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the

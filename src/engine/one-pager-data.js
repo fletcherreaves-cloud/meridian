@@ -165,11 +165,19 @@ export function buildReviewActuals(ds, locs, range) {
   // Projected product sales over the window (scope sum) — Product-Sales target.
   let projSales = 0, hasProj = false;
   for (const loc of (locs || [])) { const s = sumSeries(ds, loc, range, 'projSales'); if (s.days) { projSales += s.sum; hasProj = true; } }
+  // Scope-average targets from each store's DEFAULT_TARGETS (KVS pace + healthy usage).
+  const tgtAvg = (field) => {
+    const vals = (locs || []).map(l => (DEFAULT_TARGETS[unpad(l)] || {})[field]).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
   return {
     gcVsLY: gcv?.pct ?? null,
     osat: meanField('osatTop2'),
     accB2B: meanField('accuracyB2B'),
-    kvsPerGc: metricAvg(ds, locs, range, 'kvst'),
+    kvsPerGc: metricAvg(ds, locs, range, 'kvst'),           // KVS Time per GC (seconds)
+    kvsHealthy: metricAvg(ds, locs, range, 'kvsHealthy'),   // KVS Healthy Usage (0–1 fraction) — Daily Glimpse
+    kvsTimeTarget: tgtAvg('tKvst'),
+    kvsHealthyTarget: tgtAvg('tKvsu'),
     projSales: hasProj ? projSales : null,
     smgMonth: bestKey >= 0 ? `${bestY}-${String(bestM).padStart(2, '0')}` : null,
   };
