@@ -600,10 +600,11 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
       • Breakfast Peak (7–9a): target ______ | actual ______<br/>
       • Lunch Peak (11a–2p): target ______ | actual ______<br/>
       • Dinner Peak (5–7p): target ______ | actual ______<br/>
-      • Corrective actions: 1. ________________________ 2. ________________________</div>
-    <div class="dd" style="margin-top:6px"><b>B. Food Cost &amp; Waste</b><br/>• Top 3 high-variance items:
-      ${wideLine}${wideLine}${wideLine}
-      • Waste — Raw $ ____________ | Completed $ ____________<br/>• Yield actions: ${lines(1)}</div>
+      • Corrective actions: <div class="fl">1.<span></span> 2.<span></span></div></div>
+    <div class="dd" style="margin-top:6px"><b>B. Food Cost &amp; Waste</b><br/>
+      • Top 3 high-variance items: 1.<span class="il" style="width:1.7in"></span> 2.<span class="il" style="width:1.7in"></span> 3.<span class="il" style="width:1.7in"></span><br/>
+      • Waste — Raw $ ____________ | Completed $ ____________<br/>
+      • Yield actions: <span class="il" style="width:4.2in"></span></div>
     <div class="dd" style="margin-top:6px"><b>C. Labor Efficiency (Scheduling)</b><br/>• Projected Hours ____________ | Scheduled Hours ____________ | Variance ____________<br/>• Optimization actions: ${lines(1)}</div>
 
     <div class="banner">INDIVIDUAL SHIFT MANAGER PERFORMANCE TRACKING</div>
@@ -654,6 +655,9 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     tbody tr:nth-child(even){background:#F8F9FA}
     table.tight td{padding:2px 5px;height:1.3em}
     .dd{font-size:8.5pt;line-height:1.4;margin:2px 0}
+    .il{display:inline-block;border-bottom:1px solid #999;height:1.05em;vertical-align:bottom;margin:0 3px}
+    .fl{display:flex;gap:14px;align-items:flex-end;margin:1px 0 2px}
+    .fl span{flex:1;border-bottom:1px solid #999;height:1.05em}
     @page{size:letter;margin:.4in}
     @media print{@page{size:letter;margin:.4in}}
     </style></head><body>
