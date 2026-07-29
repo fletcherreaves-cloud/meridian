@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
 import { parseGradedVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 import { analyzeGradedVisits } from '../engine/visit-readiness.js';
@@ -133,7 +133,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     if (selLoc === 'all') return null;
     if (selLoc === 'fl') return new Set(ALL_LOCS.filter(l => FL_LOCS.has(l)));
     if (selLoc === 'ok') return new Set(ALL_LOCS.filter(l => !FL_LOCS.has(l)));
-    if (selLoc.startsWith('__patch__')) return new Set(((DEF_SETTINGS.supervisorGroups || {})[selLoc.slice(9)] || []).map(l => locNum(l)));
+    if (selLoc.startsWith('__patch__')) return new Set(((supervisorGroups() || {})[selLoc.slice(9)] || []).map(l => locNum(l)));
     return new Set([locNum(selLoc)]);
   }, [selLoc]);
   const filtered = useMemo(() => visits.filter(v =>
@@ -556,7 +556,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
           h('option', { value: 'fl' }, 'Florida'),
           h('option', { value: 'ok' }, 'Oklahoma'),
           h('optgroup', { label: '— Patches —' },
-            ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([name, locs]) =>
+            ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
               h('option', { key: name, value: '__patch__' + name }, name.split(' ')[0] + ' Patch (' + locs.length + ')'))),
           h('optgroup', { label: '— Florida —' },
             ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),

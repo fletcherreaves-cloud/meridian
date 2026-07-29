@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { loadDtHistory } from '../lib/supabase.js';
-import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS } from '../constants.js';
+import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
 
 const h = React.createElement;
 const div  = (p,...c) => h('div',  p, ...c);
@@ -25,10 +25,14 @@ const FL_LOCS  = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald'));
 
 // Distinct series colors for the multi-line (by store / by patch) trend view.
 const SERIES_COLORS = ['#60a5fa','#f59e0b','#10b981','#ef4444','#a78bfa','#f472b6','#22d3ee','#facc15','#fb923c','#4ade80','#e879f9','#38bdf8','#fca5a5','#c4b5fd','#5eead4','#fdba74'];
-// loc (unpadded) → short patch name, from the supervisor groups.
-const LOC_PATCH = {};
-for (const [name, locs] of Object.entries(DEF_SETTINGS.supervisorGroups || {})) {
-  for (const l of (locs || [])) LOC_PATCH[String(parseInt(l, 10))] = name.split(' ')[0];
+// loc (unpadded) → short patch name, read LIVE from the current supervisor groups
+// (a function, not a module-scope const, so it reflects org edits after startup).
+function locPatch(loc) {
+  const key = String(parseInt(loc, 10));
+  for (const [name, locs] of Object.entries(supervisorGroups() || {})) {
+    if ((locs || []).some(l => String(parseInt(l, 10)) === key)) return name.split(' ')[0];
+  }
+  return null;
 }
 
 const HOUR_LABELS = {
@@ -87,7 +91,7 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
       d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // Monday of week
       const wk = d.toISOString().slice(0, 10);
       weekSet.add(wk);
-      const sk = mode === 'store' ? loc : mode === 'patch' ? (LOC_PATCH[loc] || 'Other') : 'all';
+      const sk = mode === 'store' ? loc : mode === 'patch' ? (locPatch(loc) || 'Other') : 'all';
       const bs = (bySeries[sk] = bySeries[sk] || {});
       const cell = (bs[wk] = bs[wk] || { us: 0, cnt: 0 });
       cell.us += r.dt_untilserve; cell.cnt += r.dt_trans_cnt;
@@ -232,7 +236,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     if (orgFilter === 'ok') return base.filter(l => !FL_LOCS.has(l));
     if (orgFilter.startsWith('__patch__')) {
       const patchName = orgFilter.slice(9);
-      const patchLocs = new Set((DEF_SETTINGS.supervisorGroups?.[patchName] || []).map(String));
+      const patchLocs = new Set((supervisorGroups()?.[patchName] || []).map(String));
       return base.filter(l => patchLocs.has(l));
     }
     if (orgFilter !== 'all') return base.filter(l => l === orgFilter);
@@ -384,7 +388,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
           h('option', { value:'fl'  }, 'Florida'),
           h('option', { value:'ok'  }, 'Oklahoma'),
           h('optgroup', { label:'— Patches —' },
-            ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([name, locs]) =>
+            ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
               h('option', { key:name, value:'__patch__'+name },
                 name.split(' ')[0] + ' Patch (' + locs.length + ' stores)'))),
           h('optgroup', { label:'— Florida —' },

@@ -554,4 +554,14 @@ function savePanelVis(vis) {
   try { localStorage.setItem(PANEL_VIS_KEY, JSON.stringify(vis || {})); } catch { /* ignore */ }
 }
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+// ── Live supervisor-groups singleton ────────────────────────────────────────
+// DEF_SETTINGS.supervisorGroups is the hard-coded DEFAULT org. The live map (edited in
+// Management → Supervisor Patches, or uploaded) lives in app settings + Supabase org_config.
+// App.js calls setLiveSupervisorGroups() on every settings change so panels that DON'T
+// receive `settings` (DT Speed, Skills Matrix, Graded Visits) still read the CURRENT org —
+// add/remove a supervisor or reassign stores with no code change. Read via supervisorGroups().
+let _liveSupervisorGroups = null;
+function setLiveSupervisorGroups(g) { if (g && typeof g === 'object' && Object.keys(g).length) _liveSupervisorGroups = g; }
+function supervisorGroups() { return _liveSupervisorGroups || DEF_SETTINGS.supervisorGroups || {}; }
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };

@@ -6,7 +6,7 @@
 // labor-analysis engine (dollar-weighted OK/FL/grand subtotals), and prints.
 // Config tab edits the "gathered" fixed-hours inputs (maintenance/prep/lobby/24hr).
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, DEFAULT_TARGETS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
 import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime, deriveBand1FromSchedule } from '../engine/labor-analysis.js';
 import { loadLifeLenzLaborWeek, loadStoreLaborConfig, saveStoreLaborConfig, loadLifeLenzSchedule } from '../lib/supabase.js';
 
@@ -144,7 +144,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
     if (scope === 'all') return null;
     if (scope === 'fl') return new Set(ALL_LOCS.filter(l => FL_LOCS.has(l)));
     if (scope === 'ok') return new Set(ALL_LOCS.filter(l => !FL_LOCS.has(l)));
-    if (scope.startsWith('__patch__')) return new Set(((DEF_SETTINGS.supervisorGroups || {})[scope.slice(9)] || []).map(l => locNum(l)));
+    if (scope.startsWith('__patch__')) return new Set(((supervisorGroups() || {})[scope.slice(9)] || []).map(l => locNum(l)));
     return new Set([locNum(scope)]);
   }, [scope]);
 
@@ -282,7 +282,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
 
   const scopeSelect = h('select', { value: scope, onChange: e => setScope(e.target.value), style: selStyle },
     h('option', { value: 'all' }, 'All Stores'), h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
-    h('optgroup', { label: '— Patches —' }, ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
+    h('optgroup', { label: '— Patches —' }, ...Object.entries(supervisorGroups() || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
     h('optgroup', { label: '— Florida —' }, ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
     h('optgroup', { label: '— Oklahoma —' }, ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))));
 
