@@ -77,14 +77,13 @@ See [[session-handoff-2026-07-28]], [[feedback-metric-provenance]].
 - **B#6 TPPH scale — FIXED** (commit b69ccab). `loadQsrActSummary` derived TPPH from
   `(healthy_count+unhealthy_count)/punched_hours` — a KVS order-health count, not transactions →
   ~0.1 vs ~5 target. Now `transactions ÷ actual_punched_hours` (matches Shift Mgr transPerPunchedHour).
-- **B#5/B#7 R2P blank on current-day** — CONFIRMED (owner) the ONLY current-day gap is R2P; all else OK.
-  **R2P = Receipt to Print** (sec): starts when order is tendered / receipt prints, ends when the order is
-  bumped from the KVS bar (complete). Receipt ensures order → right customer. NOT fc_untilserve
-  (front-counter serve) — owner confirmed my fc_untilserve guess was WRONG (good that we asked). ROOT:
-  metric-source `r2p` = `[['opsRows','r2p']]` (manual Ops Report only) → blank until an Ops Report is
-  uploaded; today has none. **Owner is sourcing a current-day R2P feed** (capture/endpoint TBD). Fix once
-  we have it: add R2P to that source + wire into metric-source `r2p` as an auto fallback. DO NOT map
-  fc_untilserve → R2P.
+- **B#5/B#7 R2P blank on current-day** — ✅ FIXED (v4.549). Reverse-engineered from the DAR report
+  itself: **R2P = (fc_untilserve − fc_untilclosedrawer) / fc_trans_cnt / 1000** (front-counter). Reconciled
+  EXACTLY to the report's R2P column, all active hours (3708, 2026-07-28). Fields already in
+  `qsr_daily_activity` → NO re-download. Derived in `loadQsrActSummary`, wired as auto fallback in
+  metric-source `r2p` (manual Ops Report still wins first). DAR pulls ~8a/10a/2p CT → current-day
+  populates. Full derivation + proof: [[reference-r2p-formula]]. (Avg Win TTL = fc_untilserve/fc_trans_cnt,
+  NOT R2P — the near-mismap.)
 - **B#7 current-day blank / B#8 week mostly blank** — ROOT (two parts): (1) recent/current windows
   legitimately have little data (intraday today; the current week is mostly future days) — the emailed
   Glimpse/Ops/Controls lag; (2) the cloud-fresh DAR (qsrActSummaryRows) is wired ONLY for sales/gc/tpph,
