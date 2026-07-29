@@ -532,8 +532,10 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || '';
   const casc = page.cascade || {};
-  const title = blank ? 'WEEKLY BUSINESS REVIEW' : (REVIEW_TITLE_BY_LEVEL[casc.id] || 'WEEKLY BUSINESS REVIEW');
-  const focus = blank ? '' : (REVIEW_FOCUS_BY_LEVEL[casc.id] || '');
+  // Title + focus follow the cascade level so each level has its OWN blank template
+  // (District / Area / Restaurant); no level selected → generic.
+  const title = REVIEW_TITLE_BY_LEVEL[casc.id] || 'WEEKLY BUSINESS REVIEW';
+  const focus = REVIEW_FOCUS_BY_LEVEL[casc.id] || '';
   const isDistrict = casc.id === 'o_d', isPatch = casc.id === 'd_s', isStore = casc.id === 's_g';
   const hasStores = (page.perLocation || []).length > 0;
   const cs = Object.fromEntries((page.currentState || []).map(r => [r.key, r]));
@@ -576,41 +578,17 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
   const line = '<div style="border-bottom:1px solid #999;height:1.4em;margin-top:6px"></div>';
   const lines = n => Array.from({ length: n }, () => line).join('');
   const wideLine = '<div style="border-bottom:1px solid #999;height:1.3em;margin-top:5px;width:100%"></div>';
+  const subhead = t => `<div style="font-size:8.5pt;font-weight:bold;margin:6px 0 2px">${t}</div>`;
+  // A blank fillable table: header row (first col left) + n empty rows.
+  const blankRows = (headers, n) => `<table class="tight">
+    <tr>${headers.map((hh, i) => `<th style="text-align:${i === 0 ? 'left' : 'center'}">${hh}</th>`).join('')}</tr>
+    ${Array.from({ length: n }, () => `<tr>${headers.map((_, i) => `<td${i === 0 ? ' style="text-align:left"' : ''}>&nbsp;</td>`).join('')}</tr>`).join('')}
+  </table>`;
+  const stripH2 = s => s.replace(/<h2[^>]*>.*?<\/h2>/, '');
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} ${esc(rLabel)}</title>
-    <style>
-    body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:36px;font-size:9pt}
-    h1{color:#BD0011;font-size:18pt;font-weight:bold;margin:0 0 4px}
-    .meta{font-size:10pt;margin-bottom:10px}
-    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:11pt;padding:4px 6px;margin:12px 0 4px}
-    table{border-collapse:collapse;width:100%}
-    th{background:#202124;color:#fff;font-size:9pt;padding:4px 6px;text-align:center}
-    td{border:.5px solid #DADCE0;padding:4px 6px;font-size:8.5pt;text-align:center;vertical-align:middle}
-    tbody tr:nth-child(even){background:#F8F9FA}
-    table.tight td{padding:3px 5px;height:1.5em}
-    .dd{font-size:9pt;line-height:1.55;margin:2px 0}
-    @media print{@page{margin:.5in}}
-    </style></head><body>
-    <h1>${esc(title)} &amp; CHECKPOINT</h1>
-    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; ${casc.label && !blank ? `<b>${esc(casc.label)}</b> &nbsp;&nbsp;&nbsp; ` : ''}<b>Restaurant #:</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '__________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> __________________</div>
-    ${focus ? `<div style="font-size:9pt;color:#333;margin:2px 0 8px;padding:5px 9px;border-left:3px solid #FFC72C;background:#FFF9E8">${esc(focus)}</div>` : ''}
-
-    <div class="banner">WINS FROM LAST WEEK</div>
-    ${lines(3)}
-
-    <div class="banner">WEEKLY PERFORMANCE SCORECARD</div>
-    <table>
-      <tr><th style="text-align:left">Metric</th><th>Target</th><th>Actual Result</th><th style="text-align:left">On Track?</th></tr>
-      ${scBody}
-    </table>
-    ${blank ? '' : `<div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data; targets + On-Track are for the leader to complete.</div>`}
-
-    ${(!blank && (isDistrict || isPatch) && hasStores) ? `
-      <div class="banner">${isDistrict ? 'DISTRICT OUTLIERS &amp; OPPORTUNITIES' : 'YOUR PATCH — STORE BY STORE (drive results through your GMs)'}</div>
-      ${topBottomHtml(page, esc).replace(/<h2[^>]*>.*?<\/h2>/, '')}
-      ${perLocTableHtml(page, esc).replace(/<h2[^>]*>.*?<\/h2>/, '')}
-      <div style="font-size:7.5pt;color:#666;margin-top:3px">${isDistrict ? 'Press on the outliers (⚠️) and protect the wins (🏆). Opp $/wk = recoverable if the store paces to plan/target.' : 'Walk each GM through their store: biggest gap first, then the win to reinforce.'}</div>` : ''}
-
+  // ── Level-specific middle sections ──────────────────────────────────────────
+  // STORE (Supervisor→GM): operational deep dive + shift-manager tracking.
+  const storeMiddle = `
     <div class="banner">DEEP DIVE: OPERATIONAL BOTTLENECKS &amp; COST CONTROLS</div>
     <div class="dd"><b>A. Speed of Service &amp; Drive-Thru</b><br/>• Primary bottleneck: ${lines(1)}
       • Breakfast Peak (7–9a): target ______ | actual ______<br/>
@@ -627,7 +605,63 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
       <tr><th style="text-align:left">Shift Manager</th><th>Dayparts Run</th><th>Avg OEPE</th><th>Shift Labor %</th><th>Shift Waste $</th><th>Checklist 100%?</th></tr>
       ${smBody}
     </table>
-    ${managerNames && managerNames.length && !blank ? `<div style="font-size:7.5pt;color:#666;margin-top:3px">Names pre-listed from the store's Shift Manager Summary; per-shift metrics are for the leader to fill in.</div>` : ''}
+    ${managerNames && managerNames.length && !blank ? `<div style="font-size:7.5pt;color:#666;margin-top:3px">Names pre-listed from the store's Shift Manager Summary; per-shift metrics are for the leader to fill in.</div>` : ''}`;
+
+  // DISTRICT (Owner→DO): outliers, opportunities, supervisor accountability (big picture).
+  const districtMiddle = `
+    <div class="banner">DISTRICT OUTLIERS</div>
+    ${(!blank && hasStores)
+      ? stripH2(topBottomHtml(page, esc)) + stripH2(perLocTableHtml(page, esc))
+      : subhead('Top performers') + blankRows(['Store', "Why it's winning", 'How to reinforce'], 3)
+        + subhead('Watch list / biggest gaps') + blankRows(['Store', 'Gap', 'Action / owner'], 4)}
+
+    <div class="banner">OPPORTUNITIES &amp; PRIORITIES (biggest \$ / where to press)</div>
+    ${lines(3)}
+
+    <div class="banner">SUPERVISOR / PATCH ACCOUNTABILITY</div>
+    ${blankRows(['Supervisor', 'Patch focus this week', 'Biggest gap', 'Committed action'], 6)}`;
+
+  // PATCH (DO→Supervisor): store-by-store + GM coaching (drive results through GMs).
+  const patchMiddle = `
+    <div class="banner">STORE-BY-STORE — YOUR PATCH (drive results through your GMs)</div>
+    ${(!blank && hasStores)
+      ? stripH2(perLocTableHtml(page, esc))
+      : blankRows(['Store', 'Sales vs LY', 'Labor %', 'FOB %', 'OEPE', 'Biggest gap', 'GM action'], 10)}
+
+    <div class="banner">GM COACHING FOCUS</div>
+    ${blankRows(['GM / Store', 'What to drive this week', 'Follow-up'], 6)}`;
+
+  const middle = isDistrict ? districtMiddle : isPatch ? patchMiddle : storeMiddle;
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} ${esc(rLabel)}</title>
+    <style>
+    body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:36px;font-size:9pt}
+    h1{color:#BD0011;font-size:18pt;font-weight:bold;margin:0 0 4px}
+    .meta{font-size:10pt;margin-bottom:10px}
+    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:11pt;padding:4px 6px;margin:12px 0 4px}
+    table{border-collapse:collapse;width:100%}
+    th{background:#202124;color:#fff;font-size:9pt;padding:4px 6px;text-align:center}
+    td{border:.5px solid #DADCE0;padding:4px 6px;font-size:8.5pt;text-align:center;vertical-align:middle}
+    tbody tr:nth-child(even){background:#F8F9FA}
+    table.tight td{padding:3px 5px;height:1.5em}
+    .dd{font-size:9pt;line-height:1.55;margin:2px 0}
+    @media print{@page{margin:.5in}}
+    </style></head><body>
+    <h1>${esc(title)} &amp; CHECKPOINT</h1>
+    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; ${casc.label ? `<b>${esc(casc.label)}</b> &nbsp;&nbsp;&nbsp; ` : ''}<b>${isDistrict ? 'District:' : isPatch ? 'Patch:' : 'Restaurant #:'}</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '__________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> __________________</div>
+    ${focus ? `<div style="font-size:9pt;color:#333;margin:2px 0 8px;padding:5px 9px;border-left:3px solid #FFC72C;background:#FFF9E8">${esc(focus)}</div>` : ''}
+
+    <div class="banner">WINS FROM LAST WEEK</div>
+    ${lines(3)}
+
+    <div class="banner">WEEKLY PERFORMANCE SCORECARD</div>
+    <table>
+      <tr><th style="text-align:left">Metric</th><th>Target</th><th>Actual Result</th><th style="text-align:left">On Track?</th></tr>
+      ${scBody}
+    </table>
+    ${blank ? '' : `<div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data; targets + On-Track are for the leader to complete.</div>`}
+
+    ${middle}
 
     <div class="banner">COMMITMENTS FOR NEXT WEEK</div>
     ${lines(4)}
