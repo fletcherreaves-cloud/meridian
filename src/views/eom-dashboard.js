@@ -155,10 +155,12 @@ function ClassChips({ byClass, uncounted }) {
       // are still uncounted (top by $ at risk) so the store can close the last few (Notes 35).
       const items = (uncounted && uncounted[k]) || [];
       const nearDone = b.pct >= 0.90 && !b.done && items.length > 0;
+      const stTag = u => u.state === 'never' ? 'NEVER counted' : u.state === 'stale' ? `stale (last ${u.lastCounted || '?'})` : `early (${u.lastCounted || '?'})`;
       const title = nearDone
-        ? `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)}) — still to count:\n` +
-          items.slice(0, 12).map(u => `• ${u.descr || u.wrin}${u.valueAtRisk ? ` ($${Math.round(u.valueAtRisk)})` : ''}`).join('\n') +
-          (items.length > 12 ? `\n…+${items.length - 12} more` : '')
+        ? `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)}) — items not counted in the final window:\n` +
+          items.slice(0, 12).map(u => `• ${u.descr || u.wrin}${u.valueAtRisk ? ` ($${Math.round(u.valueAtRisk)})` : ''} — ${stTag(u)}`).join('\n') +
+          (items.length > 12 ? `\n…+${items.length - 12} more` : '') +
+          `\n(NEVER = true blank · early = counted earlier this period · stale = prior period / likely inactive ghost)`
         : `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})`;
       return span({
         key: k, title,

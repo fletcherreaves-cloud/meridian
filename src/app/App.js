@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.598';
+const MERIDIAN_VERSION    = '4.599';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.599', date:'2026-07-29', changes:[
+    'EOM uncounted-item diagnosis now explains WHY each item reads uncounted: NEVER counted (a true blank), counted EARLY this period (QSRSoft shows it counted — a cascade discussion, not free money), or STALE / prior-period (likely an inactive item carrying a residual on-hand "ghost float"). The class-chip hover shows each item\'s state + last-counted date, and the engine now separates true blanks from early/stale so value-at-risk isn\'t overstated. Resolves the "12 uncounted that QSRSoft doesn\'t flag" question.',
+  ]},
   {version:'4.598', date:'2026-07-29', changes:[
     'EOM Dashboard: on-demand "↻ On-Hand" and "↻ Variance" buttons pull fresh count-progress / raw-item data right now instead of waiting for the next scheduled run. (Requires the trigger-dar-sync edge function to be redeployed with the new allowlist entries.)',
     'The scheduled intraday On-Hand pull now only runs 8am–6pm Central during the count window (managers count during the day), cutting wasted overnight pulls. A manual pull button overrides this anytime.',
