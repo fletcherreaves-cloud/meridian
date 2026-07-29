@@ -188,6 +188,15 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
           h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
           h('button', { onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems), style: btn }, '🖨 Print'),
           h('button', { onClick: () => printBlankOnePager(page, period), style: btn, title: 'Open-ended discussion sheet (auto state, blank sections)' }, '📝 Discussion'),
+          h('button', { onClick: () => {
+            const norm = v => String(v || '').replace(/^0+/, '') || String(v || '');
+            const locSet = new Set((locs || []).map(norm));
+            const nmeta = {};
+            for (const r of (ds?.shiftManagerRows || [])) { if (locSet.has(norm(r.loc)) && r.geid && r.name) nmeta[r.geid] = r.name; }
+            const managerNames = [...new Set(Object.values(nmeta))].sort();
+            const storeLabel = (locs || []).length === 1 ? nm(locs[0]) : (page?.scopeLabel || '');
+            printWeeklyReview(page, { managerNames, storeLabel });
+          }, style: btn, title: 'Weekly Business Review — blank prep sheet (auto-fills actuals + shift-manager names)' }, '📋 Weekly Review'),
           h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕'),
         ),
       ),
@@ -490,6 +499,92 @@ function printBlankOnePager(page, period) {
     ${sec('Action plan — what are we working on this week?', 5)}
     ${sec("Follow-up — how did last week's items move?", 4)}
     ${sec('Notes / commitments', 3)}
+    </body></html>`);
+  w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
+}
+
+// Weekly Business Review & Checkpoint — a polished, mostly-blank prep sheet the leader
+// completes BEFORE the discussion (encourages looking at results + planning actions).
+// Modeled on the owner's ReportLab design; rebuilt natively so it prints to PDF from the
+// browser, auto-fills scorecard actuals from live data, and pre-lists the store's Shift
+// Managers. `managerNames` = names for the selected scope (blank rows when unknown).
+function printWeeklyReview(page, { managerNames = [], storeLabel = '' } = {}) {
+  const w = window.open('', '_blank', 'width=850,height=1100'); if (!w || !page) return;
+  const esc = escapeHtml;
+  const rLabel = page.rangeLabel || '';
+  const cs = Object.fromEntries((page.currentState || []).map(r => [r.key, r]));
+  // Live actual for a scorecard row, or a blank fill line when we don't have it.
+  const actual = (key, fmt, suffix = '') => {
+    const r = cs[key];
+    const v = r && r.actual != null ? valFmt(r.actual, fmt) : null;
+    return v != null ? `<b>${esc(v)}</b>` : `_____________${suffix}`;
+  };
+  const CHK = '[&nbsp;&nbsp;]';
+  const scRows = [
+    ['Gross Sales',          '$115k / $85k / $65k',        actual('sales', '$'),      `${CHK} Above Target &nbsp;&nbsp; ${CHK} Below Target`],
+    ['Guest Count (GC)',     '+2.0% vs Last Year',         '_____________ %',         `${CHK} Growth &nbsp;&nbsp; ${CHK} Decline`],
+    ['Drive-Thru OEPE',      '&lt;110s / &lt;120s / &lt;130s', actual('oepe', 's'),  `${CHK} Meeting Goal &nbsp;&nbsp; ${CHK} Missing Goal`],
+    ['R2P (Front Counter)',  'store target (sec)',         actual('r2p', 's'),        `${CHK} Meeting Goal &nbsp;&nbsp; ${CHK} Missing Goal`],
+    ['Labor Cost %',         '21.0% / 22.0% / 24.0%',      actual('laborPct', '%'),   `${CHK} Under Budget &nbsp;&nbsp; ${CHK} Over Budget`],
+    ['Food Over Base %',     'store FOB target',           actual('fobPct', '%'),     `${CHK} Controlled &nbsp;&nbsp; ${CHK} High Variance`],
+    ['VOC (Satisfaction)',   '&gt;80% / &gt;75% / &gt;70%', '_____________ %',        `${CHK} Top Tier &nbsp;&nbsp; ${CHK} Needs Attention`],
+  ];
+  const scBody = scRows.map(r => `<tr>
+    <td style="text-align:left"><b>${esc(r[0])}</b></td>
+    <td>${r[1]}</td>
+    <td>${r[2]}</td>
+    <td style="text-align:left">${r[3]}</td></tr>`).join('');
+
+  const smNames = (managerNames && managerNames.length ? managerNames.slice(0, 6) : ['', '', '']);
+  const smBody = smNames.map((nm2, i) => `<tr>
+    <td style="text-align:left">${i + 1}. ${nm2 ? `<b>${esc(nm2)}</b>` : '___________________________'}</td>
+    <td>[ ] B &nbsp; [ ] L &nbsp; [ ] D &nbsp; [ ] O</td>
+    <td>________ s</td><td>________ %</td><td>$ ________</td>
+    <td>[ ] 100% &nbsp; [ ] Missed</td></tr>`).join('');
+
+  const line = '<div style="border-bottom:1px solid #999;height:1.4em;margin-top:6px"></div>';
+  const lines = n => Array.from({ length: n }, () => line).join('');
+
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Weekly Business Review ${esc(rLabel)}</title>
+    <style>
+    body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:36px;font-size:9pt}
+    h1{color:#BD0011;font-size:18pt;font-weight:bold;margin:0 0 4px}
+    .meta{font-size:10pt;margin-bottom:10px}
+    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:11pt;padding:4px 6px;margin:12px 0 4px}
+    table{border-collapse:collapse;width:100%}
+    th{background:#202124;color:#fff;font-size:9pt;padding:4px 6px;text-align:center}
+    td{border:.5px solid #DADCE0;padding:4px 6px;font-size:8.5pt;text-align:center;vertical-align:middle}
+    tbody tr:nth-child(even){background:#F8F9FA}
+    .dd{font-size:9pt;line-height:1.5;margin:2px 0}
+    @media print{@page{margin:.5in}}
+    </style></head><body>
+    <h1>WEEKLY BUSINESS REVIEW &amp; CHECKPOINT</h1>
+    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; <b>Restaurant:</b> ${storeLabel ? `<b>${esc(storeLabel)}</b>` : '____________________'} &nbsp;&nbsp;&nbsp; <b>RGM:</b> ____________________</div>
+
+    <div class="banner">1. WEEKLY PERFORMANCE SCORECARD &nbsp;&nbsp; [ Volume Tier: &nbsp; [ ] A ($110k+) &nbsp; [ ] B ($75k–$110k) &nbsp; [ ] C (&lt;$75k) ]</div>
+    <table>
+      <tr><th style="text-align:left">Metric</th><th>Tier Target (A / B / C)</th><th>Actual Result</th><th style="text-align:left">Status</th></tr>
+      ${scBody}
+    </table>
+    <div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data for the selected scope; blanks are for the leader to complete before the discussion.</div>
+
+    <div class="banner">2. DEEP DIVE: OPERATIONAL BOTTLENECKS &amp; COST CONTROLS</div>
+    <div class="dd"><b>A. Speed of Service &amp; Drive-Thru</b><br/>• Primary bottleneck: ${lines(1)}
+      • Lunch peak (11:30–1:30): target &lt;90s | actual ______s &nbsp;&nbsp; Dinner peak (5–7): target &lt;110s | actual ______s<br/>
+      • Corrective actions: 1. ________________________ 2. ________________________</div>
+    <div class="dd" style="margin-top:6px"><b>B. Food Cost &amp; Waste</b><br/>• Top 3 high-variance items: 1. ____________ 2. ____________ 3. ____________<br/>
+      • Waste — Raw $ __________ | Completed $ __________ | Promo/Crew $ __________<br/>• Yield actions: ${lines(1)}</div>
+    <div class="dd" style="margin-top:6px"><b>C. Labor Efficiency &amp; Shift Control</b><br/>• Planned hrs __________ | Actual hrs __________ | Variance __________<br/>• Optimization actions: ${lines(1)}</div>
+
+    <div class="banner">3. INDIVIDUAL SHIFT MANAGER PERFORMANCE TRACKING</div>
+    <table>
+      <tr><th style="text-align:left">Shift Manager</th><th>Dayparts Run</th><th>Avg OEPE</th><th>Shift Labor %</th><th>Shift Waste $</th><th>Pre-Shift Checklist</th></tr>
+      ${smBody}
+    </table>
+    ${managerNames && managerNames.length ? `<div style="font-size:7.5pt;color:#666;margin-top:3px">Names pre-listed from the store's Shift Manager Summary; per-shift metrics are for the leader to fill in.</div>` : ''}
+
+    <div class="banner">4. COMMITMENTS FOR NEXT WEEK</div>
+    ${lines(4)}
     </body></html>`);
   w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
 }
