@@ -1595,7 +1595,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
   const data = await fetchAll((from, to) => supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
+    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
     .gte('dt', cutoffStr)
     .order('dt')
     .range(from, to));
@@ -1607,6 +1607,7 @@ export async function loadQsrActSummary(daysBack = 35) {
       loc, date: new Date(r.dt + 'T00:00:00'),
       sales: 0, allNetSales: 0, gc: 0, txns: 0,
       _dtTotal: 0, _dtCars: 0,
+      _fcServe: 0, _fcDrawer: 0, _fcCnt: 0,
       lySales: 0, lyGc: 0,
       actHrs: 0, needHrs: 0,
       _isQsrAct: true,
@@ -1617,6 +1618,11 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key].txns         += r.transactions    || 0;   // true transaction count (for TPPH)
     map[key]._dtTotal     += r.dt_untilserve   || 0;
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
+    // Front-counter timings for R2P (Receipt to Print). Sum the raw ms + counts
+    // across hour slots, then count-weight below.
+    map[key]._fcServe     += r.fc_untilserve      || 0;
+    map[key]._fcDrawer    += r.fc_untilclosedrawer || 0;
+    map[key]._fcCnt       += r.fc_trans_cnt        || 0;
     map[key].lySales      += r.ly_product_sales || 0;
     map[key].lyGc         += r.ly_transactions || 0;
     // Actual punched + needed labor hours summed across the day's hour slots —
@@ -1633,6 +1639,12 @@ export async function loadQsrActSummary(daysBack = 35) {
     // Summary's transPerPunchedHour. Both come from the auto-pulled DAR (cloud-fresh);
     // manual Ops/Controls TPPH still wins first via metric-source ordering.
     tpph: r.actHrs > 0 && r.txns > 0 ? r.txns / r.actHrs : null,
+    // R2P (Receipt to Print, sec) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt ÷ 1000.
+    // Reconciled EXACTLY to the QSRSoft Daily Activity report's R2P column across every
+    // active hour (store 3708, 2026-07-28). fc_untilserve alone = "Avg Win TTL" (window
+    // total) — NOT R2P; subtracting drawer-close time yields the receipt-to-print interval.
+    // Cloud-fresh (DAR pulls run ~8a/10a/2p CT), so current-day One-Pager R2P populates.
+    r2p: r._fcCnt > 0 ? (r._fcServe - r._fcDrawer) / r._fcCnt / 1000 : null,
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));

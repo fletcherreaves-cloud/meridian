@@ -2297,7 +2297,7 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
     }
     return Object.values(m).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [shiftManagerRows, loc]);
-  const showMgr = role !== 'GM' && managers.length > 0;
+  const showMgr = role !== 'GM';   // non-GM roles can attribute to a specific manager; GMs = store-total
 
   // Selecting a manager sets the geid AND the name — ensures correct attribution.
   const pickManager = (g) => {
@@ -2338,9 +2338,12 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
     // specific manager's own shifts. GMs are store-total (picker hidden).
     showMgr && div(null,
       div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Manager (attribution)'),
-      sel({value:geid,onChange:e=>pickManager(e.target.value),style:{...fieldStyle,minWidth:150}},
-        opt({value:''},'— store total —'),
-        ...managers.map(m=>opt({value:String(m.geid),key:m.geid},m.name)))
+      managers.length > 0
+        ? sel({value:geid,onChange:e=>pickManager(e.target.value),style:{...fieldStyle,minWidth:170}},
+            opt({value:''},'— store total —'),
+            ...managers.map(m=>opt({value:String(m.geid),key:m.geid},m.name)))
+        : sel({value:'',disabled:true,style:{...fieldStyle,minWidth:170,opacity:.6}},
+            opt({value:''},'— no shift-manager data for this store —'))
     ),
     div(null,
       div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Year'),

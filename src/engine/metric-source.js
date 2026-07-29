@@ -25,7 +25,10 @@ export const METRIC_SOURCES = {
   oepe:      { mode: 'pos', srcs: [['opsRows', 'oepe'], ['glimpseRows', 'oepe']] },
   kvst:      { mode: 'pos', srcs: [['opsRows', 'kvst'], ['glimpseRows', 'kvst']] },
   park:      { mode: 'pos', srcs: [['opsRows', 'park'], ['glimpseRows', 'parkedPct']] },
-  r2p:       { mode: 'pos', srcs: [['opsRows', 'r2p']] },
+  // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived
+  // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
+  // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
+  r2p:       { mode: 'pos', srcs: [['opsRows', 'r2p'], ['qsrActSummaryRows', 'r2p']] },
   // Labor — Controls, else the Labor rows, else Daily Glimpse's labor %.
   laborPct:  { mode: 'pos', srcs: [['ctrlRows', 'laborPct'], ['laborRows', 'laborPct'], ['glimpseRows', 'laborPct']] },
   tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']] },

@@ -134,6 +134,7 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
     const built = buildOnePager({
       level, scopeLabel, locs, period, currentState: currentStateWithYtd, opportunity, attention: [],
       priorActionItems: priorItems, metricNow, storeName: nm,
+      suggest: { rangeLabel: rLabel },
     });
     return { ...built, rangeLabel: rLabel, ytdLabel: rangeLabel('ytd', ytd, range.e), annualFactor: annualFactor(range), cascade: cascadeOf(cascade) };
   }, [ds, fobRows, locs, range, ytd, period, priorItems, level, scopeLabel, rLabel, cascade]);
@@ -320,7 +321,7 @@ function Suggested({ acts, onAdd, rangeLabel }) {
   if (!acts || !acts.length) return null;
   return div({},
     div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 2 } }, 'Suggested actions (approve to add)'),
-    div({ style: { fontSize: 10, color: 'var(--text3,var(--text2))', marginBottom: 5 } }, `Recoverable $ are measured over the ${rangeLabel || 'selected range'} (not annualized).`),
+    div({ style: { fontSize: 10, color: 'var(--text3,var(--text2))', marginBottom: 5 } }, `Shown as a weekly impact (the ${rangeLabel || 'selected range'} total is in parentheses) — not annualized.`),
     acts.map((a, i) => div({ key: i, style: { display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '6px 8px', borderBottom: '.5px solid var(--bdr)' } },
       div({}, div({ style: { fontSize: 12.5, fontWeight: 600, color: 'var(--text)' } }, a.title), div({ style: { fontSize: 11, color: 'var(--text2)' } }, a.detail)),
       h('button', { onClick: () => onAdd(a), style: { padding: '3px 10px', borderRadius: 6, border: '1px solid var(--accent,#f5bc00)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' } }, '+ Add'))));

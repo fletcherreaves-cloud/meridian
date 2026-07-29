@@ -68,6 +68,7 @@ function storePillars(store, bench) {
 
   return {
     loc: store.loc,
+    days,                                 // window day-count — lets the UI express $ per week
     labor$, food$, gc$,
     total$: labor$ + food$ + gc$,
     drivers: {

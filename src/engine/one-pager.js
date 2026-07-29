@@ -27,7 +27,7 @@ const fmt$   = v => v == null ? '—' : '$' + Math.round(v).toLocaleString();
 // From the Opportunity-$ per-store pillars (biggest dollars first) + attention
 // concerns, produce candidate action items. Deduped by (loc, metricKey). Each item
 // is a *draft* — the leader edits/approves before it persists.
-export function suggestActions(opportunity = {}, attention = [], { max = 6, minDollar = 250, storeName = String } = {}) {
+export function suggestActions(opportunity = {}, attention = [], { max = 6, minDollar = 250, storeName = String, rangeLabel = 'the period' } = {}) {
   const items = [];
   const seen = new Set();
   const add = (it) => {
@@ -46,11 +46,16 @@ export function suggestActions(opportunity = {}, attention = [], { max = 6, minD
     if (!pillars.length) continue;
     const top = pillars[0];
     const nm = storeName(p.loc);
+    // Lead with a WEEKLY impact — a number a GM/supervisor can act on this week
+    // ("I can do that") instead of a range total that reads as inflated. The range
+    // total stays in parentheses so the math is still transparent/auditable.
+    const days = num(p.days) || num(top.d?.days) || 0;
+    const wk$ = days > 0 ? top.$ * 7 / days : top.$;
     const detail = top.key === 'gcPerDay'
-      ? `${nm} at ${Math.round(top.d?.actual || 0)} GC/day vs best ${Math.round(top.d?.bench || 0)} — ~${fmt$(top.$)} on the table.`
-      : `${nm} running ${fmtPct(top.d?.actual)} vs ${fmtPct(top.d?.bench)} target — ~${fmt$(top.$)} recoverable.`;
+      ? `${nm} at ${Math.round(top.d?.actual || 0)} GC/day vs best ${Math.round(top.d?.bench || 0)} — about ${fmt$(wk$)}/week (${fmt$(top.$)} over the ${rangeLabel}).`
+      : `${nm} running ${fmtPct(top.d?.actual)} vs ${fmtPct(top.d?.bench)} target — about ${fmt$(wk$)}/week recoverable (${fmt$(top.$)} over the ${rangeLabel}).`;
     add({ loc: p.loc, metricKey: top.key, title: `${top.verb} at ${nm}`, detail,
-          dollar: top.$, baselineValue: top.d?.actual, targetValue: top.d?.bench, source: 'opportunity' });
+          dollar: top.$, weeklyDollar: wk$, baselineValue: top.d?.actual, targetValue: top.d?.bench, source: 'opportunity' });
     if (items.length >= max) break;
   }
 
