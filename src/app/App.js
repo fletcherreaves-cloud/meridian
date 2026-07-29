@@ -953,6 +953,8 @@ function App() {
       ? settings.orgAssignments : seedAssignmentsFromGroups(settings?.supervisorGroups);
     setLiveAssignments(a);
   },[settings]);
+  // Open SAGE on demand (e.g. the EOM diagnosis "Ask SAGE" button seeds window.__MF_SAGE_SEED__).
+  useEffect(()=>{ const h=()=>setShowSage(true); window.addEventListener('mf:open-sage',h); return ()=>window.removeEventListener('mf:open-sage',h); },[]);
   const [userEvents, setUserEvents]= useState(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}});
   const [showSettings, setShowSettings]= useState(false);
   const [showRanking, setShowRanking]  = useState(false);

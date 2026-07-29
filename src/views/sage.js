@@ -889,7 +889,7 @@ function MsgBubble({ msg, streaming, onLog, onSavePrompt }) {
   const [copied, setCopied] = uSt(false);
 
   const content = isUser
-    ? msg.content
+    ? (msg.display || msg.content)   // seeded messages keep the clean prompt visible; the report context rides along invisibly
     : h('div', { style: { fontSize: 13 } }, ...renderMarkdown(msg.content));
 
   function handleCopy() {
@@ -1099,13 +1099,24 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   };
   const deleteSession = (id) => persistSessions(sessions.filter(s => s.id !== id));
 
+  // Seed context injected from elsewhere (e.g. the EOM diagnosis "Ask SAGE" button): the
+  // report rides along as background on the FIRST message only, then clears.
+  const seedCtxRef = uRef(null);
+  uEf(() => {
+    const g = (typeof window !== 'undefined') && window.__MF_SAGE_SEED__;
+    if (g && g.context) { seedCtxRef.current = g.context; if (g.prompt) setInput(g.prompt); window.__MF_SAGE_SEED__ = null; }
+  }, []);
+
   const sendMessage = uCb(async (raw) => {
     const text = (raw || '').trim();
     if (!text || streaming) return;
 
     setInput('');
     setError(null);
-    const userMsg = { role: 'user', content: text };
+    // Prepend any one-shot seed context (report) as background to this message.
+    const ctx = seedCtxRef.current; seedCtxRef.current = null;
+    const content = ctx ? `Context (an EOM FOB variance report I'm reviewing):\n\n${ctx}\n\n---\n\n${text}` : text;
+    const userMsg = { role: 'user', content, display: ctx ? text : undefined };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setStreaming(true);

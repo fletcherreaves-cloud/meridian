@@ -926,6 +926,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             onClick: () => printDiagnosis(diag.name, period, diag.report),
             style: { background: 'none', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, '🖨 Print / PDF'),
+          h('button', {
+            title: 'Open SAGE with this report loaded — ask follow-ups (recount list, GM message, root cause)',
+            onClick: () => {
+              try { window.__MF_SAGE_SEED__ = { context: diag.report, prompt: `From this ${diag.name} FOB variance report, give me a prioritized recount list for the top items and a short message to the GM.` }; } catch {}
+              try { window.dispatchEvent(new CustomEvent('mf:open-sage')); } catch {}
+              setDiag(null);
+            },
+            style: { background: 'none', color: 'var(--text2)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
+          }, '🧠 Ask SAGE'),
           (rawByLoc[diag.loc] || []).length > 0 && h('button', {
             title: 'See the count-cycle path of each item — where the variance was realized',
             onClick: () => openJourneys(diag.loc, diag.name),
