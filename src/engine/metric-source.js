@@ -22,7 +22,10 @@ export const METRIC_SOURCES = {
   sales:     { mode: 'pos', srcs: [['laborRows', 'sales'], ['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales']] },
   gc:        { mode: 'pos', srcs: [['laborRows', 'gc'], ['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc']] },
   // Speed of service — manual Ops Report, else emailed Daily Glimpse.
-  oepe:      { mode: 'pos', srcs: [['opsRows', 'oepe'], ['glimpseRows', 'oepe']] },
+  // OEPE — manual Ops Report, then emailed Daily Glimpse, then the cloud-fresh DAR-derived
+  // OEPE = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt (reconciled exactly to the DAR
+  // OEPE column) so current-day / recent windows populate before the Glimpse email lands.
+  oepe:      { mode: 'pos', srcs: [['opsRows', 'oepe'], ['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe']] },
   kvst:      { mode: 'pos', srcs: [['opsRows', 'kvst'], ['glimpseRows', 'kvst']] },
   park:      { mode: 'pos', srcs: [['opsRows', 'park'], ['glimpseRows', 'parkedPct']] },
   // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived

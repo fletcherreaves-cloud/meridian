@@ -6,6 +6,7 @@
 // (metric-source auto-first, DEFAULT_TARGETS) and uses the dashboard's canonical
 // dollar-weighted FOB% (Σ components ÷ Σ prodSales) — never a re-derived formula.
 import { metricSeries, metricAvg } from './metric-source.js';
+import { matchedVsLY } from './vs-ly.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 const unpad = l => String(l || '').replace(/^0+/, '') || String(l || '');
@@ -97,6 +98,39 @@ export function buildMetricNow(ds, fobRows, locs, range) {
   return out;
 }
 
+// Per-location breakdown (Notes 33 B#10) — one row per store in the selected scope, so
+// the page rolls up to the group AND lists its locations individually (screen + print).
+// Same shared sourcing as the header (metric-source auto-first, canonical FOB%, matched
+// vs-LY) so a store row reconciles to the roll-up. `opp` (computeOpportunity result)
+// supplies the per-store recoverable $. Sorted worst-sales-vs-LY first (where to look).
+export function buildPerLocationRows(ds, fobRows, locs, range, opp) {
+  const fob = fobByRange(fobRows, range);
+  const oppByLoc = {};
+  for (const p of (opp?.perStore || [])) oppByLoc[unpad(p.loc)] = p;
+  const rows = (locs || []).map(loc => {
+    const L = unpad(loc);
+    const t = DEFAULT_TARGETS[L] || {};
+    const sales = sumSeries(ds, loc, range, 'sales');
+    const vsLY = matchedVsLY(ds, [loc], range, 'sales');
+    const f = fob[L] || {};
+    const o = oppByLoc[L] || {};
+    // Recoverable $ normalized to a WEEKLY figure (matches the suggested-actions framing).
+    const oppWk = (o.total$ != null && o.days > 0) ? o.total$ * 7 / o.days : (o.total$ ?? null);
+    return {
+      loc: L,
+      netSales: sales.sum || 0,
+      salesVsLYPct: vsLY.pct != null ? vsLY.pct * 100 : null,
+      fobPct: f.fobPct ?? null,       fobTarget: t.tFOBTarget ?? null,
+      laborPct: metricAvg(ds, loc, range, 'laborPct'), laborTarget: t.tLabor ?? null,
+      oepe: metricAvg(ds, loc, range, 'oepe'),         oepeTarget: t.tOepe ?? null,
+      r2p: metricAvg(ds, loc, range, 'r2p'),           r2pTarget: t.tR2p ?? null,
+      oppWk: oppWk,
+    };
+  });
+  // Worst sales-vs-LY first; stores with no vs-LY sink to the bottom.
+  return rows.sort((a, b) => (a.salesVsLYPct ?? 1e9) - (b.salesVsLYPct ?? 1e9));
+}
+
 // Scope-level headline KPIs for the page header grid (dollar-weighted where it matters).
 export function buildCurrentState(ds, fobRows, locs, range) {
   const inputs = buildOnePagerInputs(ds, fobRows, locs, range);
@@ -116,9 +150,9 @@ export function buildCurrentState(ds, fobRows, locs, range) {
     { key: 'fobPct',   label: 'FOB %',      actual: totFobProd ? totFob$ / totFobProd : null, target: tgt('tFOBTarget'), fmt: '%', lowerBetter: true },
     { key: 'laborPct', label: 'Labor %',    actual: metricAvg(ds, locs, range, 'laborPct'), target: tgt('tLabor'), fmt: '%', lowerBetter: true },
     { key: 'oepe',     label: 'OEPE',       actual: metricAvg(ds, locs, range, 'oepe'), target: tgt('tOepe'), fmt: 's', lowerBetter: true },
-    // R2P has no auto/cloud stream (manual Ops Report only) — manualOnly lets the UI
-    // explain a blank rather than read as "broken". TPPH derives from DAR hours.
-    { key: 'r2p',      label: 'R2P',        actual: metricAvg(ds, locs, range, 'r2p'), target: tgt('tR2p'), fmt: 's', lowerBetter: true, manualOnly: true },
+    // R2P + OEPE now derive from the cloud-fresh DAR (fc_ / dt_ timings) when a manual
+    // Ops Report / Glimpse hasn't landed — so both populate current-day. TPPH derives from DAR hours.
+    { key: 'r2p',      label: 'R2P',        actual: metricAvg(ds, locs, range, 'r2p'), target: tgt('tR2p'), fmt: 's', lowerBetter: true },
     { key: 'tpph',     label: 'TPPH',       actual: metricAvg(ds, locs, range, 'tpph'), target: tgt('tTpph'), fmt: 'n' },
   ];
 }

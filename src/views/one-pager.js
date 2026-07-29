@@ -10,7 +10,7 @@ import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { escapeHtml, f$ } from '../utils/fmt.js';
 import { computeOpportunity, annualize, rankByOpportunity } from '../engine/opportunity.js';
 import { buildOnePager } from '../engine/one-pager.js';
-import { buildOnePagerInputs, buildMetricNow, buildCurrentState } from '../engine/one-pager-data.js';
+import { buildOnePagerInputs, buildMetricNow, buildCurrentState, buildPerLocationRows } from '../engine/one-pager-data.js';
 import { loadQsrFob, loadActionItems, saveOnePager, saveActionItem, updateActionItem } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -136,7 +136,9 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
       priorActionItems: priorItems, metricNow, storeName: nm,
       suggest: { rangeLabel: rLabel },
     });
-    return { ...built, rangeLabel: rLabel, ytdLabel: rangeLabel('ytd', ytd, range.e), annualFactor: annualFactor(range), cascade: cascadeOf(cascade) };
+    // Per-location breakdown (Notes 33 B#10) — only when the scope spans >1 store.
+    const perLocation = (locs || []).length > 1 ? buildPerLocationRows(ds, fobRows, locs, range, opportunity) : [];
+    return { ...built, perLocation, rangeLabel: rLabel, ytdLabel: rangeLabel('ytd', ytd, range.e), annualFactor: annualFactor(range), cascade: cascadeOf(cascade) };
   }, [ds, fobRows, locs, range, ytd, period, priorItems, level, scopeLabel, rLabel, cascade]);
 
   const addAction = useCallback((a) => {
@@ -236,6 +238,8 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
             h(OppSection, { page }),
             // Current state grid — ordered by the cascade level's focus priority
             h(StateGrid, { rows: orderByFocus(page.currentState, page.cascade?.priority), rangeLabel: page.rangeLabel, ytdLabel: page.ytdLabel }),
+            // Per-location breakdown — the roll-up's stores listed individually (Notes 33 B#10)
+            page.perLocation && page.perLocation.length ? h(PerLocationTable, { rows: page.perLocation }) : null,
             // Follow-ups
             priorItems.length ? h(FollowUps, { items: page.followUps }) : null,
             // Suggested actions
@@ -306,6 +310,31 @@ function StateGrid({ rows, rangeLabel, ytdLabel }) {
       })));
 }
 
+function PerLocationTable({ rows }) {
+  const th = (t, extra) => h('th', { style: { textAlign: extra?.r ? 'right' : 'left', padding: '4px 8px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text2)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--bdr)' } }, t);
+  // color a value vs its target (lowerBetter for cost/speed metrics)
+  const cell = (v, fmt, tgt, lowerBetter) => {
+    const bad = v != null && tgt != null && (lowerBetter ? v > tgt : v < tgt);
+    return h('td', { style: { textAlign: 'right', padding: '4px 8px', fontSize: 11.5, whiteSpace: 'nowrap', color: v == null ? 'var(--text3,var(--text2))' : bad ? '#ef4444' : 'var(--text)' } }, valFmt(v, fmt));
+  };
+  return div({},
+    div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', margin: '2px 0 5px' } }, `By location (${rows.length}) — worst sales vs LY first`),
+    div({ style: { overflowX: 'auto', border: '1px solid var(--bdr)', borderRadius: 8 } },
+      h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 620 } },
+        h('thead', null, h('tr', null,
+          th('Store'), th('Net Sales', { r: 1 }), th('vs LY', { r: 1 }), th('FOB %', { r: 1 }), th('Labor %', { r: 1 }), th('OEPE', { r: 1 }), th('R2P', { r: 1 }), th('Opp $/wk', { r: 1 }))),
+        h('tbody', null, rows.map(r => h('tr', { key: r.loc, style: { borderTop: '.5px solid var(--bdr)' } },
+          h('td', { style: { padding: '4px 8px', fontSize: 11.5, color: 'var(--text)', whiteSpace: 'nowrap' } }, nm(r.loc)),
+          cell(r.netSales, '$'),
+          h('td', { style: { textAlign: 'right', padding: '4px 8px', fontSize: 11.5, whiteSpace: 'nowrap', color: r.salesVsLYPct == null ? 'var(--text3,var(--text2))' : r.salesVsLYPct < 0 ? '#ef4444' : '#10b981' } },
+            r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'),
+          cell(r.fobPct, '%', r.fobTarget, true),
+          cell(r.laborPct, '%', r.laborTarget, true),
+          cell(r.oepe, 's', r.oepeTarget, true),
+          cell(r.r2p, 's', r.r2pTarget, true),
+          h('td', { style: { textAlign: 'right', padding: '4px 8px', fontSize: 11.5, whiteSpace: 'nowrap', color: 'var(--text2)' } }, r.oppWk ? f$(r.oppWk) : '—')))))));
+}
+
 function FollowUps({ items }) {
   return div({},
     div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 5 } }, 'Follow-up — did last week move?'),
@@ -363,6 +392,10 @@ function printOnePager(page, period, narrative, actions) {
     <h2>Opportunity on the table (vs target)</h2>
     <div class="opp">${esc(f$(page.opportunityTotal || 0))} over the ${esc(rLabel)} — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
     <h2>Current state — ${esc(rLabel)} (${esc(ytdLabel)} alongside)</h2><table><tr>${state}</tr></table>
+    ${page.perLocation && page.perLocation.length ? `<h2>By location (${page.perLocation.length}) — worst sales vs LY first</h2><table>
+      <tr><td><b>Store</b></td><td><b>Net Sales</b></td><td><b>vs LY</b></td><td><b>FOB %</b></td><td><b>Labor %</b></td><td><b>OEPE</b></td><td><b>R2P</b></td><td><b>Opp $/wk</b></td></tr>
+      ${page.perLocation.map(r => `<tr><td style="text-align:left">${esc(nm(r.loc))}</td><td>${esc(f$(r.netSales))}</td><td>${r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'}</td><td>${esc(valFmt(r.fobPct, '%'))}</td><td>${esc(valFmt(r.laborPct, '%'))}</td><td>${esc(valFmt(r.oepe, 's'))}</td><td>${esc(valFmt(r.r2p, 's'))}</td><td>${r.oppWk ? esc(f$(r.oppWk)) : '—'}</td></tr>`).join('')}
+    </table>` : ''}
     ${foll ? `<h2>Follow-up</h2><ul>${foll}</ul>` : ''}
     ${acts ? `<h2>Action plan</h2><ul>${acts}</ul>` : ''}
     ${narrative ? `<h2>Notes</h2><div>${esc(narrative)}</div>` : ''}

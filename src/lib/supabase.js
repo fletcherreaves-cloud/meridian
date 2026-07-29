@@ -1595,7 +1595,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
   const data = await fetchAll((from, to) => supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
+    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
     .gte('dt', cutoffStr)
     .order('dt')
     .range(from, to));
@@ -1606,7 +1606,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     if (!map[key]) map[key] = {
       loc, date: new Date(r.dt + 'T00:00:00'),
       sales: 0, allNetSales: 0, gc: 0, txns: 0,
-      _dtTotal: 0, _dtCars: 0,
+      _dtTotal: 0, _dtStore: 0, _dtCars: 0,
       _fcServe: 0, _fcDrawer: 0, _fcCnt: 0,
       lySales: 0, lyGc: 0,
       actHrs: 0, needHrs: 0,
@@ -1617,6 +1617,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key].gc           += (r.healthy_count  || 0) + (r.unhealthy_count || 0);
     map[key].txns         += r.transactions    || 0;   // true transaction count (for TPPH)
     map[key]._dtTotal     += r.dt_untilserve   || 0;
+    map[key]._dtStore     += r.dt_untilstore   || 0;
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
     // Front-counter timings for R2P (Receipt to Print). Sum the raw ms + counts
     // across hour slots, then count-weight below.
@@ -1645,6 +1646,11 @@ export async function loadQsrActSummary(daysBack = 35) {
     // total) — NOT R2P; subtracting drawer-close time yields the receipt-to-print interval.
     // Cloud-fresh (DAR pulls run ~8a/10a/2p CT), so current-day One-Pager R2P populates.
     r2p: r._fcCnt > 0 ? (r._fcServe - r._fcDrawer) / r._fcCnt / 1000 : null,
+    // OEPE (Order-to-Exit Peak Efficiency, sec) = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt ÷ 1000,
+    // count-weighted across the day. Reconciled EXACTLY to the DAR report's OEPE column (store 3708,
+    // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
+    // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
+    oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));
