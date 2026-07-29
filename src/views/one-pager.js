@@ -56,7 +56,7 @@ function rangeLabel(mode, range, anchor) {
 // SCOPE. Each level carries a FOCUS that actually re-emphasizes the page: a headline of
 // what this conversation is about, the metric order for the current-state grid (what the
 // recipient is accountable for, first), and talking points. DRAFT — owner to refine.
-const CASCADE_LEVELS = [
+export const CASCADE_LEVELS = [
   { id: 'o_d', tag: 'O›D', label: 'Owner → DO',
     focus: 'District P&L + PACE outcomes — the number the business is graded on.',
     priority: ['sales', 'fobPct', 'laborPct', 'oepe', 'r2p', 'tpph'],
@@ -70,7 +70,7 @@ const CASCADE_LEVELS = [
     priority: ['oepe', 'r2p', 'tpph', 'laborPct', 'fobPct', 'sales'],
     talk: 'Tactical: speed of service (OEPE/R2P/KVS), labor %, food waste (FOB), guest counts — what to fix on the next shift.' },
 ];
-const cascadeOf = id => CASCADE_LEVELS.find(c => c.id === id) || CASCADE_LEVELS[0];
+export const cascadeOf = id => CASCADE_LEVELS.find(c => c.id === id) || CASCADE_LEVELS[0];
 // Reorder current-state rows by a cascade level's priority (unknown keys keep their order, appended).
 function orderByFocus(rows, priority) {
   const idx = k => { const i = (priority || []).indexOf(k); return i === -1 ? 999 : i; };
@@ -528,7 +528,7 @@ const REVIEW_FOCUS_BY_LEVEL = {
 // blank:true → a fully-blank, leader-led fillable form (the priority): generic title, no
 // live actuals, no pre-listed names, no level-specific data sections. Filled mode keeps
 // the level-aware framing + auto actuals. Structure is shared so both stay in sync.
-function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = false } = {}) {
+export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = false } = {}) {
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || '';
   const casc = page.cascade || {};
@@ -670,7 +670,7 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
 }
 
 // Print the Weekly Review (→ PDF via the browser dialog).
-function printWeeklyReview(page, opts) {
+export function printWeeklyReview(page, opts) {
   const w = window.open('', '_blank', 'width=850,height=1100'); if (!w || !page) return;
   w.document.write(weeklyReviewHtml(page, opts));
   w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
@@ -679,7 +679,7 @@ function printWeeklyReview(page, opts) {
 // Download an HTML doc as a Word-openable .doc (Word reads HTML-based .doc natively).
 // The BOM + msword MIME make Word open it directly; the user edits in Word and can send
 // it back for us to fold changes into the template.
-function downloadDoc(filename, html) {
+export function downloadDoc(filename, html) {
   try {
     const blob = new Blob(['﻿' + html], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
