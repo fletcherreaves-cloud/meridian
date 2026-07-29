@@ -6654,11 +6654,20 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   },[dateRange,ds?.laborRows?.length]);
 
   const labInRange = React.useMemo(()=>{
-    const manual=(ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
-    if(manual.length>0) return manual;
-    // No manual Operations Report uploads — fall back to auto-synced QSRSoft daily totals.
-    // qsrActSummaryRows has the same {loc, date, sales, allNetSales, gc, salesVsLYPct} shape.
-    return (ds?.qsrActSummaryRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
+    // FRESHEST-PER-DAY merge, not all-or-nothing (Notes: Jul-2026 "reverts to old date" bug).
+    // The old code used ONLY manual rows whenever ANY manual row fell in the range — so a
+    // range spanning the last manual upload (e.g. MTD) dropped every auto day AFTER it, and
+    // on load the tile flipped from current (auto, before laborRows arrived) back to the last
+    // manual date once laborRows loaded. Now: auto fills every day, manual overrides the same
+    // day it covers (an intentional upload), so recent days always show from the auto stream.
+    const inR=r=>r&&r.date&&inRange(r.date,effectiveDateRange);
+    const manual=(ds?.laborRows||[]).filter(inR);
+    const auto=(ds?.qsrActSummaryRows||[]).filter(inR);
+    const k=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+    const m=new Map();
+    for(const r of auto)   m.set(k(r),r);   // auto/DAR fills every day (incl. the recent ones)
+    for(const r of manual) m.set(k(r),r);   // a manual upload intentionally overrides its own day
+    return [...m.values()];
   },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
 
   // True when labInRange is sourced from QSRSoft auto-sync rather than manual upload
@@ -7692,14 +7701,18 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',
         letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0}},'Loaded Data'),
       ...(()=>{
+        // Each category shows the FRESHEST across its manual AND auto/emailed streams
+        // (Notes: Jul-2026). Manual uploads legitimately stop when the owner stops
+        // uploading; anchoring the strip to manual alone made it read weeks-stale even
+        // though the auto DAR/Glimpse/Ledger/qsr_fob streams were current. Union the
+        // relevant streams so the date range reflects reality (auto/emailed-first rule).
+        const _u=(...arrs)=>arrs.flatMap(a=>a||[]);
         const sources=[
-          ds?.laborRows?.length
-            ? {name:'Sales/Labor',rows:ds?.laborRows,icon:'💰'}
-            : {name:'QSRSoft Auto',rows:ds?.qsrActSummaryRows,icon:'⚡'},
-          {name:'Scheduling',rows:ds?.schedRows,icon:'📅'},
-          {name:'Service',rows:ds?.opsRows,icon:'⚡'},
-          {name:'Controls',rows:ds?.ctrlRows,icon:'🔒'},
-          {name:'FOB',rows:ds?.fobRows,icon:'🍟'},
+          {name:'Sales',      rows:_u(ds?.qsrActSummaryRows,ds?.salesLedgerRows,ds?.laborRows),icon:'💰'},
+          {name:'Scheduling', rows:ds?.schedRows,icon:'📅'},
+          {name:'Service',    rows:_u(ds?.glimpseRows,ds?.qsrActSummaryRows,ds?.opsRows),icon:'⚡'},
+          {name:'Controls',   rows:_u(ds?.glimpseRows,ds?.cashRows,ds?.ctrlRows),icon:'🔒'},
+          {name:'FOB',        rows:_u(ds?.qsrFobRows,ds?.fobRows),icon:'🍟'},
         ];
         return sources.map(src=>{
           const rows=src.rows||[];
