@@ -37,8 +37,12 @@ export const METRIC_SOURCES = {
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
   r2p:       { mode: 'pos', srcs: [['opsRows', 'r2p'], ['qsrActSummaryRows', 'r2p']] },
-  // Labor — Controls, else the Labor rows, else Daily Glimpse's labor %.
-  laborPct:  { mode: 'pos', srcs: [['ctrlRows', 'laborPct'], ['laborRows', 'laborPct'], ['glimpseRows', 'laborPct']] },
+  // Labor — PUNCHED Labor % for ALL locations (Notes 35): Controls (punched) → auto Daily
+  // Glimpse (punched, cloud-fresh) → manual Labor rows (now punched-only too). Glimpse is
+  // ordered ahead of the manual laborRows so the auto punched % wins per the auto-first rule
+  // and no stale manual crew value can slip in. All three sources now emit a punched %.
+  // See memory/project-labor-pct-punched-vs-crew.md + data-sourcing-standard.md.
+  laborPct:  { mode: 'pos', srcs: [['ctrlRows', 'laborPct'], ['glimpseRows', 'laborPct'], ['laborRows', 'laborPct']] },
   tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']] },
   otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).

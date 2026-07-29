@@ -303,15 +303,24 @@ function parseLaborData(wb,sheet,defaultDateOverride){
     const dt=C.date>=0?parseXLDate(r[C.date]):_summaryDate;if(!dt)continue;
     const flrNeed=parseNum(r[C.flrNeed]);
     const flrSch=parseNum(r[C.flrSch]);
-    const laborPctVal=parsePct(r[C.labor])||parsePct(r[C.crewLaborPct])||parsePct(r[C.totalLaborPct]);
+    // Labor % standardized on PUNCHED for ALL locations (Notes 35). Crew Labor % includes
+    // Salaried Manager Labor $ where configured (FL) → reads higher than OK; keeping it as the
+    // headline mixed the two markets. Headline laborPct = Punched Labor % only; crew/total are
+    // exposed separately for transparency + a future Total-Labor view. A row with no punched
+    // value now yields null (resolver falls through to the auto Daily-Glimpse punched %) rather
+    // than silently substituting crew. See memory/project-labor-pct-punched-vs-crew.md.
+    const punchLaborPct=parsePct(r[C.labor]);
+    const crewLaborPct=parsePct(r[C.crewLaborPct]);
+    const totalLaborPct=parsePct(r[C.totalLaborPct]);
     rows.push({loc,date:dt,isPeriodSummary:!!_summaryDate,
+      punchLaborPct,crewLaborPct,totalLaborPct,
       sales:parseNum(r[C.sales])||parseNum(r[C.allNetSales]),
       allNetSales:parseNum(r[C.allNetSales]),
       projSales:parseNum(r[C.proj]),
       gc:parseNum(r[C.gc]),actualGC:parseNum(r[C.actualGC]),
       oppCostPct:parsePct(r[C.opp]),oppCostDollar:parseNum(r[C.oppD]),
       avgCheck:parseNum(r[C.avgChk]),tpph:parseNum(r[C.tpph]),spph:parseNum(r[C.spph]),
-      actVsNeed:parseNum(r[C.avn]),laborPct:laborPctVal,
+      actVsNeed:parseNum(r[C.avn]),laborPct:punchLaborPct,
       otHrs:parseNum(r[C.otHrs]),otDollar:parseNum(r[C.otD]),
       actHrs:parseNum(r[C.actHrs]),avgRate:parseNum(r[C.avgRate]),
       salaryMgrHrs:parseNum(r[C.salMgr]),

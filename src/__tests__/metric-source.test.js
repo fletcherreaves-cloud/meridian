@@ -18,11 +18,21 @@ describe('metric-source resolver (auto-first)', () => {
     expect(metricDaily(ds, '1', d('2026-06-03'), 'oepe')).toBeNull();
   });
 
-  it('labor% falls through ctrl → labor → glimpse', () => {
-    const ds = {
-      glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }],
-    };
+  it('labor% resolves ctrl → glimpse → labor (auto punched % preferred over manual)', () => {
+    // Notes 35: labor% is PUNCHED for all locs; the auto Daily-Glimpse punched % is ordered
+    // ahead of the manual Labor rows so a stale manual value can't override the cloud-fresh one.
+    const ds = { glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }] };
     expect(metricDaily(ds, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.24, 5);
+    // Glimpse (auto) beats laborRows (manual) for the same day:
+    const ds2 = {
+      laborRows:   [{ loc: '7', date: d('2026-06-05'), laborPct: 0.31 }],  // manual — should NOT win
+      glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }],  // auto punched — wins
+    };
+    expect(metricDaily(ds2, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.24, 5);
+    // Controls (also punched) still wins first when present:
+    const ds3 = { ctrlRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.22 }],
+                  glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }] };
+    expect(metricDaily(ds3, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.22, 5);
   });
 
   it("'any' mode keeps 0 / negative values (cash O/S)", () => {

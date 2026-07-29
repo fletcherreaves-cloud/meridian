@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.582';
+const MERIDIAN_VERSION    = '4.583';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.583', date:'2026-07-29', changes:[
+    'Labor % is now PUNCHED labor for every location, so Florida and Oklahoma compare like-for-like. Background: "Crew Labor %" includes Salaried Manager Labor $ where a store is configured that way (FL is; OK isn\'t), which made FL read higher than OK for the same real performance. The headline Labor % now always uses Punched Labor %, sourced auto-first from Controls → the cloud-fresh Daily Glimpse → manual labor uploads. Crew Labor % and Total Labor % are still available separately (and the Store Dashboard\'s Crew Labor % tile, which was silently blank, now populates).',
+  ]},
   {version:'4.582', date:'2026-07-29', changes:[
     'Fix: the One-Pager "opportunity on the table" $ was wildly inflated (some stores showed millions/week). Root cause — current guest counts were read from a near-empty kitchen signal instead of real transactions, which blew up average check. Guest counts now use real transactions everywhere, and the guest/traffic pillar is reframed as Sales-to-Plan: the $ a store is running behind its own QSRSoft projected product sales — a bounded, sane figure that can\'t explode. Fixes the guest-count-vs-last-year actuals at the same time.',
     'Weekly Business Review form — auto-fill + polish: the Period now shows the exact calendar window (e.g. Jul 21 – Jul 27, 2026); the scorecard pre-fills the group\'s rolled-up Targets and auto-checks On-Track (Yes/No) from actual-vs-target; Guest Count vs LY, Voice OSAT and Voice B2B now populate their Actuals from live data; the signature line is labelled with the recipient\'s job title (DO / Supervisor / GM) instead of a generic "Leader"; a single-store review shows both the restaurant # AND its name; "Net Sales" is renamed "Product Sales" throughout; and a compact Discussion Checklist (People Development/Training, Promotions, Controls/Cash, Cleanliness Walkthrough, Other — each Y/N) was added to every variant. Still prints on one page.',
