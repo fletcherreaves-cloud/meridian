@@ -7720,11 +7720,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             color:'rgba(255,255,255,.25)',padding:'2px 8px',borderRadius:3,
             background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)'}},
             src.icon+' '+src.name+': Not loaded');
-          const dates=rows.map(r=>r.date).filter(Boolean);
-          const minD=dates.length?new Date(Math.min(...dates)):null;
-          const maxD=dates.length?new Date(Math.max(...dates)):null;
+          // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
+          // Parse dates to ms (skip unparseable → no "Invalid Date"); normalize loc so a
+          // padded "0003708" and "3708" don't double-count the store list.
+          const ms=rows.map(r=>{const d=r?.date instanceof Date?r.date:(r?.date?new Date(r.date):null);return d&&!isNaN(d.getTime())?d.getTime():null;}).filter(v=>v!=null);
+          const minD=ms.length?new Date(Math.min(...ms)):null;
+          const maxD=ms.length?new Date(Math.max(...ms)):null;
           const fmt=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'?';
-          const uniqueLocs=[...new Set(rows.map(r=>r.loc))].length;
+          const uniqueLocs=new Set(rows.map(r=>{const n=parseInt(r.loc,10);return isNaN(n)?String(r.loc):String(n);})).size;
           return div({key:src.name,style:{fontSize:'9px',
             color:'var(--text)',padding:'2px 8px',borderRadius:3,
             background:'rgba(16,185,129,.08)',border:'.5px solid rgba(16,185,129,.2)'}},
