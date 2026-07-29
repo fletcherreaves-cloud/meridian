@@ -1619,7 +1619,10 @@ export async function loadQsrActSummary(daysBack = 35) {
     };
     map[key].sales        += r.product_sales   || 0;
     map[key].allNetSales  += r.product_sales   || 0;
-    map[key].gc           += (r.healthy_count  || 0) + (r.unhealthy_count || 0);
+    // GC = real transaction count (matches ly_transactions used for LY). healthy+unhealthy is
+    // a near-empty KVS order-health count (~1/day) — sourcing GC from it made avg check
+    // (sales ÷ gc) explode and GC-vs-LY read ~-100% (Notes 35: the $21M/wk opportunity bug).
+    map[key].gc           += r.transactions    || 0;
     map[key].txns         += r.transactions    || 0;   // true transaction count (for TPPH)
     map[key]._dtTotal     += r.dt_untilserve   || 0;
     map[key]._dtStore     += r.dt_untilstore   || 0;

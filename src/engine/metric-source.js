@@ -21,9 +21,11 @@ export const METRIC_SOURCES = {
   // Sales / guests — sales & gc also flow through vs-ly.js for the matched-day comparison.
   sales:     { mode: 'pos', srcs: [['laborRows', 'sales'], ['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales']] },
   gc:        { mode: 'pos', srcs: [['laborRows', 'gc'], ['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc']] },
-  // Projected (plan) guests per day — QSRSoft's own forecast (DAR proj_total_transactions).
-  // The "what the store should deliver" baseline for pacing the GC opportunity vs plan.
+  // Projected (plan) guests / sales per day — QSRSoft's own forecast (DAR proj_total_transactions
+  // / proj_sales_dollars). The "what the store should deliver" baseline. projSales drives the
+  // One-Pager GC/sales-to-plan opportunity ($ shortfall vs plan — bounded + sane).
   projGC:    { mode: 'pos', srcs: [['qsrActSummaryRows', 'projGC']] },
+  projSales: { mode: 'pos', srcs: [['qsrActSummaryRows', 'projSales']] },
   // Speed of service — manual Ops Report, else emailed Daily Glimpse.
   // OEPE — manual Ops Report, then emailed Daily Glimpse, then the cloud-fresh DAR-derived
   // OEPE = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt (reconciled exactly to the DAR

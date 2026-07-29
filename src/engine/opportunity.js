@@ -60,11 +60,22 @@ function storePillars(store, bench) {
   const food$ = (fobA != null && fobB != null && prodSales != null)
     ? pos0(fobA - fobB) * prodSales : 0;
 
-  // GC: guest-count shortfall × avg check × days.
-  const gcA = num(store.gcPerDayActual);
-  const gcB = num(bench.gcPerDay);
-  const gc$ = (gcA != null && gcB != null && avgCheck != null && days > 0)
-    ? pos0(gcB - gcA) * avgCheck * days : 0;
+  // GC / traffic opportunity = SALES-TO-PLAN shortfall (Notes 35): pos0(projected prod
+  // sales/day − actual sales/day) × days. Tied directly to Projected Prod Sales, so it's a
+  // bounded, sane $ (a store behind plan by ~$X/day) — NO avg-check multiplication, which is
+  // what let it explode to millions/week. Falls back to the old GC-gap × avg-check form only
+  // when no projected-sales figure exists (non-One-Pager callers).
+  const projSD = num(store.projSalesPerDay), salesD = num(store.salesPerDay);
+  let gc$, gcDriver;
+  if (projSD != null && salesD != null && days > 0) {
+    const gapDay = pos0(projSD - salesD);
+    gc$ = gapDay * days;
+    gcDriver = { mode: 'sales', actual: salesD, bench: projSD, gapPerDay: gapDay, days };
+  } else {
+    const gcA = num(store.gcPerDayActual), gcB = num(bench.gcPerDay);
+    gc$ = (gcA != null && gcB != null && avgCheck != null && days > 0) ? pos0(gcB - gcA) * avgCheck * days : 0;
+    gcDriver = { mode: 'gc', actual: gcA, bench: gcB, gapPerDay: (gcA != null && gcB != null) ? pos0(gcB - gcA) : null, avgCheck, days };
+  }
 
   return {
     loc: store.loc,
@@ -74,7 +85,7 @@ function storePillars(store, bench) {
     drivers: {
       labor: { actual: laborA, bench: laborB, gapPts: (laborA != null && laborB != null) ? pos0(laborA - laborB) : null, base: netSales },
       food:  { actual: fobA,  bench: fobB,  gapPts: (fobA != null && fobB != null) ? pos0(fobA - fobB) : null, base: prodSales },
-      gc:    { actual: gcA,   bench: gcB,   gapPerDay: (gcA != null && gcB != null) ? pos0(gcB - gcA) : null, avgCheck, days },
+      gc:    gcDriver,
     },
   };
 }

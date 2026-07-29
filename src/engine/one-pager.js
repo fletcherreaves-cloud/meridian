@@ -41,7 +41,7 @@ export function suggestActions(opportunity = {}, attention = [], { max = 6, minD
     const pillars = [
       { key: 'laborPct', $: p.labor$, d: p.drivers?.labor, verb: 'Tighten labor' },
       { key: 'fobPct',   $: p.food$,  d: p.drivers?.food,  verb: 'Attack food cost' },
-      { key: 'gcPerDay', $: p.gc$,    d: p.drivers?.gc,    verb: 'Grow guest counts' },
+      { key: 'gcPerDay', $: p.gc$,    d: p.drivers?.gc,    verb: (p.drivers?.gc?.mode === 'sales' ? 'Pace to sales plan' : 'Grow guest counts') },
     ].filter(x => (x.$ || 0) >= minDollar).sort((a, b) => b.$ - a.$);
     if (!pillars.length) continue;
     const top = pillars[0];
@@ -52,7 +52,9 @@ export function suggestActions(opportunity = {}, attention = [], { max = 6, minD
     const days = num(p.days) || num(top.d?.days) || 0;
     const wk$ = days > 0 ? top.$ * 7 / days : top.$;
     const detail = top.key === 'gcPerDay'
-      ? `${nm} at ${Math.round(top.d?.actual || 0)} GC/day vs plan ${Math.round(top.d?.bench || 0)} — about ${fmt$(wk$)}/week (${fmt$(top.$)} over the ${rangeLabel}) to pace to projection.`
+      ? (top.d?.mode === 'sales'
+          ? `${nm} running ${fmt$(top.d?.actual || 0)}/day vs plan ${fmt$(top.d?.bench || 0)} — about ${fmt$(wk$)}/week behind projected sales (${fmt$(top.$)} over the ${rangeLabel}).`
+          : `${nm} at ${Math.round(top.d?.actual || 0)} GC/day vs plan ${Math.round(top.d?.bench || 0)} — about ${fmt$(wk$)}/week (${fmt$(top.$)} over the ${rangeLabel}) to pace to projection.`)
       : `${nm} running ${fmtPct(top.d?.actual)} vs ${fmtPct(top.d?.bench)} target — about ${fmt$(wk$)}/week recoverable (${fmt$(top.$)} over the ${rangeLabel}).`;
     add({ loc: p.loc, metricKey: top.key, title: `${top.verb} at ${nm}`, detail,
           dollar: top.$, weeklyDollar: wk$, baselineValue: top.d?.actual, targetValue: top.d?.bench, source: 'opportunity' });

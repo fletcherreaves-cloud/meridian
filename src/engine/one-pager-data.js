@@ -58,7 +58,8 @@ export function buildOnePagerInputs(ds, fobRows, locs, range) {
     const t = DEFAULT_TARGETS[L] || {};
     const sales = sumSeries(ds, loc, range, 'sales');
     const gc = sumSeries(ds, loc, range, 'gc');
-    const projGc = sumSeries(ds, loc, range, 'projGC');  // QSRSoft plan guests (pace baseline)
+    const projGc = sumSeries(ds, loc, range, 'projGC');     // QSRSoft plan guests (pace baseline)
+    const projSales = sumSeries(ds, loc, range, 'projSales'); // QSRSoft plan product sales $
     const f = fob[L] || {};
     const days = sales.days || gc.days || 0;
     const netSales = sales.sum || 0;                     // window sales only — no monthly fallback
@@ -75,10 +76,13 @@ export function buildOnePagerInputs(ds, fobRows, locs, range) {
       fobPctActual: f.fobPct ?? null,
       fobPctTarget: t.tFOBTarget ?? null,
       gcPerDayActual: days ? gc.sum / days : null,
-      // Pace-to-projection: expected GC/day from QSRSoft's own plan over the matched days
-      // (only days that actually have a projection). Null → GC opportunity is excluded for
-      // this store (no best-in-class fallback) so a down sales trend can't inflate it.
+      // Pace-to-projection: expected GC/day from QSRSoft's own plan over the matched days.
       gcPerDayTarget: projGc.days ? projGc.sum / projGc.days : null,
+      // Sales-to-plan (the GC/traffic opportunity, tied to Projected Prod Sales — Notes 35):
+      // per-DAY figures so different day-coverage between actual & plan can't skew the gap.
+      // gc$ = pos0(projSales/day − actualSales/day) × days — a bounded, sane $ shortfall vs plan.
+      salesPerDay:     days ? netSales / days : null,
+      projSalesPerDay: projSales.days ? projSales.sum / projSales.days : null,
     };
   });
 }

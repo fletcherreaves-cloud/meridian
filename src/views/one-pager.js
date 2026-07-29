@@ -298,7 +298,7 @@ function OppSection({ page }) {
       div({ style: { fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text)' } }, '💰 Opportunity on the Table (vs target)'),
       div({ style: { fontSize: 11, color: 'var(--text2)' } }, `$ are for the ${rLabel} · ~${f$(annual)}/yr annualized`)),
     div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: top.length ? 10 : 0 } },
-      chip(rLabel, total, 'total recoverable'), chip('Labor', d.labor$, 'excess labor $'), chip('Food (FOB)', d.food$, 'excess food $'), chip('Guest count', d.gc$, 'vs plan (pace to projection)')),
+      chip(rLabel, total, 'total recoverable'), chip('Labor', d.labor$, 'excess labor $'), chip('Food (FOB)', d.food$, 'excess food $'), chip('Sales to plan', d.gc$, 'behind projected prod sales')),
     top.length ? div({},
       div({ style: { display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text2)', marginBottom: 4 } },
         span(null, 'Biggest $ by store'),
