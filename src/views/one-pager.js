@@ -550,13 +550,14 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
   const ONTRACK = '[&nbsp;&nbsp;] Yes &nbsp;&nbsp; [&nbsp;&nbsp;] No';
   // Scorecard: Metric | Target (blank) | Actual (blank / auto in filled) | On-Track? (Y/N)
   const scRows = [
-    ['Gross Sales',              actual('sales', '$')],
+    ['Product Sales',            actual('sales', '$')],
     ['Guest Count (GC) vs LY',   actual('gcVsLY', '%')],
     ['Drive-Thru OEPE',          actual('oepe', 's')],
     ['R2P (Front Counter)',      actual('r2p', 's')],
     ['Labor Cost %',             actual('laborPct', '%')],
     ['Food Over Base %',         actual('fobPct', '%')],
-    ['VOC (Satisfaction)',       actual('osat', '%')],
+    ['Voice OSAT',               actual('osat', '%')],
+    ['Voice B2B (Accuracy)',     actual('accB2B', '%')],
   ];
   const scBody = scRows.map(r => `<tr>
     <td style="text-align:left"><b>${esc(r[0])}</b></td>
