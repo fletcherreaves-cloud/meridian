@@ -635,6 +635,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     try { await saveEomCountStatus([next]); } finally { setSaving(''); }
   }, [statusMap, period]);
 
+  // Freshness: latest eom_count_status import time (updated_at) = when the count pull last wrote.
+  const eomImportedAt = useMemo(() => {
+    let m = 0;
+    for (const loc in statusMap) { const u = statusMap[loc] && statusMap[loc].updatedAt; if (u) { const t = new Date(u).getTime(); if (t > m) m = t; } }
+    return m ? new Date(m) : null;
+  }, [statusMap]);
+
   // Scoreboard buckets — a store moves left→right as you work it (owner EOM checklist).
   const scoreboard = useMemo(() => {
     const tally = { notstarted: 0, counting: 0, ready: 0, reviewed: 0, comms: 0 };
@@ -748,6 +755,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             ? `No EOM data for ${period} yet. Variance / waste / transfers pull daily; On-Hand count progress fills in the last 3 days of the month.`
             : 'No stores match this filter — try All.')
       : mode === 'scoreboard' ? div(null,
+          // freshness — when the count data was last imported (on-hand pull writes eom_count_status)
+          div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '8px' } },
+            eomImportedAt
+              ? `Count data imported ${eomImportedAt.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · On-Hand pull runs ~8a/10a/2p CT`
+              : 'Count data populates in the last 3 days of the month (On-Hand pull ~8a/10a/2p CT).'),
           // tally band
           div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' } },
             [['notstarted', 'Not started'], ['counting', 'Counting'], ['ready', 'Ready for you'], ['reviewed', 'Reviewed'], ['comms', 'Comms sent']].map(([k, label]) => {

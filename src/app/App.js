@@ -2538,6 +2538,10 @@ function App() {
             setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');
           }
           else if(modal==='settings')setShowSettings&&setShowSettings(true);
+          else if(modal==='eom-dashboard')perm('analytics.district')&&setShowEOMDash(true);
+          else if(modal==='fob-analysis')setShowFOB&&setShowFOB(true);
+          else if(modal==='labor-analytics'){setSchedTab&&setSchedTab('analytics');setShowSchedHub&&setShowSchedHub(true);}
+          else if(modal==='fcst-accuracy')setShowFcstAccuracy&&setShowFcstAccuracy(true);
         }}),
       view==='district'&&!selStore&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
       view==='store'&&selStore&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),

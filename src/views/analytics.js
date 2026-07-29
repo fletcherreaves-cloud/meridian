@@ -6487,13 +6487,16 @@ function EOMScoreboardTile({ onOpenModal }) {
   const tally = { notstarted: 0, counting: 0, ready: 0, reviewed: 0, comms: 0 };
   for (const r of (rows || [])) tally[bucketOf(r)]++;
   const readyN = tally.ready;
+  // Freshness: latest eom_count_status import (updated_at) across stores = last count pull.
+  const freshTs = (rows || []).reduce((m, r) => Math.max(m, r.updatedAt ? new Date(r.updatedAt).getTime() : 0), 0);
+  const freshLbl = freshTs ? new Date(freshTs).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
 
   const card = (...kids) => h('div', { onClick: () => onOpenModal && onOpenModal('eom-dashboard'), style: { background: 'var(--surf2,#151821)', border: '.5px solid ' + (readyN > 0 ? 'rgba(245,188,0,.5)' : 'var(--bdr,#2a2f3a)'), borderRadius: 12, overflow: 'hidden', cursor: 'pointer' }, title: 'Open the EOM Dashboard scoreboard' }, ...kids);
   const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
     h('span', { style: { fontSize: 15 } }, '📦'),
     h('div', { style: { flex: 1 } },
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'EOM Count Progress'),
-      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Last 3 days of the month · tap to open the scoreboard')),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Last 3 days · ' + (freshLbl ? 'imported ' + freshLbl : 'tap to open the scoreboard'))),
     readyN > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: '#111', background: '#f5bc00', borderRadius: 10, padding: '2px 8px' } }, readyN + ' ready') : null);
   if (rows === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
   if (!rows.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'Counts populate as stores work through the last-3-day window (the On-Hand pull runs ~8a/10a/2p CT).'));
