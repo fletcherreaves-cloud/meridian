@@ -259,6 +259,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
   return {
     store, storeName, period,
     findings,
+    variance: data.variance || [],          // full per-item list, for the tiered report
     ran, pending,
     totalDollars: findings.reduce((s, f) => s + (f.dollars || 0), 0),
     actionItems,
@@ -268,19 +269,73 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
   };
 }
 
-// A human-readable report string (owner downloads/attaches to email to start).
-export function formatDiagnosisReport(result) {
-  const lines = [`EOM Food-Cost Diagnosis — ${result.storeName || result.store} · ${result.period}`, ''];
-  if (!result.findings.length) lines.push('No findings surfaced.');
-  for (const f of result.findings) {
-    const wrin = f.data?.wrin ? `  ·  WRIN ${f.data.wrin}` : '';
-    lines.push(`• [${f.severityWord.toUpperCase()}] ${f.title}${wrin}`);
-    lines.push(`    ${f.detail}${f.dollars ? `  (~$${Math.round(f.dollars)})` : ''}`);
-    f.links.forEach(l => lines.push(`    ↳ ${l.note || l.type}`));
+// Full-coverage, tiered variance report (markdown) — every item ≥ ±$50, ranked, with a
+// tiered action plan and Meridian's own cause overlays (yield-band, zero-waste flag,
+// manager attribution, and recount-recoverability: does recounting NOW still recover it).
+export function formatDiagnosisReport(result, { threshold = 50 } = {}) {
+  const V = (result.variance || []).filter(v => Math.abs(v.dolDiff || 0) >= threshold)
+    .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0));
+  const findings = result.findings || [];
+  // Per-WRIN cause overlays from the findings.
+  const yieldByWrin = {}, recountByWrin = {}, mgrByWrin = {};
+  for (const f of findings) {
+    const w = f.data && f.data.wrin; if (!w) continue;
+    for (const l of (f.links || [])) if (l.type === 'yield-cause' && l.note) yieldByWrin[w] = l.note;
+    if (f.checkId === 'raw-items-timing') {
+      if (f.data.late === true) recountByWrin[w] = 'recount may still recover it';
+      else if (f.data.late === false) recountByWrin[w] = 'early-period count — recount won’t recover it';
+      if (f.data.manager) mgrByWrin[w] = f.data.manager;
+    }
   }
-  if (result.pending.length) {
-    lines.push('', 'Checks awaiting data:');
-    result.pending.forEach(p => lines.push(`  · ${p.label} (${p.reason})`));
+  const money = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
+  const dir = v => (v.dolDiff < 0 ? 'SHORT' : 'OVER');
+  const causeTags = v => {
+    const t = [];
+    if (yieldByWrin[v.wrin]) t.push('yield setting likely off');
+    if (v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01) t.push('zero waste logged — verify');
+    if (recountByWrin[v.wrin]) t.push(recountByWrin[v.wrin]);
+    if (mgrByWrin[v.wrin]) t.push('counted by ' + mgrByWrin[v.wrin]);
+    return t;
+  };
+
+  const shorts = V.filter(v => v.dolDiff < 0), overs = V.filter(v => v.dolDiff >= 0);
+  const net = V.reduce((s, v) => s + (v.dolDiff || 0), 0);
+  const L = [`# FOB Variance Analysis — ${result.storeName || result.store} · ${result.period}`, ''];
+  L.push(`**${V.length} items** exceed ±$${threshold}  ·  **Net variance ${money(net)}**`);
+  L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))})  ·  Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
+
+  if (!V.length) {
+    L.push('_No items exceed the threshold._');
+  } else {
+    L.push('## Full variance detail (≥ ±$' + threshold + ')', '', '| # | Item | WRIN | $ Var | Unit Var | Dir |', '|--:|------|------|------:|--------:|-----|');
+    V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.unitVar) || 0).toFixed(1)} | ${dir(v)} |`));
+    L.push('');
+    const tier = (label, lo, hi) => {
+      const items = V.filter(v => { const a = Math.abs(v.dolDiff); return a >= lo && (hi == null || a < hi); });
+      if (!items.length) return;
+      L.push(`## ${label}`, '');
+      items.forEach(v => {
+        const tags = causeTags(v);
+        L.push(`- **${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}) — ${tags.length ? tags.join('; ') : 'recount + verify waste logging'}`);
+      });
+      L.push('');
+    };
+    tier('🔴 CRITICAL — immediate ( ≥ $200 )', 200, null);
+    tier('🟠 HIGH — within 24h ( $100–$199 )', 100, 200);
+    tier('🟡 MODERATE — within 48–72h ( $50–$99 )', threshold, 100);
   }
-  return lines.join('\n');
+
+  // Systemic patterns (not per-item) + our recount-recoverability rollup.
+  const systemic = findings.filter(f => ['waste-patterns', 'yields', 'incomplete-count', 'fob-components'].includes(f.checkId));
+  const recoverable = V.filter(v => (recountByWrin[v.wrin] || '').startsWith('recount may'));
+  const locked = V.filter(v => (recountByWrin[v.wrin] || '').startsWith('early'));
+  if (systemic.length || recoverable.length || locked.length) {
+    L.push('## 🛠️ Systemic action items', '');
+    systemic.forEach(f => L.push(`- [${f.severityWord.toUpperCase()}] ${f.title} — ${f.detail}`));
+    if (recoverable.length) L.push(`- **${recoverable.length} item(s) still recoverable by recounting now** (variance hit late in the period).`);
+    if (locked.length) L.push(`- ${locked.length} item(s) already cascaded (early-period count) — recount won’t recover; fix the source count going forward.`);
+    L.push('');
+  }
+  if ((result.pending || []).length) L.push('_Checks awaiting data: ' + result.pending.map(p => p.label).join(', ') + '._');
+  return L.join('\n');
 }
