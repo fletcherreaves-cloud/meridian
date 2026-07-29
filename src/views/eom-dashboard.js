@@ -491,8 +491,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         commsRecipient: st.commsRecipient || '',
       };
     });
-    // stores with unfinished counts first, then by name
-    out.sort((a, b) => (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
+    // Counted + counting locations to the TOP (Notes 35) — order by the same scoreboard
+    // bucket priority everywhere (ready→counting→not-started→reviewed→comms), then least-
+    // counted first within a bucket, then name. Surfaces the stores actively in play.
+    out.sort((a, b) => (SB_ORDER[sbBucket(a)] - SB_ORDER[sbBucket(b)]) || (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
     return out;
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData]);
 
