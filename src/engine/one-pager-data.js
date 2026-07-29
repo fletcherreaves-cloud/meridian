@@ -140,6 +140,41 @@ export function buildPerLocationRows(ds, fobRows, locs, range, opp) {
   return rows.sort((a, b) => (a.salesVsLYPct ?? 1e9) - (b.salesVsLYPct ?? 1e9));
 }
 
+// Weekly-Review scorecard actuals that DON'T live in the header current-state grid
+// (Notes 35): GC vs LY, Voice OSAT / Accuracy-B2B (monthly SMG FullScale), KVS time,
+// and the scope's PROJECTED product sales (the Product-Sales "target"). Kept here — the
+// one ds-coupled layer — so weeklyReviewHtml stays presentation-only. Returns fractions
+// for %-metrics (valFmt ×100), seconds for KVS, $ for projSales; null when absent.
+export function buildReviewActuals(ds, locs, range) {
+  const locSet = new Set((locs || []).map(unpad));
+  const gcv = matchedVsLY(ds, locs, range, 'gc');   // matched-day current-vs-LY guest counts
+  // Voice OSAT / B2B — the most recent month present in smgFullscale for the scope,
+  // simple mean across the scope's stores (CSAT %, no natural $ weight).
+  const smg = ds?.smgFullscale || [];
+  let bestY = 0, bestM = 0, bestKey = -1;
+  for (const r of smg) {
+    if (!locSet.has(unpad(r.loc)) || !r.year || !r.month) continue;
+    const k = r.year * 12 + r.month;
+    if (k > bestKey) { bestKey = k; bestY = r.year; bestM = r.month; }
+  }
+  const meanField = (field) => {
+    if (bestKey < 0) return null;
+    const vals = smg.filter(r => locSet.has(unpad(r.loc)) && (r.year * 12 + r.month) === bestKey && r[field] != null && !isNaN(r[field])).map(r => r[field]);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+  // Projected product sales over the window (scope sum) — Product-Sales target.
+  let projSales = 0, hasProj = false;
+  for (const loc of (locs || [])) { const s = sumSeries(ds, loc, range, 'projSales'); if (s.days) { projSales += s.sum; hasProj = true; } }
+  return {
+    gcVsLY: gcv?.pct ?? null,
+    osat: meanField('osatTop2'),
+    accB2B: meanField('accuracyB2B'),
+    kvsPerGc: metricAvg(ds, locs, range, 'kvst'),
+    projSales: hasProj ? projSales : null,
+    smgMonth: bestKey >= 0 ? `${bestY}-${String(bestM).padStart(2, '0')}` : null,
+  };
+}
+
 // Scope-level headline KPIs for the page header grid (dollar-weighted where it matters).
 export function buildCurrentState(ds, fobRows, locs, range) {
   const inputs = buildOnePagerInputs(ds, fobRows, locs, range);
@@ -155,7 +190,7 @@ export function buildCurrentState(ds, fobRows, locs, range) {
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
   };
   return [
-    { key: 'sales',    label: 'Net Sales',  actual: totSales, target: null, fmt: '$' },
+    { key: 'sales',    label: 'Product Sales', actual: totSales, target: null, fmt: '$' },
     { key: 'fobPct',   label: 'FOB %',      actual: totFobProd ? totFob$ / totFobProd : null, target: tgt('tFOBTarget'), fmt: '%', lowerBetter: true },
     { key: 'laborPct', label: 'Labor %',    actual: metricAvg(ds, locs, range, 'laborPct'), target: tgt('tLabor'), fmt: '%', lowerBetter: true },
     { key: 'oepe',     label: 'OEPE',       actual: metricAvg(ds, locs, range, 'oepe'), target: tgt('tOepe'), fmt: 's', lowerBetter: true },

@@ -10,7 +10,7 @@ import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { escapeHtml, f$ } from '../utils/fmt.js';
 import { computeOpportunity, annualize, rankByOpportunity } from '../engine/opportunity.js';
 import { buildOnePager } from '../engine/one-pager.js';
-import { buildOnePagerInputs, buildMetricNow, buildCurrentState, buildPerLocationRows } from '../engine/one-pager-data.js';
+import { buildOnePagerInputs, buildMetricNow, buildCurrentState, buildPerLocationRows, buildReviewActuals } from '../engine/one-pager-data.js';
 import { loadQsrFob, loadActionItems, saveOnePager, saveActionItem, updateActionItem } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -140,7 +140,9 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
     });
     // Per-location breakdown (Notes 33 B#10) — only when the scope spans >1 store.
     const perLocation = (locs || []).length > 1 ? buildPerLocationRows(ds, fobRows, locs, range, opportunity) : [];
-    return { ...built, perLocation, rangeLabel: rLabel, ytdLabel: rangeLabel('ytd', ytd, range.e), annualFactor: annualFactor(range), cascade: cascadeOf(cascade) };
+    // Weekly-Review scorecard actuals not in the header grid (GC vs LY, Voice, KVS, proj sales).
+    const reviewActuals = buildReviewActuals(ds, locs, range);
+    return { ...built, perLocation, reviewActuals, range: { s: range.s, e: range.e }, rangeLabel: rLabel, ytdLabel: rangeLabel('ytd', ytd, range.e), annualFactor: annualFactor(range), cascade: cascadeOf(cascade) };
   }, [ds, fobRows, locs, range, ytd, period, priorItems, level, scopeLabel, rLabel, cascade]);
 
   const addAction = useCallback((a) => {
@@ -176,7 +178,8 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
     const nmeta = {};
     for (const r of (ds?.shiftManagerRows || [])) { if (locSet.has(norm(r.loc)) && r.geid && r.name) nmeta[r.geid] = r.name; }
     const managerNames = [...new Set(Object.values(nmeta))].sort();
-    const storeLabel = (locs || []).length === 1 ? nm(locs[0]) : (page?.scopeLabel || '');
+    // Single-loc: show BOTH the restaurant number AND its name (Notes 35). Multi = scope label.
+    const storeLabel = (locs || []).length === 1 ? `${unpad(locs[0])} — ${nm(locs[0])}` : (page?.scopeLabel || '');
     return { managerNames, storeLabel };
   };
 
@@ -369,7 +372,7 @@ function PerLocationTable({ rows }) {
     div({ style: { overflowX: 'auto', border: '1px solid var(--bdr)', borderRadius: 8 } },
       h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 620 } },
         h('thead', null, h('tr', null,
-          th('Store'), th('Net Sales', { r: 1 }), th('vs LY', { r: 1 }), th('FOB %', { r: 1 }), th('Labor %', { r: 1 }), th('OEPE', { r: 1 }), th('R2P', { r: 1 }), th('Opp $/wk', { r: 1 }))),
+          th('Store'), th('Product Sales', { r: 1 }), th('vs LY', { r: 1 }), th('FOB %', { r: 1 }), th('Labor %', { r: 1 }), th('OEPE', { r: 1 }), th('R2P', { r: 1 }), th('Opp $/wk', { r: 1 }))),
         h('tbody', null, rows.map(r => h('tr', { key: r.loc, style: { borderTop: '.5px solid var(--bdr)' } },
           h('td', { style: { padding: '4px 8px', fontSize: 11.5, color: 'var(--text)', whiteSpace: 'nowrap' } }, nm(r.loc)),
           cell(r.netSales, '$'),
@@ -421,7 +424,7 @@ function perLocTableHtml(page, esc) {
   if (!rows.length) return '';
   const body = rows.map(r => `<tr><td style="text-align:left">${esc(nm(r.loc))}</td><td>${esc(f$(r.netSales))}</td><td>${r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'}</td><td>${esc(valFmt(r.fobPct, '%'))}</td><td>${esc(valFmt(r.laborPct, '%'))}</td><td>${esc(valFmt(r.oepe, 's'))}</td><td>${esc(valFmt(r.r2p, 's'))}</td><td>${r.oppWk ? esc(f$(r.oppWk)) : '—'}</td></tr>`).join('');
   return `<h2>By location (${rows.length}) — worst sales vs LY first</h2><table>
-    <tr><td><b>Store</b></td><td><b>Net Sales</b></td><td><b>vs LY</b></td><td><b>FOB %</b></td><td><b>Labor %</b></td><td><b>OEPE</b></td><td><b>R2P</b></td><td><b>Opp $/wk</b></td></tr>
+    <tr><td><b>Store</b></td><td><b>Product Sales</b></td><td><b>vs LY</b></td><td><b>FOB %</b></td><td><b>Labor %</b></td><td><b>OEPE</b></td><td><b>R2P</b></td><td><b>Opp $/wk</b></td></tr>
     ${body}</table>`;
 }
 // Shared print HTML: top/bottom performer callout (supervisor & above), with FL/OK breakout.
@@ -515,6 +518,9 @@ function printBlankOnePager(page, period) {
 // Review title adapts to the cascade level so the SAME form serves all three
 // conversations (Owner→DO district, DO→Supervisor area, Supervisor→GM restaurant).
 const REVIEW_TITLE_BY_LEVEL = { o_d: 'DISTRICT BUSINESS REVIEW', d_s: 'AREA BUSINESS REVIEW', s_g: 'RESTAURANT BUSINESS REVIEW' };
+// The RECIPIENT's job title per cascade level — labels the signature/attendee field (Notes
+// 35: "Leader:" → the actual role being reviewed). o_d reviews a DO, d_s a Supervisor, s_g a GM.
+const REVIEW_RECIPIENT_BY_LEVEL = { o_d: 'DO', d_s: 'Supervisor', s_g: 'GM' };
 // Talking-point altitude per cascade level (owner directive 2026-07-29): Owner→DO = big
 // picture, outliers & opportunities; DO→Supervisor = the patch's stores, drive results
 // through GMs; Supervisor→GM = store-specific improvement + wins (peers to motivate).
@@ -535,44 +541,58 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
   // Title + focus follow the cascade level so each level has its OWN blank template
   // (District / Area / Restaurant); no level selected → generic.
   const title = REVIEW_TITLE_BY_LEVEL[casc.id] || 'WEEKLY BUSINESS REVIEW';
+  const recipient = REVIEW_RECIPIENT_BY_LEVEL[casc.id] || 'Leader';
   const focus = REVIEW_FOCUS_BY_LEVEL[casc.id] || '';
+  // Explicit calendar window under the period label (Notes 35: clarify the date range).
+  const niceDate = s => { const p = String(s || '').split('-'); return p.length === 3 ? `${MONTH_NAMES[(+p[1] || 1) - 1]} ${+p[2]}, ${p[0]}` : ''; };
+  const win = (page.range && page.range.s && page.range.e) ? `${niceDate(page.range.s)} – ${niceDate(page.range.e)}` : '';
   const isDistrict = casc.id === 'o_d', isPatch = casc.id === 'd_s', isStore = casc.id === 's_g';
   const hasStores = (page.perLocation || []).length > 0;
   const cs = Object.fromEntries((page.currentState || []).map(r => [r.key, r]));
-  // Live actual for a scorecard row, or a blank fill line (always blank in blank mode).
-  const actual = (key, fmt) => {
-    if (blank) return '____________';
-    const r = cs[key];
-    const v = r && r.actual != null ? valFmt(r.actual, fmt) : null;
-    return v != null ? `<b>${esc(v)}</b>` : '____________';
-  };
-  const TGT = '____________';                 // target left blank → filled from the store's own targets
-  const ONTRACK = '[&nbsp;&nbsp;] Yes &nbsp;&nbsp; [&nbsp;&nbsp;] No';
-  // Scorecard: Metric | Target (blank) | Actual (blank / auto in filled) | On-Track? (Y/N)
-  const scRows = [
-    ['Product Sales',            actual('sales', '$')],
-    ['Guest Count (GC) vs LY',   actual('gcVsLY', '%')],
-    ['Drive-Thru OEPE',          actual('oepe', 's')],
-    ['R2P (Front Counter)',      actual('r2p', 's')],
-    ['Labor Cost %',             actual('laborPct', '%')],
-    ['Food Over Base %',         actual('fobPct', '%')],
-    ['Voice OSAT',               actual('osat', '%')],
-    ['Voice B2B (Accuracy)',     actual('accB2B', '%')],
+  const ra = page.reviewActuals || {};
+  const fillLine = '____________';
+  // Scorecard rows carry a numeric actual + a GROUP-ROLLED-UP target + direction, so the
+  // Target column pre-fills and On-Track auto-deduces (Notes 35). Targets: speed/labor/FOB
+  // from the scope's own DEFAULT_TARGETS (via currentState); Product Sales vs its projection;
+  // GC ≥ LY; Voice vs the standing thresholds (OSAT ≥90%, Accuracy B2B ≥95%). blank → both blank.
+  const fmtDelta = v => (v == null) ? null : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
+  const fmtVal = (v, fmt) => fmt === 'd' ? fmtDelta(v) : valFmt(v, fmt);
+  const onTrackOf = (v, t, dir) => (v == null || t == null) ? null : (dir === 'lower' ? v <= t : v >= t);
+  const otCell = (ot) => (blank || ot == null)
+    ? '[&nbsp;&nbsp;] Yes &nbsp;&nbsp; [&nbsp;&nbsp;] No'
+    : ot ? '[&nbsp;<b>X</b>&nbsp;] Yes &nbsp;&nbsp; [&nbsp;&nbsp;] No'
+         : '[&nbsp;&nbsp;] Yes &nbsp;&nbsp; [&nbsp;<b>X</b>&nbsp;] No';
+  const scDefs = [
+    { label: 'Product Sales',          v: cs.sales?.actual,    t: ra.projSales,             fmt: '$', dir: 'higher' },
+    { label: 'Guest Count (GC) vs LY', v: ra.gcVsLY,           t: 0,                        fmt: 'd', dir: 'higher', tLabel: '≥ LY' },
+    { label: 'Drive-Thru OEPE',        v: cs.oepe?.actual,     t: cs.oepe?.target,          fmt: 's', dir: 'lower' },
+    { label: 'R2P (Front Counter)',    v: cs.r2p?.actual,      t: cs.r2p?.target,           fmt: 's', dir: 'lower' },
+    { label: 'Labor Cost %',           v: cs.laborPct?.actual, t: cs.laborPct?.target,      fmt: '%', dir: 'lower' },
+    { label: 'Food Over Base %',       v: cs.fobPct?.actual,   t: cs.fobPct?.target,        fmt: '%', dir: 'lower' },
+    { label: 'Voice OSAT',             v: ra.osat,             t: 0.90,                     fmt: '%', dir: 'higher' },
+    { label: 'Voice B2B (Accuracy)',   v: ra.accB2B,           t: 0.95,                     fmt: '%', dir: 'higher' },
     // Store-level (Supervisor→GM) adds kitchen speed/health — noise at district/patch.
     ...(isStore ? [
-      ['KVS Time per GC',        actual('kvsPerGc', 's')],
-      ['KVS Healthy Usage',      actual('kvsHealthy', '%')],
+      { label: 'KVS Time per GC',      v: ra.kvsPerGc,         t: (cs.kvst && cs.kvst.target) ?? null, fmt: 's', dir: 'lower' },
+      { label: 'KVS Healthy Usage',    v: null,                t: null,                     fmt: '%', dir: 'higher' },
     ] : []),
   ];
-  const scBody = scRows.map(r => `<tr>
-    <td style="text-align:left"><b>${esc(r[0])}</b></td>
-    <td>${TGT}</td>
-    <td>${r[1]}</td>
-    <td style="text-align:left">${ONTRACK}</td></tr>`).join('');
+  const scBody = scDefs.map(r => {
+    const av = (!blank && r.v != null) ? `<b>${esc(fmtVal(r.v, r.fmt))}</b>` : fillLine;
+    const tv = blank ? fillLine
+      : (r.tLabel ? esc(r.tLabel) : (r.t != null ? esc(fmtVal(r.t, r.fmt)) : fillLine));
+    const ot = otCell(blank ? null : onTrackOf(r.v, r.t, r.dir));
+    return `<tr>
+      <td style="text-align:left"><b>${esc(r.label)}</b></td>
+      <td>${tv}</td>
+      <td>${av}</td>
+      <td style="text-align:left">${ot}</td></tr>`;
+  }).join('');
 
-  // Shift Manager tracking — 10 lines, condensed. Names pre-listed only in filled mode.
+  // Shift Manager tracking — 8 lines, condensed (keeps the store form on one page; a store
+  // rarely runs >8 SMs and pre-listed names still populate). Names only in filled mode.
   const smSrc = blank ? [] : managerNames;
-  const SM_ROWS = 10;
+  const SM_ROWS = 8;
   const smBody = Array.from({ length: SM_ROWS }, (_, i) => {
     const nm2 = (smSrc && smSrc[i]) || '';
     return `<tr>
@@ -648,7 +668,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:0;font-size:8.5pt}
     h1{color:#BD0011;font-size:15pt;font-weight:bold;margin:0 0 2px}
     .meta{font-size:9pt;margin-bottom:4px}
-    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:10pt;padding:2px 6px;margin:5px 0 2px}
+    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:10pt;padding:2px 6px;margin:3px 0 1px}
     table{border-collapse:collapse;width:100%}
     th{background:#202124;color:#fff;font-size:8.5pt;padding:2px 6px;text-align:center}
     td{border:.5px solid #DADCE0;padding:2px 6px;font-size:8pt;text-align:center;vertical-align:middle;word-wrap:break-word}
@@ -663,7 +683,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     </style></head><body>
     ${word ? '<div class="WordSection1">' : ''}
     <h1>${esc(title)} &amp; CHECKPOINT</h1>
-    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; ${casc.label ? `<b>${esc(casc.label)}</b> &nbsp;&nbsp;&nbsp; ` : ''}<b>${isDistrict ? 'District:' : isPatch ? 'Patch:' : 'Restaurant #:'}</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '__________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> __________________</div>
+    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')}${win ? ` <span style="color:#666">(${esc(win)})</span>` : ''} &nbsp;&nbsp;&nbsp; ${casc.label ? `<b>${esc(casc.label)}</b> &nbsp;&nbsp;&nbsp; ` : ''}<b>${isDistrict ? 'District:' : isPatch ? 'Patch:' : 'Restaurant #:'}</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '__________________'} &nbsp;&nbsp;&nbsp; <b>${esc(recipient)}:</b> __________________</div>
     ${focus ? `<div style="font-size:9pt;color:#333;margin:2px 0 8px;padding:5px 9px;border-left:3px solid #FFC72C;background:#FFF9E8">${esc(focus)}</div>` : ''}
 
     <div class="banner">WINS FROM LAST WEEK</div>
@@ -678,8 +698,17 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
 
     ${middle}
 
+    <div class="banner">DISCUSSION CHECKLIST (covered? Y / N)</div>
+    <div class="dd" style="line-height:1.5">
+      • People Development / Training &nbsp;[&nbsp;&nbsp;]&nbsp;Y&nbsp;[&nbsp;&nbsp;]&nbsp;N &nbsp;&nbsp;&nbsp;
+      • Promotions &nbsp;[&nbsp;&nbsp;]&nbsp;Y&nbsp;[&nbsp;&nbsp;]&nbsp;N &nbsp;&nbsp;&nbsp;
+      • Controls / Cash &nbsp;[&nbsp;&nbsp;]&nbsp;Y&nbsp;[&nbsp;&nbsp;]&nbsp;N<br/>
+      • Cleanliness Walkthrough &nbsp;[&nbsp;&nbsp;]&nbsp;Y&nbsp;[&nbsp;&nbsp;]&nbsp;N &nbsp;&nbsp;&nbsp;
+      • Other: <span class="il" style="width:2.2in"></span>&nbsp;[&nbsp;&nbsp;]&nbsp;Y&nbsp;[&nbsp;&nbsp;]&nbsp;N
+    </div>
+
     <div class="banner">COMMITMENTS FOR NEXT WEEK</div>
-    ${lines(3)}
+    ${lines(2)}
     ${word ? '</div>' : ''}
     </body></html>`;
 }

@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.567';
+const MERIDIAN_VERSION    = '4.582';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.582', date:'2026-07-29', changes:[
+    'Fix: the One-Pager "opportunity on the table" $ was wildly inflated (some stores showed millions/week). Root cause — current guest counts were read from a near-empty kitchen signal instead of real transactions, which blew up average check. Guest counts now use real transactions everywhere, and the guest/traffic pillar is reframed as Sales-to-Plan: the $ a store is running behind its own QSRSoft projected product sales — a bounded, sane figure that can\'t explode. Fixes the guest-count-vs-last-year actuals at the same time.',
+    'Weekly Business Review form — auto-fill + polish: the Period now shows the exact calendar window (e.g. Jul 21 – Jul 27, 2026); the scorecard pre-fills the group\'s rolled-up Targets and auto-checks On-Track (Yes/No) from actual-vs-target; Guest Count vs LY, Voice OSAT and Voice B2B now populate their Actuals from live data; the signature line is labelled with the recipient\'s job title (DO / Supervisor / GM) instead of a generic "Leader"; a single-store review shows both the restaurant # AND its name; "Net Sales" is renamed "Product Sales" throughout; and a compact Discussion Checklist (People Development/Training, Promotions, Controls/Cash, Cleanliness Walkthrough, Other — each Y/N) was added to every variant. Still prints on one page.',
+  ]},
   {version:'4.567', date:'2026-07-29', changes:[
     'Leadership One-Pager — Weekly Business Review: a polished, leader-led review the leader completes before each cascade discussion. It leads with last week\'s Wins, a performance scorecard (Product Sales, GC vs LY, OEPE, R2P, Labor %, FOB %, Voice OSAT + B2B — with blank Target / Actual / On-Track for the leader to fill), and closes with Commitments. The form ADAPTS to the cascade level: Owner→DO shows district outliers + opportunities + supervisor accountability; DO→Supervisor shows store-by-store + GM coaching focus; Supervisor→GM shows the store deep-dive (speed/food/labor) + a 10-line shift-manager tracker. Print to PDF, download as an editable Word (.doc), or a fully-blank fillable version. When not blank, actuals auto-fill from live data and shift-manager names pre-list for the store.',
     'New: Forms Library (🗂) — the leadership review forms catalogued by cascade level (Owner→DO / DO→Supervisor / Supervisor→GM), each with Print-blank and Word-blank actions.',
