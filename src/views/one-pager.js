@@ -124,7 +124,9 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const page = useMemo(() => {
     if (fobRows == null) return null;
     const inputs = buildOnePagerInputs(ds, fobRows, locs, range);
-    const opportunity = computeOpportunity(inputs, { mode: 'target' });
+    // GC paces vs the store's OWN QSRSoft projection (not best-in-class) so a down sales
+    // trend doesn't inflate the guest-count opportunity (owner directive 2026-07-29).
+    const opportunity = computeOpportunity(inputs, { mode: 'target', gcBench: 'projection' });
     const currentState = buildCurrentState(ds, fobRows, locs, range);
     // YTD companion for each header KPI so movement is visible (Notes 31 #1).
     const ytdState = buildCurrentState(ds, fobRows, locs, ytd);
@@ -281,7 +283,7 @@ function OppSection({ page }) {
       div({ style: { fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text)' } }, '💰 Opportunity on the Table (vs target)'),
       div({ style: { fontSize: 11, color: 'var(--text2)' } }, `$ are for the ${rLabel} · ~${f$(annual)}/yr annualized`)),
     div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: top.length ? 10 : 0 } },
-      chip(rLabel, total, 'total recoverable'), chip('Labor', d.labor$, 'excess labor $'), chip('Food (FOB)', d.food$, 'excess food $'), chip('Guest count', d.gc$, '$ = GC gap × avg check')),
+      chip(rLabel, total, 'total recoverable'), chip('Labor', d.labor$, 'excess labor $'), chip('Food (FOB)', d.food$, 'excess food $'), chip('Guest count', d.gc$, 'vs plan (pace to projection)')),
     top.length ? div({},
       div({ style: { display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text2)', marginBottom: 4 } },
         span(null, 'Biggest $ by store'),

@@ -83,7 +83,11 @@ function storePillars(store, bench) {
 //   mode: 'target' (default — each store vs its own *Target field) | 'bic'
 //   bicFrac: percentile fraction for best-in-class (default 0.1)
 // Returns { perStore:[…], district:{labor$,food$,gc$,total$}, benchmarks, mode }.
-export function computeOpportunity(stores = [], { mode = 'target', bicFrac = 0.1 } = {}) {
+// gcBench: 'auto' (default) — GC benchmarks against the store's gcPerDayTarget, else the
+//   district best-in-class GC/day. 'projection' — GC benchmarks ONLY against gcPerDayTarget
+//   (the store's plan); when absent the GC pillar is skipped ($0), never BIC. This is the
+//   One-Pager's pace-to-projection mode so a down sales trend can't inflate the GC gap.
+export function computeOpportunity(stores = [], { mode = 'target', bicFrac = 0.1, gcBench = 'auto' } = {}) {
   const list = (stores || []).filter(Boolean);
 
   // District best-in-class rates (always computed — shown as context even in target mode).
@@ -99,7 +103,8 @@ export function computeOpportunity(stores = [], { mode = 'target', bicFrac = 0.1
     const bench = mode === 'bic' ? bic : {
       laborPct: num(s.laborPctTarget),
       fobPct:   num(s.fobPctTarget),
-      gcPerDay: num(s.gcPerDayTarget) ?? bic.gcPerDay, // GC rarely has a per-store target → BIC
+      // 'projection' → plan only (null when absent → GC pillar skipped). 'auto' → plan else BIC.
+      gcPerDay: gcBench === 'projection' ? num(s.gcPerDayTarget) : (num(s.gcPerDayTarget) ?? bic.gcPerDay),
     };
     return { ...storePillars(s, bench), bench };
   });

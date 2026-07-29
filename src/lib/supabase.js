@@ -1595,7 +1595,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
   const data = await fetchAll((from, to) => supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
+    .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
     .gte('dt', cutoffStr)
     .order('dt')
     .range(from, to));
@@ -1608,6 +1608,7 @@ export async function loadQsrActSummary(daysBack = 35) {
       sales: 0, allNetSales: 0, gc: 0, txns: 0,
       _dtTotal: 0, _dtStore: 0, _dtCars: 0,
       _fcServe: 0, _fcDrawer: 0, _fcCnt: 0,
+      projGC: 0, projSales: 0,
       lySales: 0, lyGc: 0,
       actHrs: 0, needHrs: 0,
       _isQsrAct: true,
@@ -1624,6 +1625,11 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key]._fcServe     += r.fc_untilserve      || 0;
     map[key]._fcDrawer    += r.fc_untilclosedrawer || 0;
     map[key]._fcCnt       += r.fc_trans_cnt        || 0;
+    // Projected (plan) guests + sales — the store's EXPECTED delivery for the day. Used
+    // to pace the One-Pager GC opportunity vs plan (not vs a best-in-class store), so a
+    // down sales trend doesn't inflate the gap. Same source as Signals Tracking-to-Plan.
+    map[key].projGC       += r.proj_total_transactions || 0;
+    map[key].projSales    += r.proj_sales_dollars      || 0;
     map[key].lySales      += r.ly_product_sales || 0;
     map[key].lyGc         += r.ly_transactions || 0;
     // Actual punched + needed labor hours summed across the day's hour slots —

@@ -58,6 +58,7 @@ export function buildOnePagerInputs(ds, fobRows, locs, range) {
     const t = DEFAULT_TARGETS[L] || {};
     const sales = sumSeries(ds, loc, range, 'sales');
     const gc = sumSeries(ds, loc, range, 'gc');
+    const projGc = sumSeries(ds, loc, range, 'projGC');  // QSRSoft plan guests (pace baseline)
     const f = fob[L] || {};
     const days = sales.days || gc.days || 0;
     const netSales = sales.sum || 0;                     // window sales only — no monthly fallback
@@ -74,6 +75,10 @@ export function buildOnePagerInputs(ds, fobRows, locs, range) {
       fobPctActual: f.fobPct ?? null,
       fobPctTarget: t.tFOBTarget ?? null,
       gcPerDayActual: days ? gc.sum / days : null,
+      // Pace-to-projection: expected GC/day from QSRSoft's own plan over the matched days
+      // (only days that actually have a projection). Null → GC opportunity is excluded for
+      // this store (no best-in-class fallback) so a down sales trend can't inflate it.
+      gcPerDayTarget: projGc.days ? projGc.sum / projGc.days : null,
     };
   });
 }
