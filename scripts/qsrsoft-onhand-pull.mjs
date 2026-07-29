@@ -112,48 +112,74 @@ async function getEbosTokenViaSso(qsrsoftToken) {
   return token || null;
 }
 
-// Playwright fallback — capture an eBOS token from the live inventory session.
+// Playwright login — mint a FRESH eBOS token from a live browser session. eBOS tokens
+// are HS256, minted per-request and die in ~minutes, so there is no reusable stored token;
+// this is the ONLY reliable path (SSO /token/ebosByOrg is a confirmed 403 dead end). Ported
+// verbatim from the confirmed-working qsrsoft-variance-pull.mjs (2026-07-26) — Amplify's
+// React inputs need pressSequentially (page.fill leaves them empty) + the EXACT "Sign in".
 async function getEbosTokenViaPlaywright() {
   const u = process.env.QSRSOFT_USERNAME, p = process.env.QSRSOFT_PASSWORD;
   if (!u || !p) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD for Playwright fallback'); return null; }
+  const fs = await import('node:fs');
+  try { fs.mkdirSync('screenshots', { recursive: true }); } catch {}
+  const shot = async (page, name) => { try { await page.screenshot({ path: `screenshots/${name}.png`, fullPage: true }); console.log(`[pw] 📸 ${name}`); } catch (e) { console.log(`[pw] screenshot ${name} failed: ${e.message}`); } };
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' });
   const page = await context.newPage();
   let ebosToken = null;
-  // capture the token off any prod.ebos.qsrsoft.com request the app fires
-  page.on('request', req => {
+  const grab = (t, where) => { if (!ebosToken && t && t.length > 40) { ebosToken = t; console.log(`[pw] ✓ captured eBOS token from ${where}`); } };
+  page.on('request', req => { if (req.url().includes('ebos.qsrsoft.com')) grab(req.headers()['x-auth-token'], 'request header'); });
+  page.on('response', async resp => {
     if (ebosToken) return;
-    if (req.url().includes('prod.ebos.qsrsoft.com')) {
-      const t = req.headers()['x-auth-token'];
-      if (t && t.length > 20) ebosToken = t;
-    }
+    const url = resp.url();
+    if (!/sso\.myqsrsoft|ebos\.qsrsoft|token/i.test(url)) return;
+    try { const body = await resp.text(); const m = body.match(/eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9[\w.\-]+/); if (m) grab(m[0], `response ${url.slice(0, 80)}`); } catch {}
   });
   try {
-    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
-    const userSel = ['input[name="username"]','input[name="email"]','input[type="email"]','#username','#email'].join(', ');
-    const passSel = 'input[type="password"], input[name="password"], #password';
-    const subSel  = 'button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")';
-    await page.waitForSelector(userSel, { timeout: 20000 });
-    await page.fill(userSel, u); await page.fill(passSel, p); await page.click(subSel);
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
-    // navigate to the On-Hand inventory page so an eBOS request fires
-    if (!ebosToken) {
-      await page.goto('https://v3.myqsrsoft.com/inventory/on-hand', { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 4000));
+    console.log('[pw] goto v3.myqsrsoft.com …');
+    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});
+    console.log(`[pw] landed at: ${page.url()} — title: "${await page.title().catch(() => '?')}"`);
+    await shot(page, '01-landing');
+    const userSel = 'input[name="username"], input[name="email"], input[type="email"], #username, #email';
+    const passSel = 'input[name="password"], input[type="password"], #password';
+    const foundUser = await page.waitForSelector(userSel, { timeout: 20000 }).then(() => true).catch(() => false);
+    if (!foundUser) { console.log('[pw] ✗ no username field found — login UI not recognized'); await shot(page, '02-no-login'); }
+    else {
+      console.log('[pw] filling credentials (char-by-char for React/Amplify)…');
+      const userLoc = page.locator(userSel).first();
+      const passLoc = page.locator(passSel).first();
+      await userLoc.click({ clickCount: 3 }); await userLoc.pressSequentially(u, { delay: 12 });
+      await passLoc.click({ clickCount: 3 }).catch(() => {}); await passLoc.pressSequentially(p, { delay: 12 }).catch(() => {});
+      await shot(page, '02-filled');
+      const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+      const clicked = await signIn.click({ timeout: 8000 }).then(() => true).catch(() => false);
+      if (!clicked) { console.log('[pw] exact Sign in button not clickable — pressing Enter in password'); await passLoc.press('Enter').catch(() => {}); }
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 2500));
+      const stillLogin = await page.$(passSel).then(Boolean);
+      console.log(`[pw] post-login at: ${page.url()} — stillOnLogin: ${stillLogin}`);
+      await shot(page, '03-post-login');
     }
+    // Trigger an eBOS request by navigating inventory pages (token is org-wide).
+    for (const url of ['https://v3.myqsrsoft.com/inventory/on-hand', 'https://v3.myqsrsoft.com/inventory/variance', 'https://v3.myqsrsoft.com/inventory', 'https://v3.myqsrsoft.com/']) {
+      if (ebosToken) break;
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 5000));
+    }
+    if (!ebosToken) await shot(page, '04-no-token');
   } catch (e) { console.error('[auth] Playwright error:', e.message); } finally { await browser.close(); }
-  if (!ebosToken) console.error('[auth] ✗ could not capture eBOS token — refresh QSRSOFT_EBOS_TOKEN manually');
+  if (!ebosToken) console.error('[auth] ✗ Playwright could not capture an eBOS token (see screenshots artifact above)');
   return ebosToken;
 }
 
 async function resolveEbosToken() {
+  // eBOS tokens die in ~minutes → a stored QSRSOFT_EBOS_TOKEN is stale by CI time, and the
+  // SSO /token/ebosByOrg exchange is a confirmed 403 dead end. The ONLY reliable path is a
+  // fresh Playwright login (mirrors qsrsoft-variance-pull.mjs, which works). An explicit
+  // static token, if ever set, is honored first purely as a manual override.
   const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
-  if (envToken) { console.log('[auth] using QSRSOFT_EBOS_TOKEN'); return envToken; }
-  const reporting = (process.env.QSRSOFT_TOKEN || '').trim();
-  if (reporting) {
-    const t = await getEbosTokenViaSso(reporting);
-    if (t) { console.log('[auth] ✓ eBOS token via SSO exchange'); return t; }
-  }
+  if (envToken) { console.log('[auth] using QSRSOFT_EBOS_TOKEN override'); return envToken; }
   const t = await getEbosTokenViaPlaywright();
   if (!t) { console.error('[onhand-pull] ✗ no eBOS token'); process.exit(1); }
   return t;
