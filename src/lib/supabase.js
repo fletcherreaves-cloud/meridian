@@ -1889,8 +1889,10 @@ export async function loadUserSetting(key) {
   if (!supabase) return null;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+  // maybeSingle() (not single()) → returns null instead of a 406 Not Acceptable when the
+  // setting hasn't been saved yet (a first-run / unsaved key is normal, not an error).
   const { data, error } = await supabase.from('user_settings')
-    .select('value').eq('user_id', user.id).eq('key', key).single();
+    .select('value').eq('user_id', user.id).eq('key', key).maybeSingle();
   if (error) return null;
   return data?.value ?? null;
 }
