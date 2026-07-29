@@ -11,7 +11,7 @@ import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
-  loadEomDiagConfig, saveEomDiagConfig,
+  loadEomDiagConfig, saveEomDiagConfig, triggerSync,
 } from '../lib/supabase.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
@@ -411,6 +411,20 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [flowOpen, setFlowOpen] = useState(false); // flow-editor modal
   const [flowDraft, setFlowDraft] = useState([]); // editable copy while the modal is open
   const [flowSaving, setFlowSaving] = useState(false);
+  // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
+  // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
+  // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
+  const [pulling, setPulling] = useState('');   // '' | 'onhand' | 'variance'
+  const [pullMsg, setPullMsg] = useState(null);  // { ok, text }
+  const doPull = useCallback(async (wf, label) => {
+    setPulling(wf); setPullMsg(null);
+    try {
+      const r = await triggerSync(wf, {});
+      if (r && r.error) setPullMsg({ ok: false, text: `✗ ${label}: ${r.error}` });
+      else setPullMsg({ ok: true, text: `✓ ${label} pull started — data refreshes in ~5–10 min, then reload.` });
+    } catch (e) { setPullMsg({ ok: false, text: `✗ ${label}: ${e.message || 'failed'}` }); }
+    finally { setPulling(''); }
+  }, []);
 
   // Load the editable diagnosis-flow config once on mount.
   useEffect(() => { loadEomDiagConfig().then(c => { if (c) setDiagCfg(c); }).catch(() => {}); }, []);
@@ -747,6 +761,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           onClick: openFlow, title: 'Edit the diagnosis flow — reorder/toggle checks and tune thresholds',
           style: { background: 'var(--surf3)', color: 'var(--text2)', border: `1px solid ${diagCfg ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' },
         }, diagCfg ? '⚙ Flow *' : '⚙ Flow'),
+        // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
+        h('button', {
+          onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
+          title: 'Pull fresh On-Hand count progress now (forces a run regardless of the count-window / 8a–6p CT gate)',
+          style: { background: 'rgba(245,188,0,.14)', color: '#f5bc00', border: '1px solid rgba(245,188,0,.4)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: pulling === 'onhand' ? 'default' : 'pointer' },
+        }, pulling === 'onhand' ? '…' : '↻ On-Hand'),
+        h('button', {
+          onClick: () => doPull('variance', 'Variance'), disabled: pulling === 'variance',
+          title: 'Pull fresh Variance / Raw-Item detail now',
+          style: { background: 'rgba(245,188,0,.14)', color: '#f5bc00', border: '1px solid rgba(245,188,0,.4)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: pulling === 'variance' ? 'default' : 'pointer' },
+        }, pulling === 'variance' ? '…' : '↻ Variance'),
+        pullMsg && span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : '#f87171', maxWidth: '260px' } }, pullMsg.text),
         onClose && h('button', { onClick: onClose, style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '20px', cursor: 'pointer' } }, '✕'))),
 
     // location picker — state pills (All / OK / FL) + single-store dropdown
