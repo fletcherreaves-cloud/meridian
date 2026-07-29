@@ -2,8 +2,12 @@ name: QSRSoft FOB Pull
 
 on:
   schedule:
-    # 11:00 UTC = 6:00 AM CDT — after QSRSoft ABC completes (~7-8 AM Central)
-    - cron: '0 11 * * *'
+    # Pulled 3×/day so an intraday change (e.g. an EOM count finalizing → stat-variance
+    # settling → FOB moving) is reflected within hours, not next morning. The script
+    # re-pulls a recent window each run, so later runs backfill/correct the same days.
+    - cron: '0 11 * * *'   # 06:00 CDT — after QSRSoft ABC completes (~7-8 AM Central)
+    - cron: '0 18 * * *'   # 13:00 CDT — early afternoon
+    - cron: '0 22 * * *'   # 17:00 CDT — late afternoon (catches most same-day count finalizations)
   workflow_dispatch:
     inputs:
       days_back:
