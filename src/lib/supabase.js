@@ -398,7 +398,7 @@ export async function saveLifeLenzSchedule(rows) {
 }
 
 // Load LifeLenz schedule rows — defaults to last 90 days + next 30 days
-export async function loadLifeLenzSchedule({ daysBack = 1825, daysFwd = 30 } = {}) {
+export async function loadLifeLenzSchedule({ daysBack = 455, daysFwd = 30 } = {}) {   // was 1825 (5yr) — egress guard, ~15 months back covers YoY + trends
   if (!supabase) return [];
   const start = new Date(); start.setDate(start.getDate() - daysBack);
   const end   = new Date(); end.setDate(end.getDate() + daysFwd);
@@ -766,11 +766,15 @@ export async function loadAuditRows() {
 }
 
 // ── QSRSoft FOB daily rows (automated pull) ──────────────────────────────────
-export async function loadQsrFob({ dates } = {}) {
+export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
   if (!supabase) return [];
+  // Egress guard: default to a ~16-month window instead of the full history (qsr_fob is a
+  // wide, daily × 27-store table). YoY still works — qsr_fob carries its own ly_* columns.
+  const cutoffStr = (() => { const c = new Date(); c.setDate(c.getDate() - daysBack); return c.toISOString().slice(0, 10); })();
   const data = await fetchAll((from, to) => {
     let q = supabase.from('qsr_fob').select('*').order('date', { ascending: false }).range(from, to);
     if (dates?.length) q = q.in('date', dates);
+    else if (daysBack) q = q.gte('date', cutoffStr);
     return q;
   });
   if (!data.length) return [];
