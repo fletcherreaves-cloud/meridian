@@ -581,7 +581,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
       <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>[ ] Yes&nbsp; [ ] No</td></tr>`;
   }).join('');
 
-  const line = '<div style="border-bottom:1px solid #999;height:1.4em;margin-top:6px"></div>';
+  const line = '<div style="border-bottom:1px solid #999;height:1.35em;margin-top:4px"></div>';
   const lines = n => Array.from({ length: n }, () => line).join('');
   const wideLine = '<div style="border-bottom:1px solid #999;height:1.3em;margin-top:5px;width:100%"></div>';
   const subhead = t => `<div style="font-size:8.5pt;font-weight:bold;margin:6px 0 2px">${t}</div>`;
@@ -646,15 +646,15 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     ${word ? '@page WordSection1 { size: 8.5in 11.0in; margin: 0.4in; } div.WordSection1 { page: WordSection1; }' : ''}
     /* Tuned to fit ONE letter page across all levels (Notes 34). */
     body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:0;font-size:8.5pt}
-    h1{color:#BD0011;font-size:15pt;font-weight:bold;margin:0 0 3px}
-    .meta{font-size:9pt;margin-bottom:6px}
-    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:10pt;padding:3px 6px;margin:8px 0 3px}
+    h1{color:#BD0011;font-size:15pt;font-weight:bold;margin:0 0 2px}
+    .meta{font-size:9pt;margin-bottom:4px}
+    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:10pt;padding:2px 6px;margin:5px 0 2px}
     table{border-collapse:collapse;width:100%}
-    th{background:#202124;color:#fff;font-size:8.5pt;padding:3px 6px;text-align:center}
-    td{border:.5px solid #DADCE0;padding:3px 6px;font-size:8pt;text-align:center;vertical-align:middle;word-wrap:break-word}
+    th{background:#202124;color:#fff;font-size:8.5pt;padding:2px 6px;text-align:center}
+    td{border:.5px solid #DADCE0;padding:2px 6px;font-size:8pt;text-align:center;vertical-align:middle;word-wrap:break-word}
     tbody tr:nth-child(even){background:#F8F9FA}
-    table.tight td{padding:2px 5px;height:1.3em}
-    .dd{font-size:8.5pt;line-height:1.4;margin:2px 0}
+    table.tight td{padding:1px 5px;height:1.12em}
+    .dd{font-size:8.5pt;line-height:1.32;margin:1px 0}
     .il{display:inline-block;border-bottom:1px solid #999;height:1.05em;vertical-align:bottom;margin:0 3px}
     .fl{display:flex;gap:14px;align-items:flex-end;margin:1px 0 2px}
     .fl span{flex:1;border-bottom:1px solid #999;height:1.05em}
