@@ -15,7 +15,7 @@ import {
 } from '../lib/supabase.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
-  buildIncompleteCountMessage,
+  buildIncompleteCountMessage, diagnoseIncompleteCount,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
 import { mdToHtml } from '../utils/markdown.js';
@@ -144,18 +144,26 @@ function fobByStore(fobRows, period) {
   return acc;
 }
 
-function ClassChips({ byClass }) {
+function ClassChips({ byClass, uncounted }) {
   const order = [['food', 'F'], ['condiment', 'C'], ['paper', 'P'], ['nonproduct', 'N']];
   return div({ style: { display: 'flex', gap: '4px' } },
     order.map(([k, label]) => {
       const b = byClass[k];
       if (!b || !b.total) return null;
       const color = b.done ? '#4ade80' : b.pct >= 0.5 ? '#f5bc00' : '#64748b';
+      // When a class is ≥90% counted but not done, hover reveals EXACTLY which items
+      // are still uncounted (top by $ at risk) so the store can close the last few (Notes 35).
+      const items = (uncounted && uncounted[k]) || [];
+      const nearDone = b.pct >= 0.90 && !b.done && items.length > 0;
+      const title = nearDone
+        ? `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)}) — still to count:\n` +
+          items.slice(0, 12).map(u => `• ${u.descr || u.wrin}${u.valueAtRisk ? ` ($${Math.round(u.valueAtRisk)})` : ''}`).join('\n') +
+          (items.length > 12 ? `\n…+${items.length - 12} more` : '')
+        : `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})`;
       return span({
-        key: k,
-        title: `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})`,
-        style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color },
-      }, `${label} ${pct(b.pct)}`);
+        key: k, title,
+        style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color, cursor: nearDone ? 'help' : 'default' },
+      }, `${label} ${pct(b.pct)}${nearDone ? ` ·${items.length}` : ''}`);
     }));
 }
 
@@ -475,6 +483,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     ]);
     const out = [...locs].map(loc => {
       const prog = computeCountProgress(byLoc[loc] || [], { period, asOf });
+      // Specific still-uncounted items per class (Notes 35) — so a ≥90% class can show
+      // exactly what's left (hover on the class chip + in the diagnosis/comms report).
+      const incByClass = {};
+      try { for (const b of diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf }).byClass) incByClass[b.cls] = b.items; } catch {}
       const f = fob[loc] || {};
       const st = statusMap[loc] || {};
       return {
@@ -482,6 +494,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         name: nm(loc),
         org: getStoreOrg(unpad(loc)),
         prog,
+        uncountedByClass: incByClass,
         fobPct: f.fobPct ?? null,
         fob$: f.fob ?? null,
         components: f,
@@ -840,7 +853,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               div({ style: { fontWeight: 600, color: 'var(--text)' } }, r.name),
               span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK')),
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
-            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass })),
+            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
               r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—',
               mode === 'progress' && r.prog.lastActivityAt && (() => {

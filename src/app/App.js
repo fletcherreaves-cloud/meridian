@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.594';
+const MERIDIAN_VERSION    = '4.595';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.595', date:'2026-07-29', changes:[
+    'EOM count progress: when a class list is ≥90% counted but not finished, hovering its chip (e.g. "F 92% ·4") now lists exactly which items are still uncounted, ranked by dollars at risk — so the store can close the last few instead of guessing. The store message already itemizes the gaps; this puts them one hover away in the dashboard.',
+  ]},
   {version:'4.594', date:'2026-07-29', changes:[
     'Faster current-data load: the Daily Glimpse, Cash, Sales Ledger, Labor, Ops and Controls streams now load their pages in parallel (like the DAR summary already does) instead of one after another — the current-day sales/service/controls appear noticeably quicker after login.',
     'Fixed the At-A-Glance "stores at red model health" count mismatch (header said 1, checklist said 2): a store with no model-health score yet was being counted as red in one place; both now ignore null scores.',
