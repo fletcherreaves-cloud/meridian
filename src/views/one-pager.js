@@ -525,49 +525,57 @@ const REVIEW_FOCUS_BY_LEVEL = {
 };
 
 // Build the Weekly Business Review HTML (used by both Print→PDF and Word download).
-// blank:true → a fully-blank fillable form (no live actuals, no pre-listed names).
+// blank:true → a fully-blank, leader-led fillable form (the priority): generic title, no
+// live actuals, no pre-listed names, no level-specific data sections. Filled mode keeps
+// the level-aware framing + auto actuals. Structure is shared so both stay in sync.
 function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = false } = {}) {
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || '';
   const casc = page.cascade || {};
-  const title = REVIEW_TITLE_BY_LEVEL[casc.id] || 'WEEKLY BUSINESS REVIEW';
-  const focus = REVIEW_FOCUS_BY_LEVEL[casc.id] || '';
+  const title = blank ? 'WEEKLY BUSINESS REVIEW' : (REVIEW_TITLE_BY_LEVEL[casc.id] || 'WEEKLY BUSINESS REVIEW');
+  const focus = blank ? '' : (REVIEW_FOCUS_BY_LEVEL[casc.id] || '');
   const isDistrict = casc.id === 'o_d', isPatch = casc.id === 'd_s', isStore = casc.id === 's_g';
   const hasStores = (page.perLocation || []).length > 0;
   const cs = Object.fromEntries((page.currentState || []).map(r => [r.key, r]));
   // Live actual for a scorecard row, or a blank fill line (always blank in blank mode).
-  const actual = (key, fmt, suffix = '') => {
-    if (blank) return `_____________${suffix}`;
+  const actual = (key, fmt) => {
+    if (blank) return '____________';
     const r = cs[key];
     const v = r && r.actual != null ? valFmt(r.actual, fmt) : null;
-    return v != null ? `<b>${esc(v)}</b>` : `_____________${suffix}`;
+    return v != null ? `<b>${esc(v)}</b>` : '____________';
   };
-  const CHK = '[&nbsp;&nbsp;]';
+  const TGT = '____________';                 // target left blank → filled from the store's own targets
+  const ONTRACK = '[&nbsp;&nbsp;] Yes &nbsp;&nbsp; [&nbsp;&nbsp;] No';
+  // Scorecard: Metric | Target (blank) | Actual (blank / auto in filled) | On-Track? (Y/N)
   const scRows = [
-    ['Gross Sales',          '$115k / $85k / $65k',        actual('sales', '$'),      `${CHK} Above Target &nbsp;&nbsp; ${CHK} Below Target`],
-    ['Guest Count (GC)',     '+2.0% vs Last Year',         '_____________ %',         `${CHK} Growth &nbsp;&nbsp; ${CHK} Decline`],
-    ['Drive-Thru OEPE',      '&lt;110s / &lt;120s / &lt;130s', actual('oepe', 's'),  `${CHK} Meeting Goal &nbsp;&nbsp; ${CHK} Missing Goal`],
-    ['R2P (Front Counter)',  'store target (sec)',         actual('r2p', 's'),        `${CHK} Meeting Goal &nbsp;&nbsp; ${CHK} Missing Goal`],
-    ['Labor Cost %',         '21.0% / 22.0% / 24.0%',      actual('laborPct', '%'),   `${CHK} Under Budget &nbsp;&nbsp; ${CHK} Over Budget`],
-    ['Food Over Base %',     'store FOB target',           actual('fobPct', '%'),     `${CHK} Controlled &nbsp;&nbsp; ${CHK} High Variance`],
-    ['VOC (Satisfaction)',   '&gt;80% / &gt;75% / &gt;70%', '_____________ %',        `${CHK} Top Tier &nbsp;&nbsp; ${CHK} Needs Attention`],
+    ['Gross Sales',              actual('sales', '$')],
+    ['Guest Count (GC) vs LY',   actual('gcVsLY', '%')],
+    ['Drive-Thru OEPE',          actual('oepe', 's')],
+    ['R2P (Front Counter)',      actual('r2p', 's')],
+    ['Labor Cost %',             actual('laborPct', '%')],
+    ['Food Over Base %',         actual('fobPct', '%')],
+    ['VOC (Satisfaction)',       actual('osat', '%')],
   ];
   const scBody = scRows.map(r => `<tr>
     <td style="text-align:left"><b>${esc(r[0])}</b></td>
+    <td>${TGT}</td>
     <td>${r[1]}</td>
-    <td>${r[2]}</td>
-    <td style="text-align:left">${r[3]}</td></tr>`).join('');
+    <td style="text-align:left">${ONTRACK}</td></tr>`).join('');
 
+  // Shift Manager tracking — 10 lines, condensed. Names pre-listed only in filled mode.
   const smSrc = blank ? [] : managerNames;
-  const smNames = (smSrc && smSrc.length ? smSrc.slice(0, 6) : ['', '', '']);
-  const smBody = smNames.map((nm2, i) => `<tr>
-    <td style="text-align:left">${i + 1}. ${nm2 ? `<b>${esc(nm2)}</b>` : '___________________________'}</td>
-    <td>[ ] B &nbsp; [ ] L &nbsp; [ ] D &nbsp; [ ] O</td>
-    <td>________ s</td><td>________ %</td><td>$ ________</td>
-    <td>[ ] 100% &nbsp; [ ] Missed</td></tr>`).join('');
+  const SM_ROWS = 10;
+  const smBody = Array.from({ length: SM_ROWS }, (_, i) => {
+    const nm2 = (smSrc && smSrc[i]) || '';
+    return `<tr>
+      <td style="text-align:left">${i + 1}. ${nm2 ? `<b>${esc(nm2)}</b>` : '&nbsp;'}</td>
+      <td>[ ] B&nbsp; [ ] L&nbsp; [ ] D&nbsp; [ ] O</td>
+      <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>[ ] Yes&nbsp; [ ] No</td></tr>`;
+  }).join('');
 
   const line = '<div style="border-bottom:1px solid #999;height:1.4em;margin-top:6px"></div>';
   const lines = n => Array.from({ length: n }, () => line).join('');
+  const wideLine = '<div style="border-bottom:1px solid #999;height:1.3em;margin-top:5px;width:100%"></div>';
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} ${esc(rLabel)}</title>
     <style>
@@ -579,19 +587,23 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
     th{background:#202124;color:#fff;font-size:9pt;padding:4px 6px;text-align:center}
     td{border:.5px solid #DADCE0;padding:4px 6px;font-size:8.5pt;text-align:center;vertical-align:middle}
     tbody tr:nth-child(even){background:#F8F9FA}
-    .dd{font-size:9pt;line-height:1.5;margin:2px 0}
+    table.tight td{padding:3px 5px;height:1.5em}
+    .dd{font-size:9pt;line-height:1.55;margin:2px 0}
     @media print{@page{margin:.5in}}
     </style></head><body>
     <h1>${esc(title)} &amp; CHECKPOINT</h1>
-    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; <b>${esc(casc.label || '')}</b> &nbsp;&nbsp;&nbsp; <b>${(storeLabel && !blank) ? 'Scope:' : 'Restaurant:'}</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '____________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> ____________________</div>
+    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; ${casc.label && !blank ? `<b>${esc(casc.label)}</b> &nbsp;&nbsp;&nbsp; ` : ''}<b>Restaurant #:</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '__________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> __________________</div>
     ${focus ? `<div style="font-size:9pt;color:#333;margin:2px 0 8px;padding:5px 9px;border-left:3px solid #FFC72C;background:#FFF9E8">${esc(focus)}</div>` : ''}
 
-    <div class="banner">WEEKLY PERFORMANCE SCORECARD &nbsp;&nbsp; [ Volume Tier: &nbsp; [ ] A ($110k+) &nbsp; [ ] B ($75k–$110k) &nbsp; [ ] C (&lt;$75k) ]</div>
+    <div class="banner">WINS FROM LAST WEEK</div>
+    ${lines(3)}
+
+    <div class="banner">WEEKLY PERFORMANCE SCORECARD</div>
     <table>
-      <tr><th style="text-align:left">Metric</th><th>Tier Target (A / B / C)</th><th>Actual Result</th><th style="text-align:left">Status</th></tr>
+      <tr><th style="text-align:left">Metric</th><th>Target</th><th>Actual Result</th><th style="text-align:left">On Track?</th></tr>
       ${scBody}
     </table>
-    <div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data for the selected scope; blanks are for the leader to complete before the discussion.</div>
+    ${blank ? '' : `<div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data; targets + On-Track are for the leader to complete.</div>`}
 
     ${(!blank && (isDistrict || isPatch) && hasStores) ? `
       <div class="banner">${isDistrict ? 'DISTRICT OUTLIERS &amp; OPPORTUNITIES' : 'YOUR PATCH — STORE BY STORE (drive results through your GMs)'}</div>
@@ -601,21 +613,23 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
 
     <div class="banner">DEEP DIVE: OPERATIONAL BOTTLENECKS &amp; COST CONTROLS</div>
     <div class="dd"><b>A. Speed of Service &amp; Drive-Thru</b><br/>• Primary bottleneck: ${lines(1)}
-      • Lunch peak (11:30–1:30): target &lt;90s | actual ______s &nbsp;&nbsp; Dinner peak (5–7): target &lt;110s | actual ______s<br/>
+      • Breakfast Peak (7–9a): target ______ | actual ______<br/>
+      • Lunch Peak (11a–2p): target ______ | actual ______<br/>
+      • Dinner Peak (5–7p): target ______ | actual ______<br/>
       • Corrective actions: 1. ________________________ 2. ________________________</div>
-    <div class="dd" style="margin-top:6px"><b>B. Food Cost &amp; Waste</b><br/>• Top 3 high-variance items: 1. ____________ 2. ____________ 3. ____________<br/>
-      • Waste — Raw $ __________ | Completed $ __________ | Promo/Crew $ __________<br/>• Yield actions: ${lines(1)}</div>
-    <div class="dd" style="margin-top:6px"><b>C. Labor Efficiency &amp; Shift Control</b><br/>• Planned hrs __________ | Actual hrs __________ | Variance __________<br/>• Optimization actions: ${lines(1)}</div>
+    <div class="dd" style="margin-top:6px"><b>B. Food Cost &amp; Waste</b><br/>• Top 3 high-variance items:
+      ${wideLine}${wideLine}${wideLine}
+      • Waste — Raw $ ____________ | Completed $ ____________<br/>• Yield actions: ${lines(1)}</div>
+    <div class="dd" style="margin-top:6px"><b>C. Labor Efficiency (Scheduling)</b><br/>• Projected Hours ____________ | Scheduled Hours ____________ | Variance ____________<br/>• Optimization actions: ${lines(1)}</div>
 
-    ${isDistrict && !blank ? '' : `
     <div class="banner">INDIVIDUAL SHIFT MANAGER PERFORMANCE TRACKING</div>
-    <table>
-      <tr><th style="text-align:left">Shift Manager</th><th>Dayparts Run</th><th>Avg OEPE</th><th>Shift Labor %</th><th>Shift Waste $</th><th>Pre-Shift Checklist</th></tr>
+    <table class="tight">
+      <tr><th style="text-align:left">Shift Manager</th><th>Dayparts Run</th><th>Avg OEPE</th><th>Shift Labor %</th><th>Shift Waste $</th><th>Checklist 100%?</th></tr>
       ${smBody}
     </table>
-    ${managerNames && managerNames.length && !blank ? `<div style="font-size:7.5pt;color:#666;margin-top:3px">Names pre-listed from the store's Shift Manager Summary; per-shift metrics are for the leader to fill in.</div>` : ''}`}
+    ${managerNames && managerNames.length && !blank ? `<div style="font-size:7.5pt;color:#666;margin-top:3px">Names pre-listed from the store's Shift Manager Summary; per-shift metrics are for the leader to fill in.</div>` : ''}
 
-    <div class="banner">COMMITMENTS FOR NEXT WEEK${isStore ? ' &nbsp;&nbsp; (celebrate a win + set one improvement)' : ''}</div>
+    <div class="banner">COMMITMENTS FOR NEXT WEEK</div>
     ${lines(4)}
     </body></html>`;
 }
