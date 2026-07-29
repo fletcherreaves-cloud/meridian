@@ -7,7 +7,7 @@ import {
   transitionReview, REVIEW_STATUSES,
   getTemplates, saveTemplates, upsertTemplateInList, removeTemplateFromList, duplicateTemplateInList, validateTemplateWeights, syncTemplatesFromSupabase,
   RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
-  CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS,
+  CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS, SHIFT_ATTRIBUTABLE_ROLES,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { hasPermission, getOrgRoles } from '../engine/permissions.js';
@@ -2307,7 +2307,9 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
   const mgrEmptyMsg = totalShiftRows === 0
     ? '— shift-manager data not loaded —'
     : `— no shift-manager data for this store (${totalShiftRows} rows loaded, other stores) —`;
-  const showMgr = role !== 'GM';   // non-GM roles can attribute to a specific manager; GMs = store-total
+  // Manager attribution shows only for store-level shift roles (Assistant / Department /
+  // Shift Manager). GM = whole store; AS/OM are above-store → always store-total.
+  const showMgr = SHIFT_ATTRIBUTABLE_ROLES.includes(role);
 
   // Selecting a manager sets the geid AND the name — ensures correct attribution.
   const pickManager = (g) => {

@@ -7,8 +7,11 @@ const REVIEW_TEMPLATES_KEY = 'mf_review_templates_v1';
 
 export const CAT_KEYS   = ['rgr','sales','profit','people'];
 export const CAT_LABELS = { rgr:'Running Great Restaurants', sales:'Sales Drivers', profit:'Profitability', people:'People Staffing & Retention', admin:'Administration' };
-export const ROLE_KEYS  = ['GM','AM','AS','OM'];
-export const ROLE_LABELS= { GM:'General Manager', AM:'Assistant Manager', AS:'Area Supervisor', OM:'Operations Manager' };
+export const ROLE_KEYS  = ['GM','AM','DM','SM','AS','OM'];
+export const ROLE_LABELS= { GM:'General Manager', AM:'Assistant Manager', DM:'Department Manager', SM:'Shift Manager', AS:'Area Supervisor', OM:'Operations Manager' };
+// Store-level manager roles whose review can be attributed to their OWN shifts
+// (Shift Manager Summary data). GM = whole store; AS/OM are above-store → store-total.
+export const SHIFT_ATTRIBUTABLE_ROLES = ['AM','DM','SM'];
 
 export const DEFAULT_REVIEW_CONFIG = {
   version: 1,
@@ -777,11 +780,16 @@ export function autoPopulateKPIs(review, ds) {
   // manager's OWN shifts (Shift Manager Summary), not the store total. Everything else
   // stays store-total. GMs own the whole store, so they always use store-total.
   const mgrGeid = review.geid != null && review.geid !== '' ? Number(review.geid) : null;
-  const isGM = String(review.role || '') === 'GM';
+  // Only the store-level shift roles attribute to a manager's own shifts (GM = whole
+  // store; AS/OM are above-store). Padding-agnostic loc match (ds.storeIds vs
+  // shift_manager_monthly.loc can differ in zero-padding).
+  const _normLoc = v => String(v == null ? '' : v).replace(/^0+/, '') || String(v == null ? '' : v);
+  const canAttribute = SHIFT_ATTRIBUTABLE_ROLES.includes(String(review.role || ''));
   const shiftMgrM = {};
-  if (mgrGeid && !isGM) {
+  if (mgrGeid && canAttribute) {
+    const wantLoc = _normLoc(loc);
     for (const r of (ds.shiftManagerRows || [])) {
-      if (String(r.loc) !== String(loc) || Number(r.geid) !== mgrGeid || !r.month) continue;
+      if (_normLoc(r.loc) !== wantLoc || Number(r.geid) !== mgrGeid || !r.month) continue;
       if (parseInt(String(r.month).slice(0, 4)) !== _ry) continue;
       shiftMgrM[monthNum(r.month)] = r;
     }
