@@ -642,18 +642,20 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
   return `<!doctype html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(title)} ${esc(rLabel)}</title>
     ${word ? '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' : ''}
     <style>
-    ${word ? '@page WordSection1 { size: 8.5in 11.0in; margin: 0.5in; } div.WordSection1 { page: WordSection1; }' : ''}
-    body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:${word ? '0' : '36px'};font-size:9pt}
-    h1{color:#BD0011;font-size:18pt;font-weight:bold;margin:0 0 4px}
-    .meta{font-size:10pt;margin-bottom:10px}
-    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:11pt;padding:4px 6px;margin:12px 0 4px}
+    ${word ? '@page WordSection1 { size: 8.5in 11.0in; margin: 0.4in; } div.WordSection1 { page: WordSection1; }' : ''}
+    /* Tuned to fit ONE letter page across all levels (Notes 34). */
+    body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:0;font-size:8.5pt}
+    h1{color:#BD0011;font-size:15pt;font-weight:bold;margin:0 0 3px}
+    .meta{font-size:9pt;margin-bottom:6px}
+    .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:10pt;padding:3px 6px;margin:8px 0 3px}
     table{border-collapse:collapse;width:100%}
-    th{background:#202124;color:#fff;font-size:9pt;padding:4px 6px;text-align:center}
-    td{border:.5px solid #DADCE0;padding:4px 6px;font-size:8.5pt;text-align:center;vertical-align:middle;word-wrap:break-word}
+    th{background:#202124;color:#fff;font-size:8.5pt;padding:3px 6px;text-align:center}
+    td{border:.5px solid #DADCE0;padding:3px 6px;font-size:8pt;text-align:center;vertical-align:middle;word-wrap:break-word}
     tbody tr:nth-child(even){background:#F8F9FA}
-    table.tight td{padding:3px 5px;height:1.5em}
-    .dd{font-size:9pt;line-height:1.55;margin:2px 0}
-    @media print{@page{margin:.5in}}
+    table.tight td{padding:2px 5px;height:1.3em}
+    .dd{font-size:8.5pt;line-height:1.4;margin:2px 0}
+    @page{size:letter;margin:.4in}
+    @media print{@page{size:letter;margin:.4in}}
     </style></head><body>
     ${word ? '<div class="WordSection1">' : ''}
     <h1>${esc(title)} &amp; CHECKPOINT</h1>
@@ -661,7 +663,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     ${focus ? `<div style="font-size:9pt;color:#333;margin:2px 0 8px;padding:5px 9px;border-left:3px solid #FFC72C;background:#FFF9E8">${esc(focus)}</div>` : ''}
 
     <div class="banner">WINS FROM LAST WEEK</div>
-    ${lines(3)}
+    ${lines(2)}
 
     <div class="banner">WEEKLY PERFORMANCE SCORECARD</div>
     <table>
@@ -673,7 +675,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     ${middle}
 
     <div class="banner">COMMITMENTS FOR NEXT WEEK</div>
-    ${lines(4)}
+    ${lines(3)}
     ${word ? '</div>' : ''}
     </body></html>`;
 }
