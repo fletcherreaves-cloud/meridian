@@ -36,3 +36,15 @@ and asked to **log the idea of actual push/email notifications for the future**.
 
 Recommend starting with the **emailed CI trigger** when we pick this up — least infra, reaches the
 owner off-device. See [[project-eom-diagnosis-flow.md]] for the on-hand pull + status internals.
+
+## EOM FOB freshness (Notes 34, 2026-07-29)
+EOM Dashboard FOB% = `qsr_fob` (auto-pulled, `dsd:'d'`), MTD Σ(6 controllable components)/Σ prodSales,
+dollar-weighted (`fobByStore` in `src/views/eom-dashboard.js`). It's a real download but was pulled
+**once/day (~6am CT)** → a count finalizing mid-day (settling stat variance → moving FOB) didn't show
+until next morning (Chipley read 3.47 vs QSRSoft 3.58). **Fixed:** `qsrsoft-pull.yml` now pulls FOB
+**3×/day (11/18/22 UTC = 6a/1p/5p CT)**; the script re-pulls a recent window so later runs backfill.
+- **Owner idea (follow-up): autopull FOB the instant a store's count completes.** The on-hand pull
+  already fires `notified_90` (fireNow) exactly when a store crosses "believes done" — so in
+  `scripts/qsrsoft-onhand-pull.mjs`, on any fireNow, dispatch `qsrsoft-pull.yml` (FOB) via the GitHub
+  REST API (`gh workflow run` / `actions:write`). Marginal gain over 3×/day (hours → minutes); build
+  if the owner wants instant. The dashboard's "data as of" stamp already exposes the FOB snapshot date.
