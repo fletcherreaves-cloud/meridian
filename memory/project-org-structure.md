@@ -36,3 +36,22 @@ comparisons. Date-effective patches are on the Notes-33 to-do ([[notes-33-queue]
 ## 2026-07-29 pending change (owner)
 Adding an FL supervisor: **Brad Denley 7→3 stores**, new **Mary + 4 stores** (FL only). Brad's
 current 7: `6178,6838,10034,35242,37566,38609,43701`. Owner to do it in-app after v4.570 deploys.
+**Effective date to record: 2026-07-29** (see tenure-attribution note below — capture the date now).
+
+## 🎯 FUTURE (owner-endorsed direction, 2026-07-29): tenure-based / date-effective attribution
+Owner asked whether attribution should follow the TENURE of stores a leader was in charge of
+(vs today's flat map applied retroactively). **Verdict: yes, as a "responsibility timeline" layer.**
+Unifies three existing to-dos into one system: supervisor patch changes, GM store→store moves
+(Notes 33 A#1), and the review location-attribution rule (Notes 33 A#2).
+- **Model:** effective-dated `org_assignments` table `(entity_type supervisor|gm, name/geid, loc,
+  start_date, end_date, source, override_note)` + resolver `whoRan(loc, date, role)`; must be EDITABLE
+  (override bad source data). Supervisor→store rollups call the resolver per (loc, period) instead of
+  the flat `supervisorGroups()`.
+- **Phasing:** T1 store assignment history + effective dates + transition flags (low); T2 time-aware
+  supervisor/patch rollups (medium, the big win — honest history across a change); T3 prorate a
+  mid-period change by day-weight (heavy, only if per-day precision needed).
+- **Do NOW regardless:** capture the effective date of each org change AS IT HAPPENS — it can't be
+  reconstructed later. It's the sole input the time-aware system needs.
+- **Tailwind:** Employee Roster pull already provides GM `homeLocation` + `storeStartDate` +
+  `jobTitleCodeStartDate` → GM tenure has a data feed. Supervisor patches have no QSRSoft feed →
+  owner-maintained effective-dated entries. See [[notes-33-queue]].
