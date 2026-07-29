@@ -333,45 +333,81 @@ export function formatDiagnosisReport(result, { threshold = 50 } = {}) {
 
   const shorts = V.filter(v => v.dolDiff < 0), overs = V.filter(v => v.dolDiff >= 0);
   const net = V.reduce((s, v) => s + (v.dolDiff || 0), 0);
+
+  // Manager-first re-tiering (Notes 36 #3): the CURRENT count's actionable items are loud;
+  // items whose variance is LOCKED by an early-period count (recount won't recover the $) are
+  // rolled up quietly — present, not lost, but not competing for a busy manager's attention.
+  const isLocked = v => (recountByWrin[v.wrin] || '').startsWith('early');
+  const focus = V.filter(v => !isLocked(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff));
+  const context = V.filter(v => isLocked(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff));
+  const noWaste = v => v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01;
+  // Compact chips (current state first) — rendered as pills by mdToHtml.
+  const chipsFor = v => {
+    const c = [v.dolDiff < 0 ? `{{bad|SHORT ${money(Math.abs(v.dolDiff))}}}` : `{{info|OVER ${money(Math.abs(v.dolDiff))}}}`];
+    if ((recountByWrin[v.wrin] || '').startsWith('recount may')) c.push('{{warn|recount-worthy}}');
+    if (yieldByWrin[v.wrin]) c.push('{{warn|yield off?}}');
+    if (noWaste(v)) c.push('{{warn|no waste logged}}');
+    return c.join(' ');
+  };
+  const actionFor = v => yieldByWrin[v.wrin] ? 'check yield setting, then recount'
+    : noWaste(v) ? 'verify waste logging, then recount'
+    : (recountByWrin[v.wrin] || '').startsWith('recount may') ? 'recount now — still recoverable'
+    : 'recount + verify counts';
+
   const L = [`# FOB Variance Analysis — ${result.storeName || result.store} · ${result.period}`, ''];
-  L.push(`**${V.length} items** exceed ±$${threshold}  ·  **Net variance ${money(net)}**`);
-  L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))})  ·  Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
+  L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
+  L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))}) · Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
 
-  if (!V.length) {
-    L.push('_No items exceed the threshold._');
+  if (!V.length) { L.push('_No items exceed the threshold — count looks clean._'); return L.join('\n'); }
+
+  // ── FOCUS NOW (loud) — the short list a manager acts on this count ──
+  L.push('## 👉 Focus now', '');
+  if (focus.length) {
+    const TOP = 6;
+    focus.slice(0, TOP).forEach(v => {
+      const mgr = mgrByWrin[v.wrin] ? ` · _counted by ${mgrByWrin[v.wrin]}_` : '';
+      L.push(`- **${v.descr || v.wrin}** ${chipsFor(v)} — ${actionFor(v)}${mgr}`);
+    });
+    if (focus.length > TOP) L.push(`- _+${focus.length - TOP} more current item(s) in the full detail below._`);
   } else {
-    L.push('## Full variance detail (≥ ±$' + threshold + ')', '', '| # | Item | WRIN | $ Var | Unit Var | Dir |', '|--:|------|------|------:|--------:|-----|');
-    // Qty/Unit variance = the Variance Stat row's `variance` field (NOT `unitVar`, which
-    // only exists on journey count-events) — reading the wrong name showed 0.0 for every
-    // item while the $ column was fine (Notes 36). expUsage−actUsage is the unit gap.
-    V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
-    L.push('');
-    const tier = (label, lo, hi) => {
-      const items = V.filter(v => { const a = Math.abs(v.dolDiff); return a >= lo && (hi == null || a < hi); });
-      if (!items.length) return;
-      L.push(`## ${label}`, '');
-      items.forEach(v => {
-        const tags = causeTags(v);
-        L.push(`- **${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}) — ${tags.length ? tags.join('; ') : 'recount + verify waste logging'}`);
-      });
-      L.push('');
-    };
-    tier('🔴 CRITICAL — immediate ( ≥ $200 )', 200, null);
-    tier('🟠 HIGH — within 24h ( $100–$199 )', 100, 200);
-    tier('🟡 MODERATE — within 48–72h ( $50–$99 )', threshold, 100);
+    L.push("_Nothing a recount can recover this count — the open variance is locked in from earlier counts (see context below)._");
+  }
+  L.push('');
+
+  // ── EARLIER-COUNT CONTEXT (quiet, rolled up) — kept for scope, de-emphasized ──
+  if (context.length) {
+    const ctxTot = context.reduce((s, v) => s + v.dolDiff, 0);
+    const mgrs = [...new Set(context.map(v => mgrByWrin[v.wrin]).filter(Boolean))];
+    const top3 = context.slice(0, 3).map(v => `${v.descr || v.wrin} (${money(v.dolDiff)})`).join(' · ');
+    L.push('## 📌 Earlier-count context', '');
+    L.push(`${context.length} item${context.length === 1 ? '' : 's'} (${money(ctxTot)}) already cascaded from **early-period counts** — recounting now won't recover the dollars; fix the source counts going forward.${mgrs.length ? ` Early counts by: ${mgrs.join(', ')}.` : ''}`);
+    L.push(`_${top3}${context.length > 3 ? ` · +${context.length - 3} more` : ''}_`, '');
   }
 
-  // Systemic patterns (not per-item) + our recount-recoverability rollup.
+  // ── Systemic patterns (compact) ──
   const systemic = findings.filter(f => ['protein-meals', 'bib-yield', 'waste-patterns', 'yields', 'incomplete-count', 'fob-components'].includes(f.checkId));
-  const recoverable = V.filter(v => (recountByWrin[v.wrin] || '').startsWith('recount may'));
-  const locked = V.filter(v => (recountByWrin[v.wrin] || '').startsWith('early'));
-  if (systemic.length || recoverable.length || locked.length) {
-    L.push('## 🛠️ Systemic action items', '');
-    systemic.forEach(f => L.push(`- [${f.severityWord.toUpperCase()}] ${f.title} — ${f.detail}`));
-    if (recoverable.length) L.push(`- **${recoverable.length} item(s) still recoverable by recounting now** (variance hit late in the period).`);
-    if (locked.length) L.push(`- ${locked.length} item(s) already cascaded (early-period count) — recount won’t recover; fix the source count going forward.`);
+  if (systemic.length) {
+    L.push('## 🛠️ Systemic patterns', '');
+    systemic.forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
     L.push('');
   }
+
+  // ── Reference — full detail (present but demoted below the manager summary) ──
+  L.push('## Reference — full detail', '', `_All ${V.length} items ≥ ±$${threshold}, ranked._`, '');
+  L.push('| # | Item | WRIN | $ Var | Qty Var | Dir |', '|--:|------|------|------:|--------:|-----|');
+  V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
+  L.push('');
+  const tier = (label, lo, hi) => {
+    const items = focus.filter(v => { const a = Math.abs(v.dolDiff); return a >= lo && (hi == null || a < hi); });
+    if (!items.length) return;
+    L.push(`### ${label}`, '');
+    items.forEach(v => { const tags = causeTags(v); L.push(`- **${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}) — ${tags.length ? tags.join('; ') : 'recount + verify waste logging'}`); });
+    L.push('');
+  };
+  tier('🔴 CRITICAL — immediate ( ≥ $200 )', 200, null);
+  tier('🟠 HIGH — within 24h ( $100–$199 )', 100, 200);
+  tier('🟡 MODERATE — within 48–72h ( $50–$99 )', threshold, 100);
+
   if ((result.pending || []).length) L.push('_Checks awaiting data: ' + result.pending.map(p => p.label).join(', ') + '._');
   return L.join('\n');
 }

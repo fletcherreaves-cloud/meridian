@@ -3,9 +3,17 @@
 // pipe tables, horizontal rules, paragraphs. HTML is escaped first (XSS-safe for our own
 // generated reports). Enough to render the EOM diagnosis / SAGE-style reports.
 const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// Chip syntax: {{label}} or {{tone|label}} → a small pill span. tone ∈ warn|bad|good|info
+// (defaults to info) so generated reports can highlight current-state tags compactly.
+const CHIP_TONES = { warn: 1, bad: 1, good: 1, info: 1 };
 const inline = s => esc(s)
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   .replace(/`([^`]+)`/g, '<code>$1</code>')
+  .replace(/\{\{([^}]+)\}\}/g, (_, body) => {
+    const parts = String(body).split('|');
+    const tone = parts.length > 1 && CHIP_TONES[parts[0].trim()] ? parts.shift().trim() : 'info';
+    return `<span class="chip chip-${tone}">${parts.join('|').trim()}</span>`;
+  })
   .replace(/(^|[\s(])\*([^*]+)\*/g, '$1<em>$2</em>')
   .replace(/(^|[\s(])_([^_]+)_(?=$|[\s).,;:])/g, '$1<em>$2</em>');
 

@@ -49,14 +49,29 @@ function printDiagnosis(name, period, reportText) {
   const w = window.open('', '_blank', 'width=800,height=900');
   if (!w) return;
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Render the SAME markdown the on-screen modal shows (mdToHtml) instead of dumping raw
+  // markdown into a <pre> — so Print/PDF matches the formatted report incl. tables + chips
+  // (Notes 36). Light-theme print CSS mirrors the modal's structure with print-safe colors.
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>EOM Diagnosis — ${esc(name)} ${esc(period)}</title>
-    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;line-height:1.5}
-    h1{font-size:17px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:16px}
-    pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55}
+    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;margin:28px;line-height:1.5;font-size:12.5px}
+    h1{font-size:18px;margin:0 0 2px;color:#111} .sub{color:#666;font-size:12px;margin-bottom:16px}
+    .rpt h1{font-size:15px;border-bottom:2px solid #111;padding-bottom:3px;margin:18px 0 8px}
+    .rpt h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.4px;color:#333;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:2px}
+    .rpt h3{font-size:12px;margin:10px 0 4px}
+    .rpt table{border-collapse:collapse;width:100%;margin:6px 0;font-size:11px}
+    .rpt th{background:#f0f0f0;border:1px solid #ccc;padding:4px 7px;text-align:left}
+    .rpt td{border:1px solid #ddd;padding:4px 7px}
+    .rpt ul,.rpt ol{margin:5px 0;padding-left:20px} .rpt li{margin:2px 0}
+    .rpt code{background:#f2f2f2;border-radius:3px;padding:0 4px;font-size:11px}
+    .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin:0 2px;border:1px solid}
+    .chip-warn{background:#fff7e6;border-color:#f0b400;color:#8a6400}
+    .chip-bad{background:#fdecec;border-color:#e05555;color:#a12020}
+    .chip-good{background:#eafaf0;border-color:#4caf78;color:#1f7a44}
+    .chip-info{background:#eef4fb;border-color:#5b9bd5;color:#2f5f8f}
     @media print{@page{margin:0.6in}}</style></head><body>
     <h1>EOM Food-Cost Diagnosis — ${esc(name)}</h1>
     <div class="sub">Period ${esc(period)} · generated ${new Date().toLocaleString()}</div>
-    <pre>${esc(reportText)}</pre></body></html>`);
+    <div class="rpt">${mdToHtml(reportText)}</div></body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 400);
 }
@@ -925,7 +940,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           .md-rpt ul,.md-rpt ol{margin:3px 0;padding-left:18px}
           .md-rpt li{margin:2px 0}
           .md-rpt p{margin:4px 0}
-          .md-rpt code{background:var(--surf2);padding:1px 4px;border-radius:3px;font-size:11px}`),
+          .md-rpt code{background:var(--surf2);padding:1px 4px;border-radius:3px;font-size:11px}
+          .md-rpt .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin:0 2px;border:1px solid}
+          .md-rpt .chip-warn{background:rgba(245,188,0,.14);border-color:#f5bc00;color:#f5bc00}
+          .md-rpt .chip-bad{background:rgba(248,113,113,.14);border-color:#f87171;color:#f87171}
+          .md-rpt .chip-good{background:rgba(74,222,128,.14);border-color:#4ade80;color:#4ade80}
+          .md-rpt .chip-info{background:rgba(91,155,213,.14);border-color:#5b9bd5;color:#7fb0e0}`),
         h('div', { className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(diag.report) } }),
 
         // pending checks (awaiting a data pull for this period)

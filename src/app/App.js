@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.584';
+const MERIDIAN_VERSION    = '4.585';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.585', date:'2026-07-29', changes:[
+    'EOM Food-Cost Diagnosis report redesigned to be manager-first: it now leads with a "👉 Focus now" short-list of the current count\'s actionable items (each with compact colour chips — SHORT/OVER $, recount-worthy, yield off?, no waste logged — and a one-line action), then a quiet, rolled-up "Earlier-count context" summarizing items whose variance is locked in from earlier counts (present, not lost, but no longer competing for attention), then systemic patterns, with the full item table + tiered breakdown kept below as reference. Same depth, far more readable.',
+    'The Diagnosis Print/PDF now renders the formatted report (headings, tables, chips) instead of dumping raw markdown text — it matches the on-screen report.',
+  ]},
   {version:'4.584', date:'2026-07-29', changes:[
     'EOM Full report: the Unit/Qty Variance column was showing 0.0 for every item (it read a field that only exists on journey events) — it now shows the real quantity variance from the Variance Stat report alongside the $ variance.',
     'EOM Item Journeys: the report figure is now framed as one "Variance" with clear Qty and $ sub-values, and reconciliation now confirms BOTH — a "✓ Variance matches report" when the ledger $ and quantity both tie out, or a specific "⚠ doesn\'t fully match — $ off by … / qty off by …" when they don\'t. Quantity also shows an approximate full-case count where the case size is known.',
