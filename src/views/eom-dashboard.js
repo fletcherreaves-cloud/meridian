@@ -71,7 +71,9 @@ function defaultModeFor(period) {
   const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   if (period !== cur) return 'progress';
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  return now.getDate() >= lastDay - 2 ? 'eom' : 'progress';
+  // In the count window default to the Scoreboard checklist (the owner's EOM triage view);
+  // the detailed EOM Count table is one click away.
+  return now.getDate() >= lastDay - 2 ? 'scoreboard' : 'progress';
 }
 const daysAgo = (dt) => {
   if (!dt) return null;
@@ -318,6 +320,25 @@ function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
             showDollars ? money(tot[k]) : pct2(distPct(k))))))),
     div({ style: { fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic', marginTop: '8px' } },
       '▸ = store’s largest component.  Red = running >1.5× the district rate (dollar-weighted).  Click a column to sort.'));
+}
+
+// ── Scoreboard status model — a store advances left→right as the owner works it ──
+// bucket from the auto count % (believesDone ≥90%) + the human check-offs (diagnosis /
+// comms). Priority is right-most-wins so a reviewed+comms store reads as "comms sent".
+const SB_PILL = {
+  notstarted: { t: 'Not started',     c: 'var(--text3)', bg: 'var(--surf3)' },
+  counting:   { t: 'Counting',        c: '#38bdf8',      bg: 'rgba(56,189,248,.12)' },
+  ready:      { t: 'Ready to review', c: '#f5bc00',      bg: 'rgba(245,188,0,.16)' },
+  reviewed:   { t: 'Reviewed',        c: '#4ade80',      bg: 'rgba(74,222,128,.12)' },
+  comms:      { t: 'Comms sent',      c: '#a78bfa',      bg: 'rgba(167,139,250,.14)' },
+};
+const SB_ORDER = { ready: 0, counting: 1, notstarted: 2, reviewed: 3, comms: 4 };
+function sbBucket(r) {
+  if ((r.comms || 'none') !== 'none') return 'comms';
+  if ((r.diagnosis || 'pending') !== 'pending') return 'reviewed';
+  if (r.prog.believesDone) return 'ready';
+  if ((r.prog.pctCounted || 0) > 0.01) return 'counting';
+  return 'notstarted';
 }
 
 export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
@@ -614,6 +635,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     try { await saveEomCountStatus([next]); } finally { setSaving(''); }
   }, [statusMap, period]);
 
+  // Scoreboard buckets — a store moves left→right as you work it (owner EOM checklist).
+  const scoreboard = useMemo(() => {
+    const tally = { notstarted: 0, counting: 0, ready: 0, reviewed: 0, comms: 0 };
+    for (const r of rows) tally[sbBucket(r)]++;
+    const sorted = [...rows].sort((a, b) =>
+      (SB_ORDER[sbBucket(a)] - SB_ORDER[sbBucket(b)]) || (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
+    return { tally, sorted };
+  }, [rows]);
+
   const inWindow = useMemo(() => {
     const d = new Date(); d.setHours(0, 0, 0, 0);
     return d >= countWindowStart(period);
@@ -633,10 +663,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
         // mode toggle — EOM count-completion vs year-round progress
         div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-          [['eom', 'EOM Count'], ['progress', 'Year-Round']].map(([k, label]) =>
+          [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Year-Round']].map(([k, label]) =>
             h('button', {
               key: k, onClick: () => setMode(k),
-              title: k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
+              title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared' : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
               style: {
                 background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
                 border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
@@ -717,6 +747,36 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           allRows.length === 0
             ? `No EOM data for ${period} yet. Variance / waste / transfers pull daily; On-Hand count progress fills in the last 3 days of the month.`
             : 'No stores match this filter — try All.')
+      : mode === 'scoreboard' ? div(null,
+          // tally band
+          div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' } },
+            [['notstarted', 'Not started'], ['counting', 'Counting'], ['ready', 'Ready for you'], ['reviewed', 'Reviewed'], ['comms', 'Comms sent']].map(([k, label]) => {
+              const p = SB_PILL[k];
+              return div({ key: k, style: { flex: '1 1 120px', border: '1px solid var(--bdr)', borderLeft: `3px solid ${p.c}`, borderRadius: '8px', padding: '8px 10px', background: 'var(--surf2)' } },
+                div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
+                div({ style: { fontSize: '22px', fontWeight: 700, color: 'var(--text)' } }, String(scoreboard.tally[k])));
+            })),
+          // per-store checklist rows (ready-for-you first)
+          div({ style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+            scoreboard.sorted.map(r => {
+              const p = SB_PILL[sbBucket(r)];
+              const reviewed = (r.diagnosis || 'pending') !== 'pending';
+              const commsSent = (r.comms || 'none') !== 'none';
+              const chk = (on, label, onClick) => h('button', {
+                onClick, disabled: saving === r.loc,
+                style: { background: on ? 'rgba(74,222,128,.14)' : 'var(--surf3)', color: on ? '#4ade80' : 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '4px 9px', fontSize: '11px', fontWeight: 600, cursor: saving === r.loc ? 'wait' : 'pointer', whiteSpace: 'nowrap' },
+              }, (on ? '☑ ' : '☐ ') + label);
+              return div({ key: r.loc, style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--bdr)', borderLeft: `3px solid ${p.c}`, borderRadius: '8px', background: 'var(--surf2)', flexWrap: 'wrap' } },
+                div({ style: { flex: '1 1 150px', minWidth: '150px' } },
+                  span({ style: { fontWeight: 700, color: 'var(--text)' } }, r.name),
+                  span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '6px' } }, r.org === 'emerald' ? 'FL' : 'OK'),
+                  r.prog.lastActivityAt ? span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '8px' } }, 'last count ' + new Date(r.prog.lastActivityAt).toLocaleDateString()) : null),
+                div({ style: { flex: '1 1 160px', minWidth: '140px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
+                span({ style: { fontSize: '11px', fontWeight: 700, color: p.c, background: p.bg, borderRadius: '12px', padding: '3px 10px', whiteSpace: 'nowrap' } }, p.t),
+                div({ style: { display: 'flex', gap: '6px' } },
+                  chk(reviewed, 'Reviewed', () => updateStatus(r.loc, { diagnosisStatus: reviewed ? 'pending' : 'reviewed' })),
+                  chk(commsSent, 'Comms', () => updateStatus(r.loc, { commsStatus: commsSent ? 'none' : 'sent' }))));
+            })))
       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' } },
         h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '11px', textTransform: 'uppercase' } },
           [['Store'], ['Count progress'], ['By class'], ['Last count'],
