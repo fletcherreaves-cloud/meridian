@@ -215,10 +215,19 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.556';
-const MERIDIAN_BUILD_DATE = '2026-07-27';
+const MERIDIAN_VERSION    = '4.567';
+const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.567', date:'2026-07-29', changes:[
+    'Leadership One-Pager — Weekly Business Review: a polished, leader-led review the leader completes before each cascade discussion. It leads with last week\'s Wins, a performance scorecard (Product Sales, GC vs LY, OEPE, R2P, Labor %, FOB %, Voice OSAT + B2B — with blank Target / Actual / On-Track for the leader to fill), and closes with Commitments. The form ADAPTS to the cascade level: Owner→DO shows district outliers + opportunities + supervisor accountability; DO→Supervisor shows store-by-store + GM coaching focus; Supervisor→GM shows the store deep-dive (speed/food/labor) + a 10-line shift-manager tracker. Print to PDF, download as an editable Word (.doc), or a fully-blank fillable version. When not blank, actuals auto-fill from live data and shift-manager names pre-list for the store.',
+    'New: Forms Library (🗂) — the leadership review forms catalogued by cascade level (Owner→DO / DO→Supervisor / Supervisor→GM), each with Print-blank and Word-blank actions.',
+    'New: Metric Lineage (🔍) — a searchable, 100%-transparent registry of every metric that is calculated from other metrics, showing its exact formula, upstream inputs, and the source report/table so any number can be verified against source. Same registry powers the KPI info tooltip.',
+    'Speed metrics decoded from the Daily Activity report and now cloud-fresh for the current day: R2P (Receipt to Print) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt, and OEPE (Order-to-Exit) = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt — both reconciled exactly to the report, so the One-Pager\'s R2P/OEPE tiles populate intraday instead of waiting on a manual upload.',
+    'One-Pager Opportunity $ now paces Guest Count vs the store\'s own QSRSoft projection (not a best-in-class store), so an industry-wide sales dip no longer inflates the guest-count opportunity. Recoverable $ are also shown as a relatable weekly figure. Added a per-location breakdown table + supervisor top/bottom-store highlights (FL→FL, OK→OK).',
+    'Performance Reviews: added Department Manager + Shift Manager roles; the manager-attribution dropdown (score a DM/AM/Shift-Manager on their OWN shifts) now populates from the Shift Manager Summary data for the selected store.',
+    'Fix: the End-of-Month On-Hand inventory pull was failing every run (stale browser-login path) — it now mints a fresh session each run like the variance pull, so EOM count progress flows automatically through month-end.',
+  ]},
   {version:'4.556', date:'2026-07-27', changes:[
     'Precautionary hardening batch: fixed a data-completeness bug where the Daily Glimpse / Cash / Sales-Ledger loaders could silently drop the newest ~3 weeks of data on large date ranges (Supabase 1000-row cap) — At-A-Glance tiles now always see the full window. Fixed the Calendar Manager Florida/Oklahoma pills (FL pill was empty). Refreshed this version/changelog and removed stale debug logging.',
     'EOM: Item Journey visual guide (per-item count-cycle timeline with verified-fact vs likely-inference signals, qty + $ variance, reconciled exactly to the Variance Stat report, click-through flow chips), two modes (EOM count-completion + year-round progress), FOB multi-location variance matrix, and the comms draft now carries the full food-cost action plan.',
