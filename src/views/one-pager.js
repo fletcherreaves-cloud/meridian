@@ -169,6 +169,16 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
 
   const btn = { padding: '6px 12px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12, fontWeight: 700 };
   const gold = { ...btn, border: '1px solid var(--accent,#f5bc00)', background: 'var(--accent,#f5bc00)', color: '#111', fontWeight: 800 };
+  // Weekly-Review options: shift-manager names for the selected scope + a scope label.
+  const wkOpts = () => {
+    const norm = v => String(v || '').replace(/^0+/, '') || String(v || '');
+    const locSet = new Set((locs || []).map(norm));
+    const nmeta = {};
+    for (const r of (ds?.shiftManagerRows || [])) { if (locSet.has(norm(r.loc)) && r.geid && r.name) nmeta[r.geid] = r.name; }
+    const managerNames = [...new Set(Object.values(nmeta))].sort();
+    const storeLabel = (locs || []).length === 1 ? nm(locs[0]) : (page?.scopeLabel || '');
+    return { managerNames, storeLabel };
+  };
 
   return div({ style: { position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,.55)', overflow: 'auto', padding: 18 }, onClick: onClose },
     div({ onClick: e => e.stopPropagation(), style: { width: 'min(1040px,100%)', margin: '0 auto', background: 'var(--bg)', border: '1px solid var(--bdr)', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
@@ -188,15 +198,9 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
           h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
           h('button', { onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems), style: btn }, '🖨 Print'),
           h('button', { onClick: () => printBlankOnePager(page, period), style: btn, title: 'Open-ended discussion sheet (auto state, blank sections)' }, '📝 Discussion'),
-          h('button', { onClick: () => {
-            const norm = v => String(v || '').replace(/^0+/, '') || String(v || '');
-            const locSet = new Set((locs || []).map(norm));
-            const nmeta = {};
-            for (const r of (ds?.shiftManagerRows || [])) { if (locSet.has(norm(r.loc)) && r.geid && r.name) nmeta[r.geid] = r.name; }
-            const managerNames = [...new Set(Object.values(nmeta))].sort();
-            const storeLabel = (locs || []).length === 1 ? nm(locs[0]) : (page?.scopeLabel || '');
-            printWeeklyReview(page, { managerNames, storeLabel });
-          }, style: btn, title: 'Weekly Business Review — blank prep sheet (auto-fills actuals + shift-manager names)' }, '📋 Weekly Review'),
+          h('button', { onClick: () => printWeeklyReview(page, wkOpts()), style: btn, title: 'Weekly Business Review — auto-fills actuals + shift-manager names, print to PDF' }, '📋 Weekly Review'),
+          h('button', { onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, wkOpts())), style: btn, title: 'Download the filled Weekly Review as an editable Word (.doc)' }, '⬇ Word'),
+          h('button', { onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true })), style: btn, title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' }, '▫ Blank'),
           h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕'),
         ),
       ),
@@ -508,13 +512,21 @@ function printBlankOnePager(page, period) {
 // Modeled on the owner's ReportLab design; rebuilt natively so it prints to PDF from the
 // browser, auto-fills scorecard actuals from live data, and pre-lists the store's Shift
 // Managers. `managerNames` = names for the selected scope (blank rows when unknown).
-function printWeeklyReview(page, { managerNames = [], storeLabel = '' } = {}) {
-  const w = window.open('', '_blank', 'width=850,height=1100'); if (!w || !page) return;
+// Review title adapts to the cascade level so the SAME form serves all three
+// conversations (Owner→DO district, DO→Supervisor area, Supervisor→GM restaurant).
+const REVIEW_TITLE_BY_LEVEL = { o_d: 'DISTRICT BUSINESS REVIEW', d_s: 'AREA BUSINESS REVIEW', s_g: 'RESTAURANT BUSINESS REVIEW' };
+
+// Build the Weekly Business Review HTML (used by both Print→PDF and Word download).
+// blank:true → a fully-blank fillable form (no live actuals, no pre-listed names).
+function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = false } = {}) {
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || '';
+  const casc = page.cascade || {};
+  const title = REVIEW_TITLE_BY_LEVEL[casc.id] || 'WEEKLY BUSINESS REVIEW';
   const cs = Object.fromEntries((page.currentState || []).map(r => [r.key, r]));
-  // Live actual for a scorecard row, or a blank fill line when we don't have it.
+  // Live actual for a scorecard row, or a blank fill line (always blank in blank mode).
   const actual = (key, fmt, suffix = '') => {
+    if (blank) return `_____________${suffix}`;
     const r = cs[key];
     const v = r && r.actual != null ? valFmt(r.actual, fmt) : null;
     return v != null ? `<b>${esc(v)}</b>` : `_____________${suffix}`;
@@ -535,7 +547,8 @@ function printWeeklyReview(page, { managerNames = [], storeLabel = '' } = {}) {
     <td>${r[2]}</td>
     <td style="text-align:left">${r[3]}</td></tr>`).join('');
 
-  const smNames = (managerNames && managerNames.length ? managerNames.slice(0, 6) : ['', '', '']);
+  const smSrc = blank ? [] : managerNames;
+  const smNames = (smSrc && smSrc.length ? smSrc.slice(0, 6) : ['', '', '']);
   const smBody = smNames.map((nm2, i) => `<tr>
     <td style="text-align:left">${i + 1}. ${nm2 ? `<b>${esc(nm2)}</b>` : '___________________________'}</td>
     <td>[ ] B &nbsp; [ ] L &nbsp; [ ] D &nbsp; [ ] O</td>
@@ -545,7 +558,7 @@ function printWeeklyReview(page, { managerNames = [], storeLabel = '' } = {}) {
   const line = '<div style="border-bottom:1px solid #999;height:1.4em;margin-top:6px"></div>';
   const lines = n => Array.from({ length: n }, () => line).join('');
 
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Weekly Business Review ${esc(rLabel)}</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} ${esc(rLabel)}</title>
     <style>
     body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:36px;font-size:9pt}
     h1{color:#BD0011;font-size:18pt;font-weight:bold;margin:0 0 4px}
@@ -558,8 +571,8 @@ function printWeeklyReview(page, { managerNames = [], storeLabel = '' } = {}) {
     .dd{font-size:9pt;line-height:1.5;margin:2px 0}
     @media print{@page{margin:.5in}}
     </style></head><body>
-    <h1>WEEKLY BUSINESS REVIEW &amp; CHECKPOINT</h1>
-    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; <b>Restaurant:</b> ${storeLabel ? `<b>${esc(storeLabel)}</b>` : '____________________'} &nbsp;&nbsp;&nbsp; <b>RGM:</b> ____________________</div>
+    <h1>${esc(title)} &amp; CHECKPOINT</h1>
+    <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; <b>${esc(casc.label || '')}</b> &nbsp;&nbsp;&nbsp; <b>${(storeLabel && !blank) ? 'Scope:' : 'Restaurant:'}</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '____________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> ____________________</div>
 
     <div class="banner">1. WEEKLY PERFORMANCE SCORECARD &nbsp;&nbsp; [ Volume Tier: &nbsp; [ ] A ($110k+) &nbsp; [ ] B ($75k–$110k) &nbsp; [ ] C (&lt;$75k) ]</div>
     <table>
@@ -585,6 +598,25 @@ function printWeeklyReview(page, { managerNames = [], storeLabel = '' } = {}) {
 
     <div class="banner">4. COMMITMENTS FOR NEXT WEEK</div>
     ${lines(4)}
-    </body></html>`);
+    </body></html>`;
+}
+
+// Print the Weekly Review (→ PDF via the browser dialog).
+function printWeeklyReview(page, opts) {
+  const w = window.open('', '_blank', 'width=850,height=1100'); if (!w || !page) return;
+  w.document.write(weeklyReviewHtml(page, opts));
   w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
+}
+
+// Download an HTML doc as a Word-openable .doc (Word reads HTML-based .doc natively).
+// The BOM + msword MIME make Word open it directly; the user edits in Word and can send
+// it back for us to fold changes into the template.
+function downloadDoc(filename, html) {
+  try {
+    const blob = new Blob(['﻿' + html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 150);
+  } catch (e) { console.warn('[one-pager] Word download failed:', e); }
 }
