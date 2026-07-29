@@ -18,6 +18,7 @@ import {
   buildIncompleteCountMessage,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
+import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, LANE_META } from '../engine/eom-item-journey.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
@@ -786,6 +787,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 div({ style: { flex: '1 1 160px', minWidth: '140px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
                 span({ style: { fontSize: '11px', fontWeight: 700, color: p.c, background: p.bg, borderRadius: '12px', padding: '3px 10px', whiteSpace: 'nowrap' } }, p.t),
                 div({ style: { display: 'flex', gap: '6px' } },
+                  h('button', {
+                    onClick: () => openDiag(r.loc, r.name, r.components),
+                    title: 'Open the full FOB variance report + action plan for this store',
+                    style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '6px', padding: '4px 9px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' },
+                  }, '📋 Report'),
                   chk(reviewed, 'Reviewed', () => updateStatus(r.loc, { diagnosisStatus: reviewed ? 'pending' : 'reviewed' })),
                   chk(commsSent, 'Comms', () => updateStatus(r.loc, { commsStatus: commsSent ? 'none' : 'sent' }))));
             })))
@@ -893,12 +899,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             diag.result.actionItems.map((a, i) =>
               div({ key: i, style: { fontSize: '12.5px', color: 'var(--text)', padding: '6px 9px', background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${a.startsWith('[CRITICAL') ? '#f87171' : a.startsWith('[HIGH') ? '#f5bc00' : '#38bdf8'}` } }, a)))),
 
-        // full report text
+        // full report — rendered markdown (tables, tiers, bold). Copy/Print use the raw text.
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Full report'),
-        h('textarea', {
-          readOnly: true, value: diag.report,
-          style: { width: '100%', minHeight: '260px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr)', borderRadius: '6px', padding: '10px', fontSize: '12px', fontFamily: 'ui-monospace, monospace', lineHeight: 1.5, resize: 'vertical' },
-        }),
+        h('style', null, `.md-rpt{font-size:12.5px;line-height:1.5;color:var(--text);max-height:60vh;overflow:auto;background:var(--surf3);border:1px solid var(--bdr);border-radius:6px;padding:12px 14px}
+          .md-rpt h1{font-size:15px;margin:2px 0 6px;color:var(--text)}
+          .md-rpt h2{font-size:13px;margin:12px 0 4px;color:var(--text);border-bottom:1px solid var(--bdr);padding-bottom:3px}
+          .md-rpt table{border-collapse:collapse;width:100%;margin:4px 0 8px;font-size:11.5px}
+          .md-rpt th{background:var(--surf2);text-align:left;padding:3px 7px;border:.5px solid var(--bdr);color:var(--text2)}
+          .md-rpt td{padding:3px 7px;border:.5px solid var(--bdr)}
+          .md-rpt ul,.md-rpt ol{margin:3px 0;padding-left:18px}
+          .md-rpt li{margin:2px 0}
+          .md-rpt p{margin:4px 0}
+          .md-rpt code{background:var(--surf2);padding:1px 4px;border-radius:3px;font-size:11px}`),
+        h('div', { className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(diag.report) } }),
 
         // pending checks (awaiting a data pull for this period)
         diag.result.pending.length > 0 && div({ style: { marginTop: '10px', fontSize: '11px', color: 'var(--text3)' } },

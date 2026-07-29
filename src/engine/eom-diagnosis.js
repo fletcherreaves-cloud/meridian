@@ -162,6 +162,39 @@ export const DEFAULT_CHECKS = [
         t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn }));
     },
   },
+  {
+    // Employee/manager-meal leakage — multiple PROTEINS short at once rarely happens by
+    // chance; it usually means unrecorded crew/manager meals (or theft). Pattern, not per-item.
+    id: 'protein-meals', label: 'Proteins short together — likely unrecorded meals', order: 45, enabled: true,
+    requires: ['variance'], params: { threshold: 50, minItems: 3 },
+    run: (ctx) => {
+      const th = ctx.params.threshold ?? 50;
+      const PROTEIN = /\b(BEEF|PATTY|NUGGET|BACON|CHICKEN|MCCRISPY|FILET|SAUSAGE|CANADIAN|MCCHICKEN|MCNUGGET)\b/i;
+      const shorts = (ctx.data.variance || []).filter(v => v.dolDiff < 0 && Math.abs(v.dolDiff) >= th && PROTEIN.test(v.descr || ''));
+      if (shorts.length < (ctx.params.minItems ?? 3)) return [];
+      const total = shorts.reduce((s, v) => s + (v.dolDiff || 0), 0);
+      return [mkFinding('protein-meals', SEVERITY.high, `${shorts.length} protein items short together`,
+        `${shorts.map(v => v.descr).slice(0, 6).join(', ')}${shorts.length > 6 ? '…' : ''} — $${Math.round(Math.abs(total))} short. Multiple proteins short at once points to unrecorded crew/manager meals (or theft). Audit meal logging + verify counts.`,
+        Math.abs(total), { items: shorts.map(v => v.wrin) })];
+    },
+  },
+  {
+    // BIB / beverage yield — a fountain item SHORT with ~zero waste logged is almost always a
+    // yield-setting / syrup-ratio / BIB-connection issue, not real loss.
+    id: 'bib-yield', label: 'Beverage shorts w/ zero waste — BIB yield', order: 46, enabled: true,
+    requires: ['variance'], params: { threshold: 50 },
+    run: (ctx) => {
+      const th = ctx.params.threshold ?? 50;
+      const BEV = /\b(COKE|SPRITE|FANTA|HI ?C|DR ?PEPPER|MINUTE MAID|MM |LEMONADE|ICED TEA|TEA\/|FRUIT PUNCH|REFRESHER|BIB|LAVABURST|POWERADE|BARQ|SWEET TEA)\b/i;
+      const hits = (ctx.data.variance || []).filter(v => v.dolDiff < 0 && Math.abs(v.dolDiff) >= th && BEV.test(v.descr || '')
+        && ((Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01));
+      if (!hits.length) return [];
+      const total = hits.reduce((s, v) => s + (v.dolDiff || 0), 0);
+      return [mkFinding('bib-yield', SEVERITY.medium, `${hits.length} beverage item(s) short with zero waste`,
+        `${hits.map(v => v.descr).slice(0, 6).join(', ')}${hits.length > 6 ? '…' : ''} — $${Math.round(Math.abs(total))} short, no waste logged. Check BIB yield settings / syrup-to-water ratios + BIB connections; recount.`,
+        Math.abs(total), { items: hits.map(v => v.wrin) })];
+    },
+  },
 ];
 
 // ── Yield-band cause overlay ──────────────────────────────────────────────────
@@ -326,7 +359,7 @@ export function formatDiagnosisReport(result, { threshold = 50 } = {}) {
   }
 
   // Systemic patterns (not per-item) + our recount-recoverability rollup.
-  const systemic = findings.filter(f => ['waste-patterns', 'yields', 'incomplete-count', 'fob-components'].includes(f.checkId));
+  const systemic = findings.filter(f => ['protein-meals', 'bib-yield', 'waste-patterns', 'yields', 'incomplete-count', 'fob-components'].includes(f.checkId));
   const recoverable = V.filter(v => (recountByWrin[v.wrin] || '').startsWith('recount may'));
   const locked = V.filter(v => (recountByWrin[v.wrin] || '').startsWith('early'));
   if (systemic.length || recoverable.length || locked.length) {
