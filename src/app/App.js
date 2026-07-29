@@ -215,10 +215,16 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.585';
+const MERIDIAN_VERSION    = '4.587';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.587', date:'2026-07-29', changes:[
+    'Data-integrity fix: large cloud reads (starting with the QSRSoft daily-activity summary that feeds At-A-Glance + the One-Pager forms) could silently return only PARTIAL data if a read was cut off mid-way — and because they loaded oldest-first, the missing rows were the most RECENT days, so the app quietly showed data "stuck" a couple weeks back while the live data was actually current. Reads now load newest-first (a truncated read keeps the recent days that matter) and a cut-off read now logs a loud warning instead of pretending it was complete. Note: streams fed by the emailed QSRSoft reports (KVS / cash controls / labor %) can still lag until that email pipeline is caught up — that is a separate data-refresh, not a display bug.',
+  ]},
+  {version:'4.586', date:'2026-07-29', changes:[
+    'EOM Dashboard: counted + actively-counting locations now sort to the top of the store list in every mode (matching the Scoreboard), so the stores in play surface first.',
+  ]},
   {version:'4.585', date:'2026-07-29', changes:[
     'EOM Food-Cost Diagnosis report redesigned to be manager-first: it now leads with a "👉 Focus now" short-list of the current count\'s actionable items (each with compact colour chips — SHORT/OVER $, recount-worthy, yield off?, no waste logged — and a one-line action), then a quiet, rolled-up "Earlier-count context" summarizing items whose variance is locked in from earlier counts (present, not lost, but no longer competing for attention), then systemic patterns, with the full item table + tiered breakdown kept below as reference. Same depth, far more readable.',
     'The Diagnosis Print/PDF now renders the formatted report (headings, tables, chips) instead of dumping raw markdown text — it matches the on-screen report.',

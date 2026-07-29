@@ -13,11 +13,21 @@ export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 
 // Paginate through all rows — Supabase caps at 1000 by default.
 // Pass a builder fn that receives (from, to) and returns a Supabase query.
-async function fetchAll(builderFn, pageSize = 1000) {
+async function fetchAll(builderFn, pageSize = 1000, label = '') {
   let all = [], from = 0;
   while (true) {
     const { data, error } = await builderFn(from, from + pageSize - 1);
-    if (error || !data?.length) break;
+    // A mid-pagination error (e.g. a free-tier egress/throttle cutoff) previously returned
+    // whatever pages loaded so far AS IF complete — silently dropping the rest of the rows.
+    // On big reads ordered oldest-first that meant the NEWEST days vanished with no warning
+    // (the "data stuck at an old date" bug). Warn loudly and mark the result partial so
+    // callers/guards can surface a stale-data banner instead of trusting a truncated set.
+    if (error) {
+      console.warn(`[Meridian] fetchAll(${label || '?'}) truncated after ${all.length} rows — read error:`, error.message || error);
+      try { Object.defineProperty(all, '_partial', { value: true, enumerable: false }); } catch {}
+      break;
+    }
+    if (!data?.length) break;
     all.push(...data);
     if (data.length < pageSize) break;
     from += pageSize;
@@ -1597,12 +1607,17 @@ export async function loadQsrActSummary(daysBack = 35) {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   // Paginate — qsr_daily_activity has ~675 rows/day, so a single query hits the
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
+  // Order NEWEST-first: this is a large multi-page read, and if a free-tier egress cutoff
+  // truncates it mid-pagination, we must keep the RECENT days (what every current-window
+  // tile/form needs) rather than the oldest. Ascending order silently dropped the newest
+  // ~2 weeks under throttling (the "data stuck at an old date" bug). Aggregation is by
+  // (loc,dt) so row order doesn't affect the result — only which rows survive truncation.
   const data = await fetchAll((from, to) => supabase
     .from('qsr_daily_activity')
     .select('loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
     .gte('dt', cutoffStr)
-    .order('dt')
-    .range(from, to));
+    .order('dt', { ascending: false })
+    .range(from, to), 1000, 'qsrActSummary');
   const map = {};
   for (const r of data || []) {
     const loc = String(parseInt(r.loc, 10)); // strip zero-padding ("0003708" → "3708")
