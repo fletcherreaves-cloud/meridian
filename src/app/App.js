@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.593';
+const MERIDIAN_VERSION    = '4.594';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.594', date:'2026-07-29', changes:[
+    'Faster current-data load: the Daily Glimpse, Cash, Sales Ledger, Labor, Ops and Controls streams now load their pages in parallel (like the DAR summary already does) instead of one after another — the current-day sales/service/controls appear noticeably quicker after login.',
+    'Fixed the At-A-Glance "stores at red model health" count mismatch (header said 1, checklist said 2): a store with no model-health score yet was being counted as red in one place; both now ignore null scores.',
+  ]},
   {version:'4.593', date:'2026-07-29', changes:[
     'At-A-Glance tiles no longer get stuck "as of" the last manual-upload date. The date-window logic checked only the manual Operations Report to decide whether the selected range had data — so once manual uploads stopped, it silently fell back to a 30-day window ending on the last manual date (e.g. Jul 15), pinning Sales & Guest Counts, Service, Controls and the district morning brief to that old date even though the auto DAR / Daily Glimpse were current. It now recognizes data from the auto streams too and anchors to the freshest date across all of them.',
   ]},

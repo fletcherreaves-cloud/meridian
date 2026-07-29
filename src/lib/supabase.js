@@ -13,6 +13,34 @@ export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 
 // Paginate through all rows — Supabase caps at 1000 by default.
 // Pass a builder fn that receives (from, to) and returns a Supabase query.
+// PARALLEL pagination: count the rows, then fire every page at once (Promise.allSettled)
+// instead of walking pages sequentially. Much faster for the multi-thousand-row current-
+// window streams, and a partial/throttled read keeps whatever pages returned (ordered
+// newest-first) instead of rejecting. Use for big date-windowed reads.
+async function _pagedParallel({ table, select, gteCol, gteVal, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
+  if (!supabase) return [];
+  let head = supabase.from(table).select(orderCol || 'loc', { count: 'exact', head: true });
+  if (gteCol) head = head.gte(gteCol, gteVal);
+  const { count } = await head;
+  const pages = Math.max(1, Math.ceil((count || 0) / pageSize));
+  const reqs = [];
+  for (let p = 0; p < pages; p++) {
+    let q = supabase.from(table).select(select);
+    if (gteCol) q = q.gte(gteCol, gteVal);
+    q = q.order(orderCol, { ascending });
+    for (const oc of extraOrder) q = q.order(oc);
+    reqs.push(q.range(p * pageSize, p * pageSize + pageSize - 1));
+  }
+  const settled = await Promise.allSettled(reqs);
+  const data = []; let failed = 0;
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
+    else failed++;
+  }
+  if (failed) console.warn(`[Meridian] ${label || table}: ${failed}/${pages} page(s) failed (egress throttle?) — newest-first keeps recent days`);
+  return data;
+}
+
 async function fetchAll(builderFn, pageSize = 1000, label = '') {
   let all = [], from = 0;
   while (true) {
@@ -520,10 +548,7 @@ export async function saveLaborRows(rows) {
 // Load all labor rows from Supabase (for DI calibration history accumulation)
 export async function loadLaborRows() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase
-    .from('labor_rows').select('*')
-    .order('report_date', { ascending: false })   // newest-first: a truncated read keeps recent days
-    .range(from, to), 1000, 'laborRows');
+  const data = await _pagedParallel({ table: 'labor_rows', select: '*', orderCol: 'report_date', ascending: false, label: 'laborRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:      r.loc,
@@ -863,10 +888,7 @@ export async function saveOpsRows(rows) {
 
 export async function loadOpsRows() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase
-    .from('ops_rows').select('*')
-    .order('date', { ascending: false })
-    .range(from, to));
+  const data = await _pagedParallel({ table: 'ops_rows', select: '*', orderCol: 'date', ascending: false, label: 'opsRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:  r.loc,
@@ -934,10 +956,7 @@ export async function saveCtrlRows(rows) {
 
 export async function loadCtrlRows() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase
-    .from('ctrl_rows').select('*')
-    .order('date', { ascending: false })
-    .range(from, to));
+  const data = await _pagedParallel({ table: 'ctrl_rows', select: '*', orderCol: 'date', ascending: false, label: 'ctrlRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:            r.loc,
@@ -1746,8 +1765,7 @@ export async function loadGlimpse(daysBack = 45) {
   // and if a page read is cut off (free-tier egress throttle), we must keep the RECENT days
   // these freshest-wins tiles need — ascending order silently dropped the newest days (the
   // "Service/Controls stuck at an old date" bug, even though email-parse writes them current).
-  const data = await fetchAll((from, to) => supabase.from('daily_glimpse_daily')
-    .select('*').gte('date', iso).order('date', { ascending: false }).range(from, to), 1000, 'glimpse');
+  const data = await _pagedParallel({ table: 'daily_glimpse_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'glimpse' });
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
@@ -1769,8 +1787,7 @@ export async function loadCash(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase.from('cash_sheet_daily')
-    .select('*').gte('date', iso).order('date', { ascending: false }).range(from, to), 1000, 'cash');
+  const data = await _pagedParallel({ table: 'cash_sheet_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'cash' });
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, gc: r.gc, avgCheck: r.avg_check,
@@ -1793,8 +1810,7 @@ export async function loadSalesLedger(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase.from('sales_ledger_daily')
-    .select('*').gte('date', iso).order('date', { ascending: false }).range(from, to), 1000, 'salesLedger');
+  const data = await _pagedParallel({ table: 'sales_ledger_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'salesLedger' });
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     sales: r.all_net_sales, allNetSales: r.all_net_sales, allNetSalesLY: r.all_net_sales_ly, salesVsLYPct: r.sales_vs_ly_pct,

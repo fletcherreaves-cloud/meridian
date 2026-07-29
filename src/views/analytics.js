@@ -6602,7 +6602,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(unlocked.length>0) items.push({id:'auto_locks',priority:'high',
       text:unlocked.length+' store'+(unlocked.length>1?'s':'')+' missing this week\'s projection lock',
       detail:unlocked.map(l=>STORE_NAMES[l]||l).join(', ')});
-    const redStores=allLocs.filter(loc=>modelHealthScore(loc,ds,settings).score<50);
+    // Guard null scores: `null < 50` is true in JS, so an insufficient-data store used to
+    // count as red here while the header (which skips null) didn't — the 1-vs-2 mismatch.
+    const redStores=allLocs.filter(loc=>{const s=modelHealthScore(loc,ds,settings).score;return s!=null&&s<50;});
     if(redStores.length>0) items.push({id:'auto_red_health',priority:'high',
       text:redStores.length+' store'+(redStores.length>1?'s':'')+' at red model health',
       detail:redStores.map(l=>STORE_NAMES[l]||l).join(', ')});
