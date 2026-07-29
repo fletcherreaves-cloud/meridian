@@ -341,7 +341,10 @@ export function formatDiagnosisReport(result, { threshold = 50 } = {}) {
     L.push('_No items exceed the threshold._');
   } else {
     L.push('## Full variance detail (≥ ±$' + threshold + ')', '', '| # | Item | WRIN | $ Var | Unit Var | Dir |', '|--:|------|------|------:|--------:|-----|');
-    V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.unitVar) || 0).toFixed(1)} | ${dir(v)} |`));
+    // Qty/Unit variance = the Variance Stat row's `variance` field (NOT `unitVar`, which
+    // only exists on journey count-events) — reading the wrong name showed 0.0 for every
+    // item while the $ column was fine (Notes 36). expUsage−actUsage is the unit gap.
+    V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
     L.push('');
     const tier = (label, lo, hi) => {
       const items = V.filter(v => { const a = Math.abs(v.dolDiff); return a >= lo && (hi == null || a < hi); });

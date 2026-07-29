@@ -144,6 +144,7 @@ export function buildItemJourney(detail = {}, { period, asOf } = {}) {
     descr: detail.descr,
     itemClass: detail.itemClass,
     uom: detail.uom,
+    caseSz: detail.caseSz,           // units per case — lets the UI show qty as full cases (Notes 36)
     period,
     windowStart, lastDay,
     events,

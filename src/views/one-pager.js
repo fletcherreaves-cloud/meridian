@@ -517,7 +517,7 @@ function printBlankOnePager(page, period) {
 // Managers. `managerNames` = names for the selected scope (blank rows when unknown).
 // Review title adapts to the cascade level so the SAME form serves all three
 // conversations (Owner→DO district, DO→Supervisor area, Supervisor→GM restaurant).
-const REVIEW_TITLE_BY_LEVEL = { o_d: 'DISTRICT BUSINESS REVIEW', d_s: 'AREA BUSINESS REVIEW', s_g: 'RESTAURANT BUSINESS REVIEW' };
+const REVIEW_TITLE_BY_LEVEL = { o_d: 'ORGANIZATION BUSINESS REVIEW', d_s: 'PATCH BUSINESS REVIEW', s_g: 'RESTAURANT BUSINESS REVIEW' };
 // The RECIPIENT's job title per cascade level — labels the signature/attendee field (Notes
 // 35: "Leader:" → the actual role being reviewed). o_d reviews a DO, d_s a Supervisor, s_g a GM.
 const REVIEW_RECIPIENT_BY_LEVEL = { o_d: 'DO', d_s: 'Supervisor', s_g: 'GM' };
@@ -525,8 +525,8 @@ const REVIEW_RECIPIENT_BY_LEVEL = { o_d: 'DO', d_s: 'Supervisor', s_g: 'GM' };
 // picture, outliers & opportunities; DO→Supervisor = the patch's stores, drive results
 // through GMs; Supervisor→GM = store-specific improvement + wins (peers to motivate).
 const REVIEW_FOCUS_BY_LEVEL = {
-  o_d: 'District view — surface the biggest outliers and opportunities; agree where to press this week.',
-  d_s: 'Patch view — drive store results through your GMs; focus on the stores that move the district.',
+  o_d: 'Organization view — surface the biggest outliers and opportunities; agree where to press this week.',
+  d_s: 'Patch view — drive store results through your GMs; focus on the stores that move the organization.',
   s_g: 'Store view — address the top improvement, celebrate the wins, use peers to motivate.',
 };
 

@@ -176,20 +176,33 @@ function ItemJourneyView({ journey: j }) {
         [j.wrin && `WRIN ${j.wrin}`, j.itemClass, j.uom].filter(Boolean).join('  ·  ')),
       div({ style: { fontSize: '13px', color: VERDICT_TONE[j.verdict.tone], fontWeight: 600 } }, j.verdict.text)),
 
-    // Variance Stat report reconciliation (Note 30 A3) — the authoritative figure,
-    // shown alongside a tie-out check against the count-cycle timeline total.
+    // Variance reconciliation (Note 30 A3 / Notes 36) — the authoritative Variance Stat report
+    // figure, framed as ONE "Variance" with Qty and $ sub-values, plus an explicit
+    // matches-the-report? check for BOTH: $ (report vs the count-cycle $ total) and Qty
+    // (report units vs the ledger/register net count units from the most-recent data).
     (j.reportDollars != null || j.reportUnits != null) && (() => {
-      const rd = j.reportDollars, ru = j.reportUnits, jd = j.netCountDollars;
-      const diff = (rd != null && jd != null) ? Math.abs(rd - jd) : null;
-      const ties = diff != null && diff < 1;
+      const rd = j.reportDollars, ru = j.reportUnits, jd = j.netCountDollars, ju = j.netCountUnits;
+      const dDiff = (rd != null && jd != null) ? Math.abs(rd - jd) : null;   // $ tie-out
+      const qDiff = (ru != null && ju != null) ? Math.abs(ru - ju) : null;   // qty tie-out
+      const dTies = dDiff != null && dDiff < 1;
+      const qTies = qDiff != null && qDiff < 0.5;
+      // Overall Y/N: every comparison we HAVE must tie. (If only one side is available, judge on it.)
+      const checks = [dDiff != null ? dTies : null, qDiff != null ? qTies : null].filter(v => v != null);
+      const allTie = checks.length > 0 && checks.every(Boolean);
+      const cs = (j.caseSz && Math.abs(ru || 0) >= j.caseSz) ? ` (≈ ${(ru / j.caseSz).toFixed(1)} cs)` : '';
+      const lbl = (t) => span({ style: { fontSize: '9.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 700, marginRight: '3px' } }, t);
       return div({ style: { padding: '8px 12px', borderRadius: '8px', background: 'var(--surf3)', border: '1px solid var(--bdr)' } },
-        div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' } },
-          span({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Variance Stat report'),
-          rd != null && span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? '#f87171' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`),
-          ru != null && Math.abs(ru) >= 0.5 && span({ style: { fontSize: '12px', color: 'var(--text2)' } }, `${ru > 0 ? '+' : ''}${Math.round(ru).toLocaleString()}${j.uom ? ` ${j.uom}` : ' units'}`)),
-        diff != null && div({ style: { fontSize: '11px', marginTop: '3px', color: ties ? '#4ade80' : '#f5bc00' } },
-          ties ? '✓ Timeline reconciles exactly to the report.'
-            : `⚠ Timeline count total is ${jd < 0 ? '-' : '+'}${jMoney(jd)} — differs by ${jMoney(diff)}; the raw-item ledger may not cover every count for this item.`));
+        div({ style: { display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' } },
+          span({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Variance (Stat report)'),
+          rd != null && span(null, lbl('$'), span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? '#f87171' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`)),
+          ru != null && Math.abs(ru) >= 0.5 && span(null, lbl('Qty'), span({ style: { fontSize: '13px', fontWeight: 700, color: 'var(--text2)' } }, `${ru > 0 ? '+' : ''}${Math.round(ru).toLocaleString()}${j.uom ? ` ${j.uom}` : ''}${cs}`))),
+        checks.length > 0 && div({ style: { fontSize: '11px', marginTop: '4px', color: allTie ? '#4ade80' : '#f5bc00' } },
+          allTie
+            ? `✓ Variance matches report (${[dDiff != null ? '$' : null, qDiff != null ? 'qty' : null].filter(Boolean).join(' + ')} tie out to the ledger).`
+            : `⚠ Doesn't fully match — ${[
+                dDiff != null && !dTies ? `$ off by ${jMoney(dDiff)} (ledger ${jd < 0 ? '-' : '+'}${jMoney(jd)})` : null,
+                qDiff != null && !qTies ? `qty off by ${Math.round(qDiff).toLocaleString()}${j.uom ? ` ${j.uom}` : ''} (ledger ${ju > 0 ? '+' : ''}${Math.round(ju).toLocaleString()})` : null,
+              ].filter(Boolean).join('; ')}; the raw-item ledger may not cover every count for this item.`));
     })(),
 
     // flow summary — clickable chips drill the timeline into that lane's events
@@ -560,7 +573,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const vmap = {}; (varByLoc[loc] || []).forEach(v => { vmap[String(v.wrin)] = v; });
     const enriched = list.map(j => {
       const v = vmap[String(j.wrin)];
-      return v ? { ...j, reportDollars: v.dolDiff, reportUnits: v.unitVar } : j;
+      // Variance Stat rows carry the qty variance as `variance` (not `unitVar`) — using the
+      // wrong field made reportUnits 0/undefined so journeys couldn't reconcile to the report.
+      return v ? { ...j, reportDollars: v.dolDiff, reportUnits: v.variance } : j;
     });
     setJourneys({ loc, name, list: enriched, selectedWrin: enriched[0]?.wrin || null });
   }, [rawByLoc, varByLoc, period]);
@@ -931,7 +946,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             onClick: () => {
               try { window.__MF_SAGE_SEED__ = { context: diag.report, prompt: `From this ${diag.name} FOB variance report, give me a prioritized recount list for the top items and a short message to the GM.` }; } catch {}
               try { window.dispatchEvent(new CustomEvent('mf:open-sage')); } catch {}
+              // Close BOTH the diagnose panel AND the EOM Dashboard modal — otherwise SAGE
+              // (rendered at the App level) opens BEHIND these overlays and looks like nothing
+              // happened (owner report, Notes 36). Closing them lands the manager in seeded SAGE.
               setDiag(null);
+              onClose && onClose();
             },
             style: { background: 'none', color: 'var(--text2)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
           }, '🧠 Ask SAGE'),
