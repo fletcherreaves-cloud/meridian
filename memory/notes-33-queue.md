@@ -84,17 +84,19 @@ See [[session-handoff-2026-07-28]], [[feedback-metric-provenance]].
   metric-source `r2p` (manual Ops Report still wins first). DAR pulls ~8a/10a/2p CT → current-day
   populates. Full derivation + proof: [[reference-r2p-formula]]. (Avg Win TTL = fc_untilserve/fc_trans_cnt,
   NOT R2P — the near-mismap.)
-- **B#7 current-day blank / B#8 week mostly blank** — ROOT (two parts): (1) recent/current windows
-  legitimately have little data (intraday today; the current week is mostly future days) — the emailed
-  Glimpse/Ops/Controls lag; (2) the cloud-fresh DAR (qsrActSummaryRows) is wired ONLY for sales/gc/tpph,
-  NOT for oepe/r2p/laborPct — so recent windows show sales but blank ops (the exact "recent windows look
-  empty" problem metric-source.js line 7-8 calls out). Fix: wire DAR-derived oepe (dt serve) + laborPct
-  (punched$ ÷ sales — needs actual_punched_dollars added to loadQsrActSummary) as FALLBACK sources.
-  **Need owner confirm**: OEPE from DAR dt_untilserve vs a true OEPE-peak field; and that punched$/sales
-  is the labor% they want. Both are additive fallbacks (won't regress existing windows).
-- **B#4 print "only top section" / B#10 list-locations** — NOT a truncation; printOnePager renders all
-  sections but the page is a SCOPE ROLLUP with no per-store rows. This is the B#10 feature: add a
-  per-location breakdown table (each store in the selected group) to screen + print. Design choice
-  (which columns) → build with owner. 
+- **B#7 current-day blank / B#8 week mostly blank** — ✅ MOSTLY FIXED (v4.549 R2P, v4.550 OEPE).
+  Root: DAR (qsrActSummaryRows) was wired only for sales/gc/tpph, not oepe/r2p/laborPct. Now:
+  R2P = (fc_untilserve−fc_untilclosedrawer)/fc_trans_cnt/1000 (v4.549) and
+  **OEPE = (dt_untilserve−dt_untilstore)/dt_trans_cnt/1000** (v4.550) — BOTH reconciled EXACTLY to the
+  DAR report columns, wired as metric-source fallbacks, cloud-fresh → current-day populates.
+  **STILL OPEN — Labor%**: DAR punch-labor = actual_punched_dollars ÷ product_sales (reconciles to the
+  report's "Punch Labor" column exactly, per-hour 0.3733 etc.), BUT it's CREW-PUNCHED labor, not a
+  fully-loaded labor% (no mgmt salary/taxes/benefits) — could read lower than the Glimpse labor% for the
+  same day and mislead vs a fully-loaded tLabor target. **DEFERRED pending owner confirm** (see AI note).
+  actual_punched_dollars is already persisted → wiring is one accumulator + one metric-source line once confirmed.
+- **B#4 print thin / B#10 list-locations** — ✅ DONE (v4.550). `buildPerLocationRows` → PerLocationTable
+  (screen) + print table: per store Net Sales, vs LY (matched), FOB%, Labor%, OEPE, R2P, Opp $/wk,
+  colored vs each store's own target, worst-sales-vs-LY first. Shown only when scope spans >1 store.
+  Also fattens the print (B#4). Remaining B#4 nuance (per-group print scoping) can extend from here.
 - **Cleanup spotted**: stray CloudDocs duplicate files `src/**/* 2.js` (e.g. one-pager.test 2.js,
   people-reports 2.js) — delete.

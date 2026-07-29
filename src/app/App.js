@@ -37,6 +37,7 @@ import { EOMDashboardPanel } from '../views/eom-dashboard.js';
 import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
 import { FormsPrintPanel } from '../views/forms-print.js';
 import { OnePagerPanel } from '../views/one-pager.js';
+import { MetricLineagePanel } from '../views/metric-lineage.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
@@ -1003,6 +1004,7 @@ function App() {
   const [showPriorities, setShowPriorities] = useState(false);
   const [showFormsPrint, setShowFormsPrint] = useState(false);
   const [showLeaderOnePager, setShowLeaderOnePager] = useState(false);
+  const [showMetricLineage, setShowMetricLineage] = useState(false);
   const [showKB, setShowKB] = useState(false);
   const [showSmartTargets, setShowSmartTargets] = useState(false);
   const [showLocIntel,     setShowLocIntel]     = useState(false);
@@ -2442,6 +2444,7 @@ function App() {
         if(modal==='priorities')     setShowPriorities(true);
         if(modal==='forms-print')    setShowFormsPrint(true);
         if(modal==='leader-one-pager') setShowLeaderOnePager(true);
+        if(modal==='metric-lineage')   setShowMetricLineage(true);
       }
     }),
 
@@ -2628,6 +2631,7 @@ function App() {
       onClose:()=>setShowPriorities(false)}),
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
+    showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},
