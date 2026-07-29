@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.596';
+const MERIDIAN_VERSION    = '4.597';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.597', date:'2026-07-29', changes:[
+    'EOM Item Journeys now show the TIME each entry was logged next to the date (emphasized on count events), and same-day events sort by time. Seeing when a count went in — e.g. right at cutoff or re-entered late — helps spot a count that was padded or "fixed" to improve results.',
+  ]},
   {version:'4.596', date:'2026-07-29', changes:[
     'SAGE tables read cleaner: numeric columns (dollars, %, seconds, counts) now right-align with tabular figures instead of everything left-aligned, so columns line up like the rest of the app\'s data tables.',
   ]},

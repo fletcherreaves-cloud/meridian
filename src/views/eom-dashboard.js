@@ -255,7 +255,7 @@ function ItemJourneyView({ journey: j }) {
           : div(null,
             // column headers
             div({ style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '2px 8px 4px', borderBottom: '1px solid var(--bdr)' } },
-              span({ style: { width: '9px', flexShrink: 0 } }), hcell('Date', '82px'), hcell('Type', '68px'), hcell('Detail', null), hcell(qtyLabel, '70px', true), hcell('$ variance', '62px', true)),
+              span({ style: { width: '9px', flexShrink: 0 } }), hcell('Date / time', '104px'), hcell('Type', '68px'), hcell('Detail', null), hcell(qtyLabel, '70px', true), hcell('$ variance', '62px', true)),
             div({ style: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' } },
               shownEvents.map((e, i) => {
                 const m = LANE_META[e.lane];
@@ -263,8 +263,12 @@ function ItemJourneyView({ journey: j }) {
                 const qtyVal = e.isCount ? e.unitVar : e.qty; // count rows show the counted unit variance
                 return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px', background: e.isCount ? 'var(--surf2)' : 'transparent', border: e.isCount ? `1px solid ${m.color}55` : '1px solid transparent' } },
                   span({ style: { width: '9px', height: '9px', borderRadius: e.isCount ? '2px' : '50%', background: m.color, flexShrink: 0, transform: e.isCount ? 'rotate(45deg)' : 'none' } }),
-                  span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '82px', fontVariantNumeric: 'tabular-nums' } },
-                    e.dt || '—', win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
+                  span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '104px', fontVariantNumeric: 'tabular-nums' } },
+                    e.dt || '—',
+                    // Count TIME (Notes 36): when a count was entered — a count logged right at
+                    // cutoff, or re-entered late, is a tell for a padded/fixed count. Emphasized on counts.
+                    e.tm ? span({ style: { color: e.isCount ? '#f5bc00' : 'var(--text3)', marginLeft: '5px', fontWeight: e.isCount ? 700 : 400 }, title: e.isCount ? 'time this count was entered' : 'entry time' }, e.tm) : null,
+                    win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
                   span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
                   span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
                     e.isCount ? `count${e.manager ? ` · ${e.manager}` : ''}` : (e.invoice || '')),

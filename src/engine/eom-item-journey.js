@@ -33,6 +33,14 @@ export const LANE_META = {
 
 const laneOf = (source) => SOURCE_LANE[source] || 'used';
 const ts = (dt) => { const t = Date.parse(dt || ''); return Number.isNaN(t) ? null : t; };
+// Minutes-of-day from a "HH:MM" (or "H:MM AM/PM") time string, for within-day ordering.
+const tmMin = (tm) => {
+  const s = String(tm || '').trim(); if (!s) return 0;
+  const m = s.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i); if (!m) return 0;
+  let h = +m[1]; const mm = +m[2]; const ap = (m[3] || '').toLowerCase();
+  if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0;
+  return h * 60 + mm;
+};
 
 // Build the journey for one item. `detail` = a mapRawItemHistory() result.
 export function buildItemJourney(detail = {}, { period, asOf } = {}) {
@@ -43,7 +51,7 @@ export function buildItemJourney(detail = {}, { period, asOf } = {}) {
     .map((h) => {
       const lane = laneOf(h.source);
       return {
-        dt: h.dt, tm: h.tm, when: ts(h.dt), lane,
+        dt: h.dt, tm: h.tm, when: (ts(h.dt) != null ? ts(h.dt) + tmMin(h.tm) * 60000 : null), lane,
         source: h.source,
         qty: Number(h.qtyChange) || 0,
         // $ impact is only meaningful on count events (the realized variance $).
