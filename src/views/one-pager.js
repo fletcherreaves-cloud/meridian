@@ -238,6 +238,8 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
             h(FocusBanner, { cascade: page.cascade }),
             // Opportunity $ headline
             h(OppSection, { page }),
+            // Top/bottom performer highlight — supervisor & above (multi-store scope)
+            page.perLocation && page.perLocation.length > 1 ? h(TopBottomStrip, { rows: page.perLocation }) : null,
             // Current state grid — ordered by the cascade level's focus priority
             h(StateGrid, { rows: orderByFocus(page.currentState, page.cascade?.priority), rangeLabel: page.rangeLabel, ytdLabel: page.ytdLabel }),
             // Per-location breakdown — the roll-up's stores listed individually (Notes 33 B#10)
@@ -312,6 +314,36 @@ function StateGrid({ rows, rangeLabel, ytdLabel }) {
       })));
 }
 
+// Top/bottom performer highlight (supervisor & above — scope spans >1 store). Ranks by
+// sales vs LY (the headline performance signal). When the scope mixes states, also breaks
+// out each state's own best/worst (FL→FL, OK→OK) so a supervisor sees their district.
+const stateOf = loc => (INV_ORG_COORDS[unpad(loc)] || {}).state || '';
+function pickTopBottom(rows) {
+  const rated = (rows || []).filter(r => r.salesVsLYPct != null);
+  if (rated.length < 2) return null;
+  const sorted = [...rated].sort((a, b) => b.salesVsLYPct - a.salesVsLYPct);
+  return { top: sorted[0], bottom: sorted[sorted.length - 1] };
+}
+function TopBottomStrip({ rows }) {
+  const overall = pickTopBottom(rows);
+  if (!overall) return null;
+  const byState = {};
+  for (const r of rows) { const s = stateOf(r.loc); if (s) (byState[s] = byState[s] || []).push(r); }
+  const states = Object.keys(byState).filter(s => (byState[s] || []).length >= 2);
+  const pct = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const cell = (tag, r, color) => div({ style: { flex: 1, minWidth: 150, background: 'var(--surf)', border: '1px solid var(--bdr)', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '7px 10px' } },
+    div({ style: { fontSize: 9.5, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.3px' } }, tag),
+    div({ style: { fontSize: 13, fontWeight: 800, color: 'var(--text)' } }, nm(r.loc)),
+    div({ style: { fontSize: 11, color, fontWeight: 700 } }, `${pct(r.salesVsLYPct)} vs LY`));
+  const pair = (label, tb) => tb ? div({ style: { marginBottom: 8 } },
+    label ? div({ style: { fontSize: 10, fontWeight: 800, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: 4 } }, label) : null,
+    div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap' } }, cell('🏆 Top performer', tb.top, '#10b981'), cell('⚠️ Needs attention', tb.bottom, '#ef4444'))) : null;
+  return div({},
+    div({ style: { fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text2)', marginBottom: 5 } }, 'Top & bottom (by sales vs LY)'),
+    pair(states.length > 1 ? 'District (all)' : '', overall),
+    ...(states.length > 1 ? states.sort().map(s => pair(s === 'OK' ? 'Oklahoma' : s === 'FL' ? 'Florida' : s, pickTopBottom(byState[s]))) : []));
+}
+
 function PerLocationTable({ rows }) {
   const th = (t, extra) => h('th', { style: { textAlign: extra?.r ? 'right' : 'left', padding: '4px 8px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text2)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--bdr)' } }, t);
   // color a value vs its target (lowerBetter for cost/speed metrics)
@@ -370,6 +402,29 @@ function ActionPlan({ actions, setActionStatus, removeAction }) {
             h('button', { onClick: () => removeAction(i), style: { border: 'none', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 14 } }, '✕')))));
 }
 
+// Shared print HTML: per-location breakdown table (each store in the selected group).
+function perLocTableHtml(page, esc) {
+  const rows = page.perLocation || [];
+  if (!rows.length) return '';
+  const body = rows.map(r => `<tr><td style="text-align:left">${esc(nm(r.loc))}</td><td>${esc(f$(r.netSales))}</td><td>${r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'}</td><td>${esc(valFmt(r.fobPct, '%'))}</td><td>${esc(valFmt(r.laborPct, '%'))}</td><td>${esc(valFmt(r.oepe, 's'))}</td><td>${esc(valFmt(r.r2p, 's'))}</td><td>${r.oppWk ? esc(f$(r.oppWk)) : '—'}</td></tr>`).join('');
+  return `<h2>By location (${rows.length}) — worst sales vs LY first</h2><table>
+    <tr><td><b>Store</b></td><td><b>Net Sales</b></td><td><b>vs LY</b></td><td><b>FOB %</b></td><td><b>Labor %</b></td><td><b>OEPE</b></td><td><b>R2P</b></td><td><b>Opp $/wk</b></td></tr>
+    ${body}</table>`;
+}
+// Shared print HTML: top/bottom performer callout (supervisor & above), with FL/OK breakout.
+function topBottomHtml(page, esc) {
+  const rows = page.perLocation || [];
+  if (rows.length < 2) return '';
+  const pctS = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const line = (label, tb) => tb ? `<div style="margin:3px 0"><b>${esc(label)}</b> &nbsp;🏆 ${esc(nm(tb.top.loc))} (${pctS(tb.top.salesVsLYPct)}) &nbsp;·&nbsp; ⚠️ ${esc(nm(tb.bottom.loc))} (${pctS(tb.bottom.salesVsLYPct)})</div>` : '';
+  const byState = {};
+  for (const r of rows) { const s = stateOf(r.loc); if (s) (byState[s] = byState[s] || []).push(r); }
+  const states = Object.keys(byState).filter(s => (byState[s] || []).length >= 2).sort();
+  let html = line(states.length > 1 ? 'District (all):' : 'Top / bottom:', pickTopBottom(rows));
+  if (states.length > 1) for (const s of states) html += line((s === 'OK' ? 'Oklahoma:' : s === 'FL' ? 'Florida:' : s + ':'), pickTopBottom(byState[s]));
+  return html ? `<h2>Top &amp; bottom (by sales vs LY)</h2>${html}` : '';
+}
+
 // Print → clean one-pager (also Save-as-PDF via the dialog). Escaped throughout.
 function printOnePager(page, period, narrative, actions) {
   const w = window.open('', '_blank', 'width=850,height=1000'); if (!w || !page) return;
@@ -394,10 +449,8 @@ function printOnePager(page, period, narrative, actions) {
     <h2>Opportunity on the table (vs target)</h2>
     <div class="opp">${esc(f$(page.opportunityTotal || 0))} over the ${esc(rLabel)} — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
     <h2>Current state — ${esc(rLabel)} (${esc(ytdLabel)} alongside)</h2><table><tr>${state}</tr></table>
-    ${page.perLocation && page.perLocation.length ? `<h2>By location (${page.perLocation.length}) — worst sales vs LY first</h2><table>
-      <tr><td><b>Store</b></td><td><b>Net Sales</b></td><td><b>vs LY</b></td><td><b>FOB %</b></td><td><b>Labor %</b></td><td><b>OEPE</b></td><td><b>R2P</b></td><td><b>Opp $/wk</b></td></tr>
-      ${page.perLocation.map(r => `<tr><td style="text-align:left">${esc(nm(r.loc))}</td><td>${esc(f$(r.netSales))}</td><td>${r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'}</td><td>${esc(valFmt(r.fobPct, '%'))}</td><td>${esc(valFmt(r.laborPct, '%'))}</td><td>${esc(valFmt(r.oepe, 's'))}</td><td>${esc(valFmt(r.r2p, 's'))}</td><td>${r.oppWk ? esc(f$(r.oppWk)) : '—'}</td></tr>`).join('')}
-    </table>` : ''}
+    ${topBottomHtml(page, esc)}
+    ${perLocTableHtml(page, esc)}
     ${foll ? `<h2>Follow-up</h2><ul>${foll}</ul>` : ''}
     ${acts ? `<h2>Action plan</h2><ul>${acts}</ul>` : ''}
     ${narrative ? `<h2>Notes</h2><div>${esc(narrative)}</div>` : ''}
@@ -429,7 +482,9 @@ function printBlankOnePager(page, period) {
     <div class="sub">${esc(rLabel)} · ${esc(page.scopeLabel || '')} · ${esc(casc.label)} &nbsp;·&nbsp; ______________ &nbsp;↔&nbsp; ______________</div>
     ${casc.focus ? `<div style="font-size:11px;color:#333;margin:2px 0 10px;padding:5px 9px;border-left:3px solid #f5bc00;background:#faf7ea">Focus: ${esc(casc.focus)}</div>` : ''}
     <h2>Current state (reference)</h2><table><tr>${state}</tr></table>
-    <div class="ref">Opportunity on the table (${esc(rLabel)}): <b>${esc(f$(page.opportunityTotal || 0))}</b> — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))}</div>
+    <div class="ref">Opportunity on the table (${esc(rLabel)}): <b>${esc(f$(page.opportunityTotal || 0))}</b> — Labor ${esc(f$(opp.labor$))} · Food ${esc(f$(opp.food$))} · Guest count ${esc(f$(opp.gc$))} (GC vs plan)</div>
+    ${topBottomHtml(page, esc)}
+    ${perLocTableHtml(page, esc)}
     ${sec('Wins to celebrate', 3)}
     ${sec('Concerns / what needs attention', 4)}
     ${sec('Action plan — what are we working on this week?', 5)}
