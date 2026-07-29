@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.599';
+const MERIDIAN_VERSION    = '4.600';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.600', date:'2026-07-29', changes:[
+    'EOM Food-Cost Diagnosis + SAGE now frame "uncounted" items correctly. The report has a Count-Integrity section that splits them into NEVER counted (true blanks — real recovery, count before close), counted EARLY (already counted; recount only if the count looks wrong — dollars are locked this period), and STALE / deactivated ghost-floats (verify → count if still usable, or write off before close). SAGE is told to respect this split so it never hands a GM a "go count $X of blanks" instruction unless that money is truly never-counted.',
+  ]},
   {version:'4.599', date:'2026-07-29', changes:[
     'EOM uncounted-item diagnosis now explains WHY each item reads uncounted: NEVER counted (a true blank), counted EARLY this period (QSRSoft shows it counted — a cascade discussion, not free money), or STALE / prior-period (likely an inactive item carrying a residual on-hand "ghost float"). The class-chip hover shows each item\'s state + last-counted date, and the engine now separates true blanks from early/stale so value-at-risk isn\'t overstated. Resolves the "12 uncounted that QSRSoft doesn\'t flag" question.',
   ]},

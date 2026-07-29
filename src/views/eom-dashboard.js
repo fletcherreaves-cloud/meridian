@@ -612,7 +612,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       },
     });
     setDiagCopied(false);
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result) });
+    // Count-integrity breakdown (never/early/stale) so the report frames "uncounted" correctly.
+    const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date() });
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete }) });
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
 
   // Open the visual Item Journeys for a store (worst-net-variance first).
@@ -1011,7 +1013,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', {
             title: 'Open SAGE with this report loaded — ask follow-ups (recount list, GM message, root cause)',
             onClick: () => {
-              try { window.__MF_SAGE_SEED__ = { context: diag.report, prompt: `From this ${diag.name} FOB variance report, give me a prioritized recount list for the top items and a short message to the GM.` }; } catch {}
+              try { window.__MF_SAGE_SEED__ = { context: diag.report, prompt: `From this ${diag.name} FOB variance report, give me a prioritized recount list and a short GM message. Respect the Count-integrity section: NEVER-counted items are the only true "go count it" recovery; EARLY-counted items are already counted (recount only if the count looks wrong — the dollars are locked this period); STALE/deactivated ghost-float items need verify-then-count-or-write-off before close, not a recount. Don't tell the GM to "count $X of blanks" unless that $ is in the NEVER bucket.` }; } catch {}
               try { window.dispatchEvent(new CustomEvent('mf:open-sage')); } catch {}
               // Close BOTH the diagnose panel AND the EOM Dashboard modal — otherwise SAGE
               // (rendered at the App level) opens BEHIND these overlays and looks like nothing

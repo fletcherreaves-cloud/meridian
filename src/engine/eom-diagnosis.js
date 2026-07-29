@@ -305,7 +305,10 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // Full-coverage, tiered variance report (markdown) — every item ≥ ±$50, ranked, with a
 // tiered action plan and Meridian's own cause overlays (yield-band, zero-waste flag,
 // manager attribution, and recount-recoverability: does recounting NOW still recover it).
-export function formatDiagnosisReport(result, { threshold = 50 } = {}) {
+// `incomplete` = diagnoseIncompleteCount() result (byState never/early/stale). Lets the report
+// (and therefore SAGE, which reads it) frame uncounted items CORRECTLY instead of calling them
+// all "blanks to go count" — the Durant #5985 lesson. See memory/project-eom-uncounted-vs-qsrsoft.
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null } = {}) {
   const V = (result.variance || []).filter(v => Math.abs(v.dolDiff || 0) >= threshold)
     .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0));
   const findings = result.findings || [];
@@ -389,6 +392,19 @@ export function formatDiagnosisReport(result, { threshold = 50 } = {}) {
   if (systemic.length) {
     L.push('## 🛠️ Systemic patterns', '');
     systemic.forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
+    L.push('');
+  }
+
+  // ── Count integrity — WHY items read "uncounted" (Notes: Durant #5985) ──
+  // Critical framing so nobody (or SAGE) treats early/stale items as "free money — just count
+  // it." "Uncounted" here = not counted in the final window, NOT "never counted."
+  if (incomplete && incomplete.uncountedCount > 0) {
+    const bs = incomplete.byState || {};
+    const m = (o) => `${(o && o.n) || 0} item${((o && o.n) || 0) === 1 ? '' : 's'} (${money((o && o.value) || 0)})`;
+    L.push('## 🧮 Count integrity — the "uncounted" list, explained', '');
+    if (bs.never && bs.never.n) L.push(`- **${m(bs.never)} NEVER counted** — true blanks. Count these before close (real recovery).`);
+    if (bs.early && bs.early.n) L.push(`- **${m(bs.early)} counted EARLY** this period — QSRSoft already shows them counted. Recount only if the count looks *wrong*; it will **not** recover this period's dollars (they cascade). NOT "just go count it" money.`);
+    if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} STALE / likely deactivated (ghost floats)** — last counted a prior period; a residual on-hand is riding. **Verify:** still sellable/usable → count it; obsolete/gone → **write off before close** (QSRSoft force-zeros a deactivated item ~30–45 days out and fires the full balance as a loss anyway). These inflate "value at risk" without being real count work.`);
     L.push('');
   }
 
