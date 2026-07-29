@@ -199,8 +199,8 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
           h('button', { onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems), style: btn }, '🖨 Print'),
           h('button', { onClick: () => printBlankOnePager(page, period), style: btn, title: 'Open-ended discussion sheet (auto state, blank sections)' }, '📝 Discussion'),
           h('button', { onClick: () => printWeeklyReview(page, wkOpts()), style: btn, title: 'Weekly Business Review — auto-fills actuals + shift-manager names, print to PDF' }, '📋 Weekly Review'),
-          h('button', { onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, wkOpts())), style: btn, title: 'Download the filled Weekly Review as an editable Word (.doc)' }, '⬇ Word'),
-          h('button', { onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true })), style: btn, title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' }, '▫ Blank'),
+          h('button', { onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, { ...wkOpts(), word: true })), style: btn, title: 'Download the filled Weekly Review as an editable Word (.doc)' }, '⬇ Word'),
+          h('button', { onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true, word: true })), style: btn, title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' }, '▫ Blank'),
           h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕'),
         ),
       ),
@@ -528,7 +528,7 @@ const REVIEW_FOCUS_BY_LEVEL = {
 // blank:true → a fully-blank, leader-led fillable form (the priority): generic title, no
 // live actuals, no pre-listed names, no level-specific data sections. Filled mode keeps
 // the level-aware framing + auto actuals. Structure is shared so both stay in sync.
-export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = false } = {}) {
+export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = false, word = false } = {}) {
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || '';
   const casc = page.cascade || {};
@@ -558,6 +558,11 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     ['Food Over Base %',         actual('fobPct', '%')],
     ['Voice OSAT',               actual('osat', '%')],
     ['Voice B2B (Accuracy)',     actual('accB2B', '%')],
+    // Store-level (Supervisor→GM) adds kitchen speed/health — noise at district/patch.
+    ...(isStore ? [
+      ['KVS Time per GC',        actual('kvsPerGc', 's')],
+      ['KVS Healthy Usage',      actual('kvsHealthy', '%')],
+    ] : []),
   ];
   const scBody = scRows.map(r => `<tr>
     <td style="text-align:left"><b>${esc(r[0])}</b></td>
@@ -634,20 +639,23 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
 
   const middle = isDistrict ? districtMiddle : isPatch ? patchMiddle : storeMiddle;
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} ${esc(rLabel)}</title>
+  return `<!doctype html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(title)} ${esc(rLabel)}</title>
+    ${word ? '<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->' : ''}
     <style>
-    body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:36px;font-size:9pt}
+    ${word ? '@page WordSection1 { size: 8.5in 11.0in; margin: 0.5in; } div.WordSection1 { page: WordSection1; }' : ''}
+    body{font-family:Helvetica,Arial,sans-serif;color:#202124;margin:${word ? '0' : '36px'};font-size:9pt}
     h1{color:#BD0011;font-size:18pt;font-weight:bold;margin:0 0 4px}
     .meta{font-size:10pt;margin-bottom:10px}
     .banner{background:#BD0011;color:#fff;font-weight:bold;font-size:11pt;padding:4px 6px;margin:12px 0 4px}
     table{border-collapse:collapse;width:100%}
     th{background:#202124;color:#fff;font-size:9pt;padding:4px 6px;text-align:center}
-    td{border:.5px solid #DADCE0;padding:4px 6px;font-size:8.5pt;text-align:center;vertical-align:middle}
+    td{border:.5px solid #DADCE0;padding:4px 6px;font-size:8.5pt;text-align:center;vertical-align:middle;word-wrap:break-word}
     tbody tr:nth-child(even){background:#F8F9FA}
     table.tight td{padding:3px 5px;height:1.5em}
     .dd{font-size:9pt;line-height:1.55;margin:2px 0}
     @media print{@page{margin:.5in}}
     </style></head><body>
+    ${word ? '<div class="WordSection1">' : ''}
     <h1>${esc(title)} &amp; CHECKPOINT</h1>
     <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; ${casc.label ? `<b>${esc(casc.label)}</b> &nbsp;&nbsp;&nbsp; ` : ''}<b>${isDistrict ? 'District:' : isPatch ? 'Patch:' : 'Restaurant #:'}</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '__________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> __________________</div>
     ${focus ? `<div style="font-size:9pt;color:#333;margin:2px 0 8px;padding:5px 9px;border-left:3px solid #FFC72C;background:#FFF9E8">${esc(focus)}</div>` : ''}
@@ -666,6 +674,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
 
     <div class="banner">COMMITMENTS FOR NEXT WEEK</div>
     ${lines(4)}
+    ${word ? '</div>' : ''}
     </body></html>`;
 }
 

@@ -28,7 +28,7 @@ const FORMS = [
       d_s: 'Patch scorecard · store-by-store · GM coaching focus.',
       s_g: 'Store scorecard · speed / food / labor deep dive · shift-manager tracking.',
     },
-    blankHtml: levelId => weeklyReviewHtml(blankPage(levelId), { blank: true }),
+    blankHtml: levelId => weeklyReviewHtml(blankPage(levelId), { blank: true, word: true }),
   },
 ];
 
