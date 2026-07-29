@@ -2299,17 +2299,6 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
       if (normLoc(r.loc) !== want || !r.geid) continue;
       if (!m[r.geid] || (r.name && !m[r.geid].name)) m[r.geid] = { geid: r.geid, name: r.name || String(r.geid) };
     }
-    // TEMP diagnostic (v4.556) — prints why the dropdown is/ isn't populating.
-    try {
-      const rows = shiftManagerRows || [];
-      console.debug('[mgr-debug]', {
-        formLoc: loc, normFormLoc: want,
-        totalShiftRows: rows.length,
-        sampleRows: rows.slice(0, 3).map(r => ({ loc: r.loc, geid: r.geid, name: r.name })),
-        distinctLocs: [...new Set(rows.map(r => normLoc(r.loc)))].slice(0, 30),
-        matched: Object.keys(m).length,
-      });
-    } catch {}
     return Object.values(m).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [shiftManagerRows, loc]);
   const totalShiftRows = (shiftManagerRows || []).length;
