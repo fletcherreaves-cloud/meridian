@@ -9,7 +9,7 @@ const ReactDOM = { createRoot }
 
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
+import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
@@ -943,10 +943,16 @@ function App() {
       return merged;
     }catch{return DEF_SETTINGS;}
   });
-  // Keep the live supervisor-groups singleton (constants.js) in sync with settings so panels
-  // that don't receive `settings` (DT Speed, Skills Matrix, Graded Visits) reflect an org
-  // edit (add/remove supervisor, reassign stores) immediately + cross-device.
-  useEffect(()=>{ setLiveSupervisorGroups(settings?.supervisorGroups); },[settings]);
+  // Keep the live org singletons (constants.js) in sync with settings so panels that don't
+  // receive `settings` (DT Speed, Skills Matrix, Graded Visits) reflect an org edit immediately
+  // + cross-device. supervisorGroups() derives from the effective-dated assignments timeline;
+  // if none is saved yet, seed it from the flat supervisorGroups map (equivalent, open-start).
+  useEffect(()=>{
+    setLiveSupervisorGroups(settings?.supervisorGroups);
+    const a = (settings?.orgAssignments && settings.orgAssignments.length)
+      ? settings.orgAssignments : seedAssignmentsFromGroups(settings?.supervisorGroups);
+    setLiveAssignments(a);
+  },[settings]);
   const [userEvents, setUserEvents]= useState(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}});
   const [showSettings, setShowSettings]= useState(false);
   const [showRanking, setShowRanking]  = useState(false);

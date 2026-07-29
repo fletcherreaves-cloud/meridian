@@ -554,14 +554,53 @@ function savePanelVis(vis) {
   try { localStorage.setItem(PANEL_VIS_KEY, JSON.stringify(vis || {})); } catch { /* ignore */ }
 }
 
-// ── Live supervisor-groups singleton ────────────────────────────────────────
-// DEF_SETTINGS.supervisorGroups is the hard-coded DEFAULT org. The live map (edited in
-// Management → Supervisor Patches, or uploaded) lives in app settings + Supabase org_config.
-// App.js calls setLiveSupervisorGroups() on every settings change so panels that DON'T
-// receive `settings` (DT Speed, Skills Matrix, Graded Visits) still read the CURRENT org —
-// add/remove a supervisor or reassign stores with no code change. Read via supervisorGroups().
-let _liveSupervisorGroups = null;
+// ── Supervisor org: effective-dated assignments (source of truth) ────────────
+// Attribution follows TENURE: an assignment row = { loc, supervisor, start } where `start`
+// is an ISO 'YYYY-MM-DD' effective date ('' = since-always). The supervisor of a store on a
+// given date is the row with the LATEST start ≤ that date (start-only model — the next
+// assignment implicitly ends the prior one). This makes historical supervisor rollups honest
+// across a mid-history change (add Mary as of 2026-07-22 → hers from then, Brad's before).
+// The flat DEF_SETTINGS.supervisorGroups is the seed/default; the live timeline lives in app
+// settings + Supabase org_config and App.js keeps the singleton in sync. Panels read the
+// CURRENT org via supervisorGroups() (derived at today); time-aware code uses whoRan/groupsAt.
+const _dstr = d => (typeof d === 'string' ? d : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '')));
+const _unpadLoc = l => String(parseInt(l, 10));
+function seedAssignmentsFromGroups(groups) {
+  const out = [];
+  for (const [sup, locs] of Object.entries(groups || {})) for (const l of (locs || [])) out.push({ loc: _unpadLoc(l), supervisor: sup, start: '' });
+  return out;
+}
+let _liveSupervisorGroups = null;   // back-compat: a flat map set by older callers
+let _liveAssignments = null;        // the effective-dated timeline (preferred)
 function setLiveSupervisorGroups(g) { if (g && typeof g === 'object' && Object.keys(g).length) _liveSupervisorGroups = g; }
-function supervisorGroups() { return _liveSupervisorGroups || DEF_SETTINGS.supervisorGroups || {}; }
+function setLiveAssignments(a) { if (Array.isArray(a)) _liveAssignments = a; }
+function orgAssignments() {
+  if (_liveAssignments && _liveAssignments.length) return _liveAssignments;
+  return seedAssignmentsFromGroups(_liveSupervisorGroups || DEF_SETTINGS.supervisorGroups);
+}
+// Supervisor of a store as-of a date (latest start ≤ date; '' start = always effective).
+function whoRan(loc, date, list) {
+  const key = _unpadLoc(loc), d = _dstr(date);
+  let best = null, bestStart = null;
+  for (const a of (list || orgAssignments())) {
+    if (_unpadLoc(a.loc) !== key) continue;
+    const s = a.start || '';
+    if (s && d && s > d) continue;                 // not yet effective on `date`
+    if (best === null || s >= (bestStart || '')) { best = a.supervisor; bestStart = s; }
+  }
+  return best;
+}
+// Derive the { supervisor: [locs] } map as-of a date from the timeline.
+function groupsAt(date, list) {
+  const src = list || orgAssignments();
+  const out = {};
+  for (const loc of [...new Set(src.map(a => _unpadLoc(a.loc)))]) {
+    const sup = whoRan(loc, date, src);
+    if (sup) (out[sup] = out[sup] || []).push(loc);
+  }
+  return out;
+}
+// CURRENT org (as-of today) — what all the panels read.
+function supervisorGroups() { return groupsAt(_dstr(new Date()), orgAssignments()); }
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
