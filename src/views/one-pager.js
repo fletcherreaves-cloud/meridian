@@ -515,6 +515,14 @@ function printBlankOnePager(page, period) {
 // Review title adapts to the cascade level so the SAME form serves all three
 // conversations (Owner→DO district, DO→Supervisor area, Supervisor→GM restaurant).
 const REVIEW_TITLE_BY_LEVEL = { o_d: 'DISTRICT BUSINESS REVIEW', d_s: 'AREA BUSINESS REVIEW', s_g: 'RESTAURANT BUSINESS REVIEW' };
+// Talking-point altitude per cascade level (owner directive 2026-07-29): Owner→DO = big
+// picture, outliers & opportunities; DO→Supervisor = the patch's stores, drive results
+// through GMs; Supervisor→GM = store-specific improvement + wins (peers to motivate).
+const REVIEW_FOCUS_BY_LEVEL = {
+  o_d: 'District view — surface the biggest outliers and opportunities; agree where to press this week.',
+  d_s: 'Patch view — drive store results through your GMs; focus on the stores that move the district.',
+  s_g: 'Store view — address the top improvement, celebrate the wins, use peers to motivate.',
+};
 
 // Build the Weekly Business Review HTML (used by both Print→PDF and Word download).
 // blank:true → a fully-blank fillable form (no live actuals, no pre-listed names).
@@ -523,6 +531,9 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
   const rLabel = page.rangeLabel || '';
   const casc = page.cascade || {};
   const title = REVIEW_TITLE_BY_LEVEL[casc.id] || 'WEEKLY BUSINESS REVIEW';
+  const focus = REVIEW_FOCUS_BY_LEVEL[casc.id] || '';
+  const isDistrict = casc.id === 'o_d', isPatch = casc.id === 'd_s', isStore = casc.id === 's_g';
+  const hasStores = (page.perLocation || []).length > 0;
   const cs = Object.fromEntries((page.currentState || []).map(r => [r.key, r]));
   // Live actual for a scorecard row, or a blank fill line (always blank in blank mode).
   const actual = (key, fmt, suffix = '') => {
@@ -573,15 +584,22 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
     </style></head><body>
     <h1>${esc(title)} &amp; CHECKPOINT</h1>
     <div class="meta"><b>Period:</b> ${esc(rLabel || '____________')} &nbsp;&nbsp;&nbsp; <b>${esc(casc.label || '')}</b> &nbsp;&nbsp;&nbsp; <b>${(storeLabel && !blank) ? 'Scope:' : 'Restaurant:'}</b> ${(storeLabel && !blank) ? `<b>${esc(storeLabel)}</b>` : '____________________'} &nbsp;&nbsp;&nbsp; <b>Leader:</b> ____________________</div>
+    ${focus ? `<div style="font-size:9pt;color:#333;margin:2px 0 8px;padding:5px 9px;border-left:3px solid #FFC72C;background:#FFF9E8">${esc(focus)}</div>` : ''}
 
-    <div class="banner">1. WEEKLY PERFORMANCE SCORECARD &nbsp;&nbsp; [ Volume Tier: &nbsp; [ ] A ($110k+) &nbsp; [ ] B ($75k–$110k) &nbsp; [ ] C (&lt;$75k) ]</div>
+    <div class="banner">WEEKLY PERFORMANCE SCORECARD &nbsp;&nbsp; [ Volume Tier: &nbsp; [ ] A ($110k+) &nbsp; [ ] B ($75k–$110k) &nbsp; [ ] C (&lt;$75k) ]</div>
     <table>
       <tr><th style="text-align:left">Metric</th><th>Tier Target (A / B / C)</th><th>Actual Result</th><th style="text-align:left">Status</th></tr>
       ${scBody}
     </table>
     <div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data for the selected scope; blanks are for the leader to complete before the discussion.</div>
 
-    <div class="banner">2. DEEP DIVE: OPERATIONAL BOTTLENECKS &amp; COST CONTROLS</div>
+    ${(!blank && (isDistrict || isPatch) && hasStores) ? `
+      <div class="banner">${isDistrict ? 'DISTRICT OUTLIERS &amp; OPPORTUNITIES' : 'YOUR PATCH — STORE BY STORE (drive results through your GMs)'}</div>
+      ${topBottomHtml(page, esc).replace(/<h2[^>]*>.*?<\/h2>/, '')}
+      ${perLocTableHtml(page, esc).replace(/<h2[^>]*>.*?<\/h2>/, '')}
+      <div style="font-size:7.5pt;color:#666;margin-top:3px">${isDistrict ? 'Press on the outliers (⚠️) and protect the wins (🏆). Opp $/wk = recoverable if the store paces to plan/target.' : 'Walk each GM through their store: biggest gap first, then the win to reinforce.'}</div>` : ''}
+
+    <div class="banner">DEEP DIVE: OPERATIONAL BOTTLENECKS &amp; COST CONTROLS</div>
     <div class="dd"><b>A. Speed of Service &amp; Drive-Thru</b><br/>• Primary bottleneck: ${lines(1)}
       • Lunch peak (11:30–1:30): target &lt;90s | actual ______s &nbsp;&nbsp; Dinner peak (5–7): target &lt;110s | actual ______s<br/>
       • Corrective actions: 1. ________________________ 2. ________________________</div>
@@ -589,14 +607,15 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
       • Waste — Raw $ __________ | Completed $ __________ | Promo/Crew $ __________<br/>• Yield actions: ${lines(1)}</div>
     <div class="dd" style="margin-top:6px"><b>C. Labor Efficiency &amp; Shift Control</b><br/>• Planned hrs __________ | Actual hrs __________ | Variance __________<br/>• Optimization actions: ${lines(1)}</div>
 
-    <div class="banner">3. INDIVIDUAL SHIFT MANAGER PERFORMANCE TRACKING</div>
+    ${isDistrict && !blank ? '' : `
+    <div class="banner">INDIVIDUAL SHIFT MANAGER PERFORMANCE TRACKING</div>
     <table>
       <tr><th style="text-align:left">Shift Manager</th><th>Dayparts Run</th><th>Avg OEPE</th><th>Shift Labor %</th><th>Shift Waste $</th><th>Pre-Shift Checklist</th></tr>
       ${smBody}
     </table>
-    ${managerNames && managerNames.length ? `<div style="font-size:7.5pt;color:#666;margin-top:3px">Names pre-listed from the store's Shift Manager Summary; per-shift metrics are for the leader to fill in.</div>` : ''}
+    ${managerNames && managerNames.length && !blank ? `<div style="font-size:7.5pt;color:#666;margin-top:3px">Names pre-listed from the store's Shift Manager Summary; per-shift metrics are for the leader to fill in.</div>` : ''}`}
 
-    <div class="banner">4. COMMITMENTS FOR NEXT WEEK</div>
+    <div class="banner">COMMITMENTS FOR NEXT WEEK${isStore ? ' &nbsp;&nbsp; (celebrate a win + set one improvement)' : ''}</div>
     ${lines(4)}
     </body></html>`;
 }
