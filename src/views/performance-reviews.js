@@ -2297,6 +2297,12 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
     }
     return Object.values(m).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [shiftManagerRows, loc]);
+  const totalShiftRows = (shiftManagerRows || []).length;
+  // Self-diagnosing empty-state: distinguish "no shift-manager data loaded at all"
+  // (pull/load/RLS issue) from "loaded, but none matched this store" (loc/attribution).
+  const mgrEmptyMsg = totalShiftRows === 0
+    ? '— shift-manager data not loaded —'
+    : `— no shift-manager data for this store (${totalShiftRows} rows loaded, other stores) —`;
   const showMgr = role !== 'GM';   // non-GM roles can attribute to a specific manager; GMs = store-total
 
   // Selecting a manager sets the geid AND the name — ensures correct attribution.
@@ -2343,7 +2349,7 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
             opt({value:''},'— store total —'),
             ...managers.map(m=>opt({value:String(m.geid),key:m.geid},m.name)))
         : sel({value:'',disabled:true,style:{...fieldStyle,minWidth:170,opacity:.6}},
-            opt({value:''},'— no shift-manager data for this store —'))
+            opt({value:''},mgrEmptyMsg))
     ),
     div(null,
       div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Year'),
