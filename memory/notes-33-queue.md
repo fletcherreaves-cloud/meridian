@@ -73,6 +73,18 @@ See [[session-handoff-2026-07-28]], [[feedback-metric-provenance]].
 
 ---
 
+## ⏸ DEFERRED — Labor% current-day fallback (owner to explain, 2026-07-29+)
+DAR gives **crew punch labor %** = actual_punched_dollars ÷ product_sales (reconciles exactly to the
+report's "Punch Labor" column), but that is crew-only — NOT a fully-loaded labor% (no mgmt salary /
+taxes / benefits). Proposed 3 options (crew-punch labeled / leave blank / separate row). **Owner: "work
+this out tomorrow, more to it than that, needs explaining."** KEY CONTEXT owner gave: **FL vs OK utilize
+labor differently** — the two markets account for/use labor in different ways, so a single labor% fallback
+rule won't fit both. DO NOT wire a DAR labor% fallback until the owner explains the FL/OK difference and
+the intended definition. The other DAR speed fallbacks (R2P v4.549, OEPE v4.550) are already shipped and
+unaffected. actual_punched_dollars is already persisted → wiring is trivial once the definition is settled.
+
+---
+
 ## One-Pager sweep — FINDINGS (2026-07-28 autonomous pass)
 - **B#6 TPPH scale — FIXED** (commit b69ccab). `loadQsrActSummary` derived TPPH from
   `(healthy_count+unhealthy_count)/punched_hours` — a KVS order-health count, not transactions →
