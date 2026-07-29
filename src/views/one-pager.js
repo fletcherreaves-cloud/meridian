@@ -11,6 +11,7 @@ import { escapeHtml, f$ } from '../utils/fmt.js';
 import { computeOpportunity, annualize, rankByOpportunity } from '../engine/opportunity.js';
 import { buildOnePager } from '../engine/one-pager.js';
 import { buildOnePagerInputs, buildMetricNow, buildCurrentState, buildPerLocationRows, buildReviewActuals } from '../engine/one-pager-data.js';
+import { dailyDataFreshness } from '../engine/metric-source.js';
 import { loadQsrFob, loadActionItems, saveOnePager, saveActionItem, updateActionItem } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -145,6 +146,15 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
     return { ...built, perLocation, reviewActuals, range: { s: range.s, e: range.e }, rangeLabel: rLabel, ytdLabel: rangeLabel('ytd', ytd, range.e), annualFactor: annualFactor(range), cascade: cascadeOf(cascade) };
   }, [ds, fobRows, locs, range, ytd, period, priorItems, level, scopeLabel, rLabel, cascade]);
 
+  // Daily-data staleness guard (Notes: Jul-2026 data-loss). If the freshest daily operating
+  // date is > 2 days behind today, warn on the form so a stale/incomplete read can't ship silently.
+  const staleWarn = useMemo(() => {
+    const fresh = dailyDataFreshness(ds);
+    if (!fresh) return null;
+    const days = Math.floor((Date.now() - fresh.getTime()) / 86400000);
+    return days > 2 ? { days, dateLabel: `${MONTH_NAMES[fresh.getMonth()]} ${fresh.getDate()}` } : null;
+  }, [ds]);
+
   const addAction = useCallback((a) => {
     setActions(prev => prev.some(x => x.title === a.title) ? prev
       : [...prev, { title: a.title, detail: a.detail || '', loc: a.loc || null, metric_key: a.metricKey || null,
@@ -225,6 +235,11 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
       !page
         ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text2)' } }, 'Loading…')
         : div({ style: { padding: 16, display: 'grid', gap: 16 } },
+            // Daily-data staleness guard — a stale/truncated read must never ship silently.
+            staleWarn ? div({ style: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, border: '1px solid #f5bc00', background: 'rgba(245,188,0,.10)', color: 'var(--text)', fontSize: 12 } },
+              span({ style: { fontSize: 15 } }, '⚠️'),
+              span(null, span({ style: { fontWeight: 800 } }, `Daily data is ${staleWarn.days} days stale`),
+                ` — newest sales/speed/labor date is ${staleWarn.dateLabel}. Recent figures may be incomplete; refresh the QSRSoft pulls before relying on this form.`)) : null,
             // Scope presets (tie to the org groupings in settings)
             div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
               span({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text2)' } }, 'Scope:'),

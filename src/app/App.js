@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.587';
+const MERIDIAN_VERSION    = '4.588';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.588', date:'2026-07-29', changes:[
+    'Extended the recent-data fix to every large cloud read: the emailed Daily-Glimpse, Cash, Sales-Ledger and the manual Labor streams now also load newest-first, so Service (OEPE/KVS), Controls, and Labor % repopulate for the current window even when a read is throttled. (The emailed pipeline was healthy the whole time — the data was being written; the app just wasn\'t reading the newest rows.)',
+    'Added a "⚠ Daily data is N days stale" guard banner to the Leadership One-Pager: if the freshest sales/speed/labor date is more than 2 days behind today, the form warns you (with the newest date) instead of quietly printing incomplete numbers.',
+  ]},
   {version:'4.587', date:'2026-07-29', changes:[
     'Data-integrity fix: large cloud reads (starting with the QSRSoft daily-activity summary that feeds At-A-Glance + the One-Pager forms) could silently return only PARTIAL data if a read was cut off mid-way — and because they loaded oldest-first, the missing rows were the most RECENT days, so the app quietly showed data "stuck" a couple weeks back while the live data was actually current. Reads now load newest-first (a truncated read keeps the recent days that matter) and a cut-off read now logs a loud warning instead of pretending it was complete. Note: streams fed by the emailed QSRSoft reports (KVS / cash controls / labor %) can still lag until that email pipeline is caught up — that is a separate data-refresh, not a display bug.',
   ]},

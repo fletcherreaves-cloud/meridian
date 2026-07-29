@@ -53,6 +53,23 @@ export const METRIC_SOURCES = {
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);
 
+// Newest per-day date present across the CORE daily operating streams — powers a
+// "daily data is N days stale" guard so a truncated/stale read can never silently ship
+// (Notes: the Jul-2026 data-loss incident). Returns a Date, or null when nothing is loaded.
+const _DAILY_STREAMS = ['qsrActSummaryRows', 'salesLedgerRows', 'glimpseRows', 'laborRows', 'opsRows', 'ctrlRows', 'cashRows'];
+export function dailyDataFreshness(ds) {
+  if (!ds) return null;
+  let max = null;
+  for (const s of _DAILY_STREAMS) {
+    for (const r of (ds[s] || [])) {
+      if (!r || !r.date) continue;
+      const t = r.date instanceof Date ? r.date.getTime() : Date.parse(r.date);
+      if (!isNaN(t) && (max == null || t > max)) max = t;
+    }
+  }
+  return max != null ? new Date(max) : null;
+}
+
 // Lazy per-source index (loc_date → rows[]), cached non-enumerably on ds so it rebuilds
 // automatically when ds is replaced (setDs makes a new object).
 function _srcIdx(ds, src) {

@@ -522,8 +522,8 @@ export async function loadLaborRows() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase
     .from('labor_rows').select('*')
-    .order('report_date', { ascending: true })
-    .range(from, to));
+    .order('report_date', { ascending: false })   // newest-first: a truncated read keeps recent days
+    .range(from, to), 1000, 'laborRows');
   if (!data.length) return [];
   return data.map(r => ({
     loc:      r.loc,
@@ -1730,11 +1730,12 @@ export async function loadGlimpse(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  // Paginate: 27 stores × 45-60 days exceeds Supabase's 1000-row default cap.
-  // A plain select would keep only the OLDEST 1000 (ascending order) and silently
-  // drop the newest days — the exact data these freshest-wins tiles need.
+  // Paginate + order NEWEST-first: 27 stores × 45-60 days exceeds Supabase's 1000-row cap,
+  // and if a page read is cut off (free-tier egress throttle), we must keep the RECENT days
+  // these freshest-wins tiles need — ascending order silently dropped the newest days (the
+  // "Service/Controls stuck at an old date" bug, even though email-parse writes them current).
   const data = await fetchAll((from, to) => supabase.from('daily_glimpse_daily')
-    .select('*').gte('date', iso).order('date').range(from, to));
+    .select('*').gte('date', iso).order('date', { ascending: false }).range(from, to), 1000, 'glimpse');
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
@@ -1757,7 +1758,7 @@ export async function loadCash(daysBack = 45) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
   const data = await fetchAll((from, to) => supabase.from('cash_sheet_daily')
-    .select('*').gte('date', iso).order('date').range(from, to));
+    .select('*').gte('date', iso).order('date', { ascending: false }).range(from, to), 1000, 'cash');
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, gc: r.gc, avgCheck: r.avg_check,
@@ -1781,7 +1782,7 @@ export async function loadSalesLedger(daysBack = 45) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
   const data = await fetchAll((from, to) => supabase.from('sales_ledger_daily')
-    .select('*').gte('date', iso).order('date').range(from, to));
+    .select('*').gte('date', iso).order('date', { ascending: false }).range(from, to), 1000, 'salesLedger');
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     sales: r.all_net_sales, allNetSales: r.all_net_sales, allNetSalesLY: r.all_net_sales_ly, salesVsLYPct: r.sales_vs_ly_pct,
