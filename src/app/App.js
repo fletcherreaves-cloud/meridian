@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.595';
+const MERIDIAN_VERSION    = '4.596';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.596', date:'2026-07-29', changes:[
+    'SAGE tables read cleaner: numeric columns (dollars, %, seconds, counts) now right-align with tabular figures instead of everything left-aligned, so columns line up like the rest of the app\'s data tables.',
+  ]},
   {version:'4.595', date:'2026-07-29', changes:[
     'EOM count progress: when a class list is ≥90% counted but not finished, hovering its chip (e.g. "F 92% ·4") now lists exactly which items are still uncounted, ranked by dollars at risk — so the store can close the last few instead of guessing. The store message already itemizes the gaps; this puts them one hover away in the dashboard.',
   ]},

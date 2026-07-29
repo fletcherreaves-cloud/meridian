@@ -534,13 +534,22 @@ function renderMarkdown(text) {
 
     if (rows.length < 1) { tableLines = []; inTable = false; return; }
     const [header, ...body] = rows;
+    // Right-align NUMERIC columns with tabular figures so data reads cleanly (the "clean app
+    // format" — numbers left-aligned look messy). A column is numeric if most of its non-empty
+    // body cells parse as a number ($, %, s, commas, parens, ± all allowed).
+    const isNum = (s) => { const v = String(s).trim(); if (!v || v === '—' || v === '-') return null; return /^[-+±]?\$?\(?-?[\d,]*\.?\d+\)?\s*[%s×xkKmMbB]?$/.test(v.replace(/\s/g, '')); };
+    const align = header.map((_, ci) => {
+      let num = 0, tot = 0;
+      for (const row of body) { const r = isNum(row[ci]); if (r === null) continue; tot++; if (r) num++; }
+      return tot > 0 && num / tot >= 0.6 ? 'right' : 'left';
+    });
     elements.push(
       h('div', { key: k(), style: { overflowX: 'auto', margin: '8px 0' } },
         h('table', { style: { borderCollapse: 'collapse', fontSize: 11, width: '100%' } },
           h('thead', null, h('tr', null,
             header.map((cell, i) => h('th', { key: i, style: {
               padding: '5px 10px', background: 'rgba(245,158,11,.1)', color: amber,
-              fontWeight: 700, textAlign: 'left', border: '1px solid rgba(255,255,255,.1)',
+              fontWeight: 700, textAlign: align[i], border: '1px solid rgba(255,255,255,.1)',
               fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap',
             } }, cell))
           )),
@@ -548,7 +557,9 @@ function renderMarkdown(text) {
             body.map((row, ri) => h('tr', { key: ri },
               row.map((cell, ci) => h('td', { key: ci, style: {
                 padding: '4px 10px', border: '1px solid rgba(255,255,255,.07)', fontSize: 11,
-                color: 'var(--text,#f1f5f9)',
+                color: 'var(--text,#f1f5f9)', textAlign: align[ci] || 'left',
+                fontVariantNumeric: align[ci] === 'right' ? 'tabular-nums' : 'normal',
+                whiteSpace: align[ci] === 'right' ? 'nowrap' : 'normal',
                 background: ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,.02)',
               } }, renderInline(cell)))
             ))
