@@ -630,7 +630,7 @@ function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', blank = fa
       : blankRows(['Store', 'Sales vs LY', 'Labor %', 'FOB %', 'OEPE', 'Biggest gap', 'GM action'], 10)}
 
     <div class="banner">GM COACHING FOCUS</div>
-    ${blankRows(['GM / Store', 'What to drive this week', 'Follow-up'], 6)}`;
+    ${blankRows(['GM / Store', 'What to drive this week', 'Follow-up'], 5)}`;
 
   const middle = isDistrict ? districtMiddle : isPatch ? patchMiddle : storeMiddle;
 
