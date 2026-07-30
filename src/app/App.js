@@ -219,6 +219,21 @@ const MERIDIAN_VERSION    = '4.661';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.660', date:'2026-07-30', changes:[
+    'EOM → 📣 "Message all" — generate the EOM follow-up message for every location at once (ordered by who needs it first), each with Copy / Open / Mark-sent. Fire off follow-ups to all stores in one place.',
+    'EOM → 🔍 "AI Cross-Check" — paste an external AI\'s FOB analysis (e.g. CoachQ) and Meridian reconciles it against its own real numbers: flags rows the external tool FABRICATED (its own components don\'t sum to its stated FOB$) and rows that diverge >$50 from Meridian. Meridian\'s real data is the ground truth.',
+  ]},
+  {version:'4.657', date:'2026-07-30', changes:[
+    'EOM count timing is now class-aware: Food, Condiment AND Paper are due to 100% by EOD; Non-Product isn\'t counted until tomorrow — so it no longer holds a store below 100%, shows as "N tmrw" (muted) on the chips, and is framed as expected (not a gap) in the diagnosis. Progress %, "believes done", and the scoreboard all reflect TODAY\'s target.',
+    'No more "no waste logged / verify waste" flags on Paper / Non-Product — waste is a Food/Condiment concern only. "Counted over N days" now uses each item\'s most-recent count date (a store that re-counted everything today reads 1 day). Obsolete / to-count / early tables now show On-hand qty alongside On-hand $.',
+  ]},
+  {version:'4.656', date:'2026-07-30', changes:[
+    'Food-Cost Diagnosis rewrite — class-aware "Finish today\'s count to 100%" (Food/Condiment = real recovery, Paper = due-today completeness, Non-Product = tomorrow); Top-5 always shows 5 and CELEBRATES a clean sweep when a store has none; counted-early + obsolete items render as tables (WRIN, class, on-hand, last-counted, class-aware action). Store message now renders as an on-screen table with a safe plain-text copy.',
+  ]},
+  {version:'4.653', date:'2026-07-30', changes:[
+    'Inventory-integrity layer complete (11 detectors): count re-entry, bulk-submit (a single dominant timestamp = travel-path skipped), waste-inflation, unrealistic-over (fries), negative-usage, negative-on-hand, UOM-sanity, phantom-transfer timing, RUBBER-BAND (padding→collapse), UNMATCHED transfers (no mirror at the sister store), and a self-serve-tower fountain-yield exemption. All in the editable diagnosis registry, framed as verify-not-accuse.',
+    'EOM → 🪃 "Rubber-band" scan (padding that ran OVER for months then snapped to a big short) joins Chronic Offenders + Count Reliability. All three scans now have drill-down facts, CSV/Print, 1–2-month look-back, and a patch/operator filter. FOB % vs target + location numbers added to the dashboard.',
+  ]},
   {version:'4.636', date:'2026-07-30', changes:[
     'Inventory-integrity detection (new) — the Food-Cost Diagnosis now flags COUNT MANIPULATION: more than 4 count entries for the same item on one day (2-4 is normal for travel-path counting across multiple storage locations), especially when a later entry walks the variance back toward zero — the tell-tale of a re-count to negate an unfavorable result. When the same negate move shows on 2+ items it escalates to critical (intentional, not a correction). More integrity checks (waste inflation, unrealistic over/gain) to follow.',
     'The "Top 5 — do these now" list is now focused to Food & Condiment items only (the profit-driver classes) per owner; the full all-classes analysis stays below.',
