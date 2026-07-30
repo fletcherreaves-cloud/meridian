@@ -1782,6 +1782,30 @@ export async function loadDailySales(days = 120) {
 // created), preserving the prior IDB behavior.
 const _mkDate = (dt) => new Date(dt + 'T00:00:00');
 
+// ── Operations Report streams (#37) — the store-daily JSONB tables from qsrsoft-ops-pull.mjs.
+// Each row's `metrics` JSONB (snake_cased fields incl ly_/ybl_) is spread flat onto the row, so
+// consumers read { loc, date, discount_amt, treds_after_qty, over_time_total_hours, … } directly.
+// daysBack bounds egress. Return [] when the table isn't created yet (fails soft).
+async function _loadOpsTable(table, daysBack, extra) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const iso = cutoff.toISOString().slice(0, 10);
+  try {
+    const data = await fetchAll((from, to) => supabase.from(table).select('*')
+      .gte('dt', iso).order('dt', { ascending: false }).range(from, to));
+    return (data || []).map(r => ({
+      loc: r.loc, date: new Date(r.dt + 'T00:00:00'),
+      ...(r.metrics || {}), ...(r.needed || {}),
+      ...(r.time_slice != null ? { timeSlice: r.time_slice } : {}),
+    }));
+  } catch (e) { console.warn(`[${table}] load skipped:`, e?.message || e); return []; }
+}
+export const loadOpsCashSheet    = (d = 45) => _loadOpsTable('qsr_cash_sheet', d);     // Controls
+export const loadOpsLaborSummary = (d = 45) => _loadOpsTable('qsr_labor_summary', d);  // OT + crew + needed hrs
+export const loadOpsServiceStats = (d = 45) => _loadOpsTable('qsr_service_stats', d);  // CTP/OEPE/DT/MFY/KVS/RTP
+export const loadOpsSalesMix     = (d = 45) => _loadOpsTable('qsr_sales_mix', d);      // channel sales + ly + ybl
+export const loadOpsPeaksSales   = (d = 45) => _loadOpsTable('qsr_peaks_sales', d);    // 3 Peaks daypart sales
+
 export async function loadGlimpse(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);

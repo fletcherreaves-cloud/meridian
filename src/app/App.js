@@ -55,7 +55,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -215,7 +215,7 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.624';
+const MERIDIAN_VERSION    = '4.625';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
@@ -1789,6 +1789,22 @@ function App() {
           console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
         }
       }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);}
+      // Operations Report streams (#37) — Controls / Labor(OT) / Service / Sales-mix / 3 Peaks,
+      // store-daily with LY, from the qsrsoft-ops-pull. Loaded into ds for the tile-wiring phase
+      // (ctrlAuto discount%/T-Reds, OT, service, etc.). Fails soft before the tables exist/populate.
+      try{
+        const [oCash,oLabor,oSvc,oMix,oPeaks]=await Promise.all([
+          loadOpsCashSheet(60),loadOpsLaborSummary(60),loadOpsServiceStats(60),loadOpsSalesMix(60),loadOpsPeaksSales(60)]);
+        if(oCash.length||oLabor.length||oSvc.length||oMix.length||oPeaks.length){
+          setDs(prev=>{if(!prev)return prev;return{...prev,
+            ...(oCash.length?{opsCashRows:oCash}:{}),
+            ...(oLabor.length?{opsLaborRows:oLabor}:{}),
+            ...(oSvc.length?{opsServiceRows:oSvc}:{}),
+            ...(oMix.length?{opsSalesMixRows:oMix}:{}),
+            ...(oPeaks.length?{opsPeaksRows:oPeaks}:{})};});
+          console.log(`[Meridian] ✓ Ops Report streams — cash:${oCash.length} labor:${oLabor.length} svc:${oSvc.length} mix:${oMix.length} peaks:${oPeaks.length}`);
+        }
+      }catch(e){console.warn('[Meridian] Ops Report stream load failed:',e);}
       // Load cross-device user settings (locked projections, AE calibration params)
       try{
         const remoteProj=await loadUserSetting('locked_projections');
