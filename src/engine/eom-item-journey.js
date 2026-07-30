@@ -42,6 +42,43 @@ const tmMin = (tm) => {
   return h * 60 + mm;
 };
 
+// Count-timing metric (owner req #45): from a store's raw-item count history, when did the store's
+// EOM count BEGIN and END, and how long did it take. began = earliest count-event timestamp across
+// all items, ended = latest, duration = the span. Also nDays (a multi-day count) + nCounts.
+// `rawItems` = [mapRawItemHistory()]. Returns null when no timestamped count events exist.
+export function computeCountTiming(rawItems = []) {
+  const stamps = [];
+  for (const it of (rawItems || [])) {
+    for (const h of (it.history || [])) {
+      if (!h.isCount) continue;
+      const t = ts(h.dt); if (t == null) continue;
+      const hasTime = !!String(h.tm || '').trim();
+      stamps.push({ when: t + tmMin(h.tm) * 60000, dt: h.dt, tm: h.tm, hasTime });
+    }
+  }
+  if (!stamps.length) return null;
+  stamps.sort((a, b) => a.when - b.when);
+  const b = stamps[0], e = stamps[stamps.length - 1];
+  const days = new Set(stamps.map(s => s.dt));
+  return {
+    began: b.when, beganDt: b.dt, beganTm: b.tm,
+    ended: e.when, endedDt: e.dt, endedTm: e.tm,
+    durationMin: Math.max(0, Math.round((e.when - b.when) / 60000)),
+    nCounts: stamps.length, nDays: days.size,
+    hasTimes: stamps.some(s => s.hasTime),   // false → dates only (span is day-level, not to-the-minute)
+  };
+}
+
+// "2h 15m" / "1d 3h" / "45m" from a minute count (for the count-duration display).
+export function fmtDurationMin(min) {
+  if (min == null) return '—';
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
+  const d = Math.floor(h / 24), hh = h % 24;
+  return hh ? `${d}d ${hh}h` : `${d}d`;
+}
+
 // Build the journey for one item. `detail` = a mapRawItemHistory() result.
 export function buildItemJourney(detail = {}, { period, asOf } = {}) {
   const windowStart = period ? countWindowStart(period).getTime() : null;

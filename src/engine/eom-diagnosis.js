@@ -527,6 +527,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   detailTable(foodCond);
   if (otherCls.length) {
     L.push(`### Other classes — Paper / Non-Product (${otherCls.length})`, '');
+    L.push('_Fine print: Food + Condiment (≈22–29% of revenue) is where variance/waste attention moves the P&L; Paper / Non-Product is ≈3–4% and rarely a real opportunity. Raw paper is seldom wasted on its own — it\'s normally accounted for inside a completed-product waste — so treat these as reference, not an action area unless a number is clearly out of line._', '');
     detailTable(otherCls);
   }
   const tier = (label, lo, hi) => {
