@@ -82,6 +82,35 @@ const EARLY_CLASSES = ['food', 'condiment', 'paper'];
 const LATE_CLASSES = ['nonproduct'];
 
 // A store is treated as "believes they're done" at this overall completion.
+// FOB $/% per store for a period. qsr_fob is a DAILY table, but each daily row is a period-to-date
+// SNAPSHOT (the FOB report is month-keyed — the pull queries one date but the API returns the running
+// month value), NOT a daily increment. So the period figure = the LATEST snapshot per store, NEVER the
+// sum of the daily rows: summing ~30 snapshots inflates $ ~30× while the ratio (FOB%) survives, which
+// is why only absolute-$ consumers (the AI cross-check) ever surfaced the bug. This is the ONE correct
+// aggregation — kept here, pure + unit-tested, so it can't silently regress to a sum. (owner FOB 30×.)
+export function fobSnapshotByStore(fobRows, period) {
+  const latest = {};
+  const dkey = (d) => typeof d === 'string' ? d.slice(0, 10)
+    : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10));
+  for (const r of (fobRows || [])) {
+    const k = dkey(r.date);
+    if (period && k.slice(0, 7) !== period) continue;
+    const loc = String(r.loc);
+    const cur = latest[loc];
+    if (!cur || k > cur.key) latest[loc] = { row: r, key: k };
+  }
+  const acc = {};
+  for (const loc of Object.keys(latest)) {
+    const r = latest[loc].row;
+    const comp = r.compWasteAmt || 0, raw = r.rawWasteAmt || 0, cond = r.condimentsAmt || 0;
+    const emp = r.empMgrMealsAmt || 0, statv = r.statVarianceAmt || 0, unex = r.unexplainedAmt || 0;
+    const sales = r.prodSalesAmt || 0;
+    const fob = comp + raw + cond + emp + statv + unex;
+    acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: sales ? fob / sales : null, asOf: latest[loc].key };
+  }
+  return acc;
+}
+
 export const BELIEVES_DONE_PCT = 0.90;
 // A class is treated as complete at this fraction.
 export const CLASS_DONE_PCT = 0.98;

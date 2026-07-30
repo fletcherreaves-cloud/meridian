@@ -17,7 +17,7 @@ import {
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
-  buildIncompleteCountMessage, diagnoseIncompleteCount,
+  buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
@@ -172,35 +172,8 @@ const statusColor = (v) => ({
   none: '#64748b', drafted: '#f5bc00', sent: '#38bdf8', verified: '#4ade80',
 }[v] || '#64748b');
 
-// FOB $/% snapshot for the period, dollar-weighted (Σcomponents / ΣprodSales) — MTD.
-// FOB components (per fob-eom / analytics): comp waste + raw waste + condiments +
-// emp/mgr meals + stat variance + unexplained. FOB% = FOB$ / product sales$.
-function fobByStore(fobRows, period) {
-  // qsr_fob is a DAILY table, but each daily row is a period-to-date SNAPSHOT (the running
-  // month total), NOT a daily increment. So the period FOB$/sales = the LATEST snapshot per
-  // store, never the sum of the daily rows (summing ~30 snapshots inflates $ ~30×; the ratio
-  // survives, which is why only absolute-$ consumers like the cross-check ever saw the bug).
-  const latest = {};   // loc -> { row, key } keeping the newest in-period date
-  const dkey = (d) => typeof d === 'string' ? d.slice(0, 10)
-    : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10));
-  for (const r of (fobRows || [])) {
-    const k = dkey(r.date);
-    if (k.slice(0, 7) !== period) continue;
-    const loc = String(r.loc);
-    const cur = latest[loc];
-    if (!cur || k > cur.key) latest[loc] = { row: r, key: k };
-  }
-  const acc = {};
-  for (const loc of Object.keys(latest)) {
-    const r = latest[loc].row;
-    const comp = r.compWasteAmt || 0, raw = r.rawWasteAmt || 0, cond = r.condimentsAmt || 0;
-    const emp = r.empMgrMealsAmt || 0, statv = r.statVarianceAmt || 0, unex = r.unexplainedAmt || 0;
-    const sales = r.prodSalesAmt || 0;
-    const fob = comp + raw + cond + emp + statv + unex;
-    acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: sales ? fob / sales : null, asOf: latest[loc].key };
-  }
-  return acc;
-}
+// FOB $/% per store for the period — the LATEST daily snapshot, NOT a sum (see fobSnapshotByStore).
+const fobByStore = fobSnapshotByStore;
 
 function ClassChips({ byClass, uncounted }) {
   // Food/Condiment/Paper are due to 100% by EOD; Non-Product ('N') isn't due until tomorrow, so it's
