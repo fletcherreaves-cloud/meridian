@@ -215,10 +215,15 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.618';
+const MERIDIAN_VERSION    = '4.619';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.619', date:'2026-07-30', changes:[
+    'Operations Report auto-pull — groundwork: a new pull (scripts/qsrsoft-ops-pull.mjs + daily workflow) captures the whole QSRSoft Operations Report as store-level daily REST data — Controls (discount, T-Reds before/after, meals, drawer, refunds), Labor (OT hours/$, crew, needed hours), Service (CTP/OEPE/DT/MFY/KVS/RTP), channel sales mix, and the 3 Peaks — all WITH last-year values. Kills the manual Operations/Controls upload dependency. (Ingestion layer; the tile wiring lands next.)',
+    'Leadership One-Pager: the OSAT B2B (1★) target now reads the effective/yearly targets (was only reading the static defaults), so the "Overall Satisfaction B2B" target from the yearly-targets file lands.',
+    'EOM diagnosis: removed the unverified "QSRSoft force-zeros deactivated items ~30–45 days" phrasing (owner is verifying) — the write-off-before-close guidance stands on its own.',
+  ]},
   {version:'4.618', date:'2026-07-30', changes:[
     'Leadership One-Pager (Owner→DO): the Supervisor / Patch Accountability section now pre-fills on the filled form — each supervisor with their patch\'s focus store and biggest gap (the patch\'s largest weekly $ opportunity + sales-vs-LY), leaving Committed action blank for the meeting. Maps by who RUNS the stores (live supervisor assignments — responsibility), not ownership, so a supervisor running stores they don\'t own is credited correctly.',
   ]},
@@ -264,7 +269,7 @@ const MERIDIAN_CHANGELOG  = [
     'Fixed At-A-Glance Digital Sales showing 0% / "0 of 27 reporting": the tile pulled its channel breakdown (McDelivery / MOP / Kiosk) from a source that has no channel split once manual uploads stop; it now reads from the emailed Sales Ledger (which carries the channels and stays current). (Service R2P and KVS on the AAG tile are a separate known gap being worked next.)',
   ]},
   {version:'4.603', date:'2026-07-29', changes:[
-    'EOM diagnosis now prints an "Obsolete / Discontinued / Inactive — verify & clear" list — the stale / likely-deactivated items carrying a residual on-hand, each with its on-hand $, last-count date, and the two-way call: present & usable → count it ($0); obsolete/gone → write off now (−$X) so you time the loss before the period locks instead of letting QSRSoft auto-zero it later.',
+    'EOM diagnosis now prints an "Obsolete / Discontinued / Inactive — verify & clear" list — the stale / likely-deactivated items carrying a residual on-hand, each with its on-hand $, last-count date, and the two-way call: present & usable → count it ($0); obsolete/gone → write off now (−$X) so you time the loss cleanly before the period locks.',
   ]},
   {version:'4.602', date:'2026-07-29', changes:[
     'One-Pager: KVS Time per GC + KVS Healthy Usage now appear on all three review forms (Organization / Patch / Restaurant), not just the store form.',

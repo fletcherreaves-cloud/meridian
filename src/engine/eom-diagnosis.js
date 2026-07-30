@@ -481,7 +481,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       if (more > 0) L.push(`- _+${more} more._`);
     }
     if (bs.early && bs.early.n) L.push('', `- **${m(bs.early)} counted EARLY** this period — QSRSoft already shows them counted. Recount only if the count looks *wrong*; it will **not** recover this period's dollars (they cascade). NOT "just go count it" money.`);
-    if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} OBSOLETE / DISCONTINUED / INACTIVE** — last counted a prior period; a residual on-hand is riding. **Verify:** still sellable/usable → count it; obsolete/gone → **write off before close** (QSRSoft force-zeros a deactivated item ~30–45 days out and fires the full balance as a loss anyway). These inflate "value at risk" without being real count work.`);
+    if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} OBSOLETE / DISCONTINUED / INACTIVE** — last counted a prior period; a residual on-hand is riding. **Verify:** still sellable/usable → count it; obsolete/gone → **write off before close** so you time the loss cleanly instead of letting it ride into next period's opening. These inflate "value at risk" without being real count work.`);
     // Itemized obsolete/discontinued/inactive verify-&-clear list (Notes: Durant #5985 / #38). Each
     // with on-hand $, last count date, and the two-way impact so a manager can clear it before lock.
     const staleItems = (incomplete.uncounted || []).filter(u => u.state === 'stale').sort((a, b) => b.valueAtRisk - a.valueAtRisk).slice(0, 15);
@@ -490,7 +490,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       staleItems.forEach(u => L.push(`- **${u.descr || u.wrin}** — on-hand ${money(u.onHandAmt)} · last counted ${u.lastCounted || '—'} → present + usable? **count it ($0)** · obsolete / gone? **write off (−${money(u.valueAtRisk)})**`));
       const more = (incomplete.byState?.stale?.n || 0) - staleItems.length;
       if (more > 0) L.push(`- _+${more} more stale item(s)._`);
-      L.push('_Rule: recoverable value (still sellable/usable/transferable) → count; obsolete/gone → write off now so YOU time the loss, not the QSRSoft auto force-zero._');
+      L.push('_Rule: recoverable value (still sellable/usable/transferable) → count; obsolete/gone → write off now so YOU time the loss cleanly before the period locks._');
     }
     L.push('');
   }

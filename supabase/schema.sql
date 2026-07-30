@@ -1507,6 +1507,38 @@ alter table public.eom_count_status enable row level security;
 create policy "eom_count_status: public read"  on public.eom_count_status for select using (true);
 create policy "eom_count_status: public write" on public.eom_count_status for all using (true);
 
+-- ── Operations Report auto-pull (owner req 2026-07-30, #37) ───────────────────
+-- The QSRSoft Operations Report as store-level daily REST pulls (scripts/qsrsoft-ops-pull.mjs).
+-- Each table stores one row per store/day with a `metrics` JSONB (all selectCols + ly_/ybl_ twins,
+-- snake_cased) — avoids a 300-column schema and lets new fields land with no migration. Replaces
+-- the manual Operations Report / Controls upload + adds official LY. See
+-- memory/reference-operations-report-apis.md.
+create table if not exists public.qsr_cash_sheet (       -- Controls: discount, T-Reds, meals, drawer, refunds
+  loc text not null, dt date not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_labor_summary (    -- OT hours/$, crew labor, salaried mgr, gross (+ needed hrs)
+  loc text not null, dt date not null, metrics jsonb, needed jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_service_stats (    -- CTP/OEPE/DT/MFY/KVS/RTP/Bev (summary segment)
+  loc text not null, dt date not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_sales_mix (        -- channel sales breakdown + ly + ybl
+  loc text not null, dt date not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_peaks_sales (      -- 3 Peaks daypart sales by channel
+  loc text not null, dt date not null, time_slice text not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt, time_slice));
+do $$ declare t text; begin
+  foreach t in array array['qsr_cash_sheet','qsr_labor_summary','qsr_service_stats','qsr_sales_mix','qsr_peaks_sales'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists "%s: public read" on public.%I', t, t);
+    execute format('create policy "%s: public read" on public.%I for select using (true)', t, t);
+    execute format('drop policy if exists "%s: public write" on public.%I', t, t);
+    execute format('create policy "%s: public write" on public.%I for all using (true)', t, t);
+    execute format('create index if not exists %I on public.%I (dt desc)', t||'_dt_idx', t);
+  end loop;
+end $$;
+
 -- Per-location completion LOG (owner req 2026-07-30) — a timestamped snapshot of each store's
 -- count completion (overall + per class) appended by the On-Hand pull, deduped to one row per
 -- store per hour. Builds a trajectory of WHEN each store counts each class through the EOM cycle

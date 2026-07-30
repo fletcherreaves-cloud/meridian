@@ -166,8 +166,15 @@ export function buildReviewActuals(ds, locs, range) {
   let projSales = 0, hasProj = false;
   for (const loc of (locs || [])) { const s = sumSeries(ds, loc, range, 'projSales'); if (s.days) { projSales += s.sum; hasProj = true; } }
   // Scope-average targets from each store's DEFAULT_TARGETS (KVS pace + healthy usage).
+  // Read the EFFECTIVE target: the uploaded yearly-targets file lands in ds.targets (e.g. the
+  // "Overall Satisfaction B2B" → tOsatB2B), while static DEFAULT_TARGETS only carries the seeded
+  // ones (tKvst/tKvsu). Prefer ds.targets so yearly-file targets (OSAT B2B) actually land.
   const tgtAvg = (field) => {
-    const vals = (locs || []).map(l => (DEFAULT_TARGETS[unpad(l)] || {})[field]).filter(v => v != null);
+    const vals = (locs || []).map(l => {
+      const u = unpad(l);
+      const t = (ds && ds.targets && ds.targets[u]) || DEFAULT_TARGETS[u] || {};
+      return t[field];
+    }).filter(v => v != null);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
   };
   return {
