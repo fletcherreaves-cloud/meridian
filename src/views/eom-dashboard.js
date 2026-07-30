@@ -21,6 +21,7 @@ import {
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
+import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 
@@ -621,6 +622,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [rbBusy, setRbBusy] = useState(false);
   const [rbLookback, setRbLookback] = useState(6);
   const [rbOpenRows, setRbOpenRows] = useState({});
+  // FOB Cross-Check — reconcile a pasted external AI FOB analysis (e.g. CoachQ) vs Meridian's real
+  // numbers; catches internal fabrications (components don't sum to FOB$) + divergences.
+  const [xcOpen, setXcOpen] = useState(false);
+  const [xcText, setXcText] = useState('');
+  const [xcResult, setXcResult] = useState(null);
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
@@ -833,6 +839,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     }
     setRbBusy(false);
   }, [period, rows, rbLookback]);
+
+  // Meridian's real per-store FOB (from the loaded FOB stream) — the ground truth for cross-check.
+  const meridianByStore = useMemo(() => {
+    const m = {};
+    for (const r of allRows) {
+      const c = r.components || {};
+      m[unpad(r.loc)] = { fob: r.fob$ || 0, fobPct: r.fobPct || 0, sales: c.sales || 0,
+        comp: c.comp, raw: c.raw, cond: c.cond, emp: c.emp, statv: c.statv, unex: c.unex };
+    }
+    return m;
+  }, [allRows]);
+  const runXcheck = useCallback(() => {
+    const parsed = parseExternalFob(xcText, allRows.map(r => r.loc));
+    setXcResult(reconcileFob(parsed, meridianByStore));
+  }, [xcText, allRows, meridianByStore]);
 
   // ── Scan exports (Save CSV / Print) — supporting facts for coaching + records ──
   const scopeLabel = () => `${patch ? `patch: ${patch}` : (scope === 'all' ? 'all stores' : scope)}${oneStore ? ` · ${nm(oneStore)}` : ''}`;
@@ -1158,6 +1179,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'Rubber-band — the padding→collapse integrity pattern: items that ran OVER (inventory padded) for months then snapped to a big short. Catches the "variance collapse" before it explodes. Reads on demand across the scope.',
           style: { background: 'var(--surf3)', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, rbBusy ? '…' : '🪃 Rubber-band'),
+        h('button', {
+          onClick: () => setXcOpen(true), disabled: rows.length === 0,
+          title: 'AI Cross-Check — paste an external AI\'s FOB analysis (e.g. CoachQ) and reconcile it against Meridian\'s real numbers. Catches fabricated rows (components that don\'t sum to their own FOB$) + divergences.',
+          style: { background: 'var(--surf3)', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '🔍 AI Cross-Check'),
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
           onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
@@ -1680,6 +1706,58 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                         span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.overSum || 0).toLocaleString()} over ${w.overN} mo (from ${w.from || ''}) → snapped ${w.to || ''}`))))));
               }))
           : null)),
+
+    xcOpen && div({
+      onClick: () => setXcOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({ onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '820px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+        div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '4px', paddingRight: '30px' } }, '🔍 AI Cross-Check — external FOB vs Meridian'),
+        h('button', { onClick: () => setXcOpen(false), style: MODAL_X }, '✕'),
+        div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
+          'Paste an external AI\'s FOB analysis (one store per line — store number, then Prod Sales, FOB$, FOB%, and the 6 components). Meridian reconciles it against its own real numbers and flags: ',
+          span({ style: { color: '#f87171', fontWeight: 700 } }, 'fabricated'), ' (the external row\'s own components don\'t sum to its stated FOB$), ',
+          span({ style: { color: '#f5bc00', fontWeight: 700 } }, 'diverge'), ' (>$50 off Meridian), and ',
+          span({ style: { color: '#4ade80', fontWeight: 700 } }, 'match'), '.'),
+        h('textarea', {
+          value: xcText, onChange: e => setXcText(e.target.value), placeholder: '3708  $307,503.52  $13,252.22  4.31%  $944.88  $878.93  $6,477.45  $650.28  $1,440.48  $4,323.90  -$23.22\n5183  …',
+          style: { width: '100%', minHeight: '120px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr)', borderRadius: '6px', padding: '10px', fontSize: '11.5px', fontFamily: 'ui-monospace,Menlo,monospace', lineHeight: 1.5, resize: 'vertical' },
+        }),
+        div({ style: { display: 'flex', gap: '8px', margin: '10px 0' } },
+          h('button', { onClick: runXcheck, disabled: !xcText.trim(),
+            style: { background: '#f5bc00', color: '#1a1400', border: 'none', borderRadius: '6px', padding: '7px 14px', fontWeight: 700, cursor: xcText.trim() ? 'pointer' : 'default', fontSize: '13px' } }, 'Reconcile'),
+          xcResult ? h('button', { onClick: () => { setXcText(''); setXcResult(null); }, style: MODAL_TOOLBTN }, 'Clear') : null),
+        xcResult ? div(null, [
+          div({ key: 'sum', style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px', fontSize: '12px', fontWeight: 700 } },
+            span({ style: { color: '#4ade80' } }, `✓ ${xcResult.tally.match || 0} match`),
+            span({ style: { color: '#f5bc00' } }, `⚠ ${xcResult.tally.diverge || 0} diverge`),
+            span({ style: { color: '#f87171' } }, `🚩 ${xcResult.tally.fabricated || 0} fabricated`),
+            (xcResult.tally['no-meridian'] || 0) ? span({ style: { color: 'var(--text3)' } }, `· ${xcResult.tally['no-meridian']} no Meridian data`) : null,
+            span({ style: { color: 'var(--text3)', fontWeight: 400 } }, `of ${xcResult.total} parsed`)),
+          !xcResult.total ? div({ key: 'none', style: { padding: '16px', textAlign: 'center', color: '#f5bc00', fontSize: '12.5px' } }, 'No store rows recognized — check the paste includes store numbers (one of your 27) at the start of each line.')
+            : h('table', { key: 'tbl', style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } }, [
+                h('thead', null, h('tr', null, ['Store', 'Meridian FOB$', 'External FOB$', 'Δ$', 'Meridian FOB%', 'External FOB%', 'Δ%', 'Status'].map((hd, i) =>
+                  h('th', { key: i, style: { textAlign: i >= 1 && i <= 6 ? 'right' : 'left', color: 'var(--text3)', fontWeight: 600, padding: '5px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' } }, hd)))),
+                h('tbody', null, xcResult.rows.map((r, i) => {
+                  const sc = r.status === 'match' ? '#4ade80' : r.status === 'diverge' ? '#f5bc00' : r.status === 'fabricated' ? '#f87171' : 'var(--text3)';
+                  const label = r.status === 'no-meridian' ? 'no Meridian data' : r.status;
+                  const merFob = r.meridian ? `$${Math.round(r.meridian.fob).toLocaleString()}` : '—';
+                  const merPct = r.meridian && r.meridian.fobPct != null ? `${(r.meridian.fobPct * 100).toFixed(2)}%` : '—';
+                  return h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
+                    h('td', { style: { padding: '5px 8px', color: 'var(--text)', fontWeight: 600 } }, nm(r.store), span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: '10px', marginLeft: '5px' } }, `#${r.store}`)),
+                    h('td', { style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, merFob),
+                    h('td', { style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' } }, r.extFob != null ? `$${Math.round(r.extFob).toLocaleString()}` : '—'),
+                    h('td', { style: { padding: '5px 8px', textAlign: 'right', color: sc, fontVariantNumeric: 'tabular-nums', fontWeight: 600 } }, r.dFob != null ? `${r.dFob >= 0 ? '+' : ''}$${Math.round(r.dFob).toLocaleString()}` : '—'),
+                    h('td', { style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, merPct),
+                    h('td', { style: { padding: '5px 8px', textAlign: 'right', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' } }, r.extFobPct != null ? `${r.extFobPct.toFixed(2)}%` : '—'),
+                    h('td', { style: { padding: '5px 8px', textAlign: 'right', color: sc, fontVariantNumeric: 'tabular-nums', fontWeight: 600 } }, r.dPct != null ? `${r.dPct >= 0 ? '+' : ''}${r.dPct.toFixed(2)} pp` : '—'),
+                    h('td', { style: { padding: '5px 8px' } },
+                      span({ style: { fontSize: '10px', fontWeight: 700, color: sc, border: `1px solid ${sc}`, borderRadius: '4px', padding: '1px 6px', whiteSpace: 'nowrap' }, title: r.status === 'fabricated' ? `External components sum to $${Math.round(r.sum6 || 0).toLocaleString()}, not its stated $${Math.round(r.extFob || 0).toLocaleString()} — the external tool's own numbers don't reconcile (likely fabricated).` : r.status === 'diverge' ? `External $${Math.round(r.extFob || 0).toLocaleString()} vs Meridian $${Math.round((r.meridian?.fob) || 0).toLocaleString()}.` : '' }, label)),
+                  ]);
+                })),
+              ]),
+        ]) : null)),
 
     chronicOpen && div({
       onClick: () => setChronicOpen(false),
