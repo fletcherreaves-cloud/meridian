@@ -64,11 +64,26 @@ export function computeCountTiming(rawItems = []) {
   const onLast = stamps.filter(s => s.dayT === lastDayT).sort((a, b) => a.when - b.when);
   const b = onLast[0], e = onLast[onLast.length - 1];
   const hasTimes = onLast.some(s => s.hasTime);
-  const nDistinctTimes = new Set(onLast.filter(s => s.hasTime).map(s => s.when)).size;
-  // Bulk-submit tell (owner integrity 2026-07-30): ≥2 counts recorded but a single distinct
-  // timestamp = counted everything and submitted at once, not the lock-in-as-you-go travel path.
-  // Skews variance for items in active use during the count. See project-inventory-integrity-detection.
-  const bulkSubmit = hasTimes && onLast.length >= 2 && nDistinctTimes <= 1;
+  const timed = onLast.filter(s => s.hasTime);
+  const byTime = new Map();
+  for (const s of timed) byTime.set(s.when, (byTime.get(s.when) || 0) + 1);
+  const nDistinctTimes = byTime.size;
+  let domCount = 0, domWhen = null;
+  for (const [when, c] of byTime) if (c > domCount) { domCount = c; domWhen = when; }
+  const domFrac = timed.length ? domCount / timed.length : 0;
+  const nStragglers = timed.length - domCount;   // items submitted OUTSIDE the bulk instant
+  const domTm = domWhen != null ? (timed.find(s => s.when === domWhen)?.tm || null) : null;
+  const allSame = hasTimes && nDistinctTimes === 1;
+  // Bulk-submit tell (owner integrity 2026-07-30, refined for Ada 6972): the manager submitted the
+  // whole count at ONE instant instead of the lock-in-as-you-go travel path. Fires when either every
+  // count shares one timestamp, OR a single timestamp DOMINATES a real-sized count (>=80%) with only
+  // a few stragglers added after (they bulk-submitted, then noticed a couple missed items and added
+  // them later — e.g. Ada: 28 items @ 11:43, McCrispy Strips + Lemons @ 12:16). Both skew variance
+  // for items in active use during the count. See project-inventory-integrity-detection.
+  const bulkSubmit = hasTimes && (
+    (onLast.length >= 2 && allSame) ||
+    (timed.length >= 5 && domFrac >= 0.8 && !allSame)
+  );
   return {
     countDate: b.dt,
     began: b.when, beganTm: b.tm,
@@ -78,7 +93,8 @@ export function computeCountTiming(rawItems = []) {
     nCountsTotal: stamps.length,
     nDays: new Set(stamps.map(s => s.dt)).size,
     nDistinctTimes,
-    bulkSubmit,
+    bulkSubmit, allSame,
+    domCount, domFrac, domTm, nStragglers,   // dominant-timestamp detail for messaging
     hasTimes,   // false → date only (no time recorded, duration unknown)
   };
 }

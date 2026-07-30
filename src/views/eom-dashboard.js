@@ -1421,7 +1421,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               ? span(null, `${t.beganTm} → ${t.endedTm} · `, span({ style: { fontWeight: 700, color: 'var(--text)' } }, fmtDurationHMS(t.durationMs)))
               : span({ style: { color: 'var(--text3)' } }, 'no time recorded — duration unknown'),
             t.nDays > 1 ? span({ style: { color: 'var(--text3)' } }, ` · counted over ${t.nDays} days`) : null,
-            t.bulkSubmit ? span({ style: { color: '#f87171', fontWeight: 700, display: 'block', marginTop: '3px' }, title: 'Every count shares one timestamp — counted and submitted all at once, not the lock-in-as-you-go travel path. Variance for items in active use during the count may be skewed.' }, '⚠ All counts submitted at once — travel-path process not followed (in-use items may be skewed)') : null); })(),
+            t.bulkSubmit ? span({ style: { color: '#f87171', fontWeight: 700, display: 'block', marginTop: '3px' }, title: 'A single timestamp accounts for the whole count — submitted all at once instead of the lock-in-as-you-go travel path. Variance for items in active use during the count may be skewed.' },
+              t.allSame
+                ? '⚠ All counts submitted at once — travel-path process not followed (in-use items may be skewed)'
+                : `⚠ Whole count submitted at once — ${t.domCount} of ${t.domCount + t.nStragglers} items @ ${t.domTm}${t.nStragglers ? `, ${t.nStragglers} added after` : ''}; travel-path not followed (in-use items may be skewed)`) : null); })(),
 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
         // Rendered markdown (tables, tiers, chips). Copy/Print use the raw text.

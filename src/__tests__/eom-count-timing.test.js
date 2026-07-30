@@ -36,6 +36,21 @@ describe('computeCountTiming — last count date, start→end', () => {
     expect(r.bulkSubmit).toBe(true);
   });
 
+  it('flags bulkSubmit when one timestamp dominates + a few stragglers (Ada 6972 case)', () => {
+    // ~28 items @ 11:43, 2 stragglers @ 12:16 = whole count bulk-submitted, two added after.
+    const at = tm => ({ isCount: true, dt: '2026-07-31', tm });
+    const items = [];
+    for (let i = 0; i < 28; i++) items.push({ wrin: `b${i}`, history: [at('11:43 AM')] });
+    items.push({ wrin: 'mccrispy', history: [at('12:16 PM')] });
+    items.push({ wrin: 'lemons', history: [at('12:16 PM')] });
+    const r = computeCountTiming(items);
+    expect(r.bulkSubmit).toBe(true);
+    expect(r.allSame).toBe(false);
+    expect(r.domCount).toBe(28);
+    expect(r.nStragglers).toBe(2);
+    expect(r.domTm).toBe('11:43 AM');
+  });
+
   it('does NOT flag bulkSubmit for a real travel-path time spread', () => {
     const r = computeCountTiming([item([
       { isCount: true, dt: '2026-07-31', tm: '8:15 AM' },

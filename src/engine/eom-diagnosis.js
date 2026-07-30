@@ -745,19 +745,19 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const staleItems = _unc.filter(u => u.state === 'stale').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
     if (bs.stale && bs.stale.n) {
       L.push('', `### Obsolete / Discontinued / Inactive — verify & clear · ${m(bs.stale)}`, '');
-      L.push('_Last counted a PRIOR period; a residual on-hand is riding into next month\'s opening. **Always verify with a physical count first.**_', '');
+      L.push('_Last counted a PRIOR period; a residual on-hand is riding into next month\'s opening._', '');
       if (staleItems.length) {
         L.push('| Item | WRIN | Class | On-hand $ | Last counted | Action |', '|---|---|---|---:|---|---|');
         staleItems.forEach(u => {
           const action = isFCcls(u.cls)
-            ? `If it won't be used before expiration, **waste to zero** (−${money(u.valueAtRisk)}), then deactivate the WRIN at a verified zero.`
-            : `**Keep if usable** (donation / giveaway) — do not discard; deactivate only once genuinely at zero.`;
+            ? `**Verify with a count first.** If it won't be used before expiration, **waste to zero** (−${money(u.valueAtRisk)}), then deactivate the WRIN at a verified zero.`
+            : `**Keep if usable** (donation / giveaway) — do not discard; deactivate only once genuinely used up. No count/waste verification needed.`;
           L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt)} | ${u.lastCounted || '—'} | ${action} |`);
         });
         const moreS = (bs.stale?.n || 0) - staleItems.length;
         if (moreS > 0) L.push('', `_+${moreS} more item(s)._`);
       }
-      L.push('', '_Rule: verify with a physical count first. **Food / Condiment** → waste to zero if it won\'t be used before expiration, then deactivate at a verified zero. **Paper / Non-Product** (promo, Happy Meal items, paper) → count & keep if usable; deactivate only once genuinely at zero. Never discard usable product._');
+      L.push('', '_Rule: **Food / Condiment** → verify with a physical count, then waste to zero if it won\'t be used before expiration and deactivate at a verified zero. **Paper / Non-Product** (promo, Happy Meal items, paper) → keep if usable; deactivate only once used up — no count/waste verification needed. Never discard usable product._');
     }
     L.push('');
   }
