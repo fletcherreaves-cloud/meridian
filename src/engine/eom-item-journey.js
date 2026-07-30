@@ -48,13 +48,17 @@ const tmMin = (tm) => {
 // `rawItems` = [mapRawItemHistory()]. Returns null when no timestamped count events exist.
 export function computeCountTiming(rawItems = []) {
   const stamps = [];
+  const itemLastDate = [];   // each item's MOST RECENT count date (one per item)
   for (const it of (rawItems || [])) {
+    let itemLatest = null;
     for (const h of (it.history || [])) {
       if (!h.isCount) continue;
       const dayT = ts(h.dt); if (dayT == null) continue;
       const hasTime = !!String(h.tm || '').trim();
       stamps.push({ when: dayT + tmMin(h.tm) * 60000, dayT, dt: h.dt, tm: h.tm, hasTime });
+      if (itemLatest == null || dayT > itemLatest.dayT) itemLatest = { dayT, dt: h.dt };
     }
+    if (itemLatest) itemLastDate.push(itemLatest.dt);
   }
   if (!stamps.length) return null;
   // Owner (2026-07-30): the duration is the LAST count DATE only — first recorded time → last
@@ -91,7 +95,11 @@ export function computeCountTiming(rawItems = []) {
     durationMs: Math.max(0, e.when - b.when),
     nCountsLastDay: onLast.length,
     nCountsTotal: stamps.length,
-    nDays: new Set(stamps.map(s => s.dt)).size,
+    // "Counted over N days" = distinct EFFECTIVE count dates (each item's MOST RECENT count), not
+    // every historical count. A store that re-counted everything today = 1 day even if items were
+    // also touched earlier in the period (owner 2026-07-30: "counted over 10 days yet all counted
+    // today"). Only fires >1 when items' latest counts genuinely span multiple days (a spread count).
+    nDays: new Set(itemLastDate).size,
     nDistinctTimes,
     bulkSubmit, allSame,
     domCount, domFrac, domTm, nStragglers,   // dominant-timestamp detail for messaging

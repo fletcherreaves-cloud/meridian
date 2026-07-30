@@ -562,7 +562,8 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const causeTags = v => {
     const t = [];
     if (yieldByWrin[v.wrin]) t.push('yield setting likely off');
-    if (v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01) t.push('zero waste logged — verify');
+    // Waste-logging is a Food/Condiment concern only — never on Paper/Non-Product (owner).
+    if (/^(food|condiment)$/.test(normClass(v && v.cls)) && v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01) t.push('zero waste logged — verify');
     if (recountByWrin[v.wrin]) t.push(recountByWrin[v.wrin]);
     if (mgrByWrin[v.wrin]) t.push('counted by ' + mgrByWrin[v.wrin]);
     return t;
@@ -577,7 +578,10 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const isLocked = v => (recountByWrin[v.wrin] || '').startsWith('early');
   const focus = V.filter(v => !isLocked(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff));
   const context = V.filter(v => isLocked(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff));
-  const noWaste = v => v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01;
+  // "No waste logged" is a Food/Condiment concern only — Paper/Non-Product aren't raw-wasted the same
+  // way, so don't put waste-verification chips/actions on them (owner 2026-07-30, "still getting waste
+  // comments on paper"). Class-aware so cups/paper/promo never surface a waste flag.
+  const noWaste = v => { const c = normClass(v && v.cls); return (c === 'food' || c === 'condiment') && v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01; };
   // Actual-vs-standard yield % from the row's own yield band (CoachQ-style over-portioning
   // fingerprint). std = band midpoint; over-portioned = actual below the band's low end.
   const yieldPct = v => {

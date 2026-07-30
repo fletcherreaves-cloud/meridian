@@ -138,6 +138,16 @@ export function computeCountProgress(onHandRows, { period, asOf } = {}) {
   const earlyDone = EARLY_CLASSES.every(k => !byClass[k] || byClass[k].done);
   const lateDone = LATE_CLASSES.every(k => !byClass[k] || byClass[k].done);
 
+  // TODAY'S target (owner 2026-07-30): Food + Condiment + Paper are due to 100% by EOD; Non-Product
+  // (LATE_CLASSES) isn't counted until tomorrow. So the store's real "am I done today?" number is the
+  // EARLY-class %, not the all-class %. Surface both — Non-Product uncounted today is expected.
+  let earlyTotal = 0, earlyCounted = 0;
+  for (const k of EARLY_CLASSES) { if (byClass[k]) { earlyTotal += byClass[k].total; earlyCounted += byClass[k].counted; } }
+  const earlyPctCounted = earlyTotal ? earlyCounted / earlyTotal : (itemsTotal ? pctCounted : 0);
+  let lateTotal = 0, lateCounted = 0;
+  for (const k of LATE_CLASSES) { if (byClass[k]) { lateTotal += byClass[k].total; lateCounted += byClass[k].counted; } }
+  const latePctCounted = lateTotal ? lateCounted / lateTotal : 0;
+
   return {
     period,
     itemsTotal,
@@ -146,12 +156,16 @@ export function computeCountProgress(onHandRows, { period, asOf } = {}) {
     fobTotal,
     fobCounted,
     fobPctCounted,
+    earlyTotal, earlyCounted, earlyPctCounted,   // Food+Condiment+Paper — today's 100% target
+    lateTotal, lateCounted, latePctCounted,       // Non-Product — due tomorrow
     byClass,
     earlyDone,
     lateDone,
     lastActivityAt,
-    // "Believes done": overall completion high enough that the store thinks they're finished.
-    believesDone: itemsTotal > 0 && pctCounted >= BELIEVES_DONE_PCT,
+    // "Believes done": TODAY's target (Food+Condiment+Paper) high enough that the store is finished
+    // for today. Non-Product isn't due until tomorrow, so it must NOT hold a store below "done"
+    // (owner 2026-07-30). Falls back to all-class % only if there are no early-class items.
+    believesDone: earlyTotal > 0 ? earlyPctCounted >= BELIEVES_DONE_PCT : (itemsTotal > 0 && pctCounted >= BELIEVES_DONE_PCT),
     inWindow: period ? inCountWindow(period, asOf || new Date()) : false,
   };
 }

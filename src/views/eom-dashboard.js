@@ -199,27 +199,32 @@ function fobByStore(fobRows, period) {
 }
 
 function ClassChips({ byClass, uncounted }) {
+  // Food/Condiment/Paper are due to 100% by EOD; Non-Product ('N') isn't due until tomorrow, so it's
+  // shown muted with a "tmrw" tag and never colored as an incomplete gap (owner 2026-07-30).
   const order = [['food', 'F'], ['condiment', 'C'], ['paper', 'P'], ['nonproduct', 'N']];
   return div({ style: { display: 'flex', gap: '4px' } },
     order.map(([k, label]) => {
       const b = byClass[k];
       if (!b || !b.total) return null;
-      const color = b.done ? '#4ade80' : b.pct >= 0.5 ? '#f5bc00' : '#64748b';
+      const isLate = k === 'nonproduct';  // due tomorrow — not part of today's 100%
+      const color = isLate ? 'var(--text3)' : b.done ? '#4ade80' : b.pct >= 0.5 ? '#f5bc00' : '#64748b';
       // When a class is ≥90% counted but not done, hover reveals EXACTLY which items
       // are still uncounted (top by $ at risk) so the store can close the last few (Notes 35).
       const items = (uncounted && uncounted[k]) || [];
-      const nearDone = b.pct >= 0.90 && !b.done && items.length > 0;
+      const nearDone = !isLate && b.pct >= 0.90 && !b.done && items.length > 0;
       const stTag = u => u.state === 'never' ? 'NEVER counted' : u.state === 'stale' ? `stale (last ${u.lastCounted || '?'})` : `early (${u.lastCounted || '?'})`;
-      const title = nearDone
-        ? `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)}) — items not counted in the final window:\n` +
+      const title = isLate
+        ? `${label} (Non-Product): ${b.counted}/${b.total} counted (${pct(b.pct)}) — NOT due until tomorrow, so uncounted here today is expected (not part of today's 100%).`
+        : nearDone
+        ? `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)}) — due by EOD — items not counted in the final window:\n` +
           items.slice(0, 12).map(u => `• ${u.descr || u.wrin}${u.valueAtRisk ? ` ($${Math.round(u.valueAtRisk)})` : ''} — ${stTag(u)}`).join('\n') +
           (items.length > 12 ? `\n…+${items.length - 12} more` : '') +
           `\n(NEVER = true blank · early = counted earlier this period · stale = prior period / likely obsolete / discontinued / inactive)`
-        : `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})`;
+        : `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})${k === 'paper' ? ' — due by EOD (completeness, not cost-control)' : ''}`;
       return span({
         key: k, title,
-        style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color, cursor: nearDone ? 'help' : 'default' },
-      }, `${label} ${pct(b.pct)}${nearDone ? ` ·${items.length}` : ''}`);
+        style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color, opacity: isLate ? 0.75 : 1, cursor: (nearDone || isLate) ? 'help' : 'default' },
+      }, `${label} ${pct(b.pct)}${isLate ? ' tmrw' : nearDone ? ` ·${items.length}` : ''}`);
     }));
 }
 
@@ -560,7 +565,7 @@ function sbBucket(r) {
   if ((r.comms || 'none') !== 'none') return 'comms';
   if ((r.diagnosis || 'pending') !== 'pending') return 'reviewed';
   if (r.prog.believesDone) return 'ready';
-  if ((r.prog.pctCounted || 0) > 0.01) return 'counting';
+  if (((r.prog.earlyPctCounted ?? r.prog.pctCounted) || 0) > 0.01) return 'counting';
   return 'notstarted';
 }
 
@@ -1034,7 +1039,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const exportCSV = useCallback(() => {
     const cols = [
       ['Store', r => r.name], ['State', r => (r.org === 'emerald' ? 'FL' : 'OK')],
-      ['Count %', r => r.prog.pctCounted != null ? (r.prog.pctCounted * 100).toFixed(0) : ''],
+      ['Count %', r => { const v = r.prog.earlyPctCounted ?? r.prog.pctCounted; return v != null ? (v * 100).toFixed(0) : ''; }],
       ['FOB %', r => r.fobPct != null ? (r.fobPct * 100).toFixed(2) : ''],
       ['FOB $', r => r.fob$ != null ? Math.round(r.fob$) : ''],
       ['Diagnosis', r => DIAG_LABEL[r.diagnosis] || r.diagnosis],
@@ -1048,7 +1053,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const summary = useMemo(() => {
     const n = rows.length;
     const done = rows.filter(r => r.prog.believesDone).length;
-    const avg = n ? rows.reduce((s, r) => s + r.prog.pctCounted, 0) / n : 0;
+    const avg = n ? rows.reduce((s, r) => s + (r.prog.earlyPctCounted ?? r.prog.pctCounted), 0) / n : 0;
     return { n, done, avg };
   }, [rows]);
 
@@ -1272,7 +1277,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '6px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`),
                   span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '6px' } }, r.org === 'emerald' ? 'FL' : 'OK'),
                   r.prog.lastActivityAt ? span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '8px' } }, 'last count ' + new Date(r.prog.lastActivityAt).toLocaleDateString()) : null),
-                div({ style: { flex: '1 1 160px', minWidth: '140px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
+                div({ style: { flex: '1 1 160px', minWidth: '140px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
                 span({ style: { fontSize: '11px', fontWeight: 700, color: p.c, background: p.bg, borderRadius: '12px', padding: '3px 10px', whiteSpace: 'nowrap' } }, p.t),
                 div({ style: { display: 'flex', gap: '6px' } },
                   h('button', {
@@ -1296,7 +1301,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               div({ style: { fontWeight: 600, color: 'var(--text)' } }, r.name,
                 span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '6px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`)),
               span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK')),
-            h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
+            h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
             h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
               r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—',
