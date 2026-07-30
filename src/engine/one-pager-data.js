@@ -172,8 +172,11 @@ export function buildReviewActuals(ds, locs, range) {
   };
   return {
     gcVsLY: gcv?.pct ?? null,
-    osat: meanField('osatTop2'),
-    accB2B: meanField('accuracyB2B'),
+    // Voice OSAT = the "5"-rated share only (owner: rated 5 is all that counts), NOT Top-2-Box.
+    osat: meanField('osat5'),
+    // OSAT B2B = the "1"-rated share (worst box) — lower is better. Replaces the old Accuracy-B2B.
+    osatB2B: meanField('osat1'),
+    accB2B: meanField('accuracyB2B'),   // kept for any legacy reference
     kvsPerGc: metricAvg(ds, locs, range, 'kvst'),           // KVS Time per GC (seconds)
     kvsHealthy: metricAvg(ds, locs, range, 'kvsHealthy'),   // KVS Healthy Usage (0–1 fraction) — Daily Glimpse
     kvsTimeTarget: tgtAvg('tKvst'),

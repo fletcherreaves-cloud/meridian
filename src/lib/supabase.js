@@ -250,6 +250,7 @@ export async function saveSmgFullscale(rows) {
     report_end:      r.reportEnd    || null,
     osat_top2:       r.osatTop2     ?? null,
     osat_5:          r.osat5        ?? null,
+    osat_1:          r.osat1        ?? null,
     osat_avg:        r.osatAvg      ?? null,
     osat_b2b:        r.osatB2B      ?? null,
     accuracy_b2b:    r.accuracyB2B  ?? null,
@@ -284,6 +285,7 @@ export async function loadSmgFullscale({ year, month } = {}) {
     reportEnd:      r.report_end,
     osatTop2:       r.osat_top2,
     osat5:          r.osat_5,
+    osat1:          r.osat_1,
     osatAvg:        r.osat_avg,
     osatB2B:        r.osat_b2b,
     accuracyB2B:    r.accuracy_b2b,
@@ -1661,6 +1663,7 @@ export async function loadQsrActSummary(daysBack = 35) {
       projGC: 0, projSales: 0,
       lySales: 0, lyGc: 0,
       actHrs: 0, needHrs: 0,
+      _kvsH: 0, _kvsU: 0,
       _isQsrAct: true,
     };
     map[key].sales        += r.product_sales   || 0;
@@ -1689,6 +1692,12 @@ export async function loadQsrActSummary(daysBack = 35) {
     // the auto-pulled DAR labor totals (cloud-fresh on every device).
     map[key].actHrs       += r.actual_punched_hours || 0;
     map[key].needHrs      += r.total_needed_hours   || 0;
+    // KVS order-health counts (healthy / unhealthy) — the components of KVS Healthy Usage.
+    // Summed across the day's hour slots; the daily ratio is finalized below. This is the
+    // cloud-fresh DAR source for KVS Healthy Usage (was previously only in the emailed Glimpse,
+    // which can lag / omit KVS — owner: the DAR carries it). See metric-source.js kvsHealthy.
+    map[key]._kvsH        += r.healthy_count   || 0;
+    map[key]._kvsU        += r.unhealthy_count || 0;
   }
   return Object.values(map).map(r => ({
     ...r,
@@ -1710,6 +1719,10 @@ export async function loadQsrActSummary(daysBack = 35) {
     // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
     // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
     oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
+    // KVS Healthy Usage (0–1 fraction) = healthy ÷ (healthy + unhealthy) order-health counts,
+    // summed across the day. Same 0–1 shape as the emailed Glimpse `kvsHealthy`, so it slots in
+    // as a metric-source fallback (kvsHealthy) and the One-Pager / AAG KVS row fills cloud-fresh.
+    kvsHealthy: (r._kvsH + r._kvsU) > 0 ? r._kvsH / (r._kvsH + r._kvsU) : null,
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));

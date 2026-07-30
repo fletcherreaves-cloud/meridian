@@ -584,8 +584,8 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     { label: 'R2P (Front Counter)',    v: cs.r2p?.actual,      t: cs.r2p?.target,           fmt: 's', dir: 'lower' },
     { label: 'Labor Cost %',           v: cs.laborPct?.actual, t: cs.laborPct?.target,      fmt: '%', dir: 'lower' },
     { label: 'Food Over Base %',       v: cs.fobPct?.actual,   t: cs.fobPct?.target,        fmt: '%', dir: 'lower' },
-    { label: 'Voice OSAT',             v: ra.osat,             t: 0.90,                     fmt: '%', dir: 'higher' },
-    { label: 'Voice B2B (Accuracy)',   v: ra.accB2B,           t: 0.95,                     fmt: '%', dir: 'higher' },
+    { label: 'Voice OSAT (5★)',        v: ra.osat,             t: 0.90,                     fmt: '%', dir: 'higher' },
+    { label: 'OSAT B2B (1★)',          v: ra.osatB2B,          t: null,                     fmt: '%', dir: 'lower' },
     // KVS kitchen speed/health — on all three forms (owner req 2026-07-29). At org/patch
     // scope these are the scope-average; at store scope, the store's own.
     { label: 'KVS Time per GC',      v: ra.kvsPerGc,         t: ra.kvsTimeTarget,         fmt: 's', dir: 'lower' },
@@ -708,7 +708,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
       <tr><th style="text-align:left">Metric</th><th>Target</th><th>Actual Result</th><th style="text-align:left">On Track?</th></tr>
       ${scBody}
     </table>
-    ${blank ? '' : `<div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data; targets + On-Track are for the leader to complete.</div>`}
+    ${blank ? '' : `<div style="font-size:7.5pt;color:#666;margin-top:3px">Bold actuals auto-filled from live Meridian data; targets + On-Track are for the leader to complete.${ra.smgMonth ? ` &nbsp;·&nbsp; Voice OSAT (5★) / OSAT B2B (1★) reflect the latest full SMG month (${esc(ra.smgMonth)}) — a monthly result, not the review week.` : ''}</div>`}
 
     ${middle}
 

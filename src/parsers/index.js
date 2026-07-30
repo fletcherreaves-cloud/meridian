@@ -1680,6 +1680,7 @@ function parseSMGFullScale(wb) {
         reportStart, reportEnd, year, month,
         osatTop2:       anyOsat ? (osat5 || 0) + (osat4 || 0) : null,
         osat5:          osat5,
+        osat1:          osat1,   // "1"-rated share (worst box) → OSAT B2B on the reviews
         osatAvg:        anyOsat ? 5*(osat5||0) + 4*(osat4||0) + 3*(osat3||0) + 2*(osat2||0) + 1*(osat1||0) : null,
         osatB2B:        _num01(row[9]),
         accuracyB2B:    _num01(row[12]),
@@ -1760,6 +1761,7 @@ function parseSMGFullScale(wb) {
       loc, storeName, reportStart, reportEnd, year, month,
       osatTop2:        osatTop2 || null,
       osat5:           osat5    || null,
+      osat1:           osat1    || null,   // "1"-rated share (worst box) → OSAT B2B on the reviews
       osatAvg,
       osatB2B:         numPct(byRating[4], b2bCol),
       accuracyB2B:     numPct(byRating[4], accCol),

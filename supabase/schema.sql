@@ -323,7 +323,8 @@ create table if not exists public.smg_fullscale (
   report_end       text,                -- e.g. "6/30/2026"
   -- Overall Satisfaction (1-5 scale, % based)
   osat_top2        float,               -- % giving 4 or 5 (top-2-box, higher=better)
-  osat_5           float,               -- % giving 5 only (top-1-box)
+  osat_5           float,               -- % giving 5 only (top-1-box, = Voice OSAT on the reviews)
+  osat_1           float,               -- % giving 1 only (worst box, = OSAT B2B on the reviews; lower=better)
   osat_avg         float,               -- weighted average score 1-5
   -- Best-to-Best benchmarks (higher=better)
   osat_b2b         float,               -- % meeting Overall Satisfaction B2B standard

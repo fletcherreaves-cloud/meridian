@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.613';
+const MERIDIAN_VERSION    = '4.614';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.614', date:'2026-07-30', changes:[
+    'Review scorecards: KVS Healthy Usage now fills from the auto-pulled DAR (healthy ÷ total order-health counts, cloud-fresh) so it no longer depends on the emailed Daily Glimpse — recent weeks populate. Voice metrics rewired per owner: "Voice OSAT" now uses the 5★ share only (rated 5 is all that counts), and "Voice B2B (Accuracy)" becomes "OSAT B2B" using the 1★ (worst-box) share where lower is better. A footnote now clarifies these Voice numbers are the latest full SMG month (monthly), not the review week. (KVS Time per GC still pending its DAR field.)',
+  ]},
   {version:'4.613', date:'2026-07-30', changes:[
     'EOM Action Items now show ONE line per item: when a single product trips several checks at once, the most urgent result + action stays on the surface and the other checks, the pattern chip, and the month-over-month history all collapse into the expand — so a manager sees one clear decision per item, not several rows for the same product.',
   ]},
