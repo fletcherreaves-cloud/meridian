@@ -312,6 +312,33 @@ export const DEFAULT_CHECKS = [
         Math.abs(total), { items: hits.map(v => v.wrin) })];
     },
   },
+  {
+    // Unrealistic OVER / gain (integrity #47). A large POSITIVE variance = the item shows a gain
+    // (usage understated / more on-hand than theory). On a product that only ever depletes this is
+    // rarely legit — fries are the classic: being substantially over isn't realistic (a real surplus
+    // means customers are shorted, and they'd complain in droves). The regular bounce-back-from-a-
+    // prior-short pattern is caught by the `inconsistent-count` chronic Item Journey; here we flag
+    // the current-period magnitude. See memory/project-inventory-integrity-detection.
+    id: 'unrealistic-over', label: 'Unrealistic OVER / gain (esp. fries)', order: 47, enabled: true,
+    requires: ['variance'], params: { threshold: 75, friesThreshold: 40 },
+    run: (ctx) => {
+      const FRIES = /\b(FRIES|FRENCH FR(Y|IES)|WORLD FAMOUS FR(Y|IES)|\bFRY\b)\b/i;
+      const th = ctx.params.threshold ?? 75, fth = ctx.params.friesThreshold ?? 40;
+      const out = [];
+      for (const v of (ctx.data.variance || [])) {
+        if ((v.dolDiff || 0) <= 0) continue;
+        const isFries = FRIES.test(v.descr || '');
+        if ((v.dolDiff || 0) < (isFries ? fth : th)) continue;
+        out.push(mkFinding('unrealistic-over', isFries ? SEVERITY.high : SEVERITY.medium,
+          `Unrealistic OVER: ${v.descr}`,
+          `${_mny(v.dolDiff)} OVER (showing a gain)${isFries
+            ? ' — fries almost never run legitimately over; a genuine surplus would mean guests are being shorted (they’d complain in droves)'
+            : ' — a gain on a product that only depletes is rarely legitimate'}. Recount to confirm it isn’t masking a loss elsewhere or a portioning-down / keying error. A recurring bounce-back from a prior short is the classic tell (check the item’s Journey).`,
+          v.dolDiff, { wrin: v.wrin, isFries, dolDiff: v.dolDiff }));
+      }
+      return out;
+    },
+  },
 ];
 
 // ── Yield-band cause overlay ──────────────────────────────────────────────────

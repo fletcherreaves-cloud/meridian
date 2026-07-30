@@ -170,6 +170,22 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.some(x => x.checkId === 'waste-inflation')).toBe(false);
   });
 
+  it('unrealistic-over flags a large fries OVER as HIGH', () => {
+    const variance = [{ wrin: 'w1', descr: 'World Famous Fries', dolDiff: 120 }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.find(x => x.checkId === 'unrealistic-over');
+    expect(f).toBeTruthy();
+    expect(f.data.isFries).toBe(true);
+    expect(f.severity).toBe(SEVERITY.high);
+  });
+
+  it('unrealistic-over ignores shorts (negative dolDiff) and small gains', () => {
+    const variance = [
+      { wrin: 'w1', descr: 'Beef Patty', dolDiff: -300 }, // short → not this check
+      { wrin: 'w2', descr: 'Ketchup', dolDiff: 20 },       // small gain → under threshold
+    ];
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'unrealistic-over')).toBe(false);
+  });
+
   it('uom-sanity stays silent when no case sizes are available', () => {
     const res = runDiagnosis({ store: 's', period: '2026-07', data: { variance: [{ wrin: 'w1', variance: -900, dolDiff: -1200 }] } });
     expect(res.findings.some(f => f.checkId === 'uom-sanity')).toBe(false);
