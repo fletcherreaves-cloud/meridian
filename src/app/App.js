@@ -215,10 +215,16 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.617';
+const MERIDIAN_VERSION    = '4.618';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.618', date:'2026-07-30', changes:[
+    'Leadership One-Pager (Owner→DO): the Supervisor / Patch Accountability section now pre-fills on the filled form — each supervisor with their patch\'s focus store and biggest gap (the patch\'s largest weekly $ opportunity + sales-vs-LY), leaving Committed action blank for the meeting. Maps by who RUNS the stores (live supervisor assignments — responsibility), not ownership, so a supervisor running stores they don\'t own is credited correctly.',
+  ]},
+  {version:'4.617', date:'2026-07-30', changes:[
+    'Leadership One-Pager: the OSAT B2B (1★) target now auto-fills from the yearly-targets file\'s "Overall Satisfaction B2B" column (re-import the yearly targets to pick it up).',
+  ]},
   {version:'4.616', date:'2026-07-30', changes:[
     'EOM Dashboard → new "🔁 Chronic offenders" scan: on demand, across the current location scope and a past window (3/6/12 periods), it surfaces the items that are chronically High-Variance / Loss-Forming / Fluctuating on our own pattern principles — ranked by how many stores carry the problem (a systemic/spec issue outranks a one-store fluke), with per-store drill-down and the month-over-month trail. Reads only when you click Run, scoped to your filter, so it stays light on data usage.',
     'Leadership One-Pager: added one-click "‹ Last week" and "This week" buttons next to the week picker.',

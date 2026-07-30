@@ -6,7 +6,7 @@
 // actually moved (the accountability loop). Engines are pure + tested
 // (opportunity.js / one-pager.js); this panel wires ds→engines→Supabase.
 import * as React from 'react';
-import { STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
+import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups } from '../constants.js';
 import { escapeHtml, f$ } from '../utils/fmt.js';
 import { computeOpportunity, annualize, rankByOpportunity } from '../engine/opportunity.js';
 import { buildOnePager } from '../engine/one-pager.js';
@@ -451,6 +451,40 @@ function perLocTableHtml(page, esc) {
     <tr><td><b>Store</b></td><td><b>Product Sales</b></td><td><b>vs LY</b></td><td><b>FOB %</b></td><td><b>Labor %</b></td><td><b>OEPE</b></td><td><b>R2P</b></td><td><b>Opp $/wk</b></td></tr>
     ${body}</table>`;
 }
+// Owner→DO Supervisor/Patch Accountability — PRE-FILL (owner req 2026-07-30, #25). For each
+// configured supervisor, surface their patch's focus store + biggest gap so the meeting spends
+// time on the commitment, not on looking up numbers. Focus = the patch store with the biggest
+// weekly $ opportunity (the form's own opportunity math), tiebreak worst sales-vs-LY. "Committed
+// action" stays blank — that's the live conversation. Returns '' when no supervisor groups or no
+// per-store data (→ caller falls back to the blank fillable table).
+function patchAccountabilityHtml(page, esc) {
+  // supervisorGroups() = the live "who RUNS which stores" map (responsibility, effective-dated) —
+  // NOT ownership/operators. Owner: map by who is responsible for the stores, not who owns them
+  // (e.g. a supervisor may run 7 stores while owning only 4). See constants.js supervisorGroups.
+  const supervisors = supervisorGroups() || {};
+  const perLoc = page.perLocation || [];
+  const sups = Object.keys(supervisors || {});
+  if (!sups.length || !perLoc.length) return '';
+  const nz = s => String(s || '').replace(/^0+/, '') || String(s || '');
+  const byLoc = {}; perLoc.forEach(r => { byLoc[nz(r.loc)] = r; });
+  const rows = [];
+  for (const sup of sups) {
+    const stores = (supervisors[sup] || []).map(nz).map(l => byLoc[l]).filter(Boolean);
+    if (!stores.length) continue;
+    const focus = stores.slice().sort((a, b) => (b.oppWk || 0) - (a.oppWk || 0) || (a.salesVsLYPct ?? 0) - (b.salesVsLYPct ?? 0))[0];
+    const gap = [];
+    if (focus.salesVsLYPct != null) gap.push(`Sales ${(focus.salesVsLYPct >= 0 ? '+' : '') + focus.salesVsLYPct.toFixed(1)}% vs LY`);
+    if (focus.oppWk > 0) gap.push(`${f$(focus.oppWk)}/wk opp`);
+    rows.push({ sup, focus: nm(focus.loc), gap: gap.join(' · ') || '—' });
+  }
+  if (!rows.length) return '';
+  const filled = rows.map(r => `<tr><td style="text-align:left">${esc(r.sup)}</td><td style="text-align:left">${esc(r.focus)}</td><td style="text-align:left">${esc(r.gap)}</td><td>&nbsp;</td></tr>`).join('');
+  const extra = Math.max(0, 6 - rows.length);
+  const pad = Array.from({ length: extra }, () => '<tr><td style="text-align:left">&nbsp;</td><td style="text-align:left">&nbsp;</td><td style="text-align:left">&nbsp;</td><td>&nbsp;</td></tr>').join('');
+  return `<table class="tight"><tr><th style="text-align:left">Supervisor</th><th style="text-align:left">Patch focus this week</th><th style="text-align:left">Biggest gap</th><th>Committed action</th></tr>${filled}${pad}</table>
+    <div style="font-size:7.5pt;color:#666;margin-top:3px">Supervisor + patch focus/gap auto-filled from live data (each patch's biggest weekly \$ opportunity). Committed action is for the meeting.</div>`;
+}
+
 // Shared print HTML: top/bottom performer callout (supervisor & above), with FL/OK breakout.
 function topBottomHtml(page, esc) {
   const rows = page.perLocation || [];
@@ -669,7 +703,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     ${lines(3)}
 
     <div class="banner">SUPERVISOR / PATCH ACCOUNTABILITY</div>
-    ${blankRows(['Supervisor', 'Patch focus this week', 'Biggest gap', 'Committed action'], 6)}`;
+    ${(!blank && patchAccountabilityHtml(page, esc)) || blankRows(['Supervisor', 'Patch focus this week', 'Biggest gap', 'Committed action'], 6)}`;
 
   // PATCH (DO→Supervisor): store-by-store + GM coaching (drive results through GMs).
   const patchMiddle = `
