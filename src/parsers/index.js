@@ -543,6 +543,8 @@ function parseTargets(wb,sheet){
     tRedAPct:    findCol(h,'T-Reds After %'),
     tRedAAvg:    findCol(h,'T-Reds After Avg'),
     tRedADollar: findCol(h,'T-Reds After $'),
+    // Voice / SMG — OSAT B2B (1★) review target
+    osatB2B:     fc(h,'Overall Satisfaction B2B','Overall Sat B2B','OSAT B2B'),
     // Controls — Promo/Discount
     promoCnt:    findCol(h,'Promo #'),
     promoPct:    findCol(h,'Promo %'),
@@ -600,6 +602,8 @@ function parseTargets(wb,sheet){
       tAvgCheck:   parseFloat(r[C.avgCheck])||0,
       tProdSales:  parseFloat(r[C.prodSales])||0,
       tR2p:        90,
+      tOsatB2B:    parsePct(r[C.osatB2B]),   // OSAT B2B (1★) target → One-Pager review
+
       // Labor
       tLabor:      parsePct(r[C.labor])||parsePct(r[C.crewLabor]),
       tCrewLabor:  parsePct(r[C.crewLabor]),
