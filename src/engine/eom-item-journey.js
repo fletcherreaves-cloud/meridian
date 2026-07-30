@@ -95,11 +95,16 @@ export function computeCountTiming(rawItems = []) {
     durationMs: Math.max(0, e.when - b.when),
     nCountsLastDay: onLast.length,
     nCountsTotal: stamps.length,
-    // "Counted over N days" = distinct EFFECTIVE count dates (each item's MOST RECENT count), not
-    // every historical count. A store that re-counted everything today = 1 day even if items were
-    // also touched earlier in the period (owner 2026-07-30: "counted over 10 days yet all counted
-    // today"). Only fires >1 when items' latest counts genuinely span multiple days (a spread count).
-    nDays: new Set(itemLastDate).size,
+    // "Counted over N days" = distinct EFFECTIVE count dates within the FINAL ~3-day EOM session
+    // (each item's MOST RECENT count, restricted to the last 3 days ending at the final count).
+    // Items counted only EARLY carry an older latest-date but are NOT part of "the count" — they're
+    // flagged separately — so they must NOT inflate this (owner: "counted over 2 days when all counts
+    // are today"). Only fires >1 when the FINAL count genuinely spanned multiple recent days.
+    nDays: (() => {
+      const WIN = 3 * 86400000;
+      const inWin = itemLastDate.filter(dt => { const t = ts(dt); return t != null && t >= (lastDayT - WIN); });
+      return new Set(inWin).size || 1;
+    })(),
     nDistinctTimes,
     bulkSubmit, allSame,
     domCount, domFrac, domTm, nStragglers,   // dominant-timestamp detail for messaging

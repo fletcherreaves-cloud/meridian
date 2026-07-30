@@ -643,10 +643,20 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const neverFC = _unc.filter(u => u.state === 'never' && isFCcls(u.cls)).sort(_byVR);
   const neverPaper = _unc.filter(u => u.state === 'never' && isPaperCls(u.cls)).sort(_byVR);
   const neverNonProd = _unc.filter(u => u.state === 'never' && !isFCcls(u.cls) && !isPaperCls(u.cls)).sort(_byVR);
+  // Food/Condiment counted EARLY (before the final window) = a real gap for the profit-driver classes
+  // (owner: Holdenville had one food item not counted → should be a top priority). QSRSoft carries the
+  // stale early count as the EOM value, so it hasn't been counted at the TRUE close — recounting NOW
+  // gets a current number (unlike a mid-cycle count that WAS followed by an EOM count). Paper/Non-Product
+  // early is fine; only Food/Condiment is elevated.
+  const earlyFC = _unc.filter(u => u.state === 'early' && isFCcls(u.cls)).sort(_byVR);
   const doNow = [];
   if (neverFC.length) {
     const nv = sumVR(neverFC);
     doNow.push({ score: 1e6 + nv, group: true, text: `**Count the ${neverFC.length} never-counted Food/Condiment item${neverFC.length === 1 ? '' : 's'} before close** (~${money(nv)}) — the only true "count it and recover" money. Start with: ${neverFC.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
+  }
+  if (earlyFC.length) {
+    const ev = sumVR(earlyFC);
+    doNow.push({ score: 95e4 + ev, group: true, text: `**Recount the ${earlyFC.length} Food/Condiment item${earlyFC.length === 1 ? '' : 's'} counted EARLY** (${money(ev)} on hand) — counted before the final window, so QSRSoft is carrying a stale value into the close. Get a current EOM count for the profit-driver classes: ${earlyFC.slice(0, 3).map(u => `${u.descr || u.wrin} (last ${u.lastCounted || '?'})`).join(', ')}.` });
   }
   V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
     .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
@@ -663,10 +673,11 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // ── FINISH TODAY'S COUNT (owner req 2026-07-30) — time-aware by class. Food, Condiment AND Paper
   // are due to 100% by EOD; Non-Product is NOT counted until tomorrow (so it's expected, not a gap).
   // Only Food/Condiment is FOB-consequential (real recovery); Paper is due today for completeness.
-  if (neverFC.length || neverPaper.length || neverNonProd.length) {
+  if (neverFC.length || neverPaper.length || neverNonProd.length || earlyFC.length) {
     L.push('## 🧮 Finish today\'s count to 100% — Food, Condiment & Paper (due by EOD)', '');
-    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) left.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${neverFC.slice(0, 6).map(u => u.descr || u.wrin).join(', ')}${neverFC.length > 6 ? ` _+${neverFC.length - 6} more_` : ''}`);
-    else L.push('- ✅ **Food & Condiment — all counted.** No profit-driver items missing.');
+    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) never counted.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${neverFC.slice(0, 6).map(u => u.descr || u.wrin).join(', ')}${neverFC.length > 6 ? ` _+${neverFC.length - 6} more_` : ''}`);
+    else L.push('- ✅ **Food & Condiment — all counted (in the final window).**');
+    if (earlyFC.length) L.push(`- 🔴 **Food & Condiment — ${earlyFC.length} item${earlyFC.length === 1 ? '' : 's'} (${money(sumVR(earlyFC))}) counted EARLY, not in the final window.** QSRSoft is carrying a stale count into the close — **recount now for a current number:** ${earlyFC.slice(0, 6).map(u => `${u.descr || u.wrin} (last ${u.lastCounted || '?'})`).join(', ')}${earlyFC.length > 6 ? ` _+${earlyFC.length - 6} more_` : ''}`);
     if (neverPaper.length) L.push(`- **Paper — ${neverPaper.length} item${neverPaper.length === 1 ? '' : 's'} (${money(sumVR(neverPaper))}) left.** Due by EOD too, but **not** food-cost-consequential — count for completeness, not recovery.`);
     else if (neverFC.length || neverNonProd.length) L.push('- ✅ **Paper — all counted.**');
     if (neverNonProd.length) L.push(`- **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and that's EXPECTED** — Non-Product isn't due until tomorrow. Not a gap, not a today action.`);

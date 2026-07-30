@@ -60,6 +60,25 @@ describe('computeCountTiming — last count date, start→end', () => {
     expect(r.nDistinctTimes).toBe(2);
   });
 
+  it('nDays excludes EARLY-counted items — all-counted-today reads 1 day even with old early counts', () => {
+    const items = [
+      { wrin: 'a', history: [{ isCount: true, dt: '2026-07-30', tm: '11:16 AM' }] },
+      { wrin: 'b', history: [{ isCount: true, dt: '2026-07-30', tm: '11:16 AM' }] },
+      { wrin: 'early', history: [{ isCount: true, dt: '2026-07-22', tm: '9:00 AM' }] }, // early, never recounted
+    ];
+    const r = computeCountTiming(items);
+    expect(r.countDate).toBe('2026-07-30');
+    expect(r.nDays).toBe(1);   // the 07-22 early item is NOT part of "the count"
+  });
+
+  it('nDays = 2 for a genuine two-day FINAL count (consecutive recent days)', () => {
+    const items = [
+      { wrin: 'a', history: [{ isCount: true, dt: '2026-07-29', tm: '4:00 PM' }] },
+      { wrin: 'b', history: [{ isCount: true, dt: '2026-07-30', tm: '9:00 AM' }] },
+    ];
+    expect(computeCountTiming(items).nDays).toBe(2);
+  });
+
   it('hasTimes false + duration 0 when the last count has no time recorded', () => {
     const r = computeCountTiming([item([{ isCount: true, dt: '2026-07-31' }])]);
     expect(r.hasTimes).toBe(false);

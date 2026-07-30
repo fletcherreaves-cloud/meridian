@@ -66,6 +66,16 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).toMatch(/awaiting data/i);
   });
 
+  it('elevates a Food/Condiment item counted EARLY to a top priority (Holdenville case)', () => {
+    const incomplete = { uncountedCount: 1, byState: { early: { n: 1, value: 259 } }, uncounted: [
+      { wrin: '20206-000', descr: 'McCrispy Chicken Strips', cls: 'food', state: 'early', valueAtRisk: 259, onHandAmt: 259, totalUnits: 12, lastCounted: '2026-07-22' } ] };
+    const res = runDiagnosis({ store: '35064', storeName: 'Holdenville', period: '2026-07', data: { variance: [{ wrin: 'x', descr: 'Beef', dolDiff: -100, cls: 'Food' }] } });
+    const rpt = formatDiagnosisReport(res, { incomplete });
+    expect(rpt).toMatch(/Recount the 1 Food\/Condiment item.*counted EARLY/);   // in the Top-5
+    expect(rpt).toMatch(/counted EARLY, not in the final window/);              // in Finish-count
+    expect(rpt).toMatch(/McCrispy Chicken Strips/);
+  });
+
   it('dedupes duplicate variance rows so an item appears once in Top-5 / Focus now', () => {
     // Same WRIN duplicated in the variance feed (owner: duplicate lines).
     const dup = { wrin: 'icm', descr: 'ICE CREAM MIX', dolDiff: -440, cls: 'Food', yield: 30, yieldLo: 55, yieldHi: 60 };

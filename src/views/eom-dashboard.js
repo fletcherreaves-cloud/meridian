@@ -184,11 +184,15 @@ function ClassChips({ byClass, uncounted }) {
       const b = byClass[k];
       if (!b || !b.total) return null;
       const isLate = k === 'nonproduct';  // due tomorrow — not part of today's 100%
-      const color = isLate ? 'var(--text3)' : b.done ? '#4ade80' : b.pct >= 0.5 ? '#f5bc00' : '#64748b';
-      // When a class is ≥90% counted but not done, hover reveals EXACTLY which items
-      // are still uncounted (top by $ at risk) so the store can close the last few (Notes 35).
+      const isFC = k === 'food' || k === 'condiment';
+      // Food/Condiment need 100% — a SINGLE uncounted profit-driver item must flag, even at 99%+
+      // (owner: Holdenville had one food item not counted → should flag). Paper/Non-Product keep the
+      // 98% "done" threshold. So FC is only "done" (green) when every item is counted in the window.
+      const done = isFC ? (b.total > 0 && b.counted >= b.total) : b.done;
+      const color = isLate ? 'var(--text3)' : done ? '#4ade80' : (isFC && !done) ? '#fb923c' : b.pct >= 0.5 ? '#f5bc00' : '#64748b';
+      // When a class isn't done, hover reveals EXACTLY which items are still uncounted (top by $).
       const items = (uncounted && uncounted[k]) || [];
-      const nearDone = !isLate && b.pct >= 0.90 && !b.done && items.length > 0;
+      const nearDone = !isLate && !done && items.length > 0;
       const stTag = u => u.state === 'never' ? 'NEVER counted' : u.state === 'stale' ? `stale (last ${u.lastCounted || '?'})` : `early (${u.lastCounted || '?'})`;
       const title = isLate
         ? `${label} (Non-Product): ${b.counted}/${b.total} counted (${pct(b.pct)}) — NOT due until tomorrow, so uncounted here today is expected (not part of today's 100%).`
