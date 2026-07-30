@@ -120,6 +120,33 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(flags[0].detail).toMatch(/case-vs-each/i);
   });
 
+  it('count-manipulation flags >4 same-day counts + the negate-the-variance tell', () => {
+    const rawItems = [{
+      wrin: 'w1', descr: 'Beef', counts: [
+        { dt: '2026-07-29T08:00:00', difference: -180, isCount: true },
+        { dt: '2026-07-29T08:30:00', difference: -175, isCount: true },
+        { dt: '2026-07-29T09:00:00', difference: -170, isCount: true },
+        { dt: '2026-07-29T09:30:00', difference: -160, isCount: true },
+        { dt: '2026-07-29T10:00:00', difference: -20, isCount: true },   // 5th entry walks -180 → -20
+      ],
+    }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { rawItems } }).findings.find(x => x.checkId === 'count-manipulation');
+    expect(f).toBeTruthy();
+    expect(f.data.nCounts).toBe(5);
+    expect(f.data.negated).toBe(true);
+    expect(f.detail).toMatch(/negate/i);
+  });
+
+  it('count-manipulation does NOT flag legit travel-path counting (2-4 entries)', () => {
+    const rawItems = [{ wrin: 'w1', descr: 'Beef', counts: [
+      { dt: '2026-07-29T08:00:00', difference: -50, isCount: true },
+      { dt: '2026-07-29T08:20:00', difference: -40, isCount: true },
+      { dt: '2026-07-29T08:40:00', difference: -30, isCount: true },
+    ] }];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { rawItems } });
+    expect(res.findings.some(x => x.checkId === 'count-manipulation')).toBe(false);
+  });
+
   it('uom-sanity stays silent when no case sizes are available', () => {
     const res = runDiagnosis({ store: 's', period: '2026-07', data: { variance: [{ wrin: 'w1', variance: -900, dolDiff: -1200 }] } });
     expect(res.findings.some(f => f.checkId === 'uom-sanity')).toBe(false);

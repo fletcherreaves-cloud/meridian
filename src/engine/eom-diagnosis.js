@@ -26,6 +26,7 @@ import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus 
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
+const _mny = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString(); // module-level $ (checks run outside formatDiagnosisReport)
 
 // Default FOB-component targets are supplied by the caller (monthly_targets); this
 // is only a floor so the check runs before targets are wired.
@@ -153,6 +154,44 @@ export const DEFAULT_CHECKS = [
           out.push(f);
         }
       }
+      return out;
+    },
+  },
+  {
+    // Count MANIPULATION (owner integrity req #47): a store re-entering a count to NEGATE the
+    // variance it doesn't like. Legit travel-path counting (QSRSoft Inventory app, primary→service
+    // walkthrough, lock-in submits every 15-20 items under Live Inventory) yields 2-4 entries/item/
+    // day — most items live in 2-4 storage locations. MORE than that, ESPECIALLY a later entry that
+    // walks the variance back toward zero, is the tell. See memory/project-inventory-integrity-detection.
+    id: 'count-manipulation', label: 'Count manipulation — excessive same-day re-counts', order: 26, enabled: true,
+    requires: ['rawItems'], params: { maxPerDay: 4, believableDollar: 50 },
+    run: (ctx) => {
+      const max = ctx.params.maxPerDay ?? 4, believable = ctx.params.believableDollar ?? 50;
+      const out = [];
+      for (const d of (ctx.data.rawItems || [])) {
+        const counts = (d.counts || []).filter(c => c && c.dt);
+        if (counts.length <= max) continue;
+        const byDay = {};
+        for (const c of counts) { const day = String(c.dt).slice(0, 10); (byDay[day] || (byDay[day] = [])).push(c); }
+        for (const day in byDay) {
+          const dc = byDay[day].slice().sort((a, b) => String(a.dt).localeCompare(String(b.dt)));
+          if (dc.length <= max) continue;
+          const diffs = dc.map(c => Number(c.difference) || 0);
+          const firstBig = diffs.find(v => Math.abs(v) >= believable);
+          const lastDiff = diffs[diffs.length - 1];
+          // "Negate" tell: an earlier believable count exists, and a later entry walks the variance
+          // back toward zero (|last| < half of |first big|) — a re-count to erase an unfavorable result.
+          const negated = firstBig != null && Math.abs(lastDiff) < Math.abs(firstBig) * 0.5;
+          out.push(mkFinding('count-manipulation', (dc.length >= max + 2 || negated) ? SEVERITY.high : SEVERITY.medium,
+            `Excessive re-counts: ${d.descr || d.wrin}`,
+            `${dc.length} count entries on ${day} (2-${max} is normal for travel-path counting)${negated ? ` — and a later entry walked the variance from ${_mny(firstBig)} back toward ${_mny(lastDiff)}, which looks like a re-count to negate an unfavorable result` : ''}. Verify the earlier counts were believable and why it was re-entered.`,
+            Math.abs(lastDiff), { wrin: d.wrin, day, nCounts: dc.length, negated }));
+        }
+      }
+      // Cross-item pattern = intent, not a one-off correction. Bump severity to critical when the
+      // negate signal shows on 2+ items (the owner's "found on more than one item" tell).
+      const negItems = out.filter(f => f.data?.negated);
+      if (negItems.length >= 2) negItems.forEach(f => { f.severity = SEVERITY.critical; f.severityWord = sevWord(f.severity); f.detail += ` PATTERN: the same negate-the-variance move appears on ${negItems.length} items today — treat as intentional, not a correction.`; });
       return out;
     },
   },
@@ -403,32 +442,33 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
 
   const L = [`# FOB Variance Analysis — ${result.storeName || result.store} · ${result.period}`, ''];
 
-  // ── TOP 5 — DO NOW (owner req #46): cut-and-dry, ranked by the best chance to improve THIS
-  // cycle's result. Anyone can latch onto this; the full analysis stays below. Ranked by
-  // recoverability + $ + class (Food/Condiment first). Reuses the count-integrity buckets, the
-  // recount-worthiness overlay, the portioning fingerprint, and the class weighting.
-  const isFC = v => { const c = normClass(v && v.cls); return c === 'food' || c === 'condiment'; };
+  // ── TOP 5 — DO NOW (owner req #46, focused to FOOD + CONDIMENT only per owner — the profit-driver
+  // classes worth a manager's here-and-now energy). Cut-and-dry, ranked by best chance to improve
+  // THIS cycle. Reuses the count-integrity buckets, recount-worthiness, and the portioning fingerprint.
+  const isFCcls = c => { const x = normClass(c); return x === 'food' || x === 'condiment'; };
+  const isFC = v => isFCcls(v && v.cls);
   const doNow = [];
-  const neverItems = ((incomplete && incomplete.uncounted) || []).filter(u => u.state === 'never').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
-  if (neverItems.length) {
-    const nv = incomplete.byState?.never?.value || 0;
-    doNow.push({ score: 1e6 + nv, text: `**Count the ${neverItems.length} never-counted item${neverItems.length === 1 ? '' : 's'} before close** (~${money(nv)} at risk) — the only true "count it and recover" money. Start with: ${neverItems.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
+  const neverFC = ((incomplete && incomplete.uncounted) || []).filter(u => u.state === 'never' && isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
+  if (neverFC.length) {
+    const nv = neverFC.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
+    doNow.push({ score: 1e6 + nv, text: `**Count the ${neverFC.length} never-counted Food/Condiment item${neverFC.length === 1 ? '' : 's'} before close** (~${money(nv)}) — the only true "count it and recover" money. Start with: ${neverFC.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
   }
-  V.filter(v => (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => (isFC(b) - isFC(a)) || Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
-    .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff) + (isFC(v) ? 1e5 : 0), text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
+  V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
+    .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
   V.filter(v => overPortioned(v) && isFC(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
     .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), text: `**Fix portioning on ${v.descr || v.wrin}** — running ${Math.round(yieldPct(v) * 100)}% of standard yield; audit the station's recipe/portion now.` }));
-  if (incomplete && incomplete.byState?.stale?.n) {
-    const sv = incomplete.byState.stale.value || 0;
-    doNow.push({ score: 3e5 + sv, text: `**Verify & clear the ${incomplete.byState.stale.n} obsolete/inactive item${incomplete.byState.stale.n === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, write off if gone; don't let it ride into next month's opening.` });
+  const staleFC = ((incomplete && incomplete.uncounted) || []).filter(u => u.state === 'stale' && isFCcls(u.cls));
+  if (staleFC.length) {
+    const sv = staleFC.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
+    doNow.push({ score: 3e5 + sv, text: `**Verify & clear the ${staleFC.length} obsolete/inactive Food/Condiment item${staleFC.length === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, waste to zero if it won't be used before expiration; don't let it ride into next month's opening.` });
   }
   const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
   if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
   if (doNow.length) {
     doNow.sort((a, b) => b.score - a.score);
-    L.push('## ✅ Top 5 — do these now (best shot at improving this result)', '');
+    L.push('## ✅ Top 5 — do these now · Food & Condiment (best shot at improving this result)', '');
     doNow.slice(0, 5).forEach((d, i) => L.push(`${i + 1}. ${d.text}`));
-    L.push('', '_Cut-and-dry: knock these out, then **re-run the diagnosis** to see what changed. Full analysis below._', '');
+    L.push('', '_Cut-and-dry, focused on the profit-driver classes: knock these out, then **re-run the diagnosis** to see what changed. Full analysis (all classes) below._', '');
   }
 
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
