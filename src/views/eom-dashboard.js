@@ -969,7 +969,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // full cases — "look for ~3 cases" is more actionable than "≈2,091 units" (owner req).
     const caseSzByWrin = {};
     for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin }), history: null, caseSzByWrin, incomplete });
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)) }), history: null, caseSzByWrin, incomplete });
     // #38: load any saved verify-&-clear dispositions for this store/period so the panel shows state.
     setDispByWrin({});
     loadEomItemDisposition({ period, loc }).then(rows => {

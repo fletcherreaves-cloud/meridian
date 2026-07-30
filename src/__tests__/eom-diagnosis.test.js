@@ -211,6 +211,15 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'unrealistic-over')).toBe(false);
   });
 
+  it('self-serve tower exempts fountain-beverage LOW YIELD from the portioning watch', () => {
+    const variance = [{ wrin: 'coke', descr: 'COKE/DIET/BIB', dolDiff: -200, yield: 38, yieldLo: 53, yieldHi: 58, cls: 'Food' }];
+    const on = formatDiagnosisReport(runDiagnosis({ store: '6972', period: '2026-07', data: { variance } }), { selfServeTower: true });
+    const off = formatDiagnosisReport(runDiagnosis({ store: 'x', period: '2026-07', data: { variance } }), { selfServeTower: false });
+    expect(off).toMatch(/Portioning watch[\s\S]*COKE/);         // normal store: flagged as over-portioning
+    expect(on).not.toMatch(/Portioning watch[\s\S]*COKE/);      // self-serve: NOT flagged
+    expect(on).toMatch(/expected \(self-serve tower\)/i);        // instead noted as expected
+  });
+
   it('bib-yield exempts self-serve-tower stores (info, not a medium loss)', () => {
     const variance = [{ wrin: 'coke', descr: 'COKE BIB', dolDiff: -200, rawWaste: 0, compWaste: 0 }];
     const flagged = runDiagnosis({ store: 's', period: '2026-07', data: { variance, selfServeTower: false } }).findings.find(x => x.checkId === 'bib-yield');

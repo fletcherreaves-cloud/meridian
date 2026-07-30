@@ -27,6 +27,9 @@ import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
 const _mny = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString(); // module-level $ (checks run outside formatDiagnosisReport)
+// Fountain / self-serve beverage items — at self-serve-tower stores their yield runs structurally
+// low (free refills we can't meter), so it must NOT read as a loss or over-portioning there.
+const FOUNTAIN_BEV_RE = /\b(COKE|SPRITE|FANTA|HI ?C|DR ?PEPPER|MINUTE MAID|MM |LEMONADE|ICED TEA|TEA\/|FRUIT PUNCH|REFRESHER|BIB|LAVABURST|POWERADE|BARQ|SWEET TEA)\b/i;
 
 // Default FOB-component targets are supplied by the caller (monthly_targets); this
 // is only a floor so the check runs before targets are wired.
@@ -542,7 +545,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // `incomplete` = diagnoseIncompleteCount() result (byState never/early/stale). Lets the report
 // (and therefore SAGE, which reads it) frame uncounted items CORRECTLY instead of calling them
 // all "blanks to go count" — the Durant #5985 lesson. See memory/project-eom-uncounted-vs-qsrsoft.
-export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {} } = {}) {
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false } = {}) {
   const V = (result.variance || []).filter(v => Math.abs(v.dolDiff || 0) >= threshold)
     .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0));
   const findings = result.findings || [];
@@ -589,7 +592,10 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     if (!(a > 0) || !isFinite(lo) || !isFinite(hi) || (lo + hi) <= 0) return null;
     return a / ((lo + hi) / 2);
   };
-  const overPortioned = v => { const p = yieldPct(v); return p != null && Number(v.yield) < Number(v.yieldLo); };
+  // At a self-serve-tower store, a fountain beverage running below its yield band is EXPECTED (free
+  // refills we can't meter) — not over-portioning. bevExempt(v) marks those so they're noted, not flagged.
+  const bevExempt = v => selfServeTower && FOUNTAIN_BEV_RE.test(v && v.descr || '');
+  const overPortioned = v => { if (bevExempt(v)) return false; const p = yieldPct(v); return p != null && Number(v.yield) < Number(v.yieldLo); };
   // Compact chips (current state first) — rendered as pills by mdToHtml.
   const chipsFor = v => {
     const c = [v.dolDiff < 0 ? `{{bad|SHORT ${money(Math.abs(v.dolDiff))}}}` : `{{info|OVER ${money(Math.abs(v.dolDiff))}}}`];
@@ -747,6 +753,17 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       L.push(`- **${v.descr || v.wrin}** — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (**${Math.round(yieldPct(v) * 100)}% of std**${v.dolDiff != null ? `, ${money(v.dolDiff)}` : ''})`);
     });
     L.push('_Low actual-vs-standard yield = more product used per serving than the recipe allows — audit the station\'s portion/recipe, not the count._', '');
+  }
+  // Self-serve-tower EXEMPTION note (owner): fountain beverages below their yield band are NOT
+  // over-portioning here — free refills we can't meter. Surface them as expected, not flagged.
+  if (selfServeTower) {
+    const exemptBev = V.filter(v => FOUNTAIN_BEV_RE.test(v.descr || '')).filter(v => { const p = yieldPct(v); return p != null && Number(v.yield) < Number(v.yieldLo); }).sort((a, b) => (yieldPct(a) || 1) - (yieldPct(b) || 1));
+    if (exemptBev.length) {
+      L.push(`## 🥤 Fountain beverages below yield — expected (self-serve tower)`, '');
+      L.push(`_This store has a self-serve beverage tower, so low fountain yield is STRUCTURAL (guests take allowed free refills we can't meter) — NOT over-portioning, not flagged. Only investigate if a value is far beyond this store's usual (then check BIB connections / syrup ratios)._`, '');
+      exemptBev.slice(0, 12).forEach(v => { const std = (Number(v.yieldLo) + Number(v.yieldHi)) / 2; L.push(`- ${v.descr || v.wrin} — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (${Math.round(yieldPct(v) * 100)}% of std) — expected`); });
+      L.push('');
+    }
   }
 
   // ── Count integrity — WHY items read "uncounted" (Notes: Durant #5985) ──
