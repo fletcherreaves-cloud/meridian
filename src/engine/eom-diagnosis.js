@@ -546,7 +546,16 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // (and therefore SAGE, which reads it) frame uncounted items CORRECTLY instead of calling them
 // all "blanks to go count" — the Durant #5985 lesson. See memory/project-eom-uncounted-vs-qsrsoft.
 export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false } = {}) {
-  const V = (result.variance || []).filter(v => Math.abs(v.dolDiff || 0) >= threshold)
+  // Dedupe variance rows by WRIN first (owner: duplicate lines) — a doubled row would otherwise
+  // surface the same item twice in Top-5, Focus now, and the reference table. Keep the largest-|$|
+  // instance (a literal duplicate is identical; keeping one is correct, summing would double it).
+  const _vByWrin = new Map();
+  for (const v of (result.variance || [])) {
+    const k = String(v.wrin ?? v.descr ?? '');
+    const prev = _vByWrin.get(k);
+    if (!prev || Math.abs(v.dolDiff || 0) > Math.abs(prev.dolDiff || 0)) _vByWrin.set(k, v);
+  }
+  const V = [..._vByWrin.values()].filter(v => Math.abs(v.dolDiff || 0) >= threshold)
     .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0));
   const findings = result.findings || [];
   // Per-WRIN cause overlays from the findings.
@@ -637,7 +646,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const doNow = [];
   if (neverFC.length) {
     const nv = sumVR(neverFC);
-    doNow.push({ score: 1e6 + nv, wrin: neverFC[0].wrin, text: `**Count the ${neverFC.length} never-counted Food/Condiment item${neverFC.length === 1 ? '' : 's'} before close** (~${money(nv)}) — the only true "count it and recover" money. Start with: ${neverFC.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
+    doNow.push({ score: 1e6 + nv, group: true, text: `**Count the ${neverFC.length} never-counted Food/Condiment item${neverFC.length === 1 ? '' : 's'} before close** (~${money(nv)}) — the only true "count it and recover" money. Start with: ${neverFC.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
   }
   V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
     .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
@@ -646,7 +655,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const staleFC = _unc.filter(u => u.state === 'stale' && isFCcls(u.cls));
   if (staleFC.length) {
     const sv = sumVR(staleFC);
-    doNow.push({ score: 3e5 + sv, wrin: staleFC[0].wrin, text: `**Verify & clear the ${staleFC.length} obsolete/inactive Food/Condiment item${staleFC.length === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, waste to zero if it won't be used before expiration; don't let it ride into next month's opening.` });
+    doNow.push({ score: 3e5 + sv, group: true, text: `**Verify & clear the ${staleFC.length} obsolete/inactive Food/Condiment item${staleFC.length === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, waste to zero if it won't be used before expiration; don't let it ride into next month's opening.` });
   }
   const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
   if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), wrin: topFC.wrin, text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
@@ -662,6 +671,17 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     else if (neverFC.length || neverNonProd.length) L.push('- ✅ **Paper — all counted.**');
     if (neverNonProd.length) L.push(`- **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and that's EXPECTED** — Non-Product isn't due until tomorrow. Not a gap, not a today action.`);
     L.push('_Today\'s 100% = Food + Condiment + Paper. Full itemized list in Count integrity below._', '');
+  }
+
+  // Dedupe Do-Now by WRIN (owner: duplicate lines) — the same item can surface via BOTH the recount
+  // and the portioning push; keep only the highest-priority action per item. Group summaries pass through.
+  {
+    const seenW = new Set(), kept = [];
+    for (const d of doNow.slice().sort((a, b) => b.score - a.score)) {
+      if (!d.group && d.wrin) { if (seenW.has(d.wrin)) continue; seenW.add(d.wrin); }
+      kept.push(d);
+    }
+    doNow.length = 0; doNow.push(...kept);
   }
 
   // ── TOP 5 — always surface five real Food/Condiment moves. Fill toward 5 from the next-best FC

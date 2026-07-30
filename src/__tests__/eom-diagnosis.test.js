@@ -66,6 +66,17 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).toMatch(/awaiting data/i);
   });
 
+  it('dedupes duplicate variance rows so an item appears once in Top-5 / Focus now', () => {
+    // Same WRIN duplicated in the variance feed (owner: duplicate lines).
+    const dup = { wrin: 'icm', descr: 'ICE CREAM MIX', dolDiff: -440, cls: 'Food', yield: 30, yieldLo: 55, yieldHi: 60 };
+    const res = runDiagnosis({ store: 's', storeName: 'PV', period: '2026-07', data: { variance: [dup, { ...dup }] } });
+    const rpt = formatDiagnosisReport(res);
+    // Should appear at most once in Focus now, and not twice back-to-back in Top-5.
+    const focusHits = (rpt.match(/ICE CREAM MIX/g) || []).length;
+    expect(focusHits).toBeLessThanOrEqual(3);   // was 4+ with the dup (Top-5 recount+portion + Focus x2)
+    expect(rpt).not.toMatch(/(Recount ICE CREAM MIX[\s\S]{0,120}){2}/); // no back-to-back duplicate recount
+  });
+
   it('Top-5 celebrates a clean sweep when there are no Food/Condiment opportunities', () => {
     // Only a Paper short — not a profit-driver class, so nothing lands in the Food/Condiment Top-5.
     const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'p', descr: 'Napkins', dolDiff: -300, cls: 'Paper' }] } });
