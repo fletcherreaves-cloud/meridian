@@ -630,6 +630,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [xcOpen, setXcOpen] = useState(false);
   const [xcText, setXcText] = useState('');
   const [xcResult, setXcResult] = useState(null);
+  // Bulk EOM follow-up — generate every location's message at once (owner sends). Generation only.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkDrafts, setBulkDrafts] = useState([]);
+  const [bulkCopied, setBulkCopied] = useState('');
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
@@ -903,10 +907,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return `<h1>Rubber-band (padding &rarr; collapse) — ${scopeLabel()}</h1><p class="sub">${p[0] || ''} &rarr; ${p[p.length - 1] || ''} &middot; ${(rb?.nRows || 0).toLocaleString()} rows &middot; biggest snap exposure first</p>${body}`;
   };
 
-  const openDraft = useCallback((loc, name, components) => {
-    // Run the same diagnosis the 🔬 button uses, so the draft carries a real
-    // "what to fix" action plan — not just the recount nudge (which is empty
-    // off the count window). Freshest-wins cloud streams feed both.
+  // Build a store's follow-up draft (same diagnosis the 🔬 button uses → a real action plan, not just
+  // the recount nudge). Pure — returns the draft object. Reused by openDraft AND the bulk generator.
+  const computeDraft = useCallback((loc, name, components) => {
     let actionItems = [], diagSummary = '', diagDollars = 0, diagRows = [];
     if (hasDiagData.has(loc) || (components && components.sales)) {
       try {
@@ -927,7 +930,6 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           },
         });
         actionItems = dg.actionItems; diagSummary = dg.summary; diagDollars = dg.totalDollars;
-        // Structured rows for the on-screen TABLE view (owner req) — copy still uses the plain body.
         diagRows = (dg.findings || []).filter(f => (f.severity ?? 0) >= 1).map(f => ({
           sev: f.severity ?? 0, sevWord: String(f.severityWord || '').toUpperCase(),
           item: f.title, wrin: f.data?.wrin || '', dollars: f.dollars, note: f.detail,
@@ -937,9 +939,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const msg = buildIncompleteCountMessage(name, byLoc[loc] || [], {
       period, asOf: new Date(), actionItems, diagSummary, diagDollars,
     });
+    return { loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps, hasPlan: msg.hasPlan, rows: diagRows, uncounted: msg.uncounted || [] };
+  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, hasDiagData, activeChecks, period, unmatchedXfer, selfServeTowers]);
+
+  const openDraft = useCallback((loc, name, components) => {
     setCopied(false);
-    setDraft({ loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps, hasPlan: msg.hasPlan, rows: diagRows, uncounted: msg.uncounted || [] });
-  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, hasDiagData, activeChecks, period]);
+    setDraft(computeDraft(loc, name, components));
+  }, [computeDraft]);
+
+  // Generate a follow-up draft for EVERY store in scope — the ones that need a message first.
+  const openBulk = useCallback(() => {
+    const drafts = rows.map(r => ({ ...computeDraft(r.loc, r.name, r.components), commsSent: r.comms === 'sent' }));
+    drafts.sort((a, b) => ((b.hasGaps || b.hasPlan) - (a.hasGaps || a.hasPlan)) || a.name.localeCompare(b.name));
+    setBulkDrafts(drafts); setBulkCopied(''); setBulkOpen(true);
+  }, [rows, computeDraft]);
+  const copyText = (t, tag) => {
+    try { navigator.clipboard.writeText(t); setBulkCopied(tag); setTimeout(() => setBulkCopied(c => c === tag ? '' : c), 1800); }
+    catch { /* clipboard may be blocked */ }
+  };
 
   const copyDraft = useCallback(async () => {
     if (!draft) return;
@@ -1187,6 +1204,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'AI Cross-Check — paste an external AI\'s FOB analysis (e.g. CoachQ) and reconcile it against Meridian\'s real numbers. Catches fabricated rows (components that don\'t sum to their own FOB$) + divergences.',
           style: { background: 'var(--surf3)', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '🔍 AI Cross-Check'),
+        h('button', {
+          onClick: openBulk, disabled: rows.length === 0,
+          title: 'Generate the EOM follow-up message for every location in scope at once — copy each and send (recount lists / action plans, freshest-wins).',
+          style: { background: 'var(--surf3)', color: '#f5bc00', border: '1px solid #f5bc00', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '📣 Message all'),
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
           onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
@@ -1709,6 +1731,31 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                         span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.overSum || 0).toLocaleString()} over ${w.overN} mo (from ${w.from || ''}) → snapped ${w.to || ''}`))))));
               }))
           : null)),
+
+    bulkOpen && div({
+      onClick: () => setBulkOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({ onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+        div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '4px', paddingRight: '30px' } }, `📣 EOM Follow-up — ${bulkDrafts.length} location${bulkDrafts.length === 1 ? '' : 's'}`),
+        h('button', { onClick: () => setBulkOpen(false), style: MODAL_X }, '✕'),
+        (() => { const needed = bulkDrafts.filter(d => d.hasGaps || d.hasPlan).length; return div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '12px' } },
+          `${needed} need a follow-up (count gap or food-cost action plan); the rest look clean. Copy each and send to the store, then Mark sent. Ordered by who needs it first.`); })(),
+        div({ style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
+          bulkDrafts.map(d => {
+            const needs = d.hasGaps || d.hasPlan;
+            return div({ key: d.loc, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${needs ? '#f5bc00' : '#4ade80'}`, borderRadius: '7px', background: 'var(--surf2)', padding: '9px 11px' } },
+              div({ style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+                span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '12.5px' } }, d.name),
+                span({ style: { color: 'var(--text3)', fontSize: '10px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(d.loc)}`),
+                d.commsSent ? span({ style: { fontSize: '10px', color: '#4ade80', fontWeight: 700 } }, '✓ sent') : null,
+                span({ style: { marginLeft: 'auto', display: 'flex', gap: '6px' } },
+                  needs ? h('button', { onClick: () => copyText(d.body, d.loc), style: { ...MODAL_TOOLBTN, color: bulkCopied === d.loc ? '#4ade80' : 'var(--gold)', borderColor: bulkCopied === d.loc ? '#4ade80' : 'var(--bdr2)' } }, bulkCopied === d.loc ? '✓ Copied' : 'Copy') : null,
+                  h('button', { onClick: () => { openDraft(d.loc, d.name, allRows.find(r => r.loc === d.loc)?.components); setBulkOpen(false); }, style: MODAL_TOOLBTN, title: 'Open the full single-store message (table view)' }, 'Open'),
+                  h('button', { onClick: () => updateStatus(d.loc, { commsStatus: 'sent', commsSentAt: new Date().toISOString() }), style: { ...MODAL_TOOLBTN, color: '#4ade80', borderColor: '#4ade80' } }, 'Mark sent'))),
+              div({ style: { fontSize: '11.5px', color: needs ? 'var(--text2)' : 'var(--text3)', marginTop: '4px' } }, needs ? d.subject : 'Count looks complete — no action items. Nothing to send.'));
+          })))),
 
     xcOpen && div({
       onClick: () => setXcOpen(false),
