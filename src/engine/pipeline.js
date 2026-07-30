@@ -43,7 +43,13 @@ function buildDS(workbooks){
   }
       else if(type==='fob')  ds.fobRows.push(...parseFOBData(wb));
       else if(type==='weather')ds.weatherRows.push(...parseWeatherData(wb));
-      else if(type==='targets')Object.assign(ds.targets,parseTargets(wb));
+      else if(type==='targets'){
+        // Try the yearly "Table 1" format first (OEPE/Park/KVS PACE + Voice + Digital + staffing);
+        // fall back to the generic OpsTargets sheet. MUST match mergeDS() so a full rebuild and an
+        // incremental re-drop behave identically (else yearly targets land on one path but not the other).
+        const yearly=parseYearlyTargets(wb);
+        Object.assign(ds.targets, Object.keys(yearly).length>0 ? yearly : parseTargets(wb));
+      }
       else if(type==='peaks'){
         const _pkSvc=parse3PeaksService(wb);
         console.log('[McForecast] 3Peaks Service rows:',_pkSvc.length,'locs:',[...new Set(_pkSvc.map(r=>r.loc))].join(','));
@@ -79,7 +85,7 @@ function buildDS(workbooks){
         if(sh.ops)    ds.opsRows.push(...parseOpsData(wb,sh.ops));
         if(sh.ctrl)   ds.ctrlRows.push(...parseCtrlData(wb,sh.ctrl));
         if(sh.weather)ds.weatherRows.push(...parseWeatherData(wb,sh.weather));
-        if(sh.targets)Object.assign(ds.targets,parseTargets(wb,sh.targets));
+        if(sh.targets){const yy=parseYearlyTargets(wb);Object.assign(ds.targets,Object.keys(yy).length>0?yy:parseTargets(wb,sh.targets));}
       }
     }catch(e){console.warn('Parse error:',type,e);}
   }
