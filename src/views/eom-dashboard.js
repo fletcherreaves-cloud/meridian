@@ -7,7 +7,7 @@
 // FOB comes from the qsr_fob stream (dollar-weighted, MTD). Diagnosis + comms state
 // persist to eom_count_status so the owner can track who was told what.
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
@@ -78,6 +78,9 @@ tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-mono
 
 const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
+// Per-store FOB target (Food-Over-Base % of product sales) — over target = worse food cost =
+// prioritize the diagnosis (owner req 2026-07-30). tFOBTarget is a fraction (e.g. 0.0385 = 3.85%).
+const fobTgtOf = loc => { const t = DEFAULT_TARGETS[unpad(loc)]; return t && t.tFOBTarget != null ? Number(t.tFOBTarget) : null; };
 const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(0) + '%';
 const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%'; // FOB % — 2 decimals
 
@@ -1228,7 +1231,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' } },
         h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '11px', textTransform: 'uppercase' } },
           [['Store'], ['Count progress'], ['By class'], ['Last count'],
-           ['FOB %', 'Food-Over-Base as a % of product sales, MTD, dollar-weighted (Σ FOB $ ÷ Σ product sales)'],
+           ['FOB % vs tgt', 'Food-Over-Base as a % of product sales, MTD, dollar-weighted (Σ FOB $ ÷ Σ product sales), against the store\'s FOB target. Red = over target (worse food cost) → prioritize the diagnosis; green = under.'],
            ['FOB $', 'Total Food-Over-Base dollars for the period MTD — the sum of the 6 controllable components: completed waste + raw waste + condiments + emp/mgr meals + stat variance + unexplained'],
            ['Diagnosis'], ['Communication']].map(([c, tip], i) =>
             h('th', { key: i, title: tip || '', style: { padding: '8px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap', cursor: tip ? 'help' : 'default' } }, c)))),
@@ -1246,7 +1249,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 const a = daysAgo(r.prog.lastActivityAt);
                 return a == null ? null : span({ style: { fontSize: '10px', color: a > 40 ? '#f87171' : 'var(--text3)', marginLeft: '5px' } }, a === 0 ? 'today' : `${a}d ago`);
               })()),
-            h('td', { style: { padding: '8px 10px', fontWeight: 600, color: 'var(--text)' } }, pct2(r.fobPct)),
+            (() => {
+              const tgt = fobTgtOf(r.loc);
+              const d = (r.fobPct != null && tgt != null) ? r.fobPct - tgt : null;
+              const over = d != null && d > 0.0005, under = d != null && d < -0.0005;
+              const c = over ? '#f87171' : under ? '#4ade80' : 'var(--text)';
+              return h('td', { style: { padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' },
+                  title: tgt != null ? `Target ${(tgt * 100).toFixed(2)}% · ${over ? 'OVER target — prioritize diagnosis' : under ? 'under target' : 'on target'}` : 'No FOB target on file' },
+                span({ style: { color: c } }, pct2(r.fobPct)),
+                d != null ? div({ style: { fontSize: '10px', color: c, fontWeight: 600, fontVariantNumeric: 'tabular-nums' } },
+                  `tgt ${(tgt * 100).toFixed(2)}% · ${d >= 0 ? '+' : ''}${(d * 100).toFixed(2)}pp`) : null);
+            })(),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)' } }, money(r.fob$)),
             h('td', { style: { padding: '8px 10px' } },
               div({ style: { display: 'flex', gap: '6px', alignItems: 'center' } },
