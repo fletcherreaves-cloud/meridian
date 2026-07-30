@@ -568,8 +568,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [fobRows, setFobRows] = useState([]);
   const [statusMap, setStatusMap] = useState({}); // loc -> saved eom_count_status
   const [saving, setSaving] = useState('');
-  const [draft, setDraft] = useState(null); // { loc, name, subject, body } for the comms modal
+  const [draft, setDraft] = useState(null); // { loc, name, subject, body, rows, uncounted } for the comms modal
   const [copied, setCopied] = useState(false);
+  const [draftText, setDraftText] = useState(false); // false = table view, true = raw text view
   const [variance, setVariance] = useState([]);
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
@@ -828,7 +829,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // Run the same diagnosis the 🔬 button uses, so the draft carries a real
     // "what to fix" action plan — not just the recount nudge (which is empty
     // off the count window). Freshest-wins cloud streams feed both.
-    let actionItems = [], diagSummary = '', diagDollars = 0;
+    let actionItems = [], diagSummary = '', diagDollars = 0, diagRows = [];
     if (hasDiagData.has(loc) || (components && components.sales)) {
       try {
         const dg = runDiagnosis({
@@ -846,13 +847,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           },
         });
         actionItems = dg.actionItems; diagSummary = dg.summary; diagDollars = dg.totalDollars;
+        // Structured rows for the on-screen TABLE view (owner req) — copy still uses the plain body.
+        diagRows = (dg.findings || []).filter(f => (f.severity ?? 0) >= 1).map(f => ({
+          sev: f.severity ?? 0, sevWord: String(f.severityWord || '').toUpperCase(),
+          item: f.title, wrin: f.data?.wrin || '', dollars: f.dollars, note: f.detail,
+        }));
       } catch { /* diagnosis is best-effort; fall back to the recount nudge */ }
     }
     const msg = buildIncompleteCountMessage(name, byLoc[loc] || [], {
       period, asOf: new Date(), actionItems, diagSummary, diagDollars,
     });
     setCopied(false);
-    setDraft({ loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps, hasPlan: msg.hasPlan });
+    setDraft({ loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps, hasPlan: msg.hasPlan, rows: diagRows, uncounted: msg.uncounted || [] });
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, hasDiagData, activeChecks, period]);
 
   const copyDraft = useCallback(async () => {
@@ -1205,6 +1211,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               return div({ key: r.loc, style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--bdr)', borderLeft: `3px solid ${p.c}`, borderRadius: '8px', background: 'var(--surf2)', flexWrap: 'wrap' } },
                 div({ style: { flex: '1 1 150px', minWidth: '150px' } },
                   span({ style: { fontWeight: 700, color: 'var(--text)' } }, r.name),
+                  span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '6px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`),
                   span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '6px' } }, r.org === 'emerald' ? 'FL' : 'OK'),
                   r.prog.lastActivityAt ? span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '8px' } }, 'last count ' + new Date(r.prog.lastActivityAt).toLocaleDateString()) : null),
                 div({ style: { flex: '1 1 160px', minWidth: '140px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
@@ -1228,7 +1235,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         h('tbody', null, rows.map(r =>
           h('tr', { key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
             h('td', { style: { padding: '8px 10px' } },
-              div({ style: { fontWeight: 600, color: 'var(--text)' } }, r.name),
+              div({ style: { fontWeight: 600, color: 'var(--text)' } }, r.name,
+                span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '6px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`)),
               span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK')),
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
             h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass })),
@@ -1284,11 +1292,46 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', { onClick: () => setDraft(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
         div({ style: { fontSize: '13px', color: 'var(--text)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: 'var(--surf3)', borderRadius: '6px', border: '1px solid var(--bdr)' } }, draft.subject),
-        div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Message'),
-        h('textarea', {
-          readOnly: true, value: draft.body,
-          style: { width: '100%', minHeight: '240px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr)', borderRadius: '6px', padding: '10px', fontSize: '12.5px', fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' },
-        }),
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' } },
+          span({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'Message'),
+          (draft.rows?.length || draft.uncounted?.length)
+            ? h('button', { onClick: () => setDraftText(t => !t), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' } }, draftText ? 'Table view' : 'Text view') : null),
+        // On-screen TABLE view (owner req 2026-07-30) — cleaner to scan than a wall of bullets. The
+        // Copy button still copies the plain-text `body` so it pastes safely into email/SMS/Slack.
+        (!draftText && (draft.rows?.length || draft.uncounted?.length))
+          ? div({ style: { maxHeight: '48vh', overflow: 'auto', border: '1px solid var(--bdr)', borderRadius: '6px', background: 'var(--surf3)', padding: '10px' } }, [
+              draft.uncounted?.length ? div({ key: 'unc', style: { marginBottom: draft.rows?.length ? '14px' : 0 } }, [
+                div({ style: { fontSize: '12px', fontWeight: 700, color: 'var(--text)', marginBottom: '6px' } }, `Still needs a recount — ${draft.uncounted.length} item${draft.uncounted.length === 1 ? '' : 's'}`),
+                h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } }, [
+                  h('thead', null, h('tr', null,
+                    ['Item', 'Class', 'On-hand $'].map((hd, i) => h('th', { key: i, style: { textAlign: i === 2 ? 'right' : 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.04em' } }, hd)))),
+                  h('tbody', null, draft.uncounted.map((u, i) => h('tr', { key: i },
+                    h('td', { style: { padding: '4px 8px', color: 'var(--text)', borderBottom: '1px solid var(--bdr)' } }, u.descr || u.wrin),
+                    h('td', { style: { padding: '4px 8px', color: 'var(--text2)', borderBottom: '1px solid var(--bdr)' } }, u.cls || ''),
+                    h('td', { style: { padding: '4px 8px', color: 'var(--text)', textAlign: 'right', borderBottom: '1px solid var(--bdr)', fontVariantNumeric: 'tabular-nums' } }, `$${Math.round(u.valueAtRisk || 0).toLocaleString()}`)))),
+                ])]) : null,
+              draft.rows?.length ? div({ key: 'act' }, [
+                div({ style: { fontSize: '12px', fontWeight: 700, color: 'var(--text)', marginBottom: '6px' } }, `Action plan — ${draft.rows.length} item${draft.rows.length === 1 ? '' : 's'} to review & correct`),
+                h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } }, [
+                  h('thead', null, h('tr', null,
+                    ['Priority', 'Item', 'WRIN', '$', 'What to do'].map((hd, i) => h('th', { key: i, style: { textAlign: i === 3 ? 'right' : 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.04em' } }, hd)))),
+                  h('tbody', null, draft.rows.map((r, i) => {
+                    const sc = r.sev >= 3 ? '#f87171' : r.sev >= 2 ? '#fb923c' : '#f5bc00';
+                    return h('tr', { key: i }, [
+                      h('td', { style: { padding: '5px 8px', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top' } },
+                        span({ style: { fontSize: '9.5px', fontWeight: 700, color: sc, border: `1px solid ${sc}`, borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap' } }, r.sevWord || '—')),
+                      h('td', { style: { padding: '5px 8px', color: 'var(--text)', fontWeight: 600, borderBottom: '1px solid var(--bdr)', verticalAlign: 'top' } }, r.item),
+                      h('td', { style: { padding: '5px 8px', color: 'var(--text3)', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '11px', whiteSpace: 'nowrap' } }, r.wrin || '—'),
+                      h('td', { style: { padding: '5px 8px', color: 'var(--text)', textAlign: 'right', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, r.dollars != null ? `$${Math.round(r.dollars).toLocaleString()}` : ''),
+                      h('td', { style: { padding: '5px 8px', color: 'var(--text2)', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top', lineHeight: 1.4 } }, r.note),
+                    ]);
+                  })),
+                ])]) : null,
+            ])
+          : h('textarea', {
+              readOnly: true, value: draft.body,
+              style: { width: '100%', minHeight: '240px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr)', borderRadius: '6px', padding: '10px', fontSize: '12.5px', fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' },
+            }),
         div({ style: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' } },
           h('button', {
             onClick: copyDraft,
