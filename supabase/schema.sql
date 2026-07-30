@@ -1506,6 +1506,34 @@ alter table public.eom_count_status enable row level security;
 create policy "eom_count_status: public read"  on public.eom_count_status for select using (true);
 create policy "eom_count_status: public write" on public.eom_count_status for all using (true);
 
+-- Per-location completion LOG (owner req 2026-07-30) — a timestamped snapshot of each store's
+-- count completion (overall + per class) appended by the On-Hand pull, deduped to one row per
+-- store per hour. Builds a trajectory of WHEN each store counts each class through the EOM cycle
+-- (start/finish times, class order, pace) — insightful for coaching + padding/pattern detection.
+create table if not exists public.eom_count_progress_log (
+  loc             text        not null,
+  period          text        not null,
+  snapshot_hour   text        not null,          -- "YYYY-MM-DDTHH" dedup key (≤1 row/store/hour)
+  snapshot_at     timestamptz not null,
+  pct_counted     numeric,
+  items_counted   integer,
+  items_total     integer,
+  believes_done   boolean,
+  food_pct        numeric,
+  condiment_pct   numeric,
+  paper_pct       numeric,
+  nonproduct_pct  numeric,
+  food_done       boolean,
+  condiment_done  boolean,
+  paper_done      boolean,
+  nonproduct_done boolean,
+  primary key (loc, period, snapshot_hour)
+);
+create index if not exists eom_count_progress_log_period_idx on public.eom_count_progress_log (period, loc, snapshot_at);
+alter table public.eom_count_progress_log enable row level security;
+create policy "eom_count_progress_log: public read"  on public.eom_count_progress_log for select using (true);
+create policy "eom_count_progress_log: public write" on public.eom_count_progress_log for all using (true);
+
 -- Flexible notification settings (jsonb — channels, recipients, thresholds).
 -- Single owner today (key='default'); keyed for future per-user flexibility.
 create table if not exists public.eom_notification_settings (

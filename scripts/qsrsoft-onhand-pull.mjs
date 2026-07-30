@@ -291,6 +291,23 @@ function buildStatusRow(loc, period, ohRows, prev) {
     total_fc_pct:     prev?.total_fc_pct ?? null,
     updated_at:       new Date().toISOString(),
     _fireNow:         fireNow, // internal, stripped before upsert
+    // Timestamped completion snapshot for the per-location progress LOG (owner req 2026-07-30):
+    // builds a trajectory of when each store counts each class through the cycle. Stripped
+    // before the eom_count_status upsert; written to eom_count_progress_log instead.
+    _log: {
+      pct_counted:     p.pctCounted,
+      items_counted:   p.itemsCounted,
+      items_total:     p.itemsTotal,
+      believes_done:   believes,
+      food_pct:        p.byClass.food?.pct ?? null,
+      condiment_pct:   p.byClass.condiment?.pct ?? null,
+      paper_pct:       p.byClass.paper?.pct ?? null,
+      nonproduct_pct:  p.byClass.nonproduct?.pct ?? null,
+      food_done:       !!p.byClass.food?.done,
+      condiment_done:  !!p.byClass.condiment?.done,
+      paper_done:      !!p.byClass.paper?.done,
+      nonproduct_done: !!p.byClass.nonproduct?.done,
+    },
   };
 }
 
@@ -308,6 +325,7 @@ async function main() {
 
   let totalSaved = 0, storesWithData = 0, authFailed = false;
   const statusRows = [];
+  const progressLog = [];   // timestamped per-store completion snapshots (one row / store / hour)
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
     const rows = [];
@@ -338,6 +356,10 @@ async function main() {
       const st = buildStatusRow(loc, period, ohForEngine, prevStatus[loc]);
       if (st._fireNow) console.log(`  🔔 ${nsn}: crossed ${Math.round(BELIEVES_DONE_PCT * 100)}% — store believes count is done`);
       delete st._fireNow;
+      // Append a timestamped snapshot to the progress log (deduped to one row per store per hour).
+      const nowIso = new Date().toISOString();
+      progressLog.push({ loc, period, snapshot_hour: nowIso.slice(0, 13), snapshot_at: nowIso, ...st._log });
+      delete st._log;
       statusRows.push(st);
     }
     if (DEBUG) console.log(`  ${nsn}: ${deduped.length} items`);
@@ -348,6 +370,13 @@ async function main() {
     const { error } = await supabase.from('eom_count_status').upsert(statusRows, { onConflict: 'loc,period' });
     if (error) console.warn('[eom_count_status] upsert error:', error.message);
     else console.log(`[onhand-pull] status upserted for ${statusRows.length} stores`);
+  }
+
+  // Append the timestamped completion snapshots (per store per hour) — builds the trajectory.
+  if (progressLog.length) {
+    const { error } = await supabase.from('eom_count_progress_log').upsert(progressLog, { onConflict: 'loc,period,snapshot_hour' });
+    if (error) console.warn('[eom_count_progress_log] upsert error (table may not exist yet):', error.message);
+    else console.log(`[onhand-pull] progress-log: ${progressLog.length} snapshots`);
   }
 
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);
