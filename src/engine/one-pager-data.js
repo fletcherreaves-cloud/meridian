@@ -181,6 +181,7 @@ export function buildReviewActuals(ds, locs, range) {
     kvsHealthy: metricAvg(ds, locs, range, 'kvsHealthy'),   // KVS Healthy Usage (0–1 fraction) — Daily Glimpse
     kvsTimeTarget: tgtAvg('tKvst'),
     kvsHealthyTarget: tgtAvg('tKvsu'),
+    osatB2BTarget: tgtAvg('tOsatB2B'),   // "Overall Satisfaction B2B" from the yearly-targets file
     projSales: hasProj ? projSales : null,
     smgMonth: bestKey >= 0 ? `${bestY}-${String(bestM).padStart(2, '0')}` : null,
   };

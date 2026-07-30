@@ -744,6 +744,7 @@ function parseYearlyTargets(wb){
     tpph:   fc(h,'TPPH'),
     labor:  fc(h,'Labor'),
     fobT:   fc(h,'Food Over Base','FOB'),
+    osatB2B:fc(h,'Overall Satisfaction B2B','Overall Sat B2B','OSAT B2B'), // → OSAT B2B (1★) target on reviews
   };
   const targets={};
   for(let i=hi+1;i<raw.length;i++){
@@ -760,6 +761,7 @@ function parseYearlyTargets(wb){
     if(C.tpph>=0&&parseFloat(r[C.tpph]))  t.tTpph=parseFloat(r[C.tpph]);
     if(C.labor>=0&&parsePct(r[C.labor]))  t.tLabor=parsePct(r[C.labor]);
     if(C.fobT>=0&&parsePct(r[C.fobT]))    t.tFOBTarget=parsePct(r[C.fobT]);
+    if(C.osatB2B>=0&&parsePct(r[C.osatB2B])) t.tOsatB2B=parsePct(r[C.osatB2B]);
     if(Object.keys(t).length>0) targets[loc]=t;
   }
   console.log(`[YearlyTargets] sheet='${sheetName}' hdr=${hi} parsed=${Object.keys(targets).length} stores`,Object.keys(targets).slice(0,2).map(l=>({loc:l,...targets[l]})));
