@@ -577,28 +577,64 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // THIS cycle. Reuses the count-integrity buckets, recount-worthiness, and the portioning fingerprint.
   const isFCcls = c => { const x = normClass(c); return x === 'food' || x === 'condiment'; };
   const isFC = v => isFCcls(v && v.cls);
+  const clsLabel = c => ({ food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product', other: 'Other' })[normClass(c)] || 'Item';
+  const sumVR = arr => arr.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
+  const _unc = (incomplete && incomplete.uncounted) || [];
+  // Never-counted split by FOB consequence (owner 2026-07-30): Food/Condiment blanks = real
+  // "count it and recover" money; Paper/Non-Product blanks = complete the count to 100% but are
+  // NOT food-cost-consequential (mostly promo/paper) — don't frame them as a mistake or recovery.
+  const neverFC = _unc.filter(u => u.state === 'never' && isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
+  const neverOther = _unc.filter(u => u.state === 'never' && !isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
   const doNow = [];
-  const neverFC = ((incomplete && incomplete.uncounted) || []).filter(u => u.state === 'never' && isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
   if (neverFC.length) {
-    const nv = neverFC.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
-    doNow.push({ score: 1e6 + nv, text: `**Count the ${neverFC.length} never-counted Food/Condiment item${neverFC.length === 1 ? '' : 's'} before close** (~${money(nv)}) — the only true "count it and recover" money. Start with: ${neverFC.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
+    const nv = sumVR(neverFC);
+    doNow.push({ score: 1e6 + nv, wrin: neverFC[0].wrin, text: `**Count the ${neverFC.length} never-counted Food/Condiment item${neverFC.length === 1 ? '' : 's'} before close** (~${money(nv)}) — the only true "count it and recover" money. Start with: ${neverFC.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
   }
   V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
-    .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
+    .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
   V.filter(v => overPortioned(v) && isFC(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
-    .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), text: `**Fix portioning on ${v.descr || v.wrin}** — running ${Math.round(yieldPct(v) * 100)}% of standard yield; audit the station's recipe/portion now.` }));
-  const staleFC = ((incomplete && incomplete.uncounted) || []).filter(u => u.state === 'stale' && isFCcls(u.cls));
+    .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Fix portioning on ${v.descr || v.wrin}** — running ${Math.round(yieldPct(v) * 100)}% of standard yield; audit the station's recipe/portion now.` }));
+  const staleFC = _unc.filter(u => u.state === 'stale' && isFCcls(u.cls));
   if (staleFC.length) {
-    const sv = staleFC.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
-    doNow.push({ score: 3e5 + sv, text: `**Verify & clear the ${staleFC.length} obsolete/inactive Food/Condiment item${staleFC.length === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, waste to zero if it won't be used before expiration; don't let it ride into next month's opening.` });
+    const sv = sumVR(staleFC);
+    doNow.push({ score: 3e5 + sv, wrin: staleFC[0].wrin, text: `**Verify & clear the ${staleFC.length} obsolete/inactive Food/Condiment item${staleFC.length === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, waste to zero if it won't be used before expiration; don't let it ride into next month's opening.` });
   }
   const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
-  if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
-  if (doNow.length) {
-    doNow.sort((a, b) => b.score - a.score);
+  if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), wrin: topFC.wrin, text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
+
+  // ── FINISH THE COUNT (owner req 2026-07-30) — what's still open to close the location to 100%,
+  // class-aware. Food/Condiment = FOB-consequential (real recovery); Paper/Non-Product = complete
+  // for 100% but NOT food-cost-consequential (mostly promo/paper — not a mistake). Above the Top-5.
+  if (neverFC.length || neverOther.length) {
+    L.push('## 🧮 Finish the count to 100% — still needs a count', '');
+    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) left to count.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${neverFC.slice(0, 6).map(u => u.descr || u.wrin).join(', ')}${neverFC.length > 6 ? ` _+${neverFC.length - 6} more_` : ''}`);
+    else L.push('- ✅ **Food & Condiment — all counted.** No profit-driver items are missing a count.');
+    if (neverOther.length) L.push(`- **Paper / Non-Product — ${neverOther.length} item${neverOther.length === 1 ? '' : 's'} (${money(sumVR(neverOther))}) left to count.** Count these to reach 100%, but they're mostly promotional / paper — **not food-cost-consequential** (no meaningful recovery, and not a sign anything was done wrong).`);
+    L.push('_Full itemized to-count list is in Count integrity below._', '');
+  }
+
+  // ── TOP 5 — always surface five real Food/Condiment moves. Fill toward 5 from the next-best FC
+  // opportunities; if the store genuinely can't produce five, that's a WIN — celebrate it (owner).
+  if (doNow.length < 5) {
+    const used = new Set(doNow.map(d => d.wrin).filter(Boolean));
+    for (const v of V.filter(v => isFC(v) && !(recountByWrin[v.wrin] || '').startsWith('early') && !used.has(v.wrin)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff))) {
+      if (doNow.length >= 5) break;
+      used.add(v.wrin);
+      doNow.push({ score: 1e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Investigate ${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}${casesNote(v)}) — ${causeTags(v)[0] || 'recount + verify waste logging'}.` });
+    }
+  }
+  doNow.sort((a, b) => b.score - a.score);
+  if (doNow.length >= 5) {
     L.push('## ✅ Top 5 — do these now · Food & Condiment (best shot at improving this result)', '');
     doNow.slice(0, 5).forEach((d, i) => L.push(`${i + 1}. ${d.text}`));
     L.push('', '_Cut-and-dry, focused on the profit-driver classes: knock these out, then **re-run the diagnosis** to see what changed. Full analysis (all classes) below._', '');
+  } else if (doNow.length) {
+    L.push(`## ✅ Do these now · Food & Condiment — only ${doNow.length}, and that's a good sign`, '');
+    doNow.forEach((d, i) => L.push(`${i + 1}. ${d.text}`));
+    L.push('', `_Fewer than 5 Food/Condiment action items surfaced — this store is running tight on the profit-driver classes. Knock ${doNow.length === 1 ? 'it' : 'them'} out, then **re-run the diagnosis.**_`, '');
+  } else {
+    L.push('## 🏆 Clean sweep — zero Food & Condiment action items', '');
+    L.push('**Nothing** actionable surfaced on the profit-driver classes this count: no never-counted Food/Condiment, nothing to recount, no portioning flags. **That is a win in itself** — the classes that drive food cost are tight and under control. Keep doing exactly what produced this result. 🎉', '');
   }
 
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
@@ -675,37 +711,53 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const bs = incomplete.byState || {};
     const m = (o) => `${(o && o.n) || 0} item${((o && o.n) || 0) === 1 ? '' : 's'} (${money((o && o.value) || 0)})`;
     L.push('## 🧮 Count integrity — the "uncounted" list, explained', '');
-    if (bs.never && bs.never.n) L.push(`- **${m(bs.never)} NEVER counted** — true blanks. Count these before close (real recovery).`);
-    // Itemized TO-COUNT list — the actual never-counted products a manager must complete
-    // (owner req: surface the uncounted list in the report + SAGE, not just a hover count).
-    const neverItems = (incomplete.uncounted || []).filter(u => u.state === 'never').sort((a, b) => b.valueAtRisk - a.valueAtRisk).slice(0, 25);
-    if (neverItems.length) {
-      L.push('', '### 📝 To-count list — complete before close', '');
-      neverItems.forEach(u => L.push(`- **${u.descr || u.wrin}**${u.valueAtRisk ? ` — ~${money(u.valueAtRisk)} on hand` : ''}${u.cls ? ` · ${u.cls}` : ''}`));
-      const more = (bs.never?.n || 0) - neverItems.length;
-      if (more > 0) L.push(`- _+${more} more._`);
+    L.push('_"Uncounted" = not counted in the FINAL window. It splits three ways, and only some of it is food-cost-consequential — see each below. A large paper / promo count here is normal, not a mistake._', '');
+
+    // NEVER counted, split by FOB consequence (owner 2026-07-30): Food/Condiment = real recovery;
+    // Paper/Non-Product = complete the count to 100% but NOT food-cost money (mostly promo/paper).
+    if (neverFC.length) L.push(`- **${neverFC.length} Food/Condiment item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) not yet counted** — food-cost-consequential. Count before close to recover real dollars.`);
+    if (neverOther.length) L.push(`- **${neverOther.length} Paper / Non-Product item${neverOther.length === 1 ? '' : 's'} (${money(sumVR(neverOther))}) not yet counted** — count to reach 100%, but mostly promo / paper: **not food-cost-consequential**, and not a sign anything was done wrong.`);
+
+    // Itemized TO-COUNT table — Food/Condiment first (the money), then Paper/Non-Product.
+    const toCountRows = [...neverFC, ...neverOther].slice(0, 40);
+    if (toCountRows.length) {
+      L.push('', '### 📝 To-count list — complete the count to 100%', '');
+      L.push('| Item | WRIN | Class | On-hand $ | Food-cost? |', '|---|---|---|---:|:---:|');
+      toCountRows.forEach(u => L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${isFCcls(u.cls) ? '**Yes**' : 'no'} |`));
+      const moreN = (bs.never?.n || 0) - toCountRows.length;
+      if (moreN > 0) L.push('', `_+${moreN} more not-yet-counted item(s)._`);
     }
-    if (bs.early && bs.early.n) L.push('', `- **${m(bs.early)} counted EARLY** this period — QSRSoft already shows them counted. Recount only if the count looks *wrong*; it will **not** recover this period's dollars (they cascade). NOT "just go count it" money.`);
-    if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} OBSOLETE / DISCONTINUED / INACTIVE** — last counted a prior period; a residual on-hand is riding. **Always verify with a physical count first.** Food/condiment: if it won't be used before its expiration, waste it to zero to account for the balance, then deactivate the WRIN at a verified zero on-hand. Non-product (promo / Happy Meal items / paper): count and keep it — it may be usable (donation, local giveaway); deactivate only once it's genuinely used up and verified at zero. These inflate "value at risk" without being real count work.`);
-    // Itemized obsolete/discontinued/inactive verify-&-clear list (Notes: Durant #5985 / #38). Each
-    // gets a CLASS-AWARE direction so nobody discards usable non-product (owner req 2026-07-30):
-    // food/condiment (perishable) → verify count, waste-to-zero if it won't be used before expiration,
-    // then deactivate the WRIN at a verified zero; non-product (promo toys e.g. HM26, paper) → count
-    // & KEEP if usable (donation / local giveaway), deactivate only once genuinely at zero.
-    const perishable = (cls) => { const c = normClass(cls); return c === 'food' || c === 'condiment'; };
-    const staleItems = (incomplete.uncounted || []).filter(u => u.state === 'stale').sort((a, b) => b.valueAtRisk - a.valueAtRisk).slice(0, 15);
-    if (staleItems.length) {
-      L.push('', '### Obsolete / Discontinued / Inactive — verify & clear before close', '');
-      staleItems.forEach(u => {
-        const head = `- **${u.descr || u.wrin}** (${normClass(u.cls) || 'item'}) — on-hand ${money(u.onHandAmt)} · last counted ${u.lastCounted || '—'} → **verify & enter a count.**`;
-        const dir = perishable(u.cls)
-          ? ` If it won't be used before its expiration, **waste it to zero** (−${money(u.valueAtRisk)}) to account for the balance, then **deactivate the WRIN** at a verified zero on-hand.`
-          : ` **Keep it in inventory** if usable (donation / local giveaway) — do **not** discard. Deactivate the WRIN only once it's genuinely used up and verified at zero.`;
-        L.push(head + dir);
-      });
-      const more = (incomplete.byState?.stale?.n || 0) - staleItems.length;
-      if (more > 0) L.push(`- _+${more} more item(s)._`);
-      L.push('_Rule: always verify with a physical count first. **Food/condiment** → if it won\'t be used before expiration, waste to zero, then deactivate the WRIN at a verified zero on-hand. **Non-product** (promo, Happy Meal items, paper) → count and keep if usable (donation / local giveaway); deactivate only once genuinely at zero. Never discard usable product._');
+
+    // Counted EARLY — table (owner req 2026-07-30): WRIN + on-hand + last-counted to substantiate.
+    const earlyItems = _unc.filter(u => u.state === 'early').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
+    if (bs.early && bs.early.n) {
+      L.push('', `### ⏱ Counted EARLY this period — ${m(bs.early)}`, '');
+      L.push('_QSRSoft already shows these counted; a recount will **not** recover this period\'s dollars (they cascade). Recount only if a specific count looks wrong — this is NOT "just go count it" money._', '');
+      if (earlyItems.length) {
+        L.push('| Item | WRIN | Class | On-hand $ | Last counted |', '|---|---|---|---:|---|');
+        earlyItems.forEach(u => L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${u.lastCounted || '—'} |`));
+        const moreE = (bs.early?.n || 0) - earlyItems.length;
+        if (moreE > 0) L.push('', `_+${moreE} more counted-early item(s)._`);
+      }
+    }
+
+    // OBSOLETE / DISCONTINUED / INACTIVE — table with the class-aware action (owner req 2026-07-30).
+    const staleItems = _unc.filter(u => u.state === 'stale').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
+    if (bs.stale && bs.stale.n) {
+      L.push('', `### Obsolete / Discontinued / Inactive — verify & clear · ${m(bs.stale)}`, '');
+      L.push('_Last counted a PRIOR period; a residual on-hand is riding into next month\'s opening. **Always verify with a physical count first.**_', '');
+      if (staleItems.length) {
+        L.push('| Item | WRIN | Class | On-hand $ | Last counted | Action |', '|---|---|---|---:|---|---|');
+        staleItems.forEach(u => {
+          const action = isFCcls(u.cls)
+            ? `If it won't be used before expiration, **waste to zero** (−${money(u.valueAtRisk)}), then deactivate the WRIN at a verified zero.`
+            : `**Keep if usable** (donation / giveaway) — do not discard; deactivate only once genuinely at zero.`;
+          L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt)} | ${u.lastCounted || '—'} | ${action} |`);
+        });
+        const moreS = (bs.stale?.n || 0) - staleItems.length;
+        if (moreS > 0) L.push('', `_+${moreS} more item(s)._`);
+      }
+      L.push('', '_Rule: verify with a physical count first. **Food / Condiment** → waste to zero if it won\'t be used before expiration, then deactivate at a verified zero. **Paper / Non-Product** (promo, Happy Meal items, paper) → count & keep if usable; deactivate only once genuinely at zero. Never discard usable product._');
     }
     L.push('');
   }

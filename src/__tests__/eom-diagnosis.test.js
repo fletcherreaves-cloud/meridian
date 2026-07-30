@@ -65,6 +65,29 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).toMatch(/Beef/);
     expect(rpt).toMatch(/awaiting data/i);
   });
+
+  it('Top-5 celebrates a clean sweep when there are no Food/Condiment opportunities', () => {
+    // Only a Paper short — not a profit-driver class, so nothing lands in the Food/Condiment Top-5.
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'p', descr: 'Napkins', dolDiff: -300, cls: 'Paper' }] } });
+    const rpt = formatDiagnosisReport(res);
+    expect(rpt).toMatch(/Clean sweep|win in itself/i);
+  });
+
+  it('Finish-the-count + Count-integrity frame Paper/Non-Product as NOT food-cost-consequential', () => {
+    const incomplete = {
+      uncountedCount: 2, byState: { never: { n: 2, value: 500 } },
+      uncounted: [
+        { wrin: 'hm26', descr: 'Happy Meal Toy HM26', cls: 'nonproduct', state: 'never', valueAtRisk: 400, onHandAmt: 400 },
+        { wrin: 'beef', descr: 'Beef 10:1', cls: 'food', state: 'never', valueAtRisk: 100, onHandAmt: 100 },
+      ],
+    };
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'fry', descr: 'Fries', dolDiff: -200, cls: 'Food' }] } });
+    const rpt = formatDiagnosisReport(res, { incomplete });
+    expect(rpt).toMatch(/Finish the count to 100%/);
+    expect(rpt).toMatch(/not food-cost-consequential/i);   // paper/non-product framing
+    expect(rpt).not.toMatch(/true blanks/i);                // old blanket wording gone
+    expect(rpt).toMatch(/Food\/Condiment item.*food-cost-consequential/i); // FC = real recovery in Count integrity
+  });
 });
 
 describe('newly-lit checks consume mapped eBOS data', () => {
