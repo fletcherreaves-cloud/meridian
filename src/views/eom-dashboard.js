@@ -973,7 +973,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // full cases — "look for ~3 cases" is more actionable than "≈2,091 units" (owner req).
     const caseSzByWrin = {};
     for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)) }), history: null, caseSzByWrin, incomplete });
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)) }), history: null, caseSzByWrin, incomplete, fob: components || {} });
     // #38: load any saved verify-&-clear dispositions for this store/period so the panel shows state.
     setDispByWrin({});
     loadEomItemDisposition({ period, loc }).then(rows => {
@@ -1471,6 +1471,27 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               t.allSame
                 ? '⚠ All counts submitted at once — travel-path process not followed (in-use items may be skewed)'
                 : `⚠ Whole count submitted at once — ${t.domCount} of ${t.domCount + t.nStragglers} items @ ${t.domTm}${t.nStragglers ? `, ${t.nStragglers} added after` : ''}; travel-path not followed (in-use items may be skewed)`) : null); })(),
+
+        // FOB snapshot strip (owner req) — current period FOB $/% + all 6 components, low-profile,
+        // right where the diagnosis works. FOB% vs the store's target: red = over (worse food cost).
+        (() => {
+          const f = diag.fob || {};
+          if (f.fob == null && f.fobPct == null) return null;
+          const tgt = fobTgtOf(diag.loc);
+          const over = tgt != null && f.fobPct != null && f.fobPct > tgt;
+          const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
+          const cell = (label, val, color) => div({ style: { padding: '3px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '1px' } },
+            span({ style: { fontSize: '8px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' } }, label),
+            span({ style: { fontSize: '12px', fontWeight: 700, color: color || 'var(--text)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, val));
+          return div({ style: { marginBottom: '10px' } },
+            div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'stretch' } },
+              cell('FOB', `${f.fobPct != null ? (f.fobPct * 100).toFixed(2) + '%' : '—'} · ${$(f.fob)}`, over ? '#f87171' : '#f5bc00'),
+              tgt != null ? cell('vs Target', `${(tgt * 100).toFixed(2)}%${f.fobPct != null ? ` · ${f.fobPct >= tgt ? '+' : ''}${((f.fobPct - tgt) * 100).toFixed(2)}pp` : ''}`, over ? '#f87171' : '#4ade80') : null,
+              cell('Comp Waste', $(f.comp)), cell('Raw Waste', $(f.raw)), cell('Condiments', $(f.cond)),
+              cell('Emp Meals', $(f.emp)), cell('Stat Var', $(f.statv)), cell('Unexplained', $(f.unex)),
+              f.sales ? cell('Prod Sales', $(f.sales)) : null),
+            f.asOf ? div({ style: { fontSize: '9px', color: 'var(--text3)', marginTop: '3px' } }, `FOB as of ${f.asOf} · MTD, dollar-weighted`) : null);
+        })(),
 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
         // Rendered markdown (tables, tiers, chips). Copy/Print use the raw text.
