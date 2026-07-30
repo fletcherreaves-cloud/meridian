@@ -631,7 +631,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   L.push('| Once the EOM count is verified | One-off | Recurring (see pattern chips) |', '|---|---|---|');
   L.push('| **Real loss** | Locked — note it, move on. No EOM recovery. | Locked this period, but **chase the cause** (portion/yield/theft/process) — it comes back next month. |');
   L.push('| **Count artifact** | Noise — it self-corrected; coach count discipline. | Early count not re-counted at EOM → **fixable**: get a real count now (protects next month\'s opening). |');
-  L.push('_"Don\'t chase rabbits at EOM" applies to the top-left only. The value is separating a locked one-off (drop it) from a recurring loss (fix the cause) and from a still-fixable count (recount)._', '');
+  L.push('_"Don\'t chase rabbits at EOM" applies to just one cell — a **one-off real loss** (top-left: already locked, nothing to recover). The other three all deserve action. The value is separating that locked one-off (drop it) from a recurring loss (fix the cause) and from a still-fixable count (recount)._', '');
 
   // ── EARLIER-COUNT CONTEXT — reframed as an ACCURACY/PERFORMANCE signal, not a $ recovery (owner
   // 2026-07-30, grounded in the telescoping math). Mid-cycle counts wash out of the final EOM number

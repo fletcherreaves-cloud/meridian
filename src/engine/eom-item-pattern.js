@@ -169,12 +169,25 @@ export function scanCountReliability(varRows = [], { periodsAsc = [], tolerance 
       if ((it.series || []).length < 2) continue;   // need ≥2 periods to judge consistency
       nItems++;
       const ids = new Set(classifyItemPattern(it.series, { tolerance }).chips.map(c => c.id));
-      if (ids.has('inconsistent-count')) { nInconsistent++; worst.push({ wrin, descr: it.descr, cls: it.cls }); }
-      else if (ids.has('fluctuating')) nFluct++;
+      if (ids.has('inconsistent-count')) {
+        nInconsistent++;
+        // Supporting facts: the swing that hurt the grade (biggest over → biggest short) + the
+        // per-period $ series, so the UI can SHOW why the store is graded down, not just assert it.
+        const s = it.series;
+        let hi = s[0], lo = s[0];
+        for (const p of s) { if (p.dol > hi.dol) hi = p; if (p.dol < lo.dol) lo = p; }
+        worst.push({
+          wrin, descr: it.descr, cls: it.cls,
+          swingHi: hi.dol, swingHiP: hi.period, swingLo: lo.dol, swingLoP: lo.period,
+          swing: Math.abs((hi.dol || 0) - (lo.dol || 0)),
+          series: s.map(p => ({ period: p.period, dol: p.dol })),
+        });
+      } else if (ids.has('fluctuating')) nFluct++;
     }
     if (nItems < minItems) continue;                 // too few items to score meaningfully
     const penalty = nInconsistent + nFluct * 0.5;
     const score = Math.round(Math.max(0, nItems - penalty) / nItems * 100);
+    worst.sort((a, b) => (b.swing || 0) - (a.swing || 0)); // biggest swing (most supporting evidence) first
     out.push({ loc, score, grade: gradeOf(score), nItems, nInconsistent, nFluct, worst: worst.slice(0, 8) });
   }
   out.sort((a, b) => a.score - b.score);             // least reliable first — where to coach
