@@ -31,6 +31,7 @@
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
+import { withRetry } from './_retry.mjs';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
   mapWasteEvents, mapTransferLines, mapRawItemHistory,
@@ -231,9 +232,10 @@ async function upsert(table, rows, onConflict) {
   if (!rows.length) return 0;
   const CHUNK = 500; let saved = 0;
   for (let i = 0; i < rows.length; i += CHUNK) {
-    const { error } = await supabase.from(table).upsert(rows.slice(i, i + CHUNK), { onConflict });
+    const chunk = rows.slice(i, i + CHUNK);
+    const { error } = await withRetry(() => supabase.from(table).upsert(chunk, { onConflict }), { label: `${table} upsert` });
     if (error) console.warn(`[${table}] upsert error:`, error.message);
-    else saved += Math.min(CHUNK, rows.length - i);
+    else saved += chunk.length;
   }
   return saved;
 }

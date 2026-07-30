@@ -27,6 +27,7 @@
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
+import { withRetry } from './_retry.mjs';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_EBOS_DAYS_BACK   || '900', 10);
@@ -351,7 +352,7 @@ async function runWithToken(token, startDate, endDate) {
   const flush = async () => {
     if (!buffer.length) return;
     const batch = buffer.splice(0);
-    const { error } = await supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' });
+    const { error } = await withRetry(() => supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' }), { label: 'qsr_ebos_daily upsert' });
     if (error) console.error('[supabase] upsert error:', error.message);
     else totalSaved += batch.length;
   };
@@ -412,7 +413,7 @@ async function main() {
   let totalSaved = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const batch = rows.slice(i, i + 500);
-    const { error } = await supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' });
+    const { error } = await withRetry(() => supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' }), { label: 'qsr_ebos_daily upsert' });
     if (error) console.error('[supabase] upsert error:', error.message);
     else totalSaved += batch.length;
   }

@@ -19,6 +19,7 @@
 //   QSRSOFT_DAR_DEBUG       — set to '1' for verbose logging
 
 import { createClient } from '@supabase/supabase-js';
+import { withRetry } from './_retry.mjs';
 
 const DAR_BASE  = 'https://api.reports.myqsrsoft.com';
 const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -180,9 +181,9 @@ async function upsertBatch(records) {
   let total = 0;
   for (let i = 0; i < records.length; i += SIZE) {
     const batch = records.slice(i, i + SIZE);
-    const { error } = await supabase
-      .from('qsr_daily_activity')
-      .upsert(batch, { onConflict: 'loc,dt,hour_slot' });
+    const { error } = await withRetry(
+      () => supabase.from('qsr_daily_activity').upsert(batch, { onConflict: 'loc,dt,hour_slot' }),
+      { label: 'qsr_daily_activity upsert' });
     if (error) throw error;
     total += batch.length;
   }
