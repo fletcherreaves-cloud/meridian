@@ -1443,6 +1443,20 @@ export async function loadDtHistory(days = 90) {
 
 // ── eBOS monthly op supplies by store ────────────────────────────────────────
 // Returns { [loc]: totalOps } where loc is the unpadded NSN string, for a given month.
+// Self-serve beverage-tower flag per store (integrity #47 — the fountain-yield exemption). Reads
+// store_vlh_config.in_store ('self_serve' vs 'crew_pour'); returns a Set of normalized (unpadded)
+// locs that have a self-serve tower. Egress-minimal (2 columns). Empty/failed → empty set (no
+// suppression) so we never HIDE a real loss because config wasn't loaded.
+export async function loadSelfServeTowerLocs() {
+  if (!supabase) return new Set();
+  try {
+    const { data, error } = await supabase.from('store_vlh_config').select('loc,in_store');
+    if (error) { console.warn('[Meridian] loadSelfServeTowerLocs:', error.message); return new Set(); }
+    const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+    return new Set((data || []).filter(r => r.in_store === 'self_serve').map(r => norm(r.loc)));
+  } catch (e) { console.warn('[Meridian] loadSelfServeTowerLocs:', e?.message || e); return new Set(); }
+}
+
 export async function loadEbosMonthlyByStore(year, month) {
   if (!supabase) return {};
   const y = String(year), m = String(month).padStart(2, '0');
@@ -1781,6 +1795,40 @@ export async function loadDailySales(days = 120) {
 // fresh instead of device-local IDB. All fail soft to [] (e.g. table not yet
 // created), preserving the prior IDB behavior.
 const _mkDate = (dt) => new Date(dt + 'T00:00:00');
+
+// ── Operations Report streams (#37) — the store-daily JSONB tables from qsrsoft-ops-pull.mjs.
+// Each row's `metrics` JSONB (snake_cased fields incl ly_/ybl_) is spread flat onto the row, so
+// consumers read { loc, date, discount_amt, treds_after_qty, over_time_total_hours, … } directly.
+// daysBack bounds egress. Return [] when the table isn't created yet (fails soft).
+async function _loadOpsTable(table, daysBack, extra) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const iso = cutoff.toISOString().slice(0, 10);
+  try {
+    const data = await fetchAll((from, to) => supabase.from(table).select('*')
+      .gte('dt', iso).order('dt', { ascending: false }).range(from, to));
+    return (data || []).map(r => ({
+      loc: r.loc, date: new Date(r.dt + 'T00:00:00'),
+      ...(r.metrics || {}), ...(r.needed || {}),
+      ...(r.time_slice != null ? { timeSlice: r.time_slice } : {}),
+    }));
+  } catch (e) { console.warn(`[${table}] load skipped:`, e?.message || e); return []; }
+}
+// Controls — also derives discPct = discount $ ÷ net sales (reconciled to the report:
+// 174.15/10076.96 = 1.73% for 3708 2026-07-29). T-Red % denominators are left for a
+// reconciliation pass (qty/amt are exact and already flat on the row).
+export const loadOpsCashSheet = async (d = 45) => {
+  const rows = await _loadOpsTable('qsr_cash_sheet', d);
+  return rows.map(r => ({
+    ...r,
+    discPct: (r.net_sales_amt > 0 && r.discount_amt != null) ? r.discount_amt / r.net_sales_amt : null,
+    mealDiscAmt: (r.emp_meal_discount_amt || 0) + (r.mgr_meal_discount_amt || 0),
+  }));
+};
+export const loadOpsLaborSummary = (d = 45) => _loadOpsTable('qsr_labor_summary', d);  // OT + crew + needed hrs
+export const loadOpsServiceStats = (d = 45) => _loadOpsTable('qsr_service_stats', d);  // CTP/OEPE/DT/MFY/KVS/RTP
+export const loadOpsSalesMix     = (d = 45) => _loadOpsTable('qsr_sales_mix', d);      // channel sales + ly + ybl
+export const loadOpsPeaksSales   = (d = 45) => _loadOpsTable('qsr_peaks_sales', d);    // 3 Peaks daypart sales
 
 export async function loadGlimpse(daysBack = 45) {
   if (!supabase) return [];
@@ -2451,19 +2499,33 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
 // (which items are chronically High-Variance / Loss-Forming across ALL stores over a past window).
 // On-demand only (explicit "Run scan" button) — this reads many rows, so it must never auto-run.
 // Minimal columns to keep the egress bounded; optional `locs` narrows to the current filter.
+// Session cache for the variance-history pull (egress guard, task #20). The three integrity scans
+// (Chronic / Reliability / Rubber-band) request the SAME periods every run; without this, running
+// all three = 3× the multi-month fetch, and re-opening a modal re-pulls. Cache the FULL period pull
+// keyed by the sorted period set (loc filtering is applied client-side after), TTL 5 min. Cleared
+// on any variance write. This alone removes most of the egress from the integrity features.
+const _varHistCache = new Map(); // periodsKey -> { at, rows }
+const _VARHIST_TTL = 5 * 60 * 1000;
+export function clearVarianceHistoryCache() { _varHistCache.clear(); }
 export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = {}) {
   if (!supabase || !periods.length) return [];
-  const locSet = locs && locs.length ? new Set(locs.map(String)) : null;
-  const data = await fetchAll((from, to) => {
-    let q = supabase.from('qsr_variance_stat')
-      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to);
-    return q;
-  });
-  const rows = (data || []).map(r => ({
-    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
-    variance: r.variance, dolDiff: r.dol_diff,
-  }));
-  return locSet ? rows.filter(r => locSet.has(String(r.loc))) : rows;
+  const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+  const locSet = locs && locs.length ? new Set(locs.map(norm)) : null;
+  const key = [...periods].sort().join(',');
+  const hit = _varHistCache.get(key);
+  let rows;
+  if (hit && (Date.now() - hit.at) < _VARHIST_TTL) {
+    rows = hit.rows;
+  } else {
+    const data = await fetchAll((from, to) => supabase.from('qsr_variance_stat')
+      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to));
+    rows = (data || []).map(r => ({
+      loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+      variance: r.variance, dolDiff: r.dol_diff,
+    }));
+    _varHistCache.set(key, { at: Date.now(), rows });
+  }
+  return locSet ? rows.filter(r => locSet.has(norm(r.loc))) : rows;
 }
 
 // ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────
@@ -2645,6 +2707,36 @@ export async function loadEomCountStatus({ period } = {}) {
     commsStatus: r.comms_status, commsRecipient: r.comms_recipient, commsSentAt: r.comms_sent_at,
     commsNote: r.comms_note, fobPct: r.fob_pct, totalFcPct: r.total_fc_pct, updatedAt: r.updated_at,
   }));
+}
+
+// ── EOM item disposition (#38) — the verify-&-clear decision per obsolete/inactive item ──
+export async function saveEomItemDisposition(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const up = rows.map(r => ({
+    loc: String(r.loc), period: String(r.period), wrin: String(r.wrin),
+    disposition: r.disposition ?? null, cls: r.cls ?? null, descr: r.descr ?? null,
+    on_hand_amt: r.onHandAmt ?? r.on_hand_amt ?? null, note: r.note ?? null,
+    decided_at: new Date().toISOString(), decided_by: uid,
+  }));
+  const { error } = await supabase.from('eom_item_disposition').upsert(up, { onConflict: 'loc,period,wrin' });
+  if (error) { console.warn('[eom_item_disposition] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: up.length, errors: [] };
+}
+export async function loadEomItemDisposition({ period, loc } = {}) {
+  if (!supabase) return [];
+  try {
+    const data = await fetchAll((from, to) => {
+      let q = supabase.from('eom_item_disposition').select('*').range(from, to);
+      if (period) q = q.eq('period', period);
+      if (loc) q = q.eq('loc', String(loc));
+      return q;
+    });
+    return (data || []).map(r => ({
+      loc: r.loc, period: r.period, wrin: r.wrin, disposition: r.disposition, cls: r.cls,
+      descr: r.descr, onHandAmt: r.on_hand_amt, note: r.note, decidedAt: r.decided_at,
+    }));
+  } catch (e) { console.warn('[eom_item_disposition] load skipped:', e?.message || e); return []; }
 }
 
 // ── EOM notification settings (flexible jsonb) ─────────────────────────────────

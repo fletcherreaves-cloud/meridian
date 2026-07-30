@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   mapVarianceRows, mapYieldGroups, parseYieldRange, yieldBandFor, yieldStatus,
-  mapWasteEvents, summarizeWasteByManager, mapTransferLines, summarizeTransfers,
+  mapWasteEvents, summarizeWasteByManager, mapTransferLines, summarizeTransfers, flagUnmatchedTransfers,
   mapRawItemHistory,
 } from '../engine/eom-parsers.js';
 
@@ -77,6 +77,29 @@ describe('transfers', () => {
     // transfer 1 flagged (large), transfer 2 flagged (rejected)
     expect(s.flagged.map(t => t.id).sort()).toEqual([1, 2]);
     expect(s.flagged.find(t => t.id === 2).status).toBe('rejected');
+  });
+});
+
+describe('flagUnmatchedTransfers', () => {
+  const T = (loc, id, dir, cp, total, dt) => ({ loc, transferId: id, dir, counterpartyNsn: cp, transferTotal: total, dt });
+  it('flags a transfer with no mirror at the counterparty sister store', () => {
+    const lines = [
+      // A→B Out has a matching B In (counterparty A, same $, same day) → matched
+      T('0003708', 'x1', 'Out', '3709', 200, '2026-07-30'),
+      T('0003709', 'y1', 'In', '3708', 200, '2026-07-30'),
+      // A→B Out with NO mirror at B → unmatched (phantom risk)
+      T('0003708', 'x2', 'Out', '3709', 500, '2026-07-31'),
+    ];
+    const our = ['0003708', '0003709'];
+    const un = flagUnmatchedTransfers(lines, our);
+    expect(un.has('3708|x2')).toBe(true);
+    expect(un.has('3708|x1')).toBe(false);
+    expect(un.has('3709|y1')).toBe(false);
+  });
+  it('does NOT flag a transfer whose counterparty is outside our store set', () => {
+    const lines = [T('0003708', 'x9', 'Out', '9999999', 300, '2026-07-30')];
+    const un = flagUnmatchedTransfers(lines, ['0003708']);
+    expect(un.size).toBe(0);
   });
 });
 

@@ -15,6 +15,10 @@ on:
         description: 'Period to pull (YYYY-MM, default: current month)'
         required: false
         default: ''
+      backfill:
+        description: 'Backfill the last N months (current + N-1 prior) so Chronic/Reliability scans have history. Overridden by period.'
+        required: false
+        default: ''
       stores:
         description: 'Subset of NSNs (comma-separated, default: all 27)'
         required: false
@@ -54,6 +58,7 @@ jobs:
           QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
           VARIANCE_PERIOD:           ${{ github.event.inputs.period || '' }}
+          VARIANCE_BACKFILL:         ${{ github.event.inputs.backfill || '' }}
           VARIANCE_STORES:           ${{ github.event.inputs.stores || '' }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}
 

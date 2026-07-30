@@ -26,6 +26,7 @@ import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus 
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
+const _mny = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString(); // module-level $ (checks run outside formatDiagnosisReport)
 
 // Default FOB-component targets are supplied by the caller (monthly_targets); this
 // is only a floor so the check runs before targets are wired.
@@ -157,6 +158,44 @@ export const DEFAULT_CHECKS = [
     },
   },
   {
+    // Count MANIPULATION (owner integrity req #47): a store re-entering a count to NEGATE the
+    // variance it doesn't like. Legit travel-path counting (QSRSoft Inventory app, primary→service
+    // walkthrough, lock-in submits every 15-20 items under Live Inventory) yields 2-4 entries/item/
+    // day — most items live in 2-4 storage locations. MORE than that, ESPECIALLY a later entry that
+    // walks the variance back toward zero, is the tell. See memory/project-inventory-integrity-detection.
+    id: 'count-manipulation', label: 'Count manipulation — excessive same-day re-counts', order: 26, enabled: true,
+    requires: ['rawItems'], params: { maxPerDay: 4, believableDollar: 50 },
+    run: (ctx) => {
+      const max = ctx.params.maxPerDay ?? 4, believable = ctx.params.believableDollar ?? 50;
+      const out = [];
+      for (const d of (ctx.data.rawItems || [])) {
+        const counts = (d.counts || []).filter(c => c && c.dt);
+        if (counts.length <= max) continue;
+        const byDay = {};
+        for (const c of counts) { const day = String(c.dt).slice(0, 10); (byDay[day] || (byDay[day] = [])).push(c); }
+        for (const day in byDay) {
+          const dc = byDay[day].slice().sort((a, b) => String(a.dt).localeCompare(String(b.dt)));
+          if (dc.length <= max) continue;
+          const diffs = dc.map(c => Number(c.difference) || 0);
+          const firstBig = diffs.find(v => Math.abs(v) >= believable);
+          const lastDiff = diffs[diffs.length - 1];
+          // "Negate" tell: an earlier believable count exists, and a later entry walks the variance
+          // back toward zero (|last| < half of |first big|) — a re-count to erase an unfavorable result.
+          const negated = firstBig != null && Math.abs(lastDiff) < Math.abs(firstBig) * 0.5;
+          out.push(mkFinding('count-manipulation', (dc.length >= max + 2 || negated) ? SEVERITY.high : SEVERITY.medium,
+            `Excessive re-counts: ${d.descr || d.wrin}`,
+            `${dc.length} count entries on ${day} (2-${max} is normal for travel-path counting)${negated ? ` — and a later entry walked the variance from ${_mny(firstBig)} back toward ${_mny(lastDiff)}, which looks like a re-count to negate an unfavorable result` : ''}. Verify the earlier counts were believable and why it was re-entered.`,
+            Math.abs(lastDiff), { wrin: d.wrin, day, nCounts: dc.length, negated }));
+        }
+      }
+      // Cross-item pattern = intent, not a one-off correction. Bump severity to critical when the
+      // negate signal shows on 2+ items (the owner's "found on more than one item" tell).
+      const negItems = out.filter(f => f.data?.negated);
+      if (negItems.length >= 2) negItems.forEach(f => { f.severity = SEVERITY.critical; f.severityWord = sevWord(f.severity); f.detail += ` PATTERN: the same negate-the-variance move appears on ${negItems.length} items today — treat as intentional, not a correction.`; });
+      return out;
+    },
+  },
+  {
     // Waste — per-manager $ share, edited entries, disproportionate contributors.
     id: 'waste-patterns', label: 'Waste — manager/pencil-whip patterns', order: 50, enabled: true,
     requires: ['waste'], params: { shareFlag: 0.4, minTotal: 100 },
@@ -178,18 +217,89 @@ export const DEFAULT_CHECKS = [
       return out;
     },
   },
+  {
+    // Waste INFLATION (integrity #47): waste artificially spiked near EOM / on the count day to
+    // absorb a variance, OR a repeated-static value entered nightly (the "same fry waste every
+    // night" shortcut — a guess to clear the EOD prompt, not a real weigh-out). Both corrupt
+    // theoretical on-hand. See memory/project-inventory-integrity-detection.
+    id: 'waste-inflation', label: 'Waste inflation — EOM/count-day spike or static nightly value', order: 51, enabled: true,
+    requires: ['waste'], params: { spikeFactor: 2.5, minDays: 6, staticRepeats: 4, minSpike: 50 },
+    run: (ctx) => {
+      const events = (ctx.data.waste || []).filter(w => w && w.dt && Number(w.amount) > 0);
+      if (events.length < 3) return [];
+      const out = [];
+      const P = ctx.params;
+      // Daily totals across the period.
+      const byDay = {};
+      for (const w of events) { const d = String(w.dt).slice(0, 10); byDay[d] = (byDay[d] || 0) + (Number(w.amount) || 0); }
+      const days = Object.keys(byDay).sort();
+      if (days.length >= (P.minDays ?? 6)) {
+        const sorted = days.map(d => byDay[d]).sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)] || 0;
+        const factor = P.spikeFactor ?? 2.5;
+        const windowStart = countWindowStartTs(ctx.period);
+        for (const d of days) {
+          if (median <= 0 || byDay[d] < median * factor || byDay[d] < (P.minSpike ?? 50)) continue;
+          const t = Date.parse(d);
+          const nearEOM = windowStart != null && t != null && t >= windowStart;
+          out.push(mkFinding('waste-inflation', nearEOM ? SEVERITY.high : SEVERITY.medium,
+            `Waste spike: ${d}`,
+            `${_mny(byDay[d])} logged that day vs a ${_mny(median)} daily median (${(byDay[d] / median).toFixed(1)}×)${nearEOM ? ' — and it lands in the count window, exactly where waste gets inflated to absorb a variance' : ''}. Verify it was physically weighed/thrown, not entered to make a number balance.`,
+            byDay[d], { day: d, nearEOM, median }));
+        }
+      }
+      // Repeated-static value: the exact same entry amount on ≥N distinct days = a guessed/copy-paste
+      // nightly value, not a real weigh-out. "Zero is better than fake."
+      const amtDays = {};
+      for (const w of events) { const a = (Number(w.amount) || 0).toFixed(2); const d = String(w.dt).slice(0, 10); (amtDays[a] || (amtDays[a] = new Set())).add(d); }
+      const staticHits = Object.keys(amtDays)
+        .filter(a => Number(a) > 0 && amtDays[a].size >= (P.staticRepeats ?? 4))
+        .sort((a, b) => amtDays[b].size - amtDays[a].size);
+      for (const a of staticHits) {
+        const n = amtDays[a].size;
+        out.push(mkFinding('waste-inflation', SEVERITY.medium,
+          `Repeated static waste value: ${_mny(Number(a))}`,
+          `The exact same ${_mny(Number(a))} waste amount was logged on ${n} separate days — looks like a guessed/copy-paste value to clear the closing prompt, not a real weigh-out. Coach: log the real weight or leave it blank ("zero is better than fake").`,
+          Number(a) * n, { amount: Number(a), nDays: n }));
+      }
+      return out;
+    },
+  },
   { id: 'purchases-posted', label: 'Purchases — all invoices posted (none pending)', order: 60, enabled: true, requires: ['purchases'], pending: true, run: () => [] },
   {
     // Transfers — large / not-approved transfers that shift the variance picture.
-    id: 'transfers', label: 'Transfers', order: 70, enabled: true,
+    // Transfers — large / not-posted, PLUS phantom-transfer timing (integrity #47): a transfer
+    // logged inside the EOM count window is the classic move to shift inventory across the period
+    // boundary on paper. Elevate those + prompt for a signed slip on BOTH sides in the same period.
+    // (Full unmatched-side detection — a Transfer-In with no counterparty Transfer-Out — needs
+    // district-wide transfer data, not the single-store diagnosis context; tracked as future.)
+    id: 'transfers', label: 'Transfers — large / not-posted / EOM-window / unmatched', order: 70, enabled: true,
     requires: ['transfers'], params: { largeAmt: 100 },
     run: (ctx) => {
       const { flagged, netAmt } = summarizeTransfers(ctx.data.transfers || [], { largeAmt: ctx.params.largeAmt });
-      return flagged.map(t => mkFinding('transfers',
-        t.status !== 'approved' ? SEVERITY.medium : SEVERITY.info,
-        `Transfer ${t.dir} ${t.status !== 'approved' ? `(${t.status})` : ''} — store ${t.counterpartyNsn}`,
-        `$${Math.round(t.total)} on ${t.dt}${t.status !== 'approved' ? ' — NOT posted, verify' : ''} (period net $${Math.round(netAmt)})`,
-        t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn }));
+      const windowStart = countWindowStartTs(ctx.period);
+      // Unmatched-side set (integrity #47): computed district-wide upstream (dashboard) since the
+      // matching counterparty side lives at ANOTHER store; passed in as a Set of `${normLoc}|${id}`.
+      const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+      const unmatched = ctx.data.unmatchedTransfers instanceof Set ? ctx.data.unmatchedTransfers : null;
+      const myNorm = norm(ctx.store);
+      return flagged.map(t => {
+        const notPosted = t.status !== 'approved';
+        const tt = Date.parse(t.dt);
+        const boundary = windowStart != null && !Number.isNaN(tt) && tt >= windowStart;
+        const isUnmatched = !!unmatched && unmatched.has(myNorm + '|' + t.id);
+        let sev = notPosted ? (boundary ? SEVERITY.high : SEVERITY.medium)
+                            : (boundary ? SEVERITY.medium : SEVERITY.info);
+        if (isUnmatched) sev = SEVERITY.high;   // no mirror at a sister store = the strongest signal
+        const notes = [];
+        if (isUnmatched) notes.push('NO matching side found at the paired sister store — possible phantom transfer; confirm the other store logged the mirror In/Out for the same $ and date (or that both sides land in the same period)');
+        if (notPosted) notes.push('NOT posted — verify');
+        if (boundary) notes.push('logged inside the count window — the classic phantom-transfer timing; confirm a signed physical slip on BOTH stores and that the counterparty logged the matching side in the same period');
+        return mkFinding('transfers', sev,
+          `Transfer ${t.dir} ${notPosted ? `(${t.status})` : ''}${isUnmatched ? ' · UNMATCHED' : boundary ? ' · EOM-window' : ''} — store ${t.counterpartyNsn}`,
+          `${_mny(t.total)} on ${t.dt}${notes.length ? ' — ' + notes.join('; ') : ''} (period net ${_mny(netAmt)})`,
+          t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn, boundary, unmatched: isUnmatched });
+      });
     },
   },
   {
@@ -220,9 +330,86 @@ export const DEFAULT_CHECKS = [
         && ((Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01));
       if (!hits.length) return [];
       const total = hits.reduce((s, v) => s + (v.dolDiff || 0), 0);
+      const names = `${hits.map(v => v.descr).slice(0, 6).join(', ')}${hits.length > 6 ? '…' : ''}`;
+      // Self-serve beverage-tower EXEMPTION (integrity #47, owner): at stores with a dining-room
+      // self-serve tower, fountain yield runs structurally low because guests take allowed free
+      // refills we can't meter. Don't flag it as a loss — surface it as an INFO note (not an action
+      // item) so it's acknowledged + transparent, not silently dropped. Flag is per-store from VLH config.
+      if (ctx.data.selfServeTower) {
+        return [mkFinding('bib-yield', SEVERITY.info, `${hits.length} beverage item(s) short w/ zero waste — expected (self-serve tower)`,
+          `${names} — $${Math.round(Math.abs(total))} short, no waste logged. This store has a self-serve beverage tower, so low fountain yield is STRUCTURAL (free refills we can't meter), not a loss or portioning issue — not flagged. Only investigate if it's far beyond this store's usual (then check BIB connections / syrup ratios).`,
+          Math.abs(total), { items: hits.map(v => v.wrin), selfServeTower: true, exempt: true })];
+      }
       return [mkFinding('bib-yield', SEVERITY.medium, `${hits.length} beverage item(s) short with zero waste`,
-        `${hits.map(v => v.descr).slice(0, 6).join(', ')}${hits.length > 6 ? '…' : ''} — $${Math.round(Math.abs(total))} short, no waste logged. Check BIB yield settings / syrup-to-water ratios + BIB connections; recount.`,
+        `${names} — $${Math.round(Math.abs(total))} short, no waste logged. Check BIB yield settings / syrup-to-water ratios + BIB connections; recount.`,
         Math.abs(total), { items: hits.map(v => v.wrin) })];
+    },
+  },
+  {
+    // Unrealistic OVER / gain (integrity #47). A large POSITIVE variance = the item shows a gain
+    // (usage understated / more on-hand than theory). On a product that only ever depletes this is
+    // rarely legit — fries are the classic: being substantially over isn't realistic (a real surplus
+    // means customers are shorted, and they'd complain in droves). The regular bounce-back-from-a-
+    // prior-short pattern is caught by the `inconsistent-count` chronic Item Journey; here we flag
+    // the current-period magnitude. See memory/project-inventory-integrity-detection.
+    id: 'unrealistic-over', label: 'Unrealistic OVER / gain (esp. fries)', order: 47, enabled: true,
+    requires: ['variance'], params: { threshold: 75, friesThreshold: 40 },
+    run: (ctx) => {
+      const FRIES = /\b(FRIES|FRENCH FR(Y|IES)|WORLD FAMOUS FR(Y|IES)|\bFRY\b)\b/i;
+      const th = ctx.params.threshold ?? 75, fth = ctx.params.friesThreshold ?? 40;
+      const out = [];
+      for (const v of (ctx.data.variance || [])) {
+        if ((v.dolDiff || 0) <= 0) continue;
+        const isFries = FRIES.test(v.descr || '');
+        if ((v.dolDiff || 0) < (isFries ? fth : th)) continue;
+        out.push(mkFinding('unrealistic-over', isFries ? SEVERITY.high : SEVERITY.medium,
+          `Unrealistic OVER: ${v.descr}`,
+          `${_mny(v.dolDiff)} OVER (showing a gain)${isFries
+            ? ' — fries almost never run legitimately over; a genuine surplus would mean guests are being shorted (they’d complain in droves)'
+            : ' — a gain on a product that only depletes is rarely legitimate'}. Recount to confirm it isn’t masking a loss elsewhere or a portioning-down / keying error. A recurring bounce-back from a prior short is the classic tell (check the item’s Journey).`,
+          v.dolDiff, { wrin: v.wrin, isFries, dolDiff: v.dolDiff }));
+      }
+      return out;
+    },
+  },
+  {
+    // Negative ON-HAND (integrity #47, owner add 2026-07-30). A store physically cannot hold less
+    // than zero of an item. A below-zero ending count / perpetual balance = a keying error, an
+    // un-received invoice (product rung/used before its delivery was booked), or a wrong-UOM entry.
+    // Auto-flag every offending WRIN.
+    id: 'negative-onhand', label: 'Negative on-hand — physically impossible balance', order: 33, enabled: true,
+    requires: ['onHand'], params: { tol: -0.001 },
+    run: (ctx) => {
+      const tol = ctx.params.tol ?? -0.001;
+      return (ctx.data.onHand || [])
+        .filter(o => Number(o.totalUnits) < tol || Number(o.onHandAmt) < tol)
+        .map(o => {
+          const u = Number(o.totalUnits);
+          const uStr = Number.isFinite(u) ? `${u.toLocaleString()} units (${_mny(o.onHandAmt)})` : `${_mny(o.onHandAmt)}`;
+          return mkFinding('negative-onhand', SEVERITY.high,
+            `Negative on-hand: ${o.descr || o.wrin}`,
+            `Ending on-hand shows ${uStr} — below zero is physically impossible. Usually an un-received invoice (product rung/used before its delivery was booked into the system), a keying error, or a count entered against the wrong unit of measure. Book any pending invoice for this item, then recount.`,
+            Math.abs(Number(o.onHandAmt) || 0), { wrin: o.wrin, totalUnits: u, onHandAmt: Number(o.onHandAmt) });
+        });
+    },
+  },
+  {
+    // Negative actual usage = a mathematical impossibility (integrity #47, owner need-to-know #2).
+    // Actual Usage = Begin + Purchases − Ending; if it comes out < 0 the ending count is HIGHER than
+    // everything on hand plus everything received — the padding tell in its extreme form (or a
+    // mis-keyed / UOM count, e.g. inner bags entered as full cases). Auto-flag every offending WRIN.
+    id: 'negative-usage', label: 'Negative usage — impossible (padded / mis-keyed count)', order: 34, enabled: true,
+    requires: ['variance'], params: { tol: -0.001 },
+    run: (ctx) => {
+      const tol = ctx.params.tol ?? -0.001;
+      // Field name differs by source: client parser → actualUsage; Supabase loader → actUsage.
+      const usageOf = v => Number(v.actualUsage ?? v.actUsage);
+      return (ctx.data.variance || [])
+        .filter(v => usageOf(v) < tol)
+        .map(v => mkFinding('negative-usage', SEVERITY.high,
+          `Negative usage: ${v.descr}`,
+          `Actual usage computed to ${usageOf(v).toLocaleString()} (below zero) — impossible: the ending count is higher than everything on hand plus everything received this period. Almost always an over-padded ending count or a mis-keyed unit of measure (inner bags entered as full cases). Recount ${v.descr} and re-verify the ending quantity + UOM.`,
+          Math.abs(v.dolDiff || 0), { wrin: v.wrin, actualUsage: usageOf(v) }));
     },
   },
 ];
@@ -307,7 +494,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
     const haveData = (c.requires || []).every(k => data[k] != null && (!Array.isArray(data[k]) || data[k].length));
     if (!haveData || c.pending) { pending.push({ id: c.id, label: c.label, reason: c.pending ? 'awaiting data pull' : 'no data' }); continue; }
     try {
-      const got = c.run({ data, params: c.params || {}, period, asOf }) || [];
+      const got = c.run({ data, params: c.params || {}, period, asOf, store }) || [];
       got.forEach(f => { f.checkLabel = c.label; findings.push(f); });
       ran.push({ id: c.id, label: c.label, count: got.length });
     } catch (e) { ran.push({ id: c.id, label: c.label, error: String(e && e.message || e) }); }
@@ -402,6 +589,72 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     : 'recount + verify counts';
 
   const L = [`# FOB Variance Analysis — ${result.storeName || result.store} · ${result.period}`, ''];
+
+  // ── TOP 5 — DO NOW (owner req #46, focused to FOOD + CONDIMENT only per owner — the profit-driver
+  // classes worth a manager's here-and-now energy). Cut-and-dry, ranked by best chance to improve
+  // THIS cycle. Reuses the count-integrity buckets, recount-worthiness, and the portioning fingerprint.
+  const isFCcls = c => { const x = normClass(c); return x === 'food' || x === 'condiment'; };
+  const isFC = v => isFCcls(v && v.cls);
+  const clsLabel = c => ({ food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product', other: 'Other' })[normClass(c)] || 'Item';
+  const sumVR = arr => arr.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
+  const _unc = (incomplete && incomplete.uncounted) || [];
+  // Never-counted split by FOB consequence (owner 2026-07-30): Food/Condiment blanks = real
+  // "count it and recover" money; Paper/Non-Product blanks = complete the count to 100% but are
+  // NOT food-cost-consequential (mostly promo/paper) — don't frame them as a mistake or recovery.
+  const neverFC = _unc.filter(u => u.state === 'never' && isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
+  const neverOther = _unc.filter(u => u.state === 'never' && !isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
+  const doNow = [];
+  if (neverFC.length) {
+    const nv = sumVR(neverFC);
+    doNow.push({ score: 1e6 + nv, wrin: neverFC[0].wrin, text: `**Count the ${neverFC.length} never-counted Food/Condiment item${neverFC.length === 1 ? '' : 's'} before close** (~${money(nv)}) — the only true "count it and recover" money. Start with: ${neverFC.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
+  }
+  V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
+    .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
+  V.filter(v => overPortioned(v) && isFC(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
+    .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Fix portioning on ${v.descr || v.wrin}** — running ${Math.round(yieldPct(v) * 100)}% of standard yield; audit the station's recipe/portion now.` }));
+  const staleFC = _unc.filter(u => u.state === 'stale' && isFCcls(u.cls));
+  if (staleFC.length) {
+    const sv = sumVR(staleFC);
+    doNow.push({ score: 3e5 + sv, wrin: staleFC[0].wrin, text: `**Verify & clear the ${staleFC.length} obsolete/inactive Food/Condiment item${staleFC.length === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, waste to zero if it won't be used before expiration; don't let it ride into next month's opening.` });
+  }
+  const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
+  if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), wrin: topFC.wrin, text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
+
+  // ── FINISH THE COUNT (owner req 2026-07-30) — what's still open to close the location to 100%,
+  // class-aware. Food/Condiment = FOB-consequential (real recovery); Paper/Non-Product = complete
+  // for 100% but NOT food-cost-consequential (mostly promo/paper — not a mistake). Above the Top-5.
+  if (neverFC.length || neverOther.length) {
+    L.push('## 🧮 Finish the count to 100% — still needs a count', '');
+    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) left to count.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${neverFC.slice(0, 6).map(u => u.descr || u.wrin).join(', ')}${neverFC.length > 6 ? ` _+${neverFC.length - 6} more_` : ''}`);
+    else L.push('- ✅ **Food & Condiment — all counted.** No profit-driver items are missing a count.');
+    if (neverOther.length) L.push(`- **Paper / Non-Product — ${neverOther.length} item${neverOther.length === 1 ? '' : 's'} (${money(sumVR(neverOther))}) left to count.** Count these to reach 100%, but they're mostly promotional / paper — **not food-cost-consequential** (no meaningful recovery, and not a sign anything was done wrong).`);
+    L.push('_Full itemized to-count list is in Count integrity below._', '');
+  }
+
+  // ── TOP 5 — always surface five real Food/Condiment moves. Fill toward 5 from the next-best FC
+  // opportunities; if the store genuinely can't produce five, that's a WIN — celebrate it (owner).
+  if (doNow.length < 5) {
+    const used = new Set(doNow.map(d => d.wrin).filter(Boolean));
+    for (const v of V.filter(v => isFC(v) && !(recountByWrin[v.wrin] || '').startsWith('early') && !used.has(v.wrin)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff))) {
+      if (doNow.length >= 5) break;
+      used.add(v.wrin);
+      doNow.push({ score: 1e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Investigate ${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}${casesNote(v)}) — ${causeTags(v)[0] || 'recount + verify waste logging'}.` });
+    }
+  }
+  doNow.sort((a, b) => b.score - a.score);
+  if (doNow.length >= 5) {
+    L.push('## ✅ Top 5 — do these now · Food & Condiment (best shot at improving this result)', '');
+    doNow.slice(0, 5).forEach((d, i) => L.push(`${i + 1}. ${d.text}`));
+    L.push('', '_Cut-and-dry, focused on the profit-driver classes: knock these out, then **re-run the diagnosis** to see what changed. Full analysis (all classes) below._', '');
+  } else if (doNow.length) {
+    L.push(`## ✅ Do these now · Food & Condiment — only ${doNow.length}, and that's a good sign`, '');
+    doNow.forEach((d, i) => L.push(`${i + 1}. ${d.text}`));
+    L.push('', `_Fewer than 5 Food/Condiment action items surfaced — this store is running tight on the profit-driver classes. Knock ${doNow.length === 1 ? 'it' : 'them'} out, then **re-run the diagnosis.**_`, '');
+  } else {
+    L.push('## 🏆 Clean sweep — zero Food & Condiment action items', '');
+    L.push('**Nothing** actionable surfaced on the profit-driver classes this count: no never-counted Food/Condiment, nothing to recount, no portioning flags. **That is a win in itself** — the classes that drive food cost are tight and under control. Keep doing exactly what produced this result. 🎉', '');
+  }
+
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
   L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))}) · Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
 
@@ -432,15 +685,21 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   L.push('| Once the EOM count is verified | One-off | Recurring (see pattern chips) |', '|---|---|---|');
   L.push('| **Real loss** | Locked — note it, move on. No EOM recovery. | Locked this period, but **chase the cause** (portion/yield/theft/process) — it comes back next month. |');
   L.push('| **Count artifact** | Noise — it self-corrected; coach count discipline. | Early count not re-counted at EOM → **fixable**: get a real count now (protects next month\'s opening). |');
-  L.push('_"Don\'t chase rabbits at EOM" applies to the top-left only. The value is separating a locked one-off (drop it) from a recurring loss (fix the cause) and from a still-fixable count (recount)._', '');
+  L.push('_"Don\'t chase rabbits at EOM" applies to just one cell — a **one-off real loss** (top-left: already locked, nothing to recover). The other three all deserve action. The value is separating that locked one-off (drop it) from a recurring loss (fix the cause) and from a still-fixable count (recount)._', '');
 
-  // ── EARLIER-COUNT CONTEXT (quiet, rolled up) — kept for scope, de-emphasized ──
+  // ── EARLIER-COUNT CONTEXT — reframed as an ACCURACY/PERFORMANCE signal, not a $ recovery (owner
+  // 2026-07-30, grounded in the telescoping math). Mid-cycle counts wash out of the final EOM number
+  // (anchored only by the opening = prior EOM count, and this EOM count) — so they aren't this
+  // cycle's dollars. Their value is: WHERE a discrepancy first surfaced + a read on count accuracy/
+  // consistency. Caveat: with Live Inventory + counting up to 3 days pre-close, a WRONG count inside
+  // that window IS the EOM number, and any wrong count corrupts the running theoretical + can distort
+  // next month's opening. Takeaway = accuracy + consistency, not recovery. See memory/project-eom-uncounted.
   if (context.length) {
     const ctxTot = context.reduce((s, v) => s + v.dolDiff, 0);
     const mgrs = [...new Set(context.map(v => mgrByWrin[v.wrin]).filter(Boolean))];
     const top3 = context.slice(0, 3).map(v => `${v.descr || v.wrin} (${money(v.dolDiff)})`).join(' · ');
-    L.push('## 📌 Earlier-count context', '');
-    L.push(`${context.length} item${context.length === 1 ? '' : 's'} (${money(ctxTot)}) already cascaded from **early-period counts** — recounting now won't recover the dollars; fix the source counts going forward.${mgrs.length ? ` Early counts by: ${mgrs.join(', ')}.` : ''}`);
+    L.push('## 📌 Earlier-count context — accuracy signal, not this cycle\'s $', '');
+    L.push(`${context.length} item${context.length === 1 ? '' : 's'} (${money(ctxTot)}) surfaced at **early-period counts**. These **wash out of the final EOM number** (only the opening + this EOM count drive the P&L), so this is **not recoverable $** — it's a **read on count accuracy/consistency** and **where** the discrepancy first showed. Fix the *source counts going forward*: a wrong count doesn't cost this cycle, but it corrupts the running theoretical and can distort next month's opening. **Accuracy + consistency is the goal.**${mgrs.length ? ` Early counts by: ${mgrs.join(', ')}.` : ''}`);
     L.push(`_${top3}${context.length > 3 ? ` · +${context.length - 3} more` : ''}_`, '');
   }
 
@@ -470,52 +729,82 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const bs = incomplete.byState || {};
     const m = (o) => `${(o && o.n) || 0} item${((o && o.n) || 0) === 1 ? '' : 's'} (${money((o && o.value) || 0)})`;
     L.push('## 🧮 Count integrity — the "uncounted" list, explained', '');
-    if (bs.never && bs.never.n) L.push(`- **${m(bs.never)} NEVER counted** — true blanks. Count these before close (real recovery).`);
-    // Itemized TO-COUNT list — the actual never-counted products a manager must complete
-    // (owner req: surface the uncounted list in the report + SAGE, not just a hover count).
-    const neverItems = (incomplete.uncounted || []).filter(u => u.state === 'never').sort((a, b) => b.valueAtRisk - a.valueAtRisk).slice(0, 25);
-    if (neverItems.length) {
-      L.push('', '### 📝 To-count list — complete before close', '');
-      neverItems.forEach(u => L.push(`- **${u.descr || u.wrin}**${u.valueAtRisk ? ` — ~${money(u.valueAtRisk)} on hand` : ''}${u.cls ? ` · ${u.cls}` : ''}`));
-      const more = (bs.never?.n || 0) - neverItems.length;
-      if (more > 0) L.push(`- _+${more} more._`);
+    L.push('_"Uncounted" = not counted in the FINAL window. It splits three ways, and only some of it is food-cost-consequential — see each below. A large paper / promo count here is normal, not a mistake._', '');
+
+    // NEVER counted, split by FOB consequence (owner 2026-07-30): Food/Condiment = real recovery;
+    // Paper/Non-Product = complete the count to 100% but NOT food-cost money (mostly promo/paper).
+    if (neverFC.length) L.push(`- **${neverFC.length} Food/Condiment item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) not yet counted** — food-cost-consequential. Count before close to recover real dollars.`);
+    if (neverOther.length) L.push(`- **${neverOther.length} Paper / Non-Product item${neverOther.length === 1 ? '' : 's'} (${money(sumVR(neverOther))}) not yet counted** — count to reach 100%, but mostly promo / paper: **not food-cost-consequential**, and not a sign anything was done wrong.`);
+
+    // Itemized TO-COUNT table — Food/Condiment first (the money), then Paper/Non-Product.
+    const toCountRows = [...neverFC, ...neverOther].slice(0, 40);
+    if (toCountRows.length) {
+      L.push('', '### 📝 To-count list — complete the count to 100%', '');
+      L.push('| Item | WRIN | Class | On-hand $ | Food-cost? |', '|---|---|---|---:|:---:|');
+      toCountRows.forEach(u => L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${isFCcls(u.cls) ? '**Yes**' : 'no'} |`));
+      const moreN = (bs.never?.n || 0) - toCountRows.length;
+      if (moreN > 0) L.push('', `_+${moreN} more not-yet-counted item(s)._`);
     }
-    if (bs.early && bs.early.n) L.push('', `- **${m(bs.early)} counted EARLY** this period — QSRSoft already shows them counted. Recount only if the count looks *wrong*; it will **not** recover this period's dollars (they cascade). NOT "just go count it" money.`);
-    if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} OBSOLETE / DISCONTINUED / INACTIVE** — last counted a prior period; a residual on-hand is riding. **Always verify with a physical count first.** Food/condiment: if it won't be used before its expiration, waste it to zero to account for the balance, then deactivate the WRIN at a verified zero on-hand. Non-product (promo / Happy Meal items / paper): count and keep it — it may be usable (donation, local giveaway); deactivate only once it's genuinely used up and verified at zero. These inflate "value at risk" without being real count work.`);
-    // Itemized obsolete/discontinued/inactive verify-&-clear list (Notes: Durant #5985 / #38). Each
-    // gets a CLASS-AWARE direction so nobody discards usable non-product (owner req 2026-07-30):
-    // food/condiment (perishable) → verify count, waste-to-zero if it won't be used before expiration,
-    // then deactivate the WRIN at a verified zero; non-product (promo toys e.g. HM26, paper) → count
-    // & KEEP if usable (donation / local giveaway), deactivate only once genuinely at zero.
-    const perishable = (cls) => { const c = normClass(cls); return c === 'food' || c === 'condiment'; };
-    const staleItems = (incomplete.uncounted || []).filter(u => u.state === 'stale').sort((a, b) => b.valueAtRisk - a.valueAtRisk).slice(0, 15);
-    if (staleItems.length) {
-      L.push('', '### Obsolete / Discontinued / Inactive — verify & clear before close', '');
-      staleItems.forEach(u => {
-        const head = `- **${u.descr || u.wrin}** (${normClass(u.cls) || 'item'}) — on-hand ${money(u.onHandAmt)} · last counted ${u.lastCounted || '—'} → **verify & enter a count.**`;
-        const dir = perishable(u.cls)
-          ? ` If it won't be used before its expiration, **waste it to zero** (−${money(u.valueAtRisk)}) to account for the balance, then **deactivate the WRIN** at a verified zero on-hand.`
-          : ` **Keep it in inventory** if usable (donation / local giveaway) — do **not** discard. Deactivate the WRIN only once it's genuinely used up and verified at zero.`;
-        L.push(head + dir);
-      });
-      const more = (incomplete.byState?.stale?.n || 0) - staleItems.length;
-      if (more > 0) L.push(`- _+${more} more item(s)._`);
-      L.push('_Rule: always verify with a physical count first. **Food/condiment** → if it won\'t be used before expiration, waste to zero, then deactivate the WRIN at a verified zero on-hand. **Non-product** (promo, Happy Meal items, paper) → count and keep if usable (donation / local giveaway); deactivate only once genuinely at zero. Never discard usable product._');
+
+    // Counted EARLY — table (owner req 2026-07-30): WRIN + on-hand + last-counted to substantiate.
+    const earlyItems = _unc.filter(u => u.state === 'early').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
+    if (bs.early && bs.early.n) {
+      L.push('', `### ⏱ Counted EARLY this period — ${m(bs.early)}`, '');
+      L.push('_QSRSoft already shows these counted; a recount will **not** recover this period\'s dollars (they cascade). Recount only if a specific count looks wrong — this is NOT "just go count it" money._', '');
+      if (earlyItems.length) {
+        L.push('| Item | WRIN | Class | On-hand $ | Last counted |', '|---|---|---|---:|---|');
+        earlyItems.forEach(u => L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${u.lastCounted || '—'} |`));
+        const moreE = (bs.early?.n || 0) - earlyItems.length;
+        if (moreE > 0) L.push('', `_+${moreE} more counted-early item(s)._`);
+      }
+    }
+
+    // OBSOLETE / DISCONTINUED / INACTIVE — table with the class-aware action (owner req 2026-07-30).
+    const staleItems = _unc.filter(u => u.state === 'stale').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
+    if (bs.stale && bs.stale.n) {
+      L.push('', `### Obsolete / Discontinued / Inactive — verify & clear · ${m(bs.stale)}`, '');
+      L.push('_Last counted a PRIOR period; a residual on-hand is riding into next month\'s opening._', '');
+      if (staleItems.length) {
+        L.push('| Item | WRIN | Class | On-hand $ | Last counted | Action |', '|---|---|---|---:|---|---|');
+        staleItems.forEach(u => {
+          const action = isFCcls(u.cls)
+            ? `**Verify with a count first.** If it won't be used before expiration, **waste to zero** (−${money(u.valueAtRisk)}), then deactivate the WRIN at a verified zero.`
+            : `**Keep if usable** (donation / giveaway) — do not discard; deactivate only once genuinely used up. No count/waste verification needed.`;
+          L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt)} | ${u.lastCounted || '—'} | ${action} |`);
+        });
+        const moreS = (bs.stale?.n || 0) - staleItems.length;
+        if (moreS > 0) L.push('', `_+${moreS} more item(s)._`);
+      }
+      L.push('', '_Rule: **Food / Condiment** → verify with a physical count, then waste to zero if it won\'t be used before expiration and deactivate at a verified zero. **Paper / Non-Product** (promo, Happy Meal items, paper) → keep if usable; deactivate only once used up — no count/waste verification needed. Never discard usable product._');
     }
     L.push('');
   }
 
-  // ── Reference — full detail (present but demoted below the manager summary) ──
-  L.push('## Reference — full detail', '', `_All ${V.length} items ≥ ±$${threshold}, ranked._`, '');
+  // ── Reference — full detail ──. Food + Condiment lead (the profit-driver classes the owner
+  // works first); Paper / Non-Product are broken out into their own section below so they're
+  // available but not cluttering the here-and-now (owner req 2026-07-30). Class column added.
   const anyCases = V.some(v => casesOf(v) != null);
-  if (anyCases) {
-    L.push('| # | Item | WRIN | $ Var | Qty Var | Cases | Dir |', '|--:|------|------|------:|--------:|------:|-----|');
-    V.forEach((v, i) => { const c = casesOf(v); L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${c != null ? c.toFixed(1) : '—'} | ${dir(v)} |`); });
-  } else {
-    L.push('| # | Item | WRIN | $ Var | Qty Var | Dir |', '|--:|------|------|------:|--------:|-----|');
-    V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
+  const isFoodCond = v => { const c = normClass(v.cls); return c === 'food' || c === 'condiment'; };
+  const foodCond = V.filter(isFoodCond);
+  const otherCls = V.filter(v => !isFoodCond(v));
+  const detailTable = (items) => {
+    if (!items.length) { L.push('_None in this group._', ''); return; }
+    if (anyCases) {
+      L.push('| # | Item | Class | WRIN | $ Var | Qty Var | Cases | Dir |', '|--:|------|-------|------|------:|--------:|------:|-----|');
+      items.forEach((v, i) => { const c = casesOf(v); L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${normClass(v.cls) || '—'} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${c != null ? c.toFixed(1) : '—'} | ${dir(v)} |`); });
+    } else {
+      L.push('| # | Item | Class | WRIN | $ Var | Qty Var | Dir |', '|--:|------|-------|------|------:|--------:|-----|');
+      items.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${normClass(v.cls) || '—'} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
+    }
+    L.push('');
+  };
+  L.push('## Reference — full detail', '', `_Food + Condiment (${foodCond.length}) — the profit-driver classes, shown first. Paper / Non-Product broken out below._`, '');
+  detailTable(foodCond);
+  if (otherCls.length) {
+    L.push(`### Other classes — Paper / Non-Product (${otherCls.length})`, '');
+    L.push('_Fine print: Food + Condiment (≈22–29% of revenue) is where variance/waste attention moves the P&L; Paper / Non-Product is ≈3–4% and rarely a real opportunity. Raw paper is seldom wasted on its own — it\'s normally accounted for inside a completed-product waste — so treat these as reference, not an action area unless a number is clearly out of line._', '');
+    detailTable(otherCls);
   }
-  L.push('');
   const tier = (label, lo, hi) => {
     const items = focus.filter(v => { const a = Math.abs(v.dolDiff); return a >= lo && (hi == null || a < hi); });
     if (!items.length) return;

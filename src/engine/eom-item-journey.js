@@ -42,6 +42,71 @@ const tmMin = (tm) => {
   return h * 60 + mm;
 };
 
+// Count-timing metric (owner req #45): from a store's raw-item count history, when did the store's
+// EOM count BEGIN and END, and how long did it take. began = earliest count-event timestamp across
+// all items, ended = latest, duration = the span. Also nDays (a multi-day count) + nCounts.
+// `rawItems` = [mapRawItemHistory()]. Returns null when no timestamped count events exist.
+export function computeCountTiming(rawItems = []) {
+  const stamps = [];
+  for (const it of (rawItems || [])) {
+    for (const h of (it.history || [])) {
+      if (!h.isCount) continue;
+      const dayT = ts(h.dt); if (dayT == null) continue;
+      const hasTime = !!String(h.tm || '').trim();
+      stamps.push({ when: dayT + tmMin(h.tm) * 60000, dayT, dt: h.dt, tm: h.tm, hasTime });
+    }
+  }
+  if (!stamps.length) return null;
+  // Owner (2026-07-30): the duration is the LAST count DATE only — first recorded time → last
+  // recorded time that day. Mid-cycle count days telescope out of the EOM result; the meaningful
+  // count is the final one, and its start→end is the actual time spent counting.
+  const lastDayT = Math.max(...stamps.map(s => s.dayT));
+  const onLast = stamps.filter(s => s.dayT === lastDayT).sort((a, b) => a.when - b.when);
+  const b = onLast[0], e = onLast[onLast.length - 1];
+  const hasTimes = onLast.some(s => s.hasTime);
+  const timed = onLast.filter(s => s.hasTime);
+  const byTime = new Map();
+  for (const s of timed) byTime.set(s.when, (byTime.get(s.when) || 0) + 1);
+  const nDistinctTimes = byTime.size;
+  let domCount = 0, domWhen = null;
+  for (const [when, c] of byTime) if (c > domCount) { domCount = c; domWhen = when; }
+  const domFrac = timed.length ? domCount / timed.length : 0;
+  const nStragglers = timed.length - domCount;   // items submitted OUTSIDE the bulk instant
+  const domTm = domWhen != null ? (timed.find(s => s.when === domWhen)?.tm || null) : null;
+  const allSame = hasTimes && nDistinctTimes === 1;
+  // Bulk-submit tell (owner integrity 2026-07-30, refined for Ada 6972): the manager submitted the
+  // whole count at ONE instant instead of the lock-in-as-you-go travel path. Fires when either every
+  // count shares one timestamp, OR a single timestamp DOMINATES a real-sized count (>=80%) with only
+  // a few stragglers added after (they bulk-submitted, then noticed a couple missed items and added
+  // them later — e.g. Ada: 28 items @ 11:43, McCrispy Strips + Lemons @ 12:16). Both skew variance
+  // for items in active use during the count. See project-inventory-integrity-detection.
+  const bulkSubmit = hasTimes && (
+    (onLast.length >= 2 && allSame) ||
+    (timed.length >= 5 && domFrac >= 0.8 && !allSame)
+  );
+  return {
+    countDate: b.dt,
+    began: b.when, beganTm: b.tm,
+    ended: e.when, endedTm: e.tm,
+    durationMs: Math.max(0, e.when - b.when),
+    nCountsLastDay: onLast.length,
+    nCountsTotal: stamps.length,
+    nDays: new Set(stamps.map(s => s.dt)).size,
+    nDistinctTimes,
+    bulkSubmit, allSame,
+    domCount, domFrac, domTm, nStragglers,   // dominant-timestamp detail for messaging
+    hasTimes,   // false → date only (no time recorded, duration unknown)
+  };
+}
+
+// "2h 15m 30s" / "45m 0s" from a millisecond duration (count-duration display; H:M:S per owner).
+export function fmtDurationHMS(ms) {
+  if (ms == null) return '—';
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  return h ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+}
+
 // Build the journey for one item. `detail` = a mapRawItemHistory() result.
 export function buildItemJourney(detail = {}, { period, asOf } = {}) {
   const windowStart = period ? countWindowStart(period).getTime() : null;

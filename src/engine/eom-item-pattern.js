@@ -149,6 +149,94 @@ export function scanChronicOffenders(varRows = [], { periodsAsc = [], tolerance 
   return out;
 }
 
+// Count Reliability (owner north-star 2026-07-30: "accuracy + consistency is king"). Per store, over
+// a look-back window, what fraction of its multi-period items count CONSISTENTLY — i.e. WITHOUT a
+// count-error signature. An `inconsistent-count` pattern (a large sign-flip swing = over-count then a
+// correction, or a missing count) is the direct count-error signal → full penalty; `fluctuating` is a
+// softer swing → half penalty. REAL losses (`high-variance` / `loss-forming`) are NOT held against
+// reliability — those are genuine usage/loss, not counting errors. Least-reliable stores rank first
+// (where to coach). `varRows` = [{loc,period,wrin,descr,dolDiff,variance}].
+export function scanCountReliability(varRows = [], { periodsAsc = [], tolerance = 50, minItems = 3 } = {}) {
+  const byLoc = new Map();
+  for (const r of varRows) { const L = String(r.loc); (byLoc.get(L) || byLoc.set(L, []).get(L)).push(r); }
+  const gradeOf = s => s >= 95 ? 'A' : s >= 88 ? 'B' : s >= 78 ? 'C' : s >= 68 ? 'D' : 'F';
+  const out = [];
+  for (const [loc, rows] of byLoc) {
+    const series = buildItemSeries(rows, { periodsAsc });
+    let nItems = 0, nInconsistent = 0, nFluct = 0;
+    const worst = [];
+    for (const [wrin, it] of series) {
+      if ((it.series || []).length < 2) continue;   // need ≥2 periods to judge consistency
+      nItems++;
+      const ids = new Set(classifyItemPattern(it.series, { tolerance }).chips.map(c => c.id));
+      if (ids.has('inconsistent-count')) {
+        nInconsistent++;
+        // Supporting facts: the swing that hurt the grade (biggest over → biggest short) + the
+        // per-period $ series, so the UI can SHOW why the store is graded down, not just assert it.
+        const s = it.series;
+        let hi = s[0], lo = s[0];
+        for (const p of s) { if (p.dol > hi.dol) hi = p; if (p.dol < lo.dol) lo = p; }
+        worst.push({
+          wrin, descr: it.descr, cls: it.cls,
+          swingHi: hi.dol, swingHiP: hi.period, swingLo: lo.dol, swingLoP: lo.period,
+          swing: Math.abs((hi.dol || 0) - (lo.dol || 0)),
+          series: s.map(p => ({ period: p.period, dol: p.dol })),
+        });
+      } else if (ids.has('fluctuating')) nFluct++;
+    }
+    if (nItems < minItems) continue;                 // too few items to score meaningfully
+    const penalty = nInconsistent + nFluct * 0.5;
+    const score = Math.round(Math.max(0, nItems - penalty) / nItems * 100);
+    worst.sort((a, b) => (b.swing || 0) - (a.swing || 0)); // biggest swing (most supporting evidence) first
+    out.push({ loc, score, grade: gradeOf(score), nItems, nInconsistent, nFluct, worst: worst.slice(0, 8) });
+  }
+  out.sort((a, b) => a.score - b.score);             // least reliable first — where to coach
+  return out;
+}
+
+// ── Rubber-band scan (integrity #47, the "variance collapse" catch) ───────────
+// The padding-compounds-then-explodes pattern. An item that runs OVER (a gain = usage understated
+// = inventory padded, a "loan against next month") for >=2 periods and then SNAPS to a large SHORT
+// has had its accumulated padding catch up — the classic single-month blow-up. Directional cousin
+// of `inconsistent-count` (which is sign-agnostic): rubber-band specifically means over-run → short.
+// Needs multi-period history (reuses the same district variance pull as Chronic/Reliability).
+// Per store: the items showing the snap, worst (biggest snap) first; stores ranked by total snap $.
+export function scanRubberBand(varRows = [], { periodsAsc = [], tolerance = 50, minPeriods = 3, minOverRun = 2 } = {}) {
+  const byLoc = new Map();
+  for (const r of varRows) { const L = String(r.loc); (byLoc.get(L) || byLoc.set(L, []).get(L)).push(r); }
+  const out = [];
+  for (const [loc, rows] of byLoc) {
+    const series = buildItemSeries(rows, { periodsAsc });
+    const items = [];
+    for (const [wrin, it] of series) {
+      const s = it.series;
+      if (s.length < minPeriods) continue;
+      // Walk oldest→newest tracking the current OVER run; when a SHORT lands after an over-run of
+      // >= minOverRun, that's a snap — recovered = min(short magnitude, accumulated over).
+      let runN = 0, runSum = 0, runFrom = null, best = null;
+      for (const p of s) {
+        const d = p.dol || 0;
+        if (d > tolerance) { if (!runN) runFrom = p.period; runN++; runSum += d; }
+        else {
+          if (d < -tolerance && runN >= minOverRun) {
+            const snap = Math.min(Math.abs(d), runSum);
+            if (!best || snap > best.snap) best = { snap, overSum: runSum, overN: runN, from: runFrom, to: p.period, shortDol: d };
+          }
+          runN = 0; runSum = 0; runFrom = null;
+        }
+      }
+      if (best && best.snap >= tolerance * 2) {
+        items.push({ wrin, descr: it.descr, cls: it.cls, ...best, series: s.map(p => ({ period: p.period, dol: p.dol })) });
+      }
+    }
+    if (!items.length) continue;
+    items.sort((a, b) => b.snap - a.snap);
+    out.push({ loc, nItems: items.length, totalSnap: items.reduce((x, i) => x + i.snap, 0), worst: items.slice(0, 8) });
+  }
+  out.sort((a, b) => b.totalSnap - a.totalSnap);      // biggest rubber-band exposure first
+  return out;
+}
+
 function fmtDol(v) { const s = v < 0 ? '-' : ''; return `${s}$${Math.abs(Math.round(v)).toLocaleString()}`; }
 function fmt0(v) { return `$${Math.round(v).toLocaleString()}`; }
 

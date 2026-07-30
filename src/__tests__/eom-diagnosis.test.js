@@ -65,6 +65,29 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).toMatch(/Beef/);
     expect(rpt).toMatch(/awaiting data/i);
   });
+
+  it('Top-5 celebrates a clean sweep when there are no Food/Condiment opportunities', () => {
+    // Only a Paper short — not a profit-driver class, so nothing lands in the Food/Condiment Top-5.
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'p', descr: 'Napkins', dolDiff: -300, cls: 'Paper' }] } });
+    const rpt = formatDiagnosisReport(res);
+    expect(rpt).toMatch(/Clean sweep|win in itself/i);
+  });
+
+  it('Finish-the-count + Count-integrity frame Paper/Non-Product as NOT food-cost-consequential', () => {
+    const incomplete = {
+      uncountedCount: 2, byState: { never: { n: 2, value: 500 } },
+      uncounted: [
+        { wrin: 'hm26', descr: 'Happy Meal Toy HM26', cls: 'nonproduct', state: 'never', valueAtRisk: 400, onHandAmt: 400 },
+        { wrin: 'beef', descr: 'Beef 10:1', cls: 'food', state: 'never', valueAtRisk: 100, onHandAmt: 100 },
+      ],
+    };
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'fry', descr: 'Fries', dolDiff: -200, cls: 'Food' }] } });
+    const rpt = formatDiagnosisReport(res, { incomplete });
+    expect(rpt).toMatch(/Finish the count to 100%/);
+    expect(rpt).toMatch(/not food-cost-consequential/i);   // paper/non-product framing
+    expect(rpt).not.toMatch(/true blanks/i);                // old blanket wording gone
+    expect(rpt).toMatch(/Food\/Condiment item.*food-cost-consequential/i); // FC = real recovery in Count integrity
+  });
 });
 
 describe('newly-lit checks consume mapped eBOS data', () => {
@@ -118,6 +141,121 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(flags[0].data.cases).toBe(3);
     expect(flags[0].severity).toBe(SEVERITY.info); // a verify nudge, not a hard claim
     expect(flags[0].detail).toMatch(/case-vs-each/i);
+  });
+
+  it('count-manipulation flags >4 same-day counts + the negate-the-variance tell', () => {
+    const rawItems = [{
+      wrin: 'w1', descr: 'Beef', counts: [
+        { dt: '2026-07-29T08:00:00', difference: -180, isCount: true },
+        { dt: '2026-07-29T08:30:00', difference: -175, isCount: true },
+        { dt: '2026-07-29T09:00:00', difference: -170, isCount: true },
+        { dt: '2026-07-29T09:30:00', difference: -160, isCount: true },
+        { dt: '2026-07-29T10:00:00', difference: -20, isCount: true },   // 5th entry walks -180 → -20
+      ],
+    }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { rawItems } }).findings.find(x => x.checkId === 'count-manipulation');
+    expect(f).toBeTruthy();
+    expect(f.data.nCounts).toBe(5);
+    expect(f.data.negated).toBe(true);
+    expect(f.detail).toMatch(/negate/i);
+  });
+
+  it('count-manipulation does NOT flag legit travel-path counting (2-4 entries)', () => {
+    const rawItems = [{ wrin: 'w1', descr: 'Beef', counts: [
+      { dt: '2026-07-29T08:00:00', difference: -50, isCount: true },
+      { dt: '2026-07-29T08:20:00', difference: -40, isCount: true },
+      { dt: '2026-07-29T08:40:00', difference: -30, isCount: true },
+    ] }];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { rawItems } });
+    expect(res.findings.some(x => x.checkId === 'count-manipulation')).toBe(false);
+  });
+
+  it('waste-inflation flags a count-window spike vs the daily median', () => {
+    const waste = [];
+    for (const d of ['01','02','03','04','05','06','07','08','09','10']) waste.push({ dt: `2026-07-${d}`, amount: 20 });
+    waste.push({ dt: '2026-07-30', amount: 400 }); // EOM day, 20× the median
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.find(x => x.checkId === 'waste-inflation' && x.data.day === '2026-07-30');
+    expect(f).toBeTruthy();
+    expect(f.data.nearEOM).toBe(true);
+    expect(f.severity).toBe(SEVERITY.high);
+  });
+
+  it('waste-inflation flags a repeated-static nightly value', () => {
+    const waste = ['10','11','12','13','14','15'].map(d => ({ dt: `2026-07-${d}`, amount: 12.5 }));
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.find(x => x.checkId === 'waste-inflation' && x.data.amount === 12.5);
+    expect(f).toBeTruthy();
+    expect(f.data.nDays).toBe(6);
+    expect(f.detail).toMatch(/static|copy-paste|guessed/i);
+  });
+
+  it('waste-inflation stays silent on a normal, varied waste log', () => {
+    const waste = ['10','11','12','13','14','15','16'].map((d, i) => ({ dt: `2026-07-${d}`, amount: 18 + i }));
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.some(x => x.checkId === 'waste-inflation')).toBe(false);
+  });
+
+  it('unrealistic-over flags a large fries OVER as HIGH', () => {
+    const variance = [{ wrin: 'w1', descr: 'World Famous Fries', dolDiff: 120 }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.find(x => x.checkId === 'unrealistic-over');
+    expect(f).toBeTruthy();
+    expect(f.data.isFries).toBe(true);
+    expect(f.severity).toBe(SEVERITY.high);
+  });
+
+  it('unrealistic-over ignores shorts (negative dolDiff) and small gains', () => {
+    const variance = [
+      { wrin: 'w1', descr: 'Beef Patty', dolDiff: -300 }, // short → not this check
+      { wrin: 'w2', descr: 'Ketchup', dolDiff: 20 },       // small gain → under threshold
+    ];
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'unrealistic-over')).toBe(false);
+  });
+
+  it('bib-yield exempts self-serve-tower stores (info, not a medium loss)', () => {
+    const variance = [{ wrin: 'coke', descr: 'COKE BIB', dolDiff: -200, rawWaste: 0, compWaste: 0 }];
+    const flagged = runDiagnosis({ store: 's', period: '2026-07', data: { variance, selfServeTower: false } }).findings.find(x => x.checkId === 'bib-yield');
+    expect(flagged.severity).toBe(SEVERITY.medium);
+    const exempt = runDiagnosis({ store: 's', period: '2026-07', data: { variance, selfServeTower: true } }).findings.find(x => x.checkId === 'bib-yield');
+    expect(exempt.severity).toBe(SEVERITY.info);   // acknowledged, not an action item
+    expect(exempt.data.exempt).toBe(true);
+    expect(exempt.detail).toMatch(/self-serve|structural|free refills/i);
+  });
+
+  it('transfers flags an EOM-count-window transfer as a phantom-transfer risk', () => {
+    const transfers = [
+      { id: 'A', dir: 'In', status: 'approved', dt: '2026-07-30', lineAmt: 200, transferTotal: 200, counterpartyNsn: '3708', cls: 'Food' }, // inside count window
+      { id: 'B', dir: 'Out', status: 'approved', dt: '2026-07-05', lineAmt: 300, transferTotal: 300, counterpartyNsn: '3709', cls: 'Food' }, // mid-month
+    ];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { transfers } }).findings.filter(x => x.checkId === 'transfers');
+    const A = res.find(f => f.data.transferId === 'A'), B = res.find(f => f.data.transferId === 'B');
+    expect(A.data.boundary).toBe(true);
+    expect(A.severity).toBe(SEVERITY.medium);
+    expect(A.detail).toMatch(/phantom-transfer/i);
+    expect(B.data.boundary).toBe(false);
+  });
+
+  it('negative-onhand flags an impossible below-zero balance as HIGH', () => {
+    const onHand = [{ wrin: 'w1', descr: 'Big Mac Sauce', totalUnits: -6, onHandAmt: -48 }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { onHand } }).findings.find(x => x.checkId === 'negative-onhand');
+    expect(f).toBeTruthy();
+    expect(f.severity).toBe(SEVERITY.high);
+    expect(f.data.totalUnits).toBe(-6);
+  });
+
+  it('negative-onhand ignores normal positive balances', () => {
+    const onHand = [{ wrin: 'w1', descr: 'Fries', totalUnits: 40, onHandAmt: 320 }];
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { onHand } }).findings.some(x => x.checkId === 'negative-onhand')).toBe(false);
+  });
+
+  it('negative-usage flags an impossible below-zero usage as HIGH', () => {
+    const variance = [{ wrin: 'w1', descr: 'Sweetener', actualUsage: -42, dolDiff: 0 }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.find(x => x.checkId === 'negative-usage');
+    expect(f).toBeTruthy();
+    expect(f.severity).toBe(SEVERITY.high);
+    expect(f.data.actualUsage).toBe(-42);
+  });
+
+  it('negative-usage ignores normal positive/zero usage', () => {
+    const variance = [{ wrin: 'w1', descr: 'Beef', actualUsage: 500, dolDiff: -300 }, { wrin: 'w2', descr: 'Salt', actualUsage: 0 }];
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'negative-usage')).toBe(false);
   });
 
   it('uom-sanity stays silent when no case sizes are available', () => {

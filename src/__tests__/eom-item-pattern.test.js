@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyItemPattern, buildItemSeries, scanChronicOffenders, PATTERN_META } from '../engine/eom-item-pattern.js';
+import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 
 const S = (...dols) => dols.map((dol, i) => ({ period: `2026-0${i + 1}`, dol }));
 
@@ -92,5 +92,61 @@ describe('scanChronicOffenders', () => {
   it('minStores filters single-store noise when asked', () => {
     const res = scanChronicOffenders(rows, { periodsAsc, tolerance: 50, minStores: 2 });
     expect(res.every(r => r.nStores >= 2)).toBe(true);
+  });
+});
+
+describe('scanCountReliability', () => {
+  const periodsAsc = ['2026-04', '2026-05', '2026-06', '2026-07'];
+  const mk = (loc, wrin, dols) => dols.map((dol, i) => ({ loc, wrin, descr: 'i' + wrin, period: periodsAsc[i], dolDiff: dol, variance: dol / 10 }));
+  it('penalizes inconsistent-count (reversal) but NOT real losses; least-reliable first', () => {
+    const rows = [
+      // Store SLOPPY: 3 items, one a big over-count→correction reversal (inconsistent-count)
+      ...mk('SLOPPY', 'a', [10, 300, -280, 20]),   // inconsistent-count
+      ...mk('SLOPPY', 'b', [-5, 8, -6, 10]),        // within tolerance
+      ...mk('SLOPPY', 'c', [-4, 6, -5, 7]),         // within tolerance
+      // Store TIGHT: 3 items, one a real chronic loss (high-variance) — should NOT hurt reliability
+      ...mk('TIGHT', 'a', [-120, -140, -160, -180]), // high-variance (real loss, not a count error)
+      ...mk('TIGHT', 'b', [-5, 8, -6, 10]),
+      ...mk('TIGHT', 'c', [-4, 6, -5, 7]),
+    ];
+    const res = scanCountReliability(rows, { periodsAsc, tolerance: 50, minItems: 3 });
+    const sloppy = res.find(r => r.loc === 'SLOPPY');
+    const tight = res.find(r => r.loc === 'TIGHT');
+    expect(sloppy.nInconsistent).toBe(1);
+    expect(tight.nInconsistent).toBe(0);        // real loss does not count against reliability
+    expect(tight.score).toBe(100);
+    expect(sloppy.score).toBeLessThan(tight.score);
+    expect(res[0].loc).toBe('SLOPPY');           // least-reliable ranked first
+    expect(['C', 'D', 'F']).toContain(sloppy.grade);
+  });
+  it('skips stores with too few multi-period items', () => {
+    const res = scanCountReliability(mk('SMALL', 'a', [10, 20]), { periodsAsc, minItems: 3 });
+    expect(res).toEqual([]);
+  });
+});
+
+describe('scanRubberBand', () => {
+  const periodsAsc = ['2026-04', '2026-05', '2026-06', '2026-07'];
+  const mk = (loc, wrin, dols) => dols.map((dol, i) => ({ loc, wrin, descr: 'i' + wrin, period: periodsAsc[i], dolDiff: dol, variance: dol / 10 }));
+  it('flags an over-run that snaps to a big short (padding → collapse)', () => {
+    const rows = [
+      ...mk('PAD', 'a', [200, 180, 160, -420]),   // 3 periods OVER then a big SHORT = rubber-band
+      ...mk('PAD', 'b', [-5, 8, -6, 10]),          // noise
+    ];
+    const res = scanRubberBand(rows, { periodsAsc, tolerance: 50 });
+    const pad = res.find(r => r.loc === 'PAD');
+    expect(pad).toBeTruthy();
+    expect(pad.nItems).toBe(1);
+    expect(pad.worst[0].wrin).toBe('a');
+    expect(pad.worst[0].overN).toBe(3);
+    expect(pad.worst[0].snap).toBeGreaterThan(100);
+    expect(pad.worst[0].to).toBe('2026-07');
+  });
+  it('does NOT flag a plain one-off loss or steady over with no collapse', () => {
+    const rows = [
+      ...mk('CLEAN', 'a', [-300, -40, -30, -20]),  // a loss then recovery — no over-run→short
+      ...mk('CLEAN', 'b', [100, 120, 90, 110]),     // steady over, no snap (caught by unrealistic-over, not here)
+    ];
+    expect(scanRubberBand(rows, { periodsAsc, tolerance: 50 })).toEqual([]);
   });
 });
