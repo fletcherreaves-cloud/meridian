@@ -10,10 +10,10 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
-  loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
+  loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
 } from '../lib/supabase.js';
-import { classifyItemPattern, buildItemSeries, PATTERN_META } from '../engine/eom-item-pattern.js';
+import { classifyItemPattern, buildItemSeries, scanChronicOffenders, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
   buildIncompleteCountMessage, diagnoseIncompleteCount,
@@ -554,6 +554,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [flowOpen, setFlowOpen] = useState(false); // flow-editor modal
   const [flowDraft, setFlowDraft] = useState([]); // editable copy while the modal is open
   const [flowSaving, setFlowSaving] = useState(false);
+  // Chronic Offenders — district-wide past-period pattern scan (on-demand; explicit run only).
+  const [chronicOpen, setChronicOpen] = useState(false);
+  const [chronic, setChronic] = useState(null);      // { items, periods, nRows, error }
+  const [chronicBusy, setChronicBusy] = useState(false);
+  const [chronicLookback, setChronicLookback] = useState(6);
+  const [chronicOpenRows, setChronicOpenRows] = useState({}); // wrin -> expanded
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
@@ -692,6 +698,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       (scope === 'all' || stateOf(r.org) === scope) &&
       (!oneStore || r.loc === oneStore));
   }, [allRows, scope, oneStore]);
+
+  // Chronic Offenders — on-demand district-wide scan. Explicit run only (reads many rows), scoped
+  // to the current location filter. Which items are chronically bad on our own pattern principles?
+  const runChronicScan = useCallback(async (lb) => {
+    const lookback = lb ?? chronicLookback;
+    setChronicBusy(true); setChronicOpen(true); setChronicOpenRows({});
+    try {
+      const periodsAsc = lastPeriods(period, lookback);
+      const scopedLocs = [...new Set(rows.map(r => String(r.loc)))];
+      const varRows = await loadQsrVarianceHistoryAll({ periods: periodsAsc, locs: scopedLocs });
+      setChronic({ items: scanChronicOffenders(varRows, { periodsAsc, tolerance: 50 }), periods: periodsAsc, nRows: varRows.length });
+    } catch (e) {
+      setChronic({ items: [], periods: [], nRows: 0, error: String(e?.message || e) });
+    }
+    setChronicBusy(false);
+  }, [period, rows, chronicLookback]);
 
   const openDraft = useCallback((loc, name, components) => {
     // Run the same diagnosis the 🔬 button uses, so the draft carries a real
@@ -931,6 +953,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           onClick: openFlow, title: 'Edit the diagnosis flow — reorder/toggle checks and tune thresholds',
           style: { background: 'var(--surf3)', color: 'var(--text2)', border: `1px solid ${diagCfg ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' },
         }, diagCfg ? '⚙ Flow *' : '⚙ Flow'),
+        h('button', {
+          onClick: () => runChronicScan(), disabled: rows.length === 0 || chronicBusy,
+          title: 'Scan the current location scope across a past window — which items are chronically High-Variance / Loss-Forming across stores (on our own pattern principles). Reads on demand.',
+          style: { background: 'var(--surf3)', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, chronicBusy ? '…' : '🔁 Chronic offenders'),
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
           onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
@@ -1254,6 +1281,58 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     })(),
 
     // FOB multi-location variance matrix modal
+    chronicOpen && div({
+      onClick: () => setChronicOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({
+        onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '860px', maxHeight: '88vh', overflow: 'auto', padding: '18px' },
+      },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🔁 Chronic Offenders — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
+          div({ style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+            div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' } },
+              'Look back',
+              div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+                [3, 6, 12].map(n => h('button', {
+                  key: n, onClick: () => { setChronicLookback(n); runChronicScan(n); }, disabled: chronicBusy,
+                  style: { background: chronicLookback === n ? '#f5bc00' : 'var(--surf3)', color: chronicLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: chronicBusy ? 'default' : 'pointer' },
+                }, n)))),
+            h('button', { onClick: () => setChronicOpen(false), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕'))),
+        div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
+          chronicBusy ? 'Scanning…'
+            : chronic?.error ? `Scan failed: ${chronic.error}`
+            : chronic ? `${chronic.items.length} chronic item${chronic.items.length === 1 ? '' : 's'} across ${chronic.periods.length} periods (${chronic.periods[0]}→${chronic.periods[chronic.periods.length - 1]}) · ${chronic.nRows.toLocaleString()} rows read. Items bad across the MOST stores rank first — a systemic/spec issue, not a one-store fluke.`
+            : 'Run the scan.'),
+        chronicBusy ? div({ style: { padding: '30px', textAlign: 'center', color: 'var(--text3)' } }, 'Reading variance history across the scope…')
+          : chronic && !chronic.items.length && !chronic.error ? div({ style: { padding: '20px', textAlign: 'center', color: '#4ade80', fontSize: '13px' } }, '✓ No chronic offenders in this scope/window — variance is within tolerance or one-off.')
+          : chronic ? div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
+              chronic.items.slice(0, 40).map(it => {
+                const isOpen = chronicOpenRows[it.wrin];
+                const worstMeta = it.worst ? PATTERN_META[it.worst] : null;
+                return div({ key: it.wrin, style: { background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${worstMeta?.color || 'var(--bdr2)'}`, overflow: 'hidden' } },
+                  div({ onClick: () => setChronicOpenRows(o => ({ ...o, [it.wrin]: !o[it.wrin] })),
+                    style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 10px', cursor: 'pointer' } },
+                    span({ style: { color: 'var(--text3)', fontSize: '11px', width: '10px', flexShrink: 0 } }, isOpen ? '▾' : '▸'),
+                    div({ style: { flex: 1, minWidth: 0 } },
+                      div({ style: { fontSize: '12.5px', color: 'var(--text)', fontWeight: 600 } },
+                        it.descr || it.wrin, span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ` · WRIN ${it.wrin}`)),
+                      worstMeta ? div({ style: { marginTop: '3px' } }, h(PatternChip, { chip: { ...worstMeta, id: it.worst }, title: `worst pattern across ${it.nStores} store(s)` })) : null),
+                    div({ style: { textAlign: 'right', flexShrink: 0 } },
+                      div({ style: { fontSize: '13px', fontWeight: 800, color: '#f87171' } }, `${it.nStores} store${it.nStores === 1 ? '' : 's'}`),
+                      div({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${dolStr(it.totalDol)} at stake`))),
+                  isOpen && div({ style: { padding: '2px 10px 9px 28px', borderTop: '1px solid var(--bdr)' } },
+                    it.stores.map(s => div({ key: s.loc, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid var(--bdr)', fontSize: '11.5px' } },
+                      span({ style: { minWidth: '120px', color: 'var(--text2)', fontWeight: 600 } }, nm(s.loc)),
+                      s.primary ? h(PatternChip, { chip: s.primary }) : null,
+                      span({ style: { marginLeft: 'auto', fontWeight: 700, color: s.latestDol < 0 ? '#f87171' : '#fbbf24' } }, dolStr(s.latestDol)),
+                      span({ style: { color: 'var(--text3)', fontSize: '10.5px', minWidth: '150px', textAlign: 'right' } },
+                        s.series.map(p => dolStr(p.dol)).join(' → '))))));
+              }),
+              chronic.items.length > 40 ? div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '6px' } }, `+${chronic.items.length - 40} more.`) : null)
+          : null)),
+
     fobOpen && div({
       onClick: () => setFobOpen(false),
       style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyItemPattern, buildItemSeries, PATTERN_META } from '../engine/eom-item-pattern.js';
+import { classifyItemPattern, buildItemSeries, scanChronicOffenders, PATTERN_META } from '../engine/eom-item-pattern.js';
 
 const S = (...dols) => dols.map((dol, i) => ({ period: `2026-0${i + 1}`, dol }));
 
@@ -66,5 +66,31 @@ describe('buildItemSeries', () => {
   it('excludes other locations', () => {
     const m = buildItemSeries(rows, { loc: '5985', periodsAsc: ['2026-06'] });
     expect(m.get('1').series[0].dol).toBe(-140); // not the 9999 row's 500
+  });
+});
+
+describe('scanChronicOffenders', () => {
+  const periodsAsc = ['2026-04', '2026-05', '2026-06', '2026-07'];
+  // WRIN 1 (Beef): loss-forming at TWO stores. WRIN 2 (Lettuce): within-tolerance at one store.
+  const mk = (loc, wrin, descr, dols) => dols.map((dol, i) => ({ loc, wrin, descr, period: periodsAsc[i], dolDiff: dol, variance: dol / 10 }));
+  const rows = [
+    ...mk('5985', '1', 'Beef', [-20, -90, -160, -240]),
+    ...mk('3708', '1', 'Beef', [-30, -110, -180, -260]),
+    ...mk('5985', '2', 'Lettuce', [-5, 10, -8, 12]),
+  ];
+  it('ranks items chronically bad across multiple stores first', () => {
+    const res = scanChronicOffenders(rows, { periodsAsc, tolerance: 50 });
+    expect(res[0].wrin).toBe('1');
+    expect(res[0].nStores).toBe(2);
+    expect(res[0].worst).toBe('loss-forming');
+    expect(res[0].stores.map(s => s.loc).sort()).toEqual(['3708', '5985']);
+  });
+  it('omits within-tolerance items (not offenders)', () => {
+    const res = scanChronicOffenders(rows, { periodsAsc, tolerance: 50 });
+    expect(res.some(r => r.wrin === '2')).toBe(false);
+  });
+  it('minStores filters single-store noise when asked', () => {
+    const res = scanChronicOffenders(rows, { periodsAsc, tolerance: 50, minStores: 2 });
+    expect(res.every(r => r.nStores >= 2)).toBe(true);
   });
 });

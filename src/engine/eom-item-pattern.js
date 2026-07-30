@@ -95,6 +95,60 @@ export function classifyItemPattern(series = [], { tolerance = 50, recentN = 3 }
   return { chips, primary: chips[0] || null, stats };
 }
 
+// The pattern ids that mark a genuine problem (everything except the quiet good state).
+export const BAD_PATTERNS = new Set(['high-variance', 'loss-forming', 'fluctuating', 'inconsistent-count']);
+
+// District-wide Chronic Offenders scan (owner req 2026-07-30): across ALL in-scope stores over a
+// look-back window, which ITEMS are chronically problematic on our own principles? Groups flat
+// variance rows by WRIN, classifies each (loc, wrin) series, and rolls up per item: how many stores
+// carry a bad pattern, the total $ at stake, and the worst pattern seen. Ranked frequency-first
+// (an item bleeding across many stores is a systemic/menu/spec problem, not a one-store fluke),
+// then by $. Pure — feeds the on-demand scan UI. `varRows` = [{loc,period,wrin,descr,dolDiff,variance}].
+export function scanChronicOffenders(varRows = [], { periodsAsc = [], tolerance = 50, minStores = 1 } = {}) {
+  // wrin -> { descr, cls, byLoc: Map(loc -> {series}) }
+  const byWrin = new Map();
+  const wanted = new Set(periodsAsc);
+  for (const r of varRows) {
+    if (wanted.size && !wanted.has(r.period)) continue;
+    const w = String(r.wrin);
+    if (!byWrin.has(w)) byWrin.set(w, { wrin: w, descr: r.descr, cls: r.cls, byLoc: new Map() });
+    const it = byWrin.get(w);
+    if (r.descr && !it.descr) it.descr = r.descr;
+    const L = String(r.loc);
+    if (!it.byLoc.has(L)) it.byLoc.set(L, new Map());
+    it.byLoc.get(L).set(r.period, { period: r.period, dol: Number(r.dolDiff) || 0, qty: Number(r.variance) || 0 });
+  }
+
+  const order = periodsAsc.length ? periodsAsc : [...new Set(varRows.map(r => r.period))].sort();
+  const out = [];
+  for (const [w, it] of byWrin) {
+    const stores = [];
+    let totalDol = 0;
+    const patternTally = {};
+    for (const [loc, byPeriod] of it.byLoc) {
+      const series = order.filter(p => byPeriod.has(p)).map(p => byPeriod.get(p));
+      if (!series.length) continue;
+      const cls = classifyItemPattern(series, { tolerance });
+      const primary = cls.primary;
+      const bad = primary && BAD_PATTERNS.has(primary.id);
+      const latestDol = series[series.length - 1].dol;
+      if (bad) {
+        stores.push({ loc, primary, latestDol, series, chips: cls.chips });
+        totalDol += Math.abs(latestDol);
+        patternTally[primary.id] = (patternTally[primary.id] || 0) + 1;
+      }
+    }
+    if (stores.length >= minStores) {
+      // Worst pattern = highest-ranked chip appearing anywhere for this item.
+      const worst = Object.keys(patternTally).sort((a, b) => (PATTERN_META[b].rank - PATTERN_META[a].rank))[0] || null;
+      stores.sort((a, b) => Math.abs(b.latestDol) - Math.abs(a.latestDol));
+      out.push({ wrin: w, descr: it.descr, cls: it.cls, nStores: stores.length, totalDol, worst, patternTally, stores });
+    }
+  }
+  out.sort((a, b) => (b.nStores - a.nStores) || (b.totalDol - a.totalDol));
+  return out;
+}
+
 function fmtDol(v) { const s = v < 0 ? '-' : ''; return `${s}$${Math.abs(Math.round(v)).toLocaleString()}`; }
 function fmt0(v) { return `$${Math.round(v).toLocaleString()}`; }
 

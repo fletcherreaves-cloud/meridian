@@ -2447,6 +2447,25 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
   }));
 }
 
+// DISTRICT-WIDE variance history across a set of periods — powers the Chronic Offenders scan
+// (which items are chronically High-Variance / Loss-Forming across ALL stores over a past window).
+// On-demand only (explicit "Run scan" button) — this reads many rows, so it must never auto-run.
+// Minimal columns to keep the egress bounded; optional `locs` narrows to the current filter.
+export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = {}) {
+  if (!supabase || !periods.length) return [];
+  const locSet = locs && locs.length ? new Set(locs.map(String)) : null;
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_variance_stat')
+      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to);
+    return q;
+  });
+  const rows = (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    variance: r.variance, dolDiff: r.dol_diff,
+  }));
+  return locSet ? rows.filter(r => locSet.has(String(r.loc))) : rows;
+}
+
 // ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────
 export async function saveQsrWaste(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

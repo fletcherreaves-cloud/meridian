@@ -229,7 +229,16 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
               h('input', { type: 'date', value: customRange.e, onChange: e => setCustomRange(r => ({ ...r, e: e.target.value })), style: { ...btn, padding: '4px 6px' } }))
           : span({ style: { display: 'flex', gap: 6, alignItems: 'center' } },
               span({ style: { fontSize: 11, color: 'var(--text2)' } }, rangeMode === 'week' ? 'Week containing:' : 'As of:'),
-              h('input', { type: 'date', value: weekDate, onChange: e => setWeekDate(e.target.value), style: { ...btn, padding: '4px 6px' } })),
+              h('input', { type: 'date', value: weekDate, onChange: e => setWeekDate(e.target.value), style: { ...btn, padding: '4px 6px' } }),
+              // Quick week jumps (owner req) — one click for the most common picks.
+              rangeMode === 'week' ? h('button', {
+                title: 'Jump to last week', onClick: () => { setRangeMode('week'); setWeekDate(iso(new Date(Date.now() - 7 * 864e5))); },
+                style: { ...btn, padding: '4px 9px', fontWeight: 700 },
+              }, '‹ Last week') : null,
+              rangeMode === 'week' ? h('button', {
+                title: 'Jump to this week', onClick: () => { setRangeMode('week'); setWeekDate(iso(new Date())); },
+                style: { ...btn, padding: '4px 9px', fontWeight: 700 },
+              }, 'This week') : null),
         span({ style: { marginLeft: 'auto', fontSize: 10.5, color: 'var(--text3,var(--text2))' } }, 'Header KPIs show the selected range with YTD alongside for movement.'),
       ),
       !page
