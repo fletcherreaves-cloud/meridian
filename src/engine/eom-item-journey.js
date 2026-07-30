@@ -63,6 +63,12 @@ export function computeCountTiming(rawItems = []) {
   const lastDayT = Math.max(...stamps.map(s => s.dayT));
   const onLast = stamps.filter(s => s.dayT === lastDayT).sort((a, b) => a.when - b.when);
   const b = onLast[0], e = onLast[onLast.length - 1];
+  const hasTimes = onLast.some(s => s.hasTime);
+  const nDistinctTimes = new Set(onLast.filter(s => s.hasTime).map(s => s.when)).size;
+  // Bulk-submit tell (owner integrity 2026-07-30): ≥2 counts recorded but a single distinct
+  // timestamp = counted everything and submitted at once, not the lock-in-as-you-go travel path.
+  // Skews variance for items in active use during the count. See project-inventory-integrity-detection.
+  const bulkSubmit = hasTimes && onLast.length >= 2 && nDistinctTimes <= 1;
   return {
     countDate: b.dt,
     began: b.when, beganTm: b.tm,
@@ -71,7 +77,9 @@ export function computeCountTiming(rawItems = []) {
     nCountsLastDay: onLast.length,
     nCountsTotal: stamps.length,
     nDays: new Set(stamps.map(s => s.dt)).size,
-    hasTimes: onLast.some(s => s.hasTime),   // false → date only (no time recorded, duration unknown)
+    nDistinctTimes,
+    bulkSubmit,
+    hasTimes,   // false → date only (no time recorded, duration unknown)
   };
 }
 

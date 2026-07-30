@@ -26,6 +26,25 @@ describe('computeCountTiming — last count date, start→end', () => {
     expect(computeCountTiming([])).toBeNull();
   });
 
+  it('flags bulkSubmit when the last day\'s counts all share one timestamp', () => {
+    const r = computeCountTiming([item([
+      { isCount: true, dt: '2026-07-31', tm: '9:00 AM' },
+      { isCount: true, dt: '2026-07-31', tm: '9:00 AM' },
+      { isCount: true, dt: '2026-07-31', tm: '9:00 AM' },
+    ])]);
+    expect(r.nDistinctTimes).toBe(1);
+    expect(r.bulkSubmit).toBe(true);
+  });
+
+  it('does NOT flag bulkSubmit for a real travel-path time spread', () => {
+    const r = computeCountTiming([item([
+      { isCount: true, dt: '2026-07-31', tm: '8:15 AM' },
+      { isCount: true, dt: '2026-07-31', tm: '9:45 AM' },
+    ])]);
+    expect(r.bulkSubmit).toBe(false);
+    expect(r.nDistinctTimes).toBe(2);
+  });
+
   it('hasTimes false + duration 0 when the last count has no time recorded', () => {
     const r = computeCountTiming([item([{ isCount: true, dt: '2026-07-31' }])]);
     expect(r.hasTimes).toBe(false);
