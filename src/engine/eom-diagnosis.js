@@ -217,6 +217,54 @@ export const DEFAULT_CHECKS = [
       return out;
     },
   },
+  {
+    // Waste INFLATION (integrity #47): waste artificially spiked near EOM / on the count day to
+    // absorb a variance, OR a repeated-static value entered nightly (the "same fry waste every
+    // night" shortcut — a guess to clear the EOD prompt, not a real weigh-out). Both corrupt
+    // theoretical on-hand. See memory/project-inventory-integrity-detection.
+    id: 'waste-inflation', label: 'Waste inflation — EOM/count-day spike or static nightly value', order: 51, enabled: true,
+    requires: ['waste'], params: { spikeFactor: 2.5, minDays: 6, staticRepeats: 4, minSpike: 50 },
+    run: (ctx) => {
+      const events = (ctx.data.waste || []).filter(w => w && w.dt && Number(w.amount) > 0);
+      if (events.length < 3) return [];
+      const out = [];
+      const P = ctx.params;
+      // Daily totals across the period.
+      const byDay = {};
+      for (const w of events) { const d = String(w.dt).slice(0, 10); byDay[d] = (byDay[d] || 0) + (Number(w.amount) || 0); }
+      const days = Object.keys(byDay).sort();
+      if (days.length >= (P.minDays ?? 6)) {
+        const sorted = days.map(d => byDay[d]).sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)] || 0;
+        const factor = P.spikeFactor ?? 2.5;
+        const windowStart = countWindowStartTs(ctx.period);
+        for (const d of days) {
+          if (median <= 0 || byDay[d] < median * factor || byDay[d] < (P.minSpike ?? 50)) continue;
+          const t = Date.parse(d);
+          const nearEOM = windowStart != null && t != null && t >= windowStart;
+          out.push(mkFinding('waste-inflation', nearEOM ? SEVERITY.high : SEVERITY.medium,
+            `Waste spike: ${d}`,
+            `${_mny(byDay[d])} logged that day vs a ${_mny(median)} daily median (${(byDay[d] / median).toFixed(1)}×)${nearEOM ? ' — and it lands in the count window, exactly where waste gets inflated to absorb a variance' : ''}. Verify it was physically weighed/thrown, not entered to make a number balance.`,
+            byDay[d], { day: d, nearEOM, median }));
+        }
+      }
+      // Repeated-static value: the exact same entry amount on ≥N distinct days = a guessed/copy-paste
+      // nightly value, not a real weigh-out. "Zero is better than fake."
+      const amtDays = {};
+      for (const w of events) { const a = (Number(w.amount) || 0).toFixed(2); const d = String(w.dt).slice(0, 10); (amtDays[a] || (amtDays[a] = new Set())).add(d); }
+      const staticHits = Object.keys(amtDays)
+        .filter(a => Number(a) > 0 && amtDays[a].size >= (P.staticRepeats ?? 4))
+        .sort((a, b) => amtDays[b].size - amtDays[a].size);
+      for (const a of staticHits) {
+        const n = amtDays[a].size;
+        out.push(mkFinding('waste-inflation', SEVERITY.medium,
+          `Repeated static waste value: ${_mny(Number(a))}`,
+          `The exact same ${_mny(Number(a))} waste amount was logged on ${n} separate days — looks like a guessed/copy-paste value to clear the closing prompt, not a real weigh-out. Coach: log the real weight or leave it blank ("zero is better than fake").`,
+          Number(a) * n, { amount: Number(a), nDays: n }));
+      }
+      return out;
+    },
+  },
   { id: 'purchases-posted', label: 'Purchases — all invoices posted (none pending)', order: 60, enabled: true, requires: ['purchases'], pending: true, run: () => [] },
   {
     // Transfers — large / not-approved transfers that shift the variance picture.

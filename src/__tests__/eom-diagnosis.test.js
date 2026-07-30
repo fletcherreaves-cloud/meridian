@@ -147,6 +147,29 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(res.findings.some(x => x.checkId === 'count-manipulation')).toBe(false);
   });
 
+  it('waste-inflation flags a count-window spike vs the daily median', () => {
+    const waste = [];
+    for (const d of ['01','02','03','04','05','06','07','08','09','10']) waste.push({ dt: `2026-07-${d}`, amount: 20 });
+    waste.push({ dt: '2026-07-30', amount: 400 }); // EOM day, 20× the median
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.find(x => x.checkId === 'waste-inflation' && x.data.day === '2026-07-30');
+    expect(f).toBeTruthy();
+    expect(f.data.nearEOM).toBe(true);
+    expect(f.severity).toBe(SEVERITY.high);
+  });
+
+  it('waste-inflation flags a repeated-static nightly value', () => {
+    const waste = ['10','11','12','13','14','15'].map(d => ({ dt: `2026-07-${d}`, amount: 12.5 }));
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.find(x => x.checkId === 'waste-inflation' && x.data.amount === 12.5);
+    expect(f).toBeTruthy();
+    expect(f.data.nDays).toBe(6);
+    expect(f.detail).toMatch(/static|copy-paste|guessed/i);
+  });
+
+  it('waste-inflation stays silent on a normal, varied waste log', () => {
+    const waste = ['10','11','12','13','14','15','16'].map((d, i) => ({ dt: `2026-07-${d}`, amount: 18 + i }));
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.some(x => x.checkId === 'waste-inflation')).toBe(false);
+  });
+
   it('uom-sanity stays silent when no case sizes are available', () => {
     const res = runDiagnosis({ store: 's', period: '2026-07', data: { variance: [{ wrin: 'w1', variance: -900, dolDiff: -1200 }] } });
     expect(res.findings.some(f => f.checkId === 'uom-sanity')).toBe(false);
