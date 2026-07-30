@@ -186,6 +186,19 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'unrealistic-over')).toBe(false);
   });
 
+  it('negative-onhand flags an impossible below-zero balance as HIGH', () => {
+    const onHand = [{ wrin: 'w1', descr: 'Big Mac Sauce', totalUnits: -6, onHandAmt: -48 }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { onHand } }).findings.find(x => x.checkId === 'negative-onhand');
+    expect(f).toBeTruthy();
+    expect(f.severity).toBe(SEVERITY.high);
+    expect(f.data.totalUnits).toBe(-6);
+  });
+
+  it('negative-onhand ignores normal positive balances', () => {
+    const onHand = [{ wrin: 'w1', descr: 'Fries', totalUnits: 40, onHandAmt: 320 }];
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { onHand } }).findings.some(x => x.checkId === 'negative-onhand')).toBe(false);
+  });
+
   it('negative-usage flags an impossible below-zero usage as HIGH', () => {
     const variance = [{ wrin: 'w1', descr: 'Sweetener', actualUsage: -42, dolDiff: 0 }];
     const f = runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.find(x => x.checkId === 'negative-usage');

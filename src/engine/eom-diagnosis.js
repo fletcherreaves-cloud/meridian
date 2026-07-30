@@ -340,6 +340,23 @@ export const DEFAULT_CHECKS = [
     },
   },
   {
+    // Negative ON-HAND (integrity #47, owner add 2026-07-30). A store physically cannot hold less
+    // than zero of an item. A below-zero ending count / perpetual balance = a keying error, an
+    // un-received invoice (product rung/used before its delivery was booked), or a wrong-UOM entry.
+    // Auto-flag every offending WRIN.
+    id: 'negative-onhand', label: 'Negative on-hand — physically impossible balance', order: 33, enabled: true,
+    requires: ['onHand'], params: { tol: -0.001 },
+    run: (ctx) => {
+      const tol = ctx.params.tol ?? -0.001;
+      return (ctx.data.onHand || [])
+        .filter(o => Number(o.totalUnits) < tol || Number(o.onHandAmt) < tol)
+        .map(o => mkFinding('negative-onhand', SEVERITY.high,
+          `Negative on-hand: ${o.descr || o.wrin}`,
+          `Ending on-hand shows ${Number(o.totalUnits).toLocaleString()} units (${_mny(o.onHandAmt)}) — below zero is physically impossible. Usually an un-received invoice (product rung/used before its delivery was booked into the system), a keying error, or a count entered against the wrong unit of measure. Book any pending invoice for this item, then recount.`,
+          Math.abs(Number(o.onHandAmt) || 0), { wrin: o.wrin, totalUnits: Number(o.totalUnits), onHandAmt: Number(o.onHandAmt) }));
+    },
+  },
+  {
     // Negative actual usage = a mathematical impossibility (integrity #47, owner need-to-know #2).
     // Actual Usage = Begin + Purchases − Ending; if it comes out < 0 the ending count is HIGHER than
     // everything on hand plus everything received — the padding tell in its extreme form (or a
