@@ -749,9 +749,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)',
           dataAsOf && span({ style: { marginLeft: '8px', color: 'var(--text2)' }, title: 'Freshest business date across the loaded EOM streams (on-hand, FOB, waste, transfers)' },
             `· data as of ${dataAsOf.toLocaleDateString()}`))),
-      div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+      div({ style: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' } },
         // mode toggle — EOM count-completion vs year-round progress
-        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
           [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Count Cycle']].map(([k, label]) =>
             h('button', {
               key: k, onClick: () => setMode(k),
