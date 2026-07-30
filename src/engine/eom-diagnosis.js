@@ -89,6 +89,36 @@ export const DEFAULT_CHECKS = [
     },
   },
   {
+    // UOM sanity (Gemini trap #2 — "3 vs 900"): a variance whose QUANTITY is a clean
+    // whole-case multiple is a classic case-vs-each entry error, not real usage. We can't
+    // recompute the entered count, so this is a VERIFY nudge (not a hard claim): if the count
+    // was entered in cases when the system wanted eaches, the monthly figure — and next
+    // month's opening baseline — is corrupted. Owner-requested 2026-07-30.
+    id: 'uom-sanity', label: 'UOM sanity — variance is a clean case-multiple (verify entry)', order: 35, enabled: true,
+    requires: ['variance'], params: { minDollar: 50, tol: 0.05, minCases: 1 },
+    run: (ctx) => {
+      const caseSz = {};
+      for (const it of (ctx.data.rawItems || [])) { if (it.caseSz > 1) caseSz[String(it.wrin)] = it.caseSz; }
+      if (!Object.keys(caseSz).length) return []; // no case sizes → can't judge units
+      const minDol = ctx.params.minDollar ?? 50, tol = ctx.params.tol ?? 0.05, minCases = ctx.params.minCases ?? 1;
+      const out = [];
+      for (const v of (ctx.data.variance || [])) {
+        const cs = caseSz[String(v.wrin)];
+        if (!cs) continue;
+        const qty = Math.abs(Number(v.variance) || 0);
+        if (Math.abs(v.dolDiff || 0) < minDol || qty < cs * minCases) continue;
+        const mult = qty / cs;
+        const near = Math.abs(mult - Math.round(mult));
+        if (near > tol || Math.round(mult) < minCases) continue;
+        out.push(mkFinding('uom-sanity', SEVERITY.info,
+          `Verify units: ${v.descr || v.wrin}`,
+          `$${Math.round(v.dolDiff)} variance ≈ ${Math.round(mult)} full case${Math.round(mult) !== 1 ? 's' : ''} (${cs}/case) — confirm this wasn't a case-vs-each count entry before trusting it`,
+          Math.abs(v.dolDiff || 0), { wrin: v.wrin, caseSz: cs, cases: Math.round(mult) }));
+      }
+      return out.sort((a, b) => b.dollars - a.dollars).slice(0, 10);
+    },
+  },
+  {
     id: 'incomplete-count', label: 'Incomplete count (uncounted high-value items)', order: 40, enabled: true,
     requires: ['onHand'], params: { minValue: 25 },
     run: (ctx) => {
@@ -390,6 +420,19 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     L.push("_Nothing a recount can recover this count — the open variance is locked in from earlier counts (see context below)._");
   }
   L.push('');
+
+  // ── DECISION GUIDE (2×2) — how to act on a variance once the count is verified ──
+  // Grounded in verified fact: QSRSoft anchors variance at the PERIOD BOUNDARY (ending inventory
+  // → next period's beginning), so a mid-month COUNT ERROR telescopes out of the monthly figure
+  // (self-corrects); only a REAL physical loss and NOT-yet-counted items remain. The 2×2 keeps a
+  // manager from chasing a locked, verified one-off — while still chasing the CAUSE of a recurring
+  // loss (it can't be recovered this period, but it recurs next). See memory/project-eom-uncounted.
+  L.push('## 🧭 Decision guide — act on it, or let it go?', '');
+  L.push('_Verified: a mid-month **count error** washes out of the monthly number (QSRSoft anchors period-to-period, so intermediate counts cancel). Only a **real physical loss** and **not-yet-counted** items still move the figure — so the only question that matters is which of those a variance is._', '');
+  L.push('| Once the EOM count is verified | One-off | Recurring (see pattern chips) |', '|---|---|---|');
+  L.push('| **Real loss** | Locked — note it, move on. No EOM recovery. | Locked this period, but **chase the cause** (portion/yield/theft/process) — it comes back next month. |');
+  L.push('| **Count artifact** | Noise — it self-corrected; coach count discipline. | Early count not re-counted at EOM → **fixable**: get a real count now (protects next month\'s opening). |');
+  L.push('_"Don\'t chase rabbits at EOM" applies to the top-left only. The value is separating a locked one-off (drop it) from a recurring loss (fix the cause) and from a still-fixable count (recount)._', '');
 
   // ── EARLIER-COUNT CONTEXT (quiet, rolled up) — kept for scope, de-emphasized ──
   if (context.length) {

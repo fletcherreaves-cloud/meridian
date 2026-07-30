@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.610';
+const MERIDIAN_VERSION    = '4.611';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.611', date:'2026-07-30', changes:[
+    'EOM Food-Cost Diagnosis now carries a Decision guide (2×2) grounded in verified fact: because QSRSoft anchors variance at the period boundary, a mid-month COUNT ERROR washes out of the monthly figure — so the report/SAGE now separate a locked, verified one-off ("drop it") from a recurring real loss ("can\'t recover this month, but fix the cause — it comes back") from an early count never re-counted at EOM ("still fixable — recount to protect next month\'s opening").',
+    'Added a UOM-sanity check: a variance whose quantity is a clean whole-case multiple (the classic "3 cases entered as 3 eaches" blunder) is now flagged as verify-first — a possible units-entry error, not a confirmed loss — before it corrupts the monthly number and next month\'s baseline.',
+  ]},
   {version:'4.610', date:'2026-07-30', changes:[
     'EOM Food-Cost Diagnosis Action Items now carry their own provenance: click any item to expand its month-over-month variance history (with the worst month flagged and full-case counts where known), and each item is auto-tagged with a pattern chip — Within Tolerance, High Variance, Fluctuating, Loss Pattern Forming, or Inconsistent Count(s) — so a one-off reads differently from a chronic bleeder, and a real-usage loss reads differently from a count-integrity swing. A Look-back selector (3 / 6 / 12 periods) tunes the window.',
   ]},
