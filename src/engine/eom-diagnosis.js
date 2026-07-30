@@ -505,17 +505,30 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     L.push('');
   }
 
-  // ── Reference — full detail (present but demoted below the manager summary) ──
-  L.push('## Reference — full detail', '', `_All ${V.length} items ≥ ±$${threshold}, ranked._`, '');
+  // ── Reference — full detail ──. Food + Condiment lead (the profit-driver classes the owner
+  // works first); Paper / Non-Product are broken out into their own section below so they're
+  // available but not cluttering the here-and-now (owner req 2026-07-30). Class column added.
   const anyCases = V.some(v => casesOf(v) != null);
-  if (anyCases) {
-    L.push('| # | Item | WRIN | $ Var | Qty Var | Cases | Dir |', '|--:|------|------|------:|--------:|------:|-----|');
-    V.forEach((v, i) => { const c = casesOf(v); L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${c != null ? c.toFixed(1) : '—'} | ${dir(v)} |`); });
-  } else {
-    L.push('| # | Item | WRIN | $ Var | Qty Var | Dir |', '|--:|------|------|------:|--------:|-----|');
-    V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
+  const isFoodCond = v => { const c = normClass(v.cls); return c === 'food' || c === 'condiment'; };
+  const foodCond = V.filter(isFoodCond);
+  const otherCls = V.filter(v => !isFoodCond(v));
+  const detailTable = (items) => {
+    if (!items.length) { L.push('_None in this group._', ''); return; }
+    if (anyCases) {
+      L.push('| # | Item | Class | WRIN | $ Var | Qty Var | Cases | Dir |', '|--:|------|-------|------|------:|--------:|------:|-----|');
+      items.forEach((v, i) => { const c = casesOf(v); L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${normClass(v.cls) || '—'} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${c != null ? c.toFixed(1) : '—'} | ${dir(v)} |`); });
+    } else {
+      L.push('| # | Item | Class | WRIN | $ Var | Qty Var | Dir |', '|--:|------|-------|------|------:|--------:|-----|');
+      items.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${normClass(v.cls) || '—'} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
+    }
+    L.push('');
+  };
+  L.push('## Reference — full detail', '', `_Food + Condiment (${foodCond.length}) — the profit-driver classes, shown first. Paper / Non-Product broken out below._`, '');
+  detailTable(foodCond);
+  if (otherCls.length) {
+    L.push(`### Other classes — Paper / Non-Product (${otherCls.length})`, '');
+    detailTable(otherCls);
   }
-  L.push('');
   const tier = (label, lo, hi) => {
     const items = focus.filter(v => { const a = Math.abs(v.dolDiff); return a >= lo && (hi == null || a < hi); });
     if (!items.length) return;

@@ -259,12 +259,12 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
     div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' } },
       div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Action items'),
       // Look-back selector — how many periods of history to classify against.
-      div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' } },
-        'Look back',
+      div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'How many prior monthly count periods to classify the trend against (one EOM count = one month).' },
+        'Look back (months)',
         div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
           [3, 6, 12].map(n => h('button', {
             key: n, onClick: () => setLookback(n),
-            title: !history ? 'loading history…' : `${n} periods`,
+            title: !history ? 'loading history…' : `last ${n} monthly count periods`,
             disabled: !history,
             style: {
               background: lookback === n ? '#f5bc00' : 'var(--surf3)', color: lookback === n ? '#0f1117' : 'var(--text2)',
@@ -1297,11 +1297,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap' } },
           div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🔁 Chronic Offenders — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
           div({ style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-            div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' } },
-              'Look back',
+            div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'How many prior monthly count periods to scan across (one EOM count = one month).' },
+              'Look back (months)',
               div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
                 [3, 6, 12].map(n => h('button', {
-                  key: n, onClick: () => { setChronicLookback(n); runChronicScan(n); }, disabled: chronicBusy,
+                  key: n, title: `last ${n} monthly count periods`,
+                  onClick: () => { setChronicLookback(n); runChronicScan(n); }, disabled: chronicBusy,
                   style: { background: chronicLookback === n ? '#f5bc00' : 'var(--surf3)', color: chronicLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: chronicBusy ? 'default' : 'pointer' },
                 }, n)))),
             h('button', { onClick: () => setChronicOpen(false), style: MODAL_X }, '✕'))),
