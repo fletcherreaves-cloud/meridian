@@ -794,12 +794,14 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       L.push('', `### Obsolete / Discontinued / Inactive — verify & clear · ${m(bs.stale)}`, '');
       L.push('_Last counted a PRIOR period; a residual on-hand is riding into next month\'s opening._', '');
       if (staleItems.length) {
-        L.push('| Item | WRIN | Class | On-hand $ | Last counted | Action |', '|---|---|---|---:|---|---|');
+        L.push('| Item | WRIN | Class | On-hand qty | On-hand $ | Last counted | Action |', '|---|---|---|---:|---:|---|---|');
         staleItems.forEach(u => {
           const action = isFCcls(u.cls)
             ? `**Verify with a count first.** If it won't be used before expiration, **waste to zero** (−${money(u.valueAtRisk)}), then deactivate the WRIN at a verified zero.`
             : `**Keep if usable** (donation / giveaway) — do not discard; deactivate only once genuinely used up. No count/waste verification needed.`;
-          L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt)} | ${u.lastCounted || '—'} | ${action} |`);
+          const qty = Number(u.totalUnits);
+          const qtyStr = Number.isFinite(qty) && qty !== 0 ? qty.toLocaleString() : '—';
+          L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${qtyStr} | ${money(u.onHandAmt)} | ${u.lastCounted || '—'} | ${action} |`);
         });
         const moreS = (bs.stale?.n || 0) - staleItems.length;
         if (moreS > 0) L.push('', `_+${moreS} more item(s)._`);
