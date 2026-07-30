@@ -21,7 +21,7 @@ import {
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
 import { mdToHtml } from '../utils/markdown.js';
-import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationMin, LANE_META } from '../engine/eom-item-journey.js';
+import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -1208,13 +1208,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🔬 Food-Cost Diagnosis — ${diag.name}`),
           h('button', { onClick: () => setDiag(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } }, diag.result.summary),
-        // Count timing (#45) — when this store's count began/ended + total duration.
+        // Count timing (#45) — the LAST count date's start→end + duration (owner: the final count is
+        // the meaningful one; mid-cycle counts telescope out of the EOM result).
         (() => { const t = timingByLoc[diag.loc]; if (!t) return null;
           return div({ style: { fontSize: '11.5px', color: 'var(--text2)', marginBottom: '10px', padding: '5px 9px', background: 'var(--surf3)', borderRadius: '6px', display: 'inline-block' } },
-            `⏱ Count: began ${t.beganDt}${t.hasTimes && t.beganTm ? ' ' + t.beganTm : ''} → ended ${t.endedDt}${t.hasTimes && t.endedTm ? ' ' + t.endedTm : ''} · `,
-            span({ style: { fontWeight: 700, color: 'var(--text)' } }, `${fmtDurationMin(t.durationMin)}`),
-            t.nDays > 1 ? span({ style: { color: 'var(--text3)' } }, ` · ${t.nDays} days`) : null,
-            !t.hasTimes ? span({ style: { color: 'var(--text3)' } }, ' · dates only') : null); })(),
+            `⏱ Last count ${t.countDate}: `,
+            t.hasTimes
+              ? span(null, `${t.beganTm} → ${t.endedTm} · `, span({ style: { fontWeight: 700, color: 'var(--text)' } }, fmtDurationHMS(t.durationMs)))
+              : span({ style: { color: 'var(--text3)' } }, 'no time recorded — duration unknown'),
+            t.nDays > 1 ? span({ style: { color: 'var(--text3)' } }, ` · counted over ${t.nDays} days`) : null); })(),
 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
         // Rendered markdown (tables, tiers, chips). Copy/Print use the raw text.

@@ -51,32 +51,36 @@ export function computeCountTiming(rawItems = []) {
   for (const it of (rawItems || [])) {
     for (const h of (it.history || [])) {
       if (!h.isCount) continue;
-      const t = ts(h.dt); if (t == null) continue;
+      const dayT = ts(h.dt); if (dayT == null) continue;
       const hasTime = !!String(h.tm || '').trim();
-      stamps.push({ when: t + tmMin(h.tm) * 60000, dt: h.dt, tm: h.tm, hasTime });
+      stamps.push({ when: dayT + tmMin(h.tm) * 60000, dayT, dt: h.dt, tm: h.tm, hasTime });
     }
   }
   if (!stamps.length) return null;
-  stamps.sort((a, b) => a.when - b.when);
-  const b = stamps[0], e = stamps[stamps.length - 1];
-  const days = new Set(stamps.map(s => s.dt));
+  // Owner (2026-07-30): the duration is the LAST count DATE only — first recorded time → last
+  // recorded time that day. Mid-cycle count days telescope out of the EOM result; the meaningful
+  // count is the final one, and its start→end is the actual time spent counting.
+  const lastDayT = Math.max(...stamps.map(s => s.dayT));
+  const onLast = stamps.filter(s => s.dayT === lastDayT).sort((a, b) => a.when - b.when);
+  const b = onLast[0], e = onLast[onLast.length - 1];
   return {
-    began: b.when, beganDt: b.dt, beganTm: b.tm,
-    ended: e.when, endedDt: e.dt, endedTm: e.tm,
-    durationMin: Math.max(0, Math.round((e.when - b.when) / 60000)),
-    nCounts: stamps.length, nDays: days.size,
-    hasTimes: stamps.some(s => s.hasTime),   // false → dates only (span is day-level, not to-the-minute)
+    countDate: b.dt,
+    began: b.when, beganTm: b.tm,
+    ended: e.when, endedTm: e.tm,
+    durationMs: Math.max(0, e.when - b.when),
+    nCountsLastDay: onLast.length,
+    nCountsTotal: stamps.length,
+    nDays: new Set(stamps.map(s => s.dt)).size,
+    hasTimes: onLast.some(s => s.hasTime),   // false → date only (no time recorded, duration unknown)
   };
 }
 
-// "2h 15m" / "1d 3h" / "45m" from a minute count (for the count-duration display).
-export function fmtDurationMin(min) {
-  if (min == null) return '—';
-  if (min < 60) return `${min}m`;
-  const h = Math.floor(min / 60), m = min % 60;
-  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
-  const d = Math.floor(h / 24), hh = h % 24;
-  return hh ? `${d}d ${hh}h` : `${d}d`;
+// "2h 15m 30s" / "45m 0s" from a millisecond duration (count-duration display; H:M:S per owner).
+export function fmtDurationHMS(ms) {
+  if (ms == null) return '—';
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  return h ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
 }
 
 // Build the journey for one item. `detail` = a mapRawItemHistory() result.

@@ -434,13 +434,19 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   L.push('| **Count artifact** | Noise — it self-corrected; coach count discipline. | Early count not re-counted at EOM → **fixable**: get a real count now (protects next month\'s opening). |');
   L.push('_"Don\'t chase rabbits at EOM" applies to the top-left only. The value is separating a locked one-off (drop it) from a recurring loss (fix the cause) and from a still-fixable count (recount)._', '');
 
-  // ── EARLIER-COUNT CONTEXT (quiet, rolled up) — kept for scope, de-emphasized ──
+  // ── EARLIER-COUNT CONTEXT — reframed as an ACCURACY/PERFORMANCE signal, not a $ recovery (owner
+  // 2026-07-30, grounded in the telescoping math). Mid-cycle counts wash out of the final EOM number
+  // (anchored only by the opening = prior EOM count, and this EOM count) — so they aren't this
+  // cycle's dollars. Their value is: WHERE a discrepancy first surfaced + a read on count accuracy/
+  // consistency. Caveat: with Live Inventory + counting up to 3 days pre-close, a WRONG count inside
+  // that window IS the EOM number, and any wrong count corrupts the running theoretical + can distort
+  // next month's opening. Takeaway = accuracy + consistency, not recovery. See memory/project-eom-uncounted.
   if (context.length) {
     const ctxTot = context.reduce((s, v) => s + v.dolDiff, 0);
     const mgrs = [...new Set(context.map(v => mgrByWrin[v.wrin]).filter(Boolean))];
     const top3 = context.slice(0, 3).map(v => `${v.descr || v.wrin} (${money(v.dolDiff)})`).join(' · ');
-    L.push('## 📌 Earlier-count context', '');
-    L.push(`${context.length} item${context.length === 1 ? '' : 's'} (${money(ctxTot)}) already cascaded from **early-period counts** — recounting now won't recover the dollars; fix the source counts going forward.${mgrs.length ? ` Early counts by: ${mgrs.join(', ')}.` : ''}`);
+    L.push('## 📌 Earlier-count context — accuracy signal, not this cycle\'s $', '');
+    L.push(`${context.length} item${context.length === 1 ? '' : 's'} (${money(ctxTot)}) surfaced at **early-period counts**. These **wash out of the final EOM number** (only the opening + this EOM count drive the P&L), so this is **not recoverable $** — it's a **read on count accuracy/consistency** and **where** the discrepancy first showed. Fix the *source counts going forward*: a wrong count doesn't cost this cycle, but it corrupts the running theoretical and can distort next month's opening. **Accuracy + consistency is the goal.**${mgrs.length ? ` Early counts by: ${mgrs.join(', ')}.` : ''}`);
     L.push(`_${top3}${context.length > 3 ? ` · +${context.length - 3} more` : ''}_`, '');
   }
 
