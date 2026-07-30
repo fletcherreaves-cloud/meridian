@@ -479,7 +479,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const m = {};
     for (const r of (rawDetail || [])) {
       const counts = (r.history || []).filter(h => h.isCount);
-      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, counts });
+      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, counts, caseSz: r.caseSz, uom: r.uom });
     }
     return m;
   }, [rawDetail]);
@@ -614,7 +614,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     setDiagCopied(false);
     // Count-integrity breakdown (never/early/stale) so the report frames "uncounted" correctly.
     const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date() });
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete }) });
+    // Case size per WRIN (from the raw-item detail) so the report can show recount qty as
+    // full cases — "look for ~3 cases" is more actionable than "≈2,091 units" (owner req).
+    const caseSzByWrin = {};
+    for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin }) });
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
 
   // Open the visual Item Journeys for a store (worst-net-variance first).

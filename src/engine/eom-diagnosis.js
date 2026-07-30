@@ -308,7 +308,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // `incomplete` = diagnoseIncompleteCount() result (byState never/early/stale). Lets the report
 // (and therefore SAGE, which reads it) frame uncounted items CORRECTLY instead of calling them
 // all "blanks to go count" — the Durant #5985 lesson. See memory/project-eom-uncounted-vs-qsrsoft.
-export function formatDiagnosisReport(result, { threshold = 50, incomplete = null } = {}) {
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {} } = {}) {
   const V = (result.variance || []).filter(v => Math.abs(v.dolDiff || 0) >= threshold)
     .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0));
   const findings = result.findings || [];
@@ -362,6 +362,9 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     if (noWaste(v)) c.push('{{warn|no waste logged}}');
     return c.join(' ');
   };
+  // Recount qty expressed in full cases — "look for ~3 cases" beats "≈2,091 units" (owner req).
+  const casesOf = v => { const cs = Number(caseSzByWrin[String(v.wrin)]); return (cs > 0 && v.variance) ? Number(v.variance) / cs : null; };
+  const casesNote = v => { const c = casesOf(v); return c != null && Math.abs(c) >= 0.1 ? ` · ~${c > 0 ? '+' : ''}${c.toFixed(1)} cs` : ''; };
   const actionFor = v => overPortioned(v) ? `over-portioning — audit the station recipe/portion (running ${Math.round(yieldPct(v) * 100)}% of standard yield)`
     : yieldByWrin[v.wrin] ? 'check yield setting, then recount'
     : noWaste(v) ? 'verify waste logging, then recount'
@@ -380,7 +383,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const TOP = 6;
     focus.slice(0, TOP).forEach(v => {
       const mgr = mgrByWrin[v.wrin] ? ` · _counted by ${mgrByWrin[v.wrin]}_` : '';
-      L.push(`- **${v.descr || v.wrin}** ${chipsFor(v)} — ${actionFor(v)}${mgr}`);
+      L.push(`- **${v.descr || v.wrin}** ${chipsFor(v)} — ${actionFor(v)}${casesNote(v)}${mgr}`);
     });
     if (focus.length > TOP) L.push(`- _+${focus.length - TOP} more current item(s) in the full detail below._`);
   } else {
@@ -432,8 +435,14 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
 
   // ── Reference — full detail (present but demoted below the manager summary) ──
   L.push('## Reference — full detail', '', `_All ${V.length} items ≥ ±$${threshold}, ranked._`, '');
-  L.push('| # | Item | WRIN | $ Var | Qty Var | Dir |', '|--:|------|------|------:|--------:|-----|');
-  V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
+  const anyCases = V.some(v => casesOf(v) != null);
+  if (anyCases) {
+    L.push('| # | Item | WRIN | $ Var | Qty Var | Cases | Dir |', '|--:|------|------|------:|--------:|------:|-----|');
+    V.forEach((v, i) => { const c = casesOf(v); L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${c != null ? c.toFixed(1) : '—'} | ${dir(v)} |`); });
+  } else {
+    L.push('| # | Item | WRIN | $ Var | Qty Var | Dir |', '|--:|------|------|------:|--------:|-----|');
+    V.forEach((v, i) => L.push(`| ${i + 1} | ${v.descr || v.wrin} | ${v.wrin || ''} | ${money(v.dolDiff)} | ${(Number(v.variance) || 0).toFixed(1)} | ${dir(v)} |`));
+  }
   L.push('');
   const tier = (label, lo, hi) => {
     const items = focus.filter(v => { const a = Math.abs(v.dolDiff); return a >= lo && (hi == null || a < hi); });

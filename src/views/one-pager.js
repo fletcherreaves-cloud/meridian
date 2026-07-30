@@ -586,11 +586,10 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
     { label: 'Food Over Base %',       v: cs.fobPct?.actual,   t: cs.fobPct?.target,        fmt: '%', dir: 'lower' },
     { label: 'Voice OSAT',             v: ra.osat,             t: 0.90,                     fmt: '%', dir: 'higher' },
     { label: 'Voice B2B (Accuracy)',   v: ra.accB2B,           t: 0.95,                     fmt: '%', dir: 'higher' },
-    // Store-level (Supervisor→GM) adds kitchen speed/health — noise at district/patch.
-    ...(isStore ? [
-      { label: 'KVS Time per GC',      v: ra.kvsPerGc,         t: ra.kvsTimeTarget,         fmt: 's', dir: 'lower' },
-      { label: 'KVS Healthy Usage',    v: ra.kvsHealthy,       t: ra.kvsHealthyTarget,      fmt: '%', dir: 'higher' },
-    ] : []),
+    // KVS kitchen speed/health — on all three forms (owner req 2026-07-29). At org/patch
+    // scope these are the scope-average; at store scope, the store's own.
+    { label: 'KVS Time per GC',      v: ra.kvsPerGc,         t: ra.kvsTimeTarget,         fmt: 's', dir: 'lower' },
+    { label: 'KVS Healthy Usage',    v: ra.kvsHealthy,       t: ra.kvsHealthyTarget,      fmt: '%', dir: 'higher' },
   ];
   const scBody = scDefs.map(r => {
     const av = (!blank && r.v != null) ? `<b>${esc(fmtVal(r.v, r.fmt))}</b>` : fillLine;

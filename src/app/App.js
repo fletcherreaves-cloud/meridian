@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.601';
+const MERIDIAN_VERSION    = '4.602';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.602', date:'2026-07-29', changes:[
+    'One-Pager: KVS Time per GC + KVS Healthy Usage now appear on all three review forms (Organization / Patch / Restaurant), not just the store form.',
+    'EOM Food-Cost Diagnosis: recount lists + the full item table now show the quantity variance expressed in full CASES (e.g. "~+3.0 cs") next to units — easier for a manager to know what to physically look for on a recount. (Uses the raw-item case size.)',
+  ]},
   {version:'4.601', date:'2026-07-29', changes:[
     'EOM Food-Cost Diagnosis now shows actual-vs-standard YIELD (the over-portioning fingerprint) — e.g. "over-portioned 52% of std" — with a "Portioning watch" section listing items running below their recipe yield band, so the fix points at the station\'s portioning, not another recount. Matches the strongest part of QSRSoft CoachQ\'s report. (The variance pull already computed the yield band; it now persists it — the yield_lo/yield_hi columns backfill on the next Variance pull, and need the schema.sql snippet run once.)',
   ]},
