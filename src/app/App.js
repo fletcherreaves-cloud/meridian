@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.606';
+const MERIDIAN_VERSION    = '4.607';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.607', date:'2026-07-30', changes:[
+    'EOM Dashboard now shows completion BY CLASS across the district — Food, Condiment, Paper, Non-Product — with Food + Condiment highlighted as the profit drivers to finish first, and Non-Product treated as a last-day class (a low % early is expected, not behind). Renamed the "Year-Round" view to "Count Cycle".',
+  ]},
   {version:'4.606', date:'2026-07-30', changes:[
     'EOM Food-Cost Diagnosis: the FOB Analysis report now sits ABOVE the Action Items (reversed per owner preference — it is where the work happens), and the report now prints an itemized "To-count list" of the never-counted products a store must complete before close (not just a count) — which also flows into SAGE.',
   ]},

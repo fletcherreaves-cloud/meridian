@@ -723,6 +723,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return { tally, sorted };
   }, [rows]);
 
+  // District completion BY CLASS (owner req 2026-07-30). Food + Condiment are the profit
+  // drivers and should be the first classes done; Paper is flexible days 1-2; Non-Product is
+  // counted the LAST day — so a low Non-Product % early in the cycle is EXPECTED, not behind.
+  const classSummary = useMemo(() => {
+    const order = [['food', 'Food', true], ['condiment', 'Condiment', true], ['paper', 'Paper', false], ['nonproduct', 'Non-Product', false]];
+    const agg = {}; for (const [k] of order) agg[k] = { total: 0, counted: 0, doneStores: 0, n: 0 };
+    for (const r of rows) { const bc = r.prog?.byClass || {}; for (const [k] of order) { const b = bc[k]; if (b && b.total) { agg[k].total += b.total; agg[k].counted += b.counted || 0; agg[k].n++; if (b.done) agg[k].doneStores++; } } }
+    return order.map(([k, label, fob]) => ({ k, label, fob, pct: agg[k].total ? agg[k].counted / agg[k].total : null, doneStores: agg[k].doneStores, n: agg[k].n }));
+  }, [rows]);
+
   const inWindow = useMemo(() => {
     const d = new Date(); d.setHours(0, 0, 0, 0);
     return d >= countWindowStart(period);
@@ -742,7 +752,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
         // mode toggle — EOM count-completion vs year-round progress
         div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-          [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Year-Round']].map(([k, label]) =>
+          [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Count Cycle']].map(([k, label]) =>
             h('button', {
               key: k, onClick: () => setMode(k),
               title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared' : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
@@ -817,6 +827,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         div({ key: i, style: { flex: '1 1 160px', background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: '8px', padding: '12px 14px' } },
           div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
           div({ style: { fontSize: '22px', fontWeight: 700, color: 'var(--text)', marginTop: '4px' } }, String(val))))),
+
+    // Completion BY CLASS (owner req) — Food + Condiment (profit drivers) emphasized; Non-Product
+    // is a last-day class so a low % early is expected. Shown for the count-progress modes.
+    rows.length > 0 && div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'stretch' } },
+      span({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', alignSelf: 'center', marginRight: '2px' } }, 'By class:'),
+      classSummary.map(c => {
+        const p = c.pct;
+        const col = p == null ? 'var(--text3)' : p >= 0.98 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : (c.k === 'nonproduct' && !inWindow) ? 'var(--text3)' : '#64748b';
+        return div({ key: c.k, title: c.k === 'nonproduct' ? 'Non-Product is counted the LAST day — low early is expected' : c.fob ? 'FOB profit driver — count first' : '', style: { flex: '1 1 130px', border: `1px solid ${c.fob ? 'rgba(245,188,0,.4)' : 'var(--bdr)'}`, borderLeft: `3px solid ${col}`, borderRadius: '8px', padding: '8px 10px', background: c.fob ? 'rgba(245,188,0,.06)' : 'var(--surf2)' } },
+          div({ style: { fontSize: '10px', color: c.fob ? '#f5bc00' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: c.fob ? 700 : 400 } }, c.label + (c.fob ? ' ★' : '')),
+          div({ style: { fontSize: '20px', fontWeight: 700, color: 'var(--text)', marginTop: '2px' } }, p == null ? '—' : pct(p)),
+          div({ style: { fontSize: '10px', color: 'var(--text3)' } }, `${c.doneStores}/${c.n} stores done`));
+      })),
 
     // "ready for review" notification banner
     readyForReview.length > 0 && div({
