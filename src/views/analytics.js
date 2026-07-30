@@ -1905,6 +1905,24 @@ function StoreVlhConfigPanel({onClose}) {
     setTimeout(() => setStatus(prev => { const n={...prev}; delete n[loc]; return n; }), 2000);
   };
 
+  // Save ALL stores at once (owner req 2026-07-30) — persists every store's CURRENT displayed config
+  // (incl. the self_serve defaults) in one upsert, so unconfigured stores get a real saved row. The
+  // beverage-tower yield exemption reads saved rows, so this makes it apply everywhere it should.
+  const [savingAll, setSavingAll] = uSt('');   // '' | 'saving' | 'saved'
+  const saveAll = async () => {
+    const locs = Object.keys(STORE_NAMES);
+    const rows = locs.map(loc => ({...getCfg(loc), updated_at:new Date().toISOString()}));
+    const map = {}; rows.forEach(r => { map[r.loc] = r; });
+    setConfigs(prev => ({...prev, ...map}));    // reflect locally so getCfg returns saved objects
+    setSavingAll('saving');
+    if (supabase) {
+      const { error } = await supabase.from('store_vlh_config').upsert(rows, {onConflict:'loc'});
+      if (error) { console.warn('[VLH] saveAll:', error.message); setErr(error.message); }
+    }
+    setSavingAll('saved');
+    setTimeout(() => setSavingAll(''), 2500);
+  };
+
   const allLocs = Object.keys(STORE_NAMES);
   const okLocs  = allLocs.filter(l => getStoreOrg(l) === 'mcdok').sort((a,b) => sName(a).localeCompare(sName(b)));
   const flLocs  = allLocs.filter(l => getStoreOrg(l) !== 'mcdok').sort((a,b) => sName(a).localeCompare(sName(b)));
@@ -1958,6 +1976,10 @@ function StoreVlhConfigPanel({onClose}) {
           div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'Store VLH Configuration'),
           div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2}},
             'Physical configuration per store — used to select the correct VLH guide page for labor-efficiency calculations. Changes auto-save.')),
+        h('button',{onClick:saveAll,disabled:savingAll==='saving',
+          title:'Persist every store\'s current settings at once (incl. the self-serve defaults) — needed for the beverage-tower food-cost exemption to apply.',
+          style:{background:savingAll==='saved'?'rgba(16,185,129,.15)':'var(--surf3)',color:savingAll==='saved'?'#10b981':'var(--gold)',border:`1px solid ${savingAll==='saved'?'#10b981':'var(--bdr2)'}`,borderRadius:6,padding:'5px 11px',fontSize:'11px',fontWeight:700,cursor:savingAll==='saving'?'wait':'pointer',whiteSpace:'nowrap'}},
+          savingAll==='saving'?'Saving…':savingAll==='saved'?'✓ All saved':'Save all'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       // Legend row
