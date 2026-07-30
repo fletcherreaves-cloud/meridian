@@ -402,6 +402,35 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     : 'recount + verify counts';
 
   const L = [`# FOB Variance Analysis — ${result.storeName || result.store} · ${result.period}`, ''];
+
+  // ── TOP 5 — DO NOW (owner req #46): cut-and-dry, ranked by the best chance to improve THIS
+  // cycle's result. Anyone can latch onto this; the full analysis stays below. Ranked by
+  // recoverability + $ + class (Food/Condiment first). Reuses the count-integrity buckets, the
+  // recount-worthiness overlay, the portioning fingerprint, and the class weighting.
+  const isFC = v => { const c = normClass(v && v.cls); return c === 'food' || c === 'condiment'; };
+  const doNow = [];
+  const neverItems = ((incomplete && incomplete.uncounted) || []).filter(u => u.state === 'never').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
+  if (neverItems.length) {
+    const nv = incomplete.byState?.never?.value || 0;
+    doNow.push({ score: 1e6 + nv, text: `**Count the ${neverItems.length} never-counted item${neverItems.length === 1 ? '' : 's'} before close** (~${money(nv)} at risk) — the only true "count it and recover" money. Start with: ${neverItems.slice(0, 3).map(u => u.descr || u.wrin).join(', ')}.` });
+  }
+  V.filter(v => (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => (isFC(b) - isFC(a)) || Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
+    .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff) + (isFC(v) ? 1e5 : 0), text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
+  V.filter(v => overPortioned(v) && isFC(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
+    .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), text: `**Fix portioning on ${v.descr || v.wrin}** — running ${Math.round(yieldPct(v) * 100)}% of standard yield; audit the station's recipe/portion now.` }));
+  if (incomplete && incomplete.byState?.stale?.n) {
+    const sv = incomplete.byState.stale.value || 0;
+    doNow.push({ score: 3e5 + sv, text: `**Verify & clear the ${incomplete.byState.stale.n} obsolete/inactive item${incomplete.byState.stale.n === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, write off if gone; don't let it ride into next month's opening.` });
+  }
+  const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
+  if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
+  if (doNow.length) {
+    doNow.sort((a, b) => b.score - a.score);
+    L.push('## ✅ Top 5 — do these now (best shot at improving this result)', '');
+    doNow.slice(0, 5).forEach((d, i) => L.push(`${i + 1}. ${d.text}`));
+    L.push('', '_Cut-and-dry: knock these out, then **re-run the diagnosis** to see what changed. Full analysis below._', '');
+  }
+
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
   L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))}) · Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
 
