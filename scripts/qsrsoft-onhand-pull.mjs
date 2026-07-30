@@ -86,10 +86,19 @@ function isProgressSnapshotHour() {
   const h = new Date().getUTCHours();
   return h >= PROGRESS_SNAPSHOT_HOUR && h < PROGRESS_SNAPSHOT_HOUR + PROGRESS_SNAPSHOT_WINDOW;
 }
+// Intraday count-window pulls are restricted to Central business hours (Notes 35): managers
+// count during the day, so hourly pulls overnight are wasted egress + noise. 8am–6pm CT,
+// DST-safe via America/Chicago. A manual/on-demand run (FORCE=1) overrides this anytime.
+const CT_START = Number(process.env.ONHAND_CT_START ?? 8);
+const CT_END = Number(process.env.ONHAND_CT_END ?? 18);
+function centralHour() {
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date()));
+}
+function inCtBusinessHours() { const h = centralHour(); return h >= CT_START && h < CT_END; }
 // Should this invocation do a pull at all, and in which mode?
 function runMode() {
   if (FORCE) return 'forced';
-  if (inCountWindow()) return 'count-window';   // hourly, last 3 days
+  if (inCountWindow()) return inCtBusinessHours() ? 'count-window' : null; // hourly, last 3 days, 8a–6p CT only
   if (isProgressSnapshotHour()) return 'progress'; // one daily snapshot, year-round
   return null;                                   // skip
 }

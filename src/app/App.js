@@ -9,7 +9,7 @@ const ReactDOM = { createRoot }
 
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
-import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
+import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
@@ -37,6 +37,8 @@ import { EOMDashboardPanel } from '../views/eom-dashboard.js';
 import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
 import { FormsPrintPanel } from '../views/forms-print.js';
 import { OnePagerPanel } from '../views/one-pager.js';
+import { MetricLineagePanel } from '../views/metric-lineage.js';
+import { FormsLibraryPanel } from '../views/forms-library.js';
 import { SignalsPanel } from '../views/signals.js';
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
@@ -53,7 +55,7 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 import { GradedVisitsPanel } from '../views/graded-visits.js';
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -213,10 +215,94 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.556';
-const MERIDIAN_BUILD_DATE = '2026-07-27';
+const MERIDIAN_VERSION    = '4.602';
+const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.602', date:'2026-07-29', changes:[
+    'One-Pager: KVS Time per GC + KVS Healthy Usage now appear on all three review forms (Organization / Patch / Restaurant), not just the store form.',
+    'EOM Food-Cost Diagnosis: recount lists + the full item table now show the quantity variance expressed in full CASES (e.g. "~+3.0 cs") next to units — easier for a manager to know what to physically look for on a recount. (Uses the raw-item case size.)',
+  ]},
+  {version:'4.601', date:'2026-07-29', changes:[
+    'EOM Food-Cost Diagnosis now shows actual-vs-standard YIELD (the over-portioning fingerprint) — e.g. "over-portioned 52% of std" — with a "Portioning watch" section listing items running below their recipe yield band, so the fix points at the station\'s portioning, not another recount. Matches the strongest part of QSRSoft CoachQ\'s report. (The variance pull already computed the yield band; it now persists it — the yield_lo/yield_hi columns backfill on the next Variance pull, and need the schema.sql snippet run once.)',
+  ]},
+  {version:'4.600', date:'2026-07-29', changes:[
+    'EOM Food-Cost Diagnosis + SAGE now frame "uncounted" items correctly. The report has a Count-Integrity section that splits them into NEVER counted (true blanks — real recovery, count before close), counted EARLY (already counted; recount only if the count looks wrong — dollars are locked this period), and STALE / deactivated ghost-floats (verify → count if still usable, or write off before close). SAGE is told to respect this split so it never hands a GM a "go count $X of blanks" instruction unless that money is truly never-counted.',
+  ]},
+  {version:'4.599', date:'2026-07-29', changes:[
+    'EOM uncounted-item diagnosis now explains WHY each item reads uncounted: NEVER counted (a true blank), counted EARLY this period (QSRSoft shows it counted — a cascade discussion, not free money), or STALE / prior-period (likely an inactive item carrying a residual on-hand "ghost float"). The class-chip hover shows each item\'s state + last-counted date, and the engine now separates true blanks from early/stale so value-at-risk isn\'t overstated. Resolves the "12 uncounted that QSRSoft doesn\'t flag" question.',
+  ]},
+  {version:'4.598', date:'2026-07-29', changes:[
+    'EOM Dashboard: on-demand "↻ On-Hand" and "↻ Variance" buttons pull fresh count-progress / raw-item data right now instead of waiting for the next scheduled run. (Requires the trigger-dar-sync edge function to be redeployed with the new allowlist entries.)',
+    'The scheduled intraday On-Hand pull now only runs 8am–6pm Central during the count window (managers count during the day), cutting wasted overnight pulls. A manual pull button overrides this anytime.',
+  ]},
+  {version:'4.597', date:'2026-07-29', changes:[
+    'EOM Item Journeys now show the TIME each entry was logged next to the date (emphasized on count events), and same-day events sort by time. Seeing when a count went in — e.g. right at cutoff or re-entered late — helps spot a count that was padded or "fixed" to improve results.',
+  ]},
+  {version:'4.596', date:'2026-07-29', changes:[
+    'SAGE tables read cleaner: numeric columns (dollars, %, seconds, counts) now right-align with tabular figures instead of everything left-aligned, so columns line up like the rest of the app\'s data tables.',
+  ]},
+  {version:'4.595', date:'2026-07-29', changes:[
+    'EOM count progress: when a class list is ≥90% counted but not finished, hovering its chip (e.g. "F 92% ·4") now lists exactly which items are still uncounted, ranked by dollars at risk — so the store can close the last few instead of guessing. The store message already itemizes the gaps; this puts them one hover away in the dashboard.',
+  ]},
+  {version:'4.594', date:'2026-07-29', changes:[
+    'Faster current-data load: the Daily Glimpse, Cash, Sales Ledger, Labor, Ops and Controls streams now load their pages in parallel (like the DAR summary already does) instead of one after another — the current-day sales/service/controls appear noticeably quicker after login.',
+    'Fixed the At-A-Glance "stores at red model health" count mismatch (header said 1, checklist said 2): a store with no model-health score yet was being counted as red in one place; both now ignore null scores.',
+  ]},
+  {version:'4.593', date:'2026-07-29', changes:[
+    'At-A-Glance tiles no longer get stuck "as of" the last manual-upload date. The date-window logic checked only the manual Operations Report to decide whether the selected range had data — so once manual uploads stopped, it silently fell back to a 30-day window ending on the last manual date (e.g. Jul 15), pinning Sales & Guest Counts, Service, Controls and the district morning brief to that old date even though the auto DAR / Daily Glimpse were current. It now recognizes data from the auto streams too and anchors to the freshest date across all of them.',
+  ]},
+  {version:'4.592', date:'2026-07-29', changes:[
+    'One-Pager (Supervisor→GM store review): KVS Time per GC and KVS Healthy Usage now auto-fill from the Daily Glimpse (and manual Ops Report) with their targets, instead of KVS Healthy Usage always being blank.',
+  ]},
+  {version:'4.591', date:'2026-07-29', changes:[
+    'Leadership One-Pager now uses the McDonald\'s work week — WEDNESDAY through Tuesday — for its weekly range and label, honoring the Week Start setting instead of assuming Monday–Sunday. The header reads "Week of {Wed date}" and the window shows the correct Wed–Tue span.',
+    'Sped up the current-data load: the QSRSoft daily-activity summary (At-A-Glance + One-Pager sales/speed) now fetches its pages in parallel instead of ~39 sequential round-trips — the "took a while" delay before recent data appeared is largely gone — and tolerates a partial read (keeps the newest days) instead of failing.',
+  ]},
+  {version:'4.590', date:'2026-07-29', changes:[
+    'Fixed the blank vs-LY on the Leadership One-Pager: Guest-Count-vs-LY in the scorecard and the "vs LY" column in District Outliers were empty because the vs-LY helper compared date-typed rows against the form\'s text date range (a type mismatch that silently dropped every day). Both now populate from the auto DAR\'s last-year figures. Added a regression test.',
+    'Fixed the "Loaded Data" FOB pill showing "Invalid Date" and a doubled store count — it now parses each stream\'s date format and normalizes store numbers.',
+  ]},
+  {version:'4.589', date:'2026-07-29', changes:[
+    'FIXED the real "data reverts to an old date" bug. At-A-Glance sales used an all-or-nothing rule: if ANY manual Operations-Report day fell in the range, it used ONLY the manual data and ignored the auto QSRSoft sync entirely — so the moment the (older) manual upload finished loading, the tile flipped from current back to the last upload date, and any range spanning that date dropped every newer day. It now merges freshest-per-day: the auto DAR fills every day, a manual upload only overrides the specific day it covers. Sales & Guest Counts, its channel mix, vs-LY, and the "as of" date now stay current.',
+    'The "Loaded Data" strip now reflects the freshest date across BOTH manual and auto/emailed streams per category (Sales, Service, Controls, FOB), instead of showing only the manual-upload coverage — so it no longer reads weeks-stale while the app is actually running on current cloud data.',
+  ]},
+  {version:'4.588', date:'2026-07-29', changes:[
+    'Extended the recent-data fix to every large cloud read: the emailed Daily-Glimpse, Cash, Sales-Ledger and the manual Labor streams now also load newest-first, so Service (OEPE/KVS), Controls, and Labor % repopulate for the current window even when a read is throttled. (The emailed pipeline was healthy the whole time — the data was being written; the app just wasn\'t reading the newest rows.)',
+    'Added a "⚠ Daily data is N days stale" guard banner to the Leadership One-Pager: if the freshest sales/speed/labor date is more than 2 days behind today, the form warns you (with the newest date) instead of quietly printing incomplete numbers.',
+  ]},
+  {version:'4.587', date:'2026-07-29', changes:[
+    'Data-integrity fix: large cloud reads (starting with the QSRSoft daily-activity summary that feeds At-A-Glance + the One-Pager forms) could silently return only PARTIAL data if a read was cut off mid-way — and because they loaded oldest-first, the missing rows were the most RECENT days, so the app quietly showed data "stuck" a couple weeks back while the live data was actually current. Reads now load newest-first (a truncated read keeps the recent days that matter) and a cut-off read now logs a loud warning instead of pretending it was complete. Note: streams fed by the emailed QSRSoft reports (KVS / cash controls / labor %) can still lag until that email pipeline is caught up — that is a separate data-refresh, not a display bug.',
+  ]},
+  {version:'4.586', date:'2026-07-29', changes:[
+    'EOM Dashboard: counted + actively-counting locations now sort to the top of the store list in every mode (matching the Scoreboard), so the stores in play surface first.',
+  ]},
+  {version:'4.585', date:'2026-07-29', changes:[
+    'EOM Food-Cost Diagnosis report redesigned to be manager-first: it now leads with a "👉 Focus now" short-list of the current count\'s actionable items (each with compact colour chips — SHORT/OVER $, recount-worthy, yield off?, no waste logged — and a one-line action), then a quiet, rolled-up "Earlier-count context" summarizing items whose variance is locked in from earlier counts (present, not lost, but no longer competing for attention), then systemic patterns, with the full item table + tiered breakdown kept below as reference. Same depth, far more readable.',
+    'The Diagnosis Print/PDF now renders the formatted report (headings, tables, chips) instead of dumping raw markdown text — it matches the on-screen report.',
+  ]},
+  {version:'4.584', date:'2026-07-29', changes:[
+    'EOM Full report: the Unit/Qty Variance column was showing 0.0 for every item (it read a field that only exists on journey events) — it now shows the real quantity variance from the Variance Stat report alongside the $ variance.',
+    'EOM Item Journeys: the report figure is now framed as one "Variance" with clear Qty and $ sub-values, and reconciliation now confirms BOTH — a "✓ Variance matches report" when the ledger $ and quantity both tie out, or a specific "⚠ doesn\'t fully match — $ off by … / qty off by …" when they don\'t. Quantity also shows an approximate full-case count where the case size is known.',
+    'EOM "Ask SAGE" now closes the EOM dashboard when it hands off, so SAGE opens in front instead of behind the dashboard (it was opening hidden underneath).',
+    'Leadership One-Pager review titles renamed: Owner→DO = Organization Business Review & Checkpoint, DO→Supervisor = Patch Business Review & Checkpoint, Supervisor→GM = Restaurant Business Review & Checkpoint.',
+  ]},
+  {version:'4.583', date:'2026-07-29', changes:[
+    'Labor % is now PUNCHED labor for every location, so Florida and Oklahoma compare like-for-like. Background: "Crew Labor %" includes Salaried Manager Labor $ where a store is configured that way (FL is; OK isn\'t), which made FL read higher than OK for the same real performance. The headline Labor % now always uses Punched Labor %, sourced auto-first from Controls → the cloud-fresh Daily Glimpse → manual labor uploads. Crew Labor % and Total Labor % are still available separately (and the Store Dashboard\'s Crew Labor % tile, which was silently blank, now populates).',
+  ]},
+  {version:'4.582', date:'2026-07-29', changes:[
+    'Fix: the One-Pager "opportunity on the table" $ was wildly inflated (some stores showed millions/week). Root cause — current guest counts were read from a near-empty kitchen signal instead of real transactions, which blew up average check. Guest counts now use real transactions everywhere, and the guest/traffic pillar is reframed as Sales-to-Plan: the $ a store is running behind its own QSRSoft projected product sales — a bounded, sane figure that can\'t explode. Fixes the guest-count-vs-last-year actuals at the same time.',
+    'Weekly Business Review form — auto-fill + polish: the Period now shows the exact calendar window (e.g. Jul 21 – Jul 27, 2026); the scorecard pre-fills the group\'s rolled-up Targets and auto-checks On-Track (Yes/No) from actual-vs-target; Guest Count vs LY, Voice OSAT and Voice B2B now populate their Actuals from live data; the signature line is labelled with the recipient\'s job title (DO / Supervisor / GM) instead of a generic "Leader"; a single-store review shows both the restaurant # AND its name; "Net Sales" is renamed "Product Sales" throughout; and a compact Discussion Checklist (People Development/Training, Promotions, Controls/Cash, Cleanliness Walkthrough, Other — each Y/N) was added to every variant. Still prints on one page.',
+  ]},
+  {version:'4.567', date:'2026-07-29', changes:[
+    'Leadership One-Pager — Weekly Business Review: a polished, leader-led review the leader completes before each cascade discussion. It leads with last week\'s Wins, a performance scorecard (Product Sales, GC vs LY, OEPE, R2P, Labor %, FOB %, Voice OSAT + B2B — with blank Target / Actual / On-Track for the leader to fill), and closes with Commitments. The form ADAPTS to the cascade level: Owner→DO shows district outliers + opportunities + supervisor accountability; DO→Supervisor shows store-by-store + GM coaching focus; Supervisor→GM shows the store deep-dive (speed/food/labor) + a 10-line shift-manager tracker. Print to PDF, download as an editable Word (.doc), or a fully-blank fillable version. When not blank, actuals auto-fill from live data and shift-manager names pre-list for the store.',
+    'New: Forms Library (🗂) — the leadership review forms catalogued by cascade level (Owner→DO / DO→Supervisor / Supervisor→GM), each with Print-blank and Word-blank actions.',
+    'New: Metric Lineage (🔍) — a searchable, 100%-transparent registry of every metric that is calculated from other metrics, showing its exact formula, upstream inputs, and the source report/table so any number can be verified against source. Same registry powers the KPI info tooltip.',
+    'Speed metrics decoded from the Daily Activity report and now cloud-fresh for the current day: R2P (Receipt to Print) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt, and OEPE (Order-to-Exit) = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt — both reconciled exactly to the report, so the One-Pager\'s R2P/OEPE tiles populate intraday instead of waiting on a manual upload.',
+    'One-Pager Opportunity $ now paces Guest Count vs the store\'s own QSRSoft projection (not a best-in-class store), so an industry-wide sales dip no longer inflates the guest-count opportunity. Recoverable $ are also shown as a relatable weekly figure. Added a per-location breakdown table + supervisor top/bottom-store highlights (FL→FL, OK→OK).',
+    'Performance Reviews: added Department Manager + Shift Manager roles; the manager-attribution dropdown (score a DM/AM/Shift-Manager on their OWN shifts) now populates from the Shift Manager Summary data for the selected store.',
+    'Fix: the End-of-Month On-Hand inventory pull was failing every run (stale browser-login path) — it now mints a fresh session each run like the variance pull, so EOM count progress flows automatically through month-end.',
+  ]},
   {version:'4.556', date:'2026-07-27', changes:[
     'Precautionary hardening batch: fixed a data-completeness bug where the Daily Glimpse / Cash / Sales-Ledger loaders could silently drop the newest ~3 weeks of data on large date ranges (Supabase 1000-row cap) — At-A-Glance tiles now always see the full window. Fixed the Calendar Manager Florida/Oklahoma pills (FL pill was empty). Refreshed this version/changelog and removed stale debug logging.',
     'EOM: Item Journey visual guide (per-item count-cycle timeline with verified-fact vs likely-inference signals, qty + $ variance, reconciled exactly to the Variance Stat report, click-through flow chips), two modes (EOM count-completion + year-round progress), FOB multi-location variance matrix, and the comms draft now carries the full food-cost action plan.',
@@ -932,6 +1018,18 @@ function App() {
       return merged;
     }catch{return DEF_SETTINGS;}
   });
+  // Keep the live org singletons (constants.js) in sync with settings so panels that don't
+  // receive `settings` (DT Speed, Skills Matrix, Graded Visits) reflect an org edit immediately
+  // + cross-device. supervisorGroups() derives from the effective-dated assignments timeline;
+  // if none is saved yet, seed it from the flat supervisorGroups map (equivalent, open-start).
+  useEffect(()=>{
+    setLiveSupervisorGroups(settings?.supervisorGroups);
+    const a = (settings?.orgAssignments && settings.orgAssignments.length)
+      ? settings.orgAssignments : seedAssignmentsFromGroups(settings?.supervisorGroups);
+    setLiveAssignments(a);
+  },[settings]);
+  // Open SAGE on demand (e.g. the EOM diagnosis "Ask SAGE" button seeds window.__MF_SAGE_SEED__).
+  useEffect(()=>{ const h=()=>setShowSage(true); window.addEventListener('mf:open-sage',h); return ()=>window.removeEventListener('mf:open-sage',h); },[]);
   const [userEvents, setUserEvents]= useState(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}});
   const [showSettings, setShowSettings]= useState(false);
   const [showRanking, setShowRanking]  = useState(false);
@@ -1003,6 +1101,8 @@ function App() {
   const [showPriorities, setShowPriorities] = useState(false);
   const [showFormsPrint, setShowFormsPrint] = useState(false);
   const [showLeaderOnePager, setShowLeaderOnePager] = useState(false);
+  const [showMetricLineage, setShowMetricLineage] = useState(false);
+  const [showFormsLibrary, setShowFormsLibrary] = useState(false);
   const [showKB, setShowKB] = useState(false);
   const [showSmartTargets, setShowSmartTargets] = useState(false);
   const [showLocIntel,     setShowLocIntel]     = useState(false);
@@ -1587,6 +1687,34 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
         }
       }catch(e){console.warn('[Meridian] QSRSoft act summary load failed:',e);}
+      // eBOS daily op-supplies purchases → ds.ebosRows. Auto-pulled cloud stream that
+      // feeds the Perf-Review "Op Supplies vs Budget" actual (Notes 32 #4) — 400-day
+      // window so a full review year is covered on any device.
+      try{
+        const ebosRows=await loadEbosDaily(400);
+        if(ebosRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return{...prev,ebosRows};});
+          console.log(`[Meridian] ✓ Loaded ${ebosRows.length} eBOS op-supplies rows`);
+        }
+      }catch(e){console.warn('[Meridian] eBOS op-supplies load failed:',e);}
+      // QSRSoft People reports (monthly per-loc) → Perf-Review People metrics (Notes 32):
+      // Roster Statistics (headcount), Employee Roster role counts (shift-cert), Turnover (0-90).
+      try{
+        const [rosterStatsRows,rosterRoleCounts,turnoverRows]=await Promise.all([loadRosterStatistics(),loadRosterRoleCounts(),loadTurnoverMonthly()]);
+        if(rosterStatsRows.length||rosterRoleCounts.length||turnoverRows.length){
+          setDs(prev=>{if(!prev)return prev;return{...prev,rosterStatsRows,rosterRoleCounts,turnoverRows};});
+          console.log(`[Meridian] ✓ Loaded People reports — rosterStats ${rosterStatsRows.length}, roleCounts ${rosterRoleCounts.length}, turnover ${turnoverRows.length}`);
+        }
+      }catch(e){console.warn('[Meridian] People reports load failed:',e);}
+      // QSRSoft Digital App + McDelivery 3PO (monthly per-loc) → Perf-Review
+      // Digital App GC/R/D + Delivery GC/R/D metrics (Notes 32).
+      try{
+        const [digitalAppRows,mcdeliveryRows,shiftManagerRows]=await Promise.all([loadDigitalAppMonthly(),loadMcdeliveryMonthly(),loadShiftManagerMonthly()]);
+        if(digitalAppRows.length||mcdeliveryRows.length||shiftManagerRows.length){
+          setDs(prev=>{if(!prev)return prev;return{...prev,digitalAppRows,mcdeliveryRows,shiftManagerRows};});
+          console.log(`[Meridian] ✓ Loaded Digital/Delivery/ShiftMgr — digital ${digitalAppRows.length}, mcdelivery ${mcdeliveryRows.length}, shiftMgr ${shiftManagerRows.length}`);
+        }
+      }catch(e){console.warn('[Meridian] Digital/Delivery/ShiftMgr load failed:',e);}
       // Server-parsed QSRSoft email reports (Daily Glimpse, Cash Sheet, Sales Ledger).
       // Cloud-first source of truth — override the device-local IDB rows only when
       // the Supabase tables have data, so freshness follows the app on any device.
@@ -2414,6 +2542,8 @@ function App() {
         if(modal==='priorities')     setShowPriorities(true);
         if(modal==='forms-print')    setShowFormsPrint(true);
         if(modal==='leader-one-pager') setShowLeaderOnePager(true);
+        if(modal==='metric-lineage')   setShowMetricLineage(true);
+        if(modal==='forms-library')    setShowFormsLibrary(true);
       }
     }),
 
@@ -2485,6 +2615,10 @@ function App() {
             setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');
           }
           else if(modal==='settings')setShowSettings&&setShowSettings(true);
+          else if(modal==='eom-dashboard')perm('analytics.district')&&setShowEOMDash(true);
+          else if(modal==='fob-analysis')setShowFOB&&setShowFOB(true);
+          else if(modal==='labor-analytics'){setSchedTab&&setSchedTab('analytics');setShowSchedHub&&setShowSchedHub(true);}
+          else if(modal==='fcst-accuracy')setShowFcstAccuracy&&setShowFcstAccuracy(true);
         }}),
       view==='district'&&!selStore&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
       view==='store'&&selStore&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
@@ -2600,6 +2734,8 @@ function App() {
       onClose:()=>setShowPriorities(false)}),
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
+    showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
+    showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},

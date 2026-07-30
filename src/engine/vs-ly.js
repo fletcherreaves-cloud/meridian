@@ -24,20 +24,29 @@ export function autoFirstDaily(ds, loc, range, kind = 'sales') {
   const L = String(loc);
   const curField = kind === 'gc' ? 'gc' : 'sales';
   const lyField = kind === 'gc' ? 'lyGc' : 'lySales';
-  const lyS = _addD(range.s, -364), lyE = _addD(range.e, -364);
+  // Normalize the range bounds to ISO "YYYY-MM-DD" strings and compare row dates the same
+  // way. The row `date`s are Date objects; callers (the One-Pager) pass STRING ranges, and a
+  // raw `Date >= "2026-07-27"` coerces to `number >= NaN` = false, silently dropping every row
+  // → matchedVsLY returned null (blank GC-vs-LY + District-Outliers vs-LY). Same Date-vs-string
+  // class as the metric-source regression. Lexical compare of ISO dates is correct + tz-safe here.
+  const rsD = range.s instanceof Date ? range.s : new Date(range.s);
+  const reD = range.e instanceof Date ? range.e : new Date(range.e);
+  const rs = _iso(rsD), re = _iso(reD);
+  const lyS = _iso(_addD(rsD, -364)), lyE = _iso(_addD(reD, -364));
   const curByDate = {}, lyByDate = {};
 
   // Manual laborRows: current values + the 364-day-back row as last-year for that date.
   for (const r of (ds?.laborRows || [])) {
     if (String(r.loc) !== L || !r.date) continue;
-    if (r.date >= range.s && r.date <= range.e) { const v = r[curField]; if (v > 0) curByDate[_iso(r.date)] = v; }
-    if (r.date >= lyS && r.date <= lyE) { const v = r[curField]; if (v > 0) { const k = _iso(_addD(r.date, 364)); if (lyByDate[k] == null) lyByDate[k] = v; } }
+    const d = _iso(r.date);
+    if (d >= rs && d <= re) { const v = r[curField]; if (v > 0) curByDate[d] = v; }
+    if (d >= lyS && d <= lyE) { const v = r[curField]; if (v > 0) { const k = _iso(_addD(r.date, 364)); if (lyByDate[k] == null) lyByDate[k] = v; } }
   }
   // Auto DAR (qsrActSummaryRows): fill current-day gaps + the row's OWN same-date last-year value.
   for (const r of (ds?.qsrActSummaryRows || [])) {
     if (String(r.loc) !== L || !r.date) continue;
-    if (r.date >= range.s && r.date <= range.e) {
-      const k = _iso(r.date);
+    const k = _iso(r.date);
+    if (k >= rs && k <= re) {
       const v = kind === 'gc' ? r.gc : (r.sales || r.allNetSales);
       if (v > 0 && curByDate[k] == null) curByDate[k] = v;
       const ly = r[lyField]; if (ly > 0) lyByDate[k] = ly;   // DAR's own LY is same-date → authoritative

@@ -182,6 +182,12 @@ replicate, and eBOS tokens die in ~minutes. What we learned the hard way:
     15 transfer rows.** No manual token needed; mints fresh every run.
 - **TODO (task #60):** mirror this working Playwright login into `qsrsoft-onhand-pull.mjs` + `qsrsoft-ebos-pull.mjs`
   (they still use the dead SSO-first ladder). Drop the QSRSOFT_EBOS_TOKEN / QSRSOFT_COGNITO_TOKEN rungs (both dead ends).
+  - ✅ **on-hand DONE (2026-07-29):** ported variance's `getEbosTokenViaPlaywright` verbatim into
+    `qsrsoft-onhand-pull.mjs` (it had the OLD broken login: `page.fill` leaves Amplify empty + generic
+    Sign-in selector + no async settle → every EOM run failed with "no eBOS token"). `resolveEbosToken`
+    now goes straight to Playwright (static override only). Confirmed run: **6958 item-rows / 27 stores,
+    2 stores crossed 90%.** Hotfixed to BOTH main + the feature branch (workflows run from main).
+  - ⏳ **`qsrsoft-ebos-pull.mjs` still on the old ladder** — apply the same port if it starts failing.
 
 ## New data pulls needed (beyond On-Hand — capture endpoints on prod.ebos.qsrsoft.com)
 | Report | Why | Status |

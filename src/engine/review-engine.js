@@ -1,4 +1,5 @@
 // Performance Review Engine — config, storage, and scoring
+import { DEFAULT_TARGETS } from '../constants.js';
 
 const REVIEW_CONFIG_KEY    = 'mf_review_config_v1';
 const PERF_REVIEWS_KEY     = 'mf_perf_reviews_v1';
@@ -6,8 +7,11 @@ const REVIEW_TEMPLATES_KEY = 'mf_review_templates_v1';
 
 export const CAT_KEYS   = ['rgr','sales','profit','people'];
 export const CAT_LABELS = { rgr:'Running Great Restaurants', sales:'Sales Drivers', profit:'Profitability', people:'People Staffing & Retention', admin:'Administration' };
-export const ROLE_KEYS  = ['GM','AM','AS','OM'];
-export const ROLE_LABELS= { GM:'General Manager', AM:'Assistant Manager', AS:'Area Supervisor', OM:'Operations Manager' };
+export const ROLE_KEYS  = ['GM','AM','DM','SM','AS','OM'];
+export const ROLE_LABELS= { GM:'General Manager', AM:'Assistant Manager', DM:'Department Manager', SM:'Shift Manager', AS:'Area Supervisor', OM:'Operations Manager' };
+// Store-level manager roles whose review can be attributed to their OWN shifts
+// (Shift Manager Summary data). GM = whole store; AS/OM are above-store → store-total.
+export const SHIFT_ATTRIBUTABLE_ROLES = ['AM','DM','SM'];
 
 export const DEFAULT_REVIEW_CONFIG = {
   version: 1,
@@ -42,8 +46,8 @@ export const DEFAULT_REVIEW_CONFIG = {
     ],
     sales: [
       { key:'salesVsTgt', label:'Sales vs. Monthly Target',   weight:0.70, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'sales', tgtField:'salesTgt', dollar:true, note:'Auto from Labor Analysis' },
-      { key:'digitalGC',  label:'Digital App GC/Rest/Day',    weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'% vs store target' },
-      { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual',                    note:'% vs store target' },
+      { key:'digitalGC',  label:'Digital App GC/Rest/Day',    weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'digitalGC', note:'Auto: Digital App GC/R/D (cloud) vs store target' },
+      { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'delivGC',  note:'Auto: 3PO Delivery GC/R/D (cloud) vs store target' },
     ],
     profit: [
       { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report' },
@@ -467,6 +471,7 @@ export function blankReview(name, role, loc, year, half, cfg) {
   return {
     id: reviewId(name, year, half),
     name, role, loc, year, half,
+    geid: null,   // manager id for DM/shift attribution (Notes 33 A#3); set via the form dropdown
     status: 'draft',
     // Snapshot the template this review is built against (Phase A) so later template
     // edits never silently re-score it. Refreshed via an explicit "apply template".
@@ -682,10 +687,53 @@ export function computeScoreBreakdown(review, cfg) {
 }
 
 // ── Auto-populate KPIs from ds ─────────────────────────────────────────────────
+// Review metric key → the target field in the official-targets namespace
+// (DEFAULT_TARGETS / yearly / monthly). Only metrics whose ACTUAL is on the SAME scale as
+// the target are listed, so we never fill e.g. a % target against a $ actual. FOB is
+// intentionally omitted until the banked FOB metric-definition fix (score on FOB% not
+// fob$) lands. Metrics with NO entry here are the "no configured target → prompt the user
+// (optionally seed from Smart Targets)" cases surfaced by missingReviewTargets().
+export const REVIEW_METRIC_TARGET_FIELD = {
+  oepe: 'tOepe', r2p: 'tR2p', kvs: 'tKvst', labor: 'tLabor',
+  salesVsTgt: 'tProdSales', opSupplies: 'tOpSupply', tpph: 'tTpph',
+};
+
+// Merged official targets for a loc: DEFAULT_TARGETS < yearly (ds.targets) < monthly
+// (ds.monthlyTargets) — the established precedence (monthly wins), matching store-dash/analytics.
+export function mergedTargetsForLoc(ds, loc) {
+  const L = String(loc);
+  return {
+    ...(DEFAULT_TARGETS[L] || {}),
+    ...((ds && ds.targets && ds.targets[L]) || {}),
+    ...((ds && ds.monthlyTargets && ds.monthlyTargets[L]) || {}),
+  };
+}
+
+// Scored metrics (across the review's config categories) that have NO resolvable target —
+// neither already entered on any month nor available from the official-targets namespace.
+// Feeds a UI prompt: "set a target for X" (and a Smart-Targets seed where one exists).
+export function missingReviewTargets(review, cfg, ds) {
+  cfg = resolveReviewConfig(review, cfg);
+  const tgts = mergedTargetsForLoc(ds || {}, review.loc);
+  const months = review.kpis?.months || {};
+  const out = [];
+  for (const mets of Object.values(cfg.metrics || {})) {
+    for (const m of mets) {
+      if (!m.scored) continue;
+      const tf = REVIEW_METRIC_TARGET_FIELD[m.key];
+      const fromNamespace = tf != null && tgts[tf] != null;
+      const anyMonthHasTgt = Object.values(months).some(mo => mo && mo[m.key + 'Tgt'] != null);
+      if (!fromNamespace && !anyMonthHasTgt) out.push({ key: m.key, label: m.label });
+    }
+  }
+  return out;
+}
+
 export function autoPopulateKPIs(review, ds) {
   if (!ds?.loaded) return review;
   const loc = review.loc;
   const months = JSON.parse(JSON.stringify(review.kpis.months));
+  const officialTgts = mergedTargetsForLoc(ds, loc); // DEFAULT < yearly < monthly (monthly wins)
 
   const byMonth = (rows, locF='loc') => {
     const map={};
@@ -706,6 +754,46 @@ export function autoPopulateKPIs(review, ds) {
   const laborM = byMonth(ds.laborRows);
   const opsM   = byMonth(ds.opsRows);
   const fobM   = byMonth(ds.fobRows);
+  const ebosM  = byMonth(ds.ebosRows); // eBOS daily op-supplies purchases (Notes 32 #4)
+
+  // People reports are monthly per-loc, keyed by 'YYYY-MM' — index by month number
+  // for this store/year (Notes 32 #1/#2/#3). Headcount ← Roster Statistics (authoritative
+  // active count), Shift-Cert ← Roster role counts (shiftMgr bucket), 0-90 ← Turnover.
+  const _ry = review.year || new Date().getFullYear();
+  const monthNum = pm => parseInt(String(pm || '').slice(5, 7));
+  const byLocMonth = (rows) => {
+    const m = {};
+    for (const r of (rows || [])) {
+      if (String(r.loc) !== String(loc) || !r.month) continue;
+      if (parseInt(String(r.month).slice(0, 4)) !== _ry) continue;
+      m[monthNum(r.month)] = r;
+    }
+    return m;
+  };
+  const rosterStatM = byLocMonth(ds.rosterStatsRows);
+  const roleCountM  = byLocMonth(ds.rosterRoleCounts);
+  const turnoverM   = byLocMonth(ds.turnoverRows);
+  const digitalM    = byLocMonth(ds.digitalAppRows);   // Digital App GC/R/D (Notes 32)
+  const deliveryM   = byLocMonth(ds.mcdeliveryRows);   // Delivery GC/R/D (Notes 32)
+  // Shift-manager attribution (Notes 33 A#3): when a review is linked to a manager
+  // (review.geid) and the reviewee is NOT a GM, the operational metrics score on that
+  // manager's OWN shifts (Shift Manager Summary), not the store total. Everything else
+  // stays store-total. GMs own the whole store, so they always use store-total.
+  const mgrGeid = review.geid != null && review.geid !== '' ? Number(review.geid) : null;
+  // Only the store-level shift roles attribute to a manager's own shifts (GM = whole
+  // store; AS/OM are above-store). Padding-agnostic loc match (ds.storeIds vs
+  // shift_manager_monthly.loc can differ in zero-padding).
+  const _normLoc = v => String(v == null ? '' : v).replace(/^0+/, '') || String(v == null ? '' : v);
+  const canAttribute = SHIFT_ATTRIBUTABLE_ROLES.includes(String(review.role || ''));
+  const shiftMgrM = {};
+  if (mgrGeid && canAttribute) {
+    const wantLoc = _normLoc(loc);
+    for (const r of (ds.shiftManagerRows || [])) {
+      if (_normLoc(r.loc) !== wantLoc || Number(r.geid) !== mgrGeid || !r.month) continue;
+      if (parseInt(String(r.month).slice(0, 4)) !== _ry) continue;
+      shiftMgrM[monthNum(r.month)] = r;
+    }
+  }
 
   // SMG FullScale: index by year+month for this store to avoid cross-year collision
   const reviewYear = review.year || new Date().getFullYear();
@@ -721,6 +809,7 @@ export function autoPopulateKPIs(review, ds) {
     const lr = laborM[m]||[];
     const or = opsM[m]||[];
     const fr = fobM[m]||[];
+    const er = ebosM[m]||[];
     const sr = smgFSByMonth[m];
 
     if (lr.length) {
@@ -743,13 +832,81 @@ export function autoPopulateKPIs(review, ds) {
       const fd = sum(fr,'fobDollar');
       if (fd!=null) mo.foodOB = fd;
     }
+    if (er.length) {
+      // Op Supplies actual = Σ the month's daily op-supplies purchases (auto-pulled eBOS).
+      const op = sum(er,'opsPurchases');
+      if (op!=null) mo.opSupplies = op;
+    }
+    // People metrics (monthly per-loc, auto-first): Headcount ← Roster Statistics
+    // (Roster Active = all active hourly), Shift-Cert ← role counts, 0-90 ← Turnover.
+    const rst = rosterStatM[m];
+    if (rst && rst.rosterActive != null) mo.headcount = rst.rosterActive;
+    const rcc = roleCountM[m];
+    if (rcc && rcc.shiftMgr != null) mo.shiftCert = rcc.shiftMgr;
+    const tvr = turnoverM[m];
+    if (tvr && tvr.turnover090Pct != null) mo.turnover90 = tvr.turnover090Pct;
+    // Digital/Delivery GC/R/D (auto-first; only used if the review includes the metric)
+    // Sales Drivers: Digital App GC/R/D + Delivery GC/R/D (the review's own metric keys).
+    const dig = digitalM[m];
+    if (dig && dig.appGcRd != null) mo.digitalGC = dig.appGcRd;
+    const dlv = deliveryM[m];
+    if (dlv && dlv.deliveryGcRd != null) mo.delivGC = dlv.deliveryGcRd;
+    // Manager-attributed OVERRIDE (after the store fills): a DM/shift review's
+    // operational metrics use this manager's own shifts. Only the rate/time metrics
+    // that compare fairly to the store target (OEPE/R2P/KVS/Labor%); volume metrics
+    // (sales, digital, delivery) stay store-total (a shift lead isn't graded on the
+    // store's monthly sales target). See notes-33-queue A#3.
+    const smg = shiftMgrM[m];
+    if (smg) {
+      if (smg.oepe != null) mo.oepe = smg.oepe;
+      if (smg.r2p != null) mo.r2p = smg.r2p;
+      if (smg.kvs != null) mo.kvs = smg.kvs;
+      if (smg.laborPct != null) mo.labor = smg.laborPct;
+    }
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
       if (sr.osat5 != null) mo.osat = sr.osat5;
     }
+
+    // Target auto-fill from the official targets (Notes 32 A) — fill each mapped metric's
+    // target slot from DEFAULT < yearly < monthly (monthly wins) when the row-based fill
+    // above didn't already set it. Never overrides an existing target.
+    for (const [mk, tf] of Object.entries(REVIEW_METRIC_TARGET_FIELD)) {
+      const slot = mk + 'Tgt';
+      if (mo[slot] == null && officialTgts[tf] != null) mo[slot] = officialTgts[tf];
+    }
   }
 
   return { ...review, kpis:{ ...review.kpis, months } };
+}
+
+// ── Total Profit vs Target (derived — Notes 32 #5) ────────────────────────────
+// "Total Profit" for the review is derived from the Profitability category's OWN
+// controllables (no separate pull): how many DOLLARS the store beat/missed its targets
+// on FOB %, Labor %, and Op-Supplies $. Favorable (beat target) = positive.
+//   fob$     = (fobPctTarget  − fobPctActual)  × prodSales     (lower FOB%  than tgt ⇒ +)
+//   labor$   = (laborPctTarget − laborPctActual) × netSales    (lower labor% than tgt ⇒ +)
+//   opSupply$= (opSuppliesTarget − opSuppliesActual)           (under budget ⇒ +)
+//   total$   = Σ available components (a missing input drops only its own component)
+// Scored as a variance-to-target: month.totalProfit = total$, month.totalProfitTgt = 0,
+// better:'higher'. The target % / $ are the store's own official targets (auto-filled),
+// so the "target" side is built from the same pattern as the actuals.
+const _n = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+export function deriveTotalProfitVsTarget({
+  fobPctActual, fobPctTarget, laborPctActual, laborPctTarget,
+  opSuppliesActual, opSuppliesTarget, netSales, prodSales,
+} = {}) {
+  const ns = _n(netSales);
+  const ps = _n(prodSales) ?? ns;
+  const fA = _n(fobPctActual), fT = _n(fobPctTarget);
+  const lA = _n(laborPctActual), lT = _n(laborPctTarget);
+  const oA = _n(opSuppliesActual), oT = _n(opSuppliesTarget);
+  const fob$      = (fA != null && fT != null && ps != null) ? (fT - fA) * ps : null;
+  const labor$    = (lA != null && lT != null && ns != null) ? (lT - lA) * ns : null;
+  const opSupply$ = (oA != null && oT != null)               ? (oT - oA)      : null;
+  const parts = [fob$, labor$, opSupply$].filter(v => v != null);
+  const total$ = parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+  return { fob$, labor$, opSupply$, total$, components: parts.length };
 }
 
 // ── Util ───────────────────────────────────────────────────────────────────────

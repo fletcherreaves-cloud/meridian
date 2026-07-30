@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { DEF_SETTINGS, sName, sNameC, STORE_NAMES } from '../constants.js';
+import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups } from '../constants.js';
 import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
 
 const h=React.createElement;
@@ -192,6 +192,62 @@ function DevDashboard({settings, onUpdate}) {
     div({style:{fontSize:9,color:'var(--text3)',textAlign:'center',paddingTop:4}},
       'Meridian · Built on Vite + React · Supabase · Netlify')
   );
+}
+
+// ── Supervisor Assignments editor (effective-dated / tenure-based) ────────────
+// The supervisor of a store on a date = the assignment row with the latest effective
+// start ≤ that date. Reassigning = add a row with the effective date (older rows stay
+// as history; the newer date wins). Persists to settings.orgAssignments → org_config.
+function SupervisorAssignmentsEditor({ S, onUpdate }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const asg = (S.orgAssignments && S.orgAssignments.length) ? S.orgAssignments : seedAssignmentsFromGroups(S.supervisorGroups);
+  // Persist the timeline as the source of truth AND a today-derived flat supervisorGroups so
+  // panels that read settings.supervisorGroups directly (One-Pager, EOM, Store Dash, Labor
+  // Tools, Projections) stay in sync with the current org.
+  const save = (next) => onUpdate({ ...JSON.parse(JSON.stringify(S)), orgAssignments: next, supervisorGroups: groupsAt(today, next) });
+  const current = groupsAt(today, asg);
+  const [sup, setSup] = useState('');
+  const [stores, setStores] = useState('');
+  const [eff, setEff] = useState(today);
+
+  const apply = () => {
+    const name = sup.trim(); if (!name) { alert('Supervisor name required'); return; }
+    const locs = stores.split(',').map(s => String(parseInt(s.trim(), 10))).filter(x => x && x !== 'NaN');
+    if (!locs.length) { alert('Enter one or more store IDs'); return; }
+    save([...asg, ...locs.map(loc => ({ loc, supervisor: name, start: eff || '' }))]);
+    setSup(''); setStores('');
+  };
+  const editStart = (idx, val) => save(asg.map((a, i) => i === idx ? { ...a, start: val } : a));
+  const remove = (idx) => save(asg.filter((_, i) => i !== idx));
+  const rows = asg.map((a, i) => ({ ...a, _i: i })).sort((a, b) => a.loc.localeCompare(b.loc) || (a.start || '').localeCompare(b.start || ''));
+  const supNames = [...new Set(asg.map(a => a.supervisor))].sort();
+
+  return div({ className: 'set-sec' },
+    div({ className: 'set-sec-t' }, 'Supervisor Assignments (effective-dated)'),
+    div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.5 } },
+      'Attribution follows tenure: a store\'s supervisor on any date = the assignment with the latest effective date on/before it. Reassign by adding a row with the effective date — no need to remove the old one, the newer date wins. Blank date = since always.'),
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '6px 0 4px' } }, 'Current — as of today'),
+    Object.keys(current).length
+      ? Object.entries(current).sort((a,b)=>a[0].localeCompare(b[0])).map(([name, locs]) => div({ key: name, style: { fontSize: 11.5, marginBottom: 2 } },
+          span({ style: { fontWeight: 600 } }, name + ': '),
+          span({ style: { color: 'var(--text3)' } }, locs.length + ' stores — ' + locs.join(', '))))
+      : div({ style: { fontSize: 11, color: 'var(--text3)' } }, '—'),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Assign / reassign stores'),
+    div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+      inp({ className: 'set-inp', placeholder: 'Supervisor (new or existing)', value: sup, onChange: e => setSup(e.target.value), list: 'sup-names', style: { flex: '1 1 150px' } }),
+      h('datalist', { id: 'sup-names' }, supNames.map(n => opt({ key: n, value: n }))),
+      inp({ className: 'set-inp', placeholder: 'Store IDs, comma-separated', value: stores, onChange: e => setStores(e.target.value), style: { flex: '1 1 170px' } }),
+      inp({ className: 'set-inp', type: 'date', value: eff, onChange: e => setEff(e.target.value), title: 'Effective date', style: { flex: '0 0 140px' } }),
+      btn({ className: 'btn btn-sm btn-a', onClick: apply }, 'Apply')),
+
+    div({ style: { fontWeight: 600, fontSize: 12, margin: '12px 0 4px' } }, 'Assignment history (' + asg.length + ')'),
+    div({ style: { display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 260, overflowY: 'auto' } },
+      rows.map(r => div({ key: r._i, style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5 } },
+        span({ style: { minWidth: 120, fontWeight: 600 } }, r.supervisor),
+        span({ style: { minWidth: 160, color: 'var(--text3)' } }, r.loc + ' — ' + (STORE_NAMES[r.loc] || r.loc)),
+        inp({ className: 'set-inp', type: 'date', defaultValue: r.start || '', key: 'd' + r._i + (r.start || ''), onBlur: e => editStart(r._i, e.target.value), title: 'Effective date (blank = since always)', style: { width: 140 } }),
+        btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
 }
 
 function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStoreNotes}) {
@@ -435,23 +491,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
             )
           )
         ),
-        activeSection==='supervisors'&&div({className:'set-sec'},
-          div({className:'set-sec-t'},'Supervisor Patches'),
-          Object.entries(S.supervisorGroups||{}).map(([name,ids])=>div({key:name,className:'set-row'},
-            div({style:{display:'flex',gap:6,alignItems:'center',marginBottom:3}},
-              div({className:'set-lbl',style:{margin:0,fontWeight:600}},name),
-              btn({className:'btn btn-sm btn-red',style:{padding:'1px 6px',fontSize:'9px'},onClick:()=>{if(confirm('Remove '+name+'?')){const next=JSON.parse(JSON.stringify(S));delete next.supervisorGroups[name];onUpdate(next);}}},'✕')
-            ),
-            inp({className:'set-inp',defaultValue:ids.join(','),key:name+ids.join(','),onBlur:e=>set('supervisorGroups.'+name,e.target.value.split(',').map(s=>s.trim()).filter(Boolean))})
-          )),
-          div({className:'set-row'},
-            div({className:'set-lbl',style:{marginBottom:6}},'Add Supervisor Patch'),
-            div({style:{display:'flex',gap:6}},
-              inp({id:'new-sup',className:'set-inp',placeholder:'Supervisor Name',style:{flex:1}}),
-              btn({className:'btn btn-sm btn-a',onClick:()=>{const n=document.getElementById('new-sup').value.trim();if(n){const next=JSON.parse(JSON.stringify(S));if(!next.supervisorGroups)next.supervisorGroups={};next.supervisorGroups[n]=[];onUpdate(next);document.getElementById('new-sup').value='';}}},'+')
-            )
-          )
-        ),
+        activeSection==='supervisors'&&h(SupervisorAssignmentsEditor,{S,onUpdate}),
         activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate}),
 
         activeSection==='store-notes'&&div({className:'set-sec'},

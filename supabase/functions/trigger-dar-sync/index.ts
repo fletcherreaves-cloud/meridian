@@ -21,6 +21,10 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   ebos:     { file: 'qsrsoft-ebos-pull.yml', label: 'eBOS Purchases',    inputs: { days_back: '30', days_recent: '2', force_full: '0', debug: '0' } },
   fob:      { file: 'qsrsoft-pull.yml',      label: 'FOB / P&L Cost',    inputs: { days_back: '30', days_recent: '2', debug: '0' } },
   lifelenz: { file: 'lifelenz-pull.yml',     label: 'LifeLenz Schedule', inputs: { days_back: '7', safety_days: '3', days_fwd: '14', debug: '0' } },
+  // EOM on-demand pulls (Notes 35). force:'1' so a manual button runs regardless of the
+  // count-window / 8a–6p-CT gate the scheduled on-hand pull uses.
+  onhand:   { file: 'qsrsoft-onhand-pull.yml',   label: 'On-Hand (EOM count)',  inputs: { force: '1', period: '', debug: '0' } },
+  variance: { file: 'qsrsoft-variance-pull.yml', label: 'Variance / Raw Items', inputs: { period: '', stores: '', debug: '0' } },
 };
 
 const CORS = {

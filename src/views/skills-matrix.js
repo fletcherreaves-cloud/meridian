@@ -5,7 +5,7 @@
 // 1-5 rating in the cell (heat-mapped). The packed "SCHEDULE JOBS" string is
 // exploded by the parser; this renders it as "Skill Levels".
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
 import { loadEmployeeSkills } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -93,7 +93,7 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
     let r = rows;
     if (store === 'fl') r = r.filter(e => FL_LOCS.has(locNum(e.loc)));
     else if (store === 'ok') r = r.filter(e => !FL_LOCS.has(locNum(e.loc)));
-    else if (store.startsWith('__patch__')) { const set = new Set(((DEF_SETTINGS.supervisorGroups || {})[store.slice(9)] || []).map(l => locNum(l))); r = r.filter(e => set.has(locNum(e.loc))); }
+    else if (store.startsWith('__patch__')) { const set = new Set(((supervisorGroups() || {})[store.slice(9)] || []).map(l => locNum(l))); r = r.filter(e => set.has(locNum(e.loc))); }
     else if (store !== 'all') r = r.filter(e => locNum(e.loc) === locNum(store));
     if (q.trim()) { const s = q.trim().toLowerCase(); r = r.filter(e => (e.employee || '').toLowerCase().includes(s) || (e.role || '').toLowerCase().includes(s)); }
     return r;
@@ -237,7 +237,7 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
           h('option', { value: 'all' }, 'All Stores'),
           h('optgroup', { label: '— Groups —' },
             h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
-            ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
+            ...Object.entries(supervisorGroups() || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
           h('optgroup', { label: '— Stores —' }, ...stores.map(([loc, nm]) => h('option', { key: loc, value: loc }, nm + ' (' + locNum(loc) + ')')))),
         h('select', { value: sortBy, onChange: e => setSortBy(e.target.value), title: 'Sort rows', style: selStyle },
           h('option', { value: 'name' }, 'Sort: Name'), h('option', { value: 'role' }, 'Sort: Job Title')),

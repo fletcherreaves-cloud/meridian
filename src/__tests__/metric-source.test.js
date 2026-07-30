@@ -18,11 +18,21 @@ describe('metric-source resolver (auto-first)', () => {
     expect(metricDaily(ds, '1', d('2026-06-03'), 'oepe')).toBeNull();
   });
 
-  it('labor% falls through ctrl → labor → glimpse', () => {
-    const ds = {
-      glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }],
-    };
+  it('labor% resolves ctrl → glimpse → labor (auto punched % preferred over manual)', () => {
+    // Notes 35: labor% is PUNCHED for all locs; the auto Daily-Glimpse punched % is ordered
+    // ahead of the manual Labor rows so a stale manual value can't override the cloud-fresh one.
+    const ds = { glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }] };
     expect(metricDaily(ds, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.24, 5);
+    // Glimpse (auto) beats laborRows (manual) for the same day:
+    const ds2 = {
+      laborRows:   [{ loc: '7', date: d('2026-06-05'), laborPct: 0.31 }],  // manual — should NOT win
+      glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }],  // auto punched — wins
+    };
+    expect(metricDaily(ds2, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.24, 5);
+    // Controls (also punched) still wins first when present:
+    const ds3 = { ctrlRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.22 }],
+                  glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }] };
+    expect(metricDaily(ds3, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.22, 5);
   });
 
   it("'any' mode keeps 0 / negative values (cash O/S)", () => {
@@ -56,5 +66,29 @@ describe('metric-source resolver (auto-first)', () => {
     ] };
     expect(metricAvg(ds, ['1', '2'], range, 'laborPct')).toBeCloseTo(0.23, 5);
     expect(metricAvg(ds, ['3'], range, 'laborPct')).toBeNull();
+  });
+
+  it('accepts STRING ranges against Date-typed rows (One-Pager bug regression)', () => {
+    // Cloud rows carry Date objects (via _mkDate); the One-Pager passes "YYYY-MM-DD"
+    // string ranges. A raw Date >= string coerces to NaN and dropped every row.
+    const ds = { glimpseRows: [
+      { loc: '1', date: d('2026-06-10'), laborPct: 0.25, oepe: 160 },
+      { loc: '1', date: d('2026-06-20'), laborPct: 0.23, oepe: 150 },
+    ] };
+    const strRange = { s: '2026-06-01', e: '2026-06-30' };
+    expect(Object.keys(metricSeries(ds, '1', strRange, 'laborPct')).length).toBe(2);
+    expect(metricAvg(ds, ['1'], strRange, 'laborPct')).toBeCloseTo(0.24, 5);
+    expect(metricAvg(ds, ['1'], strRange, 'oepe')).toBe(155);
+    // string range must also EXCLUDE out-of-window rows
+    expect(metricAvg(ds, ['1'], { s: '2026-07-01', e: '2026-07-31' }, 'oepe')).toBeNull();
+  });
+
+  it('derives cloud TPPH from the DAR summary source', () => {
+    const ds = { qsrActSummaryRows: [{ loc: '1', date: d('2026-06-05'), tpph: 5.4 }] };
+    expect(metricDaily(ds, '1', d('2026-06-05'), 'tpph')).toBe(5.4);
+    // manual Controls TPPH still wins first
+    const ds2 = { ctrlRows: [{ loc: '1', date: d('2026-06-05'), tpph: 6.0 }],
+                  qsrActSummaryRows: [{ loc: '1', date: d('2026-06-05'), tpph: 5.4 }] };
+    expect(metricDaily(ds2, '1', d('2026-06-05'), 'tpph')).toBe(6.0);
   });
 });

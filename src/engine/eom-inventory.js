@@ -163,19 +163,37 @@ export function computeCountProgress(onHandRows, { period, asOf } = {}) {
 export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0 } = {}) {
   const rows = Array.isArray(onHandRows) ? onHandRows : [];
   const windowStart = period ? countWindowStart(period) : new Date(0);
+  // Period start (1st of the count month) so we can tell WHY an item reads "uncounted":
+  //   never   — no count on record this period → a true blank (QSRSoft flags this too).
+  //   early   — counted THIS period but before the final window → QSRSoft shows it counted;
+  //             recounting it is the cascaded-count discussion, NOT free "just count it" money.
+  //   stale   — last counted in a PRIOR period → likely an inactive item carrying a residual
+  //             on-hand "ghost float" (QSRSoft drops it from the active count list). These
+  //             inflate value-at-risk without being real to-count work — the Durant #5985 case.
+  const periodStart = /^\d{4}-\d{2}$/.test(period || '') ? new Date(period + '-01T00:00:00') : null;
 
   const uncounted = rows
     .filter(r => !isCounted(r, windowStart))
-    .map(r => ({
-      wrin: r.wrin,
-      descr: r.descr || r.desc,
-      cls: normClass(r.cls),
-      // value at risk if this item is skipped — prior on-hand amount is the best proxy
-      valueAtRisk: Math.abs(Number(r.onHandAmt) || (Number(r.unitPrice) || 0) * (Number(r.totalUnits) || 0)),
-      lastCounted: r.lastCounted || null,
-    }))
+    .map(r => {
+      const d = countedDate(r);
+      const state = !d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early');
+      return {
+        wrin: r.wrin,
+        descr: r.descr || r.desc,
+        cls: normClass(r.cls),
+        // value at risk if this item is skipped — prior on-hand amount is the best proxy
+        valueAtRisk: Math.abs(Number(r.onHandAmt) || (Number(r.unitPrice) || 0) * (Number(r.totalUnits) || 0)),
+        lastCounted: d ? d.toISOString().slice(0, 10) : null,
+        state,                                              // never | early | stale
+        onHandAmt: Number(r.onHandAmt) || 0,
+        totalUnits: Number(r.totalUnits) || 0,
+      };
+    })
     .filter(r => r.valueAtRisk >= minValue)
     .sort((a, b) => b.valueAtRisk - a.valueAtRisk);
+  // Tally by state so callers can separate true blanks from counted-early / ghost floats.
+  const byState = { never: { n: 0, value: 0 }, early: { n: 0, value: 0 }, stale: { n: 0, value: 0 } };
+  for (const u of uncounted) { const b = byState[u.state]; if (b) { b.n++; b.value += u.valueAtRisk; } }
 
   // Roll up by class so the message to the store is "Food: 12 items left ($430)".
   const byClass = {};
@@ -189,6 +207,11 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     uncountedValue: uncounted.reduce((s, u) => s + u.valueAtRisk, 0),
     uncounted,
     byClass: Object.values(byClass).sort((a, b) => b.valueAtRisk - a.valueAtRisk),
+    byState,
+    // "True blanks" only — items with NO count this period. This is the number that means
+    // "count these before close"; early/stale items are a different (cascade / ghost) story.
+    trueBlankCount: byState.never.n,
+    trueBlankValue: byState.never.value,
   };
 }
 

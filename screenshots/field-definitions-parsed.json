@@ -1,0 +1,2092 @@
+[
+  {
+    "page": "dar",
+    "label": "Act Hrs",
+    "description": "Actual Hours used - Punched Hours plus Scheduled Salaried Hours"
+  },
+  {
+    "page": "dar",
+    "label": "Act Hrs vs Need",
+    "description": "Actual hours used compared to hours needed (Needed Hours = Variable Needed + Fixed Sch Hrs + Flr Need Hrs)"
+  },
+  {
+    "page": "dar",
+    "label": "Act Hrs vs Sch",
+    "description": "Actual Hours used compared to Hours that were scheduled"
+  },
+  {
+    "page": "dar",
+    "label": "Act Punch Hrs",
+    "description": "Actual Hours punched on the timeclock"
+  },
+  {
+    "page": "dar",
+    "label": "All Net Avg Check",
+    "description": "All Net Sales divided by GC"
+  },
+  {
+    "page": "dar",
+    "label": "All Net Sales",
+    "description": "Storewide All Net Sales"
+  },
+  {
+    "page": "dar",
+    "label": "All Net Sales +/-",
+    "description": "All Net Sales compared to last year (trading or calendar day)"
+  },
+  {
+    "page": "dar",
+    "label": "All Net Sales +/- %",
+    "description": "(All Net Sales for this year minus All Net Sales for last year) divided by All Net Sales for last year (trading or calendar day depending on filter selection)"
+  },
+  {
+    "page": "dar",
+    "label": "Avg CTP",
+    "description": "Cash to Present time, time from when car is recalled at cash booth until order is presented"
+  },
+  {
+    "page": "dar",
+    "label": "Avg DT TTL",
+    "description": "Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included"
+  },
+  {
+    "page": "dar",
+    "label": "Avg Win TTL",
+    "description": "Time from first keystroke on the POS until the order is served from the Front Counter KVS monitor"
+  },
+  {
+    "page": "dar",
+    "label": "Bev Items",
+    "description": "Number of menu items sent to the beverage monitor"
+  },
+  {
+    "page": "dar",
+    "label": "Bev Items Per Order",
+    "description": "Beverage Items divided by Beverage GC"
+  },
+  {
+    "page": "dar",
+    "label": "Bev Run Time",
+    "description": "Time from when a beverage order is paid until the order is served from the beverage monitor"
+  },
+  {
+    "page": "dar",
+    "label": "Bev TTL",
+    "description": "Total Beverage time from the start of the order until the order is served"
+  },
+  {
+    "page": "dar",
+    "label": "DT GC",
+    "description": "Drive Thru Guest Count"
+  },
+  {
+    "page": "dar",
+    "label": "DT GC +/-",
+    "description": "Drive Thru Guest Count compared to last year"
+  },
+  {
+    "page": "dar",
+    "label": "DT GC vs Proj",
+    "description": "Drive Thru GC minus projected Drive Thru GC"
+  },
+  {
+    "page": "dar",
+    "label": "DT Pull Forward %",
+    "description": "Percentage of orders that are pulled forward"
+  },
+  {
+    "page": "dar",
+    "label": "DT Pulled Forward Count",
+    "description": "Number of cars \"parked\" or pulled forward"
+  },
+  {
+    "page": "dar",
+    "label": "In-Store GC",
+    "description": "All transactions that are not Drive Thru"
+  },
+  {
+    "page": "dar",
+    "label": "In-Store GC +/-",
+    "description": "In-Store Guest Count compared to last year"
+  },
+  {
+    "page": "dar",
+    "label": "In-Store GC vs Proj",
+    "description": "In-Store GC compared to the projected In-Store GC from the scheduling software"
+  },
+  {
+    "page": "fob",
+    "label": "Avg Days on Hand",
+    "description": "Inv P&L Ending Inventory / (P&L Food Cost / Number of days in the range selected) / Number of months selected"
+  },
+  {
+    "page": "fob",
+    "label": "Base Food $",
+    "description": "Dollar value of the raw cost of all menu items sold"
+  },
+  {
+    "page": "fob",
+    "label": "Base Food %",
+    "description": "Base food amount divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "Comp Waste $",
+    "description": "Dollar value of food that had to be thrown away after it was assembled into completed products"
+  },
+  {
+    "page": "fob",
+    "label": "Comp Waste %",
+    "description": "Comp waste amount divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "Condiment $",
+    "description": "Dollar value of all condiments used (includes shortening)"
+  },
+  {
+    "page": "fob",
+    "label": "Condiment %",
+    "description": "Dollar value of all condiments used (includes shortening) divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "Disc Coupon $",
+    "description": "Base food dollar amount for items that were discounted either electronically or on the register (does not include promos)"
+  },
+  {
+    "page": "fob",
+    "label": "Disc Coupon %",
+    "description": "Disc coupon amount divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "Emp Meal $",
+    "description": "Base food dollar amount for orders that were employee meals"
+  },
+  {
+    "page": "fob",
+    "label": "Emp Meal %",
+    "description": "Employee meal amount divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "FOB $",
+    "description": "Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Unexplained"
+  },
+  {
+    "page": "fob",
+    "label": "FOB %",
+    "description": "FOB $ divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "FOB W/ Disc $",
+    "description": "Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, Disc Coupons, and Unexplained"
+  },
+  {
+    "page": "fob",
+    "label": "FOB W/ Disc %",
+    "description": "FOB W/ Disc $ divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "FOB W/ Disc & W/O Unexp $",
+    "description": "Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Disc Coupons"
+  },
+  {
+    "page": "fob",
+    "label": "FOB W/ Disc & W/O Unexp %",
+    "description": "FOB W/ Disc & W/O Unexp $ divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "FOB W/O Unexp $",
+    "description": "Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals"
+  },
+  {
+    "page": "fob",
+    "label": "FOB W/O Unexp %",
+    "description": "FOB W/O Unexp $ divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "P & L Food Cost $",
+    "description": "Beginning Inventory, plus food purchases, +/- food adjustments and transfers, minus Food Promotions, minus Ending Inventory"
+  },
+  {
+    "page": "fob",
+    "label": "P & L Food Cost %",
+    "description": "P & L Food Cost $ divided by Product Net Sales"
+  },
+  {
+    "page": "fob",
+    "label": "P & L Food Promo $",
+    "description": "Base food dollars of food given away"
+  },
+  {
+    "page": "fob",
+    "label": "P & L Food Promo %",
+    "description": "P & L Food Promo $ divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Base Food $",
+    "description": "Dollar value of the raw cost of all menu items sold"
+  },
+  {
+    "page": "cash",
+    "label": "Base Food %",
+    "description": "Base food amount divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Condiment $",
+    "description": "Dollar value of all condiments used (includes shortening)"
+  },
+  {
+    "page": "cash",
+    "label": "Condiment %",
+    "description": "Dollar value of all condiments used (includes shortening) divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Disc Coupon $",
+    "description": "Base food dollar amount for items that were discounted either electronically or on the register (does not include promos)"
+  },
+  {
+    "page": "cash",
+    "label": "Disc Coupon %",
+    "description": "Disc coupon amount divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Emp Meal $",
+    "description": "Base food dollar amount for orders that were employee meals"
+  },
+  {
+    "page": "cash",
+    "label": "Emp Meal %",
+    "description": "Employee meal amount divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "FOB $",
+    "description": "Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Unexplained"
+  },
+  {
+    "page": "cash",
+    "label": "FOB %",
+    "description": "FOB $ divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "FOB W/O Unexp $",
+    "description": "Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals"
+  },
+  {
+    "page": "cash",
+    "label": "FOB W/O Unexp %",
+    "description": "FOB W/O Unexp $ divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "P & L Food Cost $",
+    "description": "Beginning Inventory, plus food purchases, +/- food adjustments and transfers, minus Food Promotions, minus Ending Inventory"
+  },
+  {
+    "page": "cash",
+    "label": "P & L Food Cost %",
+    "description": "P & L Food Cost $ divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "P & L Food Promo $",
+    "description": "Base food dollars of food given away"
+  },
+  {
+    "page": "cash",
+    "label": "P & L Paper Cost $",
+    "description": "Beginning Inventory, plus Paper Purchases, +/- Paper Adjustments and Transfers, minus Paper Promotions, minus Ending Inventory"
+  },
+  {
+    "page": "cash",
+    "label": "P & L Paper Cost %",
+    "description": "P & L Paper Cost $ divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "P & L Paper Promo $",
+    "description": "Paper (wrappers, cups etc) dollars for all food given away"
+  },
+  {
+    "page": "cash",
+    "label": "Prod Net Sales",
+    "description": "Sales for all products sold. Includes all discounts, coupons, and promotions. Excludes items that are sold that are not made at the restaurant (e.g. glassware)"
+  },
+  {
+    "page": "cash",
+    "label": "Stat Var $",
+    "description": "Dollar value of all food different from inventory. Can be positive or negative"
+  },
+  {
+    "page": "cash",
+    "label": "Stat Var %",
+    "description": "Stat variance amount divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Unexplained $",
+    "description": "The dollar difference bewteen P&L Food Cost and Total Food Cost"
+  },
+  {
+    "page": "cash",
+    "label": "Unexplained %",
+    "description": "Unexplained amount divided by Product Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage GC",
+    "description": "GC (orders) sent to the beverage monitor"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage GC +/-",
+    "description": "Beverage GC compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage Order Time",
+    "description": "Order Time for GC that include a beverage sent to the beverage monitor"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage Order Time +/-",
+    "description": "Beverage Order Time compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage Run Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage Run Time",
+    "description": "Time from when a beverage order is paid until the order is served from the beverage monitor"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage Run Time +/-",
+    "description": "Beverage Run Time compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage Total Time",
+    "description": "Total Beverage time from the start of the order until the order is served"
+  },
+  {
+    "page": "cash",
+    "label": "Beverage Time: Beverage Total Time +/-",
+    "description": "Beverage Total Time compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Line Time",
+    "description": "Drive Thru Line Time - time from order completion to arrival at the cash window"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Line Time +/-",
+    "description": "Drive Thru Line Time compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Line Time Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Order Time",
+    "description": "Time from when the first button is pressed on a DT order until the order is stored"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Order Time +/-",
+    "description": "DT Order Time compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Win1 Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Win1 Time",
+    "description": "Cashier Time, time from when the order is recalled at the cashier register until it is stored again"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Win1 Time +/-",
+    "description": "DT Win1 Time compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Win2 Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Win2 Time",
+    "description": "Present Time, time from when the order is stored at the cash booth until the order is presented"
+  },
+  {
+    "page": "cash",
+    "label": "DT Line: DT Win2 Time +/-",
+    "description": "DT Win2 Time compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "Drive Thru: Avg CTP",
+    "description": "Cash to Present time, time from when car is recalled at cash booth until order is presented"
+  },
+  {
+    "page": "cash",
+    "label": "Drive Thru: Avg CTP +/-",
+    "description": "Avg CTP compared to last year"
+  },
+  {
+    "page": "cash",
+    "label": "Drive Thru: Avg DT TTL",
+    "description": "Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included"
+  },
+  {
+    "page": "cash",
+    "label": "Act Hrs",
+    "description": "Punched Hours plus Scheduled Salaried Hours"
+  },
+  {
+    "page": "cash",
+    "label": "Act vs Need",
+    "description": "Actual Hours minus (Fixed Scheduled plus Floor Needed plus Variable Needed)"
+  },
+  {
+    "page": "cash",
+    "label": "Actual Labor %",
+    "description": "Act Labor dollars divided by Product Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Avg Rate",
+    "description": "Crew Labor Dollars divided by Crew Labor Hours"
+  },
+  {
+    "page": "cash",
+    "label": "Crew Labor Hours",
+    "description": "All Punched Hours for Job Title Codes classified as \"crew\""
+  },
+  {
+    "page": "cash",
+    "label": "Billable Sales: Billable Sales Amt",
+    "description": "Total dollar amount for all billable sales"
+  },
+  {
+    "page": "cash",
+    "label": "Billable Sales: Billable Sales Cnt",
+    "description": "Number of orders that were billable sales"
+  },
+  {
+    "page": "cash",
+    "label": "Cash Refund: Cash Refund Amt",
+    "description": "Total dollar amount for all orders where cash was refunded to a customer"
+  },
+  {
+    "page": "cash",
+    "label": "Cash Refund: Cash Refund Cnt",
+    "description": "Number of orders where cash was refunded to a customer"
+  },
+  {
+    "page": "cash",
+    "label": "Cashless Refund: Cashless Refund Amt",
+    "description": "Total dollar amount for all orders where money was refunded to a customer on a credit/debit card"
+  },
+  {
+    "page": "cash",
+    "label": "Cashless Refund: Cashless Refund Cnt",
+    "description": "Number of orders where money was refunded to a customer on a credit/debit card"
+  },
+  {
+    "page": "cash",
+    "label": "Coupon Cnt",
+    "description": "Number of orders where POS coupon A, B, C, D, or E was used"
+  },
+  {
+    "page": "cash",
+    "label": "Crew Labor %",
+    "description": "Crew Labor Dollars divided by Product Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Deposit Amt",
+    "description": "Amount of Deposit"
+  },
+  {
+    "page": "cash",
+    "label": "Discount: Discount Amt",
+    "description": "Total dollar amount of discounts (menu board price), including Electronic Discounts through the digital app or POS Auto Bundling"
+  },
+  {
+    "page": "cash",
+    "label": "Discount: Discount Cnt",
+    "description": "Number of orders where a discount was applied, including Electronic Discounts through the digital app or POS Auto Bundling"
+  },
+  {
+    "page": "cash",
+    "label": "Discount: Discount Pct",
+    "description": "Discount Amt divided by All Net Sales"
+  },
+  {
+    "page": "cash",
+    "label": "Drawer Opens",
+    "description": "Number of times the cash register drawer was opened when there was no order"
+  },
+  {
+    "page": "cash",
+    "label": "Emp Meal: Emp Meal Amt",
+    "description": "Total dollar amount for orders that were employee meals"
+  },
+  {
+    "page": "cash",
+    "label": "Emp Meal: Emp Meal Cnt",
+    "description": "Number of orders where the order was an employee meal"
+  },
+  {
+    "page": "cash",
+    "label": "Mgr Meal: Manager Meal Amt",
+    "description": "Total dollar amount for orders that were manager meals"
+  },
+  {
+    "page": "cash",
+    "label": "Mgr Meal: Manager Meal Cnt",
+    "description": "Number of orders where the order was a manager meal"
+  },
+  {
+    "page": "cash",
+    "label": "OT: OT $",
+    "description": "Overtime dollars"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast % of Total Sales",
+    "description": "Breakfast all Net Sales divided by total all net Sales for the day"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast All Net Sales",
+    "description": "Cash Sheet all net breakfast sales, determined by the times set for breakfast start and end in RFM"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast All Net Sales LY",
+    "description": "Cash Sheet all net breakfast sales last year, determined by the times set for breakfast start and end in RFM"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast Average Check",
+    "description": "Breakfast All Net Sales divided by breakfast GC"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast Average Check LY",
+    "description": "Breakfast Average Check Last Year"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast GC",
+    "description": "Breakfast GC, determined by the times set for breakfast start and end in RFM"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast GC +/-",
+    "description": "Breakfast GC compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast GC +/- %",
+    "description": "Breakfast GC increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year)"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast GC LY",
+    "description": "Breakfast GC last year, determined by the times set for breakfast start and end in RFM"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast Sales +/-",
+    "description": "Breakfast Sales compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Breakfast: Breakfast Sales +/- %",
+    "description": "Breakfast Sales increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year)"
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery % of Total Sales",
+    "description": "McDelivery Sales divided by All Net Sales"
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery Average Check",
+    "description": "Average check for McDelivery GC only"
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery Average Check LY",
+    "description": "Average check last year for McDelivery GC only"
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery GC",
+    "description": "All GC originating from the GMA Delivery & 3P0 Delivery."
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery GC +/-",
+    "description": "McDelivery GC compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery GC +/- %",
+    "description": "McDelivery GC comp percent, ((McDelivery GC this year minus McDelivery GC last year) divided by McDelivery GC last year"
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery GC LY",
+    "description": "McDelivery GC last year, all GC originating from the GMA Delivery & 3P0 Delivery."
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery Net Sales",
+    "description": "Dollars associated with all GC originating from the GMA Delivery & 3P0 Delivery."
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery Net Sales LY",
+    "description": "McDelivery Net Sales last year, dollars associated with all GC originating from the GMA Delivery & 3P0 Delivery."
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery Sales +/-",
+    "description": "McDelivery Sales compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Delivery: McDelivery Sales +/- %",
+    "description": "McDelivery Sales +/- percent, ((McDelivery sales this year minus McDelivery sales last year) divided by McDelivery sales last year)"
+  },
+  {
+    "page": "ops",
+    "label": "Drive Thru: DT % of Total Sales",
+    "description": "DT Sales divided by all net sales"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage GC",
+    "description": "GC (orders) sent to the beverage monitor"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage GC +/-",
+    "description": "Beverage GC compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage Order Time",
+    "description": "Order Time for GC that include a beverage sent to the beverage monitor"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage Order Time +/-",
+    "description": "Beverage Order Time compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage Run Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage Run Time",
+    "description": "Time from when a beverage order is paid until the order is served from the beverage monitor"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage Run Time +/-",
+    "description": "Beverage Run Time compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage Total Time",
+    "description": "Total Beverage time from the start of the order until the order is served"
+  },
+  {
+    "page": "ops",
+    "label": "Beverage Time: Beverage Total Time +/-",
+    "description": "Beverage Total Time compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Line Time",
+    "description": "Drive Thru Line Time - time from order completion to arrival at the cash window"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Line Time +/-",
+    "description": "Drive Thru Line Time compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Line Time Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Order Time",
+    "description": "Time from when the first button is pressed on a DT order until the order is stored"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Order Time +/-",
+    "description": "DT Order Time compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Win1 Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Win1 Time",
+    "description": "Cashier Time, time from when the order is recalled at the cashier register until it is stored again"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Win1 Time +/-",
+    "description": "DT Win1 Time compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Win2 Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Win2 Time",
+    "description": "Present Time, time from when the order is stored at the cash booth until the order is presented"
+  },
+  {
+    "page": "ops",
+    "label": "DT Line: DT Win2 Time +/-",
+    "description": "DT Win2 Time compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Drive Thru: Avg CTP",
+    "description": "Cash to Present time, time from when car is recalled at cash booth until order is presented"
+  },
+  {
+    "page": "ops",
+    "label": "Drive Thru: Avg CTP +/-",
+    "description": "Avg CTP compared to last year"
+  },
+  {
+    "page": "ops",
+    "label": "Drive Thru: Avg DT TTL",
+    "description": "Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included"
+  },
+  {
+    "page": "ops",
+    "label": "Product Sales",
+    "description": "Avg Rate Crew Labor Dollars divided by Crew Labor Hours Billable Sales: Billable Sales Amt Total dollar amount for all billable sales Billable Sales: Billable Sales Cnt Number of orders that were billable sales Cash Refund: Cash Refund Amt Total dollar amount for all orders where cash was refunded to a customer Cash Refund: Cash Refund Cnt Number of orders where cash was refunded to a customer Cashless Refund: Cashless Refund Amt Total dollar amount for all orders where money was refunded to a customer on a credit/debit card Cashless Refund: Cashless Refund Cnt Number of orders where money was refunded to a customer on a credit/debit card Coupon Cnt Number of orders where POS coupon A, B, C, D, or E was used Crew Labor % Crew Labor Dollars divided by"
+  },
+  {
+    "page": "ops",
+    "label": "All Net Sales",
+    "description": "Drawer Opens Number of times the cash register drawer was opened when there was no order Emp Meal: Emp Meal Amt Total dollar amount for orders that were employee meals Emp Meal: Emp Meal Cnt Number of orders where the order was an employee meal Mgr Meal: Manager Meal Amt Total dollar amount for orders that were manager meals Mgr Meal: Manager Meal Cnt Number of orders where the order was a manager meal OT: OT $ Overtime dollars"
+  },
+  {
+    "page": "cash",
+    "label": "(+/-) Penny Order Rounding",
+    "description": "The amount added to or subtracted from the order total due to rounding to the nearest nickel"
+  },
+  {
+    "page": "cash",
+    "label": "3PO Delivery Gross Amt",
+    "description": "3PO Delivery Gross Amount"
+  },
+  {
+    "page": "cash",
+    "label": "3PO Delivery Qty",
+    "description": "3PO Delivery Quantity"
+  },
+  {
+    "page": "cash",
+    "label": "AC Balance Redeemed Amt",
+    "description": "Arch Card Balance Redeemed Amount"
+  },
+  {
+    "page": "cash",
+    "label": "AC Balance Redeemed Qty",
+    "description": "Arch Card Balance Redeemed Quantity"
+  },
+  {
+    "page": "cash",
+    "label": "Actual Deposit Amt",
+    "description": "Actual Deposit Amount"
+  },
+  {
+    "page": "cash",
+    "label": "Average Check",
+    "description": "Storewide All Net Sales divided by Storewide GC"
+  },
+  {
+    "page": "cash",
+    "label": "Cash For Next Day Deposit",
+    "description": ""
+  },
+  {
+    "page": "cash",
+    "label": "Cashless Sales Amt",
+    "description": "Cashless Sales Amount"
+  },
+  {
+    "page": "cash",
+    "label": "Cashless Sales Qty",
+    "description": "Cashless Sales Quantity"
+  },
+  {
+    "page": "cash",
+    "label": "Crime Loss Amt",
+    "description": "Crime Loss Amount"
+  },
+  {
+    "page": "cash",
+    "label": "Delivery Total Amt",
+    "description": "Delivery Total Amount"
+  },
+  {
+    "page": "cash",
+    "label": "Delivery Total Qty",
+    "description": "Delivery Total Quantity"
+  },
+  {
+    "page": "cash",
+    "label": "Delivery Total Tax",
+    "description": ""
+  },
+  {
+    "page": "cash",
+    "label": "Deposit 1 Amt",
+    "description": "Amount of any Deposit 1 charged to the customer for bottles"
+  },
+  {
+    "page": "cash",
+    "label": "Deposit 2 Amt",
+    "description": "Amount of any Deposit 2 charged to the customer for bottles"
+  },
+  {
+    "page": "cash",
+    "label": "Discount Amt",
+    "description": "Total dollar amount of discounts (menu board price), including Electronic Discounts through the digital app or POS Auto Bundling"
+  },
+  {
+    "page": "cash",
+    "label": "DoorDash 1AD Delivery Amt",
+    "description": "DoorDash 1AD Delivery Amount"
+  },
+  {
+    "page": "cash",
+    "label": "DoorDash 1AD Delivery Qty",
+    "description": "DoorDash 1AD Delivery Quantity"
+  },
+  {
+    "page": "cash",
+    "label": "DoorDash 1AD Tax",
+    "description": ""
+  },
+  {
+    "page": "cash",
+    "label": "DoorDash Delivery Amt",
+    "description": "DoorDash Delivery Amount"
+  },
+  {
+    "page": "cash",
+    "label": "DoorDash Delivery Amt Total",
+    "description": "DoorDash Delivery Amount Total"
+  },
+  {
+    "page": "cash",
+    "label": "DoorDash Delivery Qty",
+    "description": "DoorDash Delivery Quantity"
+  },
+  {
+    "page": "ledger",
+    "label": "All Net Sales",
+    "description": "Storewide All Net Sales"
+  },
+  {
+    "page": "ledger",
+    "label": "All Net Sales +/-",
+    "description": "All Net Sales compared to last year (trading or calendar day)"
+  },
+  {
+    "page": "ledger",
+    "label": "All Net Sales +/- %",
+    "description": "All Net Sales +/- divided by last year's sales, trading day or calendar day depending on what is selected"
+  },
+  {
+    "page": "ledger",
+    "label": "Average Check",
+    "description": "Storewide All Net Sales divided by Storewide GC"
+  },
+  {
+    "page": "ledger",
+    "label": "Average Check +/-",
+    "description": "Average Check compared to last year"
+  },
+  {
+    "page": "ledger",
+    "label": "Average Check +/- %",
+    "description": "Average Check increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year)"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast % of Total Sales",
+    "description": "Breakfast all Net Sales divided by total all net Sales for the day"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast All Net Sales",
+    "description": "Cash Sheet all net breakfast sales, determined by the times set for breakfast start and end in RFM"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast Average Check",
+    "description": "Breakfast All Net Sales divided by breakfast GC"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast GC",
+    "description": "Breakfast GC, determined by the times set for breakfast start and end in RFM"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast GC +/-",
+    "description": "Breakfast GC compared to last year"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast GC +/- %",
+    "description": "Breakfast GC increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year)"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast Sales +/-",
+    "description": "Breakfast Sales compared to last year"
+  },
+  {
+    "page": "ledger",
+    "label": "Breakfast Sales +/- %",
+    "description": "Breakfast Sales increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year)"
+  },
+  {
+    "page": "ledger",
+    "label": "DT % of Total Sales",
+    "description": "DT Sales divided by all net sales"
+  },
+  {
+    "page": "ledger",
+    "label": "DT Sales",
+    "description": "Drive Thru All Net Sales"
+  },
+  {
+    "page": "ledger",
+    "label": "DT Average Check",
+    "description": "Drive Thru All Net Sales divided by Drive Thru GC"
+  },
+  {
+    "page": "ledger",
+    "label": "DT GC",
+    "description": "Drive Thru Guest Count"
+  },
+  {
+    "page": "ledger",
+    "label": "DT GC +/-",
+    "description": "DT GC compared to last year"
+  },
+  {
+    "page": "ledger",
+    "label": "DT GC +/- %",
+    "description": "DT GC +/- divided by DT GC last year"
+  },
+  {
+    "page": "ledger",
+    "label": "DT Sales +/-",
+    "description": "DT Sales compared to last year"
+  },
+  {
+    "page": "ledger",
+    "label": "DT Sales +/- %",
+    "description": "DT Sales +/- divided by DT sales last year"
+  },
+  {
+    "page": "ledger",
+    "label": "Eat in GC",
+    "description": "GC for orders that are consumed at the restaurant"
+  },
+  {
+    "page": "cashsheet",
+    "label": "(+/-) Penny Order Rounding",
+    "description": "The amount added to or subtracted from the order total due to rounding to the nearest nickel"
+  },
+  {
+    "page": "cashsheet",
+    "label": "3PO Delivery Gross Amt",
+    "description": "3PO Delivery Gross Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "3PO Delivery Qty",
+    "description": "3PO Delivery Quantity"
+  },
+  {
+    "page": "cashsheet",
+    "label": "AC Balance Redeemed Amt",
+    "description": "Arch Card Balance Redeemed Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "AC Balance Redeemed Qty",
+    "description": "Arch Card Balance Redeemed Quantity"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Actual Deposit Amt",
+    "description": "Actual Deposit Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Average Check",
+    "description": "Storewide All Net Sales divided by Storewide GC"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Cash For Next Day Deposit",
+    "description": ""
+  },
+  {
+    "page": "cashsheet",
+    "label": "Cashless Sales Amt",
+    "description": "Cashless Sales Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Cashless Sales Qty",
+    "description": "Cashless Sales Quantity"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Crime Loss Amt",
+    "description": "Crime Loss Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Delivery Total Amt",
+    "description": "Delivery Total Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Delivery Total Qty",
+    "description": "Delivery Total Quantity"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Delivery Total Tax",
+    "description": ""
+  },
+  {
+    "page": "cashsheet",
+    "label": "Deposit 1 Amt",
+    "description": "Amount of any Deposit 1 charged to the customer for bottles"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Deposit 2 Amt",
+    "description": "Amount of any Deposit 2 charged to the customer for bottles"
+  },
+  {
+    "page": "cashsheet",
+    "label": "Discount Amt",
+    "description": "Total dollar amount of discounts (menu board price), including Electronic Discounts through the digital app or POS Auto Bundling"
+  },
+  {
+    "page": "cashsheet",
+    "label": "DoorDash 1AD Delivery Amt",
+    "description": "DoorDash 1AD Delivery Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "DoorDash 1AD Delivery Qty",
+    "description": "DoorDash 1AD Delivery Quantity"
+  },
+  {
+    "page": "cashsheet",
+    "label": "DoorDash 1AD Tax",
+    "description": ""
+  },
+  {
+    "page": "cashsheet",
+    "label": "DoorDash Delivery Amt",
+    "description": "DoorDash Delivery Amount"
+  },
+  {
+    "page": "cashsheet",
+    "label": "DoorDash Delivery Amt Total",
+    "description": "DoorDash Delivery Amount Total"
+  },
+  {
+    "page": "cashsheet",
+    "label": "DoorDash Delivery Qty",
+    "description": "DoorDash Delivery Quantity"
+  },
+  {
+    "page": "peaks",
+    "label": "3PO McDelivery % of Total GC",
+    "description": "3PO McDelivery GC divided by Total GC"
+  },
+  {
+    "page": "peaks",
+    "label": "3PO McDelivery GC",
+    "description": "All GC originating from the 3rd Party Ordering (3PO) Delivery Vendors"
+  },
+  {
+    "page": "peaks",
+    "label": "3PO McDelivery % of Total Sales",
+    "description": "3PO McDelivery Sales divided by All Net Sales"
+  },
+  {
+    "page": "peaks",
+    "label": "All Net Sales",
+    "description": "Storewide All Net Sales"
+  },
+  {
+    "page": "peaks",
+    "label": "3PO McDelivery Average Check",
+    "description": "3PO McDelivery Net Sales divided by 3PO McDelivery GC"
+  },
+  {
+    "page": "peaks",
+    "label": "3PO McDelivery Net Sales",
+    "description": "Sales Dollars associated with GC originating from 3rd Party Ordering (3PO) Delivery Vendors"
+  },
+  {
+    "page": "peaks",
+    "label": "3PO McDelivery GC +/- %",
+    "description": "3PO McDelivery GC comp percent, ((3PO McDelivery GC this year minus 3PO McDelivery GC last year) divided by 3PO McDelivery GC last year"
+  },
+  {
+    "page": "peaks",
+    "label": "3PO McDelivery Sales +/- %",
+    "description": "3PO McDelivery Sales comp percent, ((3PO McDelivery sales this year minus 3PO McDelivery sales last year) divided by 3PO McDelivery sales last year)"
+  },
+  {
+    "page": "peaks",
+    "label": "Average Check",
+    "description": "Storewide All Net Sales divided by Storewide GC"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Where Ordered % of Total GC",
+    "description": "DT GC divided by Total GC"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Where Ordered % of Total Sales",
+    "description": "DT Sales divided by Total Sales"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Where Ordered Avg Chk",
+    "description": "Drive Thru All Net Sales divided by Drive Thru GC"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Where Ordered GC +/- %",
+    "description": "Drive Thru GC +/- divided by Drive Thru GC Last Year"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Where Ordered GCs",
+    "description": "All Guest Counts that started in DT"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Where Ordered Sales",
+    "description": "Sales for All Guest Counts that started in DT"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Where Ordered Sales +/- %",
+    "description": "Drive Thru All Net Sales compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "FC % of Total GC",
+    "description": "FC GC divided by Total GC"
+  },
+  {
+    "page": "peaks",
+    "label": "FC GC",
+    "description": "Front Counter Guest Count"
+  },
+  {
+    "page": "peaks",
+    "label": "FC % of Total Sales",
+    "description": "FC Sales divided by Total Sales"
+  },
+  {
+    "page": "peaks",
+    "label": "FC All Net Sales",
+    "description": "Front Counter all net sales"
+  },
+  {
+    "page": "peaks",
+    "label": "FC Average Check",
+    "description": "Front Counter Sales divided by Front Counter GC"
+  },
+  {
+    "page": "peaks",
+    "label": "FC GC +/- %",
+    "description": "Front counter GC compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "FC Sales +/- %",
+    "description": "Front counter sales compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "Avg CTP",
+    "description": "Cash to Present time, time from when car is recalled at cash booth until order is presented"
+  },
+  {
+    "page": "peaks",
+    "label": "Avg CTP +/-",
+    "description": "Avg CTP compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "Avg DT TTL",
+    "description": "Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included"
+  },
+  {
+    "page": "peaks",
+    "label": "Avg DT TTL +/-",
+    "description": "Avg DT TTL compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage GC",
+    "description": "GC (orders) sent to the beverage monitor"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage GC +/-",
+    "description": "Beverage GC compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage Order Time",
+    "description": "Order Time for GC that include a beverage sent to the beverage monitor"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage Order Time +/-",
+    "description": "Beverage Order Time compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage Run Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage Run Time",
+    "description": "Time from when a beverage order is paid until the order is served from the beverage monitor"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage Run Time +/-",
+    "description": "Beverage Run Time compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage Total Time",
+    "description": "Total Beverage time from the start of the order until the order is served"
+  },
+  {
+    "page": "peaks",
+    "label": "Beverage Total Time +/-",
+    "description": "Beverage Total Time compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "CTP Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "peaks",
+    "label": "DT GC",
+    "description": "Drive Thru Guest Count"
+  },
+  {
+    "page": "peaks",
+    "label": "DT GC +/-",
+    "description": "DT GC compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Line Time",
+    "description": "Drive Thru Line Time - time from order completion to arrival at the cash window"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Line Time +/-",
+    "description": "Drive Thru Line Time compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Line Time Masked QtrHrs",
+    "description": "An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Order Time",
+    "description": "Time from when the first button is pressed on a DT order until the order is stored"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Order Time +/-",
+    "description": "DT Order Time compared to last year"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Parked %",
+    "description": "Percent of cars that were parked to wait for orders to be completed"
+  },
+  {
+    "page": "peaks",
+    "label": "DT Parked % +/-",
+    "description": "DT Parked % compared to last year"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "# of Shifts",
+    "description": "The number of shifts where the manager was the floor manager during the selected period"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Act Hrs",
+    "description": "Actual Hours used - Punched Hours plus Scheduled Salaried Hours"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Act vs Need",
+    "description": "Actual hours used compared to hours needed (Needed Hours = Variable Needed + Fixed Scheduled + Floor Needed)"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Act vs Sched",
+    "description": "Actual Hours used compared to Hours that were scheduled"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "All Net Sales",
+    "description": "Storewide All Net Sales"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "All Net Sales +/-",
+    "description": "All net sales compared to last year (trading or calendar day)"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Average Check",
+    "description": "Storewide All Net Sales divided by Storewide GC"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Average Check +/-",
+    "description": "Average Check compared to last year"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Avg CTP",
+    "description": "Cash to Present time, time from when car is recalled at cash booth until order is presented"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Avg CTP +/-",
+    "description": "Avg CTP compared to last year"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Avg DT TTL",
+    "description": "Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "Avg DT TTL +/-",
+    "description": "Avg DT TTL compared to last year"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "DT Average Check",
+    "description": "Drive Thru All Net Sales divided by Drive Thru GC"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "DT Average Check +/-",
+    "description": "Drive Thru"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "DT GC",
+    "description": "Drive Thru Guest Count"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "DT GC +/-",
+    "description": "DT GC compared to last year"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "DT Pulled Forward %",
+    "description": "Percent of cars that were parked to wait for orders to be completed"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "DT Sales",
+    "description": "Drive Thru All Net Sales"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "DT Sales +/-",
+    "description": "DT Sales compared to last year"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "FC All Net Sales",
+    "description": "Front Counter all net sales"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "FC Average Check",
+    "description": "FC All Net Sales divided by FC GC"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "FC GC",
+    "description": "Front Counter Guest Count"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "FC Average Check +/-",
+    "description": "FC Average Check this year minus FC Average Check last year"
+  },
+  {
+    "page": "trends",
+    "label": "All Net Sales",
+    "description": "Storewide All Net Sales"
+  },
+  {
+    "page": "trends",
+    "label": "All Net Sales +/- %",
+    "description": "All Net Sales +/- divided by last year's sales, trading day or calendar day depending on what is selected"
+  },
+  {
+    "page": "trends",
+    "label": "Average Check",
+    "description": "Storewide All Net Sales divided by Storewide GC"
+  },
+  {
+    "page": "trends",
+    "label": "Average Check +/- %",
+    "description": "Average Check increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year)"
+  },
+  {
+    "page": "trends",
+    "label": "Product Sales",
+    "description": "Actual Sales after removing tax, non-product, and other deductions. Essentially sales based on total of food and beverages sold."
+  },
+  {
+    "page": "trends",
+    "label": "Product Sales +/- %",
+    "description": "(Product sales for this year minus product sales for last year) divided by product sales for last year"
+  },
+  {
+    "page": "trends",
+    "label": "STW GC",
+    "description": "Storewide Guest Count"
+  },
+  {
+    "page": "trends",
+    "label": "STW GC +/- %",
+    "description": "GC Comparison to last year - trading day or calendar day depending on filter selection"
+  },
+  {
+    "page": "pmix",
+    "label": "$ Sold",
+    "description": "Price times Number Sold - discounts are not subtracted"
+  },
+  {
+    "page": "pmix",
+    "label": "Price",
+    "description": "The individual price or range of prices that a menu item was sold for through the POS"
+  },
+  {
+    "page": "pmix",
+    "label": "% Total (Net Sales)",
+    "description": "Adj Pmix Sales divided by All Net Sales"
+  },
+  {
+    "page": "pmix",
+    "label": "% Total (Product Sales)",
+    "description": "Adj Pmix Sales divided by Product Net Sales"
+  },
+  {
+    "page": "pmix",
+    "label": "Adj PMIX Sales",
+    "description": "Sales of the menu item after both bundles and other discounts are applied"
+  },
+  {
+    "page": "pmix",
+    "label": "Avg F&P Cost %",
+    "description": "Total F&P divided by $ Sold"
+  },
+  {
+    "page": "pmix",
+    "label": "Avg Food Cost %",
+    "description": "Total Food Cost divided by $ Sold"
+  },
+  {
+    "page": "pmix",
+    "label": "Total Food Cost",
+    "description": "Unit Food Cost times units sold"
+  },
+  {
+    "page": "pmix",
+    "label": "Avg Paper Cost %",
+    "description": "Total Paper Cost divided by $ Sold"
+  },
+  {
+    "page": "pmix",
+    "label": "Total Paper Cost",
+    "description": "Unit Paper Cost times units sold"
+  },
+  {
+    "page": "pmix",
+    "label": "Bundle Discount $",
+    "description": "Total Discounted dollars for Menu Items that were part of an auto bundle discount"
+  },
+  {
+    "page": "pmix",
+    "label": "Bundle Units",
+    "description": "Total qty for Menu Items that were part of an auto bundle discounts"
+  },
+  {
+    "page": "pmix",
+    "label": "Desc",
+    "description": "Menu Item"
+  },
+  {
+    "page": "pmix",
+    "label": "Disc Qty",
+    "description": "Number of the menu item that were sold at a discount"
+  },
+  {
+    "page": "pmix",
+    "label": "F&P % of Total Sales",
+    "description": "Total F&P divided by"
+  },
+  {
+    "page": "pmix",
+    "label": "Family Group",
+    "description": "McDonalds"
+  },
+  {
+    "page": "pmix",
+    "label": "Margin %",
+    "description": "100% minus Avg F&P Cost"
+  },
+  {
+    "page": "pmix",
+    "label": "Menu Item #",
+    "description": "The menu item number"
+  },
+  {
+    "page": "pmix",
+    "label": "Offer Discount $",
+    "description": "Total dollars discounted for discounts other than bundling"
+  },
+  {
+    "page": "pmix",
+    "label": "Promo $",
+    "description": "Units Promo * Price"
+  },
+  {
+    "page": "pmix",
+    "label": "Total F&P Cost",
+    "description": "Unit Food & Paper times units sold"
+  },
+  {
+    "page": "pmix",
+    "label": "Total Margin $",
+    "description": "$ Sold minus Total F&P Cost"
+  },
+  {
+    "page": "pmix",
+    "label": "Unit F&P Cost",
+    "description": "Food And Paper Cost for a single menu item (there are really 4 digits past the decimal but this is rounded to 2 digits for display)"
+  },
+  {
+    "page": "schedule",
+    "label": "Symbol",
+    "description": "Fixed Job"
+  },
+  {
+    "page": "schedule",
+    "label": "TP",
+    "description": "OTP(Ops Tech Person)"
+  },
+  {
+    "page": "schedule",
+    "label": "GL",
+    "description": "GUEST EXPERIENCE LEADER"
+  },
+  {
+    "page": "schedule",
+    "label": "PS",
+    "description": "PRE SHIFT"
+  },
+  {
+    "page": "schedule",
+    "label": "PM",
+    "description": "PLANNED MAINTENANCE"
+  },
+  {
+    "page": "schedule",
+    "label": "BP",
+    "description": "BIRTHDAY PARTIES"
+  },
+  {
+    "page": "schedule",
+    "label": "A",
+    "description": "ADMINISTRATION / CASH"
+  },
+  {
+    "page": "schedule",
+    "label": "SC",
+    "description": "SCHEDULES"
+  },
+  {
+    "page": "schedule",
+    "label": "V",
+    "description": "VAT(filtering oil)"
+  },
+  {
+    "page": "schedule",
+    "label": "H",
+    "description": "HIRING"
+  },
+  {
+    "page": "schedule",
+    "label": "S",
+    "description": "SUPPORT / PREP"
+  },
+  {
+    "page": "schedule",
+    "label": "TR",
+    "description": "TRANSITION"
+  },
+  {
+    "page": "schedule",
+    "label": "M",
+    "description": "MAINTENANCE"
+  },
+  {
+    "page": "schedule",
+    "label": "L",
+    "description": "LOBBY"
+  },
+  {
+    "page": "schedule",
+    "label": "FS",
+    "description": "FOOD SAFETY"
+  },
+  {
+    "page": "schedule",
+    "label": "MM",
+    "description": "MANAGER MEETING"
+  },
+  {
+    "page": "schedule",
+    "label": "T",
+    "description": "TRAINING"
+  },
+  {
+    "page": "schedule",
+    "label": "ID",
+    "description": "INDIVIDUAL DEVELOPMENT"
+  },
+  {
+    "page": "schedule",
+    "label": "WT",
+    "description": "WALK THRUS"
+  },
+  {
+    "page": "schedule",
+    "label": "TD",
+    "description": "TRUCK DELIVERY"
+  },
+  {
+    "page": "schedule",
+    "label": "ST",
+    "description": "STAT"
+  },
+  {
+    "page": "schedule",
+    "label": "O",
+    "description": "OPENING"
+  },
+  {
+    "page": "schedule",
+    "label": "C",
+    "description": "CLOSING"
+  },
+  {
+    "page": "schedule",
+    "label": "GM",
+    "description": "GENERAL MANAGER"
+  },
+  {
+    "page": "records",
+    "label": "DT Sales: Date",
+    "description": "Date of Drive Thru Sales"
+  },
+  {
+    "page": "records",
+    "label": "DT Sales: Value",
+    "description": "Amount of Drive Thru Sales"
+  },
+  {
+    "page": "records",
+    "label": "DT Transactions: Date",
+    "description": "Date of Drive Thru Transactions"
+  },
+  {
+    "page": "records",
+    "label": "DT Transactions: Value",
+    "description": "Drive Thru Transactions"
+  },
+  {
+    "page": "records",
+    "label": "KVS Sandwiches: Date",
+    "description": "Date of KVS Sandwiches"
+  },
+  {
+    "page": "records",
+    "label": "KVS Sandwiches: Value",
+    "description": "Number of KVS Sandwich items"
+  },
+  {
+    "page": "records",
+    "label": "KVS Time: Date",
+    "description": "Date of KVS Time"
+  },
+  {
+    "page": "records",
+    "label": "KVS Time: Value",
+    "description": "KVS time per transaction"
+  },
+  {
+    "page": "records",
+    "label": "OEPE No Parked: Date",
+    "description": "Date of OEPE No Parked"
+  },
+  {
+    "page": "records",
+    "label": "OEPE No Parked: Value",
+    "description": "OEPE No Parked - number of orders not parked in OEPE"
+  },
+  {
+    "page": "records",
+    "label": "R2P: Date",
+    "description": "Date of R2P"
+  },
+  {
+    "page": "records",
+    "label": "R2P: Value",
+    "description": "Receipt to Present - front counter from time order has been paid until order is presented"
+  },
+  {
+    "page": "records",
+    "label": "Total Sales: Date",
+    "description": "Date of Total Sales"
+  },
+  {
+    "page": "records",
+    "label": "Total Sales: Value",
+    "description": "Total Sales amount"
+  },
+  {
+    "page": "records",
+    "label": "Total Transactions: Date",
+    "description": "Date of Total Transactions"
+  },
+  {
+    "page": "records",
+    "label": "Total Transactions: Value",
+    "description": "Count of Total Transactions"
+  },
+  {
+    "page": "regaudit",
+    "label": "Average Check",
+    "description": "Drawer Sales divided by GC"
+  },
+  {
+    "page": "regaudit",
+    "label": "Drawer Sales",
+    "description": "Sum of sales from drawers (Can be different from Cash Sheet`s All Net Sale)"
+  },
+  {
+    "page": "regaudit",
+    "label": "Drawer GC",
+    "description": "Number of transactions from drawers"
+  },
+  {
+    "page": "regaudit",
+    "label": "Drawer Opens",
+    "description": "Number of times the cash register drawer was opened when there was no order"
+  },
+  {
+    "page": "regaudit",
+    "label": "Emp Meal Disc $",
+    "description": "Dollar amount where the order was an Employee meal"
+  },
+  {
+    "page": "regaudit",
+    "label": "Emp Meal Disc Cnt",
+    "description": "Orders where the order was an Employee meal"
+  },
+  {
+    "page": "regaudit",
+    "label": "Emp Name",
+    "description": "Employee Name"
+  },
+  {
+    "page": "regaudit",
+    "label": "Manual Refund/Overring $",
+    "description": "Amount entered as Manual Refund or Overring during the drawer count down process"
+  },
+  {
+    "page": "regaudit",
+    "label": "Mgr Meal #",
+    "description": "Orders where the order was a manager meal"
+  },
+  {
+    "page": "regaudit",
+    "label": "Mgr Meal $",
+    "description": "Orders where the order was a manager meal"
+  },
+  {
+    "page": "regaudit",
+    "label": "Over/Short $",
+    "description": "Difference between cash that was expected and sum of drawer count downs"
+  },
+  {
+    "page": "regaudit",
+    "label": "Over/Short %",
+    "description": "Over/Short $ divided by All Net sales"
+  },
+  {
+    "page": "regaudit",
+    "label": "POS Overrings",
+    "description": "Orders where the order was voided on the POS"
+  },
+  {
+    "page": "regaudit",
+    "label": "POS Overrings $",
+    "description": "Dollar amount where the order was voided on the POS"
+  },
+  {
+    "page": "regaudit",
+    "label": "Promo #",
+    "description": "Dollar cost of one inventory unit"
+  },
+  {
+    "page": "regaudit",
+    "label": "Promo Amt",
+    "description": "Menu board price of menu items given away for free (not the F&P cost of the items)"
+  },
+  {
+    "page": "regaudit",
+    "label": "Promo Pct",
+    "description": "Promo Amt divided by Product sales"
+  },
+  {
+    "page": "regaudit",
+    "label": "Refund Cash $",
+    "description": "Dollar amount where Cash was refunded to a customer"
+  },
+  {
+    "page": "regaudit",
+    "label": "Refund Cashless $",
+    "description": "Orders where cashless money was refunded to a customer"
+  },
+  {
+    "page": "regaudit",
+    "label": "Refund Cashless Cnt",
+    "description": "Dollar amount where cashless money was refunded to a customer"
+  },
+  {
+    "page": "regaudit",
+    "label": "Refund Cnt",
+    "description": "Orders where Cash was refunded to a customer"
+  },
+  {
+    "page": "regaudit",
+    "label": "T-Red After $",
+    "description": "Sum of reductions for orders where items were removed after the total key was pressed"
+  },
+  {
+    "page": "regaudit",
+    "label": "T-Red After Avg",
+    "description": "T-Red After $ divided by T-Red After Cnt"
+  },
+  {
+    "page": "labor",
+    "label": "Act $",
+    "description": "Sum of Punched Labor $ and Salaried Manager $"
+  },
+  {
+    "page": "labor",
+    "label": "Act GC vs Proj",
+    "description": "Actual GC minus GC that were projected in the scheduling software"
+  },
+  {
+    "page": "labor",
+    "label": "Actual GC",
+    "description": "minus GC that were projected in the scheduling software"
+  },
+  {
+    "page": "labor",
+    "label": "Act Hrs",
+    "description": "Punched Hours plus Scheduled Salaried Hours"
+  },
+  {
+    "page": "labor",
+    "label": "Act Sales vs Proj",
+    "description": "Actual Sales minus sales that were projected in the scheduling software"
+  },
+  {
+    "page": "labor",
+    "label": "Act vs Need",
+    "description": "Actual Hours minus (Fixed Scheduled plus Floor Needed plus Variable Needed)"
+  },
+  {
+    "page": "labor",
+    "label": "Act vs Need FCH",
+    "description": "Actual Hours minus (Fixed Contract plus Floor Management Hours Needed plus Variable Needed)"
+  },
+  {
+    "page": "labor",
+    "label": "Floor Management Hours Needed",
+    "description": "Floor Labor Hours Needed based on actual volume of restaurant"
+  },
+  {
+    "page": "labor",
+    "label": "Act vs Need Scd",
+    "description": "Actual Hours minus (Fixed Scheduled plus Floor Scheduled plus Variable Needed)"
+  },
+  {
+    "page": "labor",
+    "label": "Act vs Sched",
+    "description": "Actual Hours minus (Fixed Scheduled plus Floor Scheduled plus Variable Scheduled)"
+  },
+  {
+    "page": "labor",
+    "label": "All Net Sales",
+    "description": "Storewide All Net Sales"
+  },
+  {
+    "page": "labor",
+    "label": "Average Check",
+    "description": "Storewide All Net Sales divided by Storewide GC"
+  },
+  {
+    "page": "labor",
+    "label": "Avg Rate",
+    "description": "Crew Labor Dollars divided by Crew Labor Hours"
+  },
+  {
+    "page": "labor",
+    "label": "Crew Labor Hours",
+    "description": "All Punched Hours for Job Title Codes classified as \"crew\""
+  },
+  {
+    "page": "labor",
+    "label": "Crew Labor $",
+    "description": "All Labor Dollars for Job Title Codes classified as \"crew\""
+  },
+  {
+    "page": "labor",
+    "label": "Crew Labor %",
+    "description": "Crew Labor Dollars divided by Product Sales"
+  },
+  {
+    "page": "labor",
+    "label": "DT Average Check",
+    "description": "Drive Thru All Net Sales divided by Drive Thru GC"
+  },
+  {
+    "page": "labor",
+    "label": "DT Sales",
+    "description": "Drive Thru All Net Sales"
+  },
+  {
+    "page": "labor",
+    "label": "Fixed Contract Hours",
+    "description": "Total hours allotted in the Fixed Hours Contract or Guide"
+  },
+  {
+    "page": "labor",
+    "label": "Fixed Labor Hours Scheduled",
+    "description": "Scheduled hours for Schedule symbols that are 'fixed' (not dependent on sales volume)"
+  },
+  {
+    "page": "labor",
+    "label": "Floor Hours Sched",
+    "description": "Manager hours scheduled to run the floor (Schedule Symbol FL)"
+  },
+  {
+    "page": "labor",
+    "label": "In-Store All Net Sales",
+    "description": "Sales from all transactions that are not Drive Thru"
+  },
+  {
+    "page": "labor",
+    "label": "In-Store Average Check",
+    "description": "In-Store All Net Sales divided by In Store GC"
+  }
+]

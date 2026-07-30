@@ -6,7 +6,7 @@
 // Current (recent run-rate) · vs Official · Confidence, plus excluded-anomaly days.
 // FL and OK are anchored SEPARATELY (peers are same-state, like-sized only).
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, DEFAULT_TARGETS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
 import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
 import { loadDailySales, loadGlimpse, loadQsrFob, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
@@ -197,7 +197,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     if (scope === 'all') return null;
     if (scope === 'fl') return new Set(ALL_LOCS.filter(l => FL_LOCS.has(l)));
     if (scope === 'ok') return new Set(ALL_LOCS.filter(l => !FL_LOCS.has(l)));
-    if (scope.startsWith('__patch__')) return new Set(((DEF_SETTINGS.supervisorGroups || {})[scope.slice(9)] || []).map(l => locNum(l)));
+    if (scope.startsWith('__patch__')) return new Set(((supervisorGroups() || {})[scope.slice(9)] || []).map(l => locNum(l)));
     return new Set([locNum(scope)]);
   }, [scope]);
 
@@ -528,7 +528,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
           h('option', { value: 60 }, 'Lookback 60d'), h('option', { value: 90 }, 'Lookback 90d'), h('option', { value: 180 }, 'Lookback 180d')),
         h('select', { value: scope, onChange: e => setScope(e.target.value), style: selStyle },
           h('option', { value: 'all' }, 'All Stores'), h('option', { value: 'fl' }, 'Florida'), h('option', { value: 'ok' }, 'Oklahoma'),
-          h('optgroup', { label: '— Patches —' }, ...Object.entries(DEF_SETTINGS.supervisorGroups || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
+          h('optgroup', { label: '— Patches —' }, ...Object.entries(supervisorGroups() || {}).map(([n, l]) => h('option', { key: n, value: '__patch__' + n }, n.split(' ')[0] + ' Patch (' + l.length + ')'))),
           h('optgroup', { label: '— Florida —' }, ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
           h('optgroup', { label: '— Oklahoma —' }, ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
         metric.officialCol ? btn({ onClick: () => { if (window.confirm('Apply the Smart ' + metric.label.split(' ')[0] + ' target as the OFFICIAL target for ' + targetLabel + ' across ' + shown.length + ' shown store(s)? This writes monthly_targets and feeds Projections.')) applyOfficial(shown); }, disabled: !shown.length || applyBusy, title: 'Write the Smart number to the official monthly_targets for ' + targetLabel + ' (all shown stores)', style: { padding: '3px 10px', borderRadius: 6, border: '1px solid var(--amber)', background: applyBusy ? 'var(--surf)' : 'rgba(245,188,0,.14)', color: 'var(--amber)', fontSize: 11, fontWeight: 700, cursor: shown.length && !applyBusy ? 'pointer' : 'default' } }, '✓ Apply as Official') : null,

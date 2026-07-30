@@ -13,7 +13,7 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus } from '../lib/supabase.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -6458,6 +6458,54 @@ function SageRunsTile() {
       r.ok ? ((r.resultMd || '').replace(/[#*|`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140) || '—') : ('⚠ ' + (r.error || 'failed')))))));
 }
 
+// EOM Count-progress tile — surfaces the EOM Scoreboard front-and-center during the last 3
+// days of the month (Notes 34). Computes the same buckets as the dashboard scoreboard from
+// eom_count_status alone (no on-hand load); click opens the EOM Dashboard (Scoreboard tab).
+function EOMScoreboardTile({ onOpenModal }) {
+  const now = new Date();
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const inWindow = now.getDate() >= lastDay - 2;   // last 3 days of the month
+  const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [rows, setRows] = React.useState(null);
+  React.useEffect(() => {
+    if (!inWindow) return;
+    let live = true;
+    loadEomCountStatus({ period }).then(r => { if (live) setRows(r || []); }).catch(() => { if (live) setRows([]); });
+    return () => { live = false; };
+  }, [inWindow, period]);
+  if (!inWindow) return null;
+
+  const bucketOf = r => {
+    const pct = r.pctCounted ?? 0;
+    if ((r.commsStatus || 'none') !== 'none') return 'comms';
+    if ((r.diagnosisStatus || 'pending') !== 'pending') return 'reviewed';
+    if (pct >= 0.9) return 'ready';
+    if (pct > 0.01) return 'counting';
+    return 'notstarted';
+  };
+  const PILL = { notstarted: ['Not started', '#6b7280'], counting: ['Counting', '#38bdf8'], ready: ['Ready for you', '#f5bc00'], reviewed: ['Reviewed', '#4ade80'], comms: ['Comms sent', '#a78bfa'] };
+  const tally = { notstarted: 0, counting: 0, ready: 0, reviewed: 0, comms: 0 };
+  for (const r of (rows || [])) tally[bucketOf(r)]++;
+  const readyN = tally.ready;
+  // Freshness: latest eom_count_status import (updated_at) across stores = last count pull.
+  const freshTs = (rows || []).reduce((m, r) => Math.max(m, r.updatedAt ? new Date(r.updatedAt).getTime() : 0), 0);
+  const freshLbl = freshTs ? new Date(freshTs).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+
+  const card = (...kids) => h('div', { onClick: () => onOpenModal && onOpenModal('eom-dashboard'), style: { background: 'var(--surf2,#151821)', border: '.5px solid ' + (readyN > 0 ? 'rgba(245,188,0,.5)' : 'var(--bdr,#2a2f3a)'), borderRadius: 12, overflow: 'hidden', cursor: 'pointer' }, title: 'Open the EOM Dashboard scoreboard' }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '📦'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'EOM Count Progress'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Last 3 days · ' + (freshLbl ? 'imported ' + freshLbl : 'tap to open the scoreboard'))),
+    readyN > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: '#111', background: '#f5bc00', borderRadius: 10, padding: '2px 8px' } }, readyN + ' ready') : null);
+  if (rows === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  if (!rows.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'Counts populate as stores work through the last-3-day window (the On-Hand pull runs ~8a/10a/2p CT).'));
+  return card(head, h('div', { style: { padding: '10px 14px', display: 'flex', gap: 6, flexWrap: 'wrap' } },
+    ...['ready', 'counting', 'reviewed', 'comms', 'notstarted'].map(k => h('div', { key: k, style: { flex: '1 1 70px', border: '.5px solid var(--bdr,#2a2f3a)', borderLeft: '3px solid ' + PILL[k][1], borderRadius: 8, padding: '6px 8px' } },
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.3px' } }, PILL[k][0]),
+      h('div', { style: { fontSize: 18, fontWeight: 800, color: k === 'ready' && tally[k] > 0 ? '#f5bc00' : 'var(--text,#e8eaed)' } }, String(tally[k]))))));
+}
+
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   const today = new Date();
   const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
@@ -6554,7 +6602,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(unlocked.length>0) items.push({id:'auto_locks',priority:'high',
       text:unlocked.length+' store'+(unlocked.length>1?'s':'')+' missing this week\'s projection lock',
       detail:unlocked.map(l=>STORE_NAMES[l]||l).join(', ')});
-    const redStores=allLocs.filter(loc=>modelHealthScore(loc,ds,settings).score<50);
+    // Guard null scores: `null < 50` is true in JS, so an insufficient-data store used to
+    // count as red here while the header (which skips null) didn't — the 1-vs-2 mismatch.
+    const redStores=allLocs.filter(loc=>{const s=modelHealthScore(loc,ds,settings).score;return s!=null&&s<50;});
     if(redStores.length>0) items.push({id:'auto_red_health',priority:'high',
       text:redStores.length+' store'+(redStores.length>1?'s':'')+' at red model health',
       detail:redStores.map(l=>STORE_NAMES[l]||l).join(', ')});
@@ -6594,23 +6644,41 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // back to most recent 30 days of loaded data so tiles always show content.
   const effectiveDateRange = React.useMemo(()=>{
     if(!dateRange?.s) return dateRange;
-    const hasData=(ds?.laborRows||[]).some(r=>r.date&&r.date>=dateRange.s&&r.date<=dateRange.e);
+    // Auto-aware (Notes: Jul-2026). The old check only looked at manual laborRows, so once
+    // manual uploads stopped it fell back to a 30-day window ending at the LAST MANUAL date
+    // (~Jul 15) — pinning every At-A-Glance tile to "as of 7/15" even though the auto DAR /
+    // emailed streams were current. Now treat the selected range as populated when ANY
+    // current-window stream (manual OR auto DAR OR Daily Glimpse) has a day in it, and if it
+    // genuinely has none, anchor the fallback to the FRESHEST date across all of them.
+    const _t=d=>d instanceof Date?d.getTime():new Date(d).getTime();
+    const inSel=r=>r.date&&_t(r.date)>=_t(dateRange.s)&&_t(r.date)<=_t(dateRange.e);
+    const streams=[ds?.laborRows,ds?.qsrActSummaryRows,ds?.glimpseRows];
+    const hasData=streams.some(arr=>(arr||[]).some(inSel));
     if(hasData)return{...dateRange,isFallback:false};
-    const dates=(ds?.laborRows||[]).map(r=>r.date).filter(Boolean);
+    const dates=streams.flatMap(arr=>(arr||[]).map(r=>r.date)).filter(Boolean).map(_t).filter(t=>!isNaN(t));
     if(!dates.length)return{...dateRange,isFallback:false};
     const maxD=new Date(Math.max(...dates));
     const minD=new Date(maxD);minD.setDate(minD.getDate()-29);minD.setHours(0,0,0,0);
     const toD=new Date(maxD);toD.setHours(23,59,59,999);
     return{s:minD,e:toD,isFallback:true,
       fallbackLabel:maxD.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
-  },[dateRange,ds?.laborRows?.length]);
+  },[dateRange,ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.glimpseRows?.length]);
 
   const labInRange = React.useMemo(()=>{
-    const manual=(ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
-    if(manual.length>0) return manual;
-    // No manual Operations Report uploads — fall back to auto-synced QSRSoft daily totals.
-    // qsrActSummaryRows has the same {loc, date, sales, allNetSales, gc, salesVsLYPct} shape.
-    return (ds?.qsrActSummaryRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
+    // FRESHEST-PER-DAY merge, not all-or-nothing (Notes: Jul-2026 "reverts to old date" bug).
+    // The old code used ONLY manual rows whenever ANY manual row fell in the range — so a
+    // range spanning the last manual upload (e.g. MTD) dropped every auto day AFTER it, and
+    // on load the tile flipped from current (auto, before laborRows arrived) back to the last
+    // manual date once laborRows loaded. Now: auto fills every day, manual overrides the same
+    // day it covers (an intentional upload), so recent days always show from the auto stream.
+    const inR=r=>r&&r.date&&inRange(r.date,effectiveDateRange);
+    const manual=(ds?.laborRows||[]).filter(inR);
+    const auto=(ds?.qsrActSummaryRows||[]).filter(inR);
+    const k=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+    const m=new Map();
+    for(const r of auto)   m.set(k(r),r);   // auto/DAR fills every day (incl. the recent ones)
+    for(const r of manual) m.set(k(r),r);   // a manual upload intentionally overrides its own day
+    return [...m.values()];
   },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
 
   // True when labInRange is sourced from QSRSoft auto-sync rather than manual upload
@@ -7644,14 +7712,18 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',
         letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0}},'Loaded Data'),
       ...(()=>{
+        // Each category shows the FRESHEST across its manual AND auto/emailed streams
+        // (Notes: Jul-2026). Manual uploads legitimately stop when the owner stops
+        // uploading; anchoring the strip to manual alone made it read weeks-stale even
+        // though the auto DAR/Glimpse/Ledger/qsr_fob streams were current. Union the
+        // relevant streams so the date range reflects reality (auto/emailed-first rule).
+        const _u=(...arrs)=>arrs.flatMap(a=>a||[]);
         const sources=[
-          ds?.laborRows?.length
-            ? {name:'Sales/Labor',rows:ds?.laborRows,icon:'💰'}
-            : {name:'QSRSoft Auto',rows:ds?.qsrActSummaryRows,icon:'⚡'},
-          {name:'Scheduling',rows:ds?.schedRows,icon:'📅'},
-          {name:'Service',rows:ds?.opsRows,icon:'⚡'},
-          {name:'Controls',rows:ds?.ctrlRows,icon:'🔒'},
-          {name:'FOB',rows:ds?.fobRows,icon:'🍟'},
+          {name:'Sales',      rows:_u(ds?.qsrActSummaryRows,ds?.salesLedgerRows,ds?.laborRows),icon:'💰'},
+          {name:'Scheduling', rows:ds?.schedRows,icon:'📅'},
+          {name:'Service',    rows:_u(ds?.glimpseRows,ds?.qsrActSummaryRows,ds?.opsRows),icon:'⚡'},
+          {name:'Controls',   rows:_u(ds?.glimpseRows,ds?.cashRows,ds?.ctrlRows),icon:'🔒'},
+          {name:'FOB',        rows:_u(ds?.qsrFobRows,ds?.fobRows),icon:'🍟'},
         ];
         return sources.map(src=>{
           const rows=src.rows||[];
@@ -7659,11 +7731,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             color:'rgba(255,255,255,.25)',padding:'2px 8px',borderRadius:3,
             background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)'}},
             src.icon+' '+src.name+': Not loaded');
-          const dates=rows.map(r=>r.date).filter(Boolean);
-          const minD=dates.length?new Date(Math.min(...dates)):null;
-          const maxD=dates.length?new Date(Math.max(...dates)):null;
+          // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
+          // Parse dates to ms (skip unparseable → no "Invalid Date"); normalize loc so a
+          // padded "0003708" and "3708" don't double-count the store list.
+          const ms=rows.map(r=>{const d=r?.date instanceof Date?r.date:(r?.date?new Date(r.date):null);return d&&!isNaN(d.getTime())?d.getTime():null;}).filter(v=>v!=null);
+          const minD=ms.length?new Date(Math.min(...ms)):null;
+          const maxD=ms.length?new Date(Math.max(...ms)):null;
           const fmt=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'?';
-          const uniqueLocs=[...new Set(rows.map(r=>r.loc))].length;
+          const uniqueLocs=new Set(rows.map(r=>{const n=parseInt(r.loc,10);return isNaN(n)?String(r.loc):String(n);})).size;
           return div({key:src.name,style:{fontSize:'9px',
             color:'var(--text)',padding:'2px 8px',borderRadius:3,
             background:'rgba(16,185,129,.08)',border:'.5px solid rgba(16,185,129,.2)'}},
@@ -7695,6 +7770,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       !noData&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(380px,100%),1fr))',gap:10}},
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
+        h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
 
         // ── PROJECTIONS SECTION ──

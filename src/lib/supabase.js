@@ -13,11 +13,49 @@ export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 
 // Paginate through all rows — Supabase caps at 1000 by default.
 // Pass a builder fn that receives (from, to) and returns a Supabase query.
-async function fetchAll(builderFn, pageSize = 1000) {
+// PARALLEL pagination: count the rows, then fire every page at once (Promise.allSettled)
+// instead of walking pages sequentially. Much faster for the multi-thousand-row current-
+// window streams, and a partial/throttled read keeps whatever pages returned (ordered
+// newest-first) instead of rejecting. Use for big date-windowed reads.
+async function _pagedParallel({ table, select, gteCol, gteVal, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
+  if (!supabase) return [];
+  let head = supabase.from(table).select(orderCol || 'loc', { count: 'exact', head: true });
+  if (gteCol) head = head.gte(gteCol, gteVal);
+  const { count } = await head;
+  const pages = Math.max(1, Math.ceil((count || 0) / pageSize));
+  const reqs = [];
+  for (let p = 0; p < pages; p++) {
+    let q = supabase.from(table).select(select);
+    if (gteCol) q = q.gte(gteCol, gteVal);
+    q = q.order(orderCol, { ascending });
+    for (const oc of extraOrder) q = q.order(oc);
+    reqs.push(q.range(p * pageSize, p * pageSize + pageSize - 1));
+  }
+  const settled = await Promise.allSettled(reqs);
+  const data = []; let failed = 0;
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
+    else failed++;
+  }
+  if (failed) console.warn(`[Meridian] ${label || table}: ${failed}/${pages} page(s) failed (egress throttle?) — newest-first keeps recent days`);
+  return data;
+}
+
+async function fetchAll(builderFn, pageSize = 1000, label = '') {
   let all = [], from = 0;
   while (true) {
     const { data, error } = await builderFn(from, from + pageSize - 1);
-    if (error || !data?.length) break;
+    // A mid-pagination error (e.g. a free-tier egress/throttle cutoff) previously returned
+    // whatever pages loaded so far AS IF complete — silently dropping the rest of the rows.
+    // On big reads ordered oldest-first that meant the NEWEST days vanished with no warning
+    // (the "data stuck at an old date" bug). Warn loudly and mark the result partial so
+    // callers/guards can surface a stale-data banner instead of trusting a truncated set.
+    if (error) {
+      console.warn(`[Meridian] fetchAll(${label || '?'}) truncated after ${all.length} rows — read error:`, error.message || error);
+      try { Object.defineProperty(all, '_partial', { value: true, enumerable: false }); } catch {}
+      break;
+    }
+    if (!data?.length) break;
     all.push(...data);
     if (data.length < pageSize) break;
     from += pageSize;
@@ -398,7 +436,7 @@ export async function saveLifeLenzSchedule(rows) {
 }
 
 // Load LifeLenz schedule rows — defaults to last 90 days + next 30 days
-export async function loadLifeLenzSchedule({ daysBack = 1825, daysFwd = 30 } = {}) {
+export async function loadLifeLenzSchedule({ daysBack = 455, daysFwd = 30 } = {}) {   // was 1825 (5yr) — egress guard, ~15 months back covers YoY + trends
   if (!supabase) return [];
   const start = new Date(); start.setDate(start.getDate() - daysBack);
   const end   = new Date(); end.setDate(end.getDate() + daysFwd);
@@ -510,10 +548,7 @@ export async function saveLaborRows(rows) {
 // Load all labor rows from Supabase (for DI calibration history accumulation)
 export async function loadLaborRows() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase
-    .from('labor_rows').select('*')
-    .order('report_date', { ascending: true })
-    .range(from, to));
+  const data = await _pagedParallel({ table: 'labor_rows', select: '*', orderCol: 'report_date', ascending: false, label: 'laborRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:      r.loc,
@@ -766,11 +801,15 @@ export async function loadAuditRows() {
 }
 
 // ── QSRSoft FOB daily rows (automated pull) ──────────────────────────────────
-export async function loadQsrFob({ dates } = {}) {
+export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
   if (!supabase) return [];
+  // Egress guard: default to a ~16-month window instead of the full history (qsr_fob is a
+  // wide, daily × 27-store table). YoY still works — qsr_fob carries its own ly_* columns.
+  const cutoffStr = (() => { const c = new Date(); c.setDate(c.getDate() - daysBack); return c.toISOString().slice(0, 10); })();
   const data = await fetchAll((from, to) => {
     let q = supabase.from('qsr_fob').select('*').order('date', { ascending: false }).range(from, to);
     if (dates?.length) q = q.in('date', dates);
+    else if (daysBack) q = q.gte('date', cutoffStr);
     return q;
   });
   if (!data.length) return [];
@@ -849,10 +888,7 @@ export async function saveOpsRows(rows) {
 
 export async function loadOpsRows() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase
-    .from('ops_rows').select('*')
-    .order('date', { ascending: false })
-    .range(from, to));
+  const data = await _pagedParallel({ table: 'ops_rows', select: '*', orderCol: 'date', ascending: false, label: 'opsRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:  r.loc,
@@ -920,10 +956,7 @@ export async function saveCtrlRows(rows) {
 
 export async function loadCtrlRows() {
   if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase
-    .from('ctrl_rows').select('*')
-    .order('date', { ascending: false })
-    .range(from, to));
+  const data = await _pagedParallel({ table: 'ctrl_rows', select: '*', orderCol: 'date', ascending: false, label: 'ctrlRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:            r.loc,
@@ -1427,6 +1460,162 @@ export async function loadEbosMonthlyByStore(year, month) {
   return map;
 }
 
+// ── QSRSoft People reports → Perf-Review People metrics (Notes 32) ────────────
+// Monthly per-loc: Roster Statistics (headcount), Employee Roster role counts
+// (shift-cert), Turnover (0-90). All keyed (loc, period_month 'YYYY-MM'). Parsers in
+// src/engine/people-reports.js produce the record shapes these save; loaders return
+// flat rows tagged with `month` for the review auto-populate month lookup.
+export async function saveRosterStatistics(periodMonth, byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, s]) => ({
+    loc: String(loc), period_month: periodMonth,
+    crew_staff: s.crewStaff ?? null, shift_staff: s.shiftStaff ?? null, gmdm_staff: s.gmdmStaff ?? null,
+    crew_active: s.crewActive ?? null, shift_active: s.shiftActive ?? null,
+    roster_size: s.rosterSize ?? null, roster_active: s.rosterActive ?? null, under18: s.under18 ?? null,
+  }));
+  const { error } = await supabase.from('roster_statistics').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[roster_statistics] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadRosterStatistics() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('roster_statistics').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    crewStaff: r.crew_staff, shiftStaff: r.shift_staff, gmdmStaff: r.gmdm_staff,
+    crewActive: r.crew_active, shiftActive: r.shift_active, rosterSize: r.roster_size,
+    rosterActive: r.roster_active, under18: r.under18,
+  }));
+}
+
+export async function saveRosterRoleCounts(periodMonth, byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, c]) => ({
+    loc: String(loc), period_month: periodMonth,
+    crew: c.crew ?? null, shift_mgr: c.shiftMgr ?? null, gm: c.gm ?? null,
+    maintenance: c.maintenance ?? null, admin: c.admin ?? null, other: c.other ?? null, total: c.total ?? null,
+  }));
+  const { error } = await supabase.from('roster_role_counts').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[roster_role_counts] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadRosterRoleCounts() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('roster_role_counts').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    crew: r.crew, shiftMgr: r.shift_mgr, gm: r.gm, maintenance: r.maintenance, admin: r.admin, other: r.other, total: r.total,
+  }));
+}
+
+export async function saveTurnoverMonthly(byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, t]) => ({
+    loc: String(loc), period_month: t.month,
+    hires: t.hires ?? null, roster_size: t.rosterSize ?? null, terms: t.terms ?? null,
+    terms_under_90: t.termsUnder90 ?? null, retained_over_90: t.retainedOver90 ?? null,
+    retained_over_90_pct: t.retainedOver90Pct ?? null, monthly_annual_turnover: t.monthlyAnnualTurnover ?? null,
+    ttm_turnover: t.ttmTurnover ?? null, three_month_turnover: t.threeMonthTurnover ?? null,
+    turnover_090_pct: t.turnover090Pct ?? null,
+  }));
+  const { error } = await supabase.from('turnover_monthly').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[turnover_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadTurnoverMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('turnover_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    hires: r.hires, rosterSize: r.roster_size, terms: r.terms, termsUnder90: r.terms_under_90,
+    retainedOver90: r.retained_over_90, retainedOver90Pct: r.retained_over_90_pct,
+    monthlyAnnualTurnover: r.monthly_annual_turnover, ttmTurnover: r.ttm_turnover,
+    threeMonthTurnover: r.three_month_turnover, turnover090Pct: r.turnover_090_pct,
+  }));
+}
+
+// ── Digital App + McDelivery 3PO (monthly per-loc) → review digital/delivery ───
+// GC/R/D metrics. Parsers in src/engine/people-reports.js; pulls upsert monthly.
+// loaders return flat rows tagged with `month` for the review auto-populate lookup.
+export async function saveDigitalAppMonthly(periodMonth, byLoc) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, d]) => ({
+    loc: String(loc), period_month: periodMonth,
+    app_sales: d.sales ?? null, app_gc: d.gcs ?? null, app_gc_rd: d.gcPerRestDay ?? null,
+    app_pct_sales: d.pctOfSales ?? null, avg_check: d.avgCheck ?? null, rest_days: d.restDays ?? null,
+  }));
+  const { error } = await supabase.from('digital_app_monthly').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[digital_app_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadDigitalAppMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('digital_app_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month,
+    appSales: r.app_sales, appGc: r.app_gc, appGcRd: r.app_gc_rd,
+    appPctSales: r.app_pct_sales, avgCheck: r.avg_check, restDays: r.rest_days,
+  }));
+}
+
+export async function saveMcdeliveryMonthly(periodMonth, byLoc, restDays = null) {
+  if (!supabase || !byLoc) return { saved: 0 };
+  const rows = Object.entries(byLoc).map(([loc, m]) => ({
+    loc: String(loc), period_month: periodMonth, vendor: m.vendor ?? null,
+    delivery_gc: m.threePoGC ?? null,
+    delivery_gc_rd: (m.threePoGC != null && restDays) ? m.threePoGC / restDays : (m.threePoGC ?? null),
+    pos_mcdelivery_gc: m.posMcDeliveryGC ?? null, pos_3po_sales: m.pos3poSales ?? null,
+    csat: m.csat ?? null, orders_missing_items_pct: m.ordersMissingItemsPct ?? null,
+    incorrect_orders: m.incorrectOrders ?? null, mcdelivery_time_sec: m.mcDeliveryTimeSec ?? null,
+    restaurant_time_sec: m.restaurantTimeSec ?? null, total_experience_time_sec: m.totalExperienceTimeSec ?? null,
+    rest_days: restDays ?? null,
+  }));
+  const { error } = await supabase.from('mcdelivery_monthly').upsert(rows, { onConflict: 'loc,period_month' });
+  if (error) { console.warn('[mcdelivery_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: rows.length };
+}
+export async function loadMcdeliveryMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('mcdelivery_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month, vendor: r.vendor,
+    deliveryGc: r.delivery_gc, deliveryGcRd: r.delivery_gc_rd, posMcDeliveryGc: r.pos_mcdelivery_gc,
+    pos3poSales: r.pos_3po_sales, csat: r.csat, ordersMissingItemsPct: r.orders_missing_items_pct,
+    incorrectOrders: r.incorrect_orders, mcDeliveryTimeSec: r.mcdelivery_time_sec,
+    restaurantTimeSec: r.restaurant_time_sec, totalExperienceTimeSec: r.total_experience_time_sec, restDays: r.rest_days,
+  }));
+}
+
+// ── Shift Manager Summary (monthly per-manager) → DM/shift review attribution ──
+// Per (loc, geid) manager-on-duty attributed performance. Feeds the review-form
+// manager dropdown (name→geid) + autoPopulate for DM/shift roles (their own shifts;
+// GMs keep store-total). Speed metrics in seconds. Pull: qsrsoft-shift-manager-pull.
+export async function loadShiftManagerMonthly() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('shift_manager_monthly').select('*').order('period_month').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), month: r.period_month, geid: r.geid, name: r.manager_name,
+    numShifts: r.num_shifts, actualHours: r.actual_hours,
+    actualVsScheduled: r.actual_vs_scheduled, actualVsNeeded: r.actual_vs_needed,
+    netSales: r.net_sales, transactions: r.transactions, avgCheck: r.avg_check, tpph: r.tpph,
+    oepe: r.oepe, r2p: r.r2p, ctp: r.ctp, dtTtl: r.dt_ttl, kvs: r.kvs, laborPct: r.labor_pct,
+  }));
+}
+
+// ── eBOS daily op-supplies rows (for ds — feeds Perf-Review opSupplies actual) ─
+// One row per (loc, date) carrying the day's operating-supplies purchases. Paginated —
+// 27 stores × a year exceeds the 1000-row cap. loc unpadded to match the rest of ds.
+export async function loadEbosDaily(daysBack = 400) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const iso = cutoff.toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) => supabase.from('qsr_ebos_daily')
+    .select('loc,date,ops_purchases').gte('date', iso).order('date').range(from, to));
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), date: _mkDate(r.date), opsPurchases: r.ops_purchases ?? 0,
+  }));
+}
+
 // ── QSRSoft daily-activity aggregated summary ─────────────────────────────────
 // Returns one row per (loc, date) with sales/GC/DT totals summed across hour slots.
 // Used by AtAGlance as a zero-upload fallback when laborRows is empty.
@@ -1437,29 +1626,63 @@ export async function loadQsrActSummary(daysBack = 35) {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   // Paginate — qsr_daily_activity has ~675 rows/day, so a single query hits the
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
-  const data = await fetchAll((from, to) => supabase
-    .from('qsr_daily_activity')
-    .select('loc,dt,product_sales,healthy_count,unhealthy_count,dt_untilserve,dt_trans_cnt,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours')
-    .gte('dt', cutoffStr)
-    .order('dt')
-    .range(from, to));
+  // PARALLEL pagination (count → fire every page at once) instead of ~39 sequential
+  // round-trips — this was the slow "took a while" current-data load. Ordered NEWEST-first
+  // + Promise.allSettled so a partial failure (free-tier egress throttle) still keeps the
+  // RECENT days every current-window tile/form needs, and one bad page can't reject the whole
+  // load. Aggregation is by (loc,dt) so page order doesn't affect the result.
+  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
+  const PAGE = 1000;
+  const { count } = await supabase.from('qsr_daily_activity')
+    .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
+  const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
+  const reqs = [];
+  for (let p = 0; p < pages; p++) {
+    reqs.push(supabase.from('qsr_daily_activity').select(SELECT).gte('dt', cutoffStr)
+      .order('dt', { ascending: false }).order('loc').order('hour_slot')
+      .range(p * PAGE, p * PAGE + PAGE - 1));
+  }
+  const settled = await Promise.allSettled(reqs);
+  const data = []; let failedPages = 0;
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
+    else failedPages++;
+  }
+  if (failedPages) console.warn(`[Meridian] loadQsrActSummary: ${failedPages}/${pages} page(s) failed (egress throttle?) — newest-first keeps recent days`);
   const map = {};
   for (const r of data || []) {
     const loc = String(parseInt(r.loc, 10)); // strip zero-padding ("0003708" → "3708")
     const key = loc + '_' + r.dt;
     if (!map[key]) map[key] = {
       loc, date: new Date(r.dt + 'T00:00:00'),
-      sales: 0, allNetSales: 0, gc: 0,
-      _dtTotal: 0, _dtCars: 0,
+      sales: 0, allNetSales: 0, gc: 0, txns: 0,
+      _dtTotal: 0, _dtStore: 0, _dtCars: 0,
+      _fcServe: 0, _fcDrawer: 0, _fcCnt: 0,
+      projGC: 0, projSales: 0,
       lySales: 0, lyGc: 0,
       actHrs: 0, needHrs: 0,
       _isQsrAct: true,
     };
     map[key].sales        += r.product_sales   || 0;
     map[key].allNetSales  += r.product_sales   || 0;
-    map[key].gc           += (r.healthy_count  || 0) + (r.unhealthy_count || 0);
+    // GC = real transaction count (matches ly_transactions used for LY). healthy+unhealthy is
+    // a near-empty KVS order-health count (~1/day) — sourcing GC from it made avg check
+    // (sales ÷ gc) explode and GC-vs-LY read ~-100% (Notes 35: the $21M/wk opportunity bug).
+    map[key].gc           += r.transactions    || 0;
+    map[key].txns         += r.transactions    || 0;   // true transaction count (for TPPH)
     map[key]._dtTotal     += r.dt_untilserve   || 0;
+    map[key]._dtStore     += r.dt_untilstore   || 0;
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
+    // Front-counter timings for R2P (Receipt to Print). Sum the raw ms + counts
+    // across hour slots, then count-weight below.
+    map[key]._fcServe     += r.fc_untilserve      || 0;
+    map[key]._fcDrawer    += r.fc_untilclosedrawer || 0;
+    map[key]._fcCnt       += r.fc_trans_cnt        || 0;
+    // Projected (plan) guests + sales — the store's EXPECTED delivery for the day. Used
+    // to pace the One-Pager GC opportunity vs plan (not vs a best-in-class store), so a
+    // down sales trend doesn't inflate the gap. Same source as Signals Tracking-to-Plan.
+    map[key].projGC       += r.proj_total_transactions || 0;
+    map[key].projSales    += r.proj_sales_dollars      || 0;
     map[key].lySales      += r.ly_product_sales || 0;
     map[key].lyGc         += r.ly_transactions || 0;
     // Actual punched + needed labor hours summed across the day's hour slots —
@@ -1470,6 +1693,23 @@ export async function loadQsrActSummary(daysBack = 35) {
   return Object.values(map).map(r => ({
     ...r,
     salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+    // Derived cloud TPPH = TRANSACTIONS ÷ actual punched labor hours. Uses the DAR's
+    // real `transactions` count — NOT healthy+unhealthy (a KVS order-health count that
+    // massively understated TPPH, e.g. 0.1 vs a ~5 target). Matches the Shift Manager
+    // Summary's transPerPunchedHour. Both come from the auto-pulled DAR (cloud-fresh);
+    // manual Ops/Controls TPPH still wins first via metric-source ordering.
+    tpph: r.actHrs > 0 && r.txns > 0 ? r.txns / r.actHrs : null,
+    // R2P (Receipt to Print, sec) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt ÷ 1000.
+    // Reconciled EXACTLY to the QSRSoft Daily Activity report's R2P column across every
+    // active hour (store 3708, 2026-07-28). fc_untilserve alone = "Avg Win TTL" (window
+    // total) — NOT R2P; subtracting drawer-close time yields the receipt-to-print interval.
+    // Cloud-fresh (DAR pulls run ~8a/10a/2p CT), so current-day One-Pager R2P populates.
+    r2p: r._fcCnt > 0 ? (r._fcServe - r._fcDrawer) / r._fcCnt / 1000 : null,
+    // OEPE (Order-to-Exit Peak Efficiency, sec) = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt ÷ 1000,
+    // count-weighted across the day. Reconciled EXACTLY to the DAR report's OEPE column (store 3708,
+    // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
+    // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
+    oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));
@@ -1521,11 +1761,11 @@ export async function loadGlimpse(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  // Paginate: 27 stores × 45-60 days exceeds Supabase's 1000-row default cap.
-  // A plain select would keep only the OLDEST 1000 (ascending order) and silently
-  // drop the newest days — the exact data these freshest-wins tiles need.
-  const data = await fetchAll((from, to) => supabase.from('daily_glimpse_daily')
-    .select('*').gte('date', iso).order('date').range(from, to));
+  // Paginate + order NEWEST-first: 27 stores × 45-60 days exceeds Supabase's 1000-row cap,
+  // and if a page read is cut off (free-tier egress throttle), we must keep the RECENT days
+  // these freshest-wins tiles need — ascending order silently dropped the newest days (the
+  // "Service/Controls stuck at an old date" bug, even though email-parse writes them current).
+  const data = await _pagedParallel({ table: 'daily_glimpse_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'glimpse' });
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
@@ -1547,8 +1787,7 @@ export async function loadCash(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase.from('cash_sheet_daily')
-    .select('*').gte('date', iso).order('date').range(from, to));
+  const data = await _pagedParallel({ table: 'cash_sheet_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'cash' });
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     allNetSales: r.all_net_sales, gc: r.gc, avgCheck: r.avg_check,
@@ -1571,8 +1810,7 @@ export async function loadSalesLedger(daysBack = 45) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
   const iso = cutoff.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase.from('sales_ledger_daily')
-    .select('*').gte('date', iso).order('date').range(from, to));
+  const data = await _pagedParallel({ table: 'sales_ledger_daily', select: '*', gteCol: 'date', gteVal: iso, orderCol: 'date', ascending: false, label: 'salesLedger' });
   return (data || []).map(r => ({
     loc: r.loc, date: _mkDate(r.date),
     sales: r.all_net_sales, allNetSales: r.all_net_sales, allNetSalesLY: r.all_net_sales_ly, salesVsLYPct: r.sales_vs_ly_pct,
@@ -1708,8 +1946,10 @@ export async function loadUserSetting(key) {
   if (!supabase) return null;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+  // maybeSingle() (not single()) → returns null instead of a 406 Not Acceptable when the
+  // setting hasn't been saved yet (a first-run / unsaved key is normal, not an error).
   const { data, error } = await supabase.from('user_settings')
-    .select('value').eq('user_id', user.id).eq('key', key).single();
+    .select('value').eq('user_id', user.id).eq('key', key).maybeSingle();
   if (error) return null;
   return data?.value ?? null;
 }
@@ -2145,6 +2385,8 @@ export async function saveQsrVarianceStat(rows) {
     yield_val:  r.yield ?? r.yieldVal ?? null,
     pct_sales:  r.pctOfSales ?? r.pctSales ?? null,
     raw_item_id: r.rawItemId ?? null,
+    yield_lo:   r.yieldLo ?? r.yieldBand?.lo ?? null,
+    yield_hi:   r.yieldHi ?? r.yieldBand?.hi ?? null,
   }));
   return _chunkUpsert('qsr_variance_stat', up, 'loc,period,wrin');
 }
@@ -2160,7 +2402,8 @@ export async function loadQsrVarianceStat({ period } = {}) {
     loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage,
     actUsage: r.act_usage, variance: r.variance, dolDiff: r.dol_diff,
-    yield: r.yield_val, pctOfSales: r.pct_sales, rawItemId: r.raw_item_id, updatedAt: r.updated_at,
+    yield: r.yield_val, yieldLo: r.yield_lo, yieldHi: r.yield_hi,
+    pctOfSales: r.pct_sales, rawItemId: r.raw_item_id, updatedAt: r.updated_at,
   }));
 }
 

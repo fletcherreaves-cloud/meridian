@@ -1,0 +1,227 @@
+[
+  {
+    "page": "dar",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Act Hrs Actual Hours used - Punched Hours plus Scheduled Salaried Hours Act Hrs vs Need Actual hours used compared to hours needed (Needed Hours = Variable Needed + Fixed Sch Hrs + Flr Need Hrs) Act Hrs vs Sch Actual Hours used compared to Hours that were scheduled Act Punch Hrs Actual Hours punched on the timeclock All Net Avg Check All Net Sales divided by GC All Net Sales Storewide All Net Sales All Net Sales +/- All Net Sales compared to last year (trading or calendar day) All Net Sales +/- % (All Net Sales for this year minus All Net Sales for last year) divided by All Net Sales for last year (trading or calendar day depending on filter selection) Avg CTP Cash to Present time, time from when car is recalled at cash booth until order is presented Avg DT TTL Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included Avg Win TTL Time from first keystroke on the POS until the order is served from the Front Counter KVS monitor Bev Items Number of menu items sent to the beverage monitor Bev Items Per Order Beverage Items divided by Beverage GC Bev Run Time Time from when a beverage order is paid until the order is served from the beverage monitor Bev TTL Total Beverage time from the start of the order until the order is served DT GC Drive Thru Guest Count DT GC +/- Drive Thru Guest Count compared to last year DT GC vs Proj Drive Thru GC minus projected Drive Thru GC DT Pull Forward % Percentage of orders that are pulled forward DT Pulled Forward Count Number of cars \"parked\" or pulled forward In-Store GC All transactions that are not Drive Thru In-Store GC +/- In-Store Guest Count compared to last year In-Store GC vs Proj In-Store GC compared to the projected In-Store GC from the scheduling software CLOSE"
+  },
+  {
+    "page": "fob",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Avg Days on Hand Inv P&L Ending Inventory / (P&L Food Cost / Number of days in the range selected) / Number of months selected Base Food $ Dollar value of the raw cost of all menu items sold Base Food % Base food amount divided by Product Net Sales Comp Waste $ Dollar value of food that had to be thrown away after it was assembled into completed products Comp Waste % Comp waste amount divided by Product Net Sales Condiment $ Dollar value of all condiments used (includes shortening) Condiment % Dollar value of all condiments used (includes shortening) divided by Product Net Sales Disc Coupon $ Base food dollar amount for items that were discounted either electronically or on the register (does not include promos) Disc Coupon % Disc coupon amount divided by Product Net Sales Emp Meal $ Base food dollar amount for orders that were employee meals Emp Meal % Employee meal amount divided by Product Net Sales FOB $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Unexplained FOB % FOB $ divided by Product Net Sales FOB W/ Disc $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, Disc Coupons, and Unexplained FOB W/ Disc % FOB W/ Disc $ divided by Product Net Sales FOB W/ Disc & W/O Unexp $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Disc Coupons FOB W/ Disc & W/O Unexp % FOB W/ Disc & W/O Unexp $ divided by Product Net Sales FOB W/O Unexp $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals FOB W/O Unexp % FOB W/O Unexp $ divided by Product Net Sales P & L Food Cost $ Beginning Inventory, plus food purchases, +/- food adjustments and transfers, minus Food Promotions, minus Ending Inventory P & L Food Cost % P & L Food Cost $ divided by Product Net Sales P & L Food Promo $ Base food dollars of food given away P & L Food Promo % P & L Food Promo $ divided by Product Net Sales CLOSE"
+  },
+  {
+    "page": "cash",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Base Food $ Dollar value of the raw cost of all menu items sold Base Food % Base food amount divided by Product Net Sales Condiment $ Dollar value of all condiments used (includes shortening) Condiment % Dollar value of all condiments used (includes shortening) divided by Product Net Sales Disc Coupon $ Base food dollar amount for items that were discounted either electronically or on the register (does not include promos) Disc Coupon % Disc coupon amount divided by Product Net Sales Emp Meal $ Base food dollar amount for orders that were employee meals Emp Meal % Employee meal amount divided by Product Net Sales FOB $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Unexplained FOB % FOB $ divided by Product Net Sales FOB W/O Unexp $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals FOB W/O Unexp % FOB W/O Unexp $ divided by Product Net Sales P & L Food Cost $ Beginning Inventory, plus food purchases, +/- food adjustments and transfers, minus Food Promotions, minus Ending Inventory P & L Food Cost % P & L Food Cost $ divided by Product Net Sales P & L Food Promo $ Base food dollars of food given away P & L Paper Cost $ Beginning Inventory, plus Paper Purchases, +/- Paper Adjustments and Transfers, minus Paper Promotions, minus Ending Inventory P & L Paper Cost % P & L Paper Cost $ divided by Product Net Sales P & L Paper Promo $ Paper (wrappers, cups etc) dollars for all food given away Prod Net Sales Sales for all products sold. Includes all discounts, coupons, and promotions. Excludes items that are sold that are not made at the restaurant (e.g. glassware) Stat Var $ Dollar value of all food different from inventory. Can be positive or negative Stat Var % Stat variance amount divided by Product Net Sales Unexplained $ The dollar difference bewteen P&L Food Cost and Total Food Cost Unexplained % Unexplained amount divided by Product Net Sales CLOSE"
+  },
+  {
+    "page": "cash",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Beverage Time: Beverage GC GC (orders) sent to the beverage monitor Beverage Time: Beverage GC +/- Beverage GC compared to last year Beverage Time: Beverage Order Time Order Time for GC that include a beverage sent to the beverage monitor Beverage Time: Beverage Order Time +/- Beverage Order Time compared to last year Beverage Time: Beverage Run Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked Beverage Time: Beverage Run Time Time from when a beverage order is paid until the order is served from the beverage monitor Beverage Time: Beverage Run Time +/- Beverage Run Time compared to last year Beverage Time: Beverage Total Time Total Beverage time from the start of the order until the order is served Beverage Time: Beverage Total Time +/- Beverage Total Time compared to last year DT Line: DT Line Time Drive Thru Line Time - time from order completion to arrival at the cash window DT Line: DT Line Time +/- Drive Thru Line Time compared to last year DT Line: DT Line Time Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT Line: DT Order Time Time from when the first button is pressed on a DT order until the order is stored DT Line: DT Order Time +/- DT Order Time compared to last year DT Line: DT Win1 Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT Line: DT Win1 Time Cashier Time, time from when the order is recalled at the cashier register until it is stored again DT Line: DT Win1 Time +/- DT Win1 Time compared to last year DT Line: DT Win2 Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT Line: DT Win2 Time Present Time, time from when the order is stored at the cash booth until the order is presented DT Line: DT Win2 Time +/- DT Win2 Time compared to last year Drive Thru: Avg CTP Cash to Present time, time from when car is recalled at cash booth until order is presented Drive Thru: Avg CTP +/- Avg CTP compared to last year Drive Thru: Avg DT TTL Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included CLOSE"
+  },
+  {
+    "page": "cash",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Act Hrs Punched Hours plus Scheduled Salaried Hours Act vs Need Actual Hours minus (Fixed Scheduled plus Floor Needed plus Variable Needed) Actual Labor % Act Labor dollars divided by Product Sales Avg Rate Crew Labor Dollars divided by Crew Labor Hours Billable Sales: Billable Sales Amt Total dollar amount for all billable sales Billable Sales: Billable Sales Cnt Number of orders that were billable sales Cash Refund: Cash Refund Amt Total dollar amount for all orders where cash was refunded to a customer Cash Refund: Cash Refund Cnt Number of orders where cash was refunded to a customer Cashless Refund: Cashless Refund Amt Total dollar amount for all orders where money was refunded to a customer on a credit/debit card Cashless Refund: Cashless Refund Cnt Number of orders where money was refunded to a customer on a credit/debit card Coupon Cnt Number of orders where POS coupon A, B, C, D, or E was used Crew Labor % Crew Labor Dollars divided by Product Sales Crew Labor Hours All Punched Hours for Job Title Codes classified as \"crew\" Deposit Amt Amount of Deposit Discount: Discount Amt Total dollar amount of discounts (menu board price), including Electronic Discounts through the digital app or POS Auto Bundling Discount: Discount Cnt Number of orders where a discount was applied, including Electronic Discounts through the digital app or POS Auto Bundling Discount: Discount Pct Discount Amt divided by All Net Sales Drawer Opens Number of times the cash register drawer was opened when there was no order Emp Meal: Emp Meal Amt Total dollar amount for orders that were employee meals Emp Meal: Emp Meal Cnt Number of orders where the order was an employee meal Mgr Meal: Manager Meal Amt Total dollar amount for orders that were manager meals Mgr Meal: Manager Meal Cnt Number of orders where the order was a manager meal OT: OT $ Overtime dollars CLOSE"
+  },
+  {
+    "page": "cash",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Base Food $ Dollar value of the raw cost of all menu items sold Base Food % Base food amount divided by Product Net Sales Condiment $ Dollar value of all condiments used (includes shortening) Condiment % Dollar value of all condiments used (includes shortening) divided by Product Net Sales Disc Coupon $ Base food dollar amount for items that were discounted either electronically or on the register (does not include promos) Disc Coupon % Disc coupon amount divided by Product Net Sales Emp Meal $ Base food dollar amount for orders that were employee meals Emp Meal % Employee meal amount divided by Product Net Sales FOB $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Unexplained FOB % FOB $ divided by Product Net Sales FOB W/O Unexp $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals FOB W/O Unexp % FOB W/O Unexp $ divided by Product Net Sales P & L Food Cost $ Beginning Inventory, plus food purchases, +/- food adjustments and transfers, minus Food Promotions, minus Ending Inventory P & L Food Cost % P & L Food Cost $ divided by Product Net Sales P & L Food Promo $ Base food dollars of food given away P & L Paper Cost $ Beginning Inventory, plus Paper Purchases, +/- Paper Adjustments and Transfers, minus Paper Promotions, minus Ending Inventory P & L Paper Cost % P & L Paper Cost $ divided by Product Net Sales P & L Paper Promo $ Paper (wrappers, cups etc) dollars for all food given away Prod Net Sales Sales for all products sold. Includes all discounts, coupons, and promotions. Excludes items that are sold that are not made at the restaurant (e.g. glassware) Stat Var $ Dollar value of all food different from inventory. Can be positive or negative Stat Var % Stat variance amount divided by Product Net Sales Unexplained $ The dollar difference bewteen P&L Food Cost and Total Food Cost Unexplained % Unexplained amount divided by Product Net Sales CLOSE"
+  },
+  {
+    "page": "ops",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Breakfast: Breakfast % of Total Sales Breakfast all Net Sales divided by total all net Sales for the day Breakfast: Breakfast All Net Sales Cash Sheet all net breakfast sales, determined by the times set for breakfast start and end in RFM Breakfast: Breakfast All Net Sales LY Cash Sheet all net breakfast sales last year, determined by the times set for breakfast start and end in RFM Breakfast: Breakfast Average Check Breakfast All Net Sales divided by breakfast GC Breakfast: Breakfast Average Check LY Breakfast Average Check Last Year Breakfast: Breakfast GC Breakfast GC, determined by the times set for breakfast start and end in RFM Breakfast: Breakfast GC +/- Breakfast GC compared to last year Breakfast: Breakfast GC +/- % Breakfast GC increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year) Breakfast: Breakfast GC LY Breakfast GC last year, determined by the times set for breakfast start and end in RFM Breakfast: Breakfast Sales +/- Breakfast Sales compared to last year Breakfast: Breakfast Sales +/- % Breakfast Sales increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year) Delivery: McDelivery % of Total Sales McDelivery Sales divided by All Net Sales Delivery: McDelivery Average Check Average check for McDelivery GC only Delivery: McDelivery Average Check LY Average check last year for McDelivery GC only Delivery: McDelivery GC All GC originating from the GMA Delivery & 3P0 Delivery. Delivery: McDelivery GC +/- McDelivery GC compared to last year Delivery: McDelivery GC +/- % McDelivery GC comp percent, ((McDelivery GC this year minus McDelivery GC last year) divided by McDelivery GC last year Delivery: McDelivery GC LY McDelivery GC last year, all GC originating from the GMA Delivery & 3P0 Delivery. Delivery: McDelivery Net Sales Dollars associated with all GC originating from the GMA Delivery & 3P0 Delivery. Delivery: McDelivery Net Sales LY McDelivery Net Sales last year, dollars associated with all GC originating from the GMA Delivery & 3P0 Delivery. Delivery: McDelivery Sales +/- McDelivery Sales compared to last year Delivery: McDelivery Sales +/- % McDelivery Sales +/- percent, ((McDelivery sales this year minus McDelivery sales last year) divided by McDelivery sales last year) Drive Thru: DT % of Total Sales DT Sales divided by all net sales CLOSE"
+  },
+  {
+    "page": "ops",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Beverage Time: Beverage GC GC (orders) sent to the beverage monitor Beverage Time: Beverage GC +/- Beverage GC compared to last year Beverage Time: Beverage Order Time Order Time for GC that include a beverage sent to the beverage monitor Beverage Time: Beverage Order Time +/- Beverage Order Time compared to last year Beverage Time: Beverage Run Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked Beverage Time: Beverage Run Time Time from when a beverage order is paid until the order is served from the beverage monitor Beverage Time: Beverage Run Time +/- Beverage Run Time compared to last year Beverage Time: Beverage Total Time Total Beverage time from the start of the order until the order is served Beverage Time: Beverage Total Time +/- Beverage Total Time compared to last year DT Line: DT Line Time Drive Thru Line Time - time from order completion to arrival at the cash window DT Line: DT Line Time +/- Drive Thru Line Time compared to last year DT Line: DT Line Time Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT Line: DT Order Time Time from when the first button is pressed on a DT order until the order is stored DT Line: DT Order Time +/- DT Order Time compared to last year DT Line: DT Win1 Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT Line: DT Win1 Time Cashier Time, time from when the order is recalled at the cashier register until it is stored again DT Line: DT Win1 Time +/- DT Win1 Time compared to last year DT Line: DT Win2 Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT Line: DT Win2 Time Present Time, time from when the order is stored at the cash booth until the order is presented DT Line: DT Win2 Time +/- DT Win2 Time compared to last year Drive Thru: Avg CTP Cash to Present time, time from when car is recalled at cash booth until order is presented Drive Thru: Avg CTP +/- Avg CTP compared to last year Drive Thru: Avg DT TTL Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included CLOSE"
+  },
+  {
+    "page": "ops",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Act Hrs Punched Hours plus Scheduled Salaried Hours Act vs Need Actual Hours minus (Fixed Scheduled plus Floor Needed plus Variable Needed) Actual Labor % Act Labor dollars divided by Product Sales Avg Rate Crew Labor Dollars divided by Crew Labor Hours Billable Sales: Billable Sales Amt Total dollar amount for all billable sales Billable Sales: Billable Sales Cnt Number of orders that were billable sales Cash Refund: Cash Refund Amt Total dollar amount for all orders where cash was refunded to a customer Cash Refund: Cash Refund Cnt Number of orders where cash was refunded to a customer Cashless Refund: Cashless Refund Amt Total dollar amount for all orders where money was refunded to a customer on a credit/debit card Cashless Refund: Cashless Refund Cnt Number of orders where money was refunded to a customer on a credit/debit card Coupon Cnt Number of orders where POS coupon A, B, C, D, or E was used Crew Labor % Crew Labor Dollars divided by Product Sales Crew Labor Hours All Punched Hours for Job Title Codes classified as \"crew\" Deposit Amt Amount of Deposit Discount: Discount Amt Total dollar amount of discounts (menu board price), including Electronic Discounts through the digital app or POS Auto Bundling Discount: Discount Cnt Number of orders where a discount was applied, including Electronic Discounts through the digital app or POS Auto Bundling Discount: Discount Pct Discount Amt divided by All Net Sales Drawer Opens Number of times the cash register drawer was opened when there was no order Emp Meal: Emp Meal Amt Total dollar amount for orders that were employee meals Emp Meal: Emp Meal Cnt Number of orders where the order was an employee meal Mgr Meal: Manager Meal Amt Total dollar amount for orders that were manager meals Mgr Meal: Manager Meal Cnt Number of orders where the order was a manager meal OT: OT $ Overtime dollars CLOSE"
+  },
+  {
+    "page": "ops",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Base Food $ Dollar value of the raw cost of all menu items sold Base Food % Base food amount divided by Product Net Sales Condiment $ Dollar value of all condiments used (includes shortening) Condiment % Dollar value of all condiments used (includes shortening) divided by Product Net Sales Disc Coupon $ Base food dollar amount for items that were discounted either electronically or on the register (does not include promos) Disc Coupon % Disc coupon amount divided by Product Net Sales Emp Meal $ Base food dollar amount for orders that were employee meals Emp Meal % Employee meal amount divided by Product Net Sales FOB $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals, and Unexplained FOB % FOB $ divided by Product Net Sales FOB W/O Unexp $ Dollar value that is the sum of Comp Waste, Raw Waste, Stat Var, Condiments, Employee Meals FOB W/O Unexp % FOB W/O Unexp $ divided by Product Net Sales P & L Food Cost $ Beginning Inventory, plus food purchases, +/- food adjustments and transfers, minus Food Promotions, minus Ending Inventory P & L Food Cost % P & L Food Cost $ divided by Product Net Sales P & L Food Promo $ Base food dollars of food given away P & L Paper Cost $ Beginning Inventory, plus Paper Purchases, +/- Paper Adjustments and Transfers, minus Paper Promotions, minus Ending Inventory P & L Paper Cost % P & L Paper Cost $ divided by Product Net Sales P & L Paper Promo $ Paper (wrappers, cups etc) dollars for all food given away Prod Net Sales Sales for all products sold. Includes all discounts, coupons, and promotions. Excludes items that are sold that are not made at the restaurant (e.g. glassware) Stat Var $ Dollar value of all food different from inventory. Can be positive or negative Stat Var % Stat variance amount divided by Product Net Sales Unexplained $ The dollar difference bewteen P&L Food Cost and Total Food Cost Unexplained % Unexplained amount divided by Product Net Sales CLOSE"
+  },
+  {
+    "page": "cash",
+    "label": "",
+    "description": "Column Descriptions Column Column Description (+/-) Penny Order Rounding The amount added to or subtracted from the order total due to rounding to the nearest nickel 3PO Delivery Gross Amt 3PO Delivery Gross Amount 3PO Delivery Qty 3PO Delivery Quantity AC Balance Redeemed Amt Arch Card Balance Redeemed Amount AC Balance Redeemed Qty Arch Card Balance Redeemed Quantity Actual Deposit Amt Actual Deposit Amount Average Check Storewide All Net Sales divided by Storewide GC Cash For Next Day Deposit Cash For Next Day Deposit Cashless Sales Amt Cashless Sales Amount Cashless Sales Qty Cashless Sales Quantity Crime Loss Amt Crime Loss Amount Delivery Total Amt Delivery Total Amount Delivery Total Qty Delivery Total Quantity Delivery Total Tax Delivery Total Tax Deposit 1 Amt Amount of any Deposit 1 charged to the customer for bottles Deposit 2 Amt Amount of any Deposit 2 charged to the customer for bottles Discount Amt Total dollar amount of discounts (menu board price), including Electronic Discounts through the digital app or POS Auto Bundling DoorDash 1AD Delivery Amt DoorDash 1AD Delivery Amount DoorDash 1AD Delivery Qty DoorDash 1AD Delivery Quantity DoorDash 1AD Tax DoorDash 1AD Tax DoorDash Delivery Amt DoorDash Delivery Amount DoorDash Delivery Amt Total DoorDash Delivery Amount Total DoorDash Delivery Qty DoorDash Delivery Quantity CLOSE"
+  },
+  {
+    "page": "ledger",
+    "label": "",
+    "description": "Column Descriptions Column Column Description All Net Sales Storewide All Net Sales All Net Sales +/- All Net Sales compared to last year (trading or calendar day) All Net Sales +/- % All Net Sales +/- divided by last year's sales, trading day or calendar day depending on what is selected Average Check Storewide All Net Sales divided by Storewide GC Average Check +/- Average Check compared to last year Average Check +/- % Average Check increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year) Breakfast % of Total Sales Breakfast all Net Sales divided by total all net Sales for the day Breakfast All Net Sales Cash Sheet all net breakfast sales, determined by the times set for breakfast start and end in RFM Breakfast Average Check Breakfast All Net Sales divided by breakfast GC Breakfast GC Breakfast GC, determined by the times set for breakfast start and end in RFM Breakfast GC +/- Breakfast GC compared to last year Breakfast GC +/- % Breakfast GC increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year) Breakfast Sales +/- Breakfast Sales compared to last year Breakfast Sales +/- % Breakfast Sales increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year) DT % of Total Sales DT Sales divided by all net sales DT Average Check Drive Thru All Net Sales divided by Drive Thru GC DT GC Drive Thru Guest Count DT GC +/- DT GC compared to last year DT GC +/- % DT GC +/- divided by DT GC last year DT Sales Drive Thru All Net Sales DT Sales +/- DT Sales compared to last year DT Sales +/- % DT Sales +/- divided by DT sales last year Eat in GC GC for orders that are consumed at the restaurant CLOSE"
+  },
+  {
+    "page": "cashsheet",
+    "label": "",
+    "description": "Column Descriptions Column Column Description (+/-) Penny Order Rounding The amount added to or subtracted from the order total due to rounding to the nearest nickel 3PO Delivery Gross Amt 3PO Delivery Gross Amount 3PO Delivery Qty 3PO Delivery Quantity AC Balance Redeemed Amt Arch Card Balance Redeemed Amount AC Balance Redeemed Qty Arch Card Balance Redeemed Quantity Actual Deposit Amt Actual Deposit Amount Average Check Storewide All Net Sales divided by Storewide GC Cash For Next Day Deposit Cash For Next Day Deposit Cashless Sales Amt Cashless Sales Amount Cashless Sales Qty Cashless Sales Quantity Crime Loss Amt Crime Loss Amount Delivery Total Amt Delivery Total Amount Delivery Total Qty Delivery Total Quantity Delivery Total Tax Delivery Total Tax Deposit 1 Amt Amount of any Deposit 1 charged to the customer for bottles Deposit 2 Amt Amount of any Deposit 2 charged to the customer for bottles Discount Amt Total dollar amount of discounts (menu board price), including Electronic Discounts through the digital app or POS Auto Bundling DoorDash 1AD Delivery Amt DoorDash 1AD Delivery Amount DoorDash 1AD Delivery Qty DoorDash 1AD Delivery Quantity DoorDash 1AD Tax DoorDash 1AD Tax DoorDash Delivery Amt DoorDash Delivery Amount DoorDash Delivery Amt Total DoorDash Delivery Amount Total DoorDash Delivery Qty DoorDash Delivery Quantity CLOSE"
+  },
+  {
+    "page": "peaks",
+    "label": "",
+    "description": "Column Descriptions Column Column Description 3PO McDelivery % of Total GC 3PO McDelivery GC divided by Total GC 3PO McDelivery % of Total Sales 3PO McDelivery Sales divided by All Net Sales 3PO McDelivery Average Check 3PO McDelivery Net Sales divided by 3PO McDelivery GC 3PO McDelivery GC All GC originating from the 3rd Party Ordering (3PO) Delivery Vendors 3PO McDelivery GC +/- % 3PO McDelivery GC comp percent, ((3PO McDelivery GC this year minus 3PO McDelivery GC last year) divided by 3PO McDelivery GC last year 3PO McDelivery Net Sales Sales Dollars associated with GC originating from 3rd Party Ordering (3PO) Delivery Vendors 3PO McDelivery Sales +/- % 3PO McDelivery Sales comp percent, ((3PO McDelivery sales this year minus 3PO McDelivery sales last year) divided by 3PO McDelivery sales last year) All Net Sales Storewide All Net Sales Average Check Storewide All Net Sales divided by Storewide GC DT Where Ordered % of Total GC DT GC divided by Total GC DT Where Ordered % of Total Sales DT Sales divided by Total Sales DT Where Ordered Avg Chk Drive Thru All Net Sales divided by Drive Thru GC DT Where Ordered GC +/- % Drive Thru GC +/- divided by Drive Thru GC Last Year DT Where Ordered GCs All Guest Counts that started in DT DT Where Ordered Sales Sales for All Guest Counts that started in DT DT Where Ordered Sales +/- % Drive Thru All Net Sales compared to last year FC % of Total GC FC GC divided by Total GC FC % of Total Sales FC Sales divided by Total Sales FC All Net Sales Front Counter all net sales FC Average Check Front Counter Sales divided by Front Counter GC FC GC Front Counter Guest Count FC GC +/- % Front counter GC compared to last year FC Sales +/- % Front counter sales compared to last year CLOSE"
+  },
+  {
+    "page": "peaks",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Avg CTP Cash to Present time, time from when car is recalled at cash booth until order is presented Avg CTP +/- Avg CTP compared to last year Avg DT TTL Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included Avg DT TTL +/- Avg DT TTL compared to last year Beverage GC GC (orders) sent to the beverage monitor Beverage GC +/- Beverage GC compared to last year Beverage Order Time Order Time for GC that include a beverage sent to the beverage monitor Beverage Order Time +/- Beverage Order Time compared to last year Beverage Run Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked Beverage Run Time Time from when a beverage order is paid until the order is served from the beverage monitor Beverage Run Time +/- Beverage Run Time compared to last year Beverage Total Time Total Beverage time from the start of the order until the order is served Beverage Total Time +/- Beverage Total Time compared to last year CTP Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT GC Drive Thru Guest Count DT GC +/- DT GC compared to last year DT Line Time Drive Thru Line Time - time from order completion to arrival at the cash window DT Line Time +/- Drive Thru Line Time compared to last year DT Line Time Masked QtrHrs An indicator to show when a quarter hour will be omitted from average due to likely incorrect times. 0 means not masked, 1 means masked DT Order Time Time from when the first button is pressed on a DT order until the order is stored DT Order Time +/- DT Order Time compared to last year DT Parked % Percent of cars that were parked to wait for orders to be completed DT Parked % +/- DT Parked % compared to last year CLOSE"
+  },
+  {
+    "page": "shiftmgr",
+    "label": "",
+    "description": "Column Descriptions Column Column Description # of Shifts The number of shifts where the manager was the floor manager during the selected period Act Hrs Actual Hours used - Punched Hours plus Scheduled Salaried Hours Act vs Need Actual hours used compared to hours needed (Needed Hours = Variable Needed + Fixed Scheduled + Floor Needed) Act vs Sched Actual Hours used compared to Hours that were scheduled All Net Sales Storewide All Net Sales All Net Sales +/- All net sales compared to last year (trading or calendar day) Average Check Storewide All Net Sales divided by Storewide GC Average Check +/- Average Check compared to last year Avg CTP Cash to Present time, time from when car is recalled at cash booth until order is presented Avg CTP +/- Avg CTP compared to last year Avg DT TTL Drive Thru Total Time, time from when the first button is pressed taking an order until the order is served from the present booth. Parks are not included Avg DT TTL +/- Avg DT TTL compared to last year DT Average Check Drive Thru All Net Sales divided by Drive Thru GC DT Average Check +/- Drive Thru Average Check Compared to last year DT GC Drive Thru Guest Count DT GC +/- DT GC compared to last year DT Pulled Forward % Percent of cars that were parked to wait for orders to be completed DT Sales Drive Thru All Net Sales DT Sales +/- DT Sales compared to last year FC All Net Sales Front Counter all net sales FC Average Check FC All Net Sales divided by FC GC FC Average Check +/- FC Average Check this year minus FC Average Check last year FC GC Front Counter Guest Count CLOSE"
+  },
+  {
+    "page": "trends",
+    "label": "",
+    "description": "Column Descriptions Column Column Description All Net Sales Storewide All Net Sales All Net Sales +/- % All Net Sales +/- divided by last year's sales, trading day or calendar day depending on what is selected Average Check Storewide All Net Sales divided by Storewide GC Average Check +/- % Average Check increase or decrease percent compared to last year ((This Year minus Last Year) divided by Last Year) Product Sales Actual Sales after removing tax, non-product, and other deductions. Essentially sales based on total of food and beverages sold. Product Sales +/- % (Product sales for this year minus product sales for last year) divided by product sales for last year STW GC Storewide Guest Count STW GC +/- % GC Comparison to last year - trading day or calendar day depending on filter selection CLOSE"
+  },
+  {
+    "page": "pmix",
+    "label": "",
+    "description": "Column Descriptions Column Column Description $ Sold Price times Number Sold - discounts are not subtracted % Total (Net Sales) Adj Pmix Sales divided by All Net Sales % Total (Product Sales) Adj Pmix Sales divided by Product Net Sales Adj PMIX Sales Sales of the menu item after both bundles and other discounts are applied Avg F&P Cost % Total F&P divided by $ Sold Avg Food Cost % Total Food Cost divided by $ Sold Avg Paper Cost % Total Paper Cost divided by $ Sold Bundle Discount $ Total Discounted dollars for Menu Items that were part of an auto bundle discount Bundle Units Total qty for Menu Items that were part of an auto bundle discounts Desc Menu Item Description Disc Qty Number of the menu item that were sold at a discount F&P % of Total Sales Total F&P divided by Adj PMIX Sales Family Group McDonalds Family Group Margin % 100% minus Avg F&P Cost Menu Item # The menu item number Offer Discount $ Total dollars discounted for discounts other than bundling Price The individual price or range of prices that a menu item was sold for through the POS Promo $ Units Promo * Price Total F&P Cost Unit Food & Paper times units sold Total Food Cost Unit Food Cost times units sold Total Margin $ $ Sold minus Total F&P Cost Total Paper Cost Unit Paper Cost times units sold Unit F&P Cost Food And Paper Cost for a single menu item (there are really 4 digits past the decimal but this is rounded to 2 digits for display) CLOSE"
+  },
+  {
+    "page": "schedule",
+    "label": "Symbol",
+    "description": "Fixed Job"
+  },
+  {
+    "page": "schedule",
+    "label": "TP",
+    "description": "OTP(Ops Tech Person)"
+  },
+  {
+    "page": "schedule",
+    "label": "GL",
+    "description": "GUEST EXPERIENCE LEADER"
+  },
+  {
+    "page": "schedule",
+    "label": "PS",
+    "description": "PRE SHIFT"
+  },
+  {
+    "page": "schedule",
+    "label": "PM",
+    "description": "PLANNED MAINTENANCE"
+  },
+  {
+    "page": "schedule",
+    "label": "BP",
+    "description": "BIRTHDAY PARTIES"
+  },
+  {
+    "page": "schedule",
+    "label": "A",
+    "description": "ADMINISTRATION / CASH"
+  },
+  {
+    "page": "schedule",
+    "label": "SC",
+    "description": "SCHEDULES"
+  },
+  {
+    "page": "schedule",
+    "label": "V",
+    "description": "VAT(filtering oil)"
+  },
+  {
+    "page": "schedule",
+    "label": "H",
+    "description": "HIRING"
+  },
+  {
+    "page": "schedule",
+    "label": "S",
+    "description": "SUPPORT / PREP"
+  },
+  {
+    "page": "schedule",
+    "label": "TR",
+    "description": "TRANSITION"
+  },
+  {
+    "page": "schedule",
+    "label": "M",
+    "description": "MAINTENANCE"
+  },
+  {
+    "page": "schedule",
+    "label": "L",
+    "description": "LOBBY"
+  },
+  {
+    "page": "schedule",
+    "label": "FS",
+    "description": "FOOD SAFETY"
+  },
+  {
+    "page": "schedule",
+    "label": "MM",
+    "description": "MANAGER MEETING"
+  },
+  {
+    "page": "schedule",
+    "label": "T",
+    "description": "TRAINING"
+  },
+  {
+    "page": "schedule",
+    "label": "ID",
+    "description": "INDIVIDUAL DEVELOPMENT"
+  },
+  {
+    "page": "schedule",
+    "label": "WT",
+    "description": "WALK THRUS"
+  },
+  {
+    "page": "schedule",
+    "label": "TD",
+    "description": "TRUCK DELIVERY"
+  },
+  {
+    "page": "schedule",
+    "label": "ST",
+    "description": "STAT"
+  },
+  {
+    "page": "schedule",
+    "label": "O",
+    "description": "OPENING"
+  },
+  {
+    "page": "schedule",
+    "label": "C",
+    "description": "CLOSING"
+  },
+  {
+    "page": "schedule",
+    "label": "GM",
+    "description": "GENERAL MANAGER"
+  },
+  {
+    "page": "records",
+    "label": "",
+    "description": "Column Descriptions Column Column Description DT Sales: Date Date of Drive Thru Sales DT Sales: Value Amount of Drive Thru Sales DT Transactions: Date Date of Drive Thru Transactions DT Transactions: Value Drive Thru Transactions KVS Sandwiches: Date Date of KVS Sandwiches KVS Sandwiches: Value Number of KVS Sandwich items KVS Time: Date Date of KVS Time KVS Time: Value KVS time per transaction OEPE No Parked: Date Date of OEPE No Parked OEPE No Parked: Value OEPE No Parked - number of orders not parked in OEPE R2P: Date Date of R2P R2P: Value Receipt to Present - front counter from time order has been paid until order is presented Total Sales: Date Date of Total Sales Total Sales: Value Total Sales amount Total Transactions: Date Date of Total Transactions Total Transactions: Value Count of Total Transactions CLOSE"
+  },
+  {
+    "page": "regaudit",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Average Check Drawer Sales divided by GC Drawer GC Number of transactions from drawers Drawer Opens Number of times the cash register drawer was opened when there was no order Drawer Sales Sum of sales from drawers (Can be different from Cash Sheet`s All Net Sale) Emp Meal Disc $ Dollar amount where the order was an Employee meal Emp Meal Disc Cnt Orders where the order was an Employee meal Emp Name Employee Name Manual Refund/Overring $ Amount entered as Manual Refund or Overring during the drawer count down process Mgr Meal # Orders where the order was a manager meal Mgr Meal $ Orders where the order was a manager meal Over/Short $ Difference between cash that was expected and sum of drawer count downs Over/Short % Over/Short $ divided by All Net sales POS Overrings Orders where the order was voided on the POS POS Overrings $ Dollar amount where the order was voided on the POS Promo # Dollar cost of one inventory unit Promo Amt Menu board price of menu items given away for free (not the F&P cost of the items) Promo Pct Promo Amt divided by Product sales Refund Cash $ Dollar amount where Cash was refunded to a customer Refund Cashless $ Orders where cashless money was refunded to a customer Refund Cashless Cnt Dollar amount where cashless money was refunded to a customer Refund Cnt Orders where Cash was refunded to a customer T-Red After $ Sum of reductions for orders where items were removed after the total key was pressed T-Red After Avg T-Red After $ divided by T-Red After Cnt CLOSE"
+  },
+  {
+    "page": "labor",
+    "label": "",
+    "description": "Column Descriptions Column Column Description Act $ Sum of Punched Labor $ and Salaried Manager $ Act GC vs Proj Actual GC minus GC that were projected in the scheduling software Act Hrs Punched Hours plus Scheduled Salaried Hours Act Sales vs Proj Actual Sales minus sales that were projected in the scheduling software Act vs Need Actual Hours minus (Fixed Scheduled plus Floor Needed plus Variable Needed) Act vs Need FCH Actual Hours minus (Fixed Contract plus Floor Management Hours Needed plus Variable Needed) Act vs Need Scd Actual Hours minus (Fixed Scheduled plus Floor Scheduled plus Variable Needed) Act vs Sched Actual Hours minus (Fixed Scheduled plus Floor Scheduled plus Variable Scheduled) Actual GC Storewide Guest Count All Net Sales Storewide All Net Sales Average Check Storewide All Net Sales divided by Storewide GC Avg Rate Crew Labor Dollars divided by Crew Labor Hours Crew Labor $ All Labor Dollars for Job Title Codes classified as \"crew\" Crew Labor % Crew Labor Dollars divided by Product Sales Crew Labor Hours All Punched Hours for Job Title Codes classified as \"crew\" DT Average Check Drive Thru All Net Sales divided by Drive Thru GC DT Sales Drive Thru All Net Sales Fixed Contract Hours Total hours allotted in the Fixed Hours Contract or Guide Fixed Labor Hours Scheduled Scheduled hours for Schedule symbols that are 'fixed' (not dependent on sales volume) Floor Hours Sched Manager hours scheduled to run the floor (Schedule Symbol FL) Floor Management Hours Needed Floor Labor Hours Needed based on actual volume of restaurant In-Store All Net Sales Sales from all transactions that are not Drive Thru In-Store Average Check In-Store All Net Sales divided by In Store GC CLOSE"
+  }
+]

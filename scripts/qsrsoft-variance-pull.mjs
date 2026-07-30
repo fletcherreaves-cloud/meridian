@@ -265,6 +265,9 @@ async function main() {
         raw_waste: v.rawWaste, comp_waste: v.compWaste, exp_usage: v.expectedUsage,
         act_usage: v.actualUsage, variance: v.unitVar, dol_diff: v.dolDiff,
         yield_val: v.yield, pct_sales: v.pctOfSales, raw_item_id: v.rawItemId,
+        // Yield STANDARD band (lo/hi) so the diagnosis can show actual-vs-standard %
+        // (CoachQ-style over-portioning fingerprint). Computed above but wasn't persisted.
+        yield_lo: v.yieldBand?.lo ?? null, yield_hi: v.yieldBand?.hi ?? null,
       })).filter(r => r.wrin), 'loc,period,wrin');
 
       // Waste

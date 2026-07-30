@@ -11,13 +11,14 @@ import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
-  loadEomDiagConfig, saveEomDiagConfig,
+  loadEomDiagConfig, saveEomDiagConfig, triggerSync,
 } from '../lib/supabase.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
-  buildIncompleteCountMessage,
+  buildIncompleteCountMessage, diagnoseIncompleteCount,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
+import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, LANE_META } from '../engine/eom-item-journey.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
@@ -48,14 +49,29 @@ function printDiagnosis(name, period, reportText) {
   const w = window.open('', '_blank', 'width=800,height=900');
   if (!w) return;
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Render the SAME markdown the on-screen modal shows (mdToHtml) instead of dumping raw
+  // markdown into a <pre> — so Print/PDF matches the formatted report incl. tables + chips
+  // (Notes 36). Light-theme print CSS mirrors the modal's structure with print-safe colors.
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>EOM Diagnosis — ${esc(name)} ${esc(period)}</title>
-    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;line-height:1.5}
-    h1{font-size:17px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:16px}
-    pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55}
+    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;margin:28px;line-height:1.5;font-size:12.5px}
+    h1{font-size:18px;margin:0 0 2px;color:#111} .sub{color:#666;font-size:12px;margin-bottom:16px}
+    .rpt h1{font-size:15px;border-bottom:2px solid #111;padding-bottom:3px;margin:18px 0 8px}
+    .rpt h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.4px;color:#333;margin:16px 0 6px;border-bottom:1px solid #ccc;padding-bottom:2px}
+    .rpt h3{font-size:12px;margin:10px 0 4px}
+    .rpt table{border-collapse:collapse;width:100%;margin:6px 0;font-size:11px}
+    .rpt th{background:#f0f0f0;border:1px solid #ccc;padding:4px 7px;text-align:left}
+    .rpt td{border:1px solid #ddd;padding:4px 7px}
+    .rpt ul,.rpt ol{margin:5px 0;padding-left:20px} .rpt li{margin:2px 0}
+    .rpt code{background:#f2f2f2;border-radius:3px;padding:0 4px;font-size:11px}
+    .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin:0 2px;border:1px solid}
+    .chip-warn{background:#fff7e6;border-color:#f0b400;color:#8a6400}
+    .chip-bad{background:#fdecec;border-color:#e05555;color:#a12020}
+    .chip-good{background:#eafaf0;border-color:#4caf78;color:#1f7a44}
+    .chip-info{background:#eef4fb;border-color:#5b9bd5;color:#2f5f8f}
     @media print{@page{margin:0.6in}}</style></head><body>
     <h1>EOM Food-Cost Diagnosis — ${esc(name)}</h1>
     <div class="sub">Period ${esc(period)} · generated ${new Date().toLocaleString()}</div>
-    <pre>${esc(reportText)}</pre></body></html>`);
+    <div class="rpt">${mdToHtml(reportText)}</div></body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 400);
 }
@@ -71,7 +87,9 @@ function defaultModeFor(period) {
   const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   if (period !== cur) return 'progress';
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  return now.getDate() >= lastDay - 2 ? 'eom' : 'progress';
+  // In the count window default to the Scoreboard checklist (the owner's EOM triage view);
+  // the detailed EOM Count table is one click away.
+  return now.getDate() >= lastDay - 2 ? 'scoreboard' : 'progress';
 }
 const daysAgo = (dt) => {
   if (!dt) return null;
@@ -126,18 +144,28 @@ function fobByStore(fobRows, period) {
   return acc;
 }
 
-function ClassChips({ byClass }) {
+function ClassChips({ byClass, uncounted }) {
   const order = [['food', 'F'], ['condiment', 'C'], ['paper', 'P'], ['nonproduct', 'N']];
   return div({ style: { display: 'flex', gap: '4px' } },
     order.map(([k, label]) => {
       const b = byClass[k];
       if (!b || !b.total) return null;
       const color = b.done ? '#4ade80' : b.pct >= 0.5 ? '#f5bc00' : '#64748b';
+      // When a class is ≥90% counted but not done, hover reveals EXACTLY which items
+      // are still uncounted (top by $ at risk) so the store can close the last few (Notes 35).
+      const items = (uncounted && uncounted[k]) || [];
+      const nearDone = b.pct >= 0.90 && !b.done && items.length > 0;
+      const stTag = u => u.state === 'never' ? 'NEVER counted' : u.state === 'stale' ? `stale (last ${u.lastCounted || '?'})` : `early (${u.lastCounted || '?'})`;
+      const title = nearDone
+        ? `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)}) — items not counted in the final window:\n` +
+          items.slice(0, 12).map(u => `• ${u.descr || u.wrin}${u.valueAtRisk ? ` ($${Math.round(u.valueAtRisk)})` : ''} — ${stTag(u)}`).join('\n') +
+          (items.length > 12 ? `\n…+${items.length - 12} more` : '') +
+          `\n(NEVER = true blank · early = counted earlier this period · stale = prior period / likely inactive ghost)`
+        : `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})`;
       return span({
-        key: k,
-        title: `${label}: ${b.counted}/${b.total} counted (${pct(b.pct)})`,
-        style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color },
-      }, `${label} ${pct(b.pct)}`);
+        key: k, title,
+        style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color, cursor: nearDone ? 'help' : 'default' },
+      }, `${label} ${pct(b.pct)}${nearDone ? ` ·${items.length}` : ''}`);
     }));
 }
 
@@ -173,20 +201,33 @@ function ItemJourneyView({ journey: j }) {
         [j.wrin && `WRIN ${j.wrin}`, j.itemClass, j.uom].filter(Boolean).join('  ·  ')),
       div({ style: { fontSize: '13px', color: VERDICT_TONE[j.verdict.tone], fontWeight: 600 } }, j.verdict.text)),
 
-    // Variance Stat report reconciliation (Note 30 A3) — the authoritative figure,
-    // shown alongside a tie-out check against the count-cycle timeline total.
+    // Variance reconciliation (Note 30 A3 / Notes 36) — the authoritative Variance Stat report
+    // figure, framed as ONE "Variance" with Qty and $ sub-values, plus an explicit
+    // matches-the-report? check for BOTH: $ (report vs the count-cycle $ total) and Qty
+    // (report units vs the ledger/register net count units from the most-recent data).
     (j.reportDollars != null || j.reportUnits != null) && (() => {
-      const rd = j.reportDollars, ru = j.reportUnits, jd = j.netCountDollars;
-      const diff = (rd != null && jd != null) ? Math.abs(rd - jd) : null;
-      const ties = diff != null && diff < 1;
+      const rd = j.reportDollars, ru = j.reportUnits, jd = j.netCountDollars, ju = j.netCountUnits;
+      const dDiff = (rd != null && jd != null) ? Math.abs(rd - jd) : null;   // $ tie-out
+      const qDiff = (ru != null && ju != null) ? Math.abs(ru - ju) : null;   // qty tie-out
+      const dTies = dDiff != null && dDiff < 1;
+      const qTies = qDiff != null && qDiff < 0.5;
+      // Overall Y/N: every comparison we HAVE must tie. (If only one side is available, judge on it.)
+      const checks = [dDiff != null ? dTies : null, qDiff != null ? qTies : null].filter(v => v != null);
+      const allTie = checks.length > 0 && checks.every(Boolean);
+      const cs = (j.caseSz && Math.abs(ru || 0) >= j.caseSz) ? ` (≈ ${(ru / j.caseSz).toFixed(1)} cs)` : '';
+      const lbl = (t) => span({ style: { fontSize: '9.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 700, marginRight: '3px' } }, t);
       return div({ style: { padding: '8px 12px', borderRadius: '8px', background: 'var(--surf3)', border: '1px solid var(--bdr)' } },
-        div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' } },
-          span({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Variance Stat report'),
-          rd != null && span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? '#f87171' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`),
-          ru != null && Math.abs(ru) >= 0.5 && span({ style: { fontSize: '12px', color: 'var(--text2)' } }, `${ru > 0 ? '+' : ''}${Math.round(ru).toLocaleString()}${j.uom ? ` ${j.uom}` : ' units'}`)),
-        diff != null && div({ style: { fontSize: '11px', marginTop: '3px', color: ties ? '#4ade80' : '#f5bc00' } },
-          ties ? '✓ Timeline reconciles exactly to the report.'
-            : `⚠ Timeline count total is ${jd < 0 ? '-' : '+'}${jMoney(jd)} — differs by ${jMoney(diff)}; the raw-item ledger may not cover every count for this item.`));
+        div({ style: { display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' } },
+          span({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Variance (Stat report)'),
+          rd != null && span(null, lbl('$'), span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? '#f87171' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`)),
+          ru != null && Math.abs(ru) >= 0.5 && span(null, lbl('Qty'), span({ style: { fontSize: '13px', fontWeight: 700, color: 'var(--text2)' } }, `${ru > 0 ? '+' : ''}${Math.round(ru).toLocaleString()}${j.uom ? ` ${j.uom}` : ''}${cs}`))),
+        checks.length > 0 && div({ style: { fontSize: '11px', marginTop: '4px', color: allTie ? '#4ade80' : '#f5bc00' } },
+          allTie
+            ? `✓ Variance matches report (${[dDiff != null ? '$' : null, qDiff != null ? 'qty' : null].filter(Boolean).join(' + ')} tie out to the ledger).`
+            : `⚠ Doesn't fully match — ${[
+                dDiff != null && !dTies ? `$ off by ${jMoney(dDiff)} (ledger ${jd < 0 ? '-' : '+'}${jMoney(jd)})` : null,
+                qDiff != null && !qTies ? `qty off by ${Math.round(qDiff).toLocaleString()}${j.uom ? ` ${j.uom}` : ''} (ledger ${ju > 0 ? '+' : ''}${Math.round(ju).toLocaleString()})` : null,
+              ].filter(Boolean).join('; ')}; the raw-item ledger may not cover every count for this item.`));
     })(),
 
     // flow summary — clickable chips drill the timeline into that lane's events
@@ -216,7 +257,7 @@ function ItemJourneyView({ journey: j }) {
           : div(null,
             // column headers
             div({ style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '2px 8px 4px', borderBottom: '1px solid var(--bdr)' } },
-              span({ style: { width: '9px', flexShrink: 0 } }), hcell('Date', '82px'), hcell('Type', '68px'), hcell('Detail', null), hcell(qtyLabel, '70px', true), hcell('$ variance', '62px', true)),
+              span({ style: { width: '9px', flexShrink: 0 } }), hcell('Date / time', '104px'), hcell('Type', '68px'), hcell('Detail', null), hcell(qtyLabel, '70px', true), hcell('$ variance', '62px', true)),
             div({ style: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' } },
               shownEvents.map((e, i) => {
                 const m = LANE_META[e.lane];
@@ -224,8 +265,12 @@ function ItemJourneyView({ journey: j }) {
                 const qtyVal = e.isCount ? e.unitVar : e.qty; // count rows show the counted unit variance
                 return div({ key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', borderRadius: '6px', background: e.isCount ? 'var(--surf2)' : 'transparent', border: e.isCount ? `1px solid ${m.color}55` : '1px solid transparent' } },
                   span({ style: { width: '9px', height: '9px', borderRadius: e.isCount ? '2px' : '50%', background: m.color, flexShrink: 0, transform: e.isCount ? 'rotate(45deg)' : 'none' } }),
-                  span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '82px', fontVariantNumeric: 'tabular-nums' } },
-                    e.dt || '—', win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
+                  span({ style: { fontSize: '11.5px', color: 'var(--text3)', minWidth: '104px', fontVariantNumeric: 'tabular-nums' } },
+                    e.dt || '—',
+                    // Count TIME (Notes 36): when a count was entered — a count logged right at
+                    // cutoff, or re-entered late, is a tell for a padded/fixed count. Emphasized on counts.
+                    e.tm ? span({ style: { color: e.isCount ? '#f5bc00' : 'var(--text3)', marginLeft: '5px', fontWeight: e.isCount ? 700 : 400 }, title: e.isCount ? 'time this count was entered' : 'entry time' }, e.tm) : null,
+                    win && span({ style: { color: '#f5bc00', marginLeft: '4px' }, title: 'inside the count window' }, '●')),
                   span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
                   span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
                     e.isCount ? `count${e.manager ? ` · ${e.manager}` : ''}` : (e.invoice || '')),
@@ -320,6 +365,25 @@ function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
       '▸ = store’s largest component.  Red = running >1.5× the district rate (dollar-weighted).  Click a column to sort.'));
 }
 
+// ── Scoreboard status model — a store advances left→right as the owner works it ──
+// bucket from the auto count % (believesDone ≥90%) + the human check-offs (diagnosis /
+// comms). Priority is right-most-wins so a reviewed+comms store reads as "comms sent".
+const SB_PILL = {
+  notstarted: { t: 'Not started',     c: 'var(--text3)', bg: 'var(--surf3)' },
+  counting:   { t: 'Counting',        c: '#38bdf8',      bg: 'rgba(56,189,248,.12)' },
+  ready:      { t: 'Ready to review', c: '#f5bc00',      bg: 'rgba(245,188,0,.16)' },
+  reviewed:   { t: 'Reviewed',        c: '#4ade80',      bg: 'rgba(74,222,128,.12)' },
+  comms:      { t: 'Comms sent',      c: '#a78bfa',      bg: 'rgba(167,139,250,.14)' },
+};
+const SB_ORDER = { ready: 0, counting: 1, notstarted: 2, reviewed: 3, comms: 4 };
+function sbBucket(r) {
+  if ((r.comms || 'none') !== 'none') return 'comms';
+  if ((r.diagnosis || 'pending') !== 'pending') return 'reviewed';
+  if (r.prog.believesDone) return 'ready';
+  if ((r.prog.pctCounted || 0) > 0.01) return 'counting';
+  return 'notstarted';
+}
+
 export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const periods = useMemo(() => recentPeriods(4), []);
   const [period, setPeriod] = useState(periods[0]);
@@ -349,6 +413,20 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [flowOpen, setFlowOpen] = useState(false); // flow-editor modal
   const [flowDraft, setFlowDraft] = useState([]); // editable copy while the modal is open
   const [flowSaving, setFlowSaving] = useState(false);
+  // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
+  // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
+  // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
+  const [pulling, setPulling] = useState('');   // '' | 'onhand' | 'variance'
+  const [pullMsg, setPullMsg] = useState(null);  // { ok, text }
+  const doPull = useCallback(async (wf, label) => {
+    setPulling(wf); setPullMsg(null);
+    try {
+      const r = await triggerSync(wf, {});
+      if (r && r.error) setPullMsg({ ok: false, text: `✗ ${label}: ${r.error}` });
+      else setPullMsg({ ok: true, text: `✓ ${label} pull started — data refreshes in ~5–10 min, then reload.` });
+    } catch (e) { setPullMsg({ ok: false, text: `✗ ${label}: ${e.message || 'failed'}` }); }
+    finally { setPulling(''); }
+  }, []);
 
   // Load the editable diagnosis-flow config once on mount.
   useEffect(() => { loadEomDiagConfig().then(c => { if (c) setDiagCfg(c); }).catch(() => {}); }, []);
@@ -401,7 +479,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const m = {};
     for (const r of (rawDetail || [])) {
       const counts = (r.history || []).filter(h => h.isCount);
-      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, counts });
+      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, counts, caseSz: r.caseSz, uom: r.uom });
     }
     return m;
   }, [rawDetail]);
@@ -425,6 +503,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     ]);
     const out = [...locs].map(loc => {
       const prog = computeCountProgress(byLoc[loc] || [], { period, asOf });
+      // Specific still-uncounted items per class (Notes 35) — so a ≥90% class can show
+      // exactly what's left (hover on the class chip + in the diagnosis/comms report).
+      const incByClass = {};
+      try { for (const b of diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf }).byClass) incByClass[b.cls] = b.items; } catch {}
       const f = fob[loc] || {};
       const st = statusMap[loc] || {};
       return {
@@ -432,6 +514,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         name: nm(loc),
         org: getStoreOrg(unpad(loc)),
         prog,
+        uncountedByClass: incByClass,
         fobPct: f.fobPct ?? null,
         fob$: f.fob ?? null,
         components: f,
@@ -441,8 +524,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         commsRecipient: st.commsRecipient || '',
       };
     });
-    // stores with unfinished counts first, then by name
-    out.sort((a, b) => (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
+    // Counted + counting locations to the TOP (Notes 35) — order by the same scoreboard
+    // bucket priority everywhere (ready→counting→not-started→reviewed→comms), then least-
+    // counted first within a bucket, then name. Surfaces the stores actively in play.
+    out.sort((a, b) => (SB_ORDER[sbBucket(a)] - SB_ORDER[sbBucket(b)]) || (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
     return out;
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData]);
 
@@ -527,7 +612,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       },
     });
     setDiagCopied(false);
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result) });
+    // Count-integrity breakdown (never/early/stale) so the report frames "uncounted" correctly.
+    const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date() });
+    // Case size per WRIN (from the raw-item detail) so the report can show recount qty as
+    // full cases — "look for ~3 cases" is more actionable than "≈2,091 units" (owner req).
+    const caseSzByWrin = {};
+    for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin }) });
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
 
   // Open the visual Item Journeys for a store (worst-net-variance first).
@@ -538,7 +629,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const vmap = {}; (varByLoc[loc] || []).forEach(v => { vmap[String(v.wrin)] = v; });
     const enriched = list.map(j => {
       const v = vmap[String(j.wrin)];
-      return v ? { ...j, reportDollars: v.dolDiff, reportUnits: v.unitVar } : j;
+      // Variance Stat rows carry the qty variance as `variance` (not `unitVar`) — using the
+      // wrong field made reportUnits 0/undefined so journeys couldn't reconcile to the report.
+      return v ? { ...j, reportDollars: v.dolDiff, reportUnits: v.variance } : j;
     });
     setJourneys({ loc, name, list: enriched, selectedWrin: enriched[0]?.wrin || null });
   }, [rawByLoc, varByLoc, period]);
@@ -614,6 +707,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     try { await saveEomCountStatus([next]); } finally { setSaving(''); }
   }, [statusMap, period]);
 
+  // Freshness: latest eom_count_status import time (updated_at) = when the count pull last wrote.
+  const eomImportedAt = useMemo(() => {
+    let m = 0;
+    for (const loc in statusMap) { const u = statusMap[loc] && statusMap[loc].updatedAt; if (u) { const t = new Date(u).getTime(); if (t > m) m = t; } }
+    return m ? new Date(m) : null;
+  }, [statusMap]);
+
+  // Scoreboard buckets — a store moves left→right as you work it (owner EOM checklist).
+  const scoreboard = useMemo(() => {
+    const tally = { notstarted: 0, counting: 0, ready: 0, reviewed: 0, comms: 0 };
+    for (const r of rows) tally[sbBucket(r)]++;
+    const sorted = [...rows].sort((a, b) =>
+      (SB_ORDER[sbBucket(a)] - SB_ORDER[sbBucket(b)]) || (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
+    return { tally, sorted };
+  }, [rows]);
+
   const inWindow = useMemo(() => {
     const d = new Date(); d.setHours(0, 0, 0, 0);
     return d >= countWindowStart(period);
@@ -633,10 +742,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       div({ style: { display: 'flex', gap: '10px', alignItems: 'center' } },
         // mode toggle — EOM count-completion vs year-round progress
         div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-          [['eom', 'EOM Count'], ['progress', 'Year-Round']].map(([k, label]) =>
+          [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Year-Round']].map(([k, label]) =>
             h('button', {
               key: k, onClick: () => setMode(k),
-              title: k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
+              title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared' : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
               style: {
                 background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
                 border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
@@ -660,6 +769,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           onClick: openFlow, title: 'Edit the diagnosis flow — reorder/toggle checks and tune thresholds',
           style: { background: 'var(--surf3)', color: 'var(--text2)', border: `1px solid ${diagCfg ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' },
         }, diagCfg ? '⚙ Flow *' : '⚙ Flow'),
+        // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
+        h('button', {
+          onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
+          title: 'Pull fresh On-Hand count progress now (forces a run regardless of the count-window / 8a–6p CT gate)',
+          style: { background: 'rgba(245,188,0,.14)', color: '#f5bc00', border: '1px solid rgba(245,188,0,.4)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: pulling === 'onhand' ? 'default' : 'pointer' },
+        }, pulling === 'onhand' ? '…' : '↻ On-Hand'),
+        h('button', {
+          onClick: () => doPull('variance', 'Variance'), disabled: pulling === 'variance',
+          title: 'Pull fresh Variance / Raw-Item detail now',
+          style: { background: 'rgba(245,188,0,.14)', color: '#f5bc00', border: '1px solid rgba(245,188,0,.4)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: pulling === 'variance' ? 'default' : 'pointer' },
+        }, pulling === 'variance' ? '…' : '↻ Variance'),
+        pullMsg && span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : '#f87171', maxWidth: '260px' } }, pullMsg.text),
         onClose && h('button', { onClick: onClose, style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '20px', cursor: 'pointer' } }, '✕'))),
 
     // location picker — state pills (All / OK / FL) + single-store dropdown
@@ -717,6 +838,46 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           allRows.length === 0
             ? `No EOM data for ${period} yet. Variance / waste / transfers pull daily; On-Hand count progress fills in the last 3 days of the month.`
             : 'No stores match this filter — try All.')
+      : mode === 'scoreboard' ? div(null,
+          // freshness — when the count data was last imported (on-hand pull writes eom_count_status)
+          div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '8px' } },
+            eomImportedAt
+              ? `Count data imported ${eomImportedAt.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · On-Hand pull runs ~8a/10a/2p CT`
+              : 'Count data populates in the last 3 days of the month (On-Hand pull ~8a/10a/2p CT).'),
+          // tally band
+          div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' } },
+            [['notstarted', 'Not started'], ['counting', 'Counting'], ['ready', 'Ready for you'], ['reviewed', 'Reviewed'], ['comms', 'Comms sent']].map(([k, label]) => {
+              const p = SB_PILL[k];
+              return div({ key: k, style: { flex: '1 1 120px', border: '1px solid var(--bdr)', borderLeft: `3px solid ${p.c}`, borderRadius: '8px', padding: '8px 10px', background: 'var(--surf2)' } },
+                div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
+                div({ style: { fontSize: '22px', fontWeight: 700, color: 'var(--text)' } }, String(scoreboard.tally[k])));
+            })),
+          // per-store checklist rows (ready-for-you first)
+          div({ style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+            scoreboard.sorted.map(r => {
+              const p = SB_PILL[sbBucket(r)];
+              const reviewed = (r.diagnosis || 'pending') !== 'pending';
+              const commsSent = (r.comms || 'none') !== 'none';
+              const chk = (on, label, onClick) => h('button', {
+                onClick, disabled: saving === r.loc,
+                style: { background: on ? 'rgba(74,222,128,.14)' : 'var(--surf3)', color: on ? '#4ade80' : 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '4px 9px', fontSize: '11px', fontWeight: 600, cursor: saving === r.loc ? 'wait' : 'pointer', whiteSpace: 'nowrap' },
+              }, (on ? '☑ ' : '☐ ') + label);
+              return div({ key: r.loc, style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--bdr)', borderLeft: `3px solid ${p.c}`, borderRadius: '8px', background: 'var(--surf2)', flexWrap: 'wrap' } },
+                div({ style: { flex: '1 1 150px', minWidth: '150px' } },
+                  span({ style: { fontWeight: 700, color: 'var(--text)' } }, r.name),
+                  span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '6px' } }, r.org === 'emerald' ? 'FL' : 'OK'),
+                  r.prog.lastActivityAt ? span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '8px' } }, 'last count ' + new Date(r.prog.lastActivityAt).toLocaleDateString()) : null),
+                div({ style: { flex: '1 1 160px', minWidth: '140px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
+                span({ style: { fontSize: '11px', fontWeight: 700, color: p.c, background: p.bg, borderRadius: '12px', padding: '3px 10px', whiteSpace: 'nowrap' } }, p.t),
+                div({ style: { display: 'flex', gap: '6px' } },
+                  h('button', {
+                    onClick: () => openDiag(r.loc, r.name, r.components),
+                    title: 'Open the full FOB variance report + action plan for this store',
+                    style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '6px', padding: '4px 9px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' },
+                  }, '📋 Report'),
+                  chk(reviewed, 'Reviewed', () => updateStatus(r.loc, { diagnosisStatus: reviewed ? 'pending' : 'reviewed' })),
+                  chk(commsSent, 'Comms', () => updateStatus(r.loc, { commsStatus: commsSent ? 'none' : 'sent' }))));
+            })))
       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' } },
         h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '11px', textTransform: 'uppercase' } },
           [['Store'], ['Count progress'], ['By class'], ['Last count'],
@@ -730,7 +891,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               div({ style: { fontWeight: 600, color: 'var(--text)' } }, r.name),
               span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK')),
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.pctCounted })),
-            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass })),
+            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
               r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—',
               mode === 'progress' && r.prog.lastActivityAt && (() => {
@@ -821,12 +982,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             diag.result.actionItems.map((a, i) =>
               div({ key: i, style: { fontSize: '12.5px', color: 'var(--text)', padding: '6px 9px', background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${a.startsWith('[CRITICAL') ? '#f87171' : a.startsWith('[HIGH') ? '#f5bc00' : '#38bdf8'}` } }, a)))),
 
-        // full report text
+        // full report — rendered markdown (tables, tiers, bold). Copy/Print use the raw text.
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Full report'),
-        h('textarea', {
-          readOnly: true, value: diag.report,
-          style: { width: '100%', minHeight: '260px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr)', borderRadius: '6px', padding: '10px', fontSize: '12px', fontFamily: 'ui-monospace, monospace', lineHeight: 1.5, resize: 'vertical' },
-        }),
+        h('style', null, `.md-rpt{font-size:12.5px;line-height:1.5;color:var(--text);max-height:60vh;overflow:auto;background:var(--surf3);border:1px solid var(--bdr);border-radius:6px;padding:12px 14px}
+          .md-rpt h1{font-size:15px;margin:2px 0 6px;color:var(--text)}
+          .md-rpt h2{font-size:13px;margin:12px 0 4px;color:var(--text);border-bottom:1px solid var(--bdr);padding-bottom:3px}
+          .md-rpt table{border-collapse:collapse;width:100%;margin:4px 0 8px;font-size:11.5px}
+          .md-rpt th{background:var(--surf2);text-align:left;padding:3px 7px;border:.5px solid var(--bdr);color:var(--text2)}
+          .md-rpt td{padding:3px 7px;border:.5px solid var(--bdr)}
+          .md-rpt ul,.md-rpt ol{margin:3px 0;padding-left:18px}
+          .md-rpt li{margin:2px 0}
+          .md-rpt p{margin:4px 0}
+          .md-rpt code{background:var(--surf2);padding:1px 4px;border-radius:3px;font-size:11px}
+          .md-rpt .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin:0 2px;border:1px solid}
+          .md-rpt .chip-warn{background:rgba(245,188,0,.14);border-color:#f5bc00;color:#f5bc00}
+          .md-rpt .chip-bad{background:rgba(248,113,113,.14);border-color:#f87171;color:#f87171}
+          .md-rpt .chip-good{background:rgba(74,222,128,.14);border-color:#4ade80;color:#4ade80}
+          .md-rpt .chip-info{background:rgba(91,155,213,.14);border-color:#5b9bd5;color:#7fb0e0}`),
+        h('div', { className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(diag.report) } }),
 
         // pending checks (awaiting a data pull for this period)
         diag.result.pending.length > 0 && div({ style: { marginTop: '10px', fontSize: '11px', color: 'var(--text3)' } },
@@ -841,6 +1014,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             onClick: () => printDiagnosis(diag.name, period, diag.report),
             style: { background: 'none', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, '🖨 Print / PDF'),
+          h('button', {
+            title: 'Open SAGE with this report loaded — ask follow-ups (recount list, GM message, root cause)',
+            onClick: () => {
+              try { window.__MF_SAGE_SEED__ = { context: diag.report, prompt: `From this ${diag.name} FOB variance report, give me a prioritized recount list and a short GM message. Respect the Count-integrity section: NEVER-counted items are the only true "go count it" recovery; EARLY-counted items are already counted (recount only if the count looks wrong — the dollars are locked this period); STALE/deactivated ghost-float items need verify-then-count-or-write-off before close, not a recount. Don't tell the GM to "count $X of blanks" unless that $ is in the NEVER bucket.` }; } catch {}
+              try { window.dispatchEvent(new CustomEvent('mf:open-sage')); } catch {}
+              // Close BOTH the diagnose panel AND the EOM Dashboard modal — otherwise SAGE
+              // (rendered at the App level) opens BEHIND these overlays and looks like nothing
+              // happened (owner report, Notes 36). Closing them lands the manager in seeded SAGE.
+              setDiag(null);
+              onClose && onClose();
+            },
+            style: { background: 'none', color: 'var(--text2)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '6px', padding: '8px 14px', fontWeight: 700, cursor: 'pointer', fontSize: '13px' },
+          }, '🧠 Ask SAGE'),
           (rawByLoc[diag.loc] || []).length > 0 && h('button', {
             title: 'See the count-cycle path of each item — where the variance was realized',
             onClick: () => openJourneys(diag.loc, diag.name),

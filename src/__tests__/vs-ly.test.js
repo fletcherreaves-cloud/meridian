@@ -67,6 +67,24 @@ describe('vs-ly shared helper', () => {
     expect(autoFirstTotal(ds, '1', range, 'sales')).toBe(100); // total still shows
   });
 
+  it('accepts STRING ranges against Date-typed rows (One-Pager regression)', () => {
+    // The One-Pager passes ISO-string ranges ("2026-06-01"); rows carry Date objects.
+    // A raw `Date >= "2026-06-01"` coerces to `number >= NaN` = false and dropped EVERY
+    // row → matchedVsLY returned null (blank GC-vs-LY + District-Outliers vs-LY).
+    const ds = { qsrActSummaryRows: [
+      { loc: '1', date: d('2026-06-01'), gc: 55, lyGc: 50, sales: 110, lySales: 100 },
+      { loc: '1', date: d('2026-06-15'), gc: 66, lyGc: 60, sales: 132, lySales: 120 },
+    ] };
+    const strRange = { s: '2026-06-01', e: '2026-06-28' };
+    const g = matchedVsLY(ds, ['1'], strRange, 'gc');
+    expect(g.days).toBe(2); expect(g.cur).toBe(121); expect(g.ly).toBe(110);
+    expect(g.pct).toBeCloseTo(0.1, 5);
+    const s = matchedVsLY(ds, ['1'], strRange, 'sales');
+    expect(s.pct).toBeCloseTo(0.1, 5);
+    // out-of-window string range must exclude everything
+    expect(matchedVsLY(ds, ['1'], { s: '2026-07-01', e: '2026-07-31' }, 'gc').pct).toBeNull();
+  });
+
   it('sums across multiple locs', () => {
     const ds = { qsrActSummaryRows: [
       { loc: '1', date: d('2026-06-01'), sales: 100, lySales: 100 },
