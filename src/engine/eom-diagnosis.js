@@ -428,7 +428,16 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const m = (o) => `${(o && o.n) || 0} item${((o && o.n) || 0) === 1 ? '' : 's'} (${money((o && o.value) || 0)})`;
     L.push('## 🧮 Count integrity — the "uncounted" list, explained', '');
     if (bs.never && bs.never.n) L.push(`- **${m(bs.never)} NEVER counted** — true blanks. Count these before close (real recovery).`);
-    if (bs.early && bs.early.n) L.push(`- **${m(bs.early)} counted EARLY** this period — QSRSoft already shows them counted. Recount only if the count looks *wrong*; it will **not** recover this period's dollars (they cascade). NOT "just go count it" money.`);
+    // Itemized TO-COUNT list — the actual never-counted products a manager must complete
+    // (owner req: surface the uncounted list in the report + SAGE, not just a hover count).
+    const neverItems = (incomplete.uncounted || []).filter(u => u.state === 'never').sort((a, b) => b.valueAtRisk - a.valueAtRisk).slice(0, 25);
+    if (neverItems.length) {
+      L.push('', '### 📝 To-count list — complete before close', '');
+      neverItems.forEach(u => L.push(`- **${u.descr || u.wrin}**${u.valueAtRisk ? ` — ~${money(u.valueAtRisk)} on hand` : ''}${u.cls ? ` · ${u.cls}` : ''}`));
+      const more = (bs.never?.n || 0) - neverItems.length;
+      if (more > 0) L.push(`- _+${more} more._`);
+    }
+    if (bs.early && bs.early.n) L.push('', `- **${m(bs.early)} counted EARLY** this period — QSRSoft already shows them counted. Recount only if the count looks *wrong*; it will **not** recover this period's dollars (they cascade). NOT "just go count it" money.`);
     if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} STALE / likely deactivated (ghost floats)** — last counted a prior period; a residual on-hand is riding. **Verify:** still sellable/usable → count it; obsolete/gone → **write off before close** (QSRSoft force-zeros a deactivated item ~30–45 days out and fires the full balance as a loss anyway). These inflate "value at risk" without being real count work.`);
     // Itemized ghost-float verify-&-clear list (Notes: Durant #5985 / #38). Each with on-hand $,
     // last count date, and the two-way impact so a manager can clear it before the period locks.

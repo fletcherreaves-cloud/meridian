@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.605';
+const MERIDIAN_VERSION    = '4.606';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.606', date:'2026-07-30', changes:[
+    'EOM Food-Cost Diagnosis: the FOB Analysis report now sits ABOVE the Action Items (reversed per owner preference — it is where the work happens), and the report now prints an itemized "To-count list" of the never-counted products a store must complete before close (not just a count) — which also flows into SAGE.',
+  ]},
   {version:'4.605', date:'2026-07-29', changes:[
     'At-A-Glance Service tile now fills R2P from the auto DAR even when the manual Operations Report is stale (it was hard-wired to manual-only). Service metrics now merge field-by-field so each takes its freshest source (DAR, then Glimpse, then manual Ops). KVS Time/Healthy, DT-Parked, and Controls T-Reds/Cash-O/S still require the Operations Report / Controls upload (stopped Jul 15) — the durable fix is auto-pulling that report.',
   ]},

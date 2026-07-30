@@ -975,15 +975,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', { onClick: () => setDiag(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } }, diag.result.summary),
 
-        // action items (medium+ severity) up top
-        diag.result.actionItems.length > 0 && div({ style: { marginBottom: '12px' } },
-          div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'Action items'),
-          div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
-            diag.result.actionItems.map((a, i) =>
-              div({ key: i, style: { fontSize: '12.5px', color: 'var(--text)', padding: '6px 9px', background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${a.startsWith('[CRITICAL') ? '#f87171' : a.startsWith('[HIGH') ? '#f5bc00' : '#38bdf8'}` } }, a)))),
-
-        // full report — rendered markdown (tables, tiers, bold). Copy/Print use the raw text.
-        div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Full report'),
+        // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
+        // Rendered markdown (tables, tiers, chips). Copy/Print use the raw text.
+        div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'FOB Analysis'),
         h('style', null, `.md-rpt{font-size:12.5px;line-height:1.5;color:var(--text);max-height:60vh;overflow:auto;background:var(--surf3);border:1px solid var(--bdr);border-radius:6px;padding:12px 14px}
           .md-rpt h1{font-size:15px;margin:2px 0 6px;color:var(--text)}
           .md-rpt h2{font-size:13px;margin:12px 0 4px;color:var(--text);border-bottom:1px solid var(--bdr);padding-bottom:3px}
@@ -1000,6 +994,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           .md-rpt .chip-good{background:rgba(74,222,128,.14);border-color:#4ade80;color:#4ade80}
           .md-rpt .chip-info{background:rgba(91,155,213,.14);border-color:#5b9bd5;color:#7fb0e0}`),
         h('div', { className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(diag.report) } }),
+
+        // Action items now BELOW the analysis (owner reversed the order).
+        diag.result.actionItems.length > 0 && div({ style: { marginTop: '12px' } },
+          div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'Action items'),
+          div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
+            diag.result.actionItems.map((a, i) =>
+              div({ key: i, style: { fontSize: '12.5px', color: 'var(--text)', padding: '6px 9px', background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${a.startsWith('[CRITICAL') ? '#f87171' : a.startsWith('[HIGH') ? '#f5bc00' : '#38bdf8'}` } }, a)))),
 
         // pending checks (awaiting a data pull for this period)
         diag.result.pending.length > 0 && div({ style: { marginTop: '10px', fontSize: '11px', color: 'var(--text3)' } },
