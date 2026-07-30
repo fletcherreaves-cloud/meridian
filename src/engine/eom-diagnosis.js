@@ -365,10 +365,14 @@ export const DEFAULT_CHECKS = [
       const tol = ctx.params.tol ?? -0.001;
       return (ctx.data.onHand || [])
         .filter(o => Number(o.totalUnits) < tol || Number(o.onHandAmt) < tol)
-        .map(o => mkFinding('negative-onhand', SEVERITY.high,
-          `Negative on-hand: ${o.descr || o.wrin}`,
-          `Ending on-hand shows ${Number(o.totalUnits).toLocaleString()} units (${_mny(o.onHandAmt)}) — below zero is physically impossible. Usually an un-received invoice (product rung/used before its delivery was booked into the system), a keying error, or a count entered against the wrong unit of measure. Book any pending invoice for this item, then recount.`,
-          Math.abs(Number(o.onHandAmt) || 0), { wrin: o.wrin, totalUnits: Number(o.totalUnits), onHandAmt: Number(o.onHandAmt) }));
+        .map(o => {
+          const u = Number(o.totalUnits);
+          const uStr = Number.isFinite(u) ? `${u.toLocaleString()} units (${_mny(o.onHandAmt)})` : `${_mny(o.onHandAmt)}`;
+          return mkFinding('negative-onhand', SEVERITY.high,
+            `Negative on-hand: ${o.descr || o.wrin}`,
+            `Ending on-hand shows ${uStr} — below zero is physically impossible. Usually an un-received invoice (product rung/used before its delivery was booked into the system), a keying error, or a count entered against the wrong unit of measure. Book any pending invoice for this item, then recount.`,
+            Math.abs(Number(o.onHandAmt) || 0), { wrin: o.wrin, totalUnits: u, onHandAmt: Number(o.onHandAmt) });
+        });
     },
   },
   {
@@ -380,12 +384,14 @@ export const DEFAULT_CHECKS = [
     requires: ['variance'], params: { tol: -0.001 },
     run: (ctx) => {
       const tol = ctx.params.tol ?? -0.001;
+      // Field name differs by source: client parser → actualUsage; Supabase loader → actUsage.
+      const usageOf = v => Number(v.actualUsage ?? v.actUsage);
       return (ctx.data.variance || [])
-        .filter(v => Number(v.actualUsage) < tol)
+        .filter(v => usageOf(v) < tol)
         .map(v => mkFinding('negative-usage', SEVERITY.high,
           `Negative usage: ${v.descr}`,
-          `Actual usage computed to ${Number(v.actualUsage).toLocaleString()} (below zero) — impossible: the ending count is higher than everything on hand plus everything received this period. Almost always an over-padded ending count or a mis-keyed unit of measure (inner bags entered as full cases). Recount ${v.descr} and re-verify the ending quantity + UOM.`,
-          Math.abs(v.dolDiff || 0), { wrin: v.wrin, actualUsage: Number(v.actualUsage) }));
+          `Actual usage computed to ${usageOf(v).toLocaleString()} (below zero) — impossible: the ending count is higher than everything on hand plus everything received this period. Almost always an over-padded ending count or a mis-keyed unit of measure (inner bags entered as full cases). Recount ${v.descr} and re-verify the ending quantity + UOM.`,
+          Math.abs(v.dolDiff || 0), { wrin: v.wrin, actualUsage: usageOf(v) }));
     },
   },
 ];

@@ -801,6 +801,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         } : null,
         onHand: (byLoc[loc] || []).map(r => ({
           wrin: r.wrin, cls: r.cls, descr: r.descr, onHandAmt: r.on_hand_amt ?? r.onHandAmt,
+          totalUnits: r.total_units ?? r.totalUnits,   // negative-onhand integrity check reads this
           lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : (r.lastCounted || null),
           lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : (r.lastSubmitted || null),
         })),
