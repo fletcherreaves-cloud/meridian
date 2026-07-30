@@ -71,10 +71,13 @@ describe('runDiagnosis — editable check registry', () => {
     const dup = { wrin: 'icm', descr: 'ICE CREAM MIX', dolDiff: -440, cls: 'Food', yield: 30, yieldLo: 55, yieldHi: 60 };
     const res = runDiagnosis({ store: 's', storeName: 'PV', period: '2026-07', data: { variance: [dup, { ...dup }] } });
     const rpt = formatDiagnosisReport(res);
-    // Should appear at most once in Focus now, and not twice back-to-back in Top-5.
-    const focusHits = (rpt.match(/ICE CREAM MIX/g) || []).length;
-    expect(focusHits).toBeLessThanOrEqual(3);   // was 4+ with the dup (Top-5 recount+portion + Focus x2)
-    expect(rpt).not.toMatch(/(Recount ICE CREAM MIX[\s\S]{0,120}){2}/); // no back-to-back duplicate recount
+    // The Top-5 block (everything before "Bottom line") must list the item at most ONCE — it was
+    // appearing twice before (recount + portioning, and/or the doubled variance row).
+    const top5Block = rpt.split('Bottom line')[0];
+    expect((top5Block.match(/ICE CREAM MIX/g) || []).length).toBeLessThanOrEqual(1);
+    // And the Focus-now list (one line per item) must not repeat it.
+    const focusBlock = (rpt.split('Focus now')[1] || '').split('##')[0];
+    expect((focusBlock.match(/ICE CREAM MIX/g) || []).length).toBeLessThanOrEqual(1);
   });
 
   it('Top-5 celebrates a clean sweep when there are no Food/Condiment opportunities', () => {
