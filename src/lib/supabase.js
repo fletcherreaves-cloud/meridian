@@ -1800,7 +1800,17 @@ async function _loadOpsTable(table, daysBack, extra) {
     }));
   } catch (e) { console.warn(`[${table}] load skipped:`, e?.message || e); return []; }
 }
-export const loadOpsCashSheet    = (d = 45) => _loadOpsTable('qsr_cash_sheet', d);     // Controls
+// Controls — also derives discPct = discount $ ÷ net sales (reconciled to the report:
+// 174.15/10076.96 = 1.73% for 3708 2026-07-29). T-Red % denominators are left for a
+// reconciliation pass (qty/amt are exact and already flat on the row).
+export const loadOpsCashSheet = async (d = 45) => {
+  const rows = await _loadOpsTable('qsr_cash_sheet', d);
+  return rows.map(r => ({
+    ...r,
+    discPct: (r.net_sales_amt > 0 && r.discount_amt != null) ? r.discount_amt / r.net_sales_amt : null,
+    mealDiscAmt: (r.emp_meal_discount_amt || 0) + (r.mgr_meal_discount_amt || 0),
+  }));
+};
 export const loadOpsLaborSummary = (d = 45) => _loadOpsTable('qsr_labor_summary', d);  // OT + crew + needed hrs
 export const loadOpsServiceStats = (d = 45) => _loadOpsTable('qsr_service_stats', d);  // CTP/OEPE/DT/MFY/KVS/RTP
 export const loadOpsSalesMix     = (d = 45) => _loadOpsTable('qsr_sales_mix', d);      // channel sales + ly + ybl

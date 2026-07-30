@@ -56,7 +56,9 @@ export const METRIC_SOURCES = {
   // Controls / loss-prevention — signed values (0 / negative are real).
   cashOSPct: { mode: 'any', srcs: [['ctrlRows', 'cashOSPct'], ['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct']] },
   tRedAPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedAPct']] },
-  discPct:   { mode: 'any', srcs: [['ctrlRows', 'discPct']] },
+  // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
+  // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
+  discPct:   { mode: 'any', srcs: [['ctrlRows', 'discPct'], ['opsCashRows', 'discPct']] },
 };
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);
