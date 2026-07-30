@@ -769,8 +769,8 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const toCountRows = [...neverFC, ...neverPaper].slice(0, 40);
     if (toCountRows.length) {
       L.push('', '### 📝 To-count list — due by EOD (Food, Condiment, Paper)', '');
-      L.push('| Item | WRIN | Class | On-hand $ | Food-cost? |', '|---|---|---|---:|:---:|');
-      toCountRows.forEach(u => L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${isFCcls(u.cls) ? '**Yes**' : 'no'} |`));
+      L.push('| Item | WRIN | Class | On-hand qty | On-hand $ | Food-cost? |', '|---|---|---|---:|---:|:---:|');
+      toCountRows.forEach(u => { const q = Number(u.totalUnits); const qs = Number.isFinite(q) && q !== 0 ? q.toLocaleString() : '—'; L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${qs} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${isFCcls(u.cls) ? '**Yes**' : 'no'} |`); });
       const moreN = (neverFC.length + neverPaper.length) - toCountRows.length;
       if (moreN > 0) L.push('', `_+${moreN} more due-today item(s)._`);
     }
@@ -781,8 +781,8 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       L.push('', `### ⏱ Counted EARLY this period — ${m(bs.early)}`, '');
       L.push('_QSRSoft already shows these counted; a recount will **not** recover this period\'s dollars (they cascade). Recount only if a specific count looks wrong — this is NOT "just go count it" money._', '');
       if (earlyItems.length) {
-        L.push('| Item | WRIN | Class | On-hand $ | Last counted |', '|---|---|---|---:|---|');
-        earlyItems.forEach(u => L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${u.lastCounted || '—'} |`));
+        L.push('| Item | WRIN | Class | On-hand qty | On-hand $ | Last counted |', '|---|---|---|---:|---:|---|');
+        earlyItems.forEach(u => { const q = Number(u.totalUnits); const qs = Number.isFinite(q) && q !== 0 ? q.toLocaleString() : '—'; L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${qs} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${u.lastCounted || '—'} |`); });
         const moreE = (bs.early?.n || 0) - earlyItems.length;
         if (moreE > 0) L.push('', `_+${moreE} more counted-early item(s)._`);
       }
