@@ -20,6 +20,7 @@ import {
   buildIncompleteCountMessage, diagnoseIncompleteCount,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
+import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 
@@ -676,6 +677,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const varByLoc = useMemo(() => groupByLoc(variance), [variance]);
   const wasteByLoc = useMemo(() => groupByLoc(waste), [waste]);
   const xferByLoc = useMemo(() => groupByLoc(transfers), [transfers]);
+  // Unmatched-transfer set (integrity #47) — computed district-wide over ALL loaded transfers (the
+  // mirror side lives at another store), keyed by `${normLoc}|${transferId}`. Fed to every store's
+  // diagnosis so the transfers check can flag a transfer with no counterparty side.
+  const unmatchedXfer = useMemo(() => flagUnmatchedTransfers(transfers, [...new Set(transfers.map(t => t.loc))]), [transfers]);
   // Raw-item registers grouped by loc; reshape for the engine (counts = inventory events).
   const rawByLoc = useMemo(() => {
     const m = {};
@@ -883,6 +888,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             variance: varByLoc[loc] || [],
             waste: wasteByLoc[loc] || [],
             transfers: xferByLoc[loc] || [],
+            unmatchedTransfers: unmatchedXfer,
             rawItems: rawByLoc[loc] || [],
           },
         });
@@ -927,6 +933,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         variance: varByLoc[loc] || [],
         waste: wasteByLoc[loc] || [],
         transfers: xferByLoc[loc] || [],
+        unmatchedTransfers: unmatchedXfer,
         rawItems: rawByLoc[loc] || [],
       },
     });

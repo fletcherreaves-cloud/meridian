@@ -273,24 +273,32 @@ export const DEFAULT_CHECKS = [
     // boundary on paper. Elevate those + prompt for a signed slip on BOTH sides in the same period.
     // (Full unmatched-side detection — a Transfer-In with no counterparty Transfer-Out — needs
     // district-wide transfer data, not the single-store diagnosis context; tracked as future.)
-    id: 'transfers', label: 'Transfers — large / not-posted / EOM-window', order: 70, enabled: true,
+    id: 'transfers', label: 'Transfers — large / not-posted / EOM-window / unmatched', order: 70, enabled: true,
     requires: ['transfers'], params: { largeAmt: 100 },
     run: (ctx) => {
       const { flagged, netAmt } = summarizeTransfers(ctx.data.transfers || [], { largeAmt: ctx.params.largeAmt });
       const windowStart = countWindowStartTs(ctx.period);
+      // Unmatched-side set (integrity #47): computed district-wide upstream (dashboard) since the
+      // matching counterparty side lives at ANOTHER store; passed in as a Set of `${normLoc}|${id}`.
+      const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+      const unmatched = ctx.data.unmatchedTransfers instanceof Set ? ctx.data.unmatchedTransfers : null;
+      const myNorm = norm(ctx.store);
       return flagged.map(t => {
         const notPosted = t.status !== 'approved';
         const tt = Date.parse(t.dt);
         const boundary = windowStart != null && !Number.isNaN(tt) && tt >= windowStart;
-        const sev = notPosted ? (boundary ? SEVERITY.high : SEVERITY.medium)
-                              : (boundary ? SEVERITY.medium : SEVERITY.info);
+        const isUnmatched = !!unmatched && unmatched.has(myNorm + '|' + t.id);
+        let sev = notPosted ? (boundary ? SEVERITY.high : SEVERITY.medium)
+                            : (boundary ? SEVERITY.medium : SEVERITY.info);
+        if (isUnmatched) sev = SEVERITY.high;   // no mirror at a sister store = the strongest signal
         const notes = [];
+        if (isUnmatched) notes.push('NO matching side found at the paired sister store — possible phantom transfer; confirm the other store logged the mirror In/Out for the same $ and date (or that both sides land in the same period)');
         if (notPosted) notes.push('NOT posted — verify');
         if (boundary) notes.push('logged inside the count window — the classic phantom-transfer timing; confirm a signed physical slip on BOTH stores and that the counterparty logged the matching side in the same period');
         return mkFinding('transfers', sev,
-          `Transfer ${t.dir} ${notPosted ? `(${t.status})` : ''}${boundary ? ' · EOM-window' : ''} — store ${t.counterpartyNsn}`,
+          `Transfer ${t.dir} ${notPosted ? `(${t.status})` : ''}${isUnmatched ? ' · UNMATCHED' : boundary ? ' · EOM-window' : ''} — store ${t.counterpartyNsn}`,
           `${_mny(t.total)} on ${t.dt}${notes.length ? ' — ' + notes.join('; ') : ''} (period net ${_mny(netAmt)})`,
-          t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn, boundary });
+          t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn, boundary, unmatched: isUnmatched });
       });
     },
   },
@@ -476,7 +484,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
     const haveData = (c.requires || []).every(k => data[k] != null && (!Array.isArray(data[k]) || data[k].length));
     if (!haveData || c.pending) { pending.push({ id: c.id, label: c.label, reason: c.pending ? 'awaiting data pull' : 'no data' }); continue; }
     try {
-      const got = c.run({ data, params: c.params || {}, period, asOf }) || [];
+      const got = c.run({ data, params: c.params || {}, period, asOf, store }) || [];
       got.forEach(f => { f.checkLabel = c.label; findings.push(f); });
       ran.push({ id: c.id, label: c.label, count: got.length });
     } catch (e) { ran.push({ id: c.id, label: c.label, error: String(e && e.message || e) }); }

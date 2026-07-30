@@ -134,6 +134,38 @@ export function mapTransferLines(rows = []) {
   }));
 }
 
+// Unmatched-side detection (integrity #47): a real inter-store transfer shows up on BOTH stores —
+// an Out at the sender and a matching In at the receiver, same amount + date. A transfer whose
+// counterparty is one of OUR stores but has no mirror record is a phantom-transfer risk (a paper
+// move with no physical product, or a pair booked into different periods on each side). Only flagged
+// when the counterparty is in the loaded store set — an outside-org store's side we simply never see.
+// Returns a Set of `${normLoc}|${transferId}` keys (loc-scoped so ids can't collide across stores).
+export function flagUnmatchedTransfers(lines = [], ourLocs = []) {
+  const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+  const dayDiff = (a, b) => { const ta = Date.parse(a), tb = Date.parse(b); return (Number.isNaN(ta) || Number.isNaN(tb)) ? 999 : Math.abs(ta - tb) / 86400000; };
+  const ours = new Set((ourLocs || []).map(norm));
+  // Collapse to one header per (loc, transferId).
+  const headers = new Map();
+  for (const l of (lines || [])) {
+    const id = l.transferId ?? l.id; if (id == null) continue;
+    const key = norm(l.loc) + '|' + id;
+    if (!headers.has(key)) headers.set(key, {
+      id, key, loc: norm(l.loc), dir: l.dir, cp: norm(l.counterpartyNsn),
+      total: Number(l.transferTotal) || 0, dt: String(l.dt || '').slice(0, 10),
+    });
+  }
+  const hs = [...headers.values()];
+  const unmatched = new Set();
+  for (const h of hs) {
+    if (!h.cp || !ours.has(h.cp)) continue;   // counterparty outside our org → can't verify, skip
+    const mirror = hs.find(o =>
+      o.loc === h.cp && o.cp === h.loc && o.dir !== h.dir &&
+      Math.abs((o.total || 0) - (h.total || 0)) <= 1 && dayDiff(o.dt, h.dt) <= 1);
+    if (!mirror) unmatched.add(h.key);
+  }
+  return unmatched;
+}
+
 // Net In/Out $ by class + a list of transfers to eyeball (large / not-approved).
 export function summarizeTransfers(lines = [], { largeAmt = 100 } = {}) {
   let inTotal = 0, outTotal = 0;
