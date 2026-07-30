@@ -12,7 +12,7 @@ import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
-  saveEomItemDisposition, loadEomItemDisposition,
+  saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
 } from '../lib/supabase.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
@@ -633,6 +633,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
   // Load the editable diagnosis-flow config once on mount.
   useEffect(() => { loadEomDiagConfig().then(c => { if (c) setDiagCfg(c); }).catch(() => {}); }, []);
+  // Self-serve beverage-tower locs (integrity #47) — suppress the fountain-yield "loss" flag for
+  // stores where low yield is structural (free refills). One tiny 2-column read, once.
+  const [selfServeTowers, setSelfServeTowers] = useState(new Set());
+  useEffect(() => { loadSelfServeTowerLocs().then(setSelfServeTowers).catch(() => {}); }, []);
   // The active check registry (defaults + saved overrides), passed to runDiagnosis.
   const activeChecks = useMemo(() => applyChecksConfig(diagCfg || []), [diagCfg]);
 
@@ -889,6 +893,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             waste: wasteByLoc[loc] || [],
             transfers: xferByLoc[loc] || [],
             unmatchedTransfers: unmatchedXfer,
+            selfServeTower: selfServeTowers.has(unpad(loc)),
             rawItems: rawByLoc[loc] || [],
           },
         });
@@ -934,6 +939,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         waste: wasteByLoc[loc] || [],
         transfers: xferByLoc[loc] || [],
         unmatchedTransfers: unmatchedXfer,
+        selfServeTower: selfServeTowers.has(unpad(loc)),
         rawItems: rawByLoc[loc] || [],
       },
     });

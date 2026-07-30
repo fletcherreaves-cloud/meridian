@@ -209,6 +209,16 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'unrealistic-over')).toBe(false);
   });
 
+  it('bib-yield exempts self-serve-tower stores (info, not a medium loss)', () => {
+    const variance = [{ wrin: 'coke', descr: 'COKE BIB', dolDiff: -200, rawWaste: 0, compWaste: 0 }];
+    const flagged = runDiagnosis({ store: 's', period: '2026-07', data: { variance, selfServeTower: false } }).findings.find(x => x.checkId === 'bib-yield');
+    expect(flagged.severity).toBe(SEVERITY.medium);
+    const exempt = runDiagnosis({ store: 's', period: '2026-07', data: { variance, selfServeTower: true } }).findings.find(x => x.checkId === 'bib-yield');
+    expect(exempt.severity).toBe(SEVERITY.info);   // acknowledged, not an action item
+    expect(exempt.data.exempt).toBe(true);
+    expect(exempt.detail).toMatch(/self-serve|structural|free refills/i);
+  });
+
   it('transfers flags an EOM-count-window transfer as a phantom-transfer risk', () => {
     const transfers = [
       { id: 'A', dir: 'In', status: 'approved', dt: '2026-07-30', lineAmt: 200, transferTotal: 200, counterpartyNsn: '3708', cls: 'Food' }, // inside count window

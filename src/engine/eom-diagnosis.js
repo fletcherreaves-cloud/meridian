@@ -330,8 +330,18 @@ export const DEFAULT_CHECKS = [
         && ((Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01));
       if (!hits.length) return [];
       const total = hits.reduce((s, v) => s + (v.dolDiff || 0), 0);
+      const names = `${hits.map(v => v.descr).slice(0, 6).join(', ')}${hits.length > 6 ? '…' : ''}`;
+      // Self-serve beverage-tower EXEMPTION (integrity #47, owner): at stores with a dining-room
+      // self-serve tower, fountain yield runs structurally low because guests take allowed free
+      // refills we can't meter. Don't flag it as a loss — surface it as an INFO note (not an action
+      // item) so it's acknowledged + transparent, not silently dropped. Flag is per-store from VLH config.
+      if (ctx.data.selfServeTower) {
+        return [mkFinding('bib-yield', SEVERITY.info, `${hits.length} beverage item(s) short w/ zero waste — expected (self-serve tower)`,
+          `${names} — $${Math.round(Math.abs(total))} short, no waste logged. This store has a self-serve beverage tower, so low fountain yield is STRUCTURAL (free refills we can't meter), not a loss or portioning issue — not flagged. Only investigate if it's far beyond this store's usual (then check BIB connections / syrup ratios).`,
+          Math.abs(total), { items: hits.map(v => v.wrin), selfServeTower: true, exempt: true })];
+      }
       return [mkFinding('bib-yield', SEVERITY.medium, `${hits.length} beverage item(s) short with zero waste`,
-        `${hits.map(v => v.descr).slice(0, 6).join(', ')}${hits.length > 6 ? '…' : ''} — $${Math.round(Math.abs(total))} short, no waste logged. Check BIB yield settings / syrup-to-water ratios + BIB connections; recount.`,
+        `${names} — $${Math.round(Math.abs(total))} short, no waste logged. Check BIB yield settings / syrup-to-water ratios + BIB connections; recount.`,
         Math.abs(total), { items: hits.map(v => v.wrin) })];
     },
   },

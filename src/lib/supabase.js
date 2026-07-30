@@ -1443,6 +1443,20 @@ export async function loadDtHistory(days = 90) {
 
 // ── eBOS monthly op supplies by store ────────────────────────────────────────
 // Returns { [loc]: totalOps } where loc is the unpadded NSN string, for a given month.
+// Self-serve beverage-tower flag per store (integrity #47 — the fountain-yield exemption). Reads
+// store_vlh_config.in_store ('self_serve' vs 'crew_pour'); returns a Set of normalized (unpadded)
+// locs that have a self-serve tower. Egress-minimal (2 columns). Empty/failed → empty set (no
+// suppression) so we never HIDE a real loss because config wasn't loaded.
+export async function loadSelfServeTowerLocs() {
+  if (!supabase) return new Set();
+  try {
+    const { data, error } = await supabase.from('store_vlh_config').select('loc,in_store');
+    if (error) { console.warn('[Meridian] loadSelfServeTowerLocs:', error.message); return new Set(); }
+    const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+    return new Set((data || []).filter(r => r.in_store === 'self_serve').map(r => norm(r.loc)));
+  } catch (e) { console.warn('[Meridian] loadSelfServeTowerLocs:', e?.message || e); return new Set(); }
+}
+
 export async function loadEbosMonthlyByStore(year, month) {
   if (!supabase) return {};
   const y = String(year), m = String(month).padStart(2, '0');
