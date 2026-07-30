@@ -41,6 +41,11 @@ function lastPeriods(period, n = 6) {
   return out.reverse();
 }
 
+// Standardized modal close ✕ — pinned to the top-right corner of the modal container so it
+// lands in the SAME place on every panel (owner req #43), instead of riding at the end of the
+// header row. The container must be position:relative (added to each modal below).
+const MODAL_X = { position: 'absolute', top: '10px', right: '14px', background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', lineHeight: 1, cursor: 'pointer', zIndex: 6, padding: '2px 5px' };
+
 const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
 const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(0) + '%';
@@ -1139,11 +1144,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     },
       div({
         onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '640px', maxHeight: '85vh', overflow: 'auto', padding: '18px' },
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '640px', maxHeight: '85vh', overflow: 'auto', padding: '18px', position: 'relative' },
       },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
           div({ style: { fontWeight: 700, color: 'var(--text)' } }, `✉️ Store message — ${draft.name}`),
-          h('button', { onClick: () => setDraft(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+          h('button', { onClick: () => setDraft(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
         div({ style: { fontSize: '13px', color: 'var(--text)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: 'var(--surf3)', borderRadius: '6px', border: '1px solid var(--bdr)' } }, draft.subject),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Message'),
@@ -1170,11 +1175,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     },
       div({
         onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '720px', maxHeight: '85vh', overflow: 'auto', padding: '18px' },
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '720px', maxHeight: '85vh', overflow: 'auto', padding: '18px', position: 'relative' },
       },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
           div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🔬 Food-Cost Diagnosis — ${diag.name}`),
-          h('button', { onClick: () => setDiag(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+          h('button', { onClick: () => setDiag(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } }, diag.result.summary),
 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
@@ -1246,11 +1251,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       },
         div({
           onClick: e => e.stopPropagation(),
-          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '88vh', overflow: 'auto', padding: '18px' },
+          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' },
         },
           div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
             div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 Item journeys — ${journeys.name}`),
-            h('button', { onClick: () => setJourneys(null), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+            h('button', { onClick: () => setJourneys(null), style: MODAL_X }, '✕')),
           div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } },
             `${journeys.list.length} item${journeys.list.length !== 1 ? 's' : ''} pulled for ${period}, worst net-variance first. Pick an item to trace its count cycle.`),
 
@@ -1287,7 +1292,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     },
       div({
         onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '860px', maxHeight: '88vh', overflow: 'auto', padding: '18px' },
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '860px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' },
       },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap' } },
           div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🔁 Chronic Offenders — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
@@ -1299,7 +1304,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   key: n, onClick: () => { setChronicLookback(n); runChronicScan(n); }, disabled: chronicBusy,
                   style: { background: chronicLookback === n ? '#f5bc00' : 'var(--surf3)', color: chronicLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: chronicBusy ? 'default' : 'pointer' },
                 }, n)))),
-            h('button', { onClick: () => setChronicOpen(false), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕'))),
+            h('button', { onClick: () => setChronicOpen(false), style: MODAL_X }, '✕'))),
         div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
           chronicBusy ? 'Scanning…'
             : chronic?.error ? `Scan failed: ${chronic.error}`
@@ -1339,11 +1344,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     },
       div({
         onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '900px', maxHeight: '88vh', overflow: 'auto', padding: '18px' },
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '900px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' },
       },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
           div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 FOB component breakdown — ${period}`),
-          h('button', { onClick: () => setFobOpen(false), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+          h('button', { onClick: () => setFobOpen(false), style: MODAL_X }, '✕')),
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' } },
           div({ style: { fontSize: '12px', color: 'var(--text3)' } },
             `${rows.length} store${rows.length !== 1 ? 's' : ''} in view · where each store's food-cost dollars are leaking`),
@@ -1362,11 +1367,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     },
       div({
         onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '620px', maxHeight: '85vh', overflow: 'auto', padding: '18px' },
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '620px', maxHeight: '85vh', overflow: 'auto', padding: '18px', position: 'relative' },
       },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
           div({ style: { fontWeight: 700, color: 'var(--text)' } }, '⚙ Edit diagnosis flow'),
-          h('button', { onClick: () => setFlowOpen(false), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', cursor: 'pointer' } }, '✕')),
+          h('button', { onClick: () => setFlowOpen(false), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '12px' } },
           'Reorder, enable/disable, and tune each check. Applies to every store’s 🔬 Diagnose. Saved to the cloud.'),
 
