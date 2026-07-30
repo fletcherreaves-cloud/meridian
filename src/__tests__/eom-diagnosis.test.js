@@ -100,6 +100,30 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(f.data.late).toBe(false); // 07-05 is early → recount won't recover
     expect(f.detail).toMatch(/won't recover/i);
   });
+
+  it('uom-sanity flags a variance that is a clean whole-case multiple (verify entry)', () => {
+    const data = {
+      variance: [
+        { wrin: 'w1', descr: 'QP Meat', cls: 'Food', variance: -897, dolDiff: -1200 }, // 897/300 ≈ 2.99 → 3 cases
+        { wrin: 'w2', descr: 'Cheese', cls: 'Food', variance: -47, dolDiff: -80 },      // 47/12 = 3.9 → not clean
+      ],
+      rawItems: [
+        { wrin: 'w1', caseSz: 300 },
+        { wrin: 'w2', caseSz: 12 },
+      ],
+    };
+    const res = runDiagnosis({ store: 's', period: '2026-07', data });
+    const flags = res.findings.filter(f => f.checkId === 'uom-sanity');
+    expect(flags.map(f => f.data.wrin)).toEqual(['w1']); // only the clean case-multiple
+    expect(flags[0].data.cases).toBe(3);
+    expect(flags[0].severity).toBe(SEVERITY.info); // a verify nudge, not a hard claim
+    expect(flags[0].detail).toMatch(/case-vs-each/i);
+  });
+
+  it('uom-sanity stays silent when no case sizes are available', () => {
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { variance: [{ wrin: 'w1', variance: -900, dolDiff: -1200 }] } });
+    expect(res.findings.some(f => f.checkId === 'uom-sanity')).toBe(false);
+  });
 });
 
 describe('applyManagerRisk overlay', () => {

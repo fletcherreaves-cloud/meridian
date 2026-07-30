@@ -250,6 +250,7 @@ export async function saveSmgFullscale(rows) {
     report_end:      r.reportEnd    || null,
     osat_top2:       r.osatTop2     ?? null,
     osat_5:          r.osat5        ?? null,
+    osat_1:          r.osat1        ?? null,
     osat_avg:        r.osatAvg      ?? null,
     osat_b2b:        r.osatB2B      ?? null,
     accuracy_b2b:    r.accuracyB2B  ?? null,
@@ -284,6 +285,7 @@ export async function loadSmgFullscale({ year, month } = {}) {
     reportEnd:      r.report_end,
     osatTop2:       r.osat_top2,
     osat5:          r.osat_5,
+    osat1:          r.osat_1,
     osatAvg:        r.osat_avg,
     osatB2B:        r.osat_b2b,
     accuracyB2B:    r.accuracy_b2b,
@@ -1631,7 +1633,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // + Promise.allSettled so a partial failure (free-tier egress throttle) still keeps the
   // RECENT days every current-window tile/form needs, and one bad page can't reject the whole
   // load. Aggregation is by (loc,dt) so page order doesn't affect the result.
-  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
+  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
   const PAGE = 1000;
   const { count } = await supabase.from('qsr_daily_activity')
     .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
@@ -1661,6 +1663,8 @@ export async function loadQsrActSummary(daysBack = 35) {
       projGC: 0, projSales: 0,
       lySales: 0, lyGc: 0,
       actHrs: 0, needHrs: 0,
+      _kvsH: 0, _kvsU: 0,
+      _mfyTime: 0, _mfyCnt: 0,
       _isQsrAct: true,
     };
     map[key].sales        += r.product_sales   || 0;
@@ -1689,6 +1693,18 @@ export async function loadQsrActSummary(daysBack = 35) {
     // the auto-pulled DAR labor totals (cloud-fresh on every device).
     map[key].actHrs       += r.actual_punched_hours || 0;
     map[key].needHrs      += r.total_needed_hours   || 0;
+    // KVS Healthy Usage components: did the store open BOTH prep-table sides (MFY2) when the
+    // item volume called for it. healthy_count = time side 2 was correctly on; unhealthy_count =
+    // time it was called for but off. Healthy Usage % = healthy ÷ (healthy+unhealthy) — 100% if on
+    // the whole time it's needed, 50% if half, blank when volume never called for side 2 (NOT a
+    // penalty). Summed across hour slots; ratio finalized below. (owner-explained 2026-07-30)
+    map[key]._kvsH        += r.healthy_count   || 0;
+    map[key]._kvsU        += r.unhealthy_count || 0;
+    // KVS Time components — the Kitchen Video System stations ARE the MFY (make-for-you) lines,
+    // so the DAR's report-computed "KVS Time Per GC" = total MFY serve time ÷ total MFY trans.
+    // Sum the raw ms + counts across hour slots; finalize per-GC seconds below.
+    map[key]._mfyTime     += (r.mfy1_untilserve || 0) + (r.mfy2_untilserve || 0);
+    map[key]._mfyCnt      += (r.mfy1_trans_cnt  || 0) + (r.mfy2_trans_cnt  || 0);
   }
   return Object.values(map).map(r => ({
     ...r,
@@ -1710,6 +1726,15 @@ export async function loadQsrActSummary(daysBack = 35) {
     // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
     // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
     oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
+    // KVS Healthy Usage (0–1 fraction) = healthy ÷ (healthy + unhealthy) order-health counts,
+    // summed across the day. Same 0–1 shape as the emailed Glimpse `kvsHealthy`, so it slots in
+    // as a metric-source fallback (kvsHealthy) and the One-Pager / AAG KVS row fills cloud-fresh.
+    kvsHealthy: (r._kvsH + r._kvsU) > 0 ? r._kvsH / (r._kvsH + r._kvsU) : null,
+    // KVS Time per GC (seconds) = total MFY serve time ÷ total MFY transaction count ÷ 1000.
+    // Reconciled EXACTLY to the DAR report's "KVS Time Per GC" column (store 3708, 2026-07-30:
+    // 06:00 1,192,796÷14÷1000 = 85s ✓ · 07:00 46.6s→47 ✓ · 08:00 61.4s→60 ✓). Cloud-fresh, so the
+    // One-Pager / AAG KVS-Time row fills from the DAR when the emailed Glimpse lags/omits KVS.
+    kvst: r._mfyCnt > 0 ? r._mfyTime / r._mfyCnt / 1000 : null,
     // Derive a QSR labor % from the day's product sales when an average crew rate
     // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
   }));
@@ -2405,6 +2430,40 @@ export async function loadQsrVarianceStat({ period } = {}) {
     yield: r.yield_val, yieldLo: r.yield_lo, yieldHi: r.yield_hi,
     pctOfSales: r.pct_sales, rawItemId: r.raw_item_id, updatedAt: r.updated_at,
   }));
+}
+
+// Variance history for one store across a set of periods (oldest→newest look-back) — powers the
+// Action-Items provenance panel (per-item month-over-month series + pattern classification).
+// Scoped to one loc + an explicit period list to keep egress bounded (on-demand, per modal open).
+export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
+  if (!supabase || !loc || !periods.length) return [];
+  const data = await fetchAll((from, to) =>
+    supabase.from('qsr_variance_stat').select('*')
+      .eq('loc', String(loc)).in('period', periods).range(from, to));
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    variance: r.variance, dolDiff: r.dol_diff, yield: r.yield_val,
+    yieldLo: r.yield_lo, yieldHi: r.yield_hi, pctOfSales: r.pct_sales,
+  }));
+}
+
+// DISTRICT-WIDE variance history across a set of periods — powers the Chronic Offenders scan
+// (which items are chronically High-Variance / Loss-Forming across ALL stores over a past window).
+// On-demand only (explicit "Run scan" button) — this reads many rows, so it must never auto-run.
+// Minimal columns to keep the egress bounded; optional `locs` narrows to the current filter.
+export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = {}) {
+  if (!supabase || !periods.length) return [];
+  const locSet = locs && locs.length ? new Set(locs.map(String)) : null;
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_variance_stat')
+      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to);
+    return q;
+  });
+  const rows = (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    variance: r.variance, dolDiff: r.dol_diff,
+  }));
+  return locSet ? rows.filter(r => locSet.has(String(r.loc))) : rows;
 }
 
 // ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────

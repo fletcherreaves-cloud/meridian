@@ -6835,11 +6835,19 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
   // Glimpse, freshest-per-day. R2P has no auto source, so it only shows from manual.
   const svcEffective = React.useMemo(()=>{
-    const gl=(ds?.glimpseRows||[]).map(r=>({loc:r.loc,date:r.date,
-      oepe:r.oepe,park:r.parkedPct,kvst:r.kvst,kvsu:r.kvsHealthy,r2p:null}));
-    const res=_recentWeek(mergeFresh(ds?.opsRows,gl));
-    return {...res,auto:(ds?.opsRows||[]).length===0&&gl.length>0};
-  },[ds?.opsRows?.length,ds?.glimpseRows?.length,effectiveDateRange]);
+    // FIELD-AWARE merge (Notes: Jul-2026) — each metric takes its freshest available source,
+    // low→high precedence: auto DAR (oepe/r2p derived) → emailed Glimpse (oepe/park/kvs) →
+    // manual Ops (all). This lets R2P (and OEPE) fill from the current DAR even when the manual
+    // Ops report is stale (Ops stopped Jul 15). KVS/DT-Parked still need Glimpse/Ops (no DAR src).
+    const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
+    const m=new Map();
+    const layer=(rows,map)=>{ for(const r of (rows||[])){ if(!r||!r.date)continue; const k=kk(r); const ex=m.get(k)||{loc:r.loc,date:r.date}; for(const dst in map){ const v=r[map[dst]]; if(v!=null&&!isNaN(v)&&v!==0) ex[dst]=v; } m.set(k,ex); } };
+    layer(ds?.qsrActSummaryRows,{oepe:'oepe',r2p:'r2p'});
+    layer(ds?.glimpseRows,{oepe:'oepe',park:'parkedPct',kvst:'kvst',kvsu:'kvsHealthy'});
+    layer(ds?.opsRows,{oepe:'oepe',park:'park',kvst:'kvst',kvsu:'kvsu',r2p:'r2p'});
+    const res=_recentWeek([...m.values()]);
+    return {...res,auto:(ds?.opsRows||[]).length===0};
+  },[ds?.opsRows?.length,ds?.glimpseRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
 
   // Channel sales mix: manual labor channel rows merged with auto Sales Ledger,
   // freshest-per-day (manual overrides the same day; ledger fills recent gaps).
@@ -7465,10 +7473,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // Digital sales section useMemo
   const digitalSec=React.useMemo(()=>{
-    if(!labInRange.length)return null;
+    // Channel breakdown (deliv/mop/kiosk) comes from channelRows = manual labor MERGED with the
+    // emailed Sales Ledger — NOT labInRange (labor + DAR), because the DAR has no channel split,
+    // so once manual labor stopped the tile read 0% digital (Notes: Jul-2026). Sales Ledger is
+    // the current channel source.
+    const chRows=channelRows.rows||[];
+    if(!chRows.length)return null;
     const sm=allLocs.map(loc=>{
-      const rows=labInRange.filter(r=>r.loc===String(loc));
-      const tot=rows.reduce((a,r)=>a+(r.allNetSales||0),0);
+      const rows=chRows.filter(r=>r.loc===String(loc));
+      const tot=rows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
       if(!tot)return null;
       const deliv=rows.reduce((a,r)=>a+(r.delivSales||0),0);
       const mop=rows.reduce((a,r)=>a+(r.mopSales||0),0);
@@ -7493,7 +7506,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       okMopPct:mktPct(okLocs,'mop'),flMopPct:mktPct(flLocs,'mop'),
       okKioskPct:mktPct(okLocs,'kiosk'),flKioskPct:mktPct(flLocs,'kiosk'),
       digStoreCount:sm.filter(s=>s.dig>0).length,storeCount:sm.length};
-  },[labInRange,okLocs,flLocs,allLocs]);
+  },[channelRows,okLocs,flLocs,allLocs]);
 
   // ── No data state ─────────────────────────────────────────────
   // noData is false when either manual laborRows OR auto-synced qsrActSummaryRows are present

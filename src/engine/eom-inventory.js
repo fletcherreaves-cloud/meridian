@@ -167,8 +167,8 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
   //   never   — no count on record this period → a true blank (QSRSoft flags this too).
   //   early   — counted THIS period but before the final window → QSRSoft shows it counted;
   //             recounting it is the cascaded-count discussion, NOT free "just count it" money.
-  //   stale   — last counted in a PRIOR period → likely an inactive item carrying a residual
-  //             on-hand "ghost float" (QSRSoft drops it from the active count list). These
+  //   stale   — last counted in a PRIOR period → likely an obsolete / discontinued / inactive item
+  //             carrying a residual on-hand (QSRSoft drops it from the active count list). These
   //             inflate value-at-risk without being real to-count work — the Durant #5985 case.
   const periodStart = /^\d{4}-\d{2}$/.test(period || '') ? new Date(period + '-01T00:00:00') : null;
 
@@ -191,7 +191,7 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     })
     .filter(r => r.valueAtRisk >= minValue)
     .sort((a, b) => b.valueAtRisk - a.valueAtRisk);
-  // Tally by state so callers can separate true blanks from counted-early / ghost floats.
+  // Tally by state so callers can separate true blanks from counted-early / obsolete-inactive items.
   const byState = { never: { n: 0, value: 0 }, early: { n: 0, value: 0 }, stale: { n: 0, value: 0 } };
   for (const u of uncounted) { const b = byState[u.state]; if (b) { b.n++; b.value += u.valueAtRisk; } }
 
@@ -209,7 +209,7 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     byClass: Object.values(byClass).sort((a, b) => b.valueAtRisk - a.valueAtRisk),
     byState,
     // "True blanks" only — items with NO count this period. This is the number that means
-    // "count these before close"; early/stale items are a different (cascade / ghost) story.
+    // "count these before close"; early/stale items are a different (cascade / obsolete-inactive) story.
     trueBlankCount: byState.never.n,
     trueBlankValue: byState.never.value,
   };

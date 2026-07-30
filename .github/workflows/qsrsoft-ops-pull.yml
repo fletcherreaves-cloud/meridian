@@ -1,0 +1,58 @@
+name: QSRSoft Operations Report Pull
+
+on:
+  schedule:
+    # US Central-anchored (GitHub cron is fixed UTC, no DST). The Operations Report
+    # finalizes overnight, so a morning pull captures the prior full day + LY.
+    - cron: '0 10 * * *'   # ~5:00 AM CDT — previous day fully closed
+    - cron: '0 19 * * *'   # ~2:00 PM CDT — current-day refresh
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on initial run (default: 45)'
+        required: false
+        default: '45'
+      days_recent:
+        description: 'Rolling re-pull window in days (default: 4)'
+        required: false
+        default: '4'
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date for an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft Operations Report data
+        run: node scripts/qsrsoft-ops-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_OPS_DAYS_BACK:     ${{ github.event.inputs.days_back   || '45' }}
+          QSRSOFT_OPS_DAYS_RECENT:   ${{ github.event.inputs.days_recent || '4'  }}
+          QSRSOFT_OPS_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
+          QSRSOFT_OPS_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
+          QSRSOFT_OPS_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}

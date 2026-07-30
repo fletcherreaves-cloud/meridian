@@ -215,10 +215,71 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.602';
-const MERIDIAN_BUILD_DATE = '2026-07-29';
+const MERIDIAN_VERSION    = '4.624';
+const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.624', date:'2026-07-30', changes:[
+    'Yearly-targets file: now captures EVERY target column on the sheet (owner req), not just the speed/labor/FOB ones — Voice OSAT (5★) + Execute-as-Designed + OSAT B2B (1★) + 1-800 Contacts, Digital App % of sales + GC/R/D, McDelivery GC/R/D + wait time + star rating, Crew Staffing / Shift Leader / Manager / Total Headcount targets, and TTM Shift-Leader / 0-90 Crew / YTD Crew turnover targets. All 22 flow to ds.targets for every consumer on re-import. Also made all three pipeline paths (full rebuild + incremental + multi-sheet) use the fixed yearly parser so a re-drop lands regardless of how the file is processed.',
+  ]},
+  {version:'4.622', date:'2026-07-30', changes:[
+    'FIXED the real reason yearly targets weren\'t landing: the yearly-targets file (a "Table 1" layout with an Index row-counter column before the Restaurant column, and a category row above the real header) was parsed as 0 stores — so NONE of the file\'s targets flowed and the app silently fell back to static defaults. The parser now anchors on the Restaurant/Loc/Store column (not the Index counter) and picks the true header row, so every yearly target the file provides — OEPE, KVS time/usage, R2P, TPPH, Labor, FOB, Voice OSAT (5★, from VOICE OSAT PACE) and OSAT B2B (1★, from Overall Satisfaction B2B) — now flows to the reviews and every other target consumer on re-import. Regression test added.',
+  ]},
+  {version:'4.620', date:'2026-07-30', changes:[
+    'EOM Obsolete/Discontinued/Inactive guidance is now class-aware and written in terms managers use: always verify with a physical count first, then — Food/Condiment: if it won\'t be used before expiration, waste to zero to account for the balance, then deactivate the WRIN at a verified zero on-hand; Non-Product (promo / Happy Meal items / paper): count and KEEP it if usable (donation / local giveaway) — do not discard — deactivate only once genuinely used up and verified at zero. SAGE gives the same class-specific direction so it never tells a manager to discard usable non-product.',
+  ]},
+  {version:'4.619', date:'2026-07-30', changes:[
+    'Operations Report auto-pull — groundwork: a new pull (scripts/qsrsoft-ops-pull.mjs + daily workflow) captures the whole QSRSoft Operations Report as store-level daily REST data — Controls (discount, T-Reds before/after, meals, drawer, refunds), Labor (OT hours/$, crew, needed hours), Service (CTP/OEPE/DT/MFY/KVS/RTP), channel sales mix, and the 3 Peaks — all WITH last-year values. Kills the manual Operations/Controls upload dependency. (Ingestion layer; the tile wiring lands next.)',
+    'Leadership One-Pager: the OSAT B2B (1★) target now reads the effective/yearly targets (was only reading the static defaults), so the "Overall Satisfaction B2B" target from the yearly-targets file lands.',
+    'EOM diagnosis: removed the unverified "QSRSoft force-zeros deactivated items ~30–45 days" phrasing (owner is verifying) — the write-off-before-close guidance stands on its own.',
+  ]},
+  {version:'4.618', date:'2026-07-30', changes:[
+    'Leadership One-Pager (Owner→DO): the Supervisor / Patch Accountability section now pre-fills on the filled form — each supervisor with their patch\'s focus store and biggest gap (the patch\'s largest weekly $ opportunity + sales-vs-LY), leaving Committed action blank for the meeting. Maps by who RUNS the stores (live supervisor assignments — responsibility), not ownership, so a supervisor running stores they don\'t own is credited correctly.',
+  ]},
+  {version:'4.617', date:'2026-07-30', changes:[
+    'Leadership One-Pager: the OSAT B2B (1★) target now auto-fills from the yearly-targets file\'s "Overall Satisfaction B2B" column (re-import the yearly targets to pick it up).',
+  ]},
+  {version:'4.616', date:'2026-07-30', changes:[
+    'EOM Dashboard → new "🔁 Chronic offenders" scan: on demand, across the current location scope and a past window (3/6/12 periods), it surfaces the items that are chronically High-Variance / Loss-Forming / Fluctuating on our own pattern principles — ranked by how many stores carry the problem (a systemic/spec issue outranks a one-store fluke), with per-store drill-down and the month-over-month trail. Reads only when you click Run, scoped to your filter, so it stays light on data usage.',
+    'Leadership One-Pager: added one-click "‹ Last week" and "This week" buttons next to the week picker.',
+  ]},
+  {version:'4.615', date:'2026-07-30', changes:[
+    'KVS Time per GC now fills from the auto-pulled DAR — the report has no KVS field, but the KVS stations are the MFY make-lines, so it is computed as total MFY serve time ÷ total MFY transactions (reconciled exactly to QSRSoft\'s KVS Time Per GC column). With KVS Healthy Usage (v4.614), both KVS metrics are now cloud-fresh from the DAR and no longer depend on the manual Ops Report or the emailed Glimpse. KVS Healthy Usage measures whether a store opens the 2nd prep-table side when item volume calls for it (blank is correct when volume doesn\'t call for it — not a penalty).',
+  ]},
+  {version:'4.614', date:'2026-07-30', changes:[
+    'Review scorecards: KVS Healthy Usage now fills from the auto-pulled DAR (healthy ÷ total order-health counts, cloud-fresh) so it no longer depends on the emailed Daily Glimpse — recent weeks populate. Voice metrics rewired per owner: "Voice OSAT" now uses the 5★ share only (rated 5 is all that counts), and "Voice B2B (Accuracy)" becomes "OSAT B2B" using the 1★ (worst-box) share where lower is better. A footnote now clarifies these Voice numbers are the latest full SMG month (monthly), not the review week. (KVS Time per GC still pending its DAR field.)',
+  ]},
+  {version:'4.613', date:'2026-07-30', changes:[
+    'EOM Action Items now show ONE line per item: when a single product trips several checks at once, the most urgent result + action stays on the surface and the other checks, the pattern chip, and the month-over-month history all collapse into the expand — so a manager sees one clear decision per item, not several rows for the same product.',
+  ]},
+  {version:'4.611', date:'2026-07-30', changes:[
+    'EOM Food-Cost Diagnosis now carries a Decision guide (2×2) grounded in verified fact: because QSRSoft anchors variance at the period boundary, a mid-month COUNT ERROR washes out of the monthly figure — so the report/SAGE now separate a locked, verified one-off ("drop it") from a recurring real loss ("can\'t recover this month, but fix the cause — it comes back") from an early count never re-counted at EOM ("still fixable — recount to protect next month\'s opening").',
+    'Added a UOM-sanity check: a variance whose quantity is a clean whole-case multiple (the classic "3 cases entered as 3 eaches" blunder) is now flagged as verify-first — a possible units-entry error, not a confirmed loss — before it corrupts the monthly number and next month\'s baseline.',
+  ]},
+  {version:'4.610', date:'2026-07-30', changes:[
+    'EOM Food-Cost Diagnosis Action Items now carry their own provenance: click any item to expand its month-over-month variance history (with the worst month flagged and full-case counts where known), and each item is auto-tagged with a pattern chip — Within Tolerance, High Variance, Fluctuating, Loss Pattern Forming, or Inconsistent Count(s) — so a one-off reads differently from a chronic bleeder, and a real-usage loss reads differently from a count-integrity swing. A Look-back selector (3 / 6 / 12 periods) tunes the window.',
+  ]},
+  {version:'4.609', date:'2026-07-30', changes:[
+    'Fixed the EOM Dashboard header — the Scoreboard / EOM Count / Count Cycle toggle no longer squishes when a sync-status message appears; the controls row wraps instead.',
+  ]},
+  {version:'4.608', date:'2026-07-30', changes:[
+    'EOM now logs each store’s count completion over time: the On-Hand pull appends a timestamped snapshot (overall % + per-class %) once per store per hour, building a trajectory of WHEN each store counts each class through the cycle — useful for coaching pace and spotting padding. A trajectory view is the follow-on.',
+  ]},
+  {version:'4.607', date:'2026-07-30', changes:[
+    'EOM Dashboard now shows completion BY CLASS across the district — Food, Condiment, Paper, Non-Product — with Food + Condiment highlighted as the profit drivers to finish first, and Non-Product treated as a last-day class (a low % early is expected, not behind). Renamed the "Year-Round" view to "Count Cycle".',
+  ]},
+  {version:'4.606', date:'2026-07-30', changes:[
+    'EOM Food-Cost Diagnosis: the FOB Analysis report now sits ABOVE the Action Items (reversed per owner preference — it is where the work happens), and the report now prints an itemized "To-count list" of the never-counted products a store must complete before close (not just a count) — which also flows into SAGE.',
+  ]},
+  {version:'4.605', date:'2026-07-29', changes:[
+    'At-A-Glance Service tile now fills R2P from the auto DAR even when the manual Operations Report is stale (it was hard-wired to manual-only). Service metrics now merge field-by-field so each takes its freshest source (DAR, then Glimpse, then manual Ops). KVS Time/Healthy, DT-Parked, and Controls T-Reds/Cash-O/S still require the Operations Report / Controls upload (stopped Jul 15) — the durable fix is auto-pulling that report.',
+  ]},
+  {version:'4.604', date:'2026-07-29', changes:[
+    'Fixed At-A-Glance Digital Sales showing 0% / "0 of 27 reporting": the tile pulled its channel breakdown (McDelivery / MOP / Kiosk) from a source that has no channel split once manual uploads stop; it now reads from the emailed Sales Ledger (which carries the channels and stays current). (Service R2P and KVS on the AAG tile are a separate known gap being worked next.)',
+  ]},
+  {version:'4.603', date:'2026-07-29', changes:[
+    'EOM diagnosis now prints an "Obsolete / Discontinued / Inactive — verify & clear" list — the stale / likely-deactivated items carrying a residual on-hand, each with its on-hand $, last-count date, and the two-way call: present & usable → count it ($0); obsolete/gone → write off now (−$X) so you time the loss cleanly before the period locks.',
+  ]},
   {version:'4.602', date:'2026-07-29', changes:[
     'One-Pager: KVS Time per GC + KVS Healthy Usage now appear on all three review forms (Organization / Patch / Restaurant), not just the store form.',
     'EOM Food-Cost Diagnosis: recount lists + the full item table now show the quantity variance expressed in full CASES (e.g. "~+3.0 cs") next to units — easier for a manager to know what to physically look for on a recount. (Uses the raw-item case size.)',
@@ -227,10 +288,10 @@ const MERIDIAN_CHANGELOG  = [
     'EOM Food-Cost Diagnosis now shows actual-vs-standard YIELD (the over-portioning fingerprint) — e.g. "over-portioned 52% of std" — with a "Portioning watch" section listing items running below their recipe yield band, so the fix points at the station\'s portioning, not another recount. Matches the strongest part of QSRSoft CoachQ\'s report. (The variance pull already computed the yield band; it now persists it — the yield_lo/yield_hi columns backfill on the next Variance pull, and need the schema.sql snippet run once.)',
   ]},
   {version:'4.600', date:'2026-07-29', changes:[
-    'EOM Food-Cost Diagnosis + SAGE now frame "uncounted" items correctly. The report has a Count-Integrity section that splits them into NEVER counted (true blanks — real recovery, count before close), counted EARLY (already counted; recount only if the count looks wrong — dollars are locked this period), and STALE / deactivated ghost-floats (verify → count if still usable, or write off before close). SAGE is told to respect this split so it never hands a GM a "go count $X of blanks" instruction unless that money is truly never-counted.',
+    'EOM Food-Cost Diagnosis + SAGE now frame "uncounted" items correctly. The report has a Count-Integrity section that splits them into NEVER counted (true blanks — real recovery, count before close), counted EARLY (already counted; recount only if the count looks wrong — dollars are locked this period), and STALE / obsolete / discontinued / inactive items (verify → count if still usable, or write off before close). SAGE is told to respect this split so it never hands a GM a "go count $X of blanks" instruction unless that money is truly never-counted.',
   ]},
   {version:'4.599', date:'2026-07-29', changes:[
-    'EOM uncounted-item diagnosis now explains WHY each item reads uncounted: NEVER counted (a true blank), counted EARLY this period (QSRSoft shows it counted — a cascade discussion, not free money), or STALE / prior-period (likely an inactive item carrying a residual on-hand "ghost float"). The class-chip hover shows each item\'s state + last-counted date, and the engine now separates true blanks from early/stale so value-at-risk isn\'t overstated. Resolves the "12 uncounted that QSRSoft doesn\'t flag" question.',
+    'EOM uncounted-item diagnosis now explains WHY each item reads uncounted: NEVER counted (a true blank), counted EARLY this period (QSRSoft shows it counted — a cascade discussion, not free money), or STALE / prior-period (likely an obsolete / discontinued / inactive item carrying a residual on-hand). The class-chip hover shows each item\'s state + last-counted date, and the engine now separates true blanks from early/stale so value-at-risk isn\'t overstated. Resolves the "12 uncounted that QSRSoft doesn\'t flag" question.',
   ]},
   {version:'4.598', date:'2026-07-29', changes:[
     'EOM Dashboard: on-demand "↻ On-Hand" and "↻ Variance" buttons pull fresh count-progress / raw-item data right now instead of waiting for the next scheduled run. (Requires the trigger-dar-sync edge function to be redeployed with the new allowlist entries.)',

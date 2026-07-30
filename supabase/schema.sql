@@ -323,7 +323,8 @@ create table if not exists public.smg_fullscale (
   report_end       text,                -- e.g. "6/30/2026"
   -- Overall Satisfaction (1-5 scale, % based)
   osat_top2        float,               -- % giving 4 or 5 (top-2-box, higher=better)
-  osat_5           float,               -- % giving 5 only (top-1-box)
+  osat_5           float,               -- % giving 5 only (top-1-box, = Voice OSAT on the reviews)
+  osat_1           float,               -- % giving 1 only (worst box, = OSAT B2B on the reviews; lower=better)
   osat_avg         float,               -- weighted average score 1-5
   -- Best-to-Best benchmarks (higher=better)
   osat_b2b         float,               -- % meeting Overall Satisfaction B2B standard
@@ -1505,6 +1506,66 @@ create table if not exists public.eom_count_status (
 alter table public.eom_count_status enable row level security;
 create policy "eom_count_status: public read"  on public.eom_count_status for select using (true);
 create policy "eom_count_status: public write" on public.eom_count_status for all using (true);
+
+-- ── Operations Report auto-pull (owner req 2026-07-30, #37) ───────────────────
+-- The QSRSoft Operations Report as store-level daily REST pulls (scripts/qsrsoft-ops-pull.mjs).
+-- Each table stores one row per store/day with a `metrics` JSONB (all selectCols + ly_/ybl_ twins,
+-- snake_cased) — avoids a 300-column schema and lets new fields land with no migration. Replaces
+-- the manual Operations Report / Controls upload + adds official LY. See
+-- memory/reference-operations-report-apis.md.
+create table if not exists public.qsr_cash_sheet (       -- Controls: discount, T-Reds, meals, drawer, refunds
+  loc text not null, dt date not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_labor_summary (    -- OT hours/$, crew labor, salaried mgr, gross (+ needed hrs)
+  loc text not null, dt date not null, metrics jsonb, needed jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_service_stats (    -- CTP/OEPE/DT/MFY/KVS/RTP/Bev (summary segment)
+  loc text not null, dt date not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_sales_mix (        -- channel sales breakdown + ly + ybl
+  loc text not null, dt date not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt));
+create table if not exists public.qsr_peaks_sales (      -- 3 Peaks daypart sales by channel
+  loc text not null, dt date not null, time_slice text not null, metrics jsonb, updated_at timestamptz default now(),
+  primary key (loc, dt, time_slice));
+do $$ declare t text; begin
+  foreach t in array array['qsr_cash_sheet','qsr_labor_summary','qsr_service_stats','qsr_sales_mix','qsr_peaks_sales'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists "%s: public read" on public.%I', t, t);
+    execute format('create policy "%s: public read" on public.%I for select using (true)', t, t);
+    execute format('drop policy if exists "%s: public write" on public.%I', t, t);
+    execute format('create policy "%s: public write" on public.%I for all using (true)', t, t);
+    execute format('create index if not exists %I on public.%I (dt desc)', t||'_dt_idx', t);
+  end loop;
+end $$;
+
+-- Per-location completion LOG (owner req 2026-07-30) — a timestamped snapshot of each store's
+-- count completion (overall + per class) appended by the On-Hand pull, deduped to one row per
+-- store per hour. Builds a trajectory of WHEN each store counts each class through the EOM cycle
+-- (start/finish times, class order, pace) — insightful for coaching + padding/pattern detection.
+create table if not exists public.eom_count_progress_log (
+  loc             text        not null,
+  period          text        not null,
+  snapshot_hour   text        not null,          -- "YYYY-MM-DDTHH" dedup key (≤1 row/store/hour)
+  snapshot_at     timestamptz not null,
+  pct_counted     numeric,
+  items_counted   integer,
+  items_total     integer,
+  believes_done   boolean,
+  food_pct        numeric,
+  condiment_pct   numeric,
+  paper_pct       numeric,
+  nonproduct_pct  numeric,
+  food_done       boolean,
+  condiment_done  boolean,
+  paper_done      boolean,
+  nonproduct_done boolean,
+  primary key (loc, period, snapshot_hour)
+);
+create index if not exists eom_count_progress_log_period_idx on public.eom_count_progress_log (period, loc, snapshot_at);
+alter table public.eom_count_progress_log enable row level security;
+create policy "eom_count_progress_log: public read"  on public.eom_count_progress_log for select using (true);
+create policy "eom_count_progress_log: public write" on public.eom_count_progress_log for all using (true);
 
 -- Flexible notification settings (jsonb — channels, recipients, thresholds).
 -- Single owner today (key='default'); keyed for future per-user flexibility.

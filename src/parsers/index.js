@@ -543,6 +543,8 @@ function parseTargets(wb,sheet){
     tRedAPct:    findCol(h,'T-Reds After %'),
     tRedAAvg:    findCol(h,'T-Reds After Avg'),
     tRedADollar: findCol(h,'T-Reds After $'),
+    // Voice / SMG — OSAT B2B (1★) review target
+    osatB2B:     fc(h,'Overall Satisfaction B2B','Overall Sat B2B','OSAT B2B'),
     // Controls — Promo/Discount
     promoCnt:    findCol(h,'Promo #'),
     promoPct:    findCol(h,'Promo %'),
@@ -600,6 +602,8 @@ function parseTargets(wb,sheet){
       tAvgCheck:   parseFloat(r[C.avgCheck])||0,
       tProdSales:  parseFloat(r[C.prodSales])||0,
       tR2p:        90,
+      tOsatB2B:    parsePct(r[C.osatB2B]),   // OSAT B2B (1★) target → One-Pager review
+
       // Labor
       tLabor:      parsePct(r[C.labor])||parsePct(r[C.crewLabor]),
       tCrewLabor:  parsePct(r[C.crewLabor]),
@@ -724,16 +728,20 @@ function parseMonthlyTargets(wb){
 function parseYearlyTargets(wb){
   const sheetName=wb.SheetNames.includes('Table 1')?'Table 1':wb.SheetNames[0];
   const raw=parseRaw(wb,sheetName);
-  // Header row: contains 'OEPE' and 'Park'
+  // Header row: contains 'OEPE' AND a store column ('Restaurant'/'Loc'/'Store'). Requiring the
+  // loc column avoids grabbing a category/title row above the real header (that row can carry the
+  // word "OEPE"/"Park" as a group label but has no Restaurant cell → 0 stores parsed).
   let hi=-1;
-  for(let i=0;i<Math.min(6,raw.length);i++){
-    const joined=(raw[i]||[]).map(c=>String(c||'').toLowerCase()).join(' ');
-    if(joined.includes('oepe')&&joined.includes('park')){hi=i;break;}
+  for(let i=0;i<Math.min(8,raw.length);i++){
+    const cells=(raw[i]||[]).map(c=>String(c||'').toLowerCase().trim());
+    const hasOepe=cells.some(c=>c.includes('oepe'));
+    const hasLoc=cells.some(c=>/^(restaurant|loc|store)$/.test(c));
+    if(hasOepe&&hasLoc){hi=i;break;}
   }
   if(hi<0){console.log('[YearlyTargets] header row not found');return {};}
   const h=raw[hi]||[];
-  // First 'Restaurant' column is the loc; all others are repeated for layout
-  const locCol=h.findIndex(c=>String(c||'').toLowerCase().trim()==='restaurant');
+  // First 'Restaurant'/'Loc'/'Store' column is the loc; all others are repeated for layout
+  const locCol=h.findIndex(c=>/^(restaurant|loc|store)$/.test(String(c||'').toLowerCase().trim()));
   const C={
     loc:    locCol,
     oepe:   fc(h,'OEPE\nPACE','OEPE PACE','OEPE\r\nPACE'),
@@ -744,6 +752,23 @@ function parseYearlyTargets(wb){
     tpph:   fc(h,'TPPH'),
     labor:  fc(h,'Labor'),
     fobT:   fc(h,'Food Over Base','FOB'),
+    osat:   fc(h,'VOICE OSAT PACE','Voice OSAT Pace','OSAT PACE','Voice OSAT'), // → Voice OSAT (5★) target on reviews
+    osatB2B:fc(h,'Overall Satisfaction B2B','Overall Sat B2B','OSAT B2B'), // → OSAT B2B (1★) target on reviews
+    // Full column capture (owner req 2026-07-30 — "capture all targets on that sheet"):
+    voiceEAD:  fc(h,'VOICE Execute As Designed','Execute As Designed','Voice Execute As Designed'),
+    contacts1800: fc(h,'1-800 Contacts','1800 Contacts'),
+    digAppPct: fc(h,'Digital App Percent of Sales','Digital App % of Sales','Digital App Percent'),
+    digAppGCRD:fc(h,'Digital App (GC/R/D)','Digital App GC/R/D'),
+    mcdGCRD:   fc(h,'McDelivery (GC/R/D)','McDelivery GC/R/D'),
+    mcdWait:   fc(h,'McDelivery Restaurant Wait Time','McDelivery Wait Time'),
+    mcdStars:  fc(h,'McDelivery Star Rating','McDelivery Stars'),
+    crewStaff: fc(h,'Crew Staffing Target','Crew Staffing'),
+    shiftLead: fc(h,'Shift Leader Target','Shift Leader'),
+    mgrTgt:    fc(h,'GM/DM/ Swing Mgr Target','GM/DM/Swing Mgr Target','Swing Mgr Target'),
+    headcount: fc(h,'Total Headcount Target  (All Hourly)','Total Headcount Target (All Hourly)','Total Headcount Target'),
+    toShiftLd: fc(h,'TTM Shift Leader T/O','Shift Leader T/O'),
+    toCrew090: fc(h,'0-90 Day Crew T/O','0-90 Crew T/O'),
+    toCrewYTD: fc(h,'YTD Crew T/O'),
   };
   const targets={};
   for(let i=hi+1;i<raw.length;i++){
@@ -760,6 +785,25 @@ function parseYearlyTargets(wb){
     if(C.tpph>=0&&parseFloat(r[C.tpph]))  t.tTpph=parseFloat(r[C.tpph]);
     if(C.labor>=0&&parsePct(r[C.labor]))  t.tLabor=parsePct(r[C.labor]);
     if(C.fobT>=0&&parsePct(r[C.fobT]))    t.tFOBTarget=parsePct(r[C.fobT]);
+    if(C.osat>=0&&parsePct(r[C.osat]))    t.tOsat=parsePct(r[C.osat]);
+    if(C.osatB2B>=0&&parsePct(r[C.osatB2B])) t.tOsatB2B=parsePct(r[C.osatB2B]);
+    // Full column capture — Voice EAD + Digital + McDelivery + staffing/headcount + turnover.
+    // %-style → parsePct; counts/times/ratings → parseFloat. Null-safe: only set when present.
+    const pf=(c)=>{const v=parseFloat(r[c]);return isNaN(v)?null:v;};
+    if(C.voiceEAD>=0&&parsePct(r[C.voiceEAD])!=null) t.tVoiceEAD=parsePct(r[C.voiceEAD]);
+    if(C.contacts1800>=0&&pf(C.contacts1800)!=null)  t.t1800Contacts=pf(C.contacts1800);
+    if(C.digAppPct>=0&&parsePct(r[C.digAppPct])!=null) t.tDigAppPct=parsePct(r[C.digAppPct]);
+    if(C.digAppGCRD>=0&&pf(C.digAppGCRD)!=null)      t.tDigAppGCRD=pf(C.digAppGCRD);
+    if(C.mcdGCRD>=0&&pf(C.mcdGCRD)!=null)            t.tMcdGCRD=pf(C.mcdGCRD);
+    if(C.mcdWait>=0&&pf(C.mcdWait)!=null)            t.tMcdWait=pf(C.mcdWait);
+    if(C.mcdStars>=0&&pf(C.mcdStars)!=null)          t.tMcdStars=pf(C.mcdStars);
+    if(C.crewStaff>=0&&pf(C.crewStaff)!=null)        t.tCrewStaffing=pf(C.crewStaff);
+    if(C.shiftLead>=0&&pf(C.shiftLead)!=null)        t.tShiftLeaders=pf(C.shiftLead);
+    if(C.mgrTgt>=0&&pf(C.mgrTgt)!=null)              t.tManagers=pf(C.mgrTgt);
+    if(C.headcount>=0&&pf(C.headcount)!=null)        t.tHeadcount=pf(C.headcount);
+    if(C.toShiftLd>=0&&parsePct(r[C.toShiftLd])!=null) t.tToShiftLeader=parsePct(r[C.toShiftLd]);
+    if(C.toCrew090>=0&&parsePct(r[C.toCrew090])!=null) t.tToCrew090=parsePct(r[C.toCrew090]);
+    if(C.toCrewYTD>=0&&parsePct(r[C.toCrewYTD])!=null) t.tToCrewYTD=parsePct(r[C.toCrewYTD]);
     if(Object.keys(t).length>0) targets[loc]=t;
   }
   console.log(`[YearlyTargets] sheet='${sheetName}' hdr=${hi} parsed=${Object.keys(targets).length} stores`,Object.keys(targets).slice(0,2).map(l=>({loc:l,...targets[l]})));
@@ -1680,6 +1724,7 @@ function parseSMGFullScale(wb) {
         reportStart, reportEnd, year, month,
         osatTop2:       anyOsat ? (osat5 || 0) + (osat4 || 0) : null,
         osat5:          osat5,
+        osat1:          osat1,   // "1"-rated share (worst box) → OSAT B2B on the reviews
         osatAvg:        anyOsat ? 5*(osat5||0) + 4*(osat4||0) + 3*(osat3||0) + 2*(osat2||0) + 1*(osat1||0) : null,
         osatB2B:        _num01(row[9]),
         accuracyB2B:    _num01(row[12]),
@@ -1760,6 +1805,7 @@ function parseSMGFullScale(wb) {
       loc, storeName, reportStart, reportEnd, year, month,
       osatTop2:        osatTop2 || null,
       osat5:           osat5    || null,
+      osat1:           osat1    || null,   // "1"-rated share (worst box) → OSAT B2B on the reviews
       osatAvg,
       osatB2B:         numPct(byRating[4], b2bCol),
       accuracyB2B:     numPct(byRating[4], accCol),

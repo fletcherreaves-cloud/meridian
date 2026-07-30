@@ -166,18 +166,30 @@ export function buildReviewActuals(ds, locs, range) {
   let projSales = 0, hasProj = false;
   for (const loc of (locs || [])) { const s = sumSeries(ds, loc, range, 'projSales'); if (s.days) { projSales += s.sum; hasProj = true; } }
   // Scope-average targets from each store's DEFAULT_TARGETS (KVS pace + healthy usage).
+  // Read the EFFECTIVE target: the uploaded yearly-targets file lands in ds.targets (e.g. the
+  // "Overall Satisfaction B2B" → tOsatB2B), while static DEFAULT_TARGETS only carries the seeded
+  // ones (tKvst/tKvsu). Prefer ds.targets so yearly-file targets (OSAT B2B) actually land.
   const tgtAvg = (field) => {
-    const vals = (locs || []).map(l => (DEFAULT_TARGETS[unpad(l)] || {})[field]).filter(v => v != null);
+    const vals = (locs || []).map(l => {
+      const u = unpad(l);
+      const t = (ds && ds.targets && ds.targets[u]) || DEFAULT_TARGETS[u] || {};
+      return t[field];
+    }).filter(v => v != null);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
   };
   return {
     gcVsLY: gcv?.pct ?? null,
-    osat: meanField('osatTop2'),
-    accB2B: meanField('accuracyB2B'),
+    // Voice OSAT = the "5"-rated share only (owner: rated 5 is all that counts), NOT Top-2-Box.
+    osat: meanField('osat5'),
+    // OSAT B2B = the "1"-rated share (worst box) — lower is better. Replaces the old Accuracy-B2B.
+    osatB2B: meanField('osat1'),
+    accB2B: meanField('accuracyB2B'),   // kept for any legacy reference
     kvsPerGc: metricAvg(ds, locs, range, 'kvst'),           // KVS Time per GC (seconds)
     kvsHealthy: metricAvg(ds, locs, range, 'kvsHealthy'),   // KVS Healthy Usage (0–1 fraction) — Daily Glimpse
     kvsTimeTarget: tgtAvg('tKvst'),
     kvsHealthyTarget: tgtAvg('tKvsu'),
+    osatTarget: tgtAvg('tOsat'),         // "VOICE OSAT PACE" from the yearly-targets file (5★ goal)
+    osatB2BTarget: tgtAvg('tOsatB2B'),   // "Overall Satisfaction B2B" from the yearly-targets file
     projSales: hasProj ? projSales : null,
     smgMonth: bestKey >= 0 ? `${bestY}-${String(bestM).padStart(2, '0')}` : null,
   };
