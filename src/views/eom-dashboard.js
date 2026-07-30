@@ -176,25 +176,28 @@ const statusColor = (v) => ({
 // FOB components (per fob-eom / analytics): comp waste + raw waste + condiments +
 // emp/mgr meals + stat variance + unexplained. FOB% = FOB$ / product sales$.
 function fobByStore(fobRows, period) {
-  const acc = {};
+  // qsr_fob is a DAILY table, but each daily row is a period-to-date SNAPSHOT (the running
+  // month total), NOT a daily increment. So the period FOB$/sales = the LATEST snapshot per
+  // store, never the sum of the daily rows (summing ~30 snapshots inflates $ ~30×; the ratio
+  // survives, which is why only absolute-$ consumers like the cross-check ever saw the bug).
+  const latest = {};   // loc -> { row, key } keeping the newest in-period date
+  const dkey = (d) => typeof d === 'string' ? d.slice(0, 10)
+    : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10));
   for (const r of (fobRows || [])) {
-    const p = typeof r.date === 'string' ? r.date.slice(0, 7)
-      : (r.date instanceof Date ? periodKey(r.date) : String(r.date || '').slice(0, 7));
-    if (p !== period) continue;
+    const k = dkey(r.date);
+    if (k.slice(0, 7) !== period) continue;
     const loc = String(r.loc);
-    const a = acc[loc] || (acc[loc] = { sales: 0, fob: 0, comp: 0, raw: 0, cond: 0, emp: 0, statv: 0, unex: 0 });
-    a.sales += r.prodSalesAmt || 0;
-    a.comp += r.compWasteAmt || 0;
-    a.raw += r.rawWasteAmt || 0;
-    a.cond += r.condimentsAmt || 0;
-    a.emp += r.empMgrMealsAmt || 0;
-    a.statv += r.statVarianceAmt || 0;
-    a.unex += r.unexplainedAmt || 0;
+    const cur = latest[loc];
+    if (!cur || k > cur.key) latest[loc] = { row: r, key: k };
   }
-  for (const loc of Object.keys(acc)) {
-    const a = acc[loc];
-    a.fob = a.comp + a.raw + a.cond + a.emp + a.statv + a.unex;
-    a.fobPct = a.sales ? a.fob / a.sales : null;
+  const acc = {};
+  for (const loc of Object.keys(latest)) {
+    const r = latest[loc].row;
+    const comp = r.compWasteAmt || 0, raw = r.rawWasteAmt || 0, cond = r.condimentsAmt || 0;
+    const emp = r.empMgrMealsAmt || 0, statv = r.statVarianceAmt || 0, unex = r.unexplainedAmt || 0;
+    const sales = r.prodSalesAmt || 0;
+    const fob = comp + raw + cond + emp + statv + unex;
+    acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: sales ? fob / sales : null, asOf: latest[loc].key };
   }
   return acc;
 }
