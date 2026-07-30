@@ -226,7 +226,27 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
   const seriesByWrin = useMemo(
     () => history ? buildItemSeries(history.rows || [], { periodsAsc }) : new Map(),
     [history, periodsAsc]);
-  if (!items.length) return null;
+
+  // Collapse to ONE entry per item (owner req 2026-07-30): a single WRIN can trip several checks
+  // (variance-50 + raw-items-timing + uom-sanity …), which read as multiple prioritized rows and
+  // leave a manager unsure which line to act on. One line = one decision. The PRIMARY finding (most
+  // severe, then largest $) is the current result on the surface; the other checks, the pattern, and
+  // the month history all move into the expand.
+  const entries = useMemo(() => {
+    const byWrin = new Map(), out = [];
+    for (const f of items) {
+      const wrin = f.data?.wrin != null ? String(f.data.wrin) : null;
+      if (!wrin) { out.push({ key: `f${out.length}`, wrin: null, primary: f, others: [] }); continue; }
+      const e = byWrin.get(wrin);
+      if (!e) { const ne = { key: wrin, wrin, primary: f, others: [] }; byWrin.set(wrin, ne); out.push(ne); }
+      else {
+        const cmp = ((f.severity ?? 0) - (e.primary.severity ?? 0)) || ((f.dollars || 0) - (e.primary.dollars || 0));
+        if (cmp > 0) { e.others.push(e.primary); e.primary = f; } else e.others.push(f);
+      }
+    }
+    return out.sort((a, b) => ((b.primary.severity ?? 0) - (a.primary.severity ?? 0)) || ((b.primary.dollars || 0) - (a.primary.dollars || 0)));
+  }, [items]);
+  if (!entries.length) return null;
 
   const toggle = (k) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
@@ -249,33 +269,44 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
     ),
     !history && div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '6px' } }, 'Loading item history…'),
     div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
-      items.map((f, i) => {
-        const wrin = f.data?.wrin != null ? String(f.data.wrin) : null;
+      entries.map((e, i) => {
+        const f = e.primary;
+        const wrin = e.wrin;
         const it = wrin ? seriesByWrin.get(wrin) : null;
         const series = it?.series || [];
         const cls = series.length ? classifyItemPattern(series, { tolerance }) : null;
         const chips = cls?.chips || [];
-        const canExpand = series.length > 0;
-        const isOpen = wrin && open[wrin];
+        const hasMore = series.length > 0 || e.others.length > 0;
+        const isOpen = hasMore && open[e.key];
         const sevColor = SEV_COLOR[f.severityWord] || '#38bdf8';
         const caseSz = wrin ? caseSzByWrin[wrin] : 0;
-        return div({ key: wrin || i, style: { background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${sevColor}`, overflow: 'hidden' } },
-          // header row
+        return div({ key: e.key, style: { background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${sevColor}`, overflow: 'hidden' } },
+          // ── ONE line per item: the current result + the action, nothing else on the surface ──
           div({
-            onClick: canExpand ? () => toggle(wrin) : undefined,
-            style: { display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 9px', cursor: canExpand ? 'pointer' : 'default' },
+            onClick: hasMore ? () => toggle(e.key) : undefined,
+            style: { display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 9px', cursor: hasMore ? 'pointer' : 'default' },
           },
-            canExpand && span({ style: { color: 'var(--text3)', fontSize: '11px', marginTop: '1px', width: '10px', flexShrink: 0 } }, isOpen ? '▾' : '▸'),
+            hasMore && span({ style: { color: 'var(--text3)', fontSize: '11px', marginTop: '1px', width: '10px', flexShrink: 0 } }, isOpen ? '▾' : '▸'),
             div({ style: { flex: 1, minWidth: 0 } },
               div({ style: { fontSize: '12.5px', color: 'var(--text)' } },
                 span({ style: { fontWeight: 700, color: sevColor } }, `[${(f.severityWord || '').toUpperCase()}] `),
                 f.title, wrin ? span({ style: { color: 'var(--text3)' } }, ` · WRIN ${wrin}`) : null),
               f.detail && div({ style: { fontSize: '11px', color: 'var(--text3)', marginTop: '1px' } }, f.detail),
-              chips.length ? div({ style: { display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' } },
-                chips.map(c => h(PatternChip, { key: c.id, chip: c }))) : null),
+              // Surface chips: the single most-actionable pattern chip + a count of other checks —
+              // the detail lives in the expand so the row stays one decision.
+              (cls?.primary || e.others.length) ? div({ style: { display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' } },
+                cls?.primary ? h(PatternChip, { key: 'p', chip: cls.primary }) : null,
+                e.others.length ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, `+${e.others.length} more check${e.others.length !== 1 ? 's' : ''}`) : null) : null),
           ),
-          // nested history
+          // ── Expand: everything else — the other checks, the full pattern, the month history ──
           isOpen && div({ style: { padding: '2px 10px 9px 29px', borderTop: '1px solid var(--bdr)' } },
+            e.others.length ? div({ style: { margin: '6px 0 2px' } },
+              div({ style: { fontSize: '10.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '2px' } }, 'Also flagged'),
+              e.others.map((o, j3) => div({ key: j3, style: { fontSize: '11px', color: 'var(--text2)', margin: '1px 0' } },
+                span({ style: { color: SEV_COLOR[o.severityWord] || 'var(--text3)', fontWeight: 700 } }, `${(o.severityWord || '').toUpperCase()} `),
+                `${o.title} — ${o.detail}`))) : null,
+            chips.length > 1 ? div({ style: { display: 'flex', gap: '4px', margin: '6px 0 2px', flexWrap: 'wrap' } },
+              chips.map(c => h(PatternChip, { key: c.id, chip: c }))) : null,
             cls?.primary && div({ style: { fontSize: '11px', color: cls.primary.color, margin: '6px 0 4px' } },
               `${cls.primary.label}: ${cls.primary.why}`),
             series.length ? h('table', { style: { borderCollapse: 'collapse', width: '100%', fontSize: '11px' } },
@@ -289,7 +320,7 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
                   h('td', { style: { padding: '2px 6px', textAlign: 'right', fontWeight: 700, color: p.dol < -tolerance ? '#f87171' : p.dol > tolerance ? '#fbbf24' : 'var(--text2)' } }, dolStr(p.dol)),
                   h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (p.qty || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })),
                   caseSz > 0 ? h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (Math.abs(p.qty) / caseSz).toFixed(1)) : null);
-              }))) : div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'No prior-period history for this item.')),
+              }))) : (wrin ? div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'No prior-period history for this item.') : null)),
         );
       })),
   );
