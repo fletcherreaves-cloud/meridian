@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, PATTERN_META } from '../engine/eom-item-pattern.js';
+import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 
 const S = (...dols) => dols.map((dol, i) => ({ period: `2026-0${i + 1}`, dol }));
 
@@ -122,5 +122,31 @@ describe('scanCountReliability', () => {
   it('skips stores with too few multi-period items', () => {
     const res = scanCountReliability(mk('SMALL', 'a', [10, 20]), { periodsAsc, minItems: 3 });
     expect(res).toEqual([]);
+  });
+});
+
+describe('scanRubberBand', () => {
+  const periodsAsc = ['2026-04', '2026-05', '2026-06', '2026-07'];
+  const mk = (loc, wrin, dols) => dols.map((dol, i) => ({ loc, wrin, descr: 'i' + wrin, period: periodsAsc[i], dolDiff: dol, variance: dol / 10 }));
+  it('flags an over-run that snaps to a big short (padding → collapse)', () => {
+    const rows = [
+      ...mk('PAD', 'a', [200, 180, 160, -420]),   // 3 periods OVER then a big SHORT = rubber-band
+      ...mk('PAD', 'b', [-5, 8, -6, 10]),          // noise
+    ];
+    const res = scanRubberBand(rows, { periodsAsc, tolerance: 50 });
+    const pad = res.find(r => r.loc === 'PAD');
+    expect(pad).toBeTruthy();
+    expect(pad.nItems).toBe(1);
+    expect(pad.worst[0].wrin).toBe('a');
+    expect(pad.worst[0].overN).toBe(3);
+    expect(pad.worst[0].snap).toBeGreaterThan(100);
+    expect(pad.worst[0].to).toBe('2026-07');
+  });
+  it('does NOT flag a plain one-off loss or steady over with no collapse', () => {
+    const rows = [
+      ...mk('CLEAN', 'a', [-300, -40, -30, -20]),  // a loss then recovery — no over-run→short
+      ...mk('CLEAN', 'b', [100, 120, 90, 110]),     // steady over, no snap (caught by unrealistic-over, not here)
+    ];
+    expect(scanRubberBand(rows, { periodsAsc, tolerance: 50 })).toEqual([]);
   });
 });

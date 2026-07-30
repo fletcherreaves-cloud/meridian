@@ -194,6 +194,49 @@ export function scanCountReliability(varRows = [], { periodsAsc = [], tolerance 
   return out;
 }
 
+// ── Rubber-band scan (integrity #47, the "variance collapse" catch) ───────────
+// The padding-compounds-then-explodes pattern. An item that runs OVER (a gain = usage understated
+// = inventory padded, a "loan against next month") for >=2 periods and then SNAPS to a large SHORT
+// has had its accumulated padding catch up — the classic single-month blow-up. Directional cousin
+// of `inconsistent-count` (which is sign-agnostic): rubber-band specifically means over-run → short.
+// Needs multi-period history (reuses the same district variance pull as Chronic/Reliability).
+// Per store: the items showing the snap, worst (biggest snap) first; stores ranked by total snap $.
+export function scanRubberBand(varRows = [], { periodsAsc = [], tolerance = 50, minPeriods = 3, minOverRun = 2 } = {}) {
+  const byLoc = new Map();
+  for (const r of varRows) { const L = String(r.loc); (byLoc.get(L) || byLoc.set(L, []).get(L)).push(r); }
+  const out = [];
+  for (const [loc, rows] of byLoc) {
+    const series = buildItemSeries(rows, { periodsAsc });
+    const items = [];
+    for (const [wrin, it] of series) {
+      const s = it.series;
+      if (s.length < minPeriods) continue;
+      // Walk oldest→newest tracking the current OVER run; when a SHORT lands after an over-run of
+      // >= minOverRun, that's a snap — recovered = min(short magnitude, accumulated over).
+      let runN = 0, runSum = 0, runFrom = null, best = null;
+      for (const p of s) {
+        const d = p.dol || 0;
+        if (d > tolerance) { if (!runN) runFrom = p.period; runN++; runSum += d; }
+        else {
+          if (d < -tolerance && runN >= minOverRun) {
+            const snap = Math.min(Math.abs(d), runSum);
+            if (!best || snap > best.snap) best = { snap, overSum: runSum, overN: runN, from: runFrom, to: p.period, shortDol: d };
+          }
+          runN = 0; runSum = 0; runFrom = null;
+        }
+      }
+      if (best && best.snap >= tolerance * 2) {
+        items.push({ wrin, descr: it.descr, cls: it.cls, ...best, series: s.map(p => ({ period: p.period, dol: p.dol })) });
+      }
+    }
+    if (!items.length) continue;
+    items.sort((a, b) => b.snap - a.snap);
+    out.push({ loc, nItems: items.length, totalSnap: items.reduce((x, i) => x + i.snap, 0), worst: items.slice(0, 8) });
+  }
+  out.sort((a, b) => b.totalSnap - a.totalSnap);      // biggest rubber-band exposure first
+  return out;
+}
+
 function fmtDol(v) { const s = v < 0 ? '-' : ''; return `${s}$${Math.abs(Math.round(v)).toLocaleString()}`; }
 function fmt0(v) { return `$${Math.round(v).toLocaleString()}`; }
 

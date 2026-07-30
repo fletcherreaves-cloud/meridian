@@ -14,7 +14,7 @@ import {
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   saveEomItemDisposition, loadEomItemDisposition,
 } from '../lib/supabase.js';
-import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, PATTERN_META } from '../engine/eom-item-pattern.js';
+import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
   buildIncompleteCountMessage, diagnoseIncompleteCount,
@@ -609,6 +609,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [relBusy, setRelBusy] = useState(false);
   const [relLookback, setRelLookback] = useState(6);
   const [relOpenRows, setRelOpenRows] = useState({}); // loc -> expanded (supporting-fact drill-down)
+  // Rubber-band scan — padding→collapse integrity pattern across periods (owner req). On-demand.
+  const [rbOpen, setRbOpen] = useState(false);
+  const [rb, setRb] = useState(null);            // { stores, periods, nRows, error }
+  const [rbBusy, setRbBusy] = useState(false);
+  const [rbLookback, setRbLookback] = useState(6);
+  const [rbOpenRows, setRbOpenRows] = useState({});
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
@@ -799,6 +805,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     setRelBusy(false);
   }, [period, rows, relLookback]);
 
+  // Rubber-band scan — same district variance pull, detects the padding→collapse pattern per store.
+  const runRubberBandScan = useCallback(async (lb) => {
+    const lookback = lb ?? rbLookback;
+    setRbBusy(true); setRbOpen(true); setRbOpenRows({});
+    try {
+      const periodsAsc = lastPeriods(period, lookback);
+      const scopedLocs = [...new Set(rows.map(r => String(r.loc)))];
+      const varRows = await loadQsrVarianceHistoryAll({ periods: periodsAsc, locs: scopedLocs });
+      setRb({ stores: scanRubberBand(varRows, { periodsAsc, tolerance: 50 }), periods: periodsAsc, nRows: varRows.length });
+    } catch (e) {
+      setRb({ stores: [], periods: [], nRows: 0, error: String(e?.message || e) });
+    }
+    setRbBusy(false);
+  }, [period, rows, rbLookback]);
+
   // ── Scan exports (Save CSV / Print) — supporting facts for coaching + records ──
   const scopeLabel = () => `${patch ? `patch: ${patch}` : (scope === 'all' ? 'all stores' : scope)}${oneStore ? ` · ${nm(oneStore)}` : ''}`;
   const relCsv = () => {
@@ -826,6 +847,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const p = chronic?.periods || [];
     const rowsHtml = (chronic?.items || []).map(it => `<tr><td>${it.descr || it.wrin}</td><td class="mono">${it.wrin}</td><td>${(PATTERN_META[it.worst]?.label) || it.worst || ''}</td><td>${it.nStores}</td><td class="r">$${Math.round(it.totalDol || 0).toLocaleString()}</td></tr>`).join('');
     return `<h1>Chronic Offenders — ${scopeLabel()}</h1><p class="sub">${p[0] || ''} &rarr; ${p[p.length - 1] || ''} &middot; ${(chronic?.nRows || 0).toLocaleString()} rows &middot; worst across the most stores first</p><table><thead><tr><th>Item</th><th>WRIN</th><th>Worst pattern</th><th>Stores</th><th>$ at stake</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+  };
+  const rbCsv = () => {
+    const H = ['Store', 'Rubber-band items', 'Total snap $', 'WRIN', 'Item', 'Class', 'Snap $', 'Over periods', 'Over $ built up', 'Snapped period'];
+    const out = [];
+    for (const s of (rb?.stores || [])) {
+      for (const w of s.worst) out.push([nm(s.loc), s.nItems, Math.round(s.totalSnap), w.wrin, w.descr || '', w.cls || '', Math.round(w.snap || 0), `${w.overN} (${w.from || ''})`, Math.round(w.overSum || 0), w.to || '']);
+    }
+    return toCsv(H, out);
+  };
+  const rbPrintHtml = () => {
+    const p = rb?.periods || [];
+    const body = (rb?.stores || []).map(s => {
+      const items = (s.worst || []).map(w => `<tr><td class="mono">${w.wrin}</td><td>${w.descr || ''}</td><td>${w.cls || ''}</td><td class="r">$${Math.round(w.snap || 0).toLocaleString()}</td><td>+$${Math.round(w.overSum || 0).toLocaleString()} over ${w.overN} mo (from ${w.from || ''}) &rarr; snapped ${w.to || ''}</td></tr>`).join('') || '<tr><td colspan="5">No rubber-band items.</td></tr>';
+      return `<h1 style="margin-top:20px">${nm(s.loc)} — ${s.nItems} item(s), $${Math.round(s.totalSnap || 0).toLocaleString()} snap exposure</h1><table><thead><tr><th>WRIN</th><th>Item</th><th>Class</th><th>Snap $</th><th>Padding built up &rarr; collapse</th></tr></thead><tbody>${items}</tbody></table>`;
+    }).join('');
+    return `<h1>Rubber-band (padding &rarr; collapse) — ${scopeLabel()}</h1><p class="sub">${p[0] || ''} &rarr; ${p[p.length - 1] || ''} &middot; ${(rb?.nRows || 0).toLocaleString()} rows &middot; biggest snap exposure first</p>${body}`;
   };
 
   const openDraft = useCallback((loc, name, components) => {
@@ -1098,6 +1135,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'Count Reliability — grades each store on how CONSISTENTLY it counts (big count-error reversals hurt; real losses do not). Accuracy + consistency is king. Reads on demand.',
           style: { background: 'var(--surf3)', color: '#4ade80', border: '1px solid #4ade80', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, relBusy ? '…' : '📊 Count reliability'),
+        h('button', {
+          onClick: () => runRubberBandScan(), disabled: rows.length === 0 || rbBusy,
+          title: 'Rubber-band — the padding→collapse integrity pattern: items that ran OVER (inventory padded) for months then snapped to a big short. Catches the "variance collapse" before it explodes. Reads on demand across the scope.',
+          style: { background: 'var(--surf3)', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, rbBusy ? '…' : '🪃 Rubber-band'),
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
           onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
@@ -1566,6 +1608,55 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                         span({ style: { color: 'var(--text3)', fontSize: '10px' } }, `${w.cls || ''} · WRIN ${w.wrin}`),
                         span({ style: { color: '#f87171', fontWeight: 700 } }, `swing $${Math.round(w.swing || 0).toLocaleString()}`),
                         span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.swingHi || 0).toLocaleString()} (${w.swingHiP || ''}) → -$${Math.abs(Math.round(w.swingLo || 0)).toLocaleString()} (${w.swingLoP || ''})`))))));
+              }))
+          : null)),
+
+    rbOpen && div({
+      onClick: () => setRbOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({ onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap', paddingRight: '30px' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🪃 Rubber-band — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
+          div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'Prior monthly count periods scanned. Rubber-band needs at least 3 to see a run then a snap.' },
+            'Look back (months)',
+            div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+              [3, 6, 12].map(n => h('button', { key: n, onClick: () => { setRbLookback(n); runRubberBandScan(n); }, disabled: rbBusy,
+                style: { background: rbLookback === n ? '#f5bc00' : 'var(--surf3)', color: rbLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: rbBusy ? 'default' : 'pointer' } }, n))))),
+        h('button', { onClick: () => setRbOpen(false), style: MODAL_X }, '✕'),
+        div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
+          'The padding→collapse pattern: an item that ran OVER (a gain — inventory padded, a "loan against next month") for 2+ months and then SNAPPED to a big short. That snap is the accumulated padding catching up. Biggest snap exposure first. Click a store for the items. Verify each — a real explanation clears it.'),
+        rb && rb.stores.length ? div({ style: { display: 'flex', gap: '7px', marginBottom: '10px' } },
+          h('button', { onClick: () => downloadText(`rubber-band_${scope}_${period}.csv`, rbCsv()), style: MODAL_TOOLBTN, title: 'Download the full store×item detail as CSV' }, '⤓ Save CSV'),
+          h('button', { onClick: () => openPrintWindow('Rubber-band', rbPrintHtml()), style: MODAL_TOOLBTN, title: 'Open a printable report' }, '⎙ Print')) : null,
+        rbBusy ? div({ style: { padding: '30px', textAlign: 'center', color: 'var(--text3)' } }, 'Scanning for padding→collapse across the scope…')
+          : rb?.error ? div({ style: { padding: '20px', textAlign: 'center', color: '#f87171', fontSize: '13px' } }, `Scan failed: ${rb.error}`)
+          : rb && !rb.stores.length ? div({ style: { padding: '20px', textAlign: 'center', color: rb.nRows ? '#4ade80' : '#f5bc00', fontSize: '13px' } },
+              !rb.nRows ? 'No variance history for this scope/window — run the Variance pull or widen the look-back.'
+                : rb.periods && rb.periods.length < 3 ? `Only ${rb.periods.length} period(s) in this window — rubber-band needs at least 3 to see a run then a snap. Choose a 3+ look-back.`
+                : `✓ No rubber-band patterns — no store shows an over-run that snapped to a short across ${rb.periods.length} periods.`)
+          : rb ? div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
+              rb.stores.map(s => {
+                const isOpen = rbOpenRows[s.loc];
+                return div({ key: s.loc, style: { background: 'var(--surf3)', borderRadius: '6px', borderLeft: '3px solid #fb923c', overflow: 'hidden' } },
+                  div({ onClick: () => setRbOpenRows(o => ({ ...o, [s.loc]: !o[s.loc] })),
+                    style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', cursor: 'pointer' } },
+                    span({ style: { color: 'var(--text3)', fontSize: '11px', width: '10px', flexShrink: 0 } }, isOpen ? '▾' : '▸'),
+                    div({ style: { flex: 1, minWidth: 0 } },
+                      div({ style: { fontSize: '12.5px', color: 'var(--text)', fontWeight: 600 } }, nm(s.loc)),
+                      div({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${s.nItems} rubber-band item${s.nItems === 1 ? '' : 's'} — e.g. ${s.worst.slice(0, 3).map(w => w.descr || w.wrin).join(', ')}`)),
+                    div({ style: { textAlign: 'right', flexShrink: 0 } },
+                      div({ style: { fontSize: '13px', fontWeight: 800, color: '#fb923c' } }, `$${Math.round(s.totalSnap || 0).toLocaleString()}`),
+                      div({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'snap exposure'))),
+                  isOpen && div({ style: { padding: '2px 12px 10px 30px', borderTop: '1px solid var(--bdr)' } },
+                    div({ style: { fontSize: '10.5px', color: 'var(--text3)', margin: '8px 0 6px', textTransform: 'uppercase', letterSpacing: '.05em' } }, 'Items — padding built up, then snapped'),
+                    div({ style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+                      (s.worst || []).map(w => div({ key: w.wrin, style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', fontSize: '11.5px' } },
+                        span({ style: { color: 'var(--text)', fontWeight: 600 } }, w.descr || w.wrin),
+                        span({ style: { color: 'var(--text3)', fontSize: '10px' } }, `${w.cls || ''} · WRIN ${w.wrin}`),
+                        span({ style: { color: '#fb923c', fontWeight: 700 } }, `snap $${Math.round(w.snap || 0).toLocaleString()}`),
+                        span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.overSum || 0).toLocaleString()} over ${w.overN} mo (from ${w.from || ''}) → snapped ${w.to || ''}`))))));
               }))
           : null)),
 
