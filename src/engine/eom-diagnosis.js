@@ -125,9 +125,26 @@ export const DEFAULT_CHECKS = [
     run: (ctx) => {
       const diag = diagnoseIncompleteCount(ctx.data.onHand || [], { period: ctx.period, asOf: ctx.asOf, minValue: ctx.params.minValue });
       if (!diag.uncountedCount) return [];
-      return [mkFinding('incomplete-count', diag.uncountedValue >= 500 ? SEVERITY.high : SEVERITY.medium,
-        `${diag.uncountedCount} items still uncounted`, `~$${Math.round(diag.uncountedValue)} at risk across ${diag.byClass.length} classes`,
-        diag.uncountedValue, { uncounted: diag.uncounted.slice(0, 20) })];
+      // Time-aware + cost-control-aware (owner 2026-07-30): Food, Condiment AND Paper are due to 100%
+      // by EOD; Non-Product is not counted until TOMORROW → don't call it out today. And only
+      // Food/Condiment $ is the cost-control "at risk" money; Paper is due today for COMPLETENESS,
+      // not cost. See reference-eom-count-timing-by-class.
+      const U = diag.uncounted || [];
+      const fc = U.filter(u => { const c = normClass(u.cls); return c === 'food' || c === 'condiment'; });
+      const paper = U.filter(u => normClass(u.cls) === 'paper');
+      const nonProd = U.filter(u => { const c = normClass(u.cls); return c !== 'food' && c !== 'condiment' && c !== 'paper'; });
+      const dueToday = fc.length + paper.length;
+      if (!dueToday) return [];  // only Non-Product left → not due today, nothing to flag
+      const fcVal = fc.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
+      const bits = [];
+      if (fc.length) bits.push(`${fc.length} Food/Condiment (~$${Math.round(fcVal)} at risk — the cost-control money)`);
+      if (paper.length) bits.push(`${paper.length} Paper (due by EOD for completeness — not cost-control)`);
+      const npNote = nonProd.length ? ` · ${nonProd.length} Non-Product not due until tomorrow (expected — not counted today)` : '';
+      const sev = fcVal >= 500 ? SEVERITY.high : fc.length ? SEVERITY.medium : SEVERITY.info;
+      return [mkFinding('incomplete-count', sev,
+        `${dueToday} item${dueToday === 1 ? '' : 's'} still uncounted — due by EOD`,
+        `${bits.join(' · ')}${npNote}.`,
+        fcVal, { uncounted: [...fc, ...paper].slice(0, 20), fcCount: fc.length, paperCount: paper.length, nonProductPending: nonProd.length })];
     },
   },
   {
@@ -594,15 +611,19 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // classes worth a manager's here-and-now energy). Cut-and-dry, ranked by best chance to improve
   // THIS cycle. Reuses the count-integrity buckets, recount-worthiness, and the portioning fingerprint.
   const isFCcls = c => { const x = normClass(c); return x === 'food' || x === 'condiment'; };
+  const isPaperCls = c => normClass(c) === 'paper';
   const isFC = v => isFCcls(v && v.cls);
   const clsLabel = c => ({ food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product', other: 'Other' })[normClass(c)] || 'Item';
   const sumVR = arr => arr.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
+  const _byVR = (a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0);
   const _unc = (incomplete && incomplete.uncounted) || [];
-  // Never-counted split by FOB consequence (owner 2026-07-30): Food/Condiment blanks = real
-  // "count it and recover" money; Paper/Non-Product blanks = complete the count to 100% but are
-  // NOT food-cost-consequential (mostly promo/paper) — don't frame them as a mistake or recovery.
-  const neverFC = _unc.filter(u => u.state === 'never' && isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
-  const neverOther = _unc.filter(u => u.state === 'never' && !isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
+  // Never-counted split by class + COUNT-TIMING rule (owner 2026-07-30): Food, Condiment AND Paper
+  // are due to 100% by EOD (today); Non-Product is NOT counted until tomorrow. So Non-Product
+  // uncounted today is EXPECTED, not a gap — flag it separately, never as a "still needs counting"
+  // to-do for today. Food/Condiment blanks are also the only FOB-consequential "count & recover".
+  const neverFC = _unc.filter(u => u.state === 'never' && isFCcls(u.cls)).sort(_byVR);
+  const neverPaper = _unc.filter(u => u.state === 'never' && isPaperCls(u.cls)).sort(_byVR);
+  const neverNonProd = _unc.filter(u => u.state === 'never' && !isFCcls(u.cls) && !isPaperCls(u.cls)).sort(_byVR);
   const doNow = [];
   if (neverFC.length) {
     const nv = sumVR(neverFC);
@@ -620,15 +641,17 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
   if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), wrin: topFC.wrin, text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
 
-  // ── FINISH THE COUNT (owner req 2026-07-30) — what's still open to close the location to 100%,
-  // class-aware. Food/Condiment = FOB-consequential (real recovery); Paper/Non-Product = complete
-  // for 100% but NOT food-cost-consequential (mostly promo/paper — not a mistake). Above the Top-5.
-  if (neverFC.length || neverOther.length) {
-    L.push('## 🧮 Finish the count to 100% — still needs a count', '');
-    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) left to count.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${neverFC.slice(0, 6).map(u => u.descr || u.wrin).join(', ')}${neverFC.length > 6 ? ` _+${neverFC.length - 6} more_` : ''}`);
-    else L.push('- ✅ **Food & Condiment — all counted.** No profit-driver items are missing a count.');
-    if (neverOther.length) L.push(`- **Paper / Non-Product — ${neverOther.length} item${neverOther.length === 1 ? '' : 's'} (${money(sumVR(neverOther))}) left to count.** Count these to reach 100%, but they're mostly promotional / paper — **not food-cost-consequential** (no meaningful recovery, and not a sign anything was done wrong).`);
-    L.push('_Full itemized to-count list is in Count integrity below._', '');
+  // ── FINISH TODAY'S COUNT (owner req 2026-07-30) — time-aware by class. Food, Condiment AND Paper
+  // are due to 100% by EOD; Non-Product is NOT counted until tomorrow (so it's expected, not a gap).
+  // Only Food/Condiment is FOB-consequential (real recovery); Paper is due today for completeness.
+  if (neverFC.length || neverPaper.length || neverNonProd.length) {
+    L.push('## 🧮 Finish today\'s count to 100% — Food, Condiment & Paper (due by EOD)', '');
+    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) left.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${neverFC.slice(0, 6).map(u => u.descr || u.wrin).join(', ')}${neverFC.length > 6 ? ` _+${neverFC.length - 6} more_` : ''}`);
+    else L.push('- ✅ **Food & Condiment — all counted.** No profit-driver items missing.');
+    if (neverPaper.length) L.push(`- **Paper — ${neverPaper.length} item${neverPaper.length === 1 ? '' : 's'} (${money(sumVR(neverPaper))}) left.** Due by EOD too, but **not** food-cost-consequential — count for completeness, not recovery.`);
+    else if (neverFC.length || neverNonProd.length) L.push('- ✅ **Paper — all counted.**');
+    if (neverNonProd.length) L.push(`- **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and that's EXPECTED** — Non-Product isn't due until tomorrow. Not a gap, not a today action.`);
+    L.push('_Today\'s 100% = Food + Condiment + Paper. Full itemized list in Count integrity below._', '');
   }
 
   // ── TOP 5 — always surface five real Food/Condiment moves. Fill toward 5 from the next-best FC
@@ -729,21 +752,23 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const bs = incomplete.byState || {};
     const m = (o) => `${(o && o.n) || 0} item${((o && o.n) || 0) === 1 ? '' : 's'} (${money((o && o.value) || 0)})`;
     L.push('## 🧮 Count integrity — the "uncounted" list, explained', '');
-    L.push('_"Uncounted" = not counted in the FINAL window. It splits three ways, and only some of it is food-cost-consequential — see each below. A large paper / promo count here is normal, not a mistake._', '');
+    L.push('_"Uncounted" = not counted in the FINAL window. **Due by EOD: Food, Condiment, Paper. Non-Product is not counted until tomorrow** — so Non-Product here is expected, not a gap. Only Food/Condiment is food-cost-consequential._', '');
 
-    // NEVER counted, split by FOB consequence (owner 2026-07-30): Food/Condiment = real recovery;
-    // Paper/Non-Product = complete the count to 100% but NOT food-cost money (mostly promo/paper).
-    if (neverFC.length) L.push(`- **${neverFC.length} Food/Condiment item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) not yet counted** — food-cost-consequential. Count before close to recover real dollars.`);
-    if (neverOther.length) L.push(`- **${neverOther.length} Paper / Non-Product item${neverOther.length === 1 ? '' : 's'} (${money(sumVR(neverOther))}) not yet counted** — count to reach 100%, but mostly promo / paper: **not food-cost-consequential**, and not a sign anything was done wrong.`);
+    // NEVER counted, split THREE ways by count-timing + FOB consequence (owner 2026-07-30):
+    // Food/Condiment (due today, real recovery), Paper (due today, completeness), Non-Product (tomorrow).
+    if (neverFC.length) L.push(`- **${neverFC.length} Food/Condiment item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) not yet counted** — food-cost-consequential, due by EOD. Count before close to recover real dollars.`);
+    if (neverPaper.length) L.push(`- **${neverPaper.length} Paper item${neverPaper.length === 1 ? '' : 's'} (${money(sumVR(neverPaper))}) not yet counted** — due by EOD too, but **not** food-cost-consequential (completeness, not recovery).`);
+    if (neverNonProd.length) L.push(`- **${neverNonProd.length} Non-Product item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) not yet counted — EXPECTED**, not due until tomorrow. Not a gap, not a today action, and not cost-control-focused.`);
 
-    // Itemized TO-COUNT table — Food/Condiment first (the money), then Paper/Non-Product.
-    const toCountRows = [...neverFC, ...neverOther].slice(0, 40);
+    // Itemized TO-COUNT table — the DUE-TODAY items (Food/Condiment first, then Paper). Non-Product
+    // is intentionally excluded (it's on tomorrow's timeline).
+    const toCountRows = [...neverFC, ...neverPaper].slice(0, 40);
     if (toCountRows.length) {
-      L.push('', '### 📝 To-count list — complete the count to 100%', '');
+      L.push('', '### 📝 To-count list — due by EOD (Food, Condiment, Paper)', '');
       L.push('| Item | WRIN | Class | On-hand $ | Food-cost? |', '|---|---|---|---:|:---:|');
       toCountRows.forEach(u => L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${isFCcls(u.cls) ? '**Yes**' : 'no'} |`));
-      const moreN = (bs.never?.n || 0) - toCountRows.length;
-      if (moreN > 0) L.push('', `_+${moreN} more not-yet-counted item(s)._`);
+      const moreN = (neverFC.length + neverPaper.length) - toCountRows.length;
+      if (moreN > 0) L.push('', `_+${moreN} more due-today item(s)._`);
     }
 
     // Counted EARLY — table (owner req 2026-07-30): WRIN + on-hand + last-counted to substantiate.

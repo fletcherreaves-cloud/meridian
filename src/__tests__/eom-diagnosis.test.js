@@ -83,10 +83,12 @@ describe('runDiagnosis — editable check registry', () => {
     };
     const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'fry', descr: 'Fries', dolDiff: -200, cls: 'Food' }] } });
     const rpt = formatDiagnosisReport(res, { incomplete });
-    expect(rpt).toMatch(/Finish the count to 100%/);
-    expect(rpt).toMatch(/not food-cost-consequential/i);   // paper/non-product framing
+    expect(rpt).toMatch(/Finish today's count to 100%/);
     expect(rpt).not.toMatch(/true blanks/i);                // old blanket wording gone
     expect(rpt).toMatch(/Food\/Condiment item.*food-cost-consequential/i); // FC = real recovery in Count integrity
+    // Time-aware: Non-Product (HM26) is not due today → expected, not a gap.
+    expect(rpt).toMatch(/Non-Product.*not due until tomorrow/i);
+    expect(rpt).toMatch(/EXPECTED/);
   });
 });
 
