@@ -2685,6 +2685,36 @@ export async function loadEomCountStatus({ period } = {}) {
   }));
 }
 
+// ── EOM item disposition (#38) — the verify-&-clear decision per obsolete/inactive item ──
+export async function saveEomItemDisposition(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const up = rows.map(r => ({
+    loc: String(r.loc), period: String(r.period), wrin: String(r.wrin),
+    disposition: r.disposition ?? null, cls: r.cls ?? null, descr: r.descr ?? null,
+    on_hand_amt: r.onHandAmt ?? r.on_hand_amt ?? null, note: r.note ?? null,
+    decided_at: new Date().toISOString(), decided_by: uid,
+  }));
+  const { error } = await supabase.from('eom_item_disposition').upsert(up, { onConflict: 'loc,period,wrin' });
+  if (error) { console.warn('[eom_item_disposition] save error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: up.length, errors: [] };
+}
+export async function loadEomItemDisposition({ period, loc } = {}) {
+  if (!supabase) return [];
+  try {
+    const data = await fetchAll((from, to) => {
+      let q = supabase.from('eom_item_disposition').select('*').range(from, to);
+      if (period) q = q.eq('period', period);
+      if (loc) q = q.eq('loc', String(loc));
+      return q;
+    });
+    return (data || []).map(r => ({
+      loc: r.loc, period: r.period, wrin: r.wrin, disposition: r.disposition, cls: r.cls,
+      descr: r.descr, onHandAmt: r.on_hand_amt, note: r.note, decidedAt: r.decided_at,
+    }));
+  } catch (e) { console.warn('[eom_item_disposition] load skipped:', e?.message || e); return []; }
+}
+
 // ── EOM notification settings (flexible jsonb) ─────────────────────────────────
 export async function loadEomNotificationSettings(key = 'default') {
   if (!supabase) return null;

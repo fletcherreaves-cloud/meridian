@@ -1539,6 +1539,28 @@ do $$ declare t text; begin
   end loop;
 end $$;
 
+-- EOM item disposition (owner req #38) — the manager's decision on each obsolete / discontinued /
+-- inactive item carrying a residual on-hand, logged before close: verified-&-counted, wrote-off
+-- (waste to zero), or kept (still usable). A tracked verify-&-clear workflow so nothing rides into
+-- next period's opening unresolved. Does NOT write back to QSRSoft (v1) — records the decision only.
+create table if not exists public.eom_item_disposition (
+  loc          text not null,
+  period       text not null,
+  wrin         text not null,
+  disposition  text,                    -- counted | wrote_off | kept_usable | pending
+  cls          text,
+  descr        text,
+  on_hand_amt  numeric,
+  note         text,
+  decided_at   timestamptz default now(),
+  decided_by   uuid,
+  primary key (loc, period, wrin)
+);
+alter table public.eom_item_disposition enable row level security;
+create policy "eom_item_disposition: public read"  on public.eom_item_disposition for select using (true);
+create policy "eom_item_disposition: public write" on public.eom_item_disposition for all using (true);
+create index if not exists eom_item_disposition_period_idx on public.eom_item_disposition (period, loc);
+
 -- Per-location completion LOG (owner req 2026-07-30) — a timestamped snapshot of each store's
 -- count completion (overall + per class) appended by the On-Hand pull, deduped to one row per
 -- store per hour. Builds a trajectory of WHEN each store counts each class through the EOM cycle

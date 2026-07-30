@@ -215,10 +215,34 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.631';
+const MERIDIAN_VERSION    = '4.632';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.632', date:'2026-07-30', changes:[
+    'EOM Food-Cost Diagnosis: new interactive "Verify & clear" panel for obsolete/discontinued/inactive items — each shows class + on-hand $ and one-tap buttons to log the decision (✓ Counted; class-aware ✗ Wrote off for Food/Condiment or ◦ Kept-usable for non-product), tracked "X/Y decided". Persists to Supabase (no QSRSoft write-back).',
+  ]},
+  {version:'4.631', date:'2026-07-30', changes:[
+    'SAGE "where to focus" is now class-weighted — leads with Food + Condiment and won\'t chase paper/non-product waste unless materially out of line.',
+  ]},
+  {version:'4.630', date:'2026-07-30', changes:[
+    'EOM count-timing metric: the Food-Cost Diagnosis modal now shows when each store\'s count began→ended + total duration (from the raw-item count timestamps). Plus a class-focus note on the Reference table (Food+Condiment ~22-29% of revenue is where waste attention pays; Paper ~3-4% rarely is).',
+  ]},
+  {version:'4.629', date:'2026-07-30', changes:[
+    'Food-Cost Diagnostics Reference — full detail now leads with Food + Condiment and breaks Paper/Non-Product into a separate section, with a Class column added. The 3/6/12 look-back selectors are labeled as months.',
+  ]},
+  {version:'4.628', date:'2026-07-30', changes:[
+    'Chronic Offenders: fixed a store-loc format mismatch that returned "no results on any window", and the empty state now explains why (no data / only 1 period / genuinely clean).',
+  ]},
+  {version:'4.627', date:'2026-07-30', changes:[
+    'Controls: Discount % is now cloud-fresh from the Operations Report cash-sheet (discount $ ÷ net sales), no manual upload.',
+  ]},
+  {version:'4.626', date:'2026-07-30', changes:[
+    'EOM Dashboard modals: the close ✕ is now pinned to the top-right corner consistently.',
+  ]},
+  {version:'4.625', date:'2026-07-30', changes:[
+    'Operations Report streams (Controls / Labor-OT / Service / sales-mix / 3 Peaks, all with LY) now load into the app, ready for tile wiring as the pull populates.',
+  ]},
   {version:'4.624', date:'2026-07-30', changes:[
     'Yearly-targets file: now captures EVERY target column on the sheet (owner req), not just the speed/labor/FOB ones — Voice OSAT (5★) + Execute-as-Designed + OSAT B2B (1★) + 1-800 Contacts, Digital App % of sales + GC/R/D, McDelivery GC/R/D + wait time + star rating, Crew Staffing / Shift Leader / Manager / Total Headcount targets, and TTM Shift-Leader / 0-90 Crew / YTD Crew turnover targets. All 22 flow to ds.targets for every consumer on re-import. Also made all three pipeline paths (full rebuild + incremental + multi-sheet) use the fixed yearly parser so a re-drop lands regardless of how the file is processed.',
   ]},

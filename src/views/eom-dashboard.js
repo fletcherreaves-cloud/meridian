@@ -12,6 +12,7 @@ import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
+  saveEomItemDisposition, loadEomItemDisposition,
 } from '../lib/supabase.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
@@ -546,6 +547,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [rawDetail, setRawDetail] = useState([]);
   const [diag, setDiag] = useState(null); // { name, result, report } for the diagnosis modal
   const [diagCopied, setDiagCopied] = useState(false);
+  const [dispByWrin, setDispByWrin] = useState({}); // #38 verify-&-clear: wrin -> disposition
+  const [dispBusy, setDispBusy] = useState(null);   // wrin currently saving
   const [journeys, setJourneys] = useState(null); // { loc, name, list, selectedWrin } item-journey modal
   const [fobOpen, setFobOpen] = useState(false); // FOB multi-location variance matrix modal
   const [fobDollars, setFobDollars] = useState(false); // matrix: show $ vs % of sales
@@ -794,7 +797,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // full cases — "look for ~3 cases" is more actionable than "≈2,091 units" (owner req).
     const caseSzByWrin = {};
     for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin }), history: null, caseSzByWrin });
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin }), history: null, caseSzByWrin, incomplete });
+    // #38: load any saved verify-&-clear dispositions for this store/period so the panel shows state.
+    setDispByWrin({});
+    loadEomItemDisposition({ period, loc }).then(rows => {
+      const m = {}; for (const r of rows) m[String(r.wrin)] = r.disposition;
+      setDispByWrin(m);
+    }).catch(() => {});
     // Provenance: pull a look-back window of variance history for this store so each action item
     // can nest its month-over-month trend + a pattern chip. On-demand (per modal open), scoped to
     // the loc + an explicit period list → bounded egress. Fetch a generous 12-period window once;
@@ -807,6 +816,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       setDiag(prev => (prev && prev.loc === loc) ? { ...prev, history: { rows: [], periods: histPeriods } } : prev);
     });
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
+
+  // #38 verify-&-clear: record a manager's decision for one obsolete/inactive item (optimistic +
+  // persisted to eom_item_disposition). No QSRSoft write-back in v1 — logs the decision only.
+  const setDisposition = useCallback(async (loc, item, disp) => {
+    setDispBusy(String(item.wrin));
+    setDispByWrin(prev => ({ ...prev, [String(item.wrin)]: disp }));
+    try { await saveEomItemDisposition([{ loc, period, wrin: item.wrin, disposition: disp, cls: item.cls, descr: item.descr, onHandAmt: item.onHandAmt }]); }
+    catch (e) { console.warn('disposition save failed', e); }
+    setDispBusy(null);
+  }, [period]);
 
   // Open the visual Item Journeys for a store (worst-net-variance first).
   // Enrich each with the authoritative Variance Stat report figure for the same
@@ -1220,6 +1239,38 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         // Action items now BELOW the analysis (owner reversed the order), each carrying its own
         // provenance: month-over-month history + a pattern chip, click to expand (owner req).
         h(ActionItemsProvenance, { findings: diag.result.findings, history: diag.history, caseSzByWrin: diag.caseSzByWrin }),
+
+        // #38 — interactive verify-&-clear for obsolete/discontinued/inactive items (class-aware,
+        // logs the decision to Supabase; no QSRSoft write-back in v1).
+        (() => {
+          const stale = (diag.incomplete?.uncounted || []).filter(u => u.state === 'stale').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0));
+          if (!stale.length) return null;
+          const perish = cls => { const c = String(cls || '').toLowerCase(); return c === 'food' || c === 'condiment'; };
+          const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
+          const decided = stale.filter(u => (dispByWrin[String(u.wrin)] || 'pending') !== 'pending').length;
+          return div({ style: { marginTop: '14px' } },
+            div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '2px' } },
+              `🧹 Verify & clear — obsolete / discontinued / inactive (${decided}/${stale.length} decided)`),
+            div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginBottom: '6px' } },
+              'Verify with a physical count first, then log the decision. Food/Condiment: waste to zero if it won\'t be used before expiration. Non-product (promo/paper): keep if usable — don\'t discard. Deactivate the WRIN only at a verified zero on-hand.'),
+            div({ style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+              stale.slice(0, 20).map(u => {
+                const cur = dispByWrin[String(u.wrin)] || 'pending';
+                const busy = dispBusy === String(u.wrin);
+                const mk = (val, label, color) => h('button', {
+                  key: val, disabled: busy, onClick: () => setDisposition(diag.loc, u, val),
+                  style: { background: cur === val ? color : 'var(--surf)', color: cur === val ? '#0f1117' : 'var(--text2)', border: `1px solid ${color}`, borderRadius: '5px', padding: '2px 8px', fontSize: '10.5px', fontWeight: 700, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' },
+                }, label);
+                return div({ key: u.wrin, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px', background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${cur !== 'pending' ? '#4ade80' : '#f5bc00'}`, flexWrap: 'wrap' } },
+                  div({ style: { flex: 1, minWidth: '150px' } },
+                    div({ style: { fontSize: '12px', color: 'var(--text)' } }, `${u.descr || u.wrin} `,
+                      span({ style: { color: 'var(--text3)', fontSize: '10.5px' } }, `· ${u.cls || 'item'} · on-hand ${$(u.onHandAmt)}`))),
+                  div({ style: { display: 'flex', gap: '4px' } },
+                    mk('counted', '✓ Counted', '#38bdf8'),
+                    perish(u.cls) ? mk('wrote_off', '✗ Wrote off', '#f87171') : mk('kept_usable', '◦ Kept (usable)', '#4ade80')));
+              }),
+              stale.length > 20 ? div({ style: { fontSize: '10.5px', color: 'var(--text3)', padding: '4px' } }, `+${stale.length - 20} more.`) : null));
+        })(),
 
         // pending checks (awaiting a data pull for this period)
         diag.result.pending.length > 0 && div({ style: { marginTop: '10px', fontSize: '11px', color: 'var(--text3)' } },
