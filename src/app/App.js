@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.621';
+const MERIDIAN_VERSION    = '4.622';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.622', date:'2026-07-30', changes:[
+    'FIXED the real reason yearly targets weren\'t landing: the yearly-targets file (a "Table 1" layout with an Index row-counter column before the Restaurant column, and a category row above the real header) was parsed as 0 stores — so NONE of the file\'s targets flowed and the app silently fell back to static defaults. The parser now anchors on the Restaurant/Loc/Store column (not the Index counter) and picks the true header row, so every yearly target the file provides — OEPE, KVS time/usage, R2P, TPPH, Labor, FOB, Voice OSAT (5★, from VOICE OSAT PACE) and OSAT B2B (1★, from Overall Satisfaction B2B) — now flows to the reviews and every other target consumer on re-import. Regression test added.',
+  ]},
   {version:'4.620', date:'2026-07-30', changes:[
     'EOM Obsolete/Discontinued/Inactive guidance is now class-aware and written in terms managers use: always verify with a physical count first, then — Food/Condiment: if it won\'t be used before expiration, waste to zero to account for the balance, then deactivate the WRIN at a verified zero on-hand; Non-Product (promo / Happy Meal items / paper): count and KEEP it if usable (donation / local giveaway) — do not discard — deactivate only once genuinely used up and verified at zero. SAGE gives the same class-specific direction so it never tells a manager to discard usable non-product.',
   ]},

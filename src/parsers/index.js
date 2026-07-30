@@ -728,16 +728,20 @@ function parseMonthlyTargets(wb){
 function parseYearlyTargets(wb){
   const sheetName=wb.SheetNames.includes('Table 1')?'Table 1':wb.SheetNames[0];
   const raw=parseRaw(wb,sheetName);
-  // Header row: contains 'OEPE' and 'Park'
+  // Header row: contains 'OEPE' AND a store column ('Restaurant'/'Loc'/'Store'). Requiring the
+  // loc column avoids grabbing a category/title row above the real header (that row can carry the
+  // word "OEPE"/"Park" as a group label but has no Restaurant cell → 0 stores parsed).
   let hi=-1;
-  for(let i=0;i<Math.min(6,raw.length);i++){
-    const joined=(raw[i]||[]).map(c=>String(c||'').toLowerCase()).join(' ');
-    if(joined.includes('oepe')&&joined.includes('park')){hi=i;break;}
+  for(let i=0;i<Math.min(8,raw.length);i++){
+    const cells=(raw[i]||[]).map(c=>String(c||'').toLowerCase().trim());
+    const hasOepe=cells.some(c=>c.includes('oepe'));
+    const hasLoc=cells.some(c=>/^(restaurant|loc|store)$/.test(c));
+    if(hasOepe&&hasLoc){hi=i;break;}
   }
   if(hi<0){console.log('[YearlyTargets] header row not found');return {};}
   const h=raw[hi]||[];
-  // First 'Restaurant' column is the loc; all others are repeated for layout
-  const locCol=h.findIndex(c=>String(c||'').toLowerCase().trim()==='restaurant');
+  // First 'Restaurant'/'Loc'/'Store' column is the loc; all others are repeated for layout
+  const locCol=h.findIndex(c=>/^(restaurant|loc|store)$/.test(String(c||'').toLowerCase().trim()));
   const C={
     loc:    locCol,
     oepe:   fc(h,'OEPE\nPACE','OEPE PACE','OEPE\r\nPACE'),
@@ -748,6 +752,7 @@ function parseYearlyTargets(wb){
     tpph:   fc(h,'TPPH'),
     labor:  fc(h,'Labor'),
     fobT:   fc(h,'Food Over Base','FOB'),
+    osat:   fc(h,'VOICE OSAT PACE','Voice OSAT Pace','OSAT PACE','Voice OSAT'), // → Voice OSAT (5★) target on reviews
     osatB2B:fc(h,'Overall Satisfaction B2B','Overall Sat B2B','OSAT B2B'), // → OSAT B2B (1★) target on reviews
   };
   const targets={};
@@ -765,6 +770,7 @@ function parseYearlyTargets(wb){
     if(C.tpph>=0&&parseFloat(r[C.tpph]))  t.tTpph=parseFloat(r[C.tpph]);
     if(C.labor>=0&&parsePct(r[C.labor]))  t.tLabor=parsePct(r[C.labor]);
     if(C.fobT>=0&&parsePct(r[C.fobT]))    t.tFOBTarget=parsePct(r[C.fobT]);
+    if(C.osat>=0&&parsePct(r[C.osat]))    t.tOsat=parsePct(r[C.osat]);
     if(C.osatB2B>=0&&parsePct(r[C.osatB2B])) t.tOsatB2B=parsePct(r[C.osatB2B]);
     if(Object.keys(t).length>0) targets[loc]=t;
   }
