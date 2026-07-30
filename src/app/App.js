@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.614';
+const MERIDIAN_VERSION    = '4.615';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.615', date:'2026-07-30', changes:[
+    'KVS Time per GC now fills from the auto-pulled DAR — the report has no KVS field, but the KVS stations are the MFY make-lines, so it is computed as total MFY serve time ÷ total MFY transactions (reconciled exactly to QSRSoft\'s KVS Time Per GC column). With KVS Healthy Usage (v4.614), both KVS metrics are now cloud-fresh from the DAR and no longer depend on the manual Ops Report or the emailed Glimpse. KVS Healthy Usage measures whether a store opens the 2nd prep-table side when item volume calls for it (blank is correct when volume doesn\'t call for it — not a penalty).',
+  ]},
   {version:'4.614', date:'2026-07-30', changes:[
     'Review scorecards: KVS Healthy Usage now fills from the auto-pulled DAR (healthy ÷ total order-health counts, cloud-fresh) so it no longer depends on the emailed Daily Glimpse — recent weeks populate. Voice metrics rewired per owner: "Voice OSAT" now uses the 5★ share only (rated 5 is all that counts), and "Voice B2B (Accuracy)" becomes "OSAT B2B" using the 1★ (worst-box) share where lower is better. A footnote now clarifies these Voice numbers are the latest full SMG month (monthly), not the review week. (KVS Time per GC still pending its DAR field.)',
   ]},
