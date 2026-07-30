@@ -754,6 +754,21 @@ function parseYearlyTargets(wb){
     fobT:   fc(h,'Food Over Base','FOB'),
     osat:   fc(h,'VOICE OSAT PACE','Voice OSAT Pace','OSAT PACE','Voice OSAT'), // → Voice OSAT (5★) target on reviews
     osatB2B:fc(h,'Overall Satisfaction B2B','Overall Sat B2B','OSAT B2B'), // → OSAT B2B (1★) target on reviews
+    // Full column capture (owner req 2026-07-30 — "capture all targets on that sheet"):
+    voiceEAD:  fc(h,'VOICE Execute As Designed','Execute As Designed','Voice Execute As Designed'),
+    contacts1800: fc(h,'1-800 Contacts','1800 Contacts'),
+    digAppPct: fc(h,'Digital App Percent of Sales','Digital App % of Sales','Digital App Percent'),
+    digAppGCRD:fc(h,'Digital App (GC/R/D)','Digital App GC/R/D'),
+    mcdGCRD:   fc(h,'McDelivery (GC/R/D)','McDelivery GC/R/D'),
+    mcdWait:   fc(h,'McDelivery Restaurant Wait Time','McDelivery Wait Time'),
+    mcdStars:  fc(h,'McDelivery Star Rating','McDelivery Stars'),
+    crewStaff: fc(h,'Crew Staffing Target','Crew Staffing'),
+    shiftLead: fc(h,'Shift Leader Target','Shift Leader'),
+    mgrTgt:    fc(h,'GM/DM/ Swing Mgr Target','GM/DM/Swing Mgr Target','Swing Mgr Target'),
+    headcount: fc(h,'Total Headcount Target  (All Hourly)','Total Headcount Target (All Hourly)','Total Headcount Target'),
+    toShiftLd: fc(h,'TTM Shift Leader T/O','Shift Leader T/O'),
+    toCrew090: fc(h,'0-90 Day Crew T/O','0-90 Crew T/O'),
+    toCrewYTD: fc(h,'YTD Crew T/O'),
   };
   const targets={};
   for(let i=hi+1;i<raw.length;i++){
@@ -772,6 +787,23 @@ function parseYearlyTargets(wb){
     if(C.fobT>=0&&parsePct(r[C.fobT]))    t.tFOBTarget=parsePct(r[C.fobT]);
     if(C.osat>=0&&parsePct(r[C.osat]))    t.tOsat=parsePct(r[C.osat]);
     if(C.osatB2B>=0&&parsePct(r[C.osatB2B])) t.tOsatB2B=parsePct(r[C.osatB2B]);
+    // Full column capture — Voice EAD + Digital + McDelivery + staffing/headcount + turnover.
+    // %-style → parsePct; counts/times/ratings → parseFloat. Null-safe: only set when present.
+    const pf=(c)=>{const v=parseFloat(r[c]);return isNaN(v)?null:v;};
+    if(C.voiceEAD>=0&&parsePct(r[C.voiceEAD])!=null) t.tVoiceEAD=parsePct(r[C.voiceEAD]);
+    if(C.contacts1800>=0&&pf(C.contacts1800)!=null)  t.t1800Contacts=pf(C.contacts1800);
+    if(C.digAppPct>=0&&parsePct(r[C.digAppPct])!=null) t.tDigAppPct=parsePct(r[C.digAppPct]);
+    if(C.digAppGCRD>=0&&pf(C.digAppGCRD)!=null)      t.tDigAppGCRD=pf(C.digAppGCRD);
+    if(C.mcdGCRD>=0&&pf(C.mcdGCRD)!=null)            t.tMcdGCRD=pf(C.mcdGCRD);
+    if(C.mcdWait>=0&&pf(C.mcdWait)!=null)            t.tMcdWait=pf(C.mcdWait);
+    if(C.mcdStars>=0&&pf(C.mcdStars)!=null)          t.tMcdStars=pf(C.mcdStars);
+    if(C.crewStaff>=0&&pf(C.crewStaff)!=null)        t.tCrewStaffing=pf(C.crewStaff);
+    if(C.shiftLead>=0&&pf(C.shiftLead)!=null)        t.tShiftLeaders=pf(C.shiftLead);
+    if(C.mgrTgt>=0&&pf(C.mgrTgt)!=null)              t.tManagers=pf(C.mgrTgt);
+    if(C.headcount>=0&&pf(C.headcount)!=null)        t.tHeadcount=pf(C.headcount);
+    if(C.toShiftLd>=0&&parsePct(r[C.toShiftLd])!=null) t.tToShiftLeader=parsePct(r[C.toShiftLd]);
+    if(C.toCrew090>=0&&parsePct(r[C.toCrew090])!=null) t.tToCrew090=parsePct(r[C.toCrew090]);
+    if(C.toCrewYTD>=0&&parsePct(r[C.toCrewYTD])!=null) t.tToCrewYTD=parsePct(r[C.toCrewYTD]);
     if(Object.keys(t).length>0) targets[loc]=t;
   }
   console.log(`[YearlyTargets] sheet='${sheetName}' hdr=${hi} parsed=${Object.keys(targets).length} stores`,Object.keys(targets).slice(0,2).map(l=>({loc:l,...targets[l]})));
