@@ -238,11 +238,28 @@ async function upsert(table, rows, onConflict) {
   return saved;
 }
 
-async function main() {
-  const period = currentPeriod();
+// Which period(s) to pull. Default = current month. VARIANCE_PERIOD=YYYY-MM pins one month.
+// VARIANCE_BACKFILL=N backfills the last N months (current + N-1 prior) so the Chronic-Offenders
+// and Count-Reliability scans have multi-period history to compare (they need >=2 periods).
+function lastNPeriods(n) {
+  const d = new Date();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1));
+    out.push(`${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}`);
+  }
+  return out; // most-recent first
+}
+function periodsToRun() {
+  if (process.env.VARIANCE_PERIOD) return [process.env.VARIANCE_PERIOD];
+  const bf = Number(process.env.VARIANCE_BACKFILL || 0);
+  if (bf > 1) return lastNPeriods(bf);
+  return [currentPeriod()];
+}
+
+async function runPeriod(period, token) {
   const { first, last } = periodRange(period);
   const range = `start_date=${first}&end_date=${last}`;
-  const token = await resolveEbosToken();
   console.log(`[variance-pull] period ${period} (${first}…${last}) × ${STORE_NSNS.length} stores`);
 
   let vSaved = 0, wSaved = 0, tSaved = 0, rSaved = 0, storesOk = 0, authFailed = false;
@@ -317,7 +334,17 @@ async function main() {
   }
 
   console.log(`[variance-pull] ✓ ${storesOk}/${STORE_NSNS.length} stores · ${vSaved} variance · ${wSaved} waste · ${tSaved} transfer · ${rSaved} raw-detail rows for ${period}`);
-  if (authFailed) process.exit(1);
+  return { authFailed };
+}
+
+async function main() {
+  const token = await resolveEbosToken();
+  const periods = periodsToRun();
+  if (periods.length > 1) console.log(`[variance-pull] backfill ${periods.length} periods: ${periods.join(', ')}`);
+  for (const period of periods) {
+    const { authFailed } = await runPeriod(period, token);
+    if (authFailed) process.exit(1);
+  }
 }
 
 main().catch(err => { console.error('[variance-pull] fatal:', err); process.exit(1); });
