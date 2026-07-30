@@ -2407,6 +2407,21 @@ export async function loadQsrVarianceStat({ period } = {}) {
   }));
 }
 
+// Variance history for one store across a set of periods (oldest→newest look-back) — powers the
+// Action-Items provenance panel (per-item month-over-month series + pattern classification).
+// Scoped to one loc + an explicit period list to keep egress bounded (on-demand, per modal open).
+export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
+  if (!supabase || !loc || !periods.length) return [];
+  const data = await fetchAll((from, to) =>
+    supabase.from('qsr_variance_stat').select('*')
+      .eq('loc', String(loc)).in('period', periods).range(from, to));
+  return (data || []).map(r => ({
+    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    variance: r.variance, dolDiff: r.dol_diff, yield: r.yield_val,
+    yieldLo: r.yield_lo, yieldHi: r.yield_hi, pctOfSales: r.pct_sales,
+  }));
+}
+
 // ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────
 export async function saveQsrWaste(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

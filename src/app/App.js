@@ -215,10 +215,19 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.607';
-const MERIDIAN_BUILD_DATE = '2026-07-29';
+const MERIDIAN_VERSION    = '4.610';
+const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.610', date:'2026-07-30', changes:[
+    'EOM Food-Cost Diagnosis Action Items now carry their own provenance: click any item to expand its month-over-month variance history (with the worst month flagged and full-case counts where known), and each item is auto-tagged with a pattern chip — Within Tolerance, High Variance, Fluctuating, Loss Pattern Forming, or Inconsistent Count(s) — so a one-off reads differently from a chronic bleeder, and a real-usage loss reads differently from a count-integrity swing. A Look-back selector (3 / 6 / 12 periods) tunes the window.',
+  ]},
+  {version:'4.609', date:'2026-07-30', changes:[
+    'Fixed the EOM Dashboard header — the Scoreboard / EOM Count / Count Cycle toggle no longer squishes when a sync-status message appears; the controls row wraps instead.',
+  ]},
+  {version:'4.608', date:'2026-07-30', changes:[
+    'EOM now logs each store’s count completion over time: the On-Hand pull appends a timestamped snapshot (overall % + per-class %) once per store per hour, building a trajectory of WHEN each store counts each class through the cycle — useful for coaching pace and spotting padding. A trajectory view is the follow-on.',
+  ]},
   {version:'4.607', date:'2026-07-30', changes:[
     'EOM Dashboard now shows completion BY CLASS across the district — Food, Condiment, Paper, Non-Product — with Food + Condiment highlighted as the profit drivers to finish first, and Non-Product treated as a last-day class (a low % early is expected, not behind). Renamed the "Year-Round" view to "Count Cycle".',
   ]},

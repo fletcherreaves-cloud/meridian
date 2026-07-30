@@ -10,9 +10,10 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
-  loadQsrVarianceStat, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
+  loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
 } from '../lib/supabase.js';
+import { classifyItemPattern, buildItemSeries, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
   buildIncompleteCountMessage, diagnoseIncompleteCount,
@@ -25,6 +26,20 @@ const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
+
+// Last `n` period keys up to and including `period` (oldest→newest) — the look-back window
+// for Action-Items provenance (per-item month-over-month variance history).
+function lastPeriods(period, n = 6) {
+  const m = /^(\d{4})-(\d{2})$/.exec(period || '');
+  if (!m) return period ? [period] : [];
+  let y = +m[1], mo = +m[2] - 1; // 0-based month of the current period
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(y, mo - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return out.reverse();
+}
 
 const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
@@ -185,6 +200,101 @@ const jMoney = (n) => `$${Math.round(Math.abs(n || 0)).toLocaleString()}`;
 // timeline → signals (facts vs clearly-labeled inferences). The visual guide that
 // lets a GM see the path of an item and where it went wrong, backed only by ledger
 // facts we can point to.
+// ── Action-Items provenance (owner req 2026-07-30) ────────────────────────────
+// Each diagnosis finding, with its month-over-month variance history nested underneath
+// (click to expand) and a pattern chip that classifies the behavior — Within Tolerance /
+// High Variance / Fluctuating / Loss Pattern Forming / Inconsistent Count(s). A look-back
+// selector tunes the window. Turns a flat "here's the $ this month" list into "is this a
+// one-off or a chronic problem, and is it a real-usage loss or a count-integrity artifact?"
+const SEV_COLOR = { critical: '#f87171', high: '#f5bc00', medium: '#38bdf8', info: '#64748b', low: '#64748b' };
+function PatternChip({ chip, title }) {
+  return span({
+    title: title || chip.why,
+    style: {
+      display: 'inline-block', fontSize: '10px', fontWeight: 700, padding: '1px 7px', borderRadius: '9px',
+      border: `1px solid ${chip.color}`, color: chip.color, background: `${chip.color}22`, whiteSpace: 'nowrap',
+    },
+  }, chip.label);
+}
+function dolStr(v) { const s = v < 0 ? '-' : ''; return `${s}$${Math.abs(Math.round(v || 0)).toLocaleString()}`; }
+
+function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance = 50 }) {
+  const [lookback, setLookback] = useState(6);
+  const [open, setOpen] = useState({});
+  const items = (findings || []).filter(f => (f.severity ?? 0) >= 1); // medium+ (matches actionItems)
+  const periodsAsc = useMemo(() => (history?.periods || []).slice(-lookback), [history, lookback]);
+  const seriesByWrin = useMemo(
+    () => history ? buildItemSeries(history.rows || [], { periodsAsc }) : new Map(),
+    [history, periodsAsc]);
+  if (!items.length) return null;
+
+  const toggle = (k) => setOpen(o => ({ ...o, [k]: !o[k] }));
+
+  return div({ style: { marginTop: '12px' } },
+    div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' } },
+      div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Action items'),
+      // Look-back selector — how many periods of history to classify against.
+      div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' } },
+        'Look back',
+        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+          [3, 6, 12].map(n => h('button', {
+            key: n, onClick: () => setLookback(n),
+            title: !history ? 'loading history…' : `${n} periods`,
+            disabled: !history,
+            style: {
+              background: lookback === n ? '#f5bc00' : 'var(--surf3)', color: lookback === n ? '#0f1117' : 'var(--text2)',
+              border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: history ? 'pointer' : 'default',
+            },
+          }, n)))),
+    ),
+    !history && div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '6px' } }, 'Loading item history…'),
+    div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
+      items.map((f, i) => {
+        const wrin = f.data?.wrin != null ? String(f.data.wrin) : null;
+        const it = wrin ? seriesByWrin.get(wrin) : null;
+        const series = it?.series || [];
+        const cls = series.length ? classifyItemPattern(series, { tolerance }) : null;
+        const chips = cls?.chips || [];
+        const canExpand = series.length > 0;
+        const isOpen = wrin && open[wrin];
+        const sevColor = SEV_COLOR[f.severityWord] || '#38bdf8';
+        const caseSz = wrin ? caseSzByWrin[wrin] : 0;
+        return div({ key: wrin || i, style: { background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${sevColor}`, overflow: 'hidden' } },
+          // header row
+          div({
+            onClick: canExpand ? () => toggle(wrin) : undefined,
+            style: { display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '6px 9px', cursor: canExpand ? 'pointer' : 'default' },
+          },
+            canExpand && span({ style: { color: 'var(--text3)', fontSize: '11px', marginTop: '1px', width: '10px', flexShrink: 0 } }, isOpen ? '▾' : '▸'),
+            div({ style: { flex: 1, minWidth: 0 } },
+              div({ style: { fontSize: '12.5px', color: 'var(--text)' } },
+                span({ style: { fontWeight: 700, color: sevColor } }, `[${(f.severityWord || '').toUpperCase()}] `),
+                f.title, wrin ? span({ style: { color: 'var(--text3)' } }, ` · WRIN ${wrin}`) : null),
+              f.detail && div({ style: { fontSize: '11px', color: 'var(--text3)', marginTop: '1px' } }, f.detail),
+              chips.length ? div({ style: { display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' } },
+                chips.map(c => h(PatternChip, { key: c.id, chip: c }))) : null),
+          ),
+          // nested history
+          isOpen && div({ style: { padding: '2px 10px 9px 29px', borderTop: '1px solid var(--bdr)' } },
+            cls?.primary && div({ style: { fontSize: '11px', color: cls.primary.color, margin: '6px 0 4px' } },
+              `${cls.primary.label}: ${cls.primary.why}`),
+            series.length ? h('table', { style: { borderCollapse: 'collapse', width: '100%', fontSize: '11px' } },
+              h('thead', null, h('tr', null,
+                ['Period', 'Variance $', 'Qty', caseSz > 0 ? 'Cases' : null].filter(Boolean).map(hd =>
+                  h('th', { key: hd, style: { textAlign: hd === 'Period' ? 'left' : 'right', padding: '2px 6px', borderBottom: '1px solid var(--bdr)', color: 'var(--text3)', fontWeight: 600 } }, hd)))),
+              h('tbody', null, series.map((p, j2) => {
+                const worst = Math.abs(p.dol) === Math.max(...series.map(x => Math.abs(x.dol)));
+                return h('tr', { key: p.period, style: { background: worst && series.length > 1 ? 'rgba(248,113,113,.08)' : 'transparent' } },
+                  h('td', { style: { padding: '2px 6px', color: 'var(--text2)' } }, p.period),
+                  h('td', { style: { padding: '2px 6px', textAlign: 'right', fontWeight: 700, color: p.dol < -tolerance ? '#f87171' : p.dol > tolerance ? '#fbbf24' : 'var(--text2)' } }, dolStr(p.dol)),
+                  h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (p.qty || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })),
+                  caseSz > 0 ? h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (Math.abs(p.qty) / caseSz).toFixed(1)) : null);
+              }))) : div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'No prior-period history for this item.')),
+        );
+      })),
+  );
+}
+
 function ItemJourneyView({ journey: j }) {
   const [laneFilter, setLaneFilter] = useState(null); // click a flow chip to drill into that lane's events
   if (!j) return null;
@@ -618,7 +728,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // full cases — "look for ~3 cases" is more actionable than "≈2,091 units" (owner req).
     const caseSzByWrin = {};
     for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin }) });
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin }), history: null, caseSzByWrin });
+    // Provenance: pull a look-back window of variance history for this store so each action item
+    // can nest its month-over-month trend + a pattern chip. On-demand (per modal open), scoped to
+    // the loc + an explicit period list → bounded egress. Fetch a generous 12-period window once;
+    // the look-back selector slices it client-side (no re-fetch). Best-effort — the report stands
+    // on its own if this fails or the table is empty.
+    const histPeriods = lastPeriods(period, 12);
+    loadQsrVarianceHistory({ loc, periods: histPeriods }).then(rows => {
+      setDiag(prev => (prev && prev.loc === loc) ? { ...prev, history: { rows, periods: histPeriods } } : prev);
+    }).catch(() => {
+      setDiag(prev => (prev && prev.loc === loc) ? { ...prev, history: { rows: [], periods: histPeriods } } : prev);
+    });
   }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
 
   // Open the visual Item Journeys for a store (worst-net-variance first).
@@ -1018,12 +1139,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           .md-rpt .chip-info{background:rgba(91,155,213,.14);border-color:#5b9bd5;color:#7fb0e0}`),
         h('div', { className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(diag.report) } }),
 
-        // Action items now BELOW the analysis (owner reversed the order).
-        diag.result.actionItems.length > 0 && div({ style: { marginTop: '12px' } },
-          div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'Action items'),
-          div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
-            diag.result.actionItems.map((a, i) =>
-              div({ key: i, style: { fontSize: '12.5px', color: 'var(--text)', padding: '6px 9px', background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${a.startsWith('[CRITICAL') ? '#f87171' : a.startsWith('[HIGH') ? '#f5bc00' : '#38bdf8'}` } }, a)))),
+        // Action items now BELOW the analysis (owner reversed the order), each carrying its own
+        // provenance: month-over-month history + a pattern chip, click to expand (owner req).
+        h(ActionItemsProvenance, { findings: diag.result.findings, history: diag.history, caseSzByWrin: diag.caseSzByWrin }),
 
         // pending checks (awaiting a data pull for this period)
         diag.result.pending.length > 0 && div({ style: { marginTop: '10px', fontSize: '11px', color: 'var(--text3)' } },
