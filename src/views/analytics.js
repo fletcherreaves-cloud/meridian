@@ -1874,11 +1874,20 @@ function StoreVlhConfigPanel({onClose}) {
 
   uE(() => {
     if (!supabase) { setLoaded(true); return; }
-    supabase.from('store_vlh_config').select('*').then(({data,error:e}) => {
-      if (e) setErr(e.message);
-      else { const m={}; (data||[]).forEach(r=>{ m[r.loc]=r; }); setConfigs(m); }
-      setLoaded(true);
-    });
+    // Harden the load: a rejected or hung query used to leave `loaded` false forever → perpetual
+    // "Loading store configurations…". Always resolve to a usable state (configs, an error banner,
+    // or a timeout that still shows editable defaults). Errors are NON-blocking (table still renders).
+    let done = false;
+    const finish = (patch) => { if (done) return; done = true; if (patch) patch(); setLoaded(true); };
+    const to = setTimeout(() => finish(() => setErr('Timed out loading configurations — showing defaults. Your edits still save.')), 8000);
+    supabase.from('store_vlh_config').select('*').then(
+      ({data,error:e}) => { clearTimeout(to); finish(() => {
+        if (e) setErr(e.message);
+        else { const m={}; (data||[]).forEach(r=>{ m[r.loc]=r; }); setConfigs(m); }
+      }); },
+      (e) => { clearTimeout(to); finish(() => setErr(String(e?.message || e) + ' — showing defaults; edits still save.')); },
+    );
+    return () => clearTimeout(to);
   }, []);
 
   const dflt = (loc) => ({loc, aot:false, dt_type:'side_tandem', in_store:'self_serve', kitchen:'fryer_same', vlh_guide:'standard', coffee:'none'});
@@ -1960,9 +1969,10 @@ function StoreVlhConfigPanel({onClose}) {
       ),
       // Table
       div({style:{flex:1,overflowY:'auto'}},
-        err ? div({style:{padding:24,color:'#ef4444',fontSize:'10px'}},'Error loading config: '+err) :
         !loaded ? div({style:{padding:24,color:'var(--text3)',fontSize:'10px'}},'Loading store configurations…') :
-        h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+        [
+        err ? div({key:'err',style:{padding:'8px 16px',color:'#f59e0b',fontSize:'10px',background:'rgba(245,158,11,.08)',borderBottom:'.5px solid var(--bdr)'}},'⚠ '+err) : null,
+        h('table',{key:'tbl',style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
           h('thead',null,h('tr',null,
             h('th',{style:{...thS,paddingLeft:12}},'Store'),
             h('th',{style:{...thS,textAlign:'center'}},'AOT'),
@@ -1980,6 +1990,7 @@ function StoreVlhConfigPanel({onClose}) {
             ...flLocs.map((loc,i)=>storeRow(loc,okLocs.length+i))
           )
         )
+        ]
       )
     )
   );
