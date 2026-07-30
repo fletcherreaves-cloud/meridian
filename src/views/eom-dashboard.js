@@ -14,7 +14,7 @@ import {
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   saveEomItemDisposition, loadEomItemDisposition,
 } from '../lib/supabase.js';
-import { classifyItemPattern, buildItemSeries, scanChronicOffenders, PATTERN_META } from '../engine/eom-item-pattern.js';
+import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
   buildIncompleteCountMessage, diagnoseIncompleteCount,
@@ -568,6 +568,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [chronicBusy, setChronicBusy] = useState(false);
   const [chronicLookback, setChronicLookback] = useState(6);
   const [chronicOpenRows, setChronicOpenRows] = useState({}); // wrin -> expanded
+  // Count Reliability — accuracy/consistency score per store (owner north-star). On-demand.
+  const [relOpen, setRelOpen] = useState(false);
+  const [rel, setRel] = useState(null);       // { stores, periods, nRows, error }
+  const [relBusy, setRelBusy] = useState(false);
+  const [relLookback, setRelLookback] = useState(6);
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
@@ -730,6 +735,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     }
     setChronicBusy(false);
   }, [period, rows, chronicLookback]);
+
+  // Count Reliability scan — same district variance pull, scored per store (least reliable first).
+  const runReliabilityScan = useCallback(async (lb) => {
+    const lookback = lb ?? relLookback;
+    setRelBusy(true); setRelOpen(true);
+    try {
+      const periodsAsc = lastPeriods(period, lookback);
+      const scopedLocs = [...new Set(rows.map(r => String(r.loc)))];
+      const varRows = await loadQsrVarianceHistoryAll({ periods: periodsAsc, locs: scopedLocs });
+      setRel({ stores: scanCountReliability(varRows, { periodsAsc, tolerance: 50 }), periods: periodsAsc, nRows: varRows.length });
+    } catch (e) {
+      setRel({ stores: [], periods: [], nRows: 0, error: String(e?.message || e) });
+    }
+    setRelBusy(false);
+  }, [period, rows, relLookback]);
 
   const openDraft = useCallback((loc, name, components) => {
     // Run the same diagnosis the 🔬 button uses, so the draft carries a real
@@ -990,6 +1010,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'Scan the current location scope across a past window — which items are chronically High-Variance / Loss-Forming across stores (on our own pattern principles). Reads on demand.',
           style: { background: 'var(--surf3)', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, chronicBusy ? '…' : '🔁 Chronic offenders'),
+        h('button', {
+          onClick: () => runReliabilityScan(), disabled: rows.length === 0 || relBusy,
+          title: 'Count Reliability — grades each store on how CONSISTENTLY it counts (big count-error reversals hurt; real losses do not). Accuracy + consistency is king. Reads on demand.',
+          style: { background: 'var(--surf3)', color: '#4ade80', border: '1px solid #4ade80', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, relBusy ? '…' : '📊 Count reliability'),
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
           onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
@@ -1354,6 +1379,40 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     })(),
 
     // FOB multi-location variance matrix modal
+    relOpen && div({
+      onClick: () => setRelOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({ onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '720px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 Count Reliability — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
+          div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'Prior monthly count periods scored (one EOM count = one month).' },
+            'Look back (months)',
+            div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+              [3, 6, 12].map(n => h('button', { key: n, onClick: () => { setRelLookback(n); runReliabilityScan(n); }, disabled: relBusy,
+                style: { background: relLookback === n ? '#f5bc00' : 'var(--surf3)', color: relLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: relBusy ? 'default' : 'pointer' } }, n))))),
+        h('button', { onClick: () => setRelOpen(false), style: MODAL_X }, '✕'),
+        div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
+          'How CONSISTENTLY each store counts — a store whose same items swing wildly month-to-month (big over-count→correction reversals) is counting unreliably, which skews its numbers AND risks a bad opening for next month. Real losses do NOT count against the grade. Accuracy + consistency is king. Least reliable first.'),
+        relBusy ? div({ style: { padding: '30px', textAlign: 'center', color: 'var(--text3)' } }, 'Scoring count consistency across the scope…')
+          : rel?.error ? div({ style: { padding: '20px', textAlign: 'center', color: '#f87171', fontSize: '13px' } }, `Scan failed: ${rel.error}`)
+          : rel && !rel.stores.length ? div({ style: { padding: '20px', textAlign: 'center', color: '#f5bc00', fontSize: '13px' } },
+              !rel.nRows ? 'No variance history for this scope/window — run the Variance pull or widen the look-back.' : `Read ${rel.nRows.toLocaleString()} rows, but no store has enough multi-period items to score yet — widen the look-back.`)
+          : rel ? div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
+              rel.stores.map(s => {
+                const gc = s.grade === 'A' ? '#4ade80' : s.grade === 'B' ? '#a3e635' : s.grade === 'C' ? '#f5bc00' : s.grade === 'D' ? '#fb923c' : '#f87171';
+                return div({ key: s.loc, style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${gc}` } },
+                  div({ style: { minWidth: '34px', textAlign: 'center' } },
+                    div({ style: { fontSize: '18px', fontWeight: 800, color: gc, lineHeight: 1 } }, s.grade),
+                    div({ style: { fontSize: '10px', color: 'var(--text3)' } }, `${s.score}%`)),
+                  div({ style: { flex: 1, minWidth: 0 } },
+                    div({ style: { fontSize: '12.5px', color: 'var(--text)', fontWeight: 600 } }, nm(s.loc)),
+                    div({ style: { fontSize: '11px', color: 'var(--text3)' } },
+                      `${s.nInconsistent} inconsistent-count item${s.nInconsistent === 1 ? '' : 's'}${s.nFluct ? ` · ${s.nFluct} fluctuating` : ''} of ${s.nItems} scored${s.worst.length ? ` — e.g. ${s.worst.slice(0, 3).map(w => w.descr || w.wrin).join(', ')}` : ''}`)));
+              }))
+          : null)),
+
     chronicOpen && div({
       onClick: () => setChronicOpen(false),
       style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },

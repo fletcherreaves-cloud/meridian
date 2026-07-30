@@ -149,6 +149,38 @@ export function scanChronicOffenders(varRows = [], { periodsAsc = [], tolerance 
   return out;
 }
 
+// Count Reliability (owner north-star 2026-07-30: "accuracy + consistency is king"). Per store, over
+// a look-back window, what fraction of its multi-period items count CONSISTENTLY — i.e. WITHOUT a
+// count-error signature. An `inconsistent-count` pattern (a large sign-flip swing = over-count then a
+// correction, or a missing count) is the direct count-error signal → full penalty; `fluctuating` is a
+// softer swing → half penalty. REAL losses (`high-variance` / `loss-forming`) are NOT held against
+// reliability — those are genuine usage/loss, not counting errors. Least-reliable stores rank first
+// (where to coach). `varRows` = [{loc,period,wrin,descr,dolDiff,variance}].
+export function scanCountReliability(varRows = [], { periodsAsc = [], tolerance = 50, minItems = 3 } = {}) {
+  const byLoc = new Map();
+  for (const r of varRows) { const L = String(r.loc); (byLoc.get(L) || byLoc.set(L, []).get(L)).push(r); }
+  const gradeOf = s => s >= 95 ? 'A' : s >= 88 ? 'B' : s >= 78 ? 'C' : s >= 68 ? 'D' : 'F';
+  const out = [];
+  for (const [loc, rows] of byLoc) {
+    const series = buildItemSeries(rows, { periodsAsc });
+    let nItems = 0, nInconsistent = 0, nFluct = 0;
+    const worst = [];
+    for (const [wrin, it] of series) {
+      if ((it.series || []).length < 2) continue;   // need ≥2 periods to judge consistency
+      nItems++;
+      const ids = new Set(classifyItemPattern(it.series, { tolerance }).chips.map(c => c.id));
+      if (ids.has('inconsistent-count')) { nInconsistent++; worst.push({ wrin, descr: it.descr, cls: it.cls }); }
+      else if (ids.has('fluctuating')) nFluct++;
+    }
+    if (nItems < minItems) continue;                 // too few items to score meaningfully
+    const penalty = nInconsistent + nFluct * 0.5;
+    const score = Math.round(Math.max(0, nItems - penalty) / nItems * 100);
+    out.push({ loc, score, grade: gradeOf(score), nItems, nInconsistent, nFluct, worst: worst.slice(0, 8) });
+  }
+  out.sort((a, b) => a.score - b.score);             // least reliable first — where to coach
+  return out;
+}
+
 function fmtDol(v) { const s = v < 0 ? '-' : ''; return `${s}$${Math.abs(Math.round(v)).toLocaleString()}`; }
 function fmt0(v) { return `$${Math.round(v).toLocaleString()}`; }
 

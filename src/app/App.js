@@ -219,6 +219,12 @@ const MERIDIAN_VERSION    = '4.633';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.634', date:'2026-07-30', changes:[
+    'EOM Dashboard → new "📊 Count Reliability" scan: grades each store (A–F) on how CONSISTENTLY it counts across a past window — a store whose same items swing wildly month-to-month (big over-count→correction reversals) is counting unreliably, which skews its numbers and risks a bad opening for next month. Real losses do NOT count against the grade. Least-reliable stores rank first, with the offending items named. Operationalizes "accuracy + consistency is king."',
+  ]},
+  {version:'4.633', date:'2026-07-30', changes:[
+    'EOM count timing is now the LAST count date only — first→last recorded time that day, shown in H:M:S. And "Earlier-count context" is reframed as an accuracy/consistency signal (mid-cycle counts wash out of the final EOM number, which is anchored only by the opening + this EOM count) rather than recoverable dollars.',
+  ]},
   {version:'4.632', date:'2026-07-30', changes:[
     'EOM Food-Cost Diagnosis: new interactive "Verify & clear" panel for obsolete/discontinued/inactive items — each shows class + on-hand $ and one-tap buttons to log the decision (✓ Counted; class-aware ✗ Wrote off for Food/Condiment or ◦ Kept-usable for non-product), tracked "X/Y decided". Persists to Supabase (no QSRSoft write-back).',
   ]},
