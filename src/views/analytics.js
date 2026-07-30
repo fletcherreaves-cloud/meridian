@@ -7465,10 +7465,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // Digital sales section useMemo
   const digitalSec=React.useMemo(()=>{
-    if(!labInRange.length)return null;
+    // Channel breakdown (deliv/mop/kiosk) comes from channelRows = manual labor MERGED with the
+    // emailed Sales Ledger — NOT labInRange (labor + DAR), because the DAR has no channel split,
+    // so once manual labor stopped the tile read 0% digital (Notes: Jul-2026). Sales Ledger is
+    // the current channel source.
+    const chRows=channelRows.rows||[];
+    if(!chRows.length)return null;
     const sm=allLocs.map(loc=>{
-      const rows=labInRange.filter(r=>r.loc===String(loc));
-      const tot=rows.reduce((a,r)=>a+(r.allNetSales||0),0);
+      const rows=chRows.filter(r=>r.loc===String(loc));
+      const tot=rows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
       if(!tot)return null;
       const deliv=rows.reduce((a,r)=>a+(r.delivSales||0),0);
       const mop=rows.reduce((a,r)=>a+(r.mopSales||0),0);
@@ -7493,7 +7498,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       okMopPct:mktPct(okLocs,'mop'),flMopPct:mktPct(flLocs,'mop'),
       okKioskPct:mktPct(okLocs,'kiosk'),flKioskPct:mktPct(flLocs,'kiosk'),
       digStoreCount:sm.filter(s=>s.dig>0).length,storeCount:sm.length};
-  },[labInRange,okLocs,flLocs,allLocs]);
+  },[channelRows,okLocs,flLocs,allLocs]);
 
   // ── No data state ─────────────────────────────────────────────
   // noData is false when either manual laborRows OR auto-synced qsrActSummaryRows are present

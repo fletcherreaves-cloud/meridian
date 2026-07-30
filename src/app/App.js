@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.603';
+const MERIDIAN_VERSION    = '4.604';
 const MERIDIAN_BUILD_DATE = '2026-07-29';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.604', date:'2026-07-29', changes:[
+    'Fixed At-A-Glance Digital Sales showing 0% / "0 of 27 reporting": the tile pulled its channel breakdown (McDelivery / MOP / Kiosk) from a source that has no channel split once manual uploads stop; it now reads from the emailed Sales Ledger (which carries the channels and stays current). (Service R2P and KVS on the AAG tile are a separate known gap being worked next.)',
+  ]},
   {version:'4.603', date:'2026-07-29', changes:[
     'EOM diagnosis now prints a "Ghost-float verify list" — the stale / likely-deactivated items carrying a residual on-hand, each with its on-hand $, last-count date, and the two-way call: present & usable → count it ($0); obsolete/gone → write off now (−$X) so you time the loss before the period locks instead of letting QSRSoft auto-zero it later.',
   ]},
