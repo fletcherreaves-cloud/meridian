@@ -1477,20 +1477,36 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         (() => {
           const f = diag.fob || {};
           if (f.fob == null && f.fobPct == null) return null;
-          const tgt = fobTgtOf(diag.loc);
-          const over = tgt != null && f.fobPct != null && f.fobPct > tgt;
+          const tg = DEFAULT_TARGETS[unpad(diag.loc)] || {};
+          const fobTgt = tg.tFOBTarget;
           const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
-          const cell = (label, val, color) => div({ style: { padding: '3px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '1px' } },
-            span({ style: { fontSize: '8px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' } }, label),
-            span({ style: { fontSize: '12px', fontWeight: 700, color: color || 'var(--text)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, val));
+          const box = { padding: '3px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '1px' };
+          const lab = { fontSize: '8px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' };
+          const big = c => ({ fontSize: '12px', fontWeight: 700, color: c || 'var(--text)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' });
+          const simple = (label, val, color) => div({ style: box }, span({ style: lab }, label), span({ style: big(color) }, val));
+          // A component cell with $, its % of sales, and ± vs its own target (minimal, owner req).
+          const comp = (label, amt, tgtFrac) => {
+            const p = f.sales ? amt / f.sales : null;
+            const dPp = (tgtFrac != null && p != null) ? (p - tgtFrac) * 100 : null;
+            const over = dPp != null && dPp > 0.001;
+            return div({ style: box },
+              span({ style: lab }, label),
+              span({ style: big() }, $(amt)),
+              p != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: dPp == null ? 'var(--text3)' : over ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+                `${(p * 100).toFixed(2)}%${dPp != null ? ` · ${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}` : ''}${tgtFrac != null ? ` (tgt ${(tgtFrac * 100).toFixed(2)}%)` : ''}`) : null);
+          };
+          const fobOver = fobTgt != null && f.fobPct != null && f.fobPct > fobTgt;
           return div({ style: { marginBottom: '10px' } },
             div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'stretch' } },
-              cell('FOB', `${f.fobPct != null ? (f.fobPct * 100).toFixed(2) + '%' : '—'} · ${$(f.fob)}`, over ? '#f87171' : '#f5bc00'),
-              tgt != null ? cell('vs Target', `${(tgt * 100).toFixed(2)}%${f.fobPct != null ? ` · ${f.fobPct >= tgt ? '+' : ''}${((f.fobPct - tgt) * 100).toFixed(2)}pp` : ''}`, over ? '#f87171' : '#4ade80') : null,
-              cell('Comp Waste', $(f.comp)), cell('Raw Waste', $(f.raw)), cell('Condiments', $(f.cond)),
-              cell('Emp Meals', $(f.emp)), cell('Stat Var', $(f.statv)), cell('Unexplained', $(f.unex)),
-              f.sales ? cell('Prod Sales', $(f.sales)) : null),
-            f.asOf ? div({ style: { fontSize: '9px', color: 'var(--text3)', marginTop: '3px' } }, `FOB as of ${f.asOf} · MTD, dollar-weighted`) : null);
+              div({ style: box },
+                span({ style: lab }, 'FOB'),
+                span({ style: big(fobOver ? '#f87171' : '#f5bc00') }, `${f.fobPct != null ? (f.fobPct * 100).toFixed(2) + '%' : '—'} · ${$(f.fob)}`),
+                fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+                  `${f.fobPct != null ? `${f.fobPct >= fobTgt ? '+' : ''}${((f.fobPct - fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${(fobTgt * 100).toFixed(2)}%`) : null),
+              comp('Comp Waste', f.comp, tg.tCompWaste), comp('Raw Waste', f.raw, tg.tRawWaste), comp('Condiments', f.cond, tg.tCondiment),
+              comp('Emp Meals', f.emp, tg.tEmpFood), comp('Stat Var', f.statv, tg.tStatLoss), comp('Unexplained', f.unex, tg.tUnex),
+              f.sales ? simple('Prod Sales', $(f.sales)) : null),
+            f.asOf ? div({ style: { fontSize: '9px', color: 'var(--text3)', marginTop: '3px' } }, `FOB as of ${f.asOf} · MTD, dollar-weighted · % = component ÷ prod sales, ± = pp vs target`) : null);
         })(),
 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
