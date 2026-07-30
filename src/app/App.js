@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.619';
+const MERIDIAN_VERSION    = '4.620';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.620', date:'2026-07-30', changes:[
+    'EOM Obsolete/Discontinued/Inactive guidance is now class-aware and written in terms managers use: always verify with a physical count first, then — Food/Condiment: if it won\'t be used before expiration, waste to zero to account for the balance, then deactivate the WRIN at a verified zero on-hand; Non-Product (promo / Happy Meal items / paper): count and KEEP it if usable (donation / local giveaway) — do not discard — deactivate only once genuinely used up and verified at zero. SAGE gives the same class-specific direction so it never tells a manager to discard usable non-product.',
+  ]},
   {version:'4.619', date:'2026-07-30', changes:[
     'Operations Report auto-pull — groundwork: a new pull (scripts/qsrsoft-ops-pull.mjs + daily workflow) captures the whole QSRSoft Operations Report as store-level daily REST data — Controls (discount, T-Reds before/after, meals, drawer, refunds), Labor (OT hours/$, crew, needed hours), Service (CTP/OEPE/DT/MFY/KVS/RTP), channel sales mix, and the 3 Peaks — all WITH last-year values. Kills the manual Operations/Controls upload dependency. (Ingestion layer; the tile wiring lands next.)',
     'Leadership One-Pager: the OSAT B2B (1★) target now reads the effective/yearly targets (was only reading the static defaults), so the "Overall Satisfaction B2B" target from the yearly-targets file lands.',

@@ -481,16 +481,26 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       if (more > 0) L.push(`- _+${more} more._`);
     }
     if (bs.early && bs.early.n) L.push('', `- **${m(bs.early)} counted EARLY** this period — QSRSoft already shows them counted. Recount only if the count looks *wrong*; it will **not** recover this period's dollars (they cascade). NOT "just go count it" money.`);
-    if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} OBSOLETE / DISCONTINUED / INACTIVE** — last counted a prior period; a residual on-hand is riding. **Verify:** still sellable/usable → count it; obsolete/gone → **write off before close** so you time the loss cleanly instead of letting it ride into next period's opening. These inflate "value at risk" without being real count work.`);
+    if (bs.stale && bs.stale.n) L.push(`- **${m(bs.stale)} OBSOLETE / DISCONTINUED / INACTIVE** — last counted a prior period; a residual on-hand is riding. **Always verify with a physical count first.** Food/condiment: if it won't be used before its expiration, waste it to zero to account for the balance, then deactivate the WRIN at a verified zero on-hand. Non-product (promo / Happy Meal items / paper): count and keep it — it may be usable (donation, local giveaway); deactivate only once it's genuinely used up and verified at zero. These inflate "value at risk" without being real count work.`);
     // Itemized obsolete/discontinued/inactive verify-&-clear list (Notes: Durant #5985 / #38). Each
-    // with on-hand $, last count date, and the two-way impact so a manager can clear it before lock.
+    // gets a CLASS-AWARE direction so nobody discards usable non-product (owner req 2026-07-30):
+    // food/condiment (perishable) → verify count, waste-to-zero if it won't be used before expiration,
+    // then deactivate the WRIN at a verified zero; non-product (promo toys e.g. HM26, paper) → count
+    // & KEEP if usable (donation / local giveaway), deactivate only once genuinely at zero.
+    const perishable = (cls) => { const c = normClass(cls); return c === 'food' || c === 'condiment'; };
     const staleItems = (incomplete.uncounted || []).filter(u => u.state === 'stale').sort((a, b) => b.valueAtRisk - a.valueAtRisk).slice(0, 15);
     if (staleItems.length) {
       L.push('', '### Obsolete / Discontinued / Inactive — verify & clear before close', '');
-      staleItems.forEach(u => L.push(`- **${u.descr || u.wrin}** — on-hand ${money(u.onHandAmt)} · last counted ${u.lastCounted || '—'} → present + usable? **count it ($0)** · obsolete / gone? **write off (−${money(u.valueAtRisk)})**`));
+      staleItems.forEach(u => {
+        const head = `- **${u.descr || u.wrin}** (${normClass(u.cls) || 'item'}) — on-hand ${money(u.onHandAmt)} · last counted ${u.lastCounted || '—'} → **verify & enter a count.**`;
+        const dir = perishable(u.cls)
+          ? ` If it won't be used before its expiration, **waste it to zero** (−${money(u.valueAtRisk)}) to account for the balance, then **deactivate the WRIN** at a verified zero on-hand.`
+          : ` **Keep it in inventory** if usable (donation / local giveaway) — do **not** discard. Deactivate the WRIN only once it's genuinely used up and verified at zero.`;
+        L.push(head + dir);
+      });
       const more = (incomplete.byState?.stale?.n || 0) - staleItems.length;
-      if (more > 0) L.push(`- _+${more} more stale item(s)._`);
-      L.push('_Rule: recoverable value (still sellable/usable/transferable) → count; obsolete/gone → write off now so YOU time the loss cleanly before the period locks._');
+      if (more > 0) L.push(`- _+${more} more item(s)._`);
+      L.push('_Rule: always verify with a physical count first. **Food/condiment** → if it won\'t be used before expiration, waste to zero, then deactivate the WRIN at a verified zero on-hand. **Non-product** (promo, Happy Meal items, paper) → count and keep if usable (donation / local giveaway); deactivate only once genuinely at zero. Never discard usable product._');
     }
     L.push('');
   }
