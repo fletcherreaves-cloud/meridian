@@ -2487,7 +2487,11 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
 // Minimal columns to keep the egress bounded; optional `locs` narrows to the current filter.
 export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = {}) {
   if (!supabase || !periods.length) return [];
-  const locSet = locs && locs.length ? new Set(locs.map(String)) : null;
+  // Compare loc format-agnostically (strip zero-padding both sides) — the scan's scoped locs may
+  // be padded ("0003708") while qsr_variance_stat stores unpadded ("3708") or vice versa; an exact
+  // String() match silently dropped every row → "no results on any window" (owner report).
+  const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+  const locSet = locs && locs.length ? new Set(locs.map(norm)) : null;
   const data = await fetchAll((from, to) => {
     let q = supabase.from('qsr_variance_stat')
       .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to);
@@ -2497,7 +2501,7 @@ export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = 
     loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     variance: r.variance, dolDiff: r.dol_diff,
   }));
-  return locSet ? rows.filter(r => locSet.has(String(r.loc))) : rows;
+  return locSet ? rows.filter(r => locSet.has(norm(r.loc))) : rows;
 }
 
 // ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────

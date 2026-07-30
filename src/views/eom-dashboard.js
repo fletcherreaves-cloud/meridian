@@ -713,7 +713,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       const periodsAsc = lastPeriods(period, lookback);
       const scopedLocs = [...new Set(rows.map(r => String(r.loc)))];
       const varRows = await loadQsrVarianceHistoryAll({ periods: periodsAsc, locs: scopedLocs });
-      setChronic({ items: scanChronicOffenders(varRows, { periodsAsc, tolerance: 50 }), periods: periodsAsc, nRows: varRows.length });
+      setChronic({ items: scanChronicOffenders(varRows, { periodsAsc, tolerance: 50 }), periods: periodsAsc, nRows: varRows.length, _rows: varRows });
     } catch (e) {
       setChronic({ items: [], periods: [], nRows: 0, error: String(e?.message || e) });
     }
@@ -1311,7 +1311,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             : chronic ? `${chronic.items.length} chronic item${chronic.items.length === 1 ? '' : 's'} across ${chronic.periods.length} periods (${chronic.periods[0]}→${chronic.periods[chronic.periods.length - 1]}) · ${chronic.nRows.toLocaleString()} rows read. Items bad across the MOST stores rank first — a systemic/spec issue, not a one-store fluke.`
             : 'Run the scan.'),
         chronicBusy ? div({ style: { padding: '30px', textAlign: 'center', color: 'var(--text3)' } }, 'Reading variance history across the scope…')
-          : chronic && !chronic.items.length && !chronic.error ? div({ style: { padding: '20px', textAlign: 'center', color: '#4ade80', fontSize: '13px' } }, '✓ No chronic offenders in this scope/window — variance is within tolerance or one-off.')
+          : chronic && !chronic.items.length && !chronic.error ? (() => {
+              // Distinguish "no data" from "clean" so an empty result is never ambiguous.
+              const nP = new Set((chronic._rows || []).map(r => r.period)).size;
+              if (!chronic.nRows) return div({ style: { padding: '20px', textAlign: 'center', color: '#f5bc00', fontSize: '13px' } },
+                'No variance history found for this scope + window. Either the Variance pull has not populated these months yet (run it / widen the look-back), or this scope has no items. ',
+                span({ style: { display: 'block', fontSize: '11px', color: 'var(--text3)', marginTop: '4px' } }, `(0 rows across ${chronic.periods.join(', ')})`));
+              if (nP < 2) return div({ style: { padding: '20px', textAlign: 'center', color: '#f5bc00', fontSize: '13px' } },
+                `Only ${nP} period of variance data in this window (${chronic.nRows.toLocaleString()} rows) — chronic patterns need at least 2 periods to compare. Run more Variance pulls or widen the look-back.`);
+              return div({ style: { padding: '20px', textAlign: 'center', color: '#4ade80', fontSize: '13px' } }, `✓ No chronic offenders — read ${chronic.nRows.toLocaleString()} rows across ${nP} periods, all within tolerance or one-off.`);
+            })()
           : chronic ? div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
               chronic.items.slice(0, 40).map(it => {
                 const isOpen = chronicOpenRows[it.wrin];
