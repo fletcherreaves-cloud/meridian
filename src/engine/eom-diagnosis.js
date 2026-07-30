@@ -268,15 +268,30 @@ export const DEFAULT_CHECKS = [
   { id: 'purchases-posted', label: 'Purchases — all invoices posted (none pending)', order: 60, enabled: true, requires: ['purchases'], pending: true, run: () => [] },
   {
     // Transfers — large / not-approved transfers that shift the variance picture.
-    id: 'transfers', label: 'Transfers', order: 70, enabled: true,
+    // Transfers — large / not-posted, PLUS phantom-transfer timing (integrity #47): a transfer
+    // logged inside the EOM count window is the classic move to shift inventory across the period
+    // boundary on paper. Elevate those + prompt for a signed slip on BOTH sides in the same period.
+    // (Full unmatched-side detection — a Transfer-In with no counterparty Transfer-Out — needs
+    // district-wide transfer data, not the single-store diagnosis context; tracked as future.)
+    id: 'transfers', label: 'Transfers — large / not-posted / EOM-window', order: 70, enabled: true,
     requires: ['transfers'], params: { largeAmt: 100 },
     run: (ctx) => {
       const { flagged, netAmt } = summarizeTransfers(ctx.data.transfers || [], { largeAmt: ctx.params.largeAmt });
-      return flagged.map(t => mkFinding('transfers',
-        t.status !== 'approved' ? SEVERITY.medium : SEVERITY.info,
-        `Transfer ${t.dir} ${t.status !== 'approved' ? `(${t.status})` : ''} — store ${t.counterpartyNsn}`,
-        `$${Math.round(t.total)} on ${t.dt}${t.status !== 'approved' ? ' — NOT posted, verify' : ''} (period net $${Math.round(netAmt)})`,
-        t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn }));
+      const windowStart = countWindowStartTs(ctx.period);
+      return flagged.map(t => {
+        const notPosted = t.status !== 'approved';
+        const tt = Date.parse(t.dt);
+        const boundary = windowStart != null && !Number.isNaN(tt) && tt >= windowStart;
+        const sev = notPosted ? (boundary ? SEVERITY.high : SEVERITY.medium)
+                              : (boundary ? SEVERITY.medium : SEVERITY.info);
+        const notes = [];
+        if (notPosted) notes.push('NOT posted — verify');
+        if (boundary) notes.push('logged inside the count window — the classic phantom-transfer timing; confirm a signed physical slip on BOTH stores and that the counterparty logged the matching side in the same period');
+        return mkFinding('transfers', sev,
+          `Transfer ${t.dir} ${notPosted ? `(${t.status})` : ''}${boundary ? ' · EOM-window' : ''} — store ${t.counterpartyNsn}`,
+          `${_mny(t.total)} on ${t.dt}${notes.length ? ' — ' + notes.join('; ') : ''} (period net ${_mny(netAmt)})`,
+          t.total, { transferId: t.id, dir: t.dir, status: t.status, manager: t.manager, counterpartyNsn: t.counterpartyNsn, boundary });
+      });
     },
   },
   {

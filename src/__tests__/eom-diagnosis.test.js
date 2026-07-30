@@ -186,6 +186,19 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'unrealistic-over')).toBe(false);
   });
 
+  it('transfers flags an EOM-count-window transfer as a phantom-transfer risk', () => {
+    const transfers = [
+      { id: 'A', dir: 'In', status: 'approved', dt: '2026-07-30', lineAmt: 200, transferTotal: 200, counterpartyNsn: '3708', cls: 'Food' }, // inside count window
+      { id: 'B', dir: 'Out', status: 'approved', dt: '2026-07-05', lineAmt: 300, transferTotal: 300, counterpartyNsn: '3709', cls: 'Food' }, // mid-month
+    ];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { transfers } }).findings.filter(x => x.checkId === 'transfers');
+    const A = res.find(f => f.data.transferId === 'A'), B = res.find(f => f.data.transferId === 'B');
+    expect(A.data.boundary).toBe(true);
+    expect(A.severity).toBe(SEVERITY.medium);
+    expect(A.detail).toMatch(/phantom-transfer/i);
+    expect(B.data.boundary).toBe(false);
+  });
+
   it('negative-onhand flags an impossible below-zero balance as HIGH', () => {
     const onHand = [{ wrin: 'w1', descr: 'Big Mac Sauce', totalUnits: -6, onHandAmt: -48 }];
     const f = runDiagnosis({ store: 's', period: '2026-07', data: { onHand } }).findings.find(x => x.checkId === 'negative-onhand');
