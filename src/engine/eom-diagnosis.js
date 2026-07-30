@@ -339,6 +339,23 @@ export const DEFAULT_CHECKS = [
       return out;
     },
   },
+  {
+    // Negative actual usage = a mathematical impossibility (integrity #47, owner need-to-know #2).
+    // Actual Usage = Begin + Purchases − Ending; if it comes out < 0 the ending count is HIGHER than
+    // everything on hand plus everything received — the padding tell in its extreme form (or a
+    // mis-keyed / UOM count, e.g. inner bags entered as full cases). Auto-flag every offending WRIN.
+    id: 'negative-usage', label: 'Negative usage — impossible (padded / mis-keyed count)', order: 34, enabled: true,
+    requires: ['variance'], params: { tol: -0.001 },
+    run: (ctx) => {
+      const tol = ctx.params.tol ?? -0.001;
+      return (ctx.data.variance || [])
+        .filter(v => Number(v.actualUsage) < tol)
+        .map(v => mkFinding('negative-usage', SEVERITY.high,
+          `Negative usage: ${v.descr}`,
+          `Actual usage computed to ${Number(v.actualUsage).toLocaleString()} (below zero) — impossible: the ending count is higher than everything on hand plus everything received this period. Almost always an over-padded ending count or a mis-keyed unit of measure (inner bags entered as full cases). Recount ${v.descr} and re-verify the ending quantity + UOM.`,
+          Math.abs(v.dolDiff || 0), { wrin: v.wrin, actualUsage: Number(v.actualUsage) }));
+    },
+  },
 ];
 
 // ── Yield-band cause overlay ──────────────────────────────────────────────────

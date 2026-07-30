@@ -186,6 +186,19 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'unrealistic-over')).toBe(false);
   });
 
+  it('negative-usage flags an impossible below-zero usage as HIGH', () => {
+    const variance = [{ wrin: 'w1', descr: 'Sweetener', actualUsage: -42, dolDiff: 0 }];
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.find(x => x.checkId === 'negative-usage');
+    expect(f).toBeTruthy();
+    expect(f.severity).toBe(SEVERITY.high);
+    expect(f.data.actualUsage).toBe(-42);
+  });
+
+  it('negative-usage ignores normal positive/zero usage', () => {
+    const variance = [{ wrin: 'w1', descr: 'Beef', actualUsage: 500, dolDiff: -300 }, { wrin: 'w2', descr: 'Salt', actualUsage: 0 }];
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { variance } }).findings.some(x => x.checkId === 'negative-usage')).toBe(false);
+  });
+
   it('uom-sanity stays silent when no case sizes are available', () => {
     const res = runDiagnosis({ store: 's', period: '2026-07', data: { variance: [{ wrin: 'w1', variance: -900, dolDiff: -1200 }] } });
     expect(res.findings.some(f => f.checkId === 'uom-sanity')).toBe(false);
