@@ -2485,22 +2485,32 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
 // (which items are chronically High-Variance / Loss-Forming across ALL stores over a past window).
 // On-demand only (explicit "Run scan" button) — this reads many rows, so it must never auto-run.
 // Minimal columns to keep the egress bounded; optional `locs` narrows to the current filter.
+// Session cache for the variance-history pull (egress guard, task #20). The three integrity scans
+// (Chronic / Reliability / Rubber-band) request the SAME periods every run; without this, running
+// all three = 3× the multi-month fetch, and re-opening a modal re-pulls. Cache the FULL period pull
+// keyed by the sorted period set (loc filtering is applied client-side after), TTL 5 min. Cleared
+// on any variance write. This alone removes most of the egress from the integrity features.
+const _varHistCache = new Map(); // periodsKey -> { at, rows }
+const _VARHIST_TTL = 5 * 60 * 1000;
+export function clearVarianceHistoryCache() { _varHistCache.clear(); }
 export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = {}) {
   if (!supabase || !periods.length) return [];
-  // Compare loc format-agnostically (strip zero-padding both sides) — the scan's scoped locs may
-  // be padded ("0003708") while qsr_variance_stat stores unpadded ("3708") or vice versa; an exact
-  // String() match silently dropped every row → "no results on any window" (owner report).
   const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
   const locSet = locs && locs.length ? new Set(locs.map(norm)) : null;
-  const data = await fetchAll((from, to) => {
-    let q = supabase.from('qsr_variance_stat')
-      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to);
-    return q;
-  });
-  const rows = (data || []).map(r => ({
-    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
-    variance: r.variance, dolDiff: r.dol_diff,
-  }));
+  const key = [...periods].sort().join(',');
+  const hit = _varHistCache.get(key);
+  let rows;
+  if (hit && (Date.now() - hit.at) < _VARHIST_TTL) {
+    rows = hit.rows;
+  } else {
+    const data = await fetchAll((from, to) => supabase.from('qsr_variance_stat')
+      .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to));
+    rows = (data || []).map(r => ({
+      loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+      variance: r.variance, dolDiff: r.dol_diff,
+    }));
+    _varHistCache.set(key, { at: Date.now(), rows });
+  }
   return locSet ? rows.filter(r => locSet.has(norm(r.loc))) : rows;
 }
 
