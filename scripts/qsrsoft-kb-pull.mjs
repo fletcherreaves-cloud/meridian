@@ -57,40 +57,24 @@ async function main() {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('[kb] post-login url:', page.url());
 
-    // ── SSO into the KB the way the app does: the left-menu "Support Site" link (2nd from bottom)
-    // initiates the SSO handshake — no separate login (owner-confirmed). Read its href and navigate to
-    // it (robust vs. clicking a possibly-new-tab link); fall back to the help-center URL directly.
-    let ssoHref = null;
-    try {
-      ssoHref = await page.evaluate(() => {
-        const links = [...document.querySelectorAll('a')];
-        const byText = links.find(a => /support\s*site/i.test(a.textContent || ''));
-        const byHref = links.find(a => /zendesk|\/support\b|help[_-]?center|\/hc\b/i.test(a.href || ''));
-        return (byText || byHref)?.href || null;
-      });
-    } catch {}
-    if (ssoHref) {
-      console.log('[kb] found Support Site link → SSO via', ssoHref);
-      await page.goto(ssoHref, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
-    } else {
-      console.log(`[kb] Support Site link not found — trying ${KB_HOST}/hc/${LOCALE} directly…`);
-      await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    // ── SSO into the KB. Hitting the zendesk host initiates SSO (v3/zdlogin bounce → the custom domain
+    // support.qsrsoft.com/hc). That bounce is FLAKY, so retry navigating to the help center until the
+    // URL actually settles on a /hc/ page that isn't the zdlogin interstitial. `settled` = we're there.
+    const SUPPORT = 'https://support.qsrsoft.com';
+    const settled = () => { const u = page.url(); return /\/hc\//.test(u) && !/zdlogin/i.test(u); };
+    console.log('[kb] initiating KB SSO…');
+    await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    await page.waitForURL(u => /\/hc\//.test(String(u)) && !/zdlogin/i.test(String(u)), { timeout: 25000 }).catch(() => {});
+    let base = null;
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      if (settled()) { base = new URL(page.url()).origin; break; }
+      console.log(`[kb] SSO attempt ${attempt}: at ${page.url()} — re-navigating to the help center…`);
+      await page.goto(`${SUPPORT}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 2500));
     }
-    // The SSO bounces through v3.myqsrsoft.com/zdlogin → the custom KB domain (support.qsrsoft.com/hc).
-    // Wait for that redirect to SETTLE on a /hc/ URL before reading the origin (first run caught the
-    // zdlogin bounce mid-flight).
-    await page.waitForURL(/\/hc\//, { timeout: 25000 }).catch(() => {});
-    await new Promise(r => setTimeout(r, 2000));
     await snap('kb-01-helpcenter.png');
-    console.log('[kb] KB landing url:', page.url());
-    if (!/\/hc\//.test(page.url())) {
-      await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
-      await page.waitForURL(/\/hc\//, { timeout: 20000 }).catch(() => {});
-    }
-    // The API MUST be called on the origin we actually landed on (same-origin) — the KB is served from
-    // its custom domain, so fetching the zendesk.com host cross-origin fails (the first-run lesson).
-    const base = new URL(page.url()).origin;
-    console.log('[kb] KB origin:', base);
+    console.log('[kb] KB landing url:', page.url(), '| origin:', base);
+    if (!base) { console.error('[kb] SSO never settled on the help center (stuck at zdlogin?) — check kb-01.'); process.exitCode = 1; return; }
 
     // ── Crawl the RENDERED help center (Zendesk server-renders article bodies into the page HTML; the
     // end-user JSON API 401s on this restricted custom-domain HC). BFS from the home page over
