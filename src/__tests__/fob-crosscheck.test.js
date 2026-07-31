@@ -24,6 +24,25 @@ describe('parseExternalFob', () => {
   it('skips lines that are not one of our stores', () => {
     expect(parseExternalFob('Total 99 $1 $2', OUR)).toEqual([]);
   });
+  it('parses the LABELED CoachQ format — FOB$ from "FOB: $X (Y%)", components by label (owner 2026-07-31 bug)', () => {
+    const line = '3708\tFOB: $14,589.13 (4.58%) | +$1,009.42 vs median · Comp Waste: $1,003.98 | +$571.14 OVER · Raw Waste: $899.29 | -$942.42 UNDER · Emp Meal: $669.89 | -$173.24 UNDER · Stat Var: $5,544.58 | +$1,192.21 OVER';
+    const [r] = parseExternalFob(line, OUR);
+    expect(r.labeled).toBe(true);
+    expect(r.extFob).toBeCloseTo(14589.13, 2);       // NOT the median-delta 1009.42
+    expect(r.extFobPct).toBeCloseTo(4.58, 2);        // NOT 1009 or 571
+    expect(r.comps.comp).toBeCloseTo(1003.98, 2);
+    expect(r.comps.statv).toBeCloseTo(5544.58, 2);
+    expect(r.nComps).toBe(4);                         // only the flagged ones listed
+    expect(r.sumOk).toBe(null);                       // can't sum-check with <6 components
+  });
+  it('labeled format: full 6-component row reconciles to itself (sumOk true), negatives handled', () => {
+    const line = '5183\tFOB: $20,307.12 (4.55%) · Comp Waste: $270.30 · Raw Waste: $1,077.45 · Condiment: $9,363.10 · Emp Meal: $1,410.18 · Disc Coupon: $2,844.43 · Stat Var: $9,123.35 · Unexplained: -$937.26';
+    const [r] = parseExternalFob(line, ['5183']);
+    expect(r.extFob).toBeCloseTo(20307.12, 2);
+    expect(r.comps.unex).toBeCloseTo(-937.26, 2);    // -$ handled
+    expect(r.comps.disc).toBeCloseTo(2844.43, 2);    // disc parsed but excluded from sum6
+    expect(r.sumOk).toBe(true);                       // 6 sum to FOB$
+  });
 });
 
 describe('reconcileFob', () => {

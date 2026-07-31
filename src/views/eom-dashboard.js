@@ -18,6 +18,7 @@ import {
   createEomShareLink,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
+import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
@@ -925,18 +926,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const loc = String(r.loc);
     const oh = byLoc[loc] || [], vr = varByLoc[loc] || [];
     const vByWrin = {}; for (const v of vr) vByWrin[String(v.wrin)] = v;
+    // RAW-source variance (the var-0 fix): the Raw Item count event logs the variance the instant a
+    // manager submits (owner-confirmed), whereas the aggregate qsr_variance_stat lags. Prefer raw; the
+    // aggregate is the fallback. So the baseline/current never capture a stale $0 for a counted item.
+    const rawV = latestVarianceByWrin(rawByLoc[loc] || [], { asOf: new Date() });
+    const dolOf = w => rawV[w]?.dolDiff ?? vByWrin[w]?.dolDiff ?? null;
+    const varOf = w => rawV[w]?.variance ?? vByWrin[w]?.variance ?? null;
     const items = oh.map(o => {
-      const v = vByWrin[String(o.wrin)] || {};
+      const w = String(o.wrin), v = vByWrin[w] || {};
       return {
-        wrin: String(o.wrin), descr: o.descr || v.descr || '', cls: o.cls || v.cls || '',
+        wrin: w, descr: o.descr || v.descr || '', cls: o.cls || v.cls || '',
         qty: o.totalUnits ?? null, onHandAmt: o.onHandAmt ?? null,
-        dolDiff: v.dolDiff ?? null, variance: v.variance ?? null,
-        lastCounted: isoDay(o.lastCounted) || isoDay(o.lastSubmitted),
+        dolDiff: dolOf(w), variance: varOf(w),
+        lastCounted: isoDay(o.lastCounted) || isoDay(o.lastSubmitted) || rawV[w]?.lastCounted || null,
       };
     });
     // Variance-only items (no on-hand row) — retain them too so nothing is lost.
     const seen = new Set(items.map(i => i.wrin));
-    for (const v of vr) { const w = String(v.wrin); if (!seen.has(w)) items.push({ wrin: w, descr: v.descr || '', cls: v.cls || '', qty: null, onHandAmt: null, dolDiff: v.dolDiff ?? null, variance: v.variance ?? null, lastCounted: null }); }
+    for (const v of vr) { const w = String(v.wrin); if (!seen.has(w)) items.push({ wrin: w, descr: v.descr || '', cls: v.cls || '', qty: null, onHandAmt: null, dolDiff: dolOf(w), variance: varOf(w), lastCounted: rawV[w]?.lastCounted || null }); }
     const c = r.components || {};
     return {
       loc, period, name: r.name,
@@ -944,7 +951,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       count: { pctCounted: r.prog?.pctCounted ?? null, earlyPctCounted: r.prog?.earlyPctCounted ?? null, believesDone: !!r.prog?.believesDone, byClass: r.prog?.byClass ?? null },
       items,
     };
-  }, [byLoc, varByLoc, period]);
+  }, [byLoc, varByLoc, rawByLoc, period]);
 
   // Lock a baseline for EVERY loaded store (not just the current filter) so the baseline is complete.
   const lockBaseline = useCallback(async () => {

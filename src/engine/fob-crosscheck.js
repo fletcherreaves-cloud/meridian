@@ -25,8 +25,6 @@ export function parseExternalFob(text, ourLocs = []) {
   for (const raw of String(text || '').split('\n')) {
     const line = raw.trim();
     if (!line) continue;
-    // First store-looking token that's one of ours. Split on whitespace/pipe only — NOT commas,
-    // or "$307,503.52" would shatter into "$307" + "503.52".
     const tokens = line.split(/[\s|]+/);
     let store = null, idx = -1;
     for (let i = 0; i < Math.min(tokens.length, 3); i++) {
@@ -34,22 +32,37 @@ export function parseExternalFob(text, ourLocs = []) {
       if (t && ours.has(norm(t))) { store = norm(t); idx = i; break; }
     }
     if (!store) continue;
-    // Numbers AFTER the store token (strip $ and commas; keep sign + decimals).
+
+    // ── LABELED format (CoachQ 2026-07): "FOB: $14,589.13 (4.58%) … • Comp Waste: $1,003.98 …". Parse
+    // by label, not position — the old positional parser mis-read the median-delta as FOB% (owner bug). ──
+    if (/FOB\s*:/i.test(line) || /Comp\s*Waste\s*:/i.test(line)) {
+      const money = re => { const m = line.match(re); return m ? Number(String(m[1]).replace(/[$,\s]/g, '')) : null; };
+      const comp = label => money(new RegExp(label + '\\s*:\\s*(-?\\$?[\\d,]+(?:\\.\\d+)?)', 'i'));
+      const extFob = money(/FOB\s*:\s*(-?\$?[\d,]+(?:\.\d+)?)/i);
+      const extFobPct = money(/FOB\s*:[^(]*\(\s*([\d.]+)\s*%/i) ?? money(/\(\s*([\d.]+)\s*%\)/);
+      const comps = { comp: comp('Comp\\s*Waste'), raw: comp('Raw\\s*Waste'), cond: comp('Condiment'), emp: comp('Emp\\s*Meal'), disc: comp('Disc(?:ount)?[\\s/]*Coupon'), statv: comp('Stat\\s*Var'), unex: comp('Unexplained') };
+      const has6 = ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'].every(k => comps[k] != null);
+      const sum6 = has6 ? (comps.comp + comps.raw + comps.cond + comps.emp + comps.statv + comps.unex) : null;
+      out.push({
+        store, prodSales: null, extFob, extFobPct, comps, sum6,
+        // Fabrication check only when all 6 components were listed (CoachQ often lists only the FLAGGED
+        // ones, so sum-check is null there — that's the data's limit, not a mismatch).
+        sumOk: (sum6 != null && extFob != null) ? Math.abs(sum6 - extFob) <= 1 : null,
+        nComps: ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'].filter(k => comps[k] != null).length,
+        labeled: true, line,
+      });
+      continue;
+    }
+
+    // ── POSITIONAL fallback: [prodSales, fob$, fob%, comp, raw, cond, emp, disc, statv, unex] ──
     const rest = tokens.slice(idx + 1).join(' ');
-    const nums = (rest.match(/-?\$?\s?[\d,]+(?:\.\d+)?/g) || [])
-      .map(x => Number(x.replace(/[$,\s]/g, '')))
-      .filter(n => Number.isFinite(n));
-    // CoachQ: [prodSales, fob$, fob%, comp, raw, cond, emp, disc, statv, unex]
+    const nums = (rest.match(/-?\$?\s?[\d,]+(?:\.\d+)?/g) || []).map(x => Number(x.replace(/[$,\s]/g, ''))).filter(n => Number.isFinite(n));
     const g = i => (nums.length > i ? nums[i] : null);
     const comps = { comp: g(3), raw: g(4), cond: g(5), emp: g(6), disc: g(7), statv: g(8), unex: g(9) };
     const has6 = ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'].every(k => comps[k] != null);
     const sum6 = has6 ? (comps.comp + comps.raw + comps.cond + comps.emp + comps.statv + comps.unex) : null;
     const extFob = g(1);
-    out.push({
-      store, prodSales: g(0), extFob, extFobPct: g(2), comps, sum6,
-      sumOk: (sum6 != null && extFob != null) ? Math.abs(sum6 - extFob) <= 1 : null,
-      nNums: nums.length, line,
-    });
+    out.push({ store, prodSales: g(0), extFob, extFobPct: g(2), comps, sum6, sumOk: (sum6 != null && extFob != null) ? Math.abs(sum6 - extFob) <= 1 : null, nNums: nums.length, line });
   }
   return out;
 }
