@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.700';
+const MERIDIAN_VERSION    = '4.701';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.701', date:'2026-07-31', changes:[
+    'Share links are now LIVE, not frozen: a shared EOM report opens on the as-sent snapshot instantly, then re-pulls the freshest synced data and rebuilds itself — with a 🔄 Refresh button and a "synced through / refreshed at" line. So after a GM corrects counts, they (or anyone with the link) can hit Refresh and watch FOB + the uncounted list update, no re-send. The report is rebuilt client-side with the SAME engine the dashboard uses (new shared builder eom-report-build.js); the eom-share edge function serves live rows strictly scoped to that one store+period; the frozen snapshot remains a safe fallback. Corrections appear after the next sync (noted on the page).',
+  ]},
   {version:'4.700', date:'2026-07-31', changes:[
     'EOM count-timing rule (owner): Food/Condiment/Paper should be counted on the 2nd & 3rd day out from EOM — the last day is reserved for Non-Product. The diagnosis now adds a soft "📅 Count timing" coaching note when a store bulk-counted those classes on the last day (still counted, just off the ideal schedule). Completion math is unchanged — this is a coaching signal, not a gap.',
   ]},

@@ -9,7 +9,8 @@
 // camelCase the client already carries. `components` = the FOB $ breakdown; `targets` = DEFAULT_TARGETS
 // for the store (for the FOB target line). `exception` = a granted count-date exception (or null).
 
-import { runDiagnosis, diagnoseIncompleteCount, formatDiagnosisReport, checksConfig, fobComponentDeltas } from './eom-diagnosis.js';
+import { runDiagnosis, formatDiagnosisReport, checksConfig, fobComponentDeltas } from './eom-diagnosis.js';
+import { diagnoseIncompleteCount } from './eom-inventory.js';
 
 const num = v => (v == null || v === '' ? null : Number(v));
 const toDate = v => {
@@ -55,9 +56,12 @@ export function buildEomReport({
   const caseSzByWrin = {};
   for (const it of (rawItems || [])) { const cs = num(it.caseSz ?? it.case_sz); if (cs > 0) caseSzByWrin[String(it.wrin)] = cs; }
 
-  const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
+  // FOB $ = the given total, or the sum of the six components (robust to callers that omit .fob/.fobPct).
+  const fobDollars = c.fob != null ? Number(c.fob)
+    : (c.sales != null ? ((Number(c.comp) || 0) + (Number(c.raw) || 0) + (Number(c.cond) || 0) + (Number(c.emp) || 0) + (Number(c.statv) || 0) + (Number(c.unex) || 0)) : null);
+  const pct = c.fobPct != null ? c.fobPct : (c.sales ? (fobDollars / c.sales) : null);
   const tg = targets || {};
-  const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null, components: fobComponentDeltas(c, tg) } : null;
+  const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: fobDollars, components: fobComponentDeltas(c, tg) } : null;
 
   const opts = { incomplete, caseSzByWrin, selfServeTower: !!selfServeTower, fob, exception };
   const recapMd = formatDiagnosisReport(result, { ...opts, mode: 'recap' });

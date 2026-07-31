@@ -4,10 +4,33 @@
 // heavy dashboard) — fetches the snapshot via the eom-share edge function and renders the FOB strip +
 // recap (with a Full-report expander) + a single "I've reviewed this" acknowledge tap. Mobile-first.
 import * as React from 'react';
-import { fetchSharedEom, acknowledgeSharedEom } from '../lib/supabase.js';
+import { fetchSharedEom, refreshSharedEom, acknowledgeSharedEom } from '../lib/supabase.js';
 import { mdToHtml } from '../utils/markdown.js';
+import { buildEomReport } from '../engine/eom-report-build.js';
+import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { DEFAULT_TARGETS } from '../constants.js';
 
-const { useState, useEffect } = React;
+const { useState, useEffect, useCallback } = React;
+const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
+
+// Rebuild the report from LIVE scoped rows (same engine the dashboard uses) → { recapMd, fullMd, fob }.
+// Returns null if there's nothing to build from, so the caller keeps the frozen snapshot.
+function buildFromLive(resp) {
+  const live = resp && resp.live; if (!live) return null;
+  const loc = resp.loc, period = resp.period;
+  const snap = fobSnapshotByStore(live.fob || [], period);
+  const components = snap[String(loc)] || Object.values(snap)[0] || null;
+  const hasData = components || (live.onHand || []).length || (live.variance || []).length;
+  if (!hasData) return null;
+  const targets = DEFAULT_TARGETS[unpad(loc)] || DEFAULT_TARGETS[String(loc)] || {};
+  const built = buildEomReport({
+    loc, name: resp.storeName || '', period,
+    components, onHand: live.onHand || [], variance: live.variance || [],
+    waste: live.waste || [], transfers: live.transfers || [], rawItems: live.rawItems || [],
+    targets, exception: live.exception || null,
+  });
+  return { recapMd: built.recapMd, fullMd: built.fullMd, fob: components || null, syncedAsOf: resp.syncedAsOf || null };
+}
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
@@ -35,17 +58,32 @@ export function EomShareView({ token }) {
   const [loading, setLoading] = useState(true);
   const [full, setFull] = useState(false);
   const [ackBusy, setAckBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [live, setLive] = useState(null);       // { recapMd, fullMd, fob, syncedAsOf } from a live rebuild
+  const [refreshedAt, setRefreshedAt] = useState(null);
+
+  // Pull the freshest scoped rows + rebuild the report. Best-effort — on any failure the frozen
+  // snapshot stays. Reused by the initial auto-refresh and the manual 🔄 button.
+  const doRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await refreshSharedEom(token);
+      const built = r && !r.error ? buildFromLive(r) : null;
+      if (built) { setLive(built); setRefreshedAt(new Date()); }
+    } catch { /* keep frozen */ }
+    setRefreshing(false);
+  }, [token]);
 
   useEffect(() => {
-    let live = true;
+    let on = true;
     fetchSharedEom(token).then(r => {
-      if (!live) return;
+      if (!on) return;
       if (r?.error || (!r?.recapMd && !r?.fullMd)) setErr(r?.error || 'This report could not be loaded.');
-      else setData(r);
+      else { setData(r); doRefresh(); }   // paint frozen instantly, then refresh to live
       setLoading(false);
-    }).catch(e => { if (live) { setErr(String(e?.message || e)); setLoading(false); } });
-    return () => { live = false; };
-  }, [token]);
+    }).catch(e => { if (on) { setErr(String(e?.message || e)); setLoading(false); } });
+    return () => { on = false; };
+  }, [token, doRefresh]);
 
   const ack = async () => {
     setAckBusy(true);
@@ -62,9 +100,13 @@ export function EomShareView({ token }) {
     div({ style: { fontWeight: 800, fontSize: '18px', marginBottom: '8px' } }, 'Meridian'),
     div({ style: { color: '#fb923c', background: '#171a21', border: '1px solid #262b36', borderRadius: '10px', padding: '20px', fontSize: '14px', lineHeight: 1.5 } }, err));
 
-  const activeMd = full ? (data.fullMd || data.recapMd) : (data.recapMd || data.fullMd);
+  // Prefer the LIVE rebuild when we have one; otherwise the frozen snapshot (always a safe fallback).
+  const src = live || data;
+  const activeMd = full ? (src.fullMd || src.recapMd) : (src.recapMd || src.fullMd);
+  const stripFob = (live && live.fob) || data.fob;
   const exp = data.expiresAt ? new Date(data.expiresAt) : null;
   const acked = !!data.acknowledgedAt;
+  const syncedAsOf = live && live.syncedAsOf ? live.syncedAsOf : null;
 
   return page(
     div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '2px' } },
@@ -72,9 +114,18 @@ export function EomShareView({ token }) {
       span({ style: { fontSize: '11px', color: '#78839a' } }, 'EOM report · view-only')),
     div({ style: { fontWeight: 700, fontSize: '20px', margin: '4px 0 14px' } }, `${data.storeName || ''} · ${data.title || `EOM FOB ${data.period}`}`),
 
-    h(FobStripLite, { fob: data.fob }),
+    h(FobStripLite, { fob: stripFob }),
 
-    (data.fullMd && data.fullMd !== data.recapMd)
+    // Live-refresh bar: re-pull the freshest synced data (after the store corrects counts) + timestamp.
+    div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' } },
+      h('button', { onClick: doRefresh, disabled: refreshing, title: 'Re-pull the latest synced counts and rebuild this report', style: { background: '#171a21', border: '1px solid #333a48', color: refreshing ? '#78839a' : '#f5bc00', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: refreshing ? 'default' : 'pointer' } }, refreshing ? '↻ Refreshing…' : '🔄 Refresh'),
+      span({ style: { fontSize: '10.5px', color: '#78839a' } },
+        live
+          ? `Live${syncedAsOf ? ` · synced through ${syncedAsOf}` : ''}${refreshedAt ? ` · refreshed ${refreshedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}`
+          : 'As-sent snapshot — tap Refresh for the latest'),
+      (live && (live.syncedAsOf || refreshedAt)) ? span({ style: { fontSize: '10px', color: '#78839a' } }, '· corrections appear after the next sync') : null),
+
+    ((src.fullMd && src.fullMd !== src.recapMd))
       ? div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' } },
           h('button', { onClick: () => setFull(f => !f), style: { background: 'none', border: '1px solid #333a48', color: full ? '#f5bc00' : '#aab3c5', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer' } }, full ? '← Summary' : 'Full report →'))
       : null,

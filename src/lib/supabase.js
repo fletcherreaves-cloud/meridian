@@ -2818,6 +2818,7 @@ async function callShareFn(payload) {
   } catch (e) { return { error: String(e?.message || e) }; }
 }
 export async function fetchSharedEom(token) { return callShareFn({ token }); }
+export async function refreshSharedEom(token) { return callShareFn({ token, action: 'refresh' }); }
 export async function acknowledgeSharedEom(token, note) { return callShareFn({ token, action: 'acknowledge', note }); }
 
 // ── EOM count-date exceptions (accept an early count as the EOM count; logged + attributed) ──
