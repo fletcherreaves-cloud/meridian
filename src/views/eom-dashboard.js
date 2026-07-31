@@ -1132,7 +1132,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const tg = DEFAULT_TARGETS[unpad(loc)] || {};
     const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
     const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null } : null;
-    return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob };
+    return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob, exception: exceptions[loc] || null };
   }, [byLoc, rawByLoc, period, selfServeTowers, exceptions]);
 
   // Pure — returns the draft object with BOTH the abbreviated recap (default message, Notes 37 C1)

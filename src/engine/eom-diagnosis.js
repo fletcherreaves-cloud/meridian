@@ -638,7 +638,7 @@ export const INTEGRITY_CHECK_IDS = new Set([
 // integrity note → punchy close + optional link), scaled hard — the day-of nudge to a GM. It reuses
 // the SAME computed doNow/net/shorts/overs as the full report, so the two can never drift.
 // `fob` = { pct, tgt, dollars } for the FOB one-liner; `link` = optional "more detail" URL.
-export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date() } = {}) {
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date(), exception = null } = {}) {
   // Last day of the month → Non-Product is due today too (owner Notes 38). Flips its "tomorrow" framing.
   const npDueToday = nonProductDueToday(result.period, asOf);
   // Dedupe variance rows by WRIN first (owner: duplicate lines) — a doubled row would otherwise
@@ -725,6 +725,12 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const dpp = fob.tgt != null ? (fob.pct - fob.tgt) * 100 : null;
     L.push(`**FOB ${(fob.pct * 100).toFixed(2)}%**${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}pp vs ${(fob.tgt * 100).toFixed(2)}% target` : ''}${fob.dollars != null ? ` · ${money(fob.dollars)}` : ''}`, '');
   }
+  // Always-visible exception banner — this store's EOM count was accepted off standard process.
+  if (exception) {
+    const d = exception.acceptedDate ? exception.acceptedDate : null;
+    const by = exception.approvedBy && exception.approvedBy !== 'unspecified' ? exception.approvedBy : null;
+    L.push(`> ⚠️ **Count-date exception granted** — this store's EOM count was accepted from an **early count**${d ? ` (dated ${d})` : ''}${by ? `, approved by ${by}` : ''}, off the standard final-window process. Numbers below reflect that accepted count.`, '');
+  }
 
   // ── TOP 5 — DO NOW (owner req #46, focused to FOOD + CONDIMENT only per owner — the profit-driver
   // classes worth a manager's here-and-now energy). Cut-and-dry, ranked by best chance to improve
@@ -777,12 +783,20 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const nameW = u => `${u.descr || u.wrin}${u.wrin && u.descr ? ` [${u.wrin}]` : ''}`;
   const listW = (arr, n, withDate) => arr.slice(0, n).map(u => `${nameW(u)}${withDate ? ` (last ${u.lastCounted || '?'})` : ''}`).join(', ') + (arr.length > n ? ` _+${arr.length - n} more_` : '');
   const npLabel = npDueToday ? 'Food, Condiment, Paper & Non-Product' : 'Food, Condiment & Paper';
+  // When an early-count exception was granted, "all counted (in the final window)" is technically off
+  // process — the count was accepted early. Reconcile it right on the line so the awareness travels
+  // with the number (owner request).
+  const excDate = exception && exception.acceptedDate ? exception.acceptedDate : null;
+  const excBy = exception && exception.approvedBy && exception.approvedBy !== 'unspecified' ? exception.approvedBy : null;
+  const allCountedFC = exception
+    ? `- ✅ **Food & Condiment — all counted**, ⚠️ _via an **accepted early-count exception**${excDate ? ` (count dated ${excDate})` : ''}${excBy ? `, approved by ${excBy}` : ''} — off standard process; the final-window count was waived for this store._`
+    : '- ✅ **Food & Condiment — all counted (in the final window).**';
   if (neverFC.length || neverPaper.length || neverNonProd.length || earlyFC.length) {
     L.push(`## 🧮 Finish today's count to 100% — ${npLabel} (due by EOD)`, '');
     if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) never counted.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${listW(neverFC, 6)}`);
     // Only claim "all counted" when there are NO never-counted AND no counted-early FC (owner: the
     // "all counted" line contradicted the "1 counted EARLY" line right below it).
-    else if (!earlyFC.length) L.push('- ✅ **Food & Condiment — all counted (in the final window).**');
+    else if (!earlyFC.length) L.push(allCountedFC);
     if (earlyFC.length) L.push(`- 🔴 **Food & Condiment — ${earlyFC.length} item${earlyFC.length === 1 ? '' : 's'} (${money(sumVR(earlyFC))}) counted EARLY, not in the final window** (so not fully counted for the close). QSRSoft is carrying a stale count in — **recount now for a current number:** ${listW(earlyFC, 6, true)}`);
     if (neverPaper.length) L.push(`- **Paper — ${neverPaper.length} item${neverPaper.length === 1 ? '' : 's'} (${money(sumVR(neverPaper))}) left:** ${listW(neverPaper, 6)}. Due by EOD too, but **not** food-cost-consequential — count for completeness, not recovery.`);
     else if (neverFC.length || neverNonProd.length) L.push('- ✅ **Paper — all counted.**');

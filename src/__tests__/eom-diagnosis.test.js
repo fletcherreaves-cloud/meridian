@@ -117,6 +117,31 @@ describe('runDiagnosis — editable check registry', () => {
     expect(recap.indexOf('FOB 3.73%')).toBeLessThan(recap.indexOf('Do these now'));
   });
 
+  it('surfaces a granted count-date exception (banner + off-process note on the all-counted line)', () => {
+    const res = runDiagnosis({ store: '37566', storeName: 'Ponce de Leon', period: '2026-07', data: { variance: [{ wrin: '1', descr: 'BEEF', dolDiff: -80, cls: 'food' }] } });
+    const exception = { kind: 'early-count-accepted', acceptedDate: '2026-07-28', approvedBy: 'Brad Denley' };
+    const full = formatDiagnosisReport(res, { exception });
+    // Always-visible banner near the top.
+    expect(full).toMatch(/Count-date exception granted/);
+    expect(full).toMatch(/2026-07-28/);
+    expect(full).toMatch(/Brad Denley/);
+    // Without the exception, the banner is absent (default null).
+    expect(formatDiagnosisReport(res, {})).not.toMatch(/Count-date exception granted/);
+  });
+
+  it('annotates the "all counted" line as an accepted early-count exception (not "in the final window")', () => {
+    // A store with everything counted in-window → the all-counted line renders; add a "never" paper
+    // item so the count section prints, then confirm the FC line carries the exception wording.
+    const incomplete = { uncountedCount: 1, byState: { never: { n: 1, value: 50 } },
+      uncounted: [{ wrin: 'p', descr: 'Napkins', cls: 'paper', state: 'never', valueAtRisk: 50 }] };
+    const res = runDiagnosis({ store: '37566', storeName: 'Ponce de Leon', period: '2026-07', data: { variance: [] } });
+    const withExc = formatDiagnosisReport(res, { incomplete, exception: { acceptedDate: '2026-07-28', approvedBy: 'Brad Denley' } });
+    expect(withExc).toMatch(/all counted\*\*, ⚠️ _via an \*\*accepted early-count exception\*\*/);
+    expect(withExc).not.toMatch(/all counted \(in the final window\)/);
+    // No exception → the standard in-window wording.
+    expect(formatDiagnosisReport(res, { incomplete })).toMatch(/all counted \(in the final window\)/);
+  });
+
   it('recap lands the actual uncounted Food/Condiment/Paper items prominently (owner Notes 37), Non-Product omitted', () => {
     const incomplete = {
       uncountedCount: 3, byState: { never: { n: 2, value: 300 }, early: { n: 1, value: 259 } },

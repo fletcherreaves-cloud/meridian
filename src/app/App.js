@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.696';
+const MERIDIAN_VERSION    = '4.697';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.697', date:'2026-07-31', changes:[
+    'EOM diagnosis now flags a granted count-date exception where it matters: a store with an accepted early count gets a "⚠️ Count-date exception granted" banner near the top (dated + approver) AND the "all counted" line reads "all counted, ⚠️ via an accepted early-count exception — off standard process" instead of the plain "all counted (in the final window)". Keeps the awareness that the count was off-process traveling with the numbers, in both the on-screen report and the store message.',
+  ]},
   {version:'4.696', date:'2026-07-31', changes:[
     'SAGE → 📖 Docs: a QSRSoft Help Center viewer built into SAGE. Search the vendor\'s own docs (the same 208-article corpus SAGE cites), expand any article to read it, and hit "🧠 Explain with SAGE" to hand the article to SAGE for a plain-English read against your operation. Closes the KB loop end-to-end: pulled → stored → grounds SAGE → browsable.',
   ]},
