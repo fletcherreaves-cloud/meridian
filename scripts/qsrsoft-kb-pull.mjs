@@ -13,10 +13,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 
-const URL = process.env.VITE_SUPABASE_URL;
+const SB_URL = process.env.VITE_SUPABASE_URL;  // NB: not named URL — that would shadow the global URL ctor
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!URL || !KEY) { console.error('Missing VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'); process.exit(1); }
-const sb = createClient(URL, KEY, { auth: { persistSession: false } });
+if (!SB_URL || !KEY) { console.error('Missing VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'); process.exit(1); }
+const sb = createClient(SB_URL, KEY, { auth: { persistSession: false } });
 
 const KB_HOST = (process.env.KB_HOST || 'qsrsoft.zendesk.com').trim();
 const LOCALE = (process.env.KB_LOCALE || 'en-us').trim();
@@ -76,13 +76,16 @@ async function main() {
       console.log(`[kb] Support Site link not found — trying ${KB_HOST}/hc/${LOCALE} directly…`);
       await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
     }
-    await new Promise(r => setTimeout(r, 2500));
+    // The SSO bounces through v3.myqsrsoft.com/zdlogin → the custom KB domain (support.qsrsoft.com/hc).
+    // Wait for that redirect to SETTLE on a /hc/ URL before reading the origin (first run caught the
+    // zdlogin bounce mid-flight).
+    await page.waitForURL(/\/hc\//, { timeout: 25000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000));
     await snap('kb-01-helpcenter.png');
     console.log('[kb] KB landing url:', page.url());
-    // Make sure we actually landed on a help-center page (SSO redirects the zendesk host → the custom
-    // domain, e.g. support.qsrsoft.com/hc/en-us). If not, nudge to the help center.
     if (!/\/hc\//.test(page.url())) {
       await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      await page.waitForURL(/\/hc\//, { timeout: 20000 }).catch(() => {});
     }
     // The API MUST be called on the origin we actually landed on (same-origin) — the KB is served from
     // its custom domain, so fetching the zendesk.com host cross-origin fails (the first-run lesson).
