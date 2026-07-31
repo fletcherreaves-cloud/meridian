@@ -1733,7 +1733,7 @@ alter table public.eom_integrity_flags enable row level security;
 create policy "eom_integrity_flags: read scoped" on public.eom_integrity_flags for select
   using (
     (select accessible_locs from public.profiles where id = auth.uid()) is null
-    or loc = any (select accessible_locs from public.profiles where id = auth.uid())
+    or loc = any ((select accessible_locs from public.profiles where id = auth.uid()))
   );
 create policy "eom_integrity_flags: service write" on public.eom_integrity_flags for all
   using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
@@ -1777,7 +1777,7 @@ alter table public.eom_count_status_history enable row level security;
 create policy "eom_count_status_history: read scoped" on public.eom_count_status_history for select
   using (
     (select accessible_locs from public.profiles where id = auth.uid()) is null
-    or loc = any (select accessible_locs from public.profiles where id = auth.uid())
+    or loc = any ((select accessible_locs from public.profiles where id = auth.uid()))
   );
 create policy "eom_count_status_history: service write" on public.eom_count_status_history for all
   using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
