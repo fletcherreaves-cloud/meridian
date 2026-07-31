@@ -2781,6 +2781,25 @@ export async function loadEomSecondaryReview({ period } = {}) {
   return m;
 }
 
+// ── QSRSoft Knowledge Base (#41) — grounds SAGE + diagnostics in QSRSoft's own methodology ──
+export async function loadQsrKb() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('qsrsoft_kb').select('id,title,body_text,category,section,html_url,updated_at').order('category', { ascending: true }).range(from, to));
+  return (data || []).map(r => ({ id: r.id, title: r.title, bodyText: r.body_text, category: r.category, section: r.section, htmlUrl: r.html_url, updatedAt: r.updated_at }));
+}
+
+// Keyword search over the KB (title + body). Sanitizes the query for PostgREST's or() filter syntax.
+export async function searchQsrKb(query, { limit = 20 } = {}) {
+  if (!supabase || !query) return [];
+  const q = String(query).replace(/[,%()]/g, ' ').trim();
+  if (!q) return [];
+  const { data, error } = await supabase.from('qsrsoft_kb')
+    .select('id,title,body_text,category,section,html_url')
+    .or(`title.ilike.%${q}%,body_text.ilike.%${q}%`).limit(limit);
+  if (error) return [];
+  return (data || []).map(r => ({ id: r.id, title: r.title, bodyText: r.body_text, category: r.category, section: r.section, htmlUrl: r.html_url }));
+}
+
 // ── EOM item disposition (#38) — the verify-&-clear decision per obsolete/inactive item ──
 export async function saveEomItemDisposition(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

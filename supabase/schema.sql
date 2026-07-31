@@ -1639,3 +1639,26 @@ create table if not exists public.eom_secondary_review (
 alter table public.eom_secondary_review enable row level security;
 create policy "eom_secondary_review: public read"  on public.eom_secondary_review for select using (true);
 create policy "eom_secondary_review: public write" on public.eom_secondary_review for all using (true);
+
+-- ── QSRSoft Zendesk Knowledge Base (#41) ────────────────────────────────────────
+-- The QSRSoft help center (qsrsoft.zendesk.com), pulled via the authenticated session (SSO from the
+-- normal QSRSoft login). Grounds SAGE + our diagnostics in QSRSoft's OWN methodology (how Variance/Stat
+-- posts, deactivated-item timing, retention, report definitions) instead of reverse-engineered guesses.
+create table if not exists public.qsrsoft_kb (
+  id          bigint primary key,          -- Zendesk article id
+  title       text,
+  body_html   text,
+  body_text   text,                        -- tag-stripped, for search + LLM context
+  section_id  bigint,
+  category    text,
+  section     text,
+  locale      text,
+  html_url    text,
+  labels      text[],
+  updated_at  timestamptz,
+  pulled_at   timestamptz default now()
+);
+create index if not exists qsrsoft_kb_title_idx on public.qsrsoft_kb using gin (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body_text,'')));
+alter table public.qsrsoft_kb enable row level security;
+create policy "qsrsoft_kb: public read"  on public.qsrsoft_kb for select using (true);
+create policy "qsrsoft_kb: public write" on public.qsrsoft_kb for all using (true);

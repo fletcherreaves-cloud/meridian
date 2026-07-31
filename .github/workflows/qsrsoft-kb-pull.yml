@@ -1,0 +1,51 @@
+name: QSRSoft KB Pull
+
+# Pulls the QSRSoft Zendesk knowledge base (qsrsoft.zendesk.com) via the authenticated session (SSO
+# from the normal QSRSoft login) → qsrsoft_kb. Grounds SAGE + diagnostics in QSRSoft's own methodology.
+# KB articles change rarely — weekly is plenty; also runnable on demand.
+
+on:
+  schedule:
+    - cron: '15 12 * * 1'    # 12:15 UTC Mondays (~7:15 AM CT)
+  workflow_dispatch:
+    inputs:
+      locale:
+        description: 'Help-center locale (default en-us)'
+        required: false
+        default: 'en-us'
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft KB
+        run: node scripts/qsrsoft-kb-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          KB_LOCALE:                 ${{ github.event.inputs.locale || 'en-us' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kb-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
