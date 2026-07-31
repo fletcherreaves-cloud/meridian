@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.688';
+const MERIDIAN_VERSION    = '4.689';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.689', date:'2026-07-31', changes:[
+    'EOM → count-date EXCEPTIONS: accept a store\'s early count as its EOM count when an above-store leader approves it (e.g., a store that counted on the 28th and won\'t recount). "grant count exception" on the store row records who approved it + a reason; the store then reads complete and the recap stops nudging a recount, but every exception is logged + attributed (green "✓ early count accepted · {approver}" tag) so the pattern stays visible.',
+    'EOM integrity checks are now named "Second-Look Signals" (non-accusatory), branded on the recap + a dedicated "verify, don\'t accuse" report section. FOB breakdown matrix colors each component vs its OWN target (red = over / green = under) with a sales-weighted Target row. QSRSoft KB pull (#41) built — crawls the help center for grounding SAGE + diagnostics.',
+  ]},
   {version:'4.677', date:'2026-07-31', changes:[
     'New integrity check — HIGH-$ WASTE SESSION: flags one manager\'s waste on one day when it totals far above a typical session (distinct from the store-wide daily spike + overall per-manager share checks). Two-path, non-accusatory framing: if it was expired product pulled at once, it\'s real waste → coach ordering-to-on-hands + FIFO rotation; if not, verify it was thrown, not entered to absorb a variance.',
   ]},

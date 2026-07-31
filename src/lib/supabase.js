@@ -2781,6 +2781,34 @@ export async function loadEomSecondaryReview({ period } = {}) {
   return m;
 }
 
+// ── EOM count-date exceptions (accept an early count as the EOM count; logged + attributed) ──
+export async function saveEomCountException(row) {
+  if (!supabase || !row?.loc) return { error: 'no-op' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const { error } = await supabase.from('eom_count_exceptions').upsert({
+    loc: String(row.loc), period: String(row.period), kind: row.kind || 'early-count-accepted',
+    accepted_date: row.acceptedDate ?? null, approved_by: row.approvedBy ?? null, note: row.note ?? null,
+    created_at: new Date().toISOString(), created_by: uid,
+  }, { onConflict: 'loc,period,kind' });
+  return { error: error?.message || null };
+}
+export async function deleteEomCountException({ loc, period, kind = 'early-count-accepted' } = {}) {
+  if (!supabase || !loc) return { error: 'no-op' };
+  const { error } = await supabase.from('eom_count_exceptions').delete().eq('loc', String(loc)).eq('period', String(period)).eq('kind', kind);
+  return { error: error?.message || null };
+}
+export async function loadEomCountExceptions({ period } = {}) {
+  if (!supabase) return {};
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('eom_count_exceptions').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  const m = {};
+  for (const r of (data || [])) m[String(r.loc)] = { kind: r.kind, acceptedDate: r.accepted_date, approvedBy: r.approved_by, note: r.note, createdAt: r.created_at };
+  return m;
+}
+
 // ── QSRSoft Knowledge Base (#41) — grounds SAGE + diagnostics in QSRSoft's own methodology ──
 export async function loadQsrKb() {
   if (!supabase) return [];

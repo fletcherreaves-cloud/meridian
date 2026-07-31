@@ -128,6 +128,30 @@ describe('diagnoseIncompleteCount', () => {
     const diag = diagnoseIncompleteCount(rows, { period, minValue: 50 });
     expect(diag.uncountedCount).toBe(1);
   });
+  it('acceptEarly (count-date exception) drops early-counted items but keeps never-counted', () => {
+    const rows = [
+      { wrin: '1', cls: 'Food', descr: 'Beef', onHandAmt: 500, lastCounted: null },            // never
+      { wrin: '2', cls: 'Food', descr: 'Fries', onHandAmt: 300, lastCounted: d(2026, 7, 20) }, // early (this period, pre-window)
+    ];
+    const normal = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 31) });
+    expect(normal.uncountedCount).toBe(2);
+    expect(normal.byState.early.n).toBe(1);
+    const accepted = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 31), acceptEarly: true });
+    expect(accepted.uncountedCount).toBe(1);           // early accepted → dropped
+    expect(accepted.byState.early.n).toBe(0);
+    expect(accepted.uncounted[0].wrin).toBe('1');      // never-counted still flagged
+  });
+});
+
+describe('computeCountProgress acceptEarly (count-date exception)', () => {
+  it('counts early counts as done when the exception is granted', () => {
+    const rows = [
+      { cls: 'Food', lastCounted: d(2026, 7, 20) },   // early
+      { cls: 'Food', lastCounted: d(2026, 7, 30) },   // in the final window
+    ];
+    expect(computeCountProgress(rows, { period: '2026-07', asOf: d(2026, 7, 31) }).byClass.food.counted).toBe(1);
+    expect(computeCountProgress(rows, { period: '2026-07', asOf: d(2026, 7, 31), acceptEarly: true }).byClass.food.counted).toBe(2);
+  });
 });
 
 describe('rankVarianceFollowups', () => {

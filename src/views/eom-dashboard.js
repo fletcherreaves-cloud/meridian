@@ -14,6 +14,7 @@ import {
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
   saveEomSnapshots, loadEomSnapshots, saveEomSecondaryReview, loadEomSecondaryReview,
+  saveEomCountException, deleteEomCountException, loadEomCountExceptions,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
@@ -702,6 +703,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   // Self-serve beverage-tower locs (integrity #47) — suppress the fountain-yield "loss" flag for
   // stores where low yield is structural (free refills). One tiny 2-column read, once.
   const [selfServeTowers, setSelfServeTowers] = useState(new Set());
+  const [exceptions, setExceptions] = useState({});   // loc -> {kind, acceptedDate, approvedBy, note} (count-date exceptions)
   useEffect(() => { loadSelfServeTowerLocs().then(setSelfServeTowers).catch(() => {}); }, []);
   // The active check registry (defaults + saved overrides), passed to runDiagnosis.
   const activeChecks = useMemo(() => applyChecksConfig(diagCfg || []), [diagCfg]);
@@ -726,6 +728,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       setRawDetail(rd || []);
       const m = {}; (st || []).forEach(r => { m[String(r.loc)] = r; });
       setStatusMap(m);
+      loadEomCountExceptions({ period: p }).then(x => setExceptions(x || {})).catch(() => setExceptions({}));
     } finally { setLoading(false); }
   }, []);
 
@@ -787,11 +790,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       ...Object.keys(xferByLoc), ...Object.keys(fob),
     ]);
     const out = [...locs].map(loc => {
-      const prog = computeCountProgress(byLoc[loc] || [], { period, asOf });
+      const acceptEarly = !!exceptions[loc];   // count-date exception → early count accepted as EOM count
+      const prog = computeCountProgress(byLoc[loc] || [], { period, asOf, acceptEarly });
       // Specific still-uncounted items per class (Notes 35) — so a ≥90% class can show
       // exactly what's left (hover on the class chip + in the diagnosis/comms report).
       const incByClass = {};
-      try { for (const b of diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf }).byClass) incByClass[b.cls] = b.items; } catch {}
+      try { for (const b of diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf, acceptEarly }).byClass) incByClass[b.cls] = b.items; } catch {}
       const f = fob[loc] || {};
       const st = statusMap[loc] || {};
       return {
@@ -807,6 +811,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         diagnosis: st.diagnosisStatus || 'pending',
         comms: st.commsStatus || 'none',
         commsRecipient: st.commsRecipient || '',
+        exception: exceptions[loc] || null,   // count-date exception (accepted early count), if any
       };
     });
     // Counted + counting locations to the TOP (Notes 35) — order by the same scoreboard
@@ -814,7 +819,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // counted first within a bucket, then name. Surfaces the stores actively in play.
     out.sort((a, b) => (SB_ORDER[sbBucket(a)] - SB_ORDER[sbBucket(b)]) || (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
     return out;
-  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData]);
+  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData, exceptions]);
 
   // Freshest business date across the EOM streams feeding this view (As-of stamp).
   const dataAsOf = useMemo(() => {
@@ -983,6 +988,25 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     try { await saveEomSecondaryReview({ loc, period, status }); } catch {}
   }, [period]);
 
+  // Count-date exception (owner 2026-07-31): accept a store's EARLY count as its EOM count — logged +
+  // attributed (who approved, why). Toggling on/off updates the exceptions map so progress + diagnosis
+  // re-derive with acceptEarly. Grant asks for the approver + reason so the workaround is tracked.
+  const toggleException = useCallback(async (loc, existing) => {
+    const key = String(loc);
+    if (existing) {
+      if (typeof window !== 'undefined' && !window.confirm(`Remove the accepted-early-count exception for ${nm(loc)}?`)) return;
+      setExceptions(m => { const n = { ...m }; delete n[key]; return n; });
+      try { await deleteEomCountException({ loc, period }); } catch {}
+      return;
+    }
+    const approvedBy = typeof window !== 'undefined' ? window.prompt(`Grant "accepted early count" exception for ${nm(loc)}.\nApproved by (above-store leader):`, '') : '';
+    if (approvedBy == null) return;   // cancelled
+    const note = typeof window !== 'undefined' ? (window.prompt('Reason / note (optional):', '') || '') : '';
+    const rec = { kind: 'early-count-accepted', approvedBy: approvedBy.trim() || 'unspecified', note, createdAt: new Date().toISOString() };
+    setExceptions(m => ({ ...m, [key]: rec }));
+    try { await saveEomCountException({ loc, period, approvedBy: rec.approvedBy, note }); } catch {}
+  }, [period]);
+
   // District EOM Summary over the CURRENT scope (rows are already filtered by state/patch/store).
   const districtSummary = useMemo(() => buildDistrictSummary(rows, DEFAULT_TARGETS), [rows]);
   const sumCsv = () => {
@@ -1083,7 +1107,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period]);
 
   const diagOptsFor = useCallback((loc, components) => {
-    const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date() });
+    const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date(), acceptEarly: !!exceptions[loc] });
     const caseSzByWrin = {};
     for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
     const c = components || {};
@@ -1091,7 +1115,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
     const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null } : null;
     return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob };
-  }, [byLoc, rawByLoc, period, selfServeTowers]);
+  }, [byLoc, rawByLoc, period, selfServeTowers, exceptions]);
 
   // Pure — returns the draft object with BOTH the abbreviated recap (default message, Notes 37 C1)
   // and the full report one click away. Reused by openDraft AND the bulk "Message all" generator.
@@ -1532,7 +1556,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             h('td', { style: { padding: '8px 10px' } },
               div({ style: { fontWeight: 600, color: 'var(--text)' } }, r.name,
                 span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '6px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`)),
-              span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK')),
+              span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK'),
+              // Count-date exception (accept early count) — green tag when active (click to remove), else a grant link.
+              r.exception
+                ? span({ onClick: () => toggleException(r.loc, r.exception), title: `Early count accepted as this store's EOM count${r.exception.approvedBy ? ` — approved by ${r.exception.approvedBy}` : ''}${r.exception.note ? `\n${r.exception.note}` : ''}\n(click to remove)`, style: { display: 'inline-block', marginTop: '3px', fontSize: '9.5px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade80', borderRadius: '4px', padding: '0 5px', cursor: 'pointer' } }, `✓ early count accepted${r.exception.approvedBy ? ` · ${r.exception.approvedBy}` : ''}`)
+                : h('button', { onClick: () => toggleException(r.loc, null), title: "Accept this store's early count as its EOM count (logged + attributed to the approver)", style: { display: 'block', marginTop: '3px', fontSize: '9px', color: 'var(--text3)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' } }, 'grant count exception')),
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
             h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass, npDueToday: r.prog.nonProductDueToday })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },

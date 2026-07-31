@@ -145,10 +145,14 @@ function isCounted(row, windowStart) {
 // ── Count progress ────────────────────────────────────────────────────────────
 // Given a store's On-Hand rows for a period, how far along is the count?
 // Returns overall + per-class breakdown and the "believes done" flag.
-export function computeCountProgress(onHandRows, { period, asOf } = {}) {
+export function computeCountProgress(onHandRows, { period, asOf, acceptEarly = false } = {}) {
   const rows = Array.isArray(onHandRows) ? onHandRows : [];
   if (!period) period = rows.length ? periodKey(countedDate(rows[0]) || new Date()) : null;
-  const windowStart = period ? countWindowStart(period) : new Date(0);
+  // acceptEarly (count-date exception): count anything counted THIS period as done, not just the final
+  // window — so a store whose approved count was early reads complete. See project-eom-count-exceptions.
+  const windowStart = period
+    ? (acceptEarly && /^\d{4}-\d{2}$/.test(period) ? new Date(period + '-01T00:00:00') : countWindowStart(period))
+    : new Date(0);
 
   const byClass = {};
   const ensure = k => (byClass[k] || (byClass[k] = { total: 0, counted: 0, pct: 0, done: false }));
@@ -223,7 +227,10 @@ export function computeCountProgress(onHandRows, { period, asOf } = {}) {
 // Which items/classes are still uncounted, ranked by their $ weight so the store
 // chases the ones that actually move food cost. Uncounted, high-value items are
 // the #1 driver of false variance (undercounted ending inventory → usage up).
-export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0 } = {}) {
+// `acceptEarly` (owner 2026-07-31, count-date exception): the store's early count was approved as its
+// EOM count (e.g., Ponce counted 07/28 and won't recount), so items counted EARLY this period are
+// treated as counted — dropped from the uncounted/flagged set. See project-eom-count-exceptions.
+export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0, acceptEarly = false } = {}) {
   const rows = Array.isArray(onHandRows) ? onHandRows : [];
   const windowStart = period ? countWindowStart(period) : new Date(0);
   // Period start (1st of the count month) so we can tell WHY an item reads "uncounted":
@@ -235,7 +242,7 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
   //             inflate value-at-risk without being real to-count work — the Durant #5985 case.
   const periodStart = /^\d{4}-\d{2}$/.test(period || '') ? new Date(period + '-01T00:00:00') : null;
 
-  const uncounted = rows
+  let uncounted = rows
     .filter(r => !isCounted(r, windowStart))
     .map(r => {
       const d = countedDate(r);
@@ -254,6 +261,9 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     })
     .filter(r => r.valueAtRisk >= minValue)
     .sort((a, b) => b.valueAtRisk - a.valueAtRisk);
+  // Count-date exception: the store's early count was approved as its EOM count → early-counted items
+  // are accepted (dropped from the uncounted/flagged set). Stale/never are unaffected.
+  if (acceptEarly) uncounted = uncounted.filter(u => u.state !== 'early');
   // Tally by state so callers can separate true blanks from counted-early / obsolete-inactive items.
   const byState = { never: { n: 0, value: 0 }, early: { n: 0, value: 0 }, stale: { n: 0, value: 0 } };
   for (const u of uncounted) { const b = byState[u.state]; if (b) { b.n++; b.value += u.valueAtRisk; } }

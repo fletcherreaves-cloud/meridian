@@ -1662,3 +1662,22 @@ create index if not exists qsrsoft_kb_title_idx on public.qsrsoft_kb using gin (
 alter table public.qsrsoft_kb enable row level security;
 create policy "qsrsoft_kb: public read"  on public.qsrsoft_kb for select using (true);
 create policy "qsrsoft_kb: public write" on public.qsrsoft_kb for all using (true);
+
+-- ── EOM count-date exceptions (owner 2026-07-31) ────────────────────────────────
+-- Accept a store's EARLY count as its EOM count (e.g., Ponce counted 07/28 and won't recount). Logged +
+-- attributed so the workaround is tracked, not hidden. The engine's acceptEarly path treats that store's
+-- early-counted items as counted. accepted_date supports the future "accept a specific date" variant (b).
+create table if not exists public.eom_count_exceptions (
+  loc           text not null,
+  period        text not null,
+  kind          text not null default 'early-count-accepted',
+  accepted_date date,
+  approved_by   text,
+  note          text,
+  created_at    timestamptz default now(),
+  created_by    uuid,
+  primary key (loc, period, kind)
+);
+alter table public.eom_count_exceptions enable row level security;
+create policy "eom_count_exceptions: public read"  on public.eom_count_exceptions for select using (true);
+create policy "eom_count_exceptions: public write" on public.eom_count_exceptions for all using (true);
