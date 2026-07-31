@@ -1,0 +1,42 @@
+name: QSRSoft KB Analyze
+
+# Distills the qsrsoft_kb corpus into a committed intelligence digest (memory/qsrsoft-kb-digest.md +
+# docs/qsrsoft-kb-index.json). No QSRSoft auth — pure Supabase read. Runs after the weekly KB pull,
+# and on demand. Commits the digest back so it's durable + reviewable in the repo.
+
+on:
+  schedule:
+    - cron: '45 12 * * 1'    # 12:45 UTC Mondays — ~30 min after the KB pull
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Analyze QSRSoft KB
+        run: node scripts/qsrsoft-kb-analyze.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Commit digest
+        run: |
+          git config user.name  "meridian-bot"
+          git config user.email "bot@meridianbi.local"
+          git add memory/qsrsoft-kb-digest.md docs/qsrsoft-kb-index.json
+          if git diff --cached --quiet; then
+            echo "No KB digest changes."
+          else
+            git commit -m "chore: refresh QSRSoft KB intelligence digest [skip ci]"
+            git push
+          fi
