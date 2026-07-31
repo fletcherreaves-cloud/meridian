@@ -101,12 +101,16 @@ async function main() {
     for (const v of vr) { const w = String(v.wrin); if (!seen.has(w)) items.push({ wrin: w, descr: v.descr || '', cls: v.cls || '', qty: null, onHandAmt: null, dolDiff: v.dol_diff ?? null, variance: v.variance ?? null, lastCounted: null }); }
 
     // Count progress (per-class %) from on-hand rows mapped into the engine's shape.
-    let count = null;
+    let count = null, lastActivityAt = null;
     try {
       const shaped = oh.map(o => ({ cls: o.cls, lastCounted: o.last_counted ? new Date(o.last_counted) : null, lastSubmitted: o.last_submitted ? new Date(o.last_submitted) : null }));
       const prog = computeCountProgress(shaped, { period: PERIOD });
       count = { pctCounted: prog.pctCounted, earlyPctCounted: prog.earlyPctCounted, believesDone: prog.believesDone, byClass: prog.byClass };
+      lastActivityAt = prog.lastActivityAt instanceof Date ? prog.lastActivityAt.toISOString() : (prog.lastActivityAt || null);
     } catch (e) { count = { error: String(e?.message || e) }; }
+    // "Variance posted" = enough items carry a real per-item $ variance (so we never freeze an empty
+    // $0 state — the whole point of the count-complete lock, owner Notes 38).
+    const postedCount = items.filter(i => i.dolDiff != null && Math.abs(Number(i.dolDiff)) >= 1).length;
 
     const f = fob[loc] || {};
     snaps.push({
@@ -114,21 +118,52 @@ async function main() {
       taken_at: new Date().toISOString(), taken_by: null,
       fob: { sales: f.sales ?? null, fob: f.fob ?? null, fobPct: f.fobPct ?? null, comp: f.comp ?? null, raw: f.raw ?? null, cond: f.cond ?? null, emp: f.emp ?? null, statv: f.statv ?? null, unex: f.unex ?? null, asOf: f.asOf ?? null },
       count, items,
-      meta: { nItems: items.length, source: 'auto-cron' },
+      meta: { nItems: items.length, source: 'auto-cron', postedCount, lastActivityAt },
+      _believesDone: !!(count && count.believesDone), _earlyPct: count ? count.earlyPctCounted : null, _postedCount: postedCount, _lastActivityAt: lastActivityAt,
     });
   }
 
   console.log(`[eom-snapshot] built ${snaps.length} store snapshots (${snaps.reduce((s, x) => s + x.items.length, 0)} item rows)`);
   if (!snaps.length) { console.log('[eom-snapshot] nothing to write'); return; }
 
+  const toInsert = snaps.map(({ _believesDone, _earlyPct, _postedCount, _lastActivityAt, ...s }) => s);
   let saved = 0;
-  for (let i = 0; i < snaps.length; i += 100) {
-    const chunk = snaps.slice(i, i + 100);
+  for (let i = 0; i < toInsert.length; i += 100) {
+    const chunk = toInsert.slice(i, i + 100);
     const { error } = await withRetry(() => sb.from('eom_snapshots').insert(chunk), { tries: 4, baseMs: 800, label: `insert[${i}]` });
     if (error) { console.error(`[eom-snapshot] insert error: ${error.message}`); process.exitCode = 1; }
     else saved += chunk.length;
   }
-  console.log(`[eom-snapshot] ✓ locked ${saved}/${snaps.length} stores for ${PERIOD}`);
+  console.log(`[eom-snapshot] ✓ locked ${saved}/${toInsert.length} stores for ${PERIOD}`);
+
+  // ── Count-complete pass (owner Notes 38) — a per-store "as-counted" lock, captured the FIRST time a
+  // store is both count-complete AND its Variance/Stat has posted (≥ MIN_POSTED items with real $). This
+  // freezes each store at its own real-count moment (no $0 baselines), independent of when it counted.
+  // Idempotent: write once per (loc, period) — skip stores that already have a count-complete lock.
+  const COMPLETE_PCT = Number(process.env.EOM_COMPLETE_PCT || 0.9);
+  const MIN_POSTED = Number(process.env.EOM_MIN_POSTED || 8);
+  const { data: existingCC } = await withRetry(() => sb.from('eom_snapshots').select('loc').eq('period', PERIOD).eq('kind', 'count-complete'), { tries: 3, label: 'cc-existing' });
+  const haveCC = new Set((existingCC || []).map(r => String(r.loc)));
+  const ccRows = snaps
+    .filter(s => !haveCC.has(String(s.loc)) && s._believesDone && (s._earlyPct == null || s._earlyPct >= COMPLETE_PCT) && s._postedCount >= MIN_POSTED)
+    .map(s => ({
+      loc: s.loc, period: s.period, kind: 'count-complete', label: 'as-counted',
+      taken_at: new Date().toISOString(), taken_by: null,
+      fob: s.fob, count: s.count, items: s.items,
+      meta: { ...s.meta, source: 'count-complete', completedAt: s._lastActivityAt, postedCount: s._postedCount },
+    }));
+  if (ccRows.length) {
+    let ccSaved = 0;
+    for (let i = 0; i < ccRows.length; i += 100) {
+      const chunk = ccRows.slice(i, i + 100);
+      const { error } = await withRetry(() => sb.from('eom_snapshots').insert(chunk), { tries: 4, baseMs: 800, label: `cc-insert[${i}]` });
+      if (error) console.error(`[eom-snapshot] count-complete insert error: ${error.message}`);
+      else ccSaved += chunk.length;
+    }
+    console.log(`[eom-snapshot] ✓ count-complete locked ${ccSaved} newly-completed store(s): ${ccRows.map(r => r.loc).join(', ')}`);
+  } else {
+    console.log(`[eom-snapshot] count-complete: no newly-completed+posted stores this run (${haveCC.size} already locked)`);
+  }
 }
 
 main().catch(e => { console.error('[eom-snapshot] FATAL', e); process.exit(1); });

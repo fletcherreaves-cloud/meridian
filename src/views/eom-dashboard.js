@@ -939,16 +939,21 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const openMonitor = useCallback(async () => {
     setMonOpen(true); setMonBusy(true); setMonOpenRows({}); setMon(null);
     try {
-      const [baseSnaps, sr] = await Promise.all([
+      const [ccSnaps, baseSnaps, sr] = await Promise.all([
+        loadEomSnapshots({ period, kind: 'count-complete', latestPerLoc: true }),
         loadEomSnapshots({ period, kind: 'baseline', latestPerLoc: true }),
         loadEomSecondaryReview({ period }),
       ]);
       setSecReview(sr || {});
       const scopedLocs = new Set(rows.map(r => unpad(r.loc)));
-      const baselinesByLoc = {}, currentsByLoc = {};
-      for (const s of baseSnaps) { const k = unpad(s.loc); if (scopedLocs.has(k)) baselinesByLoc[k] = { loc: s.loc, fob: s.fob, count: s.count, items: s.items }; }
+      const baselinesByLoc = {}, currentsByLoc = {}, baselineKind = {};
+      // District baseline first, then override per-store with the "as-counted" lock where it exists —
+      // the count-complete lock is captured at each store's real-count moment (no $0 baselines).
+      for (const s of baseSnaps) { const k = unpad(s.loc); if (scopedLocs.has(k)) { baselinesByLoc[k] = { loc: s.loc, fob: s.fob, count: s.count, items: s.items }; baselineKind[k] = 'baseline'; } }
+      for (const s of ccSnaps) { const k = unpad(s.loc); if (scopedLocs.has(k)) { baselinesByLoc[k] = { loc: s.loc, fob: s.fob, count: s.count, items: s.items }; baselineKind[k] = 'count-complete'; } }
       for (const r of rows) currentsByLoc[unpad(r.loc)] = buildLiveSnapshot(r);
-      setMon({ diff: diffScope(baselinesByLoc, currentsByLoc), takenAt: baseSnaps[0]?.takenAt || null, nBaseline: Object.keys(baselinesByLoc).length });
+      const nAsCounted = Object.values(baselineKind).filter(v => v === 'count-complete').length;
+      setMon({ diff: diffScope(baselinesByLoc, currentsByLoc), takenAt: (ccSnaps[0] || baseSnaps[0])?.takenAt || null, nBaseline: Object.keys(baselinesByLoc).length, baselineKind, nAsCounted });
     } catch (e) {
       const msg = String(e?.message || e);
       setMon({ error: /relation|does not exist|eom_snapshots/i.test(msg) ? 'The eom_snapshots table isn\'t created yet — run the snapshot SQL in Supabase (see handoff), then Lock a baseline.' : msg });
@@ -1965,7 +1970,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📸 EOM Change Monitor — ${scopeLabel()}`),
           h('button', { onClick: () => setMonOpen(false), style: MODAL_X }, '✕'),
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
-            takenLbl ? `Live now vs baseline locked ${takenLbl} · ${mon.nBaseline} store${mon.nBaseline === 1 ? '' : 's'} baselined` : 'No baseline found for this period yet.'),
+            takenLbl ? `Live now vs baseline locked ${takenLbl} · ${mon.nBaseline} store${mon.nBaseline === 1 ? '' : 's'} baselined${mon.nAsCounted ? ` · ${mon.nAsCounted} on their as-counted lock` : ''}` : 'No baseline found for this period yet.'),
           div({ style: { display: 'flex', gap: '7px', marginBottom: '12px' } },
             h('button', { onClick: openMonitor, style: MODAL_TOOLBTN, disabled: monBusy }, monBusy ? '… Refreshing' : '↻ Refresh')),
 
@@ -1997,6 +2002,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                       style: { cursor: 'pointer', borderBottom: '1px solid var(--bdr)', background: open ? 'var(--surf2)' : 'transparent' } },
                       h('td', { style: { padding: '5px 7px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } },
                         span({ style: { color: 'var(--text3)', marginRight: '5px' } }, open ? '▾' : '▸'), nm(loc), span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ` #${unpad(loc)}`),
+                        (mon.baselineKind && mon.baselineKind[unpad(loc)] === 'count-complete') ? span({ title: 'Diffed against this store\'s AS-COUNTED lock — captured the moment its count completed and variance posted. This is the clean per-store baseline.', style: { marginLeft: '6px', fontSize: '8.5px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade80', borderRadius: '4px', padding: '0 4px', cursor: 'help' } }, 'as-counted') : null,
                         s.baselineIncomplete ? span({ title: 'Most items had ~$0 variance at lock — the Variance/Stat data was not yet populated in the snapshot when the baseline was captured (QSRSoft\'s variance report lags the physical count, and an early auto-lock can precede the daily pull). This is NOT proof the store hadn\'t counted. The diff below shows the variance data landing, not moves that helped or hurt.', style: { marginLeft: '6px', fontSize: '8.5px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 4px', cursor: 'help' } }, 'baseline: var not yet posted') : null),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: 'var(--text2)' } }, `${pct2(s.fob.baseFobPct)} → ${pct2(s.fob.curFobPct)}`),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[s.fob.verdict] } }, dpp(s.fob.dFobPct)),
