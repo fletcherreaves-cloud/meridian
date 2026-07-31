@@ -215,10 +215,16 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.693';
+const MERIDIAN_VERSION    = '4.695';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.695', date:'2026-07-31', changes:[
+    'Waste Analysis drill-in (EOM Dashboard → 🗑 Waste): click any flagged store to expand its underlying waste events — every entry biggest-$ first (date/time, $, type, manager, EDITED flag, reason) — so a flag ("$350 session", "same $20 on 5 days") is one click from the raw evidence. Each store also gets a "🧠 Ask SAGE" button that hands SAGE the store\'s waste picture (flags + $-by-manager + largest events) and asks for non-accusatory coaching questions, weighting Food/Condiment over paper. Verify, don\'t accuse.',
+  ]},
+  {version:'4.694', date:'2026-07-31', changes:[
+    'SAGE now grounds QSRSoft questions in the vendor\'s own docs: a new search_qsr_kb tool queries the 208-article QSRSoft Help Center corpus (auto-pulled into qsrsoft_kb) so "how does QSRSoft calculate stat variance?", "what is OEPE / R2P / KVS?", "how do I run the raw item report?" are answered from the source and cited — instead of guessed. Vendor documentation, kept separate from your live store numbers (SAGE still uses the live data tools for those).',
+  ]},
   {version:'4.693', date:'2026-07-31', changes:[
     'EOM count exception now DATES the accepted count: when you grant "accepted early count", Meridian reads the store\'s items to find the day the bulk of the count actually happened (the perceived full-count date, e.g. Ponce\'s 07/28) and stamps the exception with it — the green tag now shows "✓ count accepted 07/28 · {approver}" so the count is attributed to when it really took place, not the close date.',
     'var-0 fix now flows through the Change Monitor BASELINE too: the nightly baseline auto-lock (eom-snapshot cron) reads per-item variance from the raw item ledger (posts the instant a manager submits) instead of the lagging aggregate Variance/Stat report — so both sides of the day-over-day diff use the same immediate as-counted variance the live side already uses. Re-lock a baseline to see it apply.',

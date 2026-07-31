@@ -628,6 +628,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [shareMsg, setShareMsg] = useState('');      // transient result of "Share link" (URL copied / error)
   const [wasteOpen, setWasteOpen] = useState(false); // Waste-analysis scan modal (Notes 40 #2)
   const [wasteScan, setWasteScan] = useState(null);
+  const [wasteDrill, setWasteDrill] = useState(null); // loc currently expanded to its raw waste events
   const [variance, setVariance] = useState([]);
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
@@ -1198,8 +1199,34 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const scoped = new Set(rows.map(r => unpad(r.loc)));
     const w = (waste || []).filter(x => scoped.has(unpad(x.loc)));
     setWasteScan(scanWaste(w, { period }));
+    setWasteDrill(null);
     setWasteOpen(true);
   }, [rows, waste, period]);
+
+  // The raw waste events behind a flagged store — sorted biggest-$ first (drill-in for the scan card).
+  const wasteEventsFor = useCallback((loc) => (waste || [])
+    .filter(x => unpad(x.loc) === unpad(loc) && Number(x.amount) > 0)
+    .sort((a, b) => Number(b.amount) - Number(a.amount)), [waste]);
+
+  // Hand a flagged store's waste picture to SAGE for a deeper, non-accusatory read (owner: "expound").
+  const askSageWaste = useCallback((store) => {
+    const evs = wasteEventsFor(store.loc);
+    const byMgr = {}; for (const e of evs) { const m = e.manager || '?'; byMgr[m] = (byMgr[m] || 0) + Number(e.amount || 0); }
+    const mgrLines = Object.entries(byMgr).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([m, $]) => `  ${m}: $${Math.round($).toLocaleString()}`).join('\n');
+    const flagLines = store.flags.map(f => `  • [${f.kind}] ${f.label}`).join('\n');
+    const topEvents = evs.slice(0, 20).map(e => `  ${e.dt}${e.tm ? ' ' + e.tm : ''} · ${e.type || 'waste'} · $${Number(e.amount).toFixed(2)} · ${e.manager || '?'}${e.edited ? ' · EDITED' : ''}${e.reason ? ' · ' + e.reason : ''}`).join('\n');
+    const context = `Waste analysis — ${nm(store.loc)} (#${unpad(store.loc)}), period ${period}\n`
+      + `Total logged waste: $${Math.round(store.total).toLocaleString()} across ${store.nEvents} entries.\n\n`
+      + `Second-Look flags:\n${flagLines || '  (none)'}\n\n`
+      + `Waste $ by manager:\n${mgrLines}\n\n`
+      + `Largest waste events:\n${topEvents}`;
+    try {
+      window.__MF_SAGE_SEED__ = { context, prompt: `Here is ${nm(store.loc)}'s waste picture for ${period} with our Second-Look flags. Help me read it WITHOUT accusing anyone: which flags are most likely real behavior vs benign (self-serve beverage free-refills, a legit big toss, a travel-path multi-count)? Weight FOOD + CONDIMENT waste over paper/non-product (paper is seldom raw-wasted). If a manager's session or a uniform/static value looks like estimation rather than weighing, say what a coach should ASK — not conclude. Give me 3 short, specific coaching questions for the GM and one thing to verify on the floor. Keep it professional and non-accusatory.` };
+      window.dispatchEvent(new CustomEvent('mf:open-sage'));
+    } catch {}
+    setWasteOpen(false);
+    onClose && onClose();
+  }, [wasteEventsFor, period, onClose]);
 
   // Generate a follow-up draft for EVERY store in scope — the ones that need a message first.
   const openBulk = useCallback(() => {
@@ -1677,15 +1704,29 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           wasteScan ? `${wasteScan.nFlags} flag${wasteScan.nFlags === 1 ? '' : 's'} across ${wasteScan.nStores} store${wasteScan.nStores === 1 ? '' : 's'} · ${period} · Second-Look waste rules (verify, don't accuse)` : ''),
         (!wasteScan || !wasteScan.stores.length)
           ? div({ style: { color: '#4ade80', padding: '16px', fontSize: '13px' } }, '🏆 No waste patterns flagged across this scope — logging looks clean.')
-          : div(null, wasteScan.stores.map(s => div({ key: s.loc, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${s.flags.some(f => f.sev >= 3) ? '#f87171' : '#fb923c'}`, borderRadius: '7px', background: 'var(--surf2)', padding: '10px 12px', marginBottom: '8px' } }, [
+          : div(null, wasteScan.stores.map(s => {
+              const drilled = wasteDrill === s.loc;
+              const evs = drilled ? wasteEventsFor(s.loc) : [];
+              return div({ key: s.loc, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${s.flags.some(f => f.sev >= 3) ? '#f87171' : '#fb923c'}`, borderRadius: '7px', background: 'var(--surf2)', padding: '10px 12px', marginBottom: '8px' } }, [
               div({ key: 'h', style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '5px' } },
-                span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, nm(s.loc)),
+                span({ onClick: () => setWasteDrill(d => d === s.loc ? null : s.loc), style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', cursor: 'pointer' }, title: 'Show / hide the raw waste events behind these flags' }, `${drilled ? '▾' : '▸'} ${nm(s.loc)}`),
                 span({ style: { color: 'var(--text3)', fontSize: '10px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(s.loc)}`),
-                span({ style: { marginLeft: 'auto', color: 'var(--text3)', fontSize: '10.5px' } }, `$${Math.round(s.total).toLocaleString()} waste · ${s.nEvents} entries`)),
+                span({ style: { marginLeft: 'auto', color: 'var(--text3)', fontSize: '10.5px' } }, `$${Math.round(s.total).toLocaleString()} waste · ${s.nEvents} entries`),
+                h('button', { onClick: () => askSageWaste(s), title: 'Open SAGE with this store\'s waste picture — coaching questions, not accusations', style: { background: 'none', color: 'var(--accent,#f5bc00)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '5px', padding: '1px 7px', fontSize: '10px', fontWeight: 700, cursor: 'pointer' } }, '🧠 Ask SAGE')),
               ...s.flags.map((f, i) => div({ key: 'f' + i, style: { display: 'flex', gap: '7px', alignItems: 'baseline', fontSize: '12px', color: 'var(--text2)', padding: '2px 0' } },
                 span({ style: { fontSize: '9px', fontWeight: 700, color: f.sev >= 3 ? '#f87171' : f.sev >= 2 ? '#fb923c' : '#f5bc00', border: `1px solid ${f.sev >= 3 ? '#f87171' : f.sev >= 2 ? '#fb923c' : '#f5bc00'}`, borderRadius: '4px', padding: '0 5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, f.kind),
                 span(null, f.label))),
-            ]))),
+              drilled && div({ key: 'drill', style: { marginTop: '7px', borderTop: '1px dashed var(--bdr)', paddingTop: '6px' } }, [
+                div({ key: 'dh', style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: '3px' } }, `Waste events (largest first) — ${evs.length}`),
+                ...evs.slice(0, 40).map((e, i) => div({ key: 'e' + i, style: { display: 'flex', gap: '8px', alignItems: 'baseline', fontSize: '11.5px', color: 'var(--text2)', padding: '1px 0', fontFamily: 'ui-monospace,Menlo,monospace' } },
+                  span({ style: { color: 'var(--text3)', minWidth: '92px' } }, `${e.dt}${e.tm ? ' ' + String(e.tm).slice(0, 5) : ''}`),
+                  span({ style: { color: 'var(--text)', fontWeight: 600, minWidth: '64px', textAlign: 'right' } }, `$${Number(e.amount).toFixed(2)}`),
+                  span({ style: { flex: 1 } }, `${e.type || 'waste'} · ${e.manager || '?'}`),
+                  e.edited && span({ style: { color: '#fb923c', fontSize: '9px', fontWeight: 700 } }, 'EDITED'),
+                  e.reason && span({ style: { color: 'var(--text3)', fontSize: '10px' } }, e.reason))),
+                evs.length > 40 && div({ key: 'more', style: { fontSize: '10px', color: 'var(--text3)', marginTop: '2px' } }, `+${evs.length - 40} more`),
+              ]),
+            ]); })),
         div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginTop: '10px', fontStyle: 'italic' } }, 'Uniform = same $ many days (estimated, not weighed) · Session = one manager/day outlier · Concentration = one manager\'s share · Spike = count-window day spike. Verify, don\'t accuse.')),
     ),
 
