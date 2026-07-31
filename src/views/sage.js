@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
-import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule } from '../lib/supabase.js';
+import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule, searchQsrKb } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 
@@ -790,6 +790,53 @@ function LogIssueModal({ question, answer, conversation, onClose }) {
         h('button', { onClick: doSave, disabled: saving, style: { padding: '6px 16px', borderRadius: 6, border: 'none', background: amber, color: '#000', fontSize: 11, fontWeight: 800, cursor: saving ? 'default' : 'pointer' } }, saving ? '…' : 'Create'))));
 }
 
+// ── QSRSoft KB viewer — search + read the vendor's Help Center corpus (qsrsoft_kb) ──────────────
+// Same corpus SAGE grounds on (search_qsr_kb). Lets the owner browse the docs directly and, from any
+// article, hand it to SAGE to explain in plain English against their own operation.
+function KbViewerModal({ onClose, onAskSage }) {
+  const [q, setQ] = uSt('');
+  const [results, setResults] = uSt([]);
+  const [busy, setBusy] = uSt(false);
+  const [open, setOpen] = uSt(null);   // the expanded article
+  const [ran, setRan] = uSt(false);
+  const run = uCb(async (term) => {
+    const t = (term != null ? term : q).trim();
+    if (!t) { setResults([]); setRan(false); return; }
+    setBusy(true); setRan(true); setOpen(null);
+    try { setResults(await searchQsrKb(t, { limit: 30 }) || []); } catch { setResults([]); }
+    setBusy(false);
+  }, [q]);
+  const card = { background: 'var(--surf,#0f1117)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '86vh', overflow: 'auto', padding: 18, position: 'relative' };
+  return createPortal(
+    h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { onClick: e => e.stopPropagation(), style: card },
+        h('button', { onClick: onClose, style: { position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', color: muted, fontSize: 18, cursor: 'pointer', lineHeight: 1 } }, '✕'),
+        h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '📖 QSRSoft Help Center'),
+        h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Search the vendor\'s own docs — reports, eBOS, DAR, food cost, inventory, forms. Same corpus SAGE cites.'),
+        h('div', { style: { display: 'flex', gap: 7, marginBottom: 12 } },
+          h('input', { value: q, autoFocus: true, placeholder: 'e.g. stat variance, OEPE, raw item report, red model…',
+            onChange: e => setQ(e.target.value), onKeyDown: e => { if (e.key === 'Enter') run(); },
+            style: { flex: 1, background: 'var(--surf2,#161a22)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 7, padding: '8px 10px', color: 'var(--text,#f1f5f9)', fontSize: 13 } }),
+          h('button', { onClick: () => run(), disabled: busy, style: { background: amber, color: '#000', border: 'none', borderRadius: 7, padding: '8px 16px', fontWeight: 800, fontSize: 12, cursor: busy ? 'default' : 'pointer' } }, busy ? '…' : 'Search')),
+        busy && h('div', { style: { color: muted, fontSize: 12, padding: '10px 2px' } }, 'Searching…'),
+        !busy && ran && !results.length && h('div', { style: { color: muted, fontSize: 12, padding: '10px 2px' } }, `No articles matched "${q}". Try different terms.`),
+        !busy && h('div', null, results.map((a, i) => {
+          const isOpen = open === i;
+          return h('div', { key: a.id || i, style: { border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, marginBottom: 7, background: 'var(--surf2,#161a22)', overflow: 'hidden' } },
+            h('div', { onClick: () => setOpen(o => o === i ? null : i), style: { padding: '9px 11px', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'baseline' } },
+              h('span', { style: { color: amber, fontSize: 11 } }, isOpen ? '▾' : '▸'),
+              h('div', { style: { flex: 1 } },
+                h('div', { style: { fontSize: 12.5, fontWeight: 700, color: 'var(--text,#f1f5f9)' } }, a.title || '(untitled)'),
+                h('div', { style: { fontSize: 10, color: muted, marginTop: 1 } }, [a.category, a.section].filter(Boolean).join(' · ')))),
+            isOpen && h('div', { style: { padding: '2px 12px 11px', borderTop: '1px solid rgba(255,255,255,.06)' } },
+              h('div', { style: { fontSize: 12, color: 'var(--text2,#cbd5e1)', lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: 320, overflow: 'auto', marginTop: 8 } }, (a.bodyText || '').trim() || '(no text captured)'),
+              h('div', { style: { display: 'flex', gap: 8, marginTop: 10 } },
+                h('button', { onClick: () => onAskSage(a), style: { background: 'transparent', border: `1px solid ${amber}`, color: amber, borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' } }, '🧠 Explain with SAGE'),
+                a.htmlUrl && h('a', { href: a.htmlUrl, target: '_blank', rel: 'noreferrer', style: { color: muted, fontSize: 11, alignSelf: 'center', textDecoration: 'underline' } }, 'Open in QSRSoft ↗'))));
+        })))),
+    document.body);
+}
+
 function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClose, onUse, onRun, onRefresh }) {
   // Editable draft — NO longer gated on the SAGE composer having text. Prefilled from
   // the composer when it has text, but you can always type/paste a prompt to save here.
@@ -1054,6 +1101,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   const [error, setError]       = uSt(null);
   const [logTarget, setLogTarget] = uSt(null);   // {question, answer} for the issue-logger modal
   const [promptLibOpen, setPromptLibOpen] = uSt(false);
+  const [kbOpen, setKbOpen] = uSt(false);              // QSRSoft KB viewer
   const [promptLibSeed, setPromptLibSeed] = uSt('');   // prefill for the library (from a response's ★ Save prompt)
   const openPromptLib = (seed) => { setPromptLibSeed(seed || ''); setPromptLibOpen(true); };
   const [prompts, setPrompts]   = uSt([]);        // saved SAGE prompts
@@ -1131,7 +1179,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
     setError(null);
     // Prepend any one-shot seed context (report) as background to this message.
     const ctx = seedCtxRef.current; seedCtxRef.current = null;
-    const content = ctx ? `Context (an EOM FOB variance report I'm reviewing):\n\n${ctx}\n\n---\n\n${text}` : text;
+    const content = ctx ? `Context I'm referencing:\n\n${ctx}\n\n---\n\n${text}` : text;
     const userMsg = { role: 'user', content, display: ctx ? text : undefined };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
@@ -1198,6 +1246,17 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
           onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(245,158,11,.4)'; e.currentTarget.style.color = amber; },
           onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
         }, '📚 Prompts' + (prompts.length ? ' · ' + prompts.length : '')),
+        h('button', {
+          onClick: () => setKbOpen(true),
+          title: 'QSRSoft Help Center — search the vendor docs SAGE grounds on',
+          style: {
+            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
+            fontSize: '11px', color: muted, transition: 'all .15s',
+          },
+          onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(245,158,11,.4)'; e.currentTarget.style.color = amber; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+        }, '📖 Docs'),
         sessions.length > 0 && h('button', {
           onClick: () => setSessionsOpen(true),
           title: 'Past conversations — reopen a previous SAGE session',
@@ -1360,6 +1419,14 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
     sessionsOpen && createPortal(h(SessionsModal, {
       sessions, onClose: () => setSessionsOpen(false), onReopen: reopenSession, onDelete: deleteSession,
     }), document.body),
+    kbOpen && h(KbViewerModal, {
+      onClose: () => setKbOpen(false),
+      onAskSage: (a) => {
+        seedCtxRef.current = `QSRSoft Help Center article — "${a.title || 'untitled'}"${a.section ? ` (${a.section})` : ''}:\n\n${(a.bodyText || '').trim()}`;
+        setKbOpen(false);
+        sendMessage('Explain this QSRSoft doc in plain English, and how it applies to how I run my stores.');
+      },
+    }),
   );
 }
 

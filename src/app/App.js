@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.695';
+const MERIDIAN_VERSION    = '4.696';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.696', date:'2026-07-31', changes:[
+    'SAGE → 📖 Docs: a QSRSoft Help Center viewer built into SAGE. Search the vendor\'s own docs (the same 208-article corpus SAGE cites), expand any article to read it, and hit "🧠 Explain with SAGE" to hand the article to SAGE for a plain-English read against your operation. Closes the KB loop end-to-end: pulled → stored → grounds SAGE → browsable.',
+  ]},
   {version:'4.695', date:'2026-07-31', changes:[
     'Waste Analysis drill-in (EOM Dashboard → 🗑 Waste): click any flagged store to expand its underlying waste events — every entry biggest-$ first (date/time, $, type, manager, EDITED flag, reason) — so a flag ("$350 session", "same $20 on 5 days") is one click from the raw evidence. Each store also gets a "🧠 Ask SAGE" button that hands SAGE the store\'s waste picture (flags + $-by-manager + largest events) and asks for non-accusatory coaching questions, weighting Food/Condiment over paper. Verify, don\'t accuse.',
   ]},
