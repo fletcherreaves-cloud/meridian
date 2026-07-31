@@ -823,17 +823,20 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       if (moreN > 0) L.push('', `_+${moreN} more due-today item(s)._`);
     }
 
-    // Counted EARLY — table (owner req 2026-07-30): WRIN + on-hand + last-counted to substantiate.
-    const earlyItems = _unc.filter(u => u.state === 'early').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
-    if (bs.early && bs.early.n) {
-      L.push('', `### ⏱ Counted EARLY this period — ${m(bs.early)}`, '');
-      L.push('_QSRSoft already shows these counted; a recount will **not** recover this period\'s dollars (they cascade). Recount only if a specific count looks wrong — this is NOT "just go count it" money._', '');
-      if (earlyItems.length) {
-        L.push('| Item | WRIN | Class | On-hand qty | On-hand $ | Last counted |', '|---|---|---|---:|---:|---|');
-        earlyItems.forEach(u => { const q = Number(u.totalUnits); const qs = Number.isFinite(q) && q !== 0 ? q.toLocaleString() : '—'; L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${qs} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${u.lastCounted || '—'} |`); });
-        const moreE = (bs.early?.n || 0) - earlyItems.length;
-        if (moreE > 0) L.push('', `_+${moreE} more counted-early item(s)._`);
-      }
+    // Counted EARLY — FOOD/CONDIMENT ONLY (owner 2026-07-30, Harrah): Paper/Non-Product counted
+    // mid-month is fine — NOT cost-control, and the "recount won't recover, it cascades" framing is
+    // wrong for these anyway (an item whose LATEST count is the early one carries that stale value
+    // into the close). So only the profit-driver classes appear here, framed to recount for a current
+    // EOM number. When Food/Condiment were counted fresh in the window, this section disappears.
+    const earlyItems = _unc.filter(u => u.state === 'early' && isFCcls(u.cls)).sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
+    const earlyFCcount = _unc.filter(u => u.state === 'early' && isFCcls(u.cls)).length;
+    if (earlyItems.length) {
+      L.push('', `### ⏱ Food/Condiment counted EARLY — ${earlyFCcount} item${earlyFCcount === 1 ? '' : 's'} (${money(sumVR(earlyItems))})`, '');
+      L.push('_Counted before the final window, so QSRSoft is carrying a stale count into the close — **recount for a current EOM number** on the profit-driver classes. (Paper / Non-Product counted mid-month is fine and not listed.)_', '');
+      L.push('| Item | WRIN | Class | On-hand qty | On-hand $ | Last counted |', '|---|---|---|---:|---:|---|');
+      earlyItems.forEach(u => { const q = Number(u.totalUnits); const qs = Number.isFinite(q) && q !== 0 ? q.toLocaleString() : '—'; L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${qs} | ${money(u.onHandAmt ?? u.valueAtRisk)} | ${u.lastCounted || '—'} |`); });
+      const moreE = earlyFCcount - earlyItems.length;
+      if (moreE > 0) L.push('', `_+${moreE} more Food/Condiment counted-early item(s)._`);
     }
 
     // OBSOLETE / DISCONTINUED / INACTIVE — table with the class-aware action (owner req 2026-07-30).
