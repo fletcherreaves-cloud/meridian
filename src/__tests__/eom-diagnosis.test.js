@@ -182,6 +182,28 @@ describe('runDiagnosis — editable check registry', () => {
     expect(runDiagnosis({ store: 's', period: '2026-06', data: { rawItems: single } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
   });
 
+  it('waste-session: flags a manager whose one-day waste session is a large outlier, with rotation-vs-verify framing', () => {
+    const waste = [
+      { dt: '2026-07-10', manager: 'A', amount: 30, type: 'raw' },
+      { dt: '2026-07-11', manager: 'B', amount: 28, type: 'raw' },
+      { dt: '2026-07-12', manager: 'A', amount: 32, type: 'raw' },
+      { dt: '2026-07-13', manager: 'C', amount: 25, type: 'raw' },
+      { dt: '2026-07-14', manager: 'D', amount: 200, type: 'raw' },
+      { dt: '2026-07-14', manager: 'D', amount: 150, type: 'raw' },   // D's session = $350, a big outlier
+    ];
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { waste } });
+    const f = res.findings.find(x => x.checkId === 'waste-session');
+    expect(f).toBeTruthy();
+    expect(f.title).toMatch(/D on 2026-07-14/);
+    expect(f.detail).toMatch(/FIFO rotation/);       // legitimate-expired path
+    expect(f.detail).toMatch(/verify it was physically thrown/); // not-legit path
+  });
+
+  it('waste-session: quiet when every session is similar', () => {
+    const waste = ['A', 'B', 'C', 'D', 'E'].map((m, i) => ({ dt: `2026-07-1${i}`, manager: m, amount: 30 + i, type: 'raw' }));
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.some(x => x.checkId === 'waste-session')).toBe(false);
+  });
+
   it('Finish-the-count + Count-integrity frame Paper/Non-Product as NOT food-cost-consequential', () => {
     const incomplete = {
       uncountedCount: 2, byState: { never: { n: 2, value: 500 } },

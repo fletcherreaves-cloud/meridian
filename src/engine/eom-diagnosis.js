@@ -327,6 +327,41 @@ export const DEFAULT_CHECKS = [
       return out;
     },
   },
+  {
+    // High-$ waste SESSION (integrity, Notes 37 A2): one manager's waste on one day totals far above a
+    // typical session. Two legitimate-vs-not paths, framed without accusation: if it's expired product
+    // pulled at once, it's real waste → coach ordering-to-on-hands + FIFO rotation so it stops recurring;
+    // if not, verify it was physically thrown, not entered to absorb a variance. Distinct from
+    // waste-inflation (store-wide daily spike) and waste-patterns (overall per-manager share).
+    id: 'waste-session', label: 'High-$ waste session — one manager, one day (verify / rotation)', order: 52, enabled: true,
+    requires: ['waste'], params: { factor: 2.5, minTotal: 75 },
+    run: (ctx) => {
+      const events = (ctx.data.waste || []).filter(w => w && w.dt && Number(w.amount) > 0);
+      if (events.length < 4) return [];
+      const sess = {};
+      for (const w of events) {
+        const day = String(w.dt).slice(0, 10); const k = `${w.manager || '?'}|${day}`;
+        const s = sess[k] || (sess[k] = { manager: w.manager || '?', day, total: 0, n: 0 });
+        s.total += Number(w.amount) || 0; s.n++;
+      }
+      const sessions = Object.values(sess);
+      if (sessions.length < 3) return [];
+      const totals = sessions.map(s => s.total).sort((a, b) => a - b);
+      const median = totals[Math.floor(totals.length / 2)] || 0;
+      const factor = ctx.params.factor ?? 2.5, minTotal = ctx.params.minTotal ?? 75;
+      const windowStart = countWindowStartTs(ctx.period);
+      const out = [];
+      for (const s of sessions) {
+        if (median <= 0 || s.total < median * factor || s.total < minTotal) continue;
+        const t = Date.parse(s.day); const nearEOM = windowStart != null && t != null && t >= windowStart;
+        out.push(mkFinding('waste-session', nearEOM ? SEVERITY.high : SEVERITY.medium,
+          `Large waste session: ${s.manager} on ${s.day}`,
+          `${_mny(s.total)} of waste in one session (${s.n} entries) vs a ${_mny(median)} typical session (${(s.total / median).toFixed(1)}×)${nearEOM ? ' — and it lands in the count window, where waste gets inflated to absorb a variance' : ''}. If this was expired product pulled at once, it's real waste — coach tighter ordering to on-hands + FIFO rotation so it doesn't recur. If not, verify it was physically thrown, not entered to balance a number.`,
+          s.total, { manager: s.manager, day: s.day, n: s.n, nearEOM }));
+      }
+      return out;
+    },
+  },
   { id: 'purchases-posted', label: 'Purchases — all invoices posted (none pending)', order: 60, enabled: true, requires: ['purchases'], pending: true, run: () => [] },
   {
     // Transfers — large / not-approved transfers that shift the variance picture.
@@ -591,8 +626,8 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // impossible balances, re-count churn). When one of these fires, the recap softens into a
 // non-accusatory "let's verify" note instead of the punchy default (owner: give the why, nicely).
 export const INTEGRITY_CHECK_IDS = new Set([
-  'count-manipulation', 'recount-swing', 'waste-inflation', 'waste-patterns', 'unrealistic-over',
-  'negative-onhand', 'negative-usage', 'uom-sanity',
+  'count-manipulation', 'recount-swing', 'waste-inflation', 'waste-session', 'waste-patterns',
+  'unrealistic-over', 'negative-onhand', 'negative-usage', 'uom-sanity',
 ]);
 
 // `mode:'recap'` returns the super-abbreviated message (FOB line → count status → Top-5 → net → soft
