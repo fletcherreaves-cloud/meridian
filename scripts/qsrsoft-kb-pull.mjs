@@ -79,12 +79,17 @@ async function main() {
     await new Promise(r => setTimeout(r, 2500));
     await snap('kb-01-helpcenter.png');
     console.log('[kb] KB landing url:', page.url());
-    // Make sure we're on the KB host before hitting its API.
-    if (!page.url().includes(KB_HOST)) {
+    // Make sure we actually landed on a help-center page (SSO redirects the zendesk host → the custom
+    // domain, e.g. support.qsrsoft.com/hc/en-us). If not, nudge to the help center.
+    if (!/\/hc\//.test(page.url())) {
       await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
     }
+    // The API MUST be called on the origin we actually landed on (same-origin) — the KB is served from
+    // its custom domain, so fetching the zendesk.com host cross-origin fails (the first-run lesson).
+    const base = new URL(page.url()).origin;
+    console.log('[kb] KB origin (API base):', base);
 
-    // ── Walk the Help Center API from inside the authenticated browser ──
+    // ── Walk the Help Center API from inside the authenticated browser (same-origin) ──
     const fetchJson = (path) => page.evaluate(async (p) => {
       const res = await fetch(p, { credentials: 'include', headers: { Accept: 'application/json' } });
       return { status: res.status, ok: res.ok, body: res.ok ? await res.json() : await res.text().catch(() => '') };
@@ -93,7 +98,7 @@ async function main() {
     // Categories + sections give us human-readable breadcrumbs.
     const catById = {}, secById = {};
     for (const [key, store] of [['categories', catById], ['sections', secById]]) {
-      let url = `https://${KB_HOST}/api/v2/help_center/${LOCALE}/${key}.json?per_page=100`;
+      let url = `${base}/api/v2/help_center/${LOCALE}/${key}.json?per_page=100`;
       while (url) {
         const r = await withRetry(() => fetchJson(url), { tries: 3, baseMs: 900, label: key });
         if (!r.ok) { console.error(`[kb] ${key} fetch failed: ${r.status} ${String(r.body).slice(0, 200)}`); break; }
