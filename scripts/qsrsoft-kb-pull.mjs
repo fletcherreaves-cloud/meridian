@@ -90,51 +90,56 @@ async function main() {
     // The API MUST be called on the origin we actually landed on (same-origin) — the KB is served from
     // its custom domain, so fetching the zendesk.com host cross-origin fails (the first-run lesson).
     const base = new URL(page.url()).origin;
-    console.log('[kb] KB origin (API base):', base);
+    console.log('[kb] KB origin:', base);
 
-    // ── Walk the Help Center API from inside the authenticated browser (same-origin) ──
-    const fetchJson = (path) => page.evaluate(async (p) => {
-      const res = await fetch(p, { credentials: 'include', headers: { Accept: 'application/json' } });
-      return { status: res.status, ok: res.ok, body: res.ok ? await res.json() : await res.text().catch(() => '') };
-    }, path);
+    // ── Crawl the RENDERED help center (Zendesk server-renders article bodies into the page HTML; the
+    // end-user JSON API 401s on this restricted custom-domain HC). BFS from the home page over
+    // categories → sections → article pages, collecting article URLs, then read each article's body. ──
+    const linksOn = () => page.evaluate((b) => [...document.querySelectorAll('a[href]')]
+      .map(a => a.href).filter(h => h.startsWith(b) && /\/hc\/[^/]+\/(categories|sections|articles)\//.test(h))
+      .map(h => h.split('#')[0].split('?')[0]), base).catch(() => []);
 
-    // Categories + sections give us human-readable breadcrumbs.
-    const catById = {}, secById = {};
-    for (const [key, store] of [['categories', catById], ['sections', secById]]) {
-      let url = `${base}/api/v2/help_center/${LOCALE}/${key}.json?per_page=100`;
-      while (url) {
-        const r = await withRetry(() => fetchJson(url), { tries: 3, baseMs: 900, label: key });
-        if (!r.ok) { console.error(`[kb] ${key} fetch failed: ${r.status} ${String(r.body).slice(0, 200)}`); break; }
-        for (const it of (r.body[key] || [])) store[it.id] = it;
-        url = r.body.next_page || null;
+    const seen = new Set(), queue = [`${base}/hc/${LOCALE}`], articleUrls = new Set();
+    let guard = 0;
+    while (queue.length && guard++ < 500) {
+      const u = queue.shift();
+      if (seen.has(u) || /\/articles\//.test(u)) continue;
+      seen.add(u);
+      await page.goto(u, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      for (const l of await linksOn()) {
+        if (/\/articles\//.test(l)) articleUrls.add(l);
+        else if (!seen.has(l)) queue.push(l);
       }
-      console.log(`[kb] loaded ${Object.keys(store).length} ${key}`);
     }
+    console.log(`[kb] discovered ${articleUrls.size} article URL(s) across ${seen.size} listing page(s)`);
+    if (!articleUrls.size) { console.error('[kb] no article links found — check kb-01 screenshot (are we signed in?).'); await snap('kb-02-nolinks.png'); process.exitCode = 1; return; }
 
-    // Articles (paginated).
     const rows = [];
-    let url = `https://${KB_HOST}/api/v2/help_center/${LOCALE}/articles.json?per_page=100`;
-    let pageN = 0;
-    while (url) {
-      const r = await withRetry(() => fetchJson(url), { tries: 4, baseMs: 1000, label: `articles[${pageN}]` });
-      if (!r.ok) { console.error(`[kb] articles fetch failed: ${r.status} ${String(r.body).slice(0, 300)}`); if (pageN === 0) { await snap('kb-02-articles-fail.png'); } break; }
-      for (const a of (r.body.articles || [])) {
-        const sec = secById[a.section_id]; const cat = sec ? catById[sec.category_id] : null;
+    let n = 0;
+    for (const au of articleUrls) {
+      await page.goto(au, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      const art = await page.evaluate(() => {
+        const idm = location.pathname.match(/\/articles\/(\d+)/);
+        const pick = (...sels) => { for (const s of sels) { const el = document.querySelector(s); if (el) return el; } return null; };
+        const titleEl = pick('.article-title', 'h1.article-title', '.article-header h1', 'article h1', 'h1');
+        const bodyEl = pick('.article-body', '.article__body', '[itemprop="articleBody"]', '.article-content');
+        const crumbs = [...document.querySelectorAll('.breadcrumbs a, nav.breadcrumbs a, ol.breadcrumbs a')].map(a => a.textContent.trim()).filter(Boolean);
+        const ts = (document.querySelector('time[datetime]') || {}).getAttribute?.('datetime') || null;
+        return { id: idm ? Number(idm[1]) : null, title: (titleEl?.textContent || '').trim(), bodyHtml: bodyEl ? bodyEl.innerHTML : '', crumbs, ts };
+      }).catch(() => null);
+      if (art && art.id && (art.title || art.bodyHtml)) {
         rows.push({
-          id: a.id, title: a.title || null,
-          body_html: a.body || null, body_text: htmlToText(a.body),
-          section_id: a.section_id ?? null, section: sec ? sec.name : null, category: cat ? cat.name : null,
-          locale: a.locale || LOCALE, html_url: a.html_url || null,
-          labels: Array.isArray(a.label_names) ? a.label_names : null,
-          updated_at: a.updated_at || a.edited_at || null, pulled_at: new Date().toISOString(),
+          id: art.id, title: art.title || null,
+          body_html: art.bodyHtml || null, body_text: htmlToText(art.bodyHtml),
+          section_id: null, category: art.crumbs[0] || null, section: art.crumbs[1] || art.crumbs[art.crumbs.length - 1] || null,
+          locale: LOCALE, html_url: au, labels: null,
+          updated_at: art.ts || null, pulled_at: new Date().toISOString(),
         });
       }
-      pageN++;
-      url = r.body.next_page || null;
-      if (pageN > 60) break; // safety
+      if (++n % 20 === 0) console.log(`[kb] …read ${n}/${articleUrls.size} articles`);
     }
-    console.log(`[kb] collected ${rows.length} articles across ${pageN} page(s)`);
-    if (!rows.length) { console.error('[kb] no articles — SSO may not have carried into Zendesk (check kb-01/kb-02 screenshots).'); process.exitCode = 1; return; }
+    console.log(`[kb] collected ${rows.length} articles`);
+    if (!rows.length) { console.error('[kb] no article bodies extracted (theme selectors?) — check kb-01.'); process.exitCode = 1; return; }
 
     let saved = 0;
     for (let i = 0; i < rows.length; i += 100) {
