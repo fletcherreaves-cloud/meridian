@@ -7271,7 +7271,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const prior=fobAgg(scope(fobPeriods.prior,allLocs));
       const mtdOk=fobAgg(scope(fobPeriods.cur,okLocs)),mtdFl=fobAgg(scope(fobPeriods.cur,flLocs));
       const pr=f=>prior?prior[f]:null;
+      // Sales-weighted targets across the scope (owner: pass targets to the AAG tile like the
+      // diagnosis strip). Σ(target × store sales) / Σsales, per component.
+      const _curS=scope(fobPeriods.cur,allLocs);
+      const wTgt=(tk)=>{let n=0,d=0;for(const r of _curS){const t=DEFAULT_TARGETS[String(parseInt(r.loc,10))]?.[tk];const s=r.prodSalesAmt||0;if(t!=null&&s){n+=t*s;d+=s;}}return d?n/d:null;};
+      const tgts={fobPct:wTgt('tFOBTarget'),unexplained:wTgt('tUnex'),compWaste:wTgt('tCompWaste'),rawWaste:wTgt('tRawWaste'),condiment:wTgt('tCondiment'),empMeal:wTgt('tEmpFood'),statVar:wTgt('tStatLoss'),baseFoodPct:wTgt('tFOBBase'),pLFoodPct:wTgt('tFOBTotal')};
       return {
+        tgts,
         fobPct:mtd.fobPct,baseFoodPct:mtd.baseFoodPct,unexplained:mtd.unexplained,
         compWaste:mtd.compWaste,rawWaste:mtd.rawWaste,condiment:mtd.condiment,
         empMeal:mtd.empMeal,statVar:mtd.statVar,discCoupon:mtd.discCoupon,
@@ -8275,6 +8281,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   color:fobSec.fobPct!=null?(fobSec.fobPct<.035?'#10b981':fobSec.fobPct<.055?'#f59e0b':'#f87171'):'var(--text3)'}},
                   fobSec.fobPct!=null?((fobSec.fobPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'FOB %'+(fobSec.primaryIsMTD?' · MTD':'')),
+                (fobSec.tgts&&fobSec.tgts.fobPct!=null&&fobSec.fobPct!=null)&&(()=>{const dp=(fobSec.fobPct-fobSec.tgts.fobPct)*100;return div({style:{fontSize:'8px',fontWeight:700,fontFamily:'var(--mono)',marginTop:1,color:dp>0.001?'#f87171':'#10b981'},title:'vs sales-weighted FOB target'},`${dp>=0?'+':''}${dp.toFixed(2)} vs tgt ${(fobSec.tgts.fobPct*100).toFixed(2)}%`);})(),
                 fobSec.priorFobPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorFobPct||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
                 MktBadge({ok:fobSec.okFobPct,fl:fobSec.flFobPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
@@ -8299,12 +8306,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 'FOB COMPONENTS'+(fobSec.primaryIsMTD?' · '+(fobSec.curMonth||'MTD')+' MTD vs '+(fobSec.priorMonth||'prior'):'')),
               div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:3}},
                 [
-                  {l:'Unexplained',v:fobSec.unexplained,ok:fobSec.okUnexp,fl:fobSec.flUnexp,prior:fobSec.priorUnexplained,alert:(fobSec.unexplained||0)>.003},
-                  {l:'Comp Waste',v:fobSec.compWaste,ok:fobSec.okCompWaste,fl:fobSec.flCompWaste,prior:fobSec.priorCompWaste},
-                  {l:'Raw Waste',v:fobSec.rawWaste,ok:fobSec.okRawWaste,fl:fobSec.flRawWaste,prior:fobSec.priorRawWaste},
-                  {l:'Condiment',v:fobSec.condiment,ok:fobSec.okCondiment,fl:fobSec.flCondiment,prior:fobSec.priorCondiment},
-                  {l:'Emp Meal',v:fobSec.empMeal,ok:fobSec.okEmpMeal,fl:fobSec.flEmpMeal,prior:fobSec.priorEmpMeal},
-                  {l:'Stat Var',v:fobSec.statVar,ok:fobSec.okStatVar,fl:fobSec.flStatVar,prior:fobSec.priorStatVar},
+                  {l:'Unexplained',v:fobSec.unexplained,ok:fobSec.okUnexp,fl:fobSec.flUnexp,prior:fobSec.priorUnexplained,tgt:fobSec.tgts&&fobSec.tgts.unexplained,alert:(fobSec.unexplained||0)>.003},
+                  {l:'Comp Waste',v:fobSec.compWaste,ok:fobSec.okCompWaste,fl:fobSec.flCompWaste,prior:fobSec.priorCompWaste,tgt:fobSec.tgts&&fobSec.tgts.compWaste},
+                  {l:'Raw Waste',v:fobSec.rawWaste,ok:fobSec.okRawWaste,fl:fobSec.flRawWaste,prior:fobSec.priorRawWaste,tgt:fobSec.tgts&&fobSec.tgts.rawWaste},
+                  {l:'Condiment',v:fobSec.condiment,ok:fobSec.okCondiment,fl:fobSec.flCondiment,prior:fobSec.priorCondiment,tgt:fobSec.tgts&&fobSec.tgts.condiment},
+                  {l:'Emp Meal',v:fobSec.empMeal,ok:fobSec.okEmpMeal,fl:fobSec.flEmpMeal,prior:fobSec.priorEmpMeal,tgt:fobSec.tgts&&fobSec.tgts.empMeal},
+                  {l:'Stat Var',v:fobSec.statVar,ok:fobSec.okStatVar,fl:fobSec.flStatVar,prior:fobSec.priorStatVar,tgt:fobSec.tgts&&fobSec.tgts.statVar},
                 ].map((item,i)=>
                   div({key:i,style:{display:'flex',flexDirection:'column',
                     padding:'2px 5px',borderRadius:3,
@@ -8315,6 +8322,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                         color:item.alert?'#f87171':'var(--text)'}},
                         item.v!=null?((item.v||0)*100).toFixed(2)+'%':'—')
                     ),
+                    (item.tgt!=null&&item.v!=null)&&(()=>{const dp=(item.v-item.tgt)*100;return div({style:{fontSize:'7px',fontFamily:'var(--mono)',fontWeight:700,textAlign:'right',color:dp>0.001?'#f87171':'#10b981'},title:'vs sales-weighted target'},`${dp>=0?'+':''}${dp.toFixed(2)} (tgt ${(item.tgt*100).toFixed(2)}%)`);})(),
                     fobSec.primaryIsMTD&&item.prior!=null&&div({style:{fontSize:'7px',color:'var(--text3)',fontFamily:'var(--mono)',textAlign:'right'},title:'Last completed month (final)'},
                       ((item.prior||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
                     (item.ok!=null||item.fl!=null)&&div({style:{marginTop:1}},
