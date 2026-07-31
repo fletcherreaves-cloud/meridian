@@ -69,15 +69,19 @@ async function main() {
     await page.waitForURL(landed, { timeout: 40000 }).catch(() => {});
     let base = settled() ? new URL(page.url()).origin : null;
     if (!base) {
-      // Diagnose the zdlogin interstitial + try submitting its SSO form (JWT flows often POST a form).
-      const diag = await page.evaluate(() => ({
-        title: document.title, text: (document.body?.innerText || '').slice(0, 800),
-        forms: [...document.forms].map(f => ({ action: f.action, method: f.method, inputs: [...f.elements].map(e => e.name).filter(Boolean) })),
-        metaRefresh: (document.querySelector('meta[http-equiv="refresh" i]') || {}).getAttribute?.('content') || null,
-      })).catch(() => null);
-      console.log('[kb] zdlogin diagnostics:', JSON.stringify(diag).slice(0, 1400));
-      const submitted = await page.evaluate(() => { const f = document.forms[0]; if (f) { f.submit(); return true; } return false; }).catch(() => false);
-      if (submitted) { console.log('[kb] submitted zdlogin form; waiting for KB…'); await page.waitForURL(landed, { timeout: 25000 }).catch(() => {}); base = settled() ? new URL(page.url()).origin : null; }
+      // The zdlogin SSO endpoint is showing the QSRSoft sign-in form (our token/SPA app login doesn't
+      // set the cookie session it honors). Sign in HERE with the same creds — this IS the SSO entry
+      // that establishes the KB session and redirects to support.qsrsoft.com/hc.
+      const loginSel = 'input[name="username"], input[name="email"], input[type="email"], #username';
+      if (await page.$(loginSel)) {
+        console.log('[kb] zdlogin is asking to sign in — logging in on the SSO page…');
+        await page.fill(loginSel, u).catch(() => {});
+        await page.fill('input[name="password"], input[type="password"], #password', pw).catch(() => {});
+        await page.click('button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Login"), .btn-primary').catch(() => {});
+        await page.waitForURL(landed, { timeout: 35000 }).catch(() => {});
+        base = settled() ? new URL(page.url()).origin : null;
+        console.log('[kb] after zdlogin sign-in:', page.url(), '| origin:', base);
+      }
     }
     await snap('kb-01-helpcenter.png');
     console.log('[kb] KB landing url:', page.url(), '| origin:', base);
