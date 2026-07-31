@@ -160,7 +160,7 @@ describe('runDiagnosis — editable check registry', () => {
     const hasIntegrity = (res.findings || []).some(f => f.checkId === 'waste-inflation' || f.checkId === 'waste-patterns');
     const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.04, tgt: 0.038, dollars: 5000 } });
     if (hasIntegrity) {
-      expect(recap).toMatch(/Worth a look together/);
+      expect(recap).toMatch(/Second-Look Signals — worth a look together/);
       expect(recap).toMatch(/Nothing's being called wrong/);   // non-accusatory framing
     }
   });

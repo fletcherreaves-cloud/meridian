@@ -627,6 +627,8 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // Integrity/pattern checks — the "worth a second look" family (padding, uniform/inflated waste,
 // impossible balances, re-count churn). When one of these fires, the recap softens into a
 // non-accusatory "let's verify" note instead of the punchy default (owner: give the why, nicely).
+// Owner-chosen name for the integrity/anti-padding family — non-accusatory, "verify not accuse".
+export const INTEGRITY_LABEL = 'Second-Look Signals';
 export const INTEGRITY_CHECK_IDS = new Set([
   'count-manipulation', 'recount-swing', 'waste-inflation', 'waste-session', 'waste-patterns',
   'unrealistic-over', 'negative-onhand', 'negative-usage', 'uom-sanity',
@@ -865,7 +867,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const intg = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
     if (intg.length) {
       const names = [...new Set(intg.slice(0, 2).map(f => (f.title || '').replace(/\s*\(WRIN[^)]*\)/i, '').trim()))].filter(Boolean);
-      R.push(`_Worth a look together: ${names.join(' · ') || 'a few entries'}. Nothing's being called wrong — a clean recount/verify just makes the number airtight and off our radar._`, '');
+      R.push(`_🔍 ${INTEGRITY_LABEL} — worth a look together: ${names.join(' · ') || 'a few entries'}. Nothing's being called wrong; a clean verify just makes the number airtight and off our radar._`, '');
     }
     // Recount rule (owner Notes 38): a store already AT/UNDER its FOB target shouldn't be pushed to
     // chase variance-reduction recounts (no upside, real downside). But integrity items (padding,
@@ -879,6 +881,18 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
         ? `You're at/under your FOB target ✓ — the recounts above are optional polish, not required.${intg.length ? ' The one thing worth doing: verify the flagged items so the number is airtight.' : ' Finalize once your count is complete.'}${link ? ` · More detail: ${link}` : ''}`
         : `Time's the lever — knock these out today, then re-run and reply.${link ? ` · More detail: ${link}` : ''}`);
     return R.join('\n');
+  }
+
+  // ── SECOND-LOOK SIGNALS — the integrity/pattern family, grouped + framed verify-not-accuse ──
+  {
+    const intgFull = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
+    if (intgFull.length) {
+      L.push(`## 🔍 ${INTEGRITY_LABEL} — verify, don't accuse`, '');
+      L.push('_A clean recount / verify makes these numbers airtight. Nothing here is an accusation — just entries worth a second look together._', '');
+      intgFull.slice(0, 8).forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
+      if (intgFull.length > 8) L.push(`- _+${intgFull.length - 8} more_`);
+      L.push('');
+    }
   }
 
   if (!V.length) { L.push('_No items exceed the threshold — count looks clean._'); return L.join('\n'); }
