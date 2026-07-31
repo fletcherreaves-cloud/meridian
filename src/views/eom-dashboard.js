@@ -67,7 +67,9 @@ function downloadText(filename, text, mime = 'text/csv;charset=utf-8') {
 }
 function openPrintWindow(title, bodyHtml) {
   try {
-    const w = window.open('', '_blank', 'noopener,width=900,height=1100');
+    // NB: do NOT pass 'noopener' — with it window.open() returns null, so nothing gets written and the
+    // new tab stays blank white (owner Notes 38: "Print for summary report ... blank white page").
+    const w = window.open('', '_blank', 'width=900,height=1100');
     if (!w) { console.warn('[eom] print window blocked'); return; }
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;color:#111;margin:26px;font-size:12px;line-height:1.45}
@@ -211,6 +213,42 @@ function ClassChips({ byClass, uncounted, npDueToday }) {
         style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color, opacity: isLate ? 0.75 : 1, cursor: (nearDone || isLate) ? 'help' : 'default' },
       }, `${label} ${pct(b.pct)}${isLate ? ' tmrw' : nearDone ? ` ·${items.length}` : ''}`);
     }));
+}
+
+// FOB component strip (owner req) — FOB %/$ + each component's $, % of sales, and ± vs its own
+// target. Shared by the diagnosis panel AND the store-message draft so they read identically.
+function FobStrip({ fob, loc }) {
+  const f = fob || {};
+  if (f.fob == null && f.fobPct == null) return null;
+  const tg = DEFAULT_TARGETS[unpad(loc)] || {};
+  const fobTgt = tg.tFOBTarget;
+  const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
+  const box = { padding: '3px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '1px' };
+  const lab = { fontSize: '8px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' };
+  const big = c => ({ fontSize: '12px', fontWeight: 700, color: c || 'var(--text)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' });
+  const simple = (label, val, color) => div({ style: box }, span({ style: lab }, label), span({ style: big(color) }, val));
+  const comp = (label, amt, tgtFrac) => {
+    const p = f.sales ? amt / f.sales : null;
+    const dPp = (tgtFrac != null && p != null) ? (p - tgtFrac) * 100 : null;
+    const over = dPp != null && dPp > 0.001;
+    return div({ style: box },
+      span({ style: lab }, label),
+      span({ style: big() }, $(amt)),
+      p != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: dPp == null ? 'var(--text3)' : over ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+        `${(p * 100).toFixed(2)}%${dPp != null ? ` · ${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}` : ''}${tgtFrac != null ? ` (tgt ${(tgtFrac * 100).toFixed(2)}%)` : ''}`) : null);
+  };
+  const fobOver = fobTgt != null && f.fobPct != null && f.fobPct > fobTgt;
+  return div({ style: { marginBottom: '10px' } },
+    div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'stretch' } },
+      div({ style: box },
+        span({ style: lab }, 'FOB'),
+        span({ style: big(fobOver ? '#f87171' : '#f5bc00') }, `${f.fobPct != null ? (f.fobPct * 100).toFixed(2) + '%' : '—'} · ${$(f.fob)}`),
+        fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+          `${f.fobPct != null ? `${f.fobPct >= fobTgt ? '+' : ''}${((f.fobPct - fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${(fobTgt * 100).toFixed(2)}%`) : null),
+      comp('Comp Waste', f.comp, tg.tCompWaste), comp('Raw Waste', f.raw, tg.tRawWaste), comp('Condiments', f.cond, tg.tCondiment),
+      comp('Emp Meals', f.emp, tg.tEmpFood), comp('Stat Var', f.statv, tg.tStatLoss), comp('Unexplained', f.unex, tg.tUnex),
+      f.sales ? simple('Prod Sales', $(f.sales)) : null),
+    f.asOf ? div({ style: { fontSize: '9px', color: 'var(--text3)', marginTop: '3px' } }, `FOB as of ${f.asOf} · MTD, dollar-weighted · % = component ÷ prod sales, ± = pp vs target`) : null);
 }
 
 function ProgressBar({ value }) {
@@ -1067,7 +1105,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       fobTail = ` · FOB ${(fp.pct * 100).toFixed(2)}%${dpp != null ? (dpp > 0.0001 ? ` (+${(dpp * 100).toFixed(2)}pp — opportunity)` : ' (at/under target ✓)') : ''}`;
     }
     const subject = `EOM FOB — ${name}${fobTail}`;
-    return { loc, name, subject, body: recapBody, recapBody, fullBody, hasGaps, hasPlan: actionItems.length > 0, rows: diagRows, uncounted };
+    return { loc, name, subject, body: recapBody, recapBody, fullBody, hasGaps, hasPlan: actionItems.length > 0, rows: diagRows, uncounted, fob: components || {} };
   }, [buildDiagResult, diagOptsFor, hasDiagData, byLoc, period]);
 
   const openDraft = useCallback((loc, name, components) => {
@@ -1537,6 +1575,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', { onClick: () => setDraft(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
         div({ style: { fontSize: '13px', color: 'var(--text)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: 'var(--surf3)', borderRadius: '6px', border: '1px solid var(--bdr)' } }, draft.subject),
+        // FOB component strip verbatim (owner Notes 38) — same tiles the diagnose panel shows on top.
+        h(FobStrip, { fob: draft.fob, loc: draft.loc }),
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },
           span({ style: { fontSize: '12px', color: 'var(--text3)' } }, draftFull ? 'Full report' : 'Abbreviated recap'),
           div({ style: { display: 'flex', gap: '12px' } },
@@ -1596,40 +1636,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
         // FOB snapshot strip (owner req) — current period FOB $/% + all 6 components, low-profile,
         // right where the diagnosis works. FOB% vs the store's target: red = over (worse food cost).
-        (() => {
-          const f = diag.fob || {};
-          if (f.fob == null && f.fobPct == null) return null;
-          const tg = DEFAULT_TARGETS[unpad(diag.loc)] || {};
-          const fobTgt = tg.tFOBTarget;
-          const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
-          const box = { padding: '3px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '1px' };
-          const lab = { fontSize: '8px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' };
-          const big = c => ({ fontSize: '12px', fontWeight: 700, color: c || 'var(--text)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' });
-          const simple = (label, val, color) => div({ style: box }, span({ style: lab }, label), span({ style: big(color) }, val));
-          // A component cell with $, its % of sales, and ± vs its own target (minimal, owner req).
-          const comp = (label, amt, tgtFrac) => {
-            const p = f.sales ? amt / f.sales : null;
-            const dPp = (tgtFrac != null && p != null) ? (p - tgtFrac) * 100 : null;
-            const over = dPp != null && dPp > 0.001;
-            return div({ style: box },
-              span({ style: lab }, label),
-              span({ style: big() }, $(amt)),
-              p != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: dPp == null ? 'var(--text3)' : over ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
-                `${(p * 100).toFixed(2)}%${dPp != null ? ` · ${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}` : ''}${tgtFrac != null ? ` (tgt ${(tgtFrac * 100).toFixed(2)}%)` : ''}`) : null);
-          };
-          const fobOver = fobTgt != null && f.fobPct != null && f.fobPct > fobTgt;
-          return div({ style: { marginBottom: '10px' } },
-            div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'stretch' } },
-              div({ style: box },
-                span({ style: lab }, 'FOB'),
-                span({ style: big(fobOver ? '#f87171' : '#f5bc00') }, `${f.fobPct != null ? (f.fobPct * 100).toFixed(2) + '%' : '—'} · ${$(f.fob)}`),
-                fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
-                  `${f.fobPct != null ? `${f.fobPct >= fobTgt ? '+' : ''}${((f.fobPct - fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${(fobTgt * 100).toFixed(2)}%`) : null),
-              comp('Comp Waste', f.comp, tg.tCompWaste), comp('Raw Waste', f.raw, tg.tRawWaste), comp('Condiments', f.cond, tg.tCondiment),
-              comp('Emp Meals', f.emp, tg.tEmpFood), comp('Stat Var', f.statv, tg.tStatLoss), comp('Unexplained', f.unex, tg.tUnex),
-              f.sales ? simple('Prod Sales', $(f.sales)) : null),
-            f.asOf ? div({ style: { fontSize: '9px', color: 'var(--text3)', marginTop: '3px' } }, `FOB as of ${f.asOf} · MTD, dollar-weighted · % = component ÷ prod sales, ± = pp vs target`) : null);
-        })(),
+        h(FobStrip, { fob: diag.fob, loc: diag.loc }),
 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
         // Rendered markdown (tables, tiers, chips). Copy/Print use the raw text.
