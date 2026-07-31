@@ -9,6 +9,12 @@
 const unpad = s => String(s || '').replace(/^0+/, '') || String(s || '');
 const num = v => Number(v) || 0;
 const COMP_KEYS = ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'];
+// Count-completion classes. Food/Condiment/Paper due by EOD; Non-Product due tomorrow.
+export const CLASS_KEYS = ['food', 'condiment', 'paper', 'nonproduct'];
+export const CLASS_META = [
+  { k: 'food', label: 'Food', short: 'F' }, { k: 'condiment', label: 'Condiment', short: 'C' },
+  { k: 'paper', label: 'Paper', short: 'P' }, { k: 'nonproduct', label: 'Non-Product', short: 'N' },
+];
 // Component → its target key in DEFAULT_TARGETS (all fractions of sales).
 export const COMP_META = [
   { k: 'comp', label: 'Comp Waste', tgt: 'tCompWaste' },
@@ -31,11 +37,20 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
     const over$ = (fobPct != null && fobTgt != null) ? (fobPct - fobTgt) * sales : null;
     const countPct = r.prog ? (r.prog.earlyPctCounted ?? r.prog.pctCounted ?? null) : null;
     let uncountedFC = 0;
-    if (r.prog && r.prog.byClass) for (const k of ['food', 'condiment']) { const b = r.prog.byClass[k]; if (b) uncountedFC += Math.max(0, num(b.total) - num(b.counted)); }
+    // Per-class count completion (owner req): Food / Condiment / Paper / Non-Product each.
+    const classPct = {}, classCounted = {}, classTotal = {};
+    for (const k of CLASS_KEYS) {
+      const b = r.prog && r.prog.byClass && r.prog.byClass[k];
+      classCounted[k] = b ? num(b.counted) : 0;
+      classTotal[k] = b ? num(b.total) : 0;
+      classPct[k] = (b && num(b.total)) ? num(b.counted) / num(b.total) : null;
+      if ((k === 'food' || k === 'condiment') && b) uncountedFC += Math.max(0, num(b.total) - num(b.counted));
+    }
     const comps = {}; for (const k of COMP_KEYS) comps[k] = num(c[k]);
     return {
       loc: r.loc, name: r.name, sales, fobD, fobPct, fobTgt, deltaPp, over$, comps,
       countPct, believesDone: !!(r.prog && r.prog.believesDone), uncountedFC,
+      classPct, classCounted, classTotal,
       diagnosis: r.diagnosis, comms: r.comms,
     };
   });
@@ -62,6 +77,11 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
     notStarted: stores.filter(s => num(s.countPct) <= 0.01).length,
     avgCountPct: withProg.length ? withProg.reduce((a, s) => a + s.countPct, 0) / withProg.length : null,
     storesWithUncountedFC: stores.filter(s => s.uncountedFC > 0).length,
+    // District per-class completion = Σ counted / Σ total across stores (item-weighted).
+    byClass: Object.fromEntries(CLASS_KEYS.map(k => {
+      const cnt = sum(s => s.classCounted[k] || 0), tot = sum(s => s.classTotal[k] || 0);
+      return [k, tot ? cnt / tot : null];
+    })),
   };
 
   // Opportunity = stores OVER their FOB target, ranked by $ over target (the recoverable gap).

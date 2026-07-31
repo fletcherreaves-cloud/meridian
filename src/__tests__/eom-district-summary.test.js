@@ -32,6 +32,15 @@ describe('buildDistrictSummary', () => {
     expect(s.completion.counting).toBe(1);       // Chickasha
     expect(s.completion.storesWithUncountedFC).toBe(1); // Chickasha 96/100
   });
+  it('reports per-class completion — per store and district-wide', () => {
+    const ard = s.stores.find(x => x.name === 'Ardmore');
+    expect(ard.classPct.food).toBeCloseTo(1, 3);        // 100/100
+    const chick = s.stores.find(x => x.name === 'Chickasha');
+    expect(chick.classPct.food).toBeCloseTo(0.96, 3);   // 96/100
+    // District food = (100+96)/(100+100) = 0.98
+    expect(s.completion.byClass.food).toBeCloseTo(0.98, 3);
+  });
+
   it('identifies the biggest district component driver + per-store delta', () => {
     expect(s.analysis.biggestComp.k).toBe('cond');   // condiments largest
     const ard = s.stores.find(x => x.name === 'Ardmore');

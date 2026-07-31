@@ -22,7 +22,7 @@ import {
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
-import { buildDistrictSummary, COMP_META } from '../engine/eom-district-summary.js';
+import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 
@@ -847,13 +847,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const sumCsv = () => {
     const H = ['Store', 'Prod Sales', 'FOB $', 'FOB %', 'FOB target %', 'FOB ± pp',
       ...COMP_META.map(m => `${m.label} $`), ...COMP_META.map(m => `${m.label} %`), ...COMP_META.map(m => `${m.label} ±pp`),
-      'Count %', 'Ready', 'Uncounted F/C', '$ over target'];
+      'Count %', ...CLASS_META.map(m => `${m.label} %`), 'Ready', 'Uncounted F/C', '$ over target'];
     const rows2 = districtSummary.stores.map(s => {
       const pctOf = k => s.sales ? (s.comps[k] / s.sales * 100) : null;
       const dOf = m => { const p = pctOf(m.k); const t = DEFAULT_TARGETS[unpad(s.loc)]?.[m.tgt]; return (p != null && t != null) ? (p - t * 100) : null; };
       return [nm(s.loc), Math.round(s.sales), Math.round(s.fobD), s.fobPct != null ? (s.fobPct * 100).toFixed(2) : '', s.fobTgt != null ? (s.fobTgt * 100).toFixed(2) : '', s.deltaPp != null ? s.deltaPp.toFixed(2) : '',
         ...COMP_META.map(m => Math.round(s.comps[m.k])), ...COMP_META.map(m => { const p = pctOf(m.k); return p != null ? p.toFixed(2) : ''; }), ...COMP_META.map(m => { const d = dOf(m); return d != null ? d.toFixed(2) : ''; }),
-        s.countPct != null ? Math.round(s.countPct * 100) : '', s.believesDone ? 'yes' : 'no', s.uncountedFC, s.over$ != null ? Math.round(s.over$) : ''];
+        s.countPct != null ? Math.round(s.countPct * 100) : '', ...CLASS_META.map(m => { const p = s.classPct[m.k]; return p != null ? Math.round(p * 100) : ''; }), s.believesDone ? 'yes' : 'no', s.uncountedFC, s.over$ != null ? Math.round(s.over$) : ''];
     });
     return toCsv(H, rows2);
   };
@@ -865,11 +865,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       <table><tbody>
       <tr><th>District FOB</th><td class="g">${pctS(r.fobPct)} · ${$(r.fob$)}</td><th>vs target</th><td>${pctS(r.fobTgt)}${r.fobPct != null && r.fobTgt != null ? ` (${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)}pp)` : ''}</td><th>Prod Sales</th><td>${$(r.sales)}</td></tr>
       <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'} · ${d.completion.storesWithUncountedFC} store(s) with uncounted Food/Condiment</td></tr>
+      <tr><th>By class</th><td colspan="5">${CLASS_META.map(m => { const p = d.completion.byClass[m.k]; return `${m.label} ${p != null ? Math.round(p * 100) + '%' : '—'}${m.k === 'nonproduct' ? ' (due tomorrow)' : ''}`; }).join(' · ')}</td></tr>
       <tr><th>Opportunity</th><td colspan="5">${$(d.totalOver$)} over target across ${d.opportunity.length} store(s) · biggest driver district-wide: ${d.analysis.biggestComp ? `${d.analysis.biggestComp.label} (${$(d.analysis.biggestComp.amt)})` : '—'}</td></tr>
       </tbody></table>`;
     const rowsHtml = d.stores.slice().sort((a, b) => (b.over$ || -1e9) - (a.over$ || -1e9)).map(s =>
-      `<tr><td>${nm(s.loc)}</td><td class="${s.deltaPp > 0 ? 'r' : ''}">${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}</td><td>${$(s.fobD)}</td>${COMP_META.map(m => `<td>${$(s.comps[m.k])}</td>`).join('')}<td>${s.countPct != null ? Math.round(s.countPct * 100) + '%' : '—'}${s.uncountedFC ? ` <span class="r">(${s.uncountedFC} F/C)</span>` : ''}</td><td>${s.believesDone ? '✓' : s.countPct > 0.01 ? 'counting' : '—'}</td></tr>`).join('');
-    const table = `<h1 style="margin-top:18px">By store</h1><table><thead><tr><th>Store</th><th>FOB % (±tgt)</th><th>FOB $</th>${COMP_META.map(m => `<th>${m.label}</th>`).join('')}<th>Count</th><th>Ready</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+      `<tr><td>${nm(s.loc)}</td><td class="${s.deltaPp > 0 ? 'r' : ''}">${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}</td><td>${$(s.fobD)}</td>${COMP_META.map(m => `<td>${$(s.comps[m.k])}</td>`).join('')}<td>${s.countPct != null ? Math.round(s.countPct * 100) + '%' : '—'}${s.uncountedFC ? ` <span class="r">(${s.uncountedFC} F/C)</span>` : ''}</td>${CLASS_META.map(m => { const p = s.classPct[m.k]; return `<td>${p != null ? Math.round(p * 100) + '%' : '—'}</td>`; }).join('')}<td>${s.believesDone ? '✓' : s.countPct > 0.01 ? 'counting' : '—'}</td></tr>`).join('');
+    const table = `<h1 style="margin-top:18px">By store</h1><table><thead><tr><th>Store</th><th>FOB % (±tgt)</th><th>FOB $</th>${COMP_META.map(m => `<th>${m.label}</th>`).join('')}<th>Count</th>${CLASS_META.map(m => `<th>${m.short}</th>`).join('')}<th>Ready</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
     return head + table;
   };
 
@@ -1818,6 +1819,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
             span(null, span({ style: { color: '#4ade80', fontWeight: 700 } }, `${d.completion.ready} ready`), ` · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'}`),
             d.completion.storesWithUncountedFC ? span({ style: { color: '#fb923c', fontWeight: 700 } }, `⚠ ${d.completion.storesWithUncountedFC} with uncounted Food/Condiment`) : null),
+          // District per-class completion (owner req) — Non-Product muted (not due today).
+          div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '11.5px', color: 'var(--text3)' } },
+            span({ style: { textTransform: 'uppercase', letterSpacing: '.04em', fontSize: '10px' } }, 'By class:'),
+            ...CLASS_META.map(m => { const p = d.completion.byClass[m.k]; const late = m.k === 'nonproduct';
+              return span({ key: m.k, style: { color: p == null ? 'var(--text3)' : late ? 'var(--text3)' : p >= 0.999 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#fb923c', fontWeight: 600, opacity: late ? 0.7 : 1 } },
+                `${m.label} ${p != null ? Math.round(p * 100) + '%' : '—'}${late ? ' (tmrw)' : ''}`); })),
           div({ style: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
             span(null, span({ style: { color: '#f5bc00', fontWeight: 700 } }, `💰 ${$(d.totalOver$)} over target`), ` across ${d.opportunity.length} store${d.opportunity.length === 1 ? '' : 's'}`),
             d.analysis.biggestComp ? span({ style: { color: 'var(--text2)' } }, `Biggest driver: ${d.analysis.biggestComp.label} (${$(d.analysis.biggestComp.amt)})`) : null),
@@ -1826,7 +1833,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
               h('thead', { key: 'h' }, h('tr', null,
                 h('th', { style: { textAlign: 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase' } }, 'Store'),
-                th('FOB % (±tgt)'), th('FOB $'), ...COMP_META.map(m => th(m.label)), th('Count'), th('Ready'), th('$ over'))),
+                th('FOB % (±tgt)'), th('FOB $'), ...COMP_META.map(m => th(m.label)), th('Count'), ...CLASS_META.map(m => th(m.short)), th('Ready'), th('$ over'))),
               h('tbody', { key: 'b' }, stores.map((s, i) => {
                 const sc = s.deltaPp > 0.001 ? '#f87171' : s.deltaPp < -0.001 ? '#4ade80' : 'var(--text)';
                 return h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
@@ -1835,6 +1842,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' } }, $(s.fobD)),
                   ...COMP_META.map(m => h('td', { key: m.k, style: { padding: '4px 7px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, $(s.comps[m.k]))),
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.uncountedFC ? '#fb923c' : 'var(--text2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, s.countPct != null ? `${Math.round(s.countPct * 100)}%` : '—', s.uncountedFC ? ` ·${s.uncountedFC}` : ''),
+                  ...CLASS_META.map(m => { const p = s.classPct[m.k]; const late = m.k === 'nonproduct';
+                    return h('td', { key: m.k, style: { padding: '4px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: p == null ? 'var(--text3)' : late ? 'var(--text3)' : p >= 0.999 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#fb923c', opacity: late ? 0.7 : 1 } }, p != null ? `${Math.round(p * 100)}%` : '—'); }),
                   h('td', { style: { padding: '4px 7px', textAlign: 'center', color: s.believesDone ? '#4ade80' : 'var(--text3)' } }, s.believesDone ? '✓' : ''),
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.over$ > 0 ? '#f5bc00' : 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, s.over$ != null && s.over$ > 0 ? $(s.over$) : ''),
                 ]);
