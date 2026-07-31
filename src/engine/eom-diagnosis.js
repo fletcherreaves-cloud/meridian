@@ -21,7 +21,7 @@
 //   waste      — mapWasteEvents() (manager/$, raw vs completed)        ✅ endpoint confirmed
 //   transfers  — mapTransferLines() (In/Out, unposted)                ✅ endpoint confirmed
 //   purchases  — qsr_ebos_daily (verify posted / not pending)         ✅ have (status check TBD)
-import { normClass, diagnoseIncompleteCount, nonProductDueToday } from './eom-inventory.js';
+import { normClass, diagnoseIncompleteCount, nonProductDueToday, countWindowStart } from './eom-inventory.js';
 import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus } from './eom-parsers.js';
 import { eventTs, recountBatchTiming, recountTimingSentence } from './eom-recount-forensics.js';
 
@@ -263,7 +263,7 @@ export const DEFAULT_CHECKS = [
       // item; if the offsetting corrections landed in a window too short for that, the "recount" didn't
       // happen. Group the same-manager offsetting swings per day and test the batch timing.
       const sm = out.filter(f => f.data?.sameMgr);
-      if (sm.length >= 2) sm.forEach(f => { f.detail += ` PATTERN: the same single-counter recount-swing shows on ${sm.length} items today.`; });
+      if (sm.length >= 2) sm.forEach(f => { f.detail += ` PATTERN: the same single-counter recount-swing shows on ${sm.length} items this period.`; });
       const byMgrDay = {};
       for (const f of sm) {
         const k = `${f.data.manager || '?'}|${f.data.day}`;
@@ -987,30 +987,63 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     if (intgFull.length) {
       L.push(`## 🔍 ${INTEGRITY_LABEL} — verify, don't accuse`, '');
       L.push('_A clean recount / verify makes these numbers airtight. Nothing here is an accusation — just entries worth a second look together._', '');
-      // Roll up items that share the SAME diagnosis into one coaching block + a compact item list,
-      // instead of repeating an identical paragraph N times (owner 2026-07-31 — the 14 recount-swings).
-      const groups = {};
+      // Roll up items that share the SAME diagnosis into ONE coaching block + a compact item list,
+      // instead of repeating an identical paragraph N times (owner 2026-07-31). Recount-swings group by
+      // counter×day (they carry timing + consequence); every other repeated check rolls up generically
+      // by detecting the shared coaching (longest common trailing sentence) and listing the item-specific
+      // lead per item — so negative-on-hand, uom-sanity, etc. all condense with no per-check templates.
+      const groups = new Map();
       for (const f of intgFull) {
-        const key = f.checkId === 'recount-swing'
-          ? `recount-swing|${f.data?.manager || '?'}|${f.data?.day || '?'}`
-          : `solo|${f.checkId}|${f.title}`;
-        (groups[key] || (groups[key] = [])).push(f);
+        const key = f.checkId === 'recount-swing' ? `recount|${f.data?.manager || '?'}|${f.data?.day || '?'}` : `chk|${f.checkId}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(f);
       }
-      let shown = 0;
-      for (const key of Object.keys(groups)) {
-        if (shown >= 14) break;
-        const g = groups[key];
-        if (key.startsWith('recount-swing|') && g.length >= 3) {
+      // Longest common trailing word-run across a set of strings = the shared coaching sentence.
+      const commonTail = (strs) => {
+        if (strs.length < 2) return '';
+        const arrs = strs.map(s => String(s).split(/\s+/));
+        const min = Math.min(...arrs.map(a => a.length));
+        let k = 0; while (k < min && arrs.every(a => a[a.length - 1 - k] === arrs[0][arrs[0].length - 1 - k])) k++;
+        return k >= 6 ? arrs[0].slice(arrs[0].length - k).join(' ') : '';   // need a real shared clause
+      };
+      const cleanLabel = (checkId) => { const c = (DEFAULT_CHECKS.find(x => x.id === checkId) || {}); return (c.label || checkId).replace(/\s*\(.*$/, '').replace(/\s+[—–].*$/, '').trim(); };
+      let blocks = 0;
+      for (const [key, g] of groups) {
+        if (blocks >= 12) { L.push(`- _+${[...groups.values()].slice([...groups.keys()].indexOf(key)).reduce((s, x) => s + x.length, 0)} more flagged items_`); break; }
+        if (key.startsWith('recount|') && g.length >= 3) {
           const mgr = g[0].data?.manager, day = g[0].data?.day;
           const timing = (g.find(f => f.data?.timing) || {}).data?.timing;
           const nCross = g.filter(f => f.data?.crossZero).length;
-          L.push(`- **Recount swings — ${g.length} items${mgr ? `, single counter (${mgr})` : ''}${day ? `, ${day}` : ''}.** A swing this large between counts — with no delivery in between — is where a **3rd count by a different manager** should be required before saving. Verify which count was right so the on-hand is clean.${nCross ? ` ${nCross} crossed zero (offsetting).` : ''}${timing ? ' ' + recountTimingSentence(timing) : ''}`);
-          const items = g.slice().sort((a, b) => (b.dollars || 0) - (a.dollars || 0))
-            .map(f => `${(f.title || '').replace(/^Recount swing:\s*/, '')} (${money(f.dollars)} swing${f.data?.crossZero ? ' ↔' : ''})`);
+          let midCycle = false;
+          try { const dTs = day ? eventTs(day, null) : null; const ws = result.period ? countWindowStart(result.period).getTime() : null; if (dTs != null && ws != null && dTs < ws) midCycle = true; } catch { /* keep false */ }
+          const consequence = midCycle ? ' _Mid-cycle — this washes out of THIS EOM number (opening + final count drive the P&L); a weekly-count + process-coaching signal, not a period-binding loss._' : '';
+          L.push(`- **Recount swings — ${g.length} items${mgr ? `, single counter (${mgr})` : ''}${day ? `, ${day}` : ''}.** A swing this large between counts — with no delivery in between — is where a **3rd count by a different manager** should be required before saving. Verify which count was right so the on-hand is clean.${nCross ? ` ${nCross} crossed zero (offsetting).` : ''}${timing ? ' ' + recountTimingSentence(timing) : ''}${consequence}`);
+          const items = g.slice().sort((a, b) => (b.dollars || 0) - (a.dollars || 0)).map(f => `${(f.title || '').replace(/^Recount swing:\s*/, '')} (${money(f.dollars)} swing${f.data?.crossZero ? ' ↔' : ''})`);
           L.push(`  ${items.slice(0, 12).join(' · ')}${items.length > 12 ? ` _+${items.length - 12} more_` : ''}`);
-          shown++;
+          blocks++;
+        } else if (g.length >= 2) {
+          const tail = commonTail(g.map(f => f.detail || ''));
+          if (tail) {
+            // Also strip the shared LEADING phrase so each item shows only its own specifics.
+            const leads = g.map(f => String(f.detail || '').slice(0, Math.max(0, (f.detail || '').length - tail.length)).replace(/\s+[—–]\s*$/, '').trim());
+            const headArrs = leads.map(s => s.split(/\s+/));
+            const headMin = Math.min(...headArrs.map(a => a.length));
+            let hk = 0; while (hk < headMin && headArrs.every(a => a[hk] === headArrs[0][hk])) hk++;
+            const head = hk >= 2 ? headArrs[0].slice(0, hk).join(' ') : '';
+            L.push(`- **${cleanLabel(g[0].checkId)} — ${g.length} items.** ${head ? head + ' ' : ''}${tail}`);
+            const order = g.map((f, i) => ({ f, lead: leads[i] })).sort((a, b) => Math.abs(b.f.dollars || 0) - Math.abs(a.f.dollars || 0));
+            const items = order.map(({ f, lead }) => {
+              const spec = head ? lead.split(/\s+/).slice(hk).join(' ') : lead;
+              return `${(f.title || '').replace(/^[^:]+:\s*/, '')}${spec ? ` ${spec}` : ''}`;
+            });
+            L.push(`  ${items.slice(0, 12).join(' · ')}${items.length > 12 ? ` _+${items.length - 12} more_` : ''}`);
+          } else {
+            g.forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
+          }
+          blocks++;
         } else {
-          for (const f of g) { if (shown >= 14) break; L.push(`- **${f.title}** — ${f.detail}`); shown++; }
+          g.forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
+          blocks++;
         }
       }
       L.push('');

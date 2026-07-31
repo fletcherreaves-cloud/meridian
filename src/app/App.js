@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.703';
+const MERIDIAN_VERSION    = '4.704';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.704', date:'2026-07-31', changes:[
+    'Second-Look roll-up is now GENERIC + consequence-aware. (1) Any repeated diagnosis condenses — not just recount swings: negative-on-hand (was 12 identical paragraphs), uom-sanity, etc. now show ONE shared coaching line + a compact item list, via automatic longest-common-coaching detection (no per-check templates). (2) A recount swing OUTSIDE the final EOM count window is labeled mid-cycle — it washes out of THIS period\'s number (opening + final count drive the P&L), so it reads as a weekly-count + process-coaching signal, not a period-binding loss. (3) Forensics scan reports pre/post net variance and flags only the true red-flag direction (a net shortage lifted toward zero to hide a loss) — which fired ZERO times in the July district scan (recounts consistently REVEAL shortages, honest direction).',
+  ]},
   {version:'4.703', date:'2026-07-31', changes:[
     'Second-Look Signals roll-up: when many items share the SAME diagnosis (e.g. 14 recount swings with identical coaching), the report now shows ONE coaching block + a compact item list instead of repeating the same paragraph 14 times. Cleaner, shorter, and reads smarter. First applied to recount swings (grouped by counter + day, with the timing verdict once); generalizes to other repeated integrity signals.',
   ]},
