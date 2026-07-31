@@ -53,6 +53,19 @@ export function lastDayOfPeriod(period) {
   return periodDay(period, daysInPeriod(period));
 }
 
+// Non-Product is counted on the LAST day of the month (not the 2nd/3rd days out like Food/Cond/Paper).
+// So it's "due today" only once asOf is on or past the period's last calendar day — before that it's
+// expected-uncounted ("tmrw"). On the last day (and during the early-next-month close) it IS due today.
+// (owner Notes 38: chip said "tmrw" on 07/31 — the last day — when Non-Product was actually due.)
+export function nonProductDueToday(period, asOf = new Date()) {
+  if (!period) return false;
+  const a = asOf instanceof Date ? new Date(asOf) : new Date(asOf);
+  if (isNaN(a)) return false;
+  a.setHours(0, 0, 0, 0);
+  const l = lastDayOfPeriod(period); l.setHours(0, 0, 0, 0);
+  return a.getTime() >= l.getTime();
+}
+
 // Is `asOf` inside (or past the start of) the count window for `period`?
 export function inCountWindow(period, asOf) {
   const t = asOf instanceof Date ? asOf : new Date(asOf);
@@ -164,17 +177,23 @@ export function computeCountProgress(onHandRows, { period, asOf } = {}) {
   for (const k of FOB_CLASSES) { if (byClass[k]) { fobTotal += byClass[k].total; fobCounted += byClass[k].counted; } }
   const fobPctCounted = fobTotal ? fobCounted / fobTotal : 0;
 
-  const earlyDone = EARLY_CLASSES.every(k => !byClass[k] || byClass[k].done);
-  const lateDone = LATE_CLASSES.every(k => !byClass[k] || byClass[k].done);
+  // On the LAST day of the month Non-Product IS due today, so it joins the due-today (early) set
+  // (owner Notes 38). Before then it's "late" (tomorrow). effEarly/effLate switch on that.
+  const npDue = nonProductDueToday(period, asOf || new Date());
+  const effEarly = npDue ? [...EARLY_CLASSES, ...LATE_CLASSES] : EARLY_CLASSES;
+  const effLate = npDue ? [] : LATE_CLASSES;
+  const earlyDone = effEarly.every(k => !byClass[k] || byClass[k].done);
+  const lateDone = effLate.every(k => !byClass[k] || byClass[k].done);
 
   // TODAY'S target (owner 2026-07-30): Food + Condiment + Paper are due to 100% by EOD; Non-Product
-  // (LATE_CLASSES) isn't counted until tomorrow. So the store's real "am I done today?" number is the
-  // EARLY-class %, not the all-class %. Surface both — Non-Product uncounted today is expected.
+  // isn't counted until tomorrow — UNLESS today is the last day of the month, when it's due too. So
+  // the store's real "am I done today?" number is the effective-early %. Non-Product uncounted before
+  // the last day is expected; on the last day it counts against today's 100%.
   let earlyTotal = 0, earlyCounted = 0;
-  for (const k of EARLY_CLASSES) { if (byClass[k]) { earlyTotal += byClass[k].total; earlyCounted += byClass[k].counted; } }
+  for (const k of effEarly) { if (byClass[k]) { earlyTotal += byClass[k].total; earlyCounted += byClass[k].counted; } }
   const earlyPctCounted = earlyTotal ? earlyCounted / earlyTotal : (itemsTotal ? pctCounted : 0);
   let lateTotal = 0, lateCounted = 0;
-  for (const k of LATE_CLASSES) { if (byClass[k]) { lateTotal += byClass[k].total; lateCounted += byClass[k].counted; } }
+  for (const k of effLate) { if (byClass[k]) { lateTotal += byClass[k].total; lateCounted += byClass[k].counted; } }
   const latePctCounted = lateTotal ? lateCounted / lateTotal : 0;
 
   return {
@@ -186,7 +205,8 @@ export function computeCountProgress(onHandRows, { period, asOf } = {}) {
     fobCounted,
     fobPctCounted,
     earlyTotal, earlyCounted, earlyPctCounted,   // Food+Condiment+Paper — today's 100% target
-    lateTotal, lateCounted, latePctCounted,       // Non-Product — due tomorrow
+    lateTotal, lateCounted, latePctCounted,       // Non-Product — due tomorrow (or today on the last day)
+    nonProductDueToday: npDue,                     // last day of month → Non-Product due today too
     byClass,
     earlyDone,
     lateDone,

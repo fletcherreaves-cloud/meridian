@@ -21,7 +21,7 @@
 //   waste      — mapWasteEvents() (manager/$, raw vs completed)        ✅ endpoint confirmed
 //   transfers  — mapTransferLines() (In/Out, unposted)                ✅ endpoint confirmed
 //   purchases  — qsr_ebos_daily (verify posted / not pending)         ✅ have (status check TBD)
-import { normClass, diagnoseIncompleteCount } from './eom-inventory.js';
+import { normClass, diagnoseIncompleteCount, nonProductDueToday } from './eom-inventory.js';
 import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus } from './eom-parsers.js';
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
@@ -133,16 +133,18 @@ export const DEFAULT_CHECKS = [
       // Food/Condiment $ is the cost-control "at risk" money; Paper is due today for COMPLETENESS,
       // not cost. See reference-eom-count-timing-by-class.
       const U = diag.uncounted || [];
+      const npDue = nonProductDueToday(ctx.period, ctx.asOf);  // last day of month → Non-Product due today too
       const fc = U.filter(u => { const c = normClass(u.cls); return c === 'food' || c === 'condiment'; });
       const paper = U.filter(u => normClass(u.cls) === 'paper');
       const nonProd = U.filter(u => { const c = normClass(u.cls); return c !== 'food' && c !== 'condiment' && c !== 'paper'; });
-      const dueToday = fc.length + paper.length;
-      if (!dueToday) return [];  // only Non-Product left → not due today, nothing to flag
+      const dueToday = fc.length + paper.length + (npDue ? nonProd.length : 0);
+      if (!dueToday) return [];  // only Non-Product left AND not the last day → nothing due today
       const fcVal = fc.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
       const bits = [];
       if (fc.length) bits.push(`${fc.length} Food/Condiment (~$${Math.round(fcVal)} at risk — the cost-control money)`);
       if (paper.length) bits.push(`${paper.length} Paper (due by EOD for completeness — not cost-control)`);
-      const npNote = nonProd.length ? ` · ${nonProd.length} Non-Product not due until tomorrow (expected — not counted today)` : '';
+      if (npDue && nonProd.length) bits.push(`${nonProd.length} Non-Product (due today — it's the last day of the month)`);
+      const npNote = (!npDue && nonProd.length) ? ` · ${nonProd.length} Non-Product not due until tomorrow (expected — not counted today)` : '';
       const sev = fcVal >= 500 ? SEVERITY.high : fc.length ? SEVERITY.medium : SEVERITY.info;
       return [mkFinding('incomplete-count', sev,
         `${dueToday} item${dueToday === 1 ? '' : 's'} still uncounted — due by EOD`,
@@ -634,7 +636,9 @@ export const INTEGRITY_CHECK_IDS = new Set([
 // integrity note → punchy close + optional link), scaled hard — the day-of nudge to a GM. It reuses
 // the SAME computed doNow/net/shorts/overs as the full report, so the two can never drift.
 // `fob` = { pct, tgt, dollars } for the FOB one-liner; `link` = optional "more detail" URL.
-export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '' } = {}) {
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date() } = {}) {
+  // Last day of the month → Non-Product is due today too (owner Notes 38). Flips its "tomorrow" framing.
+  const npDueToday = nonProductDueToday(result.period, asOf);
   // Dedupe variance rows by WRIN first (owner: duplicate lines) — a doubled row would otherwise
   // surface the same item twice in Top-5, Focus now, and the reference table. Keep the largest-|$|
   // instance (a literal duplicate is identical; keeping one is correct, summing would double it).
@@ -714,6 +718,11 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     : 'recount + verify counts';
 
   const L = [`# FOB Variance Analysis — ${result.storeName || result.store} · ${result.period}`, ''];
+  // FOB headline (owner Notes 38: the full report was missing the FOB-vs-target line the recap has).
+  if (fob && fob.pct != null) {
+    const dpp = fob.tgt != null ? (fob.pct - fob.tgt) * 100 : null;
+    L.push(`**FOB ${(fob.pct * 100).toFixed(2)}%**${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}pp vs ${(fob.tgt * 100).toFixed(2)}% target` : ''}${fob.dollars != null ? ` · ${money(fob.dollars)}` : ''}`, '');
+  }
 
   // ── TOP 5 — DO NOW (owner req #46, focused to FOOD + CONDIMENT only per owner — the profit-driver
   // classes worth a manager's here-and-now energy). Cut-and-dry, ranked by best chance to improve
@@ -762,15 +771,23 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // ── FINISH TODAY'S COUNT (owner req 2026-07-30) — time-aware by class. Food, Condiment AND Paper
   // are due to 100% by EOD; Non-Product is NOT counted until tomorrow (so it's expected, not a gap).
   // Only Food/Condiment is FOB-consequential (real recovery); Paper is due today for completeness.
+  // Item label always carries the WRIN (owner Notes 38: list uncounted items WITH wrins up top).
+  const nameW = u => `${u.descr || u.wrin}${u.wrin && u.descr ? ` [${u.wrin}]` : ''}`;
+  const listW = (arr, n, withDate) => arr.slice(0, n).map(u => `${nameW(u)}${withDate ? ` (last ${u.lastCounted || '?'})` : ''}`).join(', ') + (arr.length > n ? ` _+${arr.length - n} more_` : '');
+  const npLabel = npDueToday ? 'Food, Condiment, Paper & Non-Product' : 'Food, Condiment & Paper';
   if (neverFC.length || neverPaper.length || neverNonProd.length || earlyFC.length) {
-    L.push('## 🧮 Finish today\'s count to 100% — Food, Condiment & Paper (due by EOD)', '');
-    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) never counted.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${neverFC.slice(0, 6).map(u => u.descr || u.wrin).join(', ')}${neverFC.length > 6 ? ` _+${neverFC.length - 6} more_` : ''}`);
-    else L.push('- ✅ **Food & Condiment — all counted (in the final window).**');
-    if (earlyFC.length) L.push(`- 🔴 **Food & Condiment — ${earlyFC.length} item${earlyFC.length === 1 ? '' : 's'} (${money(sumVR(earlyFC))}) counted EARLY, not in the final window.** QSRSoft is carrying a stale count into the close — **recount now for a current number:** ${earlyFC.slice(0, 6).map(u => `${u.descr || u.wrin} (last ${u.lastCounted || '?'})`).join(', ')}${earlyFC.length > 6 ? ` _+${earlyFC.length - 6} more_` : ''}`);
-    if (neverPaper.length) L.push(`- **Paper — ${neverPaper.length} item${neverPaper.length === 1 ? '' : 's'} (${money(sumVR(neverPaper))}) left.** Due by EOD too, but **not** food-cost-consequential — count for completeness, not recovery.`);
+    L.push(`## 🧮 Finish today's count to 100% — ${npLabel} (due by EOD)`, '');
+    if (neverFC.length) L.push(`- **Food & Condiment — ${neverFC.length} item${neverFC.length === 1 ? '' : 's'} (${money(sumVR(neverFC))}) never counted.** These ARE food-cost-consequential — **count before close to recover real dollars:** ${listW(neverFC, 6)}`);
+    // Only claim "all counted" when there are NO never-counted AND no counted-early FC (owner: the
+    // "all counted" line contradicted the "1 counted EARLY" line right below it).
+    else if (!earlyFC.length) L.push('- ✅ **Food & Condiment — all counted (in the final window).**');
+    if (earlyFC.length) L.push(`- 🔴 **Food & Condiment — ${earlyFC.length} item${earlyFC.length === 1 ? '' : 's'} (${money(sumVR(earlyFC))}) counted EARLY, not in the final window** (so not fully counted for the close). QSRSoft is carrying a stale count in — **recount now for a current number:** ${listW(earlyFC, 6, true)}`);
+    if (neverPaper.length) L.push(`- **Paper — ${neverPaper.length} item${neverPaper.length === 1 ? '' : 's'} (${money(sumVR(neverPaper))}) left:** ${listW(neverPaper, 6)}. Due by EOD too, but **not** food-cost-consequential — count for completeness, not recovery.`);
     else if (neverFC.length || neverNonProd.length) L.push('- ✅ **Paper — all counted.**');
-    if (neverNonProd.length) L.push(`- **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and that's EXPECTED** — Non-Product isn't due until tomorrow. Not a gap, not a today action.`);
-    L.push('_Today\'s 100% = Food + Condiment + Paper. Full itemized list in Count integrity below._', '');
+    if (neverNonProd.length) L.push(npDueToday
+      ? `- 🔴 **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and it's DUE TODAY** (last day of the month) — count these to hit 100%: ${listW(neverNonProd, 6)}`
+      : `- **Non-Product — ${neverNonProd.length} item${neverNonProd.length === 1 ? '' : 's'} (${money(sumVR(neverNonProd))}) still uncounted, and that's EXPECTED** — Non-Product isn't due until tomorrow. Not a gap, not a today action.`);
+    L.push(`_Today's 100% = ${npLabel}. Full itemized list in Count integrity below._`, '');
   }
 
   // Dedupe Do-Now by WRIN (owner: duplicate lines) — the same item can surface via BOTH the recount
@@ -823,15 +840,17 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     // Uncounted items land on the recap IN PROMINENCE (owner Notes 37) — the actual items + $ on hand,
     // right under the FOB line. Time/class-aware: Food, Condiment & Paper are due to 100% by EOD (list
     // them); Non-Product isn't due until tomorrow, so it's omitted here (expected, not a gap).
-    if (earlyFC.length || neverFC.length || neverPaper.length) {
+    const showNP = npDueToday && neverNonProd.length;   // last day → Non-Product due today too
+    if (earlyFC.length || neverFC.length || neverPaper.length || showNP) {
       R.push(`⏳ **Finish today's count — recount these before you close:**`);
-      const uncList = (arr, label, withDate) => { if (arr.length) R.push(`- **${label}** (${money(sumVR(arr))}): ${arr.slice(0, 8).map(u => `${u.descr || u.wrin}${withDate ? ` _(last ${u.lastCounted || '?'})_` : ''}`).join(', ')}${arr.length > 8 ? ` _+${arr.length - 8} more_` : ''}`); };
+      const uncList = (arr, label, withDate) => { if (arr.length) R.push(`- **${label}** (${money(sumVR(arr))}): ${arr.slice(0, 8).map(u => `${nameW(u)}${withDate ? ` _(last ${u.lastCounted || '?'})_` : ''}`).join(', ')}${arr.length > 8 ? ` _+${arr.length - 8} more_` : ''}`); };
       uncList(earlyFC, `${earlyFC.length} Food/Condiment counted early`, true);
       uncList(neverFC, `${neverFC.length} Food/Condiment not counted`, false);
       uncList(neverPaper, `${neverPaper.length} Paper not counted`, false);
+      if (showNP) uncList(neverNonProd, `${neverNonProd.length} Non-Product not counted (due today — last day of month)`, false);
       R.push('');
     } else {
-      R.push(`✅ Food, Condiment & Paper counted.`, '');
+      R.push(npDueToday ? `✅ All classes counted.` : `✅ Food, Condiment & Paper counted.`, '');
     }
     // Top 5 (scales down — celebrates a clean sweep).
     if (doNow.length) {

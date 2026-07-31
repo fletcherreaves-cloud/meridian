@@ -128,14 +128,28 @@ describe('runDiagnosis — editable check registry', () => {
       ],
     };
     const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'v', descr: 'Beef', dolDiff: -80, cls: 'food' }] } });
-    const recap = formatDiagnosisReport(res, { mode: 'recap', incomplete, fob: { pct: 0.04, tgt: 0.038, dollars: 8000 } });
+    // asOf mid-window (not the last day) so Non-Product is still "tomorrow".
+    const recap = formatDiagnosisReport(res, { mode: 'recap', incomplete, asOf: new Date('2026-07-29T12:00:00'), fob: { pct: 0.04, tgt: 0.038, dollars: 8000 } });
     expect(recap).toMatch(/Finish today's count — recount these/);
     expect(recap).toMatch(/McCrispy Strips/);          // early Food listed by name
     expect(recap).toMatch(/Grill Cheese/);             // never Food listed
     expect(recap).toMatch(/Napkins/);                  // Paper listed (due today)
-    expect(recap).not.toMatch(/Happy Meal Toy/);       // Non-Product omitted (tomorrow)
+    expect(recap).not.toMatch(/Happy Meal Toy/);       // Non-Product omitted (not the last day)
+    expect(recap).toMatch(/Grill Cheese \[b\]/);       // WRIN shown alongside the name (owner Notes 38)
     // The count block appears before the Top-5 (prominence).
     expect(recap.indexOf('Finish today')).toBeLessThan(recap.indexOf('Do these now'));
+  });
+
+  it('recap includes never-counted Non-Product on the LAST day of the month (owner Notes 38)', () => {
+    const incomplete = { uncountedCount: 1, byState: { never: { n: 1, value: 400 } }, uncounted: [
+      { wrin: 'd', descr: 'Happy Meal Toy', cls: 'nonproduct', state: 'never', valueAtRisk: 400 } ] };
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [] } });
+    const lastDay = formatDiagnosisReport(res, { mode: 'recap', incomplete, asOf: new Date('2026-07-31T12:00:00'), fob: { pct: 0.04, tgt: 0.038, dollars: 8000 } });
+    expect(lastDay).toMatch(/Non-Product not counted \(due today/);
+    expect(lastDay).toMatch(/Happy Meal Toy \[d\]/);
+    // Same data mid-window → omitted.
+    const mid = formatDiagnosisReport(res, { mode: 'recap', incomplete, asOf: new Date('2026-07-29T12:00:00'), fob: { pct: 0.04, tgt: 0.038, dollars: 8000 } });
+    expect(mid).not.toMatch(/Happy Meal Toy/);
   });
 
   it('recap softens to a non-accusatory "worth a look" note when an integrity check fires', () => {

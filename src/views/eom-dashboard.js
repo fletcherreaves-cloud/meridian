@@ -178,15 +178,16 @@ const statusColor = (v) => ({
 // FOB $/% per store for the period — the LATEST daily snapshot, NOT a sum (see fobSnapshotByStore).
 const fobByStore = fobSnapshotByStore;
 
-function ClassChips({ byClass, uncounted }) {
-  // Food/Condiment/Paper are due to 100% by EOD; Non-Product ('N') isn't due until tomorrow, so it's
-  // shown muted with a "tmrw" tag and never colored as an incomplete gap (owner 2026-07-30).
+function ClassChips({ byClass, uncounted, npDueToday }) {
+  // Food/Condiment/Paper are due to 100% by EOD; Non-Product ('N') isn't due until tomorrow — UNLESS
+  // today is the last day of the month, when it's due too (owner Notes 38). Muted "tmrw" tag only when
+  // it's genuinely not-yet-due.
   const order = [['food', 'F'], ['condiment', 'C'], ['paper', 'P'], ['nonproduct', 'N']];
   return div({ style: { display: 'flex', gap: '4px' } },
     order.map(([k, label]) => {
       const b = byClass[k];
       if (!b || !b.total) return null;
-      const isLate = k === 'nonproduct';  // due tomorrow — not part of today's 100%
+      const isLate = k === 'nonproduct' && !npDueToday;  // due tomorrow — not part of today's 100% (except last day)
       const isFC = k === 'food' || k === 'condiment';
       // Food/Condiment need 100% — a SINGLE uncounted profit-driver item must flag, even at 99%+
       // (owner: Holdenville had one food item not counted → should flag). Paper/Non-Product keep the
@@ -1057,7 +1058,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const inc = opts.incomplete;
     const uncounted = (inc && inc.uncounted) ? inc.uncounted.slice(0, 20) : [];
     const hasGaps = !!(inc && inc.uncountedCount);
-    const subject = `EOM FOB — ${name} · ${period}${actionItems.length ? ` (${actionItems.length} to do now)` : ''}`;
+    // Subject leads with FOB vs target — NOT a raw findings count. "(239 to do now)" overwhelmed
+    // (owner Notes 38); the focused Top-5 lives in the body, so the subject just frames the result.
+    const fp = opts.fob;
+    let fobTail = '';
+    if (fp && fp.pct != null) {
+      const dpp = fp.tgt != null ? (fp.pct - fp.tgt) : null;
+      fobTail = ` · FOB ${(fp.pct * 100).toFixed(2)}%${dpp != null ? (dpp > 0.0001 ? ` (+${(dpp * 100).toFixed(2)}pp — opportunity)` : ' (at/under target ✓)') : ''}`;
+    }
+    const subject = `EOM FOB — ${name}${fobTail}`;
     return { loc, name, subject, body: recapBody, recapBody, fullBody, hasGaps, hasPlan: actionItems.length > 0, rows: diagRows, uncounted };
   }, [buildDiagResult, diagOptsFor, hasDiagData, byLoc, period]);
 
@@ -1465,7 +1474,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '6px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`)),
               span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK')),
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
-            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass })),
+            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass, npDueToday: r.prog.nonProductDueToday })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
               r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—',
               mode === 'progress' && r.prog.lastActivityAt && (() => {
