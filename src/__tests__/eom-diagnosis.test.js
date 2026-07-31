@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  runDiagnosis, formatDiagnosisReport, applyManagerRisk, SEVERITY, DEFAULT_CHECKS,
+  runDiagnosis, formatDiagnosisReport, applyManagerRisk, SEVERITY, DEFAULT_CHECKS, fobComponentDeltas,
 } from '../engine/eom-diagnosis.js';
 
 const d = (y, m, day) => { const x = new Date(y, m - 1, day); x.setHours(0, 0, 0, 0); return x; };
@@ -115,6 +115,22 @@ describe('runDiagnosis — editable check registry', () => {
     expect(recap.length).toBeLessThan(full.length);
     // FOB line appears before the Top-5 (owner: FOB first).
     expect(recap.indexOf('FOB 3.73%')).toBeLessThan(recap.indexOf('Do these now'));
+  });
+
+  it('over FOB target with clean item variance surfaces component levers in Top-5 (no false clean sweep)', () => {
+    const res = runDiagnosis({ store: '1', storeName: 'Tecumseh', period: '2026-07', data: { variance: [] } });
+    // Tecumseh: FOB 4.27% vs 4.00% — overage is in Raw Waste (+0.16pp) & Stat Variance (+0.09pp), not item variance.
+    const components = fobComponentDeltas(
+      { sales: 278785, comp: 428, raw: 1842, cond: 5250, emp: 1068, statv: 3313, unex: 15 },
+      { tCompWaste: 0.0015, tRawWaste: 0.005, tCondiment: 0.0185, tEmpFood: 0.004, tStatLoss: 0.011, tUnex: 0 });
+    const full = formatDiagnosisReport(res, { fob: { pct: 0.0427, tgt: 0.04, dollars: 11917, components } });
+    expect(full).toMatch(/Cut Raw Waste/);               // component lever ranked into the actions
+    expect(full).toMatch(/Investigate Stat Variance/);
+    expect(full).toMatch(/Driving the \+0\.27pp overage/); // driver line under the FOB headline
+    expect(full).not.toMatch(/Clean sweep/);             // never celebrate a win while over target
+    // Under target with truly nothing → the clean-sweep celebration still fires.
+    const clean = formatDiagnosisReport(res, { fob: { pct: 0.036, tgt: 0.04, dollars: 9000, components: [] } });
+    expect(clean).toMatch(/Clean sweep/);
   });
 
   it('surfaces a granted count-date exception (banner + off-process note on the all-counted line)', () => {

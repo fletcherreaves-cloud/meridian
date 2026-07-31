@@ -25,7 +25,7 @@ import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
   buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore,
 } from '../engine/eom-inventory.js';
-import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
+import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
@@ -1131,7 +1131,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const c = components || {};
     const tg = DEFAULT_TARGETS[unpad(loc)] || {};
     const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
-    const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null } : null;
+    const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null, components: fobComponentDeltas(c, tg) } : null;
     return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob, exception: exceptions[loc] || null };
   }, [byLoc, rawByLoc, period, selfServeTowers, exceptions]);
 

@@ -634,11 +634,40 @@ export const INTEGRITY_CHECK_IDS = new Set([
   'unrealistic-over', 'negative-onhand', 'negative-usage', 'uom-sanity',
 ]);
 
+// The six FOB components and the DEFAULT_TARGETS key that sets each one's target %.
+export const FOB_COMPONENTS = [
+  ['comp', 'Comp Waste', 'tCompWaste'], ['raw', 'Raw Waste', 'tRawWaste'], ['cond', 'Condiments', 'tCondiment'],
+  ['emp', 'Emp Meals', 'tEmpFood'], ['statv', 'Stat Variance', 'tStatLoss'], ['unex', 'Unexplained', 'tUnex'],
+];
+// Per-component actual-% vs target-% deltas from the FOB $ breakdown + the store's targets. Lets the
+// report explain a FOB overage that lives in the COMPONENTS (waste / stat variance) even when the
+// item-level Food/Condiment action list is clean (owner: over target yet "clean sweep" is a contradiction).
+export function fobComponentDeltas(components, targets) {
+  const c = components || {}, tg = targets || {}, sales = Number(c.sales) || 0;
+  if (!sales) return [];
+  return FOB_COMPONENTS.map(([key, label, tk]) => {
+    const amt = Number(c[key]) || 0;
+    const pct = amt / sales;
+    const tgtPct = tg[tk] != null ? Number(tg[tk]) : null;
+    return { key, label, amt, pct, tgtPct, deltaPp: tgtPct != null ? (pct - tgtPct) * 100 : null };
+  });
+}
+
 // `mode:'recap'` returns the super-abbreviated message (FOB line → count status → Top-5 → net → soft
 // integrity note → punchy close + optional link), scaled hard — the day-of nudge to a GM. It reuses
 // the SAME computed doNow/net/shorts/overs as the full report, so the two can never drift.
-// `fob` = { pct, tgt, dollars } for the FOB one-liner; `link` = optional "more detail" URL.
+// `fob` = { pct, tgt, dollars, components? } for the FOB one-liner; `link` = optional "more detail" URL.
 export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date(), exception = null } = {}) {
+  // FOB-over-target driver analysis: which components exceed their own target (biggest gap first). Used
+  // to explain an overage that item-level variance doesn't capture (raw waste, stat variance, condiments).
+  const fobOver = !!(fob && fob.pct != null && fob.tgt != null && (fob.pct - fob.tgt) > 5e-5);
+  // Food-cost component levers worth an action (waste discipline / condiment portioning / stat-variance
+  // review). Emp meals + unexplained are excluded — they're policy/reconciliation, not coaching levers.
+  const DRIVER_KEYS = new Set(['raw', 'comp', 'cond', 'statv']);
+  const overComps = (fob && Array.isArray(fob.components) ? fob.components : [])
+    .filter(x => DRIVER_KEYS.has(x.key) && x.deltaPp != null && x.deltaPp > 0.005).sort((a, b) => b.deltaPp - a.deltaPp);
+  const fobDriverStr = (n = 3) => overComps.slice(0, n).map(x => `${x.label} +${x.deltaPp.toFixed(2)}pp (${money(x.amt)})`).join(' · ') + (overComps.length > n ? ` _+${overComps.length - n} more_` : '');
+  const fobOverPp = fobOver ? ((fob.pct - fob.tgt) * 100).toFixed(2) : null;
   // Last day of the month → Non-Product is due today too (owner Notes 38). Flips its "tomorrow" framing.
   const npDueToday = nonProductDueToday(result.period, asOf);
   // Dedupe variance rows by WRIN first (owner: duplicate lines) — a doubled row would otherwise
@@ -724,6 +753,9 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   if (fob && fob.pct != null) {
     const dpp = fob.tgt != null ? (fob.pct - fob.tgt) * 100 : null;
     L.push(`**FOB ${(fob.pct * 100).toFixed(2)}%**${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}pp vs ${(fob.tgt * 100).toFixed(2)}% target` : ''}${fob.dollars != null ? ` · ${money(fob.dollars)}` : ''}`, '');
+    // Explain WHERE an overage lives — the components over their own target — since the item-level Top-5
+    // only sees Food/Condiment variance and can read "clean" while waste/stat-var push FOB over (owner).
+    if (fobOver && overComps.length) L.push(`_Driving the +${fobOverPp}pp overage:_ **${fobDriverStr()}** — component levers (waste discipline / stat-variance review), separate from the item-level recounts below.`, '');
   }
   // Always-visible exception banner — this store's EOM count was accepted off standard process.
   if (exception) {
@@ -827,6 +859,25 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       doNow.push({ score: 1e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Investigate ${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}${casesNote(v)}) — ${causeTags(v)[0] || 'recount + verify waste logging'}.` });
     }
   }
+  // Include ALL food-cost analysis in the Top-5 ranking (owner): the component levers over target
+  // (raw/comp waste, condiments, stat variance) compete head-to-head by dollars-over-target with the
+  // item-level moves. This is what makes an over-target store surface real actions instead of a false
+  // "clean sweep" — the overage lives in components the item-level variance never inspects.
+  if (fobOver) {
+    const compAction = {
+      raw:   ['Cut', 'tighten raw-waste discipline — every waste entry weighed, not estimated'],
+      comp:  ['Cut', 'tighten completed-product waste discipline + verify waste logging'],
+      cond:  ['Tighten', 'audit condiment portioning + dispenser calibration'],
+      statv: ['Investigate', 'reconcile counted-vs-theoretical usage — recount the biggest movers, check receiving/transfers'],
+    };
+    for (const oc of overComps) {
+      const a = compAction[oc.key]; if (!a) continue;
+      const sales = oc.pct ? oc.amt / oc.pct : 0;
+      const dollarsOver = Math.max(0, (oc.pct - (oc.tgtPct || 0)) * sales);
+      doNow.push({ score: 2e5 + dollarsOver, group: true, comp: oc.key,
+        text: `**${a[0]} ${oc.label}** — +${oc.deltaPp.toFixed(2)}pp over target (${money(oc.amt)}, ~${money(dollarsOver)} over target) — ${a[1]}.` });
+    }
+  }
   doNow.sort((a, b) => b.score - a.score);
   if (doNow.length >= 5) {
     L.push('## ✅ Top 5 — do these now · Food & Condiment (best shot at improving this result)', '');
@@ -836,9 +887,14 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     L.push(`## ✅ Do these now · Food & Condiment — only ${doNow.length}, and that's a good sign`, '');
     doNow.forEach((d, i) => L.push(`${i + 1}. ${d.text}`));
     L.push('', `_Fewer than 5 Food/Condiment action items surfaced — this store is running tight on the profit-driver classes. Knock ${doNow.length === 1 ? 'it' : 'them'} out, then **re-run the diagnosis.**_`, '');
+  } else if (fobOver) {
+    // Edge case: FOB over target but no single component materially over (spread thin / emp-meals /
+    // sub-threshold). Don't celebrate a "clean sweep" while over target — point at the FOB strip.
+    L.push('## 🟡 Item & component counts read clean — but FOB is over target', '');
+    L.push(`**No item-level recount or single component surfaced above threshold**, yet **FOB is +${fobOverPp}pp over target**. The overage is spread across components rather than one driver — review the FOB component strip above; the lever here is broad waste/portion discipline, not a single item.`, '');
   } else {
     L.push('## 🏆 Clean sweep — zero Food & Condiment action items', '');
-    L.push('**Nothing** actionable surfaced on the profit-driver classes this count: no never-counted Food/Condiment, nothing to recount, no portioning flags. **That is a win in itself** — the classes that drive food cost are tight and under control. Keep doing exactly what produced this result. 🎉', '');
+    L.push('**Nothing** actionable surfaced on the profit-driver classes this count: no never-counted Food/Condiment, nothing to recount, no portioning flags, and **FOB is at/under target**. **That is a win in itself** — the classes that drive food cost are tight and under control. Keep doing exactly what produced this result. 🎉', '');
   }
 
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
