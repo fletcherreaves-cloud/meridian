@@ -2817,6 +2817,19 @@ async function callShareFn(payload) {
     return await res.json();
   } catch (e) { return { error: String(e?.message || e) }; }
 }
+// Pre-computed integrity flags (e.g. implausible recount batches) for the Needs-Attention panel.
+export async function loadEomIntegrityFlags({ period } = {}) {
+  if (!supabase) return [];
+  try {
+    const data = await fetchAll((from, to) => {
+      let q = supabase.from('eom_integrity_flags').select('*').range(from, to);
+      if (period) q = q.eq('period', period);
+      return q;
+    });
+    return (data || []).map(r => ({ loc: r.loc, period: r.period, kind: r.kind, severity: r.severity, title: r.title, detail: r.detail, dollars: r.dollars, meta: r.meta }));
+  } catch { return []; }   // table may not exist yet → fail-soft
+}
+
 export async function fetchSharedEom(token) { return callShareFn({ token }); }
 export async function refreshSharedEom(token) { return callShareFn({ token, action: 'refresh' }); }
 export async function acknowledgeSharedEom(token, note) { return callShareFn({ token, action: 'acknowledge', note }); }

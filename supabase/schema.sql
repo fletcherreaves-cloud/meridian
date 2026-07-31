@@ -1710,3 +1710,30 @@ alter table public.eom_share_links enable row level security;
 -- Only signed-in users manage links; anonymous/public access is ONLY via the eom-share edge function.
 create policy "eom_share_links: authenticated"  on public.eom_share_links for all
   using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- ── EOM integrity flags (v4.706) ─────────────────────────────────────────────
+-- Pre-computed integrity findings (e.g. implausible recount-swing batches from the forensic scan) so
+-- the Needs-Attention panel can surface them without loading raw item detail district-wide. Written by
+-- scripts/recount-forensics-scan.mjs (service role); read RLS-scoped by accessible_locs.
+create table if not exists public.eom_integrity_flags (
+  loc          text not null,
+  period       text not null,
+  kind         text not null,        -- e.g. 'recount-timing'
+  ref          text not null default '',  -- disambiguator within (loc,period,kind), e.g. manager|day
+  severity     text default 'warn',
+  title        text,
+  detail       text,
+  dollars      numeric default 0,
+  meta         jsonb,
+  created_at   timestamptz default now(),
+  primary key (loc, period, kind, ref)
+);
+create index if not exists eom_integrity_flags_period_idx on public.eom_integrity_flags (period, created_at desc);
+alter table public.eom_integrity_flags enable row level security;
+create policy "eom_integrity_flags: read scoped" on public.eom_integrity_flags for select
+  using (
+    (select accessible_locs from public.profiles where id = auth.uid()) is null
+    or loc = any (select accessible_locs from public.profiles where id = auth.uid())
+  );
+create policy "eom_integrity_flags: service write" on public.eom_integrity_flags for all
+  using (auth.role() = 'service_role') with check (auth.role() = 'service_role');

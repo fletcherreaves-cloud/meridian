@@ -11,7 +11,7 @@ import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { buildAttentionFeed, SEV_META } from '../engine/attention-feed.js';
-import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions } from '../lib/supabase.js';
+import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
 
 const h = React.createElement;
 const { useMemo, useState, useEffect } = React;
@@ -48,12 +48,14 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
   const [gradedVisits, setGradedVisits] = useState(ds?.gradedVisits || null);
   const [savedCorr, setSavedCorr] = useState(null);
   const [exceptions, setExceptions] = useState(null);   // eom_count_exceptions for the current period → Integrity
+  const [integrity, setIntegrity] = useState(null);     // eom_integrity_flags (recount-padding batches) → Integrity
   useEffect(() => {
     let live = true;
     if (!ds?.gradedVisits) loadGradedVisits().then(v => { if (live) setGradedVisits(v || []); }).catch(() => { if (live) setGradedVisits([]); });
     loadSavedCorrelations().then(c => { if (live) setSavedCorr(c || []); }).catch(() => { if (live) setSavedCorr([]); });
     const period = new Date().toISOString().slice(0, 7);
     loadEomCountExceptions({ period }).then(m => { if (live) setExceptions(m || {}); }).catch(() => { if (live) setExceptions({}); });
+    loadEomIntegrityFlags({ period }).then(f => { if (live) setIntegrity(f || []); }).catch(() => { if (live) setIntegrity([]); });
     return () => { live = false; };
   }, [ds]);
 
@@ -76,8 +78,9 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
       .filter(r => r.ly > 0);
 
     const countExceptionRows = Object.entries(exceptions || {}).map(([loc, e]) => ({ loc, acceptedDate: e.acceptedDate, approvedBy: e.approvedBy }));
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, storeName: nm, max: 20 });
-  }, [ds, allLocs, dateRange, visitStores, savedCorr, exceptions]);
+    const integrityItems = (integrity || []).map(f => ({ id: `intg-${f.loc}-${f.kind}`, loc: f.loc, severity: f.severity, dollars: f.dollars, title: `${nm(f.loc)} — ${f.title || 'integrity flag'}`, detail: f.detail, nav: 'analytics' }));
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, storeName: nm, max: 20 });
+  }, [ds, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity]);
 
   const counts = feed.reduce((a, i) => { a[i.severity] = (a[i.severity] || 0) + 1; return a; }, {});
   const go = (item) => {

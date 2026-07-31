@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.705';
+const MERIDIAN_VERSION    = '4.706';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.706', date:'2026-07-31', changes:[
+    'Integrity loop closed: the recount forensic scan now writes implausible padding batches to a new eom_integrity_flags table, and the Needs-Attention panel reads them — so #6838-style "8 corrections in 3 minutes" lands automatically in the one-glance triage feed, no digging. Fail-soft (panel + scan both no-op if the table isn\'t created yet). NOTE: run the eom_integrity_flags block in supabase/schema.sql to activate persistence.',
+  ]},
   {version:'4.705', date:'2026-07-31', changes:[
     'Needs-Attention panel gains an Integrity category + FOB-over-target: stores over their OWN FOB target now surface (distinct from the vs-district outlier signal), granted early-count exceptions show as an Integrity awareness item, and there\'s a pass-through pipe for pre-computed integrity flags (e.g. implausible recount-swing batches from the forensic scan) so #6838-style padding signals can land in the one-glance triage feed. The panel now loads eom_count_exceptions + store FOB targets to feed these.',
   ]},

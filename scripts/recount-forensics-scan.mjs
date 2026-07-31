@@ -100,6 +100,22 @@ async function main() {
   }
   if (!flagged.length) console.log('  (none — no batch cleared the padding-timing threshold)');
 
+  // Persist the implausible batches so the Needs-Attention panel surfaces them (legwork up-front). Idempotent.
+  if (!process.env.NO_WRITE) {
+    const mmw = (s) => s >= 90 ? `${(s / 60).toFixed(1)}min` : `${s}s`;
+    const rows = flagged.map(f => ({
+      loc: f.loc, period: PERIOD, kind: 'recount-timing', ref: `${f.mgr}|${f.day}`,
+      severity: f.maskedShortage ? 'crit' : 'warn',
+      title: `implausible recount batch (${f.mgr})`,
+      detail: `${f.n} offsetting corrections in ${mmw(f.windowSec)} on ${f.day} — recounting ${f.n} scattered items needs ≥ ${mmw(f.requiredSec)}; the timing doesn't support a physical recount. Net $${f.preNet.toLocaleString()}→$${f.postNet.toLocaleString()}${f.maskedShortage ? ' — MASKED A REAL SHORTAGE' : ''}. Walk the manager through these before accepting the count.`,
+      dollars: f.totalSwing, meta: f,
+    }));
+    if (rows.length) {
+      const { error } = await sb.from('eom_integrity_flags').upsert(rows, { onConflict: 'loc,period,kind,ref' });
+      console.log(error ? `\n[recount-scan] flag write skipped: ${error.message}` : `\n[recount-scan] ✓ wrote ${rows.length} integrity flag(s) to eom_integrity_flags`);
+    }
+  }
+
   // Verbose: every same-manager offsetting batch tested (≥3 items), so 0-flagged can be trusted (not a
   // missing-timestamp artifact). hasTimes=false means the counts carried no time-of-day → can't judge.
   const mm = (s) => s == null ? '?' : (s >= 90 ? `${(s / 60).toFixed(1)}min` : `${s}s`);
