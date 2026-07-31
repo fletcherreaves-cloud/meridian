@@ -1737,3 +1737,47 @@ create policy "eom_integrity_flags: read scoped" on public.eom_integrity_flags f
   );
 create policy "eom_integrity_flags: service write" on public.eom_integrity_flags for all
   using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+-- ── Person attribution + count-status history (v4.707) ───────────────────────
+-- Owner directive 2026-07-31: capture the NAME of the person + supporting info wherever possible.
+alter table if exists public.eom_integrity_flags add column if not exists person text;
+
+-- One row per store per period: the longitudinal spine for count-timing, accountability, and trend
+-- surfacing. Written by scripts/eom-snapshot-pull.mjs (nightly, service role). Names included.
+create table if not exists public.eom_count_status_history (
+  loc                  text not null,
+  period               text not null,
+  pct_counted          numeric,
+  early_pct_counted    numeric,        -- Food+Condiment+Paper (today's target)
+  believes_done        boolean,
+  full_count_date      date,           -- the perceived bulk-count day (mode)
+  last_activity_at     timestamptz,
+  count_began_tm       text,
+  count_ended_tm       text,
+  count_duration_ms    bigint,
+  count_days           int,
+  timing               text,           -- 'on-time' | 'late' (Food/Cond/Paper on the last day) | null
+  late_bulk            boolean,
+  primary_counter      text,           -- main counting manager (name)
+  counters             text[],         -- everyone who counted (names) — supporting attribution
+  n_exceptions         int default 0,
+  exception_date       date,
+  exception_approved_by text,
+  n_integrity_flags    int default 0,
+  integrity_dollars    numeric default 0,
+  integrity_persons    text[],         -- who the integrity flags are attributed to
+  fob_pct              numeric,
+  fob_dollars          numeric,
+  fob_target           numeric,
+  captured_at          timestamptz default now(),
+  primary key (loc, period)
+);
+create index if not exists eom_count_status_history_period_idx on public.eom_count_status_history (period, captured_at desc);
+alter table public.eom_count_status_history enable row level security;
+create policy "eom_count_status_history: read scoped" on public.eom_count_status_history for select
+  using (
+    (select accessible_locs from public.profiles where id = auth.uid()) is null
+    or loc = any (select accessible_locs from public.profiles where id = auth.uid())
+  );
+create policy "eom_count_status_history: service write" on public.eom_count_status_history for all
+  using (auth.role() = 'service_role') with check (auth.role() = 'service_role');

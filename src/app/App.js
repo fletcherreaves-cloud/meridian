@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.706';
+const MERIDIAN_VERSION    = '4.707';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.707', date:'2026-07-31', changes:[
+    'Historical logging (longitudinal spine): the nightly cron now writes an eom_count_status_history row per store/period — % counted, on-time vs late timing, count duration, the COUNTER NAMES (primary + all), granted exceptions (+ who approved), integrity-flag counts + who they attribute to, and the FOB result. eom_integrity_flags also gains a person column. Backbone for recurring-pattern detection, manager accountability, and SAGE trend queries. Run the new SQL block to activate.',
+    'EOM Summary header now reads "6 Locations with uncounted Food/Condiment (9 Items Total)" — location count plus the item total, on screen and in print (owner QW).',
+  ]},
   {version:'4.706', date:'2026-07-31', changes:[
     'Integrity loop closed: the recount forensic scan now writes implausible padding batches to a new eom_integrity_flags table, and the Needs-Attention panel reads them — so #6838-style "8 corrections in 3 minutes" lands automatically in the one-glance triage feed, no digging. Fail-soft (panel + scan both no-op if the table isn\'t created yet). NOTE: run the eom_integrity_flags block in supabase/schema.sql to activate persistence.',
   ]},

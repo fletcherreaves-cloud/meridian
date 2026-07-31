@@ -13,9 +13,23 @@
 //               EOM_LABEL=auto-4am
 
 import { createClient } from '@supabase/supabase-js';
-import { fobSnapshotByStore, computeCountProgress } from '../src/engine/eom-inventory.js';
+import { fobSnapshotByStore, computeCountProgress, diagnoseIncompleteCount } from '../src/engine/eom-inventory.js';
 import { latestVarianceByWrin } from '../src/engine/eom-variance-raw.js';
+import { computeCountTiming } from '../src/engine/eom-item-journey.js';
+import { DEFAULT_TARGETS } from '../src/constants.js';
 import { withRetry } from './_retry.mjs';
+
+const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
+
+// Distinct counter names across an item's count history (+ the most frequent = primary counter).
+function countersOf(rawItems) {
+  const tally = {};
+  for (const it of (rawItems || [])) for (const h of (it.history || [])) {
+    if (h && h.isCount && h.manager) tally[h.manager] = (tally[h.manager] || 0) + 1;
+  }
+  const names = Object.keys(tally).sort((a, b) => tally[b] - tally[a]);
+  return { counters: names, primary: names[0] || null };
+}
 
 const URL = process.env.VITE_SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -87,8 +101,17 @@ async function main() {
   for (const r of rawRaw) (rawByLoc[String(r.loc)] || (rawByLoc[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, cls: r.item_class, history: Array.isArray(r.history) ? r.history : [] });
   console.log(`[eom-snapshot] raw_item_detail rows=${rawRaw.length} across ${Object.keys(rawByLoc).length} stores`);
 
+  // Supporting data for the count-status history (owner: log names + supporting info): granted
+  // exceptions + already-written integrity flags for this period, keyed by loc.
+  const [excRows, flagRows] = await Promise.all([
+    selectAll('eom_count_exceptions', q => q.eq('period', PERIOD)).catch(() => []),
+    selectAll('eom_integrity_flags', q => q.eq('period', PERIOD)).catch(() => []),
+  ]);
+  const excByLoc = {}; for (const r of excRows) excByLoc[String(r.loc)] = r;
+  const flagsByLoc = {}; for (const r of flagRows) (flagsByLoc[String(r.loc)] || (flagsByLoc[String(r.loc)] = [])).push(r);
+
   const locs = new Set([...Object.keys(fob), ...Object.keys(ohByLoc), ...Object.keys(varByLoc), ...Object.keys(rawByLoc)]);
-  const snaps = [];
+  const snaps = [], statusRows = [];
   for (const loc of locs) {
     const oh = ohByLoc[loc] || [], vr = varByLoc[loc] || [];
     const vByWrin = {}; for (const v of vr) vByWrin[String(v.wrin)] = v;
@@ -111,12 +134,36 @@ async function main() {
     for (const w of Object.keys(rawV)) { if (!seen.has(w)) { seen.add(w); const rd = rawByLoc[loc].find(x => String(x.wrin) === w) || {}; items.push({ wrin: w, descr: rd.descr || '', cls: rd.cls || '', qty: null, onHandAmt: null, dolDiff: rawV[w].dolDiff, variance: rawV[w].variance, lastCounted: rawV[w].lastCounted || null }); } }
 
     // Count progress (per-class %) from on-hand rows mapped into the engine's shape.
-    let count = null, lastActivityAt = null;
+    let count = null, lastActivityAt = null, fullCountDate = null;
     try {
       const shaped = oh.map(o => ({ cls: o.cls, lastCounted: o.last_counted ? new Date(o.last_counted) : null, lastSubmitted: o.last_submitted ? new Date(o.last_submitted) : null }));
       const prog = computeCountProgress(shaped, { period: PERIOD });
       count = { pctCounted: prog.pctCounted, earlyPctCounted: prog.earlyPctCounted, believesDone: prog.believesDone, byClass: prog.byClass };
       lastActivityAt = prog.lastActivityAt instanceof Date ? prog.lastActivityAt.toISOString() : (prog.lastActivityAt || null);
+      fullCountDate = prog.fullCountDate || null;
+
+      // ── Count-status history row (owner: longitudinal spine + names) ──────────────────────────
+      const shapedFull = oh.map(o => ({ wrin: o.wrin, cls: o.cls, descr: o.descr, onHandAmt: o.on_hand_amt, lastCounted: o.last_counted ? new Date(o.last_counted) : null, lastSubmitted: o.last_submitted ? new Date(o.last_submitted) : null }));
+      let lateBulk = false; try { lateBulk = !!diagnoseIncompleteCount(shapedFull, { period: PERIOD }).lateBulk; } catch { /* ignore */ }
+      let t = null; try { t = computeCountTiming(rawByLoc[loc] || []); } catch { /* ignore */ }
+      const { counters, primary } = countersOf(rawByLoc[loc] || []);
+      const ex = excByLoc[loc], flags = flagsByLoc[loc] || [];
+      const f2 = fob[loc] || {}, tg = DEFAULT_TARGETS[unpad(loc)] || {};
+      statusRows.push({
+        loc: String(loc), period: PERIOD,
+        pct_counted: prog.pctCounted ?? null, early_pct_counted: prog.earlyPctCounted ?? null,
+        believes_done: !!prog.believesDone, full_count_date: fullCountDate,
+        last_activity_at: lastActivityAt,
+        count_began_tm: t?.beganTm ?? null, count_ended_tm: t?.endedTm ?? null,
+        count_duration_ms: t?.durationMs ?? null, count_days: t?.nDays ?? null,
+        timing: lateBulk ? 'late' : (prog.believesDone ? 'on-time' : null), late_bulk: lateBulk,
+        primary_counter: primary, counters,
+        n_exceptions: ex ? 1 : 0, exception_date: ex?.accepted_date ?? null, exception_approved_by: ex?.approved_by ?? null,
+        n_integrity_flags: flags.length, integrity_dollars: flags.reduce((s, x) => s + (Number(x.dollars) || 0), 0),
+        integrity_persons: [...new Set(flags.map(x => x.person).filter(Boolean))],
+        fob_pct: f2.fobPct ?? null, fob_dollars: f2.fob ?? null, fob_target: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null,
+        captured_at: new Date().toISOString(),
+      });
     } catch (e) { count = { error: String(e?.message || e) }; }
     // "Variance posted" = enough items carry a real per-item $ variance (so we never freeze an empty
     // $0 state — the whole point of the count-complete lock, owner Notes 38).
@@ -145,6 +192,18 @@ async function main() {
     else saved += chunk.length;
   }
   console.log(`[eom-snapshot] ✓ locked ${saved}/${toInsert.length} stores for ${PERIOD}`);
+
+  // Count-status history — the longitudinal spine (owner 2026-07-31). Upsert one row per store/period
+  // (idempotent: latest run wins). Fail-soft if the table isn't created yet.
+  if (statusRows.length) {
+    let cs = 0;
+    for (let i = 0; i < statusRows.length; i += 100) {
+      const { error } = await withRetry(() => sb.from('eom_count_status_history').upsert(statusRows.slice(i, i + 100), { onConflict: 'loc,period' }), { tries: 3, label: `count-status[${i}]` });
+      if (error) { console.log(`[eom-snapshot] count-status write skipped: ${error.message}`); break; }
+      cs += Math.min(100, statusRows.length - i);
+    }
+    if (cs) console.log(`[eom-snapshot] ✓ wrote ${cs} count-status history rows (with counter names) for ${PERIOD}`);
+  }
 
   // ── Count-complete pass (owner Notes 38) — a per-store "as-counted" lock, captured the FIRST time a
   // store is both count-complete AND its Variance/Stat has posted (≥ MIN_POSTED items with real $). This

@@ -2830,6 +2830,21 @@ export async function loadEomIntegrityFlags({ period } = {}) {
   } catch { return []; }   // table may not exist yet → fail-soft
 }
 
+// Count-status history (longitudinal spine): per store/period count timing, counters, exceptions,
+// integrity-flag counts, FOB result. For trend analysis + manager accountability + SAGE.
+export async function loadEomCountStatusHistory({ loc, period } = {}) {
+  if (!supabase) return [];
+  try {
+    const data = await fetchAll((from, to) => {
+      let q = supabase.from('eom_count_status_history').select('*').order('period', { ascending: false }).range(from, to);
+      if (loc) q = q.eq('loc', String(loc));
+      if (period) q = q.eq('period', period);
+      return q;
+    });
+    return data || [];
+  } catch { return []; }   // table may not exist yet → fail-soft
+}
+
 export async function fetchSharedEom(token) { return callShareFn({ token }); }
 export async function refreshSharedEom(token) { return callShareFn({ token, action: 'refresh' }); }
 export async function acknowledgeSharedEom(token, note) { return callShareFn({ token, action: 'acknowledge', note }); }

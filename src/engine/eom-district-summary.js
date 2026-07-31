@@ -85,6 +85,7 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
     notStarted: stores.filter(s => num(s.countPct) <= 0.01).length,
     avgCountPct: withProg.length ? withProg.reduce((a, s) => a + s.countPct, 0) / withProg.length : null,
     storesWithUncountedFC: stores.filter(s => s.uncountedFC > 0).length,
+    totalUncountedFC: stores.reduce((a, s) => a + (num(s.uncountedFC) || 0), 0),
     // District per-class completion = Σ counted / Σ total across stores (item-weighted).
     byClass: Object.fromEntries(CLASS_KEYS.map(k => {
       const cnt = sum(s => s.classCounted[k] || 0), tot = sum(s => s.classTotal[k] || 0);

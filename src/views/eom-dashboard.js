@@ -1056,7 +1056,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const head = `<h1>District EOM Summary — ${scopeLabel()}</h1><p class="sub">${period} · ${r.nStores} store(s) · dollar-weighted FOB roll-up</p>
       <table><tbody>
       <tr><th>District FOB</th><td class="g">${pctS(r.fobPct)} · ${$(r.fob$)}</td><th>vs target</th><td>${pctS(r.fobTgt)}${r.fobPct != null && r.fobTgt != null ? ` (${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)}pp)` : ''}</td><th>Prod Sales</th><td>${$(r.sales)}</td></tr>
-      <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'} · ${d.completion.storesWithUncountedFC} store(s) with uncounted Food/Condiment</td></tr>
+      <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'} · ${d.completion.storesWithUncountedFC} Location(s) with uncounted Food/Condiment${d.completion.totalUncountedFC ? ` (${d.completion.totalUncountedFC} Items Total)` : ''}</td></tr>
       <tr><th>By class</th><td colspan="5">${CLASS_META.map(m => { const p = d.completion.byClass[m.k]; return `${m.label} ${p != null ? Math.round(p * 100) + '%' : '—'}${m.k === 'nonproduct' ? ' (due tomorrow)' : ''}`; }).join(' · ')}</td></tr>
       <tr><th>Opportunity</th><td colspan="5">${$(d.totalOver$)} over target across ${d.opportunity.length} store(s) · biggest component opportunity vs target: ${d.analysis.anyOverTarget ? `${d.analysis.biggestComp.label} (${d.analysis.biggestComp.deltaPp != null ? `+${d.analysis.biggestComp.deltaPp.toFixed(2)}pp · ` : ''}${$(d.analysis.biggestComp.over$)} over)` : 'all components at/under target'}</td></tr>
       </tbody></table>`;
@@ -2089,7 +2089,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           // Completion + opportunity + analysis
           div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
             span(null, span({ style: { color: '#4ade80', fontWeight: 700 } }, `${d.completion.ready} ready`), ` · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'}`),
-            d.completion.storesWithUncountedFC ? span({ style: { color: '#fb923c', fontWeight: 700 } }, `⚠ ${d.completion.storesWithUncountedFC} with uncounted Food/Condiment`) : null),
+            d.completion.storesWithUncountedFC ? span({ style: { color: '#fb923c', fontWeight: 700 } }, `⚠ ${d.completion.storesWithUncountedFC} Location${d.completion.storesWithUncountedFC === 1 ? '' : 's'} with uncounted Food/Condiment${d.completion.totalUncountedFC ? ` (${d.completion.totalUncountedFC} Item${d.completion.totalUncountedFC === 1 ? '' : 's'} Total)` : ''}`) : null),
           // District per-class completion (owner req) — Non-Product muted (not due today).
           div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '11.5px', color: 'var(--text3)' } },
             span({ style: { textTransform: 'uppercase', letterSpacing: '.04em', fontSize: '10px' } }, 'By class:'),
