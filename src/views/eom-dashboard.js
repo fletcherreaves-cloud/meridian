@@ -1814,7 +1814,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               r.fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80' } }, `${r.fobPct != null ? `${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${pctS(r.fobTgt)}`) : null),
             ...COMP_META.map(m => div({ key: m.k, style: box }, span({ style: lab }, m.label), span({ style: big() }, $(r.comps[m.k])),
               span({ style: { fontSize: '8.5px', color: 'var(--text3)' } }, pctS(r.compPct[m.k])))),
-            div({ style: box }, span({ style: lab }, 'Prod Sales'), span({ style: big() }, $(r.sales)))),
+            div({ style: box }, span({ style: lab }, 'Prod Sales'), span({ style: big() }, $(r.sales)),
+              span({ style: { fontSize: '8.5px', fontWeight: 600, color: 'var(--text3)' } }, `${r.nStores} ${scopeLabel()} store${r.nStores === 1 ? '' : 's'} · MTD`))),
           // Completion + opportunity + analysis
           div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
             span(null, span({ style: { color: '#4ade80', fontWeight: 700 } }, `${d.completion.ready} ready`), ` · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'}`),
