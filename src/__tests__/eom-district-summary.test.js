@@ -48,8 +48,18 @@ describe('buildDistrictSummary', () => {
     expect(s.completion.byClass.food).toBeCloseTo(0.98, 3);
   });
 
-  it('identifies the biggest district component driver + per-store delta', () => {
-    expect(s.analysis.biggestComp.k).toBe('cond');   // condiments largest
+  it('ranks component opportunity by OVER-TARGET $, not raw $ (owner Notes 38 — Condiments not auto-crowned)', () => {
+    // Condiments is the largest raw-$ component ($15,533) but sits near its target → it must NOT be
+    // the "biggest opportunity". The winner is the component furthest OVER its own target.
+    expect(s.analysis.biggestComp.k).not.toBe('cond');
+    const maxOver = s.analysis.compOpp.reduce((a, c) => (c.over$ > a.over$ ? c : a));
+    expect(s.analysis.biggestComp.k).toBe(maxOver.k);
+    expect(maxOver.over$).toBeGreaterThan(0);
+    // Condiments' own opportunity is tiny despite its huge raw $.
+    const cond = s.analysis.compOpp.find(c => c.k === 'cond');
+    expect(cond.over$).toBeLessThan(maxOver.over$);
+  });
+  it('per-store FOB delta vs target', () => {
     const ard = s.stores.find(x => x.name === 'Ardmore');
     expect(ard.deltaPp).toBeCloseTo(0.46, 1);        // 4.31 - 3.85
   });

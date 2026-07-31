@@ -985,7 +985,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       <tr><th>District FOB</th><td class="g">${pctS(r.fobPct)} · ${$(r.fob$)}</td><th>vs target</th><td>${pctS(r.fobTgt)}${r.fobPct != null && r.fobTgt != null ? ` (${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)}pp)` : ''}</td><th>Prod Sales</th><td>${$(r.sales)}</td></tr>
       <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'} · ${d.completion.storesWithUncountedFC} store(s) with uncounted Food/Condiment</td></tr>
       <tr><th>By class</th><td colspan="5">${CLASS_META.map(m => { const p = d.completion.byClass[m.k]; return `${m.label} ${p != null ? Math.round(p * 100) + '%' : '—'}${m.k === 'nonproduct' ? ' (due tomorrow)' : ''}`; }).join(' · ')}</td></tr>
-      <tr><th>Opportunity</th><td colspan="5">${$(d.totalOver$)} over target across ${d.opportunity.length} store(s) · biggest driver district-wide: ${d.analysis.biggestComp ? `${d.analysis.biggestComp.label} (${$(d.analysis.biggestComp.amt)})` : '—'}</td></tr>
+      <tr><th>Opportunity</th><td colspan="5">${$(d.totalOver$)} over target across ${d.opportunity.length} store(s) · biggest component opportunity vs target: ${d.analysis.anyOverTarget ? `${d.analysis.biggestComp.label} (${d.analysis.biggestComp.deltaPp != null ? `+${d.analysis.biggestComp.deltaPp.toFixed(2)}pp · ` : ''}${$(d.analysis.biggestComp.over$)} over)` : 'all components at/under target'}</td></tr>
       </tbody></table>`;
     const rowsHtml = d.stores.slice().sort((a, b) => (b.over$ || -1e9) - (a.over$ || -1e9)).map(s =>
       `<tr><td>${nm(s.loc)}</td><td class="${s.deltaPp > 0 ? 'r' : ''}">${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}</td><td>${$(s.fobD)}</td>${COMP_META.map(m => `<td>${$(s.comps[m.k])}</td>`).join('')}<td>${s.countPct != null ? Math.round(s.countPct * 100) + '%' : '—'}${s.uncountedFC ? ` <span class="r">(${s.uncountedFC} F/C)</span>` : ''}</td>${CLASS_META.map(m => { const p = s.classPct[m.k]; return `<td>${p != null ? Math.round(p * 100) + '%' : '—'}</td>`; }).join('')}<td>${s.believesDone ? '✓' : s.countPct > 0.01 ? 'counting' : '—'}</td></tr>`).join('');
@@ -1919,7 +1919,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 `${m.label} ${p != null ? Math.round(p * 100) + '%' : '—'}${late ? ' (tmrw)' : ''}`); })),
           div({ style: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
             span(null, span({ style: { color: '#f5bc00', fontWeight: 700 } }, `💰 ${$(d.totalOver$)} over target`), ` across ${d.opportunity.length} store${d.opportunity.length === 1 ? '' : 's'}`),
-            d.analysis.biggestComp ? span({ style: { color: 'var(--text2)' } }, `Biggest driver: ${d.analysis.biggestComp.label} (${$(d.analysis.biggestComp.amt)})`) : null),
+            d.analysis.anyOverTarget
+              ? span({ style: { color: 'var(--text2)' } }, `Biggest opportunity vs target: ${d.analysis.biggestComp.label} (${d.analysis.biggestComp.deltaPp != null ? `+${d.analysis.biggestComp.deltaPp.toFixed(2)}pp · ` : ''}${$(d.analysis.biggestComp.over$)} over)`)
+              : span({ style: { color: '#4ade80' } }, 'All components at/under target ✓')),
           // Per-store table
           div({ style: { overflowX: 'auto' } },
             h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [

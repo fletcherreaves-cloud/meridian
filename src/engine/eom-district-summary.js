@@ -96,9 +96,21 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
   const opportunity = stores.filter(s => s.over$ != null && s.over$ > 0).sort((a, b) => b.over$ - a.over$);
   const totalOver$ = opportunity.reduce((a, s) => a + s.over$, 0);
 
-  // Analysis: biggest district component driver ($), worst-FOB% stores.
-  const biggestComp = COMP_KEYS.map(k => ({ k, amt: rollupComps[k], label: (COMP_META.find(m => m.k === k) || {}).label })).sort((a, b) => b.amt - a.amt)[0];
+  // Component OPPORTUNITY = $ OVER each component's OWN target (owner Notes 38): ranking by raw $ wrongly
+  // crowns Condiments, which is structurally large (1.6–2.2% of sales, targeted accordingly) and carries
+  // no opportunity when it's on target. A component under its target is NOT an opportunity ($0). So we
+  // rank by (actual% − target%) × sales, positive only. Components with no target fall back to raw $ as a
+  // last resort (so they're not silently dropped), but real (over-target) opportunities always sort first.
+  const compOpp = COMP_KEYS.map(k => {
+    const label = (COMP_META.find(m => m.k === k) || {}).label;
+    const hasTgt = rollupCompTgt[k] != null && rollupCompPct[k] != null;
+    const over$ = hasTgt ? Math.max(0, (rollupCompPct[k] - rollupCompTgt[k]) * totSales) : 0;
+    const deltaPp = hasTgt ? (rollupCompPct[k] - rollupCompTgt[k]) * 100 : null;
+    return { k, label, amt: rollupComps[k], over$, deltaPp, hasTgt };
+  }).sort((a, b) => (b.over$ - a.over$) || (b.amt - a.amt));
+  const biggestComp = compOpp[0];                                   // biggest opportunity vs target
+  const anyOverTarget = compOpp.some(c => c.over$ > 0);
   const worstFob = stores.filter(s => s.fobPct != null).sort((a, b) => b.fobPct - a.fobPct).slice(0, 5);
 
-  return { stores, rollup, completion, opportunity, totalOver$, analysis: { biggestComp, worstFob } };
+  return { stores, rollup, completion, opportunity, totalOver$, analysis: { biggestComp, compOpp, anyOverTarget, worstFob } };
 }
