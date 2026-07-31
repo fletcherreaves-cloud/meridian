@@ -162,6 +162,26 @@ Needs several weeks of daily data. This is a directional screen, not a randomize
       required: [],
     },
   },
+  {
+    name: 'search_qsr_kb',
+    description: `Search the official QSRSoft Help Center / Knowledge Base — the vendor's own documentation for how QSRSoft reports, eBOS, DAR, food-cost/FOB, inventory counts, and forms work.
+Use this whenever a question is about HOW QSRSoft works, what a QSRSoft metric/report/field MEANS, how to do something in QSRSoft, or when you need the vendor's authoritative definition to ground an answer (e.g. "how does QSRSoft calculate stat variance", "what is OEPE", "how do I run the raw item report", "what does a red model mean").
+Prefer this over guessing at QSRSoft terminology. Returns the most relevant articles (title, section, body excerpt, url). Cite the article title when you use it. Not a source of the owner's live store data — use the query_* tools for that.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search terms — QSRSoft concept, report name, metric, or how-to question. Required.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max articles to return (1-8). Default 5.',
+        },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 // ── RBAC scoping ─────────────────────────────────────────────────────────────
@@ -450,6 +470,54 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     });
   }
 
+  if (name === 'search_qsr_kb') {
+    const raw = String((input.query as string) || '').trim();
+    if (!raw) return 'Provide a search query (a QSRSoft concept, report, metric, or how-to).';
+    const limit = Math.min(8, Math.max(1, Number(input.limit) || 5));
+    // Terms for OR-match + relevance scoring. Sanitize for PostgREST or() syntax.
+    const terms = raw.replace(/[,%()]/g, ' ').split(/\s+/).filter(w => w.length >= 3).slice(0, 8);
+    const phrase = raw.replace(/[,%()]/g, ' ').trim();
+    const ors = [`title.ilike.%${phrase}%`, `body_text.ilike.%${phrase}%`, ...terms.flatMap(t => [`title.ilike.%${t}%`, `body_text.ilike.%${t}%`])];
+    const { data, error } = await sb.from('qsrsoft_kb')
+      .select('id,title,body_text,category,section,html_url')
+      .or(ors.join(',')).limit(60);
+    if (error) return `KB search error: ${error.message}`;
+    if (!data?.length) return `No QSRSoft KB articles matched "${raw}". The KB has vendor docs on reports, eBOS, DAR, food cost, inventory, and forms — try different terms.`;
+
+    const scoreTerms = terms.length ? terms : [phrase.toLowerCase()];
+    const scored = data.map((r: Record<string, unknown>) => {
+      const title = String(r.title || '').toLowerCase();
+      const body = String(r.body_text || '').toLowerCase();
+      let score = 0;
+      if (title.includes(phrase.toLowerCase())) score += 10;
+      if (body.includes(phrase.toLowerCase())) score += 4;
+      for (const t of scoreTerms) { const tl = t.toLowerCase(); if (title.includes(tl)) score += 3; if (body.includes(tl)) score += 1; }
+      return { r, score };
+    }).sort((a, b) => b.score - a.score).slice(0, limit);
+
+    const results = scored.map(({ r }) => {
+      const body = String((r as Record<string, unknown>).body_text || '');
+      // Excerpt around the first matching term (or the head of the article).
+      let idx = -1;
+      for (const t of scoreTerms) { const i = body.toLowerCase().indexOf(t.toLowerCase()); if (i >= 0 && (idx < 0 || i < idx)) idx = i; }
+      const start = idx > 120 ? idx - 120 : 0;
+      const excerpt = body.slice(start, start + 700).replace(/\s+/g, ' ').trim();
+      return {
+        title: (r as Record<string, unknown>).title,
+        category: (r as Record<string, unknown>).category,
+        section: (r as Record<string, unknown>).section,
+        url: (r as Record<string, unknown>).html_url,
+        excerpt: (start > 0 ? '…' : '') + excerpt + (body.length > start + 700 ? '…' : ''),
+      };
+    });
+    return JSON.stringify({
+      query: raw,
+      count: results.length,
+      articles: results,
+      note: 'Official QSRSoft Help Center content. Cite the article title when you rely on it. This is vendor documentation, not the owner\'s live store data.',
+    });
+  }
+
   return `Unknown tool: ${name}`;
 }
 
@@ -658,6 +726,7 @@ Deno.serve(async (req: Request) => {
                         : tu.name === 'query_lifelenz_labor'   ? 'labor schedules'
                         : tu.name === 'query_forecast_snapshots' ? 'forecast accuracy'
                         : tu.name === 'query_promo_roi'         ? 'promo/discount ROI'
+                        : tu.name === 'search_qsr_kb'          ? 'QSRSoft docs'
                         : tu.name.replace(/_/g, ' ');
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Querying ${label}…` })}\n\n`));
 

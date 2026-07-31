@@ -388,7 +388,7 @@ Today: ${today}
 
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have four tools that query live Supabase data (updated daily via automation):
+You have five tools — four query live Supabase data (updated daily via automation), one searches the QSRSoft vendor docs:
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -409,6 +409,11 @@ You have four tools that query live Supabase data (updated daily via automation)
    Returns: per lever (promo, discount) a district verdict + per-store rows (lift %, extra sales/day, extra give-away/day, gross-profit delta/day, verdict pays/costs/neutral). Matched-day method: promo-heavy vs promo-light days within each weekday.
    USE FOR: "are our promos paying off?", "is [store]'s discounting worth it?", "which stores give away margin without a sales lift?", "promo/discount ROI", "should we cut any promotions?"
    CAVEAT: directional screen (association with controls), NOT a randomized experiment — always say so. Defaults to ~90 days if no dates given (needs a multi-week window).
+
+5. search_qsr_kb(query, limit?)
+   Returns: the most relevant QSRSoft Help Center articles (title, section, body excerpt, url) — the vendor's own documentation.
+   USE FOR: how QSRSoft works / what a QSRSoft metric, report, or field MEANS / how to do something in QSRSoft — e.g. "how does QSRSoft calculate stat variance?", "what is OEPE / R2P / KVS?", "how do I run the raw item report?", "what does a red model mean?", "how does eBOS handle transfers?"
+   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–4 for those).
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
