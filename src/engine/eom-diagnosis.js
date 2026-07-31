@@ -529,7 +529,7 @@ export const DEFAULT_CHECKS = [
         .filter(v => usageOf(v) < tol)
         .map(v => mkFinding('negative-usage', SEVERITY.high,
           `Negative usage: ${v.descr}`,
-          `Actual usage computed to ${usageOf(v).toLocaleString()} (below zero) — impossible: the ending count is higher than everything on hand plus everything received this period. Almost always an over-padded ending count or a mis-keyed unit of measure (inner bags entered as full cases). Recount ${v.descr} and re-verify the ending quantity + UOM.`,
+          `Actual usage computed to ${usageOf(v).toLocaleString()} (below zero) — impossible: the ending count is higher than everything on hand plus everything received this period. Almost always an over-padded ending count or a mis-keyed unit of measure (inner bags entered as full cases). Recount and re-verify the ending quantity + UOM.`,
           Math.abs(v.dolDiff || 0), { wrin: v.wrin, actualUsage: usageOf(v) }));
     },
   },

@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.708';
+const MERIDIAN_VERSION    = '4.709';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.709', date:'2026-07-31', changes:[
+    'Second-Look roll-up now condenses "Negative usage" too — it was still repeating the full "impossible… inner bags entered as full cases. Recount {item}" paragraph per item because the item name sat in the tail, breaking the shared-coaching detection. Dropped the redundant item name from the coaching (it\'s already the list label), so 11 items collapse to one coaching line + a compact list.',
+  ]},
   {version:'4.708', date:'2026-07-31', changes:[
     'Renamed the EOM Dashboard → "Inventory Control" (nav + panel header). It long outgrew "EOM": it now spans counts across cadences, food-cost/FOB diagnosis, integrity forensics, waste, and shareable reports. Internal id unchanged, so nothing else is affected. Weekly/daily count monitoring plugs in here next.',
   ]},
