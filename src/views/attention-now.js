@@ -7,11 +7,11 @@
 // the panel that owns the issue. Visit-readiness + signal-decay are Phase 2 (the
 // engine already supports more detectors; the panel just feeds them inputs).
 import * as React from 'react';
-import { STORE_NAMES } from '../constants.js';
+import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { buildAttentionFeed, SEV_META } from '../engine/attention-feed.js';
-import { loadGradedVisits, loadSavedCorrelations } from '../lib/supabase.js';
+import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions } from '../lib/supabase.js';
 
 const h = React.createElement;
 const { useMemo, useState, useEffect } = React;
@@ -44,13 +44,16 @@ const NAV_MODAL = { fob: 'fob-analysis', signals: 'signals', analytics: 'eom-das
 export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, onClose }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
 
-  // Phase-2 inputs load async (graded visits → readiness; saved correlations → decay).
+  // Phase-2 inputs load async (graded visits → readiness; saved correlations → decay; EOM exceptions).
   const [gradedVisits, setGradedVisits] = useState(ds?.gradedVisits || null);
   const [savedCorr, setSavedCorr] = useState(null);
+  const [exceptions, setExceptions] = useState(null);   // eom_count_exceptions for the current period → Integrity
   useEffect(() => {
     let live = true;
     if (!ds?.gradedVisits) loadGradedVisits().then(v => { if (live) setGradedVisits(v || []); }).catch(() => { if (live) setGradedVisits([]); });
     loadSavedCorrelations().then(c => { if (live) setSavedCorr(c || []); }).catch(() => { if (live) setSavedCorr([]); });
+    const period = new Date().toISOString().slice(0, 7);
+    loadEomCountExceptions({ period }).then(m => { if (live) setExceptions(m || {}); }).catch(() => { if (live) setExceptions({}); });
     return () => { live = false; };
   }, [ds]);
 
@@ -72,8 +75,9 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
     const salesLY = allLocs.map(loc => { const m = matchedVsLY(ds, [loc], dateRange); return { loc, cur: m.cur, ly: m.ly }; })
       .filter(r => r.ly > 0);
 
-    return buildAttentionFeed({ fobByStore, salesLY, ageDays, visitStores, savedCorrelations: savedCorr || [], storeName: nm, max: 20 });
-  }, [ds, allLocs, dateRange, visitStores, savedCorr]);
+    const countExceptionRows = Object.entries(exceptions || {}).map(([loc, e]) => ({ loc, acceptedDate: e.acceptedDate, approvedBy: e.approvedBy }));
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, storeName: nm, max: 20 });
+  }, [ds, allLocs, dateRange, visitStores, savedCorr, exceptions]);
 
   const counts = feed.reduce((a, i) => { a[i.severity] = (a[i.severity] || 0) + 1; return a; }, {});
   const go = (item) => {

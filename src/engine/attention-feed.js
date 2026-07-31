@@ -136,6 +136,49 @@ export function signalDecay(saved = [], { dropFrac = 0.35 } = {}) {
   return out;
 }
 
+// FOB over the store's OWN target (distinct from fobOutliers, which compares to the district). `dollars`
+// = FOB $ above target. `targetsByLoc` = DEFAULT_TARGETS keyed by loc (padded or unpadded).
+export function fobOverTarget(fobByStore = {}, targetsByLoc = {}, storeName = String, { minExcess = 500 } = {}) {
+  const out = [];
+  for (const [loc, v] of Object.entries(fobByStore)) {
+    if (!v || !(v.sales > 0) || v.fobPct == null) continue;
+    const tg = targetsByLoc[loc] || targetsByLoc[String(loc).replace(/^0+/, '')] || {};
+    const tgt = tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null;
+    if (tgt == null) continue;
+    const overPp = (v.fobPct - tgt) * 100;
+    const excess = (v.fobPct - tgt) * v.sales;
+    if (overPp > 0.05 && excess >= minExcess) out.push({
+      id: 'fobtgt-' + loc, severity: overPp > 0.5 ? 'warn' : 'info',
+      category: 'Food Cost', icon: '🎯',
+      title: `${storeName(loc)} — FOB over target`,
+      detail: `${(v.fobPct * 100).toFixed(2)}% vs ${(tgt * 100).toFixed(2)}% target (+${overPp.toFixed(2)}pp) · ~${money(excess)} over`,
+      dollars: excess, loc, nav: 'fob',
+    });
+  }
+  return out;
+}
+
+// Integrity — a granted early-count exception (awareness that a store's EOM count was off standard
+// process). `rows` = [{ loc, acceptedDate, approvedBy }].
+export function countExceptions(rows = [], storeName = String) {
+  return (rows || []).filter(Boolean).map(e => ({
+    id: 'exc-' + e.loc, severity: 'info', category: 'Integrity', icon: '📅',
+    title: `${storeName(e.loc)} — early-count exception granted`,
+    detail: `EOM count accepted from an early count${e.acceptedDate ? ` (${e.acceptedDate})` : ''}${e.approvedBy ? ` · ${e.approvedBy}` : ''} — off standard process, logged.`,
+    dollars: 0, loc: e.loc, nav: 'analytics',
+  }));
+}
+
+// Integrity — pass-through for pre-computed flags (e.g. implausible recount-swing batches from the
+// forensic scan / diagnosis). Each flag: { id?, loc, title, detail, dollars?, severity?, nav? }.
+export function integrityFlags(flags = [], storeName = String) {
+  return (flags || []).filter(Boolean).map(f => ({
+    id: f.id || ('intg-' + f.loc), severity: f.severity || 'warn', category: 'Integrity', icon: '🔍',
+    title: f.title || `${storeName(f.loc)} — integrity flag`,
+    detail: f.detail || '', dollars: f.dollars || 0, loc: f.loc, nav: f.nav || 'analytics',
+  }));
+}
+
 // Rank + cap. Severity desc, then |dollars| desc.
 export function rankAttention(items = [], { max = 15 } = {}) {
   return (items || []).filter(Boolean)
@@ -144,14 +187,17 @@ export function rankAttention(items = [], { max = 15 } = {}) {
 }
 
 // Convenience aggregator.
-export function buildAttentionFeed({ fobByStore, salesLY, dtRows, ageDays, visitStores, savedCorrelations, storeName = String, max = 15 } = {}) {
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, storeName = String, max = 15 } = {}) {
   const items = [
     ...staleData(ageDays),
     ...fobOutliers(fobByStore || {}, storeName),
+    ...fobOverTarget(fobByStore || {}, targetsByLoc || {}, storeName),
     ...salesBehindLY(salesLY || [], storeName),
     ...slowDT(dtRows || [], storeName),
     ...visitRisk(visitStores || [], storeName),
     ...signalDecay(savedCorrelations || []),
+    ...countExceptions(countExceptionRows || [], storeName),
+    ...integrityFlags(integrityItems || [], storeName),
   ];
   return rankAttention(items, { max });
 }

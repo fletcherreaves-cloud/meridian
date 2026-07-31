@@ -1,7 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
+
+describe('Integrity + over-target detectors', () => {
+  it('fobOverTarget flags a store above its OWN FOB target', () => {
+    const out = fobOverTarget(
+      { '43701': { fobPct: 0.052, fob$: 15000, sales: 288000 } },
+      { '43701': { tFOBTarget: 0.0485 } }, nm);
+    expect(out).toHaveLength(1);
+    expect(out[0].category).toBe('Food Cost');
+    expect(out[0].title).toMatch(/over target/);
+    expect(out[0].dollars).toBeGreaterThan(500);
+  });
+  it('countExceptions surfaces a granted early-count exception as Integrity', () => {
+    const out = countExceptions([{ loc: '37566', acceptedDate: '2026-07-28', approvedBy: 'Brad Denley' }], nm);
+    expect(out[0].category).toBe('Integrity');
+    expect(out[0].detail).toMatch(/2026-07-28/);
+    expect(out[0].detail).toMatch(/Brad Denley/);
+  });
+  it('integrityFlags passes through pre-computed flags (recount padding) into the feed', () => {
+    const out = integrityFlags([{ loc: '6838', title: 'Store6838 — implausible recount batch', detail: '8 corrections in 3 min', severity: 'crit', dollars: 7422 }], nm);
+    expect(out[0].category).toBe('Integrity');
+    expect(out[0].severity).toBe('crit');
+    expect(out[0].dollars).toBe(7422);
+  });
+});
 
 describe('fobOutliers', () => {
   it('flags stores whose FOB% runs above the dollar-weighted district rate', () => {
