@@ -158,6 +158,30 @@ describe('runDiagnosis — editable check registry', () => {
     expect(recap).not.toMatch(/Do these now/);
   });
 
+  it('recount-swing: flags a large same-day count-to-count swing crossing zero (Magali fry case)', () => {
+    const rawItems = [{ wrin: '00004-849', descr: 'Fries', counts: [
+      { dt: '2026-06-04', tm: '07:53', isCount: true, difference: -1780, manager: 'Magali G' },
+      { dt: '2026-06-04', tm: '09:11', isCount: true, difference: 222, manager: 'Magali G' },
+    ] }];
+    const res = runDiagnosis({ store: '29760', storeName: 'X', period: '2026-06', data: { rawItems } });
+    const f = res.findings.find(x => x.checkId === 'recount-swing');
+    expect(f).toBeTruthy();
+    expect(f.severityWord.toLowerCase()).toBe('high');       // crosses zero → high
+    expect(f.detail).toMatch(/crossing zero/);
+    expect(f.detail).toMatch(/THIRD count/);
+    expect(f.detail).toMatch(/both counts by Magali G/);     // same single counter
+  });
+
+  it('recount-swing: does not fire on a small swing or a single count', () => {
+    const small = [{ wrin: 'a', descr: 'X', counts: [
+      { dt: '2026-06-04', tm: '07:00', isCount: true, difference: -20 },
+      { dt: '2026-06-04', tm: '09:00', isCount: true, difference: -10 },
+    ] }];
+    expect(runDiagnosis({ store: 's', period: '2026-06', data: { rawItems: small } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
+    const single = [{ wrin: 'a', descr: 'X', counts: [{ dt: '2026-06-04', tm: '07:00', isCount: true, difference: -500 }] }];
+    expect(runDiagnosis({ store: 's', period: '2026-06', data: { rawItems: single } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
+  });
+
   it('Finish-the-count + Count-integrity frame Paper/Non-Product as NOT food-cost-consequential', () => {
     const incomplete = {
       uncountedCount: 2, byState: { never: { n: 2, value: 500 } },

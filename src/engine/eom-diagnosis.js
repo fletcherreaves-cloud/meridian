@@ -216,6 +216,48 @@ export const DEFAULT_CHECKS = [
     },
   },
   {
+    // Recount SWING (integrity, Notes 37 / CoachQ fry case store 29760): a same-day pair of counts on
+    // ONE item where the recorded variance swings by a large amount — the classic "counted 24, recounted
+    // 413" overshoot. Even with just 2 counts (below count-manipulation's >4/day threshold), a swing this
+    // big with no delivery between should trigger a THIRD count by a different manager before saving.
+    // Non-accusatory: we don't claim which count was wrong — we ask them to verify so the on-hand is clean.
+    id: 'recount-swing', label: 'Recount swing — large same-day count-to-count change (verify 3rd count)', order: 27, enabled: true,
+    requires: ['rawItems'], params: { minSwing: 150 },
+    run: (ctx) => {
+      const minSwing = ctx.params.minSwing ?? 150;
+      const out = [];
+      for (const d of (ctx.data.rawItems || [])) {
+        const counts = (d.counts || []).filter(c => c && c.dt && c.difference != null);
+        if (counts.length < 2) continue;
+        const byDay = {};
+        for (const c of counts) { const day = String(c.dt).slice(0, 10); (byDay[day] || (byDay[day] = [])).push(c); }
+        for (const day in byDay) {
+          const dc = byDay[day].slice().sort((a, b) => String(`${a.dt} ${a.tm || ''}`).localeCompare(`${b.dt} ${b.tm || ''}`));
+          if (dc.length < 2) continue;
+          // Largest consecutive swing in the recorded variance ($) across the day's counts.
+          let best = null;
+          for (let i = 1; i < dc.length; i++) {
+            const a = Number(dc[i - 1].difference) || 0, b = Number(dc[i].difference) || 0;
+            const swing = Math.abs(b - a);
+            if (!best || swing > best.swing) best = { swing, a, b, from: dc[i - 1], to: dc[i], crossZero: (a < 0) !== (b < 0) && a !== 0 && b !== 0 };
+          }
+          if (!best || best.swing < minSwing) continue;
+          const sev = (best.crossZero || best.swing >= minSwing * 3) ? SEVERITY.high : SEVERITY.medium;
+          const mgrs = [best.from.manager, best.to.manager].filter(Boolean);
+          const sameMgr = mgrs.length === 2 && mgrs[0] === mgrs[1];
+          out.push(mkFinding('recount-swing', sev,
+            `Recount swing: ${d.descr || d.wrin}`,
+            `On ${day} the recorded variance moved ${_mny(best.a)} → ${_mny(best.b)} between two counts (${_mny(best.swing)} swing${best.crossZero ? ', crossing zero' : ''})${mgrs.length ? (sameMgr ? `, both counts by ${mgrs[0]}` : ` (${best.from.manager || '?'} → ${best.to.manager || '?'})`) : ''}. A swing this large between counts — with no delivery in between — is exactly where a THIRD count by a different manager should be required before saving. Verify which count was right so the on-hand is clean.`,
+            best.swing, { wrin: d.wrin, day, swing: best.swing, crossZero: best.crossZero, sameMgr }));
+        }
+      }
+      // Pattern: the same single counter overshooting on 2+ items today is worth a direct conversation.
+      const sm = out.filter(f => f.data?.sameMgr);
+      if (sm.length >= 2) sm.forEach(f => { f.detail += ` PATTERN: the same single-counter recount-swing shows on ${sm.length} items today.`; });
+      return out;
+    },
+  },
+  {
     // Waste — per-manager $ share, edited entries, disproportionate contributors.
     id: 'waste-patterns', label: 'Waste — manager/pencil-whip patterns', order: 50, enabled: true,
     requires: ['waste'], params: { shareFlag: 0.4, minTotal: 100 },
@@ -549,7 +591,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // impossible balances, re-count churn). When one of these fires, the recap softens into a
 // non-accusatory "let's verify" note instead of the punchy default (owner: give the why, nicely).
 export const INTEGRITY_CHECK_IDS = new Set([
-  'count-manipulation', 'waste-inflation', 'waste-patterns', 'unrealistic-over',
+  'count-manipulation', 'recount-swing', 'waste-inflation', 'waste-patterns', 'unrealistic-over',
   'negative-onhand', 'negative-usage', 'uom-sanity',
 ]);
 
