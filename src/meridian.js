@@ -6,6 +6,7 @@ import './meridian.css';
 import { ErrorBoundary } from './features/session.js';
 import App from './app/App.js';
 import { AuthGate } from './components/AuthGate.js';
+import { EomShareView } from './views/eom-share-view.js';
 
 window._cdnError = function(name) {
   var msg = '<div style="padding:30px;font-family:monospace;background:#090e18;color:#e2e8f0;min-height:100vh">'
@@ -34,13 +35,14 @@ if ('serviceWorker' in navigator) {
 }
 
 try {
-  createRoot(document.getElementById('root')).render(
-    React.createElement(ErrorBoundary, null,
-      React.createElement(AuthGate, null,
-        React.createElement(App)
-      )
-    )
-  );
+  // Public, no-login EOM share route: ?share=<token> renders the read-only report ONLY — it never
+  // mounts AuthGate or the full app, so a shared link can't reach anything but its one snapshot.
+  const _shareToken = new URLSearchParams(location.search).get('share');
+  const _tree = _shareToken
+    ? React.createElement(ErrorBoundary, null, React.createElement(EomShareView, { token: _shareToken }))
+    : React.createElement(ErrorBoundary, null,
+        React.createElement(AuthGate, null, React.createElement(App)));
+  createRoot(document.getElementById('root')).render(_tree);
 } catch(e) {
   document.getElementById('root').innerHTML =
     `<div style="padding:40px;font-family:monospace;background:#090e18;color:#e2e8f0;min-height:100vh">

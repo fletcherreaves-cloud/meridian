@@ -15,6 +15,7 @@ import {
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
   saveEomSnapshots, loadEomSnapshots, saveEomSecondaryReview, loadEomSecondaryReview,
   saveEomCountException, deleteEomCountException, loadEomCountExceptions,
+  createEomShareLink,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
@@ -622,6 +623,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [copied, setCopied] = useState(false);
   const [draftText, setDraftText] = useState(false); // false = table view, true = raw text view
   const [draftFull, setDraftFull] = useState(false); // false = abbreviated recap, true = full report (text view)
+  const [shareMsg, setShareMsg] = useState('');      // transient result of "Share link" (URL copied / error)
   const [variance, setVariance] = useState([]);
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
@@ -1159,6 +1161,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     setDraft(computeDraft(loc, name, components));
   }, [computeDraft]);
 
+  // Create an opaque, scoped, read-only SHARE LINK for a store's EOM report (Phase 1 sandbox) — snapshots
+  // the recap + full report + FOB strip into the link, then copies the no-login URL to paste anywhere.
+  const createShare = useCallback(async (loc, name, components) => {
+    setShareMsg(`Creating link for ${name}…`);
+    try {
+      const result = buildDiagResult(loc, name, components);
+      const opts = diagOptsFor(loc, components);
+      const recapMd = formatDiagnosisReport(result, { ...opts, mode: 'recap' });
+      const fullMd = formatDiagnosisReport(result, { ...opts, mode: 'full' });
+      const { token, error } = await createEomShareLink({ loc, period, storeName: name, title: `EOM FOB ${period}`, fob: components || {}, recapMd, fullMd });
+      if (error || !token) { setShareMsg(`Share failed: ${error || 'no token'}`); return; }
+      const url = `${location.origin}${import.meta.env.BASE_URL || '/'}`.replace(/\/+$/, '/') + `?share=${token}`;
+      try { await navigator.clipboard.writeText(url); setShareMsg(`✓ Read-only link copied — ${name}`); }
+      catch { setShareMsg(`✓ Link (copy it): ${url}`); }
+    } catch (e) { setShareMsg(`Share failed: ${e?.message || e}`); }
+  }, [buildDiagResult, diagOptsFor, period]);
+
   // Generate a follow-up draft for EVERY store in scope — the ones that need a message first.
   const openBulk = useCallback(() => {
     const drafts = rows.map(r => ({ ...computeDraft(r.loc, r.name, r.components), commsSent: r.comms === 'sent' }));
@@ -1609,7 +1628,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   title: 'Draft a store message — recount gaps + the food-cost diagnosis action plan',
                   onClick: () => openDraft(r.loc, r.name, r.components),
                   style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: '5px', color: 'var(--text2)', cursor: 'pointer', fontSize: '12px', padding: '3px 7px' },
-                }, '✉️ Draft'))))))),
+                }, '✉️ Draft'),
+                h('button', {
+                  title: 'Create a read-only, no-login share link to this store\'s EOM report (scoped + expiring). Copies the URL.',
+                  onClick: () => createShare(r.loc, r.name, r.components),
+                  style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: '5px', color: 'var(--text2)', cursor: 'pointer', fontSize: '12px', padding: '3px 7px', marginLeft: '4px' },
+                }, '🔗 Share'))))))),
+    shareMsg ? div({ style: { position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '9px 14px', fontSize: '12.5px', color: shareMsg.startsWith('✓') ? '#4ade80' : shareMsg.startsWith('Share failed') ? '#f87171' : 'var(--text2)', boxShadow: '0 6px 20px rgba(0,0,0,.4)', maxWidth: '90vw' }, onClick: () => setShareMsg('') }, shareMsg) : null,
 
     // comms draft modal
     draft && div({

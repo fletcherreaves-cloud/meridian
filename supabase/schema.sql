@@ -1681,3 +1681,32 @@ create table if not exists public.eom_count_exceptions (
 alter table public.eom_count_exceptions enable row level security;
 create policy "eom_count_exceptions: public read"  on public.eom_count_exceptions for select using (true);
 create policy "eom_count_exceptions: public write" on public.eom_count_exceptions for all using (true);
+
+-- ── EOM share links (Phase 1 — opaque, scoped, read-only, no-login access) ───────────────────────
+-- A shareable link that shows ONE store's EOM report for ONE period, read-only. The recap/full report
+-- + FOB strip are SNAPSHOTTED into the row at creation (no live app behind the link). Public reads go
+-- through the eom-share edge function (service role) — NOT anon RLS — so a token only ever returns its
+-- own row. Scoped + expiring + revocable; acknowledge is the only write-back (view + reviewed tracking).
+create table if not exists public.eom_share_links (
+  token        uuid primary key default gen_random_uuid(),
+  loc          text not null,
+  period       text not null,
+  store_name   text,
+  title        text,
+  fob          jsonb,           -- the FOB-strip tiles
+  recap_md     text,            -- the abbreviated recap (markdown)
+  full_md      text,            -- the full report (markdown)
+  created_by   uuid,
+  created_at   timestamptz default now(),
+  expires_at   timestamptz,
+  revoked      boolean default false,
+  view_count   integer default 0,
+  last_viewed_at   timestamptz,
+  acknowledged_at  timestamptz,
+  acknowledged_note text
+);
+create index if not exists eom_share_links_loc_period_idx on public.eom_share_links (loc, period, created_at desc);
+alter table public.eom_share_links enable row level security;
+-- Only signed-in users manage links; anonymous/public access is ONLY via the eom-share edge function.
+create policy "eom_share_links: authenticated"  on public.eom_share_links for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

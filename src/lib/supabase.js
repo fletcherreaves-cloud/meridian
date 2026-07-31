@@ -2781,6 +2781,45 @@ export async function loadEomSecondaryReview({ period } = {}) {
   return m;
 }
 
+// ── EOM share links (Phase 1: opaque, scoped, read-only, no-login access) ──
+export async function createEomShareLink({ loc, period, storeName, title, fob, recapMd, fullMd, expiresDays = 14 } = {}) {
+  if (!supabase) return { error: 'no-db' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const expires_at = new Date(Date.now() + expiresDays * 86400000).toISOString();
+  const { data, error } = await supabase.from('eom_share_links').insert({
+    loc: String(loc), period: String(period), store_name: storeName ?? null, title: title ?? null,
+    fob: fob ?? null, recap_md: recapMd ?? null, full_md: fullMd ?? null, created_by: uid, expires_at,
+  }).select('token').single();
+  return { token: data?.token || null, error: error?.message || null };
+}
+export async function loadEomShareLinks({ period } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('eom_share_links').select('token,loc,period,store_name,created_at,expires_at,revoked,view_count,last_viewed_at,acknowledged_at').order('created_at', { ascending: false }).range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  return (data || []).map(r => ({ token: r.token, loc: r.loc, period: r.period, storeName: r.store_name, createdAt: r.created_at, expiresAt: r.expires_at, revoked: r.revoked, viewCount: r.view_count, lastViewedAt: r.last_viewed_at, acknowledgedAt: r.acknowledged_at }));
+}
+export async function revokeEomShareLink(token, revoked = true) {
+  if (!supabase || !token) return { error: 'no-op' };
+  const { error } = await supabase.from('eom_share_links').update({ revoked }).eq('token', token);
+  return { error: error?.message || null };
+}
+// Public reader — no auth; calls the eom-share edge function (the only public gateway to a link).
+async function callShareFn(payload) {
+  if (!URL || !KEY) return { error: 'no-db' };
+  try {
+    const res = await fetch(`${URL}/functions/v1/eom-share`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: `Bearer ${KEY}` },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (e) { return { error: String(e?.message || e) }; }
+}
+export async function fetchSharedEom(token) { return callShareFn({ token }); }
+export async function acknowledgeSharedEom(token, note) { return callShareFn({ token, action: 'acknowledge', note }); }
+
 // ── EOM count-date exceptions (accept an early count as the EOM count; logged + attributed) ──
 export async function saveEomCountException(row) {
   if (!supabase || !row?.loc) return { error: 'no-op' };
