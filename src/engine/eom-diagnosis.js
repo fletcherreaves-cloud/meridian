@@ -23,6 +23,7 @@
 //   purchases  — qsr_ebos_daily (verify posted / not pending)         ✅ have (status check TBD)
 import { normClass, diagnoseIncompleteCount, nonProductDueToday } from './eom-inventory.js';
 import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus } from './eom-parsers.js';
+import { eventTs, recountBatchTiming, recountTimingSentence } from './eom-recount-forensics.js';
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
@@ -250,12 +251,33 @@ export const DEFAULT_CHECKS = [
           out.push(mkFinding('recount-swing', sev,
             `Recount swing: ${d.descr || d.wrin}`,
             `On ${day} the recorded variance moved ${_mny(best.a)} → ${_mny(best.b)} between two counts (${_mny(best.swing)} swing${best.crossZero ? ', crossing zero' : ''})${mgrs.length ? (sameMgr ? `, both counts by ${mgrs[0]}` : ` (${best.from.manager || '?'} → ${best.to.manager || '?'})`) : ''}. A swing this large between counts — with no delivery in between — is exactly where a THIRD count by a different manager should be required before saving. Verify which count was right so the on-hand is clean.`,
-            best.swing, { wrin: d.wrin, day, swing: best.swing, crossZero: best.crossZero, sameMgr }));
+            best.swing, {
+              wrin: d.wrin, day, swing: best.swing, crossZero: best.crossZero, sameMgr,
+              manager: sameMgr ? mgrs[0] : null,
+              origTs: eventTs(best.from.dt, best.from.tm), corrTs: eventTs(best.to.dt, best.to.tm),
+            }));
         }
       }
-      // Pattern: the same single counter overshooting on 2+ items today is worth a direct conversation.
+      // Pattern + TIMING forensics (owner 2026-07-31): the same single counter offsetting many items on
+      // one day is where padding hides. A genuine recount takes physical time to walk + recount each
+      // item; if the offsetting corrections landed in a window too short for that, the "recount" didn't
+      // happen. Group the same-manager offsetting swings per day and test the batch timing.
       const sm = out.filter(f => f.data?.sameMgr);
       if (sm.length >= 2) sm.forEach(f => { f.detail += ` PATTERN: the same single-counter recount-swing shows on ${sm.length} items today.`; });
+      const byMgrDay = {};
+      for (const f of sm) {
+        const k = `${f.data.manager || '?'}|${f.data.day}`;
+        (byMgrDay[k] || (byMgrDay[k] = [])).push(f);
+      }
+      for (const k of Object.keys(byMgrDay)) {
+        const batch = byMgrDay[k].filter(f => f.data.crossZero);   // offsetting swings only
+        if (batch.length < 3) continue;
+        const timing = recountBatchTiming(batch.map(f => ({ wrin: f.data.wrin, origTs: f.data.origTs, corrTs: f.data.corrTs })));
+        if (timing.verdict === 'implausible') {
+          const sentence = ' ' + recountTimingSentence(timing);
+          byMgrDay[k].forEach(f => { f.detail += sentence; f.severity = Math.max(f.severity, SEVERITY.high); f.severityWord = sevWord(f.severity); if (f.data) f.data.timing = timing; });
+        }
+      }
       return out;
     },
   },

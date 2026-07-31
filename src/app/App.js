@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.701';
+const MERIDIAN_VERSION    = '4.702';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.702', date:'2026-07-31', changes:[
+    'Recount-swing TIMING forensics (padding detection): a recount swing is healthy when genuine, but when a store is actually short product and the loss is negated by offsetting "corrections," the tell is TIME — you can\'t physically walk the building and recount N scattered items in seconds. The recount-swing check now groups the same-manager offsetting swings per day and tests whether enough time elapsed to have recounted them (floor: ~2 min/item, so ~29 min for 14 items — owner\'s standard). If the corrections landed in a window too short, the batch escalates to HIGH with a non-accusatory note ("the N corrections landed within X min — recounting N items needs ≥ Y min — walk me through these before accepting the count"). Never false-flags a spread-out or gap-then-batch (pen-and-paper) recount. Engine eom-recount-forensics.js + district scan scripts/recount-forensics-scan.mjs.',
+  ]},
   {version:'4.701', date:'2026-07-31', changes:[
     'Share links are now LIVE, not frozen: a shared EOM report opens on the as-sent snapshot instantly, then re-pulls the freshest synced data and rebuilds itself — with a 🔄 Refresh button and a "synced through / refreshed at" line. So after a GM corrects counts, they (or anyone with the link) can hit Refresh and watch FOB + the uncounted list update, no re-send. The report is rebuilt client-side with the SAME engine the dashboard uses (new shared builder eom-report-build.js); the eom-share edge function serves live rows strictly scoped to that one store+period; the frozen snapshot remains a safe fallback. Corrections appear after the next sync (noted on the page).',
   ]},
