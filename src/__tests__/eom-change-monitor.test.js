@@ -43,6 +43,22 @@ describe('diffSnapshot', () => {
     expect(d.fob.verdict).toBe('flat');
   });
 
+  it('labels an empty-baseline store as count-landing (verdict "counted"), not hurting (owner Notes 38 var-0)', () => {
+    const emptyBase = { loc: '38609', fob: { fobPct: 0.0282 }, count: { earlyPctCounted: 1 }, items:
+      ['Ice Cream', 'Sprite', 'Nuggets', '100% Beef', 'Bacon', 'Coke'].map((d, i) => ({ wrin: 'w' + i, descr: d, cls: 'food', qty: 0, dolDiff: 0, variance: 0 })) };
+    const current = { loc: '38609', fob: { fobPct: 0.0298 }, count: { earlyPctCounted: 1 }, items:
+      ['Ice Cream', 'Sprite', 'Nuggets', '100% Beef', 'Bacon', 'Coke'].map((d, i) => ({ wrin: 'w' + i, descr: d, cls: 'food', qty: 20, dolDiff: [-622, -427, -411, -329, -255, -144][i], variance: [-120, -80, -60, -50, -40, -20][i] })) };
+    const d = diffSnapshot(emptyBase, current);
+    expect(d.items.every(i => i.verdict !== 'hurting')).toBe(true);   // NOT scored as moves-that-hurt
+    expect(d.nCounted).toBeGreaterThanOrEqual(5);
+    expect(d.nHurt).toBe(0);
+    expect(d.baselineIncomplete).toBe(true);
+    // Qty variance base→now carried through.
+    const ice = d.items.find(i => i.descr === 'Ice Cream');
+    expect(ice.baseQtyVar).toBe(0);
+    expect(ice.curQtyVar).toBe(-120);
+  });
+
   it('marks brand-new and disappeared items', () => {
     const current = { ...baseline, items: [
       ...baseline.items.slice(1),

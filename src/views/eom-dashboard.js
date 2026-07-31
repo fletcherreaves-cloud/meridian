@@ -1945,8 +1945,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
     // ── Change Monitor modal — day-2 diff of live state vs the locked baseline ──────
     monOpen && (() => {
-      const V = { helping: '#4ade80', hurting: '#f87171', flat: 'var(--text3)', unknown: 'var(--text3)', tie: 'var(--text3)' };
-      const VLABEL = { helping: 'helping', hurting: 'hurting', flat: 'flat', unknown: '—' };
+      const V = { helping: '#4ade80', hurting: '#f87171', flat: 'var(--text3)', unknown: 'var(--text3)', tie: 'var(--text3)', counted: '#38bdf8' };
+      const VLABEL = { helping: 'helping', hurting: 'hurting', flat: 'flat', unknown: '—', counted: 'count landed' };
       const box = { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '7px', padding: '7px 10px', display: 'flex', flexDirection: 'column', gap: '1px', minWidth: '96px' };
       const lab = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 };
       const th = (t, extra) => h('th', { key: t, style: { textAlign: extra?.left ? 'left' : 'right', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, t);
@@ -1986,7 +1986,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
                 h('thead', { key: 'h' }, h('tr', null,
                   th('Store', { left: true }), th('FOB base→now'), th('Δ'), th('Verdict'),
-                  th('Count'), th('Helped'), th('Hurt'), th('2nd review'))),
+                  th('Count'), th('Helped'), th('Hurt'), th('Recounted'), th('2nd review'))),
                 h('tbody', { key: 'b' }, stores.flatMap((s) => {
                   const loc = s.loc; const open = !!monOpenRows[loc];
                   const sr = secReview[unpad(loc)] || secReview[String(loc)] || {};
@@ -1994,13 +1994,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                     h('tr', { key: loc, onClick: () => setMonOpenRows(m => ({ ...m, [loc]: !m[loc] })),
                       style: { cursor: 'pointer', borderBottom: '1px solid var(--bdr)', background: open ? 'var(--surf2)' : 'transparent' } },
                       h('td', { style: { padding: '5px 7px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } },
-                        span({ style: { color: 'var(--text3)', marginRight: '5px' } }, open ? '▾' : '▸'), nm(loc), span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ` #${unpad(loc)}`)),
+                        span({ style: { color: 'var(--text3)', marginRight: '5px' } }, open ? '▾' : '▸'), nm(loc), span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ` #${unpad(loc)}`),
+                        s.baselineIncomplete ? span({ title: 'Most items had ~$0 variance at lock — this store hadn\'t entered its count when the baseline was captured. The diff below shows their count LANDING, not moves that helped or hurt.', style: { marginLeft: '6px', fontSize: '8.5px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 4px', cursor: 'help' } }, 'baseline pre-count') : null),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: 'var(--text2)' } }, `${pct2(s.fob.baseFobPct)} → ${pct2(s.fob.curFobPct)}`),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[s.fob.verdict] } }, dpp(s.fob.dFobPct)),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontWeight: 700, color: V[s.fob.verdict] } }, VLABEL[s.fob.verdict]),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, s.count.basePct != null && s.count.curPct != null ? `${Math.round(s.count.basePct * 100)}→${Math.round(s.count.curPct * 100)}%` : '—'),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHelped ? '#4ade80' : 'var(--text3)', fontWeight: s.nHelped ? 700 : 400 } }, s.nHelped || ''),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHurt ? '#f87171' : 'var(--text3)', fontWeight: s.nHurt ? 700 : 400 } }, s.nHurt || ''),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nRecounted ? '#f5bc00' : 'var(--text3)', fontWeight: s.nRecounted ? 700 : 400 } }, s.nRecounted ? `↻ ${s.nRecounted}` : ''),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', whiteSpace: 'nowrap' }, onClick: e => e.stopPropagation() },
                         h('button', { onClick: () => markSecondary(loc, sr.status === 'reviewed' ? 'pending' : 'reviewed'),
                           style: { fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 7px', cursor: 'pointer', border: '1px solid', ...(sr.status === 'reviewed' ? { color: '#4ade80', borderColor: '#4ade80', background: 'transparent' } : sr.status === 'flagged' ? { color: '#f87171', borderColor: '#f87171', background: 'transparent' } : { color: 'var(--text3)', borderColor: 'var(--bdr2)', background: 'var(--surf3)' }) } },
@@ -2010,15 +2012,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   ];
                   if (open) {
                     const its = s.items.slice(0, 40);
-                    rowEls.push(h('tr', { key: loc + '-d' }, h('td', { colSpan: 8, style: { padding: '2px 7px 10px 24px', background: 'var(--surf2)' } },
+                    const qv = v => v == null ? '—' : (Math.round(v * 10) / 10).toLocaleString();
+                    rowEls.push(h('tr', { key: loc + '-d' }, h('td', { colSpan: 9, style: { padding: '2px 7px 10px 24px', background: 'var(--surf2)' } },
                       s.items.length === 0 ? div({ style: { color: 'var(--text3)', fontSize: '11px', padding: '6px 0' } }, 'No item-level changes since baseline.')
                       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
-                        h('thead', { key: 'ih' }, h('tr', null, th('Item', { left: true }), th('Class', { left: true }), th('Var base→now'), th('Δ'), th('Move'), th('Recounted'))),
+                        h('thead', { key: 'ih' }, h('tr', null, th('Item', { left: true }), th('Class', { left: true }), th('$ Var base→now'), th('Δ$'), th('Qty var base→now'), th('Move'), th('Recounted'))),
                         h('tbody', { key: 'ib' }, its.map((it, j) => h('tr', { key: j, style: { borderBottom: '1px solid var(--bdr)' } },
                           h('td', { style: { padding: '3px 7px', color: 'var(--text2)' } }, it.descr || it.wrin, it.isNew ? span({ style: { color: '#38bdf8', fontSize: '9px', marginLeft: '4px' } }, 'NEW') : it.isGone ? span({ style: { color: 'var(--text3)', fontSize: '9px', marginLeft: '4px' } }, 'GONE') : null),
                           h('td', { style: { padding: '3px 7px', color: 'var(--text3)', textTransform: 'capitalize' } }, it.cls || '—'),
                           h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, `${it.baseVar != null ? money(it.baseVar) : '—'} → ${it.curVar != null ? money(it.curVar) : '—'}`),
                           h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[it.verdict] } }, it.dVar != null ? `${it.dVar > 0 ? '+' : ''}${money(it.dVar)}` : '—'),
+                          h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, `${qv(it.baseQtyVar)} → ${qv(it.curQtyVar)}`),
                           h('td', { style: { padding: '3px 7px', textAlign: 'right', fontWeight: 700, color: V[it.verdict] } }, VLABEL[it.verdict]),
                           h('td', { style: { padding: '3px 7px', textAlign: 'center', color: it.recounted ? '#f5bc00' : 'var(--text3)' } }, it.recounted ? '↻' : ''))))]),
                       s.items.length > 40 ? div({ style: { color: 'var(--text3)', fontSize: '10px', paddingTop: '4px' } }, `+${s.items.length - 40} more changed items`) : null)));

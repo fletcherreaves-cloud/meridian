@@ -14,9 +14,14 @@ const num = v => Number(v) || 0;
 const COMP = ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'];
 
 // Judge a variance move: helping = |current| smaller than |baseline| (toward zero); hurting = larger.
+// 'counted' = the baseline was ~empty for this item (the store hadn't entered its count when the
+// baseline locked) but now it carries a real value → the COUNT LANDED, not a move that helped or hurt.
+// A near-zero item-by-item variance almost never reflects a real count (owner Notes 38: Tishomingo all
+// zeroes) — it means "uncounted at lock", so we label it neutrally instead of scoring it as hurting.
 function verdict(baseVar, curVar, tol = 1) {
   if (baseVar == null || curVar == null) return 'unknown';
   const b = Math.abs(baseVar), c = Math.abs(curVar);
+  if (b < tol && c >= tol) return 'counted';   // empty baseline → first real count appeared
   if (c < b - tol) return 'helping';
   if (c > b + tol) return 'hurting';
   return 'flat';
@@ -40,9 +45,12 @@ export function diffSnapshot(baseline = {}, current = {}, { itemTol = 1 } = {}) 
     const recounted = !!(b && c && String(b.lastCounted || '') !== String(c.lastCounted || ''));
     const changed = (dVar != null && Math.abs(dVar) >= itemTol) || (b?.qty !== c?.qty) || recounted || !b || !c;
     if (!changed) continue;
+    // Qty (unit) variance base→now too (owner Notes 38 — helps see what they physically found).
+    const bq = b ? num(b.variance) : null, cq = c ? num(c.variance) : null;
     items.push({
       wrin: w, descr: (c || b).descr, cls: (c || b).cls,
       baseVar: bv, curVar: cv, dVar, verdict: verdict(bv, cv, itemTol),
+      baseQtyVar: bq, curQtyVar: cq, dQtyVar: (b && c) ? cq - bq : null,
       baseQty: b ? num(b.qty) : null, curQty: c ? num(c.qty) : null,
       baseCounted: b?.lastCounted ?? null, curCounted: c?.lastCounted ?? null, recounted,
       isNew: !b, isGone: !c,
@@ -52,15 +60,23 @@ export function diffSnapshot(baseline = {}, current = {}, { itemTol = 1 } = {}) 
   items.sort((a, b2) => (Math.abs(b2.dVar || 0) - Math.abs(a.dVar || 0)));
   const helped = items.filter(i => i.verdict === 'helping');
   const hurt = items.filter(i => i.verdict === 'hurting');
+  const counted = items.filter(i => i.verdict === 'counted');   // first-count-landing (empty baseline)
+  const nRecounted = items.filter(i => i.recounted).length;
+  // Baseline looks INCOMPLETE (store hadn't entered its count at lock) if most items with a real
+  // current variance had a ~zero baseline. Then the diff shows the count landing, not moves — so
+  // helping/hurting is meaningless for this store and the UI should say so (owner Notes 38 var-0).
+  const withCur = items.filter(i => i.curVar != null && Math.abs(i.curVar) >= itemTol);
+  const baselineIncomplete = withCur.length >= 5 && (counted.length / withCur.length) >= 0.6;
   return {
     loc: baseline.loc || current.loc,
     fob: { baseFobPct: bf.fobPct ?? null, curFobPct: cf.fobPct ?? null, dFobPct, baseFob: bf.fob ?? null, curFob: cf.fob ?? null, dFobD, verdict: fobVerdict },
     compDelta,
     count: { basePct: (baseline.count || {}).earlyPctCounted ?? null, curPct: (current.count || {}).earlyPctCounted ?? null },
     items,
-    nHelped: helped.length, nHurt: hurt.length,
+    nHelped: helped.length, nHurt: hurt.length, nCounted: counted.length, nRecounted, baselineIncomplete,
     helpedDol: helped.reduce((s, i) => s + Math.max(0, Math.abs(i.baseVar || 0) - Math.abs(i.curVar || 0)), 0),
     hurtDol: hurt.reduce((s, i) => s + Math.max(0, Math.abs(i.curVar || 0) - Math.abs(i.baseVar || 0)), 0),
+    newlyCountedDol: counted.reduce((s, i) => s + Math.abs(i.curVar || 0), 0),
     anyActivity: items.length > 0,
   };
 }
