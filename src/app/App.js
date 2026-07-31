@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.707';
+const MERIDIAN_VERSION    = '4.708';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.708', date:'2026-07-31', changes:[
+    'Renamed the EOM Dashboard → "Inventory Control" (nav + panel header). It long outgrew "EOM": it now spans counts across cadences, food-cost/FOB diagnosis, integrity forensics, waste, and shareable reports. Internal id unchanged, so nothing else is affected. Weekly/daily count monitoring plugs in here next.',
+  ]},
   {version:'4.707', date:'2026-07-31', changes:[
     'Historical logging (longitudinal spine): the nightly cron now writes an eom_count_status_history row per store/period — % counted, on-time vs late timing, count duration, the COUNTER NAMES (primary + all), granted exceptions (+ who approved), integrity-flag counts + who they attribute to, and the FOB result. eom_integrity_flags also gains a person column. Backbone for recurring-pattern detection, manager accountability, and SAGE trend queries. Run the new SQL block to activate.',
     'EOM Summary header now reads "6 Locations with uncounted Food/Condiment (9 Items Total)" — location count plus the item total, on screen and in print (owner QW).',

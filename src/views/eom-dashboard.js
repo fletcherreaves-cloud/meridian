@@ -1413,7 +1413,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     // header
     div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' } },
       div(null,
-        h('h2', { style: { margin: 0, fontSize: '20px', color: 'var(--text)' } }, '📦 EOM Dashboard'),
+        h('h2', { style: { margin: 0, fontSize: '20px', color: 'var(--text)' } }, '📦 Inventory Control'),
         span({ style: { fontSize: '12px', color: 'var(--text3)' } },
           mode === 'eom'
             ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
