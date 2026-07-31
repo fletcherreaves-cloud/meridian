@@ -60,21 +60,29 @@ async function main() {
     // ── SSO into the KB. Hitting the zendesk host initiates SSO (v3/zdlogin bounce → the custom domain
     // support.qsrsoft.com/hc). That bounce is FLAKY, so retry navigating to the help center until the
     // URL actually settles on a /hc/ page that isn't the zdlogin interstitial. `settled` = we're there.
-    const SUPPORT = 'https://support.qsrsoft.com';
-    const settled = () => { const u = page.url(); return /\/hc\//.test(u) && !/zdlogin/i.test(u); };
+    const settled = () => { const u = page.url(); return /support\.qsrsoft\.com\/hc\//.test(u); };
+    const landed = u => /support\.qsrsoft\.com\/(hc|access)/.test(String(u));
     console.log('[kb] initiating KB SSO…');
-    await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
-    await page.waitForURL(u => /\/hc\//.test(String(u)) && !/zdlogin/i.test(String(u)), { timeout: 25000 }).catch(() => {});
-    let base = null;
-    for (let attempt = 1; attempt <= 6; attempt++) {
-      if (settled()) { base = new URL(page.url()).origin; break; }
-      console.log(`[kb] SSO attempt ${attempt}: at ${page.url()} — re-navigating to the help center…`);
-      await page.goto(`${SUPPORT}/hc/${LOCALE}`, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 2500));
+    // ONE navigation, then a long single wait — the zdlogin JWT page bounces itself to the KB; re-
+    // navigating just resets it to a fresh zdlogin (the flaky-loop lesson).
+    await page.goto(`https://${KB_HOST}/hc/${LOCALE}`, { waitUntil: 'load', timeout: 45000 }).catch(() => {});
+    await page.waitForURL(landed, { timeout: 40000 }).catch(() => {});
+    let base = settled() ? new URL(page.url()).origin : null;
+    if (!base) {
+      // Diagnose the zdlogin interstitial + try submitting its SSO form (JWT flows often POST a form).
+      const diag = await page.evaluate(() => ({
+        title: document.title, text: (document.body?.innerText || '').slice(0, 800),
+        forms: [...document.forms].map(f => ({ action: f.action, method: f.method, inputs: [...f.elements].map(e => e.name).filter(Boolean) })),
+        metaRefresh: (document.querySelector('meta[http-equiv="refresh" i]') || {}).getAttribute?.('content') || null,
+      })).catch(() => null);
+      console.log('[kb] zdlogin diagnostics:', JSON.stringify(diag).slice(0, 1400));
+      const submitted = await page.evaluate(() => { const f = document.forms[0]; if (f) { f.submit(); return true; } return false; }).catch(() => false);
+      if (submitted) { console.log('[kb] submitted zdlogin form; waiting for KB…'); await page.waitForURL(landed, { timeout: 25000 }).catch(() => {}); base = settled() ? new URL(page.url()).origin : null; }
     }
     await snap('kb-01-helpcenter.png');
     console.log('[kb] KB landing url:', page.url(), '| origin:', base);
-    if (!base) { console.error('[kb] SSO never settled on the help center (stuck at zdlogin?) — check kb-01.'); process.exitCode = 1; return; }
+    if (!base) { console.error('[kb] SSO never settled on the help center — see zdlogin diagnostics + kb-01.'); process.exitCode = 1; return; }
+    if (!settled()) { await page.goto(`https://support.qsrsoft.com/hc/${LOCALE}`, { waitUntil: 'load', timeout: 30000 }).catch(() => {}); await page.waitForURL(settled, { timeout: 20000 }).catch(() => {}); base = settled() ? new URL(page.url()).origin : base; }
 
     // ── Crawl the RENDERED help center (Zendesk server-renders article bodies into the page HTML; the
     // end-user JSON API 401s on this restricted custom-domain HC). BFS from the home page over
