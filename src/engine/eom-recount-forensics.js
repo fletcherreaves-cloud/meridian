@@ -25,11 +25,18 @@ export function tmMin(tm) {
   if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0;
   return h * 60 + mm;
 }
-// Full ms timestamp from a count event's date + time-of-day (null if the date won't parse).
+// Full ms timestamp from a count event's date + time-of-day (null if the date won't parse). Handles
+// BOTH "YYYY-MM-DD" and the "MM/DD/YYYY" the raw item report actually stores — parse the date, rebuild
+// its local midnight, then add the time-of-day. (Deltas within a batch are what matter, so tz is moot.)
 export function eventTs(dt, tm) {
-  const base = Date.parse(String(dt || '').slice(0, 10) + 'T00:00:00');
-  if (Number.isNaN(base)) return null;
-  return base + tmMin(tm) * 60000;
+  if (!dt) return null;
+  const s = String(dt).slice(0, 10);
+  let y, mo, d;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);           // YYYY-MM-DD
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else { m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) { mo = +m[1]; d = +m[2]; y = +m[3]; } }   // MM/DD/YYYY
+  if (!y) return null;
+  return new Date(y, mo - 1, d).getTime() + tmMin(tm) * 60000;   // local midnight + time-of-day
 }
 
 // Physical-recount floor: the minimum time to accurately recount N items across the store. Owner's
@@ -53,6 +60,9 @@ export function recountBatchTiming(swings, opts = {}) {
   // least the span of the corrections themselves (handles interleaved same-day recounting). Generous.
   const windowSec = Math.max(corrEnd - origEnd, corrEnd - corrStart) / 1000;
   const requiredSec = travelBaseSec + n * perItemSec;
+  // No usable time signal (counts carried no time-of-day → every stamp collapses to the same instant):
+  // we CANNOT judge timing. Abstain honestly rather than false-flag a data gap as padding.
+  if (windowSec <= 0) return { n, plausible: true, verdict: 'no-times', windowSec: 0, requiredSec, cadenceSec: null, shortfallSec: 0 };
   const cadenceSec = n > 1 ? (corrEnd - corrStart) / 1000 / (n - 1) : null;   // avg gap between correction entries
   const plausible = windowSec >= requiredSec;
   return {

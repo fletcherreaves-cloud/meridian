@@ -80,7 +80,7 @@ async function main() {
       if (batch.length < 3) continue;
       const t = recountBatchTiming(batch);
       const [mgr, day] = k.split('|');
-      const rec = { loc, mgr, day, verdict: t.verdict, n: t.n, windowSec: t.windowSec, requiredSec: t.requiredSec, cadenceSec: t.cadenceSec, totalSwing: Math.round(batch.reduce((s, x) => s + x.swing, 0)), hasTimes: batch.every(x => Number.isFinite(x.corrTs) && (x.corrTs % 86400000) !== 0) };
+      const rec = { loc, mgr, day, verdict: t.verdict, n: t.n || batch.length, windowSec: t.windowSec, requiredSec: t.requiredSec, cadenceSec: t.cadenceSec, totalSwing: Math.round(batch.reduce((s, x) => s + x.swing, 0)), hasTimes: t.verdict !== 'no-times' && t.verdict !== 'insufficient' };
       tested.push(rec);
       if (t.verdict === 'implausible') flagged.push(rec);
     }
