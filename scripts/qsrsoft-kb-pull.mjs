@@ -99,12 +99,22 @@ async function main() {
 
     const seen = new Set(), queue = [`${base}/hc/${LOCALE}`], articleUrls = new Set();
     let guard = 0, first = true;
+    const LINK_SEL = 'a[href*="/categories/"], a[href*="/sections/"], a[href*="/articles/"]';
     while (queue.length && guard++ < 500) {
       const u = queue.shift();
       if (seen.has(u) || /\/articles\//.test(u)) continue;
       seen.add(u);
       await page.goto(u, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
-      const { hc, total, sampleHc } = await linksOn();
+      // The Copenhagen theme renders category/article links via JS — wait for them (the render-flake fix).
+      await page.waitForSelector(LINK_SEL, { timeout: 8000 }).catch(() => {});
+      let { hc, total, sampleHc } = await linksOn();
+      // First listing page empty → one reload+wait retry (SSO/render timing).
+      if (first && hc.length === 0) {
+        await page.reload({ waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+        await page.waitForSelector(LINK_SEL, { timeout: 12000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 1500));
+        ({ hc, total, sampleHc } = await linksOn());
+      }
       if (first) { console.log(`[kb] home: ${total} total links, ${hc.length} cat/sec/article; sample /hc/ hrefs:`, JSON.stringify(sampleHc)); first = false; }
       for (const l of hc) {
         if (/\/articles\//.test(l)) articleUrls.add(l);
