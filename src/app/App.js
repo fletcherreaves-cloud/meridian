@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.698';
+const MERIDIAN_VERSION    = '4.699';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.699', date:'2026-07-31', changes:[
+    'EOM dashboard now dates each store by when it ACTUALLY counted, not a stray last-touch or the close date. New prog.fullCountDate = the day the bulk of items were counted (the mode); the row shows the approved early-count date (exception) if one was granted, else the bulk-count day. Fixes Ponce de Leon reading "7/31" when the real count was 07/28.',
+  ]},
   {version:'4.698', date:'2026-07-31', changes:[
     'EOM diagnosis no longer declares "clean sweep" while a store is OVER its FOB target. Root cause: the Top-5 only inspected item-level Food/Condiment variance, but a FOB overage often lives in the COMPONENTS (raw waste, stat variance, condiments). Now: (1) the FOB headline names the drivers — "Driving the +0.27pp overage: Raw Waste +0.16pp ($1,842) · Stat Variance +0.09pp ($3,313)"; (2) those component levers are folded into the SAME Top-5 ranking (compete by dollars-over-target) so an over-target store always surfaces real actions — "Cut Raw Waste", "Investigate Stat Variance", "Tighten Condiments"; (3) the "🏆 clean sweep" celebration only fires when FOB is genuinely at/under target. Factored the report pipeline into one shared builder (eom-report-build.js) so the dashboard + shared link stay identical.',
   ]},

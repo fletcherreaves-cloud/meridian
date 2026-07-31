@@ -162,6 +162,15 @@ const daysAgo = (dt) => {
   return Math.max(0, Math.floor((Date.now() - t) / 86400000));
 };
 
+// The date to attribute a store's count to: the APPROVED early-count date (exception) wins, else the
+// bulk-count day (mode, prog.fullCountDate), else the latest activity. Keeps the dashboard honest about
+// WHEN a store actually counted — not a stray last-touch or the close date (owner: PDL counted 07/28).
+const preferredCountDate = (r) => {
+  const iso = (r && r.exception && r.exception.acceptedDate) || (r && r.prog && r.prog.fullCountDate) || null;
+  if (iso) return new Date(iso + 'T00:00:00');
+  return (r && r.prog && r.prog.lastActivityAt) ? new Date(r.prog.lastActivityAt) : null;
+};
+
 function recentPeriods(n = 4) {
   const out = [];
   const now = new Date();
@@ -1606,7 +1615,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   span({ style: { fontWeight: 700, color: 'var(--text)' } }, r.name),
                   span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '6px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(r.loc)}`),
                   span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '6px' } }, r.org === 'emerald' ? 'FL' : 'OK'),
-                  r.prog.lastActivityAt ? span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '8px' } }, 'last count ' + new Date(r.prog.lastActivityAt).toLocaleDateString()) : null),
+                  (() => { const cd = preferredCountDate(r); return cd ? span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '8px' } }, 'counted ' + cd.toLocaleDateString()) : null; })()),
                 div({ style: { flex: '1 1 160px', minWidth: '140px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
                 span({ style: { fontSize: '11px', fontWeight: 700, color: p.c, background: p.bg, borderRadius: '12px', padding: '3px 10px', whiteSpace: 'nowrap' } }, p.t),
                 div({ style: { display: 'flex', gap: '6px' } },
@@ -1638,9 +1647,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
             h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass, npDueToday: r.prog.nonProductDueToday })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
-              r.prog.lastActivityAt ? new Date(r.prog.lastActivityAt).toLocaleDateString() : '—',
-              mode === 'progress' && r.prog.lastActivityAt && (() => {
-                const a = daysAgo(r.prog.lastActivityAt);
+              (() => { const cd = preferredCountDate(r); return cd ? cd.toLocaleDateString() : '—'; })(),
+              mode === 'progress' && (() => {
+                const cd = preferredCountDate(r); if (!cd) return null;
+                const a = daysAgo(cd.getTime());
                 return a == null ? null : span({ style: { fontSize: '10px', color: a > 40 ? '#f87171' : 'var(--text3)', marginLeft: '5px' } }, a === 0 ? 'today' : `${a}d ago`);
               })()),
             (() => {

@@ -158,6 +158,7 @@ export function computeCountProgress(onHandRows, { period, asOf, acceptEarly = f
   const ensure = k => (byClass[k] || (byClass[k] = { total: 0, counted: 0, pct: 0, done: false }));
 
   let itemsTotal = 0, itemsCounted = 0, lastActivityAt = null;
+  const dayTally = {};   // YYYY-MM-DD → count of items counted that day (to find the bulk-count day)
   for (const r of rows) {
     const k = normClass(r.cls);
     const bucket = ensure(k);
@@ -166,7 +167,15 @@ export function computeCountProgress(onHandRows, { period, asOf, acceptEarly = f
       bucket.counted++; itemsCounted++;
       const d = countedDate(r);
       if (d && (!lastActivityAt || d > lastActivityAt)) lastActivityAt = d;
+      if (d) { const key = d.toISOString().slice(0, 10); dayTally[key] = (dayTally[key] || 0) + 1; }
     }
+  }
+  // The "perceived full count" date = the day the BULK of items were counted (the mode), NOT the latest
+  // stray touch (owner: PDL counted 07/28 but a lone 07/31 activity made lastActivityAt read 07/31). Ties
+  // break to the later day. This is the date the dashboard should attribute the count to.
+  let fullCountDate = null, fullCountN = -1;
+  for (const day of Object.keys(dayTally)) {
+    if (dayTally[day] > fullCountN || (dayTally[day] === fullCountN && day > fullCountDate)) { fullCountN = dayTally[day]; fullCountDate = day; }
   }
   for (const k of Object.keys(byClass)) {
     const b = byClass[k];
@@ -215,6 +224,7 @@ export function computeCountProgress(onHandRows, { period, asOf, acceptEarly = f
     earlyDone,
     lateDone,
     lastActivityAt,
+    fullCountDate,     // the bulk-count day (mode) — the date to attribute the count to on the dashboard
     // "Believes done": TODAY's target (Food+Condiment+Paper) high enough that the store is finished
     // for today. Non-Product isn't due until tomorrow, so it must NOT hold a store below "done"
     // (owner 2026-07-30). Falls back to all-class % only if there are no early-class items.
