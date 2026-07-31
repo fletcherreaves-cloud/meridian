@@ -91,18 +91,22 @@ async function main() {
     // ── Crawl the RENDERED help center (Zendesk server-renders article bodies into the page HTML; the
     // end-user JSON API 401s on this restricted custom-domain HC). BFS from the home page over
     // categories → sections → article pages, collecting article URLs, then read each article's body. ──
-    const linksOn = () => page.evaluate((b) => [...document.querySelectorAll('a[href]')]
-      .map(a => a.href).filter(h => h.startsWith(b) && /\/hc\/[^/]+\/(categories|sections|articles)\//.test(h))
-      .map(h => h.split('#')[0].split('?')[0]), base).catch(() => []);
+    const linksOn = () => page.evaluate((b) => {
+      const all = [...document.querySelectorAll('a[href]')].map(a => a.href);
+      const hc = [...new Set(all.filter(h => h.startsWith(b) && /\/hc\/[^/]+\/(categories|sections|articles)\//.test(h)).map(h => h.split('#')[0].split('?')[0]))];
+      return { hc, total: all.length, sampleHc: [...new Set(all.filter(h => /\/hc\//.test(h)))].slice(0, 15) };
+    }, base).catch(() => ({ hc: [], total: 0, sampleHc: [] }));
 
     const seen = new Set(), queue = [`${base}/hc/${LOCALE}`], articleUrls = new Set();
-    let guard = 0;
+    let guard = 0, first = true;
     while (queue.length && guard++ < 500) {
       const u = queue.shift();
       if (seen.has(u) || /\/articles\//.test(u)) continue;
       seen.add(u);
-      await page.goto(u, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-      for (const l of await linksOn()) {
+      await page.goto(u, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      const { hc, total, sampleHc } = await linksOn();
+      if (first) { console.log(`[kb] home: ${total} total links, ${hc.length} cat/sec/article; sample /hc/ hrefs:`, JSON.stringify(sampleHc)); first = false; }
+      for (const l of hc) {
         if (/\/articles\//.test(l)) articleUrls.add(l);
         else if (!seen.has(l)) queue.push(l);
       }
