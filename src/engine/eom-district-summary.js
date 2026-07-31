@@ -62,11 +62,19 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
   // Sales-weighted average FOB target across the scope.
   const wTgtNum = sum(s => (s.fobTgt != null ? s.fobTgt * s.sales : 0));
   const wTgtDen = sum(s => (s.fobTgt != null ? s.sales : 0));
+  // Sales-weighted target + ±pp vs target PER COMPONENT (owner Notes 38 — targets in the summary too).
+  const rollupCompTgt = {}, rollupCompDeltaPp = {};
+  for (const m of COMP_META) {
+    let n = 0, d = 0;
+    for (const s of stores) { const t = (targetsByLoc[unpad(s.loc)] || {})[m.tgt]; if (t != null && s.sales) { n += Number(t) * s.sales; d += s.sales; } }
+    rollupCompTgt[m.k] = d ? n / d : null;
+    rollupCompDeltaPp[m.k] = (rollupCompTgt[m.k] != null && rollupCompPct[m.k] != null) ? (rollupCompPct[m.k] - rollupCompTgt[m.k]) * 100 : null;
+  }
   const rollup = {
     nStores: stores.length, sales: totSales, fob$: totFob,
     fobPct: totSales ? totFob / totSales : null,
     fobTgt: wTgtDen ? wTgtNum / wTgtDen : null,
-    comps: rollupComps, compPct: rollupCompPct,
+    comps: rollupComps, compPct: rollupCompPct, compTgt: rollupCompTgt, compDeltaPp: rollupCompDeltaPp,
   };
 
   const withProg = stores.filter(s => s.countPct != null);

@@ -22,6 +22,13 @@ describe('buildDistrictSummary', () => {
     expect(s.rollup.fobPct).toBeCloseTo(29068 / 738265, 4);
     expect(Math.round(s.rollup.comps.cond)).toBe(15533);   // 6477 + 9056
   });
+  it('carries sales-weighted component targets + ±pp (owner Notes 38)', () => {
+    // Only 3708 has a Condiment target (0.0205) → weighted target = 0.0205.
+    expect(s.rollup.compTgt.cond).toBeCloseTo(0.0205, 4);
+    // ±pp = (component % of sales − target) × 100.
+    const expDelta = (s.rollup.compPct.cond - 0.0205) * 100;
+    expect(s.rollup.compDeltaPp.cond).toBeCloseTo(expDelta, 3);
+  });
   it('flags the OVER-target store as the opportunity, ranked by $ over', () => {
     // 3708 is over (4.31% vs 3.85% → +0.46pp on $307k ≈ +$1,415); 5183 is under → not an opportunity.
     expect(s.opportunity.map(o => o.name)).toEqual(['Ardmore']);

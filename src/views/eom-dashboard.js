@@ -1901,8 +1901,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '10px' } },
             div({ style: box }, span({ style: lab }, 'District FOB'), span({ style: big(fobOver ? '#f87171' : '#f5bc00') }, `${pctS(r.fobPct)} · ${$(r.fob$)}`),
               r.fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80' } }, `${r.fobPct != null ? `${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${pctS(r.fobTgt)}`) : null),
-            ...COMP_META.map(m => div({ key: m.k, style: box }, span({ style: lab }, m.label), span({ style: big() }, $(r.comps[m.k])),
-              span({ style: { fontSize: '8.5px', color: 'var(--text3)' } }, pctS(r.compPct[m.k])))),
+            ...COMP_META.map(m => { const dpp = r.compDeltaPp && r.compDeltaPp[m.k]; const tgt = r.compTgt && r.compTgt[m.k]; const over = dpp != null && dpp > 0.001;
+              return div({ key: m.k, style: box }, span({ style: lab }, m.label), span({ style: big() }, $(r.comps[m.k])),
+                span({ style: { fontSize: '8.5px', fontWeight: 600, color: dpp == null ? 'var(--text3)' : over ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+                  `${pctS(r.compPct[m.k])}${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}` : ''}${tgt != null ? ` (tgt ${pctS(tgt)})` : ''}`)); }),
             div({ style: box }, span({ style: lab }, 'Prod Sales'), span({ style: big() }, $(r.sales)),
               span({ style: { fontSize: '8.5px', fontWeight: 600, color: 'var(--text3)' } }, `${r.nStores} ${scopeLabel()} store${r.nStores === 1 ? '' : 's'} · MTD`))),
           // Completion + opportunity + analysis
