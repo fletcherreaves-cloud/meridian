@@ -1731,10 +1731,11 @@ create table if not exists public.eom_integrity_flags (
 create index if not exists eom_integrity_flags_period_idx on public.eom_integrity_flags (period, created_at desc);
 alter table public.eom_integrity_flags enable row level security;
 create policy "eom_integrity_flags: read scoped" on public.eom_integrity_flags for select
-  using (
-    (select accessible_locs from public.profiles where id = auth.uid()) is null
-    or loc = any ((select accessible_locs from public.profiles where id = auth.uid()))
-  );
+  using (exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid()
+      and (p.accessible_locs is null or public.eom_integrity_flags.loc = any (p.accessible_locs))
+  ));
 create policy "eom_integrity_flags: service write" on public.eom_integrity_flags for all
   using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
@@ -1775,9 +1776,10 @@ create table if not exists public.eom_count_status_history (
 create index if not exists eom_count_status_history_period_idx on public.eom_count_status_history (period, captured_at desc);
 alter table public.eom_count_status_history enable row level security;
 create policy "eom_count_status_history: read scoped" on public.eom_count_status_history for select
-  using (
-    (select accessible_locs from public.profiles where id = auth.uid()) is null
-    or loc = any ((select accessible_locs from public.profiles where id = auth.uid()))
-  );
+  using (exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid()
+      and (p.accessible_locs is null or public.eom_count_status_history.loc = any (p.accessible_locs))
+  ));
 create policy "eom_count_status_history: service write" on public.eom_count_status_history for all
   using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
