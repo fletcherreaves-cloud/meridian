@@ -19,6 +19,7 @@ import {
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
 import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
+import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
@@ -625,6 +626,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [draftText, setDraftText] = useState(false); // false = table view, true = raw text view
   const [draftFull, setDraftFull] = useState(false); // false = abbreviated recap, true = full report (text view)
   const [shareMsg, setShareMsg] = useState('');      // transient result of "Share link" (URL copied / error)
+  const [wasteOpen, setWasteOpen] = useState(false); // Waste-analysis scan modal (Notes 40 #2)
+  const [wasteScan, setWasteScan] = useState(null);
   const [variance, setVariance] = useState([]);
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
@@ -1185,6 +1188,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     } catch (e) { setShareMsg(`Share failed: ${e?.message || e}`); }
   }, [buildDiagResult, diagOptsFor, period]);
 
+  // Waste analysis (Notes 40 #2): run the Second-Look waste rules across the current scope on demand.
+  const runWasteScan = useCallback(() => {
+    const scoped = new Set(rows.map(r => unpad(r.loc)));
+    const w = (waste || []).filter(x => scoped.has(unpad(x.loc)));
+    setWasteScan(scanWaste(w, { period }));
+    setWasteOpen(true);
+  }, [rows, waste, period]);
+
   // Generate a follow-up draft for EVERY store in scope — the ones that need a message first.
   const openBulk = useCallback(() => {
     const drafts = rows.map(r => ({ ...computeDraft(r.loc, r.name, r.components), commsSent: r.comms === 'sent' }));
@@ -1414,6 +1425,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           style: { background: 'var(--surf3)', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, rbBusy ? '…' : '🪃 Rubber-band'),
         h('button', {
+          onClick: runWasteScan, disabled: rows.length === 0,
+          title: 'Waste analysis — run the Second-Look waste rules across the scope: uniform/static values (estimated, not weighed), high-$ manager sessions, manager concentration, and count-window spikes.',
+          style: { background: 'var(--surf3)', color: '#a3e635', border: '1px solid #a3e635', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '🗑 Waste'),
+        h('button', {
           onClick: () => setXcOpen(true), disabled: rows.length === 0,
           title: 'AI Cross-Check — paste an external AI\'s FOB analysis (e.g. CoachQ) and reconcile it against Meridian\'s real numbers. Catches fabricated rows (components that don\'t sum to their own FOB$) + divergences.',
           style: { background: 'var(--surf3)', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
@@ -1642,6 +1658,31 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: '5px', color: 'var(--text2)', cursor: 'pointer', fontSize: '12px', padding: '3px 7px', marginLeft: '4px' },
                 }, '🔗 Share'))))))),
     shareMsg ? div({ style: { position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '9px 14px', fontSize: '12.5px', color: shareMsg.startsWith('✓') ? '#4ade80' : shareMsg.startsWith('Share failed') ? '#f87171' : 'var(--text2)', boxShadow: '0 6px 20px rgba(0,0,0,.4)', maxWidth: '90vw' }, onClick: () => setShareMsg('') }, shareMsg) : null,
+
+    // Waste analysis modal (Notes 40 #2) — Second-Look waste rules across the scope.
+    wasteOpen && div({
+      onClick: () => setWasteOpen(false),
+      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    },
+      div({ onClick: e => e.stopPropagation(),
+        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '860px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+        div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `🗑 Waste Analysis — ${scopeLabel()}`),
+        h('button', { onClick: () => setWasteOpen(false), style: MODAL_X }, '✕'),
+        div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '12px' } },
+          wasteScan ? `${wasteScan.nFlags} flag${wasteScan.nFlags === 1 ? '' : 's'} across ${wasteScan.nStores} store${wasteScan.nStores === 1 ? '' : 's'} · ${period} · Second-Look waste rules (verify, don't accuse)` : ''),
+        (!wasteScan || !wasteScan.stores.length)
+          ? div({ style: { color: '#4ade80', padding: '16px', fontSize: '13px' } }, '🏆 No waste patterns flagged across this scope — logging looks clean.')
+          : div(null, wasteScan.stores.map(s => div({ key: s.loc, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${s.flags.some(f => f.sev >= 3) ? '#f87171' : '#fb923c'}`, borderRadius: '7px', background: 'var(--surf2)', padding: '10px 12px', marginBottom: '8px' } }, [
+              div({ key: 'h', style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '5px' } },
+                span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, nm(s.loc)),
+                span({ style: { color: 'var(--text3)', fontSize: '10px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(s.loc)}`),
+                span({ style: { marginLeft: 'auto', color: 'var(--text3)', fontSize: '10.5px' } }, `$${Math.round(s.total).toLocaleString()} waste · ${s.nEvents} entries`)),
+              ...s.flags.map((f, i) => div({ key: 'f' + i, style: { display: 'flex', gap: '7px', alignItems: 'baseline', fontSize: '12px', color: 'var(--text2)', padding: '2px 0' } },
+                span({ style: { fontSize: '9px', fontWeight: 700, color: f.sev >= 3 ? '#f87171' : f.sev >= 2 ? '#fb923c' : '#f5bc00', border: `1px solid ${f.sev >= 3 ? '#f87171' : f.sev >= 2 ? '#fb923c' : '#f5bc00'}`, borderRadius: '4px', padding: '0 5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, f.kind),
+                span(null, f.label))),
+            ]))),
+        div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginTop: '10px', fontStyle: 'italic' } }, 'Uniform = same $ many days (estimated, not weighed) · Session = one manager/day outlier · Concentration = one manager\'s share · Spike = count-window day spike. Verify, don\'t accuse.')),
+    ),
 
     // comms draft modal
     draft && div({
