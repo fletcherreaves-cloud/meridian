@@ -57,7 +57,7 @@ async function main() {
   const byLoc = {};
   for (const r of rows) (byLoc[String(r.loc)] || (byLoc[String(r.loc)] = [])).push(r);
 
-  const flagged = [];
+  const flagged = [], tested = [];
   for (const loc of Object.keys(byLoc)) {
     // Collect all offsetting (crossZero) swings for this store, tagged with manager + timestamps.
     const swings = [];
@@ -79,10 +79,10 @@ async function main() {
       const batch = byMgrDay[k];
       if (batch.length < 3) continue;
       const t = recountBatchTiming(batch);
-      if (t.verdict === 'implausible') {
-        const [mgr, day] = k.split('|');
-        flagged.push({ loc, mgr, day, n: t.n, windowSec: t.windowSec, requiredSec: t.requiredSec, cadenceSec: t.cadenceSec, totalSwing: Math.round(batch.reduce((s, x) => s + x.swing, 0)) });
-      }
+      const [mgr, day] = k.split('|');
+      const rec = { loc, mgr, day, verdict: t.verdict, n: t.n, windowSec: t.windowSec, requiredSec: t.requiredSec, cadenceSec: t.cadenceSec, totalSwing: Math.round(batch.reduce((s, x) => s + x.swing, 0)), hasTimes: batch.every(x => Number.isFinite(x.corrTs) && (x.corrTs % 86400000) !== 0) };
+      tested.push(rec);
+      if (t.verdict === 'implausible') flagged.push(rec);
     }
   }
 
@@ -93,6 +93,17 @@ async function main() {
     console.log(`  loc ${f.loc} · ${f.mgr} · ${f.day} — ${f.n} offsetting corrections in ${mm(f.windowSec)} (needs ≥ ${mm(f.requiredSec)}; ~${mm(f.cadenceSec)}/entry) · $${f.totalSwing.toLocaleString()} swung`);
   }
   if (!flagged.length) console.log('  (none — no batch cleared the padding-timing threshold)');
+
+  // Verbose: every same-manager offsetting batch tested (≥3 items), so 0-flagged can be trusted (not a
+  // missing-timestamp artifact). hasTimes=false means the counts carried no time-of-day → can't judge.
+  const mm = (s) => s == null ? '?' : (s >= 90 ? `${(s / 60).toFixed(1)}min` : `${s}s`);
+  tested.sort((a, b) => b.n - a.n || a.windowSec - b.windowSec);
+  console.log(`\n[recount-scan] all ${tested.length} same-manager offsetting batches tested (≥3 items):`);
+  for (const t of tested.slice(0, 30)) {
+    console.log(`  loc ${t.loc} · ${t.mgr} · ${t.day} — ${t.n} items, window ${mm(t.windowSec)} vs need ${mm(t.requiredSec)} → ${t.verdict.toUpperCase()}${t.hasTimes ? '' : ' [NO TIMES ON COUNTS]'} · $${t.totalSwing.toLocaleString()}`);
+  }
+  const noTimes = tested.filter(t => !t.hasTimes).length;
+  if (noTimes) console.log(`\n[recount-scan] ⚠ ${noTimes}/${tested.length} batches had counts with NO time-of-day — timing can't be judged for those (data gap, not a clean bill).`);
 }
 
 main().catch(e => { console.error('[recount-scan] fatal:', e); process.exit(1); });
