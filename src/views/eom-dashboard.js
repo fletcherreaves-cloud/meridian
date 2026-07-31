@@ -1011,13 +1011,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       try { await deleteEomCountException({ loc, period }); } catch {}
       return;
     }
-    const approvedBy = typeof window !== 'undefined' ? window.prompt(`Grant "accepted early count" exception for ${nm(loc)}.\nApproved by (above-store leader):`, '') : '';
+    // The perceived FULL-count date = the day the store counted the bulk of its items (mode of the
+    // items' last-counted dates), so the accepted count is dated to when it actually happened (owner).
+    const dayCount = {};
+    for (const o of (byLoc[key] || [])) { const d = isoDay(o.lastCounted) || isoDay(o.lastSubmitted); if (d) dayCount[d] = (dayCount[d] || 0) + 1; }
+    const acceptedDate = Object.keys(dayCount).sort((a, b) => dayCount[b] - dayCount[a])[0] || null;
+    const approvedBy = typeof window !== 'undefined' ? window.prompt(`Grant "accepted early count" exception for ${nm(loc)}${acceptedDate ? ` — full count dated ${acceptedDate}` : ''}.\nApproved by (above-store leader):`, '') : '';
     if (approvedBy == null) return;   // cancelled
     const note = typeof window !== 'undefined' ? (window.prompt('Reason / note (optional):', '') || '') : '';
-    const rec = { kind: 'early-count-accepted', approvedBy: approvedBy.trim() || 'unspecified', note, createdAt: new Date().toISOString() };
+    const rec = { kind: 'early-count-accepted', approvedBy: approvedBy.trim() || 'unspecified', note, acceptedDate, createdAt: new Date().toISOString() };
     setExceptions(m => ({ ...m, [key]: rec }));
-    try { await saveEomCountException({ loc, period, approvedBy: rec.approvedBy, note }); } catch {}
-  }, [period]);
+    try { await saveEomCountException({ loc, period, approvedBy: rec.approvedBy, note, acceptedDate }); } catch {}
+  }, [period, byLoc]);
 
   // District EOM Summary over the CURRENT scope (rows are already filtered by state/patch/store).
   const districtSummary = useMemo(() => buildDistrictSummary(rows, DEFAULT_TARGETS), [rows]);
@@ -1601,7 +1606,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, r.org === 'emerald' ? 'FL' : 'OK'),
               // Count-date exception (accept early count) — green tag when active (click to remove), else a grant link.
               r.exception
-                ? span({ onClick: () => toggleException(r.loc, r.exception), title: `Early count accepted as this store's EOM count${r.exception.approvedBy ? ` — approved by ${r.exception.approvedBy}` : ''}${r.exception.note ? `\n${r.exception.note}` : ''}\n(click to remove)`, style: { display: 'inline-block', marginTop: '3px', fontSize: '9.5px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade80', borderRadius: '4px', padding: '0 5px', cursor: 'pointer' } }, `✓ early count accepted${r.exception.approvedBy ? ` · ${r.exception.approvedBy}` : ''}`)
+                ? span({ onClick: () => toggleException(r.loc, r.exception), title: `Early count (full count ${r.exception.acceptedDate || '?'}) accepted as this store's EOM count${r.exception.approvedBy ? ` — approved by ${r.exception.approvedBy}` : ''}${r.exception.note ? `\n${r.exception.note}` : ''}\n(click to remove)`, style: { display: 'inline-block', marginTop: '3px', fontSize: '9.5px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade80', borderRadius: '4px', padding: '0 5px', cursor: 'pointer' } }, `✓ count accepted${r.exception.acceptedDate ? ` ${r.exception.acceptedDate}` : ''}${r.exception.approvedBy ? ` · ${r.exception.approvedBy}` : ''}`)
                 : h('button', { onClick: () => toggleException(r.loc, null), title: "Accept this store's early count as its EOM count (logged + attributed to the approver)", style: { display: 'block', marginTop: '3px', fontSize: '9px', color: 'var(--text3)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' } }, 'grant count exception')),
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
             h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass, npDueToday: r.prog.nonProductDueToday })),

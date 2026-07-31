@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.692';
-const MERIDIAN_BUILD_DATE = '2026-07-30';
+const MERIDIAN_VERSION    = '4.693';
+const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.693', date:'2026-07-31', changes:[
+    'EOM count exception now DATES the accepted count: when you grant "accepted early count", Meridian reads the store\'s items to find the day the bulk of the count actually happened (the perceived full-count date, e.g. Ponce\'s 07/28) and stamps the exception with it — the green tag now shows "✓ count accepted 07/28 · {approver}" so the count is attributed to when it really took place, not the close date.',
+    'var-0 fix now flows through the Change Monitor BASELINE too: the nightly baseline auto-lock (eom-snapshot cron) reads per-item variance from the raw item ledger (posts the instant a manager submits) instead of the lagging aggregate Variance/Stat report — so both sides of the day-over-day diff use the same immediate as-counted variance the live side already uses. Re-lock a baseline to see it apply.',
+  ]},
   {version:'4.689', date:'2026-07-31', changes:[
     'EOM → count-date EXCEPTIONS: accept a store\'s early count as its EOM count when an above-store leader approves it (e.g., a store that counted on the 28th and won\'t recount). "grant count exception" on the store row records who approved it + a reason; the store then reads complete and the recap stops nudging a recount, but every exception is logged + attributed (green "✓ early count accepted · {approver}" tag) so the pattern stays visible.',
     'EOM integrity checks are now named "Second-Look Signals" (non-accusatory), branded on the recap + a dedicated "verify, don\'t accuse" report section. FOB breakdown matrix colors each component vs its OWN target (red = over / green = under) with a sales-weighted Target row. QSRSoft KB pull (#41) built — crawls the help center for grounding SAGE + diagnostics.',

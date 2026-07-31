@@ -14,6 +14,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { fobSnapshotByStore, computeCountProgress } from '../src/engine/eom-inventory.js';
+import { latestVarianceByWrin } from '../src/engine/eom-variance-raw.js';
 import { withRetry } from './_retry.mjs';
 
 const URL = process.env.VITE_SUPABASE_URL;
@@ -55,10 +56,11 @@ async function main() {
   const monthStart = `${PERIOD}-01`;
   const monthEnd = `${PERIOD}-31`;
 
-  const [fobRaw, varRaw, ohRaw] = await Promise.all([
+  const [fobRaw, varRaw, ohRaw, rawRaw] = await Promise.all([
     selectAll('qsr_fob', q => q.gte('date', monthStart).lte('date', monthEnd)),
     selectAll('qsr_variance_stat', q => q.eq('period', PERIOD)),
     selectAll('qsr_onhand', q => q.eq('period', PERIOD)),
+    selectAll('qsr_raw_item_detail', q => q.eq('period', PERIOD)),
   ]);
 
   // Gate: only snapshot when there's an active count (on-hand rows) — unless a period was forced.
@@ -78,27 +80,35 @@ async function main() {
   }));
   const fob = fobSnapshotByStore(fobRows, PERIOD);
 
-  // Per-store on-hand + variance, keyed by loc.
-  const ohByLoc = {}, varByLoc = {};
+  // Per-store on-hand + variance + raw item detail, keyed by loc.
+  const ohByLoc = {}, varByLoc = {}, rawByLoc = {};
   for (const r of ohRaw) (ohByLoc[String(r.loc)] || (ohByLoc[String(r.loc)] = [])).push(r);
   for (const r of varRaw) (varByLoc[String(r.loc)] || (varByLoc[String(r.loc)] = [])).push(r);
+  for (const r of rawRaw) (rawByLoc[String(r.loc)] || (rawByLoc[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, cls: r.item_class, history: Array.isArray(r.history) ? r.history : [] });
+  console.log(`[eom-snapshot] raw_item_detail rows=${rawRaw.length} across ${Object.keys(rawByLoc).length} stores`);
 
-  const locs = new Set([...Object.keys(fob), ...Object.keys(ohByLoc), ...Object.keys(varByLoc)]);
+  const locs = new Set([...Object.keys(fob), ...Object.keys(ohByLoc), ...Object.keys(varByLoc), ...Object.keys(rawByLoc)]);
   const snaps = [];
   for (const loc of locs) {
     const oh = ohByLoc[loc] || [], vr = varByLoc[loc] || [];
     const vByWrin = {}; for (const v of vr) vByWrin[String(v.wrin)] = v;
+    // var-0 fix (mirrors the client's buildLiveSnapshot): the aggregate Variance/Stat report LAGS, so
+    // prefer the per-item variance logged the instant a manager submits a count (raw item history).
+    const rawV = latestVarianceByWrin(rawByLoc[loc] || [], { asOf: new Date() });
+    const varOf = wrin => { const r = rawV[String(wrin)]; const v = vByWrin[String(wrin)] || {}; return { dolDiff: r && r.dolDiff != null ? r.dolDiff : (v.dol_diff ?? null), variance: r && r.variance != null ? r.variance : (v.variance ?? null) }; };
     const items = oh.map(o => {
-      const v = vByWrin[String(o.wrin)] || {};
+      const v = vByWrin[String(o.wrin)] || {}, vv = varOf(o.wrin);
       return {
         wrin: String(o.wrin), descr: o.descr || v.descr || '', cls: o.cls || v.cls || '',
         qty: o.total_units ?? null, onHandAmt: o.on_hand_amt ?? null,
-        dolDiff: v.dol_diff ?? null, variance: v.variance ?? null,
+        dolDiff: vv.dolDiff, variance: vv.variance,
         lastCounted: isoDay(o.last_counted) || isoDay(o.last_submitted),
       };
     });
     const seen = new Set(items.map(i => i.wrin));
-    for (const v of vr) { const w = String(v.wrin); if (!seen.has(w)) items.push({ wrin: w, descr: v.descr || '', cls: v.cls || '', qty: null, onHandAmt: null, dolDiff: v.dol_diff ?? null, variance: v.variance ?? null, lastCounted: null }); }
+    for (const v of vr) { const w = String(v.wrin); if (!seen.has(w)) { const vv = varOf(w); items.push({ wrin: w, descr: v.descr || '', cls: v.cls || '', qty: null, onHandAmt: null, dolDiff: vv.dolDiff, variance: vv.variance, lastCounted: rawV[w]?.lastCounted || null }); } }
+    // Also fold in raw-only items (counted, variance posted, but absent from on-hand + aggregate).
+    for (const w of Object.keys(rawV)) { if (!seen.has(w)) { seen.add(w); const rd = rawByLoc[loc].find(x => String(x.wrin) === w) || {}; items.push({ wrin: w, descr: rd.descr || '', cls: rd.cls || '', qty: null, onHandAmt: null, dolDiff: rawV[w].dolDiff, variance: rawV[w].variance, lastCounted: rawV[w].lastCounted || null }); } }
 
     // Count progress (per-class %) from on-hand rows mapped into the engine's shape.
     let count = null, lastActivityAt = null;
