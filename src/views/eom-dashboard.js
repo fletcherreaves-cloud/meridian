@@ -509,6 +509,9 @@ const FOB_COMPONENTS = [
   ['comp', 'Comp Waste'], ['raw', 'Raw Waste'], ['cond', 'Condiments'],
   ['emp', 'Emp/Mgr'], ['statv', 'Stat Var'], ['unex', 'Unexplained'],
 ];
+// Component → its target key in DEFAULT_TARGETS (all fractions of sales). Opportunity/hot is measured
+// vs a component's OWN target, not raw $ or district rate (Condiments is structurally large — Notes 38).
+const FOB_COMP_TGT = { comp: 'tCompWaste', raw: 'tRawWaste', cond: 'tCondiment', emp: 'tEmpFood', statv: 'tStatLoss', unex: 'tUnex' };
 
 // FOB multi-location variance matrix (feature seed-fob-p): side-by-side component
 // breakdown across stores, so the owner can see WHERE food-cost overruns originate.
@@ -521,7 +524,12 @@ function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
   withFob.forEach(r => { const c = r.components; tot.sales += c.sales; tot.fob += c.fob || 0; FOB_COMPONENTS.forEach(([k]) => tot[k] += c[k] || 0); });
   const distPct = k => tot.sales ? tot[k] / tot.sales : 0;
   const ratePct = (c, k) => (c[k] || 0) / (c.sales || 1);
-  const isOutlier = (c, k) => { const p = ratePct(c, k); return p > distPct(k) * 1.5 && p > 0.001; };
+  // Per-component target + over/under (pp) vs a store's OWN target — over target = worse food cost
+  // (owner Notes 38: measure vs target, not raw rate/$). District target = sales-weighted.
+  const tgtOf = (loc, k) => { const t = (DEFAULT_TARGETS[unpad(loc)] || {})[FOB_COMP_TGT[k]]; return t != null ? Number(t) : null; };
+  const overTgt = (loc, k, c) => { const t = tgtOf(loc, k); return t == null ? null : (ratePct(c, k) - t) * 100; };
+  const distTgt = k => { let n = 0, d = 0; for (const r of withFob) { const t = tgtOf(r.loc, k); if (t != null) { n += t * r.components.sales; d += r.components.sales; } } return d ? n / d : null; };
+  const distFobTgt = (() => { let n = 0, d = 0; for (const r of withFob) { const t = fobTgtOf(r.loc); if (t != null) { n += t * r.components.sales; d += r.components.sales; } } return d ? n / d : null; })();
   const driverOf = c => FOB_COMPONENTS.map(([k]) => [k, ratePct(c, k)]).sort((a, b) => b[1] - a[1])[0][0];
   const cell = (c, k) => showDollars ? money(c[k] || 0) : pct2(ratePct(c, k));
 
@@ -551,26 +559,35 @@ function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
               r.name, span({ style: { fontSize: '9px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '5px' } }, r.org === 'emerald' ? 'FL' : 'OK')),
             h('td', { style: { padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, pct2(c.fobPct)),
             ...FOB_COMPONENTS.map(([k]) => {
-              const out = isOutlier(c, k);
+              const dPp = overTgt(r.loc, k, c);           // pp over(+)/under(−) this store's target
+              const t = tgtOf(r.loc, k);
+              const over = dPp != null && dPp > 0.01, under = dPp != null && dPp < -0.01;
               return h('td', {
                 key: k,
-                title: out ? `${(ratePct(c, k) * 100).toFixed(2)}% vs district ${(distPct(k) * 100).toFixed(2)}% — running hot` : '',
+                title: t != null ? `${(ratePct(c, k) * 100).toFixed(2)}% vs tgt ${(t * 100).toFixed(2)}% (${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}pp)` : `${(ratePct(c, k) * 100).toFixed(2)}% — no target set`,
                 style: {
                   padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-                  color: out ? '#f87171' : 'var(--text2)', fontWeight: out ? 700 : 400,
-                  background: out ? 'rgba(248,113,113,.08)' : 'transparent',
+                  color: over ? '#f87171' : under ? '#4ade80' : 'var(--text2)', fontWeight: over ? 700 : 400,
+                  background: over ? 'rgba(248,113,113,.08)' : 'transparent',
                 },
               }, k === drv && span({ title: 'biggest component for this store', style: { color: '#f5bc00', marginRight: '3px' } }, '▸'), cell(c, k));
             }));
         }),
-        // district dollar-weighted average row
+        // district dollar-weighted actual row
         h('tr', { style: { borderTop: '2px solid var(--bdr2)', background: 'var(--surf2)' } },
           h('td', { style: { padding: '7px 8px', color: 'var(--text)', fontWeight: 700 } }, `District (${withFob.length})`),
           h('td', { style: { padding: '7px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' } }, pct2(tot.sales ? tot.fob / tot.sales : null)),
           ...FOB_COMPONENTS.map(([k]) => h('td', { key: k, style: { padding: '7px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } },
-            showDollars ? money(tot[k]) : pct2(distPct(k))))))),
+            showDollars ? money(tot[k]) : pct2(distPct(k))))),
+        // TARGET row (sales-weighted) — the "vs target" reference (owner Notes 38)
+        h('tr', { style: { background: 'var(--surf)' } },
+          h('td', { style: { padding: '6px 8px', color: 'var(--text3)', fontWeight: 600, fontStyle: 'italic' } }, 'Target (wtd)'),
+          h('td', { style: { padding: '6px 8px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, pct2(distFobTgt)),
+          ...FOB_COMPONENTS.map(([k]) => { const dt = distTgt(k); const dPp = (dt != null && distPct(k) != null) ? (distPct(k) - dt) * 100 : null;
+            return h('td', { key: k, style: { padding: '6px 8px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+              dt != null ? pct2(dt) : '—', dPp != null ? span({ style: { fontSize: '9px', color: dPp > 0.01 ? '#f87171' : '#4ade80', marginLeft: '4px' } }, `${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}`) : null); })))),
     div({ style: { fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic', marginTop: '8px' } },
-      '▸ = store’s largest component.  Red = running >1.5× the district rate (dollar-weighted).  Click a column to sort.'));
+      '▸ = store’s largest component.  Red = OVER its target · green = under.  Target row = sales-weighted target per component (± = district vs target).  Click a column to sort.'));
 }
 
 // ── Scoreboard status model — a store advances left→right as the owner works it ──
