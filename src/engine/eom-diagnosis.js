@@ -838,6 +838,12 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     L.push(`_Today's 100% = ${npLabel}. Full itemized list in Count integrity below._`, '');
   }
 
+  // Late-count coaching (owner 2026-07-31): Food/Condiment/Paper should be counted on the 2nd & 3rd day
+  // out from EOM — the last day is for Non-Product. If the bulk landed on the last day, note it (soft).
+  if (incomplete && incomplete.lateBulk) {
+    L.push(`📅 _**Count timing:** Food/Condiment/Paper were bulk-counted on the **last day of the month**${incomplete.lateBulkDay ? ` (${incomplete.lateBulkDay})` : ''}. Target is the **2nd & 3rd day out** — coach the store to count these classes 1–2 days earlier so the last day is free for Non-Product and the close._`, '');
+  }
+
   // Dedupe Do-Now by WRIN (owner: duplicate lines) — the same item can surface via BOTH the recount
   // and the portioning push; keep only the highest-priority action per item. Group summaries pass through.
   {

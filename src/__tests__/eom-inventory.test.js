@@ -141,6 +141,23 @@ describe('diagnoseIncompleteCount', () => {
     expect(accepted.byState.early.n).toBe(0);
     expect(accepted.uncounted[0].wrin).toBe('1');      // never-counted still flagged
   });
+  it('flags lateBulk when Food/Cond/Paper bulk-counted on the last day (owner 2nd/3rd-day-out rule)', () => {
+    // Bulk counted on the last day (07/31) → late.
+    const late = diagnoseIncompleteCount([
+      { wrin: '1', cls: 'Food', onHandAmt: 100, lastCounted: d(2026, 7, 31) },
+      { wrin: '2', cls: 'Condiment', onHandAmt: 100, lastCounted: d(2026, 7, 31) },
+      { wrin: '3', cls: 'Paper', onHandAmt: 100, lastCounted: d(2026, 7, 30) },
+    ], { period });
+    expect(late.lateBulk).toBe(true);
+    expect(late.lateBulkDay).toBe('2026-07-31');
+    // Bulk on the 30th (2nd day out) → on time, not late.
+    const onTime = diagnoseIncompleteCount([
+      { wrin: '1', cls: 'Food', onHandAmt: 100, lastCounted: d(2026, 7, 30) },
+      { wrin: '2', cls: 'Condiment', onHandAmt: 100, lastCounted: d(2026, 7, 30) },
+      { wrin: '3', cls: 'Food', onHandAmt: 100, lastCounted: d(2026, 7, 31) },
+    ], { period });
+    expect(onTime.lateBulk).toBe(false);
+  });
 });
 
 describe('computeCountProgress acceptEarly (count-date exception)', () => {

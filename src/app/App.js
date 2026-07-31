@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.699';
+const MERIDIAN_VERSION    = '4.700';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.700', date:'2026-07-31', changes:[
+    'EOM count-timing rule (owner): Food/Condiment/Paper should be counted on the 2nd & 3rd day out from EOM — the last day is reserved for Non-Product. The diagnosis now adds a soft "📅 Count timing" coaching note when a store bulk-counted those classes on the last day (still counted, just off the ideal schedule). Completion math is unchanged — this is a coaching signal, not a gap.',
+  ]},
   {version:'4.699', date:'2026-07-31', changes:[
     'EOM dashboard now dates each store by when it ACTUALLY counted, not a stray last-touch or the close date. New prog.fullCountDate = the day the bulk of items were counted (the mode); the row shows the approved early-count date (exception) if one was granted, else the bulk-count day. Fixes Ponce de Leon reading "7/31" when the real count was 07/28.',
   ]},

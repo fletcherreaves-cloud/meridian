@@ -278,6 +278,22 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
   const byState = { never: { n: 0, value: 0 }, early: { n: 0, value: 0 }, stale: { n: 0, value: 0 } };
   for (const u of uncounted) { const b = byState[u.state]; if (b) { b.n++; b.value += u.valueAtRisk; } }
 
+  // Late-count timing (owner 2026-07-31): Food/Condiment/Paper should be counted on the 2nd & 3rd day
+  // out from EOM — NOT the last day (that's for Non-Product). If the store's BULK count of those classes
+  // (the mode day) landed on the last calendar day, flag it "late" — a soft coaching note, not a gap
+  // (the count IS done, just off the intended schedule). Prior-period (stale) counts are ignored.
+  const lastIso = periodStart ? lastDayOfPeriod(period).toISOString().slice(0, 10) : null;
+  const timingClasses = new Set(['food', 'condiment', 'paper']);
+  const fcDayTally = {};
+  for (const r of rows) {
+    if (!timingClasses.has(normClass(r.cls))) continue;
+    const d = countedDate(r); if (!d || (periodStart && d < periodStart)) continue;
+    const iso = d.toISOString().slice(0, 10); fcDayTally[iso] = (fcDayTally[iso] || 0) + 1;
+  }
+  let fcBulkDay = null, fcBulkN = -1;
+  for (const iso of Object.keys(fcDayTally)) { if (fcDayTally[iso] > fcBulkN || (fcDayTally[iso] === fcBulkN && iso > fcBulkDay)) { fcBulkN = fcDayTally[iso]; fcBulkDay = iso; } }
+  const lateBulk = !!(lastIso && fcBulkDay && fcBulkDay === lastIso);
+
   // Roll up by class so the message to the store is "Food: 12 items left ($430)".
   const byClass = {};
   for (const u of uncounted) {
@@ -295,6 +311,9 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     // "count these before close"; early/stale items are a different (cascade / obsolete-inactive) story.
     trueBlankCount: byState.never.n,
     trueBlankValue: byState.never.value,
+    // Late-count coaching (Food/Cond/Paper bulk-counted on the last day instead of the 2nd/3rd day out).
+    lateBulk,
+    lateBulkDay: fcBulkDay,
   };
 }
 
