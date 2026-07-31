@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.672';
+const MERIDIAN_VERSION    = '4.673';
 const MERIDIAN_BUILD_DATE = '2026-07-30';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.673', date:'2026-07-31', changes:[
+    'EOM → 🔒 "Lock baseline" + 📸 "Change Monitor" — freeze every store\'s full EOM state (FOB + all 6 components, per-item count qty / on-hand $ / variance / last-counted, per-class completion) into a snapshot, then watch what changes. The Change Monitor diffs the live pull against the locked baseline and, per store AND per item, shows whether a recount HELPED (variance moved toward $0 / FOB down) or HURT (moved away). Includes a district roll-up (improving vs worse, $ moved toward/away from zero) and a per-store secondary-review mark/flag. A nightly Action auto-locks the baseline at ~4:30am CT and checkpoints at 10a/4p CT.',
+    'Verified the "Product Net sales off by $2.5M" report was NOT a data bug — Meridian\'s per-store Product Sales matches QSRSoft to the dollar; the gap was a scope mismatch (District EOM Summary on OK vs a QSRSoft report on ALL STORE = the 7 FL stores). Added an explicit scope subtitle to the Prod Sales tile so a scoped figure can\'t be eyeballed against an all-store total.',
+  ]},
   {version:'4.660', date:'2026-07-30', changes:[
     'EOM → 📣 "Message all" — generate the EOM follow-up message for every location at once (ordered by who needs it first), each with Copy / Open / Mark-sent. Fire off follow-ups to all stores in one place.',
     'EOM → 🔍 "AI Cross-Check" — paste an external AI\'s FOB analysis (e.g. CoachQ) and Meridian reconciles it against its own real numbers: flags rows the external tool FABRICATED (its own components don\'t sum to its stated FOB$) and rows that diverge >$50 from Meridian. Meridian\'s real data is the ground truth.',

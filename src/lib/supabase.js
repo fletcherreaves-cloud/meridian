@@ -2709,6 +2709,78 @@ export async function loadEomCountStatus({ period } = {}) {
   }));
 }
 
+// ── EOM snapshots (baseline lock + day-2 change monitor) ─────────────────────────
+// A point-in-time LOCK of a store's full EOM state: FOB + all 6 components, per-item count qty /
+// on-hand $ / variance / last-counted, and per-class completion. Written after ~4am (auto cron) and
+// on demand ("Lock baseline"); tomorrow we diff the live pull against the latest baseline to see
+// which moves helped (variance toward $0 / FOB down) or hurt. APPEND-ONLY — we keep every checkpoint
+// (owner: "err on saving too much"). One row per (loc, snapshot).
+export async function saveEomSnapshots(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const up = rows.map(r => ({
+    loc: String(r.loc), period: String(r.period),
+    kind: r.kind || 'baseline', label: r.label ?? null,
+    taken_at: r.takenAt instanceof Date ? r.takenAt.toISOString() : (r.takenAt || new Date().toISOString()),
+    taken_by: r.takenBy ?? uid,
+    fob: r.fob ?? null, count: r.count ?? null, items: r.items ?? null, meta: r.meta ?? null,
+  }));
+  const errors = []; let saved = 0;
+  for (let i = 0; i < up.length; i += 150) {
+    const chunk = up.slice(i, i + 150);
+    const { error } = await supabase.from('eom_snapshots').insert(chunk);
+    if (error) errors.push(error.message); else saved += chunk.length;
+  }
+  return { saved, errors };
+}
+
+// Load snapshots for a period. `latestPerLoc` collapses to the newest snapshot per store (the active
+// baseline to diff against). `kind`/`loc` narrow further. Ordered newest-first.
+export async function loadEomSnapshots({ period, kind, loc, latestPerLoc } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('eom_snapshots').select('*').order('taken_at', { ascending: false }).range(from, to);
+    if (period) q = q.eq('period', period);
+    if (kind) q = q.eq('kind', kind);
+    if (loc) q = q.eq('loc', String(loc));
+    return q;
+  });
+  let out = (data || []).map(r => ({
+    id: r.id, loc: r.loc, period: r.period, kind: r.kind, label: r.label,
+    takenAt: r.taken_at, takenBy: r.taken_by, fob: r.fob, count: r.count, items: r.items, meta: r.meta,
+  }));
+  if (latestPerLoc) {
+    const seen = new Map();
+    for (const s of out) { const k = String(s.loc); if (!seen.has(k)) seen.set(k, s); } // already desc by taken_at
+    out = [...seen.values()];
+  }
+  return out;
+}
+
+// Per-store secondary-review status (day-2): owner marks a store reviewed/flagged with a note.
+export async function saveEomSecondaryReview(row) {
+  if (!supabase || !row?.loc) return { error: 'no-op' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const { error } = await supabase.from('eom_secondary_review').upsert({
+    loc: String(row.loc), period: String(row.period),
+    status: row.status ?? 'reviewed', note: row.note ?? null,
+    reviewed_at: new Date().toISOString(), reviewed_by: uid, updated_at: new Date().toISOString(),
+  }, { onConflict: 'loc,period' });
+  return { error: error?.message || null };
+}
+
+export async function loadEomSecondaryReview({ period } = {}) {
+  if (!supabase) return {};
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('eom_secondary_review').select('*').range(from, to);
+    if (period) q = q.eq('period', period);
+    return q;
+  });
+  const m = {};
+  for (const r of (data || [])) m[String(r.loc)] = { status: r.status, note: r.note, reviewedAt: r.reviewed_at };
+  return m;
+}
+
 // ── EOM item disposition (#38) — the verify-&-clear decision per obsolete/inactive item ──
 export async function saveEomItemDisposition(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

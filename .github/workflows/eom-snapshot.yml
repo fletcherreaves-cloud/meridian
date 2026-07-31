@@ -1,0 +1,48 @@
+name: EOM Baseline Snapshot
+
+# Freezes every store's full EOM state (FOB + components, per-item count qty / on-hand $ / variance)
+# into eom_snapshots so the Change Monitor can diff live data against it (which moves helped/hurt).
+# Reads only what's already in Supabase — no QSRSoft auth, no Playwright. The FIRST run of a period
+# writes kind='baseline' (the fixed reference); later runs write kind='checkpoint'. Auto-skips when
+# there's no active count window (no on-hand rows), so it's safe to run year-round.
+
+on:
+  schedule:
+    - cron: '30 9 * * *'    # 09:30 UTC = ~4:30 AM CT — the BASELINE lock, before the day's recounting
+    - cron: '0 15 * * *'    # 15:00 UTC = ~10:00 AM CT — intraday checkpoint
+    - cron: '0 21 * * *'    # 21:00 UTC = ~4:00 PM CT  — intraday checkpoint
+  workflow_dispatch:
+    inputs:
+      period:
+        description: 'Force a period YYYY-MM (default: active EOM period from on-hand).'
+        required: false
+        default: ''
+      kind:
+        description: 'Force kind: baseline | checkpoint (default: auto).'
+        required: false
+        default: ''
+      label:
+        description: 'Snapshot label (default: auto-4am).'
+        required: false
+        default: 'manual-dispatch'
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lock EOM snapshot
+        run: node scripts/eom-snapshot-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EOM_PERIOD:                ${{ github.event.inputs.period || '' }}
+          EOM_KIND:                  ${{ github.event.inputs.kind   || '' }}
+          EOM_LABEL:                 ${{ github.event.inputs.label  || 'auto-4am' }}

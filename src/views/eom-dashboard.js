@@ -13,7 +13,9 @@ import {
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
+  saveEomSnapshots, loadEomSnapshots, saveEomSecondaryReview, loadEomSecondaryReview,
 } from '../lib/supabase.js';
+import { diffScope } from '../engine/eom-change-monitor.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
@@ -614,6 +616,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [bulkCopied, setBulkCopied] = useState('');
   // District EOM Summary — roll-up across the current scope (FOB + components, count, opportunity).
   const [sumOpen, setSumOpen] = useState(false);
+
+  // ── Baseline lock + day-2 Change Monitor ─────────────────────────────────────
+  const [locking, setLocking] = useState(false);      // "Lock baseline" in-flight
+  const [lockMsg, setLockMsg] = useState('');         // transient result of a lock
+  const [monOpen, setMonOpen] = useState(false);      // Change Monitor modal
+  const [monBusy, setMonBusy] = useState(false);
+  const [mon, setMon] = useState(null);               // { diff, takenAt, nBaseline, error }
+  const [monOpenRows, setMonOpenRows] = useState({});  // loc -> expanded item deltas
+  const [secReview, setSecReview] = useState({});     // loc -> { status, note } (day-2 secondary review)
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
@@ -841,6 +852,74 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const parsed = parseExternalFob(xcText, allRows.map(r => r.loc));
     setXcResult(reconcileFob(parsed, meridianByStore));
   }, [xcText, allRows, meridianByStore]);
+
+  // ── Baseline lock + Change Monitor ───────────────────────────────────────────
+  // Build a FULL live snapshot of one store from what's already loaded (on-hand ∪ variance + FOB).
+  // Used identically to WRITE a baseline and to compute the CURRENT side of the diff — no drift.
+  const isoDay = (d) => !d ? null : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+  const buildLiveSnapshot = useCallback((r) => {
+    const loc = String(r.loc);
+    const oh = byLoc[loc] || [], vr = varByLoc[loc] || [];
+    const vByWrin = {}; for (const v of vr) vByWrin[String(v.wrin)] = v;
+    const items = oh.map(o => {
+      const v = vByWrin[String(o.wrin)] || {};
+      return {
+        wrin: String(o.wrin), descr: o.descr || v.descr || '', cls: o.cls || v.cls || '',
+        qty: o.totalUnits ?? null, onHandAmt: o.onHandAmt ?? null,
+        dolDiff: v.dolDiff ?? null, variance: v.variance ?? null,
+        lastCounted: isoDay(o.lastCounted) || isoDay(o.lastSubmitted),
+      };
+    });
+    // Variance-only items (no on-hand row) — retain them too so nothing is lost.
+    const seen = new Set(items.map(i => i.wrin));
+    for (const v of vr) { const w = String(v.wrin); if (!seen.has(w)) items.push({ wrin: w, descr: v.descr || '', cls: v.cls || '', qty: null, onHandAmt: null, dolDiff: v.dolDiff ?? null, variance: v.variance ?? null, lastCounted: null }); }
+    const c = r.components || {};
+    return {
+      loc, period, name: r.name,
+      fob: { sales: c.sales ?? null, fob: r.fob$ ?? null, fobPct: r.fobPct ?? null, comp: c.comp ?? null, raw: c.raw ?? null, cond: c.cond ?? null, emp: c.emp ?? null, statv: c.statv ?? null, unex: c.unex ?? null, asOf: c.asOf ?? null },
+      count: { pctCounted: r.prog?.pctCounted ?? null, earlyPctCounted: r.prog?.earlyPctCounted ?? null, believesDone: !!r.prog?.believesDone, byClass: r.prog?.byClass ?? null },
+      items,
+    };
+  }, [byLoc, varByLoc, period]);
+
+  // Lock a baseline for EVERY loaded store (not just the current filter) so the baseline is complete.
+  const lockBaseline = useCallback(async () => {
+    if (locking) return;
+    setLocking(true); setLockMsg('');
+    try {
+      const snaps = allRows.map(r => ({ ...buildLiveSnapshot(r), kind: 'baseline', label: 'manual', takenAt: new Date() }));
+      const res = await saveEomSnapshots(snaps);
+      if (res.errors?.length) setLockMsg(`Saved ${res.saved}; ${res.errors.length} error(s): ${res.errors[0]}`);
+      else setLockMsg(`✓ Locked baseline for ${res.saved} store${res.saved === 1 ? '' : 's'} at ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
+    } catch (e) { setLockMsg('Lock failed: ' + (e?.message || e)); }
+    setLocking(false);
+  }, [allRows, buildLiveSnapshot, locking]);
+
+  // Open the Change Monitor: load the latest baseline per store, diff the CURRENT live state against it.
+  const openMonitor = useCallback(async () => {
+    setMonOpen(true); setMonBusy(true); setMonOpenRows({}); setMon(null);
+    try {
+      const [baseSnaps, sr] = await Promise.all([
+        loadEomSnapshots({ period, kind: 'baseline', latestPerLoc: true }),
+        loadEomSecondaryReview({ period }),
+      ]);
+      setSecReview(sr || {});
+      const scopedLocs = new Set(rows.map(r => unpad(r.loc)));
+      const baselinesByLoc = {}, currentsByLoc = {};
+      for (const s of baseSnaps) { const k = unpad(s.loc); if (scopedLocs.has(k)) baselinesByLoc[k] = { loc: s.loc, fob: s.fob, count: s.count, items: s.items }; }
+      for (const r of rows) currentsByLoc[unpad(r.loc)] = buildLiveSnapshot(r);
+      setMon({ diff: diffScope(baselinesByLoc, currentsByLoc), takenAt: baseSnaps[0]?.takenAt || null, nBaseline: Object.keys(baselinesByLoc).length });
+    } catch (e) {
+      const msg = String(e?.message || e);
+      setMon({ error: /relation|does not exist|eom_snapshots/i.test(msg) ? 'The eom_snapshots table isn\'t created yet — run the snapshot SQL in Supabase (see handoff), then Lock a baseline.' : msg });
+    }
+    setMonBusy(false);
+  }, [period, rows, buildLiveSnapshot]);
+
+  const markSecondary = useCallback(async (loc, status) => {
+    setSecReview(m => ({ ...m, [String(loc)]: { ...(m[String(loc)] || {}), status } }));
+    try { await saveEomSecondaryReview({ loc, period, status }); } catch {}
+  }, [period]);
 
   // District EOM Summary over the CURRENT scope (rows are already filtered by state/patch/store).
   const districtSummary = useMemo(() => buildDistrictSummary(rows, DEFAULT_TARGETS), [rows]);
@@ -1226,6 +1305,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'District EOM Summary — FOB + all components ($/%/vs target), count completion, and the $ opportunity across the current scope. CSV + Print.',
           style: { background: 'var(--surf3)', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '📊 Summary report'),
+        // Baseline lock + day-2 Change Monitor: freeze the current state, then watch what moves.
+        h('button', {
+          onClick: lockBaseline, disabled: allRows.length === 0 || locking,
+          title: 'Lock baseline — freeze EVERY store\'s current EOM state (FOB + all components, per-item count qty / on-hand $ / variance / last-counted). Do this before the day\'s recounting starts. Tomorrow the Change Monitor diffs live data against this lock. Append-only — safe to lock more than once (keeps every checkpoint).',
+          style: { background: 'var(--surf3)', color: '#34d399', border: '1px solid #34d399', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: allRows.length ? 'pointer' : 'not-allowed' },
+        }, locking ? '… Locking' : '🔒 Lock baseline'),
+        h('button', {
+          onClick: openMonitor, disabled: rows.length === 0,
+          title: 'Change Monitor — diff the current live state against the locked baseline. Shows per store the FOB Δ and, per item, whether a recount HELPED (variance moved toward $0) or HURT (moved away). This is the day-2 secondary review.',
+          style: { background: 'var(--surf3)', color: '#f472b6', border: '1px solid #f472b6', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '📸 Change Monitor'),
+        lockMsg ? span({ style: { fontSize: '11px', color: lockMsg.startsWith('✓') ? '#4ade80' : '#fb923c', alignSelf: 'center' } }, lockMsg) : null,
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
           onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
@@ -1850,6 +1941,93 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 ]);
               })),
             ]))));
+    })(),
+
+    // ── Change Monitor modal — day-2 diff of live state vs the locked baseline ──────
+    monOpen && (() => {
+      const V = { helping: '#4ade80', hurting: '#f87171', flat: 'var(--text3)', unknown: 'var(--text3)', tie: 'var(--text3)' };
+      const VLABEL = { helping: 'helping', hurting: 'hurting', flat: 'flat', unknown: '—' };
+      const box = { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '7px', padding: '7px 10px', display: 'flex', flexDirection: 'column', gap: '1px', minWidth: '96px' };
+      const lab = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 };
+      const th = (t, extra) => h('th', { key: t, style: { textAlign: extra?.left ? 'left' : 'right', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, t);
+      const dpp = v => v == null ? '—' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(2)}pp`;
+      const d = mon?.diff;
+      const stores = d ? d.stores : [];
+      const takenLbl = mon?.takenAt ? new Date(mon.takenAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null;
+      return div({
+        onClick: () => setMonOpen(false),
+        style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+      },
+        div({ onClick: e => e.stopPropagation(),
+          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '1000px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📸 EOM Change Monitor — ${scopeLabel()}`),
+          h('button', { onClick: () => setMonOpen(false), style: MODAL_X }, '✕'),
+          div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
+            takenLbl ? `Live now vs baseline locked ${takenLbl} · ${mon.nBaseline} store${mon.nBaseline === 1 ? '' : 's'} baselined` : 'No baseline found for this period yet.'),
+          div({ style: { display: 'flex', gap: '7px', marginBottom: '12px' } },
+            h('button', { onClick: openMonitor, style: MODAL_TOOLBTN, disabled: monBusy }, monBusy ? '… Refreshing' : '↻ Refresh')),
+
+          monBusy ? div({ style: { color: 'var(--text3)', padding: '30px', textAlign: 'center' } }, 'Diffing live data against the baseline…')
+          : mon?.error ? div({ style: { color: '#fb923c', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } }, mon.error)
+          : !mon?.nBaseline ? div({ style: { color: 'var(--text3)', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } },
+              'No baseline is locked for these stores yet. Click ', span({ style: { color: '#34d399', fontWeight: 700 } }, '🔒 Lock baseline'), ' to freeze the current state, then check back after the stores make moves.')
+          : [
+            // District roll-up strip
+            div({ key: 'roll', style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
+              div({ style: box }, span({ style: lab }, 'FOB improving'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(d.improved))),
+              div({ style: box }, span({ style: lab }, 'FOB worse'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(d.worsened))),
+              div({ style: box }, span({ style: lab }, 'Active'), span({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--text)' } }, `${d.active}/${d.nStores}`)),
+              div({ style: box }, span({ style: lab }, '$ moved toward 0'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#4ade80' } }, money(d.totalHelped))),
+              div({ style: box }, span({ style: lab }, '$ moved away'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#f87171' } }, money(d.totalHurt)))),
+            d.active === 0 ? div({ key: 'noact', style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 2px 12px' } }, 'No changes since the baseline yet — nothing has moved. Check back after the stores recount.') : null,
+
+            // Per-store table
+            div({ key: 'tbl', style: { overflowX: 'auto' } },
+              h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
+                h('thead', { key: 'h' }, h('tr', null,
+                  th('Store', { left: true }), th('FOB base→now'), th('Δ'), th('Verdict'),
+                  th('Count'), th('Helped'), th('Hurt'), th('2nd review'))),
+                h('tbody', { key: 'b' }, stores.flatMap((s) => {
+                  const loc = s.loc; const open = !!monOpenRows[loc];
+                  const sr = secReview[unpad(loc)] || secReview[String(loc)] || {};
+                  const rowEls = [
+                    h('tr', { key: loc, onClick: () => setMonOpenRows(m => ({ ...m, [loc]: !m[loc] })),
+                      style: { cursor: 'pointer', borderBottom: '1px solid var(--bdr)', background: open ? 'var(--surf2)' : 'transparent' } },
+                      h('td', { style: { padding: '5px 7px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } },
+                        span({ style: { color: 'var(--text3)', marginRight: '5px' } }, open ? '▾' : '▸'), nm(loc), span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ` #${unpad(loc)}`)),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: 'var(--text2)' } }, `${pct2(s.fob.baseFobPct)} → ${pct2(s.fob.curFobPct)}`),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[s.fob.verdict] } }, dpp(s.fob.dFobPct)),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', fontWeight: 700, color: V[s.fob.verdict] } }, VLABEL[s.fob.verdict]),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, s.count.basePct != null && s.count.curPct != null ? `${Math.round(s.count.basePct * 100)}→${Math.round(s.count.curPct * 100)}%` : '—'),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHelped ? '#4ade80' : 'var(--text3)', fontWeight: s.nHelped ? 700 : 400 } }, s.nHelped || ''),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHurt ? '#f87171' : 'var(--text3)', fontWeight: s.nHurt ? 700 : 400 } }, s.nHurt || ''),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', whiteSpace: 'nowrap' }, onClick: e => e.stopPropagation() },
+                        h('button', { onClick: () => markSecondary(loc, sr.status === 'reviewed' ? 'pending' : 'reviewed'),
+                          style: { fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 7px', cursor: 'pointer', border: '1px solid', ...(sr.status === 'reviewed' ? { color: '#4ade80', borderColor: '#4ade80', background: 'transparent' } : sr.status === 'flagged' ? { color: '#f87171', borderColor: '#f87171', background: 'transparent' } : { color: 'var(--text3)', borderColor: 'var(--bdr2)', background: 'var(--surf3)' }) } },
+                          sr.status === 'reviewed' ? '✓ reviewed' : sr.status === 'flagged' ? '⚑ flagged' : 'mark'),
+                        h('button', { onClick: () => markSecondary(loc, sr.status === 'flagged' ? 'pending' : 'flagged'), title: 'Flag for follow-up',
+                          style: { marginLeft: '4px', fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 6px', cursor: 'pointer', border: '1px solid var(--bdr2)', background: 'var(--surf3)', color: sr.status === 'flagged' ? '#f87171' : 'var(--text3)' } }, '⚑'))),
+                  ];
+                  if (open) {
+                    const its = s.items.slice(0, 40);
+                    rowEls.push(h('tr', { key: loc + '-d' }, h('td', { colSpan: 8, style: { padding: '2px 7px 10px 24px', background: 'var(--surf2)' } },
+                      s.items.length === 0 ? div({ style: { color: 'var(--text3)', fontSize: '11px', padding: '6px 0' } }, 'No item-level changes since baseline.')
+                      : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
+                        h('thead', { key: 'ih' }, h('tr', null, th('Item', { left: true }), th('Class', { left: true }), th('Var base→now'), th('Δ'), th('Move'), th('Recounted'))),
+                        h('tbody', { key: 'ib' }, its.map((it, j) => h('tr', { key: j, style: { borderBottom: '1px solid var(--bdr)' } },
+                          h('td', { style: { padding: '3px 7px', color: 'var(--text2)' } }, it.descr || it.wrin, it.isNew ? span({ style: { color: '#38bdf8', fontSize: '9px', marginLeft: '4px' } }, 'NEW') : it.isGone ? span({ style: { color: 'var(--text3)', fontSize: '9px', marginLeft: '4px' } }, 'GONE') : null),
+                          h('td', { style: { padding: '3px 7px', color: 'var(--text3)', textTransform: 'capitalize' } }, it.cls || '—'),
+                          h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, `${it.baseVar != null ? money(it.baseVar) : '—'} → ${it.curVar != null ? money(it.curVar) : '—'}`),
+                          h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[it.verdict] } }, it.dVar != null ? `${it.dVar > 0 ? '+' : ''}${money(it.dVar)}` : '—'),
+                          h('td', { style: { padding: '3px 7px', textAlign: 'right', fontWeight: 700, color: V[it.verdict] } }, VLABEL[it.verdict]),
+                          h('td', { style: { padding: '3px 7px', textAlign: 'center', color: it.recounted ? '#f5bc00' : 'var(--text3)' } }, it.recounted ? '↻' : ''))))]),
+                      s.items.length > 40 ? div({ style: { color: 'var(--text3)', fontSize: '10px', paddingTop: '4px' } }, `+${s.items.length - 40} more changed items`) : null)));
+                  }
+                  return rowEls;
+                })),
+              ])),
+          ],
+        ));
     })(),
 
     bulkOpen && div({

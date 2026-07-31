@@ -1599,3 +1599,43 @@ create table if not exists public.eom_notification_settings (
 alter table public.eom_notification_settings enable row level security;
 create policy "eom_notification_settings: public read"  on public.eom_notification_settings for select using (true);
 create policy "eom_notification_settings: public write" on public.eom_notification_settings for all using (true);
+
+-- ── EOM baseline lock + day-2 change monitor ────────────────────────────────────
+-- A point-in-time LOCK of a store's FULL EOM state so we can watch what changes after comms go out
+-- and judge whether each move HELPED (variance toward $0 / FOB down) or HURT. Captures FOB + all 6
+-- components, per-item count qty / on-hand $ / variance / last-counted, and per-class completion —
+-- all as jsonb (owner directive: "err on saving too much; we can weed it out later"). APPEND-ONLY:
+-- one row per (loc, snapshot); we keep every baseline + intraday checkpoint for the full trajectory.
+create table if not exists public.eom_snapshots (
+  id        bigint generated always as identity primary key,
+  loc       text        not null,
+  period    text        not null,            -- 'YYYY-MM'
+  kind      text        not null default 'baseline',   -- 'baseline' | 'checkpoint'
+  label     text,                            -- 'auto-4am' | 'manual' | free text
+  taken_at  timestamptz not null default now(),
+  taken_by  uuid,                            -- auth uid (null for the cron/service account)
+  fob       jsonb,                           -- { sales, fob, fobPct, comp, raw, cond, emp, statv, unex, asOf }
+  count     jsonb,                           -- { pctCounted, earlyPctCounted, believesDone, byClass }
+  items     jsonb,                           -- [{ wrin, descr, cls, qty, onHandAmt, dolDiff, variance, lastCounted }]
+  meta      jsonb                            -- anything else worth retaining
+);
+create index if not exists eom_snapshots_period_loc_idx on public.eom_snapshots (period, loc, taken_at desc);
+create index if not exists eom_snapshots_kind_idx        on public.eom_snapshots (period, kind, taken_at desc);
+alter table public.eom_snapshots enable row level security;
+create policy "eom_snapshots: public read"  on public.eom_snapshots for select using (true);
+create policy "eom_snapshots: public write" on public.eom_snapshots for all using (true);
+
+-- Per-store secondary-review status for day-2 (owner marks stores as re-reviewed with a note).
+create table if not exists public.eom_secondary_review (
+  loc         text not null,
+  period      text not null,
+  status      text default 'pending',        -- 'pending' | 'reviewed' | 'flagged'
+  note        text,
+  reviewed_at timestamptz,
+  reviewed_by uuid,
+  updated_at  timestamptz default now(),
+  primary key (loc, period)
+);
+alter table public.eom_secondary_review enable row level security;
+create policy "eom_secondary_review: public read"  on public.eom_secondary_review for select using (true);
+create policy "eom_secondary_review: public write" on public.eom_secondary_review for all using (true);
