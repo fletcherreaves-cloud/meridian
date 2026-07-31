@@ -46,6 +46,16 @@ const METRIC_MAP = {
   'Reports / eBOS / DAR':   ['ebos', 'dar', 'daily activity', 'report', 'shift', 'model', 'red model', 'green model', 'glimpse', 'sales ledger', 'cash sheet'],
 };
 
+// Curated reference articles — the ones that DEFINE a metric or formula we lean on. Their full body
+// is captured verbatim in the digest + index so the exact math is versioned and citable (not just a
+// mined sentence). Match on title (case-insensitive).
+const KEY_ARTICLE_PATTERNS = [
+  /2nd Side Formula/i, /Food Over Base/i, /On Hand Inventory/i, /Raw Item Count Report/i,
+  /Inventory Usage/i, /Inventory Analysis Report/i, /DAR \(Daily Activity Report\)/i,
+  /Mobile App Report Metrics Definitions/i, /Digital.?Mobile App Reporting/i, /Locating Digital Metrics/i,
+  /Job Title Codes/i, /2 ?nd side/i, /Overview Of Reports/i, /Physical Inventory/i, /Food Cost Routines/i,
+];
+
 // Definitional / formula cues — a sentence carrying one of these is a glossary candidate.
 const DEF_CUES = [
   /\bis (?:defined as|calculated|computed|the (?:sum|total|percentage|number|amount|ratio|average))\b/i,
@@ -97,6 +107,12 @@ function main() {
       if (glossary.length >= 600) break;
     }
 
+    // 4) Key reference articles — full body verbatim (exact formulas we cite).
+    const keyArticles = rows
+      .filter(r => KEY_ARTICLE_PATTERNS.some(re => re.test(r.title || '')))
+      .map(r => ({ id: r.id, title: clean(r.title), section: clean(r.section), url: r.html_url, body: clean(r.body_text) }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+
     // ── Write JSON index ──────────────────────────────────────────────────────
     const index = {
       generatedAt: new Date().toISOString(),
@@ -104,6 +120,7 @@ function main() {
       taxonomy: tax,
       metricMap,
       glossary,
+      keyArticles,
       articles: rows.map(r => ({ id: r.id, title: clean(r.title), category: clean(r.category), section: clean(r.section), url: r.html_url, nChars: (r.body_text || '').length })),
     };
     writeFile('docs/qsrsoft-kb-index.json', JSON.stringify(index, null, 2));
@@ -141,6 +158,13 @@ function main() {
     for (const g of glossary.slice(0, 200)) L.push(`- "${g.sentence}" — _${g.article}_`);
     if (glossary.length > 200) L.push(`- _+${glossary.length - 200} more in \`docs/qsrsoft-kb-index.json\`_`);
     L.push('');
+
+    L.push('## Key reference articles (verbatim)', '');
+    L.push(`_${keyArticles.length} articles that DEFINE a metric/formula we rely on — full text captured so the exact math is versioned + citable. Full bodies also in \`docs/qsrsoft-kb-index.json\` → \`keyArticles\`._`, '');
+    for (const a of keyArticles) {
+      L.push(`### ${a.title}${a.section ? `  ·  _${a.section}_` : ''}${a.url ? `  ([open](${a.url}))` : ''}`, '');
+      L.push(a.body.length > 4000 ? a.body.slice(0, 4000) + ' …_[truncated — see index]_' : a.body, '');
+    }
 
     writeFile('memory/qsrsoft-kb-digest.md', L.join('\n'));
     console.log(`[kb-analyze] ✓ wrote memory/qsrsoft-kb-digest.md (${L.length} lines) + docs/qsrsoft-kb-index.json`);
