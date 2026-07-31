@@ -8,8 +8,11 @@ name: EOM Baseline Snapshot
 
 on:
   schedule:
-    - cron: '30 9 * * *'    # 09:30 UTC = ~4:30 AM CT — the BASELINE lock, before the day's recounting
-    - cron: '0 15 * * *'    # 15:00 UTC = ~10:00 AM CT — intraday checkpoint
+    # Baseline runs AFTER the daily data pulls (10:00 UTC) so the snapshot captures FRESH Variance/Stat
+    # data — an earlier lock captured stale/empty variance even for stores that had counted (owner Notes
+    # 38: Tishomingo counted 07/30 but its 4:30am-ish baseline was all $0). Still before daytime recounting.
+    - cron: '30 11 * * *'   # 11:30 UTC = ~6:30 AM CT — the BASELINE lock (post-pull, pre-recount)
+    - cron: '0 16 * * *'    # 16:00 UTC = ~11:00 AM CT — intraday checkpoint
     - cron: '0 21 * * *'    # 21:00 UTC = ~4:00 PM CT  — intraday checkpoint
   workflow_dispatch:
     inputs:

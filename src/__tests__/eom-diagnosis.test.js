@@ -109,7 +109,7 @@ describe('runDiagnosis — editable check registry', () => {
     expect(recap).toMatch(/\*\*FOB 3\.73%\*\* · -0\.07pp vs 3\.80% target · \$9,922/);
     expect(recap).toMatch(/Do these now/);
     expect(recap).toMatch(/Net variance/);
-    expect(recap).toMatch(/Time's the lever/);
+    expect(recap).toMatch(/optional polish/);  // 3.73% < 3.80% target → recount rule reframes as optional
     // Recap omits the heavy Focus-now / reference-table sections the full report carries.
     expect(recap).not.toMatch(/Focus now/);
     expect(recap.length).toBeLessThan(full.length);
@@ -170,6 +170,18 @@ describe('runDiagnosis — editable check registry', () => {
     const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.037, tgt: 0.038, dollars: 8000 } });
     expect(recap).toMatch(/Clean sweep|Go ahead and finalize/);
     expect(recap).not.toMatch(/Do these now/);
+  });
+
+  it('recount rule: at/under FOB target reframes recounts as optional polish; over target keeps the push (Notes 38)', () => {
+    const variance = [{ wrin: 'a', descr: 'Fries', dolDiff: -200, cls: 'food' }];
+    const res = runDiagnosis({ store: 's', storeName: 'Marietta', period: '2026-07', data: { variance } });
+    const under = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.037, tgt: 0.038, dollars: 9000 } });
+    expect(under).toMatch(/at\/under your FOB target/);
+    expect(under).toMatch(/optional polish/);
+    expect(under).not.toMatch(/Time's the lever/);
+    const over = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.040, tgt: 0.038, dollars: 9000 } });
+    expect(over).toMatch(/Time's the lever/);
+    expect(over).not.toMatch(/optional polish/);
   });
 
   it('recount-swing: flags a large same-day count-to-count swing crossing zero (Magali fry case)', () => {

@@ -867,10 +867,17 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       const names = [...new Set(intg.slice(0, 2).map(f => (f.title || '').replace(/\s*\(WRIN[^)]*\)/i, '').trim()))].filter(Boolean);
       R.push(`_Worth a look together: ${names.join(' · ') || 'a few entries'}. Nothing's being called wrong — a clean recount/verify just makes the number airtight and off our radar._`, '');
     }
+    // Recount rule (owner Notes 38): a store already AT/UNDER its FOB target shouldn't be pushed to
+    // chase variance-reduction recounts (no upside, real downside). But integrity items (padding,
+    // swings, impossible values) are about TRUTH, not optimization — pursue them regardless of target.
+    // So under-target reframes OPTIMIZATION recounts as optional while keeping integrity front-and-center.
+    const underTarget = fob && fob.pct != null && fob.tgt != null && fob.pct <= fob.tgt + 1e-9;
     const clean = !V.length && !doNow.length;
     R.push(clean
       ? `Go ahead and finalize.${link ? ` More detail: ${link}` : ''}`
-      : `Time's the lever — knock these out today, then re-run and reply.${link ? ` · More detail: ${link}` : ''}`);
+      : underTarget
+        ? `You're at/under your FOB target ✓ — the recounts above are optional polish, not required.${intg.length ? ' The one thing worth doing: verify the flagged items so the number is airtight.' : ' Finalize once your count is complete.'}${link ? ` · More detail: ${link}` : ''}`
+        : `Time's the lever — knock these out today, then re-run and reply.${link ? ` · More detail: ${link}` : ''}`);
     return R.join('\n');
   }
 

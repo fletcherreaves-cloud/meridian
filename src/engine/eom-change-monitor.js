@@ -14,10 +14,12 @@ const num = v => Number(v) || 0;
 const COMP = ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'];
 
 // Judge a variance move: helping = |current| smaller than |baseline| (toward zero); hurting = larger.
-// 'counted' = the baseline was ~empty for this item (the store hadn't entered its count when the
-// baseline locked) but now it carries a real value → the COUNT LANDED, not a move that helped or hurt.
-// A near-zero item-by-item variance almost never reflects a real count (owner Notes 38: Tishomingo all
-// zeroes) — it means "uncounted at lock", so we label it neutrally instead of scoring it as hurting.
+// 'counted' = the baseline had ~$0 for this item but it now carries a real value → the VARIANCE DATA
+// POSTED between lock and now, not a move that helped or hurt. A near-zero item-by-item variance almost
+// never reflects a real count (owner Notes 38: Tishomingo counted 07/30 yet its baseline was all $0),
+// so a $0 baseline means the Variance/Stat data wasn't populated in the snapshot at lock (QSRSoft's
+// report lags the count; an early auto-lock can precede the daily pull) — NOT that the store didn't
+// count. We label it neutrally ('var posted') instead of scoring it as hurting.
 function verdict(baseVar, curVar, tol = 1) {
   if (baseVar == null || curVar == null) return 'unknown';
   const b = Math.abs(baseVar), c = Math.abs(curVar);
