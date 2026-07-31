@@ -133,6 +133,20 @@ describe('runDiagnosis — editable check registry', () => {
     expect(clean).toMatch(/Clean sweep/);
   });
 
+  it('rolls up repeated recount-swing diagnoses into one coaching block + item list (owner)', () => {
+    const mkItem = (wrin, descr) => ({ wrin, descr, counts: [
+      { dt: '2026-07-03', tm: '8:00 AM', difference: 300, manager: 'Marlena F' },
+      { dt: '2026-07-03', tm: '8:30 AM', difference: -300, manager: 'Marlena F' },
+    ] });
+    const rawItems = [mkItem('1', 'McNuggets'), mkItem('2', 'Bacon'), mkItem('3', 'Beef'), mkItem('4', 'Sprite')];
+    const res = runDiagnosis({ store: '1', storeName: 'Tecumseh', period: '2026-07', data: { rawItems } });
+    const full = formatDiagnosisReport(res, {});
+    // ONE rolled-up header naming the count + manager, not four repeated "Recount swing:" paragraphs.
+    expect(full).toMatch(/Recount swings — 4 items, single counter \(Marlena F\)/);
+    expect((full.match(/A swing this large between counts/g) || []).length).toBe(1); // coaching appears once
+    expect(full).toMatch(/McNuggets \(\$600 swing ↔\)/);                            // compact item list (600 = 300→-300 delta)
+  });
+
   it('surfaces a granted count-date exception (banner + off-process note on the all-counted line)', () => {
     const res = runDiagnosis({ store: '37566', storeName: 'Ponce de Leon', period: '2026-07', data: { variance: [{ wrin: '1', descr: 'BEEF', dolDiff: -80, cls: 'food' }] } });
     const exception = { kind: 'early-count-accepted', acceptedDate: '2026-07-28', approvedBy: 'Brad Denley' };

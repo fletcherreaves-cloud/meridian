@@ -987,8 +987,32 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     if (intgFull.length) {
       L.push(`## 🔍 ${INTEGRITY_LABEL} — verify, don't accuse`, '');
       L.push('_A clean recount / verify makes these numbers airtight. Nothing here is an accusation — just entries worth a second look together._', '');
-      intgFull.slice(0, 8).forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
-      if (intgFull.length > 8) L.push(`- _+${intgFull.length - 8} more_`);
+      // Roll up items that share the SAME diagnosis into one coaching block + a compact item list,
+      // instead of repeating an identical paragraph N times (owner 2026-07-31 — the 14 recount-swings).
+      const groups = {};
+      for (const f of intgFull) {
+        const key = f.checkId === 'recount-swing'
+          ? `recount-swing|${f.data?.manager || '?'}|${f.data?.day || '?'}`
+          : `solo|${f.checkId}|${f.title}`;
+        (groups[key] || (groups[key] = [])).push(f);
+      }
+      let shown = 0;
+      for (const key of Object.keys(groups)) {
+        if (shown >= 14) break;
+        const g = groups[key];
+        if (key.startsWith('recount-swing|') && g.length >= 3) {
+          const mgr = g[0].data?.manager, day = g[0].data?.day;
+          const timing = (g.find(f => f.data?.timing) || {}).data?.timing;
+          const nCross = g.filter(f => f.data?.crossZero).length;
+          L.push(`- **Recount swings — ${g.length} items${mgr ? `, single counter (${mgr})` : ''}${day ? `, ${day}` : ''}.** A swing this large between counts — with no delivery in between — is where a **3rd count by a different manager** should be required before saving. Verify which count was right so the on-hand is clean.${nCross ? ` ${nCross} crossed zero (offsetting).` : ''}${timing ? ' ' + recountTimingSentence(timing) : ''}`);
+          const items = g.slice().sort((a, b) => (b.dollars || 0) - (a.dollars || 0))
+            .map(f => `${(f.title || '').replace(/^Recount swing:\s*/, '')} (${money(f.dollars)} swing${f.data?.crossZero ? ' ↔' : ''})`);
+          L.push(`  ${items.slice(0, 12).join(' · ')}${items.length > 12 ? ` _+${items.length - 12} more_` : ''}`);
+          shown++;
+        } else {
+          for (const f of g) { if (shown >= 14) break; L.push(`- **${f.title}** — ${f.detail}`); shown++; }
+        }
+      }
       L.push('');
     }
   }
