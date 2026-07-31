@@ -22,6 +22,7 @@ import {
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig } from '../engine/eom-diagnosis.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
+import { buildDistrictSummary, COMP_META } from '../engine/eom-district-summary.js';
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 
@@ -611,6 +612,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkDrafts, setBulkDrafts] = useState([]);
   const [bulkCopied, setBulkCopied] = useState('');
+  // District EOM Summary — roll-up across the current scope (FOB + components, count, opportunity).
+  const [sumOpen, setSumOpen] = useState(false);
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
@@ -838,6 +841,37 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const parsed = parseExternalFob(xcText, allRows.map(r => r.loc));
     setXcResult(reconcileFob(parsed, meridianByStore));
   }, [xcText, allRows, meridianByStore]);
+
+  // District EOM Summary over the CURRENT scope (rows are already filtered by state/patch/store).
+  const districtSummary = useMemo(() => buildDistrictSummary(rows, DEFAULT_TARGETS), [rows]);
+  const sumCsv = () => {
+    const H = ['Store', 'Prod Sales', 'FOB $', 'FOB %', 'FOB target %', 'FOB ± pp',
+      ...COMP_META.map(m => `${m.label} $`), ...COMP_META.map(m => `${m.label} %`), ...COMP_META.map(m => `${m.label} ±pp`),
+      'Count %', 'Ready', 'Uncounted F/C', '$ over target'];
+    const rows2 = districtSummary.stores.map(s => {
+      const pctOf = k => s.sales ? (s.comps[k] / s.sales * 100) : null;
+      const dOf = m => { const p = pctOf(m.k); const t = DEFAULT_TARGETS[unpad(s.loc)]?.[m.tgt]; return (p != null && t != null) ? (p - t * 100) : null; };
+      return [nm(s.loc), Math.round(s.sales), Math.round(s.fobD), s.fobPct != null ? (s.fobPct * 100).toFixed(2) : '', s.fobTgt != null ? (s.fobTgt * 100).toFixed(2) : '', s.deltaPp != null ? s.deltaPp.toFixed(2) : '',
+        ...COMP_META.map(m => Math.round(s.comps[m.k])), ...COMP_META.map(m => { const p = pctOf(m.k); return p != null ? p.toFixed(2) : ''; }), ...COMP_META.map(m => { const d = dOf(m); return d != null ? d.toFixed(2) : ''; }),
+        s.countPct != null ? Math.round(s.countPct * 100) : '', s.believesDone ? 'yes' : 'no', s.uncountedFC, s.over$ != null ? Math.round(s.over$) : ''];
+    });
+    return toCsv(H, rows2);
+  };
+  const sumPrintHtml = () => {
+    const d = districtSummary; const r = d.rollup;
+    const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
+    const pctS = (p) => p != null ? `${(p * 100).toFixed(2)}%` : '—';
+    const head = `<h1>District EOM Summary — ${scopeLabel()}</h1><p class="sub">${period} · ${r.nStores} store(s) · dollar-weighted FOB roll-up</p>
+      <table><tbody>
+      <tr><th>District FOB</th><td class="g">${pctS(r.fobPct)} · ${$(r.fob$)}</td><th>vs target</th><td>${pctS(r.fobTgt)}${r.fobPct != null && r.fobTgt != null ? ` (${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)}pp)` : ''}</td><th>Prod Sales</th><td>${$(r.sales)}</td></tr>
+      <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'} · ${d.completion.storesWithUncountedFC} store(s) with uncounted Food/Condiment</td></tr>
+      <tr><th>Opportunity</th><td colspan="5">${$(d.totalOver$)} over target across ${d.opportunity.length} store(s) · biggest driver district-wide: ${d.analysis.biggestComp ? `${d.analysis.biggestComp.label} (${$(d.analysis.biggestComp.amt)})` : '—'}</td></tr>
+      </tbody></table>`;
+    const rowsHtml = d.stores.slice().sort((a, b) => (b.over$ || -1e9) - (a.over$ || -1e9)).map(s =>
+      `<tr><td>${nm(s.loc)}</td><td class="${s.deltaPp > 0 ? 'r' : ''}">${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}</td><td>${$(s.fobD)}</td>${COMP_META.map(m => `<td>${$(s.comps[m.k])}</td>`).join('')}<td>${s.countPct != null ? Math.round(s.countPct * 100) + '%' : '—'}${s.uncountedFC ? ` <span class="r">(${s.uncountedFC} F/C)</span>` : ''}</td><td>${s.believesDone ? '✓' : s.countPct > 0.01 ? 'counting' : '—'}</td></tr>`).join('');
+    const table = `<h1 style="margin-top:18px">By store</h1><table><thead><tr><th>Store</th><th>FOB % (±tgt)</th><th>FOB $</th>${COMP_META.map(m => `<th>${m.label}</th>`).join('')}<th>Count</th><th>Ready</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+    return head + table;
+  };
 
   // ── Scan exports (Save CSV / Print) — supporting facts for coaching + records ──
   const scopeLabel = () => `${patch ? `patch: ${patch}` : (scope === 'all' ? 'all stores' : scope)}${oneStore ? ` · ${nm(oneStore)}` : ''}`;
@@ -1186,6 +1220,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'Generate the EOM follow-up message for every location in scope at once — copy each and send (recount lists / action plans, freshest-wins).',
           style: { background: 'var(--surf3)', color: '#f5bc00', border: '1px solid #f5bc00', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '📣 Message all'),
+        h('button', {
+          onClick: () => setSumOpen(true), disabled: rows.length === 0,
+          title: 'District EOM Summary — FOB + all components ($/%/vs target), count completion, and the $ opportunity across the current scope. CSV + Print.',
+          style: { background: 'var(--surf3)', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '📊 Summary report'),
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
           onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
@@ -1745,6 +1784,63 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                         span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.overSum || 0).toLocaleString()} over ${w.overN} mo (from ${w.from || ''}) → snapped ${w.to || ''}`))))));
               }))
           : null)),
+
+    sumOpen && (() => {
+      const d = districtSummary, r = d.rollup;
+      const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
+      const pctS = p => p != null ? `${(p * 100).toFixed(2)}%` : '—';
+      const box = { padding: '4px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '1px' };
+      const lab = { fontSize: '8px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' };
+      const big = c => ({ fontSize: '13px', fontWeight: 800, color: c || 'var(--text)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' });
+      const fobOver = r.fobPct != null && r.fobTgt != null && r.fobPct > r.fobTgt;
+      const th = t => h('th', { style: { textAlign: 'right', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, t);
+      const stores = d.stores.slice().sort((a, b) => (b.over$ || -1e9) - (a.over$ || -1e9));
+      return div({
+        onClick: () => setSumOpen(false),
+        style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+      },
+        div({ onClick: e => e.stopPropagation(),
+          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '960px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📊 District EOM Summary — ${scopeLabel()}`),
+          h('button', { onClick: () => setSumOpen(false), style: MODAL_X }, '✕'),
+          div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } }, `${period} · ${r.nStores} store${r.nStores === 1 ? '' : 's'} · dollar-weighted roll-up`),
+          div({ style: { display: 'flex', gap: '7px', marginBottom: '12px' } },
+            h('button', { onClick: () => downloadText(`eom-summary_${scope}_${period}.csv`, sumCsv()), style: MODAL_TOOLBTN }, '⤓ Save CSV'),
+            h('button', { onClick: () => openPrintWindow('District EOM Summary', sumPrintHtml()), style: MODAL_TOOLBTN }, '⎙ Print')),
+          // FOB roll-up strip
+          div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '10px' } },
+            div({ style: box }, span({ style: lab }, 'District FOB'), span({ style: big(fobOver ? '#f87171' : '#f5bc00') }, `${pctS(r.fobPct)} · ${$(r.fob$)}`),
+              r.fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80' } }, `${r.fobPct != null ? `${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${pctS(r.fobTgt)}`) : null),
+            ...COMP_META.map(m => div({ key: m.k, style: box }, span({ style: lab }, m.label), span({ style: big() }, $(r.comps[m.k])),
+              span({ style: { fontSize: '8.5px', color: 'var(--text3)' } }, pctS(r.compPct[m.k])))),
+            div({ style: box }, span({ style: lab }, 'Prod Sales'), span({ style: big() }, $(r.sales)))),
+          // Completion + opportunity + analysis
+          div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
+            span(null, span({ style: { color: '#4ade80', fontWeight: 700 } }, `${d.completion.ready} ready`), ` · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'}`),
+            d.completion.storesWithUncountedFC ? span({ style: { color: '#fb923c', fontWeight: 700 } }, `⚠ ${d.completion.storesWithUncountedFC} with uncounted Food/Condiment`) : null),
+          div({ style: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
+            span(null, span({ style: { color: '#f5bc00', fontWeight: 700 } }, `💰 ${$(d.totalOver$)} over target`), ` across ${d.opportunity.length} store${d.opportunity.length === 1 ? '' : 's'}`),
+            d.analysis.biggestComp ? span({ style: { color: 'var(--text2)' } }, `Biggest driver: ${d.analysis.biggestComp.label} (${$(d.analysis.biggestComp.amt)})`) : null),
+          // Per-store table
+          div({ style: { overflowX: 'auto' } },
+            h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
+              h('thead', { key: 'h' }, h('tr', null,
+                h('th', { style: { textAlign: 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase' } }, 'Store'),
+                th('FOB % (±tgt)'), th('FOB $'), ...COMP_META.map(m => th(m.label)), th('Count'), th('Ready'), th('$ over'))),
+              h('tbody', { key: 'b' }, stores.map((s, i) => {
+                const sc = s.deltaPp > 0.001 ? '#f87171' : s.deltaPp < -0.001 ? '#4ade80' : 'var(--text)';
+                return h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
+                  h('td', { style: { padding: '4px 7px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, nm(s.loc), span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: '9px', marginLeft: '4px' } }, `#${unpad(s.loc)}`)),
+                  h('td', { style: { padding: '4px 7px', textAlign: 'right', color: sc, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, `${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}`),
+                  h('td', { style: { padding: '4px 7px', textAlign: 'right', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' } }, $(s.fobD)),
+                  ...COMP_META.map(m => h('td', { key: m.k, style: { padding: '4px 7px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, $(s.comps[m.k]))),
+                  h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.uncountedFC ? '#fb923c' : 'var(--text2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, s.countPct != null ? `${Math.round(s.countPct * 100)}%` : '—', s.uncountedFC ? ` ·${s.uncountedFC}` : ''),
+                  h('td', { style: { padding: '4px 7px', textAlign: 'center', color: s.believesDone ? '#4ade80' : 'var(--text3)' } }, s.believesDone ? '✓' : ''),
+                  h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.over$ > 0 ? '#f5bc00' : 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, s.over$ != null && s.over$ > 0 ? $(s.over$) : ''),
+                ]);
+              })),
+            ]))));
+    })(),
 
     bulkOpen && div({
       onClick: () => setBulkOpen(false),
