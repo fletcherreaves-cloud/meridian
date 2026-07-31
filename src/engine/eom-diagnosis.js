@@ -545,7 +545,19 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // `incomplete` = diagnoseIncompleteCount() result (byState never/early/stale). Lets the report
 // (and therefore SAGE, which reads it) frame uncounted items CORRECTLY instead of calling them
 // all "blanks to go count" — the Durant #5985 lesson. See memory/project-eom-uncounted-vs-qsrsoft.
-export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false } = {}) {
+// Integrity/pattern checks — the "worth a second look" family (padding, uniform/inflated waste,
+// impossible balances, re-count churn). When one of these fires, the recap softens into a
+// non-accusatory "let's verify" note instead of the punchy default (owner: give the why, nicely).
+export const INTEGRITY_CHECK_IDS = new Set([
+  'count-manipulation', 'waste-inflation', 'waste-patterns', 'unrealistic-over',
+  'negative-onhand', 'negative-usage', 'uom-sanity',
+]);
+
+// `mode:'recap'` returns the super-abbreviated message (FOB line → count status → Top-5 → net → soft
+// integrity note → punchy close + optional link), scaled hard — the day-of nudge to a GM. It reuses
+// the SAME computed doNow/net/shorts/overs as the full report, so the two can never drift.
+// `fob` = { pct, tgt, dollars } for the FOB one-liner; `link` = optional "more detail" URL.
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '' } = {}) {
   // Dedupe variance rows by WRIN first (owner: duplicate lines) — a doubled row would otherwise
   // surface the same item twice in Top-5, Focus now, and the reference table. Keep the largest-|$|
   // instance (a literal duplicate is identical; keeping one is correct, summing would double it).
@@ -721,6 +733,43 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
 
   L.push(`**Bottom line:** ${V.length} item${V.length === 1 ? '' : 's'} exceed ±$${threshold} · **Net variance ${money(net)}**`);
   L.push(`Shortages: ${shorts.length} (${money(shorts.reduce((s, v) => s + v.dolDiff, 0))}) · Overages: ${overs.length} (${money(overs.reduce((s, v) => s + v.dolDiff, 0))})`, '');
+
+  // ── RECAP MODE — the super-abbreviated day-of message (owner Notes 37 C1) ──
+  // FOB line first → count status one-liner → Top-5 → net → soft integrity note → punchy close.
+  // Reuses doNow/net/shorts/overs/V + the count-timing buckets above, so it can't drift from the report.
+  if (mode === 'recap') {
+    const R = [`**${result.storeName || result.store} — EOM FOB ${result.period}**`, ''];
+    if (fob && fob.pct != null) {
+      const dpp = (fob.tgt != null) ? (fob.pct - fob.tgt) * 100 : null;
+      R.push(`**FOB ${(fob.pct * 100).toFixed(2)}%**${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}pp vs ${(fob.tgt * 100).toFixed(2)}% target` : ''}${fob.dollars != null ? ` · ${money(fob.dollars)}` : ''}`, '');
+    }
+    // Count status — one line, only the gaps that matter TODAY (Food/Cond early or never, Paper never).
+    const gaps = [];
+    if (earlyFC.length) gaps.push(`${earlyFC.length} Food/Cond counted early — recount for a live number`);
+    if (neverFC.length) gaps.push(`${neverFC.length} Food/Cond not counted`);
+    if (neverPaper.length) gaps.push(`${neverPaper.length} Paper not counted`);
+    R.push(gaps.length ? `⏳ **Finish today's count:** ${gaps.join(' · ')}.` : `✅ Food, Condiment & Paper counted.`, '');
+    // Top 5 (scales down — celebrates a clean sweep).
+    if (doNow.length) {
+      R.push(`**Do these now${doNow.length < 5 ? ` (only ${doNow.length} — running tight, good sign)` : ''}:**`);
+      doNow.slice(0, 5).forEach((d, i) => R.push(`${i + 1}. ${d.text}`));
+      R.push('');
+    } else {
+      R.push(`🏆 **Clean sweep on Food & Condiment** — nothing to action. Nice work.`, '');
+    }
+    if (V.length) R.push(`**Net variance ${money(net)}** across ${V.length} item${V.length === 1 ? '' : 's'} over ±$${threshold} (short ${shorts.length} / over ${overs.length}).`, '');
+    // Soft, non-accusatory note when an integrity/pattern check fired — give the why, recommend a look.
+    const intg = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
+    if (intg.length) {
+      const names = [...new Set(intg.slice(0, 2).map(f => (f.title || '').replace(/\s*\(WRIN[^)]*\)/i, '').trim()))].filter(Boolean);
+      R.push(`_Worth a look together: ${names.join(' · ') || 'a few entries'}. Nothing's being called wrong — a clean recount/verify just makes the number airtight and off our radar._`, '');
+    }
+    const clean = !V.length && !doNow.length;
+    R.push(clean
+      ? `Go ahead and finalize.${link ? ` More detail: ${link}` : ''}`
+      : `Time's the lever — knock these out today, then re-run and reply.${link ? ` · More detail: ${link}` : ''}`);
+    return R.join('\n');
+  }
 
   if (!V.length) { L.push('_No items exceed the threshold — count looks clean._'); return L.join('\n'); }
 

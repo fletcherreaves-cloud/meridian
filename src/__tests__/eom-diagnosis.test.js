@@ -97,6 +97,46 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).toMatch(/Clean sweep|win in itself/i);
   });
 
+  it('recap mode: FOB line first, Top-5, net line, punchy close — much shorter than the full report', () => {
+    const variance = [
+      { wrin: '1', descr: 'ICE CREAM MIX', dolDiff: -266, cls: 'food', yield: 30, yieldLo: 55, yieldHi: 60 },
+      { wrin: '2', descr: 'SAUSAGE GRAVY', dolDiff: -143, cls: 'food' },
+      { wrin: '3', descr: 'LEMONADE 7:1', dolDiff: -93, cls: 'food' },
+    ];
+    const res = runDiagnosis({ store: '33109', storeName: 'Marietta', period: '2026-07', data: { variance } });
+    const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.0373, tgt: 0.0380, dollars: 9922 } });
+    const full = formatDiagnosisReport(res, {});
+    expect(recap).toMatch(/\*\*FOB 3\.73%\*\* · -0\.07pp vs 3\.80% target · \$9,922/);
+    expect(recap).toMatch(/Do these now/);
+    expect(recap).toMatch(/Net variance/);
+    expect(recap).toMatch(/Time's the lever/);
+    // Recap omits the heavy Focus-now / reference-table sections the full report carries.
+    expect(recap).not.toMatch(/Focus now/);
+    expect(recap.length).toBeLessThan(full.length);
+    // FOB line appears before the Top-5 (owner: FOB first).
+    expect(recap.indexOf('FOB 3.73%')).toBeLessThan(recap.indexOf('Do these now'));
+  });
+
+  it('recap softens to a non-accusatory "worth a look" note when an integrity check fires', () => {
+    // Static nightly waste on a fry item → waste-inflation finding (integrity family).
+    const variance = [{ wrin: 'f', descr: 'Fries', dolDiff: -120, cls: 'food' }];
+    const waste = [1, 2, 3, 6, 7].map(d => ({ wrin: 'f', descr: 'Fries', amount: 20, type: 'raw', dt: `2026-06-0${d}T23:1${d}:00`, manager: 'Allen W' }));
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance, waste } });
+    const hasIntegrity = (res.findings || []).some(f => f.checkId === 'waste-inflation' || f.checkId === 'waste-patterns');
+    const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.04, tgt: 0.038, dollars: 5000 } });
+    if (hasIntegrity) {
+      expect(recap).toMatch(/Worth a look together/);
+      expect(recap).toMatch(/Nothing's being called wrong/);   // non-accusatory framing
+    }
+  });
+
+  it('recap scales down to a one-liner when the store is clean', () => {
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [] } });
+    const recap = formatDiagnosisReport(res, { mode: 'recap', fob: { pct: 0.037, tgt: 0.038, dollars: 8000 } });
+    expect(recap).toMatch(/Clean sweep|Go ahead and finalize/);
+    expect(recap).not.toMatch(/Do these now/);
+  });
+
   it('Finish-the-count + Count-integrity frame Paper/Non-Product as NOT food-cost-consequential', () => {
     const incomplete = {
       uncountedCount: 2, byState: { never: { n: 2, value: 500 } },

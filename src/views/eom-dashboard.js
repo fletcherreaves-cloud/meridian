@@ -564,6 +564,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [draft, setDraft] = useState(null); // { loc, name, subject, body, rows, uncounted } for the comms modal
   const [copied, setCopied] = useState(false);
   const [draftText, setDraftText] = useState(false); // false = table view, true = raw text view
+  const [draftFull, setDraftFull] = useState(false); // false = abbreviated recap, true = full report (text view)
   const [variance, setVariance] = useState([]);
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
@@ -999,42 +1000,69 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   };
 
   // Build a store's follow-up draft (same diagnosis the 🔬 button uses → a real action plan, not just
-  // the recount nudge). Pure — returns the draft object. Reused by openDraft AND the bulk generator.
+  // ── Shared diagnosis result + report opts (used by BOTH the full-report modal and the message
+  // draft, so the recap can never drift from the report). buildDiagResult mirrors openDiag's data
+  // shape exactly; diagOptsFor returns the report options incl. the FOB one-liner inputs.
+  const buildDiagResult = useCallback((loc, name, components) => {
+    const c = components || {};
+    return runDiagnosis({
+      store: loc, storeName: name, period, asOf: new Date(), checks: activeChecks,
+      data: {
+        fob: c.sales ? { sales: c.sales, compWaste: c.comp, rawWaste: c.raw, condiments: c.cond, empMgrMeals: c.emp, statVariance: c.statv, unexplained: c.unex } : null,
+        onHand: (byLoc[loc] || []).map(r => ({
+          wrin: r.wrin, cls: r.cls, descr: r.descr, onHandAmt: r.on_hand_amt ?? r.onHandAmt,
+          totalUnits: r.total_units ?? r.totalUnits,
+          lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : (r.lastCounted || null),
+          lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : (r.lastSubmitted || null),
+        })),
+        variance: varByLoc[loc] || [], waste: wasteByLoc[loc] || [], transfers: xferByLoc[loc] || [],
+        unmatchedTransfers: unmatchedXfer, selfServeTower: selfServeTowers.has(unpad(loc)), rawItems: rawByLoc[loc] || [],
+      },
+    });
+  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period]);
+
+  const diagOptsFor = useCallback((loc, components) => {
+    const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date() });
+    const caseSzByWrin = {};
+    for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
+    const c = components || {};
+    const tg = DEFAULT_TARGETS[unpad(loc)] || {};
+    const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
+    const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null } : null;
+    return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob };
+  }, [byLoc, rawByLoc, period, selfServeTowers]);
+
+  // Pure — returns the draft object with BOTH the abbreviated recap (default message, Notes 37 C1)
+  // and the full report one click away. Reused by openDraft AND the bulk "Message all" generator.
   const computeDraft = useCallback((loc, name, components) => {
-    let actionItems = [], diagSummary = '', diagDollars = 0, diagRows = [];
+    let recapBody = '', fullBody = '', diagRows = [], actionItems = [];
+    const opts = diagOptsFor(loc, components);
     if (hasDiagData.has(loc) || (components && components.sales)) {
       try {
-        const dg = runDiagnosis({
-          store: loc, storeName: name, period, asOf: new Date(), checks: activeChecks,
-          data: {
-            fob: components && components.sales ? {
-              sales: components.sales, compWaste: components.comp, rawWaste: components.raw,
-              condiments: components.cond, empMgrMeals: components.emp,
-              statVariance: components.statv, unexplained: components.unex,
-            } : null,
-            variance: varByLoc[loc] || [],
-            waste: wasteByLoc[loc] || [],
-            transfers: xferByLoc[loc] || [],
-            unmatchedTransfers: unmatchedXfer,
-            selfServeTower: selfServeTowers.has(unpad(loc)),
-            rawItems: rawByLoc[loc] || [],
-          },
-        });
-        actionItems = dg.actionItems; diagSummary = dg.summary; diagDollars = dg.totalDollars;
-        diagRows = (dg.findings || []).filter(f => (f.severity ?? 0) >= 1).map(f => ({
+        const result = buildDiagResult(loc, name, components);
+        recapBody = formatDiagnosisReport(result, { ...opts, mode: 'recap' });
+        fullBody = formatDiagnosisReport(result, { ...opts, mode: 'full' });
+        actionItems = result.actionItems || [];
+        diagRows = (result.findings || []).filter(f => (f.severity ?? 0) >= 1).map(f => ({
           sev: f.severity ?? 0, sevWord: String(f.severityWord || '').toUpperCase(),
           item: f.title, wrin: f.data?.wrin || '', dollars: f.dollars, note: f.detail,
         }));
-      } catch { /* diagnosis is best-effort; fall back to the recount nudge */ }
+      } catch { /* diagnosis is best-effort */ }
     }
-    const msg = buildIncompleteCountMessage(name, byLoc[loc] || [], {
-      period, asOf: new Date(), actionItems, diagSummary, diagDollars,
-    });
-    return { loc, name, subject: msg.subject, body: msg.body, hasGaps: msg.hasGaps, hasPlan: msg.hasPlan, rows: diagRows, uncounted: msg.uncounted || [] };
-  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, hasDiagData, activeChecks, period, unmatchedXfer, selfServeTowers]);
+    // Fall back to the plain recount nudge if the diagnosis produced nothing (e.g. no FOB/variance yet).
+    if (!recapBody) {
+      const msg = buildIncompleteCountMessage(name, byLoc[loc] || [], { period, asOf: new Date() });
+      recapBody = msg.body; fullBody = msg.body;
+    }
+    const inc = opts.incomplete;
+    const uncounted = (inc && inc.uncounted) ? inc.uncounted.slice(0, 20) : [];
+    const hasGaps = !!(inc && inc.uncountedCount);
+    const subject = `EOM FOB — ${name} · ${period}${actionItems.length ? ` (${actionItems.length} to do now)` : ''}`;
+    return { loc, name, subject, body: recapBody, recapBody, fullBody, hasGaps, hasPlan: actionItems.length > 0, rows: diagRows, uncounted };
+  }, [buildDiagResult, diagOptsFor, hasDiagData, byLoc, period]);
 
   const openDraft = useCallback((loc, name, components) => {
-    setCopied(false);
+    setCopied(false); setDraftFull(false); setDraftText(false);
     setDraft(computeDraft(loc, name, components));
   }, [computeDraft]);
 
@@ -1051,43 +1079,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
   const copyDraft = useCallback(async () => {
     if (!draft) return;
-    const text = `${draft.subject}\n\n${draft.body}`;
+    const activeBody = draftFull ? (draft.fullBody || draft.body) : (draft.recapBody || draft.body);
+    const text = `${draft.subject}\n\n${activeBody}`;
     try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopied(false); }
-  }, [draft]);
+  }, [draft, draftFull]);
 
   // Run the full diagnosis engine for one store from the cloud streams.
   const openDiag = useCallback((loc, name, components) => {
-    const c = components || {};
-    const result = runDiagnosis({
-      store: loc, storeName: name, period, asOf: new Date(), checks: activeChecks,
-      data: {
-        // FOB components → engine keys (targets come from monthly_targets later; band floor for now)
-        fob: c.sales ? {
-          sales: c.sales, compWaste: c.comp, rawWaste: c.raw, condiments: c.cond,
-          empMgrMeals: c.emp, statVariance: c.statv, unexplained: c.unex,
-        } : null,
-        onHand: (byLoc[loc] || []).map(r => ({
-          wrin: r.wrin, cls: r.cls, descr: r.descr, onHandAmt: r.on_hand_amt ?? r.onHandAmt,
-          totalUnits: r.total_units ?? r.totalUnits,   // negative-onhand integrity check reads this
-          lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : (r.lastCounted || null),
-          lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : (r.lastSubmitted || null),
-        })),
-        variance: varByLoc[loc] || [],
-        waste: wasteByLoc[loc] || [],
-        transfers: xferByLoc[loc] || [],
-        unmatchedTransfers: unmatchedXfer,
-        selfServeTower: selfServeTowers.has(unpad(loc)),
-        rawItems: rawByLoc[loc] || [],
-      },
-    });
+    const result = buildDiagResult(loc, name, components);
     setDiagCopied(false);
-    // Count-integrity breakdown (never/early/stale) so the report frames "uncounted" correctly.
-    const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date() });
-    // Case size per WRIN (from the raw-item detail) so the report can show recount qty as
-    // full cases — "look for ~3 cases" is more actionable than "≈2,091 units" (owner req).
-    const caseSzByWrin = {};
-    for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
-    setDiag({ loc, name, result, report: formatDiagnosisReport(result, { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)) }), history: null, caseSzByWrin, incomplete, fob: components || {} });
+    // Report opts (count-integrity never/early/stale, case sizes, self-serve, FOB one-liner inputs).
+    const opts = diagOptsFor(loc, components);
+    const { incomplete, caseSzByWrin } = opts;
+    setDiag({ loc, name, result, report: formatDiagnosisReport(result, opts), history: null, caseSzByWrin, incomplete, fob: components || {} });
     // #38: load any saved verify-&-clear dispositions for this store/period so the panel shows state.
     setDispByWrin({});
     loadEomItemDisposition({ period, loc }).then(rows => {
@@ -1105,7 +1109,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     }).catch(() => {
       setDiag(prev => (prev && prev.loc === loc) ? { ...prev, history: { rows: [], periods: histPeriods } } : prev);
     });
-  }, [period, byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, activeChecks]);
+  }, [buildDiagResult, diagOptsFor, period]);
 
   // #38 verify-&-clear: record a manager's decision for one obsolete/inactive item (optimistic +
   // persisted to eom_item_disposition). No QSRSoft write-back in v1 — logs the decision only.
@@ -1524,45 +1528,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', { onClick: () => setDraft(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
         div({ style: { fontSize: '13px', color: 'var(--text)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: 'var(--surf3)', borderRadius: '6px', border: '1px solid var(--bdr)' } }, draft.subject),
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' } },
-          span({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'Message'),
-          (draft.rows?.length || draft.uncounted?.length)
-            ? h('button', { onClick: () => setDraftText(t => !t), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' } }, draftText ? 'Table view' : 'Text view') : null),
-        // On-screen TABLE view (owner req 2026-07-30) — cleaner to scan than a wall of bullets. The
-        // Copy button still copies the plain-text `body` so it pastes safely into email/SMS/Slack.
-        (!draftText && (draft.rows?.length || draft.uncounted?.length))
-          ? div({ style: { maxHeight: '48vh', overflow: 'auto', border: '1px solid var(--bdr)', borderRadius: '6px', background: 'var(--surf3)', padding: '10px' } }, [
-              draft.uncounted?.length ? div({ key: 'unc', style: { marginBottom: draft.rows?.length ? '14px' : 0 } }, [
-                div({ style: { fontSize: '12px', fontWeight: 700, color: 'var(--text)', marginBottom: '6px' } }, `Still needs a recount — ${draft.uncounted.length} item${draft.uncounted.length === 1 ? '' : 's'}`),
-                h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } }, [
-                  h('thead', null, h('tr', null,
-                    ['Item', 'Class', 'On-hand $'].map((hd, i) => h('th', { key: i, style: { textAlign: i === 2 ? 'right' : 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.04em' } }, hd)))),
-                  h('tbody', null, draft.uncounted.map((u, i) => h('tr', { key: i },
-                    h('td', { style: { padding: '4px 8px', color: 'var(--text)', borderBottom: '1px solid var(--bdr)' } }, u.descr || u.wrin),
-                    h('td', { style: { padding: '4px 8px', color: 'var(--text2)', borderBottom: '1px solid var(--bdr)' } }, u.cls || ''),
-                    h('td', { style: { padding: '4px 8px', color: 'var(--text)', textAlign: 'right', borderBottom: '1px solid var(--bdr)', fontVariantNumeric: 'tabular-nums' } }, `$${Math.round(u.valueAtRisk || 0).toLocaleString()}`)))),
-                ])]) : null,
-              draft.rows?.length ? div({ key: 'act' }, [
-                div({ style: { fontSize: '12px', fontWeight: 700, color: 'var(--text)', marginBottom: '6px' } }, `Action plan — ${draft.rows.length} item${draft.rows.length === 1 ? '' : 's'} to review & correct`),
-                h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } }, [
-                  h('thead', null, h('tr', null,
-                    ['Priority', 'Item', 'WRIN', '$', 'What to do'].map((hd, i) => h('th', { key: i, style: { textAlign: i === 3 ? 'right' : 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.04em' } }, hd)))),
-                  h('tbody', null, draft.rows.map((r, i) => {
-                    const sc = r.sev >= 3 ? '#f87171' : r.sev >= 2 ? '#fb923c' : '#f5bc00';
-                    return h('tr', { key: i }, [
-                      h('td', { style: { padding: '5px 8px', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top' } },
-                        span({ style: { fontSize: '9.5px', fontWeight: 700, color: sc, border: `1px solid ${sc}`, borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap' } }, r.sevWord || '—')),
-                      h('td', { style: { padding: '5px 8px', color: 'var(--text)', fontWeight: 600, borderBottom: '1px solid var(--bdr)', verticalAlign: 'top' } }, r.item),
-                      h('td', { style: { padding: '5px 8px', color: 'var(--text3)', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '11px', whiteSpace: 'nowrap' } }, r.wrin || '—'),
-                      h('td', { style: { padding: '5px 8px', color: 'var(--text)', textAlign: 'right', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, r.dollars != null ? `$${Math.round(r.dollars).toLocaleString()}` : ''),
-                      h('td', { style: { padding: '5px 8px', color: 'var(--text2)', borderBottom: '1px solid var(--bdr)', verticalAlign: 'top', lineHeight: 1.4 } }, r.note),
-                    ]);
-                  })),
-                ])]) : null,
-            ])
-          : h('textarea', {
-              readOnly: true, value: draft.body,
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },
+          span({ style: { fontSize: '12px', color: 'var(--text3)' } }, draftFull ? 'Full report' : 'Abbreviated recap'),
+          div({ style: { display: 'flex', gap: '12px' } },
+            (draft.fullBody && draft.fullBody !== draft.recapBody)
+              ? h('button', { onClick: () => setDraftFull(f => !f), style: { background: 'none', border: 'none', color: draftFull ? 'var(--gold)' : 'var(--text3)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' } }, draftFull ? '↩ Recap' : 'Full report →') : null,
+            h('button', { onClick: () => setDraftText(t => !t), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' } }, draftText ? 'Formatted' : 'Plain text'))),
+        // Message body — the approved abbreviated recap by default (Full report a click away).
+        // Formatted (mdToHtml) reads like the report + copies with styling; Plain text = raw for SMS/Slack.
+        draftText
+          ? h('textarea', {
+              readOnly: true, value: (draftFull ? (draft.fullBody || draft.body) : (draft.recapBody || draft.body)),
               style: { width: '100%', minHeight: '240px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr)', borderRadius: '6px', padding: '10px', fontSize: '12.5px', fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' },
+            })
+          : h('div', {
+              className: 'md-rpt',
+              style: { maxHeight: '52vh', overflow: 'auto', border: '1px solid var(--bdr)', borderRadius: '6px', background: 'var(--surf3)', padding: '12px', fontSize: '13px', lineHeight: 1.55 },
+              dangerouslySetInnerHTML: { __html: mdToHtml(draftFull ? (draft.fullBody || draft.body) : (draft.recapBody || draft.body)) },
             }),
         div({ style: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' } },
           h('button', {
@@ -2050,7 +2032,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 d.commsSent ? span({ style: { fontSize: '10px', color: '#4ade80', fontWeight: 700 } }, '✓ sent') : null,
                 span({ style: { marginLeft: 'auto', display: 'flex', gap: '6px' } },
                   needs ? h('button', { onClick: () => copyText(d.body, d.loc), style: { ...MODAL_TOOLBTN, color: bulkCopied === d.loc ? '#4ade80' : 'var(--gold)', borderColor: bulkCopied === d.loc ? '#4ade80' : 'var(--bdr2)' } }, bulkCopied === d.loc ? '✓ Copied' : 'Copy') : null,
-                  h('button', { onClick: () => { openDraft(d.loc, d.name, allRows.find(r => r.loc === d.loc)?.components); setBulkOpen(false); }, style: MODAL_TOOLBTN, title: 'Open the full single-store message (table view)' }, 'Open'),
+                  h('button', { onClick: () => { openDraft(d.loc, d.name, allRows.find(r => r.loc === d.loc)?.components); setBulkOpen(false); }, style: MODAL_TOOLBTN, title: 'Open the single-store message (recap + Full report toggle)' }, 'Open'),
                   h('button', { onClick: () => updateStatus(d.loc, { commsStatus: 'sent', commsSentAt: new Date().toISOString() }), style: { ...MODAL_TOOLBTN, color: '#4ade80', borderColor: '#4ade80' } }, 'Mark sent'))),
               div({ style: { fontSize: '11.5px', color: needs ? 'var(--text2)' : 'var(--text3)', marginTop: '4px' } }, needs ? d.subject : 'Count looks complete — no action items. Nothing to send.'));
           })))),
