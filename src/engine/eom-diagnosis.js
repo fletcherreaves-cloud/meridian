@@ -743,12 +743,19 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       const dpp = (fob.tgt != null) ? (fob.pct - fob.tgt) * 100 : null;
       R.push(`**FOB ${(fob.pct * 100).toFixed(2)}%**${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}pp vs ${(fob.tgt * 100).toFixed(2)}% target` : ''}${fob.dollars != null ? ` · ${money(fob.dollars)}` : ''}`, '');
     }
-    // Count status — one line, only the gaps that matter TODAY (Food/Cond early or never, Paper never).
-    const gaps = [];
-    if (earlyFC.length) gaps.push(`${earlyFC.length} Food/Cond counted early — recount for a live number`);
-    if (neverFC.length) gaps.push(`${neverFC.length} Food/Cond not counted`);
-    if (neverPaper.length) gaps.push(`${neverPaper.length} Paper not counted`);
-    R.push(gaps.length ? `⏳ **Finish today's count:** ${gaps.join(' · ')}.` : `✅ Food, Condiment & Paper counted.`, '');
+    // Uncounted items land on the recap IN PROMINENCE (owner Notes 37) — the actual items + $ on hand,
+    // right under the FOB line. Time/class-aware: Food, Condiment & Paper are due to 100% by EOD (list
+    // them); Non-Product isn't due until tomorrow, so it's omitted here (expected, not a gap).
+    if (earlyFC.length || neverFC.length || neverPaper.length) {
+      R.push(`⏳ **Finish today's count — recount these before you close:**`);
+      const uncList = (arr, label, withDate) => { if (arr.length) R.push(`- **${label}** (${money(sumVR(arr))}): ${arr.slice(0, 8).map(u => `${u.descr || u.wrin}${withDate ? ` _(last ${u.lastCounted || '?'})_` : ''}`).join(', ')}${arr.length > 8 ? ` _+${arr.length - 8} more_` : ''}`); };
+      uncList(earlyFC, `${earlyFC.length} Food/Condiment counted early`, true);
+      uncList(neverFC, `${neverFC.length} Food/Condiment not counted`, false);
+      uncList(neverPaper, `${neverPaper.length} Paper not counted`, false);
+      R.push('');
+    } else {
+      R.push(`✅ Food, Condiment & Paper counted.`, '');
+    }
     // Top 5 (scales down — celebrates a clean sweep).
     if (doNow.length) {
       R.push(`**Do these now${doNow.length < 5 ? ` (only ${doNow.length} — running tight, good sign)` : ''}:**`);

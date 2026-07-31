@@ -117,6 +117,27 @@ describe('runDiagnosis — editable check registry', () => {
     expect(recap.indexOf('FOB 3.73%')).toBeLessThan(recap.indexOf('Do these now'));
   });
 
+  it('recap lands the actual uncounted Food/Condiment/Paper items prominently (owner Notes 37), Non-Product omitted', () => {
+    const incomplete = {
+      uncountedCount: 3, byState: { never: { n: 2, value: 300 }, early: { n: 1, value: 259 } },
+      uncounted: [
+        { wrin: 'a', descr: 'McCrispy Strips', cls: 'food', state: 'early', valueAtRisk: 259, lastCounted: '2026-07-22' },
+        { wrin: 'b', descr: 'Grill Cheese', cls: 'food', state: 'never', valueAtRisk: 200 },
+        { wrin: 'c', descr: 'Napkins', cls: 'paper', state: 'never', valueAtRisk: 100 },
+        { wrin: 'd', descr: 'Happy Meal Toy', cls: 'nonproduct', state: 'never', valueAtRisk: 400 },
+      ],
+    };
+    const res = runDiagnosis({ store: 's', storeName: 'Ada', period: '2026-07', data: { variance: [{ wrin: 'v', descr: 'Beef', dolDiff: -80, cls: 'food' }] } });
+    const recap = formatDiagnosisReport(res, { mode: 'recap', incomplete, fob: { pct: 0.04, tgt: 0.038, dollars: 8000 } });
+    expect(recap).toMatch(/Finish today's count — recount these/);
+    expect(recap).toMatch(/McCrispy Strips/);          // early Food listed by name
+    expect(recap).toMatch(/Grill Cheese/);             // never Food listed
+    expect(recap).toMatch(/Napkins/);                  // Paper listed (due today)
+    expect(recap).not.toMatch(/Happy Meal Toy/);       // Non-Product omitted (tomorrow)
+    // The count block appears before the Top-5 (prominence).
+    expect(recap.indexOf('Finish today')).toBeLessThan(recap.indexOf('Do these now'));
+  });
+
   it('recap softens to a non-accusatory "worth a look" note when an integrity check fires', () => {
     // Static nightly waste on a fry item → waste-inflation finding (integrity family).
     const variance = [{ wrin: 'f', descr: 'Fries', dolDiff: -120, cls: 'food' }];
