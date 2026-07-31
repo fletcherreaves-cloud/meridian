@@ -60,8 +60,12 @@ async function main() {
     // ── SSO into the KB. Hitting the zendesk host initiates SSO (v3/zdlogin bounce → the custom domain
     // support.qsrsoft.com/hc). That bounce is FLAKY, so retry navigating to the help center until the
     // URL actually settles on a /hc/ page that isn't the zdlogin interstitial. `settled` = we're there.
-    const settled = () => { const u = page.url(); return /support\.qsrsoft\.com\/hc\//.test(u); };
-    const landed = u => /support\.qsrsoft\.com\/(hc|access)/.test(String(u));
+    // The SSO lands on EITHER the custom domain (support.qsrsoft.com) OR the zendesk host
+    // (qsrsoft.zendesk.com) — both are valid signed-in /hc pages. Accept either (the crawl runs on
+    // whatever origin we land on). Earlier runs only accepting support.qsrsoft.com falsely "never settled".
+    const KB_HOSTS = /(support\.qsrsoft\.com|qsrsoft\.zendesk\.com)/;
+    const settled = () => new RegExp(KB_HOSTS.source + '\\/hc\\/').test(page.url());
+    const landed = u => new RegExp(KB_HOSTS.source + '\\/(hc|access)').test(String(u));
     console.log('[kb] initiating KB SSO…');
     // ONE navigation, then a long single wait — the zdlogin JWT page bounces itself to the KB; re-
     // navigating just resets it to a fresh zdlogin (the flaky-loop lesson).
