@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.725';
+const MERIDIAN_VERSION    = '4.727';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.727', date:'2026-08-01', changes:[
+    'EOM Supervisor OT: now sourced AUTO-FIRST from the Operations Report labor-summary stream (ds.opsLaborRows → overTimeTotalHours/$), device-independent, no manual upload needed; manual daily-labor upload is the fallback and manual entry still overrides. (The auto stream is currently empty because the Operations Report pull is returning 0 rows on a stale QSRSOFT_TOKEN — refresh the token and OT auto-populates with no further app change.)',
+    'FOB Leadership Summary: renamed "laggards/achievers" → "Focus Stores / Top Performers" and softened the language ("ran $X over" not "burned") for an above-store-leader doc.',
+  ]},
   {version:'4.725', date:'2026-08-01', changes:[
     'FOB Report FIX: the Avg FOB was averaging averages (a simple mean of per-store %s). Now DOLLAR-WEIGHTED (Σ FOB$ ÷ Σ sales) per the standing rule — small stores no longer over-count.',
     'FOB Report → new "⎙ Leadership Summary" report + an in-modal narrative for above-store leaders: the district dollar-weighted FOB vs target, and the MATH of laggards eroding achievers\' gains — "N stores under target banked $X/mo; M over target burned $Y/mo, erasing $Z of it; net the district is $ over/under target; fixing the top 3 laggards recovers $/mo." Plus laggard (with action) and achiever tables. Existing full Print retained.',

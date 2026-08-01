@@ -111,6 +111,17 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   const monthlySales     = monthLaborRows.reduce((s, r) => s + (r.sales||0), 0);
   const monthlyOtHrs     = monthLaborRows.reduce((s, r) => s + (r.otHrs||0), 0);
   const monthlyOtDollar  = monthLaborRows.reduce((s, r) => s + (r.otDollar||0), 0);
+  // AUTO OT (auto-first, standing rule): the emailed/auto Operations Report labor-summary stream
+  // (ds.opsLaborRows, metrics.overTimeTotalHours/$) — device-independent, no manual upload needed.
+  // Fills OT when the manual laborRows upload is absent; manual entry still overrides below.
+  const _locKey = String(locStr).replace(/^0+/, '');
+  const monthOpsLabor = (ds.opsLaborRows || []).filter(r => {
+    if (String(r.loc).replace(/^0+/, '') !== _locKey) return false;
+    const d = r.dt ? new Date(r.dt + 'T00:00:00') : (r.date instanceof Date ? r.date : null);
+    return d && d.getFullYear() === selYear && d.getMonth() + 1 === selMonth;
+  });
+  const autoOtHrs    = monthOpsLabor.reduce((s, r) => s + (Number(r.metrics?.overTimeTotalHours)   || 0), 0);
+  const autoOtDollar = monthOpsLabor.reduce((s, r) => s + (Number(r.metrics?.overTimeTotalDollars) || 0), 0);
   // Sales-weighted labor % from daily rows (only rows with both values)
   const _lbrValid = monthLaborRows.filter(r => (r.laborPct||0) > 0 && (r.sales||0) > 0);
   const _lbrWt    = _lbrValid.reduce((s, r) => s + r.laborPct * r.sales, 0);
@@ -144,9 +155,9 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   const ebosOpSup    = ebosByLoc?.[locStr] != null ? Math.round(ebosByLoc[locStr] * 100) / 100 : null;
   const actOpSup     = m.actOpSup     != null ? +m.actOpSup     : ebosOpSup;
   const actCash      = m.actCash      != null ? +m.actCash      : cashFromCtrl;
-  // OT Hours and OT $ — manual override first, then sum of all daily labor rows for the month
-  const otHours      = m.otHours      != null ? +m.otHours      : (monthlyOtHrs    > 0 ? monthlyOtHrs    : null);
-  const otDollar     = m.otDollar     != null ? +m.otDollar     : (monthlyOtDollar > 0 ? monthlyOtDollar : null);
+  // OT Hours and OT $ — manual override first, then AUTO ops stream, then manual daily labor upload.
+  const otHours      = m.otHours      != null ? +m.otHours      : (autoOtHrs    > 0 ? autoOtHrs    : (monthlyOtHrs    > 0 ? monthlyOtHrs    : null));
+  const otDollar     = m.otDollar     != null ? +m.otDollar     : (autoOtDollar > 0 ? autoOtDollar : (monthlyOtDollar > 0 ? monthlyOtDollar : null));
   const laborXfers   = m.laborXfers   != null ? +m.laborXfers   : null;
   const laborUnclk   = m.laborUnclk   != null ? +m.laborUnclk   : null;
   const projOpSupMan = m.projOpSup    != null ? +m.projOpSup    : projOpSup;
