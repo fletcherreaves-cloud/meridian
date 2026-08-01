@@ -118,7 +118,13 @@ async function getDateRange() {
 }
 
 // ── Aggregate line items to daily totals ─────────────────────────────────────
-// Only "Purchase" records count as spend. Credits and Out transfers are excluded.
+// The QSRSoft ledger "Total Purchases" row = Purchase + Credit + Adjustment records (transfers "Out"/"In"
+// are the separate "Total Transfers" row). Verified on 5183 July: ops Purchase 4555.20 + Credit 328.66 =
+// 4883.86 = the ledger Ops Supplies column to the cent (Credit was previously dropped → op supplies was
+// under-reported). Only ops_purchases is consumed downstream, but netting credits into every category
+// keeps all of them ledger-accurate.
+const PURCHASE_RECORD_TYPES = new Set(['Purchase', 'Credit', 'Adjustment']);
+const isPurchaseRecord = rt => PURCHASE_RECORD_TYPES.has(rt);
 function aggregateByDate(items, nsn) {
   // One-time raw-field dump (DUMP_EBOS_FIELDS=1) for a target store — reveal every numeric sub-field +
   // its month total so we can see which fields QSRSoft rolls into the ledger "Ops Supplies" column.
@@ -146,7 +152,7 @@ function aggregateByDate(items, nsn) {
   }
   const byDate = {};
   for (const item of items) {
-    if (item.record_type !== 'Purchase') continue;
+    if (!isPurchaseRecord(item.record_type)) continue;   // Purchase + Credit + Adjustment (ledger Total Purchases)
     const date = item.posted_date;
     if (!date) continue;
     if (!byDate[date]) byDate[date] = [0, 0, 0, 0, 0];
@@ -348,8 +354,9 @@ async function pullViaPlaywright(startDate, endDate) {
 
           // Aggregate: sum sub-categories by posted_date, Purchase records only
           const byDate = {};
+          const PT = { Purchase: 1, Credit: 1, Adjustment: 1 };   // ledger "Total Purchases" = these (not Out/In transfers)
           for (const item of items) {
-            if (item.record_type !== 'Purchase' || !item.posted_date) continue;
+            if (!PT[item.record_type] || !item.posted_date) continue;
             const d = item.posted_date;
             if (!byDate[d]) byDate[d] = [0, 0, 0, 0, 0];
             byDate[d][0] += item.food_sub       || 0;
