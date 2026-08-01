@@ -318,6 +318,15 @@ async function runPeriod(period, token) {
       for (const v of actionable) {
         try {
           const detail = await ebosGetObj(token, nsn, `raw_detail/${v.rawItemId}?${range}`);
+          // One-time raw-field dump (DUMP_RAW_FIELDS=1) — reveal any hidden columns (e.g. a Replace/
+          // count-type flag) we don't currently map, so we can nail the walkthrough-vs-recount split.
+          if (process.env.DUMP_RAW_FIELDS === '1' && !globalThis.__rawDumped && Array.isArray(detail.history) && detail.history.length) {
+            globalThis.__rawDumped = true;
+            console.log('[RAW-FIELDS] detail top-level keys:', Object.keys(detail).join(', '));
+            const invs = detail.history.filter(h => h.source === 'inventory');
+            console.log(`[RAW-FIELDS] inventory-event keys:`, Object.keys((invs[0] || detail.history[0]) || {}).join(', '));
+            for (const h of invs.slice(0, 5)) console.log('[RAW-FIELDS] inv event:', JSON.stringify(h));
+          }
           const m = mapRawItemHistory(detail);
           detailRows.push({ loc, period, wrin: v.wrin, descr: m.descr || v.descr, item_class: m.itemClass || v.classCode, history: m.history });
         } catch (e) {

@@ -27,6 +27,10 @@ on:
         description: 'Verbose logging (1 = on)'
         required: false
         default: '0'
+      dump_raw:
+        description: 'One-time raw-field dump of raw_detail events (1 = on) — reveals hidden columns'
+        required: false
+        default: '0'
 
 jobs:
   pull:
@@ -61,6 +65,7 @@ jobs:
           VARIANCE_BACKFILL:         ${{ github.event.inputs.backfill || '' }}
           VARIANCE_STORES:           ${{ github.event.inputs.stores || '' }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}
+          DUMP_RAW_FIELDS:           ${{ github.event.inputs.dump_raw || '0' }}
 
       - name: Upload debug screenshots
         if: always()
