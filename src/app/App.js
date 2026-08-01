@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.720';
+const MERIDIAN_VERSION    = '4.721';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.721', date:'2026-08-01', changes:[
+    'FOB Report (Inventory Control → 📊 FOB Report) — Notes 42 #1. All-location EOM-lean read, scoped to the current filter (one / all / patch): OK/FL summary tiles, a ranked "Biggest opportunities" list, then a market → patch → store hierarchy. Each store shows FOB% vs target, month-over-month trend (▼ improving / ▲ regressing), its worst FOB components vs target, top item losers, a masking flag (large losses offset by gains — the QSRSoft Variance-Card pattern), and a plain-language action plan of easy real-work steps (e.g. "Variance Stat is the driver — audit portioning + waste-recording on [top losers]"). Engine src/engine/fob-report.js, dollar-weighted throughout, +tests. Reports the latest month with real FOB (early in a month the MTD row is all zeros, so it falls back to last completed EOM — same lesson as the count-timing work).',
+  ]},
   {version:'4.720', date:'2026-08-01', changes:[
     'Count-timing artifact detection (baked in as a reusable engine, src/engine/count-timing.js). A variance % can be huge yet meaningless when a count lands early in a period — the sales denominator is tiny AND the count reconciles several days of theoretical-only drift since the item’s last physical count. New EOM-diagnosis context note fires ONLY early in a period (≈ first 10% of the month) with material loss: "counted only through day N of ~M — judge the absolute $ and trend, not the %." Stays quiet at month-end. Proven on Durant #5985: 5.60% Variance Stat = $559 loss over 1 day’s $9,979 sales = 0.086% over a full month. Ledger-verified the point-to-point model (Actual Usage = carried POS-Open beginning inv − ending count) to the unit. Shared piece for the coming all-location FOB report.',
   ]},

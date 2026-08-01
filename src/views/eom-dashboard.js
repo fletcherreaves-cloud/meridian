@@ -20,6 +20,7 @@ import {
 import { diffScope } from '../engine/eom-change-monitor.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
+import { buildFobReport } from '../engine/fob-report.js';
 import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
 import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
@@ -947,6 +948,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [monOpenRows, setMonOpenRows] = useState({});  // loc -> expanded item deltas
   const [monView, setMonView] = useState('progression'); // 'progression' (ledger-derived, v2) | 'diff' (snapshot)
   const [riddleOpen, setRiddleOpen] = useState(false);   // 🔬 FOB Root-Cause Analysis modal
+  const [fobRepOpen, setFobRepOpen] = useState(false);   // 📊 FOB Report modal
+  const [fobRepStore, setFobRepStore] = useState(null);  // loc expanded in the report
   const [riddleStore, setRiddleStore] = useState(null);  // loc expanded to its harmful recount items
   const [secReview, setSecReview] = useState({});     // loc -> { status, note } (day-2 secondary review)
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
@@ -1152,6 +1155,43 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const months = [...new Set(fobScoped.map(r => (typeof r.date === 'string' ? r.date : '').slice(0, 7)).filter(Boolean))].sort();
     return { impact, consistency, months, nFob: fobScoped.length };
   }, [rows, rawByLoc, fobRows]);
+
+  // FOB Report (Notes 42 #1) — all-location EOM-lean read, SCOPED to the current filter: OK/FL summary →
+  // biggest opportunities → patch → store, with trend / worst component / top losers / masking / actions.
+  const patchOfLoc = useCallback((u) => {
+    for (const p of Object.keys(patchGroups || {})) if ((patchGroups[p] || []).map(unpad).includes(u)) return p;
+    return null;
+  }, [patchGroups]);
+  const fobReport = useMemo(() => {
+    const prevP = lastPeriods(period, 2)[0];
+    const months = lastPeriods(period, 5);   // ascending
+    const fobByMonth = {}; for (const mo of months) fobByMonth[mo] = fobByStore(fobRows, mo);
+    // Report the latest month with REAL FOB (non-zero) — early in a month the MTD row is all zeros, so
+    // at the start of a period we fall back to last completed EOM (matches how the owner reviews it).
+    let reportPeriod = period;
+    for (let i = months.length - 1; i >= 0; i--) { const f = fobByMonth[months[i]] || {}; if (Object.values(f).some(x => x && x.fobPct != null)) { reportPeriod = months[i]; break; } }
+    const cur = fobByMonth[reportPeriod] || {};
+    const monthlyByLoc = {};
+    for (const mo of months) { if (mo > reportPeriod) continue; const f = fobByMonth[mo] || {}; for (const loc in f) if (f[loc]?.fobPct != null) (monthlyByLoc[loc] || (monthlyByLoc[loc] = {}))[mo] = f[loc].fobPct; }
+    const varSource = reportPeriod === period ? varByLoc : reportPeriod === prevP ? prevVarByLoc : {};
+    const get = (s) => {
+      const loc = String(s.loc), u = unpad(loc);
+      const fob = cur[loc] || cur[u] || null;
+      const tg = DEFAULT_TARGETS[u] || {};
+      const compActual = (fob && fob.sales) ? {
+        statv: fob.statv / fob.sales, comp: fob.comp / fob.sales, raw: fob.raw / fob.sales,
+        cond: fob.cond / fob.sales, emp: fob.emp / fob.sales, unex: fob.unex / fob.sales,
+      } : null;
+      const compTarget = { statv: tg.tStatLoss, comp: tg.tCompWaste, raw: tg.tRawWaste, cond: tg.tCondiment, emp: tg.tEmpFood, unex: tg.tUnex };
+      return {
+        name: s.name, org: s.org === 'emerald' ? 'FL' : 'OK', patch: patchOfLoc(u),
+        fob, target: fobTgtOf(loc), monthly: monthlyByLoc[loc] || monthlyByLoc[u] || {},
+        varRows: (varSource[loc] || varSource[u] || []).filter(v => v.hasDollars).map(v => ({ descr: v.descr, wrin: v.wrin, dolDiff: v.dolDiff })),
+        compActual, compTarget,
+      };
+    };
+    return { ...buildFobReport({ stores: rows, get }), reportPeriod };
+  }, [rows, fobRows, varByLoc, prevVarByLoc, period, patchOfLoc]);
 
   // Store-picker options: scoped by state + patch but NOT by the single-store selection, so the
   // dropdown always lists every store you could switch to (not just the one already chosen).
@@ -1794,6 +1834,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'FOB Root-Cause Analysis — for the current scope: which stores\' RECOUNTS add loss (net-harmful = the coaching opportunities) and which stores hold the most CONSISTENT FOB month-to-month. Same math as the batch analysis; every number is decomposable.',
           style: { background: 'var(--surf3)', color: '#a78bfa', border: '1px solid #a78bfa', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '🔬 FOB Analysis'),
+        h('button', {
+          onClick: () => { setFobRepStore(null); setFobRepOpen(true); }, disabled: rows.length === 0,
+          title: 'FOB Report — all-location EOM-lean read for the current scope: OK/FL summary, biggest opportunities, then patch → store with each store\'s FOB vs target, month-over-month trend (improving/regressing), worst component, top item losers, a masking check, and a plain-language action plan. Reusable for one / all / patch.',
+          style: { background: 'var(--surf3)', color: '#34d399', border: '1px solid #34d399', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '📊 FOB Report'),
         lockMsg ? span({ style: { fontSize: '11px', color: lockMsg.startsWith('✓') ? '#4ade80' : '#fb923c', alignSelf: 'center' } }, lockMsg) : null,
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
@@ -2003,6 +2048,74 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 }, '🔗 Share'))))))),
     shareMsg ? div({ style: { position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '9px 14px', fontSize: '12.5px', color: shareMsg.startsWith('✓') ? '#4ade80' : shareMsg.startsWith('Share failed') ? '#f87171' : 'var(--text2)', boxShadow: '0 6px 20px rgba(0,0,0,.4)', maxWidth: '90vw' }, onClick: () => setShareMsg('') }, shareMsg) : null,
 
+    // 📊 FOB Report modal (Notes 42 #1) — OK/FL summary → opportunities → patch → store, scoped.
+    fobRepOpen && (() => {
+      const R = fobReport;
+      const ppf = f => (f == null ? '—' : (f * 100).toFixed(2) + '%');
+      const trendChip = (t) => t.dir === 'improving' ? span({ style: { color: '#4ade80', fontWeight: 700 } }, `▼ improving ${t.deltaPP}pp`)
+        : t.dir === 'regressing' ? span({ style: { color: '#f87171', fontWeight: 700 } }, `▲ regressing +${t.deltaPP}pp`)
+        : t.dir === 'flat' ? span({ style: { color: 'var(--text3)' } }, 'flat') : span({ style: { color: 'var(--text3)' } }, 'n/a');
+      const sumTile = (label, val, color, sub) => div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '8px 12px', minWidth: '120px' } },
+        div({ style: { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 } }, label),
+        div({ style: { fontSize: '18px', fontWeight: 800, color } }, val),
+        sub ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, sub) : null);
+      const orgBlock = (o) => {
+        const sm = o.summary;
+        return div({ key: o.org, style: { marginBottom: '16px' } },
+          div({ style: { display: 'flex', alignItems: 'baseline', gap: '10px', borderBottom: '2px solid var(--bdr2)', paddingBottom: '4px', marginBottom: '8px' } },
+            span({ style: { fontWeight: 800, fontSize: '14px', color: o.org === 'FL' ? '#38bdf8' : '#f5bc00' } }, o.label),
+            span({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${sm.nStores} stores · avg FOB ${sm.avgFobPP != null ? sm.avgFobPP + '%' : '—'} · ${sm.overTarget} over target · ${sm.regressing} regressing · ${sm.improving} improving`),
+            sm.oppDollars > 0 ? span({ style: { marginLeft: 'auto', fontSize: '11px', color: '#f87171', fontWeight: 700 } }, `${$(sm.oppDollars)}/mo opportunity`) : null),
+          o.patches.map(pg => div({ key: pg.patch, style: { marginBottom: '6px' } },
+            pg.patch !== '—' ? div({ style: { fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text3)', fontWeight: 700, margin: '4px 0 2px' } }, pg.patch) : null,
+            pg.stores.map(r => {
+              const iso = fobRepStore === r.loc;
+              const gc = r.overTarget ? '#f87171' : '#4ade80';
+              return div({ key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
+                div({ onClick: () => setFobRepStore(o => o === r.loc ? null : r.loc), style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '5px 2px', cursor: 'pointer', flexWrap: 'wrap' } },
+                  span({ style: { color: 'var(--text3)', fontSize: '10px' } }, iso ? '▾' : '▸'),
+                  span({ style: { fontWeight: 600, color: 'var(--text)', minWidth: '140px' } }, r.name || nm(r.loc)),
+                  span({ style: { fontVariantNumeric: 'tabular-nums', fontWeight: 800, color: gc } }, ppf(r.fobPct)),
+                  span({ style: { fontSize: '10px', color: 'var(--text3)' } }, `tgt ${ppf(r.target)}`),
+                  r.gapPP != null ? span({ style: { fontSize: '10px', fontWeight: 700, color: gc } }, `${r.gapPP > 0 ? '+' : ''}${r.gapPP}pp`) : null,
+                  trendChip(r.trend),
+                  r.masking ? span({ style: { fontSize: '9px', fontWeight: 700, color: '#f5bc00', border: '1px solid #f5bc00', borderRadius: '4px', padding: '0 5px' } }, 'masking') : null),
+                iso ? div({ style: { padding: '4px 4px 12px 20px' } },
+                  r.actions.length ? div({ style: { marginBottom: '8px' } }, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Action plan'),
+                    r.actions.map((a, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', lineHeight: 1.5, marginBottom: '2px' } }, '• ' + a))) : null,
+                  r.comps.some(c => c.deltaPP != null) ? div({ style: { marginBottom: '6px' } }, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Components vs target'),
+                    div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '11px' } }, r.comps.filter(c => c.actualPP != null).map(c => span({ key: c.key, style: { color: c.deltaPP > 0.02 ? '#f87171' : 'var(--text3)' } }, `${c.label} ${c.actualPP}%${c.tgtPP != null ? ` (t ${c.tgtPP}%)` : ''}`)))) : null,
+                  r.topItems.length ? div(null, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Top item losers'),
+                    div({ style: { fontSize: '11px', color: 'var(--text2)' } }, r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}`).join(' · '))) : null,
+                  r.masking ? div({ style: { fontSize: '10.5px', color: '#f5bc00', marginTop: '4px' } }, `Masking: ${$(r.grossLoss)} losses offset by ${$(r.grossGain)} gains (net ${$(r.net)}) — verify the offsetting counts are real.`) : null) : null);
+            }))));
+      };
+      return div({ onClick: () => setFobRepOpen(false), style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' } },
+        div({ onClick: e => e.stopPropagation(), style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '980px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📊 FOB Report — ${scopeLabel()}`),
+          h('button', { onClick: () => setFobRepOpen(false), style: MODAL_X }, '✕'),
+          div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '12px' } }, `Reporting ${R.reportPeriod}${R.reportPeriod !== period ? ` (latest month with real FOB — ${period} MTD not populated yet)` : ''} · ${R.summary.nStores} store(s) · dollar-weighted FOB vs target · trend = month-over-month final FOB%. Opportunities ranked by gap-to-target, regression, and masking.`),
+          // Summary tiles
+          div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' } },
+            sumTile('Stores', String(R.summary.nStores), 'var(--text)', `${R.summary.overTarget} over target`),
+            sumTile('Avg FOB', R.summary.avgFobPP != null ? R.summary.avgFobPP + '%' : '—', 'var(--text)'),
+            sumTile('Regressing', String(R.summary.regressing), '#f87171', `${R.summary.improving} improving`),
+            sumTile('Opportunity', $(R.summary.oppDollars) + '/mo', '#f5bc00', 'over-target $ vs target'),
+            ...Object.keys(R.summary.byOrg).sort().map(k => sumTile(k, (R.summary.byOrg[k].avgFobPP ?? '—') + '%', k === 'FL' ? '#38bdf8' : '#f5bc00', `${R.summary.byOrg[k].overTarget}/${R.summary.byOrg[k].nStores} over tgt`))),
+          // Biggest opportunities
+          R.opportunities.length ? div({ style: { marginBottom: '16px' } },
+            div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', marginBottom: '6px' } }, `Biggest opportunities (${R.opportunities.length})`),
+            R.opportunities.slice(0, 8).map(r => div({ key: r.loc, onClick: () => { setFobRepStore(r.loc); }, style: { display: 'flex', gap: '8px', alignItems: 'baseline', padding: '3px 0', fontSize: '12px', cursor: 'pointer', flexWrap: 'wrap' } },
+              span({ style: { fontWeight: 700, color: 'var(--text)', minWidth: '150px' } }, `${r.name || nm(r.loc)}`, span({ style: { fontSize: '9px', color: 'var(--text3)', marginLeft: '4px' } }, r.org)),
+              span({ style: { color: '#f87171', fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, ppf(r.fobPct)),
+              span({ style: { fontSize: '10px', color: 'var(--text3)' } }, `+${r.gapPP}pp vs tgt`),
+              trendChip(r.trend),
+              span({ style: { fontSize: '11px', color: 'var(--text2)' } }, r.actions[0] || ''))))
+            : div({ style: { color: '#4ade80', fontSize: '12px', marginBottom: '14px' } }, 'No over-target or regressing stores in scope — clean. ✓'),
+          // Hierarchy
+          div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', marginBottom: '6px', borderTop: '1px solid var(--bdr2)', paddingTop: '10px' } }, 'By market → patch → store'),
+          R.orgs.map(orgBlock)));
+    })(),
     // 🔬 FOB Root-Cause Analysis modal (Notes 41) — recount impact + FOB consistency, scoped + verifiable.
     riddleOpen && (() => {
       const R = riddle;
