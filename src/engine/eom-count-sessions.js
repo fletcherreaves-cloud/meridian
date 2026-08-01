@@ -19,6 +19,7 @@
 // Within a session there is no such thing as hurt/held — that was the bug this module removes.
 
 import { eventTs } from './eom-recount-forensics.js';
+import { storeDayWindows, itemRecounts } from './eom-recount-detect.js';
 
 const abs = v => Math.abs(Number(v) || 0);
 const ZERO = 1;                         // |$| < ZERO ≈ a $0 net (improbable → soft flag)
@@ -133,10 +134,15 @@ export function itemVarianceProgression(history, { baseIndex = 0, gapHours = 4, 
 // (wrin → authoritative period $ variance from qsr_variance_stat) is attached as `officialVar` so the
 // view can headline the real number instead of the count-impact chain.
 export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4, byDay = true, statVar = null, priorStatVar = null } = {}) {
+  // Store-level count windows (from ALL items' events) drive the walkthrough-vs-recount split: a long
+  // area-by-area walkthrough stays ONE count; a genuine same-day re-verify (a later store window, or a
+  // back-office correction) splits off as a graded recount. Cross-day = count progression, not recounts.
+  const windows = storeDayWindows(rawItems);
   const out = [];
   for (const it of (rawItems || [])) {
     const p = itemVarianceProgression(it.history, { gapHours, byDay });
     if (!p.base) continue;
+    const recount = itemRecounts(it.history, windows);
     const finalVar = p.final ? p.final.dolVar : 0;
     const official = statVar ? (statVar[String(it.wrin)] ?? statVar[it.wrin] ?? null) : null;
     // Prior-EOM anchor (last month's authoritative period variance) → month-over-month trend view.
@@ -149,7 +155,7 @@ export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4,
       .map(h => ({ dt: String(h.dt).slice(0, 10), tm: h.tm || null, when: eventTs(h.dt, h.tm), onHand: h.qtyChange != null ? Number(h.qtyChange) : null }))
       .sort((a, b) => (a.when ?? 0) - (b.when ?? 0));
     const periodStart = opens[0] || null;
-    out.push({ wrin: it.wrin, descr: it.descr || it.wrin, cls: it.cls, officialVar: official, priorVar, periodStart, ...p });
+    out.push({ wrin: it.wrin, descr: it.descr || it.wrin, cls: it.cls, officialVar: official, priorVar, periodStart, recount, ...p });
   }
   out.sort((a, b) =>
     (b.flags.length - a.flags.length) ||
