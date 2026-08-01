@@ -215,10 +215,16 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.716';
-const MERIDIAN_BUILD_DATE = '2026-07-31';
+const MERIDIAN_VERSION    = '4.717';
+const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.717', date:'2026-08-01', changes:[
+    'FIX (crash): Inventory Control panel threw "Cannot access before initialization" (temporal-dead-zone) — the FOB Root-Cause (riddle) memo referenced `rows` before it was declared. Moved the memo after `rows`. Panel loads again.',
+    'Change Monitor v2 → SESSION model (KB-substantiated). An item is counted BY AREA (fries live in 2–3 places), and the QSRSoft app ADDS each SAVE (only "Replace Count" replaces), so one honest count is several submissions in one session — only the FINAL (BINDING) entry counts ("most recent count overrides all previous"). A "recount" now means a SEPARATE session (another day / large gap). Fixes the FRIES/#3708 case that read as "recount hurt / held worse": a −$1,103 fry-station read then +$1,106 freezer add is normal area build-up, net ≈ $0, official period variance $86 — clean, not harmful.',
+    'Progression view rebuilt to read like QSRSoft Raw Item Detail: per item, the authoritative PERIOD variance (qsr_variance_stat) is the headline; expand to a table of every count session · entry (Date·Time · Counter · On-hand entered · $ impact) with the binding final marked, plus a plain-language story. "Recount hurt / held worse" fire ONLY across sessions now.',
+    'Recount-swing integrity check is session-aware: a big same-day swing between area entries of ONE session is no longer flagged as padding — only genuine cross-session recounts are. Removes the false positive on normal area-by-area counting.',
+  ]},
   {version:'4.716', date:'2026-08-01', changes:[
     'FOB Root-Cause Analysis modal (Inventory Control → 🔬 FOB Analysis) — the recount-impact + consistency study, in-app and scoped to the current filter (one / all / patch). ① Recount Impact ranks stores by whether their recounts move variance TOWARD $0 or AWAY (net-harmful = the coaching opportunities), expandable to the exact items that hurt. ② FOB Consistency ranks stores by month-final FOB% standard deviation (steadiest first). Full methodology shown for trust; same engine as the batch scan so numbers are verifiable to the dollar. First run confirmed #3708 / #29760 / #33704 / #10422 as net-harmful-recount opportunities and #38609 / #34222 / #43380 as the steadiest.',
   ]},

@@ -134,16 +134,17 @@ describe('runDiagnosis — editable check registry', () => {
   });
 
   it('rolls up repeated recount-swing diagnoses into one coaching block + item list (owner)', () => {
-    const mkItem = (wrin, descr) => ({ wrin, descr, counts: [
-      { dt: '2026-07-03', tm: '8:00 AM', difference: 300, manager: 'Marlena F' },
-      { dt: '2026-07-03', tm: '8:30 AM', difference: -300, manager: 'Marlena F' },
+    // Cross-session recounts (day 3 → day 4) so the swing counts as a genuine recount, not area build-up.
+    const mkItem = (wrin, descr) => ({ wrin, descr, history: [
+      { dt: '2026-07-03', tm: '8:00 AM', isCount: true, difference: 300, manager: 'Marlena F' },
+      { dt: '2026-07-04', tm: '8:30 AM', isCount: true, difference: -300, manager: 'Marlena F' },
     ] });
     const rawItems = [mkItem('1', 'McNuggets'), mkItem('2', 'Bacon'), mkItem('3', 'Beef'), mkItem('4', 'Sprite')];
     const res = runDiagnosis({ store: '1', storeName: 'Tecumseh', period: '2026-07', data: { rawItems } });
     const full = formatDiagnosisReport(res, {});
     // ONE rolled-up header naming the count + manager, not four repeated "Recount swing:" paragraphs.
     expect(full).toMatch(/Recount swings — 4 items, single counter \(Marlena F\)/);
-    expect((full.match(/A swing this large between counts/g) || []).length).toBe(1); // coaching appears once
+    expect((full.match(/A recount swing this large/g) || []).length).toBe(1); // coaching appears once
     expect(full).toMatch(/McNuggets \(\$600 swing ↔\)/);                            // compact item list (600 = 300→-300 delta)
   });
 
@@ -239,10 +240,10 @@ describe('runDiagnosis — editable check registry', () => {
     expect(over).not.toMatch(/optional polish/);
   });
 
-  it('recount-swing: flags a large same-day count-to-count swing crossing zero (Magali fry case)', () => {
-    const rawItems = [{ wrin: '00004-849', descr: 'Fries', counts: [
-      { dt: '2026-06-04', tm: '07:53', isCount: true, difference: -1780, manager: 'Magali G' },
-      { dt: '2026-06-04', tm: '09:11', isCount: true, difference: 222, manager: 'Magali G' },
+  it('recount-swing: flags a large swing between two SEPARATE counting sessions (genuine recount)', () => {
+    const rawItems = [{ wrin: '00004-849', descr: 'Fries', history: [
+      { dt: '2026-06-04', tm: '07:53', isCount: true, difference: -1780, manager: 'Magali G' },  // session 1 (day 4)
+      { dt: '2026-06-05', tm: '09:11', isCount: true, difference: 222, manager: 'Magali G' },     // session 2 (day 5) = recount
     ] }];
     const res = runDiagnosis({ store: '29760', storeName: 'X', period: '2026-06', data: { rawItems } });
     const f = res.findings.find(x => x.checkId === 'recount-swing');
@@ -250,16 +251,25 @@ describe('runDiagnosis — editable check registry', () => {
     expect(f.severityWord.toLowerCase()).toBe('high');       // crosses zero → high
     expect(f.detail).toMatch(/crossing zero/);
     expect(f.detail).toMatch(/THIRD count/);
-    expect(f.detail).toMatch(/both counts by Magali G/);     // same single counter
+    expect(f.detail).toMatch(/both by Magali G/);            // same single counter
+  });
+
+  it('recount-swing: does NOT fire on a same-session area-by-area swing (the FRIES fix)', () => {
+    // −$1,103 fry-station read then +$1,106 freezer add, 44 min apart, same day = ONE count, not a recount.
+    const rawItems = [{ wrin: '00004-849', descr: 'Fries', history: [
+      { dt: '2026-07-30', tm: '09:02', isCount: true, difference: -1103, manager: 'Cinthya a' },
+      { dt: '2026-07-30', tm: '09:46', isCount: true, difference: 1106, manager: 'Cinthya a' },
+    ] }];
+    expect(runDiagnosis({ store: '3708', period: '2026-07', data: { rawItems } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
   });
 
   it('recount-swing: does not fire on a small swing or a single count', () => {
-    const small = [{ wrin: 'a', descr: 'X', counts: [
+    const small = [{ wrin: 'a', descr: 'X', history: [
       { dt: '2026-06-04', tm: '07:00', isCount: true, difference: -20 },
-      { dt: '2026-06-04', tm: '09:00', isCount: true, difference: -10 },
+      { dt: '2026-06-05', tm: '09:00', isCount: true, difference: -10 },
     ] }];
     expect(runDiagnosis({ store: 's', period: '2026-06', data: { rawItems: small } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
-    const single = [{ wrin: 'a', descr: 'X', counts: [{ dt: '2026-06-04', tm: '07:00', isCount: true, difference: -500 }] }];
+    const single = [{ wrin: 'a', descr: 'X', history: [{ dt: '2026-06-04', tm: '07:00', isCount: true, difference: -500 }] }];
     expect(runDiagnosis({ store: 's', period: '2026-06', data: { rawItems: single } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
   });
 

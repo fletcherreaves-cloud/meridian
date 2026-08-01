@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 
-const cnt = (v, tm) => ({ isCount: true, dt: '2026-07-14', tm, difference: v, manager: 'A' });
+// A genuine recount is a SEPARATE session (different day) — same-day area entries are one count.
+const cnt = (v, tm, dt = '2026-07-14') => ({ isCount: true, dt, tm, difference: v, manager: 'A' });
 
 describe('recountImpactByStore', () => {
   it('ranks net-harmful stores first (recounts moved variance AWAY from zero)', () => {
     const rawByLoc = {
-      '3708': [{ wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM'), cnt(-300, '9:00 AM')] }],   // away $200 (harmful)
-      '34222': [{ wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM'), cnt(-20, '9:00 AM')] }],   // toward $80 (helpful)
+      '3708': [{ wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM', '2026-07-14'), cnt(-300, '8:00 AM', '2026-07-15')] }],   // away $200 (harmful)
+      '34222': [{ wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM', '2026-07-14'), cnt(-20, '8:00 AM', '2026-07-15')] }],   // toward $80 (helpful)
     };
     const out = recountImpactByStore(rawByLoc);
     expect(out[0].loc).toBe('3708');          // most harmful first

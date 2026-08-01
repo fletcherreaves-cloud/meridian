@@ -24,6 +24,7 @@
 import { normClass, diagnoseIncompleteCount, nonProductDueToday, countWindowStart } from './eom-inventory.js';
 import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus } from './eom-parsers.js';
 import { eventTs, recountBatchTiming, recountTimingSentence } from './eom-recount-forensics.js';
+import { itemCountSessions } from './eom-count-sessions.js';
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
@@ -219,44 +220,41 @@ export const DEFAULT_CHECKS = [
     },
   },
   {
-    // Recount SWING (integrity, Notes 37 / CoachQ fry case store 29760): a same-day pair of counts on
-    // ONE item where the recorded variance swings by a large amount — the classic "counted 24, recounted
-    // 413" overshoot. Even with just 2 counts (below count-manipulation's >4/day threshold), a swing this
-    // big with no delivery between should trigger a THIRD count by a different manager before saving.
+    // Recount SWING (integrity, Notes 37 / CoachQ fry case store 29760): a genuine RECOUNT — a SEPARATE
+    // counting session (another day, or a large gap) — whose binding number swings by a large amount vs the
+    // earlier completed count. Session-aware (2026-08-01): multiple entries WITHIN one session are the
+    // normal area-by-area build-up (fries live in 2–3 places), so a big −$1,103 → +$1,106 swing between
+    // entries of the SAME session is NOT flagged — only cross-session recounts are. Even a 2-session swing
+    // this big, with no delivery between, should trigger a THIRD count by a different manager before saving.
     // Non-accusatory: we don't claim which count was wrong — we ask them to verify so the on-hand is clean.
-    id: 'recount-swing', label: 'Recount swing — large same-day count-to-count change (verify 3rd count)', order: 27, enabled: true,
+    id: 'recount-swing', label: 'Recount swing — large change between counting sessions (verify 3rd count)', order: 27, enabled: true,
     requires: ['rawItems'], params: { minSwing: 150 },
     run: (ctx) => {
       const minSwing = ctx.params.minSwing ?? 150;
       const out = [];
       for (const d of (ctx.data.rawItems || [])) {
-        const counts = (d.counts || []).filter(c => c && c.dt && c.difference != null);
-        if (counts.length < 2) continue;
-        const byDay = {};
-        for (const c of counts) { const day = String(c.dt).slice(0, 10); (byDay[day] || (byDay[day] = [])).push(c); }
-        for (const day in byDay) {
-          const dc = byDay[day].slice().sort((a, b) => String(`${a.dt} ${a.tm || ''}`).localeCompare(`${b.dt} ${b.tm || ''}`));
-          if (dc.length < 2) continue;
-          // Largest consecutive swing in the recorded variance ($) across the day's counts.
-          let best = null;
-          for (let i = 1; i < dc.length; i++) {
-            const a = Number(dc[i - 1].difference) || 0, b = Number(dc[i].difference) || 0;
-            const swing = Math.abs(b - a);
-            if (!best || swing > best.swing) best = { swing, a, b, from: dc[i - 1], to: dc[i], crossZero: (a < 0) !== (b < 0) && a !== 0 && b !== 0 };
-          }
-          if (!best || best.swing < minSwing) continue;
-          const sev = (best.crossZero || best.swing >= minSwing * 3) ? SEVERITY.high : SEVERITY.medium;
-          const mgrs = [best.from.manager, best.to.manager].filter(Boolean);
-          const sameMgr = mgrs.length === 2 && mgrs[0] === mgrs[1];
-          out.push(mkFinding('recount-swing', sev,
-            `Recount swing: ${d.descr || d.wrin}`,
-            `On ${day} the recorded variance moved ${_mny(best.a)} → ${_mny(best.b)} between two counts (${_mny(best.swing)} swing${best.crossZero ? ', crossing zero' : ''})${mgrs.length ? (sameMgr ? `, both counts by ${mgrs[0]}` : ` (${best.from.manager || '?'} → ${best.to.manager || '?'})`) : ''}. A swing this large between counts — with no delivery in between — is exactly where a THIRD count by a different manager should be required before saving. Verify which count was right so the on-hand is clean.`,
-            best.swing, {
-              wrin: d.wrin, day, swing: best.swing, crossZero: best.crossZero, sameMgr,
-              manager: sameMgr ? mgrs[0] : null,
-              origTs: eventTs(best.from.dt, best.from.tm), corrTs: eventTs(best.to.dt, best.to.tm),
-            }));
+        const { sessions, nSessions } = itemCountSessions(d.history || [], {});
+        if (nSessions < 2) continue;   // a recount only exists ACROSS sessions; area entries are one count
+        // Largest swing in the binding net between consecutive counting sessions.
+        let best = null;
+        for (let i = 1; i < nSessions; i++) {
+          const a = sessions[i - 1].netDolVar, b = sessions[i].netDolVar;
+          const swing = Math.abs(b - a);
+          if (!best || swing > best.swing) best = { swing, a, b, from: sessions[i - 1], to: sessions[i], crossZero: (a < 0) !== (b < 0) && a !== 0 && b !== 0 };
         }
+        if (!best || best.swing < minSwing) continue;
+        const sev = (best.crossZero || best.swing >= minSwing * 3) ? SEVERITY.high : SEVERITY.medium;
+        const day = best.to.date;
+        const mgrs = [best.from.manager, best.to.manager].filter(Boolean);
+        const sameMgr = mgrs.length === 2 && mgrs[0] === mgrs[1];
+        out.push(mkFinding('recount-swing', sev,
+          `Recount swing: ${d.descr || d.wrin}`,
+          `The binding count moved ${_mny(best.a)} → ${_mny(best.b)} between two separate counting sessions (${best.from.date} → ${best.to.date}, ${_mny(best.swing)} swing${best.crossZero ? ', crossing zero' : ''})${mgrs.length ? (sameMgr ? `, both by ${mgrs[0]}` : ` (${best.from.manager || '?'} → ${best.to.manager || '?'})`) : ''}. A recount swing this large — with no delivery in between — is exactly where a THIRD count by a different manager should be required before saving. Verify which count was right so the on-hand is clean.`,
+          best.swing, {
+            wrin: d.wrin, day, swing: best.swing, crossZero: best.crossZero, sameMgr,
+            manager: sameMgr ? mgrs[0] : null,
+            origTs: best.from.end.when, corrTs: best.to.end.when,
+          }));
       }
       // Pattern + TIMING forensics (owner 2026-07-31): the same single counter offsetting many items on
       // one day is where padding hides. A genuine recount takes physical time to walk + recount each
@@ -1017,7 +1015,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
           let midCycle = false;
           try { const dTs = day ? eventTs(day, null) : null; const ws = result.period ? countWindowStart(result.period).getTime() : null; if (dTs != null && ws != null && dTs < ws) midCycle = true; } catch { /* keep false */ }
           const consequence = midCycle ? ' _Mid-cycle — this washes out of THIS EOM number (opening + final count drive the P&L); a weekly-count + process-coaching signal, not a period-binding loss._' : '';
-          L.push(`- **Recount swings — ${g.length} items${mgr ? `, single counter (${mgr})` : ''}${day ? `, ${day}` : ''}.** A swing this large between counts — with no delivery in between — is where a **3rd count by a different manager** should be required before saving. Verify which count was right so the on-hand is clean.${nCross ? ` ${nCross} crossed zero (offsetting).` : ''}${timing ? ' ' + recountTimingSentence(timing) : ''}${consequence}`);
+          L.push(`- **Recount swings — ${g.length} items${mgr ? `, single counter (${mgr})` : ''}${day ? `, ${day}` : ''}.** A recount swing this large between counting sessions — with no delivery in between — is where a **3rd count by a different manager** should be required before saving. Verify which count was right so the on-hand is clean.${nCross ? ` ${nCross} crossed zero (offsetting).` : ''}${timing ? ' ' + recountTimingSentence(timing) : ''}${consequence}`);
           const items = g.slice().sort((a, b) => (b.dollars || 0) - (a.dollars || 0)).map(f => `${(f.title || '').replace(/^Recount swing:\s*/, '')} (${money(f.dollars)} swing${f.data?.crossZero ? ' ↔' : ''})`);
           L.push(`  ${items.slice(0, 12).join(' · ')}${items.length > 12 ? ` _+${items.length - 12} more_` : ''}`);
           blocks++;

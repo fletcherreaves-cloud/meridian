@@ -1,39 +1,66 @@
 import { describe, it, expect } from 'vitest';
-import { itemVarianceProgression, storeVarianceProgressions } from '../engine/eom-variance-progression.js';
+import { itemVarianceProgression, storeVarianceProgressions, itemCountSessions } from '../engine/eom-variance-progression.js';
 
-// A count event: variance ($) at that count, plus a time so ordering is stable.
-const cnt = (dolVar, tm, manager = 'Marlena F') => ({ isCount: true, dt: '2026-07-14', tm, difference: dolVar, manager });
+// A count event: $ impact at that submission + a date/time so ordering + session-grouping are stable.
+const cnt = (dolVar, tm, dt = '2026-07-14', manager = 'Marlena F') => ({ isCount: true, dt, tm, difference: dolVar, manager });
 
-describe('itemVarianceProgression', () => {
-  it("owner example: base -100 -> recount to -50 = improved (moved toward zero)", () => {
-    const p = itemVarianceProgression([cnt(-100, '8:00 AM'), cnt(-50, '9:00 AM')]);
+describe('itemCountSessions — binding-final, area-by-area', () => {
+  it('groups same-session area entries into ONE session (final is binding)', () => {
+    // FRIES at #3708: 3 bags at the fry station (−$1,103), then the freezer added (+$1,106) → one count.
+    const s = itemCountSessions([cnt(-1103, '9:02 AM'), cnt(1106, '9:46 AM')]);
+    expect(s.nSessions).toBe(1);
+    expect(s.nRecounts).toBe(0);                 // NOT a recount — it's one area-by-area count
+    expect(s.sessions[0].nEntries).toBe(2);
+    expect(s.sessions[0].areaBuildUp).toBe(true);
+    expect(s.sessions[0].offsetting).toBe(true); // big swing that nets small = counting artifact
+    expect(Math.round(s.binding.netDolVar)).toBe(3);
+  });
+
+  it('splits a next-day count into a separate session (a genuine recount)', () => {
+    const s = itemCountSessions([cnt(-100, '8:00 AM', '2026-07-14'), cnt(-40, '8:00 AM', '2026-07-15')]);
+    expect(s.nSessions).toBe(2);
+    expect(s.nRecounts).toBe(1);
+  });
+});
+
+describe('itemVarianceProgression — session-aware', () => {
+  it('single session with area entries = counted, NOT recount-hurt (the FRIES bug fix)', () => {
+    const p = itemVarianceProgression([cnt(-1103, '9:02 AM'), cnt(1106, '9:46 AM')]);
+    expect(p.nRecounts).toBe(0);
+    expect(p.verdict).toBe('counted-multi');
+    expect(p.flags).not.toContain('recount-worsened');
+    expect(p.flags).not.toContain('held-worse');
+  });
+
+  it("genuine recount (separate day): base -100 -> -50 = improved", () => {
+    const p = itemVarianceProgression([cnt(-100, '8:00 AM', '2026-07-14'), cnt(-50, '8:00 AM', '2026-07-15')]);
     expect(p.base.dolVar).toBe(-100);
     expect(p.nRecounts).toBe(1);
     expect(p.final.dolVar).toBe(-50);
     expect(p.improvedVsBase).toBe(true);
     expect(p.verdict).toBe('improved');
     expect(p.steps[0].direction).toBe('improved');
-    expect(p.steps[0].netImprovedVsBase).toBe(50);   // $50 closer to zero
+    expect(p.steps[0].netImprovedVsBase).toBe(50);
     expect(p.flags).not.toContain('recount-worsened');
   });
 
-  it("owner example: base -100 -> recount to -175 = worsened (recount hurt)", () => {
-    const p = itemVarianceProgression([cnt(-100, '8:00 AM'), cnt(-175, '9:00 AM')]);
+  it("genuine recount (separate day): base -100 -> -175 = worsened (recount hurt)", () => {
+    const p = itemVarianceProgression([cnt(-100, '8:00 AM', '2026-07-14'), cnt(-175, '8:00 AM', '2026-07-15')]);
     expect(p.verdict).toBe('worsened');
     expect(p.steps[0].direction).toBe('hurt');
     expect(p.flags).toContain('recount-worsened');
     expect(p.netVsBase).toBe(-75);
   });
 
-  it('held-worse: two recounts holding the worse value (bad for result, good for accuracy)', () => {
-    const p = itemVarianceProgression([cnt(-100, '8:00 AM'), cnt(-175, '9:00 AM'), cnt(-175, '10:00 AM')]);
+  it('held-worse: two separate recount sessions holding the worse value', () => {
+    const p = itemVarianceProgression([cnt(-100, '8:00 AM', '2026-07-14'), cnt(-175, '8:00 AM', '2026-07-15'), cnt(-175, '8:00 AM', '2026-07-16')]);
     expect(p.nRecounts).toBe(2);
     expect(p.flags).toContain('held-worse');
     expect(p.verdict).toBe('worsened');
   });
 
-  it('flags a ~$0 final variance as improbable', () => {
-    const p = itemVarianceProgression([cnt(-100, '8:00 AM'), cnt(0, '9:00 AM')]);
+  it('flags a ~$0 binding as improbable', () => {
+    const p = itemVarianceProgression([cnt(-100, '8:00 AM', '2026-07-14'), cnt(0, '8:00 AM', '2026-07-15')]);
     expect(p.flags).toContain('zero-variance');
   });
 
@@ -44,21 +71,24 @@ describe('itemVarianceProgression', () => {
     expect(p.steps).toHaveLength(0);
   });
 
-  it('baseIndex override re-anchors the base (the picker)', () => {
-    const p = itemVarianceProgression([cnt(-30, '7:00 AM'), cnt(-100, '8:00 AM'), cnt(-50, '9:00 AM')], { baseIndex: 1 });
-    expect(p.base.dolVar).toBe(-100);   // base is the 2nd count now
+  it('baseIndex override re-anchors the base session (the picker)', () => {
+    const p = itemVarianceProgression([
+      cnt(-30, '8:00 AM', '2026-07-13'), cnt(-100, '8:00 AM', '2026-07-14'), cnt(-50, '8:00 AM', '2026-07-15'),
+    ], { baseIndex: 1 });
+    expect(p.base.dolVar).toBe(-100);   // base is the 2nd session now
     expect(p.nRecounts).toBe(1);
     expect(p.final.dolVar).toBe(-50);
   });
 
-  it('storeVarianceProgressions ranks flagged/biggest movers first', () => {
+  it('storeVarianceProgressions ranks flagged/biggest first + attaches officialVar', () => {
     const items = [
-      { wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM'), cnt(-175, '9:00 AM')] },  // worsened → flagged
-      { wrin: '2', descr: 'FRIES', history: [cnt(-40, '8:00 AM'), cnt(-20, '9:00 AM')] },    // improved, small
-      { wrin: '3', descr: 'TINY', history: [cnt(-5, '8:00 AM')] },                            // below minAbs → dropped
+      { wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM', '2026-07-14'), cnt(-175, '8:00 AM', '2026-07-15')] }, // worsened → flagged
+      { wrin: '2', descr: 'FRIES', history: [cnt(-40, '8:00 AM', '2026-07-14'), cnt(-20, '8:00 AM', '2026-07-15')] },   // improved, small
+      { wrin: '3', descr: 'TINY', history: [cnt(-5, '8:00 AM')] },                                                       // below minAbs, no official → dropped
     ];
-    const out = storeVarianceProgressions(items);
+    const out = storeVarianceProgressions(items, { statVar: { '1': 260 } });
     expect(out[0].descr).toBe('BEEF');            // flagged first
+    expect(out[0].officialVar).toBe(260);         // authoritative period variance attached
     expect(out.find(o => o.descr === 'TINY')).toBeUndefined();
   });
 });

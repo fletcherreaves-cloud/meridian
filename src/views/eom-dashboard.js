@@ -334,71 +334,124 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, nm }) {
       }))));
 }
 
-// Change Monitor v2 (Notes 41) — per-item variance PROGRESSION from the raw ledger. For each item: the
-// base count → each recount as a step (✅ improved toward zero / ⚠️ hurt away / • held), the net vs base,
-// a verdict, and flags (recount-worsened, held-worse, ~$0-improbable). No lock/baseline needed.
+// Change Monitor v2 (Notes 41, session model 2026-08-01) — reads the raw count ledger the way QSRSoft's
+// Raw Item Detail reads it. An item is counted BY AREA, so one honest count = several submissions in one
+// session; only the FINAL entry is binding ("most recent count overrides all previous"). A "recount" only
+// exists ACROSS sessions (a separate day/large gap). Headline = the authoritative period variance
+// (qsr_variance_stat); the session table below is the how-it-was-counted story. No lock/baseline needed.
+const VP_VBADGE = {
+  'single-count': ['var(--text3)', 'counted'],
+  'counted-multi': ['#38bdf8', 'counted · area-by-area'],
+  improved: ['#4ade80', 'recount improved'],
+  worsened: ['#f87171', 'recount hurt'],
+  held: ['#f5bc00', 'recount held'],
+};
 function VarianceProgressionView({ rows, progByLoc, nm }) {
-  const [open, setOpen] = useState(null);
+  const [openStore, setOpenStore] = useState(null);
+  const [openItem, setOpenItem] = useState(null);
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const stores = (rows || []).map(r => {
     const items = progByLoc[String(r.loc)] || [];
     return { loc: r.loc, name: r.name, items,
-      improved: items.filter(i => i.verdict === 'improved').length,
+      recounted: items.filter(i => i.nRecounts > 0).length,
       worsened: items.filter(i => i.verdict === 'worsened').length,
-      flagged: items.filter(i => i.flags.length).length,
-      recounted: items.filter(i => i.nRecounts > 0).length };
+      flagged: items.filter(i => (i.flags || []).some(f => f !== 'recount-worsened')).length };
   }).filter(s => s.items.length);
   if (!stores.length) return div({ style: { color: 'var(--text3)', fontSize: '12.5px', padding: '20px', textAlign: 'center' } },
-    'No raw item count history in scope yet — the progression view reads the per-item count ledger (fills in as counts post).');
+    'No raw item count history in scope yet — this view reads the per-item count ledger (fills in as counts post).');
   stores.sort((a, b) => (b.flagged - a.flagged) || (b.worsened - a.worsened) || (b.items.length - a.items.length));
   const all = stores.flatMap(s => s.items);
-  const dImproved = all.filter(i => i.verdict === 'improved').length;
+  const dRecounted = all.filter(i => i.nRecounts > 0).length;
   const dWorsened = all.filter(i => i.verdict === 'worsened').length;
-  const dHeld = all.filter(i => i.flags.includes('held-worse')).length;
-  const dZero = all.filter(i => i.flags.includes('zero-variance')).length;
-  const box = { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '7px', padding: '7px 10px', minWidth: '92px' };
+  const dHeld = all.filter(i => (i.flags || []).includes('held-worse')).length;
+  const dZero = all.filter(i => (i.flags || []).includes('zero-variance')).length;
+  const box = { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '7px', padding: '7px 10px', minWidth: '96px' };
   const lab = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 };
+  const qty = n => n == null ? '—' : (Math.round(n * 100) / 100).toLocaleString();
 
-  const chain = (p) => {
-    const els = [span({ key: 'b', style: { fontWeight: 700, color: 'var(--text2)' }, title: `base count · ${p.base.dt}${p.base.tm ? ' ' + p.base.tm : ''}${p.base.manager ? ' · ' + p.base.manager : ''}` }, $(p.base.dolVar))];
-    p.steps.forEach((st, i) => {
-      const c = st.direction === 'improved' ? '#4ade80' : st.direction === 'hurt' ? '#f87171' : 'var(--text3)';
-      const ic = st.direction === 'improved' ? '✅' : st.direction === 'hurt' ? '⚠️' : '•';
-      els.push(span({ key: 'a' + i, style: { color: 'var(--text3)', margin: '0 3px' } }, '→'));
-      els.push(span({ key: 's' + i, style: { fontWeight: 700, color: c }, title: `recount · ${st.dt}${st.tm ? ' ' + st.tm : ''}${st.manager ? ' · ' + st.manager : ''}` }, `${$(st.dolVar)} ${ic}`));
-    });
-    return els;
+  // Plain-language one-liner for an item — the story a GM can read without decoding a chain.
+  const story = (p) => {
+    const s0 = p.sessions[0];
+    const areas = s0.nEntries > 1 ? ` (counted area-by-area — ${s0.nEntries} entries)` : '';
+    if (p.nRecounts === 0) {
+      if (s0.offsetting) return `One count, built up across areas${areas}; the swing between entries is normal area-by-area counting, not a loss. Binding = final entry.`;
+      return `Counted once${areas}. Binding = the final entry.`;
+    }
+    const dir = p.verdict === 'improved' ? 'moved the variance toward zero' : p.verdict === 'worsened' ? 'moved it further from zero' : 'held about the same';
+    return `Recounted in ${p.nSessions} separate sessions; the latest recount ${dir}. Only the final session is binding.`;
   };
-  const VBADGE = { improved: ['#4ade80', 'improved'], worsened: ['#f87171', 'recount hurt'], held: ['#f5bc00', 'held'], 'single-count': ['var(--text3)', 'single count'] };
+
+  // Raw-Item-Detail-style event table for one item: every count session, its area entries, binding final.
+  const eventTable = (p) => {
+    const th = { textAlign: 'left', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text3)', fontWeight: 700, padding: '3px 8px', borderBottom: '1px solid var(--bdr2)' };
+    const td = { padding: '3px 8px', fontSize: '11.5px', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+    const bodyRows = [];
+    p.sessions.forEach((s, si) => {
+      const labelTxt = p.nSessions === 1 ? 'Count' : si === 0 ? 'Count (base session)' : `Recount ${si} — ${s.date}`;
+      bodyRows.push(h('tr', { key: `s${si}` },
+        h('td', { colSpan: 5, style: { padding: '6px 8px 2px', fontSize: '9.5px', fontWeight: 700, color: si === 0 ? 'var(--text3)' : '#f5bc00', textTransform: 'uppercase', letterSpacing: '.04em' } },
+          `${labelTxt}${s.nEntries > 1 ? ` · ${s.nEntries} area entries` : ''}`)));
+      s.entries.forEach((e, ei) => {
+        const binding = ei === s.entries.length - 1;
+        const dc = Math.abs(e.dolVar) >= 1 ? (e.dolVar < 0 ? '#f87171' : '#4ade80') : 'var(--text3)';
+        bodyRows.push(h('tr', { key: `s${si}e${ei}`, style: { background: binding ? 'var(--surf2)' : 'transparent' } },
+          h('td', { style: { ...td, color: 'var(--text3)' } }, `${e.dt}${e.tm ? ' ' + e.tm : ''}`),
+          h('td', { style: td }, e.manager || '—'),
+          h('td', { style: { ...td, fontWeight: binding ? 800 : 500, color: binding ? 'var(--text)' : 'var(--text2)' } }, qty(e.onHand)),
+          h('td', { style: { ...td, color: dc } }, Math.abs(e.dolVar) >= 1 ? `${e.dolVar < 0 ? '-' : '+'}$${Math.abs(Math.round(e.dolVar)).toLocaleString()}` : '—'),
+          h('td', { style: { ...td, fontSize: '9px', fontWeight: 700, color: binding ? '#38bdf8' : 'var(--text3)' } }, binding ? 'BINDING' : 'area')));
+      });
+    });
+    return h('table', { style: { borderCollapse: 'collapse', width: '100%', maxWidth: '620px', marginTop: '6px' } },
+      h('thead', null, h('tr', null,
+        h('th', { style: th }, 'Date · Time'), h('th', { style: th }, 'Counter'),
+        h('th', { style: th }, 'On-hand entered'), h('th', { style: th }, '$ impact of entry'), h('th', { style: th }, ''))),
+      h('tbody', null, ...bodyRows));
+  };
 
   return div(null,
     div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
-      div({ style: box }, span({ style: lab }, 'Items improved'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(dImproved))),
-      div({ style: box }, span({ style: lab }, 'Recount hurt'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dWorsened))),
-      div({ style: box }, span({ style: lab, title: 'A recount held a worse value — bad for this period, but the item genuinely is off (good going forward)' }, 'Held worse'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f5bc00' } }, String(dHeld))),
-      div({ style: box }, span({ style: lab, title: 'A ~$0 variance is statistically improbable — usually not-yet-posted; verify' }, '$0 (verify)'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dZero)))),
-    div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginBottom: '10px' } }, 'Read straight from the raw count ledger — base count then each recount, ✅ toward zero / ⚠️ away. Click a store to expand its items. Hover a value for who/when.'),
+      div({ style: box }, span({ style: { ...lab }, title: 'Items with a genuine recount — a SEPARATE counting session (different day / large gap). Area-by-area entries within one session are NOT recounts.' }, 'Recounted'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dRecounted))),
+      div({ style: box }, span({ style: lab, title: 'A genuine recount ended further from zero than the first completed count' }, 'Recount hurt'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dWorsened))),
+      div({ style: box }, span({ style: lab, title: 'Multiple recount sessions holding a worse value — bad for this period, but the item genuinely is off (good going forward)' }, 'Held worse'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f5bc00' } }, String(dHeld))),
+      div({ style: box }, span({ style: lab, title: 'A binding count of ~$0 is statistically improbable — usually not-yet-posted; verify' }, '$0 (verify)'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dZero)))),
+    div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginBottom: '10px', lineHeight: 1.5 } },
+      'Reads like QSRSoft Raw Item Detail. An item is counted ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'by area'),
+      ', so one count is several entries in one session — only the ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'final (BINDING)'),
+      ' entry counts. Headline is the item’s ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'official period variance'),
+      '; the table shows how it was counted. A “recount” means a separate session on another day. Click a store, then an item.'),
     div(null, stores.map(s => {
-      const isOpen = open === s.loc;
-      const items = isOpen ? s.items.slice(0, 60) : [];
+      const isOpen = openStore === s.loc;
+      const items = isOpen ? s.items.slice(0, 80) : [];
       return div({ key: s.loc, style: { borderBottom: '1px solid var(--bdr)' } },
-        div({ onClick: () => setOpen(o => o === s.loc ? null : s.loc), style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '8px 4px', cursor: 'pointer' } },
+        div({ onClick: () => setOpenStore(o => o === s.loc ? null : s.loc), style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '8px 4px', cursor: 'pointer' } },
           span({ style: { color: 'var(--text3)' } }, isOpen ? '▾' : '▸'),
           span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, s.name),
           span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(s.loc)}`),
           span({ style: { marginLeft: 'auto', fontSize: '11px', display: 'flex', gap: '10px' } },
-            s.improved ? span({ style: { color: '#4ade80', fontWeight: 700 } }, `${s.improved} improved`) : null,
-            s.worsened ? span({ style: { color: '#f87171', fontWeight: 700 } }, `${s.worsened} hurt`) : null,
+            s.worsened ? span({ style: { color: '#f87171', fontWeight: 700 } }, `${s.worsened} recount hurt`) : null,
             s.flagged ? span({ style: { color: '#f5bc00', fontWeight: 700 } }, `⚑ ${s.flagged}`) : null,
             span({ style: { color: 'var(--text3)' } }, `${s.recounted} recounted · ${s.items.length} items`))),
         isOpen ? div({ style: { padding: '2px 4px 12px 22px' } }, items.map(p => {
-          const [vc, vl] = VBADGE[p.verdict] || VBADGE['held'];
-          return div({ key: p.wrin, style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '3px 0', fontSize: '12px', flexWrap: 'wrap', borderTop: '1px solid var(--bdr)' } },
-            span({ style: { fontWeight: 600, color: 'var(--text)', minWidth: '160px' } }, p.descr),
-            span({ style: { fontFamily: 'ui-monospace,Menlo,monospace' } }, ...chain(p)),
-            p.nRecounts > 0 ? span({ style: { color: 'var(--text3)' } }, `net ${$(p.netVsBase)} vs base`) : null,
-            span({ style: { fontSize: '10px', fontWeight: 700, color: vc, border: `1px solid ${vc}`, borderRadius: '4px', padding: '0 6px' } }, vl),
-            ...(p.flags.filter(f => f !== 'recount-worsened').map(f => span({ key: f, style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, f === 'held-worse' ? 'held worse' : f === 'zero-variance' ? '$0 — verify' : f))));
+          const [vc, vl] = VP_VBADGE[p.verdict] || VP_VBADGE['single-count'];
+          const iid = `${s.loc}|${p.wrin}`;
+          const itemOpen = openItem === iid;
+          const off = p.officialVar;
+          const offC = off == null ? 'var(--text3)' : Math.abs(off) < 1 ? 'var(--text3)' : off < 0 ? '#f87171' : '#4ade80';
+          return div({ key: p.wrin, style: { borderTop: '1px solid var(--bdr)', padding: '4px 0' } },
+            div({ onClick: () => setOpenItem(o => o === iid ? null : iid), style: { display: 'flex', alignItems: 'baseline', gap: '8px', fontSize: '12px', flexWrap: 'wrap', cursor: 'pointer' } },
+              span({ style: { color: 'var(--text3)', fontSize: '10px' } }, itemOpen ? '▾' : '▸'),
+              span({ style: { fontWeight: 600, color: 'var(--text)', minWidth: '150px' } }, p.descr),
+              // Headline: authoritative period variance
+              off != null
+                ? span({ title: 'Official period variance (QSRSoft Variance Stat)' }, span({ style: { fontSize: '9px', color: 'var(--text3)', marginRight: '3px' } }, 'period var'), span({ style: { fontWeight: 800, color: offC, fontVariantNumeric: 'tabular-nums' } }, $(off)))
+                : span({ style: { fontSize: '10px', color: 'var(--text3)' }, title: 'Not in the QSRSoft top-variance list (±$50) — no material period variance flagged' }, 'not flagged'),
+              span({ style: { fontSize: '10px', fontWeight: 700, color: vc, border: `1px solid ${vc}`, borderRadius: '4px', padding: '0 6px' } }, vl),
+              p.nSessions > 1 ? span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `↻ ${p.nSessions} sessions`) : span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.sessions[0].nEntries} ${p.sessions[0].nEntries === 1 ? 'entry' : 'area entries'}`),
+              ...((p.flags || []).filter(f => f !== 'recount-worsened').map(f => span({ key: f, style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, f === 'held-worse' ? 'held worse' : f === 'zero-variance' ? '$0 — verify' : f)))),
+            itemOpen ? div({ style: { padding: '4px 0 8px 18px' } },
+              div({ style: { fontSize: '11px', color: 'var(--text2)', marginBottom: '2px', lineHeight: 1.45 } }, story(p)),
+              eventTable(p)) : null);
         })) : null);
     })));
 }
@@ -934,21 +987,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   // — base count → recount steps → improved/hurt/held. No lock needed; works for any period reviewed.
   const progByLoc = useMemo(() => {
     const m = {};
-    for (const loc in rawByLoc) { try { m[loc] = storeVarianceProgressions(rawByLoc[loc]); } catch { m[loc] = []; } }
+    for (const loc in rawByLoc) {
+      // Authoritative period $ variance per item (qsr_variance_stat) → headline the real number,
+      // not the count-impact chain. Keyed by wrin for the session engine to attach as officialVar.
+      const statVar = {};
+      for (const v of (varByLoc[loc] || [])) if (v.hasDollars && v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
+      try { m[loc] = storeVarianceProgressions(rawByLoc[loc], { statVar }); } catch { m[loc] = []; }
+    }
     return m;
-  }, [rawByLoc]);
-
-  // FOB Root-Cause Analysis (Notes 41) — recount impact + FOB consistency, SCOPED to the current filter
-  // (one / all / patch). Same engine as the CI scan, so numbers are verifiable.
-  const riddle = useMemo(() => {
-    const scoped = new Set(rows.map(r => unpad(r.loc)));
-    const rawScoped = {}; for (const loc of Object.keys(rawByLoc)) if (scoped.has(unpad(loc))) rawScoped[loc] = rawByLoc[loc];
-    const fobScoped = (fobRows || []).filter(r => scoped.has(unpad(r.loc)));
-    const impact = recountImpactByStore(rawScoped);
-    const consistency = fobConsistencyByStore(fobScoped);
-    const months = [...new Set(fobScoped.map(r => (typeof r.date === 'string' ? r.date : '').slice(0, 7)).filter(Boolean))].sort();
-    return { impact, consistency, months, nFob: fobScoped.length };
-  }, [rows, rawByLoc, fobRows]);
+  }, [rawByLoc, varByLoc]);
 
   // Which stores have any diagnosis input beyond on-hand (variance/waste/transfers).
   const hasDiagData = useMemo(() => {
@@ -1021,6 +1068,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       (!patchLocs || patchLocs.has(unpad(r.loc))) &&
       (!oneStore || r.loc === oneStore));
   }, [allRows, scope, oneStore, patch, patchGroups]);
+
+  // FOB Root-Cause Analysis (Notes 41) — recount impact + FOB consistency, SCOPED to the current filter
+  // (one / all / patch). Same engine as the CI scan, so numbers are verifiable. Declared AFTER `rows`
+  // (it reads it) to avoid a temporal-dead-zone crash.
+  const riddle = useMemo(() => {
+    const scoped = new Set(rows.map(r => unpad(r.loc)));
+    const rawScoped = {}; for (const loc of Object.keys(rawByLoc)) if (scoped.has(unpad(loc))) rawScoped[loc] = rawByLoc[loc];
+    const fobScoped = (fobRows || []).filter(r => scoped.has(unpad(r.loc)));
+    const impact = recountImpactByStore(rawScoped);
+    const consistency = fobConsistencyByStore(fobScoped);
+    const months = [...new Set(fobScoped.map(r => (typeof r.date === 'string' ? r.date : '').slice(0, 7)).filter(Boolean))].sort();
+    return { impact, consistency, months, nFob: fobScoped.length };
+  }, [rows, rawByLoc, fobRows]);
 
   // Store-picker options: scoped by state + patch but NOT by the single-store selection, so the
   // dropdown always lists every store you could switch to (not just the one already chosen).
