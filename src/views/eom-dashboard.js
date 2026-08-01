@@ -21,6 +21,7 @@ import { diffScope } from '../engine/eom-change-monitor.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { buildFobReport } from '../engine/fob-report.js';
+import { fountainShortTotal, fountainBaseline } from '../engine/fountain-yield.js';
 import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
 import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
@@ -972,6 +973,26 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   // Self-serve beverage-tower locs (integrity #47) — suppress the fountain-yield "loss" flag for
   // stores where low yield is structural (free refills). One tiny 2-column read, once.
   const [selfServeTowers, setSelfServeTowers] = useState(new Set());
+  // Fountain-yield look-back baseline (#52): per-store mean/sd of prior-months' fountain-short totals,
+  // so the bib-yield check can tell a store's structural free-refill norm from an abnormal spike.
+  const [fountainBaselineByLoc, setFountainBaselineByLoc] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const priorPs = lastPeriods(period, 4).slice(0, 3);   // 3 completed months before the current
+    Promise.all(priorPs.map(pp => loadQsrVarianceStat({ period: pp }).catch(() => []))).then(mons => {
+      if (cancelled) return;
+      const shortsByLoc = {};
+      for (const rows of mons) {
+        const byLoc = {};
+        for (const v of (rows || [])) { const u = unpad(v.loc); (byLoc[u] || (byLoc[u] = [])).push(v); }
+        for (const u in byLoc) (shortsByLoc[u] || (shortsByLoc[u] = [])).push(fountainShortTotal(byLoc[u]));
+      }
+      const base = {};
+      for (const u in shortsByLoc) base[u] = fountainBaseline(shortsByLoc[u]);
+      setFountainBaselineByLoc(base);
+    }).catch(() => { if (!cancelled) setFountainBaselineByLoc({}); });
+    return () => { cancelled = true; };
+  }, [period]);
   const [exceptions, setExceptions] = useState({});   // loc -> {kind, acceptedDate, approvedBy, note} (count-date exceptions)
   useEffect(() => { loadSelfServeTowerLocs().then(setSelfServeTowers).catch(() => {}); }, []);
   // The active check registry (defaults + saved overrides), passed to runDiagnosis.
@@ -1481,9 +1502,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         })),
         variance: varByLoc[loc] || [], waste: wasteByLoc[loc] || [], transfers: xferByLoc[loc] || [],
         unmatchedTransfers: unmatchedXfer, selfServeTower: selfServeTowers.has(unpad(loc)), rawItems: rawByLoc[loc] || [],
+        fountainBaseline: fountainBaselineByLoc[unpad(loc)] || null,
       },
     });
-  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period]);
+  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period, fountainBaselineByLoc]);
 
   const diagOptsFor = useCallback((loc, components) => {
     const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date(), acceptEarly: !!exceptions[loc] });

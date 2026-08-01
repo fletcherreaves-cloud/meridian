@@ -27,6 +27,7 @@ import { eventTs, recountBatchTiming, recountTimingSentence } from './eom-recoun
 import { itemCountSessions } from './eom-count-sessions.js';
 import { countTimingArtifact } from './count-timing.js';
 import { verifyClearItems } from './eom-verify-clear.js';
+import { fountainVerdict } from './fountain-yield.js';
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
@@ -540,18 +541,26 @@ export const DEFAULT_CHECKS = [
       if (!hits.length) return [];
       const total = hits.reduce((s, v) => s + (v.dolDiff || 0), 0);
       const names = `${hits.map(v => v.descr).slice(0, 6).join(', ')}${hits.length > 6 ? '…' : ''}`;
+      // Look-back baseline (#52): the store's own historical fountain-short norm. `abnormal` = this month
+      // runs FAR beyond usual → worth a look even at a tower store (BIB connection / syrup ratio / leak).
+      const bl = ctx.data.fountainBaseline || null;
+      const verdict = fountainVerdict(Math.abs(total), bl);
+      const usual = (bl && bl.mean != null) ? ` The store's usual is ~$${Math.round(bl.mean)}/mo (${bl.n} mo).` : '';
+      const abnormalTail = verdict.abnormal ? ` This is ABNORMALLY high vs that baseline${verdict.ratio ? ` (~${verdict.ratio.toFixed(1)}×)` : ''} — check BIB connections / syrup-to-water ratios and recount, tower or not.` : '';
       // Self-serve beverage-tower EXEMPTION (integrity #47, owner): at stores with a dining-room
       // self-serve tower, fountain yield runs structurally low because guests take allowed free
       // refills we can't meter. Don't flag it as a loss — surface it as an INFO note (not an action
       // item) so it's acknowledged + transparent, not silently dropped. Flag is per-store from VLH config.
-      if (ctx.data.selfServeTower) {
+      // BUT a short abnormally beyond the store's OWN baseline escalates to a real flag (#52).
+      if (ctx.data.selfServeTower && !verdict.abnormal) {
         return [mkFinding('bib-yield', SEVERITY.info, `${hits.length} beverage item(s) short w/ zero waste — expected (self-serve tower)`,
-          `${names} — $${Math.round(Math.abs(total))} short, no waste logged. This store has a self-serve beverage tower, so low fountain yield is STRUCTURAL (free refills we can't meter), not a loss or portioning issue — not flagged. Only investigate if it's far beyond this store's usual (then check BIB connections / syrup ratios).`,
-          Math.abs(total), { items: hits.map(v => v.wrin), selfServeTower: true, exempt: true })];
+          `${names} — $${Math.round(Math.abs(total))} short, no waste logged. This store has a self-serve beverage tower, so low fountain yield is STRUCTURAL (free refills we can't meter), not a loss or portioning issue — not flagged.${usual}`,
+          Math.abs(total), { items: hits.map(v => v.wrin), selfServeTower: true, exempt: true, baseline: bl })];
       }
-      return [mkFinding('bib-yield', SEVERITY.medium, `${hits.length} beverage item(s) short with zero waste`,
-        `${names} — $${Math.round(Math.abs(total))} short, no waste logged. Check BIB yield settings / syrup-to-water ratios + BIB connections; recount.`,
-        Math.abs(total), { items: hits.map(v => v.wrin) })];
+      const towerNote = ctx.data.selfServeTower ? ' (self-serve tower — structural low yield is normal, but this exceeds it)' : '';
+      return [mkFinding('bib-yield', SEVERITY.medium, `${hits.length} beverage item(s) short with zero waste${verdict.abnormal ? ' — abnormal vs baseline' : ''}`,
+        `${names} — $${Math.round(Math.abs(total))} short, no waste logged${towerNote}.${usual}${abnormalTail || ' Check BIB yield settings / syrup-to-water ratios + BIB connections; recount.'}`,
+        Math.abs(total), { items: hits.map(v => v.wrin), baseline: bl, abnormal: verdict.abnormal })];
     },
   },
   {

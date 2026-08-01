@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.723';
+const MERIDIAN_VERSION    = '4.724';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.724', date:'2026-08-01', changes:[
+    'Fountain-yield look-back baselines (task #52). Each store now carries a 3-month baseline of its fountain-beverage short total (mean + sd). The bib-yield check uses it: at a self-serve-tower store, a short WITHIN the store\'s norm stays an info note (structural free refills, not a loss) — but a short ABNORMALLY beyond the store\'s own baseline (≥2σ or ≥1.6×) escalates to a real flag ("check BIB connections / syrup-to-water ratios", tower or not). Notes now cite the store\'s usual $/mo. Engine src/engine/fountain-yield.js, +tests. Validated on real data (e.g. #5183 ~$1,783/mo, #3708 ~$551/mo).',
+  ]},
   {version:'4.723', date:'2026-08-01', changes:[
     'FIX (crash): opening the FOB Report threw "$ is not defined" — the money formatter used by the report modal + print/CSV wasn\'t in scope (it was defined only inside the sibling FOB-Analysis modal). Declared it in the component body so both share it. FOB Report opens again.',
     'EOM "Verify & Clear" pre-close check (task #38, KB-grounded): flags deactivated/obsolete WRINs still holding inventory (submit a zero inventory / waste before close) and the same item carrying inventory under 2+ WRINs (zero the unused one — duplicate WRINs must count down to zero). Matched by DESCRIPTION, not leading digits, so items that merely share a WRIN-family prefix are NOT falsely grouped. Quiet when clean (the usual case) — a pre-close safety net. Engine src/engine/eom-verify-clear.js, +tests.',
