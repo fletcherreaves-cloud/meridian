@@ -37,6 +37,25 @@ describe('diffSnapshot', () => {
     expect(beef.recounted).toBe(true);
   });
 
+  it('materiality floor: a sub-$25 variance drift is not scored helping/hurting (owner floor)', () => {
+    const base = { loc: '3708', fob: { fobPct: 0.0458 }, count: { earlyPctCounted: 0.94 }, items: [
+      { wrin: 'a', descr: 'Bacon', cls: 'food', qty: 10, dolDiff: -335, variance: -968, lastCounted: '2026-07-31' },   // will move -335 -> -372 = $37 (material)
+      { wrin: 'b', descr: 'Nuggets', cls: 'food', qty: 10, dolDiff: -556, variance: -6006, lastCounted: '2026-07-31' }, // -556 -> -565 = $9 (immaterial)
+    ] };
+    const cur = { loc: '3708', fob: { fobPct: 0.0455 }, count: { earlyPctCounted: 1 }, items: [
+      { wrin: 'a', descr: 'Bacon', cls: 'food', qty: 11, dolDiff: -372, variance: -1079, lastCounted: '2026-08-01' },
+      { wrin: 'b', descr: 'Nuggets', cls: 'food', qty: 11, dolDiff: -565, variance: -6100, lastCounted: '2026-08-01' },
+    ] };
+    const d = diffSnapshot(base, cur);
+    const bacon = d.items.find(i => i.wrin === 'a'), nug = d.items.find(i => i.wrin === 'b');
+    expect(bacon.verdict).toBe('hurting');   // $37 move clears the $25 floor
+    expect(nug.verdict).toBe('flat');        // $9 drift is below the floor — variance settling, not a move
+    expect(nug.recounted).toBe(true);        // still shown (it was recounted) — just not graded
+    expect(d.nHurt).toBe(1);                 // only the material one counts
+    // A higher floor reclassifies the $37 move as noise too.
+    expect(diffSnapshot(base, cur, { material: 50 }).nHurt).toBe(0);
+  });
+
   it('treats no change as no activity', () => {
     const d = diffSnapshot(baseline, JSON.parse(JSON.stringify(baseline)));
     expect(d.anyActivity).toBe(false);

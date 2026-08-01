@@ -2765,6 +2765,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               div({ style: box }, span({ style: lab }, '$ moved toward 0'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#4ade80' } }, money(d.totalHelped))),
               div({ style: box }, span({ style: lab }, '$ moved away'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#f87171' } }, money(d.totalHurt)))),
             d.active === 0 ? div({ key: 'noact', style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 2px 12px' } }, 'No changes since the baseline yet — nothing has moved. Check back after the stores recount.') : null,
+            div({ key: 'floor', style: { color: 'var(--text3)', fontSize: '10.5px', marginBottom: '10px', lineHeight: 1.5 } },
+              'Helped / hurt count only ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'material moves (≥ $25 change in variance magnitude)'), '. Smaller drifts are variance-settling noise and read ', span({ style: { fontWeight: 700 } }, 'flat'), '. An item that was ≈$0 at lock and now carries a value is ', span({ style: { fontWeight: 700, color: '#38bdf8' } }, 'var posted'), ' (the data landed), not a move. ', span({ style: { color: '#f5bc00', fontWeight: 700 } }, '↻'), ' = a recount actually occurred.'),
 
             // Per-store table
             div({ key: 'tbl', style: { overflowX: 'auto' } },

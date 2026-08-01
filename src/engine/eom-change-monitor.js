@@ -13,6 +13,11 @@
 const num = v => Number(v) || 0;
 const COMP = ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'];
 
+// Materiality floor (owner, 2026-08-01): the baseline is often locked mid-count, so the diff is full of
+// tiny variance-settling drifts ($2–$40) that are NOT coaching events. A move must clear this $ floor in
+// |Δvariance| to count as helping/hurting; smaller = 'flat' (immaterial). Tunable.
+const MATERIAL_FLOOR = 25;
+
 // Judge a variance move: helping = |current| smaller than |baseline| (toward zero); hurting = larger.
 // 'counted' = the baseline had ~$0 for this item but it now carries a real value → the VARIANCE DATA
 // POSTED between lock and now, not a move that helped or hurt. A near-zero item-by-item variance almost
@@ -20,16 +25,18 @@ const COMP = ['comp', 'raw', 'cond', 'emp', 'statv', 'unex'];
 // so a $0 baseline means the Variance/Stat data wasn't populated in the snapshot at lock (QSRSoft's
 // report lags the count; an early auto-lock can precede the daily pull) — NOT that the store didn't
 // count. We label it neutrally ('var posted') instead of scoring it as hurting.
-function verdict(baseVar, curVar, tol = 1) {
+//   zeroTol   — the ~$0 band for the 'var posted' / empty-baseline test (small).
+//   material  — the $ floor a real move must clear to be graded helping/hurting (materiality).
+function verdict(baseVar, curVar, { zeroTol = 1, material = MATERIAL_FLOOR } = {}) {
   if (baseVar == null || curVar == null) return 'unknown';
   const b = Math.abs(baseVar), c = Math.abs(curVar);
-  if (b < tol && c >= tol) return 'counted';   // empty baseline → first real count appeared
-  if (c < b - tol) return 'helping';
-  if (c > b + tol) return 'hurting';
-  return 'flat';
+  if (b < zeroTol && c >= zeroTol) return 'counted';   // empty baseline → variance just posted (not a move)
+  if (c < b - material) return 'helping';
+  if (c > b + material) return 'hurting';
+  return 'flat';   // moved, but below the materiality floor → variance-settling noise, not a real move
 }
 
-export function diffSnapshot(baseline = {}, current = {}, { itemTol = 1 } = {}) {
+export function diffSnapshot(baseline = {}, current = {}, { itemTol = 1, material = MATERIAL_FLOOR } = {}) {
   const bf = baseline.fob || {}, cf = current.fob || {};
   const dFobPct = (cf.fobPct != null && bf.fobPct != null) ? cf.fobPct - bf.fobPct : null;
   const dFobD = (cf.fob != null && bf.fob != null) ? cf.fob - bf.fob : null;
@@ -45,13 +52,16 @@ export function diffSnapshot(baseline = {}, current = {}, { itemTol = 1 } = {}) 
     const bv = b ? num(b.dolDiff) : null, cv = c ? num(c.dolDiff) : null;
     const dVar = (bv != null && cv != null) ? cv - bv : null;
     const recounted = !!(b && c && String(b.lastCounted || '') !== String(c.lastCounted || ''));
-    const changed = (dVar != null && Math.abs(dVar) >= itemTol) || (b?.qty !== c?.qty) || recounted || !b || !c;
+    const v = verdict(bv, cv, { zeroTol: itemTol, material });
+    // Show real, material moves (helping/hurting), var-posting ('counted'), any recount, and new/gone.
+    // A sub-floor 'flat' drift that wasn't recounted is variance-settling noise → hidden (owner floor).
+    const changed = v === 'helping' || v === 'hurting' || v === 'counted' || recounted || !b || !c;
     if (!changed) continue;
     // Qty (unit) variance base→now too (owner Notes 38 — helps see what they physically found).
     const bq = b ? num(b.variance) : null, cq = c ? num(c.variance) : null;
     items.push({
       wrin: w, descr: (c || b).descr, cls: (c || b).cls,
-      baseVar: bv, curVar: cv, dVar, verdict: verdict(bv, cv, itemTol),
+      baseVar: bv, curVar: cv, dVar, verdict: v,
       baseQtyVar: bq, curQtyVar: cq, dQtyVar: (b && c) ? cq - bq : null,
       baseQty: b ? num(b.qty) : null, curQty: c ? num(c.qty) : null,
       baseCounted: b?.lastCounted ?? null, curCounted: c?.lastCounted ?? null, recounted,
