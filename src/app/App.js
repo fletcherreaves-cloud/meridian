@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.712';
+const MERIDIAN_VERSION    = '4.713';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.713', date:'2026-08-01', changes:[
+    'Trading-day comparison foundation (P0): a new pure engine (trading-days.js) for fair partial-period comparisons. Because we run on daily pulls and sales swing by weekday, a partial range that is NOT a whole number of weeks must be compared weekday-aligned — the clean trick being a 52-week (364-day) shift that preserves the day-of-week exactly, vs a naive same-calendar-date LY. It reports whether trading-day alignment was required (partial range) or calendar was already fair (whole weeks). +6 tests. Next: wire it through vs-LY, projections pace, and movers.',
+  ]},
   {version:'4.712', date:'2026-08-01', changes:[
     'Weekly Count Cadence drill-in: click any store in the cadence monitor to expand its biggest between-count variance windows — for each item, how much it moved and BETWEEN WHICH TWO COUNTS (e.g. "100% PURE BEEF moved -$430 between 07/09 and 07/16"). That brackets WHEN the product shrank/grew to a specific window, so the investigation points at the right days instead of the whole month.',
   ]},
