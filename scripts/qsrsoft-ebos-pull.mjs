@@ -120,6 +120,20 @@ async function getDateRange() {
 // ── Aggregate line items to daily totals ─────────────────────────────────────
 // Only "Purchase" records count as spend. Credits and Out transfers are excluded.
 function aggregateByDate(items, nsn) {
+  // One-time raw-field dump (DUMP_EBOS_FIELDS=1) for a target store — reveal every numeric sub-field +
+  // its month total so we can see which fields QSRSoft rolls into the ledger "Ops Supplies" column.
+  if (process.env.DUMP_EBOS_FIELDS === '1' && !globalThis.__ebosDumped
+      && String(nsn) === (process.env.DUMP_EBOS_STORE || '5183')) {
+    globalThis.__ebosDumped = true;
+    const mon = process.env.DUMP_EBOS_MONTH || '2026-07';
+    const purch = items.filter(it => it.record_type === 'Purchase' && String(it.posted_date || '').startsWith(mon));
+    console.log(`[EBOS-FIELDS] NSN ${nsn} month ${mon}: ${purch.length} Purchase items; keys: ${Object.keys(purch[0] || items[0] || {}).join(', ')}`);
+    const totals = {};
+    for (const it of purch) for (const [k, v] of Object.entries(it)) if (typeof v === 'number') totals[k] = (totals[k] || 0) + v;
+    console.log(`[EBOS-FIELDS] NSN ${nsn} ${mon} numeric-field totals: ${JSON.stringify(Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, Math.round(v * 100) / 100])))}`);
+    console.log(`[EBOS-FIELDS] record_type values: ${JSON.stringify([...new Set(items.map(it => it.record_type))])}`);
+    console.log(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
+  }
   const byDate = {};
   for (const item of items) {
     if (item.record_type !== 'Purchase') continue;
@@ -283,6 +297,7 @@ async function pullViaPlaywright(startDate, endDate) {
     const { rows, log } = await page.evaluate(async (args) => {
       const { token, nsns, startDate, endDate, base, debug } = args;
       const rows = [], log = [];
+      let dumped = false;
 
       for (const nsn of nsns) {
         const url = `${base}/api/inv/${nsn}/purchase/store_ledger?start_date=${startDate}&end_date=${endDate}`;
@@ -298,6 +313,20 @@ async function pullViaPlaywright(startDate, endDate) {
           });
           if (!r.ok) { log.push(`NSN ${nsn} HTTP ${r.status}`); continue; }
           const items = await r.json();
+
+          // One-time raw-field dump (DUMP_EBOS_FIELDS=1) — reveal every numeric sub-field + its month
+          // total so we can see which fields QSRSoft rolls into the ledger "Ops Supplies" column.
+          if (args.dumpFields && !dumped && String(nsn) === (args.dumpStore || '5183')) {
+            dumped = true;
+            const mon = args.dumpMonth || '2026-07';
+            const purch = items.filter(it => it.record_type === 'Purchase' && String(it.posted_date || '').startsWith(mon));
+            log.push(`[EBOS-FIELDS] NSN ${nsn} month ${mon}: ${purch.length} Purchase items; keys: ${Object.keys(purch[0] || items[0] || {}).join(', ')}`);
+            const totals = {};
+            for (const it of purch) for (const [k, v] of Object.entries(it)) if (typeof v === 'number') totals[k] = (totals[k] || 0) + v;
+            log.push(`[EBOS-FIELDS] NSN ${nsn} ${mon} numeric-field totals: ${JSON.stringify(Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, Math.round(v * 100) / 100])))}`);
+            log.push(`[EBOS-FIELDS] record_type values seen: ${JSON.stringify([...new Set(items.map(it => it.record_type))])}`);
+            log.push(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
+          }
 
           // Aggregate: sum sub-categories by posted_date, Purchase records only
           const byDate = {};
@@ -330,7 +359,8 @@ async function pullViaPlaywright(startDate, endDate) {
         }
       }
       return { rows, log };
-    }, { token: ebosToken, nsns: STORE_NSNS, startDate, endDate, base: EBOS_BASE, debug: DEBUG });
+    }, { token: ebosToken, nsns: STORE_NSNS, startDate, endDate, base: EBOS_BASE, debug: DEBUG,
+         dumpFields: process.env.DUMP_EBOS_FIELDS === '1', dumpStore: process.env.DUMP_EBOS_STORE || '5183', dumpMonth: process.env.DUMP_EBOS_MONTH || '2026-07' });
 
     for (const msg of log) console.log('[ebos]', msg);
     await snap('ebos-final.png');

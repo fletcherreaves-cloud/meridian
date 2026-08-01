@@ -22,6 +22,10 @@ on:
         description: 'Force full days_back pull, ignoring existing data (1 = on)'
         required: false
         default: '0'
+      dump_fields:
+        description: 'One-time raw-field dump for store 5183 (1 = on) — reveals which sub-fields roll into ledger Ops Supplies'
+        required: false
+        default: '0'
 
 jobs:
   pull:
@@ -55,6 +59,7 @@ jobs:
           QSRSOFT_EBOS_DAYS_RECENT:  ${{ github.event.inputs.days_recent || '30' }}
           QSRSOFT_EBOS_DEBUG:        ${{ github.event.inputs.debug || '0' }}
           QSRSOFT_EBOS_FORCE_FULL:   ${{ github.event.inputs.force_full || '0' }}
+          DUMP_EBOS_FIELDS:          ${{ github.event.inputs.dump_fields || '0' }}
 
       - name: Upload debug screenshots
         if: always()
