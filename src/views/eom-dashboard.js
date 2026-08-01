@@ -31,6 +31,7 @@ import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
+import { analyzeCountCadence, weeklyExceptions, WEEKDAY_NAMES } from '../engine/weekly-cadence.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -271,6 +272,38 @@ function ProgressBar({ value }) {
     div({ style: { flex: 1, height: '8px', background: 'var(--bdr)', borderRadius: '4px', overflow: 'hidden' } },
       div({ style: { width: `${p * 100}%`, height: '100%', background: color } })),
     span({ style: { fontSize: '12px', fontWeight: 700, color, minWidth: '34px', textAlign: 'right' } }, pct(p)));
+}
+
+// Weekly-count cadence monitor (Count Cycle view) — is each store running its weekly full Food+Condiment
+// count? Detected weekly day, last full count + days-since, weekly-vs-spot session mix. Overdue first.
+function CadenceMonitor({ rows, cadenceByLoc, nm }) {
+  const data = (rows || []).map(r => ({ loc: r.loc, name: r.name, c: cadenceByLoc[String(r.loc)] })).filter(x => x.c);
+  if (!data.length) return null;
+  const statusOf = c => c.daysSinceWeekly == null ? 3 : (c.daysSinceWeekly >= 14 ? 2 : c.daysSinceWeekly >= 8 ? 1 : 0);
+  data.sort((a, b) => statusOf(b.c) - statusOf(a.c) || ((b.c.daysSinceWeekly || 0) - (a.c.daysSinceWeekly || 0)) || a.name.localeCompare(b.name));
+  const nOverdue = data.filter(x => statusOf(x.c) >= 1 && x.c.daysSinceWeekly != null).length;
+  const nNever = data.filter(x => x.c.daysSinceWeekly == null).length;
+  const fmtDay = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(); } catch { return d; } };
+  const th = (t) => h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t);
+  return div({ style: { marginBottom: '18px', border: '1px solid var(--bdr)', borderRadius: '10px', padding: '12px 14px', background: 'var(--surf2)' } },
+    div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px' } }, '🗓 Weekly Count Cadence'),
+    div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
+      `Every store runs a full Food + Condiment count weekly. ${nOverdue ? `⚠ ${nOverdue} overdue (≥8 days)` : '✓ all current'}${nNever ? ` · ${nNever} with no full weekly on record` : ''}.`),
+    h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
+      h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
+        ['Store', 'Counts on', 'Last full count', 'This window', 'Status'].map(th))),
+      h('tbody', null, data.map(({ loc, name, c }) => {
+        const st = statusOf(c);
+        const col = st >= 2 ? '#f87171' : st === 1 ? '#f5bc00' : '#4ade80';
+        const label = c.daysSinceWeekly == null ? 'No full weekly' : c.daysSinceWeekly >= 8 ? `Overdue · ${c.daysSinceWeekly}d` : 'On track';
+        return h('tr', { key: loc, style: { borderBottom: '1px solid var(--bdr)' } },
+          h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, name,
+            span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(loc)}`)),
+          h('td', { style: { padding: '6px 10px', color: 'var(--text2)' } }, c.detectedWeekdayName ? `${c.detectedWeekdayName}s` : '—'),
+          h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, c.lastWeekly ? `${fmtDay(c.lastWeekly)}${c.daysSinceWeekly != null ? ` · ${c.daysSinceWeekly}d ago` : ''}` : '—'),
+          h('td', { style: { padding: '6px 10px', color: 'var(--text3)' } }, `${c.nWeekly} weekly · ${c.nSpot} spot`),
+          h('td', { style: { padding: '6px 10px' } }, span({ style: { color: col, fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' } }, label)));
+      }))));
 }
 
 const VERDICT_TONE = { good: '#4ade80', warn: '#f5bc00', bad: '#f87171', neutral: 'var(--text3)' };
@@ -785,6 +818,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const timingByLoc = useMemo(() => {
     const m = {};
     for (const loc in rawByLoc) { const t = computeCountTiming(rawByLoc[loc]); if (t) m[loc] = t; }
+    return m;
+  }, [rawByLoc]);
+
+  // Weekly-count cadence per store (Notes 40 #1) — is each store doing its weekly full Food/Condiment
+  // count? Detected weekly day, last full count + days-since, weekly vs daily-spot sessions. Overdue
+  // ≥ 8 days. Powers the Count Cycle view's cadence monitor.
+  const cadenceByLoc = useMemo(() => {
+    const m = {};
+    for (const loc in rawByLoc) { try { m[loc] = analyzeCountCadence(rawByLoc[loc], { asOf: new Date() }); } catch { /* skip */ } }
     return m;
   }, [rawByLoc]);
 
@@ -1580,6 +1622,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           `${readyForReview.length} store${readyForReview.length !== 1 ? 's' : ''} ready for review`),
         div({ style: { fontSize: '12px', color: 'var(--text2)', marginTop: '2px' } },
           readyForReview.map(r => r.name).join(', ') + ' — count ≥90%. Set Diagnosis to "In review" to begin.'))),
+
+    // Count Cycle view → weekly-cadence monitor above the store table (Notes 40 #1). Renders only when
+    // it has cadence data; hidden in Scoreboard/EOM modes.
+    (mode === 'progress' && !loading && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, nm }) : null,
 
     loading ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },

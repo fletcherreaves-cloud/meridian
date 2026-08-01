@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.709';
+const MERIDIAN_VERSION    = '4.710';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.710', date:'2026-08-01', changes:[
+    'Weekly Count Cadence monitor — Inventory Control → Count Cycle now surfaces, per store: the detected weekly count day ("counts Wednesdays"), the last full Food+Condiment count + days since, this window\'s weekly-vs-daily-spot session mix, and a status (On track / Overdue ≥8d / No full weekly on record) — overdue stores first. Turns Count Cycle from a progress re-skin into a real year-round count-cadence watch (feeds off the raw item history already loaded). It also denotes each store\'s weekly count day, so setting up the weekly cadence is easier.',
+  ]},
   {version:'4.709', date:'2026-07-31', changes:[
     'Second-Look roll-up now condenses "Negative usage" too — it was still repeating the full "impossible… inner bags entered as full cases. Recount {item}" paragraph per item because the item name sat in the tail, breaking the shared-coaching detection. Dropped the redundant item name from the coaching (it\'s already the list label), so 11 items collapse to one coaching line + a compact list.',
   ]},
