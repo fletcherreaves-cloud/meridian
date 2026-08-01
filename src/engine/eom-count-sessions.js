@@ -45,8 +45,8 @@ export function itemCountSessions(history, { gapHours = 4 } = {}) {
   for (const c of counts) {
     const g = groups[groups.length - 1];
     const contiguous = g && c.when != null && g.lastWhen != null && (c.when - g.lastWhen) <= gapMs;
-    if (contiguous) { g.entries.push(c); g.lastWhen = c.when ?? g.lastWhen; }
-    else groups.push({ entries: [c], lastWhen: c.when });
+    if (contiguous) { g.entries.push(c); g.lastWhen = c.when ?? g.lastWhen; g.day = c.dt; }
+    else groups.push({ day: c.dt, entries: [c], lastWhen: c.when });
   }
 
   const sessions = groups.map((g, i) => {
