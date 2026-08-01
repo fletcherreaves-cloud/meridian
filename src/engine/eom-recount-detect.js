@@ -30,7 +30,7 @@ const isBackOffice = src => !!src && String(src).toLowerCase() !== 'mobileapp';
 export function storeDayWindows(rawItems, { gapMin = 90 } = {}) {
   const byDay = {};
   for (const it of (rawItems || [])) for (const h of (it.history || [])) {
-    if (!h || h.source !== 'inventory' || !h.dt) continue;
+    if (!h || !h.dt || !(h.source === 'inventory' || h.isCount)) continue;   // count events only
     const when = eventTs(h.dt, h.tm);
     if (when == null) continue;
     (byDay[dayOf(h.dt)] || (byDay[dayOf(h.dt)] = [])).push(when);
@@ -102,7 +102,8 @@ export function itemRecounts(itemHistory, storeWindows = {}, { minEffect = 1 } =
       const direction = effect > minEffect ? 'helped' : effect < -minEffect ? 'hurt' : 'held';
       const back = isBackOffice(e.countSource);
       const r = {
-        dt: e.dt, tm: e.tm, dolVar: e.dolVar, onHand: e.onHand, manager: e.manager, countSource: e.countSource,
+        dt: e.dt, tm: e.tm, when: e.when, dolVar: e.dolVar, onHand: e.onHand, manager: e.manager, countSource: e.countSource,
+        prevDolVar: prev.dolVar, prevManager: prev.manager, prevWhen: prev.when,
         effect, direction, vsPrior: e.dolVar - prev.dolVar,
         signal: back ? `back-office (${e.countSource})` : 'later count window',
         confidence: back ? 'confirmed' : 'likely',

@@ -25,6 +25,7 @@ import { normClass, diagnoseIncompleteCount, nonProductDueToday, countWindowStar
 import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus } from './eom-parsers.js';
 import { eventTs, recountBatchTiming, recountTimingSentence } from './eom-recount-forensics.js';
 import { itemCountSessions } from './eom-count-sessions.js';
+import { storeDayWindows, itemRecounts } from './eom-recount-detect.js';
 import { countTimingArtifact } from './count-timing.js';
 import { verifyClearItems } from './eom-verify-clear.js';
 import { fountainVerdict } from './fountain-yield.js';
@@ -230,33 +231,45 @@ export const DEFAULT_CHECKS = [
     // entries of the SAME session is NOT flagged — only cross-session recounts are. Even a 2-session swing
     // this big, with no delivery between, should trigger a THIRD count by a different manager before saving.
     // Non-accusatory: we don't claim which count was wrong — we ask them to verify so the on-hand is clean.
-    id: 'recount-swing', label: 'Recount swing — large change between counting sessions (verify 3rd count)', order: 27, enabled: true,
+    id: 'recount-swing', label: 'Recount swing — large change on a same-day recount (verify 3rd count)', order: 27, enabled: true,
     requires: ['rawItems'], params: { minSwing: 150 },
     run: (ctx) => {
       const minSwing = ctx.params.minSwing ?? 150;
       const out = [];
+      // Store-window model (v4.733): a "recount" is a GENUINE same-day re-verify after the walkthrough (a
+      // later store-level count window, or a back-office correction) — NOT a count on another day, which is
+      // the weekly count PROGRESSION and expected to differ. Compute the store's day-windows once, then read
+      // each item's graded same-day recounts. This stops the weekly cadence from firing false recount swings.
+      const windows = storeDayWindows(ctx.data.rawItems || []);
       for (const d of (ctx.data.rawItems || [])) {
-        const { sessions, nSessions } = itemCountSessions(d.history || [], {});
-        if (nSessions < 2) continue;   // a recount only exists ACROSS sessions; area entries are one count
-        // Largest swing in the binding net between consecutive counting sessions.
+        const rc = itemRecounts(d.history || [], windows);
+        if (!rc.nRecounts) continue;   // no genuine same-day recount → not a recount swing
+        // Largest same-day swing between the pre-recount state and a recount entry.
         let best = null;
-        for (let i = 1; i < nSessions; i++) {
-          const a = sessions[i - 1].netDolVar, b = sessions[i].netDolVar;
-          const swing = Math.abs(b - a);
-          if (!best || swing > best.swing) best = { swing, a, b, from: sessions[i - 1], to: sessions[i], crossZero: (a < 0) !== (b < 0) && a !== 0 && b !== 0 };
+        for (const day of rc.days) {
+          for (const r of (day.recounts || [])) {
+            const swing = Math.abs(r.vsPrior);
+            if (!best || swing > best.swing) best = {
+              swing, a: r.prevDolVar, b: r.dolVar, date: r.dt,
+              fromMgr: r.prevManager, toMgr: r.manager, fromWhen: r.prevWhen, toWhen: r.when,
+              crossZero: (r.prevDolVar < 0) !== (r.dolVar < 0) && r.prevDolVar !== 0 && r.dolVar !== 0,
+              confirmed: r.confidence === 'confirmed', source: r.countSource,
+            };
+          }
         }
         if (!best || best.swing < minSwing) continue;
-        const sev = (best.crossZero || best.swing >= minSwing * 3) ? SEVERITY.high : SEVERITY.medium;
-        const day = best.to.date;
-        const mgrs = [best.from.manager, best.to.manager].filter(Boolean);
+        const sev = (best.crossZero || best.confirmed || best.swing >= minSwing * 3) ? SEVERITY.high : SEVERITY.medium;
+        const day = best.date;
+        const mgrs = [best.fromMgr, best.toMgr].filter(Boolean);
         const sameMgr = mgrs.length === 2 && mgrs[0] === mgrs[1];
+        const via = best.confirmed ? ` via a back-office ${best.source} correction` : '';
         out.push(mkFinding('recount-swing', sev,
           `Recount swing: ${d.descr || d.wrin}`,
-          `The binding count moved ${_mny(best.a)} → ${_mny(best.b)} between two separate counting sessions (${best.from.date} → ${best.to.date}, ${_mny(best.swing)} swing${best.crossZero ? ', crossing zero' : ''})${mgrs.length ? (sameMgr ? `, both by ${mgrs[0]}` : ` (${best.from.manager || '?'} → ${best.to.manager || '?'})`) : ''}. A recount swing this large — with no delivery in between — is exactly where a THIRD count by a different manager should be required before saving. Verify which count was right so the on-hand is clean.`,
+          `On ${best.date}, a same-day recount${via} moved the count ${_mny(best.a)} → ${_mny(best.b)} (${_mny(best.swing)} swing${best.crossZero ? ', crossing zero' : ''})${mgrs.length ? (sameMgr ? `, both by ${mgrs[0]}` : ` (${best.fromMgr || '?'} → ${best.toMgr || '?'})`) : ''}. A recount swing this large — with no delivery in between — is exactly where a THIRD count by a different manager should be required before saving. Verify which count was right so the on-hand is clean.`,
           best.swing, {
             wrin: d.wrin, day, swing: best.swing, crossZero: best.crossZero, sameMgr,
             manager: sameMgr ? mgrs[0] : null,
-            origTs: best.from.end.when, corrTs: best.to.end.when,
+            origTs: best.fromWhen, corrTs: best.toWhen,
           }));
       }
       // Pattern + TIMING forensics (owner 2026-07-31): the same single counter offsetting many items on

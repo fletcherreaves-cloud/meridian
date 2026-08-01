@@ -134,10 +134,11 @@ describe('runDiagnosis — editable check registry', () => {
   });
 
   it('rolls up repeated recount-swing diagnoses into one coaching block + item list (owner)', () => {
-    // Cross-session recounts (day 3 → day 4) so the swing counts as a genuine recount, not area build-up.
+    // Same-day recounts (store-window model, v4.733): the count walkthrough at 08:00, then a re-verify pass
+    // 2h later (>90min gap = a later store window) → a genuine recount. Cross-DAY counts are progression.
     const mkItem = (wrin, descr) => ({ wrin, descr, history: [
       { dt: '2026-07-03', tm: '8:00 AM', isCount: true, difference: 300, manager: 'Marlena F' },
-      { dt: '2026-07-04', tm: '8:30 AM', isCount: true, difference: -300, manager: 'Marlena F' },
+      { dt: '2026-07-03', tm: '10:00 AM', isCount: true, difference: -300, manager: 'Marlena F' },
     ] });
     const rawItems = [mkItem('1', 'McNuggets'), mkItem('2', 'Bacon'), mkItem('3', 'Beef'), mkItem('4', 'Sprite')];
     const res = runDiagnosis({ store: '1', storeName: 'Tecumseh', period: '2026-07', data: { rawItems } });
@@ -240,10 +241,10 @@ describe('runDiagnosis — editable check registry', () => {
     expect(over).not.toMatch(/optional polish/);
   });
 
-  it('recount-swing: flags a large swing between two SEPARATE counting sessions (genuine recount)', () => {
+  it('recount-swing: flags a large SAME-DAY recount swing (a re-verify after the walkthrough)', () => {
     const rawItems = [{ wrin: '00004-849', descr: 'Fries', history: [
-      { dt: '2026-06-04', tm: '07:53', isCount: true, difference: -1780, manager: 'Magali G' },  // session 1 (day 4)
-      { dt: '2026-06-05', tm: '09:11', isCount: true, difference: 222, manager: 'Magali G' },     // session 2 (day 5) = recount
+      { dt: '2026-06-04', tm: '07:53', isCount: true, difference: -1780, manager: 'Magali G' },  // walkthrough (main window)
+      { dt: '2026-06-04', tm: '15:01', isCount: true, difference: 222, manager: 'Magali G' },     // afternoon recount pass (later window)
     ] }];
     const res = runDiagnosis({ store: '29760', storeName: 'X', period: '2026-06', data: { rawItems } });
     const f = res.findings.find(x => x.checkId === 'recount-swing');
@@ -252,6 +253,16 @@ describe('runDiagnosis — editable check registry', () => {
     expect(f.detail).toMatch(/crossing zero/);
     expect(f.detail).toMatch(/THIRD count/);
     expect(f.detail).toMatch(/both by Magali G/);            // same single counter
+    expect(f.detail).toMatch(/same-day recount/);            // finalized model wording
+  });
+
+  it('recount-swing: does NOT fire on a cross-DAY count progression (weekly cadence, not a recount)', () => {
+    // Two counts on DIFFERENT days = the weekly count progression, expected to differ — never a recount.
+    const rawItems = [{ wrin: 'a', descr: 'Beef', history: [
+      { dt: '2026-06-04', tm: '07:53', isCount: true, difference: -1780, manager: 'Magali G' },
+      { dt: '2026-06-11', tm: '09:11', isCount: true, difference: 222, manager: 'Magali G' },
+    ] }];
+    expect(runDiagnosis({ store: '29760', period: '2026-06', data: { rawItems } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
   });
 
   it('recount-swing: does NOT fire on a same-session area-by-area swing (the FRIES fix)', () => {
