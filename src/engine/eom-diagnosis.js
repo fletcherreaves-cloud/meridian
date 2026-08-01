@@ -26,6 +26,7 @@ import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus 
 import { eventTs, recountBatchTiming, recountTimingSentence } from './eom-recount-forensics.js';
 import { itemCountSessions } from './eom-count-sessions.js';
 import { countTimingArtifact } from './count-timing.js';
+import { verifyClearItems } from './eom-verify-clear.js';
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
@@ -339,6 +340,33 @@ export const DEFAULT_CHECKS = [
         `Count-timing context: counted only through day ${elapsed} of ~${periodLength}`,
         `${art.reason} The Variance Stat % is inflated by the small sales denominator this early in the period — the same $ over a full month is a fraction of it. Watch the absolute $ and the trend as the month fills in.`,
         Math.abs(loss), { periodElapsed: elapsed, periodLength, confidence: art.confidence })];
+    },
+  },
+  {
+    // Verify & Clear before close (task #38, KB Inventory-Analysis Topics 3/5/15): deactivated/obsolete
+    // WRINs still holding inventory, and the same item carrying inventory under 2+ WRINs. Both should be
+    // zeroed (submit zero inventory / waste) before the count closes, or they inflate value + manufacture
+    // unexplained variance. Quiet when clean (the usual case — stores handle it) → a pre-close safety net.
+    id: 'verify-clear', label: 'Verify & Clear — deactivated / duplicate WRINs to zero before close', order: 7, enabled: true,
+    requires: ['onHand'],
+    run: (ctx) => {
+      const vc = verifyClearItems(ctx.data.onHand || [], { minAmt: 1 });
+      const out = [];
+      if (vc.deactivated.length) {
+        const list = vc.deactivated.slice(0, 8).map(d => `${d.descr} (${_mny(d.onHandAmt)})`).join(', ');
+        out.push(mkFinding('verify-clear', SEVERITY.medium,
+          `Deactivated items still on hand: ${vc.deactivated.length} (${_mny(vc.deactivatedTotal)})`,
+          `${vc.deactivated.length} deactivated/obsolete WRIN${vc.deactivated.length === 1 ? '' : 's'} still carry inventory totaling ${_mny(vc.deactivatedTotal)}. Before close, submit a ZERO inventory for each (or waste and discard the product) so it doesn't inflate ending inventory or create unexplained variance when the recipe swaps. Items: ${list}.`,
+          vc.deactivatedTotal, { deactivated: vc.deactivated }));
+      }
+      if (vc.duplicates.length) {
+        const list = vc.duplicates.slice(0, 6).map(g => `${g.descr} [${g.items.map(i => i.wrin).join(' + ')}]`).join('; ');
+        out.push(mkFinding('verify-clear', SEVERITY.medium,
+          `Duplicate WRINs (same item, 2+ numbers): ${vc.duplicates.length} (${_mny(vc.duplicateTotal)})`,
+          `${vc.duplicates.length} item${vc.duplicates.length === 1 ? '' : 's'} carry inventory under more than one WRIN (${_mny(vc.duplicateTotal)}). Recount the item and put ZERO inventory under the unused WRIN — all duplicate WRINs must be counted down to zero (recipes swap to the new WRIN at the next POS Open). Verify first: ${list}.`,
+          vc.duplicateTotal, { duplicates: vc.duplicates }));
+      }
+      return out;
     },
   },
   {

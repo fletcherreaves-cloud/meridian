@@ -1194,6 +1194,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   }, [rows, fobRows, varByLoc, prevVarByLoc, period, patchOfLoc]);
 
   // FOB Report — printable (→ PDF) + CSV export, so it can go into a DO/GM review.
+  const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const fobRepPrintHtml = () => {
     const R = fobReport, esc = s => String(s || '').replace(/</g, '&lt;');
     const gap = r => r.gapPP == null ? '' : `${r.gapPP > 0 ? '+' : ''}${r.gapPP}pp`;
