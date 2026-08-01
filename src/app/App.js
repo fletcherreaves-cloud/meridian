@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.715';
+const MERIDIAN_VERSION    = '4.716';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.716', date:'2026-08-01', changes:[
+    'FOB Root-Cause Analysis modal (Inventory Control → 🔬 FOB Analysis) — the recount-impact + consistency study, in-app and scoped to the current filter (one / all / patch). ① Recount Impact ranks stores by whether their recounts move variance TOWARD $0 or AWAY (net-harmful = the coaching opportunities), expandable to the exact items that hurt. ② FOB Consistency ranks stores by month-final FOB% standard deviation (steadiest first). Full methodology shown for trust; same engine as the batch scan so numbers are verifiable to the dollar. First run confirmed #3708 / #29760 / #33704 / #10422 as net-harmful-recount opportunities and #38609 / #34222 / #43380 as the steadiest.',
+  ]},
   {version:'4.715', date:'2026-08-01', changes:[
     'Change Monitor v2 — a new "📈 Progression" view (now the default) reads each item\'s variance journey straight from the raw count ledger: base count → each recount as a step (✅ moved toward zero / ⚠️ moved away / • held), the net vs base, a verdict (improved / recount hurt / held), and flags (held-worse, $0-improbable). No lock or baseline needed — works for whatever period is selected, and per-store it tallies improved vs hurt vs recounted. The old snapshot "📸 Baseline diff" stays behind the toggle. Hover any value for who/when.',
   ]},

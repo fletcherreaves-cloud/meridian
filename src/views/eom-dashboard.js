@@ -19,6 +19,7 @@ import {
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
+import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
 import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
@@ -828,6 +829,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [mon, setMon] = useState(null);               // { diff, takenAt, nBaseline, error }
   const [monOpenRows, setMonOpenRows] = useState({});  // loc -> expanded item deltas
   const [monView, setMonView] = useState('progression'); // 'progression' (ledger-derived, v2) | 'diff' (snapshot)
+  const [riddleOpen, setRiddleOpen] = useState(false);   // 🔬 FOB Root-Cause Analysis modal
+  const [riddleStore, setRiddleStore] = useState(null);  // loc expanded to its harmful recount items
   const [secReview, setSecReview] = useState({});     // loc -> { status, note } (day-2 secondary review)
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
@@ -934,6 +937,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     for (const loc in rawByLoc) { try { m[loc] = storeVarianceProgressions(rawByLoc[loc]); } catch { m[loc] = []; } }
     return m;
   }, [rawByLoc]);
+
+  // FOB Root-Cause Analysis (Notes 41) — recount impact + FOB consistency, SCOPED to the current filter
+  // (one / all / patch). Same engine as the CI scan, so numbers are verifiable.
+  const riddle = useMemo(() => {
+    const scoped = new Set(rows.map(r => unpad(r.loc)));
+    const rawScoped = {}; for (const loc of Object.keys(rawByLoc)) if (scoped.has(unpad(loc))) rawScoped[loc] = rawByLoc[loc];
+    const fobScoped = (fobRows || []).filter(r => scoped.has(unpad(r.loc)));
+    const impact = recountImpactByStore(rawScoped);
+    const consistency = fobConsistencyByStore(fobScoped);
+    const months = [...new Set(fobScoped.map(r => (typeof r.date === 'string' ? r.date : '').slice(0, 7)).filter(Boolean))].sort();
+    return { impact, consistency, months, nFob: fobScoped.length };
+  }, [rows, rawByLoc, fobRows]);
 
   // Which stores have any diagnosis input beyond on-hand (variance/waste/transfers).
   const hasDiagData = useMemo(() => {
@@ -1643,6 +1658,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'Change Monitor — diff the current live state against the locked baseline. Shows per store the FOB Δ and, per item, whether a recount HELPED (variance moved toward $0) or HURT (moved away). This is the day-2 secondary review.',
           style: { background: 'var(--surf3)', color: '#f472b6', border: '1px solid #f472b6', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '📸 Change Monitor'),
+        h('button', {
+          onClick: () => { setRiddleStore(null); setRiddleOpen(true); }, disabled: rows.length === 0,
+          title: 'FOB Root-Cause Analysis — for the current scope: which stores\' RECOUNTS add loss (net-harmful = the coaching opportunities) and which stores hold the most CONSISTENT FOB month-to-month. Same math as the batch analysis; every number is decomposable.',
+          style: { background: 'var(--surf3)', color: '#a78bfa', border: '1px solid #a78bfa', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
+        }, '🔬 FOB Analysis'),
         lockMsg ? span({ style: { fontSize: '11px', color: lockMsg.startsWith('✓') ? '#4ade80' : '#fb923c', alignSelf: 'center' } }, lockMsg) : null,
         // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
         h('button', {
@@ -1851,6 +1871,60 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: '5px', color: 'var(--text2)', cursor: 'pointer', fontSize: '12px', padding: '3px 7px', marginLeft: '4px' },
                 }, '🔗 Share'))))))),
     shareMsg ? div({ style: { position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '9px 14px', fontSize: '12.5px', color: shareMsg.startsWith('✓') ? '#4ade80' : shareMsg.startsWith('Share failed') ? '#f87171' : 'var(--text2)', boxShadow: '0 6px 20px rgba(0,0,0,.4)', maxWidth: '90vw' }, onClick: () => setShareMsg('') }, shareMsg) : null,
+
+    // 🔬 FOB Root-Cause Analysis modal (Notes 41) — recount impact + FOB consistency, scoped + verifiable.
+    riddleOpen && (() => {
+      const R = riddle;
+      const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
+      const harmful = R.impact.filter(s => s.net < 0);
+      const winLbl = R.months.length ? `${R.months[0]} → ${R.months[R.months.length - 1]} (${R.months.length} mo)` : 'no FOB history in scope';
+      const th = (t, r) => h('th', { key: t, style: { textAlign: r ? 'right' : 'left', padding: '4px 9px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
+      return div({ onClick: () => setRiddleOpen(false), style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' } },
+        div({ onClick: e => e.stopPropagation(), style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '940px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
+          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `🔬 FOB Root-Cause Analysis — ${scopeLabel()}`),
+          h('button', { onClick: () => setRiddleOpen(false), style: MODAL_X }, '✕'),
+          div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } }, `Scope: ${rows.length} store${rows.length === 1 ? '' : 's'} · FOB history ${winLbl} · ${R.nFob.toLocaleString()} daily snapshots · recount impact from the current-period ledger`),
+          // Methodology — for trust
+          div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '11.5px', color: 'var(--text2)', lineHeight: 1.55 } },
+            div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '4px' } }, 'How this is computed (audit anything):'),
+            div(null, span({ style: { fontWeight: 700, color: '#a78bfa' } }, 'Recount Impact — '), 'for each item counted more than once, compare the FINAL count\'s variance to the FIRST (base) count. Closer to $0 = the recount HELPED (toward); further away = it HURT (away). Read straight from the raw item ledger — the same data the Change Monitor → Progression view shows. Net = toward − away. Net-negative stores are where recounting is adding loss.'),
+            div({ style: { marginTop: '4px' } }, span({ style: { fontWeight: 700, color: '#4ade80' } }, 'FOB Consistency — '), 'each store\'s month-final FOB% across every month on record → the average and the standard deviation (sd). Low sd = repeatable results (dialed in). Dollar-weighted FOB (Σ components ÷ Σ sales), same as everywhere else.')),
+          // T1 — Recount Impact
+          div({ style: { fontWeight: 700, color: 'var(--text)', margin: '4px 0 6px', fontSize: '13px' } }, '① Recount Impact — the opportunities',
+            harmful.length ? span({ style: { marginLeft: '8px', fontSize: '11px', color: '#f87171', fontWeight: 700 } }, `${harmful.length} store${harmful.length === 1 ? '' : 's'} net-harmful`) : span({ style: { marginLeft: '8px', fontSize: '11px', color: '#4ade80' } }, 'all net-helpful ✓')),
+          !R.impact.length ? div({ style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 0 12px' } }, 'No recounted items in the current-period ledger for this scope yet.')
+          : div({ style: { overflowX: 'auto', marginBottom: '16px' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+              h('thead', null, h('tr', null, th('Store'), th('Toward $0', 1), th('Away', 1), th('Net', 1), th('# recounted', 1))),
+              h('tbody', null, R.impact.flatMap(s => {
+                const isOpen = riddleStore === s.loc;
+                const c = s.net < 0 ? '#f87171' : '#4ade80';
+                const els = [h('tr', { key: s.loc, onClick: () => setRiddleStore(o => o === s.loc ? null : s.loc), style: { borderBottom: isOpen ? 'none' : '1px solid var(--bdr)', cursor: 'pointer' } },
+                  h('td', { style: { padding: '5px 9px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, `${isOpen ? '▾' : '▸'} ${nm(s.loc)}`, span({ style: { color: 'var(--text3)', fontWeight: 400, marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '10px' } }, `#${unpad(s.loc)}`)),
+                  h('td', { style: { padding: '5px 9px', textAlign: 'right', color: '#4ade80', fontVariantNumeric: 'tabular-nums' } }, $(s.toward)),
+                  h('td', { style: { padding: '5px 9px', textAlign: 'right', color: '#f87171', fontVariantNumeric: 'tabular-nums' } }, $(s.away)),
+                  h('td', { style: { padding: '5px 9px', textAlign: 'right', fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums' } }, `${s.net >= 0 ? '+' : ''}${$(s.net)}`),
+                  h('td', { style: { padding: '5px 9px', textAlign: 'right', color: 'var(--text3)' } }, s.nRecounted))];
+                if (isOpen) els.push(h('tr', { key: s.loc + '-d', style: { borderBottom: '1px solid var(--bdr)' } },
+                  h('td', { colSpan: 5, style: { padding: '2px 9px 10px 22px', background: 'var(--surf3)' } },
+                    div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', margin: '4px 0 3px' } }, 'Recounts that hurt most (base → final)'),
+                    s.items.slice(0, 12).map((it, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '1px 0' } },
+                      span({ style: { fontWeight: 600, color: 'var(--text)' } }, it.descr), ' — ',
+                      span({ style: { fontFamily: 'ui-monospace,Menlo,monospace' } }, `${$(it.baseVar)} → ${$(it.finalVar)}`), ' · ',
+                      span({ style: { fontWeight: 700, color: it.effect < 0 ? '#f87171' : '#4ade80' } }, `${it.effect < 0 ? 'hurt ' : 'helped '}${$(Math.abs(it.effect))}`))))));
+                return els;
+              })))),
+          // T3 — Consistency
+          div({ style: { fontWeight: 700, color: 'var(--text)', margin: '4px 0 6px', fontSize: '13px' } }, '② FOB Consistency — steadiest first (lowest sd = most dialed in)'),
+          !R.consistency.length ? div({ style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 0' } }, 'Need ≥2 months of FOB history in scope to measure consistency.')
+          : div({ style: { overflowX: 'auto' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+              h('thead', null, h('tr', null, th('Store'), th('Mean FOB%', 1), th('Std dev (pp)', 1), th('# months', 1))),
+              h('tbody', null, R.consistency.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)' } },
+                h('td', { style: { padding: '5px 9px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, i < 3 ? '🟢 ' : '', nm(s.loc), span({ style: { color: 'var(--text3)', fontWeight: 400, marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '10px' } }, `#${unpad(s.loc)}`)),
+                h('td', { style: { padding: '5px 9px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' } }, `${s.mean.toFixed(2)}%`),
+                h('td', { style: { padding: '5px 9px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: s.sd < 0.3 ? '#4ade80' : s.sd < 0.5 ? '#f5bc00' : '#f87171' } }, s.sd.toFixed(2)),
+                h('td', { style: { padding: '5px 9px', textAlign: 'right', color: 'var(--text3)' } }, s.n)))))),
+          div({ style: { marginTop: '12px', fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic' } }, 'Recount impact reads the current selected period\'s ledger; consistency spans all FOB history in scope. Click a store above to see the recounts driving its number.')));
+    })(),
 
     // Waste analysis modal (Notes 40 #2) — Second-Look waste rules across the scope.
     wasteOpen && div({
