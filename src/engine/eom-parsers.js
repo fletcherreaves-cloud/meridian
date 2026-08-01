@@ -204,6 +204,10 @@ export function mapRawItemHistory(detail = {}) {
     manager: h.eID || null,
     countSource: h.count_source || null,
     invoice: h.invoice_identifier || null,
+    // source_id = monotonic creation-order id (exact same-timestamp ordering tiebreaker);
+    // date_created = true wall-clock create time (vs store_busn_* = the assigned business date/time).
+    sourceId: h.source_id != null ? Number(h.source_id) : null,
+    createdAt: h.date_created || null,
   }));
   return {
     wrin: detail.full_wrin,

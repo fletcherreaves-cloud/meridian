@@ -73,8 +73,10 @@ export function itemRecounts(itemHistory, storeWindows = {}, { minEffect = 1 } =
       dolVar: Number(h.difference) || 0, unitVar: h.variance != null ? Number(h.variance) : null,
       onHand: h.qtyChange != null ? Number(h.qtyChange) : null,
       manager: h.manager || null, countSource: h.countSource || 'MobileApp',
+      sourceId: h.sourceId != null ? Number(h.sourceId) : null,
     }))
-    .sort((a, b) => ((a.when ?? 0) - (b.when ?? 0)));
+    // Order by business time, then source_id (creation order) so same-minute entries bind deterministically.
+    .sort((a, b) => ((a.when ?? 0) - (b.when ?? 0)) || ((a.sourceId ?? 0) - (b.sourceId ?? 0)));
   if (!counts.length) return { days: [], nRecounts: 0, nHelped: 0, nHurt: 0 };
 
   const byDay = {};

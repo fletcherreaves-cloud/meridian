@@ -36,8 +36,9 @@ export function itemCountSessions(history, { gapHours = 4, byDay = false } = {})
       unitVar: h.variance != null ? Number(h.variance) : null,
       onHand: h.qtyChange != null ? Number(h.qtyChange) : null,  // on-hand value entered at this area
       manager: h.manager || null, method: h.method || h.entryMethod || h.countSource || null,
+      sourceId: h.sourceId != null ? Number(h.sourceId) : null,
     }))
-    .sort((a, b) => ((a.when ?? 0) - (b.when ?? 0)) || String(`${a.dt} ${a.tm || ''}`).localeCompare(`${b.dt} ${b.tm || ''}`));
+    .sort((a, b) => ((a.when ?? 0) - (b.when ?? 0)) || ((a.sourceId ?? 0) - (b.sourceId ?? 0)) || String(`${a.dt} ${a.tm || ''}`).localeCompare(`${b.dt} ${b.tm || ''}`));
 
   if (!counts.length) return { sessions: [], binding: null, nSessions: 0, nRecounts: 0 };
 
