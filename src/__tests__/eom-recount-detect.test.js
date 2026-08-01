@@ -44,6 +44,33 @@ describe('itemRecounts', () => {
     expect(d.recounts[0].direction).toBe('helped');        // −300 → −80 = toward zero
   });
 
+  it('is PERIOD-SPECIFIC: only a recount on the FINAL (EOM) count day is graded as eom*', () => {
+    // A same-day recount on an EARLY count-day (07/02), then clean single counts on later days incl. the
+    // EOM day (07/30). The early recount is informational; the EOM day has no recount → nEomRecounts 0.
+    const hist = [
+      ev('07/02/2026', '08:00', -300), ev('07/02/2026', '15:00', -80),   // early-day same-day recount
+      ev('07/16/2026', '08:00', -50),
+      ev('07/30/2026', '08:00', -40),                                     // EOM count day, single count
+    ];
+    const windows = storeDayWindows([{ history: hist }]);
+    const r = itemRecounts(hist, windows);
+    expect(r.nRecounts).toBe(1);        // the early-day recount is still detected (informational)
+    expect(r.eomDay).toBe('2026-07-30');
+    expect(r.nEomRecounts).toBe(0);     // ...but the binding (EOM) day had no recount → nothing graded
+  });
+
+  it('grades a recount that lands ON the EOM count day', () => {
+    const hist = [
+      ev('07/16/2026', '08:00', -50),                                    // earlier progression day
+      ev('07/30/2026', '08:00', -300), ev('07/30/2026', '15:00', -80),   // EOM day walkthrough + afternoon recount
+    ];
+    const windows = storeDayWindows([{ history: hist }]);
+    const r = itemRecounts(hist, windows);
+    expect(r.eomDay).toBe('2026-07-30');
+    expect(r.nEomRecounts).toBe(1);
+    expect(r.nEomHelped).toBe(1);       // -300 -> -80 = toward zero
+  });
+
   it('cross-day counts are NOT recounts (weekly cadence)', () => {
     const hist = [ev('07/02/2026', '08:00', -100), ev('07/09/2026', '08:00', -80), ev('07/16/2026', '08:00', -60)];
     const windows = storeDayWindows([{ history: hist }]);

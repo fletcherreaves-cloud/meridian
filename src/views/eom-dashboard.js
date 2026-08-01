@@ -355,17 +355,19 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const lastEom = baseMode === 'lastEom';
 
-  // Genuine same-day recounts (store-window model): a deliberate re-verify AFTER the walkthrough — a
-  // later store-level count window, or a back-office (non-MobileApp) correction. Cross-day counts are the
-  // weekly count PROGRESSION, never recounts. Grading: helped = moved variance toward zero, hurt = away.
-  const nGenuine = i => i.recount?.nRecounts || 0;
+  // PERIOD-SPECIFIC recount (owner, 2026-08-01): on an EOM/monthly period the only recount that matters
+  // for grading is a genuine same-day re-verify on the FINAL (EOM-binding) count day — a later store-level
+  // count window, or a back-office (non-MobileApp) correction. Same-day recounts on EARLIER weekly count-
+  // days are informational (that count doesn't bind the period). Cross-DAY counts are the weekly count
+  // PROGRESSION, never recounts. Grading: helped = the recount moved the variance toward zero, hurt = away.
+  const nGenuine = i => i.recount?.nEomRecounts || 0;
   const recountBadge = (i) => {
-    const rc = i.recount; if (!rc || !rc.nRecounts) return null;
-    const confirmed = (rc.days || []).some(d => (d.recounts || []).some(r => r.confidence === 'confirmed'));
-    const label = rc.nHurt > rc.nHelped ? 'recount hurt' : rc.nHelped > rc.nHurt ? 'recount helped' : 'recount held';
-    const color = rc.nHurt > rc.nHelped ? '#f87171' : rc.nHelped > rc.nHurt ? '#4ade80' : 'var(--text3)';
+    const rc = i.recount; if (!rc || !rc.nEomRecounts) return null;
+    const confirmed = (rc.eomRecounts || []).some(r => r.confidence === 'confirmed');
+    const label = rc.nEomHurt > rc.nEomHelped ? 'recount hurt' : rc.nEomHelped > rc.nEomHurt ? 'recount helped' : 'recount held';
+    const color = rc.nEomHurt > rc.nEomHelped ? '#f87171' : rc.nEomHelped > rc.nEomHurt ? '#4ade80' : 'var(--text3)';
     return { label: `↻ ${label}${confirmed ? ' ✓' : ''}`, color,
-      title: `${rc.nRecounts} same-day recount${rc.nRecounts !== 1 ? 's' : ''} — ${rc.nHelped} helped, ${rc.nHurt} hurt${confirmed ? '. ✓ = a back-office (non-MobileApp) correction — a confirmed recount.' : '. Detected from a later store-level count window (a re-verify after the walkthrough).'}` };
+      title: `${rc.nEomRecounts} same-day recount${rc.nEomRecounts !== 1 ? 's' : ''} on the binding (EOM) count day ${rc.eomDay || ''} — ${rc.nEomHelped} helped, ${rc.nEomHurt} hurt${confirmed ? '. ✓ = a back-office (non-MobileApp) correction — a confirmed recount.' : '. Detected from a later store-level count window — a re-verify after the walkthrough.'}${rc.nRecounts > rc.nEomRecounts ? ` (${rc.nRecounts - rc.nEomRecounts} more on earlier count-days — informational only.)` : ''}` };
   };
 
   // Month-over-month vs last period's authoritative variance (Notes 42 #2). Improving = |variance| shrank
@@ -386,8 +388,8 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     const moms = items.map(mom);
     return { loc: r.loc, name: r.name, items,
       recounted: items.filter(i => nGenuine(i) > 0).length,
-      rHelped: items.reduce((n, i) => n + (i.recount?.nHelped || 0), 0),
-      rHurt: items.reduce((n, i) => n + (i.recount?.nHurt || 0), 0),
+      rHelped: items.reduce((n, i) => n + (i.recount?.nEomHelped || 0), 0),
+      rHurt: items.reduce((n, i) => n + (i.recount?.nEomHurt || 0), 0),
       worsened: items.filter(i => i.verdict === 'worsened').length,
       flagged: items.filter(i => (i.flags || []).some(f => f !== 'recount-worsened')).length,
       improving: moms.filter(m => isImproving(m.verdict)).length,
@@ -401,8 +403,8 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     : (a, b) => (b.flagged - a.flagged) || (b.worsened - a.worsened) || (b.items.length - a.items.length));
   const all = stores.flatMap(s => s.items);
   const dRecounted = all.filter(i => nGenuine(i) > 0).length;
-  const dRHelped = all.reduce((n, i) => n + (i.recount?.nHelped || 0), 0);
-  const dRHurt = all.reduce((n, i) => n + (i.recount?.nHurt || 0), 0);
+  const dRHelped = all.reduce((n, i) => n + (i.recount?.nEomHelped || 0), 0);
+  const dRHurt = all.reduce((n, i) => n + (i.recount?.nEomHurt || 0), 0);
   const dWorsened = all.filter(i => i.verdict === 'worsened').length;
   const dZero = all.filter(i => (i.flags || []).includes('zero-variance')).length;
   const dImproving = stores.reduce((n, s) => n + s.improving, 0);
@@ -421,17 +423,22 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
 
   // Plain-language one-liner for an item — the story a GM can read without decoding a chain.
   const story = (p) => {
-    const s0 = p.sessions[0];
-    const areas = s0.nEntries > 1 ? ` (counted area-by-area — ${s0.nEntries} entries)` : '';
     const rc = p.recount;
-    const days = p.nSessions > 1 ? ` Counted on ${p.nSessions} days this period — the weekly count progression; only the final (EOM) count binds.` : '';
-    if (rc && rc.nRecounts > 0) {
-      const dir = rc.nHelped > rc.nHurt ? 'moved the variance toward zero — good diagnosis' : rc.nHurt > rc.nHelped ? 'moved it further from zero' : 'held about the same';
-      const conf = (rc.days || []).some(d => (d.recounts || []).some(r => r.confidence === 'confirmed')) ? ' via a back-office correction (a confirmed recount)' : '';
-      return `Re-verified the same day after the walkthrough${conf}; the recount ${dir}. Binding = the final entry.${days}`;
+    const eomSess = p.sessions[p.sessions.length - 1];   // the BINDING (final/EOM) count day
+    const areas = eomSess.nEntries > 1 ? ` counted area-by-area (${eomSess.nEntries} entries)` : '';
+    // Period frame: multiple count-days = the weekly progression; only the final (EOM) count binds.
+    const frame = p.nSessions > 1
+      ? `Counted on ${p.nSessions} days this period — the weekly count progression; only the final (EOM) count on ${eomSess.date}${areas} binds.`
+      : `Counted once${areas}. Binding = the final entry.`;
+    // The ONLY recount that changes the binding number is a same-day re-verify ON the EOM count day.
+    if (rc && rc.nEomRecounts > 0) {
+      const dir = rc.nEomHelped > rc.nEomHurt ? 'moved the variance toward zero — good diagnosis' : rc.nEomHurt > rc.nEomHelped ? 'moved it further from zero' : 'held about the same';
+      const conf = (rc.eomRecounts || []).some(r => r.confidence === 'confirmed') ? ' via a back-office correction (a confirmed recount)' : '';
+      const earlier = rc.nRecounts > rc.nEomRecounts ? ` (${rc.nRecounts - rc.nEomRecounts} same-day recount${rc.nRecounts - rc.nEomRecounts === 1 ? '' : 's'} on earlier count-days are informational.)` : '';
+      return `${frame} On the EOM count it was re-verified the same day${conf}; the recount ${dir}.${earlier}`;
     }
-    if (s0.offsetting) return `One count, built up across areas${areas}; the swing between entries is normal area-by-area counting, not a loss. Binding = final entry.${days}`;
-    return `Counted once${areas}. Binding = the final entry.${days}`;
+    if (eomSess.offsetting) return `${frame} The swing between the EOM day's entries is normal area-by-area counting, not a loss.`;
+    return frame;
   };
 
   // Raw-Item-Detail-style event table for one item: every count session, its area entries, binding final.
@@ -479,7 +486,7 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     return h('table', { style: { borderCollapse: 'collapse', width: '100%', maxWidth: '620px', marginTop: '6px' } },
       h('thead', null, h('tr', null,
         h('th', { style: th }, 'Date · Time'), h('th', { style: th }, 'Counter'),
-        h('th', { style: th }, 'On-hand entered'), h('th', { style: th }, '$ impact of entry'), h('th', { style: th }, ''))),
+        h('th', { style: th }, 'On-hand entered'), h('th', { style: { ...th }, title: 'The item’s variance in dollars at that count (unit variance × unit cost). During an area-by-area walkthrough the intermediate rows show PARTIAL variance (an artifact until every area is counted); only the BINDING row is the real variance for that count.' }, 'Variance $ (at count)'), h('th', { style: th }, ''))),
       h('tbody', null, ...bodyRows));
   };
 
@@ -520,7 +527,11 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
                span({ key: 'c', style: { color: 'var(--text3)' } }, `${s.recounted} recounted · ${s.items.length} items`)]))),
         isOpen ? div({ style: { padding: '2px 4px 12px 22px' } }, items.map(p => {
           const m = mom(p);
-          const [vc, vl] = lastEom ? (MOM_BADGE[m.verdict] || MOM_BADGE.na) : (VP_VBADGE[p.verdict] || VP_VBADGE['single-count']);
+          // "This period" badge is period-specific: the BINDING (EOM) count's base state (single vs
+          // counted-by-area). Recount grading rides on the separate ↻ badge; cross-day progression is
+          // NOT graded here (that was the old byDay verdict that mislabeled weekly counts as recounts).
+          const eomMulti = p.sessions.length ? p.sessions[p.sessions.length - 1].nEntries > 1 : false;
+          const [vc, vl] = lastEom ? (MOM_BADGE[m.verdict] || MOM_BADGE.na) : VP_VBADGE[eomMulti ? 'counted-multi' : 'single-count'];
           const iid = `${s.loc}|${p.wrin}`;
           const itemOpen = openItem === iid;
           const off = p.officialVar;
@@ -538,13 +549,15 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
                     span({ style: { fontWeight: 800, color: offC } }, m.cur == null ? 'resolved' : $(m.cur)))
                 : (off != null
                     ? span({ title: 'Official period variance (QSRSoft Variance Stat)' }, span({ style: { fontSize: '9px', color: 'var(--text3)', marginRight: '3px' } }, 'period var'), span({ style: { fontWeight: 800, color: offC, fontVariantNumeric: 'tabular-nums' } }, $(off)))
-                    : span({ style: { fontSize: '10px', color: 'var(--text3)' }, title: 'Not in the QSRSoft top-variance list (±$50) — no material period variance flagged' }, 'not flagged')),
+                    : span({ style: { fontSize: '10px', color: 'var(--text3)' }, title: 'No authoritative period variance (QSRSoft Variance Stat) for this item — either it is under ±$50 (immaterial), or the Variance-Stat data has not posted / been pulled for this period yet. If EVERY item reads "not flagged", the period’s variance report almost certainly has not landed yet — the ledger below still shows how it was counted.' }, 'not flagged')),
               span({ style: { fontSize: '10px', fontWeight: 700, color: vc, border: `1px solid ${vc}`, borderRadius: '4px', padding: '0 6px' } }, vl),
               lastEom && m.delta != null ? span({ style: { fontSize: '9px', color: m.delta < 0 ? '#4ade80' : '#f87171' } }, `${m.delta < 0 ? '−' : '+'}${$(Math.abs(m.delta)).replace('-', '')}`) : null,
               !lastEom ? (p.nSessions > 1 ? span({ title: 'Counted on more than one day — the weekly count progression. Only the final (EOM) count binds; these are NOT recounts.', style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.nSessions} count days`) : span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.sessions[0].nEntries} ${p.sessions[0].nEntries === 1 ? 'entry' : 'area entries'}`)) : null,
               // Genuine same-day recount badge (store-window model) — graded helped/hurt; ✓ = confirmed back-office.
               !lastEom ? (() => { const rb = recountBadge(p); return rb ? span({ title: rb.title, style: { fontSize: '9px', fontWeight: 700, color: rb.color, border: `1px solid ${rb.color}`, borderRadius: '4px', padding: '0 5px' } }, rb.label) : null; })() : null,
-              ...((p.flags || []).filter(f => f !== 'recount-worsened').map(f => span({ key: f, style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, f === 'held-worse' ? 'held worse' : f === 'zero-variance' ? '$0 — verify' : f)))),
+              // Only the $0-verify flag is period-safe. 'held-worse'/'recount-worsened' were cross-day byDay
+              // artifacts (they treated the weekly count progression as recounts) — dropped per the finalized model.
+              ...((p.flags || []).filter(f => f === 'zero-variance').map(f => span({ key: f, title: 'The binding count posted ≈ $0 variance — statistically improbable; usually the variance just has not posted yet (QSRSoft lag / early lock). Verify.', style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, '$0 — verify')))),
             itemOpen ? div({ style: { padding: '4px 0 8px 18px' } },
               div({ style: { fontSize: '11px', color: 'var(--text2)', marginBottom: '2px', lineHeight: 1.45 } }, story(p)),
               eventTable(p)) : null);
@@ -2765,7 +2778,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, s.count.basePct != null && s.count.curPct != null ? `${Math.round(s.count.basePct * 100)}→${Math.round(s.count.curPct * 100)}%` : '—'),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHelped ? '#4ade80' : 'var(--text3)', fontWeight: s.nHelped ? 700 : 400 } }, s.nHelped || ''),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHurt ? '#f87171' : 'var(--text3)', fontWeight: s.nHurt ? 700 : 400 } }, s.nHurt || ''),
-                      h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nRecounted ? '#f5bc00' : 'var(--text3)', fontWeight: s.nRecounted ? 700 : 400 } }, s.nRecounted ? `↻ ${s.nRecounted}` : ''),
+                      h('td', { title: s.nRecounted ? `${s.nRecounted} item${s.nRecounted === 1 ? '' : 's'} were RE-COUNTED since the baseline (their last-counted date changed). ↻ = a recount occurred, not a recommendation.` : '', style: { padding: '5px 7px', textAlign: 'right', color: s.nRecounted ? '#f5bc00' : 'var(--text3)', fontWeight: s.nRecounted ? 700 : 400 } }, s.nRecounted ? `↻ ${s.nRecounted}` : ''),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', whiteSpace: 'nowrap' }, onClick: e => e.stopPropagation() },
                         h('button', { onClick: () => markSecondary(loc, sr.status === 'reviewed' ? 'pending' : 'reviewed'),
                           style: { fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 7px', cursor: 'pointer', border: '1px solid', ...(sr.status === 'reviewed' ? { color: '#4ade80', borderColor: '#4ade80', background: 'transparent' } : sr.status === 'flagged' ? { color: '#f87171', borderColor: '#f87171', background: 'transparent' } : { color: 'var(--text3)', borderColor: 'var(--bdr2)', background: 'var(--surf3)' }) } },
@@ -2779,15 +2792,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                     rowEls.push(h('tr', { key: loc + '-d' }, h('td', { colSpan: 9, style: { padding: '2px 7px 10px 24px', background: 'var(--surf2)' } },
                       s.items.length === 0 ? div({ style: { color: 'var(--text3)', fontSize: '11px', padding: '6px 0' } }, 'No item-level changes since baseline.')
                       : h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
-                        h('thead', { key: 'ih' }, h('tr', null, th('Item', { left: true }), th('Class', { left: true }), th('$ Var base→now'), th('Δ$'), th('Qty var base→now'), th('Move'), th('Recounted'))),
+                        h('thead', { key: 'ih' }, h('tr', null, th('Item', { left: true }), th('Class', { left: true }), th('$ Var base→now'), th('Δ|var|'), th('Qty var base→now'), th('Move'), th('Recounted'))),
                         h('tbody', { key: 'ib' }, its.map((it, j) => h('tr', { key: j, style: { borderBottom: '1px solid var(--bdr)' } },
                           h('td', { style: { padding: '3px 7px', color: 'var(--text2)' } }, it.descr || it.wrin, it.isNew ? span({ style: { color: '#38bdf8', fontSize: '9px', marginLeft: '4px' } }, 'NEW') : it.isGone ? span({ style: { color: 'var(--text3)', fontSize: '9px', marginLeft: '4px' } }, 'GONE') : null),
                           h('td', { style: { padding: '3px 7px', color: 'var(--text3)', textTransform: 'capitalize' } }, it.cls || '—'),
                           h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, `${it.baseVar != null ? money(it.baseVar) : '—'} → ${it.curVar != null ? money(it.curVar) : '—'}`),
-                          h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[it.verdict] } }, it.dVar != null ? `${it.dVar > 0 ? '+' : ''}${money(it.dVar)}` : '—'),
+                          // Δ|var| = change in variance MAGNITUDE (toward/away from zero), so the sign matches the
+                          // helping/hurting color: −$ = shrank toward zero (helping), +$ = grew (hurting). (The raw
+                          // base→now column beside it shows the actual signed variance, incl. any overage→loss flip.)
+                          (() => { const dMag = (it.baseVar != null && it.curVar != null) ? Math.abs(it.curVar) - Math.abs(it.baseVar) : null;
+                            return h('td', { title: 'Change in variance magnitude vs baseline: −$ = moved toward zero (helping), +$ = grew away from zero (hurting).', style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[it.verdict] } }, dMag != null ? `${dMag > 0 ? '+' : ''}${money(dMag)}` : '—'); })(),
                           h('td', { style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, `${qv(it.baseQtyVar)} → ${qv(it.curQtyVar)}`),
                           h('td', { style: { padding: '3px 7px', textAlign: 'right', fontWeight: 700, color: V[it.verdict] } }, VLABEL[it.verdict]),
-                          h('td', { style: { padding: '3px 7px', textAlign: 'center', color: it.recounted ? '#f5bc00' : 'var(--text3)' } }, it.recounted ? '↻' : ''))))]),
+                          h('td', { title: it.recounted ? 'A recount OCCURRED since the baseline — this item’s last-counted date changed (the store re-counted it).' : '', style: { padding: '3px 7px', textAlign: 'center', color: it.recounted ? '#f5bc00' : 'var(--text3)' } }, it.recounted ? '↻' : ''))))]),
                       s.items.length > 40 ? div({ style: { color: 'var(--text3)', fontSize: '10px', paddingTop: '4px' } }, `+${s.items.length - 40} more changed items`) : null)));
                   }
                   return rowEls;

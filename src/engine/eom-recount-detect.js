@@ -117,9 +117,19 @@ export function itemRecounts(itemHistory, storeWindows = {}, { minEffect = 1 } =
   }
 
   const allRe = days.flatMap(d => d.recounts);
+  // Period-specific view (owner, 2026-08-01): when the period is EOM/monthly, the only recount that MATTERS
+  // for grading is a same-day recount on the FINAL (EOM-binding) count day. Recounts on earlier weekly
+  // count-days are informational (that count doesn't bind the period). `eom*` = the binding-day recount(s).
+  const eomDay = days.length ? days[days.length - 1] : null;
+  const eomRecounts = eomDay ? eomDay.recounts : [];
   return {
     days, nRecounts: allRe.length,
     nHelped: allRe.filter(r => r.direction === 'helped').length,
     nHurt: allRe.filter(r => r.direction === 'hurt').length,
+    // Binding-day (EOM) recounts — the period-specific set to grade/surface.
+    eomDay: eomDay ? eomDay.day : null, eomRecounts,
+    nEomRecounts: eomRecounts.length,
+    nEomHelped: eomRecounts.filter(r => r.direction === 'helped').length,
+    nEomHurt: eomRecounts.filter(r => r.direction === 'hurt').length,
   };
 }
