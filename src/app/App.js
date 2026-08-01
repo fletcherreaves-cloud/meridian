@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.711';
+const MERIDIAN_VERSION    = '4.712';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.712', date:'2026-08-01', changes:[
+    'Weekly Count Cadence drill-in: click any store in the cadence monitor to expand its biggest between-count variance windows — for each item, how much it moved and BETWEEN WHICH TWO COUNTS (e.g. "100% PURE BEEF moved -$430 between 07/09 and 07/16"). That brackets WHEN the product shrank/grew to a specific window, so the investigation points at the right days instead of the whole month.',
+  ]},
   {version:'4.711', date:'2026-08-01', changes:[
     'Fixed SAGE FOB numbers reading near-zero. SAGE was pulling FOB from the stale/unscaled MANUAL food-cost upload AND averaging percentages; it now reads the authoritative auto qsr_fob stream and dollar-weights everything (district FOB + each component = Σ$ ÷ Σ sales), the same engine the dashboard uses. District FOB, the component breakdown, and the per-store ranking are now real, and SAGE is told these are authoritative over any uploaded file. Client-side (system-prompt context) — no redeploy needed.',
   ]},

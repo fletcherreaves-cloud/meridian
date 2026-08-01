@@ -31,7 +31,7 @@ import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
-import { analyzeCountCadence, weeklyExceptions, WEEKDAY_NAMES } from '../engine/weekly-cadence.js';
+import { analyzeCountCadence, weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -276,7 +276,8 @@ function ProgressBar({ value }) {
 
 // Weekly-count cadence monitor (Count Cycle view) — is each store running its weekly full Food+Condiment
 // count? Detected weekly day, last full count + days-since, weekly-vs-spot session mix. Overdue first.
-function CadenceMonitor({ rows, cadenceByLoc, nm }) {
+function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, nm }) {
+  const [open, setOpen] = useState(null);   // loc expanded to its between-count variance windows
   const data = (rows || []).map(r => ({ loc: r.loc, name: r.name, c: cadenceByLoc[String(r.loc)] })).filter(x => x.c);
   if (!data.length) return null;
   const statusOf = c => c.daysSinceWeekly == null ? 3 : (c.daysSinceWeekly >= 14 ? 2 : c.daysSinceWeekly >= 8 ? 1 : 0);
@@ -284,25 +285,50 @@ function CadenceMonitor({ rows, cadenceByLoc, nm }) {
   const nOverdue = data.filter(x => statusOf(x.c) >= 1 && x.c.daysSinceWeekly != null).length;
   const nNever = data.filter(x => x.c.daysSinceWeekly == null).length;
   const fmtDay = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(); } catch { return d; } };
+  const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const th = (t) => h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t);
+
+  // Between-count variance windows for a store: per item, the biggest |delta| between consecutive
+  // counts — that window localizes WHEN the product moved (Notes: the powerful part of the engine).
+  const windowsFor = (loc) => (rawByLoc[String(loc)] || [])
+    .map(it => { const w = itemVarianceWindows(it.history); return w.biggest ? { descr: it.descr || it.wrin, ...w.biggest } : null; })
+    .filter(Boolean).filter(w => Math.abs(w.delta) >= 50)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 8);
+
   return div({ style: { marginBottom: '18px', border: '1px solid var(--bdr)', borderRadius: '10px', padding: '12px 14px', background: 'var(--surf2)' } },
     div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px' } }, '🗓 Weekly Count Cadence'),
     div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
-      `Every store runs a full Food + Condiment count weekly. ${nOverdue ? `⚠ ${nOverdue} overdue (≥8 days)` : '✓ all current'}${nNever ? ` · ${nNever} with no full weekly on record` : ''}.`),
+      `Every store runs a full Food + Condiment count weekly. ${nOverdue ? `⚠ ${nOverdue} overdue (≥8 days)` : '✓ all current'}${nNever ? ` · ${nNever} with no full weekly on record` : ''}. Click a store to see which count window each item's variance happened in.`),
     h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
       h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
         ['Store', 'Counts on', 'Last full count', 'This window', 'Status'].map(th))),
-      h('tbody', null, data.map(({ loc, name, c }) => {
+      h('tbody', null, data.flatMap(({ loc, name, c }) => {
         const st = statusOf(c);
         const col = st >= 2 ? '#f87171' : st === 1 ? '#f5bc00' : '#4ade80';
         const label = c.daysSinceWeekly == null ? 'No full weekly' : c.daysSinceWeekly >= 8 ? `Overdue · ${c.daysSinceWeekly}d` : 'On track';
-        return h('tr', { key: loc, style: { borderBottom: '1px solid var(--bdr)' } },
-          h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, name,
-            span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(loc)}`)),
-          h('td', { style: { padding: '6px 10px', color: 'var(--text2)' } }, c.detectedWeekdayName ? `${c.detectedWeekdayName}s` : '—'),
-          h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, c.lastWeekly ? `${fmtDay(c.lastWeekly)}${c.daysSinceWeekly != null ? ` · ${c.daysSinceWeekly}d ago` : ''}` : '—'),
-          h('td', { style: { padding: '6px 10px', color: 'var(--text3)' } }, `${c.nWeekly} weekly · ${c.nSpot} spot`),
-          h('td', { style: { padding: '6px 10px' } }, span({ style: { color: col, fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' } }, label)));
+        const isOpen = open === loc;
+        const wins = isOpen ? windowsFor(loc) : [];
+        const rowEls = [
+          h('tr', { key: loc, onClick: () => setOpen(o => o === loc ? null : loc), style: { borderBottom: isOpen ? 'none' : '1px solid var(--bdr)', cursor: 'pointer' } },
+            h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, `${isOpen ? '▾' : '▸'} ${name}`,
+              span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(loc)}`)),
+            h('td', { style: { padding: '6px 10px', color: 'var(--text2)' } }, c.detectedWeekdayName ? `${c.detectedWeekdayName}s` : '—'),
+            h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, c.lastWeekly ? `${fmtDay(c.lastWeekly)}${c.daysSinceWeekly != null ? ` · ${c.daysSinceWeekly}d ago` : ''}` : '—'),
+            h('td', { style: { padding: '6px 10px', color: 'var(--text3)' } }, `${c.nWeekly} weekly · ${c.nSpot} spot`),
+            h('td', { style: { padding: '6px 10px' } }, span({ style: { color: col, fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' } }, label))),
+        ];
+        if (isOpen) rowEls.push(
+          h('tr', { key: loc + '-d', style: { borderBottom: '1px solid var(--bdr)' } },
+            h('td', { colSpan: 5, style: { padding: '2px 10px 10px 24px', background: 'var(--surf3)' } },
+              wins.length
+                ? div(null,
+                    div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '4px 0 3px' } }, 'Biggest between-count variance windows (where the movement happened)'),
+                    ...wins.map((w, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '1px 0' } },
+                      span({ style: { fontWeight: 600, color: 'var(--text)' } }, w.descr), ` — moved `,
+                      span({ style: { fontWeight: 700, color: w.delta < 0 ? '#f87171' : '#4ade80' } }, `${w.delta >= 0 ? '+' : ''}${$(w.delta)}`),
+                      ` between ${w.from} and ${w.to}`)))
+                : div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '4px 0' } }, 'No multi-point count history to bracket a variance window yet.'))));
+        return rowEls;
       }))));
 }
 
@@ -1625,7 +1651,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
     // Count Cycle view → weekly-cadence monitor above the store table (Notes 40 #1). Renders only when
     // it has cadence data; hidden in Scoreboard/EOM modes.
-    (mode === 'progress' && !loading && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, nm }) : null,
+    (mode === 'progress' && !loading && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, rawByLoc, nm }) : null,
 
     loading ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
