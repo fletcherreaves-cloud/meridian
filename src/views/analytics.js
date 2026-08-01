@@ -7499,11 +7499,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const META={
       sales:{getVal:loc=>{const r=labInRange.filter(r=>r.loc===String(loc));const v=r.reduce((a,x)=>a+(x.allNetSales||0),0);return r.length&&v>0?v:null;},
         fmt:v=>f$(Math.round(v)),higherBetter:true,label:'Net Sales',unit:'$'},
-      oepe:{getVal:loc=>avgOf(opsInRange.filter(r=>r.loc===String(loc)),'oepe'),
+      // OEPE/Labor/T-Reds read the AUTO+manual merged effective sources (svcEffective/ctrlEffective) so
+      // they populate from the cloud DAR/Glimpse feeds — not just manual Ops/Controls uploads, which
+      // stopped mid-July and left these three tabs blank. Fall back to the raw in-range arrays if empty.
+      oepe:{getVal:loc=>avgOf((svcEffective.rows||[]).filter(r=>r.loc===String(loc)),'oepe') ?? avgOf(opsInRange.filter(r=>r.loc===String(loc)),'oepe'),
         fmt:v=>Math.round(v)+'s',higherBetter:false,label:'OEPE W/O Parked',unit:'s'},
-      labor:{getVal:loc=>avgOf(ctrlInRange.filter(r=>r.loc===String(loc)),'laborPct'),
+      labor:{getVal:loc=>avgOf((ctrlEffective.rows||[]).filter(r=>r.loc===String(loc)),'laborPct') ?? avgOf(labInRange.filter(r=>r.loc===String(loc)),'laborPct'),
         fmt:v=>((v||0)*100).toFixed(1)+'%',higherBetter:false,label:'Labor %',unit:'%'},
-      tred:{getVal:loc=>avgOf(ctrlInRange.filter(r=>r.loc===String(loc)),'tRedAPct'),
+      tred:{getVal:loc=>avgOf((ctrlEffective.rows||[]).filter(r=>r.loc===String(loc)),'tRedAPct') ?? avgOf(ctrlInRange.filter(r=>r.loc===String(loc)),'tRedAPct'),
         fmt:v=>((v||0)*100).toFixed(2)+'%',higherBetter:false,label:'T-Red After %',unit:'%'},
     };
     const m=META[lbMetric]||META.sales;
@@ -7513,7 +7516,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       .sort((a,b)=>m.higherBetter?b.value-a.value:a.value-b.value);
     const avg=data.length?data.reduce((a,s)=>a+s.value,0)/data.length:null;
     return{data,avg,fmt:m.fmt,label:m.label,higherBetter:m.higherBetter};
-  },[lbMetric,labInRange,opsInRange,ctrlInRange,allLocs,flLocs]);
+  },[lbMetric,labInRange,opsInRange,ctrlInRange,svcEffective,ctrlEffective,allLocs,flLocs]);
 
   // Digital sales section useMemo
   const digitalSec=React.useMemo(()=>{

@@ -132,6 +132,16 @@ function aggregateByDate(items, nsn) {
     for (const it of purch) for (const [k, v] of Object.entries(it)) if (typeof v === 'number') totals[k] = (totals[k] || 0) + v;
     console.log(`[EBOS-FIELDS] NSN ${nsn} ${mon} numeric-field totals: ${JSON.stringify(Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, Math.round(v * 100) / 100])))}`);
     console.log(`[EBOS-FIELDS] record_type values: ${JSON.stringify([...new Set(items.map(it => it.record_type))])}`);
+    // ops_sub broken down by record_type (all rows in the month) — reveal whether the ledger's Ops
+    // Supplies nets in Credit/Adjustment/Out, and by how much (should reconcile to 4883.86 for 5183).
+    const byRt = {};
+    for (const it of items.filter(x => String(x.posted_date || '').startsWith(mon))) {
+      const rt = it.record_type || '?';
+      byRt[rt] = byRt[rt] || { count: 0, ops_sub: 0, other_sub: 0, happy_meal_sub: 0, other_charges_credits: 0 };
+      byRt[rt].count++; byRt[rt].ops_sub += it.ops_sub || 0; byRt[rt].other_sub += it.other_sub || 0;
+      byRt[rt].happy_meal_sub += it.happy_meal_sub || 0; byRt[rt].other_charges_credits += it.other_charges_credits || 0;
+    }
+    console.log(`[EBOS-FIELDS] ${mon} ops_sub/etc by record_type: ${JSON.stringify(Object.fromEntries(Object.entries(byRt).map(([k, v]) => [k, { count: v.count, ops_sub: Math.round(v.ops_sub * 100) / 100, other_sub: Math.round(v.other_sub * 100) / 100, hm: Math.round(v.happy_meal_sub * 100) / 100, occ: Math.round(v.other_charges_credits * 100) / 100 }])))}`);
     console.log(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
   }
   const byDate = {};
@@ -325,6 +335,14 @@ async function pullViaPlaywright(startDate, endDate) {
             for (const it of purch) for (const [k, v] of Object.entries(it)) if (typeof v === 'number') totals[k] = (totals[k] || 0) + v;
             log.push(`[EBOS-FIELDS] NSN ${nsn} ${mon} numeric-field totals: ${JSON.stringify(Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, Math.round(v * 100) / 100])))}`);
             log.push(`[EBOS-FIELDS] record_type values seen: ${JSON.stringify([...new Set(items.map(it => it.record_type))])}`);
+            const byRt = {};
+            for (const it of items.filter(x => String(x.posted_date || '').startsWith(mon))) {
+              const rt = it.record_type || '?';
+              byRt[rt] = byRt[rt] || { count: 0, ops_sub: 0, other_sub: 0, happy_meal_sub: 0, other_charges_credits: 0 };
+              byRt[rt].count++; byRt[rt].ops_sub += it.ops_sub || 0; byRt[rt].other_sub += it.other_sub || 0;
+              byRt[rt].happy_meal_sub += it.happy_meal_sub || 0; byRt[rt].other_charges_credits += it.other_charges_credits || 0;
+            }
+            log.push(`[EBOS-FIELDS] ${mon} by record_type: ${JSON.stringify(Object.fromEntries(Object.entries(byRt).map(([k, v]) => [k, { n: v.count, ops: Math.round(v.ops_sub * 100) / 100, other: Math.round(v.other_sub * 100) / 100, hm: Math.round(v.happy_meal_sub * 100) / 100, occ: Math.round(v.other_charges_credits * 100) / 100 }])))}`);
             log.push(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
           }
 
