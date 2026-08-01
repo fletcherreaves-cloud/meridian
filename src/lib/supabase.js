@@ -1825,7 +1825,12 @@ export const loadOpsCashSheet = async (d = 45) => {
     mealDiscAmt: (r.emp_meal_discount_amt || 0) + (r.mgr_meal_discount_amt || 0),
   }));
 };
-export const loadOpsLaborSummary = (d = 45) => _loadOpsTable('qsr_labor_summary', d);  // OT + crew + needed hrs
+// OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that
+// look for those names (AAG Labor, EOM Supervisor) can read the auto stream with no manual upload (#37).
+export const loadOpsLaborSummary = async (d = 45) => {
+  const rows = await _loadOpsTable('qsr_labor_summary', d);
+  return rows.map(r => ({ ...r, otHrs: Number(r.over_time_total_hours) || 0, otDollar: Number(r.over_time_total_dollars) || 0 }));
+};
 // Service stats → derive the composed metrics the AAG/One-Pager read (the raw fields are already flat
 // on the row via _loadOpsTable). This is the cloud-fresh source that fills KVS (the DAR carries MFY
 // serve time but its order-health counts are 0, so DAR-derived KVS Healthy is null) + DT Parked.

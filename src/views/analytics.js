@@ -6875,12 +6875,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
     const m=new Map();
     const layer=(rows,map)=>{ for(const r of (rows||[])){ if(!r||!r.date)continue; const k=kk(r); const ex=m.get(k)||{loc:r.loc,date:r.date}; for(const dst in map){ const v=r[map[dst]]; if(v!=null&&!isNaN(v)&&v!==0) ex[dst]=v; } m.set(k,ex); } };
-    layer(ds?.qsrActSummaryRows,{oepe:'oepe',r2p:'r2p'});
+    // DAR carries MFY serve time → KVS Time derives from it too (its order-health counts are 0, so
+    // KVS Healthy stays null here and comes from the service-stats summary below).
+    layer(ds?.qsrActSummaryRows,{oepe:'oepe',r2p:'r2p',kvst:'kvst'});
+    // Auto Operations Report service-stats summary (cloud-fresh) — fills KVS Healthy + DT Parked (which
+    // the DAR can't) and backstops OEPE/KVS Time. Overrides the DAR where present, yields to Glimpse/manual.
+    layer(ds?.opsServiceRows,{oepe:'oepe',park:'park',kvst:'kvst',kvsu:'kvsHealthy'});
     layer(ds?.glimpseRows,{oepe:'oepe',park:'parkedPct',kvst:'kvst',kvsu:'kvsHealthy'});
     layer(ds?.opsRows,{oepe:'oepe',park:'park',kvst:'kvst',kvsu:'kvsu',r2p:'r2p'});
     const res=_recentWeek([...m.values()]);
     return {...res,auto:(ds?.opsRows||[]).length===0};
-  },[ds?.opsRows?.length,ds?.glimpseRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
+  },[ds?.opsRows?.length,ds?.glimpseRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsServiceRows?.length,effectiveDateRange]);
 
   // Channel sales mix: manual labor channel rows merged with auto Sales Ledger,
   // freshest-per-day (manual overrides the same day; ledger fills recent gaps).
