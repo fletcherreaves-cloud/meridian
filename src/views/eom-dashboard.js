@@ -185,6 +185,16 @@ function recentPeriods(n = 4) {
   }
   return out;
 }
+// The EOM count/close runs into the first days of the NEXT month, so early in a month you are still
+// closing the PRIOR month's EOM — default the dashboard there (else Progression/EOM read the brand-new
+// month, which has no count data yet and shows blank). Mid-month, the current month is the active period.
+function defaultPeriod() {
+  const now = new Date();
+  const d = now.getDate() <= 6
+    ? new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    : new Date(now.getFullYear(), now.getMonth(), 1);
+  return periodKey(d);
+}
 
 const DIAG_OPTS = ['pending', 'in_review', 'diagnosed', 'cleared'];
 const COMMS_OPTS = ['none', 'drafted', 'sent', 'verified'];
@@ -916,7 +926,7 @@ function sbBucket(r) {
 
 export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const periods = useMemo(() => recentPeriods(4), []);
-  const [period, setPeriod] = useState(periods[0]);
+  const [period, setPeriod] = useState(defaultPeriod());   // early-month → prior month's EOM (still closing)
   const [loading, setLoading] = useState(true);
   const [onHand, setOnHand] = useState([]);
   const [fobRows, setFobRows] = useState([]);
@@ -947,7 +957,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [oneStore, setOneStore] = useState(''); // '' = all stores in scope, else a single loc
   const [patch, setPatch] = useState('');       // '' = all supervisors, else a supervisor's patch
   const patchGroups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
-  const [mode, setMode] = useState(() => defaultModeFor(periods[0])); // 'eom' | 'progress'
+  const [mode, setMode] = useState(() => defaultModeFor(defaultPeriod())); // 'eom' | 'progress'
   // Re-default the mode when the period changes (manual toggle still overrides after).
   useEffect(() => { setMode(defaultModeFor(period)); }, [period]);
   const [diagCfg, setDiagCfg] = useState(null); // saved check overrides (or null = defaults)
