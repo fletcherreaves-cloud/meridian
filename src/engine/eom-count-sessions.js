@@ -26,7 +26,7 @@ const ZERO = 1;                         // |$| < ZERO ≈ a $0 net (improbable �
 // Group an item's count events into sessions. A new session starts when the gap to the previous count
 // exceeds `gapHours` (default 4h) — tight enough that an area-by-area burst (minutes apart) stays one
 // session, loose enough that a genuine same-day afternoon recount or a next-day recount splits off.
-export function itemCountSessions(history, { gapHours = 4 } = {}) {
+export function itemCountSessions(history, { gapHours = 4, byDay = false } = {}) {
   const counts = (history || [])
     .filter(h => h && h.isCount && h.dt)
     .map(h => ({
@@ -40,11 +40,20 @@ export function itemCountSessions(history, { gapHours = 4 } = {}) {
 
   if (!counts.length) return { sessions: [], binding: null, nSessions: 0, nRecounts: 0 };
 
+  // Two grouping modes:
+  //  • byDay (Change Monitor): a count SESSION = one day's count-path walkthrough. The counter enters an
+  //    item's areas as they walk the store, so entries land hours apart on the SAME day but are ONE count,
+  //    not recounts. So all same-day entries = one session; only the last is binding. (A rare same-day
+  //    re-count still lands here — the last entry binds either way, which is what QSRSoft honors.)
+  //  • gap-based (integrity recount-swing): the tighter time-window (timer proxy) that CAN separate a
+  //    deliberate same-day re-count from the walkthrough, for padding/forensic detection.
   const gapMs = gapHours * 3600 * 1000;
   const groups = [];
   for (const c of counts) {
     const g = groups[groups.length - 1];
-    const contiguous = g && c.when != null && g.lastWhen != null && (c.when - g.lastWhen) <= gapMs;
+    const contiguous = byDay
+      ? (g && g.day === c.dt)
+      : (g && c.when != null && g.lastWhen != null && (c.when - g.lastWhen) <= gapMs);
     if (contiguous) { g.entries.push(c); g.lastWhen = c.when ?? g.lastWhen; g.day = c.dt; }
     else groups.push({ day: c.dt, entries: [c], lastWhen: c.when });
   }
@@ -75,8 +84,8 @@ export function itemCountSessions(history, { gapHours = 4 } = {}) {
 // genuine recount step (helped = its net moved toward zero vs the previous session, hurt = away).
 // Shape kept compatible with the old itemVarianceProgression consumers (base/steps/final/nRecounts/
 // verdict/flags/netVsBase) so fob-recount-analysis + the view keep working — but now session-correct.
-export function itemVarianceProgression(history, { baseIndex = 0, gapHours = 4 } = {}) {
-  const { sessions, nSessions } = itemCountSessions(history, { gapHours });
+export function itemVarianceProgression(history, { baseIndex = 0, gapHours = 4, byDay = false } = {}) {
+  const { sessions, nSessions } = itemCountSessions(history, { gapHours, byDay });
   if (!nSessions) return { sessions: [], counts: [], base: null, steps: [], final: null, nRecounts: 0, verdict: 'none', flags: [] };
 
   const bi = Math.max(0, Math.min(baseIndex, nSessions - 1));
@@ -123,10 +132,10 @@ export function itemVarianceProgression(history, { baseIndex = 0, gapHours = 4 }
 // Roll across a store's raw items, ranked flagged-first then by |net effect|. Optional `statVar` map
 // (wrin → authoritative period $ variance from qsr_variance_stat) is attached as `officialVar` so the
 // view can headline the real number instead of the count-impact chain.
-export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4, statVar = null, priorStatVar = null } = {}) {
+export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4, byDay = true, statVar = null, priorStatVar = null } = {}) {
   const out = [];
   for (const it of (rawItems || [])) {
-    const p = itemVarianceProgression(it.history, { gapHours });
+    const p = itemVarianceProgression(it.history, { gapHours, byDay });
     if (!p.base) continue;
     const finalVar = p.final ? p.final.dolVar : 0;
     const official = statVar ? (statVar[String(it.wrin)] ?? statVar[it.wrin] ?? null) : null;

@@ -26,33 +26,44 @@ import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProj
 import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard } from '../views/store-analytics.js';
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
-const PerformanceReviewsPanel = React.lazy(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
-const DeliveryMixPanel = React.lazy(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
+// Lazy panel with stale-chunk recovery: after a new deploy, an open tab's index.html references old
+// hashed chunk filenames that are gone from the server, so a dynamic import 404s ("Failed to fetch
+// dynamically imported module"). Reload ONCE (throttled) to pull the fresh index.html + chunk map.
+const lazyPanel = (importFn) => React.lazy(() => importFn().catch((err) => {
+  try {
+    const KEY = 'meridian_chunk_reload_at';
+    const last = Number(sessionStorage.getItem(KEY) || 0);
+    if (Date.now() - last > 15000) { sessionStorage.setItem(KEY, String(Date.now())); location.reload(); return new Promise(() => {}); }
+  } catch {}
+  throw err;
+}));
+const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
+const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 import { SchedulingPanel } from '../views/scheduling.js';
 import { AdminPanel } from '../views/admin.js';
-const SMGVoicePanel = React.lazy(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
-const FOBEOMPanel = React.lazy(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
+const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
+const FOBEOMPanel = lazyPanel(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
-const EOMDashboardPanel = React.lazy(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
+const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
 import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
 import { FormsPrintPanel } from '../views/forms-print.js';
-const OnePagerPanel = React.lazy(() => import('../views/one-pager.js').then(m => ({ default: m.OnePagerPanel })));
+const OnePagerPanel = lazyPanel(() => import('../views/one-pager.js').then(m => ({ default: m.OnePagerPanel })));
 import { MetricLineagePanel } from '../views/metric-lineage.js';
 import { FormsLibraryPanel } from '../views/forms-library.js';
-const SignalsPanel = React.lazy(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })));
+const SignalsPanel = lazyPanel(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })));
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
 import { PaceToTargetPanel } from '../views/pace-to-target.js';
-const YearlyProjectionsPanel = React.lazy(() => import('../views/yearly-projections.js').then(m => ({ default: m.YearlyProjectionsPanel })));
+const YearlyProjectionsPanel = lazyPanel(() => import('../views/yearly-projections.js').then(m => ({ default: m.YearlyProjectionsPanel })));
 import { PromoRoiPanel } from '../views/promo-roi.js';
-const VisitReadinessPanel = React.lazy(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })));
+const VisitReadinessPanel = lazyPanel(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })));
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
-const SagePanel = React.lazy(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
+const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
-const GradedVisitsPanel = React.lazy(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
+const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
@@ -215,7 +226,7 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.731';
+const MERIDIAN_VERSION    = '4.732';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
