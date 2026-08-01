@@ -1826,7 +1826,28 @@ export const loadOpsCashSheet = async (d = 45) => {
   }));
 };
 export const loadOpsLaborSummary = (d = 45) => _loadOpsTable('qsr_labor_summary', d);  // OT + crew + needed hrs
-export const loadOpsServiceStats = (d = 45) => _loadOpsTable('qsr_service_stats', d);  // CTP/OEPE/DT/MFY/KVS/RTP
+// Service stats → derive the composed metrics the AAG/One-Pager read (the raw fields are already flat
+// on the row via _loadOpsTable). This is the cloud-fresh source that fills KVS (the DAR carries MFY
+// serve time but its order-health counts are 0, so DAR-derived KVS Healthy is null) + DT Parked.
+//   KVS Time/GC = Σ MFY serve time ÷ Σ MFY trans ÷ 1000 (reconciled to the QSRSoft KVS column)
+//   KVS Healthy = healthy ÷ (healthy+unhealthy) order-health counts (0–1)
+//   OEPE        = oepe_total ÷ oepe_trans ÷ 1000 (≈ the DAR OEPE; a backstop)
+//   DT Parked % = dt_cars_held ÷ dt_serve_trans (0–1)
+export const loadOpsServiceStats = async (d = 45) => {
+  const rows = await _loadOpsTable('qsr_service_stats', d);
+  return rows.map(r => {
+    const mfyTime  = (Number(r.mfy_one_serve_total) || 0) + (Number(r.mfy2_untilserve) || 0);
+    const mfyTrans = (Number(r.mfy_one_serve_trans) || 0) + (Number(r.mfy_two_serve_trans) || 0);
+    const kvsDen   = (Number(r.healthy_cnt) || 0) + (Number(r.unhealthy_cnt) || 0);
+    return {
+      ...r,
+      kvst:       mfyTrans > 0 ? mfyTime / mfyTrans / 1000 : null,
+      kvsHealthy: kvsDen   > 0 ? (Number(r.healthy_cnt) || 0) / kvsDen : null,
+      oepe:       Number(r.oepe_trans)     > 0 ? Number(r.oepe_total) / Number(r.oepe_trans) / 1000 : null,
+      park:       Number(r.dt_serve_trans) > 0 ? (Number(r.dt_cars_held) || 0) / Number(r.dt_serve_trans) : null,
+    };
+  });
+};
 export const loadOpsSalesMix     = (d = 45) => _loadOpsTable('qsr_sales_mix', d);      // channel sales + ly + ybl
 export const loadOpsPeaksSales   = (d = 45) => _loadOpsTable('qsr_peaks_sales', d);    // 3 Peaks daypart sales
 
