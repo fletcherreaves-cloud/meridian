@@ -1,0 +1,31 @@
+name: FOB Riddle Analysis
+
+# On-demand: why does FOB worsen from count-submission to month-end? Tests recount-effect / late-month
+# drift / consistency across all historical data. Read-only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      recount_periods:
+        description: 'Comma-separated periods for the recount-effect pass (default: last 2 months)'
+        required: false
+        default: ''
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Analyze
+        run: node scripts/fob-riddle-analysis.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RECOUNT_PERIODS:           ${{ github.event.inputs.recount_periods }}
