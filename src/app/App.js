@@ -215,10 +215,16 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.714';
+const MERIDIAN_VERSION    = '4.715';
 const MERIDIAN_BUILD_DATE = '2026-07-31';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.715', date:'2026-08-01', changes:[
+    'Change Monitor v2 — a new "📈 Progression" view (now the default) reads each item\'s variance journey straight from the raw count ledger: base count → each recount as a step (✅ moved toward zero / ⚠️ moved away / • held), the net vs base, a verdict (improved / recount hurt / held), and flags (held-worse, $0-improbable). No lock or baseline needed — works for whatever period is selected, and per-store it tallies improved vs hurt vs recounted. The old snapshot "📸 Baseline diff" stays behind the toggle. Hover any value for who/when.',
+  ]},
+  {version:'4.714', date:'2026-08-01', changes:[
+    'Change Monitor v2 engine (Notes 41): eom-variance-progression.js — per-item variance progression from the raw ledger (base count + recount steps with improved/hurt/held direction, net movement, verdict, and flags: recount-worsened / held-worse / zero-variance). Groundwork for the ledger-derived Change Monitor. +7 tests.',
+  ]},
   {version:'4.713', date:'2026-08-01', changes:[
     'Trading-day comparison foundation (P0): a new pure engine (trading-days.js) for fair partial-period comparisons. Because we run on daily pulls and sales swing by weekday, a partial range that is NOT a whole number of weeks must be compared weekday-aligned — the clean trick being a 52-week (364-day) shift that preserves the day-of-week exactly, vs a naive same-calendar-date LY. It reports whether trading-day alignment was required (partial range) or calendar was already fair (whole weeks). +6 tests. Next: wire it through vs-LY, projections pace, and movers.',
   ]},

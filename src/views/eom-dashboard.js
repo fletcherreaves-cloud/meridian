@@ -18,6 +18,7 @@ import {
   createEomShareLink,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
+import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
 import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
@@ -330,6 +331,75 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, nm }) {
                 : div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '4px 0' } }, 'No multi-point count history to bracket a variance window yet.'))));
         return rowEls;
       }))));
+}
+
+// Change Monitor v2 (Notes 41) — per-item variance PROGRESSION from the raw ledger. For each item: the
+// base count → each recount as a step (✅ improved toward zero / ⚠️ hurt away / • held), the net vs base,
+// a verdict, and flags (recount-worsened, held-worse, ~$0-improbable). No lock/baseline needed.
+function VarianceProgressionView({ rows, progByLoc, nm }) {
+  const [open, setOpen] = useState(null);
+  const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
+  const stores = (rows || []).map(r => {
+    const items = progByLoc[String(r.loc)] || [];
+    return { loc: r.loc, name: r.name, items,
+      improved: items.filter(i => i.verdict === 'improved').length,
+      worsened: items.filter(i => i.verdict === 'worsened').length,
+      flagged: items.filter(i => i.flags.length).length,
+      recounted: items.filter(i => i.nRecounts > 0).length };
+  }).filter(s => s.items.length);
+  if (!stores.length) return div({ style: { color: 'var(--text3)', fontSize: '12.5px', padding: '20px', textAlign: 'center' } },
+    'No raw item count history in scope yet — the progression view reads the per-item count ledger (fills in as counts post).');
+  stores.sort((a, b) => (b.flagged - a.flagged) || (b.worsened - a.worsened) || (b.items.length - a.items.length));
+  const all = stores.flatMap(s => s.items);
+  const dImproved = all.filter(i => i.verdict === 'improved').length;
+  const dWorsened = all.filter(i => i.verdict === 'worsened').length;
+  const dHeld = all.filter(i => i.flags.includes('held-worse')).length;
+  const dZero = all.filter(i => i.flags.includes('zero-variance')).length;
+  const box = { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '7px', padding: '7px 10px', minWidth: '92px' };
+  const lab = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 };
+
+  const chain = (p) => {
+    const els = [span({ key: 'b', style: { fontWeight: 700, color: 'var(--text2)' }, title: `base count · ${p.base.dt}${p.base.tm ? ' ' + p.base.tm : ''}${p.base.manager ? ' · ' + p.base.manager : ''}` }, $(p.base.dolVar))];
+    p.steps.forEach((st, i) => {
+      const c = st.direction === 'improved' ? '#4ade80' : st.direction === 'hurt' ? '#f87171' : 'var(--text3)';
+      const ic = st.direction === 'improved' ? '✅' : st.direction === 'hurt' ? '⚠️' : '•';
+      els.push(span({ key: 'a' + i, style: { color: 'var(--text3)', margin: '0 3px' } }, '→'));
+      els.push(span({ key: 's' + i, style: { fontWeight: 700, color: c }, title: `recount · ${st.dt}${st.tm ? ' ' + st.tm : ''}${st.manager ? ' · ' + st.manager : ''}` }, `${$(st.dolVar)} ${ic}`));
+    });
+    return els;
+  };
+  const VBADGE = { improved: ['#4ade80', 'improved'], worsened: ['#f87171', 'recount hurt'], held: ['#f5bc00', 'held'], 'single-count': ['var(--text3)', 'single count'] };
+
+  return div(null,
+    div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
+      div({ style: box }, span({ style: lab }, 'Items improved'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(dImproved))),
+      div({ style: box }, span({ style: lab }, 'Recount hurt'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dWorsened))),
+      div({ style: box }, span({ style: lab, title: 'A recount held a worse value — bad for this period, but the item genuinely is off (good going forward)' }, 'Held worse'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f5bc00' } }, String(dHeld))),
+      div({ style: box }, span({ style: lab, title: 'A ~$0 variance is statistically improbable — usually not-yet-posted; verify' }, '$0 (verify)'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dZero)))),
+    div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginBottom: '10px' } }, 'Read straight from the raw count ledger — base count then each recount, ✅ toward zero / ⚠️ away. Click a store to expand its items. Hover a value for who/when.'),
+    div(null, stores.map(s => {
+      const isOpen = open === s.loc;
+      const items = isOpen ? s.items.slice(0, 60) : [];
+      return div({ key: s.loc, style: { borderBottom: '1px solid var(--bdr)' } },
+        div({ onClick: () => setOpen(o => o === s.loc ? null : s.loc), style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '8px 4px', cursor: 'pointer' } },
+          span({ style: { color: 'var(--text3)' } }, isOpen ? '▾' : '▸'),
+          span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, s.name),
+          span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(s.loc)}`),
+          span({ style: { marginLeft: 'auto', fontSize: '11px', display: 'flex', gap: '10px' } },
+            s.improved ? span({ style: { color: '#4ade80', fontWeight: 700 } }, `${s.improved} improved`) : null,
+            s.worsened ? span({ style: { color: '#f87171', fontWeight: 700 } }, `${s.worsened} hurt`) : null,
+            s.flagged ? span({ style: { color: '#f5bc00', fontWeight: 700 } }, `⚑ ${s.flagged}`) : null,
+            span({ style: { color: 'var(--text3)' } }, `${s.recounted} recounted · ${s.items.length} items`))),
+        isOpen ? div({ style: { padding: '2px 4px 12px 22px' } }, items.map(p => {
+          const [vc, vl] = VBADGE[p.verdict] || VBADGE['held'];
+          return div({ key: p.wrin, style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '3px 0', fontSize: '12px', flexWrap: 'wrap', borderTop: '1px solid var(--bdr)' } },
+            span({ style: { fontWeight: 600, color: 'var(--text)', minWidth: '160px' } }, p.descr),
+            span({ style: { fontFamily: 'ui-monospace,Menlo,monospace' } }, ...chain(p)),
+            p.nRecounts > 0 ? span({ style: { color: 'var(--text3)' } }, `net ${$(p.netVsBase)} vs base`) : null,
+            span({ style: { fontSize: '10px', fontWeight: 700, color: vc, border: `1px solid ${vc}`, borderRadius: '4px', padding: '0 6px' } }, vl),
+            ...(p.flags.filter(f => f !== 'recount-worsened').map(f => span({ key: f, style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, f === 'held-worse' ? 'held worse' : f === 'zero-variance' ? '$0 — verify' : f))));
+        })) : null);
+    })));
 }
 
 const VERDICT_TONE = { good: '#4ade80', warn: '#f5bc00', bad: '#f87171', neutral: 'var(--text3)' };
@@ -757,6 +827,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [monBusy, setMonBusy] = useState(false);
   const [mon, setMon] = useState(null);               // { diff, takenAt, nBaseline, error }
   const [monOpenRows, setMonOpenRows] = useState({});  // loc -> expanded item deltas
+  const [monView, setMonView] = useState('progression'); // 'progression' (ledger-derived, v2) | 'diff' (snapshot)
   const [secReview, setSecReview] = useState({});     // loc -> { status, note } (day-2 secondary review)
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
   // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
@@ -853,6 +924,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const cadenceByLoc = useMemo(() => {
     const m = {};
     for (const loc in rawByLoc) { try { m[loc] = analyzeCountCadence(rawByLoc[loc], { asOf: new Date() }); } catch { /* skip */ } }
+    return m;
+  }, [rawByLoc]);
+
+  // Change Monitor v2 (Notes 41): per-store item variance progressions read straight from the raw ledger
+  // — base count → recount steps → improved/hurt/held. No lock needed; works for any period reviewed.
+  const progByLoc = useMemo(() => {
+    const m = {};
+    for (const loc in rawByLoc) { try { m[loc] = storeVarianceProgressions(rawByLoc[loc]); } catch { m[loc] = []; } }
     return m;
   }, [rawByLoc]);
 
@@ -2216,11 +2295,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📸 EOM Change Monitor — ${scopeLabel()}`),
           h('button', { onClick: () => setMonOpen(false), style: MODAL_X }, '✕'),
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
-            takenLbl ? `Live now vs baseline locked ${takenLbl} · ${mon.nBaseline} store${mon.nBaseline === 1 ? '' : 's'} baselined${mon.nAsCounted ? ` · ${mon.nAsCounted} on their as-counted lock` : ''}` : 'No baseline found for this period yet.'),
-          div({ style: { display: 'flex', gap: '7px', marginBottom: '12px' } },
-            h('button', { onClick: openMonitor, style: MODAL_TOOLBTN, disabled: monBusy }, monBusy ? '… Refreshing' : '↻ Refresh')),
+            monView === 'progression'
+              ? 'Per-item variance progression — read straight from the raw count ledger (no lock needed), for the selected period.'
+              : (takenLbl ? `Live now vs baseline locked ${takenLbl} · ${mon.nBaseline} store${mon.nBaseline === 1 ? '' : 's'} baselined${mon.nAsCounted ? ` · ${mon.nAsCounted} on their as-counted lock` : ''}` : 'No baseline found for this period yet.')),
+          div({ style: { display: 'flex', gap: '7px', marginBottom: '12px', alignItems: 'center' } },
+            div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+              [['progression', '📈 Progression'], ['diff', '📸 Baseline diff']].map(([k, l]) =>
+                h('button', { key: k, onClick: () => { setMonView(k); if (k === 'diff' && !mon && !monBusy) openMonitor(); },
+                  style: { background: monView === k ? 'var(--accent,#f5bc00)' : 'var(--surf3)', color: monView === k ? '#0f1117' : 'var(--text2)', border: 'none', padding: '5px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' } }, l))),
+            monView === 'diff' ? h('button', { onClick: openMonitor, style: MODAL_TOOLBTN, disabled: monBusy }, monBusy ? '… Refreshing' : '↻ Refresh') : null),
 
-          monBusy ? div({ style: { color: 'var(--text3)', padding: '30px', textAlign: 'center' } }, 'Diffing live data against the baseline…')
+          monView === 'progression' ? h(VarianceProgressionView, { rows, progByLoc, nm })
+          : monBusy ? div({ style: { color: 'var(--text3)', padding: '30px', textAlign: 'center' } }, 'Diffing live data against the baseline…')
           : mon?.error ? div({ style: { color: '#fb923c', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } }, mon.error)
           : !mon?.nBaseline ? div({ style: { color: 'var(--text3)', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } },
               'No baseline is locked for these stores yet. Click ', span({ style: { color: '#34d399', fontWeight: 700 } }, '🔒 Lock baseline'), ' to freeze the current state, then check back after the stores make moves.')
