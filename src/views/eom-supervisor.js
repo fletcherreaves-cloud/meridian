@@ -120,8 +120,9 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
     const d = r.dt ? new Date(r.dt + 'T00:00:00') : (r.date instanceof Date ? r.date : null);
     return d && d.getFullYear() === selYear && d.getMonth() + 1 === selMonth;
   });
-  const autoOtHrs    = monthOpsLabor.reduce((s, r) => s + (Number(r.metrics?.overTimeTotalHours)   || 0), 0);
-  const autoOtDollar = monthOpsLabor.reduce((s, r) => s + (Number(r.metrics?.overTimeTotalDollars) || 0), 0);
+  // NB: the ops pull snake_cases metric keys (mapCols) → over_time_total_hours / _dollars.
+  const autoOtHrs    = monthOpsLabor.reduce((s, r) => s + (Number(r.metrics?.over_time_total_hours)   || 0), 0);
+  const autoOtDollar = monthOpsLabor.reduce((s, r) => s + (Number(r.metrics?.over_time_total_dollars) || 0), 0);
   // Sales-weighted labor % from daily rows (only rows with both values)
   const _lbrValid = monthLaborRows.filter(r => (r.laborPct||0) > 0 && (r.sales||0) > 0);
   const _lbrWt    = _lbrValid.reduce((s, r) => s + r.laborPct * r.sales, 0);
