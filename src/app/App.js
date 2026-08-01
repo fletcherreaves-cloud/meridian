@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.719';
+const MERIDIAN_VERSION    = '4.720';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.720', date:'2026-08-01', changes:[
+    'Count-timing artifact detection (baked in as a reusable engine, src/engine/count-timing.js). A variance % can be huge yet meaningless when a count lands early in a period — the sales denominator is tiny AND the count reconciles several days of theoretical-only drift since the item’s last physical count. New EOM-diagnosis context note fires ONLY early in a period (≈ first 10% of the month) with material loss: "counted only through day N of ~M — judge the absolute $ and trend, not the %." Stays quiet at month-end. Proven on Durant #5985: 5.60% Variance Stat = $559 loss over 1 day’s $9,979 sales = 0.086% over a full month. Ledger-verified the point-to-point model (Actual Usage = carried POS-Open beginning inv − ending count) to the unit. Shared piece for the coming all-location FOB report.',
+  ]},
   {version:'4.719', date:'2026-08-01', changes:[
     'Change Monitor: new "Month-over-month" baseline toggle. Compares each item’s authoritative period variance this period vs last (QSRSoft Variance Stat), flagging improving (variance shrank toward zero / resolved off the list) vs regressing (grew / newly on the list); stores rank by most regressing → laggard detection. KB-grounded framing: variance is a point-to-point reconciliation (Actual Usage = Starting Inv + Purchases ± Transfers − Waste − Ending Inv), and each period already begins from the prior EOM’s ending count, so this compares two reconciliations rather than re-baselining.',
     'Change Monitor drill-down now shows the point-to-point anchor: a "Period start · beginning inventory (carried from last EOM)" row = the first POS Open reading, so the reconciliation window (beginning inventory → binding count = variance) is visible and verifiable right in the ledger table.',

@@ -25,6 +25,7 @@ import { normClass, diagnoseIncompleteCount, nonProductDueToday, countWindowStar
 import { summarizeWasteByManager, summarizeTransfers, yieldBandFor, yieldStatus } from './eom-parsers.js';
 import { eventTs, recountBatchTiming, recountTimingSentence } from './eom-recount-forensics.js';
 import { itemCountSessions } from './eom-count-sessions.js';
+import { countTimingArtifact } from './count-timing.js';
 
 export const SEVERITY = { critical: 3, high: 2, medium: 1, info: 0 };
 const sevWord = s => ({ 3: 'critical', 2: 'high', 1: 'medium', 0: 'info' }[s] || 'info');
@@ -304,6 +305,40 @@ export const DEFAULT_CHECKS = [
         }
       }
       return out;
+    },
+  },
+  {
+    // Count-timing CONTEXT (Durant #5985 lesson): early in a period, a normal variance $ reads as a huge %
+    // because the sales denominator is tiny. Fires only when counts land very early (≈ first 10% of the
+    // month) AND there's material loss — tells the reader to judge the $ and trend, not the %. At month-end
+    // (the usual EOM run) the denominator is full, so this stays quiet. Info-level context, not a defect.
+    id: 'count-timing', label: 'Count-timing context — early-period % inflation', order: 6, enabled: true,
+    requires: ['rawItems'],
+    run: (ctx) => {
+      const period = ctx.period;
+      if (!/^\d{4}-\d{2}$/.test(period || '')) return [];
+      const [y, mo] = period.split('-').map(Number);
+      const periodLength = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      let elapsed = 0;
+      for (const it of (ctx.data.rawItems || [])) {
+        for (const hh of (it.history || [])) {
+          if (!hh || !hh.isCount || !hh.dt) continue;
+          const s = String(hh.dt); let ym, dd;
+          const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (m1) { ym = `${m1[3]}-${String(m1[1]).padStart(2, '0')}`; dd = Number(m1[2]); }
+          else { const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m2) continue; ym = `${m2[1]}-${m2[2]}`; dd = Number(m2[3]); }
+          if (ym === period && dd > elapsed) elapsed = dd;
+        }
+      }
+      if (!elapsed) return [];
+      const loss = (ctx.data.variance || []).filter(v => (v.dolDiff || 0) < 0).reduce((s, v) => s + v.dolDiff, 0);
+      if (loss === 0) return [];
+      const art = countTimingArtifact({ periodElapsed: elapsed, periodLength, dollars: loss });
+      if (!art.isArtifact) return [];
+      return [mkFinding('count-timing', SEVERITY.info,
+        `Count-timing context: counted only through day ${elapsed} of ~${periodLength}`,
+        `${art.reason} The Variance Stat % is inflated by the small sales denominator this early in the period — the same $ over a full month is a fraction of it. Watch the absolute $ and the trend as the month fills in.`,
+        Math.abs(loss), { periodElapsed: elapsed, periodLength, confidence: art.confidence })];
     },
   },
   {
