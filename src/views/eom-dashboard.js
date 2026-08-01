@@ -1231,12 +1231,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const lines = [];
     lines.push(`District FOB is ${pctf(L.districtFobPct)} (dollar-weighted: ${$(L.totFob)} of food-over-base on ${$(L.totSales)} in sales) vs a ${pctf(L.districtTarget)} target — ${L.net > 0 ? '+' : ''}${$(L.net)}/mo ${L.net > 0 ? 'OVER' : 'under'} target across ${L.nStores} stores.`);
     if (L.achievers.length || L.laggards.length) {
-      lines.push(`${L.achievers.length} store${L.achievers.length === 1 ? '' : 's'} under target banked ${$(L.savings)}/mo in savings; ${L.laggards.length} store${L.laggards.length === 1 ? '' : 's'} over target burned ${$(L.excess)}/mo — erasing ${$(L.erased)} of it.`);
+      lines.push(`${L.achievers.length} store${L.achievers.length === 1 ? '' : 's'} under target banked ${$(L.savings)}/mo in savings; ${L.laggards.length} store${L.laggards.length === 1 ? '' : 's'} over target ran ${$(L.excess)}/mo over — offsetting ${$(L.erased)} of those gains.`);
       lines.push(L.net > 0
-        ? `The laggards more than wiped out the achievers' gains, leaving the district ${$(L.net)}/mo over target. Closing them is the whole opportunity.`
-        : `The achievers still edged ahead by ${$(-L.net)}/mo — but fixing the laggards would add ${$(L.excess)}/mo more.`);
+        ? `The over-target stores more than offset the top performers' gains, leaving the district ${$(L.net)}/mo over target — closing that gap is the whole opportunity.`
+        : `The top performers still edged the district ${$(-L.net)}/mo ahead — and bringing the focus stores on board would add ${$(L.excess)}/mo more.`);
       const top3 = L.laggards.slice(0, 3).reduce((s, r) => s + (r.oppDollars || 0), 0);
-      if (L.laggards.length) lines.push(`Fixing just the top ${Math.min(3, L.laggards.length)} laggards recovers ${$(top3)}/mo.`);
+      if (L.laggards.length) lines.push(`Bringing just the top ${Math.min(3, L.laggards.length)} focus stores to target recovers ${$(top3)}/mo.`);
     }
     return lines;
   };
@@ -1245,8 +1245,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const pctf = f => f == null ? '—' : (f * 100).toFixed(2) + '%';
     const head = `<h1>FOB Leadership Summary — ${scopeLabel()}</h1><p class="sub">Reporting ${R.reportPeriod} · ${R.summary.nStores} store(s) · dollar-weighted · for above-store leaders</p>`;
     const narrative = `<p style="font-size:13px;line-height:1.6;background:#f7f7f4;border-left:3px solid #b98a00;padding:10px 14px;margin:0 0 16px">${leadershipLines().map(esc).join('<br><br>')}</p>`;
-    const lag = L.laggards.length ? `<h1 style="font-size:14px">Laggards — closing these gets everyone on board (${$(L.excess)}/mo at stake)</h1><table><thead><tr><th>Store</th><th>Mkt</th><th>FOB</th><th>Tgt</th><th>Over by</th><th>$/mo excess</th><th>What to do</th></tr></thead><tbody>${L.laggards.map(r => `<tr><td class="g">${esc(r.name)}</td><td>${r.org}</td><td class="g r">${pctf(r.fobPct)}</td><td>${pctf(r.target)}</td><td class="r">+${r.gapPP}pp</td><td class="g r">${$(r.oppDollars)}</td><td>${esc(r.actions[0] || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="sub">No stores over target — the whole scope is at/under. 🎉</p>';
-    const ach = L.achievers.length ? `<h1 style="font-size:14px">Achievers — the model (${$(L.savings)}/mo banked)</h1><table><thead><tr><th>Store</th><th>Mkt</th><th>FOB</th><th>Tgt</th><th>Under by</th><th>$/mo saved</th></tr></thead><tbody>${L.achievers.map(r => `<tr><td class="g">${esc(r.name)}</td><td>${r.org}</td><td class="g">${pctf(r.fobPct)}</td><td>${pctf(r.target)}</td><td>${r.gapPP}pp</td><td class="g">${$(r.savingsDollars)}</td></tr>`).join('')}</tbody></table>` : '';
+    const lag = L.laggards.length ? `<h1 style="font-size:14px">Focus Stores — bringing these to target gets everyone on board (${$(L.excess)}/mo at stake)</h1><table><thead><tr><th>Store</th><th>Mkt</th><th>FOB</th><th>Tgt</th><th>Over by</th><th>$/mo over</th><th>What to do</th></tr></thead><tbody>${L.laggards.map(r => `<tr><td class="g">${esc(r.name)}</td><td>${r.org}</td><td class="g r">${pctf(r.fobPct)}</td><td>${pctf(r.target)}</td><td class="r">+${r.gapPP}pp</td><td class="g r">${$(r.oppDollars)}</td><td>${esc(r.actions[0] || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="sub">No stores over target — the whole scope is at/under. 🎉</p>';
+    const ach = L.achievers.length ? `<h1 style="font-size:14px">Top Performers — the model (${$(L.savings)}/mo banked)</h1><table><thead><tr><th>Store</th><th>Mkt</th><th>FOB</th><th>Tgt</th><th>Under by</th><th>$/mo saved</th></tr></thead><tbody>${L.achievers.map(r => `<tr><td class="g">${esc(r.name)}</td><td>${r.org}</td><td class="g">${pctf(r.fobPct)}</td><td>${pctf(r.target)}</td><td>${r.gapPP}pp</td><td class="g">${$(r.savingsDollars)}</td></tr>`).join('')}</tbody></table>` : '';
     return head + narrative + lag + ach;
   };
   const fobRepCsv = () => {
@@ -2162,7 +2162,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', { onClick: () => setFobRepOpen(false), style: MODAL_X }, '✕'),
           div({ style: { display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' } },
             h('button', { onClick: () => openPrintWindow('FOB Report', fobRepPrintHtml()), style: MODAL_TOOLBTN, title: 'Full report → PDF (summary + opportunities + every store)' }, '⎙ Print (full)'),
-            h('button', { onClick: () => openPrintWindow('FOB Leadership Summary', leadershipPrintHtml()), style: { ...MODAL_TOOLBTN, color: '#34d399', borderColor: '#34d399' }, title: 'Detailed-yet-summarized report for above-store leaders: where we are, who is where, the math of laggards vs achievers, and what to do' }, '⎙ Leadership Summary'),
+            h('button', { onClick: () => openPrintWindow('FOB Leadership Summary', leadershipPrintHtml()), style: { ...MODAL_TOOLBTN, color: '#34d399', borderColor: '#34d399' }, title: 'Detailed-yet-summarized report for above-store leaders: where we are, who is where, the math of focus stores vs top performers, and what to do' }, '⎙ Leadership Summary'),
             h('button', { onClick: () => downloadFile(fobRepCsv(), `fob-report-${R.reportPeriod}.csv`), style: MODAL_TOOLBTN, title: 'Download the report as CSV' }, '⬇ CSV')),
           // Leadership narrative — the district position + the math of laggards eroding achiever gains.
           (() => { const lines = leadershipLines(); return lines.length ? div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderLeft: '3px solid #34d399', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px' } },
