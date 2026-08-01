@@ -1193,6 +1193,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return { ...buildFobReport({ stores: rows, get }), reportPeriod };
   }, [rows, fobRows, varByLoc, prevVarByLoc, period, patchOfLoc]);
 
+  // FOB Report — printable (→ PDF) + CSV export, so it can go into a DO/GM review.
+  const fobRepPrintHtml = () => {
+    const R = fobReport, esc = s => String(s || '').replace(/</g, '&lt;');
+    const gap = r => r.gapPP == null ? '' : `${r.gapPP > 0 ? '+' : ''}${r.gapPP}pp`;
+    const head = `<h1>FOB Report — ${scopeLabel()}</h1><p class="sub">Reporting ${R.reportPeriod}${R.reportPeriod !== period ? ` (latest month with real FOB; ${period} MTD not populated)` : ''} · ${R.summary.nStores} store(s) · dollar-weighted FOB vs target · avg ${R.summary.avgFobPP ?? '—'}% · ${R.summary.overTarget} over target · ${$(R.summary.oppDollars)}/mo opportunity</p>`;
+    const opps = R.opportunities.length ? `<h1 style="font-size:14px">Biggest opportunities</h1><table><thead><tr><th>Store</th><th>Mkt</th><th>FOB</th><th>Tgt</th><th>Gap</th><th>Trend</th><th>Action</th></tr></thead><tbody>${R.opportunities.map(r => `<tr><td class="g">${esc(r.name || nm(r.loc))}</td><td>${r.org}</td><td class="g${r.overTarget ? ' r' : ''}">${pct2(r.fobPct)}</td><td>${pct2(r.target)}</td><td class="${r.gapPP > 0 ? 'r' : ''}">${gap(r)}</td><td>${r.trend.dir}</td><td>${esc(r.actions[0] || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="sub">No over-target or regressing stores in scope — clean.</p>';
+    const byOrg = R.orgs.map(o => `<h1 style="font-size:14px">${o.label} — avg ${o.summary.avgFobPP ?? '—'}%, ${o.summary.overTarget}/${o.summary.nStores} over target, ${o.summary.regressing} regressing</h1><table><thead><tr><th>Store</th><th>Patch</th><th>FOB</th><th>Tgt</th><th>Gap</th><th>Trend</th><th>Top item losers</th></tr></thead><tbody>${o.stores.map(r => `<tr><td class="g">${esc(r.name || nm(r.loc))}</td><td>${esc(r.patch || '')}</td><td class="g${r.overTarget ? ' r' : ''}">${pct2(r.fobPct)}</td><td>${pct2(r.target)}</td><td class="${r.gapPP > 0 ? 'r' : ''}">${gap(r)}</td><td>${r.trend.dir}${r.masking ? ' · masking' : ''}</td><td>${esc(r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}`).join('; '))}</td></tr>`).join('')}</tbody></table>`).join('');
+    return head + opps + byOrg;
+  };
+  const fobRepCsv = () => {
+    const R = fobReport;
+    const rows = [['Market', 'Patch', 'Store', 'Loc', 'FOB%', 'Target%', 'GapPP', 'Trend', 'Masking', 'OppDollarsPerMo', 'TopAction']];
+    for (const o of R.orgs) for (const r of o.stores) rows.push([o.label, r.patch || '', r.name || nm(r.loc), unpad(r.loc),
+      r.fobPct != null ? (r.fobPct * 100).toFixed(2) : '', r.target != null ? (r.target * 100).toFixed(2) : '', r.gapPP ?? '',
+      r.trend.dir, r.masking ? 'yes' : '', Math.round(r.oppDollars || 0), r.actions[0] || '']);
+    return rows.map(r => r.map(csvCell).join(',')).join('\n');
+  };
+
   // Store-picker options: scoped by state + patch but NOT by the single-store selection, so the
   // dropdown always lists every store you could switch to (not just the one already chosen).
   const pickerStores = useMemo(() => {
@@ -2094,6 +2112,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         div({ onClick: e => e.stopPropagation(), style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '980px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
           div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📊 FOB Report — ${scopeLabel()}`),
           h('button', { onClick: () => setFobRepOpen(false), style: MODAL_X }, '✕'),
+          div({ style: { display: 'flex', gap: '6px', marginBottom: '8px' } },
+            h('button', { onClick: () => openPrintWindow('FOB Report', fobRepPrintHtml()), style: MODAL_TOOLBTN, title: 'Open a printable report (Save as PDF or print)' }, '⎙ Print'),
+            h('button', { onClick: () => downloadFile(fobRepCsv(), `fob-report-${R.reportPeriod}.csv`), style: MODAL_TOOLBTN, title: 'Download the report as CSV' }, '⬇ CSV')),
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '12px' } }, `Reporting ${R.reportPeriod}${R.reportPeriod !== period ? ` (latest month with real FOB — ${period} MTD not populated yet)` : ''} · ${R.summary.nStores} store(s) · dollar-weighted FOB vs target · trend = month-over-month final FOB%. Opportunities ranked by gap-to-target, regression, and masking.`),
           // Summary tiles
           div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' } },
