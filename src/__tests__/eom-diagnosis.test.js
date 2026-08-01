@@ -273,6 +273,31 @@ describe('runDiagnosis — editable check registry', () => {
     expect(runDiagnosis({ store: 's', period: '2026-06', data: { rawItems: single } }).findings.some(x => x.checkId === 'recount-swing')).toBe(false);
   });
 
+  it('count-accumulation: flags a multi-entry session that nets a large positive OVERAGE', () => {
+    // Correct count (~$0), then a re-entered total added on top within the active timer → +$1,100 overage.
+    const rawItems = [{ wrin: '1', descr: 'Fries', history: [
+      { dt: '2026-07-30', tm: '09:00', isCount: true, difference: 40, manager: 'Cinthya a' },
+      { dt: '2026-07-30', tm: '09:20', isCount: true, difference: 1100, manager: 'Cinthya a' },
+    ] }];
+    const res = runDiagnosis({ store: '3708', period: '2026-07', data: { rawItems } });
+    const f = res.findings.find(x => x.checkId === 'count-accumulation');
+    expect(f).toBeTruthy();
+    expect(f.detail).toMatch(/Replace Count/);
+    expect(f.detail).toMatch(/check receipts/);       // honest missing-receipt alternative
+    expect(f.data.nEntries).toBe(2);
+  });
+
+  it('count-accumulation: does NOT fire on normal area build-up that nets ~$0 (FRIES)', () => {
+    const rawItems = [{ wrin: '1', descr: 'Fries', history: [
+      { dt: '2026-07-30', tm: '09:02', isCount: true, difference: -1103, manager: 'Cinthya a' },
+      { dt: '2026-07-30', tm: '09:46', isCount: true, difference: 1106, manager: 'Cinthya a' },
+    ] }];
+    expect(runDiagnosis({ store: '3708', period: '2026-07', data: { rawItems } }).findings.some(x => x.checkId === 'count-accumulation')).toBe(false);
+    // ...and not on a single big overage (that's a plain overage / missing receipt, not accumulation)
+    const single = [{ wrin: '1', descr: 'X', history: [{ dt: '2026-07-30', tm: '09:00', isCount: true, difference: 500 }] }];
+    expect(runDiagnosis({ store: 's', period: '2026-07', data: { rawItems: single } }).findings.some(x => x.checkId === 'count-accumulation')).toBe(false);
+  });
+
   it('waste-session: flags a manager whose one-day waste session is a large outlier, with rotation-vs-verify framing', () => {
     const waste = [
       { dt: '2026-07-10', manager: 'A', amount: 30, type: 'raw' },

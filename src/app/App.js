@@ -215,10 +215,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.717';
+const MERIDIAN_VERSION    = '4.718';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.718', date:'2026-08-01', changes:[
+    'Second-Look: new "Count accumulation?" check. When a manager re-enters a full TOTAL on top of an already-submitted count while the device count-timer is still active (the app ADDS unless "Replace Count" is used), the on-hand ~doubles into a large positive overage — a likely driver of FOB worsening after counts post. Fires on a multi-entry session that nets a ≥$150 positive overage (normal area build-up nets ≈ $0, so FRIES-type counts are not flagged). Non-accusatory: recommends verifying the true on-hand and using Replace Count / recounting after the timer resets, and names the honest alternative (an un-approved purchase/transfer also reads as an overage — check receipts). KB-grounded in the Mobile Inventory App counting mechanics.',
+  ]},
   {version:'4.717', date:'2026-08-01', changes:[
     'FIX (crash): Inventory Control panel threw "Cannot access before initialization" (temporal-dead-zone) — the FOB Root-Cause (riddle) memo referenced `rows` before it was declared. Moved the memo after `rows`. Panel loads again.',
     'Change Monitor v2 → SESSION model (KB-substantiated). An item is counted BY AREA (fries live in 2–3 places), and the QSRSoft app ADDS each SAVE (only "Replace Count" replaces), so one honest count is several submissions in one session — only the FINAL (BINDING) entry counts ("most recent count overrides all previous"). A "recount" now means a SEPARATE session (another day / large gap). Fixes the FRIES/#3708 case that read as "recount hurt / held worse": a −$1,103 fry-station read then +$1,106 freezer add is normal area build-up, net ≈ $0, official period variance $86 — clean, not harmful.',

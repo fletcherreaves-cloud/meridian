@@ -280,6 +280,33 @@ export const DEFAULT_CHECKS = [
     },
   },
   {
+    // Count ACCUMULATION (integrity, owner 2026-08-01; see reference-inventory-count-mechanics): while the
+    // device count-timer is still active, if the same person re-enters a full TOTAL (meaning to replace)
+    // without ticking "Replace Count", the app ADDS it on top of the already-submitted count → the running
+    // on-hand ~doubles → a large POSITIVE (overage) variance. The tell: a multi-entry session whose BINDING
+    // net is a big positive overage (area build-up nets ≈ $0; accumulation nets far over). Non-accusatory,
+    // and we name the honest alternative — an un-approved purchase/transfer also reads as an overage.
+    id: 'count-accumulation', label: 'Count accumulation — total re-entered on top of a submitted count (overage)', order: 28, enabled: true,
+    requires: ['rawItems'], params: { minOverage: 150 },
+    run: (ctx) => {
+      const minOverage = ctx.params.minOverage ?? 150;
+      const out = [];
+      for (const d of (ctx.data.rawItems || [])) {
+        const { sessions } = itemCountSessions(d.history || [], {});
+        for (const s of sessions) {
+          if (s.nEntries < 2) continue;           // one entry can't accumulate on itself
+          if (s.netDolVar < minOverage) continue; // large POSITIVE overage only (area build-up nets ≈ $0)
+          const sev = s.netDolVar >= minOverage * 3 ? SEVERITY.high : SEVERITY.medium;
+          out.push(mkFinding('count-accumulation', sev,
+            `Count accumulation? ${d.descr || d.wrin}`,
+            `On ${s.date}, ${s.nEntries} count entries in one session summed to a +${_mny(s.netDolVar)} OVERAGE${s.manager ? ` (${s.manager})` : ''}. A jump this far OVER is unlikely under live inventory — it's the signature of a correction ADDED on top of an already-submitted count while the device count-timer was still active (the app accumulates unless "Replace Count" is used). Verify the true on-hand: if it was a re-entered total, recount with Replace Count or after the timer resets. (An un-approved purchase/transfer counted too early also reads as an overage — check receipts if so.)`,
+            s.netDolVar, { wrin: d.wrin, day: s.date, overage: s.netDolVar, nEntries: s.nEntries, manager: s.manager }));
+        }
+      }
+      return out;
+    },
+  },
+  {
     // Waste — per-manager $ share, edited entries, disproportionate contributors.
     id: 'waste-patterns', label: 'Waste — manager/pencil-whip patterns', order: 50, enabled: true,
     requires: ['waste'], params: { shareFlag: 0.4, minTotal: 100 },
@@ -650,7 +677,7 @@ export function runDiagnosis({ store, storeName, period, asOf = new Date(), data
 // Owner-chosen name for the integrity/anti-padding family — non-accusatory, "verify not accuse".
 export const INTEGRITY_LABEL = 'Second-Look Signals';
 export const INTEGRITY_CHECK_IDS = new Set([
-  'count-manipulation', 'recount-swing', 'waste-inflation', 'waste-session', 'waste-patterns',
+  'count-manipulation', 'recount-swing', 'count-accumulation', 'waste-inflation', 'waste-session', 'waste-patterns',
   'unrealistic-over', 'negative-onhand', 'negative-usage', 'uom-sanity',
 ]);
 
