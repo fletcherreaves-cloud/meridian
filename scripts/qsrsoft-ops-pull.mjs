@@ -104,7 +104,9 @@ async function fetchRows(url, token, evalPage) {
       try {
         const r = await fetch(url, { headers: { 'X-Auth-Token': token, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport' }, signal: AbortSignal.timeout(25000) });
         if (!r.ok) return { error: `HTTP ${r.status}` };
-        return { rows: (await r.json())?.result || [] };
+        const body = await r.json();
+        // reporting/v2 wraps rows in { result: [...] }; data_layer/v1 (service stats) returns a bare array.
+        return { rows: Array.isArray(body) ? body : (body?.result || []) };
       } catch (e) { return { error: e.message }; }
     }, { url, token });
     if (res.error) throw new Error(res.error);
@@ -113,7 +115,8 @@ async function fetchRows(url, token, evalPage) {
   const resp = await fetch(url, { headers: HDRS(token) });
   if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 160)}`);
-  return (await resp.json())?.result || [];
+  const body = await resp.json();
+  return Array.isArray(body) ? body : (body?.result || []);
 }
 
 async function upsert(table, records, conflict) {
