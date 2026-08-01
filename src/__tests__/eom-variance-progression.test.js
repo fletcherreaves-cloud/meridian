@@ -91,4 +91,11 @@ describe('itemVarianceProgression — session-aware', () => {
     expect(out[0].officialVar).toBe(260);         // authoritative period variance attached
     expect(out.find(o => o.descr === 'TINY')).toBeUndefined();
   });
+
+  it('attaches priorVar (last-EOM anchor) for the month-over-month "vs Last EOM" view', () => {
+    const items = [{ wrin: '1', descr: 'BEEF', history: [cnt(-100, '8:00 AM', '2026-07-14')] }];
+    const out = storeVarianceProgressions(items, { statVar: { '1': -60 }, priorStatVar: { '1': -200 } });
+    expect(out[0].officialVar).toBe(-60);
+    expect(out[0].priorVar).toBe(-200);           // |−60| < |−200| → improving vs last EOM
+  });
 });

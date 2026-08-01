@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.718';
+const MERIDIAN_VERSION    = '4.719';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.719', date:'2026-08-01', changes:[
+    'Change Monitor: new "Month-over-month" baseline toggle. Compares each item’s authoritative period variance this period vs last (QSRSoft Variance Stat), flagging improving (variance shrank toward zero / resolved off the list) vs regressing (grew / newly on the list); stores rank by most regressing → laggard detection. KB-grounded framing: variance is a point-to-point reconciliation (Actual Usage = Starting Inv + Purchases ± Transfers − Waste − Ending Inv), and each period already begins from the prior EOM’s ending count, so this compares two reconciliations rather than re-baselining.',
+    'Change Monitor drill-down now shows the point-to-point anchor: a "Period start · beginning inventory (carried from last EOM)" row = the first POS Open reading, so the reconciliation window (beginning inventory → binding count = variance) is visible and verifiable right in the ledger table.',
+  ]},
   {version:'4.718', date:'2026-08-01', changes:[
     'Second-Look: new "Count accumulation?" check. When a manager re-enters a full TOTAL on top of an already-submitted count while the device count-timer is still active (the app ADDS unless "Replace Count" is used), the on-hand ~doubles into a large positive overage — a likely driver of FOB worsening after counts post. Fires on a multi-entry session that nets a ≥$150 positive overage (normal area build-up nets ≈ $0, so FRIES-type counts are not flagged). Non-accusatory: recommends verifying the true on-hand and using Replace Count / recounting after the timer resets, and names the honest alternative (an un-approved purchase/transfer also reads as an overage — check receipts). KB-grounded in the Mobile Inventory App counting mechanics.',
   ]},

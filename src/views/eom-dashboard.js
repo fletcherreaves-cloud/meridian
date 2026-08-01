@@ -349,25 +349,57 @@ const VP_VBADGE = {
 function VarianceProgressionView({ rows, progByLoc, nm }) {
   const [openStore, setOpenStore] = useState(null);
   const [openItem, setOpenItem] = useState(null);
+  const [baseMode, setBaseMode] = useState('period');   // 'period' (this month's sessions) | 'lastEom' (vs last period)
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
+  const lastEom = baseMode === 'lastEom';
+
+  // Month-over-month vs last period's authoritative variance (Notes 42 #2). Improving = |variance| shrank
+  // toward zero; resolved = dropped off the flag list entirely; regressed = grew; new = newly on the list.
+  const mom = (p) => {
+    const cur = p.officialVar, prior = p.priorVar;
+    if (prior == null && cur == null) return { verdict: 'na', cur, prior, delta: null };
+    if (prior == null) return { verdict: 'new', cur, prior: null, delta: null };
+    if (cur == null) return { verdict: 'resolved', cur: null, prior, delta: -Math.abs(prior) };
+    const d = Math.abs(cur) - Math.abs(prior);   // − = toward zero = improved
+    return { verdict: Math.abs(d) < 1 ? 'held' : d < 0 ? 'improved' : 'regressed', cur, prior, delta: d };
+  };
+  const isImproving = v => v === 'improved' || v === 'resolved';
+  const isRegressing = v => v === 'regressed' || v === 'new';
+
   const stores = (rows || []).map(r => {
     const items = progByLoc[String(r.loc)] || [];
+    const moms = items.map(mom);
     return { loc: r.loc, name: r.name, items,
       recounted: items.filter(i => i.nRecounts > 0).length,
       worsened: items.filter(i => i.verdict === 'worsened').length,
-      flagged: items.filter(i => (i.flags || []).some(f => f !== 'recount-worsened')).length };
+      flagged: items.filter(i => (i.flags || []).some(f => f !== 'recount-worsened')).length,
+      improving: moms.filter(m => isImproving(m.verdict)).length,
+      regressing: moms.filter(m => isRegressing(m.verdict)).length,
+      momNet: moms.reduce((s, m) => s + (m.delta || 0), 0) };
   }).filter(s => s.items.length);
   if (!stores.length) return div({ style: { color: 'var(--text3)', fontSize: '12.5px', padding: '20px', textAlign: 'center' } },
     'No raw item count history in scope yet — this view reads the per-item count ledger (fills in as counts post).');
-  stores.sort((a, b) => (b.flagged - a.flagged) || (b.worsened - a.worsened) || (b.items.length - a.items.length));
+  stores.sort(lastEom
+    ? (a, b) => (b.regressing - a.regressing) || (b.momNet - a.momNet) || (b.items.length - a.items.length)
+    : (a, b) => (b.flagged - a.flagged) || (b.worsened - a.worsened) || (b.items.length - a.items.length));
   const all = stores.flatMap(s => s.items);
   const dRecounted = all.filter(i => i.nRecounts > 0).length;
   const dWorsened = all.filter(i => i.verdict === 'worsened').length;
   const dHeld = all.filter(i => (i.flags || []).includes('held-worse')).length;
   const dZero = all.filter(i => (i.flags || []).includes('zero-variance')).length;
+  const dImproving = stores.reduce((n, s) => n + s.improving, 0);
+  const dRegressing = stores.reduce((n, s) => n + s.regressing, 0);
+  const dMomNet = stores.reduce((n, s) => n + s.momNet, 0);
   const box = { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '7px', padding: '7px 10px', minWidth: '96px' };
   const lab = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 };
   const qty = n => n == null ? '—' : (Math.round(n * 100) / 100).toLocaleString();
+  const MOM_BADGE = {
+    improved: ['#4ade80', 'improving vs last period'], resolved: ['#4ade80', 'resolved vs last period'],
+    regressed: ['#f87171', 'regressing vs last period'], new: ['#f5bc00', 'new vs last period'],
+    held: ['var(--text3)', 'flat vs last period'], na: ['var(--text3)', 'no last-period data'],
+  };
+  const toggleBtn = (k, l) => h('button', { key: k, onClick: () => setBaseMode(k),
+    style: { background: baseMode === k ? 'var(--accent,#f5bc00)' : 'var(--surf3)', color: baseMode === k ? '#0f1117' : 'var(--text2)', border: 'none', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', borderRadius: '5px' } }, l);
 
   // Plain-language one-liner for an item — the story a GM can read without decoding a chain.
   const story = (p) => {
@@ -386,6 +418,18 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     const th = { textAlign: 'left', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text3)', fontWeight: 700, padding: '3px 8px', borderBottom: '1px solid var(--bdr2)' };
     const td = { padding: '3px 8px', fontSize: '11.5px', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
     const bodyRows = [];
+    // Point-to-point anchor: the period's beginning inventory = the first POS Open reading (carried from
+    // last EOM's ending count). Variance reconciles from HERE to the binding count.
+    if (p.periodStart) {
+      bodyRows.push(h('tr', { key: 'ps-h' },
+        h('td', { colSpan: 5, style: { padding: '6px 8px 2px', fontSize: '9.5px', fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Period start · beginning inventory (carried from last EOM)')));
+      bodyRows.push(h('tr', { key: 'ps' },
+        h('td', { style: { ...td, color: 'var(--text3)' } }, `${p.periodStart.dt}${p.periodStart.tm ? ' ' + p.periodStart.tm : ''}`),
+        h('td', { style: td }, 'POS Open'),
+        h('td', { style: { ...td, fontWeight: 700, color: 'var(--text2)' } }, qty(p.periodStart.onHand)),
+        h('td', { style: { ...td, color: 'var(--text3)' } }, '—'),
+        h('td', { style: { ...td, fontSize: '9px', fontWeight: 700, color: '#38bdf8' } }, 'BEGIN')));
+    }
     p.sessions.forEach((s, si) => {
       const labelTxt = p.nSessions === 1 ? 'Count' : si === 0 ? 'Count (base session)' : `Recount ${si} — ${s.date}`;
       bodyRows.push(h('tr', { key: `s${si}` },
@@ -409,17 +453,25 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
       h('tbody', null, ...bodyRows));
   };
 
+  const netC = dMomNet < 0 ? '#4ade80' : dMomNet > 0 ? '#f87171' : 'var(--text3)';
   return div(null,
-    div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
-      div({ style: box }, span({ style: { ...lab }, title: 'Items with a genuine recount — a SEPARATE counting session (different day / large gap). Area-by-area entries within one session are NOT recounts.' }, 'Recounted'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dRecounted))),
-      div({ style: box }, span({ style: lab, title: 'A genuine recount ended further from zero than the first completed count' }, 'Recount hurt'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dWorsened))),
-      div({ style: box }, span({ style: lab, title: 'Multiple recount sessions holding a worse value — bad for this period, but the item genuinely is off (good going forward)' }, 'Held worse'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f5bc00' } }, String(dHeld))),
-      div({ style: box }, span({ style: lab, title: 'A binding count of ~$0 is statistically improbable — usually not-yet-posted; verify' }, '$0 (verify)'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dZero)))),
-    div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginBottom: '10px', lineHeight: 1.5 } },
-      'Reads like QSRSoft Raw Item Detail. An item is counted ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'by area'),
-      ', so one count is several entries in one session — only the ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'final (BINDING)'),
-      ' entry counts. Headline is the item’s ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'official period variance'),
-      '; the table shows how it was counted. A “recount” means a separate session on another day. Click a store, then an item.'),
+    // Baseline toggle: this-period sessions vs month-over-month vs last period.
+    div({ style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' } },
+      span({ style: { ...lab } }, 'Baseline'),
+      div({ style: { display: 'flex', gap: '4px' } }, toggleBtn('period', 'This period'), toggleBtn('lastEom', 'Month-over-month'))),
+    lastEom
+      ? div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
+          div({ style: box }, span({ style: lab, title: 'Items whose period variance moved TOWARD zero vs last period, or dropped off the flag list entirely' }, 'Improving'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(dImproving))),
+          div({ style: box }, span({ style: lab, title: 'Items whose variance grew away from zero vs last period, or newly landed on the flag list' }, 'Regressing'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dRegressing))),
+          div({ style: box }, span({ style: lab, title: 'Net change in |variance| vs last period across scoped items (− = better)' }, 'Net vs last period'), div({ style: { fontSize: '17px', fontWeight: 800, color: netC } }, (dMomNet < 0 ? '−' : dMomNet > 0 ? '+' : '') + $(Math.abs(dMomNet)).replace('-', ''))))
+      : div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
+          div({ style: box }, span({ style: { ...lab }, title: 'Items with a genuine recount — a SEPARATE counting session (different day / large gap). Area-by-area entries within one session are NOT recounts.' }, 'Recounted'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dRecounted))),
+          div({ style: box }, span({ style: lab, title: 'A genuine recount ended further from zero than the first completed count' }, 'Recount hurt'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dWorsened))),
+          div({ style: box }, span({ style: lab, title: 'Multiple recount sessions holding a worse value — bad for this period, but the item genuinely is off (good going forward)' }, 'Held worse'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f5bc00' } }, String(dHeld))),
+          div({ style: box }, span({ style: lab, title: 'A binding count of ~$0 is statistically improbable — usually not-yet-posted; verify' }, '$0 (verify)'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dZero)))),
+    div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginBottom: '10px', lineHeight: 1.5 } }, lastEom
+      ? ['Month-over-month trend: each item’s ', span({ key: 'a', style: { fontWeight: 700, color: 'var(--text2)' } }, 'official period variance, this period vs last'), '. (Each period already reconciles from the prior EOM count — beginning inventory = last EOM’s ending count — so this compares two reconciliations.) Improving = variance shrank toward zero (or resolved off the list); regressing = grew (or newly on the list). Stores ranked by most regressing. Click a store, then an item.']
+      : ['Reads like QSRSoft Raw Item Detail. An item is counted ', span({ key: 'a', style: { fontWeight: 700, color: 'var(--text2)' } }, 'by area'), ', so one count is several entries in one session — only the ', span({ key: 'b', style: { fontWeight: 700, color: 'var(--text2)' } }, 'final (BINDING)'), ' entry counts. Headline is the item’s ', span({ key: 'c', style: { fontWeight: 700, color: 'var(--text2)' } }, 'official period variance'), '; the table shows how it was counted. A “recount” means a separate session on another day. Click a store, then an item.']),
     div(null, stores.map(s => {
       const isOpen = openStore === s.loc;
       const items = isOpen ? s.items.slice(0, 80) : [];
@@ -428,12 +480,16 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
           span({ style: { color: 'var(--text3)' } }, isOpen ? '▾' : '▸'),
           span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, s.name),
           span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(s.loc)}`),
-          span({ style: { marginLeft: 'auto', fontSize: '11px', display: 'flex', gap: '10px' } },
-            s.worsened ? span({ style: { color: '#f87171', fontWeight: 700 } }, `${s.worsened} recount hurt`) : null,
-            s.flagged ? span({ style: { color: '#f5bc00', fontWeight: 700 } }, `⚑ ${s.flagged}`) : null,
-            span({ style: { color: 'var(--text3)' } }, `${s.recounted} recounted · ${s.items.length} items`))),
+          span({ style: { marginLeft: 'auto', fontSize: '11px', display: 'flex', gap: '10px' } }, ...(lastEom
+            ? [s.regressing ? span({ key: 'r', style: { color: '#f87171', fontWeight: 700 } }, `${s.regressing} regressing`) : null,
+               s.improving ? span({ key: 'i', style: { color: '#4ade80', fontWeight: 700 } }, `${s.improving} improving`) : null,
+               span({ key: 'n', style: { color: s.momNet < 0 ? '#4ade80' : s.momNet > 0 ? '#f87171' : 'var(--text3)' } }, `net ${s.momNet < 0 ? '−' : s.momNet > 0 ? '+' : ''}${$(Math.abs(s.momNet)).replace('-', '')} vs last period`)]
+            : [s.worsened ? span({ key: 'w', style: { color: '#f87171', fontWeight: 700 } }, `${s.worsened} recount hurt`) : null,
+               s.flagged ? span({ key: 'f', style: { color: '#f5bc00', fontWeight: 700 } }, `⚑ ${s.flagged}`) : null,
+               span({ key: 'c', style: { color: 'var(--text3)' } }, `${s.recounted} recounted · ${s.items.length} items`)]))),
         isOpen ? div({ style: { padding: '2px 4px 12px 22px' } }, items.map(p => {
-          const [vc, vl] = VP_VBADGE[p.verdict] || VP_VBADGE['single-count'];
+          const m = mom(p);
+          const [vc, vl] = lastEom ? (MOM_BADGE[m.verdict] || MOM_BADGE.na) : (VP_VBADGE[p.verdict] || VP_VBADGE['single-count']);
           const iid = `${s.loc}|${p.wrin}`;
           const itemOpen = openItem === iid;
           const off = p.officialVar;
@@ -442,12 +498,19 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
             div({ onClick: () => setOpenItem(o => o === iid ? null : iid), style: { display: 'flex', alignItems: 'baseline', gap: '8px', fontSize: '12px', flexWrap: 'wrap', cursor: 'pointer' } },
               span({ style: { color: 'var(--text3)', fontSize: '10px' } }, itemOpen ? '▾' : '▸'),
               span({ style: { fontWeight: 600, color: 'var(--text)', minWidth: '150px' } }, p.descr),
-              // Headline: authoritative period variance
-              off != null
-                ? span({ title: 'Official period variance (QSRSoft Variance Stat)' }, span({ style: { fontSize: '9px', color: 'var(--text3)', marginRight: '3px' } }, 'period var'), span({ style: { fontWeight: 800, color: offC, fontVariantNumeric: 'tabular-nums' } }, $(off)))
-                : span({ style: { fontSize: '10px', color: 'var(--text3)' }, title: 'Not in the QSRSoft top-variance list (±$50) — no material period variance flagged' }, 'not flagged'),
+              // Headline: last-EOM → this-EOM (month-over-month) OR this period's official variance
+              lastEom
+                ? span({ title: 'Last period → this period authoritative variance (QSRSoft Variance Stat). Each period already reconciles from the prior EOM, so this is a month-over-month trend.', style: { fontVariantNumeric: 'tabular-nums' } },
+                    span({ style: { fontSize: '9px', color: 'var(--text3)', marginRight: '3px' } }, 'last period'),
+                    span({ style: { color: 'var(--text2)', fontWeight: 700 } }, m.prior == null ? '—' : $(m.prior)),
+                    span({ style: { color: 'var(--text3)', margin: '0 4px' } }, '→'),
+                    span({ style: { fontWeight: 800, color: offC } }, m.cur == null ? 'resolved' : $(m.cur)))
+                : (off != null
+                    ? span({ title: 'Official period variance (QSRSoft Variance Stat)' }, span({ style: { fontSize: '9px', color: 'var(--text3)', marginRight: '3px' } }, 'period var'), span({ style: { fontWeight: 800, color: offC, fontVariantNumeric: 'tabular-nums' } }, $(off)))
+                    : span({ style: { fontSize: '10px', color: 'var(--text3)' }, title: 'Not in the QSRSoft top-variance list (±$50) — no material period variance flagged' }, 'not flagged')),
               span({ style: { fontSize: '10px', fontWeight: 700, color: vc, border: `1px solid ${vc}`, borderRadius: '4px', padding: '0 6px' } }, vl),
-              p.nSessions > 1 ? span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `↻ ${p.nSessions} sessions`) : span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.sessions[0].nEntries} ${p.sessions[0].nEntries === 1 ? 'entry' : 'area entries'}`),
+              lastEom && m.delta != null ? span({ style: { fontSize: '9px', color: m.delta < 0 ? '#4ade80' : '#f87171' } }, `${m.delta < 0 ? '−' : '+'}${$(Math.abs(m.delta)).replace('-', '')}`) : null,
+              !lastEom ? (p.nSessions > 1 ? span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `↻ ${p.nSessions} sessions`) : span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.sessions[0].nEntries} ${p.sessions[0].nEntries === 1 ? 'entry' : 'area entries'}`)) : null,
               ...((p.flags || []).filter(f => f !== 'recount-worsened').map(f => span({ key: f, style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, f === 'held-worse' ? 'held worse' : f === 'zero-variance' ? '$0 — verify' : f)))),
             itemOpen ? div({ style: { padding: '4px 0 8px 18px' } },
               div({ style: { fontSize: '11px', color: 'var(--text2)', marginBottom: '2px', lineHeight: 1.45 } }, story(p)),
@@ -822,6 +885,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [wasteScan, setWasteScan] = useState(null);
   const [wasteDrill, setWasteDrill] = useState(null); // loc currently expanded to its raw waste events
   const [variance, setVariance] = useState([]);
+  const [prevVariance, setPrevVariance] = useState([]);   // prior period's variance stat → "vs Last EOM" baseline
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [rawDetail, setRawDetail] = useState([]);
@@ -913,7 +977,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const load = useCallback(async (p) => {
     setLoading(true);
     try {
-      const [oh, fob, st, vr, wa, tr, rd] = await Promise.all([
+      const prevP = lastPeriods(p, 2)[0];   // previous month → "vs Last EOM" baseline
+      const [oh, fob, st, vr, wa, tr, rd, pvr] = await Promise.all([
         loadQsrOnHand({ period: p }),
         loadQsrFob().catch(() => []),
         loadEomCountStatus({ period: p }).catch(() => []),
@@ -921,10 +986,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         loadQsrWaste({ period: p }).catch(() => []),
         loadQsrTransfers({ period: p }).catch(() => []),
         loadQsrRawItemDetail({ period: p }).catch(() => []),
+        loadQsrVarianceStat({ period: prevP }).catch(() => []),
       ]);
       setOnHand(oh || []);
       setFobRows(fob || []);
       setVariance(vr || []);
+      setPrevVariance(pvr || []);
       setWaste(wa || []);
       setTransfers(tr || []);
       setRawDetail(rd || []);
@@ -950,6 +1017,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return m;
   };
   const varByLoc = useMemo(() => groupByLoc(variance), [variance]);
+  const prevVarByLoc = useMemo(() => groupByLoc(prevVariance), [prevVariance]);
   const wasteByLoc = useMemo(() => groupByLoc(waste), [waste]);
   const xferByLoc = useMemo(() => groupByLoc(transfers), [transfers]);
   // Unmatched-transfer set (integrity #47) — computed district-wide over ALL loaded transfers (the
@@ -992,10 +1060,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       // not the count-impact chain. Keyed by wrin for the session engine to attach as officialVar.
       const statVar = {};
       for (const v of (varByLoc[loc] || [])) if (v.hasDollars && v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
-      try { m[loc] = storeVarianceProgressions(rawByLoc[loc], { statVar }); } catch { m[loc] = []; }
+      // Prior-month authoritative variance per item → the "vs Last EOM" baseline (month-over-month).
+      const priorStatVar = {};
+      for (const v of (prevVarByLoc[loc] || [])) if (v.hasDollars && v.dolDiff != null) priorStatVar[String(v.wrin)] = v.dolDiff;
+      try { m[loc] = storeVarianceProgressions(rawByLoc[loc], { statVar, priorStatVar }); } catch { m[loc] = []; }
     }
     return m;
-  }, [rawByLoc, varByLoc]);
+  }, [rawByLoc, varByLoc, prevVarByLoc]);
 
   // Which stores have any diagnosis input beyond on-hand (variance/waste/transfers).
   const hasDiagData = useMemo(() => {

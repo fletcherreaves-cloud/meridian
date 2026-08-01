@@ -123,15 +123,24 @@ export function itemVarianceProgression(history, { baseIndex = 0, gapHours = 4 }
 // Roll across a store's raw items, ranked flagged-first then by |net effect|. Optional `statVar` map
 // (wrin → authoritative period $ variance from qsr_variance_stat) is attached as `officialVar` so the
 // view can headline the real number instead of the count-impact chain.
-export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4, statVar = null } = {}) {
+export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4, statVar = null, priorStatVar = null } = {}) {
   const out = [];
   for (const it of (rawItems || [])) {
     const p = itemVarianceProgression(it.history, { gapHours });
     if (!p.base) continue;
     const finalVar = p.final ? p.final.dolVar : 0;
     const official = statVar ? (statVar[String(it.wrin)] ?? statVar[it.wrin] ?? null) : null;
-    if (abs(finalVar) < minAbs && abs(p.base.dolVar) < minAbs && official == null && !p.flags.length) continue;
-    out.push({ wrin: it.wrin, descr: it.descr || it.wrin, cls: it.cls, officialVar: official, ...p });
+    // Prior-EOM anchor (last month's authoritative period variance) → month-over-month trend view.
+    const priorVar = priorStatVar ? (priorStatVar[String(it.wrin)] ?? priorStatVar[it.wrin] ?? null) : null;
+    if (abs(finalVar) < minAbs && abs(p.base.dolVar) < minAbs && official == null && priorVar == null && !p.flags.length) continue;
+    // Period-start anchor: the earliest POS Open reading = beginning inventory (carried from last EOM).
+    // Variance reconciles point-to-point from here to the binding count. Same qtyChange unit as counts.
+    const opens = (it.history || [])
+      .filter(h => h && h.source === 'pos_open' && h.dt)
+      .map(h => ({ dt: String(h.dt).slice(0, 10), tm: h.tm || null, when: eventTs(h.dt, h.tm), onHand: h.qtyChange != null ? Number(h.qtyChange) : null }))
+      .sort((a, b) => (a.when ?? 0) - (b.when ?? 0));
+    const periodStart = opens[0] || null;
+    out.push({ wrin: it.wrin, descr: it.descr || it.wrin, cls: it.cls, officialVar: official, priorVar, periodStart, ...p });
   }
   out.sort((a, b) =>
     (b.flags.length - a.flags.length) ||
