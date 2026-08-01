@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule, searchQsrKb } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
+import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 
 const h = React.createElement;
 const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb, useMemo: uMemo } = React;
@@ -98,62 +99,44 @@ function buildLaborSummary(ds) {
   return out;
 }
 
+// FOB from the AUTHORITATIVE auto stream (qsr_fob), dollar-weighted (Σ$ ÷ Σsales) — the SAME engine
+// the Inventory Control dashboard uses. Fixes the old build, which read the stale MANUAL food-cost
+// upload (ds.fobRows, near-zero/unscaled) AND averaged percentages (violating the dollar-weight rule).
 function buildFobSummary(ds) {
-  const rows = ds?.fobRows || [];
+  const rows = ds?.qsrFobRows || [];
   if (rows.length < 3) return null;
-  const working = _recentRows(rows, 120);
+  const monthOf = r => (typeof r.date === 'string' ? r.date : (r.date?.toISOString?.() || '')).slice(0, 7);
+  const months = [...new Set(rows.map(monthOf).filter(Boolean))].sort();
+  const period = months[months.length - 1];
+  if (!period) return null;
 
-  const field = f => _avg(working.map(r => r[f]));
-  const fobAvg = field('fobPct');
+  const snap = fobSnapshotByStore(rows, period);   // per loc: { sales, comp, raw, cond, emp, statv, unex, fob, fobPct }
+  const stores = Object.entries(snap).map(([loc, v]) => ({ loc, name: _storeName(loc), ...v })).filter(s => s.sales > 0);
+  if (!stores.length) return null;
 
-  const locMap = _byLoc(working,
-    () => ({ rows: [] }),
-    (d, r) => d.rows.push(r)
-  );
+  const sum = f => stores.reduce((a, s) => a + (s[f] || 0), 0);
+  const totSales = sum('sales'), totFob = sum('fob');
+  const distPct = totSales ? (totFob / totSales) * 100 : null;
+  const comps = [['comp', 'Comp Waste'], ['raw', 'Raw Waste'], ['cond', 'Condiments'], ['emp', 'Emp/Mgr Meals'], ['statv', 'Stat Variance'], ['unex', 'Unexplained']];
 
-  const stores = Object.entries(locMap)
-    .map(([loc, d]) => ({
-      loc, name: _storeName(loc),
-      fobPct: _avg(d.rows.map(r => r.fobPct)),
-      unexplained: _avg(d.rows.map(r => r.unexplained)),
-      compWaste: _avg(d.rows.map(r => r.compWaste)),
-      rawWaste: _avg(d.rows.map(r => r.rawWaste)),
-      avgSales: _avg(d.rows.map(r => r.sales)),
-    }))
-    .filter(s => s.fobPct != null)
-    .sort((a,b) => b.fobPct - a.fobPct);
-
-  const cats = [
-    ['baseFoodPct', 'Base Food'], ['compWaste', 'Comp Waste'], ['rawWaste', 'Raw Waste'],
-    ['condiment', 'Condiment'], ['empMeal', 'Emp Meal'], ['statVar', 'Stat Variance'],
-    ['unexplained', 'Unexplained'], ['discCoupon', 'Disc/Coupon'],
-  ];
-
-  let out = `FOB / FOOD COST (${working.length} records):
-  District avg FOB: ${_fmt(fobAvg)}%
+  let out = `FOB / FOOD COST — auto qsr_fob stream, MTD ${period}, DOLLAR-WEIGHTED (Σ$ ÷ Σ product sales). Authoritative — use these, not any uploaded food-cost file:
+  District FOB: ${_fmt(distPct)}%  ·  FOB $${Math.round(totFob).toLocaleString()} on $${Math.round(totSales).toLocaleString()} product sales (${stores.length} stores)
 `;
-
-  const catVals = cats.filter(([f]) => field(f) != null);
-  if (catVals.length) {
-    out += '\n  CATEGORY BREAKDOWN (district avg):\n';
-    for (const [f, label] of catVals) {
-      out += `    ${label}: ${_fmt(field(f), 2)}%\n`;
-    }
+  out += '\n  COMPONENT BREAKDOWN (district, dollar-weighted % of sales):\n';
+  for (const [k, label] of comps) {
+    const pct = totSales ? (sum(k) / totSales) * 100 : null;
+    out += `    ${label}: ${_fmt(pct, 2)}%  ($${Math.round(sum(k)).toLocaleString()})\n`;
   }
 
-  if (stores.length) {
-    out += '\n  STORE FOB RANKING (highest first):\n';
-    out += `  | # | Store | FOB% | vs District | $ Over(est) | Top Driver |\n  | - | ----- | ---- | ----------- | ----------- | ---------- |\n`;
-    stores.forEach((s, i) => {
-      const variance = fobAvg != null ? s.fobPct - fobAvg : null;
-      const dollarOver = variance != null && s.avgSales != null ? variance / 100 * s.avgSales : null;
-      const topDriver = s.unexplained > 0.5 ? `Unexplained ${_fmt(s.unexplained,2)}%`
-        : s.compWaste > 1.2 ? `Comp Waste ${_fmt(s.compWaste,2)}%`
-        : s.rawWaste > 0.8 ? `Raw Waste ${_fmt(s.rawWaste,2)}%`
-        : '—';
-      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.fobPct)}% | ${variance != null ? (variance>=0?'+':'')+_fmt(variance)+'pp' : '—'} | ${dollarOver != null && Math.abs(dollarOver)>20 ? _dollar(dollarOver) : '—'} | ${topDriver} |\n`;
-    });
-  }
+  const ranked = stores.slice().sort((a, b) => (b.fobPct || 0) - (a.fobPct || 0));
+  out += '\n  STORE FOB RANKING (highest first):\n';
+  out += `  | # | Store | FOB% | FOB $ | vs District | Top Driver |\n  | - | ----- | ---- | ----- | ----------- | ---------- |\n`;
+  ranked.forEach((s, i) => {
+    const pct = (s.fobPct || 0) * 100;
+    const vsDist = distPct != null ? pct - distPct : null;
+    const drv = comps.map(([k, label]) => ({ label, share: s.sales ? (s[k] || 0) / s.sales : 0, $: s[k] || 0 })).sort((a, b) => b.share - a.share)[0];
+    out += `  | ${i + 1} | ${s.name} (${s.loc}) | ${_fmt(pct)}% | $${Math.round(s.fob || 0).toLocaleString()} | ${vsDist != null ? (vsDist >= 0 ? '+' : '') + _fmt(vsDist) + 'pp' : '—'} | ${drv ? `${drv.label} ${_fmt(drv.share * 100, 2)}%` : '—'} |\n`;
+  });
   return out;
 }
 
