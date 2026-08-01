@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.724';
+const MERIDIAN_VERSION    = '4.725';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.725', date:'2026-08-01', changes:[
+    'FOB Report FIX: the Avg FOB was averaging averages (a simple mean of per-store %s). Now DOLLAR-WEIGHTED (Σ FOB$ ÷ Σ sales) per the standing rule — small stores no longer over-count.',
+    'FOB Report → new "⎙ Leadership Summary" report + an in-modal narrative for above-store leaders: the district dollar-weighted FOB vs target, and the MATH of laggards eroding achievers\' gains — "N stores under target banked $X/mo; M over target burned $Y/mo, erasing $Z of it; net the district is $ over/under target; fixing the top 3 laggards recovers $/mo." Plus laggard (with action) and achiever tables. Existing full Print retained.',
+  ]},
   {version:'4.724', date:'2026-08-01', changes:[
     'Fountain-yield look-back baselines (task #52). Each store now carries a 3-month baseline of its fountain-beverage short total (mean + sd). The bib-yield check uses it: at a self-serve-tower store, a short WITHIN the store\'s norm stays an info note (structural free refills, not a loss) — but a short ABNORMALLY beyond the store\'s own baseline (≥2σ or ≥1.6×) escalates to a real flag ("check BIB connections / syrup-to-water ratios", tower or not). Notes now cite the store\'s usual $/mo. Engine src/engine/fountain-yield.js, +tests. Validated on real data (e.g. #5183 ~$1,783/mo, #3708 ~$551/mo).',
   ]},

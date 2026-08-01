@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildStoreFobReport, buildFobReport } from '../engine/fob-report.js';
+import { buildStoreFobReport, buildFobReport, leadershipMath } from '../engine/fob-report.js';
 
 describe('buildStoreFobReport', () => {
   it('over target with a Variance-Stat driver → statv action naming top losers', () => {
@@ -55,5 +55,25 @@ describe('buildFobReport', () => {
     expect(rep.summary.byOrg.OK.overTarget).toBe(1);   // Durant only
     expect(rep.orgs.map(o => o.org)).toEqual(['FL', 'OK']);
     expect(rep.opportunities[0].loc).toBe('5985');     // biggest gap ranks first
+  });
+
+  it('dollar-weights district FOB (not a simple average) and computes laggard-vs-achiever math', () => {
+    const stores = [{ loc: 'A', org: 'OK' }, { loc: 'B', org: 'OK' }];
+    const data = {
+      // big achiever: sales 100k, FOB 4.0% ($4,000), target 4.5% → saves $500/mo
+      A: { name: 'A', org: 'OK', fob: { fobPct: 0.04, fob: 4000 }, target: 0.045, monthly: {}, varRows: [] },
+      // small laggard: sales 10k, FOB 8.0% ($800), target 4.0% → excess $400/mo
+      B: { name: 'B', org: 'OK', fob: { fobPct: 0.08, fob: 800 }, target: 0.04, monthly: {}, varRows: [] },
+    };
+    const rep = buildFobReport({ stores, get: s => data[String(s.loc)] });
+    // simple avg would be (4+8)/2 = 6.0%; dollar-weighted = 4800/110000 = 4.36%
+    expect(rep.summary.avgFobPP).toBeCloseTo(4.36, 1);
+    const L = rep.leadership;
+    expect(L.achievers.map(r => r.loc)).toEqual(['A']);
+    expect(L.laggards.map(r => r.loc)).toEqual(['B']);
+    expect(Math.round(L.savings)).toBe(500);
+    expect(Math.round(L.excess)).toBe(400);
+    expect(Math.round(L.net)).toBe(-100);        // net still under target — achievers win, barely
+    expect(Math.round(L.erased)).toBe(400);      // laggards erased $400 of the $500 saved
   });
 });
