@@ -183,7 +183,15 @@ async function viaPlaywright(dates) {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', { waitUntil: 'networkidle', timeout: 30000 });
     await new Promise(r => setTimeout(r, 4000));
-    if (!token) { console.error('[auth] ✗ could not capture token from Operations Report'); return 0; }
+    // The Operations Report page doesn't always auto-fire an api.reports.myqsrsoft.com request, so the
+    // token listener never sees one. The Daily Activity page reliably does (it's what the working DAR
+    // pull uses) — and it's the SAME X-Auth-Token for every api.reports endpoint, so grab it there.
+    if (!token) {
+      console.log('[auth] no token from Operations Report — trying Daily Activity page…');
+      await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/dailyActivity', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 4000));
+    }
+    if (!token) { console.error('[auth] ✗ could not capture token from Operations Report or Daily Activity'); return 0; }
     console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s) × ${ENDPOINTS.length} endpoints…`);
     return await runAll(token, dates, page);
   } finally { await browser.close(); }

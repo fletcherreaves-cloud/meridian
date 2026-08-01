@@ -26,33 +26,33 @@ import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProj
 import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard } from '../views/store-analytics.js';
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
-import { PerformanceReviewsPanel } from '../views/performance-reviews.js';
-import { DeliveryMixPanel } from '../views/delivery-mix.js';
+const PerformanceReviewsPanel = React.lazy(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
+const DeliveryMixPanel = React.lazy(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 import { SchedulingPanel } from '../views/scheduling.js';
 import { AdminPanel } from '../views/admin.js';
-import { SMGVoicePanel } from '../views/smg-voice.js';
-import { FOBEOMPanel } from '../views/fob-eom.js';
+const SMGVoicePanel = React.lazy(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
+const FOBEOMPanel = React.lazy(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
 import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
-import { EOMDashboardPanel } from '../views/eom-dashboard.js';
+const EOMDashboardPanel = React.lazy(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
 import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
 import { FormsPrintPanel } from '../views/forms-print.js';
-import { OnePagerPanel } from '../views/one-pager.js';
+const OnePagerPanel = React.lazy(() => import('../views/one-pager.js').then(m => ({ default: m.OnePagerPanel })));
 import { MetricLineagePanel } from '../views/metric-lineage.js';
 import { FormsLibraryPanel } from '../views/forms-library.js';
-import { SignalsPanel } from '../views/signals.js';
+const SignalsPanel = React.lazy(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })));
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
 import { PaceToTargetPanel } from '../views/pace-to-target.js';
-import { YearlyProjectionsPanel } from '../views/yearly-projections.js';
+const YearlyProjectionsPanel = React.lazy(() => import('../views/yearly-projections.js').then(m => ({ default: m.YearlyProjectionsPanel })));
 import { PromoRoiPanel } from '../views/promo-roi.js';
-import { VisitReadinessPanel } from '../views/visit-readiness.js';
+const VisitReadinessPanel = React.lazy(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })));
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
-import { SagePanel } from '../views/sage.js';
+const SagePanel = React.lazy(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
-import { GradedVisitsPanel } from '../views/graded-visits.js';
+const GradedVisitsPanel = React.lazy(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
@@ -215,10 +215,14 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.727';
+const MERIDIAN_VERSION    = '4.728';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.728', date:'2026-08-01', changes:[
+    'Faster load / hard refresh: code-split the 11 heaviest secondary panels (EOM Dashboard, Signals, SAGE, One-Pager, SMG Voice, FOB EOM, Delivery Mix, Yearly Projections, Visit Readiness, Graded Visits, Performance Reviews) into on-demand chunks via React.lazy behind a single Suspense boundary. Initial bundle 4.2MB → 3.34MB (~555KB of panel code now loads only when a panel is opened). The home/At-a-Glance view and the Loaded Data strip (incl. Sales) stay in the eager bundle — high-priority, never deferred.',
+    'Ops pull (OT source) robustness: when the Operations Report page doesn\'t fire an api.reports request (so the token listener sees nothing), the Playwright fallback now also visits the Daily Activity page to capture the same X-Auth-Token — the likely reason the pull was returning 0 rows. Refresh QSRSOFT_TOKEN or re-run the pull to repopulate qsr_labor_summary → OT.',
+  ]},
   {version:'4.727', date:'2026-08-01', changes:[
     'EOM Supervisor OT: now sourced AUTO-FIRST from the Operations Report labor-summary stream (ds.opsLaborRows → overTimeTotalHours/$), device-independent, no manual upload needed; manual daily-labor upload is the fallback and manual entry still overrides. (The auto stream is currently empty because the Operations Report pull is returning 0 rows on a stale QSRSOFT_TOKEN — refresh the token and OT auto-populates with no further app change.)',
     'FOB Leadership Summary: renamed "laggards/achievers" → "Focus Stores / Top Performers" and softened the language ("ran $X over" not "burned") for an above-store-leader doc.',

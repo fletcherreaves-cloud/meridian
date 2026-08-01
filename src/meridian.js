@@ -38,10 +38,14 @@ try {
   // Public, no-login EOM share route: ?share=<token> renders the read-only report ONLY — it never
   // mounts AuthGate or the full app, so a shared link can't reach anything but its one snapshot.
   const _shareToken = new URLSearchParams(location.search).get('share');
+  // One Suspense boundary for the whole app so lazily-loaded panels (React.lazy in App.js) resolve
+  // against it — the initial bundle ships only the shell + landing view; each panel's code loads the
+  // first time it's opened (code-splitting → faster first load and hard refresh).
+  const _fallback = React.createElement('div', { style: { height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f1117', color: '#f5bc00', font: "600 14px/1 ui-sans-serif,system-ui,sans-serif" } }, 'Loading…');
   const _tree = _shareToken
     ? React.createElement(ErrorBoundary, null, React.createElement(EomShareView, { token: _shareToken }))
     : React.createElement(ErrorBoundary, null,
-        React.createElement(AuthGate, null, React.createElement(App)));
+        React.createElement(AuthGate, null, React.createElement(React.Suspense, { fallback: _fallback }, React.createElement(App))));
   createRoot(document.getElementById('root')).render(_tree);
 } catch(e) {
   document.getElementById('root').innerHTML =
