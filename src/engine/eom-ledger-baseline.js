@@ -72,3 +72,51 @@ export function ledgerBaselineDiff(rawItems, { countCompleteDate = null, officia
     anyMove: helped.length + hurt.length > 0,
   };
 }
+
+// ── Store-engagement verdict (the north-star payoff, memory/project-count-cycle-vision.md) ──────────
+// Roll a store's ledger diff + FOB direction into ONE read: did the store actively try to diagnose and
+// improve FOB after we flagged its recount-worthy items — and if it failed, is it SKILL (needs training)
+// or WILL (don't-care / no follow-up)? This is a first-pass, TUNABLE scaffold — thresholds are the owner's
+// to dial. It NEVER accuses of integrity (a "helped" store can still be padding — that's a separate layer);
+// it only reads engagement + technique.
+//   diff          — ledgerBaselineDiff(...) for the store
+//   flaggedWrins  — the recount-worthy items we asked the store to act on (±$50, mid-cycle-filtered)
+//   fobDeltaPct   — FOB now − FOB at count-complete (negative = FOB improved = good), optional
+export function storeEngagement(diff, { flaggedWrins = [], fobDeltaPct = null, minNet = 25 } = {}) {
+  const flagged = new Set((flaggedWrins || []).map(String));
+  const flaggedItems = (diff.items || []).filter(i => flagged.has(i.wrin));
+  const recountedFlagged = flaggedItems.filter(i => i.recounted).length;
+  const netDol = (diff.helpedDol || 0) - (diff.hurtDol || 0);          // + = net variance toward zero
+  const fobImproved = fobDeltaPct != null && fobDeltaPct < -0.0001;
+  const fobWorse = fobDeltaPct != null && fobDeltaPct > 0.0001;
+  const acted = (diff.nRecounted || 0) > 0;
+
+  // Direction: did the store's moves net toward zero (better) or away (worse)?
+  const netBetter = netDol > minNet || fobImproved;
+  const netWorse = netDol < -minNet || fobWorse;
+
+  let verdict;                                    // what the store DID
+  if (!acted) verdict = 'no-action';
+  else if (netBetter && !netWorse) verdict = 'improving';
+  else if (netWorse && !netBetter) verdict = 'worsened';
+  else verdict = 'mixed';                         // recounted but no material net move (or offsetting)
+
+  let read;                                       // WHY — skill vs will
+  if (verdict === 'improving') read = 'good';                              // tried and it worked
+  else if (verdict === 'no-action' && flagged.size > 0) read = 'will';     // flagged items, did nothing → follow-through gap
+  else if (verdict === 'no-action') read = 'none';                          // nothing was flagged → nothing to judge
+  else read = 'training';                                                   // acted but wrong result → technique gap
+
+  const LABEL = {
+    improving: 'Actively improving', worsened: 'Made it worse', mixed: 'Acted, no net gain', 'no-action': 'No meaningful action',
+  };
+  const READ = {
+    good: 'Diagnosed + corrected well', training: 'Trying but off — coach the technique',
+    will: 'Flagged items untouched — follow-through gap', none: 'Nothing flagged to act on',
+  };
+  return {
+    verdict, read, label: LABEL[verdict], readLabel: READ[read],
+    acted, recountedFlagged, flaggedTotal: flagged.size,
+    netDol, fobDeltaPct, nRecounted: diff.nRecounted || 0,
+  };
+}

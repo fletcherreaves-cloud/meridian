@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ledgerBaselineDiff } from '../engine/eom-ledger-baseline.js';
+import { ledgerBaselineDiff, storeEngagement } from '../engine/eom-ledger-baseline.js';
 
 const item = (wrin, hist) => ({ wrin, descr: wrin, cls: 'food', history: hist });
 const cnt = (dt, tm, dolVar, { variance = null } = {}) => ({ isCount: true, source: 'inventory', dt, tm, difference: dolVar, variance });
@@ -66,5 +66,43 @@ describe('ledgerBaselineDiff', () => {
     const d = ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
     expect(d.items[0].wrin).toBe('big');
     expect(d.items[1].wrin).toBe('small');
+  });
+});
+
+describe('storeEngagement', () => {
+  const diffFrom = (rawItems) => ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+
+  it('recounted a flagged item and cut the loss → improving / good', () => {
+    const d = diffFrom([item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])]);
+    const e = storeEngagement(d, { flaggedWrins: ['a'] });
+    expect(e.verdict).toBe('improving');
+    expect(e.read).toBe('good');
+    expect(e.recountedFlagged).toBe(1);
+  });
+
+  it('flagged items left untouched → no-action / will (follow-through gap)', () => {
+    const d = diffFrom([item('a', [cnt('2026-07-30', '10:00', -300)])]);   // never recounted
+    const e = storeEngagement(d, { flaggedWrins: ['a'] });
+    expect(e.verdict).toBe('no-action');
+    expect(e.read).toBe('will');
+  });
+
+  it('recounted but made it worse → worsened / training (technique gap)', () => {
+    const d = diffFrom([item('a', [cnt('2026-07-30', '10:00', -100), cnt('2026-08-01', '09:00', -400)])]);
+    const e = storeEngagement(d, { flaggedWrins: ['a'] });
+    expect(e.verdict).toBe('worsened');
+    expect(e.read).toBe('training');
+  });
+
+  it('FOB direction can drive the verdict when item $ is a wash', () => {
+    const d = diffFrom([item('a', [cnt('2026-07-30', '10:00', -50), cnt('2026-08-01', '09:00', -60)])]);   // $10 < floor
+    const e = storeEngagement(d, { flaggedWrins: ['a'], fobDeltaPct: -0.001 });   // FOB improved
+    expect(e.verdict).toBe('improving');
+  });
+
+  it('nothing flagged and no action → none (nothing to judge)', () => {
+    const d = diffFrom([item('a', [cnt('2026-07-30', '10:00', -300)])]);
+    const e = storeEngagement(d, { flaggedWrins: [] });
+    expect(e.read).toBe('none');
   });
 });
