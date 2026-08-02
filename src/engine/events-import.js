@@ -102,6 +102,48 @@ export function parseStaffingEvents(rows, urlByRowIndex = {}) {
   return { events, estimated, skipped };
 }
 
+// Down-project cloud org_events (one row per event, spans as a range) into the calendar's per-day
+// map shape `{ loc: { 'YYYY-MM-DD': entry } }` that every existing consumer (calendar/pipeline/
+// forecast) already reads from localStorage `mf_events`. Spans expand to one entry per day sharing a
+// rangeId (matching applyEventToStores). Org-sourced entries are tagged so hydration can refresh them
+// from the cloud without clobbering hand-entered events. `iconFor(type)` supplies the display icon.
+export function orgEventsToDayMap(events, iconFor = () => '📌') {
+  const map = {};
+  for (const e of (events || [])) {
+    const loc = String(e.loc);
+    const start = e.dateStart; const end = e.dateEnd || e.dateStart;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(start || ''))) continue;
+    // enumerate ISO days start..end (noon anchor avoids DST/timezone slips)
+    const days = [];
+    let d = new Date(start + 'T12:00:00');
+    const last = new Date(end + 'T12:00:00');
+    for (let guard = 0; d <= last && guard < 400; guard++) {
+      days.push(d.toISOString().slice(0, 10));
+      d = new Date(d.getTime() + 86400000);
+    }
+    const multi = days.length > 1;
+    const rangeId = multi ? `org_${e.id ?? e.label}_${start}_${end}` : null;
+    days.forEach((dk, i) => {
+      if (!map[loc]) map[loc] = {};
+      map[loc][dk] = {
+        type: e.type || 'event',
+        label: multi ? `${e.label} (Day ${i + 1} of ${days.length})` : e.label,
+        note: e.note || e.label,
+        icon: iconFor(e.type || 'event'),
+        source: e.method === 'bulk upload' ? 'Bulk Import' : (e.method || 'Bulk Import'),
+        orgSourced: true, orgEventId: e.id ?? null,
+        url: e.url || null,
+        impact: e.impact || null,
+        expectedSalesDelta: e.expectedSalesDelta ?? null,
+        expectedGcDelta: e.expectedGcDelta ?? null,
+        verification: e.verification || null,
+        ...(multi ? { rangeId, rangeDayNum: i + 1, rangeTotalDays: days.length } : {}),
+      };
+    });
+  }
+  return map;
+}
+
 // School District Overview sheet → per-store config (term dates + bell times) for the daypart signal.
 // Columns: Store# | City | State | District | First Day | Last Day | Start | Stop | Status | URL.
 export function parseSchoolDistricts(rows, urlByRowIndex = {}) {

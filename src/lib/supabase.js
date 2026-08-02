@@ -2783,6 +2783,67 @@ export async function loadEomSnapshots({ period, kind, loc, latestPerLoc } = {})
   return out;
 }
 
+// ── Org calendar events (Notes 46) — cloud-first replacement for the localStorage mf_events ──────
+// Row shape mirrors src/engine/events-import.js output. Returns app-shaped event objects.
+export async function loadOrgEvents() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('org_events').select('*').order('date_start').range(from, to), 1000, 'org_events');
+  return (data || []).map(r => ({
+    id: r.id, loc: String(r.loc), dateStart: r.date_start, dateEnd: r.date_end, span: !!r.span,
+    category: r.category, type: r.event_type, label: r.label,
+    impact: { magnitude: r.impact_magnitude, daypart: r.impact_daypart, gameDay: !!r.impact_gameday, raw: r.impact_raw },
+    expectedSalesDelta: r.expected_sales_delta, expectedGcDelta: r.expected_gc_delta,
+    url: r.url, verification: r.verification, note: r.note,
+    enteredBy: r.entered_by, enteredAt: r.entered_at, method: r.method,
+  }));
+}
+// Bulk upsert (import). Events keyed by (loc, date_start, label). Chunked to stay under limits.
+export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy = null } = {}) {
+  if (!supabase || !events?.length) return { saved: 0, errors: [] };
+  const nowIso = new Date().toISOString();
+  const rows = events.map(e => ({
+    loc: String(e.loc), date_start: e.dateStart, date_end: e.dateEnd || e.dateStart, span: !!e.span,
+    category: e.category ?? null, event_type: e.type ?? null, label: e.label,
+    impact_magnitude: e.impact?.magnitude ?? null, impact_daypart: e.impact?.daypart ?? null,
+    impact_gameday: !!e.impact?.gameDay, impact_raw: e.impact?.raw ?? e.impactRaw ?? null,
+    expected_sales_delta: e.expectedSalesDelta ?? null, expected_gc_delta: e.expectedGcDelta ?? null,
+    url: e.url ?? null, verification: e.verification ?? null, note: e.note ?? null,
+    entered_by: e.enteredBy ?? enteredBy, entered_at: e.enteredAt ?? nowIso, method: e.method ?? method,
+    updated_at: nowIso,
+  }));
+  let saved = 0; const errors = [];
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error, count } = await supabase.from('org_events').upsert(rows.slice(i, i + 500), { onConflict: 'loc,date_start,label', count: 'exact' });
+    if (error) errors.push(error.message); else saved += count ?? rows.slice(i, i + 500).length;
+  }
+  return { saved, errors };
+}
+export async function deleteOrgEvent(id) {
+  if (!supabase || id == null) return { error: 'no-id' };
+  const { error } = await supabase.from('org_events').delete().eq('id', id);
+  return { error: error?.message || null };
+}
+export async function loadOrgSchoolConfig() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('org_school_config').select('*').range(from, to), 1000, 'org_school_config');
+  return (data || []).map(r => ({
+    loc: String(r.loc), city: r.city, state: r.state, district: r.district,
+    firstDay: r.first_day, lastDay: r.last_day, startTime: r.start_time, stopTime: r.stop_time,
+    verification: r.verification, url: r.url,
+  }));
+}
+export async function saveOrgSchoolConfig(configs) {
+  if (!supabase || !configs?.length) return { saved: 0, errors: [] };
+  const rows = configs.map(c => ({
+    loc: String(c.loc), city: c.city ?? null, state: c.state ?? null, district: c.district ?? null,
+    first_day: c.firstDay ?? null, last_day: c.lastDay ?? null, start_time: c.startTime ?? null,
+    stop_time: c.stopTime ?? null, verification: c.verification ?? null, url: c.url ?? null,
+    updated_at: new Date().toISOString(),
+  }));
+  const { error } = await supabase.from('org_school_config').upsert(rows, { onConflict: 'loc' });
+  return { saved: error ? 0 : rows.length, errors: error ? [error.message] : [] };
+}
+
 // Per-store secondary-review status (day-2): owner marks a store reviewed/flagged with a note.
 export async function saveEomSecondaryReview(row) {
   if (!supabase || !row?.loc) return { error: 'no-op' };

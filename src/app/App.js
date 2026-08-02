@@ -66,7 +66,8 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, loadOrgSchoolConfig } from '../lib/supabase.js';
+import { orgEventsToDayMap } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -226,7 +227,7 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.749';
+const MERIDIAN_VERSION    = '4.750';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
@@ -2027,6 +2028,35 @@ function App() {
           console.log('[Meridian] ✓ Loaded model assignments from Supabase');
         }
       }catch(e){console.warn('[Meridian] model assignments load failed:',e);}
+      try{
+        // Cloud org calendar events (Notes 46): Supabase `org_events` is the source of
+        // truth (cross-device). Down-project into the per-day `mf_events` map every
+        // existing consumer already reads. NON-DESTRUCTIVE: cloud entries only fill a
+        // loc/day that has no local event, and refresh entries previously stamped
+        // orgSourced — hand-entered events are never clobbered (owner's "notify before
+        // overwrite" rule; genuine conflicts stay local and surface in the import UI).
+        const orgEvents=await loadOrgEvents();
+        if(orgEvents&&orgEvents.length){
+          const iconFor=(t)=>(EVENT_TYPES[t]||EVENT_TYPES.other||{}).icon||'📌';
+          const cloudMap=orgEventsToDayMap(orgEvents,iconFor);
+          const cur=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();
+          let added=0,refreshed=0;
+          for(const loc of Object.keys(cloudMap)){
+            if(!cur[loc])cur[loc]={};
+            for(const dk of Object.keys(cloudMap[loc])){
+              const ex=cur[loc][dk];
+              if(!ex){cur[loc][dk]=cloudMap[loc][dk];added++;}
+              else if(ex.orgSourced){cur[loc][dk]=cloudMap[loc][dk];refreshed++;}
+              // else: hand-entered event present → leave it (conflict, not overwritten)
+            }
+          }
+          if(added||refreshed){
+            try{localStorage.setItem('mf_events',JSON.stringify(cur));}catch{}
+            setUserEvents(cur);
+            console.log(`[Meridian] ✓ Hydrated ${orgEvents.length} cloud events (${added} new, ${refreshed} refreshed)`);
+          }
+        }
+      }catch(e){console.warn('[Meridian] org events hydration failed:',e);}
     })();
   },[]);
 

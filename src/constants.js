@@ -380,6 +380,7 @@ const EVENT_TYPES={
   road_closure: {label:'Road Closure',         icon:'🚧',  col:'#f97316'},
   construction: {label:'Construction',         icon:'🏗',   col:'#a3a3a3'},
   event:        {label:'Major Local Event',    icon:'🎪',  col:'#a78bfa'},
+  sports:       {label:'Sports / Game Day',    icon:'🏈',  col:'#f59e0b'},
   comp:         {label:'Competition (General)', icon:'🏪',  col:'#f87171'},
   comp_new:     {label:'Competitor — New Opening',   icon:'🆕',  col:'#fb923c'},
   comp_promo:   {label:'Competitor — Promo/Deal',    icon:'💸',  col:'#f87171'},
@@ -406,7 +407,7 @@ const EVENT_TYPES={
 const EVENT_TYPE_GROUPS=[
   {label:'⛈ Weather',items:['winter_storm','snow','ice','tornado','t_storm','sev_weather','high_winds','flood','hurricane','weather']},
   {label:'🏪 Store Events',items:['tech','utilities','maintenance','power','outage']},
-  {label:'🚨 Community / External',items:['pub_emergency','road_closure','construction','event','comp']},
+  {label:'🚨 Community / External',items:['pub_emergency','road_closure','construction','event','sports','comp']},
   {label:'🏪 Competition',items:['comp_new','comp_promo','comp_closure','comp_pricing','comp_media']},
   {label:'📋 Operations',items:['promo','holiday','staffing','cfv','ecosure','rgr','other']},
   {label:'📚 School Calendar',items:['school_start','school_end','school_break','school_no_school','school_early_release']},

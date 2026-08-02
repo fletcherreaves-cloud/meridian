@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseImpact, impactWeight, parseConfirmation, parseDates, eventTypeFor, parseStaffingEvents, IMPACT_WEIGHTS, GAMEDAY_WEIGHT } from '../engine/events-import.js';
+import { parseImpact, impactWeight, parseConfirmation, parseDates, eventTypeFor, parseStaffingEvents, orgEventsToDayMap, IMPACT_WEIGHTS, GAMEDAY_WEIGHT } from '../engine/events-import.js';
 
 describe('parseImpact', () => {
   it('decomposes magnitude × daypart', () => {
@@ -85,5 +85,24 @@ describe('parseStaffingEvents', () => {
     expect(events[2].dateStart).toBe('2026-09-08');
     expect(events[2].dateEnd).toBe('2026-09-13');
     expect(events[2].label).toBe('Carter County Free Fair');   // "(Confirmed)" stripped
+  });
+});
+
+describe('orgEventsToDayMap', () => {
+  it('down-projects a single-day event into the per-day map', () => {
+    const map = orgEventsToDayMap([{ id: 1, loc: '3708', dateStart: '2026-08-13', dateEnd: '2026-08-13', type: 'school_start', label: 'First Day', url: 'https://x', method: 'bulk upload' }], () => '🎒');
+    expect(Object.keys(map['3708'])).toEqual(['2026-08-13']);
+    const e = map['3708']['2026-08-13'];
+    expect(e).toMatchObject({ type: 'school_start', label: 'First Day', icon: '🎒', orgSourced: true, orgEventId: 1, url: 'https://x', source: 'Bulk Import' });
+    expect(e.rangeId).toBeUndefined();
+  });
+  it('expands a span into one entry per day sharing a rangeId', () => {
+    const map = orgEventsToDayMap([{ id: 9, loc: '3708', dateStart: '2026-09-08', dateEnd: '2026-09-10', type: 'event', label: 'Fair' }]);
+    const days = Object.keys(map['3708']);
+    expect(days).toEqual(['2026-09-08', '2026-09-09', '2026-09-10']);
+    expect(map['3708']['2026-09-08'].label).toBe('Fair (Day 1 of 3)');
+    expect(map['3708']['2026-09-10'].rangeDayNum).toBe(3);
+    const rid = map['3708']['2026-09-08'].rangeId;
+    expect(days.every(d => map['3708'][d].rangeId === rid)).toBe(true);
   });
 });
