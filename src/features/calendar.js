@@ -5,6 +5,8 @@ import { isHoliday, HOLIDAY_MAP } from '../utils/holidays.js';
 import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
+import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap } from '../engine/events-import.js';
+import { saveOrgEvents, saveOrgSchoolConfig } from '../lib/supabase.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -63,6 +65,12 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const [importError, setImportError] = uSt('');
   const [searchProg, setSearchProg] = uSt(null); // {done,total,storeName} for batch search
   const cancelSearchRef = uR(false);
+  // ── Bulk file import (Notes 46): staffing-events workbook → Supabase org_events ──
+  const [showBulk, setShowBulk]   = uSt(false);
+  const [bulkBusy, setBulkBusy]   = uSt(false);
+  const [bulkPreview, setBulkPreview] = uSt(null); // {events, districts, conflicts[], newDays, refreshes, byType, fileName}
+  const [bulkError, setBulkError] = uSt('');
+  const bulkFileRef = uR(null);
 
   const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
   const okLocs = LOCS.filter(l=>(INV_ORG_COORDS[l]||{}).state!=='FL');
@@ -216,6 +224,96 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
     setTab('pending');
   };
 
+  // ── Bulk workbook import (Notes 46) ─────────────────────────────────────────
+  // Walk a worksheet into rows + a parallel array of the real cell-hyperlink Target
+  // per row (SheetJS puts hyperlinks in cell.l.Target). Mirrors scripts/seed-org-events.
+  const _readSheet = (XLSX, ws) => {
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const header = [];
+    for(let C=range.s.c;C<=range.e.c;C++){const cell=ws[XLSX.utils.encode_cell({r:range.s.r,c:C})];header.push(cell?String(cell.v):'');}
+    const urlCol = header.findIndex(hn=>/url|verif|source|link/i.test(hn));
+    const rows=[],urls=[];
+    for(let R=range.s.r;R<=range.e.r;R++){
+      const row=[];let url=null;
+      for(let C=range.s.c;C<=range.e.c;C++){
+        const cell=ws[XLSX.utils.encode_cell({r:R,c:C})];
+        row.push(cell?cell.v:'');
+        if(cell&&cell.l&&cell.l.Target&&(urlCol<0||C===urlCol))url=cell.l.Target;
+      }
+      rows.push(row);urls.push(url);
+    }
+    return {rows,urls};
+  };
+  const _urlMap = (rows,urls) => {
+    const dataUrls=urls.slice(1);const map={};let fi=0;
+    rows.slice(1).forEach((r,raw)=>{ if(r&&r[0]!==''&&r[0]!=null){ if(dataUrls[raw])map[fi]=dataUrls[raw]; fi++; } });
+    return map;
+  };
+  const onBulkFile = async (file) => {
+    if(!file) return;
+    setBulkBusy(true); setBulkError(''); setBulkPreview(null);
+    try{
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), {type:'array', cellDates:false});
+      const evName = wb.SheetNames.find(n=>/event|staffing/i.test(n)&&!/district|overview/i.test(n));
+      const scName = wb.SheetNames.find(n=>/district|school|overview/i.test(n));
+      let events=[], districts=[], byType={};
+      if(evName){ const {rows,urls}=_readSheet(XLSX,wb.Sheets[evName]); const r=parseStaffingEvents(rows,_urlMap(rows,urls)); events=r.events; }
+      if(scName){ const {rows,urls}=_readSheet(XLSX,wb.Sheets[scName]); districts=parseSchoolDistricts(rows,_urlMap(rows,urls)); }
+      if(!events.length && !districts.length){ setBulkError('No events or school-district rows found. Expected a "…Events" sheet and/or a "…District Overview" sheet.'); setBulkBusy(false); return; }
+      events.forEach(e=>{ byType[e.type]=(byType[e.type]||0)+1; });
+      // Conflict scan against existing calendar (down-project + compare to userEvents).
+      const iconFor=(t)=>(EVENT_TYPES[t]||EVENT_TYPES.other||{}).icon||'📌';
+      const dayMap = orgEventsToDayMap(events, iconFor);
+      const conflicts=[]; let newDays=0, refreshes=0;
+      for(const loc of Object.keys(dayMap)){
+        for(const dk of Object.keys(dayMap[loc])){
+          const ex=(userEvents||{})[loc]&&userEvents[loc][dk];
+          if(!ex) newDays++;
+          else if(ex.orgSourced) refreshes++;
+          else conflicts.push({loc,dk,existing:ex.label||ex.type,incoming:dayMap[loc][dk].label});
+        }
+      }
+      setBulkPreview({events, districts, conflicts, newDays, refreshes, byType, fileName:file.name});
+    }catch(e){ setBulkError('Could not read the file: '+(e.message||e)); }
+    setBulkBusy(false);
+  };
+  const approveBulk = async () => {
+    if(!bulkPreview) return;
+    setBulkBusy(true);
+    try{
+      const enteredBy = (settings&&settings._userEmail) || 'app import';
+      let saveMsg='';
+      if(bulkPreview.events.length){
+        const res = await saveOrgEvents(bulkPreview.events, {method:'bulk upload', enteredBy});
+        if(res.errors&&res.errors.length){ setBulkError('Supabase save error: '+res.errors[0]); setBulkBusy(false); return; }
+        saveMsg += res.saved+' events';
+      }
+      if(bulkPreview.districts.length){
+        const r2 = await saveOrgSchoolConfig(bulkPreview.districts);
+        if(r2.errors&&r2.errors.length){ setBulkError('School config save error: '+r2.errors[0]); setBulkBusy(false); return; }
+        saveMsg += (saveMsg?' + ':'')+r2.saved+' school configs';
+      }
+      // Hydrate down into the live calendar — NON-DESTRUCTIVE (conflicts stay local).
+      const iconFor=(t)=>(EVENT_TYPES[t]||EVENT_TYPES.other||{}).icon||'📌';
+      const dayMap = orgEventsToDayMap(bulkPreview.events, iconFor);
+      const cur = JSON.parse(JSON.stringify(userEvents||{}));
+      for(const loc of Object.keys(dayMap)){
+        if(!cur[loc]) cur[loc]={};
+        for(const dk of Object.keys(dayMap[loc])){
+          const ex=cur[loc][dk];
+          if(!ex || ex.orgSourced) cur[loc][dk]=dayMap[loc][dk];
+          // else: hand-entered conflict → preserved
+        }
+      }
+      try{ localStorage.setItem('mf_events', JSON.stringify(cur)); }catch(e){}
+      onUpdate(cur);
+      setShowBulk(false); setBulkPreview(null); setBulkBusy(false);
+      alert('✓ Imported '+saveMsg+' to the cloud calendar.'+(bulkPreview.conflicts.length?'\n\n'+bulkPreview.conflicts.length+' day(s) had an existing hand-entered event and were left unchanged.':''));
+    }catch(e){ setBulkError('Import failed: '+(e.message||e)); setBulkBusy(false); }
+  };
+
   // ── Recurring rule form ─────────────────────────────────────────────────────
   const newRuleDraft = () => ({id:'rule_'+Date.now(), label:'', type:'school_break',
     locs:[], month:11, day:25, durationDays:5, active:true, source:'manual', createdAt:new Date().toISOString()});
@@ -277,8 +375,64 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
           title:'Import an event submitted by a GM or store manager via share code',
           onClick:()=>{setShowImport(true);setImportCode('');setImportPreview(null);setImportError('');}},
           '📥 Import'),
+        btn({className:'btn btn-sm',
+          style:{fontSize:'9px',background:'rgba(52,211,153,.08)',borderColor:'rgba(52,211,153,.3)',color:'#6ee7b7'},
+          title:'Bulk-import a staffing/school/sports events workbook to the cloud calendar (conflicts shown before anything is overwritten)',
+          onClick:()=>{setShowBulk(true);setBulkPreview(null);setBulkError('');setBulkBusy(false);}},
+          '📁 Bulk Import'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
+
+      // Bulk workbook import modal (Notes 46)
+      showBulk&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',zIndex:520,
+        display:'flex',alignItems:'center',justifyContent:'center',padding:20},
+        onClick:()=>{if(!bulkBusy){setShowBulk(false);setBulkPreview(null);setBulkError('');}}},
+        div({onClick:e=>e.stopPropagation(),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',
+          borderRadius:'var(--rl)',width:'100%',maxWidth:640,maxHeight:'90vh',display:'flex',flexDirection:'column',
+          boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
+          div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',display:'flex',alignItems:'center',gap:10}},
+            span({style:{fontSize:'18px'}},'📁'),
+            div({style:{flex:1}},
+              div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Bulk Import Events'),
+              div({style:{fontSize:'9px',color:'var(--text3)'}},'Confirmed events only → cloud calendar (Supabase). School/sports/festival workbook.')),
+            btn({className:'btn btn-sm',style:{color:'var(--text3)'},disabled:bulkBusy,
+              onClick:()=>{if(!bulkBusy){setShowBulk(false);setBulkPreview(null);setBulkError('');}}},'✕')),
+          div({style:{padding:16,overflow:'auto',display:'flex',flexDirection:'column',gap:12}},
+            !bulkPreview&&div(null,
+              div({style:{fontSize:'11px',color:'var(--text2)',marginBottom:10,lineHeight:1.5}},
+                'Select the staffing-events workbook (.xlsx). Only ',span({style:{color:'var(--amber)',fontWeight:700}},'Confirmed'),
+                ' events import; real source hyperlinks and Expected Impact are read from the sheet. Nothing is written until you review the preview.'),
+              h('input',{type:'file',accept:'.xlsx,.xls',ref:bulkFileRef,disabled:bulkBusy,
+                style:{fontSize:'11px',color:'var(--text2)'},
+                onChange:e=>onBulkFile(e.target.files&&e.target.files[0])}),
+              bulkBusy&&div({style:{marginTop:12,fontSize:'11px',color:'var(--amber)'}},'Reading workbook…')),
+            bulkError&&div({style:{padding:'8px 10px',background:'rgba(239,68,68,.1)',border:'.5px solid rgba(239,68,68,.35)',borderRadius:'var(--r)',fontSize:'10px',color:'#fca5a5'}},bulkError),
+            bulkPreview&&div({style:{display:'flex',flexDirection:'column',gap:12}},
+              div({style:{fontSize:'10px',color:'var(--text3)'}},'File: ',span({style:{color:'var(--text2)'}},bulkPreview.fileName)),
+              div({style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}},
+                ...[['Events',bulkPreview.events.length,'#6ee7b7'],['New days',bulkPreview.newDays,'#93c5fd'],['Refresh',bulkPreview.refreshes,'var(--text2)'],['Conflicts',bulkPreview.conflicts.length,bulkPreview.conflicts.length?'#fca5a5':'var(--text3)']].map(([l,v,c])=>
+                  div({key:l,style:{padding:'8px 10px',background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',textAlign:'center'}},
+                    div({style:{fontSize:'18px',fontWeight:800,color:c}},v),
+                    div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em'}},l)))),
+              div({style:{fontSize:'10px',color:'var(--text2)'}},'Types: ',
+                Object.entries(bulkPreview.byType).sort((a,b)=>b[1]-a[1]).map(([t,n])=>((EVENT_TYPES[t]||{}).icon||'')+' '+((EVENT_TYPES[t]||{}).label||t)+' ('+n+')').join('  ·  ')),
+              bulkPreview.districts.length>0&&div({style:{fontSize:'10px',color:'var(--text2)'}},'🏫 '+bulkPreview.districts.length+' school-district config(s) (term dates + bell times)'),
+              bulkPreview.conflicts.length>0&&div({style:{border:'.5px solid rgba(245,158,11,.4)',borderRadius:'var(--r)',overflow:'hidden'}},
+                div({style:{padding:'6px 10px',background:'rgba(245,158,11,.12)',fontSize:'10px',fontWeight:700,color:'#fbbf24'}},
+                  '⚠ '+bulkPreview.conflicts.length+' day(s) already have a hand-entered event — these will be KEPT, not overwritten:'),
+                div({style:{maxHeight:160,overflow:'auto'}},
+                  ...bulkPreview.conflicts.slice(0,50).map((c,i)=>
+                    div({key:i,style:{padding:'4px 10px',fontSize:'9px',color:'var(--text2)',borderTop:i?'.5px solid var(--bdr)':'none',display:'flex',gap:8}},
+                      span({style:{color:'var(--text3)',minWidth:110}},(sName(c.loc)||c.loc)+' · '+c.dk),
+                      span({style:{color:'var(--text2)'}},'keep: '+c.existing),
+                      span({style:{color:'var(--text3)'}},'  (skip: '+c.incoming+')'))),
+                  bulkPreview.conflicts.length>50&&div({style:{padding:'4px 10px',fontSize:'9px',color:'var(--text3)'}},'…and '+(bulkPreview.conflicts.length-50)+' more'))),
+              div({style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}},
+                btn({className:'btn btn-sm',disabled:bulkBusy,onClick:()=>{setBulkPreview(null);setBulkError('');if(bulkFileRef.current)bulkFileRef.current.value='';}},'← Choose another'),
+                btn({className:'btn btn-sm',disabled:bulkBusy,
+                  style:{background:'var(--adim)',borderColor:'rgba(245,158,11,.4)',color:'var(--amber)',fontWeight:700},
+                  onClick:approveBulk},
+                  bulkBusy?'Importing…':('✓ Import '+bulkPreview.events.length+' events'+(bulkPreview.districts.length?' + '+bulkPreview.districts.length+' districts':'')))))))),
 
       // Import modal
       showImport&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:500,
