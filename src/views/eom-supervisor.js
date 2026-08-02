@@ -548,14 +548,18 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
 // ── Print styles ──────────────────────────────────────────────────────────────
 const PRINT_STYLE = `
 @media print {
-  body { background: white !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .eom-no-print { display: none !important; }
-  .eom-print-area { padding: 0 !important; }
-  table { font-size: 10px !important; }
-  th, td { padding: 3px 4px !important; }
+  /* Print ONLY the EOM summary, not the app shell (nav/top bar). Scoped to body.eom-printing (toggled by
+     the Print button) so this can never blank out printing on other screens. Classic hide-all-then-show. */
+  body.eom-printing { background: white !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.eom-printing * { visibility: hidden !important; }
+  body.eom-printing .eom-print-area, body.eom-printing .eom-print-area * { visibility: visible !important; }
+  body.eom-printing .eom-print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; }
+  body.eom-printing .eom-no-print { display: none !important; }
+  body.eom-printing table { font-size: 10px !important; }
+  body.eom-printing th, body.eom-printing td { padding: 3px 4px !important; }
   /* Keep each rollup/location block whole — never split one across a page. Both properties for cross-browser. */
-  .eom-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 10px !important; }
-  .eom-print-title { display: block !important; }
+  body.eom-printing .eom-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 10px !important; }
+  body.eom-printing .eom-print-title { display: block !important; }
   @page { margin: 0.5in; size: landscape; }
 }
 .eom-print-title { display: none; }
@@ -571,15 +575,16 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
       s.id = id; s.textContent = PRINT_STYLE;
       document.head.appendChild(s);
     }
-    const after = () => setForPrint(false);
+    const after = () => { setForPrint(false); document.body.classList.remove('eom-printing'); };
     window.addEventListener('afterprint', after);
     return () => window.removeEventListener('afterprint', after);
   }, []);
 
-  // Print the CURRENT grouping: expand every location so its full block prints (page-break-inside keeps
-  // each whole), then open the print dialog on the next paint. afterprint (above) restores the screen view.
+  // Print the CURRENT grouping ONLY (not the app shell): flag the body so the print CSS hides everything but
+  // the .eom-print-area, expand every location, then open the dialog on the next paint. afterprint restores.
   const doPrint = uCB(() => {
     setForPrint(true);
+    document.body.classList.add('eom-printing');
     setTimeout(() => window.print(), 60);
   }, []);
 
