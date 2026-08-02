@@ -16,6 +16,13 @@ import { metricDaily } from './metric-source.js';
 import { weightedRecencyProjection, robustBaseline, _isNum as _stIsNum } from './smart-targets.js';
 import { impactWeight } from './events-import.js';
 
+// ── Event Impact Registry cache (Notes 47) — { normLoc: { eventType: {home, away} } } ─────────────
+// Set once on app load from Supabase (loadEventImpact). Read in forecastDay's _evFactor so measured
+// per-store event lifts drive the forecast. Module-level so it doesn't thread through every call site.
+let _EVENT_IMPACT = {};
+export function setEventImpact(map) { _EVENT_IMPACT = map || {}; }
+export function getEventImpact() { return _EVENT_IMPACT; }
+
 // ── Model assignment cache  (v4.208 — performance) ──────────────────────────
 // getModelAssignment() is called from forecastDay() itself — the single most
 // frequently-invoked function in the app — plus per-store loops in Priority
@@ -1457,17 +1464,26 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   const _evTag = settings._userEvents && settings._userEvents[loc] && settings._userEvents[loc][_dk];
   const _evFactor = (()=>{
     if(!_evTag || !settings.useEventRegistry) return 0;
-    const factors = (settings._eventFactors && settings._eventFactors[loc]) || {};
-    // Per-tag impact. Learned historical impact wins when present (data-driven);
-    // otherwise fall back to the event's STORED expected impact (Notes 46) so an
-    // imported event with no history still moves the forecast: a manual
-    // expectedSalesDelta overrides, else the magnitude×daypart default weight.
-    // Conservative + clamped so a stray value can't distort the projection.
+    // A canceled/postponed event drops its lift entirely (editability, Notes 46).
+    if(_evTag.status==='canceled'||_evTag.status==='postponed') return 0;
     const types = (_evTag.tags&&_evTag.tags.length)
       ? _evTag.tags.map(t=>t.type) : [_evTag.type||'other'];
+    // 1) Event Impact Registry (Notes 47) — the MEASURED, curated per-store × event-type value wins.
+    // For sports, pick home vs away from the label; other types use the single home_impact.
+    const reg = _EVENT_IMPACT[String(loc).replace(/^0+/,'')];
+    if(reg){
+      const label=String(_evTag.label||'');
+      const away=/\(away\)/i.test(label), home=/\(home\)/i.test(label);
+      const rv = types.map(t=>{ const e=reg[t]; if(!e)return null;
+        if(t==='sports') return _stIsNum(away?e.away:home?e.home:e.home)?(away?e.away:e.home):null;
+        return _stIsNum(e.home)?e.home:null; }).filter(v=>v!=null);
+      if(rv.length) return Math.max(-0.25, Math.min(0.25, rv.reduce((a,b)=>a+b,0)/rv.length));
+    }
+    // 2) Learned historical impact (data-driven), when present.
+    const factors = (settings._eventFactors && settings._eventFactors[loc]) || {};
     const learned = types.map(t=>factors[t]??0).filter(v=>v!==0);
     if(learned.length) return learned.reduce((a,b)=>a+b,0)/learned.length;
-    // No learned factor → stored expected impact from the event record.
+    // 3) Stored expected impact on the event record: manual expectedSalesDelta, else magnitude×daypart weight.
     const stored = (_stIsNum(_evTag.expectedSalesDelta) && _evTag.expectedSalesDelta!==0)
       ? _evTag.expectedSalesDelta
       : (_evTag.impact ? impactWeight(_evTag.impact) : 0);
