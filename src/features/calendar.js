@@ -51,6 +51,8 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
 
   const [showAddEvent, setShowAddEvent] = uSt(false);
   const [prefillDate,  setPrefillDate]  = uSt(null);
+  const [dayPanel,     setDayPanel]     = uSt(null);   // dk string → day-detail organizer panel
+  const [dayEvtOpen,   setDayEvtOpen]   = uSt(null);   // expanded event key within the day panel
 
   const [rules, setRules] = uSt(()=>loadRecurringRules());
   const [showRuleForm, setShowRuleForm] = uSt(false);
@@ -350,6 +352,66 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
       },
       onClose:()=>{setShowAddEvent(false);setPrefillDate(null);}}),
 
+    // ════════ DAY DETAIL PANEL (organizer view) ════════
+    // Click a date → this lists every event on it across the current scope, each expandable to full
+    // context (store, impact, verification, source link, notes). Add-event still lives here.
+    dayPanel&&(()=>{
+      const dk=dayPanel;
+      const dObj=new Date(dk+'T12:00:00');
+      const dayEvents=[];
+      scopeLocs.forEach(loc=>{ const ev=(userEvents||{})[loc]&&userEvents[loc][dk]; if(ev) dayEvents.push({loc,...ev}); });
+      dayEvents.sort((a,b)=>(EVENT_TYPES[a.type]?.label||a.type||'').localeCompare(EVENT_TYPES[b.type]?.label||b.type||'')||(a.label||'').localeCompare(b.label||''));
+      const dp=(v)=>v==null?null:((v>0?'+':'')+Math.round(v*100)+'%');
+      const hostOf=(u)=>{try{return new URL(u).hostname.replace(/^www\./,'');}catch{return 'source';}};
+      const dl=(txt)=>({breakfast:'Breakfast / Morning',afternoon:'Afternoon',day:'Day Shift',dinner:'Dinner / Late Night',all:'All Shifts',gameday:'Game Day'}[txt]||txt);
+      return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',zIndex:515,
+        display:'flex',alignItems:'center',justifyContent:'center',padding:20},
+        onClick:()=>{setDayPanel(null);setDayEvtOpen(null);}},
+        div({onClick:e=>e.stopPropagation(),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',
+          borderRadius:'var(--rl)',width:'100%',maxWidth:560,maxHeight:'88vh',display:'flex',flexDirection:'column',
+          boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
+          // Header
+          div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',display:'flex',alignItems:'center',gap:10}},
+            span({style:{fontSize:'18px'}},'📅'),
+            div({style:{flex:1}},
+              div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},dObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})),
+              div({style:{fontSize:'9px',color:'var(--text3)'}},dayEvents.length+' event'+(dayEvents.length===1?'':'s')+(scope==='all'?' · all stores':scope==='ok'?' · Oklahoma':scope==='fl'?' · Florida':' · '+(sName(scope)||scope)))),
+            btn({className:'btn btn-sm btn-a',style:{fontSize:'9px',fontWeight:700},
+              onClick:()=>{setPrefillDate(dk);setShowAddEvent(true);setDayPanel(null);}},'➕ Add'),
+            btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:()=>{setDayPanel(null);setDayEvtOpen(null);}},'✕')),
+          // Event list
+          div({style:{padding:'8px 12px 14px',overflowY:'auto',display:'flex',flexDirection:'column',gap:6}},
+            dayEvents.length===0&&div({style:{textAlign:'center',color:'var(--text3)',fontSize:'11px',padding:'28px 12px',lineHeight:1.6}},
+              div({style:{fontSize:28,marginBottom:8}},'🗓'),
+              'No events on this day.',h('br'),'Use ➕ Add to tag one.'),
+            ...dayEvents.map((ev,i)=>{
+              const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
+              const key=ev.loc+'|'+(ev.label||i);
+              const open=dayEvtOpen===key;
+              const imp=ev.impact;
+              const impLabel=imp?(imp.gameDay?'Game Day traffic':((imp.magnitude||'')+(imp.daypart?' · '+dl(imp.daypart):''))):null;
+              return div({key,style:{border:'.5px solid var(--bdr)',borderLeft:'3px solid '+et.col,borderRadius:6,background:'var(--surf2)',overflow:'hidden'}},
+                div({onClick:()=>setDayEvtOpen(open?null:key),style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',cursor:'pointer'}},
+                  span({style:{fontSize:'15px'}},ev.icon||et.icon),
+                  div({style:{flex:1,minWidth:0}},
+                    div({style:{fontSize:'12px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},ev.label||et.label),
+                    div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
+                      (sName(ev.loc)||('#'+ev.loc))+' · '+et.label+(ev.verification?' · '+ev.verification:''))),
+                  impLabel&&span({style:{fontSize:'8.5px',fontWeight:700,color:'#fbbf24',border:'1px solid rgba(251,191,36,.4)',borderRadius:4,padding:'1px 5px',whiteSpace:'nowrap'}},impLabel),
+                  span({style:{color:'var(--text3)',fontSize:'11px'}},open?'▾':'▸')),
+                open&&div({style:{padding:'2px 12px 10px 12px',borderTop:'.5px solid var(--bdr)',fontSize:'10.5px',color:'var(--text2)',display:'flex',flexDirection:'column',gap:4,lineHeight:1.5}},
+                  ev.note&&ev.note!==ev.label&&div(null,span({style:{color:'var(--text3)'}},'Note: '),ev.note),
+                  impLabel&&div(null,span({style:{color:'var(--text3)'}},'Expected impact: '),impLabel),
+                  (ev.expectedSalesDelta!=null||ev.expectedGcDelta!=null)&&div(null,span({style:{color:'var(--text3)'}},'Owner estimate: '),
+                    [ev.expectedSalesDelta!=null?dp(ev.expectedSalesDelta)+' sales':null,ev.expectedGcDelta!=null?dp(ev.expectedGcDelta)+' GC':null].filter(Boolean).join(' · ')),
+                  ev.rangeTotalDays>1&&div(null,span({style:{color:'var(--text3)'}},'Multi-day: '),'day '+ev.rangeDayNum+' of '+ev.rangeTotalDays),
+                  div(null,span({style:{color:'var(--text3)'}},'Source: '),ev.source||'Calendar'),
+                  ev.url&&h('a',{href:ev.url,target:'_blank',rel:'noopener noreferrer',onClick:e=>e.stopPropagation(),
+                    style:{color:'#60a5fa',textDecoration:'none',fontWeight:600,width:'fit-content'}},'🔗 '+hostOf(ev.url))));
+            }))
+        ));
+    })(),
+
     div({style:{background:'var(--surf)',border:'.5px solid var(--bdr2)',borderRadius:'var(--rl)',
       width:'100%',maxWidth:920,maxHeight:'92vh',display:'flex',flexDirection:'column',
       boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
@@ -571,8 +633,9 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               const cell=monthData[day]||{events:[]};
               const isToday=viewY===today.getFullYear()&&viewM===today.getMonth()+1&&day===today.getDate();
               const uniqueTypes=[...new Set(cell.events.map(e=>e.type))];
+              const _dk=viewY+'-'+String(viewM).padStart(2,'0')+'-'+String(day).padStart(2,'0');
               return div({key:day,
-                onClick:()=>{setPrefillDate(viewY+'-'+String(viewM).padStart(2,'0')+'-'+String(day).padStart(2,'0'));setShowAddEvent(true);},
+                onClick:()=>{setDayPanel(_dk);setDayEvtOpen(null);},
                 style:{minHeight:54,padding:'4px 5px',borderRadius:6,cursor:'pointer',
                   background:isToday?'rgba(245,158,11,.08)':'var(--surf2)',
                   border:'.5px solid '+(isToday?'rgba(245,158,11,.4)':'var(--bdr)')}},
