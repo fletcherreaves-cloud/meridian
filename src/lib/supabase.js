@@ -2801,6 +2801,7 @@ export async function loadOrgEvents() {
     id: r.id, loc: String(r.loc), dateStart: r.date_start, dateEnd: r.date_end, span: !!r.span,
     category: r.category, type: r.event_type, label: r.label,
     impact: { magnitude: r.impact_magnitude, daypart: r.impact_daypart, gameDay: !!r.impact_gameday, raw: r.impact_raw },
+    opponent: r.opponent ?? null, kickoff: r.kickoff ?? null,
     expectedSalesDelta: r.expected_sales_delta, expectedGcDelta: r.expected_gc_delta,
     url: r.url, verification: r.verification, note: r.note,
     enteredBy: r.entered_by, enteredAt: r.entered_at, method: r.method,
@@ -2815,15 +2816,23 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
     category: e.category ?? null, event_type: e.type ?? null, label: e.label,
     impact_magnitude: e.impact?.magnitude ?? null, impact_daypart: e.impact?.daypart ?? null,
     impact_gameday: !!e.impact?.gameDay, impact_raw: e.impact?.raw ?? e.impactRaw ?? null,
+    opponent: e.opponent ?? null, kickoff: e.kickoff ?? null,
     expected_sales_delta: e.expectedSalesDelta ?? null, expected_gc_delta: e.expectedGcDelta ?? null,
     url: e.url ?? null, verification: e.verification ?? null, note: e.note ?? null,
     entered_by: e.enteredBy ?? enteredBy, entered_at: e.enteredAt ?? nowIso, method: e.method ?? method,
     updated_at: nowIso,
   }));
+  // Strip opponent/kickoff if that migration hasn't run yet (schema-org-events-sports.sql) so imports
+  // never break; self-heals once the columns exist.
+  const stripSports = arr => arr.map(({ opponent, kickoff, ...rest }) => rest);
   let saved = 0; const errors = [];
   for (let i = 0; i < rows.length; i += 500) {
-    const { error, count } = await supabase.from('org_events').upsert(rows.slice(i, i + 500), { onConflict: 'loc,date_start,label', count: 'exact' });
-    if (error) errors.push(error.message); else saved += count ?? rows.slice(i, i + 500).length;
+    const chunk = rows.slice(i, i + 500);
+    let { error, count } = await supabase.from('org_events').upsert(chunk, { onConflict: 'loc,date_start,label', count: 'exact' });
+    if (error && /column .*(opponent|kickoff).* does not exist/i.test(error.message || '')) {
+      ({ error, count } = await supabase.from('org_events').upsert(stripSports(chunk), { onConflict: 'loc,date_start,label', count: 'exact' }));
+    }
+    if (error) errors.push(error.message); else saved += count ?? chunk.length;
   }
   return { saved, errors };
 }

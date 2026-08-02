@@ -80,6 +80,11 @@ export function eventTypeFor(category, name) {
 // Returns Confirmed events only (owner rule) + counts of what was skipped.
 export function parseStaffingEvents(rows, urlByRowIndex = {}) {
   if (!rows || rows.length < 2) return { events: [], estimated: 0, skipped: 0 };
+  // Optional richer columns (opponent / kickoff time) — read by header name if present so the owner
+  // can enrich the Sports sheet without changing the fixed first 7 columns. Blank/absent → omitted.
+  const header = (rows[0] || []).map(h => String(h == null ? '' : h).toLowerCase());
+  const oppCol  = header.findIndex(h => /opponent|versus|\bvs\b/.test(h));
+  const kickCol = header.findIndex(h => /kick\s*off|kickoff|\btime\b|game\s*time/.test(h));
   const data = rows.slice(1).filter(r => r && r[0] !== '' && r[0] != null);
   const events = []; let estimated = 0, skipped = 0;
   data.forEach((r, i) => {
@@ -89,12 +94,15 @@ export function parseStaffingEvents(rows, urlByRowIndex = {}) {
     const d = parseDates(dates);
     if (!d) { skipped++; return; }
     const impact = parseImpact(impactTxt);
+    const clean = v => { const s = String(v == null ? '' : v).trim(); return s && s !== '**' ? s : null; };
     events.push({
       loc: String(store).replace(/\D/g, '') || String(store),
       city: city || null, state: state || null,
       category: category || null, type: eventTypeFor(category, name),
       label: strip(name), dateStart: d.start, dateEnd: d.end, span: d.span,
       impact, impactRaw: String(impactTxt || ''),
+      opponent: oppCol >= 0 ? clean(r[oppCol]) : null,
+      kickoff:  kickCol >= 0 ? clean(r[kickCol]) : null,
       expectedSalesDelta: null, expectedGcDelta: null,   // owner-tunable later
       url: urlByRowIndex[i] || null, verification,
     });
@@ -134,6 +142,8 @@ export function orgEventsToDayMap(events, iconFor = () => '📌') {
         orgSourced: true, orgEventId: e.id ?? null,
         url: e.url || null,
         impact: e.impact || null,
+        opponent: e.opponent ?? null,
+        kickoff: e.kickoff ?? null,
         expectedSalesDelta: e.expectedSalesDelta ?? null,
         expectedGcDelta: e.expectedGcDelta ?? null,
         verification: e.verification || null,

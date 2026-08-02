@@ -401,7 +401,12 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               const imp=ev.impact;
               const impLabel=imp?(imp.gameDay?'Game Day traffic':((imp.magnitude||'')+(imp.daypart?' · '+dl(imp.daypart):''))):null;
               const game=ev.type==='sports'?parseGame(ev.label):null;
-              const gameBits=game?[game.homeAway,game.opponent?'vs '+game.opponent:null].filter(Boolean).join(' · '):null;
+              // Prefer explicitly-imported opponent/kickoff (optional sheet columns) over what we can
+              // parse out of the label; kickoff only exists if the sheet carries it.
+              const opponent=ev.opponent||(game&&game.opponent)||null;
+              const homeAway=(game&&game.homeAway)||null;
+              const kickoff=ev.kickoff||null;
+              const gameBits=game?[homeAway,opponent?'vs '+opponent:null,kickoff].filter(Boolean).join(' · '):null;
               return div({key,style:{flexShrink:0,border:'.5px solid var(--bdr)',borderLeft:'3px solid '+et.col,borderRadius:6,background:'var(--surf2)',overflow:'hidden'}},
                 div({onClick:()=>setDayEvtOpen(open?null:key),style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',cursor:'pointer'}},
                   span({style:{fontSize:'15px',flexShrink:0}},ev.icon||et.icon),
@@ -412,8 +417,9 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
                   impLabel&&span({style:{flexShrink:0,fontSize:'8.5px',fontWeight:700,color:'#fbbf24',border:'1px solid rgba(251,191,36,.4)',borderRadius:4,padding:'1px 5px',whiteSpace:'nowrap'}},impLabel),
                   span({style:{color:'var(--text3)',fontSize:'11px',flexShrink:0}},open?'▾':'▸')),
                 open&&div({style:{padding:'2px 12px 10px 12px',borderTop:'.5px solid var(--bdr)',fontSize:'10.5px',color:'var(--text2)',display:'flex',flexDirection:'column',gap:4,lineHeight:1.5}},
-                  game&&game.opponent&&div(null,span({style:{color:'var(--text3)'}},'Opponent: '),game.opponent+(game.homeAway?' ('+game.homeAway+')':'')),
-                  game&&!game.opponent&&game.homeAway&&div(null,span({style:{color:'var(--text3)'}},'Location: '),game.homeAway+' game'),
+                  opponent&&div(null,span({style:{color:'var(--text3)'}},'Opponent: '),opponent+(homeAway?' ('+homeAway+')':'')),
+                  !opponent&&homeAway&&div(null,span({style:{color:'var(--text3)'}},'Location: '),homeAway+' game'),
+                  kickoff&&div(null,span({style:{color:'var(--text3)'}},'Kickoff: '),kickoff),
                   ev.note&&ev.note!==ev.label&&div(null,span({style:{color:'var(--text3)'}},'Note: '),ev.note),
                   impLabel&&div(null,span({style:{color:'var(--text3)'}},'Expected impact: '),impLabel),
                   (ev.expectedSalesDelta!=null||ev.expectedGcDelta!=null)&&div(null,span({style:{color:'var(--text3)'}},'Owner estimate: '),
