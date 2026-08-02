@@ -2883,6 +2883,33 @@ export async function saveOrgSchoolConfig(configs) {
   return { saved: error ? 0 : rows.length, errors: error ? [error.message] : [] };
 }
 
+// ── Event Impact Registry (Notes 47 findings home) — per store × event-type measured sales impact ──
+export async function loadEventImpact() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('event_impact').select('*').range(from, to), 1000, 'event_impact');
+  return (data || []).map(r => ({
+    loc: String(r.loc), eventType: r.event_type,
+    homeImpact: r.home_impact, awayImpact: r.away_impact,
+    measuredHome: r.measured_home, measuredAway: r.measured_away,
+    nHome: r.n_home, nAway: r.n_away, source: r.source, storeType: r.store_type, note: r.note,
+    updatedAt: r.updated_at,
+  }));
+}
+export async function saveEventImpact(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const up = rows.map(r => ({
+    loc: String(r.loc), event_type: r.eventType || 'sports',
+    home_impact: r.homeImpact ?? null, away_impact: r.awayImpact ?? null,
+    measured_home: r.measuredHome ?? null, measured_away: r.measuredAway ?? null,
+    n_home: r.nHome ?? null, n_away: r.nAway ?? null,
+    source: r.source || 'override', store_type: r.storeType ?? null, note: r.note ?? null,
+    updated_by: uid, updated_at: new Date().toISOString(),
+  }));
+  const { error } = await supabase.from('event_impact').upsert(up, { onConflict: 'loc,event_type' });
+  return { saved: error ? 0 : up.length, errors: error ? [error.message] : [] };
+}
+
 // Per-store secondary-review status (day-2): owner marks a store reviewed/flagged with a note.
 export async function saveEomSecondaryReview(row) {
   if (!supabase || !row?.loc) return { error: 'no-op' };
