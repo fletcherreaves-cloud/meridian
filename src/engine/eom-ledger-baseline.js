@@ -54,43 +54,57 @@ export function closeWindowStartFor(period, days = 3) {
 //   rawItems         — qsr_raw_item_detail rows for the store
 //   closeWindowStart — first day of the EOM close window (ISO or MM/DD/YYYY). Counts on/after = the EOM
 //                      count + recounts; the first is the session, later days are recounts.
+// Per-ITEM close-window recount analysis from a raw count history. Reusable so the Progression view and
+// the Baseline-diff share ONE definition of "was a recount detected". Returns the session vs final binding,
+// the graded recount chain, and a recounted flag (counted on ≥2 days in the close window). null if no counts.
+export function itemCloseWindowRecount(history, { closeWindowStart = null, floor = LEDGER_MATERIAL_FLOOR } = {}) {
+  const winStart = closeWindowStart ? isoDay(closeWindowStart) : null;
+  const counts = (history || []).filter(h => h && h.isCount && h.dt).map(h => ({
+    day: isoDay(h.dt), when: tsOf(h.dt, h.tm), tm: h.tm || null,
+    dolVar: Number(h.difference) || 0, unitVar: h.variance != null ? Number(h.variance) : null,
+    onHand: h.qtyChange != null ? Number(h.qtyChange) : null, manager: h.manager || null, countSource: h.countSource || 'MobileApp',
+  })).sort((a, b) => a.when - b.when);
+  if (!counts.length) return null;
+  // Day-bindings: the last count of each day (same-day area entries collapse to the binding).
+  const byDay = {}; for (const c of counts) byDay[c.day] = c;
+  const allDayBindings = Object.keys(byDay).sort().map(d => byDay[d]);
+  const winBindings = winStart ? allDayBindings.filter(b => b.day >= winStart) : allDayBindings;
+  // If never counted in the close window, its EOM number = its last overall count → flat, not recounted.
+  const usable = winBindings.length ? winBindings : allDayBindings.slice(-1);
+  const sessionB = usable[0], finalB = usable[usable.length - 1];
+  const recounted = winBindings.length >= 2;
+  // Recount chain: session → each later window day, graded toward zero (captures MULTIPLE recounts).
+  const recounts = []; let prev = sessionB;
+  for (const b of usable.slice(1)) {
+    const delta = abs(prev.dolVar) - abs(b.dolVar);   // + = toward zero = helped
+    recounts.push({ day: b.day, tm: b.tm, dolVar: b.dolVar, onHand: b.onHand, manager: b.manager, countSource: b.countSource,
+      direction: delta > floor ? 'helped' : delta < -floor ? 'hurt' : 'held', deltaDollars: delta, prevDolVar: prev.dolVar });
+    prev = b;
+  }
+  return {
+    sessionB, finalB, baseVar: sessionB.dolVar, curVar: finalB.dolVar,
+    baseCounted: sessionB.day, curCounted: finalB.day,
+    recounted, nRecounts: recounts.length, recounts,
+    nRecHelped: recounts.filter(r => r.direction === 'helped').length,
+    nRecHurt: recounts.filter(r => r.direction === 'hurt').length,
+    verdict: verdict(sessionB.dolVar, finalB.dolVar, floor),
+  };
+}
+
 export function ledgerBaselineDiff(rawItems, { closeWindowStart = null, officialVarByWrin = {}, floor = LEDGER_MATERIAL_FLOOR } = {}) {
   const winStart = closeWindowStart ? isoDay(closeWindowStart) : null;
   const items = [];
   for (const it of (rawItems || [])) {
-    const counts = (it.history || []).filter(h => h && h.isCount && h.dt).map(h => ({
-      day: isoDay(h.dt), when: tsOf(h.dt, h.tm), tm: h.tm || null,
-      dolVar: Number(h.difference) || 0, unitVar: h.variance != null ? Number(h.variance) : null,
-      onHand: h.qtyChange != null ? Number(h.qtyChange) : null, manager: h.manager || null, countSource: h.countSource || 'MobileApp',
-    })).sort((a, b) => a.when - b.when);
-    if (!counts.length) continue;
-    // Day-bindings: the last count of each day (same-day area entries collapse to the binding).
-    const byDay = {}; for (const c of counts) byDay[c.day] = c;
-    const allDayBindings = Object.keys(byDay).sort().map(d => byDay[d]);
-    const winBindings = winStart ? allDayBindings.filter(b => b.day >= winStart) : allDayBindings;
-    // If never counted in the close window, its EOM number = its last overall count → flat, not recounted.
-    const usable = winBindings.length ? winBindings : allDayBindings.slice(-1);
-    const sessionB = usable[0], finalB = usable[usable.length - 1];
-    const bv = sessionB.dolVar, cv = finalB.dolVar;
-    const recounted = winBindings.length >= 2;
+    const r = itemCloseWindowRecount(it.history, { closeWindowStart: winStart, floor });
+    if (!r) continue;
     const official = officialVarByWrin[String(it.wrin)] ?? officialVarByWrin[it.wrin] ?? null;
-    // Recount chain: session → each later window day, graded toward zero (captures MULTIPLE recounts).
-    const recounts = []; let prev = sessionB;
-    for (const b of usable.slice(1)) {
-      const delta = abs(prev.dolVar) - abs(b.dolVar);   // + = toward zero = helped
-      recounts.push({ day: b.day, tm: b.tm, dolVar: b.dolVar, onHand: b.onHand, manager: b.manager, countSource: b.countSource,
-        direction: delta > floor ? 'helped' : delta < -floor ? 'hurt' : 'held', deltaDollars: delta, prevDolVar: prev.dolVar });
-      prev = b;
-    }
-    const nHelpedRe = recounts.filter(r => r.direction === 'helped').length;
-    const nHurtRe = recounts.filter(r => r.direction === 'hurt').length;
     items.push({
       wrin: String(it.wrin), descr: it.descr || String(it.wrin), cls: it.cls || null,
-      baseVar: bv, curVar: cv, dVar: cv - bv, dMag: abs(cv) - abs(bv),
-      baseQtyVar: sessionB.unitVar, curQtyVar: finalB.unitVar,
-      verdict: verdict(bv, cv, floor), recounted, nRecounts: recounts.length, recounts,
-      nRecHelped: nHelpedRe, nRecHurt: nHurtRe, isNew: false, isGone: false,
-      baseCounted: sessionB.day, curCounted: finalB.day, officialVar: official,
+      baseVar: r.baseVar, curVar: r.curVar, dVar: r.curVar - r.baseVar, dMag: abs(r.curVar) - abs(r.baseVar),
+      baseQtyVar: r.sessionB.unitVar, curQtyVar: r.finalB.unitVar,
+      verdict: r.verdict, recounted: r.recounted, nRecounts: r.nRecounts, recounts: r.recounts,
+      nRecHelped: r.nRecHelped, nRecHurt: r.nRecHurt, isNew: false, isGone: false,
+      baseCounted: r.baseCounted, curCounted: r.curCounted, officialVar: official,
     });
   }
   items.sort((a, b) => abs(b.dMag || 0) - abs(a.dMag || 0));

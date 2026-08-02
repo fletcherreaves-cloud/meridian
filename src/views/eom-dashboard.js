@@ -18,7 +18,7 @@ import {
   createEomShareLink,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
-import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
+import { ledgerScopeDiff, closeWindowStartFor, itemCloseWindowRecount } from '../engine/eom-ledger-baseline.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { buildFobReport } from '../engine/fob-report.js';
@@ -371,7 +371,7 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
   // count window, or a back-office (non-MobileApp) correction. Same-day recounts on EARLIER weekly count-
   // days are informational (that count doesn't bind the period). Cross-DAY counts are the weekly count
   // PROGRESSION, never recounts. Grading: helped = the recount moved the variance toward zero, hurt = away.
-  const nGenuine = i => i.recount?.nEomRecounts || 0;
+  const nGenuine = i => (i.closeRecount?.recounted ? 1 : 0);   // close-window recount (matches the per-item badge)
   const recountBadge = (i) => {
     const rc = i.recount; if (!rc || !rc.nEomRecounts) return null;
     const confirmed = (rc.eomRecounts || []).some(r => r.confidence === 'confirmed');
@@ -380,6 +380,21 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     return { label: `↻ ${label}${confirmed ? ' ✓' : ''}`, color,
       title: `${rc.nEomRecounts} same-day recount${rc.nEomRecounts !== 1 ? 's' : ''} on the binding (EOM) count day ${rc.eomDay || ''} — ${rc.nEomHelped} helped, ${rc.nEomHurt} hurt${confirmed ? '. ✓ = a back-office (non-MobileApp) correction — a confirmed recount.' : '. Detected from a later store-level count window — a re-verify after the walkthrough.'}${rc.nRecounts > rc.nEomRecounts ? ` (${rc.nRecounts - rc.nEomRecounts} more on earlier count-days — informational only.)` : ''}` };
   };
+
+  // CLOSE-WINDOW recount indicator (the owner's model + what the Baseline-diff uses): was the item counted
+  // again in the EOM close window (session count → a later day before EOD)? Shown on EVERY item so "was a
+  // recount detected?" is answerable at a glance. Green/red = the recount moved the variance toward/away zero.
+  const closeRecountBadge = (p) => {
+    const r = p.closeRecount;
+    if (!r || !r.recounted) return { label: 'no recount', color: 'var(--text3)', muted: true,
+      title: 'No recount detected — the item was counted on only one day in the EOM close window (its session count). Expand to see the count ledger.' };
+    const dir = r.nRecHurt > r.nRecHelped ? 'hurt' : r.nRecHelped > r.nRecHurt ? 'helped' : 'held';
+    const color = dir === 'hurt' ? '#f87171' : dir === 'helped' ? '#4ade80' : '#f5bc00';
+    const n = r.nRecounts;
+    return { label: `↻ recount ${dir}`, color,
+      title: `Recounted in the EOM close window: session ${r.baseCounted} (${$$(r.baseVar)}) → ${r.curCounted} (${$$(r.curVar)})${n > 1 ? ` across ${n} recounts` : ''}. The re-count moved the variance ${dir === 'helped' ? 'TOWARD zero (good diagnosis)' : dir === 'hurt' ? 'AWAY from zero' : 'about the same'}. Expand for the full ledger.` };
+  };
+  const $$ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
 
   // Month-over-month vs last period's authoritative variance (Notes 42 #2). Improving = |variance| shrank
   // toward zero; resolved = dropped off the flag list entirely; regressed = grew; new = newly on the list.
@@ -399,8 +414,8 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     const moms = items.map(mom);
     return { loc: r.loc, name: r.name, items,
       recounted: items.filter(i => nGenuine(i) > 0).length,
-      rHelped: items.reduce((n, i) => n + (i.recount?.nEomHelped || 0), 0),
-      rHurt: items.reduce((n, i) => n + (i.recount?.nEomHurt || 0), 0),
+      rHelped: items.reduce((n, i) => n + (i.closeRecount?.nRecHelped || 0), 0),
+      rHurt: items.reduce((n, i) => n + (i.closeRecount?.nRecHurt || 0), 0),
       worsened: items.filter(i => i.verdict === 'worsened').length,
       flagged: items.filter(i => (i.flags || []).some(f => f !== 'recount-worsened')).length,
       improving: moms.filter(m => isImproving(m.verdict)).length,
@@ -414,8 +429,8 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     : (a, b) => (b.flagged - a.flagged) || (b.worsened - a.worsened) || (b.items.length - a.items.length));
   const all = stores.flatMap(s => s.items);
   const dRecounted = all.filter(i => nGenuine(i) > 0).length;
-  const dRHelped = all.reduce((n, i) => n + (i.recount?.nEomHelped || 0), 0);
-  const dRHurt = all.reduce((n, i) => n + (i.recount?.nEomHurt || 0), 0);
+  const dRHelped = all.reduce((n, i) => n + (i.closeRecount?.nRecHelped || 0), 0);
+  const dRHurt = all.reduce((n, i) => n + (i.closeRecount?.nRecHurt || 0), 0);
   const dWorsened = all.filter(i => i.verdict === 'worsened').length;
   const dZero = all.filter(i => (i.flags || []).includes('zero-variance')).length;
   const dImproving = stores.reduce((n, s) => n + s.improving, 0);
@@ -566,6 +581,8 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
               !lastEom ? (p.nSessions > 1 ? span({ title: 'Counted on more than one day — the weekly count progression. Only the final (EOM) count binds; these are NOT recounts.', style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.nSessions} count days`) : span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.sessions[0].nEntries} ${p.sessions[0].nEntries === 1 ? 'entry' : 'area entries'}`)) : null,
               // Genuine same-day recount badge (store-window model) — graded helped/hurt; ✓ = confirmed back-office.
               !lastEom ? (() => { const rb = recountBadge(p); return rb ? span({ title: rb.title, style: { fontSize: '9px', fontWeight: 700, color: rb.color, border: `1px solid ${rb.color}`, borderRadius: '4px', padding: '0 5px' } }, rb.label) : null; })() : null,
+              // Clear "was a recount detected?" indicator (close-window model) on EVERY item's top line.
+              !lastEom ? (() => { const rb = closeRecountBadge(p); return span({ title: rb.title, style: { fontSize: '9px', fontWeight: 700, color: rb.color, border: `1px solid ${rb.muted ? 'var(--bdr2)' : rb.color}`, borderRadius: '4px', padding: '0 5px', opacity: rb.muted ? 0.7 : 1 } }, rb.label); })() : null,
               // Only the $0-verify flag is period-safe. 'held-worse'/'recount-worsened' were cross-day byDay
               // artifacts (they treated the weekly count progression as recounts) — dropped per the finalized model.
               ...((p.flags || []).filter(f => f === 'zero-variance').map(f => span({ key: f, title: 'The binding count posted ≈ $0 variance — statistically improbable; usually the variance just has not posted yet (QSRSoft lag / early lock). Verify.', style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, '$0 — verify')))),
@@ -1134,18 +1151,25 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   // — base count → recount steps → improved/hurt/held. No lock needed; works for any period reviewed.
   const progByLoc = useMemo(() => {
     const m = {};
+    const closeWin = closeWindowStartFor(period, 3);   // EOM close window → detect session→recount per item
     for (const loc in rawByLoc) {
       // Authoritative period $ variance per item (qsr_variance_stat) → headline the real number,
       // not the count-impact chain. Keyed by wrin for the session engine to attach as officialVar.
       const statVar = {};
-      for (const v of (varByLoc[loc] || [])) if (v.dolDiff != null && v.dolDiff !== 0)statVar[String(v.wrin)] = v.dolDiff;
+      for (const v of (varByLoc[loc] || [])) if (v.dolDiff != null && v.dolDiff !== 0) statVar[String(v.wrin)] = v.dolDiff;
       // Prior-month authoritative variance per item → the "vs Last EOM" baseline (month-over-month).
       const priorStatVar = {};
-      for (const v of (prevVarByLoc[loc] || [])) if (v.dolDiff != null && v.dolDiff !== 0)priorStatVar[String(v.wrin)] = v.dolDiff;
-      try { m[loc] = storeVarianceProgressions(rawByLoc[loc], { statVar, priorStatVar }); } catch { m[loc] = []; }
+      for (const v of (prevVarByLoc[loc] || [])) if (v.dolDiff != null && v.dolDiff !== 0) priorStatVar[String(v.wrin)] = v.dolDiff;
+      try {
+        const rows = storeVarianceProgressions(rawByLoc[loc], { statVar, priorStatVar });
+        // Attach the CLOSE-WINDOW recount per item — the SAME definition the Baseline-diff uses (session
+        // count → later-day recount before EOD), so the Progression row can flag it clearly.
+        const histByWrin = {}; for (const it of (rawByLoc[loc] || [])) histByWrin[String(it.wrin)] = it.history;
+        m[loc] = rows.map(p => ({ ...p, closeRecount: itemCloseWindowRecount(histByWrin[String(p.wrin)], { closeWindowStart: closeWin }) }));
+      } catch { m[loc] = []; }
     }
     return m;
-  }, [rawByLoc, varByLoc, prevVarByLoc]);
+  }, [rawByLoc, varByLoc, prevVarByLoc, period]);
 
   // Which stores have any diagnosis input beyond on-hand (variance/waste/transfers).
   const hasDiagData = useMemo(() => {
