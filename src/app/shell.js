@@ -200,6 +200,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.brief', 'Daily Brief',      '☀️', ()=>onOpenModal('morning-brief'), false),
       navItem('Date-Range Report', '📅', ()=>onOpenModal('report'),     false),
       navItem('Events & Tags',     '◷', ()=>onOpenModal('events'),     false),
+      pis('analytics.dashboard', 'Calendar',        '📅', ()=>onOpenModal('calendar-manager'), false),
       // ── PERFORMANCE ────────────────────────────────────────────
       can('analytics.store') && navLabel('PERFORMANCE'),
       pis('analytics.district', 'Org Summary',        '📊', ()=>onOpenModal('operator-summary'), false),
@@ -260,9 +261,8 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // on per-panel in Admin → Panel Manager. Nothing deleted; modal routing stays in App.js.
       ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
         .map(p=>pi(p.perm, p.label, p.icon, ()=>onOpenModal(p.id), false)),
-      // PRUNED — overlaps "Events & Tags" (recurring-rule calendar). Recall: uncomment.
-      // (Still reachable via onOpenModal('calendar-manager'); recurring rules also live in Events & Tags.)
-      // pi('analytics.dashboard',   'Calendar Manager',   '📅', ()=>onOpenModal('calendar-manager'),false),
+      // Calendar Manager RESTORED to the DAILY section (v4.756, Notes 46) — now that it holds the
+      // 870-event cloud calendar + the 📁 Bulk Import, it earns a top-level home again.
       // ── ADMIN ──────────────────────────────────────────────────
       navLabel('ADMIN'),
       pis('settings.view', 'Settings',     '⚙', ()=>onOpenModal('settings'),               false),
