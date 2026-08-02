@@ -359,19 +359,50 @@ const VP_VBADGE = {
   worsened: ['#f87171', 'recount hurt'],
   held: ['#f5bc00', 'recount held'],
 };
-function VarianceProgressionView({ rows, progByLoc, nm }) {
+function VarianceProgressionView({ rows, progByLoc, nm, period }) {
   const [openStore, setOpenStore] = useState(null);
   const [openItem, setOpenItem] = useState(null);
   const [baseMode, setBaseMode] = useState('period');   // 'period' (this month's sessions) | 'lastEom' (vs last period)
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const lastEom = baseMode === 'lastEom';
 
+  // ── Owner override of the auto-detected recount status (Notes 45 #82) ─────────────────────────
+  // "In case I learn a detail that changes an item's status, let me override — and recompute."
+  // Choices: 'auto' (detected) | 'none' (force session-only, not a recount) | 'helped' | 'hurt'.
+  // Persisted device-local by period|loc|wrin so the owner's corrections survive reloads. Every
+  // tally (per-item badge, store rollup, district rollup) reads the EFFECTIVE recount below, so a
+  // change re-renders the whole view live.
+  const OVR_KEY = 'mf_recount_overrides';
+  const [overrides, setOverrides] = useState(() => { try { return JSON.parse(localStorage.getItem(OVR_KEY) || '{}'); } catch { return {}; } });
+  const ovrKey = (loc, wrin) => `${period || 'p'}|${unpad(loc)}|${wrin}`;
+  const setOverride = (loc, wrin, val) => setOverrides(prev => {
+    const next = { ...prev }; const k = ovrKey(loc, wrin);
+    if (!val || val === 'auto') delete next[k]; else next[k] = val;
+    try { localStorage.setItem(OVR_KEY, JSON.stringify(next)); } catch { /* device-local best-effort */ }
+    return next;
+  });
+  // Effective recount for an item after any owner override. Returns the same fields the auto engine
+  // exposes (recounted / nRecHelped / nRecHurt / dir) so downstream tallies don't care about the source.
+  const effRc = (p, loc) => {
+    const auto = p.closeRecount || null;
+    const ov = overrides[ovrKey(loc, p.wrin)];
+    if (!ov || ov === 'auto') {
+      if (!auto || !auto.recounted) return { recounted: false, nRecHelped: 0, nRecHurt: 0, dir: 'none', src: 'auto' };
+      const dir = auto.nRecHurt > auto.nRecHelped ? 'hurt' : auto.nRecHelped > auto.nRecHurt ? 'helped' : 'held';
+      return { recounted: true, nRecHelped: auto.nRecHelped || 0, nRecHurt: auto.nRecHurt || 0, dir, src: 'auto', base: auto };
+    }
+    if (ov === 'none') return { recounted: false, nRecHelped: 0, nRecHurt: 0, dir: 'none', src: 'override', base: auto };
+    if (ov === 'helped') return { recounted: true, nRecHelped: 1, nRecHurt: 0, dir: 'helped', src: 'override', base: auto };
+    if (ov === 'hurt')  return { recounted: true, nRecHelped: 0, nRecHurt: 1, dir: 'hurt', src: 'override', base: auto };
+    return { recounted: false, nRecHelped: 0, nRecHurt: 0, dir: 'none', src: 'auto' };
+  };
+
   // PERIOD-SPECIFIC recount (owner, 2026-08-01): on an EOM/monthly period the only recount that matters
   // for grading is a genuine same-day re-verify on the FINAL (EOM-binding) count day — a later store-level
   // count window, or a back-office (non-MobileApp) correction. Same-day recounts on EARLIER weekly count-
   // days are informational (that count doesn't bind the period). Cross-DAY counts are the weekly count
   // PROGRESSION, never recounts. Grading: helped = the recount moved the variance toward zero, hurt = away.
-  const nGenuine = i => (i.closeRecount?.recounted ? 1 : 0);   // close-window recount (matches the per-item badge)
+  const nGenuine = (i, loc) => (effRc(i, loc).recounted ? 1 : 0);   // close-window recount (post-override; matches the per-item badge)
   const recountBadge = (i) => {
     const rc = i.recount; if (!rc || !rc.nEomRecounts) return null;
     const confirmed = (rc.eomRecounts || []).some(r => r.confidence === 'confirmed');
@@ -384,15 +415,22 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
   // CLOSE-WINDOW recount indicator (the owner's model + what the Baseline-diff uses): was the item counted
   // again in the EOM close window (session count → a later day before EOD)? Shown on EVERY item so "was a
   // recount detected?" is answerable at a glance. Green/red = the recount moved the variance toward/away zero.
-  const closeRecountBadge = (p) => {
+  const closeRecountBadge = (p, loc) => {
     const r = p.closeRecount;
-    if (!r || !r.recounted) return { label: 'no recount', color: 'var(--text3)', muted: true,
-      title: 'No recount detected — the item was counted on only one day in the EOM close window (its session count). Expand to see the count ledger.' };
-    const dir = r.nRecHurt > r.nRecHelped ? 'hurt' : r.nRecHelped > r.nRecHurt ? 'helped' : 'held';
+    const eff = effRc(p, loc);
+    const ovr = eff.src === 'override';
+    const ovrTag = ovr ? ' · manual override' : '';
+    if (!eff.recounted) return { label: (ovr ? '✎ ' : '') + 'SESSION only', color: 'var(--text3)', muted: !ovr,
+      title: (ovr ? 'Owner override: marked NOT a recount (session count only). ' : 'No recount detected — ') +
+        (r && r.baseCounted ? `session counted ${r.baseCounted}${r.baseVar != null ? ` (${$$(r.baseVar)})` : ''}. ` : 'counted on only one day in the EOM close window. ') +
+        'Expand to see the count ledger' + (ovr ? ' or reset the override.' : '.') };
+    const dir = eff.dir;
     const color = dir === 'hurt' ? '#f87171' : dir === 'helped' ? '#4ade80' : '#f5bc00';
-    const n = r.nRecounts;
-    return { label: `↻ recount ${dir}`, color,
-      title: `Recounted in the EOM close window: session ${r.baseCounted} (${$$(r.baseVar)}) → ${r.curCounted} (${$$(r.curVar)})${n > 1 ? ` across ${n} recounts` : ''}. The re-count moved the variance ${dir === 'helped' ? 'TOWARD zero (good diagnosis)' : dir === 'hurt' ? 'AWAY from zero' : 'about the same'}. Expand for the full ledger.` };
+    const n = r?.nRecounts || 1;
+    // Clear SESSION → RECOUNT notation: show both bindings when the auto engine has them.
+    const chain = r && r.baseCounted ? `SESSION ${r.baseCounted} ${$$(r.baseVar)} → RECOUNT${n > 1 ? `×${n}` : ''} ${r.curCounted} ${$$(r.curVar)}` : `RECOUNT ${dir}`;
+    return { label: `${ovr ? '✎ ' : '↻ '}RECOUNT ${dir}`, color,
+      title: `${ovr ? 'Owner override: graded ' + dir + '. ' : ''}${chain}${ovrTag}. The re-count moved the variance ${dir === 'helped' ? 'TOWARD zero (good diagnosis)' : dir === 'hurt' ? 'AWAY from zero' : 'about the same'}. Expand for the full ledger + to override.` };
   };
   const $$ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
 
@@ -413,9 +451,9 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     const items = progByLoc[String(r.loc)] || [];
     const moms = items.map(mom);
     return { loc: r.loc, name: r.name, items,
-      recounted: items.filter(i => nGenuine(i) > 0).length,
-      rHelped: items.reduce((n, i) => n + (i.closeRecount?.nRecHelped || 0), 0),
-      rHurt: items.reduce((n, i) => n + (i.closeRecount?.nRecHurt || 0), 0),
+      recounted: items.filter(i => nGenuine(i, r.loc) > 0).length,
+      rHelped: items.reduce((n, i) => n + (effRc(i, r.loc).nRecHelped || 0), 0),
+      rHurt: items.reduce((n, i) => n + (effRc(i, r.loc).nRecHurt || 0), 0),
       worsened: items.filter(i => i.verdict === 'worsened').length,
       flagged: items.filter(i => (i.flags || []).some(f => f !== 'recount-worsened')).length,
       improving: moms.filter(m => isImproving(m.verdict)).length,
@@ -428,9 +466,10 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
     ? (a, b) => (b.regressing - a.regressing) || (b.momNet - a.momNet) || (b.items.length - a.items.length)
     : (a, b) => (b.flagged - a.flagged) || (b.worsened - a.worsened) || (b.items.length - a.items.length));
   const all = stores.flatMap(s => s.items);
-  const dRecounted = all.filter(i => nGenuine(i) > 0).length;
-  const dRHelped = all.reduce((n, i) => n + (i.closeRecount?.nRecHelped || 0), 0);
-  const dRHurt = all.reduce((n, i) => n + (i.closeRecount?.nRecHurt || 0), 0);
+  // Recount tallies roll up the per-store values (already post-override via effRc).
+  const dRecounted = stores.reduce((n, s) => n + s.recounted, 0);
+  const dRHelped = stores.reduce((n, s) => n + s.rHelped, 0);
+  const dRHurt = stores.reduce((n, s) => n + s.rHurt, 0);
   const dWorsened = all.filter(i => i.verdict === 'worsened').length;
   const dZero = all.filter(i => (i.flags || []).includes('zero-variance')).length;
   const dImproving = stores.reduce((n, s) => n + s.improving, 0);
@@ -581,14 +620,28 @@ function VarianceProgressionView({ rows, progByLoc, nm }) {
               !lastEom ? (p.nSessions > 1 ? span({ title: 'Counted on more than one day — the weekly count progression. Only the final (EOM) count binds; these are NOT recounts.', style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.nSessions} count days`) : span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.sessions[0].nEntries} ${p.sessions[0].nEntries === 1 ? 'entry' : 'area entries'}`)) : null,
               // Genuine same-day recount badge (store-window model) — graded helped/hurt; ✓ = confirmed back-office.
               !lastEom ? (() => { const rb = recountBadge(p); return rb ? span({ title: rb.title, style: { fontSize: '9px', fontWeight: 700, color: rb.color, border: `1px solid ${rb.color}`, borderRadius: '4px', padding: '0 5px' } }, rb.label) : null; })() : null,
-              // Clear "was a recount detected?" indicator (close-window model) on EVERY item's top line.
-              !lastEom ? (() => { const rb = closeRecountBadge(p); return span({ title: rb.title, style: { fontSize: '9px', fontWeight: 700, color: rb.color, border: `1px solid ${rb.muted ? 'var(--bdr2)' : rb.color}`, borderRadius: '4px', padding: '0 5px', opacity: rb.muted ? 0.7 : 1 } }, rb.label); })() : null,
+              // Clear SESSION vs RECOUNT indicator (close-window model, post-override) on EVERY item's top line.
+              !lastEom ? (() => { const rb = closeRecountBadge(p, s.loc); return span({ title: rb.title, style: { fontSize: '9px', fontWeight: 700, color: rb.color, border: `1px solid ${rb.muted ? 'var(--bdr2)' : rb.color}`, borderRadius: '4px', padding: '0 5px', opacity: rb.muted ? 0.7 : 1 } }, rb.label); })() : null,
               // Only the $0-verify flag is period-safe. 'held-worse'/'recount-worsened' were cross-day byDay
               // artifacts (they treated the weekly count progression as recounts) — dropped per the finalized model.
               ...((p.flags || []).filter(f => f === 'zero-variance').map(f => span({ key: f, title: 'The binding count posted ≈ $0 variance — statistically improbable; usually the variance just has not posted yet (QSRSoft lag / early lock). Verify.', style: { fontSize: '9px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 5px' } }, '$0 — verify')))),
             itemOpen ? div({ style: { padding: '4px 0 8px 18px' } },
               div({ style: { fontSize: '11px', color: 'var(--text2)', marginBottom: '2px', lineHeight: 1.45 } }, story(p)),
-              eventTable(p)) : null);
+              eventTable(p),
+              // ── Owner override of the recount status (Notes 45 #82) — recomputes tallies live ──
+              !lastEom ? (() => {
+                const curOv = overrides[ovrKey(s.loc, p.wrin)] || 'auto';
+                const autoLbl = (() => { const a = p.closeRecount; if (!a || !a.recounted) return 'Session only (no recount)'; const d = a.nRecHurt > a.nRecHelped ? 'hurt' : a.nRecHelped > a.nRecHurt ? 'helped' : 'held'; return `Recount ${d}`; })();
+                const OPTS = [['auto', `Auto — ${autoLbl}`], ['none', 'Not a recount (session only)'], ['helped', 'Recount — helped (toward zero)'], ['hurt', 'Recount — hurt (away from zero)']];
+                return div({ style: { marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px dashed var(--bdr2)' } },
+                  span({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, '✎ Override status'),
+                  h('select', { value: curOv, onClick: e => e.stopPropagation(), onChange: e => setOverride(s.loc, p.wrin, e.target.value),
+                    style: { fontSize: '11px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '5px', padding: '3px 6px', cursor: 'pointer' } },
+                    OPTS.map(([v, l]) => h('option', { key: v, value: v }, l))),
+                  curOv !== 'auto' ? span({ style: { fontSize: '10px', color: '#f5bc00', fontWeight: 700 } }, 'manual — overrides detection') : null,
+                  curOv !== 'auto' ? h('button', { onClick: e => { e.stopPropagation(); setOverride(s.loc, p.wrin, 'auto'); }, style: { fontSize: '10px', background: 'transparent', color: 'var(--text3)', border: '1px solid var(--bdr2)', borderRadius: '5px', padding: '2px 8px', cursor: 'pointer' } }, 'Reset to auto') : null,
+                  span({ style: { fontSize: '9px', color: 'var(--text3)' } }, 'Recomputes the store + district recount tallies live. Saved on this device.'));
+              })() : null) : null);
         })) : null);
     })));
 }
@@ -2803,7 +2856,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   style: { background: monView === k ? 'var(--accent,#f5bc00)' : 'var(--surf3)', color: monView === k ? '#0f1117' : 'var(--text2)', border: 'none', padding: '5px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' } }, l))),
             monView === 'diff' ? h('button', { onClick: openMonitor, style: MODAL_TOOLBTN, disabled: monBusy }, monBusy ? '… Refreshing' : '↻ Refresh') : null),
 
-          monView === 'progression' ? h(VarianceProgressionView, { rows, progByLoc, nm })
+          monView === 'progression' ? h(VarianceProgressionView, { rows, progByLoc, nm, period })
           : monBusy ? div({ style: { color: 'var(--text3)', padding: '30px', textAlign: 'center' } }, 'Diffing live data against the baseline…')
           : mon?.error ? div({ style: { color: '#fb923c', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } }, mon.error)
           : !mon?.nBaseline ? div({ style: { color: 'var(--text3)', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } },
