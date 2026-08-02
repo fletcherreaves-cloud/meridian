@@ -548,17 +548,20 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
 // ── Print styles ──────────────────────────────────────────────────────────────
 const PRINT_STYLE = `
 @media print {
-  /* Print ONLY the EOM summary, not the app shell (nav/top bar). Scoped to body.eom-printing (toggled by
-     the Print button) so this can never blank out printing on other screens. Classic hide-all-then-show. */
-  body.eom-printing { background: white !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body.eom-printing * { visibility: hidden !important; }
-  body.eom-printing .eom-print-area, body.eom-printing .eom-print-area * { visibility: visible !important; }
-  body.eom-printing .eom-print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; }
-  body.eom-printing .eom-no-print { display: none !important; }
+  /* Print ONLY the EOM summary as a clean full-page report. The summary is a MODAL, so we hide every other
+     child of the app root and strip the modal's own chrome — using display:none (NOT visibility) so no blank
+     space or phantom pages remain, and NO absolute positioning (so multi-page paginates in every browser).
+     Scoped to body.eom-printing (set by the Print button, cleared on afterprint) so no other screen breaks. */
+  body.eom-printing { background: #fff !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.eom-printing .mf-app-root > *:not(.mf-eom-print-modal) { display: none !important; }
+  body.eom-printing .mf-eom-print-modal { position: static !important; inset: auto !important; background: #fff !important; padding: 0 !important; overflow: visible !important; display: block !important; z-index: auto !important; }
+  body.eom-printing .mf-eom-print-card { background: #fff !important; border: none !important; border-radius: 0 !important; max-width: none !important; box-shadow: none !important; }
+  body.eom-printing .mf-eom-print-card > div { overflow: visible !important; max-height: none !important; }
+  body.eom-printing .mf-eom-modal-chrome, body.eom-printing .eom-no-print { display: none !important; }
   body.eom-printing table { font-size: 10px !important; }
   body.eom-printing th, body.eom-printing td { padding: 3px 4px !important; }
   /* Keep each rollup/location block whole — never split one across a page. Both properties for cross-browser. */
-  body.eom-printing .eom-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 10px !important; }
+  body.eom-printing .eom-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 12px !important; }
   body.eom-printing .eom-print-title { display: block !important; }
   @page { margin: 0.5in; size: landscape; }
 }

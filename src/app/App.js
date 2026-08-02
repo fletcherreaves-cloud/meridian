@@ -226,7 +226,7 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.746';
+const MERIDIAN_VERSION    = '4.747';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
@@ -2695,7 +2695,7 @@ function App() {
     return ()=>document.removeEventListener('keydown', onKey);
   },[]);
 
-  return div({style:{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--text)',fontFamily:'var(--sans)',overflow:'hidden'}},
+  return div({className:'mf-app-root',style:{height:'100vh',display:'flex',background:'var(--bg)',color:'var(--text)',fontFamily:'var(--sans)',overflow:'hidden'}},
 
     // ── Drag-drop overlay ─────────────────────────────────────────
     isDragging&&div({style:{
@@ -3216,9 +3216,9 @@ function App() {
           h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar}))
       )
     ),
-        showEOMSummary&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1140,position:'relative'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
+        showEOMSummary&&div({className:'mf-eom-print-modal',style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
+      div({className:'mf-eom-print-card',style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1140,position:'relative'}},
+        h('div',{className:'mf-eom-modal-chrome',style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
           h('div',null,
             h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800,letterSpacing:'-.02em'}},'📊 EOM Supervisor Summary'),
             h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Monthly P&L variance by store — filter by supervisor, operator, or all')),
