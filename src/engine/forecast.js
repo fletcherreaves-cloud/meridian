@@ -14,6 +14,7 @@ import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_S
 import { TH, grade } from '../utils/fmt.js';
 import { metricDaily } from './metric-source.js';
 import { weightedRecencyProjection, robustBaseline, _isNum as _stIsNum } from './smart-targets.js';
+import { impactWeight } from './events-import.js';
 
 // ── Model assignment cache  (v4.208 — performance) ──────────────────────────
 // getModelAssignment() is called from forecastDay() itself — the single most
@@ -1456,13 +1457,21 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   const _evTag = settings._userEvents && settings._userEvents[loc] && settings._userEvents[loc][_dk];
   const _evFactor = (()=>{
     if(!_evTag || !settings.useEventRegistry) return 0;
-    const factors = settings._eventFactors && settings._eventFactors[loc];
-    if(!factors) return 0;
-    // Support multi-tag: average all tag impacts
+    const factors = (settings._eventFactors && settings._eventFactors[loc]) || {};
+    // Per-tag impact. Learned historical impact wins when present (data-driven);
+    // otherwise fall back to the event's STORED expected impact (Notes 46) so an
+    // imported event with no history still moves the forecast: a manual
+    // expectedSalesDelta overrides, else the magnitude×daypart default weight.
+    // Conservative + clamped so a stray value can't distort the projection.
     const types = (_evTag.tags&&_evTag.tags.length)
       ? _evTag.tags.map(t=>t.type) : [_evTag.type||'other'];
-    const impacts = types.map(t=>factors[t]??0).filter(v=>v!==0);
-    return impacts.length ? impacts.reduce((a,b)=>a+b,0)/impacts.length : 0;
+    const learned = types.map(t=>factors[t]??0).filter(v=>v!==0);
+    if(learned.length) return learned.reduce((a,b)=>a+b,0)/learned.length;
+    // No learned factor → stored expected impact from the event record.
+    const stored = (_stIsNum(_evTag.expectedSalesDelta) && _evTag.expectedSalesDelta!==0)
+      ? _evTag.expectedSalesDelta
+      : (_evTag.impact ? impactWeight(_evTag.impact) : 0);
+    return Math.max(-0.25, Math.min(0.25, stored||0));
   })();
   // ── Enhanced primary forecast (LY model + trend + event adj) ─────────────
   const _plusFrac = effectivePlusUp(loc,settings)/100;
