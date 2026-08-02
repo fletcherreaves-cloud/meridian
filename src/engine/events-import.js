@@ -85,6 +85,7 @@ export function parseStaffingEvents(rows, urlByRowIndex = {}) {
   const header = (rows[0] || []).map(h => String(h == null ? '' : h).toLowerCase());
   const oppCol  = header.findIndex(h => /opponent|versus|\bvs\b/.test(h));
   const kickCol = header.findIndex(h => /kick\s*off|kickoff|\btime\b|game\s*time/.test(h));
+  const urlCol  = header.findIndex(h => /url|verif|source|link/.test(h));
   const data = rows.slice(1).filter(r => r && r[0] !== '' && r[0] != null);
   const events = []; let estimated = 0, skipped = 0;
   data.forEach((r, i) => {
@@ -104,7 +105,11 @@ export function parseStaffingEvents(rows, urlByRowIndex = {}) {
       opponent: oppCol >= 0 ? clean(r[oppCol]) : null,
       kickoff:  kickCol >= 0 ? clean(r[kickCol]) : null,
       expectedSalesDelta: null, expectedGcDelta: null,   // owner-tunable later
-      url: urlByRowIndex[i] || null, verification,
+      // Prefer the real cell hyperlink; else accept the URL column's text value if it looks like a URL
+      // (the original workbook stores "Verify Source" text + a hyperlink; a generated sheet may store the
+      // bare URL as text). Never treat non-URL link text like "Verify Source" as the url.
+      url: urlByRowIndex[i] || (urlCol >= 0 && /^https?:\/\//i.test(String(r[urlCol] || '').trim()) ? String(r[urlCol]).trim() : null),
+      verification,
     });
   });
   return { events, estimated, skipped };

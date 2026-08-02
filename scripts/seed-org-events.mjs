@@ -94,6 +94,7 @@ if (events.length) {
     category: e.category ?? null, event_type: e.type ?? null, label: e.label,
     impact_magnitude: e.impact?.magnitude ?? null, impact_daypart: e.impact?.daypart ?? null,
     impact_gameday: !!e.impact?.gameDay, impact_raw: e.impactRaw ?? e.impact?.raw ?? null,
+    opponent: e.opponent ?? null, kickoff: e.kickoff ?? null,
     expected_sales_delta: null, expected_gc_delta: null,
     url: e.url ?? null, verification: e.verification ?? null, note: null,
     entered_by: 'seed-org-events', entered_at: nowIso, method: 'bulk upload', updated_at: nowIso,
