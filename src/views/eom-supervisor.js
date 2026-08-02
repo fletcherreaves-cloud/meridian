@@ -501,8 +501,9 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
 
   return h('div', {
     key: id,
+    className: 'eom-block',
     style: { border: bdr, background: bg, borderRadius: '8px', marginBottom: '14px',
-             pageBreakInside: 'avoid' }
+             pageBreakInside: 'avoid', breakInside: 'avoid' }
   },
     // Block header
     h('div', {
@@ -547,19 +548,22 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
 // ── Print styles ──────────────────────────────────────────────────────────────
 const PRINT_STYLE = `
 @media print {
-  body { background: white !important; color: #111 !important; }
+  body { background: white !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .eom-no-print { display: none !important; }
   .eom-print-area { padding: 0 !important; }
   table { font-size: 10px !important; }
   th, td { padding: 3px 4px !important; }
-  .eom-block { page-break-inside: avoid; margin-bottom: 10px !important; }
+  /* Keep each rollup/location block whole — never split one across a page. Both properties for cross-browser. */
+  .eom-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 10px !important; }
+  .eom-print-title { display: block !important; }
   @page { margin: 0.5in; size: landscape; }
 }
+.eom-print-title { display: none; }
 `;
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 export function EOMSupervisorPanel({ ds, settings, supabase }) {
-  // Inject print styles once
+  // Inject print styles once + reset the expand-all-for-print flag when the print dialog closes.
   uE(() => {
     const id = 'eom-print-style';
     if (!document.getElementById(id)) {
@@ -567,6 +571,16 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
       s.id = id; s.textContent = PRINT_STYLE;
       document.head.appendChild(s);
     }
+    const after = () => setForPrint(false);
+    window.addEventListener('afterprint', after);
+    return () => window.removeEventListener('afterprint', after);
+  }, []);
+
+  // Print the CURRENT grouping: expand every location so its full block prints (page-break-inside keeps
+  // each whole), then open the print dialog on the next paint. afterprint (above) restores the screen view.
+  const doPrint = uCB(() => {
+    setForPrint(true);
+    setTimeout(() => window.print(), 60);
   }, []);
 
   const now = new Date();
@@ -774,9 +788,10 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
               cursor: opSupplyRows.length ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 600,
             }
           }, '⬇ CSV'),
-          // Print button
+          // Print button — expands every location, then prints the current grouping (rollup + each store)
           h('button', {
-            onClick: () => window.print(),
+            onClick: doPrint,
+            title: 'Print the selected grouping — patch total on top, each assigned location below, one location per block (no location splits across pages).',
             style: {
               background: 'rgba(16,185,129,.12)', border: '1px solid rgba(16,185,129,.3)',
               color: grn, borderRadius: '7px', padding: '6px 14px',
@@ -790,8 +805,10 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
     // ── Print area (always visible, but print-formatted) ─────────────────
     h('div', { className: 'eom-print-area' },
 
-      // Print-only title
-      h('div', { className: 'eom-no-print', style: { display: 'none' } }),
+      // Print-only title (hidden on screen; shown at the top of the printout via .eom-print-title CSS)
+      h('div', { className: 'eom-print-title', style: { marginBottom: '10px' } },
+        h('div', { style: { fontSize: '15px', fontWeight: 800, color: '#111' } }, `EOM Supervisor Summary — ${groupLabel}`),
+        h('div', { style: { fontSize: '11px', color: '#555' } }, `${monthLabel} · ${storeData.length} location${storeData.length === 1 ? '' : 's'}`)),
 
       // Rollup block at top
       rollup && h(EOMBlock, {
