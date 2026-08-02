@@ -201,6 +201,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       navItem('Date-Range Report', '📅', ()=>onOpenModal('report'),     false),
       navItem('Events & Tags',     '◷', ()=>onOpenModal('events'),     false),
       pis('analytics.dashboard', 'Calendar',        '📅', ()=>onOpenModal('calendar-manager'), false),
+      pis('analytics.dashboard', 'Event Impact',    '📈', ()=>onOpenModal('event-impact'),     false),
       // ── PERFORMANCE ────────────────────────────────────────────
       can('analytics.store') && navLabel('PERFORMANCE'),
       pis('analytics.district', 'Org Summary',        '📊', ()=>onOpenModal('operator-summary'), false),
