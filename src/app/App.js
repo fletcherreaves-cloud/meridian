@@ -17,6 +17,7 @@ import { GMCoachingBrief } from '../engine/coaching.js';
 import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
 import { CalendarManagerPanel, EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { EventImpactPanel } from '../views/event-impact.js';
+import { ReportSubscriptions } from '../views/report-subscriptions.js';
 import { AboveStoreOnePager } from '../views/above-store-onepager.js';
 import { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
@@ -229,7 +230,7 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.770';
+const MERIDIAN_VERSION    = '4.771';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
@@ -1317,6 +1318,9 @@ function App() {
   const [showCalendarManager, setShowCalendarManager] = useState(false);
   const [showEventImpact, setShowEventImpact] = useState(false);
   const [showAboveStore, setShowAboveStore] = useState(false);
+  const [aboveStoreInit, setAboveStoreInit] = useState(null); // {scope,period,panels} from a saved report
+  const [showReportSubs, setShowReportSubs] = useState(false);
+  const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
   const [showWhyEngine, setShowWhyEngine] = useState(false);
   const [showChannelIntel, setShowChannelIntel] = useState(false);
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
@@ -2840,6 +2844,7 @@ function App() {
         if(modal==='calendar-manager') perm('analytics.dashboard')&&setShowCalendarManager(true);
         if(modal==='event-impact')   perm('analytics.dashboard')&&setShowEventImpact(true);
         if(modal==='above-store')    perm('analytics.district')&&setShowAboveStore(true);
+        if(modal==='my-reports')     perm('analytics.dashboard')&&setShowReportSubs(true);
         if(modal==='channel-intel')  perm('analytics.store')&&setShowChannelIntel(true);
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
@@ -2968,9 +2973,17 @@ function App() {
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
-    showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowCalendarManager(false)}),
+    showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,initialScope:calInitScope,onClose:()=>{setShowCalendarManager(false);setCalInitScope(null);}}),
     showEventImpact&&h(EventImpactPanel,{onClose:()=>setShowEventImpact(false)}),
-    showAboveStore&&h(AboveStoreOnePager,{ds,settings,userEvents,onClose:()=>setShowAboveStore(false)}),
+    showAboveStore&&h(AboveStoreOnePager,{ds,settings,userEvents,
+      initialScope:aboveStoreInit?.scope,initialPeriod:aboveStoreInit?.period,initialPanels:aboveStoreInit?.panels,
+      onClose:()=>{setShowAboveStore(false);setAboveStoreInit(null);}}),
+    showReportSubs&&h(ReportSubscriptions,{onClose:()=>setShowReportSubs(false),
+      onLaunch:(sub)=>{
+        setShowReportSubs(false);
+        if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setShowCalendarManager(true); }
+        else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); setShowAboveStore(true); }
+      }}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
     showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,onClose:()=>setShowPerfReviews(false)}),

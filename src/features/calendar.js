@@ -41,12 +41,12 @@ const tr   = (props, ...c) => h('tr',     props, ...c);
 // Why Engine when it's built) sees these events identically to a manually
 // tagged one — no separate code path to keep in sync.
 // ─────────────────────────────────────────────────────────────────────────────
-function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
+function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClose, initialScope}) {
   const {useState:uSt, useMemo:uM, useRef:uR} = React;
   const today = new Date();
   const [viewY, setViewY] = uSt(today.getFullYear());
   const [viewM, setViewM] = uSt(today.getMonth()+1); // 1-12
-  const [scope, setScope] = uSt('all'); // 'all' | 'ok' | 'fl' | a specific loc
+  const [scope, setScope] = uSt(initialScope || 'all'); // 'all' | 'ok' | 'fl' | a specific loc
   const [tab,   setTab]   = uSt('grid'); // 'grid' | 'rules' | 'pending'
   const [gridView, setGridView] = uSt('month'); // 'month' | 'agenda'
   const [printMonths, setPrintMonths] = uSt(1); // how many consecutive months to print (Notes 49)

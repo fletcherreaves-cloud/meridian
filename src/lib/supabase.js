@@ -2910,6 +2910,44 @@ export async function saveEventImpact(rows) {
   return { saved: error ? 0 : up.length, errors: error ? [error.message] : [] };
 }
 
+// ── Report subscriptions (Notes 49) ──────────────────────────────────────────
+// A per-user list of saved report configs (report + scope/grouping + period + panels).
+// localStorage is the instant/primary cache; Supabase (report_subscriptions.subs jsonb,
+// one row per user) is the cross-device mirror. All Supabase paths fail soft — the
+// feature works fully offline/without the table, just device-local.
+const REPORT_SUBS_LS = 'mf_report_subs';
+function readSubsLS() {
+  try { const v = JSON.parse(localStorage.getItem(REPORT_SUBS_LS) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+function writeSubsLS(subs) {
+  try { localStorage.setItem(REPORT_SUBS_LS, JSON.stringify(subs || [])); } catch {}
+}
+export async function loadReportSubs() {
+  const local = readSubsLS();
+  if (!supabase) return local;
+  try {
+    const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+    if (!uid) return local;
+    const { data, error } = await supabase.from('report_subscriptions').select('subs').eq('user_id', uid).maybeSingle();
+    if (error) return local;                       // table missing / RLS — stay local
+    const remote = Array.isArray(data?.subs) ? data.subs : null;
+    if (remote) { writeSubsLS(remote); return remote; }   // cloud wins when present
+    return local;
+  } catch { return local; }
+}
+export async function saveReportSubs(subs) {
+  const clean = Array.isArray(subs) ? subs : [];
+  writeSubsLS(clean);                              // always persist locally first
+  if (!supabase) return { ok: true, cloud: false };
+  try {
+    const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+    if (!uid) return { ok: true, cloud: false };
+    const { error } = await supabase.from('report_subscriptions')
+      .upsert({ user_id: uid, subs: clean, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    return { ok: true, cloud: !error };
+  } catch { return { ok: true, cloud: false }; }
+}
+
 // Per-store secondary-review status (day-2): owner marks a store reviewed/flagged with a note.
 export async function saveEomSecondaryReview(row) {
   if (!supabase || !row?.loc) return { error: 'no-op' };

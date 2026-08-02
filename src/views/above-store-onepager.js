@@ -44,10 +44,26 @@ const fmtV = (v, fmt) => {
 };
 const pct = v => v == null || isNaN(v) ? '—' : ((v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%');
 
-export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
+// The six selectable panels (Notes 49 "build your own"). Order = display order.
+export const ONEPAGER_PANELS = [
+  { key: 'sales',    label: 'Sales / GC' },
+  { key: 'fob',      label: 'FOB / Food Cost' },
+  { key: 'labor',    label: 'Labor' },
+  { key: 'service',  label: 'Service' },
+  { key: 'controls', label: 'Controls' },
+  { key: 'voice',    label: 'Guest Voice' },
+];
+const ALL_PANEL_KEYS = ONEPAGER_PANELS.map(p => p.key);
+
+export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialScope, initialPeriod, initialPanels }) {
   const { useState, useMemo } = React;
-  const [scope, setScope] = useState('all');
-  const [period, setPeriod] = useState('mtd');
+  const [scope, setScope] = useState(initialScope || 'all');
+  const [period, setPeriod] = useState(initialPeriod || 'mtd');
+  // Which panels are visible ("build your own"). A subscription can pin a subset.
+  const [panels, setPanels] = useState(() => new Set(
+    Array.isArray(initialPanels) && initialPanels.length ? initialPanels.filter(k => ALL_PANEL_KEYS.includes(k)) : ALL_PANEL_KEYS));
+  const showP = k => panels.has(k);
+  const togglePanel = k => setPanels(prev => { const n = new Set(prev); if (n.has(k)) { if (n.size > 1) n.delete(k); } else n.add(k); return n; });
   const [ai, setAi] = useState('');            // AI narrative (streamed)
   const [aiBusy, setAiBusy] = useState(false);
   const [aiErr, setAiErr] = useState('');
@@ -106,12 +122,12 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
   const briefLines = () => {
     const d = data; if (d.err) return [];
     const L = [];
-    L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
-    L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})`);
-    L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
-    L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
-    L.push(`Controls: Cash O/S ${fmtV(d.controls.cashOS, '%')}; T-Reds After ${fmtV(d.controls.tRedA, '%')}; Discount ${fmtV(d.controls.disc, '%')}`);
-    L.push(`Voice: OSAT 5★ ${fmtV(d.rv.osat, '%')} (tgt ${fmtV(d.rv.osatTarget, '%')}); OSAT B2B ${fmtV(d.rv.osatB2B, '%')}`);
+    if (showP('sales')) L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
+    if (showP('fob')) L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})`);
+    if (showP('labor')) L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
+    if (showP('service')) L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
+    if (showP('controls')) L.push(`Controls: Cash O/S ${fmtV(d.controls.cashOS, '%')}; T-Reds After ${fmtV(d.controls.tRedA, '%')}; Discount ${fmtV(d.controls.disc, '%')}`);
+    if (showP('voice')) L.push(`Voice: OSAT 5★ ${fmtV(d.rv.osat, '%')} (tgt ${fmtV(d.rv.osatTarget, '%')}); OSAT B2B ${fmtV(d.rv.osatB2B, '%')}`);
     if (upcoming.length) L.push(`Upcoming (21d): ${upcoming.slice(0, 8).map(e => e.dk.slice(5) + ' ' + (e.label || e.type)).join('; ')}`);
     return L;
   };
@@ -168,6 +184,15 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
         btn({ className: 'btn btn-sm', disabled: aiBusy, style: { fontSize: '9px', background: 'rgba(129,140,248,.1)', borderColor: 'rgba(129,140,248,.35)', color: '#a5b4fc' }, onClick: runAI }, aiBusy ? '🧠 …' : '🧠 Analyze'),
         btn({ className: 'btn btn-sm', style: { fontSize: '9px' }, onClick: printOnePager, title: 'Print this rollup' }, '🖨'),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+      // panel toggles ("build your own" — Notes 49)
+      div({ style: { padding: '6px 16px', borderBottom: '.5px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', background: 'var(--surf)' } },
+        span({ style: { fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Panels'),
+        ...ONEPAGER_PANELS.map(p => btn({ key: p.key, onClick: () => togglePanel(p.key),
+          title: showP(p.key) ? 'Hide ' + p.label : 'Show ' + p.label,
+          style: { padding: '2px 8px', fontSize: '9px', borderRadius: 999, cursor: 'pointer', border: '.5px solid ' + (showP(p.key) ? 'var(--amber)' : 'var(--bdr)'),
+            background: showP(p.key) ? 'var(--adim)' : 'transparent', color: showP(p.key) ? 'var(--amber)' : 'var(--text3)', fontWeight: showP(p.key) ? 700 : 400 } },
+          (showP(p.key) ? '✓ ' : '') + p.label)),
+        panels.size < ALL_PANEL_KEYS.length ? btn({ onClick: () => setPanels(new Set(ALL_PANEL_KEYS)), style: { padding: '2px 8px', fontSize: '9px', borderRadius: 999, cursor: 'pointer', border: '.5px solid var(--bdr)', background: 'transparent', color: 'var(--text2)' } }, 'All') : null),
       // body
       d.err ? div({ style: { padding: 30, color: '#fca5a5', fontSize: '12px' } }, 'Could not build rollup: ' + d.err)
       : div({ style: { flex: 1, overflow: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 } },
@@ -178,31 +203,31 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
           : div({ style: { fontSize: '11.5px', color: 'var(--text2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' } }, ai || 'Thinking…')) : null,
         div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(400px,100%),1fr))', gap: 12 } },
         // Sales / GC
-        Section('Sales / GC', '💵',
+        showP('sales') && Section('Sales / GC', '💵',
           Row('Product Sales', d.byKey.sales?.actual, null, '$'),
           div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (matched)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.salesVsLY?.pct))),
           div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.rv.gcVsLY))),
           d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(0) + '%' : '—')) : null),
         // FOB
-        Section('FOB / Food Cost', '🥗',
+        showP('fob') && Section('FOB / Food Cost', '🥗',
           Row('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true),
           div({ key: 'fobd', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Σ$ ' + fmtV(d.fob$, '$') + ' ÷ Σ prod-sales ' + fmtV(d.fobProd, '$') + ' (dollar-weighted)')),
         // Labor
-        Section('Labor', '👥',
+        showP('labor') && Section('Labor', '👥',
           Row('Labor %', d.byKey.laborPct?.actual, d.byKey.laborPct?.target, '%', true),
           Row('TPPH', d.byKey.tpph?.actual, d.byKey.tpph?.target, 'n', false)),
         // Service / Speed
-        Section('Service', '🚗',
+        showP('service') && Section('Service', '🚗',
           Row('OEPE', d.byKey.oepe?.actual, d.byKey.oepe?.target, 's', true),
           Row('R2P', d.byKey.r2p?.actual, d.byKey.r2p?.target, 's', true),
           Row('KVS Time / GC', d.rv.kvsPerGc, d.rv.kvsTimeTarget, 's', true)),
         // Controls
-        Section('Controls', '🎛',
+        showP('controls') && Section('Controls', '🎛',
           Row('Cash Over/Short %', d.controls.cashOS, null, '%'),
           Row('T-Reds After %', d.controls.tRedA, null, '%'),
           Row('Discount %', d.controls.disc, null, '%')),
         // Voice
-        Section('Guest Voice', '💬',
+        showP('voice') && Section('Guest Voice', '💬',
           Row('OSAT 5★', d.rv.osat, d.rv.osatTarget, '%', false),
           Row('OSAT B2B (1★)', d.rv.osatB2B, d.rv.osatB2BTarget, '%', true),
           d.rv.smgMonth ? div({ key: 'sm', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'SMG month ' + d.rv.smgMonth + ' · n-weighted') : null),
