@@ -6,7 +6,7 @@ import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
 import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap } from '../engine/events-import.js';
-import { saveOrgEvents, saveOrgSchoolConfig } from '../lib/supabase.js';
+import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -53,6 +53,9 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const [prefillDate,  setPrefillDate]  = uSt(null);
   const [dayPanel,     setDayPanel]     = uSt(null);   // dk string → day-detail organizer panel
   const [dayEvtOpen,   setDayEvtOpen]   = uSt(null);   // expanded event key within the day panel
+  const [editKey,      setEditKey]      = uSt(null);   // event key being edited in the day panel
+  const [editDraft,    setEditDraft]    = uSt(null);   // {label,kickoff,opponent,status,note,magnitude,daypart}
+  const [editBusy,     setEditBusy]     = uSt(false);
 
   const [rules, setRules] = uSt(()=>loadRecurringRules());
   const [showRuleForm, setShowRuleForm] = uSt(false);
@@ -316,6 +319,61 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
     }catch(e){ setBulkError('Import failed: '+(e.message||e)); setBulkBusy(false); }
   };
 
+  // ── In-app event editing (Notes 46) — edit time/opponent/impact/status or delete an event ────────
+  // Writes to org_events (cloud source of truth) when the event is org-sourced (has orgEventId), and
+  // always updates the local mf_events per-day map so the calendar reflects the change immediately.
+  const evKeyOf = (loc, dk, ev) => loc+'|'+dk+'|'+(ev.label||'');
+  const writeLocalEvent = (loc, dk, patch) => {
+    const cur = (()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();
+    if(!cur[loc] || !cur[loc][dk]) return cur;
+    if(patch===null){ delete cur[loc][dk]; }
+    else cur[loc][dk] = {...cur[loc][dk], ...patch};
+    try{localStorage.setItem('mf_events',JSON.stringify(cur));}catch{}
+    onUpdate(cur);
+    return cur;
+  };
+  const startEdit = (loc, dk, ev) => {
+    setEditKey(evKeyOf(loc,dk,ev));
+    setEditDraft({
+      label: ev.label||'', kickoff: ev.kickoff||'', opponent: ev.opponent||'',
+      status: ev.status||'scheduled', note: (ev.note&&ev.note!==ev.label)?ev.note:'',
+      magnitude: ev.impact?.magnitude||'', daypart: ev.impact?.daypart||'',
+    });
+  };
+  const saveEdit = async (loc, dk, ev) => {
+    setEditBusy(true);
+    const d = editDraft;
+    const impact = (d.magnitude||d.daypart) ? {...(ev.impact||{}), magnitude:d.magnitude||null, daypart:d.daypart||null} : ev.impact;
+    const localPatch = { label:d.label, kickoff:d.kickoff||null, opponent:d.opponent||null,
+      status:d.status==='scheduled'?null:d.status, note:d.note||d.label, impact };
+    // Cloud write for org-sourced events.
+    if(ev.orgEventId){
+      const res = await updateOrgEvent(ev.orgEventId, {
+        label:d.label, kickoff:d.kickoff||null, opponent:d.opponent||null,
+        status:d.status==='scheduled'?null:d.status, note:d.note||null,
+        impactMagnitude:impact?.magnitude??null, impactDaypart:impact?.daypart??null,
+      });
+      if(res.error){ setEditBusy(false); alert('Save failed: '+res.error); return; }
+    }
+    writeLocalEvent(loc, dk, localPatch);
+    setEditBusy(false); setEditKey(null); setEditDraft(null);
+  };
+  const deleteEvt = async (loc, dk, ev) => {
+    if(!window.confirm('Delete this event? This removes it from the calendar'+(ev.orgEventId?' and the cloud.':'.'))) return;
+    setEditBusy(true);
+    if(ev.orgEventId){ const res = await deleteOrgEvent(ev.orgEventId); if(res.error){ setEditBusy(false); alert('Delete failed: '+res.error); return; } }
+    writeLocalEvent(loc, dk, null);
+    setEditBusy(false); setEditKey(null); setEditDraft(null);
+  };
+  // Quick status toggle (Postpone / Cancel / restore) without opening the full edit form.
+  const quickStatus = async (loc, dk, ev, status) => {
+    setEditBusy(true);
+    const st = status==='scheduled'?null:status;
+    if(ev.orgEventId){ const res = await updateOrgEvent(ev.orgEventId, {status:st}); if(res.error){ setEditBusy(false); alert('Update failed: '+res.error); return; } }
+    writeLocalEvent(loc, dk, {status:st});
+    setEditBusy(false);
+  };
+
   // ── Recurring rule form ─────────────────────────────────────────────────────
   const newRuleDraft = () => ({id:'rule_'+Date.now(), label:'', type:'school_break',
     locs:[], month:11, day:25, durationDays:5, active:true, source:'manual', createdAt:new Date().toISOString()});
@@ -398,25 +456,31 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
               const key=ev.loc+'|'+(ev.label||i);
               const open=dayEvtOpen===key;
+              const eKey=evKeyOf(ev.loc,dk,ev);
+              const editing=editKey===eKey;
               const imp=ev.impact;
               const impLabel=imp?(imp.gameDay?'Game Day traffic':((imp.magnitude||'')+(imp.daypart?' · '+dl(imp.daypart):''))):null;
               const game=ev.type==='sports'?parseGame(ev.label):null;
-              // Prefer explicitly-imported opponent/kickoff (optional sheet columns) over what we can
-              // parse out of the label; kickoff only exists if the sheet carries it.
               const opponent=ev.opponent||(game&&game.opponent)||null;
               const homeAway=(game&&game.homeAway)||null;
               const kickoff=ev.kickoff||null;
               const gameBits=game?[homeAway,opponent?'vs '+opponent:null,kickoff].filter(Boolean).join(' · '):null;
-              return div({key,style:{flexShrink:0,border:'.5px solid var(--bdr)',borderLeft:'3px solid '+et.col,borderRadius:6,background:'var(--surf2)',overflow:'hidden'}},
-                div({onClick:()=>setDayEvtOpen(open?null:key),style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',cursor:'pointer'}},
+              // Status: null/scheduled = active; canceled = strikethrough+red; postponed = amber; rescheduled = blue.
+              const ST={canceled:['✕ Canceled','#ef4444'],postponed:['⏸ Postponed','#fbbf24'],rescheduled:['↺ Rescheduled','#60a5fa']};
+              const stInfo=ev.status&&ST[ev.status]?ST[ev.status]:null;
+              const canceled=ev.status==='canceled';
+              const btnS={fontSize:'9.5px',fontWeight:700,borderRadius:5,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--bdr2)',background:'var(--surf3)',color:'var(--text2)'};
+              return div({key,style:{flexShrink:0,border:'.5px solid '+(stInfo?stInfo[1]+'66':'var(--bdr)'),borderLeft:'3px solid '+(stInfo?stInfo[1]:et.col),borderRadius:6,background:'var(--surf2)',overflow:'hidden',opacity:canceled?0.6:1}},
+                div({onClick:()=>{setDayEvtOpen(open?null:key);if(editing){setEditKey(null);setEditDraft(null);}},style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',cursor:'pointer'}},
                   span({style:{fontSize:'15px',flexShrink:0}},ev.icon||et.icon),
                   div({style:{flex:1,minWidth:0}},
-                    div({style:{fontSize:'12px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},ev.label||et.label),
+                    div({style:{fontSize:'12px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',textDecoration:canceled?'line-through':'none'}},ev.label||et.label),
                     div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
                       (sName(ev.loc)||('#'+ev.loc))+' · '+et.label+(gameBits?' · '+gameBits:'')+(ev.verification?' · '+ev.verification:''))),
-                  impLabel&&span({style:{flexShrink:0,fontSize:'8.5px',fontWeight:700,color:'#fbbf24',border:'1px solid rgba(251,191,36,.4)',borderRadius:4,padding:'1px 5px',whiteSpace:'nowrap'}},impLabel),
+                  stInfo&&span({style:{flexShrink:0,fontSize:'8.5px',fontWeight:700,color:stInfo[1],border:'1px solid '+stInfo[1],borderRadius:4,padding:'1px 5px',whiteSpace:'nowrap'}},stInfo[0]),
+                  !stInfo&&impLabel&&span({style:{flexShrink:0,fontSize:'8.5px',fontWeight:700,color:'#fbbf24',border:'1px solid rgba(251,191,36,.4)',borderRadius:4,padding:'1px 5px',whiteSpace:'nowrap'}},impLabel),
                   span({style:{color:'var(--text3)',fontSize:'11px',flexShrink:0}},open?'▾':'▸')),
-                open&&div({style:{padding:'2px 12px 10px 12px',borderTop:'.5px solid var(--bdr)',fontSize:'10.5px',color:'var(--text2)',display:'flex',flexDirection:'column',gap:4,lineHeight:1.5}},
+                open&&!editing&&div({style:{padding:'2px 12px 10px 12px',borderTop:'.5px solid var(--bdr)',fontSize:'10.5px',color:'var(--text2)',display:'flex',flexDirection:'column',gap:4,lineHeight:1.5}},
                   opponent&&div(null,span({style:{color:'var(--text3)'}},'Opponent: '),opponent+(homeAway?' ('+homeAway+')':'')),
                   !opponent&&homeAway&&div(null,span({style:{color:'var(--text3)'}},'Location: '),homeAway+' game'),
                   kickoff&&div(null,span({style:{color:'var(--text3)'}},'Kickoff: '),kickoff),
@@ -427,7 +491,31 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
                   ev.rangeTotalDays>1&&div(null,span({style:{color:'var(--text3)'}},'Multi-day: '),'day '+ev.rangeDayNum+' of '+ev.rangeTotalDays),
                   div(null,span({style:{color:'var(--text3)'}},'Source: '),ev.source||'Calendar'),
                   ev.url&&h('a',{href:ev.url,target:'_blank',rel:'noopener noreferrer',onClick:e=>e.stopPropagation(),
-                    style:{color:'#60a5fa',textDecoration:'none',fontWeight:600,width:'fit-content'}},'🔗 '+hostOf(ev.url))));
+                    style:{color:'#60a5fa',textDecoration:'none',fontWeight:600,width:'fit-content'}},'🔗 '+hostOf(ev.url)),
+                  // Action row: edit / quick postpone-cancel / restore / delete
+                  div({style:{display:'flex',gap:6,flexWrap:'wrap',marginTop:6,paddingTop:6,borderTop:'1px dashed var(--bdr2)'}},
+                    btn({disabled:editBusy,onClick:e=>{e.stopPropagation();startEdit(ev.loc,dk,ev);},style:{...btnS,color:'var(--amber)',borderColor:'rgba(245,188,0,.4)'}},'✎ Edit'),
+                    ev.status!=='postponed'?btn({disabled:editBusy,onClick:e=>{e.stopPropagation();quickStatus(ev.loc,dk,ev,'postponed');},style:btnS},'⏸ Postpone'):null,
+                    ev.status!=='canceled'?btn({disabled:editBusy,onClick:e=>{e.stopPropagation();quickStatus(ev.loc,dk,ev,'canceled');},style:{...btnS,color:'#fca5a5'}},'✕ Cancel'):null,
+                    ev.status?btn({disabled:editBusy,onClick:e=>{e.stopPropagation();quickStatus(ev.loc,dk,ev,'scheduled');},style:{...btnS,color:'#6ee7b7'}},'✓ Restore'):null,
+                    btn({disabled:editBusy,onClick:e=>{e.stopPropagation();deleteEvt(ev.loc,dk,ev);},style:{...btnS,color:'#f87171',marginLeft:'auto'}},'🗑 Delete'))),
+                // ── Edit form ──
+                open&&editing&&editDraft&&div({onClick:e=>e.stopPropagation(),style:{padding:'8px 12px 12px',borderTop:'.5px solid var(--bdr)',display:'flex',flexDirection:'column',gap:7}},
+                  ...[['label','Title','text'],['kickoff','Time / kickoff (e.g. 7:00 pm)','text'],...(ev.type==='sports'?[['opponent','Opponent','text']]:[])].map(([f,ph])=>
+                    h('input',{key:f,value:editDraft[f],placeholder:ph,onChange:e=>setEditDraft(d=>({...d,[f]:e.target.value})),
+                      style:{fontSize:'11px',background:'var(--surf3)',color:'var(--text)',border:'1px solid var(--bdr2)',borderRadius:5,padding:'5px 7px'}})),
+                  div({style:{display:'flex',gap:6,flexWrap:'wrap'}},
+                    h('select',{value:editDraft.status,onChange:e=>setEditDraft(d=>({...d,status:e.target.value})),style:{flex:1,fontSize:'11px',background:'var(--surf3)',color:'var(--text)',border:'1px solid var(--bdr2)',borderRadius:5,padding:'5px 6px'}},
+                      [['scheduled','Scheduled'],['postponed','Postponed'],['canceled','Canceled'],['rescheduled','Rescheduled']].map(([v,l])=>h('option',{key:v,value:v},l))),
+                    h('select',{value:editDraft.magnitude,onChange:e=>setEditDraft(d=>({...d,magnitude:e.target.value})),style:{flex:1,fontSize:'11px',background:'var(--surf3)',color:'var(--text)',border:'1px solid var(--bdr2)',borderRadius:5,padding:'5px 6px'}},
+                      [['','Impact —'],['High','High'],['Medium','Medium'],['Low','Low']].map(([v,l])=>h('option',{key:v,value:v},l))),
+                    h('select',{value:editDraft.daypart,onChange:e=>setEditDraft(d=>({...d,daypart:e.target.value})),style:{flex:1,fontSize:'11px',background:'var(--surf3)',color:'var(--text)',border:'1px solid var(--bdr2)',borderRadius:5,padding:'5px 6px'}},
+                      [['','Daypart —'],['breakfast','Breakfast'],['afternoon','Afternoon'],['day','Day'],['dinner','Dinner'],['all','All'],['gameday','Game Day']].map(([v,l])=>h('option',{key:v,value:v},l)))),
+                  h('textarea',{value:editDraft.note,placeholder:'Note (optional)',rows:2,onChange:e=>setEditDraft(d=>({...d,note:e.target.value})),
+                    style:{fontSize:'11px',background:'var(--surf3)',color:'var(--text)',border:'1px solid var(--bdr2)',borderRadius:5,padding:'5px 7px',resize:'vertical'}}),
+                  div({style:{display:'flex',gap:6,justifyContent:'flex-end'}},
+                    btn({disabled:editBusy,onClick:()=>{setEditKey(null);setEditDraft(null);},style:btnS},'Cancel'),
+                    btn({disabled:editBusy,onClick:()=>saveEdit(ev.loc,dk,ev),style:{...btnS,background:'var(--adim)',borderColor:'rgba(245,188,0,.4)',color:'var(--amber)'}},editBusy?'Saving…':'✓ Save'))));
             }))
         ));
     })(),

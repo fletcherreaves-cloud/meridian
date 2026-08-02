@@ -149,6 +149,7 @@ export function orgEventsToDayMap(events, iconFor = () => '📌') {
         impact: e.impact || null,
         opponent: e.opponent ?? null,
         kickoff: e.kickoff ?? null,
+        status: e.status ?? null,
         expectedSalesDelta: e.expectedSalesDelta ?? null,
         expectedGcDelta: e.expectedGcDelta ?? null,
         verification: e.verification || null,

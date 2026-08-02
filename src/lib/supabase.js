@@ -2801,7 +2801,7 @@ export async function loadOrgEvents() {
     id: r.id, loc: String(r.loc), dateStart: r.date_start, dateEnd: r.date_end, span: !!r.span,
     category: r.category, type: r.event_type, label: r.label,
     impact: { magnitude: r.impact_magnitude, daypart: r.impact_daypart, gameDay: !!r.impact_gameday, raw: r.impact_raw },
-    opponent: r.opponent ?? null, kickoff: r.kickoff ?? null,
+    opponent: r.opponent ?? null, kickoff: r.kickoff ?? null, status: r.status ?? null,
     expectedSalesDelta: r.expected_sales_delta, expectedGcDelta: r.expected_gc_delta,
     url: r.url, verification: r.verification, note: r.note,
     enteredBy: r.entered_by, enteredAt: r.entered_at, method: r.method,
@@ -2839,6 +2839,27 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
 export async function deleteOrgEvent(id) {
   if (!supabase || id == null) return { error: 'no-id' };
   const { error } = await supabase.from('org_events').delete().eq('id', id);
+  return { error: error?.message || null };
+}
+// Update a single org_events row by id (in-app editing: time/opponent/impact/status/note changes).
+// patch keys are camelCase; mapped to columns here. Only provided keys are written.
+export async function updateOrgEvent(id, patch = {}) {
+  if (!supabase || id == null) return { error: 'no-id' };
+  const M = {
+    label: 'label', note: 'note', url: 'url', status: 'status',
+    opponent: 'opponent', kickoff: 'kickoff',
+    dateStart: 'date_start', dateEnd: 'date_end',
+    expectedSalesDelta: 'expected_sales_delta', expectedGcDelta: 'expected_gc_delta',
+    impactMagnitude: 'impact_magnitude', impactDaypart: 'impact_daypart', impactGameday: 'impact_gameday',
+  };
+  const row = { updated_at: new Date().toISOString() };
+  for (const [k, col] of Object.entries(M)) if (k in patch) row[col] = patch[k];
+  let { error } = await supabase.from('org_events').update(row).eq('id', id);
+  // Self-heal if the status column isn't migrated yet (schema-org-events-status.sql).
+  if (error && /column .*status.* does not exist/i.test(error.message || '') && 'status' in row) {
+    const { status, ...rest } = row;
+    ({ error } = await supabase.from('org_events').update(rest).eq('id', id));
+  }
   return { error: error?.message || null };
 }
 export async function loadOrgSchoolConfig() {
