@@ -1719,9 +1719,12 @@ function parseSMGFullScale(wb) {
       const osat5 = _num01(row[2]), osat4 = _num01(row[3]), osat3 = _num01(row[4]),
             osat2 = _num01(row[5]), osat1 = _num01(row[6]);
       const anyOsat = [osat5, osat4, osat3, osat2, osat1].some(v => v != null);
+      // OSAT response count (col 1) — the survey base. Persisted so district/patch/org
+      // rollups can n-weight the %s (Σ pct·n / Σ n) instead of averaging averages.
+      const n = (typeof row[1] === 'number' && row[1] > 0) ? Math.round(row[1]) : null;
       out.push({
         loc: String(parseInt(sm[1], 10)), storeName: sm[2].trim(),
-        reportStart, reportEnd, year, month,
+        reportStart, reportEnd, year, month, n,
         osatTop2:       anyOsat ? (osat5 || 0) + (osat4 || 0) : null,
         osat5:          osat5,
         osat1:          osat1,   // "1"-rated share (worst box) → OSAT B2B on the reviews
@@ -1803,6 +1806,7 @@ function parseSMGFullScale(wb) {
 
     result.push({
       loc, storeName, reportStart, reportEnd, year, month,
+      n: null,   // legacy Small-Graph layout exposes no clean response count → rollup falls back to simple mean
       osatTop2:        osatTop2 || null,
       osat5:           osat5    || null,
       osat1:           osat1    || null,   // "1"-rated share (worst box) → OSAT B2B on the reviews

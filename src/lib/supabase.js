@@ -256,9 +256,17 @@ export async function saveSmgFullscale(rows) {
     accuracy_b2b:    r.accuracyB2B  ?? null,
     dt_problem:      r.dtProblem    ?? null,
     overall_problem: r.overallProblem ?? null,
+    n:               r.n            ?? null,   // OSAT response count → n-weighted rollups (Notes 36 #7)
     updated_by:      uid || null,
   }));
-  const { error } = await supabase.from('smg_fullscale').upsert(upsert, { onConflict: 'loc,year,month' });
+  let { error } = await supabase.from('smg_fullscale').upsert(upsert, { onConflict: 'loc,year,month' });
+  // Resilient to a not-yet-migrated table: if the `n` column doesn't exist, retry without it so
+  // SMG uploads never break before the owner runs supabase/schema-smg-n.sql. Self-heals after.
+  if (error && /column .*\bn\b.* does not exist|'n' column|column "n"/i.test(error.message || '')) {
+    const upsertNoN = upsert.map(({ n, ...rest }) => rest);
+    ({ error } = await supabase.from('smg_fullscale').upsert(upsertNoN, { onConflict: 'loc,year,month' }));
+    if (!error) console.warn('[smg_fullscale] saved WITHOUT n — run schema-smg-n.sql to enable n-weighted rollups');
+  }
   if (error) { console.warn('[smg_fullscale] save error:', error); return { saved: 0, errors: [error.message] }; }
   console.log(`[smg_fullscale] saved ${upsert.length} store records`);
   return { saved: upsert.length, errors: [] };
@@ -291,6 +299,7 @@ export async function loadSmgFullscale({ year, month } = {}) {
     accuracyB2B:    r.accuracy_b2b,
     dtProblem:      r.dt_problem,
     overallProblem: r.overall_problem,
+    n:              r.n ?? null,   // OSAT response count (null on pre-migration rows) → n-weighted rollups
   }));
 }
 

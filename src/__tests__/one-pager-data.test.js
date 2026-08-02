@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
-import { fobByRange, buildOnePagerInputs, buildCurrentState } from '../engine/one-pager-data.js';
+import { fobByRange, buildOnePagerInputs, buildCurrentState, buildReviewActuals } from '../engine/one-pager-data.js';
 
 const d = s => new Date(s + 'T00:00:00');
 
@@ -55,5 +55,27 @@ describe('buildCurrentState FOB% tile', () => {
     expect(fob.actual).toBeCloseTo(0.05, 6);       // 6000/120000, NOT 6000/7000 (=0.857)
     const sales = rows.find(r => r.key === 'sales');
     expect(sales.actual).toBe(7000);               // window net sales
+  });
+});
+
+describe('buildReviewActuals SMG n-weighting (Notes 36 #7)', () => {
+  const range = { s: '2026-06-01', e: '2026-06-30' };
+  it('n-weights CSAT % across stores (Σ pct·n / Σ n), not a simple mean', () => {
+    const ds = { smgFullscale: [
+      { loc: '1', year: 2026, month: 6, osat5: 0.90, n: 100 },
+      { loc: '2', year: 2026, month: 6, osat5: 0.60, n: 900 },  // far more responses → pulls the roll-up down
+    ] };
+    const a = buildReviewActuals(ds, ['1', '2'], range);
+    // weighted = (0.90*100 + 0.60*900)/1000 = 0.63 ; simple mean would be 0.75
+    expect(a.osat).toBeCloseTo(0.63, 6);
+    expect(a.osat).not.toBeCloseTo(0.75, 3);
+  });
+  it('falls back to a simple mean when any store lacks a response count', () => {
+    const ds = { smgFullscale: [
+      { loc: '1', year: 2026, month: 6, osat5: 0.90, n: 100 },
+      { loc: '2', year: 2026, month: 6, osat5: 0.60, n: null },  // legacy row → no n
+    ] };
+    const a = buildReviewActuals(ds, ['1', '2'], range);
+    expect(a.osat).toBeCloseTo(0.75, 6);   // (0.90+0.60)/2
   });
 });

@@ -157,10 +157,21 @@ export function buildReviewActuals(ds, locs, range) {
     const k = r.year * 12 + r.month;
     if (k > bestKey) { bestKey = k; bestY = r.year; bestM = r.month; }
   }
+  // Response-count (n) weighted mean of a CSAT % across the scope's stores for the latest month:
+  // Σ(pct·n)/Σn — the correct roll-up (never average averages). Falls back to a simple mean only
+  // when response counts aren't present (legacy Small-Graph uploads, or pre-migration rows with
+  // null n). The FullScale "Combined" row's weighted value is reproduced this way. (Notes 36 #7)
   const meanField = (field) => {
     if (bestKey < 0) return null;
-    const vals = smg.filter(r => locSet.has(unpad(r.loc)) && (r.year * 12 + r.month) === bestKey && r[field] != null && !isNaN(r[field])).map(r => r[field]);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    const rows = smg.filter(r => locSet.has(unpad(r.loc)) && (r.year * 12 + r.month) === bestKey && r[field] != null && !isNaN(r[field]));
+    if (!rows.length) return null;
+    const weighted = rows.every(r => typeof r.n === 'number' && r.n > 0);
+    if (weighted) {
+      const num = rows.reduce((s, r) => s + r[field] * r.n, 0);
+      const den = rows.reduce((s, r) => s + r.n, 0);
+      return den > 0 ? num / den : null;
+    }
+    return rows.reduce((s, r) => s + r[field], 0) / rows.length;
   };
   // Projected product sales over the window (scope sum) — Product-Sales target.
   let projSales = 0, hasProj = false;
