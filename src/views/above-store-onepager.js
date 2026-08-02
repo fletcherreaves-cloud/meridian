@@ -4,10 +4,10 @@
 // period (MTD / Last week / Last month). Reuses the proven one-pager-data builders + metric-source +
 // vs-LY, plus the Event Impact registry's upcoming events. v1: quantified rollup (read-only) + print.
 import * as React from 'react';
-import { buildCurrentState, buildReviewActuals, fobByRange } from '../engine/one-pager-data.js';
+import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows } from '../engine/one-pager-data.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
-import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES } from '../constants.js';
+import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
 import { supabase } from '../lib/supabase.js';
 
 // Stream a SAGE analysis (same edge-function contract as sage.js callSageStream).
@@ -53,10 +53,15 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
   const [aiErr, setAiErr] = useState('');
   const fobRows = (ds && ds.fobRows) || [];
 
-  const locs = useMemo(() => Object.keys(STORE_NAMES).filter(l =>
-    scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
-      : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope), [scope]);
-  const scopeLabel = scope === 'all' ? 'All 27 stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida' : (sNameC(scope) || scope);
+  const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
+  const locs = useMemo(() => {
+    if (scope.startsWith('grp:')) return (groups[scope.slice(4)] || []).map(l => String(l).replace(/^0+/, ''));
+    return Object.keys(STORE_NAMES).filter(l =>
+      scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
+        : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
+  }, [scope, groups]);
+  const scopeLabel = scope === 'all' ? 'All 27 stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
+    : scope.startsWith('grp:') ? ('Patch: ' + scope.slice(4) + ' (' + locs.length + ')') : (sNameC(scope) || scope);
 
   const range = useMemo(() => {
     const now = new Date(); const y = now.getFullYear(), m = now.getMonth();
@@ -81,7 +86,8 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
       const fobProd = fobAgg.reduce((s, a) => s + (a.prodSales || 0), 0);
       const projSales = rv.projSales;
       const pace = (projSales && byKey.sales?.actual) ? byKey.sales.actual / projSales : null;
-      return { byKey, rv, salesVsLY, controls, fob$, fobProd, projSales, pace, err: null };
+      const perStore = locs.length > 1 ? buildPerLocationRows(ds, fobRows, locs, range, null) : [];
+      return { byKey, rv, salesVsLY, controls, fob$, fobProd, projSales, pace, perStore, err: null };
     } catch (e) { return { err: String(e?.message || e) }; }
   }, [ds, fobRows, locs, range]);
 
@@ -155,6 +161,8 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
           ...[['mtd', 'MTD'], ['lastweek', 'Last wk'], ['lastmonth', 'Last mo']].map(([v, l]) => btn({ key: v, onClick: () => setPeriod(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: period === v ? 'var(--amber)' : 'transparent', color: period === v ? '#000' : 'var(--text3)' } }, l))),
         div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
           ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => btn({ key: v, onClick: () => setScope(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: scope === v ? 'var(--adim)' : 'transparent', color: scope === v ? 'var(--amber)' : 'var(--text3)' } }, l))),
+        Object.keys(groups).length ? h('select', { value: scope.startsWith('grp:') ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Supervisor patch', style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
+          h('option', { value: '' }, '— patch —'), Object.keys(groups).sort().map(g => h('option', { key: g, value: 'grp:' + g }, g))) : null,
         h('select', { value: STORE_NAMES[scope] ? scope : '', onChange: e => e.target.value && setScope(e.target.value), style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
           h('option', { value: '' }, '— store —'), Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l)))),
         btn({ className: 'btn btn-sm', disabled: aiBusy, style: { fontSize: '9px', background: 'rgba(129,140,248,.1)', borderColor: 'rgba(129,140,248,.35)', color: '#a5b4fc' }, onClick: runAI }, aiBusy ? '🧠 …' : '🧠 Analyze'),
@@ -206,7 +214,21 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
               return div({ key: i, style: { display: 'flex', gap: 6, fontSize: '10px', alignItems: 'baseline', borderTop: i ? '1px solid var(--bdr)' : 'none', padding: '2px 0' } },
                 span({ style: { color: 'var(--text3)', minWidth: 42 } }, e.dk.slice(5)),
                 span(null, e.icon || et.icon),
-                span({ style: { color: 'var(--text2)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, e.label || et.label)); }))))),
+                span({ style: { color: 'var(--text2)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, e.label || et.label)); }))),
+        (d.perStore && d.perStore.length) ? h('div', { key: 'ps', style: { gridColumn: '1/-1', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', overflowX: 'auto' } }, [
+          h('div', { key: 't', style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, '🏬 Per-store · worst sales vs LY first'),
+          h('table', { key: 'tbl', style: { width: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
+            h('thead', { key: 'h' }, h('tr', null, ['Store', 'Sales', 'vs LY', 'FOB %', 'Labor %', 'OEPE'].map((t, i) => h('th', { key: i, style: { textAlign: i === 0 ? 'left' : 'right', fontSize: '8.5px', textTransform: 'uppercase', color: 'var(--text3)', padding: '3px 6px', borderBottom: '1px solid var(--bdr2)' } }, t)))),
+            h('tbody', { key: 'b' }, d.perStore.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
+              h('td', { key: 'a', style: { padding: '3px 6px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sNameC(r.loc) || r.loc),
+              h('td', { key: 's', style: { padding: '3px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' } }, fmtV(r.netSales, '$')),
+              h('td', { key: 'v', style: { padding: '3px 6px', textAlign: 'right', fontWeight: 700, color: (r.salesVsLYPct || 0) >= 0 ? '#4ade80' : '#f87171' } }, r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'),
+              h('td', { key: 'f', style: { padding: '3px 6px', textAlign: 'right', color: badge(r.fobPct, r.fobTarget, true) } }, fmtV(r.fobPct, '%')),
+              h('td', { key: 'l', style: { padding: '3px 6px', textAlign: 'right', color: badge(r.laborPct, r.laborTarget, true) } }, fmtV(r.laborPct, '%')),
+              h('td', { key: 'o', style: { padding: '3px 6px', textAlign: 'right' } }, fmtV(r.oepe, 's')),
+            ])))
+          ])
+        ]) : null)),
       // footer
       div({ style: { padding: '8px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', fontSize: '9px', color: 'var(--text3)' } },
         'v1 rollup — Scheduling depth + AI narrative + per-panel drilldown next. Green = at/better than target, red = worse.')));
