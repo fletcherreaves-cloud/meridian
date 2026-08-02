@@ -364,6 +364,15 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
       const dp=(v)=>v==null?null:((v>0?'+':'')+Math.round(v*100)+'%');
       const hostOf=(u)=>{try{return new URL(u).hostname.replace(/^www\./,'');}catch{return 'source';}};
       const dl=(txt)=>({breakfast:'Breakfast / Morning',afternoon:'Afternoon',day:'Day Shift',dinner:'Dinner / Late Night',all:'All Shifts',gameday:'Game Day'}[txt]||txt);
+      // Pull opponent + home/away out of a game label ("OU vs UTEP (Home)" → {opponent:'UTEP', homeAway:'Home'}).
+      // HS labels ("Ada High School Football (Home)") carry no opponent — kickoff time isn't in the source data.
+      const parseGame=(label)=>{
+        const s=String(label||'');
+        const homeAway=/\(\s*home\s*\)/i.test(s)?'Home':/\(\s*away\s*\)/i.test(s)?'Away':null;
+        const core=s.replace(/\s*\((?:home|away)\)\s*$/i,'').trim();
+        const m=core.match(/\b(?:vs\.?|@|at)\s+(.+)$/i);
+        return {homeAway,opponent:m?m[1].trim():null};
+      };
       return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',zIndex:515,
         display:'flex',alignItems:'center',justifyContent:'center',padding:20},
         onClick:()=>{setDayPanel(null);setDayEvtOpen(null);}},
@@ -379,8 +388,9 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
             btn({className:'btn btn-sm btn-a',style:{fontSize:'9px',fontWeight:700},
               onClick:()=>{setPrefillDate(dk);setShowAddEvent(true);setDayPanel(null);}},'➕ Add'),
             btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:()=>{setDayPanel(null);setDayEvtOpen(null);}},'✕')),
-          // Event list
-          div({style:{padding:'8px 12px 14px',overflowY:'auto',display:'flex',flexDirection:'column',gap:6}},
+          // Event list — flex:1 + minHeight:0 so it bounds to the card and scrolls; each row is
+          // flexShrink:0 so rows keep their natural height on busy days (no squished overlap).
+          div({style:{flex:1,minHeight:0,padding:'8px 12px 14px',overflowY:'auto',display:'flex',flexDirection:'column',gap:6}},
             dayEvents.length===0&&div({style:{textAlign:'center',color:'var(--text3)',fontSize:'11px',padding:'28px 12px',lineHeight:1.6}},
               div({style:{fontSize:28,marginBottom:8}},'🗓'),
               'No events on this day.',h('br'),'Use ➕ Add to tag one.'),
@@ -390,16 +400,20 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               const open=dayEvtOpen===key;
               const imp=ev.impact;
               const impLabel=imp?(imp.gameDay?'Game Day traffic':((imp.magnitude||'')+(imp.daypart?' · '+dl(imp.daypart):''))):null;
-              return div({key,style:{border:'.5px solid var(--bdr)',borderLeft:'3px solid '+et.col,borderRadius:6,background:'var(--surf2)',overflow:'hidden'}},
+              const game=ev.type==='sports'?parseGame(ev.label):null;
+              const gameBits=game?[game.homeAway,game.opponent?'vs '+game.opponent:null].filter(Boolean).join(' · '):null;
+              return div({key,style:{flexShrink:0,border:'.5px solid var(--bdr)',borderLeft:'3px solid '+et.col,borderRadius:6,background:'var(--surf2)',overflow:'hidden'}},
                 div({onClick:()=>setDayEvtOpen(open?null:key),style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',cursor:'pointer'}},
-                  span({style:{fontSize:'15px'}},ev.icon||et.icon),
+                  span({style:{fontSize:'15px',flexShrink:0}},ev.icon||et.icon),
                   div({style:{flex:1,minWidth:0}},
                     div({style:{fontSize:'12px',fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},ev.label||et.label),
-                    div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
-                      (sName(ev.loc)||('#'+ev.loc))+' · '+et.label+(ev.verification?' · '+ev.verification:''))),
-                  impLabel&&span({style:{fontSize:'8.5px',fontWeight:700,color:'#fbbf24',border:'1px solid rgba(251,191,36,.4)',borderRadius:4,padding:'1px 5px',whiteSpace:'nowrap'}},impLabel),
-                  span({style:{color:'var(--text3)',fontSize:'11px'}},open?'▾':'▸')),
+                    div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
+                      (sName(ev.loc)||('#'+ev.loc))+' · '+et.label+(gameBits?' · '+gameBits:'')+(ev.verification?' · '+ev.verification:''))),
+                  impLabel&&span({style:{flexShrink:0,fontSize:'8.5px',fontWeight:700,color:'#fbbf24',border:'1px solid rgba(251,191,36,.4)',borderRadius:4,padding:'1px 5px',whiteSpace:'nowrap'}},impLabel),
+                  span({style:{color:'var(--text3)',fontSize:'11px',flexShrink:0}},open?'▾':'▸')),
                 open&&div({style:{padding:'2px 12px 10px 12px',borderTop:'.5px solid var(--bdr)',fontSize:'10.5px',color:'var(--text2)',display:'flex',flexDirection:'column',gap:4,lineHeight:1.5}},
+                  game&&game.opponent&&div(null,span({style:{color:'var(--text3)'}},'Opponent: '),game.opponent+(game.homeAway?' ('+game.homeAway+')':'')),
+                  game&&!game.opponent&&game.homeAway&&div(null,span({style:{color:'var(--text3)'}},'Location: '),game.homeAway+' game'),
                   ev.note&&ev.note!==ev.label&&div(null,span({style:{color:'var(--text3)'}},'Note: '),ev.note),
                   impLabel&&div(null,span({style:{color:'var(--text3)'}},'Expected impact: '),impLabel),
                   (ev.expectedSalesDelta!=null||ev.expectedGcDelta!=null)&&div(null,span({style:{color:'var(--text3)'}},'Owner estimate: '),
