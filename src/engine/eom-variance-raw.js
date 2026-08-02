@@ -8,10 +8,20 @@
 //
 // rawItems = qsr_raw_item_detail rows: { wrin, descr, cls, history:[{ dt, tm, isCount, difference, variance }] }.
 
+// Parse a count event's date+time to ms. The raw ledger stores dates as MM/DD/YYYY (e.g. "07/30/2026"),
+// which Date.parse of `${dt}T${tm}` turns into NaN — so this MUST handle US format, not just ISO. (This
+// bug silently zeroed out every raw-source variance, forcing the lagging-aggregate fallback everywhere.)
 const tsOf = (dt, tm) => {
   if (!dt) return null;
-  const t = Date.parse(`${String(dt).slice(0, 10)}T${(tm && /^\d{1,2}:\d{2}/.test(tm)) ? tm.slice(0, 5) : '00:00'}:00`);
-  return Number.isNaN(t) ? null : t;
+  const s = String(dt);
+  let y, mo, d;
+  const isoM = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const usM = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (isoM) { y = +isoM[1]; mo = +isoM[2]; d = +isoM[3]; }
+  else if (usM) { mo = +usM[1]; d = +usM[2]; y = +usM[3]; }
+  else return null;
+  const tM = String(tm || '').match(/^(\d{1,2}):(\d{2})/);
+  return new Date(y, mo - 1, d, tM ? +tM[1] : 0, tM ? +tM[2] : 0).getTime();
 };
 
 // Per-item variance from the LATEST count event on or before `asOf`. Returns wrin -> { dolDiff (the $

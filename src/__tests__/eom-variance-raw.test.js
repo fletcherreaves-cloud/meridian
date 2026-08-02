@@ -20,6 +20,19 @@ describe('latestVarianceByWrin', () => {
     expect(m['1001'].dolDiff).toBe(-50);
     expect(m['1001'].lastCounted).toBe('2026-07-20');
   });
+  it('parses MM/DD/YYYY ledger dates (the real qsr_raw_item_detail format) — not just ISO', () => {
+    // Regression: Date.parse("07/30/2026T22:15") is NaN, which silently dropped every count and zeroed
+    // out the raw-source variance (forcing the lagging-aggregate fallback everywhere it was used).
+    const us = [{ wrin: 'x', history: [
+      { dt: '07/20/2026', tm: '10:00:00', isCount: true, difference: -50, variance: -10 },
+      { dt: '07/30/2026', tm: '22:15:11', isCount: true, difference: -180, variance: -35 },
+    ] }];
+    const m = latestVarianceByWrin(us, { asOf: new Date('2026-07-31T12:00:00') });
+    expect(m['x'].dolDiff).toBe(-180);
+    expect(m['x'].lastCounted).toBe('07/30/2026');
+    // and the asOf cutoff still works with US dates
+    expect(latestVarianceByWrin(us, { asOf: new Date('2026-07-25T00:00:00') })['x'].dolDiff).toBe(-50);
+  });
 });
 
 describe('mergeVariance', () => {

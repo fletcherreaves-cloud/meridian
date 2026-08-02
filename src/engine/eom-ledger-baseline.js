@@ -27,18 +27,25 @@ function verdict(baseVar, curVar, floor) {
   return 'flat';
 }
 
-const dayOf = d => String(d || '').slice(0, 10);
+// Normalize MM/DD/YYYY or ISO → YYYY-MM-DD, so date comparisons never mix formats (the ledger's
+// lastCounted is MM/DD/YYYY; a caller may pass either).
+const isoDay = d => {
+  const s = String(d || '');
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : s.slice(0, 10);
+};
 
 // Ledger-derived baseline diff for ONE store.
 //   rawItems          — qsr_raw_item_detail rows for the store (already loaded for the Progression view)
-//   countCompleteDate — the store's bulk/count-complete day (eom-inventory fullCountDate) → the baseline asOf
+//   countCompleteDate — the store's count-complete day (last day of the primary count) → the baseline asOf.
+//                       Accepts ISO or MM/DD/YYYY. Everything ≤ this = baseline; a count AFTER = a recount.
 //   officialVarByWrin — authoritative period variance per wrin (qsr_variance_stat) → anchors the recount grade
 export function ledgerBaselineDiff(rawItems, { countCompleteDate = null, officialVarByWrin = {}, floor = LEDGER_MATERIAL_FLOOR } = {}) {
-  const baseAsOf = countCompleteDate ? new Date(`${dayOf(countCompleteDate)}T23:59:59`) : null;
+  const ccDay = countCompleteDate ? isoDay(countCompleteDate) : null;
+  const baseAsOf = ccDay ? new Date(`${ccDay}T23:59:59`) : null;
   const baseVar = latestVarianceByWrin(rawItems, { asOf: baseAsOf });   // variance at count-completion
   const curVar = latestVarianceByWrin(rawItems, { asOf: null });        // latest ledger count (now)
   const windows = storeDayWindows(rawItems);
-  const ccDay = countCompleteDate ? dayOf(countCompleteDate) : null;
 
   const items = [];
   for (const it of (rawItems || [])) {
@@ -48,15 +55,17 @@ export function ledgerBaselineDiff(rawItems, { countCompleteDate = null, officia
     if (bv == null && cv == null) continue;
     const official = officialVarByWrin[w] ?? officialVarByWrin[it.wrin] ?? null;
     const rc = itemRecounts(it.history || [], windows, { officialVar: official });
-    // A recount "since baseline" = the item's latest count landed AFTER count-completion.
-    const recounted = !!(ccDay && curVar[w]?.lastCounted && curVar[w].lastCounted > ccDay);
+    // A recount "since baseline" = the item's latest count landed AFTER count-completion. Normalize both
+    // to ISO — the ledger's lastCounted is MM/DD/YYYY, so a raw string compare would silently never fire.
+    const curCountedIso = isoDay(curVar[w]?.lastCounted);
+    const recounted = !!(ccDay && curCountedIso && curCountedIso > ccDay);
     const v = verdict(bv, cv, floor);
     items.push({
       wrin: w, descr: it.descr || w, cls: it.cls || null,
       baseVar: bv, curVar: cv,
       dMag: (bv != null && cv != null) ? abs(cv) - abs(bv) : null,   // + = grew (hurting), − = toward zero (helping)
       verdict: v, recounted,
-      baseCounted: baseVar[w]?.lastCounted ?? null, curCounted: curVar[w]?.lastCounted ?? null,
+      baseCounted: isoDay(baseVar[w]?.lastCounted) || null, curCounted: curCountedIso || null,
       officialVar: official, recount: rc,
     });
   }
