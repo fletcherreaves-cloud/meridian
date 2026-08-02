@@ -17,6 +17,7 @@ import { GMCoachingBrief } from '../engine/coaching.js';
 import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
 import { CalendarManagerPanel, EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { EventImpactPanel } from '../views/event-impact.js';
+import { AboveStoreOnePager } from '../views/above-store-onepager.js';
 import { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
@@ -228,7 +229,7 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.766';
+const MERIDIAN_VERSION    = '4.767';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
@@ -1315,6 +1316,7 @@ function App() {
   const [showEvents, setShowEvents]    = useState(false);
   const [showCalendarManager, setShowCalendarManager] = useState(false);
   const [showEventImpact, setShowEventImpact] = useState(false);
+  const [showAboveStore, setShowAboveStore] = useState(false);
   const [showWhyEngine, setShowWhyEngine] = useState(false);
   const [showChannelIntel, setShowChannelIntel] = useState(false);
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
@@ -2837,6 +2839,7 @@ function App() {
         if(modal==='gm-brief')       perm('analytics.store')&&setShowGMBrief(true);
         if(modal==='calendar-manager') perm('analytics.dashboard')&&setShowCalendarManager(true);
         if(modal==='event-impact')   perm('analytics.dashboard')&&setShowEventImpact(true);
+        if(modal==='above-store')    perm('analytics.district')&&setShowAboveStore(true);
         if(modal==='channel-intel')  perm('analytics.store')&&setShowChannelIntel(true);
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
@@ -2967,6 +2970,7 @@ function App() {
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
     showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowCalendarManager(false)}),
     showEventImpact&&h(EventImpactPanel,{onClose:()=>setShowEventImpact(false)}),
+    showAboveStore&&h(AboveStoreOnePager,{ds,settings,userEvents,onClose:()=>setShowAboveStore(false)}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
     showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,onClose:()=>setShowPerfReviews(false)}),
