@@ -2,7 +2,7 @@
 // ── District Waste Scan (Notes 40 #2) ───────────────────────────────────────────────────────────
 // Runs the Second-Look waste rules across a WHOLE scope on demand (the diagnosis runs them per store).
 // Surfaces the same non-accusatory patterns, ranked, so the owner can sweep waste behavior in one view:
-//   • uniform/static value — the exact same $ logged on many days = estimated, not weighed (Allen-W 20s)
+//   • uniform/static value — the exact same $ logged on many days = a guessed/copy-paste entry (Allen-W 20s)
 //   • high-$ session — one manager, one day, far above that store's typical session
 //   • manager concentration — one manager owns an outsized share of a store's waste
 //   • EOM-window spike — a day's total far above the store's median, in the count window

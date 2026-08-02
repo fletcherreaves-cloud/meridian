@@ -432,12 +432,13 @@ export const DEFAULT_CHECKS = [
           const nearEOM = windowStart != null && t != null && t >= windowStart;
           out.push(mkFinding('waste-inflation', nearEOM ? SEVERITY.high : SEVERITY.medium,
             `Waste spike: ${d}`,
-            `${_mny(byDay[d])} logged that day vs a ${_mny(median)} daily median (${(byDay[d] / median).toFixed(1)}×)${nearEOM ? ' — and it lands in the count window, exactly where waste gets inflated to absorb a variance' : ''}. Verify it was physically weighed/thrown, not entered to make a number balance.`,
+            `${_mny(byDay[d])} logged that day vs a ${_mny(median)} daily median (${(byDay[d] / median).toFixed(1)}×)${nearEOM ? ' — and it lands in the count window, exactly where waste gets inflated to absorb a variance' : ''}. Verify it was really tossed, not entered to make a number balance.`,
             byDay[d], { day: d, nearEOM, median }));
         }
       }
       // Repeated-static value: the exact same entry amount on ≥N distinct days = a guessed/copy-paste
-      // nightly value, not a real weigh-out. "Zero is better than fake."
+      // nightly value, not a real waste event. "Zero is better than fake." (Most items are eyeballed —
+      // few stores even have a scale; only ice cream mix and fries are realistically weighed.)
       const amtDays = {};
       for (const w of events) { const a = (Number(w.amount) || 0).toFixed(2); const d = String(w.dt).slice(0, 10); (amtDays[a] || (amtDays[a] = new Set())).add(d); }
       const staticHits = Object.keys(amtDays)
@@ -447,7 +448,7 @@ export const DEFAULT_CHECKS = [
         const n = amtDays[a].size;
         out.push(mkFinding('waste-inflation', SEVERITY.medium,
           `Repeated static waste value: ${_mny(Number(a))}`,
-          `The exact same ${_mny(Number(a))} waste amount was logged on ${n} separate days — looks like a guessed/copy-paste value to clear the closing prompt, not a real weigh-out. Coach: log the real weight or leave it blank ("zero is better than fake").`,
+          `The exact same ${_mny(Number(a))} waste amount was logged on ${n} separate days — looks like a guessed/copy-paste value to clear the closing prompt, not a real toss. Coach: log what was actually thrown or leave it blank ("zero is better than fake") — for ice cream mix or fries, a quick weigh gets it exact.`,
           Number(a) * n, { amount: Number(a), nDays: n }));
       }
       return out;
@@ -1003,7 +1004,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // "clean sweep" — the overage lives in components the item-level variance never inspects.
   if (fobOver) {
     const compAction = {
-      raw:   ['Cut', 'tighten raw-waste discipline — every waste entry weighed, not estimated'],
+      raw:   ['Cut', 'tighten raw-waste discipline — log what was actually tossed, not a nightly guess'],
       comp:  ['Cut', 'tighten completed-product waste discipline + verify waste logging'],
       cond:  ['Tighten', 'audit condiment portioning + dispenser calibration'],
       statv: ['Investigate', 'reconcile counted-vs-theoretical usage — recount the biggest movers, check receiving/transfers'],

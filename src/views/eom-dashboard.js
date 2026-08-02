@@ -1683,7 +1683,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       + `Waste $ by manager:\n${mgrLines}\n\n`
       + `Largest waste events:\n${topEvents}`;
     try {
-      window.__MF_SAGE_SEED__ = { context, prompt: `Here is ${nm(store.loc)}'s waste picture for ${period} with our Second-Look flags. Help me read it WITHOUT accusing anyone: which flags are most likely real behavior vs benign (self-serve beverage free-refills, a legit big toss, a travel-path multi-count)? Weight FOOD + CONDIMENT waste over paper/non-product (paper is seldom raw-wasted). If a manager's session or a uniform/static value looks like estimation rather than weighing, say what a coach should ASK — not conclude. Give me 3 short, specific coaching questions for the GM and one thing to verify on the floor. Keep it professional and non-accusatory.` };
+      window.__MF_SAGE_SEED__ = { context, prompt: `Here is ${nm(store.loc)}'s waste picture for ${period} with our Second-Look flags. Help me read it WITHOUT accusing anyone: which flags are most likely real behavior vs benign (self-serve beverage free-refills, a legit big toss, a travel-path multi-count)? Weight FOOD + CONDIMENT waste over paper/non-product (paper is seldom raw-wasted). If a manager's session or a uniform/static value looks like a guessed/copy-paste entry rather than a real toss, say what a coach should ASK — not conclude (note: most items are eyeballed — few stores have a scale; only ice cream mix and fries are realistically weighed). Give me 3 short, specific coaching questions for the GM and one thing to verify on the floor. Keep it professional and non-accusatory.` };
       window.dispatchEvent(new CustomEvent('mf:open-sage'));
     } catch {}
     setWasteOpen(false);
@@ -1920,7 +1920,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         }, rbBusy ? '…' : '🪃 Rubber-band'),
         h('button', {
           onClick: runWasteScan, disabled: rows.length === 0,
-          title: 'Waste analysis — run the Second-Look waste rules across the scope: uniform/static values (estimated, not weighed), high-$ manager sessions, manager concentration, and count-window spikes.',
+          title: 'Waste analysis — run the Second-Look waste rules across the scope: uniform/static values (a guessed/copy-paste entry, not a real toss), high-$ manager sessions, manager concentration, and count-window spikes.',
           style: { background: 'var(--surf3)', color: '#a3e635', border: '1px solid #a3e635', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '🗑 Waste'),
         h('button', {
