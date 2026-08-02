@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ledgerBaselineDiff, storeEngagement } from '../engine/eom-ledger-baseline.js';
+import { ledgerBaselineDiff, storeEngagement, ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
 
 const item = (wrin, hist) => ({ wrin, descr: wrin, cls: 'food', history: hist });
 const cnt = (dt, tm, dolVar, { variance = null } = {}) => ({ isCount: true, source: 'inventory', dt, tm, difference: dolVar, variance });
@@ -104,5 +104,25 @@ describe('storeEngagement', () => {
     const d = diffFrom([item('a', [cnt('2026-07-30', '10:00', -300)])]);
     const e = storeEngagement(d, { flaggedWrins: [] });
     expect(e.read).toBe('none');
+  });
+});
+
+describe('ledgerScopeDiff', () => {
+  it('rolls per-store engagement + ranks worst-engagement first', () => {
+    const rawByLoc = {
+      '18213': [item('a', [cnt('2026-07-30', '10:00', -300)])],                                  // no recount → no-action
+      '6972': [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])],   // recount helped → improving
+    };
+    const perLoc = {
+      '18213': { name: 'Lindsay', countCompleteDate: '2026-07-30', statVar: { a: -300 } },
+      '6972': { name: 'Ada', countCompleteDate: '2026-07-30', statVar: { a: -80 } },
+    };
+    const scope = ledgerScopeDiff(rawByLoc, perLoc);
+    expect(scope.nStores).toBe(2);
+    expect(scope.improved).toBe(1);
+    expect(scope.noAction).toBe(1);
+    const ada = scope.stores.find(s => s.name === 'Ada');
+    expect(ada.engagement.verdict).toBe('improving');
+    expect(ada.nRecounted).toBe(1);
   });
 });

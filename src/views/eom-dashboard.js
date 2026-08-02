@@ -18,6 +18,7 @@ import {
   createEomShareLink,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
+import { ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { buildFobReport } from '../engine/fob-report.js';
@@ -1431,31 +1432,62 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     setLocking(false);
   }, [allRows, buildLiveSnapshot, locking]);
 
-  // Open the Change Monitor: load the latest baseline per store, diff the CURRENT live state against it.
+  // Open the Change Monitor. LEDGER-DERIVED (v4.743, spec §5b): the baseline is each item's variance AT
+  // COUNT-COMPLETION, read straight from the raw ledger — no frozen snapshot, no $0 ghosts, no manual lock.
+  // The auto "count-complete" snapshot is still used ONLY for the store-level FOB base→now (an aggregate the
+  // ledger doesn't carry). Item helped/hurt/recount + the engagement verdict all come from the ledger.
   const openMonitor = useCallback(async () => {
     setMonOpen(true); setMonBusy(true); setMonOpenRows({}); setMon(null);
     try {
-      const [ccSnaps, baseSnaps, sr] = await Promise.all([
-        loadEomSnapshots({ period, kind: 'count-complete', latestPerLoc: true }),
-        loadEomSnapshots({ period, kind: 'baseline', latestPerLoc: true }),
+      const [ccSnaps, sr] = await Promise.all([
+        loadEomSnapshots({ period, kind: 'count-complete', latestPerLoc: true }).catch(() => []),
         loadEomSecondaryReview({ period }),
       ]);
       setSecReview(sr || {});
-      const scopedLocs = new Set(rows.map(r => unpad(r.loc)));
-      const baselinesByLoc = {}, currentsByLoc = {}, baselineKind = {};
-      // District baseline first, then override per-store with the "as-counted" lock where it exists —
-      // the count-complete lock is captured at each store's real-count moment (no $0 baselines).
-      for (const s of baseSnaps) { const k = unpad(s.loc); if (scopedLocs.has(k)) { baselinesByLoc[k] = { loc: s.loc, fob: s.fob, count: s.count, items: s.items }; baselineKind[k] = 'baseline'; } }
-      for (const s of ccSnaps) { const k = unpad(s.loc); if (scopedLocs.has(k)) { baselinesByLoc[k] = { loc: s.loc, fob: s.fob, count: s.count, items: s.items }; baselineKind[k] = 'count-complete'; } }
-      for (const r of rows) currentsByLoc[unpad(r.loc)] = buildLiveSnapshot(r);
+      const pick = (map, loc) => map[unpad(loc)] ?? map[String(loc)] ?? map[String(loc).padStart(7, '0')] ?? null;
+      // Count-complete day for a store = the last day of its dense primary count (the max last-count day).
+      const ccDateOf = (items) => {
+        const tally = {};
+        for (const it of (items || [])) {
+          const days = (it.history || []).filter(h => h && h.isCount && h.dt).map(h => {
+            const m = String(h.dt).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : String(h.dt).slice(0, 10);
+          }).sort();
+          const last = days[days.length - 1]; if (last) tally[last] = (tally[last] || 0) + 1;
+        }
+        return Object.keys(tally).sort().pop() || null;
+      };
+      const ccFob = {}, baselineKind = {};
+      for (const s of ccSnaps) { const k = unpad(s.loc); ccFob[k] = { baseFobPct: s.fob?.fobPct ?? null, basePct: s.count?.earlyPctCounted ?? null }; baselineKind[k] = 'count-complete'; }
+
+      const rawScoped = {}, perLoc = {};
+      for (const r of rows) {
+        const k = unpad(r.loc);
+        const items = pick(rawByLoc, r.loc) || [];
+        rawScoped[k] = items;
+        const statVar = {}; for (const v of (pick(varByLoc, r.loc) || [])) if (v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
+        perLoc[k] = {
+          name: r.name || nm(r.loc), countCompleteDate: ccDateOf(items), statVar,
+          baseFobPct: ccFob[k]?.baseFobPct ?? null, curFobPct: r.fobPct ?? null,
+          basePct: ccFob[k]?.basePct ?? null, curPct: r.prog?.earlyPctCounted ?? null,
+        };
+      }
       const nAsCounted = Object.values(baselineKind).filter(v => v === 'count-complete').length;
-      setMon({ diff: diffScope(baselinesByLoc, currentsByLoc), takenAt: (ccSnaps[0] || baseSnaps[0])?.takenAt || null, nBaseline: Object.keys(baselinesByLoc).length, baselineKind, nAsCounted });
+      const hasLedger = Object.values(rawScoped).some(a => a.length);
+      if (hasLedger) {
+        const diff = ledgerScopeDiff(rawScoped, perLoc);
+        setMon({ diff, takenAt: ccSnaps[0]?.takenAt || null, nBaseline: diff.nStores, baselineKind, nAsCounted, ledger: true });
+      } else {
+        // Fallback (no raw ledger loaded yet): keep the old snapshot diff so the view never goes blank.
+        const baselinesByLoc = {}, currentsByLoc = {};
+        for (const s of ccSnaps) { const k = unpad(s.loc); baselinesByLoc[k] = { loc: s.loc, fob: s.fob, count: s.count, items: s.items }; }
+        for (const r of rows) currentsByLoc[unpad(r.loc)] = buildLiveSnapshot(r);
+        setMon({ diff: diffScope(baselinesByLoc, currentsByLoc), takenAt: ccSnaps[0]?.takenAt || null, nBaseline: Object.keys(baselinesByLoc).length, baselineKind, nAsCounted, ledger: false });
+      }
     } catch (e) {
-      const msg = String(e?.message || e);
-      setMon({ error: /relation|does not exist|eom_snapshots/i.test(msg) ? 'The eom_snapshots table isn\'t created yet — run the snapshot SQL in Supabase (see handoff), then Lock a baseline.' : msg });
+      setMon({ error: String(e?.message || e) });
     }
     setMonBusy(false);
-  }, [period, rows, buildLiveSnapshot]);
+  }, [period, rows, rawByLoc, varByLoc, buildLiveSnapshot]);
 
   const markSecondary = useCallback(async (loc, status) => {
     setSecReview(m => ({ ...m, [String(loc)]: { ...(m[String(loc)] || {}), status } }));
@@ -1938,12 +1970,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'District EOM Summary — FOB + all components ($/%/vs target), count completion, and the $ opportunity across the current scope. CSV + Print.',
           style: { background: 'var(--surf3)', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
         }, '📊 Summary report'),
-        // Baseline lock + day-2 Change Monitor: freeze the current state, then watch what moves.
+        // Optional manual snapshot. The Change Monitor no longer needs it — the baseline is auto-derived
+        // from the count ledger (variance at count-completion). Keep this only to freeze an extra checkpoint
+        // for watching the authoritative number drift over days. Muted so it's clearly secondary.
         h('button', {
           onClick: lockBaseline, disabled: allRows.length === 0 || locking,
-          title: 'Lock baseline — freeze EVERY store\'s current EOM state (FOB + all components, per-item count qty / on-hand $ / variance / last-counted). Do this before the day\'s recounting starts. Tomorrow the Change Monitor diffs live data against this lock. Append-only — safe to lock more than once (keeps every checkpoint).',
-          style: { background: 'var(--surf3)', color: '#34d399', border: '1px solid #34d399', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: allRows.length ? 'pointer' : 'not-allowed' },
-        }, locking ? '… Locking' : '🔒 Lock baseline'),
+          title: 'Optional: freeze an extra snapshot of the current state to watch the authoritative FOB drift over days. NOT required — the Change Monitor auto-derives each store\'s baseline from the count ledger (variance at count-completion).',
+          style: { background: 'var(--surf3)', color: 'var(--text3)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: allRows.length ? 'pointer' : 'not-allowed' },
+        }, locking ? '… Locking' : '📌 Snapshot (optional)'),
         h('button', {
           onClick: openMonitor, disabled: rows.length === 0,
           title: 'Change Monitor — diff the current live state against the locked baseline. Shows per store the FOB Δ and, per item, whether a recount HELPED (variance moved toward $0) or HURT (moved away). This is the day-2 secondary review.',
@@ -2743,7 +2777,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
             monView === 'progression'
               ? 'Per-item variance progression — read straight from the raw count ledger (no lock needed), for the selected period.'
-              : (takenLbl ? `Live now vs baseline locked ${takenLbl} · ${mon.nBaseline} store${mon.nBaseline === 1 ? '' : 's'} baselined${mon.nAsCounted ? ` · ${mon.nAsCounted} on their as-counted lock` : ''}` : 'No baseline found for this period yet.')),
+              : (mon?.ledger
+                  ? `The EOM count + qualifying recounts — baseline is each store's variance at count-completion, read from the ledger (no lock, no $0 ghosts). Changes below are recounts made since. ${mon.nAsCounted || 0} store${mon.nAsCounted === 1 ? '' : 's'} carry an as-counted FOB.`
+                  : (takenLbl ? `Live now vs baseline locked ${takenLbl} · ${mon.nBaseline} store${mon.nBaseline === 1 ? '' : 's'} baselined` : 'No baseline found for this period yet.'))),
           div({ style: { display: 'flex', gap: '7px', marginBottom: '12px', alignItems: 'center' } },
             div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
               [['progression', '📈 Progression'], ['diff', '📸 Baseline diff']].map(([k, l]) =>
@@ -2755,18 +2791,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           : monBusy ? div({ style: { color: 'var(--text3)', padding: '30px', textAlign: 'center' } }, 'Diffing live data against the baseline…')
           : mon?.error ? div({ style: { color: '#fb923c', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } }, mon.error)
           : !mon?.nBaseline ? div({ style: { color: 'var(--text3)', padding: '16px', fontSize: '12.5px', lineHeight: 1.5 } },
-              'No baseline is locked for these stores yet. Click ', span({ style: { color: '#34d399', fontWeight: 700 } }, '🔒 Lock baseline'), ' to freeze the current state, then check back after the stores make moves.')
+              'No count-ledger data for these stores in this period yet — the baseline is derived from the raw item counts as they post. Check back once the stores have counted.')
           : [
             // District roll-up strip
             div({ key: 'roll', style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
-              div({ style: box }, span({ style: lab }, 'FOB improving'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(d.improved))),
-              div({ style: box }, span({ style: lab }, 'FOB worse'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(d.worsened))),
-              div({ style: box }, span({ style: lab }, 'Active'), span({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--text)' } }, `${d.active}/${d.nStores}`)),
+              div({ style: box }, span({ style: lab, title: 'Stores that recounted flagged items and moved the variance toward zero (better FOB)' }, 'Improving'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(d.improved))),
+              div({ style: box }, span({ style: lab, title: 'Stores whose recounts moved the variance away from zero (worse FOB)' }, 'Made worse'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(d.worsened))),
+              div({ style: box }, span({ style: lab, title: 'Stores with no qualifying recount on their flagged items since count-completion' }, 'No action'), span({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--text)' } }, String(d.noAction ?? (d.nStores - d.improved - d.worsened)))),
               div({ style: box }, span({ style: lab }, '$ moved toward 0'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#4ade80' } }, money(d.totalHelped))),
               div({ style: box }, span({ style: lab }, '$ moved away'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#f87171' } }, money(d.totalHurt)))),
-            d.active === 0 ? div({ key: 'noact', style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 2px 12px' } }, 'No changes since the baseline yet — nothing has moved. Check back after the stores recount.') : null,
+            d.active === 0 ? div({ key: 'noact', style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 2px 12px' } }, 'No recounts since count-completion — nothing has moved. This is the honest read for a period the stores have finished; the signal fills in when they recount flagged items.') : null,
             div({ key: 'floor', style: { color: 'var(--text3)', fontSize: '10.5px', marginBottom: '10px', lineHeight: 1.5 } },
-              'Helped / hurt count only ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'material moves (≥ $25 change in variance magnitude)'), '. Smaller drifts are variance-settling noise and read ', span({ style: { fontWeight: 700 } }, 'flat'), '. An item that was ≈$0 at lock and now carries a value is ', span({ style: { fontWeight: 700, color: '#38bdf8' } }, 'var posted'), ' (the data landed), not a move. ', span({ style: { color: '#f5bc00', fontWeight: 700 } }, '↻'), ' = a recount actually occurred.'),
+              'Baseline = each store\'s variance ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'at count-completion'), ' (from the ledger). Helped / hurt count only ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'material recounts (≥ $25 toward/away zero)'), '. ', span({ style: { color: '#f5bc00', fontWeight: 700 } }, '↻'), ' = a recount actually occurred since count-completion. The ', span({ style: { fontWeight: 700 } }, 'Verdict'), ' is the store\'s engagement: did it act on its flagged items and improve FOB.'),
 
             // Per-store table
             div({ key: 'tbl', style: { overflowX: 'auto' } },
@@ -2782,11 +2818,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                       style: { cursor: 'pointer', borderBottom: '1px solid var(--bdr)', background: open ? 'var(--surf2)' : 'transparent' } },
                       h('td', { style: { padding: '5px 7px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } },
                         span({ style: { color: 'var(--text3)', marginRight: '5px' } }, open ? '▾' : '▸'), nm(loc), span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ` #${unpad(loc)}`),
-                        (mon.baselineKind && mon.baselineKind[unpad(loc)] === 'count-complete') ? span({ title: 'Diffed against this store\'s AS-COUNTED lock — captured the moment its count completed and variance posted. This is the clean per-store baseline.', style: { marginLeft: '6px', fontSize: '8.5px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade80', borderRadius: '4px', padding: '0 4px', cursor: 'help' } }, 'as-counted') : null,
+                        (mon.baselineKind && mon.baselineKind[unpad(loc)] === 'count-complete') ? span({ title: 'This store has an auto as-counted FOB baseline (captured when its count completed). Item variances + recounts are read live from the ledger, not this snapshot.', style: { marginLeft: '6px', fontSize: '8.5px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade80', borderRadius: '4px', padding: '0 4px', cursor: 'help' } }, 'as-counted FOB') : null,
                         s.baselineIncomplete ? span({ title: 'Most items had ~$0 variance at lock — the Variance/Stat data was not yet populated in the snapshot when the baseline was captured (QSRSoft\'s variance report lags the physical count, and an early auto-lock can precede the daily pull). This is NOT proof the store hadn\'t counted. The diff below shows the variance data landing, not moves that helped or hurt.', style: { marginLeft: '6px', fontSize: '8.5px', fontWeight: 700, color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '4px', padding: '0 4px', cursor: 'help' } }, 'baseline: var not yet posted') : null),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: 'var(--text2)' } }, `${pct2(s.fob.baseFobPct)} → ${pct2(s.fob.curFobPct)}`),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[s.fob.verdict] } }, dpp(s.fob.dFobPct)),
-                      h('td', { style: { padding: '5px 7px', textAlign: 'right', fontWeight: 700, color: V[s.fob.verdict] } }, VLABEL[s.fob.verdict]),
+                      (() => {
+                        const EV = { improving: '#4ade80', worsened: '#f87171', mixed: '#f5bc00', 'no-action': 'var(--text3)' };
+                        const e = s.engagement || {};
+                        return h('td', { title: e.readLabel || '', style: { padding: '5px 7px', textAlign: 'right', fontWeight: 700, color: EV[e.verdict] || 'var(--text3)' } }, e.label || '—');
+                      })(),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, s.count.basePct != null && s.count.curPct != null ? `${Math.round(s.count.basePct * 100)}→${Math.round(s.count.curPct * 100)}%` : '—'),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHelped ? '#4ade80' : 'var(--text3)', fontWeight: s.nHelped ? 700 : 400 } }, s.nHelped || ''),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHurt ? '#f87171' : 'var(--text3)', fontWeight: s.nHurt ? 700 : 400 } }, s.nHurt || ''),

@@ -60,11 +60,13 @@ export function ledgerBaselineDiff(rawItems, { countCompleteDate = null, officia
     const curCountedIso = isoDay(curVar[w]?.lastCounted);
     const recounted = !!(ccDay && curCountedIso && curCountedIso > ccDay);
     const v = verdict(bv, cv, floor);
+    const bq = baseVar[w]?.variance ?? null, cq = curVar[w]?.variance ?? null;
     items.push({
       wrin: w, descr: it.descr || w, cls: it.cls || null,
-      baseVar: bv, curVar: cv,
+      baseVar: bv, curVar: cv, dVar: (bv != null && cv != null) ? cv - bv : null,
       dMag: (bv != null && cv != null) ? abs(cv) - abs(bv) : null,   // + = grew (hurting), − = toward zero (helping)
-      verdict: v, recounted,
+      baseQtyVar: bq, curQtyVar: cq,
+      verdict: v, recounted, isNew: bv == null, isGone: cv == null,
       baseCounted: isoDay(baseVar[w]?.lastCounted) || null, curCounted: curCountedIso || null,
       officialVar: official, recount: rc,
     });
@@ -79,6 +81,46 @@ export function ledgerBaselineDiff(rawItems, { countCompleteDate = null, officia
     helpedDol: helped.reduce((s, i) => s + Math.max(0, abs(i.baseVar) - abs(i.curVar)), 0),
     hurtDol: hurt.reduce((s, i) => s + Math.max(0, abs(i.curVar) - abs(i.baseVar)), 0),
     anyMove: helped.length + hurt.length > 0,
+  };
+}
+
+// Diff a whole SCOPE from the ledger — the lock-free replacement for diffScope (spec §5b). Returns the
+// same shape the Change-Monitor view already renders, plus a per-store engagement verdict.
+//   rawByLoc — { normLoc → rawItems[] } (already loaded for the Progression view)
+//   perLoc   — { normLoc → { name, countCompleteDate, statVar:{wrin→$}, baseFobPct, curFobPct, basePct, curPct } }
+export function ledgerScopeDiff(rawByLoc = {}, perLoc = {}, { floor = LEDGER_MATERIAL_FLOOR } = {}) {
+  const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+  const stores = [];
+  for (const [loc, rawItems] of Object.entries(rawByLoc)) {
+    const p = perLoc[norm(loc)] || perLoc[loc] || {};
+    const statVar = p.statVar || {};
+    const diff = ledgerBaselineDiff(rawItems, { countCompleteDate: p.countCompleteDate, officialVarByWrin: statVar, floor });
+    const dFobPct = (p.curFobPct != null && p.baseFobPct != null) ? p.curFobPct - p.baseFobPct : null;
+    const fobVerdict = dFobPct == null ? 'unknown' : dFobPct < -0.0001 ? 'helping' : dFobPct > 0.0001 ? 'hurting' : 'flat';
+    const flaggedWrins = Object.entries(statVar).filter(([, v]) => Math.abs(v) >= 50).map(([w]) => w);
+    const engagement = storeEngagement(diff, { flaggedWrins, fobDeltaPct: dFobPct, minNet: floor });
+    stores.push({
+      loc, name: p.name || null,
+      fob: { baseFobPct: p.baseFobPct ?? null, curFobPct: p.curFobPct ?? null, dFobPct, verdict: fobVerdict },
+      count: { basePct: p.basePct ?? null, curPct: p.curPct ?? null },
+      countCompleteDate: diff.countCompleteDate,
+      items: diff.items, nHelped: diff.nHelped, nHurt: diff.nHurt, nRecounted: diff.nRecounted,
+      helpedDol: diff.helpedDol, hurtDol: diff.hurtDol, anyActivity: diff.nRecounted > 0 || diff.anyMove,
+      baselineIncomplete: false, engagement,
+    });
+  }
+  stores.sort((a, b) => {
+    const rank = { worsened: 0, mixed: 1, 'no-action': 2, improving: 3 };
+    return (rank[a.engagement.verdict] - rank[b.engagement.verdict]) || (b.nRecounted - a.nRecounted) || (b.hurtDol - a.hurtDol);
+  });
+  return {
+    stores, nStores: stores.length,
+    improved: stores.filter(s => s.engagement.verdict === 'improving').length,
+    worsened: stores.filter(s => s.engagement.verdict === 'worsened').length,
+    noAction: stores.filter(s => s.engagement.verdict === 'no-action').length,
+    totalHelped: stores.reduce((s, x) => s + x.helpedDol, 0),
+    totalHurt: stores.reduce((s, x) => s + x.hurtDol, 0),
+    active: stores.filter(s => s.anyActivity).length,
   };
 }
 
