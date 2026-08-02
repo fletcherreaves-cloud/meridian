@@ -8,6 +8,25 @@ import { buildCurrentState, buildReviewActuals, fobByRange } from '../engine/one
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES } from '../constants.js';
+import { supabase } from '../lib/supabase.js';
+
+// Stream a SAGE analysis (same edge-function contract as sage.js callSageStream).
+async function askSageStream(prompt, systemPrompt, onChunk) {
+  const sbUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  if (!sbUrl) throw new Error('Supabase not configured.');
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Sign in to use AI analysis.');
+  const res = await fetch(`${sbUrl}/functions/v1/sage-chat`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], systemPrompt }) });
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || ('SAGE error ' + res.status));
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  for (;;) { const { done, value } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop() || '';
+    for (const line of lines) { if (!line.startsWith('data: ')) continue; const dt = line.slice(6).trim();
+      if (dt === '[DONE]') return; try { const p = JSON.parse(dt); if (p.text) onChunk(p.text); if (p.error) throw new Error(p.error); } catch (e) { if (e.message && !e.message.startsWith('data:')) throw e; } } }
+}
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -29,6 +48,9 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
   const { useState, useMemo } = React;
   const [scope, setScope] = useState('all');
   const [period, setPeriod] = useState('mtd');
+  const [ai, setAi] = useState('');            // AI narrative (streamed)
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiErr, setAiErr] = useState('');
   const fobRows = (ds && ds.fobRows) || [];
 
   const locs = useMemo(() => Object.keys(STORE_NAMES).filter(l =>
@@ -74,6 +96,39 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
     return out.sort((a, b) => a.dk.localeCompare(b.dk)).slice(0, 24);
   }, [locs, userEvents]);
 
+  // Build a compact numeric brief of the rollup for the AI + print.
+  const briefLines = () => {
+    const d = data; if (d.err) return [];
+    const L = [];
+    L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
+    L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})`);
+    L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
+    L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
+    L.push(`Controls: Cash O/S ${fmtV(d.controls.cashOS, '%')}; T-Reds After ${fmtV(d.controls.tRedA, '%')}; Discount ${fmtV(d.controls.disc, '%')}`);
+    L.push(`Voice: OSAT 5★ ${fmtV(d.rv.osat, '%')} (tgt ${fmtV(d.rv.osatTarget, '%')}); OSAT B2B ${fmtV(d.rv.osatB2B, '%')}`);
+    if (upcoming.length) L.push(`Upcoming (21d): ${upcoming.slice(0, 8).map(e => e.dk.slice(5) + ' ' + (e.label || e.type)).join('; ')}`);
+    return L;
+  };
+  const runAI = async () => {
+    setAiBusy(true); setAiErr(''); setAi('');
+    const sys = `You are SAGE, an above-store operations analyst for a McDonald's franchise. Given a period rollup for a store group, write a SHORT executive read (120-180 words): 2-3 sentences on what's driving results (positive AND negative), citing the specific metrics; call out the biggest risk and the biggest win; end with one concrete focus. Be direct, no fluff, no restating every number.`;
+    const prompt = `Scope: ${scopeLabel}. Period: ${range.label} (${range.s} to ${range.e}).\n\n${briefLines().join('\n')}\n\nWrite the executive read.`;
+    try { await askSageStream(prompt, sys, chunk => setAi(a => a + chunk)); }
+    catch (e) { setAiErr(String(e?.message || e)); }
+    setAiBusy(false);
+  };
+  const printOnePager = () => {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const lines = briefLines().map(l => `<li>${esc(l)}</li>`).join('');
+    const aiHtml = ai ? `<h2>Analysis</h2><p>${esc(ai).replace(/\n/g, '<br>')}</p>` : '';
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Above-Store One-Pager — ${esc(scopeLabel)}</title>
+      <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;max-width:720px}h1{font-size:17px;margin:0 0 2px}h2{font-size:12px;text-transform:uppercase;color:#666;margin:16px 0 4px}.sub{color:#666;font-size:11px;margin-bottom:10px}ul{margin:0;padding-left:18px}li{margin:3px 0}@media print{body{margin:0}}</style></head>
+      <body><h1>Above-Store One-Pager — ${esc(scopeLabel)}</h1><div class="sub">${esc(range.label)} (${range.s} → ${range.e}) · printed ${new Date().toLocaleDateString()}</div>
+      <h2>Rollup</h2><ul>${lines}</ul>${aiHtml}</body></html>`;
+    const w = window.open('', '_blank'); if (!w) { alert('Allow pop-ups to print.'); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  };
+
   const badge = (actual, target, lowerBetter) => {
     if (actual == null || target == null) return 'var(--text3)';
     const good = lowerBetter ? actual <= target : actual >= target;
@@ -102,10 +157,18 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
           ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => btn({ key: v, onClick: () => setScope(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: scope === v ? 'var(--adim)' : 'transparent', color: scope === v ? 'var(--amber)' : 'var(--text3)' } }, l))),
         h('select', { value: STORE_NAMES[scope] ? scope : '', onChange: e => e.target.value && setScope(e.target.value), style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
           h('option', { value: '' }, '— store —'), Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l)))),
+        btn({ className: 'btn btn-sm', disabled: aiBusy, style: { fontSize: '9px', background: 'rgba(129,140,248,.1)', borderColor: 'rgba(129,140,248,.35)', color: '#a5b4fc' }, onClick: runAI }, aiBusy ? '🧠 …' : '🧠 Analyze'),
+        btn({ className: 'btn btn-sm', style: { fontSize: '9px' }, onClick: printOnePager, title: 'Print this rollup' }, '🖨'),
         btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
       // body
       d.err ? div({ style: { padding: 30, color: '#fca5a5', fontSize: '12px' } }, 'Could not build rollup: ' + d.err)
-      : div({ style: { flex: 1, overflow: 'auto', padding: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(400px,100%),1fr))', gap: 12 } },
+      : div({ style: { flex: 1, overflow: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 } },
+        // AI narrative
+        (ai || aiBusy || aiErr) ? div({ style: { border: '.5px solid rgba(129,140,248,.35)', background: 'rgba(129,140,248,.06)', borderRadius: 8, padding: '10px 12px' } },
+          div({ style: { fontSize: '10px', fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 } }, '🧠 Analysis'),
+          aiErr ? div({ style: { fontSize: '11px', color: '#fca5a5' } }, aiErr)
+          : div({ style: { fontSize: '11.5px', color: 'var(--text2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' } }, ai || 'Thinking…')) : null,
+        div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(400px,100%),1fr))', gap: 12 } },
         // Sales / GC
         Section('Sales / GC', '💵',
           Row('Product Sales', d.byKey.sales?.actual, null, '$'),
@@ -143,7 +206,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose }) {
               return div({ key: i, style: { display: 'flex', gap: 6, fontSize: '10px', alignItems: 'baseline', borderTop: i ? '1px solid var(--bdr)' : 'none', padding: '2px 0' } },
                 span({ style: { color: 'var(--text3)', minWidth: 42 } }, e.dk.slice(5)),
                 span(null, e.icon || et.icon),
-                span({ style: { color: 'var(--text2)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, e.label || et.label)); })))),
+                span({ style: { color: 'var(--text2)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, e.label || et.label)); }))))),
       // footer
       div({ style: { padding: '8px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', fontSize: '9px', color: 'var(--text3)' } },
         'v1 rollup — Scheduling depth + AI narrative + per-panel drilldown next. Green = at/better than target, red = worse.')));
