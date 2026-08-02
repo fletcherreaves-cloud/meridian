@@ -10,7 +10,7 @@ describe('ledgerBaselineDiff', () => {
     // have recorded $0 → the count later "landing" reads as a fake helping move. The ledger baseline reads
     // the actual −$300 at count-completion → correctly flat, no phantom helped.
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300)])];
-    const d = ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
     expect(d.items[0].baseVar).toBe(-300);
     expect(d.items[0].curVar).toBe(-300);
     expect(d.items[0].verdict).toBe('flat');
@@ -21,7 +21,7 @@ describe('ledgerBaselineDiff', () => {
   it('post-close recount that FOUND inventory grades helping + flags recounted', () => {
     // Counted −$300 at close (07/30), then re-counted 08/01 and found inventory → −$80 (loss cut).
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])];
-    const d = ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
     expect(d.items[0].baseVar).toBe(-300);   // the 08/01 count is AFTER count-completion → excluded from baseline
     expect(d.items[0].curVar).toBe(-80);
     expect(d.items[0].verdict).toBe('helping');
@@ -33,7 +33,7 @@ describe('ledgerBaselineDiff', () => {
 
   it('a post-close recount that grew the loss grades hurting', () => {
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -360)])];
-    const d = ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
     expect(d.items[0].verdict).toBe('hurting');
     expect(d.nHurt).toBe(1);
     expect(Math.round(d.hurtDol)).toBe(60);
@@ -41,7 +41,7 @@ describe('ledgerBaselineDiff', () => {
 
   it('respects the $25 materiality floor — a small settle reads flat', () => {
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -312)])];
-    const d = ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
     expect(d.items[0].verdict).toBe('flat');   // $12 drift < $25
     expect(d.nHurt).toBe(0);
   });
@@ -51,11 +51,45 @@ describe('ledgerBaselineDiff', () => {
       item('a', [cnt('2026-07-28', '10:00', -300), cnt('2026-07-30', '11:00', -300)]),   // weekly + EOM, same value
       item('b', [cnt('2026-07-30', '10:00', 40)]),
     ];
-    const d = ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
     expect(d.nHelped).toBe(0);
     expect(d.nHurt).toBe(0);
     expect(d.nRecounted).toBe(0);
     expect(d.anyMove).toBe(false);
+  });
+
+  it('CLOSE WINDOW: session count is the baseline; weekly counts BEFORE the window are excluded', () => {
+    // Weekly progression (07/09, 07/16, 07/23) then the EOM session 07/30, recounted 07/31 toward zero.
+    const rawItems = [item('a', [
+      cnt('2026-07-09', '10:00', 200), cnt('2026-07-16', '10:00', 150), cnt('2026-07-23', '10:00', 129),
+      cnt('2026-07-30', '15:00', 129),   // session count (first in the close window)
+      cnt('2026-07-31', '09:00', 22),    // recount before EOD → helped
+    ])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-29' });
+    expect(d.items[0].baseVar).toBe(129);        // session, NOT the 07/09 weekly count
+    expect(d.items[0].curVar).toBe(22);
+    expect(d.items[0].baseCounted).toBe('2026-07-30');
+    expect(d.items[0].curCounted).toBe('2026-07-31');
+    expect(d.items[0].verdict).toBe('helping');
+    expect(d.items[0].recounted).toBe(true);
+    expect(d.nRecounted).toBe(1);
+  });
+
+  it('CLOSE WINDOW: a single late count in the window is NOT a recount (Lindsay McCrispy case)', () => {
+    // Counted weekly, then once on 07/31 — never in the session → one window count → flat, not recounted.
+    const rawItems = [item('a', [cnt('2026-07-23', '10:00', 159), cnt('2026-07-31', '10:00', 159)])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-29' });
+    expect(d.items[0].recounted).toBe(false);
+    expect(d.items[0].verdict).toBe('flat');
+  });
+
+  it('CLOSE WINDOW: grades MULTIPLE recounts as a chain (owner: multiple recounts can happen)', () => {
+    const rawItems = [item('a', [cnt('2026-07-29', '10:00', 300), cnt('2026-07-30', '10:00', 120), cnt('2026-07-31', '10:00', 20)])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-29' });
+    expect(d.items[0].nRecounts).toBe(2);          // two recounts after the session
+    expect(d.items[0].nRecHelped).toBe(2);         // 300→120 and 120→20 both toward zero
+    expect(d.items[0].baseVar).toBe(300);
+    expect(d.items[0].curVar).toBe(20);
   });
 
   it('ranks the biggest movers first', () => {
@@ -63,14 +97,14 @@ describe('ledgerBaselineDiff', () => {
       item('small', [cnt('2026-07-30', '10:00', -100), cnt('2026-08-01', '09:00', -160)]),   // +60
       item('big', [cnt('2026-07-30', '10:00', -100), cnt('2026-08-01', '09:00', -400)]),      // +300
     ];
-    const d = ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
     expect(d.items[0].wrin).toBe('big');
     expect(d.items[1].wrin).toBe('small');
   });
 });
 
 describe('storeEngagement', () => {
-  const diffFrom = (rawItems) => ledgerBaselineDiff(rawItems, { countCompleteDate: '2026-07-30' });
+  const diffFrom = (rawItems) => ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
 
   it('recounted a flagged item and cut the loss → improving / good', () => {
     const d = diffFrom([item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])]);
@@ -114,8 +148,8 @@ describe('ledgerScopeDiff', () => {
       '6972': [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])],   // recount helped → improving
     };
     const perLoc = {
-      '18213': { name: 'Lindsay', countCompleteDate: '2026-07-30', statVar: { a: -300 } },
-      '6972': { name: 'Ada', countCompleteDate: '2026-07-30', statVar: { a: -80 } },
+      '18213': { name: 'Lindsay', closeWindowStart: '2026-07-30', statVar: { a: -300 } },
+      '6972': { name: 'Ada', closeWindowStart: '2026-07-30', statVar: { a: -80 } },
     };
     const scope = ledgerScopeDiff(rawByLoc, perLoc);
     expect(scope.nStores).toBe(2);

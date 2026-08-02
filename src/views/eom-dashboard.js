@@ -18,7 +18,7 @@ import {
   createEomShareLink,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
-import { ledgerScopeDiff } from '../engine/eom-ledger-baseline.js';
+import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { buildFobReport } from '../engine/fob-report.js';
@@ -1445,17 +1445,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       ]);
       setSecReview(sr || {});
       const pick = (map, loc) => map[unpad(loc)] ?? map[String(loc)] ?? map[String(loc).padStart(7, '0')] ?? null;
-      // Count-complete day for a store = the last day of its dense primary count (the max last-count day).
-      const ccDateOf = (items) => {
-        const tally = {};
-        for (const it of (items || [])) {
-          const days = (it.history || []).filter(h => h && h.isCount && h.dt).map(h => {
-            const m = String(h.dt).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : String(h.dt).slice(0, 10);
-          }).sort();
-          const last = days[days.length - 1]; if (last) tally[last] = (tally[last] || 0) + 1;
-        }
-        return Object.keys(tally).sort().pop() || null;
-      };
+      // Close window = the last few days of the period (the EOM count + any recounts). An item's FIRST count
+      // in the window is its session count; later-day counts are recounts. Same start for every store.
+      const closeStart = closeWindowStartFor(period, 3);
       const ccFob = {}, baselineKind = {};
       for (const s of ccSnaps) { const k = unpad(s.loc); ccFob[k] = { baseFobPct: s.fob?.fobPct ?? null, basePct: s.count?.earlyPctCounted ?? null }; baselineKind[k] = 'count-complete'; }
 
@@ -1466,7 +1458,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         rawScoped[k] = items;
         const statVar = {}; for (const v of (pick(varByLoc, r.loc) || [])) if (v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
         perLoc[k] = {
-          name: r.name || nm(r.loc), countCompleteDate: ccDateOf(items), statVar,
+          name: r.name || nm(r.loc), closeWindowStart: closeStart, statVar,
           baseFobPct: ccFob[k]?.baseFobPct ?? null, curFobPct: r.fobPct ?? null,
           basePct: ccFob[k]?.basePct ?? null, curPct: r.prog?.earlyPctCounted ?? null,
         };
