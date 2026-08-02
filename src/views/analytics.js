@@ -13,7 +13,8 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat } from '../lib/supabase.js';
+import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -6539,6 +6540,89 @@ function EOMScoreboardTile({ onOpenModal }) {
       h('div', { style: { fontSize: 18, fontWeight: 800, color: k === 'ready' && tally[k] > 0 ? '#f5bc00' : 'var(--text,#e8eaed)' } }, String(tally[k]))))));
 }
 
+// Items Recounted tile (Notes 45 #81) — district-wide close-window recount rollup on the main
+// dashboard: how many items stores went back and re-verified during the EOM close, and whether
+// those recounts collectively pulled variance TOWARD zero (helped) or away (hurt). Same close-window
+// engine as the Change Monitor (ledgerScopeDiff). Visible in the close window + the first days after.
+// Click opens the EOM Dashboard → Change Monitor.
+function ItemsRecountedTile({ onOpenModal }) {
+  const now = new Date();
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const day = now.getDate();
+  // Relevant during the close window (last 3 days) and the first week after (recounts just landed).
+  const inWindow = day >= lastDay - 2 || day <= 7;
+  // In the first week the just-closed PRIOR month is the interesting period; otherwise this month.
+  const target = (day <= 7) ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : now;
+  const period = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
+  const [diff, setDiff] = React.useState(undefined);   // undefined=loading, null=error, {}=result
+  React.useEffect(() => {
+    if (!inWindow) return;
+    let live = true;
+    (async () => {
+      try {
+        const [rawDetail, variance] = await Promise.all([
+          loadQsrRawItemDetail({ period }).catch(() => []),
+          loadQsrVarianceStat({ period }).catch(() => []),
+        ]);
+        if (!live) return;
+        if (!rawDetail || !rawDetail.length) { setDiff(null); return; }
+        const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
+        const rawByLoc = {}, perLoc = {};
+        for (const r of rawDetail) {
+          const k = norm(r.loc);
+          (rawByLoc[k] || (rawByLoc[k] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, caseSz: r.caseSz, uom: r.uom });
+        }
+        for (const v of (variance || [])) {
+          const k = norm(v.loc);
+          if (!perLoc[k]) perLoc[k] = { closeWindowStart: closeWindowStartFor(period, 3), statVar: {} };
+          if (v.dolDiff != null) perLoc[k].statVar[String(v.wrin)] = v.dolDiff;
+        }
+        for (const k of Object.keys(rawByLoc)) if (!perLoc[k]) perLoc[k] = { closeWindowStart: closeWindowStartFor(period, 3), statVar: {} };
+        setDiff(ledgerScopeDiff(rawByLoc, perLoc));
+      } catch { if (live) setDiff(null); }
+    })();
+    return () => { live = false; };
+  }, [inWindow, period]);
+  if (!inWindow) return null;
+
+  const totalRecounted = diff && diff.stores ? diff.stores.reduce((s, x) => s + (x.nRecounted || 0), 0) : 0;
+  const helped = diff ? (diff.totalHelped || 0) : 0;
+  const hurt = diff ? (diff.totalHurt || 0) : 0;
+  const net = helped - hurt;                                     // + = collectively toward zero
+  const dir = Math.abs(net) < 25 ? 'flat' : net > 0 ? 'helped' : 'hurt';
+  const DIR = { helped: ['↑ Helped', '#10b981'], hurt: ['↓ Hurt', '#ef4444'], flat: ['→ Neutral', '#9aa0aa'] };
+  const money = n => '$' + Math.round(Math.abs(n)).toLocaleString();
+  const perLbl = target.toLocaleDateString([], { month: 'short', year: 'numeric' });
+
+  const card = (...kids) => h('div', { onClick: () => onOpenModal && onOpenModal('eom-dashboard'),
+    style: { background: 'var(--surf2,#151821)', border: '.5px solid ' + (totalRecounted > 0 ? 'rgba(96,165,250,.4)' : 'var(--bdr,#2a2f3a)'), borderRadius: 12, overflow: 'hidden', cursor: 'pointer' },
+    title: 'Open the EOM Dashboard → Change Monitor' }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '🔁'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Items Recounted'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' close window · did recounts help or hurt')),
+    totalRecounted > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: DIR[dir][1], background: 'rgba(255,255,255,.05)', borderRadius: 10, padding: '2px 8px', border: '.5px solid ' + DIR[dir][1] } }, DIR[dir][0]) : null);
+  if (diff === undefined) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  if (diff === null) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No ledger detail for ' + perLbl + ' yet — recounts appear here once stores count in the close window.'));
+  if (totalRecounted === 0) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No recounts detected yet across ' + (diff.nStores || 0) + ' stores. A recount = an item re-verified on a later day of the close window.'));
+  return card(head, h('div', { style: { padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'stretch' } },
+    // big number
+    h('div', { style: { flex: '0 0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 76, borderRight: '.5px solid var(--bdr,#2a2f3a)', paddingRight: 12 } },
+      h('div', { style: { fontSize: 30, fontWeight: 800, color: 'var(--text,#e8eaed)', lineHeight: 1 } }, String(totalRecounted)),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)', textTransform: 'uppercase', letterSpacing: '.3px', marginTop: 3 } }, 'items · ' + (diff.active || 0) + ' stores')),
+    // net + breakdown
+    h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 } },
+      h('div', { style: { fontSize: 13, fontWeight: 800, color: DIR[dir][1] } }, dir === 'flat' ? 'Net wash' : (money(net) + ' variance ' + (net > 0 ? 'recovered' : 'lost'))),
+      h('div', { style: { fontSize: 10, color: 'var(--text3,#9aa0aa)', display: 'flex', gap: 10, flexWrap: 'wrap' } },
+        h('span', null, h('span', { style: { color: '#10b981', fontWeight: 700 } }, money(helped)), ' toward zero'),
+        h('span', null, h('span', { style: { color: '#ef4444', fontWeight: 700 } }, money(hurt)), ' away')),
+      h('div', { style: { fontSize: 10, color: 'var(--text3,#6b7280)', display: 'flex', gap: 10, flexWrap: 'wrap' } },
+        h('span', null, h('span', { style: { color: '#4ade80', fontWeight: 700 } }, diff.improved || 0), ' improving'),
+        (diff.worsened || 0) > 0 ? h('span', null, h('span', { style: { color: '#f87171', fontWeight: 700 } }, diff.worsened), ' made worse') : null,
+        h('span', null, h('span', { style: { color: '#9aa0aa', fontWeight: 700 } }, diff.noAction || 0), ' no action')))));
+}
+
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   const today = new Date();
   const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
@@ -7831,6 +7915,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
         h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
+        h(ItemsRecountedTile,{key:'eom-recount',onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
 
         // ── PROJECTIONS SECTION ──
