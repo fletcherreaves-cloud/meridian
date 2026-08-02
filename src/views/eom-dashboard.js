@@ -1138,10 +1138,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       // Authoritative period $ variance per item (qsr_variance_stat) → headline the real number,
       // not the count-impact chain. Keyed by wrin for the session engine to attach as officialVar.
       const statVar = {};
-      for (const v of (varByLoc[loc] || [])) if (v.hasDollars && v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
+      for (const v of (varByLoc[loc] || [])) if (v.dolDiff != null && v.dolDiff !== 0)statVar[String(v.wrin)] = v.dolDiff;
       // Prior-month authoritative variance per item → the "vs Last EOM" baseline (month-over-month).
       const priorStatVar = {};
-      for (const v of (prevVarByLoc[loc] || [])) if (v.hasDollars && v.dolDiff != null) priorStatVar[String(v.wrin)] = v.dolDiff;
+      for (const v of (prevVarByLoc[loc] || [])) if (v.dolDiff != null && v.dolDiff !== 0)priorStatVar[String(v.wrin)] = v.dolDiff;
       try { m[loc] = storeVarianceProgressions(rawByLoc[loc], { statVar, priorStatVar }); } catch { m[loc] = []; }
     }
     return m;
