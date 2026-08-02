@@ -143,9 +143,11 @@ export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4,
   for (const it of (rawItems || [])) {
     const p = itemVarianceProgression(it.history, { gapHours, byDay });
     if (!p.base) continue;
-    const recount = itemRecounts(it.history, windows);
     const finalVar = p.final ? p.final.dolVar : 0;
     const official = statVar ? (statVar[String(it.wrin)] ?? statVar[it.wrin] ?? null) : null;
+    // Grade recounts against the authoritative period variance (officialVar) when it's posted; else the
+    // engine grades direction-only. Anchoring is spec'd in docs/eom-recount-grading-spec.md (owner-approved).
+    const recount = itemRecounts(it.history, windows, { officialVar: official });
     // Prior-EOM anchor (last month's authoritative period variance) → month-over-month trend view.
     const priorVar = priorStatVar ? (priorStatVar[String(it.wrin)] ?? priorStatVar[it.wrin] ?? null) : null;
     if (abs(finalVar) < minAbs && abs(p.base.dolVar) < minAbs && official == null && priorVar == null && !p.flags.length) continue;

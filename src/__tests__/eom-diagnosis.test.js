@@ -134,11 +134,11 @@ describe('runDiagnosis — editable check registry', () => {
   });
 
   it('rolls up repeated recount-swing diagnoses into one coaching block + item list (owner)', () => {
-    // Same-day recounts (store-window model, v4.733): the count walkthrough at 08:00, then a re-verify pass
-    // 2h later (>90min gap = a later store window) → a genuine recount. Cross-DAY counts are progression.
+    // Same-day recount (v4.738): the walkthrough at 08:00, then a re-verify 5h later (≥4h recount gap → a
+    // genuine recount, not a slow walkthrough). Cross-DAY counts are progression.
     const mkItem = (wrin, descr) => ({ wrin, descr, history: [
       { dt: '2026-07-03', tm: '8:00 AM', isCount: true, difference: 300, manager: 'Marlena F' },
-      { dt: '2026-07-03', tm: '10:00 AM', isCount: true, difference: -300, manager: 'Marlena F' },
+      { dt: '2026-07-03', tm: '1:00 PM', isCount: true, difference: -300, manager: 'Marlena F' },
     ] });
     const rawItems = [mkItem('1', 'McNuggets'), mkItem('2', 'Bacon'), mkItem('3', 'Beef'), mkItem('4', 'Sprite')];
     const res = runDiagnosis({ store: '1', storeName: 'Tecumseh', period: '2026-07', data: { rawItems } });
