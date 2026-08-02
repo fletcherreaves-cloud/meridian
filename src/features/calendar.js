@@ -49,6 +49,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const [scope, setScope] = uSt('all'); // 'all' | 'ok' | 'fl' | a specific loc
   const [tab,   setTab]   = uSt('grid'); // 'grid' | 'rules' | 'pending'
   const [gridView, setGridView] = uSt('month'); // 'month' | 'agenda'
+  const [printMonths, setPrintMonths] = uSt(1); // how many consecutive months to print (Notes 49)
 
   const [showAddEvent, setShowAddEvent] = uSt(false);
   const [prefillDate,  setPrefillDate]  = uSt(null);
@@ -137,24 +138,64 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   },[monthData,viewY,viewM,daysInMonth]);
 
   const scopeLabel = scope==='all'?'All stores':scope==='ok'?'Oklahoma':scope==='fl'?'Florida':(sNameC(scope)||scope);
-  // Print the current month's agenda as a clean standalone page (per selected scope).
-  const printAgenda = () => {
+  // Build a deduped agenda (same shape as monthAgenda) for ANY month — used by multi-month print.
+  const agendaForMonth = (y, m) => {
+    const dim = new Date(y, m, 0).getDate();
+    const cells = {};
+    for(let d=1; d<=dim; d++) cells[d]=[];
+    scopeLocs.forEach(loc=>{
+      const dkMap = (userEvents||{})[loc]; if(!dkMap) return;
+      Object.entries(dkMap).forEach(([dk,ev])=>{
+        const dt=new Date(dk+'T12:00:00');
+        if(dt.getFullYear()!==y||dt.getMonth()+1!==m) return;
+        const day=dt.getDate(); if(!cells[day]) return;
+        cells[day].push({loc,dk,...ev});
+      });
+    });
+    const out=[];
+    for(let d=1; d<=dim; d++){
+      const evs=cells[d]; if(!evs.length) continue;
+      const byLabel={};
+      for(const e of evs){ const k=(e.label||e.type); (byLabel[k]=byLabel[k]||{...e,locs:[]}).locs.push(e.loc); }
+      const dk=y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      out.push({ day:d, dk, dow:new Date(dk+'T12:00:00').toLocaleDateString('en-US',{weekday:'short'}),
+        events:Object.values(byLabel).sort((a,b)=>(EVENT_TYPES[a.type]?.label||'').localeCompare(EVENT_TYPES[b.type]?.label||'')) });
+    }
+    return out;
+  };
+  // Print one or more consecutive months' agendas (starting at the current view) as a clean standalone page.
+  const printAgenda = (months=1) => {
     const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-    const rows=monthAgenda.map(d=>{
-      const evs=d.events.map(e=>{ const et=EVENT_TYPES[e.type]||EVENT_TYPES.other;
-        const nloc=e.locs.length>1?` <span class="n">(${e.locs.length} stores)</span>`:'';
-        const extra=[e.opponent?'vs '+esc(e.opponent):'', e.kickoff?esc(e.kickoff):'', e.status&&e.status!=='scheduled'?esc(e.status.toUpperCase()):''].filter(Boolean).join(' · ');
-        return `<div class="ev"><span class="dot" style="background:${et.col}"></span><b>${esc(e.label||et.label)}</b>${nloc}${extra?` <span class="x">— ${extra}</span>`:''}</div>`; }).join('');
-      return `<tr><td class="d"><b>${d.day}</b><br><span class="dow">${d.dow}</span></td><td>${evs}</td></tr>`;
-    }).join('');
-    const html=`<!doctype html><html><head><meta charset="utf-8"><title>${esc(monthLabel)} Events — ${esc(scopeLabel)}</title>
+    const nMonths=Math.max(1, months|0);
+    const sections=[]; let grandTotal=0;
+    for(let i=0;i<nMonths;i++){
+      let mm=viewM+i, yy=viewY;
+      while(mm>12){ mm-=12; yy+=1; }
+      const label=new Date(yy,mm-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+      const agenda=agendaForMonth(yy,mm);
+      const total=agenda.reduce((s,d)=>s+d.events.length,0); grandTotal+=total;
+      const rows=agenda.map(d=>{
+        const evs=d.events.map(e=>{ const et=EVENT_TYPES[e.type]||EVENT_TYPES.other;
+          const nloc=e.locs.length>1?` <span class="n">(${e.locs.length} stores)</span>`:'';
+          const extra=[e.opponent?'vs '+esc(e.opponent):'', e.kickoff?esc(e.kickoff):'', e.status&&e.status!=='scheduled'?esc(e.status.toUpperCase()):''].filter(Boolean).join(' · ');
+          return `<div class="ev"><span class="dot" style="background:${et.col}"></span><b>${esc(e.label||et.label)}</b>${nloc}${extra?` <span class="x">— ${extra}</span>`:''}</div>`; }).join('');
+        return `<tr><td class="d"><b>${d.day}</b><br><span class="dow">${d.dow}</span></td><td>${evs}</td></tr>`;
+      }).join('');
+      sections.push(`<section class="mo"><h2>${esc(label)}<span class="c">${total} event${total===1?'':'s'}</span></h2>
+        <table>${rows||'<tr><td colspan="2" class="empty">No events this month.</td></tr>'}</table></section>`);
+    }
+    const rangeLabel=nMonths===1?monthLabel:`${monthLabel} – ${(()=>{let mm=viewM+nMonths-1,yy=viewY;while(mm>12){mm-=12;yy+=1;}return new Date(yy,mm-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});})()}`;
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>${esc(rangeLabel)} Events — ${esc(scopeLabel)}</title>
       <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:24px}h1{font-size:16px;margin:0 0 2px}
-      .sub{color:#666;font-size:11px;margin-bottom:12px}table{width:100%;border-collapse:collapse}
+      h2{font-size:13px;margin:0 0 4px;padding-bottom:3px;border-bottom:2px solid #333;display:flex;justify-content:space-between;align-items:baseline}
+      h2 .c{color:#888;font-size:10px;font-weight:400}.sub{color:#666;font-size:11px;margin-bottom:14px}
+      section.mo{margin-bottom:18px}table{width:100%;border-collapse:collapse}
       td{border-top:1px solid #ddd;padding:6px 8px;vertical-align:top}td.d{width:44px;text-align:center;color:#333}
+      td.empty{color:#999;text-align:center;border-top:none}
       .dow{color:#888;font-size:10px}.ev{margin:2px 0}.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
-      .n{color:#888;font-weight:400}.x{color:#666}@media print{body{margin:0}}</style></head>
-      <body><h1>${esc(monthLabel)} — Events</h1><div class="sub">${esc(scopeLabel)} · ${monthAgenda.reduce((s,d)=>s+d.events.length,0)} events · printed ${new Date().toLocaleDateString()}</div>
-      <table>${rows||'<tr><td>No events this month.</td></tr>'}</table></body></html>`;
+      .n{color:#888;font-weight:400}.x{color:#666}@media print{body{margin:0}section.mo{break-inside:avoid}}</style></head>
+      <body><h1>Events — ${esc(rangeLabel)}</h1><div class="sub">${esc(scopeLabel)} · ${grandTotal} event${grandTotal===1?'':'s'} across ${nMonths} month${nMonths===1?'':'s'} · printed ${new Date().toLocaleDateString()}</div>
+      ${sections.join('\n')}</body></html>`;
     const w=window.open('','_blank'); if(!w){alert('Allow pop-ups to print.');return;}
     w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
   };
@@ -744,9 +785,13 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
             ...[['month','📆 Month'],['agenda','📋 Agenda']].map(([v,l])=>btn({key:v,onClick:()=>setGridView(v),
               style:{padding:'3px 8px',border:'none',fontSize:'9px',cursor:'pointer',
                 background:gridView===v?'var(--adim)':'transparent',color:gridView===v?'var(--amber)':'var(--text3)',fontWeight:gridView===v?700:400}},l))),
-          div({style:{marginLeft:'auto',display:'flex',gap:6}},
-            btn({className:'btn btn-sm',style:{fontSize:'9px'},title:'Print this month\'s events for the selected scope',
-              onClick:()=>printAgenda()},'🖨 Print'),
+          div({style:{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}},
+            h('select',{value:printMonths,onChange:e=>setPrintMonths(+e.target.value),title:'How many months to include when printing (starting from the month in view)',
+              style:{fontSize:'9px',padding:'4px 6px',background:'var(--surf)',border:'.5px solid var(--bdr)',
+                borderRadius:'var(--r)',color:'var(--text)'}},
+              [[1,'This month'],[2,'2 months'],[3,'3 months'],[6,'6 months'],[12,'12 months']].map(([v,l])=>h('option',{key:v,value:v},l))),
+            btn({className:'btn btn-sm',style:{fontSize:'9px'},title:'Print the selected month range of events for the current scope',
+              onClick:()=>printAgenda(printMonths)},'🖨 Print'),
             btn({className:'btn btn-sm btn-a',style:{fontSize:'9px',fontWeight:700},
               onClick:()=>{setPrefillDate(null);setShowAddEvent(true);}},'➕ Add Event'),
             btn({className:'btn btn-sm',style:{fontSize:'9px'},disabled:searching,
