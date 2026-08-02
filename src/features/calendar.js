@@ -48,6 +48,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const [viewM, setViewM] = uSt(today.getMonth()+1); // 1-12
   const [scope, setScope] = uSt('all'); // 'all' | 'ok' | 'fl' | a specific loc
   const [tab,   setTab]   = uSt('grid'); // 'grid' | 'rules' | 'pending'
+  const [gridView, setGridView] = uSt('month'); // 'month' | 'agenda'
 
   const [showAddEvent, setShowAddEvent] = uSt(false);
   const [prefillDate,  setPrefillDate]  = uSt(null);
@@ -120,6 +121,43 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   const monthLabel = new Date(viewY,viewM-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
   const firstDOW = new Date(viewY,viewM-1,1).getDay();
   const daysInMonth = new Date(viewY,viewM,0).getDate();
+
+  // Deduped agenda for the visible month (national/multi-store events collapse to one row + a store count).
+  const monthAgenda = useMemo(()=>{
+    const out=[];
+    for(let d=1; d<=daysInMonth; d++){
+      const evs=(monthData[d]||{events:[]}).events; if(!evs.length) continue;
+      const byLabel={};
+      for(const e of evs){ const k=(e.label||e.type); (byLabel[k]=byLabel[k]||{...e,locs:[]}).locs.push(e.loc); }
+      const dk=viewY+'-'+String(viewM).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      out.push({ day:d, dk, dow:new Date(dk+'T12:00:00').toLocaleDateString('en-US',{weekday:'short'}),
+        events:Object.values(byLabel).sort((a,b)=>(EVENT_TYPES[a.type]?.label||'').localeCompare(EVENT_TYPES[b.type]?.label||'')) });
+    }
+    return out;
+  },[monthData,viewY,viewM,daysInMonth]);
+
+  const scopeLabel = scope==='all'?'All stores':scope==='ok'?'Oklahoma':scope==='fl'?'Florida':(sNameC(scope)||scope);
+  // Print the current month's agenda as a clean standalone page (per selected scope).
+  const printAgenda = () => {
+    const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const rows=monthAgenda.map(d=>{
+      const evs=d.events.map(e=>{ const et=EVENT_TYPES[e.type]||EVENT_TYPES.other;
+        const nloc=e.locs.length>1?` <span class="n">(${e.locs.length} stores)</span>`:'';
+        const extra=[e.opponent?'vs '+esc(e.opponent):'', e.kickoff?esc(e.kickoff):'', e.status&&e.status!=='scheduled'?esc(e.status.toUpperCase()):''].filter(Boolean).join(' · ');
+        return `<div class="ev"><span class="dot" style="background:${et.col}"></span><b>${esc(e.label||et.label)}</b>${nloc}${extra?` <span class="x">— ${extra}</span>`:''}</div>`; }).join('');
+      return `<tr><td class="d"><b>${d.day}</b><br><span class="dow">${d.dow}</span></td><td>${evs}</td></tr>`;
+    }).join('');
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>${esc(monthLabel)} Events — ${esc(scopeLabel)}</title>
+      <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:24px}h1{font-size:16px;margin:0 0 2px}
+      .sub{color:#666;font-size:11px;margin-bottom:12px}table{width:100%;border-collapse:collapse}
+      td{border-top:1px solid #ddd;padding:6px 8px;vertical-align:top}td.d{width:44px;text-align:center;color:#333}
+      .dow{color:#888;font-size:10px}.ev{margin:2px 0}.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+      .n{color:#888;font-weight:400}.x{color:#666}@media print{body{margin:0}}</style></head>
+      <body><h1>${esc(monthLabel)} — Events</h1><div class="sub">${esc(scopeLabel)} · ${monthAgenda.reduce((s,d)=>s+d.events.length,0)} events · printed ${new Date().toLocaleDateString()}</div>
+      <table>${rows||'<tr><td>No events this month.</td></tr>'}</table></body></html>`;
+    const w=window.open('','_blank'); if(!w){alert('Allow pop-ups to print.');return;}
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+  };
 
   const navMonth = (delta) => {
     let m=viewM+delta, y=viewY;
@@ -702,7 +740,13 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
             h('option',{value:''},'— single store —'),
             LOCS.map(l=>h('option',{key:l,value:l},sNameC(l)))
           ),
+          div({style:{display:'flex',gap:2,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
+            ...[['month','📆 Month'],['agenda','📋 Agenda']].map(([v,l])=>btn({key:v,onClick:()=>setGridView(v),
+              style:{padding:'3px 8px',border:'none',fontSize:'9px',cursor:'pointer',
+                background:gridView===v?'var(--adim)':'transparent',color:gridView===v?'var(--amber)':'var(--text3)',fontWeight:gridView===v?700:400}},l))),
           div({style:{marginLeft:'auto',display:'flex',gap:6}},
+            btn({className:'btn btn-sm',style:{fontSize:'9px'},title:'Print this month\'s events for the selected scope',
+              onClick:()=>printAgenda()},'🖨 Print'),
             btn({className:'btn btn-sm btn-a',style:{fontSize:'9px',fontWeight:700},
               onClick:()=>{setPrefillDate(null);setShowAddEvent(true);}},'➕ Add Event'),
             btn({className:'btn btn-sm',style:{fontSize:'9px'},disabled:searching,
@@ -730,7 +774,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               EVENT_TYPES[t].label))
         ),
         // Month grid
-        div({style:{flex:1,overflowY:'auto',padding:'0 16px 16px'}},
+        gridView==='month'&&div({style:{flex:1,overflowY:'auto',padding:'0 16px 16px'}},
           div({style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,marginBottom:4}},
             ...DOW_LETTERS.map((l,i)=>div({key:i,style:{textAlign:'center',fontSize:'8px',
               fontWeight:700,color:'var(--text3)',padding:'2px 0'}},l))
@@ -740,25 +784,44 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
             ...Array.from({length:daysInMonth},(_,idx)=>idx+1).map(day=>{
               const cell=monthData[day]||{events:[]};
               const isToday=viewY===today.getFullYear()&&viewM===today.getMonth()+1&&day===today.getDate();
-              const uniqueTypes=[...new Set(cell.events.map(e=>e.type))];
+              // Readable chips: dedupe by label (a national promo / a school's game shows once, not per-store).
+              const seen=new Set(), uniq=[];
+              for(const e of cell.events){ const k=(e.label||e.type)+'|'+(e.status||''); if(!seen.has(k)){seen.add(k);uniq.push(e);} }
               const _dk=viewY+'-'+String(viewM).padStart(2,'0')+'-'+String(day).padStart(2,'0');
               return div({key:day,
                 onClick:()=>{setDayPanel(_dk);setDayEvtOpen(null);},
-                style:{minHeight:54,padding:'4px 5px',borderRadius:6,cursor:'pointer',
+                style:{minHeight:58,padding:'4px 4px',borderRadius:6,cursor:'pointer',display:'flex',flexDirection:'column',
                   background:isToday?'rgba(245,158,11,.08)':'var(--surf2)',
                   border:'.5px solid '+(isToday?'rgba(245,158,11,.4)':'var(--bdr)')}},
-                div({style:{fontSize:'9px',fontWeight:isToday?800:600,color:isToday?'var(--amber)':'var(--text2)',marginBottom:3}},day),
-                div({style:{display:'flex',flexWrap:'wrap',gap:2}},
-                  ...uniqueTypes.slice(0,4).map((t,i)=>span({key:i,title:EVENT_TYPES[t]?.label,
-                    style:{width:7,height:7,borderRadius:2,background:(EVENT_TYPES[t]||EVENT_TYPES.other).col,display:'inline-block'}})),
-                  cell.events.length>4&&span({style:{fontSize:'6.5px',color:'var(--text3)'}},'+'+(cell.events.length-4))
-                ),
-                cell.events.length>0&&div({style:{fontSize:'6.5px',color:'var(--text3)',marginTop:2}},
-                  cell.events.length+' tagged')
+                div({style:{fontSize:'9px',fontWeight:isToday?800:600,color:isToday?'var(--amber)':'var(--text2)',marginBottom:2}},day),
+                div({style:{display:'flex',flexDirection:'column',gap:1.5,overflow:'hidden'}},
+                  ...uniq.slice(0,3).map((e,i)=>{ const et=EVENT_TYPES[e.type]||EVENT_TYPES.other; const cx=e.status==='canceled';
+                    return div({key:i,title:(e.label||et.label),
+                      style:{fontSize:'7.5px',lineHeight:1.25,color:cx?'var(--text3)':'var(--text2)',background:et.col+'22',borderLeft:'2px solid '+et.col,
+                        borderRadius:2,padding:'0 3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',textDecoration:cx?'line-through':'none'}},
+                      (e.icon||et.icon)+' '+(e.label||et.label)); }),
+                  uniq.length>3&&span({style:{fontSize:'7px',color:'var(--text3)',paddingLeft:2}},'+'+(uniq.length-3)+' more'))
               );
             })
           )
-        )
+        ),
+        // Agenda / tabular view (chronological, deduped, print-friendly)
+        gridView==='agenda'&&div({style:{flex:1,overflowY:'auto',padding:'4px 16px 16px'}},
+          monthAgenda.length===0
+            ? div({style:{textAlign:'center',color:'var(--text3)',fontSize:'11px',padding:'30px'}},'No events in '+monthLabel+' for '+scopeLabel+'.')
+            : div({style:{display:'flex',flexDirection:'column',gap:2}},
+              ...monthAgenda.map(d=>div({key:d.day,style:{display:'flex',gap:10,padding:'6px 0',borderTop:'.5px solid var(--bdr)'}},
+                div({onClick:()=>{setDayPanel(d.dk);setDayEvtOpen(null);},style:{flexShrink:0,width:40,textAlign:'center',cursor:'pointer'}},
+                  div({style:{fontSize:'15px',fontWeight:800,color:'var(--text)'}},d.day),
+                  div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase'}},d.dow)),
+                div({style:{flex:1,display:'flex',flexDirection:'column',gap:3}},
+                  ...d.events.map((e,i)=>{ const et=EVENT_TYPES[e.type]||EVENT_TYPES.other; const cx=e.status==='canceled';
+                    const bits=[e.opponent?'vs '+e.opponent:null,e.kickoff,e.locs.length>1?e.locs.length+' stores':(sNameC(e.locs[0])||null),e.status&&e.status!=='scheduled'?e.status:null].filter(Boolean).join(' · ');
+                    return div({key:i,onClick:()=>{setDayPanel(d.dk);setDayEvtOpen(null);},
+                      style:{display:'flex',alignItems:'baseline',gap:6,cursor:'pointer',borderLeft:'3px solid '+et.col,background:et.col+'11',borderRadius:4,padding:'3px 7px'}},
+                      span({style:{fontSize:'12px'}},e.icon||et.icon),
+                      span({style:{fontSize:'11.5px',fontWeight:700,color:cx?'var(--text3)':'var(--text)',textDecoration:cx?'line-through':'none'}},e.label||et.label),
+                      bits&&span({style:{fontSize:'9px',color:'var(--text3)'}},bits)); }))))))
       ),
 
       // ════════ RULES TAB ════════
