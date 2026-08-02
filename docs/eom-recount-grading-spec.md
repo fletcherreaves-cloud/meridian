@@ -58,6 +58,22 @@ If instead the recount had *dropped* the count (found 14, a worse count), var_af
 - Reuse the existing **$25 materiality floor**.
 - Keep every detection field (window, countSource, confidence, ↻) exactly as-is.
 
+## 5b. Retire the manual lock — derive the baseline from the raw ledger (owner, 2026-08-01)
+
+**North star** (`memory/project-count-cycle-vision.md`): the end goal is a per-store **engagement verdict** — did the store actively try to diagnose and *improve* FOB, make it worse, or take no meaningful action (and is a failure *skill* or *will*?). The recount grade feeds that.
+
+**Root cause of the "var not yet posted" / fake-helped rows (CONFIRMED):** the Change Monitor baseline is a **frozen snapshot** (`eom_snapshots`) built by `buildLiveSnapshot`, which reads the ledger variance `{ asOf: new Date() }` — i.e. *at lock time*. A store that hadn't counted when the lock fired (manual lock Jul 31 10:50 AM) recorded **$0**, and then the data "landing" later reads as fake helped/hurt (e.g. Freeport "36 helped"). **The variance was never missing** — the raw item detail logs it the instant a count is submitted. The snapshot just captured too early.
+
+**Fix:** stop freezing. **Derive the baseline directly from the raw item detail** (`rawByLoc`, already loaded for the Progression view): each item's baseline variance = the binding variance of its **primary count** (the count-complete day), read with `asOf` = that store's count-complete date — not "now," not a lock. `current` = the item's latest/EOM binding (or `officialVar`). The diff = exactly the qualifying recounts, graded by §3. This:
+- eliminates the $0 baselines and the fake helped/hurt (the ledger always has the real number),
+- unifies Progression + Baseline-diff onto ONE ledger-anchored engine (kills the "lock has more precedence than the new rules" divergence),
+- reframes the view from **"baseline vs live"** → **"the EOM count + qualifying recounts,"** removing post-close drift noise,
+- makes **Lock baseline** an optional power-user "freeze & watch the authoritative number drift" tool, not the primary path.
+
+**Store-engagement verdict (the payoff):** per store, roll the item grades + FOB direction into: **Actively improving** (recounted flagged items, net FOB down) / **Made it worse** (net FOB up) / **No meaningful action** (few/no qualifying recounts on flagged items). Prioritization applies the **mid-cycle filter**: don't ask a store to recount an item whose material variance was already booked at an earlier count this month (not a loss "today"). Keep integrity separate (a "helped" store can still be padding).
+
+**Staging (don't break the working view):** (1) build `deriveBaseline(rawItems, countCompleteDate)` from the ledger; (2) feed the Baseline-diff's HELPED/HURT/RECOUNTED + item expand from the ledger recount engine instead of the snapshot; (3) keep FOB base→now for the store-level "did FOB move" signal; (4) once verified, demote the manual lock.
+
 ## 6. Decisions I need from you
 
 1. **Anchor to `officialVar`** as the truth basis (§3), with direction-only fallback when it hasn't posted? *(my recommendation: yes)*
