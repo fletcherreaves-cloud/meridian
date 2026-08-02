@@ -148,6 +148,10 @@ function aggregateByDate(items, nsn) {
       byRt[rt].happy_meal_sub += it.happy_meal_sub || 0; byRt[rt].other_charges_credits += it.other_charges_credits || 0;
     }
     console.log(`[EBOS-FIELDS] ${mon} ops_sub/etc by record_type: ${JSON.stringify(Object.fromEntries(Object.entries(byRt).map(([k, v]) => [k, { count: v.count, ops_sub: Math.round(v.ops_sub * 100) / 100, other_sub: Math.round(v.other_sub * 100) / 100, hm: Math.round(v.happy_meal_sub * 100) / 100, occ: Math.round(v.other_charges_credits * 100) / 100 }])))}`);
+    const credOps = items.filter(x => x.record_type === 'Credit' && String(x.posted_date || '').startsWith(mon) && Math.abs(x.ops_sub || 0) > 0.005)
+      .map(x => ({ date: x.posted_date, inv: x.invoice_identifier, wrin: x.wrin, desc: x.description, ops: Math.round((x.ops_sub || 0) * 100) / 100, total: Math.round((x.total_amount || 0) * 100) / 100 }))
+      .sort((a, b) => Math.abs(b.ops) - Math.abs(a.ops));
+    console.log(`[EBOS-FIELDS] ${mon} Credit line items with ops spend (${credOps.length}): ${JSON.stringify(credOps.slice(0, 30))}`);
     console.log(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
   }
   const byDate = {};
@@ -349,6 +353,11 @@ async function pullViaPlaywright(startDate, endDate) {
               byRt[rt].happy_meal_sub += it.happy_meal_sub || 0; byRt[rt].other_charges_credits += it.other_charges_credits || 0;
             }
             log.push(`[EBOS-FIELDS] ${mon} by record_type: ${JSON.stringify(Object.fromEntries(Object.entries(byRt).map(([k, v]) => [k, { n: v.count, ops: Math.round(v.ops_sub * 100) / 100, other: Math.round(v.other_sub * 100) / 100, hm: Math.round(v.happy_meal_sub * 100) / 100, occ: Math.round(v.other_charges_credits * 100) / 100 }])))}`);
+            // Individual Credit line items that carry ops spend — answers "what were the positive credits?"
+            const credOps = items.filter(x => x.record_type === 'Credit' && String(x.posted_date || '').startsWith(mon) && Math.abs(x.ops_sub || 0) > 0.005)
+              .map(x => ({ date: x.posted_date, inv: x.invoice_identifier, wrin: x.wrin, desc: x.description, ops: Math.round((x.ops_sub || 0) * 100) / 100, total: Math.round((x.total_amount || 0) * 100) / 100 }))
+              .sort((a, b) => Math.abs(b.ops) - Math.abs(a.ops));
+            log.push(`[EBOS-FIELDS] ${mon} Credit line items with ops spend (${credOps.length}): ${JSON.stringify(credOps.slice(0, 30))}`);
             log.push(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
           }
 
