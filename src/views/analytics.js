@@ -9642,6 +9642,13 @@ const PROJ_FIELDS = [
   {g:'Sales & Labor', key:'tCrewLabor',   l:'Crew Labor', fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
   {g:'Sales & Labor', key:'tBonusLabor',  l:'Bonus Cr',   fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
   {g:'Sales & Labor', key:'tTpph',        l:'TPPH',       fmt:v=>v!=null?v.toFixed(2):'—'},
+  // Service targets (#40) — already carried per-store in DEFAULT_TARGETS/monthly_targets
+  // (tOepe/tKvst/tKvsu/tR2p) but were never surfaced in this grid. rollupProj is fully
+  // generic (sales-weighted avg for anything but tProdSales/tOpSupply) so no rollup change.
+  {g:'Service',       key:'tOepe',        l:'OEPE',       fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
+  {g:'Service',       key:'tKvst',        l:'KVS Time',   fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
+  {g:'Service',       key:'tKvsu',        l:'KVS Hlthy',  fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
+  {g:'Service',       key:'tR2p',         l:'R2P',        fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
   {g:'Food Cost',     key:'tFOBBase',     l:'Base Food',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Food Cost',     key:'tDiscCoupPct', l:'Disc Coup',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Food Cost',     key:'tCompWaste',   l:'Comp Wst',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
