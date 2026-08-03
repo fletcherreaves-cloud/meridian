@@ -38,12 +38,12 @@ const iso = d => d.toISOString().slice(0, 10);
 const fmtV = (v, fmt) => {
   if (v == null || isNaN(v)) return '—';
   if (fmt === '$') return '$' + Math.round(v).toLocaleString();
-  if (fmt === '%') return (v * 100).toFixed(1) + '%';
+  if (fmt === '%') return (v * 100).toFixed(2) + '%';
   if (fmt === 's') return Math.round(v) + 's';
   if (fmt === 'n') return (Math.round(v * 10) / 10).toString();
   return String(v);
 };
-const pct = v => v == null || isNaN(v) ? '—' : ((v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%');
+const pct = v => v == null || isNaN(v) ? '—' : ((v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%');
 const fmtHrs = v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString() + 'h';
 
 // The six selectable panels (Notes 49 "build your own"). Order = display order.
@@ -159,7 +159,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   const lyEventCaveat = () => {
     if (!lyWindowEvents.length) return null;
     return lyWindowEvents.slice(0, 3).map(e => {
-      const mag = e.impact ? ' (measured ' + (e.impact.home != null ? '+' + (e.impact.home * 100).toFixed(1) + '%' : e.impact.away != null ? '+' + (e.impact.away * 100).toFixed(1) + '%' : '') + ')' : '';
+      const mag = e.impact ? ' (measured ' + (e.impact.home != null ? '+' + (e.impact.home * 100).toFixed(2) + '%' : e.impact.away != null ? '+' + (e.impact.away * 100).toFixed(2) + '%' : '') + ')' : '';
       return e.dk.slice(5) + ' ' + (e.label || (EVENT_TYPES[e.type] || {}).label || e.type) + mag;
     }).join(', ') + (lyWindowEvents.length > 3 ? ` +${lyWindowEvents.length - 3} more` : '');
   };
@@ -287,11 +287,11 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       if (panelKey === 'sales') {
         const s = matchedVsLY(ds, [loc], range, 'sales'); const g = matchedVsLY(ds, [loc], range, 'gc');
         const rv = buildReviewActuals(ds, [loc], range);
-        cols = [['Sales vs LY', pct(s.pct)], ['GC vs LY', pct(g.pct)], ['Digital App %', fmtV(rv.digitalAppPct, '%')]];
+        cols = [['Sales vs LY (TD)', pct(s.pct)], ['GC vs LY (TD)', pct(g.pct)], ['Digital App %', fmtV(rv.digitalAppPct, '%')]];
       } else if (panelKey === 'fob') {
         const f = fobMap[L] || {};
         const vsLy = (f.fobPct != null && f.lyFobPct != null) ? (f.fobPct - f.lyFobPct) : null;
-        cols = [['FOB %', fmtV(f.fobPct, '%')], ['vs LY', vsLy == null ? '—' : (vsLy <= 0 ? '' : '+') + (vsLy * 100).toFixed(2) + 'pp']];
+        cols = [['FOB %', fmtV(f.fobPct, '%')], ['vs LY (Cal)', vsLy == null ? '—' : (vsLy <= 0 ? '' : '+') + (vsLy * 100).toFixed(2) + 'pp']];
       } else if (panelKey === 'schedule') {
         const s = buildScheduleActuals(ds, [loc], range);
         cols = s ? [['Sched/Fcst hrs', fmtHrs(s.schedHrs) + ' / ' + fmtHrs(s.fcstHrs)], ['Fixed %', fmtV(s.fixedPct, '%')], ['Floor %', fmtV(s.floorPct, '%')]] : [['No schedule rows', '—']];
@@ -373,8 +373,8 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         // Sales / GC
         showP('sales') && Section('Sales / GC', '💵', 'sales',
           Row('Product Sales', d.byKey.sales?.actual, null, '$'),
-          div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (matched)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.salesVsLY?.pct))),
-          div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.rv.gcVsLY))),
+          div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.salesVsLY?.pct))),
+          div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.rv.gcVsLY))),
           d.rv.digitalAppPct != null ? Row('Digital App % of Sales', d.rv.digitalAppPct, d.rv.digitalAppPctTarget, '%', false) : null,
           d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(0) + '%' : '—')) : null,
           lyWindowEvents.length ? div({ key: 'lyev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null),
@@ -382,8 +382,11 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         showP('fob') && Section('FOB / Food Cost', '🥗', 'fob',
           Row('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true),
           // vs LY (dollar-weighted, same method) — lower than last year = better (green).
-          d.lyFobPct != null ? div({ key: 'fobly', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } },
-            span({ style: { flex: 1, color: 'var(--text2)' } }, 'vs LY'),
+          // Calendar, not Trading Day: qsr_fob's own ly_* columns come from QSRSoft's
+          // compType='calendar' comparison (same calendar dates last year), unlike the
+          // Sales/GC trading-day (-364) comparisons above.
+          d.lyFobPct != null ? div({ key: 'fobly', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'QSRSoft’s own same-calendar-dates comparison — not the Trading Day (364-day) shift used for Sales/GC' },
+            span({ style: { flex: 1, color: 'var(--text2)' } }, 'vs LY (Calendar)'),
             span({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'LY ' + fmtV(d.lyFobPct, '%')),
             span({ style: { fontWeight: 700, color: d.fobVsLyPp == null ? 'var(--text3)' : (d.fobVsLyPp <= 0 ? '#4ade80' : '#f87171'), minWidth: 60, textAlign: 'right' } },
               d.fobVsLyPp == null ? '—' : (d.fobVsLyPp <= 0 ? '' : '+') + (d.fobVsLyPp * 100).toFixed(2) + 'pp')) : null,
@@ -450,11 +453,11 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         (d.perStore && d.perStore.length) ? h('div', { key: 'ps', style: { gridColumn: '1/-1', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', overflowX: 'auto' } }, [
           h('div', { key: 't', style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, '🏬 Per-store · worst sales vs LY first'),
           h('table', { key: 'tbl', style: { width: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
-            h('thead', { key: 'h' }, h('tr', null, ['Store', 'Sales', 'vs LY', 'FOB %', 'Labor %', 'OEPE'].map((t, i) => h('th', { key: i, style: { textAlign: i === 0 ? 'left' : 'right', fontSize: '8.5px', textTransform: 'uppercase', color: 'var(--text3)', padding: '3px 6px', borderBottom: '1px solid var(--bdr2)' } }, t)))),
+            h('thead', { key: 'h' }, h('tr', null, ['Store', 'Sales', 'vs LY (TD)', 'FOB %', 'Labor %', 'OEPE'].map((t, i) => h('th', { key: i, title: t === 'vs LY (TD)' ? 'Trading Day — same day-of-week, 364 days back' : undefined, style: { textAlign: i === 0 ? 'left' : 'right', fontSize: '8.5px', textTransform: 'uppercase', color: 'var(--text3)', padding: '3px 6px', borderBottom: '1px solid var(--bdr2)' } }, t)))),
             h('tbody', { key: 'b' }, d.perStore.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
               h('td', { key: 'a', style: { padding: '3px 6px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sNameC(r.loc) || r.loc),
               h('td', { key: 's', style: { padding: '3px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' } }, fmtV(r.netSales, '$')),
-              h('td', { key: 'v', style: { padding: '3px 6px', textAlign: 'right', fontWeight: 700, color: (r.salesVsLYPct || 0) >= 0 ? '#4ade80' : '#f87171' } }, r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'),
+              h('td', { key: 'v', style: { padding: '3px 6px', textAlign: 'right', fontWeight: 700, color: (r.salesVsLYPct || 0) >= 0 ? '#4ade80' : '#f87171' } }, r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(2) + '%'),
               h('td', { key: 'f', style: { padding: '3px 6px', textAlign: 'right', color: badge(r.fobPct, r.fobTarget, true) } }, fmtV(r.fobPct, '%')),
               h('td', { key: 'l', style: { padding: '3px 6px', textAlign: 'right', color: badge(r.laborPct, r.laborTarget, true) } }, fmtV(r.laborPct, '%')),
               h('td', { key: 'o', style: { padding: '3px 6px', textAlign: 'right' } }, fmtV(r.oepe, 's')),
