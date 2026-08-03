@@ -82,7 +82,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
       scope === 'all' ? true : scope === 'ok' ? (INV_ORG_COORDS[l] || {}).state === 'OK'
         : scope === 'fl' ? (INV_ORG_COORDS[l] || {}).state === 'FL' : l === scope);
   }, [scope, groups]);
-  const scopeLabel = scope === 'all' ? 'All 27 stores' : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
+  const scopeLabel = scope === 'all' ? ('All ' + Object.keys(STORE_NAMES).length + ' stores') : scope === 'ok' ? 'Oklahoma' : scope === 'fl' ? 'Florida'
     : scope.startsWith('grp:') ? ('Patch: ' + scope.slice(4) + ' (' + locs.length + ')') : (sNameC(scope) || scope);
 
   const range = useMemo(() => {
