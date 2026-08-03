@@ -34,14 +34,19 @@ rollback;
 -- ── TEST 2 (positive control): the owner still sees their data ───────────────────
 -- Impersonate the REAL owner user (their profile has tenant_id = owner tenant).
 -- These counts MUST be > 0 — proves the flip didn't lock the owner out.
+-- IMPORTANT: fetch the owner's id BEFORE `set local role authenticated`. Once RLS is on
+-- and the role is authenticated with no JWT yet, a `select … from profiles` returns
+-- nothing (own-read needs auth.uid(); tenant-read needs current_tenant_id()) — so fetching
+-- the id after the role switch yields NULL and the test silently impersonates a null user
+-- (every count comes back 0). We stash the id in a GUC as postgres first, then build the JWT.
 begin;
+  -- as postgres (bypasses RLS): capture the owner's auth id into a transaction-local GUC
+  select set_config('meridian.test_sub',
+    (select id::text from public.profiles where email = 'fletcher.reaves@mcreaves.com'), true);
   set local role authenticated;
   select set_config(
     'request.jwt.claims',
-    json_build_object(
-      'sub',  (select id::text from public.profiles where email = 'fletcher.reaves@mcreaves.com'),
-      'role', 'authenticated'
-    )::text,
+    json_build_object('sub', current_setting('meridian.test_sub'), 'role', 'authenticated')::text,
     true    -- transaction-local
   );
 
