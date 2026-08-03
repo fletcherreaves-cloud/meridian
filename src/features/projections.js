@@ -1708,7 +1708,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
           groupView: groupBy==='operator' ? 'operator' : groupBy==='patch' ? 'supervisor' : 'flat' }),
 
         loading&&!Object.keys(weekData).length
-          ? div({style:{padding:40,textAlign:'center',color:'var(--text3)'}},'⏳ Computing projections for all 27 stores…')
+          ? div({style:{padding:40,textAlign:'center',color:'var(--text3)'}},'⏳ Computing projections for all '+Object.keys(STORE_NAMES).length+' stores…')
           : tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
               h('thead',null,
                 // Sticky header (v4.195): column headers now stay visible while

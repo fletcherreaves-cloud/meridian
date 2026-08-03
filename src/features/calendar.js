@@ -800,7 +800,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
                 runSearch(loc);
               }},searching&&!searchProg?'⏳ Searching…':'🔍 Search This Store'),
             btn({className:'btn btn-sm',style:{fontSize:'9px',color:'var(--amber)'},disabled:searching,
-              onClick:runBatchSearch},'🔍 Search All 27')
+              onClick:runBatchSearch},'🔍 Search All '+Object.keys(STORE_NAMES).length)
           )
         ),
         searchProg&&div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},

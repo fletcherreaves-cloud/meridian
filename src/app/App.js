@@ -230,10 +230,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.777';
+const MERIDIAN_VERSION    = '4.778';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.778', date:'2026-08-03', changes:[
+    'Productization (multi-operator groundwork): removed hard-coded "27 stores"/"27 Locations" and the "MCDOK & Emerald Arches" org name from user-facing chrome — the About footer and the Sales Anomaly export footer now read the district name from settings and the store count dynamically from the store list, and the correlation subtitle, projections/smart-targets loading text, morning-brief header, calendar "Search All" button, and the analytics correlation tooltips all derive the count. Identical for the current org; correct for any future operator.',
+  ]},
   {version:'4.777', date:'2026-08-03', changes:[
     'Above-Store One-Pager FOB depth cont. (Notes 47 v2): the FOB panel now shows EOM count completion (Food+Condiment — the classes that move FOB$) for the window\'s month — X/Y stores complete, average % counted, and the stores furthest behind by name. Only appears once counting has actually started (mid-month reads of 0% are correctly treated as "not started", not "behind"). Loaded on demand from the persisted per-store count status; folded into the AI narrative + print brief.',
   ]},
@@ -3240,7 +3243,7 @@ function App() {
             h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800}},
               'Meridian. v'+MERIDIAN_VERSION),
             h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},
-              'QSR Forecasting & Intelligence · MCDOK & Emerald Arches · 27 Locations · Build '+MERIDIAN_BUILD_DATE)),
+              'QSR Forecasting & Intelligence · '+(settings.districtName||'District')+' · '+Object.keys(STORE_NAMES).length+' Locations · Build '+MERIDIAN_BUILD_DATE)),
           h('button',{onClick:()=>setShowAbout(false),
             style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer'}},'✕')),
         div({style:{padding:'20px 24px',overflowY:'auto',maxHeight:'80vh'}},
@@ -3286,7 +3289,7 @@ function App() {
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
           h('div',null,
             h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800,letterSpacing:'-.02em'}},'☀️ Morning Intelligence Brief'),
-            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Correlation engine · 9 rules · 27 stores · Sorted by priority')),
+            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Correlation engine · 9 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority')),
           h('button',{onClick:()=>setShowMorningBrief(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
         div({style:{overflowY:'auto',maxHeight:'88vh'}},
           h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar}))

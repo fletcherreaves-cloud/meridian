@@ -389,7 +389,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
       alert('Load an Operations Report first — no data to backtest.'); return;
     }
     if (!window.confirm(
-      'Re-run Model Assignment Backtest for all 27 stores × 3 horizons?\n\n' +
+      'Re-run Model Assignment Backtest for all '+Object.keys(STORE_NAMES).length+' stores × 3 horizons?\n\n' +
       'This tests DOW, AE, EWMA, and DI (where calibrated) on live forecastDay data ' +
       'and writes the winners back as model assignments.\n\n' +
       'Manual overrides you\'ve set are preserved.\n' +

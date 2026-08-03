@@ -798,7 +798,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
       div({style:{fontSize:'10px',color:'var(--text3)',lineHeight:1.7,marginBottom:10,padding:'9px 12px',
         background:'rgba(255,255,255,.03)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)'}},
         span({style:{fontWeight:600,color:'var(--text2)'}},'Metric Lens: '),
-        'Pick one ops metric to see how strongly it correlates with your selected outcome across all 27 stores, ranked by relationship strength. The bar length shows relative strength — longer = matters more. Use this to identify which metric deserves a coaching focus district-wide.'
+        'Pick one ops metric to see how strongly it correlates with your selected outcome across all '+Object.keys(STORE_NAMES).length+' stores, ranked by relationship strength. The bar length shows relative strength — longer = matters more. Use this to identify which metric deserves a coaching focus district-wide.'
       ),
       div({style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}},
         ...CORR_PREDICTORS.map(p=>btn({key:p.id,
@@ -920,7 +920,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'District Lens — What Works Where'),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
-            'Correlation patterns across all 27 stores — heatmap, metric ranking, coaching opportunities & AI narrative')
+            'Correlation patterns across all '+Object.keys(STORE_NAMES).length+' stores — heatmap, metric ranking, coaching opportunities & AI narrative')
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
@@ -949,7 +949,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
       !hasData&&div({style:{padding:'60px 20px',textAlign:'center',color:'var(--text3)'}},
         div({style:{fontSize:'36px',marginBottom:12}},'🌐'),
         div({style:{fontSize:'13px',fontWeight:600,color:'var(--text2)',marginBottom:6}},'No data loaded'),
-        div({style:{fontSize:'11px',lineHeight:1.7}},'Load an Operations Report to compute district-wide correlations across all 27 stores.')
+        div({style:{fontSize:'11px',lineHeight:1.7}},'Load an Operations Report to compute district-wide correlations across all '+Object.keys(STORE_NAMES).length+' stores.')
       ),
 
       hasData&&div({style:{overflowY:'auto',padding:'16px'}},
@@ -1815,7 +1815,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
             borderRadius:'var(--r)',border:'.5px solid rgba(16,185,129,.2)',marginBottom:14,
             fontSize:'9px',color:'#34d399',lineHeight:1.7}},
             span({style:{fontWeight:700}},'⚡ Auto-synced daily (~5am CDT): '),
-            'LifeLenz schedule, QSRSoft FOB, eBOS Purchases, and Daily Activity (hourly for all 27 stores) pull automatically via GitHub Actions — no action needed. ',
+            'LifeLenz schedule, QSRSoft FOB, eBOS Purchases, and Daily Activity (hourly for all '+Object.keys(STORE_NAMES).length+' stores) pull automatically via GitHub Actions — no action needed. ',
             span({style:{color:'var(--text3)'}},'Manual uploads (Ops, Controls, SMG, etc.) persist to Supabase and load on any device without re-uploading.')
           ),
           // EOM Supervisor auto-population note
@@ -4017,7 +4017,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       '<div><div style="font-size:9px;color:#64748b;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;">Meridian</div>'+
       '<div style="font-size:22px;font-weight:800;letter-spacing:-.5px;">Sales Anomaly Report</div>'+
       '<div style="font-size:10px;color:#64748b;margin-top:4px;">'+new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' | Threshold: \u00b1'+threshold+'% | '+spanLabel+'</div></div>'+
-      '<div style="text-align:right;font-size:10px;color:#64748b;">MCDOK | Emerald Arches<br>27 Locations</div></div>'+
+      '<div style="text-align:right;font-size:10px;color:#64748b;">'+((settings&&settings.districtName)||'District')+'<br>'+Object.keys(STORE_NAMES).length+' Locations</div></div>'+
       '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:28px;">'+
       '<div class="card"><div class="n" style="color:#f59e0b;">'+allRows.length+'</div><div class="l">Total Anomalies</div></div>'+
       '<div class="card"><div class="n" style="color:#ef4444;">'+allRows.filter(r=>r.varPct<0).length+'</div><div class="l">Under Baseline</div></div>'+

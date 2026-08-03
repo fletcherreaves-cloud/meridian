@@ -380,7 +380,7 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
         // LEFT: Store × Metric grid
         div({style:{flex:1,overflowY:'auto',overflowX:'auto'}},
           computing&&div({style:{padding:40,textAlign:'center',color:'var(--text3)',
-            fontSize:'11px'}},'Computing data-driven targets for all 27 stores…'),
+            fontSize:'11px'}},'Computing data-driven targets for all '+Object.keys(STORE_NAMES).length+' stores…'),
 
           !computing&&gridData&&h('table',{style:{borderCollapse:'collapse',
             fontSize:'9px',width:'100%',minWidth:800}},

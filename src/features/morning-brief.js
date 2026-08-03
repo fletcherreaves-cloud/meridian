@@ -642,7 +642,7 @@ function TodayPaceCard({date, darRows}) {
       h('div',null,
         h('div',{style:{fontSize:'9px',fontWeight:800,textTransform:'uppercase',letterSpacing:'.07em',
           color:'#10b981',marginBottom:3}},'⚡ Today\'s District Pace'),
-        h('div',{style:{fontSize:'9px',color:'#4a6080'}},'All 27 stores · hours '+slotLabel+' · '+completedSlots.length+' hr'+(completedSlots.length!==1?'s':'')+' of data')
+        h('div',{style:{fontSize:'9px',color:'#4a6080'}},'All '+Object.keys(STORE_NAMES).length+' stores · hours '+slotLabel+' · '+completedSlots.length+' hr'+(completedSlots.length!==1?'s':'')+' of data')
       ),
       h('div',{style:{display:'flex',gap:16,flexWrap:'wrap'}},
         h('div',{style:{textAlign:'right'}},
