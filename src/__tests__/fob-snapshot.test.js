@@ -29,4 +29,21 @@ describe('fobSnapshotByStore — latest snapshot, never a 30× sum', () => {
     expect(Math.round(r.sales)).toBe(430762);
     expect(Math.round(r.fob)).toBe(9056);
   });
+
+  // pLFoodPct (Total P&L Food Cost %, EOM Supervisor's "Total Food Cost" — 2026-08-03 #52) is a
+  // DIFFERENT, broader metric than FOB (Food Over Base) above — Begin+Purchases+Adjustments+
+  // Transfers-Promotions-End, the same build-up analytics.js's fobAuto/fobAgg already use.
+  it('pLFoodPct uses the Begin+Purchases+Adjustments+Transfers-Promotions-End build-up, latest snapshot only', () => {
+    const rows = [
+      { loc: '3708', date: '2026-07-15', prodSalesAmt: 150000,
+        pnlFoodCostBegin: 10000, pnlFoodCostPurchases: 5000, pnlFoodCostAdjustments: 100,
+        pnlFoodCostTransfers: 50, pnlFoodCostPromotions: 200, pnlFoodCostEnd: 8000 },
+      { loc: '3708', date: '2026-07-31', prodSalesAmt: 307503,
+        pnlFoodCostBegin: 10000, pnlFoodCostPurchases: 84252, pnlFoodCostAdjustments: 0,
+        pnlFoodCostTransfers: 0, pnlFoodCostPromotions: 0, pnlFoodCostEnd: 10000 }, // latest → 84252/307503
+    ];
+    const r = fobSnapshotByStore(rows, '2026-07')['3708'];
+    expect(r.pLFoodCost).toBe(84252);
+    expect(r.pLFoodPct).toBeCloseTo(84252 / 307503, 6);
+  });
 });

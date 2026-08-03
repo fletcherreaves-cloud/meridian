@@ -1837,6 +1837,8 @@ export const loadOpsCashSheet = async (d = 45) => {
     tRedBPct: (r.net_sales_amt > 0 && r.treds_before_amt != null) ? r.treds_before_amt / r.net_sales_amt : null,
     tRedAPct: (r.net_sales_amt > 0 && r.treds_after_amt != null) ? r.treds_after_amt / r.net_sales_amt : null,
     drawerOpens: r.drawer_opens_qty != null ? Number(r.drawer_opens_qty) : null,
+    // Cash Over/Short $ (#52) — auto-first backstop for EOM Supervisor's Cash +/- actual.
+    cashOSAmt: r.cash_over_or_short != null ? Number(r.cash_over_or_short) : null,
   }));
 };
 // OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that

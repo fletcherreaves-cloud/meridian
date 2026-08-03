@@ -2,6 +2,8 @@
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEF_SETTINGS } from '../constants.js';
 import { loadEbosMonthlyByStore } from '../lib/supabase.js';
+import { metricAvg, metricSeries } from '../engine/metric-source.js';
+import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 
 const h = React.createElement;
 const { useState: uSt, useEffect: uE, useMemo: uM, useCallback: uCB, useRef: uR } = React;
@@ -130,15 +132,36 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   const _lbrSales = _lbrValid.reduce((s, r) => s + r.sales, 0);
   const monthlyLaborPct  = _lbrSales > 0 ? _lbrWt / _lbrSales : null;
 
+  // Auto-first backstops (#52) — the manual FOB Report / Labor Analysis / Controls uploads above
+  // are still preferred (an intentional monthly submission), but when they're missing for this
+  // period, fall through to the SAME cloud streams every other panel already sources through
+  // (metric-source.js's auto-first resolver + fobSnapshotByStore's proven latest-per-month
+  // qsr_fob snapshot — never a sum, see project-fob-30x-investigation). pmKey is zero-padded
+  // ('YYYY-MM') to match fobSnapshotByStore/metricSeries date-key slicing; periodKey above isn't.
+  const pmKey      = `${selYear}-${String(selMonth).padStart(2, '0')}`;
+  const monthRange = { s: `${pmKey}-01`, e: new Date(selYear, selMonth, 0).toISOString().slice(0, 10) };
+  // qsr_fob rows carry a 7-char zero-padded NSN (unlike ctrlRows/laborRows/etc., which are
+  // unpadded like STORE_NAMES) — fobSnapshotByStore's output keys follow suit, so the lookup
+  // must pad locStr to match, not strip it.
+  const autoFob    = fobSnapshotByStore(ds.qsrFobRows || [], pmKey)[locStr.padStart(7, '0')];
+  const autoLaborPct = metricAvg(ds, locStr, monthRange, 'laborPct');   // punched %, auto-first
+  const autoCashSeries = metricSeries(ds, locStr, monthRange, 'cashOSAmt');
+  const autoCash = Object.keys(autoCashSeries).length
+    ? Math.round(Object.values(autoCashSeries).reduce((a, b) => a + b, 0) * 100) / 100
+    : null;
+
   // Sales and labor % come from Operations Report (laborRows) — daily rows summed for the month.
   // FOB report is fallback for sales/labor only; primary for food cost metrics (actFCPct, actFOBPct).
   const actSales    = (monthlySales > 0 ? monthlySales : null)
                       || (fobRow?.sales > 0 ? fobRow.sales : null);
-  const actFCPct    = fobRow?.pLFoodPct  || null; // Total Food Cost % actual
-  const actFOBPct   = fobRow?.fobPct     || null; // Food Over Base % actual
-  const actLaborPct = monthlyLaborPct || (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || null;
+  // Total Food Cost % actual — manual FOB report, then auto qsr_fob's P&L Food Cost snapshot (#52).
+  const actFCPct    = fobRow?.pLFoodPct  || autoFob?.pLFoodPct || null;
+  const actFOBPct   = fobRow?.fobPct     || autoFob?.fobPct    || null; // Food Over Base % actual
+  // Crew Labor Actual — manual (sales-weighted, best when present), then manual FOB report,
+  // then auto-first PUNCHED Labor % (#52 — was blank whenever Labor Analysis wasn't uploaded).
+  const actLaborPct = monthlyLaborPct || (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || autoLaborPct || null;
 
-  // Cash: sum from ctrlRows for the month
+  // Cash: sum from ctrlRows for the month, else the auto-first cashOSAmt series (#52).
   const cashFromCtrl = (() => {
     const rows = (ds.ctrlRows || []).filter(r =>
       String(r.loc) === locStr &&
@@ -147,7 +170,7 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
       r.date.getMonth() + 1 === selMonth &&
       (r.cashOSAmt || r.tCashOSAmt)
     );
-    if (!rows.length) return null;
+    if (!rows.length) return autoCash;
     const raw = rows.reduce((s, r) => s + (r.cashOSAmt || r.tCashOSAmt || 0), 0);
     return Math.round(raw * 100) / 100;
   })();
@@ -679,10 +702,15 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
     }).join(delim)).join('\n');
     return head + '\n' + body;
   };
+  // The copied text has no filename (unlike the CSV export, which carries the period in its
+  // filename) — a period-selector click changes what the underlying data IS, but the pasted
+  // text itself gave no clue which month it was for once shared out of context (#52: "I need
+  // EOM numbers for July" — the recipient can't tell from the paste alone). Prefix a title line.
   const copyOpSupplies = uCB(async () => {
-    try { await navigator.clipboard.writeText(buildOpTable('\t')); setOpCopied(true); setTimeout(() => setOpCopied(false), 2000); }
+    const title = `Op Supplies — ${MONTH_NAMES[selMonth - 1]} ${selYear}`;
+    try { await navigator.clipboard.writeText(title + '\n' + buildOpTable('\t')); setOpCopied(true); setTimeout(() => setOpCopied(false), 2000); }
     catch { setOpCopied(false); }
-  }, [opSupplyRows]);
+  }, [opSupplyRows, selYear, selMonth]);
   const exportOpCsv = uCB(() =>
     downloadFile(buildOpTable(','), `op-supplies-${selYear}-${String(selMonth).padStart(2, '0')}.csv`),
     [opSupplyRows, selYear, selMonth]);

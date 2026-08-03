@@ -119,7 +119,14 @@ export function fobSnapshotByStore(fobRows, period) {
     const emp = r.empMgrMealsAmt || 0, statv = r.statVarianceAmt || 0, unex = r.unexplainedAmt || 0;
     const sales = r.prodSalesAmt || 0;
     const fob = comp + raw + cond + emp + statv + unex;
-    acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: sales ? fob / sales : null, asOf: latest[loc].key };
+    // Total P&L Food Cost $ — the SAME Begin+Purchases+Adjustments+Transfers-Promotions-End
+    // build-up already used in analytics.js's fobAuto/fobAgg. A different, broader metric
+    // than FOB (Food Over Base) above — this is what QSRSoft's own "P & L Food Cost %" column
+    // reports (EOM Supervisor's "Total Food Cost", 2026-08-03).
+    const pLFoodCost = (r.pnlFoodCostBegin || 0) + (r.pnlFoodCostPurchases || 0) + (r.pnlFoodCostAdjustments || 0)
+                      + (r.pnlFoodCostTransfers || 0) - (r.pnlFoodCostPromotions || 0) - (r.pnlFoodCostEnd || 0);
+    acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: sales ? fob / sales : null,
+      pLFoodCost, pLFoodPct: sales ? pLFoodCost / sales : null, asOf: latest[loc].key };
   }
   return acc;
 }
