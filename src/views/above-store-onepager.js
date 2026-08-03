@@ -182,6 +182,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     const L = [];
     if (showP('sales')) {
       L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
+      if (d.rv.digitalAppPct != null) L.push(`  Digital App % of Sales: ${fmtV(d.rv.digitalAppPct, '%')} (target ${fmtV(d.rv.digitalAppPctTarget, '%')})`);
       if (lyWindowEvents.length) L.push(`  ⚠ LY window (${lyWindow.s} → ${lyWindow.e}) included: ${lyEventCaveat()} — vs-LY comparisons above may be skewed`);
     }
     if (showP('fob')) {
@@ -285,7 +286,8 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       let cols = [];
       if (panelKey === 'sales') {
         const s = matchedVsLY(ds, [loc], range, 'sales'); const g = matchedVsLY(ds, [loc], range, 'gc');
-        cols = [['Sales vs LY', pct(s.pct)], ['GC vs LY', pct(g.pct)]];
+        const rv = buildReviewActuals(ds, [loc], range);
+        cols = [['Sales vs LY', pct(s.pct)], ['GC vs LY', pct(g.pct)], ['Digital App %', fmtV(rv.digitalAppPct, '%')]];
       } else if (panelKey === 'fob') {
         const f = fobMap[L] || {};
         const vsLy = (f.fobPct != null && f.lyFobPct != null) ? (f.fobPct - f.lyFobPct) : null;
@@ -373,6 +375,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           Row('Product Sales', d.byKey.sales?.actual, null, '$'),
           div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (matched)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.salesVsLY?.pct))),
           div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.rv.gcVsLY))),
+          d.rv.digitalAppPct != null ? Row('Digital App % of Sales', d.rv.digitalAppPct, d.rv.digitalAppPctTarget, '%', false) : null,
           d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(0) + '%' : '—')) : null,
           lyWindowEvents.length ? div({ key: 'lyev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null),
         // FOB

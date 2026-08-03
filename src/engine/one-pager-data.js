@@ -194,6 +194,24 @@ export function buildReviewActuals(ds, locs, range) {
   // Projected product sales over the window (scope sum) — Product-Sales target.
   let projSales = 0, hasProj = false;
   for (const loc of (locs || [])) { const s = sumSeries(ds, loc, range, 'projSales'); if (s.days) { projSales += s.sum; hasProj = true; } }
+  // Digital App % of Sales — QSRSoft's official "Digital App" metric (Mobile Order Ahead +
+  // Scanned Offers + Loyalty Self-ID + Internal/GMA Delivery — see reference-digital-app-formula),
+  // NOT the broader delivery/mop/kiosk channel-mix % shown elsewhere. Sourced from
+  // ds.digitalAppRows (digital_app_monthly, appPctSales already = appSales÷allNetSales per
+  // loc/month). Dollar-weighted over the scope: reconstruct each row's total sales as
+  // appSales÷appPctSales (exact, since appPctSales IS that ratio) and Σapp÷Σtotal — never an
+  // average of per-store %s. Monthly granularity, so match any month overlapping the range.
+  const digRows = (ds && ds.digitalAppRows) || [];
+  const rangeM0 = range.s.slice(0, 7), rangeM1 = range.e.slice(0, 7);
+  let digAppSum = 0, digTotSum = 0;
+  for (const r of digRows) {
+    if (!locSet.has(unpad(r.loc))) continue;
+    if (!r.month || r.month < rangeM0 || r.month > rangeM1) continue;
+    if (!(r.appSales > 0) || !(r.appPctSales > 0)) continue;
+    digAppSum += r.appSales;
+    digTotSum += r.appSales / r.appPctSales;
+  }
+  const digitalAppPct = digTotSum > 0 ? digAppSum / digTotSum : null;
   // Scope-average targets from each store's DEFAULT_TARGETS (KVS pace + healthy usage).
   // Read the EFFECTIVE target: the uploaded yearly-targets file lands in ds.targets (e.g. the
   // "Overall Satisfaction B2B" → tOsatB2B), while static DEFAULT_TARGETS only carries the seeded
@@ -219,6 +237,8 @@ export function buildReviewActuals(ds, locs, range) {
     kvsHealthyTarget: tgtAvg('tKvsu'),
     osatTarget: tgtAvg('tOsat'),         // "VOICE OSAT PACE" from the yearly-targets file (5★ goal)
     osatB2BTarget: tgtAvg('tOsatB2B'),   // "Overall Satisfaction B2B" from the yearly-targets file
+    digitalAppPct,                       // dollar-weighted Digital App % of Sales (actual)
+    digitalAppPctTarget: tgtAvg('tDigAppPct'), // "Digital App Percent of Sales" from the yearly-targets file
     projSales: hasProj ? projSales : null,
     smgMonth: bestKey >= 0 ? `${bestY}-${String(bestM).padStart(2, '0')}` : null,
   };
