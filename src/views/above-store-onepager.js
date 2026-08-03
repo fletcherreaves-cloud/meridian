@@ -7,6 +7,7 @@ import * as React from 'react';
 import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows, buildScheduleActuals, buildControlsOutliers, summarizeCountStatus } from '../engine/one-pager-data.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
+import { shiftDays } from '../engine/trading-days.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
 import { supabase, loadEomCountStatus } from '../lib/supabase.js';
 
@@ -57,7 +58,7 @@ export const ONEPAGER_PANELS = [
 ];
 const ALL_PANEL_KEYS = ONEPAGER_PANELS.map(p => p.key);
 
-export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialScope, initialPeriod, initialPanels }) {
+export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onClose, initialScope, initialPeriod, initialPanels }) {
   const { useState, useMemo, useEffect } = React;
   const [scope, setScope] = useState(initialScope || 'all');
   const [period, setPeriod] = useState(initialPeriod || 'mtd');
@@ -135,6 +136,30 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
     return out.sort((a, b) => a.dk.localeCompare(b.dk)).slice(0, 24);
   }, [locs, userEvents]);
 
+  // LY-event awareness (Notes 47 v2) — tagged events that fell inside the WEEKDAY-ALIGNED
+  // comparison window (52-week/364-day shift, same alignment fetchLY/vs-ly.js use) are a
+  // caveat on "vs LY": a store isn't under- or over-performing vs a clean baseline if last
+  // year's matching window had a closure/festival/etc. Enriched with the Event Impact
+  // registry's measured lift for that (loc,type) when available (home/away), so the caveat
+  // states a magnitude instead of just naming the event.
+  const lyWindow = useMemo(() => ({ s: shiftDays(range.s, -364), e: shiftDays(range.e, -364) }), [range.s, range.e]);
+  const lyWindowEvents = useMemo(() => {
+    const seen = new Set(), out = [];
+    for (const l of locs) { const m = (userEvents || {})[l]; if (!m) continue;
+      for (const dk of Object.keys(m)) { if (dk < lyWindow.s || dk > lyWindow.e) continue;
+        const e = m[dk]; const key = dk + '|' + (e.label || e.type); if (seen.has(key)) continue; seen.add(key);
+        const imp = (eventImpact && eventImpact[l] && eventImpact[l][e.type]) || null;
+        out.push({ dk, ...e, impact: imp }); } }
+    return out.sort((a, b) => a.dk.localeCompare(b.dk));
+  }, [locs, userEvents, lyWindow, eventImpact]);
+  const lyEventCaveat = () => {
+    if (!lyWindowEvents.length) return null;
+    return lyWindowEvents.slice(0, 3).map(e => {
+      const mag = e.impact ? ' (measured ' + (e.impact.home != null ? '+' + (e.impact.home * 100).toFixed(1) + '%' : e.impact.away != null ? '+' + (e.impact.away * 100).toFixed(1) + '%' : '') + ')' : '';
+      return e.dk.slice(5) + ' ' + (e.label || (EVENT_TYPES[e.type] || {}).label || e.type) + mag;
+    }).join(', ') + (lyWindowEvents.length > 3 ? ` +${lyWindowEvents.length - 3} more` : '');
+  };
+
   // EOM count-completion (Notes 47 v2 FOB depth) — the inventory count isn't on ds; it's
   // a persisted per-store status loaded on demand by period ("YYYY-MM"), derived from the
   // window's end month. Cheap (one table, pre-computed). null = loading.
@@ -151,7 +176,10 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
   const briefLines = () => {
     const d = data; if (d.err) return [];
     const L = [];
-    if (showP('sales')) L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
+    if (showP('sales')) {
+      L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
+      if (lyWindowEvents.length) L.push(`  ⚠ LY window (${lyWindow.s} → ${lyWindow.e}) included: ${lyEventCaveat()} — vs-LY comparisons above may be skewed`);
+    }
     if (showP('fob')) {
       L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})${d.lyFobPct != null ? `; vs LY ${fmtV(d.lyFobPct, '%')} (${d.fobVsLyPp <= 0 ? '' : '+'}${(d.fobVsLyPp * 100).toFixed(2)}pp, ${d.fobVsLyPp <= 0 ? 'better' : 'worse'})` : ''}`);
       if (countSummary && countSummary.n) L.push(`EOM count (Food+Cond, ${eomPeriod}): ${countSummary.nDone}/${countSummary.n} stores complete, avg ${fmtV(countSummary.avgPct, '%')}${countSummary.behind.length ? '; behind: ' + countSummary.behind.map(b => (sNameC(b.loc) || b.loc) + ' ' + fmtV(b.pct, '%')).join(', ') : ''}`);
@@ -264,7 +292,8 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
           Row('Product Sales', d.byKey.sales?.actual, null, '$'),
           div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (matched)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.salesVsLY?.pct))),
           div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.rv.gcVsLY))),
-          d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(0) + '%' : '—')) : null),
+          d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(0) + '%' : '—')) : null,
+          lyWindowEvents.length ? div({ key: 'lyev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null),
         // FOB
         showP('fob') && Section('FOB / Food Cost', '🥗',
           Row('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true),
@@ -274,6 +303,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
             span({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'LY ' + fmtV(d.lyFobPct, '%')),
             span({ style: { fontWeight: 700, color: d.fobVsLyPp == null ? 'var(--text3)' : (d.fobVsLyPp <= 0 ? '#4ade80' : '#f87171'), minWidth: 60, textAlign: 'right' } },
               d.fobVsLyPp == null ? '—' : (d.fobVsLyPp <= 0 ? '' : '+') + (d.fobVsLyPp * 100).toFixed(2) + 'pp')) : null,
+          (d.lyFobPct != null && lyWindowEvents.length) ? div({ key: 'fobev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null,
           div({ key: 'fobd', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Σ$ ' + fmtV(d.fob$, '$') + ' ÷ Σ prod-sales ' + fmtV(d.fobProd, '$') + ' (dollar-weighted)'),
           // EOM count completion (Food+Condiment) for the window's month.
           (countSummary && countSummary.n) ? h(React.Fragment, { key: 'cc' },
