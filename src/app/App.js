@@ -230,10 +230,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.773';
+const MERIDIAN_VERSION    = '4.774';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.774', date:'2026-08-03', changes:[
+    'Above-Store One-Pager: Controls panel now names the outliers behind the scope averages (Notes 47 v2) — the worst store-days for Cash Over/Short %, T-Reds After %, and Discount %, with store + date. Cash O/S ranks by absolute deviation from zero (a big short and a big over are both exposure) and keeps its sign (over +, short −); T-Reds and Discount rank highest-first and drop clean days. Sourced through the shared metric resolver (auto-first per day, never a raw ctrl-row filter). Shown for multi-store scopes and folded into the AI narrative + print brief.',
+  ]},
   {version:'4.773', date:'2026-08-03', changes:[
     'Above-Store One-Pager: added the Scheduling / VLH panel (Notes 47) — the sixth panel the rollup was missing. Shows Scheduled vs Forecast hours and the gap, Schd TPMH, and Fixed / Floor / Combined labor % against the owner standard (each segment 10–15%, combined ≤25%), for the selected scope + period. Reconciled to the weekly Scheduling panel via a new range-scoped computeScheduleRollup (ratios of aggregates, dollar/hour-weighted — never an average of daily %s). Selectable in "build your own" panels + My Reports; flows into the AI narrative and print. Falls back to a clear note when LifeLenz has no schedule rows for the scope/window.',
   ]},

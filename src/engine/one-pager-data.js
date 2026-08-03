@@ -230,6 +230,42 @@ export function buildScheduleActuals(ds, locs, range) {
   };
 }
 
+// Controls loss-prevention OUTLIERS for the Above-Store One-Pager (Notes 47 v2 — the
+// "who and when" behind the Controls scope averages). Sourced through metricSeries
+// (auto-first per day), NEVER a raw ctrlRows filter, so it obeys the standing data-
+// sourcing rule. For each controls metric it returns the scope average + the worst
+// individual store-days:
+//   cashOSPct — ranked by ABSOLUTE deviation from 0 (a big over AND a big short are both
+//               exposure); the signed value is kept so the UI shows over(+)/short(−).
+//   tRedAPct / discPct — ranked HIGH (more = worse).
+// Returns { <key>: { avg, n, outliers: [{loc, date, val}] } }, up to topN worst days each.
+// Days that are clean (0 / non-positive for the "high" metrics) are excluded so the list
+// only ever surfaces genuine offenders, not filler.
+const CONTROLS_OUTLIER_METRICS = [
+  { key: 'cashOSPct', dir: 'abs' },
+  { key: 'tRedAPct',  dir: 'high' },
+  { key: 'discPct',   dir: 'high' },
+];
+export function buildControlsOutliers(ds, locs, range, topN = 3) {
+  const out = {};
+  for (const { key, dir } of CONTROLS_OUTLIER_METRICS) {
+    const pts = [];
+    for (const loc of (locs || [])) {
+      const s = metricSeries(ds, loc, range, key);
+      for (const dk in s) pts.push({ loc: unpad(loc), date: dk, val: s[dk] });
+    }
+    const n = pts.length;
+    const avg = n ? pts.reduce((a, p) => a + p.val, 0) / n : null;
+    const sev = p => (dir === 'abs' ? Math.abs(p.val) : p.val);
+    const outliers = pts
+      .filter(p => (dir === 'abs' ? p.val !== 0 : p.val > 0))
+      .sort((a, b) => sev(b) - sev(a))
+      .slice(0, topN);
+    out[key] = { avg, n, outliers };
+  }
+  return out;
+}
+
 // Scope-level headline KPIs for the page header grid (dollar-weighted where it matters).
 export function buildCurrentState(ds, fobRows, locs, range) {
   const inputs = buildOnePagerInputs(ds, fobRows, locs, range);

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
-import { fobByRange, buildOnePagerInputs, buildCurrentState, buildReviewActuals } from '../engine/one-pager-data.js';
+import { fobByRange, buildOnePagerInputs, buildCurrentState, buildReviewActuals, buildControlsOutliers } from '../engine/one-pager-data.js';
 
 const d = s => new Date(s + 'T00:00:00');
 
@@ -77,5 +77,43 @@ describe('buildReviewActuals SMG n-weighting (Notes 36 #7)', () => {
     ] };
     const a = buildReviewActuals(ds, ['1', '2'], range);
     expect(a.osat).toBeCloseTo(0.75, 6);   // (0.90+0.60)/2
+  });
+});
+
+describe('buildControlsOutliers — the who + when behind the Controls averages', () => {
+  const range = { s: '2026-06-01', e: '2026-06-30' };
+  const ds = { ctrlRows: [
+    { loc: '1', date: '2026-06-02', cashOSPct:  0.01, tRedAPct: 0.02, discPct: 0.05 },
+    { loc: '2', date: '2026-06-03', cashOSPct: -0.03, tRedAPct: 0.09, discPct: 0.00 },
+    { loc: '1', date: '2026-06-04', cashOSPct:  0.00, tRedAPct: 0.00, discPct: 0.12 },
+  ] };
+
+  it('cash O/S ranks by ABSOLUTE deviation (a big short beats a small over) and keeps the sign', () => {
+    const out = buildControlsOutliers(ds, ['1', '2'], range);
+    expect(out.cashOSPct.outliers[0]).toEqual({ loc: '2', date: '2026-06-03', val: -0.03 });
+    expect(out.cashOSPct.outliers[1].val).toBe(0.01);
+    expect(out.cashOSPct.outliers).toHaveLength(2);        // the 0.00 clean day excluded
+    expect(out.cashOSPct.n).toBe(3);                       // avg still counts every day incl. 0
+    expect(out.cashOSPct.avg).toBeCloseTo((0.01 - 0.03 + 0) / 3, 6);
+  });
+
+  it('T-Reds After and Discount rank HIGH and drop clean (0) days', () => {
+    const out = buildControlsOutliers(ds, ['1', '2'], range);
+    expect(out.tRedAPct.outliers[0]).toEqual({ loc: '2', date: '2026-06-03', val: 0.09 });
+    expect(out.tRedAPct.outliers).toHaveLength(2);
+    expect(out.discPct.outliers[0]).toEqual({ loc: '1', date: '2026-06-04', val: 0.12 });
+    expect(out.discPct.outliers).toHaveLength(2);
+  });
+
+  it('respects topN', () => {
+    const out = buildControlsOutliers(ds, ['1', '2'], range, 1);
+    expect(out.cashOSPct.outliers).toHaveLength(1);
+    expect(out.cashOSPct.outliers[0].loc).toBe('2');
+  });
+
+  it('normalizes loc zero-padding', () => {
+    const padded = { ctrlRows: [{ loc: '0000002', date: '2026-06-03', cashOSPct: -0.03 }] };
+    const out = buildControlsOutliers(padded, ['0000002'], range);
+    expect(out.cashOSPct.outliers[0].loc).toBe('2');
   });
 });

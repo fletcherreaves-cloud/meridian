@@ -4,7 +4,7 @@
 // period (MTD / Last week / Last month). Reuses the proven one-pager-data builders + metric-source +
 // vs-LY, plus the Event Impact registry's upcoming events. v1: quantified rollup (read-only) + print.
 import * as React from 'react';
-import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows, buildScheduleActuals } from '../engine/one-pager-data.js';
+import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows, buildScheduleActuals, buildControlsOutliers } from '../engine/one-pager-data.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
@@ -99,6 +99,9 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
         tRedA: metricAvg(ds, locs, range, 'tRedAPct'),
         disc: metricAvg(ds, locs, range, 'discPct'),
       };
+      // Worst store-days behind the Controls averages (the "who + when"). Only for
+      // multi-store scopes — a single store IS the outlier, no need to name it.
+      const controlsOut = locs.length > 1 ? buildControlsOutliers(ds, locs, range) : null;
       const fobAgg = Object.values(fobByRange(fobRows, range));
       const fob$ = fobAgg.reduce((s, a) => s + (a.fob$ || 0), 0);
       const fobProd = fobAgg.reduce((s, a) => s + (a.prodSales || 0), 0);
@@ -106,7 +109,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
       const projSales = rv.projSales;
       const pace = (projSales && byKey.sales?.actual) ? byKey.sales.actual / projSales : null;
       const perStore = locs.length > 1 ? buildPerLocationRows(ds, fobRows, locs, range, null) : [];
-      return { byKey, rv, salesVsLY, controls, sched, fob$, fobProd, projSales, pace, perStore, err: null };
+      return { byKey, rv, salesVsLY, controls, controlsOut, sched, fob$, fobProd, projSales, pace, perStore, err: null };
     } catch (e) { return { err: String(e?.message || e) }; }
   }, [ds, fobRows, locs, range]);
 
@@ -130,7 +133,15 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
     if (showP('schedule') && d.sched) L.push(`Scheduling: ${fmtHrs(d.sched.schedHrs)} sched vs ${fmtHrs(d.sched.fcstHrs)} fcst (${d.sched.hrsDiff >= 0 ? '+' : ''}${fmtHrs(d.sched.hrsDiff)}); Schd TPMH ${fmtV(d.sched.tpmh, 'n')}; Fixed ${fmtV(d.sched.fixedPct, '%')} / Floor ${fmtV(d.sched.floorPct, '%')} (combined ${fmtV(d.sched.combinedPct, '%')}, cap ${fmtV(d.sched.combinedMax, '%')})`);
     if (showP('labor')) L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
     if (showP('service')) L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
-    if (showP('controls')) L.push(`Controls: Cash O/S ${fmtV(d.controls.cashOS, '%')}; T-Reds After ${fmtV(d.controls.tRedA, '%')}; Discount ${fmtV(d.controls.disc, '%')}`);
+    if (showP('controls')) {
+      L.push(`Controls: Cash O/S ${fmtV(d.controls.cashOS, '%')}; T-Reds After ${fmtV(d.controls.tRedA, '%')}; Discount ${fmtV(d.controls.disc, '%')}`);
+      const co = d.controlsOut;
+      if (co) {
+        const worst = (key, label, signed) => { const o = co[key]; if (!o || !o.outliers || !o.outliers.length) return null; return label + ' ' + o.outliers.map(p => (sNameC(p.loc) || p.loc) + ' ' + p.date.slice(5) + ' ' + (signed ? pct(p.val) : fmtV(p.val, '%'))).join(', '); };
+        const parts = [worst('cashOSPct', 'Cash O/S:', true), worst('tRedAPct', 'T-Reds After:', false), worst('discPct', 'Discount:', false)].filter(Boolean);
+        if (parts.length) L.push('  Controls outliers — ' + parts.join(' | '));
+      }
+    }
     if (showP('voice')) L.push(`Voice: OSAT 5★ ${fmtV(d.rv.osat, '%')} (tgt ${fmtV(d.rv.osatTarget, '%')}); OSAT B2B ${fmtV(d.rv.osatB2B, '%')}`);
     if (upcoming.length) L.push(`Upcoming (21d): ${upcoming.slice(0, 8).map(e => e.dk.slice(5) + ' ' + (e.label || e.type)).join('; ')}`);
     return L;
@@ -171,6 +182,16 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
     span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
     span({ style: { fontSize: '12px', fontWeight: 700, color: v == null ? 'var(--text3)' : (v >= lo && v <= hi ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(v, '%')),
     span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'band ' + (lo * 100).toFixed(0) + '–' + (hi * 100).toFixed(0) + '%'));
+  // Worst store-days behind a Controls metric ("who + when"). signed=true shows +/-
+  // (Cash Over/Short: over vs short). Renders nothing when there are no offenders.
+  const ctrlOut = (key, signed) => {
+    const o = d.controlsOut && d.controlsOut[key];
+    if (!o || !o.outliers || !o.outliers.length) return null;
+    return div({ key: key + 'o', style: { fontSize: '9px', color: 'var(--text3)', padding: '0 0 3px 2px', lineHeight: 1.4 } },
+      span(null, '↳ '),
+      ...o.outliers.map((p, i) => span({ key: i, style: { color: '#f5bc00' } },
+        (i ? ' · ' : '') + (sNameC(p.loc) || p.loc) + ' ' + p.date.slice(5) + ' ' + (signed ? pct(p.val) : fmtV(p.val, '%')))));
+  };
   const Section = (title, icon, ...kids) => div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '10px 12px' } },
     div({ style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 } }, (icon ? icon + ' ' : '') + title), ...kids);
 
@@ -251,8 +272,11 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
         // Controls
         showP('controls') && Section('Controls', '🎛',
           Row('Cash Over/Short %', d.controls.cashOS, null, '%'),
+          ctrlOut('cashOSPct', true),
           Row('T-Reds After %', d.controls.tRedA, null, '%'),
-          Row('Discount %', d.controls.disc, null, '%')),
+          ctrlOut('tRedAPct', false),
+          Row('Discount %', d.controls.disc, null, '%'),
+          ctrlOut('discPct', false)),
         // Voice
         showP('voice') && Section('Guest Voice', '💬',
           Row('OSAT 5★', d.rv.osat, d.rv.osatTarget, '%', false),
