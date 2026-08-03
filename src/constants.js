@@ -604,4 +604,22 @@ function groupsAt(date, list) {
 // CURRENT org (as-of today) — what all the panels read.
 function supervisorGroups() { return groupsAt(_dstr(new Date()), orgAssignments()); }
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+// ── Store registry: Supabase-with-constants-fallback (Track-B onboarding plumbing) ──
+// STORE_NAMES/DEFAULT_TARGETS below are the seed (this owner's known-good values, and the
+// zero-Supabase-row fallback). A future tenant's registry lives in org_config key
+// 'store_registry' and is mutated IN PLACE onto these same exported objects at login sync
+// (App.js, mirroring the app_settings merge) — every module holds a reference to the same
+// object, so no consumer code needs to change. Absent row = identical behavior (verified).
+function setLiveStoreNames(names) {
+  if (names && typeof names === 'object' && Object.keys(names).length) Object.assign(STORE_NAMES, names);
+}
+function setLiveDefaultTargets(targets) {
+  if (!targets || typeof targets !== 'object') return;
+  for (const [loc, vals] of Object.entries(targets)) {
+    if (!vals || typeof vals !== 'object') continue;
+    if (DEFAULT_TARGETS[loc]) Object.assign(DEFAULT_TARGETS[loc], vals);
+    else DEFAULT_TARGETS[loc] = { ...vals };
+  }
+}
+
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
