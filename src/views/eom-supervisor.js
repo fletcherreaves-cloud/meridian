@@ -649,12 +649,19 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
   }, []);
 
   const now = new Date();
-  const [selYear,  setSelYear]  = uSt(now.getFullYear());
-  const [selMonth, setSelMonth] = uSt(now.getMonth() + 1);
+  // EOM Supervisor reviews a COMPLETED month's actuals — default to the LAST completed month,
+  // not the current (usually still-in-progress, near-empty) one. Defaulting to "now" made it
+  // easy to open this panel, export/copy Op Supplies without noticing the period, and read a
+  // 2-day-old current month as if it were a finished period (Notes 53, 2026-08-03 — this exact
+  // confusion happened this session on Aug 3rd, showing August instead of July).
+  const _defMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+  const _defYear  = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const [selYear,  setSelYear]  = uSt(_defYear);
+  const [selMonth, setSelMonth] = uSt(_defMonth);
   const [groupType, setGroupType] = uSt('supervisor'); // supervisor | operator | all
   const [selGroup, setSelGroup]   = uSt('all');
   const [expanded,   setExpanded]  = uSt(null);
-  const [manual,     setManual]    = uSt(() => loadManual(now.getFullYear(), now.getMonth() + 1));
+  const [manual,     setManual]    = uSt(() => loadManual(_defYear, _defMonth));
   const [forPrint,   setForPrint]  = uSt(false);
   const [ebosByLoc,  setEbosByLoc] = uSt({});
 
@@ -842,7 +849,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
           // OP Supplies copy / CSV (Note 5) — current op-supplies per store for projections
           h('button', {
             onClick: copyOpSupplies, disabled: opSupplyRows.length === 0,
-            title: 'Copy every store’s current OP Supplies (MTD + projected), sorted by store number — paste into Excel',
+            title: 'Copy every store’s OP Supplies for the selected Period above (actual + projected), sorted by store number — paste into Excel',
             style: {
               background: opCopied ? 'rgba(16,185,129,.18)' : 'rgba(255,255,255,.06)',
               border: '1px solid rgba(255,255,255,.14)', color: opCopied ? grn : 'var(--text,#111827)',
