@@ -1042,6 +1042,22 @@ const CONTACTS={
   }
 };
 
+// ── Contact registry: Supabase-with-constants-fallback (Track-B onboarding plumbing) ──
+// CONTACTS/STORE_STAFF above are this owner's real GM/supervisor/operator names+emails —
+// a future tenant's own people live in org_config key 'contact_registry' and are mutated
+// IN PLACE onto these same exported objects at login sync (App.js, mirroring the
+// setLiveStoreNames pattern in constants.js), so no consumer code needs to change. No row
+// for this owner = identical behavior.
+function setLiveStoreStaff(staff) {
+  if (staff && typeof staff === 'object' && Object.keys(staff).length) Object.assign(STORE_STAFF, staff);
+}
+function setLiveContacts(contacts) {
+  if (!contacts || typeof contacts !== 'object') return;
+  if (Array.isArray(contacts.aboveStore) && contacts.aboveStore.length) CONTACTS.aboveStore = contacts.aboveStore;
+  if (contacts.operators && typeof contacts.operators === 'object') Object.assign(CONTACTS.operators, contacts.operators);
+  if (contacts.supervisors && typeof contacts.supervisors === 'object') Object.assign(CONTACTS.supervisors, contacts.supervisors);
+}
+
 // Email routing for reports
 function getReportRecipients(scope, stores, settings) {
   const above=CONTACTS.aboveStore.map(c=>c.email);
@@ -1120,4 +1136,4 @@ function storeDistance(locA, locB) {
 // Regional radius per org — Oklahoma stores span ~250mi, FL panhandle ~100mi
 function regionalRadius(loc){return (STORE_COORDS[loc]&&STORE_COORDS[loc].org==='Emerald Arches')?80:150;}
 
-export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS };
+export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts };

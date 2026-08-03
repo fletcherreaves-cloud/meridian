@@ -78,7 +78,7 @@ import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt.js';
-import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS } from '../features/morning-brief.js';
+import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts } from '../features/morning-brief.js';
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
@@ -1630,6 +1630,16 @@ function App() {
         const remote=data.data;
         if(remote.storeNames) setLiveStoreNames(remote.storeNames);
         if(remote.defaultTargets) setLiveDefaultTargets(remote.defaultTargets);
+      }).catch(()=>{});
+    // Sync contact registry from Supabase (Track-B onboarding plumbing) — a future tenant's
+    // own GM/supervisor/operator names+emails, mutated in place onto the morning-brief.js
+    // seed. No row for this owner yet → no-op, identical behavior.
+    supabase.from('org_config').select('data').eq('key','contact_registry').maybeSingle()
+      .then(({data})=>{
+        if(!data?.data) return;
+        const remote=data.data;
+        if(remote.storeStaff) setLiveStoreStaff(remote.storeStaff);
+        if(remote.contacts) setLiveContacts(remote.contacts);
       }).catch(()=>{});
     // Sync user targets from Supabase — remote wins over localStorage for any key it has
     supabase.from('org_config').select('data').eq('key','app_user_targets').maybeSingle()
