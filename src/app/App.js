@@ -230,10 +230,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.774';
+const MERIDIAN_VERSION    = '4.775';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.775', date:'2026-08-03', changes:[
+    'Above-Store One-Pager FOB% fix: the panel was reading FOB from the manual XLSX stream (percentage fields) but the dollar-weighted FOB engine needs the QSRSoft qsr_fob dollar stream (prodSalesAmt/compWasteAmt/…). The mismatch meant every FOB row was skipped and the FOB% tile, the per-store FOB column, and FOB in the AI/print all rendered blank since v4.767. Now sourced from ds.qsrFobRows — FOB% populates correctly.',
+  ]},
   {version:'4.774', date:'2026-08-03', changes:[
     'Above-Store One-Pager: Controls panel now names the outliers behind the scope averages (Notes 47 v2) — the worst store-days for Cash Over/Short %, T-Reds After %, and Discount %, with store + date. Cash O/S ranks by absolute deviation from zero (a big short and a big over are both exposure) and keeps its sign (over +, short −); T-Reds and Discount rank highest-first and drop clean days. Sourced through the shared metric resolver (auto-first per day, never a raw ctrl-row filter). Shown for multi-store scopes and folded into the AI narrative + print brief.',
   ]},

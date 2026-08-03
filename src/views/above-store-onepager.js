@@ -69,7 +69,11 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
   const [ai, setAi] = useState('');            // AI narrative (streamed)
   const [aiBusy, setAiBusy] = useState(false);
   const [aiErr, setAiErr] = useState('');
-  const fobRows = (ds && ds.fobRows) || [];
+  // FOB must come from the qsr_fob DOLLAR stream (prodSalesAmt/compWasteAmt/…) that
+  // fobByRange consumes — NOT ds.fobRows, which is the manual XLSX PERCENTAGE shape
+  // (sales/fobPct/compWaste, no *Amt). Passing ds.fobRows made fobByRange skip every
+  // row (prod<=0) → blank FOB% since v1. ds.qsrFobRows is loaded app-wide (App.js).
+  const fobRows = (ds && ds.qsrFobRows) || [];
 
   const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
   const locs = useMemo(() => {
