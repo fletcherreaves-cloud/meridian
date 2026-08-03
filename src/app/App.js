@@ -230,10 +230,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.778';
+const MERIDIAN_VERSION    = '4.779';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.779', date:'2026-08-03', changes:[
+    'At-A-Glance polish: the Sales & Guest Counts, Labor, and Service tiles now show "Loading…" instead of "No … data for this period" during the brief post-reload window before the cloud streams finish loading. The empty-state was reading as "no data exists" when the data was simply still in flight (the blank-tile-on-hard-reload report) — now it only says "no data" once the streams have loaded and the selected period genuinely has none.',
+  ]},
   {version:'4.778', date:'2026-08-03', changes:[
     'Productization (multi-operator groundwork): removed hard-coded "27 stores"/"27 Locations" and the "MCDOK & Emerald Arches" org name from user-facing chrome — the About footer and the Sales Anomaly export footer now read the district name from settings and the store count dynamically from the store list, and the correlation subtitle, projections/smart-targets loading text, morning-brief header, calendar "Search All" button, and the analytics correlation tooltips all derive the count. Identical for the current org; correct for any future operator.',
   ]},

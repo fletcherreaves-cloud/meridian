@@ -6798,6 +6798,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return [...m.values()];
   },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
 
+  // True during the post-reload load race: the core daily streams haven't populated ds
+  // yet (App.js loads them from Supabase a beat after first paint). Lets a tile show
+  // "Loading…" instead of "No data for this period" — the latter reads as "nothing
+  // exists" when the data is simply still in flight (the blank-Sales-tile-on-reload report).
+  const coreStreamsLoading=React.useMemo(()=>{
+    const n=k=>(ds?.[k]?.length||0);
+    return (n('laborRows')+n('qsrActSummaryRows')+n('opsRows')+n('glimpseRows')+n('ctrlRows')+n('salesLedgerRows'))===0;
+  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsRows?.length,ds?.glimpseRows?.length,ds?.ctrlRows?.length,ds?.salesLedgerRows?.length]);
+
   // True when labInRange is sourced from QSRSoft auto-sync rather than manual upload
   const usingQsrFallback=React.useMemo(()=>{
     const manual=(ds?.laborRows||[]).filter(r=>inRange(r.date,effectiveDateRange));
@@ -8216,7 +8225,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 )
               )
             )
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No sales data for this period'))
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},coreStreamsLoading?'Loading…':'No sales data for this period'))
         ),
 
         // ── LABOR SECTION ──
@@ -8261,7 +8270,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'OT Hours')
               )
             )
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No labor data for this period'))
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},coreStreamsLoading?'Loading…':'No labor data for this period'))
         ),
 
         // ── SERVICE SECTION ──
@@ -8292,7 +8301,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{flex:1}},MktBadge({ok:row.ok,fl:row.fl,fmt:row.fmt}))
               );
             })
-          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No service data for this period'))
+          ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},coreStreamsLoading?'Loading…':'No service data for this period'))
         ),
 
         // ── CONTROLS SECTION ──
