@@ -6933,9 +6933,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   };
 
   // Controls: manual Controls sheet merged with the CLEAN auto-synced fields from
-  // Daily Glimpse + Cash Sheet (promo, cash O/S, POS overrings, refunds, labor %).
-  // T-reds / TPPH / drawer opens / meals have no clean auto equivalent, so they
-  // stay manual-only (blank on days where only auto data exists).
+  // Daily Glimpse + Cash Sheet (promo, cash O/S, POS overrings, refunds, labor %) and,
+  // since #37, the auto Operations Report cash-sheet for T-Reds Before/After % + drawer
+  // opens (loadOpsCashSheet derives these net-sales-weighted, same math as discPct).
+  // TPPH / meals still have no clean auto equivalent — manual-only.
   const ctrlAuto = React.useMemo(()=>{
     const byKey=new Map();
     const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
@@ -6954,8 +6955,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         cashRefCnt:c.cashRefCnt,cashRefAmt:c.cashRefAmt,
         cashlessRefCnt:c.cashlessRefCnt,cashlessRefAmt:c.cashlessRefAmt});
     }
+    for(const o of (ds?.opsCashRows||[])){
+      const key=kk(o);const ex=byKey.get(key)||{loc:o.loc,date:o.date};
+      byKey.set(key,{...ex,
+        tRedBPct:ex.tRedBPct??o.tRedBPct,tRedAPct:ex.tRedAPct??o.tRedAPct,
+        drawerOpens:ex.drawerOpens??o.drawerOpens});
+    }
     return [...byKey.values()];
-  },[ds?.glimpseRows?.length,ds?.cashRows?.length]);
+  },[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length]);
   const ctrlEffective = React.useMemo(()=>_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
 
   // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily

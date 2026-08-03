@@ -1832,6 +1832,11 @@ export const loadOpsCashSheet = async (d = 45) => {
     ...r,
     discPct: (r.net_sales_amt > 0 && r.discount_amt != null) ? r.discount_amt / r.net_sales_amt : null,
     mealDiscAmt: (r.emp_meal_discount_amt || 0) + (r.mgr_meal_discount_amt || 0),
+    // T-Reds Before/After % + drawer opens (#37) — closes the stale-Controls gap for these
+    // three fields the same way discPct already does: net-sales-weighted, auto-fresh backstop.
+    tRedBPct: (r.net_sales_amt > 0 && r.treds_before_amt != null) ? r.treds_before_amt / r.net_sales_amt : null,
+    tRedAPct: (r.net_sales_amt > 0 && r.treds_after_amt != null) ? r.treds_after_amt / r.net_sales_amt : null,
+    drawerOpens: r.drawer_opens_qty != null ? Number(r.drawer_opens_qty) : null,
   }));
 };
 // OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that

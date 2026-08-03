@@ -55,7 +55,12 @@ export const METRIC_SOURCES = {
   otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
   cashOSPct: { mode: 'any', srcs: [['ctrlRows', 'cashOSPct'], ['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct']] },
-  tRedAPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedAPct']] },
+  // T-Reds Before/After % — manual Controls, then the cloud-fresh Operations Report cash-sheet
+  // (treds $ ÷ net sales, same net-sales-weighted math as discPct). Closes #37 for T-Reds.
+  tRedAPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedAPct'], ['opsCashRows', 'tRedAPct']] },
+  tRedBPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedBPct'], ['opsCashRows', 'tRedBPct']] },
+  // Drawer opens (count) — manual Controls, then the auto-pulled Operations Report cash-sheet.
+  drawerOpens: { mode: 'any', srcs: [['ctrlRows', 'drawerOpens'], ['opsCashRows', 'drawerOpens']] },
   // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
   // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
   discPct:   { mode: 'any', srcs: [['ctrlRows', 'discPct'], ['opsCashRows', 'discPct']] },
