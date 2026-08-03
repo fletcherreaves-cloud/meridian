@@ -16,7 +16,22 @@
 -- throwaway second-tenant profile.
 --
 -- Idempotent: safe to re-run.
+--
+-- ⚠️ RUNNING ON A LIVE (PRODUCTION) DB — lock contention:
+--   ALTER TABLE ADD COLUMN needs a brief AccessExclusiveLock. If the live app (or
+--   another open SQL editor tab) is querying the same table, the two can deadlock
+--   (40P01). Mitigations, in order of ease:
+--     1. Close your OTHER SQL editor tabs (each can hold locks) before running.
+--     2. lock_timeout below makes a blocked statement abort in 8s → a clean,
+--        retryable error instead of a wedge. This whole file is idempotent, so on
+--        a lock/deadlock error just RE-RUN it.
+--     3. If it still won't pass, run it at a low-traffic time (e.g. early AM), or
+--        run the smaller batch files (see note at bottom) one at a time.
 -- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Abort fast on lock contention instead of queueing behind live traffic (where a
+-- deadlock can form). Session-scoped; the whole file is idempotent → safe to re-run.
+set lock_timeout = '8s';
 
 -- ── 1. Tenants registry ────────────────────────────────────────────────────────
 create table if not exists public.tenants (
