@@ -208,14 +208,36 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     catch (e) { setAiErr(String(e?.message || e)); }
     setAiBusy(false);
   };
+  // Dedicated print table for the Scheduling/VLH band (Notes 47 v2) — the on-screen band
+  // visual (Fixed/Floor in/out of the owner-standard band, Combined vs its cap) was print-
+  // flattened to one text line in briefLines(); this reproduces the actual band grading.
+  const scheduleBandHtml = () => {
+    if (!showP('schedule') || !d.sched) return '';
+    const s = d.sched;
+    const band = (label, v, lo, hi) => {
+      const ok = v != null && v >= lo && v <= hi;
+      const col = v == null ? '#999' : (ok ? '#0a7d3c' : '#c0392b');
+      return `<tr><td>${label}</td><td style="text-align:right;font-weight:700;color:${col}">${fmtV(v, '%')}</td><td style="text-align:right;color:#666">band ${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}%</td></tr>`;
+    };
+    const diffCol = s.hrsDiff == null ? '#999' : (s.hrsDiff <= 0 ? '#0a7d3c' : '#c0392b');
+    const cmbCol = s.combinedPct == null ? '#999' : (s.combinedPct <= s.combinedMax ? '#0a7d3c' : '#c0392b');
+    return `<h2>Scheduling / VLH band</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <tr><td>Scheduled vs Forecast hrs</td><td style="text-align:right">${fmtHrs(s.schedHrs)} / ${fmtHrs(s.fcstHrs)}</td><td style="text-align:right;font-weight:700;color:${diffCol}">${(s.hrsDiff >= 0 ? '+' : '') + fmtHrs(s.hrsDiff)}</td></tr>
+        <tr><td>Schd TPMH</td><td colspan="2" style="text-align:right">${fmtV(s.tpmh, 'n')}</td></tr>
+        ${band('Fixed labor %', s.fixedPct, s.segMin, s.segMax)}
+        ${band('Floor labor %', s.floorPct, s.segMin, s.segMax)}
+        <tr><td>Combined (Fixed+Floor)</td><td style="text-align:right;font-weight:700;color:${cmbCol}">${fmtV(s.combinedPct, '%')}</td><td style="text-align:right;color:#666">cap ${fmtV(s.combinedMax, '%')}</td></tr>
+      </table>`;
+  };
   const printOnePager = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const lines = briefLines().map(l => `<li>${esc(l)}</li>`).join('');
     const aiHtml = ai ? `<h2>Analysis</h2><p>${esc(ai).replace(/\n/g, '<br>')}</p>` : '';
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Above-Store One-Pager — ${esc(scopeLabel)}</title>
-      <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;max-width:720px}h1{font-size:17px;margin:0 0 2px}h2{font-size:12px;text-transform:uppercase;color:#666;margin:16px 0 4px}.sub{color:#666;font-size:11px;margin-bottom:10px}ul{margin:0;padding-left:18px}li{margin:3px 0}@media print{body{margin:0}}</style></head>
+      <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;max-width:720px}h1{font-size:17px;margin:0 0 2px}h2{font-size:12px;text-transform:uppercase;color:#666;margin:16px 0 4px}.sub{color:#666;font-size:11px;margin-bottom:10px}ul{margin:0;padding-left:18px}li{margin:3px 0}table td{padding:3px 6px;border-top:1px solid #ddd}@media print{body{margin:0}}</style></head>
       <body><h1>Above-Store One-Pager — ${esc(scopeLabel)}</h1><div class="sub">${esc(range.label)} (${range.s} → ${range.e}) · printed ${new Date().toLocaleDateString()}</div>
-      <h2>Rollup</h2><ul>${lines}</ul>${aiHtml}</body></html>`;
+      <h2>Rollup</h2><ul>${lines}</ul>${scheduleBandHtml()}${aiHtml}</body></html>`;
     const w = window.open('', '_blank'); if (!w) { alert('Allow pop-ups to print.'); return; }
     w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
