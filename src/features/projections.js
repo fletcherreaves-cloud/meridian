@@ -751,9 +751,9 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   const lyAmt = (loc,d) => {
     const _r=_cachedForecast(loc,d);
     if(_r.lyAdj>0&&_r.lyAdj!==_r.forecast)return _r.lyAdj;
-    const _ld=new Date(d);_ld.setFullYear(_ld.getFullYear()-1);
-    const _lr=(ds.laborRows||[]).find(r=>String(r.loc)===String(loc)&&Math.abs(r.date-_ld)<4*86400000&&r.sales>0);
-    return _lr?_lr.sales:0;
+    // Trading-day-aligned LY (#55) — same weekday-exact/holiday-excluding resolver forecast.js
+    // itself uses, not a raw calendar 365-day shift + fuzzy window.
+    return fetchLY(ds.laborIdx,ds.laborRows,loc,d,settings._userEvents)||0;
   };
 
   // As-originally-locked amount: the month-plan number for (loc,d), ignoring
@@ -1782,12 +1782,10 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                                   th({key:i,style:{...TH,fontSize:'8px'}},l))
                               )),
                               h('tbody',null,deepWeekDays.map((r,i)=>{
-                                const _rowLY=(r.lyAdj>0&&r.lyAdj!==r.forecast)?r.lyAdj:(()=>{
-      const _lyDate=new Date(r.date); _lyDate.setFullYear(_lyDate.getFullYear()-1);
-      const _lyRow=(ds.laborRows||[]).find(lr=>String(lr.loc)===String(r.loc||loc)&&
-        Math.abs(lr.date-_lyDate)<4*86400000&&lr.sales>0);
-      return _lyRow?_lyRow.sales:0;
-    })();
+                                // Trading-day-aligned LY (#55) — same resolver as lyAmt() above,
+                                // not a raw calendar 365-day shift + fuzzy window.
+                                const _rowLY=(r.lyAdj>0&&r.lyAdj!==r.forecast)?r.lyAdj:
+                                  (fetchLY(ds.laborIdx,ds.laborRows,r.loc||loc,r.date,settings._userEvents)||0);
     const vsLY=_rowLY>0?((r.forecast-_rowLY)/_rowLY*100).toFixed(1):null;
                                 const gc=r.forecast>0&&ds?gcCrossCheck(deepStore,r.date,ds,settings,r.forecast):null;
                                 return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
