@@ -57,7 +57,12 @@ declare
     'org_events','org_school_config','report_subscriptions','employee_skills',
     'eom_count_status','eom_count_status_history','eom_count_progress_log',
     'eom_count_exceptions','eom_item_disposition','eom_integrity_flags',
-    'eom_secondary_review','eom_snapshots','eom_share_links','eom_notification_settings'
+    'eom_secondary_review','eom_snapshots','eom_share_links','eom_notification_settings',
+    -- Added 2026-08-03 (full-table audit): these were missing from the original flip
+    -- list. qsr_daily_activity (364k rows, hourly DAR all stores) + feature_requests
+    -- (was wide-open auth.uid() policy) are the important ones. user_settings is handled
+    -- SEPARATELY below (user-scoped, not tenant-scoped).
+    'qsr_daily_activity','feature_requests','session_notes','tasks','store_vlh_config'
   ];
 begin
   foreach t in array tbls loop
@@ -108,6 +113,17 @@ drop policy if exists "config: tenant write" on public.org_config;
 create policy "config: tenant read"  on public.org_config for select using (tenant_id = public.current_tenant_id());
 create policy "config: tenant write" on public.org_config for all
   using (get_my_role() in ('admin','supervisor') and tenant_id = public.current_tenant_id());
+
+-- ── user_settings: USER-scoped, NOT tenant-scoped ──────────────────────────────
+-- Keyed by user_id (per-user prefs). Isolating by tenant would let every user in a
+-- tenant read each other's settings — worse than today. Enforce own-row only, which
+-- is inherently tenant-isolated (a user belongs to one tenant). No tenant_id column.
+alter table public.user_settings enable row level security;
+drop policy if exists "user_settings: own"       on public.user_settings;
+drop policy if exists "user_settings: own read"  on public.user_settings;
+drop policy if exists "user_settings: own write" on public.user_settings;
+create policy "user_settings: own" on public.user_settings for all
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- VERIFY ISOLATION (do this on a COPY/branch first, or with a throwaway tenant):

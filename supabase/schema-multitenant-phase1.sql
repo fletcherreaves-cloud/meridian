@@ -125,7 +125,12 @@ declare
     'org_events','org_school_config','report_subscriptions','employee_skills',
     'eom_count_status','eom_count_status_history','eom_count_progress_log',
     'eom_count_exceptions','eom_item_disposition','eom_integrity_flags',
-    'eom_secondary_review','eom_snapshots','eom_share_links','eom_notification_settings'
+    'eom_secondary_review','eom_snapshots','eom_share_links','eom_notification_settings',
+    -- Added 2026-08-03 after a live full-table audit found these exposed data tables
+    -- were missing from the list (would have leaked under Phase 2). qsr_daily_activity
+    -- is the big one (hourly DAR, all stores). user_settings is deliberately NOT here —
+    -- it is user_id-keyed and stays USER-scoped (see Phase 2), not tenant-scoped.
+    'qsr_daily_activity','feature_requests','session_notes','tasks','store_vlh_config'
   ];
 begin
   foreach t in array tbls loop
