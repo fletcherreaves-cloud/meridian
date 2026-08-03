@@ -29,17 +29,34 @@ function sumSeries(ds, loc, range, key) {
 // valid FOB contribution requires a real sales base for the same period.
 export function fobByRange(fobRows, range) {
   const acc = {};
+  const at = loc => acc[loc] || (acc[loc] = { prodSales: 0, fob$: 0, lyProdSales: 0, lyFob$: 0 });
   for (const r of (fobRows || [])) {
     if (!inRange(r.date, range)) continue;
-    const prod = r.prodSalesAmt || 0;
-    if (prod <= 0) continue;
     const loc = unpad(r.loc);
-    const a = acc[loc] || (acc[loc] = { prodSales: 0, fob$: 0 });
-    a.prodSales += prod;
-    a.fob$ += (r.compWasteAmt || 0) + (r.rawWasteAmt || 0) + (r.condimentsAmt || 0)
-            + (r.empMgrMealsAmt || 0) + (r.statVarianceAmt || 0) + (r.unexplainedAmt || 0);
+    const prod = r.prodSalesAmt || 0;
+    if (prod > 0) {
+      const a = at(loc);
+      a.prodSales += prod;
+      a.fob$ += (r.compWasteAmt || 0) + (r.rawWasteAmt || 0) + (r.condimentsAmt || 0)
+              + (r.empMgrMealsAmt || 0) + (r.statVarianceAmt || 0) + (r.unexplainedAmt || 0);
+    }
+    // Same-basis LAST-YEAR aggregation from the qsr_fob ly_* dollar columns, so FOB% vs LY
+    // uses the IDENTICAL dollar-weighted method as the current FOB% (Σ components ÷ Σ prod
+    // sales) — an apples-to-apples direction signal, never a re-derived formula. Guarded on a
+    // real LY sales base for the same reason as current (a component-only LY row would inflate).
+    const lyProd = r.lyProdSalesAmt || 0;
+    if (lyProd > 0) {
+      const a = at(loc);
+      a.lyProdSales += lyProd;
+      a.lyFob$ += (r.lyCompWasteAmt || 0) + (r.lyRawWasteAmt || 0) + (r.lyCondimentsAmt || 0)
+                + (r.lyEmpMgrMealsAmt || 0) + (r.lyStatVarianceAmt || 0) + (r.lyUnexplainedAmt || 0);
+    }
   }
-  for (const loc in acc) { const a = acc[loc]; a.fobPct = a.prodSales ? a.fob$ / a.prodSales : null; }
+  for (const loc in acc) {
+    const a = acc[loc];
+    a.fobPct = a.prodSales ? a.fob$ / a.prodSales : null;
+    a.lyFobPct = a.lyProdSales ? a.lyFob$ / a.lyProdSales : null;
+  }
   return acc;
 }
 

@@ -230,10 +230,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.775';
+const MERIDIAN_VERSION    = '4.776';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.776', date:'2026-08-03', changes:[
+    'Above-Store One-Pager FOB depth (Notes 47 v2): the FOB panel now shows FOB% vs last year, dollar-weighted with the IDENTICAL Σ components ÷ Σ prod-sales method as the current figure (from the qsr_fob ly_* columns) — a defensible direction signal (lower than LY = better, shown in percentage points). Folded into the AI narrative + print brief. FOB count-completion + recount help/hurt are next.',
+  ]},
   {version:'4.775', date:'2026-08-03', changes:[
     'Above-Store One-Pager FOB% fix: the panel was reading FOB from the manual XLSX stream (percentage fields) but the dollar-weighted FOB engine needs the QSRSoft qsr_fob dollar stream (prodSalesAmt/compWasteAmt/…). The mismatch meant every FOB row was skipped and the FOB% tile, the per-store FOB column, and FOB in the AI/print all rendered blank since v4.767. Now sourced from ds.qsrFobRows — FOB% populates correctly.',
   ]},

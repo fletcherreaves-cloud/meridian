@@ -16,6 +16,22 @@ describe('fobByRange', () => {
     expect(agg['1'].fob$).toBe(400);
     expect(agg['1'].fobPct).toBeCloseTo(0.04, 6);
   });
+
+  it('aggregates LY the same way (apples-to-apples) and yields lyFobPct', () => {
+    const rows = [{ loc: '1', date: '2026-06-15', prodSalesAmt: 10000, compWasteAmt: 400, lyProdSalesAmt: 8000, lyCompWasteAmt: 480 }];
+    const agg = fobByRange(rows, { s: '2026-06-01', e: '2026-06-30' });
+    expect(agg['1'].fobPct).toBeCloseTo(0.04, 6);   // now 4%
+    expect(agg['1'].lyProdSales).toBe(8000);
+    expect(agg['1'].lyFob$).toBe(480);
+    expect(agg['1'].lyFobPct).toBeCloseTo(0.06, 6); // ly 6% → FOB improved 2pp YoY
+  });
+
+  it('skips a LY row with no LY sales base (component-only would inflate) but keeps current', () => {
+    const rows = [{ loc: '1', date: '2026-06-15', prodSalesAmt: 10000, compWasteAmt: 400, lyProdSalesAmt: 0, lyCompWasteAmt: 500 }];
+    const agg = fobByRange(rows, { s: '2026-06-01', e: '2026-06-30' });
+    expect(agg['1'].fobPct).toBeCloseTo(0.04, 6);
+    expect(agg['1'].lyFobPct).toBe(null);           // no LY base → null, never inflated
+  });
 });
 
 describe('buildOnePagerInputs window-consistency (Notes 32 C)', () => {

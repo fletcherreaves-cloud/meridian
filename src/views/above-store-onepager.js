@@ -109,11 +109,18 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
       const fobAgg = Object.values(fobByRange(fobRows, range));
       const fob$ = fobAgg.reduce((s, a) => s + (a.fob$ || 0), 0);
       const fobProd = fobAgg.reduce((s, a) => s + (a.prodSales || 0), 0);
+      // FOB% vs LY (dollar-weighted, same method as current) — the direction signal.
+      const lyFob$ = fobAgg.reduce((s, a) => s + (a.lyFob$ || 0), 0);
+      const lyFobProd = fobAgg.reduce((s, a) => s + (a.lyProdSales || 0), 0);
+      const lyFobPct = lyFobProd ? lyFob$ / lyFobProd : null;
+      const fobNowPct = fobProd ? fob$ / fobProd : null;
+      // Percentage-point delta vs LY; NEGATIVE = better (FOB is lower than last year).
+      const fobVsLyPp = (fobNowPct != null && lyFobPct != null) ? (fobNowPct - lyFobPct) : null;
       const sched = buildScheduleActuals(ds, locs, range);   // null if no schedule rows in window
       const projSales = rv.projSales;
       const pace = (projSales && byKey.sales?.actual) ? byKey.sales.actual / projSales : null;
       const perStore = locs.length > 1 ? buildPerLocationRows(ds, fobRows, locs, range, null) : [];
-      return { byKey, rv, salesVsLY, controls, controlsOut, sched, fob$, fobProd, projSales, pace, perStore, err: null };
+      return { byKey, rv, salesVsLY, controls, controlsOut, sched, fob$, fobProd, lyFobPct, fobVsLyPp, projSales, pace, perStore, err: null };
     } catch (e) { return { err: String(e?.message || e) }; }
   }, [ds, fobRows, locs, range]);
 
@@ -133,7 +140,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
     const d = data; if (d.err) return [];
     const L = [];
     if (showP('sales')) L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
-    if (showP('fob')) L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})`);
+    if (showP('fob')) L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})${d.lyFobPct != null ? `; vs LY ${fmtV(d.lyFobPct, '%')} (${d.fobVsLyPp <= 0 ? '' : '+'}${(d.fobVsLyPp * 100).toFixed(2)}pp, ${d.fobVsLyPp <= 0 ? 'better' : 'worse'})` : ''}`);
     if (showP('schedule') && d.sched) L.push(`Scheduling: ${fmtHrs(d.sched.schedHrs)} sched vs ${fmtHrs(d.sched.fcstHrs)} fcst (${d.sched.hrsDiff >= 0 ? '+' : ''}${fmtHrs(d.sched.hrsDiff)}); Schd TPMH ${fmtV(d.sched.tpmh, 'n')}; Fixed ${fmtV(d.sched.fixedPct, '%')} / Floor ${fmtV(d.sched.floorPct, '%')} (combined ${fmtV(d.sched.combinedPct, '%')}, cap ${fmtV(d.sched.combinedMax, '%')})`);
     if (showP('labor')) L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
     if (showP('service')) L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
@@ -246,6 +253,12 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
         // FOB
         showP('fob') && Section('FOB / Food Cost', '🥗',
           Row('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true),
+          // vs LY (dollar-weighted, same method) — lower than last year = better (green).
+          d.lyFobPct != null ? div({ key: 'fobly', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } },
+            span({ style: { flex: 1, color: 'var(--text2)' } }, 'vs LY'),
+            span({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'LY ' + fmtV(d.lyFobPct, '%')),
+            span({ style: { fontWeight: 700, color: d.fobVsLyPp == null ? 'var(--text3)' : (d.fobVsLyPp <= 0 ? '#4ade80' : '#f87171'), minWidth: 60, textAlign: 'right' } },
+              d.fobVsLyPp == null ? '—' : (d.fobVsLyPp <= 0 ? '' : '+') + (d.fobVsLyPp * 100).toFixed(2) + 'pp')) : null,
           div({ key: 'fobd', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Σ$ ' + fmtV(d.fob$, '$') + ' ÷ Σ prod-sales ' + fmtV(d.fobProd, '$') + ' (dollar-weighted)')),
         // Scheduling / VLH (LifeLenz) — schedule-quality metrics distinct from actual labor.
         // Reconciled to the Scheduling panel via computeScheduleRollup (ratios of aggregates).
