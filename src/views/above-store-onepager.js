@@ -4,7 +4,7 @@
 // period (MTD / Last week / Last month). Reuses the proven one-pager-data builders + metric-source +
 // vs-LY, plus the Event Impact registry's upcoming events. v1: quantified rollup (read-only) + print.
 import * as React from 'react';
-import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows } from '../engine/one-pager-data.js';
+import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows, buildScheduleActuals } from '../engine/one-pager-data.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
@@ -43,11 +43,13 @@ const fmtV = (v, fmt) => {
   return String(v);
 };
 const pct = v => v == null || isNaN(v) ? '—' : ((v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%');
+const fmtHrs = v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString() + 'h';
 
 // The six selectable panels (Notes 49 "build your own"). Order = display order.
 export const ONEPAGER_PANELS = [
   { key: 'sales',    label: 'Sales / GC' },
   { key: 'fob',      label: 'FOB / Food Cost' },
+  { key: 'schedule', label: 'Scheduling' },
   { key: 'labor',    label: 'Labor' },
   { key: 'service',  label: 'Service' },
   { key: 'controls', label: 'Controls' },
@@ -100,10 +102,11 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
       const fobAgg = Object.values(fobByRange(fobRows, range));
       const fob$ = fobAgg.reduce((s, a) => s + (a.fob$ || 0), 0);
       const fobProd = fobAgg.reduce((s, a) => s + (a.prodSales || 0), 0);
+      const sched = buildScheduleActuals(ds, locs, range);   // null if no schedule rows in window
       const projSales = rv.projSales;
       const pace = (projSales && byKey.sales?.actual) ? byKey.sales.actual / projSales : null;
       const perStore = locs.length > 1 ? buildPerLocationRows(ds, fobRows, locs, range, null) : [];
-      return { byKey, rv, salesVsLY, controls, fob$, fobProd, projSales, pace, perStore, err: null };
+      return { byKey, rv, salesVsLY, controls, sched, fob$, fobProd, projSales, pace, perStore, err: null };
     } catch (e) { return { err: String(e?.message || e) }; }
   }, [ds, fobRows, locs, range]);
 
@@ -124,6 +127,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
     const L = [];
     if (showP('sales')) L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
     if (showP('fob')) L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})`);
+    if (showP('schedule') && d.sched) L.push(`Scheduling: ${fmtHrs(d.sched.schedHrs)} sched vs ${fmtHrs(d.sched.fcstHrs)} fcst (${d.sched.hrsDiff >= 0 ? '+' : ''}${fmtHrs(d.sched.hrsDiff)}); Schd TPMH ${fmtV(d.sched.tpmh, 'n')}; Fixed ${fmtV(d.sched.fixedPct, '%')} / Floor ${fmtV(d.sched.floorPct, '%')} (combined ${fmtV(d.sched.combinedPct, '%')}, cap ${fmtV(d.sched.combinedMax, '%')})`);
     if (showP('labor')) L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
     if (showP('service')) L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
     if (showP('controls')) L.push(`Controls: Cash O/S ${fmtV(d.controls.cashOS, '%')}; T-Reds After ${fmtV(d.controls.tRedA, '%')}; Discount ${fmtV(d.controls.disc, '%')}`);
@@ -161,6 +165,12 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
     extra ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, extra) : null,
     span({ style: { fontSize: '12px', fontWeight: 700, color: badge(actual, target, lowerBetter), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(actual, fmt)),
     span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, target != null ? 'tgt ' + fmtV(target, fmt) : ''));
+  // A metric measured against a BAND (min–max), not a single target — e.g. Fixed/Floor
+  // labor % (owner standard 10–15% each). Green in-band, red out. Shows the band range.
+  const bandRow = (label, v, lo, hi) => div({ key: label, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
+    span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
+    span({ style: { fontSize: '12px', fontWeight: 700, color: v == null ? 'var(--text3)' : (v >= lo && v <= hi ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(v, '%')),
+    span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'band ' + (lo * 100).toFixed(0) + '–' + (hi * 100).toFixed(0) + '%'));
   const Section = (title, icon, ...kids) => div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '10px 12px' } },
     div({ style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 } }, (icon ? icon + ' ' : '') + title), ...kids);
 
@@ -212,6 +222,23 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
         showP('fob') && Section('FOB / Food Cost', '🥗',
           Row('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true),
           div({ key: 'fobd', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Σ$ ' + fmtV(d.fob$, '$') + ' ÷ Σ prod-sales ' + fmtV(d.fobProd, '$') + ' (dollar-weighted)')),
+        // Scheduling / VLH (LifeLenz) — schedule-quality metrics distinct from actual labor.
+        // Reconciled to the Scheduling panel via computeScheduleRollup (ratios of aggregates).
+        showP('schedule') && (d.sched ? Section('Scheduling', '🗓',
+          // Scheduled vs Forecast hours + the gap (at/under forecast = green, over = red).
+          div({ key: 'sh', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
+            span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'Scheduled vs Forecast hrs'),
+            span({ style: { fontSize: '10px', color: 'var(--text3)' } }, fmtHrs(d.sched.schedHrs) + ' / ' + fmtHrs(d.sched.fcstHrs)),
+            span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.hrsDiff == null ? 'var(--text3)' : (d.sched.hrsDiff <= 0 ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 56, textAlign: 'right' } }, (d.sched.hrsDiff >= 0 ? '+' : '') + fmtHrs(d.sched.hrsDiff))),
+          Row('Schd TPMH', d.sched.tpmh, null, 'n'),
+          bandRow('Fixed labor %', d.sched.fixedPct, d.sched.segMin, d.sched.segMax),
+          bandRow('Floor labor %', d.sched.floorPct, d.sched.segMin, d.sched.segMax),
+          div({ key: 'cmb', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
+            span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'Combined (Fixed+Floor)'),
+            span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.combinedPct == null ? 'var(--text3)' : (d.sched.combinedPct <= d.sched.combinedMax ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(d.sched.combinedPct, '%')),
+            span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'cap ' + fmtV(d.sched.combinedMax, '%')))
+        ) : Section('Scheduling', '🗓',
+          div({ style: { fontSize: '10px', color: 'var(--text3)', padding: '4px 0' } }, 'No LifeLenz schedule rows for this scope in the selected period.'))),
         // Labor
         showP('labor') && Section('Labor', '👥',
           Row('Labor %', d.byKey.laborPct?.actual, d.byKey.laborPct?.target, '%', true),
@@ -256,5 +283,5 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
         ]) : null)),
       // footer
       div({ style: { padding: '8px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', fontSize: '9px', color: 'var(--text3)' } },
-        'v1 rollup — Scheduling depth + AI narrative + per-panel drilldown next. Green = at/better than target, red = worse.')));
+        'Rollup + AI narrative + Scheduling/VLH. Per-panel drilldown next. Green = at/better than target (Fixed/Floor: in 10–15% band), red = worse.')));
 }

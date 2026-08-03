@@ -230,10 +230,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.772';
+const MERIDIAN_VERSION    = '4.773';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.773', date:'2026-08-03', changes:[
+    'Above-Store One-Pager: added the Scheduling / VLH panel (Notes 47) — the sixth panel the rollup was missing. Shows Scheduled vs Forecast hours and the gap, Schd TPMH, and Fixed / Floor / Combined labor % against the owner standard (each segment 10–15%, combined ≤25%), for the selected scope + period. Reconciled to the weekly Scheduling panel via a new range-scoped computeScheduleRollup (ratios of aggregates, dollar/hour-weighted — never an average of daily %s). Selectable in "build your own" panels + My Reports; flows into the AI narrative and print. Falls back to a clear note when LifeLenz has no schedule rows for the scope/window.',
+  ]},
   {version:'4.728', date:'2026-08-01', changes:[
     'Faster load / hard refresh: code-split the 11 heaviest secondary panels (EOM Dashboard, Signals, SAGE, One-Pager, SMG Voice, FOB EOM, Delivery Mix, Yearly Projections, Visit Readiness, Graded Visits, Performance Reviews) into on-demand chunks via React.lazy behind a single Suspense boundary. Initial bundle 4.2MB → 3.34MB (~555KB of panel code now loads only when a panel is opened). The home/At-a-Glance view and the Loaded Data strip (incl. Sales) stay in the eager bundle — high-priority, never deferred.',
     'Ops pull (OT source) robustness: when the Operations Report page doesn\'t fire an api.reports request (so the token listener sees nothing), the Playwright fallback now also visits the Daily Activity page to capture the same X-Auth-Token — the likely reason the pull was returning 0 rows. Refresh QSRSOFT_TOKEN or re-run the pull to repopulate qsr_labor_summary → OT.',

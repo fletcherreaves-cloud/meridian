@@ -7,6 +7,7 @@
 // dollar-weighted FOB% (Σ components ÷ Σ prodSales) — never a re-derived formula.
 import { metricSeries, metricAvg } from './metric-source.js';
 import { matchedVsLY } from './vs-ly.js';
+import { computeScheduleRollup, FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX } from './schedule-summary.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 const unpad = l => String(l || '').replace(/^0+/, '') || String(l || '');
@@ -203,6 +204,29 @@ export function buildReviewActuals(ds, locs, range) {
     osatB2BTarget: tgtAvg('tOsatB2B'),   // "Overall Satisfaction B2B" from the yearly-targets file
     projSales: hasProj ? projSales : null,
     smgMonth: bestKey >= 0 ? `${bestY}-${String(bestM).padStart(2, '0')}` : null,
+  };
+}
+
+// Scheduling / VLH band for the Above-Store One-Pager (Notes 47 — the one panel with
+// no metric-source key; sourced straight from ds.schedRows / LifeLenz). Reuses the
+// reconciled computeScheduleRollup so Scheduled-vs-Forecast hours, Schd TPMH and the
+// Fixed/Floor/Combined shares match the Scheduling panel exactly. All ratios-of-
+// aggregates — never an average of daily %s. Returns null when the scope has no
+// schedule rows in the window (the LifeLenz sync may not cover a past `last-month`).
+export function buildScheduleActuals(ds, locs, range) {
+  const band = computeScheduleRollup((ds && ds.schedRows) || [], locs, range);
+  if (!band) return null;
+  return {
+    schedHrs: band.schedHrs,
+    fcstHrs: band.fcstHrs,
+    hrsDiff: band.hrsDiff,                       // + = over-scheduled vs forecast, − = under
+    tpmh: band.tpmh,                             // scheduled transactions per man-hour
+    fixedPct: band.fixedLaborPct,               // fixed hrs ÷ scheduled hrs (band 10–15%)
+    floorPct: band.floorLaborPct,               // floor hrs ÷ scheduled hrs (band 10–15%)
+    combinedPct: band.combinedFixedFloorPct,    // (fixed+floor) ÷ scheduled (cap ≤25%)
+    nStores: band.nStores,
+    // Owner-confirmed standards (echoed so the UI/print can flag in-band vs breach).
+    segMin: FIXED_FLOOR_SEG_MIN, segMax: FIXED_FLOOR_SEG_MAX, combinedMax: FIXED_FLOOR_COMBINED_MAX,
   };
 }
 

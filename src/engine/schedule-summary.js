@@ -78,6 +78,29 @@ function rollup(loc, rows) {
   };
 }
 
+// Roll a scope's daily schedule rows over an ARBITRARY date range into a single band —
+// for the Above-Store One-Pager, whose period is MTD / last-week / last-month, not a
+// LifeLenz business week. Reuses the SAME per-row extraction + dollar-weighting as the
+// weekly rollup() so the figures reconcile to the Scheduling panel (never a re-derived
+// formula, never an average of averages). locs = loc ids (any zero-padding); range =
+// { s, e } inclusive ISO dates. Returns null when no rows fall in scope+range.
+export function computeScheduleRollup(schedRows, locs, range) {
+  const locSet = new Set((locs || []).map(_normLoc));
+  const s = range?.s, e = range?.e;
+  const inR = d => {
+    const k = (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+    return (!s || k >= s) && (!e || k <= e);
+  };
+  const rows = (schedRows || []).filter(r =>
+    r && r.date && locSet.has(_normLoc(r.loc)) && inR(r.date)
+    && (r.fcstSales != null || r.schVLH != null || r.projVLH != null));
+  if (!rows.length) return null;
+  const band = rollup('scope', rows);
+  // How many distinct stores contributed (the range can span multiple stores/weeks).
+  band.nStores = new Set(rows.map(r => _normLoc(r.loc))).size;
+  return band;
+}
+
 // computeScheduleSummary(schedRows) → { weeks:[{weekStart, weekKey, stores:[…], district}], … }
 // Weeks newest-first; stores sorted by scheduled-vs-forecast gap (most over first).
 export function computeScheduleSummary(schedRows, opts = {}) {

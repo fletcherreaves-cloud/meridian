@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computeScheduleSummary, weekStartOf, WEEK_START_DOW,
+  computeScheduleSummary, computeScheduleRollup, weekStartOf, WEEK_START_DOW,
   FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX,
 } from '../engine/schedule-summary.js';
 
@@ -136,5 +136,49 @@ describe('schedule-summary — grouping + district', () => {
     expect(wk.district.nStores).toBe(2);
     expect(wk.district.fcstSales).toBeCloseTo(89850.72 * 2, 1);
     expect(wk.district.laborPct).toBeCloseTo(24.50, 2); // identical stores → same weighted %
+  });
+});
+
+// ── computeScheduleRollup — the range-scoped band for the Above-Store One-Pager ──
+// Same reconciled DeFuniak week fixture (`rows`), so a full-week range must reproduce
+// the weekly rollup exactly (proves the One-Pager Scheduling panel = the weekly panel).
+describe('computeScheduleRollup — scope+range band reconciles to the weekly rollup', () => {
+  const fullWeek = { s: '2026-07-22', e: '2026-07-28' };
+
+  it('a full-week range for the store equals its weekly rollup', () => {
+    const wk = computeScheduleSummary(rows).weeks[0].stores.find(x => x.loc === '6838');
+    const band = computeScheduleRollup(rows, ['6838'], fullWeek);
+    expect(band).toBeTruthy();
+    expect(band.schedHrs).toBeCloseTo(wk.schedHrs, 5);
+    expect(band.fcstHrs).toBeCloseTo(wk.fcstHrs, 5);
+    expect(band.hrsDiff).toBeCloseTo(wk.hrsDiff, 5);
+    expect(band.tpmh).toBeCloseTo(wk.tpmh, 5);
+    expect(band.laborPct).toBeCloseTo(wk.laborPct, 5);
+    expect(band.nStores).toBe(1);
+  });
+
+  it('accepts any loc zero-padding and matches the loc regardless of pad', () => {
+    const band = computeScheduleRollup(rows, ['0006838'], fullWeek);   // padded input
+    expect(band.schedHrs).toBeCloseTo(1460.5, 5);
+  });
+
+  it('clips to the range — a 2-day window sums only those two days', () => {
+    const band = computeScheduleRollup(rows, ['6838'], { s: '2026-07-22', e: '2026-07-23' });
+    expect(band.schedHrs).toBeCloseTo(171 + 201, 5);       // Wed + Thu scheduled hrs
+    expect(band.fcstHrs).toBeCloseTo(189.75 + 210.5, 5);
+  });
+
+  it('returns null when no rows fall in scope or range', () => {
+    expect(computeScheduleRollup(rows, ['9999'], fullWeek)).toBe(null);            // wrong store
+    expect(computeScheduleRollup(rows, ['6838'], { s: '2030-01-01', e: '2030-01-07' })).toBe(null); // wrong window
+    expect(computeScheduleRollup([], ['6838'], fullWeek)).toBe(null);              // no rows
+  });
+
+  it('rolls multiple stores as ratio-of-aggregates (dollar/hour weighted, not avg of %s)', () => {
+    const two = [...rows, ...rows.map(r => ({ ...r, loc: '0005985' }))];
+    const band = computeScheduleRollup(two, ['6838', '5985'], fullWeek);
+    expect(band.nStores).toBe(2);
+    expect(band.schedHrs).toBeCloseTo(1460.5 * 2, 4);
+    expect(band.laborPct).toBeCloseTo(24.50, 2); // identical stores → same weighted %
   });
 });
