@@ -22,34 +22,80 @@ function sumSeries(ds, loc, range, key) {
   return { sum, days: n };
 }
 
-// Canonical dollar-weighted FOB over a range, per loc: Σ components ÷ Σ prodSales.
-// Rows with no positive product-sales base are skipped entirely — a component-only
-// row (waste $ present, prodSales 0/null) would otherwise inflate the numerator
-// without adding to the denominator and blow the % up (the FL 14.88% anomaly). A
-// valid FOB contribution requires a real sales base for the same period.
+// ── qsr_fob snapshot math (2026-08-03 fix) ─────────────────────────────────────
+// qsr_fob is pulled ONE API CALL PER DATE, but QSRSoft's Food-Over-Base endpoint is
+// MONTH-KEYED: every row for a given (loc, month) carries the CUMULATIVE month-to-date
+// total as of that pull day, not a standalone daily delta (proven in the FOB-30x
+// investigation — fobSnapshotByStore in eom-inventory.js takes the LATEST row per
+// month, never sums, and is unit-tested against exactly this shape). A period total is
+// therefore snapshot(periodEnd) − snapshot(dayBeforePeriodStart), NOT Σ every row in
+// range — summing multiple days double/triple/N-counts the same running total (the
+// exact "FOB$ ≈30×, FOB% still right because both sides inflated" signature). This was
+// a genuine gap: fobByRange predates that finding and summed every in-range row.
+const _dk = d => (typeof d === 'string' ? d : (d && d.toISOString ? d.toISOString() : '')).slice(0, 10);
+const _monthStart = ym => ym + '-01';
+const _dayBefore = dateStr => { const dt = new Date(dateStr + 'T00:00:00'); dt.setDate(dt.getDate() - 1); return dt.toISOString().slice(0, 10); };
+const _monthEnd = ym => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).toISOString().slice(0, 10); };
+
+// Latest row for `loc` in month `ym` with date ≤ `onOrBefore` (null = no data that far back).
+// Prefers the latest row that has a POSITIVE current-year prodSalesAmt over a literal latest
+// date — a same-day pull can land a component-only/broken snapshot (waste$ present, sales 0),
+// and picking that as "the" snapshot would zero out an otherwise-good cumulative total (the
+// same defensive guard fobByRange always had, now applied to snapshot selection instead of
+// per-row summing). Falls back to the literal latest only when NOTHING that month has sales.
+function _snapshotAsOf(fobRows, loc, ym, onOrBefore) {
+  let best = null, bestKey = null, bestPos = null, bestPosKey = null;
+  for (const r of fobRows) {
+    if (unpad(r.loc) !== loc) continue;
+    const k = _dk(r.date);
+    if (k.slice(0, 7) !== ym) continue;
+    if (k > onOrBefore) continue;
+    if (!best || k > bestKey) { best = r; bestKey = k; }
+    if ((r.prodSalesAmt || 0) > 0 && (!bestPos || k > bestPosKey)) { bestPos = r; bestPosKey = k; }
+  }
+  return bestPos || best;
+}
+const _FOB_FIELDS = ['prodSalesAmt', 'compWasteAmt', 'rawWasteAmt', 'condimentsAmt', 'empMgrMealsAmt', 'statVarianceAmt', 'unexplainedAmt'];
+const _LY_FOB_FIELDS = ['lyProdSalesAmt', 'lyCompWasteAmt', 'lyRawWasteAmt', 'lyCondimentsAmt', 'lyEmpMgrMealsAmt', 'lyStatVarianceAmt', 'lyUnexplainedAmt'];
+// end − base, field by field (missing/null on either side treated as 0).
+function _diffFields(fields, end, base) {
+  const out = {};
+  for (const f of fields) out[f] = (end?.[f] || 0) - (base?.[f] || 0);
+  return out;
+}
+
+// Canonical dollar-weighted FOB over a range, per loc: Σ components ÷ Σ prodSales, where
+// each component is the SNAPSHOT-DIFFERENCED period total (see above), summed across
+// every calendar month the range touches (so a range spanning a month boundary — e.g.
+// "last 7 days" near the 1st — differences each month's segment separately, never
+// bleeding one month's cumulative baseline into the next). A component-only result
+// (prodSales delta ≤ 0) is skipped — same guard as before, now applied to the delta.
 export function fobByRange(fobRows, range) {
+  const rows = fobRows || [];
   const acc = {};
   const at = loc => acc[loc] || (acc[loc] = { prodSales: 0, fob$: 0, lyProdSales: 0, lyFob$: 0 });
-  for (const r of (fobRows || [])) {
-    if (!inRange(r.date, range)) continue;
-    const loc = unpad(r.loc);
-    const prod = r.prodSalesAmt || 0;
-    if (prod > 0) {
-      const a = at(loc);
-      a.prodSales += prod;
-      a.fob$ += (r.compWasteAmt || 0) + (r.rawWasteAmt || 0) + (r.condimentsAmt || 0)
-              + (r.empMgrMealsAmt || 0) + (r.statVarianceAmt || 0) + (r.unexplainedAmt || 0);
-    }
-    // Same-basis LAST-YEAR aggregation from the qsr_fob ly_* dollar columns, so FOB% vs LY
-    // uses the IDENTICAL dollar-weighted method as the current FOB% (Σ components ÷ Σ prod
-    // sales) — an apples-to-apples direction signal, never a re-derived formula. Guarded on a
-    // real LY sales base for the same reason as current (a component-only LY row would inflate).
-    const lyProd = r.lyProdSalesAmt || 0;
-    if (lyProd > 0) {
-      const a = at(loc);
-      a.lyProdSales += lyProd;
-      a.lyFob$ += (r.lyCompWasteAmt || 0) + (r.lyRawWasteAmt || 0) + (r.lyCondimentsAmt || 0)
-                + (r.lyEmpMgrMealsAmt || 0) + (r.lyStatVarianceAmt || 0) + (r.lyUnexplainedAmt || 0);
+  const locs = new Set(rows.map(r => unpad(r.loc)));
+  const months = [];
+  { let ym = range.s.slice(0, 7); const endYm = range.e.slice(0, 7);
+    while (ym <= endYm) { months.push(ym); const [y, m] = ym.split('-').map(Number); ym = new Date(y, m, 1).toISOString().slice(0, 7); } }
+  for (const loc of locs) {
+    const a = at(loc);
+    for (const ym of months) {
+      const segStart = range.s > _monthStart(ym) ? range.s : _monthStart(ym);
+      const segEnd = range.e < _monthEnd(ym) ? range.e : _monthEnd(ym);
+      const endSnap = _snapshotAsOf(rows, loc, ym, segEnd);
+      const baseSnap = segStart === _monthStart(ym) ? null : _snapshotAsOf(rows, loc, ym, _dayBefore(segStart));
+      if (!endSnap) continue;
+      const cur = _diffFields(_FOB_FIELDS, endSnap, baseSnap);
+      if (cur.prodSalesAmt > 0) {
+        a.prodSales += cur.prodSalesAmt;
+        a.fob$ += cur.compWasteAmt + cur.rawWasteAmt + cur.condimentsAmt + cur.empMgrMealsAmt + cur.statVarianceAmt + cur.unexplainedAmt;
+      }
+      const ly = _diffFields(_LY_FOB_FIELDS, endSnap, baseSnap);
+      if (ly.lyProdSalesAmt > 0) {
+        a.lyProdSales += ly.lyProdSalesAmt;
+        a.lyFob$ += ly.lyCompWasteAmt + ly.lyRawWasteAmt + ly.lyCondimentsAmt + ly.lyEmpMgrMealsAmt + ly.lyStatVarianceAmt + ly.lyUnexplainedAmt;
+      }
     }
   }
   for (const loc in acc) {

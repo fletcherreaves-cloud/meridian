@@ -32,6 +32,48 @@ describe('fobByRange', () => {
     expect(agg['1'].fobPct).toBeCloseTo(0.04, 6);
     expect(agg['1'].lyFobPct).toBe(null);           // no LY base → null, never inflated
   });
+
+  // qsr_fob is pulled ONE ROW PER DAY but the API is MONTH-KEYED — every row for a given
+  // (loc, month) carries the CUMULATIVE month-to-date total as of that pull, not a daily
+  // delta (the FOB-30x investigation: fobSnapshotByStore takes the latest row per month,
+  // never sums). A full-month range must return the LAST day's cumulative value, never
+  // the sum of every day's running total (which would ~15-30x-inflate both $ and sales).
+  it('a full-month range with 3 cumulative daily snapshots returns the LATEST snapshot, not the sum', () => {
+    const rows = [
+      { loc: '1', date: '2026-06-10', prodSalesAmt: 100000, compWasteAmt: 2000 },  // MTD thru the 10th
+      { loc: '1', date: '2026-06-20', prodSalesAmt: 220000, compWasteAmt: 4000 },  // MTD thru the 20th
+      { loc: '1', date: '2026-06-30', prodSalesAmt: 330000, compWasteAmt: 6000 },  // MTD thru month-end (the true total)
+    ];
+    const agg = fobByRange(rows, { s: '2026-06-01', e: '2026-06-30' });
+    expect(agg['1'].prodSales).toBe(330000);   // NOT 100000+220000+330000=650000
+    expect(agg['1'].fob$).toBe(6000);          // NOT 2000+4000+6000=12000
+    expect(agg['1'].fobPct).toBeCloseTo(6000 / 330000, 6);
+  });
+
+  it('a partial-month range (mid-month start) differences against the day-before baseline', () => {
+    const rows = [
+      { loc: '1', date: '2026-06-14', prodSalesAmt: 140000, compWasteAmt: 2800 },  // baseline (day before the window)
+      { loc: '1', date: '2026-06-21', prodSalesAmt: 210000, compWasteAmt: 4200 },  // window end
+    ];
+    // "last 7 days" 06-15 → 06-21
+    const agg = fobByRange(rows, { s: '2026-06-15', e: '2026-06-21' });
+    expect(agg['1'].prodSales).toBe(70000);    // 210000 - 140000, the TRUE 7-day delta
+    expect(agg['1'].fob$).toBe(1400);          // 4200 - 2800
+  });
+
+  it('a range crossing a month boundary differences EACH month segment separately', () => {
+    const rows = [
+      { loc: '1', date: '2026-05-31', prodSalesAmt: 300000, compWasteAmt: 6000 },  // May's full-month total
+      { loc: '1', date: '2026-05-29', prodSalesAmt: 280000, compWasteAmt: 5600 },  // May baseline (day before the window)
+      { loc: '1', date: '2026-06-02', prodSalesAmt: 20000,  compWasteAmt: 400 },   // June MTD thru the 2nd (June resets to 0)
+    ];
+    // window = 2026-05-30 → 2026-06-02 (crosses May→June)
+    const agg = fobByRange(rows, { s: '2026-05-30', e: '2026-06-02' });
+    // May segment: 300000 (05-31, latest ≤ segEnd 05-31) - 280000 (baseline ≤ 05-29) = 20000
+    // June segment: 20000 (06-02, no earlier June row → baseline 0) = 20000
+    expect(agg['1'].prodSales).toBe(40000);
+    expect(agg['1'].fob$).toBe(800);           // (6000-5600) + 400
+  });
 });
 
 describe('buildOnePagerInputs window-consistency (Notes 32 C)', () => {
