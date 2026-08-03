@@ -45,12 +45,17 @@ export const METRIC_SOURCES = {
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
   r2p:       { mode: 'pos', srcs: [['opsRows', 'r2p'], ['qsrActSummaryRows', 'r2p']] },
-  // Labor — PUNCHED Labor % for ALL locations (Notes 35): Controls (punched) → auto Daily
-  // Glimpse (punched, cloud-fresh) → manual Labor rows (now punched-only too). Glimpse is
-  // ordered ahead of the manual laborRows so the auto punched % wins per the auto-first rule
-  // and no stale manual crew value can slip in. All three sources now emit a punched %.
-  // See memory/project-labor-pct-punched-vs-crew.md + data-sourcing-standard.md.
-  laborPct:  { mode: 'pos', srcs: [['ctrlRows', 'laborPct'], ['glimpseRows', 'laborPct'], ['laborRows', 'laborPct']] },
+  // Labor — PUNCHED Labor % for ALL locations (Notes 35 + 2026-08-03 correction). Glimpse FIRST,
+  // then Controls, then manual Labor rows. Controls (ctrlRows.laborPct) was supposed to already
+  // be punched, but parseCtrlData had a bug (fixed 2026-08-03) that preferred "Actual Labor %"
+  // over "Punched Labor %" when a sheet had both columns — owner-verified via QSRSoft screenshot,
+  // e.g. store 6178 read Actual 25.84% vs Punched 23.23% for the same period, a 2.6pp gap. The
+  // parser fix only affects FUTURE uploads; rows already in ctrl_rows from before the fix are
+  // permanently stuck holding the wrong (Actual-labeled) value until that period is re-uploaded.
+  // Glimpse is independently confirmed genuinely punched and auto/cloud-fresh (no upload lag), so
+  // ordering it first gets today's best available number without waiting on a re-upload, and
+  // costs nothing once ctrlRows data is clean again (both sources should then agree).
+  laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']] },
   tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']] },
   otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).

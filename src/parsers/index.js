@@ -429,7 +429,10 @@ function parseCtrlData(wb,sheet,defaultDateOverride){
     posAmt:fc(h,'POS Overrings Amt','POS Overrings $'),
     // OT — in new format at col 2
     otHrs:fc(h,'OT Hrs','OT Hours'),otD:fc(h,'OT $','OT Dollar'),
-    // Labor — new format has both; prefer Actual Labor %
+    // Labor — new format has both. They are NOT the same number (owner-verified, 2026-08-03:
+    // e.g. store 6178 read Actual 25.84% vs Punched 23.23% for the same period) — standardize
+    // on Punched Labor % for all locations (project-labor-pct-punched-vs-crew.md), Actual as
+    // fallback only for older/partial sheets that lack a Punched column.
     actLabor:fc(h,'Actual Labor %','Punched Labor %','Labor %'),
     punchLabor:fc(h,'Punched Labor %','Punched Labor'),
     // Operations
@@ -464,8 +467,9 @@ function parseCtrlData(wb,sheet,defaultDateOverride){
     const loc=String(r[C.loc]||'').trim();if(!loc||!/^\d+$/.test(loc))continue;
     const dt=C.date>=0?parseXLDate(r[C.date]):_summaryDate;if(!dt)continue;
     const pettyAmt=parseFloat(r[C.petty])||0;
-    // Prefer Actual Labor % (punched hours ÷ sales), fall back to Punched Labor %
-    const laborPctVal = parsePct(r[C.actLabor]) || parsePct(r[C.punchLabor]);
+    // Prefer Punched Labor % (2026-08-03 — was backwards; see the owner-verified C.actLabor
+    // comment above), fall back to Actual Labor % only when a sheet has no Punched column.
+    const laborPctVal = parsePct(r[C.punchLabor]) || parsePct(r[C.actLabor]);
     rows.push({loc,date:dt,
       cashOSPct:parsePct(r[C.cashOS]),cashOSAmt:parseFloat(r[C.cashOSAmt])||0,
       tRedAPct:parsePct(r[C.tRedAPct]),tRedACnt:parseFloat(r[C.tRedACnt])||0,

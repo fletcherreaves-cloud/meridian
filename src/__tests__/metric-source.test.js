@@ -18,7 +18,7 @@ describe('metric-source resolver (auto-first)', () => {
     expect(metricDaily(ds, '1', d('2026-06-03'), 'oepe')).toBeNull();
   });
 
-  it('labor% resolves ctrl → glimpse → labor (auto punched % preferred over manual)', () => {
+  it('labor% resolves glimpse → ctrl → labor (auto punched % preferred over manual)', () => {
     // Notes 35: labor% is PUNCHED for all locs; the auto Daily-Glimpse punched % is ordered
     // ahead of the manual Labor rows so a stale manual value can't override the cloud-fresh one.
     const ds = { glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }] };
@@ -29,10 +29,17 @@ describe('metric-source resolver (auto-first)', () => {
       glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }],  // auto punched — wins
     };
     expect(metricDaily(ds2, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.24, 5);
-    // Controls (also punched) still wins first when present:
+    // Glimpse wins over Controls too (2026-08-03 correction — parseCtrlData preferred "Actual
+    // Labor %" over "Punched Labor %" when a sheet had both columns, so a manual Controls
+    // upload from before that parser fix can silently hold a non-punched value; Glimpse is
+    // independently confirmed always punched. See project-labor-pct-punched-vs-crew.md).
     const ds3 = { ctrlRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.22 }],
                   glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }] };
-    expect(metricDaily(ds3, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.22, 5);
+    expect(metricDaily(ds3, '7', d('2026-06-05'), 'laborPct')).toBeCloseTo(0.24, 5);
+    // Controls still fills a day Glimpse doesn't cover:
+    const ds4 = { ctrlRows: [{ loc: '7', date: d('2026-06-06'), laborPct: 0.22 }],
+                  glimpseRows: [{ loc: '7', date: d('2026-06-05'), laborPct: 0.24 }] };
+    expect(metricDaily(ds4, '7', d('2026-06-06'), 'laborPct')).toBeCloseTo(0.22, 5);
   });
 
   it("'any' mode keeps 0 / negative values (cash O/S)", () => {
