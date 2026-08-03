@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
-import { fobByRange, buildOnePagerInputs, buildCurrentState, buildReviewActuals, buildControlsOutliers } from '../engine/one-pager-data.js';
+import { fobByRange, buildOnePagerInputs, buildCurrentState, buildReviewActuals, buildControlsOutliers, summarizeCountStatus } from '../engine/one-pager-data.js';
 
 const d = s => new Date(s + 'T00:00:00');
 
@@ -131,5 +131,41 @@ describe('buildControlsOutliers — the who + when behind the Controls averages'
     const padded = { ctrlRows: [{ loc: '0000002', date: '2026-06-03', cashOSPct: -0.03 }] };
     const out = buildControlsOutliers(padded, ['0000002'], range);
     expect(out.cashOSPct.outliers[0].loc).toBe('2');
+  });
+});
+
+describe('summarizeCountStatus — EOM count-completion rollup (Notes 47 v2)', () => {
+  it('none when no status rows for the scope', () => {
+    expect(summarizeCountStatus([], ['1']).none).toBe(true);
+    expect(summarizeCountStatus([{ loc: '9', pctCounted: 0.5 }], ['1']).none).toBe(true);
+  });
+
+  it('notStarted when every scoped store reads 0% with no activity (mid-month, not "behind")', () => {
+    const rows = [
+      { loc: '1', pctCounted: 0, foodDone: false, condimentDone: false, lastActivityAt: null },
+      { loc: '2', pctCounted: 0, foodDone: false, condimentDone: false, lastActivityAt: null },
+    ];
+    expect(summarizeCountStatus(rows, ['1', '2']).notStarted).toBe(true);
+  });
+
+  it('counts Food+Condiment complete and lists the lowest incomplete stores', () => {
+    const rows = [
+      { loc: '1', pctCounted: 1.0,  foodDone: true,  condimentDone: true },
+      { loc: '2', pctCounted: 0.40, foodDone: true,  condimentDone: false },
+      { loc: '3', pctCounted: 0.10, foodDone: false, condimentDone: false },
+    ];
+    const s = summarizeCountStatus(rows, ['1', '2', '3']);
+    expect(s.n).toBe(3);
+    expect(s.nDone).toBe(1);                          // only store 1 has BOTH classes done
+    expect(s.avgPct).toBeCloseTo((1.0 + 0.40 + 0.10) / 3, 6);
+    expect(s.behind.map(b => b.loc)).toEqual(['3', '2']);  // lowest first
+    expect(s.behind[0].pct).toBeCloseTo(0.10, 6);
+  });
+
+  it('normalizes loc zero-padding on both the rows and the scope', () => {
+    const rows = [{ loc: '0000002', pctCounted: 0.5, foodDone: false, condimentDone: false }];
+    const s = summarizeCountStatus(rows, ['2']);
+    expect(s.n).toBe(1);
+    expect(s.behind[0].loc).toBe('2');
   });
 });

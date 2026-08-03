@@ -283,6 +283,31 @@ export function buildControlsOutliers(ds, locs, range, topN = 3) {
   return out;
 }
 
+// EOM count-completion rollup for the Above-Store One-Pager FOB depth (Notes 47 v2).
+// Input = rows from loadEomCountStatus({period}) (persisted per-store count status:
+// { loc, pctCounted, foodDone, condimentDone, lastActivityAt, ... }) scoped to `locs`.
+// "Complete" = Food AND Condiment done (FOB_CLASSES — the classes that move FOB$; paper
+// / non-product don't, and non-product isn't due until the next day). Returns:
+//   { none:true }        — no status rows for the scope
+//   { notStarted:true }  — rows exist but counting hasn't begun (mid-month → every store
+//                          reads 0%; that's "not started", never "behind" — don't cry wolf)
+//   { n, nDone, avgPct, behind:[{loc,pct}] } — started; behind = up to 6 lowest, incomplete
+export function summarizeCountStatus(rows, locs) {
+  const locSet = new Set((locs || []).map(unpad));
+  const r = (rows || []).filter(x => locSet.has(unpad(x.loc)));
+  if (!r.length) return { none: true };
+  const started = r.some(x => (x.pctCounted || 0) > 0 || x.lastActivityAt);
+  if (!started) return { notStarted: true };
+  const done = x => x.foodDone && x.condimentDone;
+  const nDone = r.filter(done).length;
+  const avgPct = r.reduce((s, x) => s + (x.pctCounted || 0), 0) / r.length;
+  const behind = r.filter(x => !done(x))
+    .sort((a, b) => (a.pctCounted || 0) - (b.pctCounted || 0))
+    .slice(0, 6)
+    .map(x => ({ loc: unpad(x.loc), pct: x.pctCounted }));
+  return { n: r.length, nDone, avgPct, behind };
+}
+
 // Scope-level headline KPIs for the page header grid (dollar-weighted where it matters).
 export function buildCurrentState(ds, fobRows, locs, range) {
   const inputs = buildOnePagerInputs(ds, fobRows, locs, range);

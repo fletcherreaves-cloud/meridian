@@ -230,10 +230,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.776';
+const MERIDIAN_VERSION    = '4.777';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.777', date:'2026-08-03', changes:[
+    'Above-Store One-Pager FOB depth cont. (Notes 47 v2): the FOB panel now shows EOM count completion (Food+Condiment — the classes that move FOB$) for the window\'s month — X/Y stores complete, average % counted, and the stores furthest behind by name. Only appears once counting has actually started (mid-month reads of 0% are correctly treated as "not started", not "behind"). Loaded on demand from the persisted per-store count status; folded into the AI narrative + print brief.',
+  ]},
   {version:'4.776', date:'2026-08-03', changes:[
     'Above-Store One-Pager FOB depth (Notes 47 v2): the FOB panel now shows FOB% vs last year, dollar-weighted with the IDENTICAL Σ components ÷ Σ prod-sales method as the current figure (from the qsr_fob ly_* columns) — a defensible direction signal (lower than LY = better, shown in percentage points). Folded into the AI narrative + print brief. FOB count-completion + recount help/hurt are next.',
   ]},

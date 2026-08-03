@@ -4,11 +4,11 @@
 // period (MTD / Last week / Last month). Reuses the proven one-pager-data builders + metric-source +
 // vs-LY, plus the Event Impact registry's upcoming events. v1: quantified rollup (read-only) + print.
 import * as React from 'react';
-import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows, buildScheduleActuals, buildControlsOutliers } from '../engine/one-pager-data.js';
+import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows, buildScheduleActuals, buildControlsOutliers, summarizeCountStatus } from '../engine/one-pager-data.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
-import { supabase } from '../lib/supabase.js';
+import { supabase, loadEomCountStatus } from '../lib/supabase.js';
 
 // Stream a SAGE analysis (same edge-function contract as sage.js callSageStream).
 async function askSageStream(prompt, systemPrompt, onChunk) {
@@ -58,7 +58,7 @@ export const ONEPAGER_PANELS = [
 const ALL_PANEL_KEYS = ONEPAGER_PANELS.map(p => p.key);
 
 export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialScope, initialPeriod, initialPanels }) {
-  const { useState, useMemo } = React;
+  const { useState, useMemo, useEffect } = React;
   const [scope, setScope] = useState(initialScope || 'all');
   const [period, setPeriod] = useState(initialPeriod || 'mtd');
   // Which panels are visible ("build your own"). A subscription can pin a subset.
@@ -135,12 +135,27 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
     return out.sort((a, b) => a.dk.localeCompare(b.dk)).slice(0, 24);
   }, [locs, userEvents]);
 
+  // EOM count-completion (Notes 47 v2 FOB depth) — the inventory count isn't on ds; it's
+  // a persisted per-store status loaded on demand by period ("YYYY-MM"), derived from the
+  // window's end month. Cheap (one table, pre-computed). null = loading.
+  const eomPeriod = useMemo(() => range.e.slice(0, 7), [range]);
+  const [eomCount, setEomCount] = useState(null);
+  useEffect(() => {
+    let live = true; setEomCount(null);
+    loadEomCountStatus({ period: eomPeriod }).then(r => { if (live) setEomCount(r || []); }).catch(() => { if (live) setEomCount([]); });
+    return () => { live = false; };
+  }, [eomPeriod]);
+  const countSummary = useMemo(() => (eomCount ? summarizeCountStatus(eomCount, locs) : null), [eomCount, locs]);
+
   // Build a compact numeric brief of the rollup for the AI + print.
   const briefLines = () => {
     const d = data; if (d.err) return [];
     const L = [];
     if (showP('sales')) L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
-    if (showP('fob')) L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})${d.lyFobPct != null ? `; vs LY ${fmtV(d.lyFobPct, '%')} (${d.fobVsLyPp <= 0 ? '' : '+'}${(d.fobVsLyPp * 100).toFixed(2)}pp, ${d.fobVsLyPp <= 0 ? 'better' : 'worse'})` : ''}`);
+    if (showP('fob')) {
+      L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})${d.lyFobPct != null ? `; vs LY ${fmtV(d.lyFobPct, '%')} (${d.fobVsLyPp <= 0 ? '' : '+'}${(d.fobVsLyPp * 100).toFixed(2)}pp, ${d.fobVsLyPp <= 0 ? 'better' : 'worse'})` : ''}`);
+      if (countSummary && countSummary.n) L.push(`EOM count (Food+Cond, ${eomPeriod}): ${countSummary.nDone}/${countSummary.n} stores complete, avg ${fmtV(countSummary.avgPct, '%')}${countSummary.behind.length ? '; behind: ' + countSummary.behind.map(b => (sNameC(b.loc) || b.loc) + ' ' + fmtV(b.pct, '%')).join(', ') : ''}`);
+    }
     if (showP('schedule') && d.sched) L.push(`Scheduling: ${fmtHrs(d.sched.schedHrs)} sched vs ${fmtHrs(d.sched.fcstHrs)} fcst (${d.sched.hrsDiff >= 0 ? '+' : ''}${fmtHrs(d.sched.hrsDiff)}); Schd TPMH ${fmtV(d.sched.tpmh, 'n')}; Fixed ${fmtV(d.sched.fixedPct, '%')} / Floor ${fmtV(d.sched.floorPct, '%')} (combined ${fmtV(d.sched.combinedPct, '%')}, cap ${fmtV(d.sched.combinedMax, '%')})`);
     if (showP('labor')) L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
     if (showP('service')) L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
@@ -259,7 +274,17 @@ export function AboveStoreOnePager({ ds, settings, userEvents, onClose, initialS
             span({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'LY ' + fmtV(d.lyFobPct, '%')),
             span({ style: { fontWeight: 700, color: d.fobVsLyPp == null ? 'var(--text3)' : (d.fobVsLyPp <= 0 ? '#4ade80' : '#f87171'), minWidth: 60, textAlign: 'right' } },
               d.fobVsLyPp == null ? '—' : (d.fobVsLyPp <= 0 ? '' : '+') + (d.fobVsLyPp * 100).toFixed(2) + 'pp')) : null,
-          div({ key: 'fobd', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Σ$ ' + fmtV(d.fob$, '$') + ' ÷ Σ prod-sales ' + fmtV(d.fobProd, '$') + ' (dollar-weighted)')),
+          div({ key: 'fobd', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Σ$ ' + fmtV(d.fob$, '$') + ' ÷ Σ prod-sales ' + fmtV(d.fobProd, '$') + ' (dollar-weighted)'),
+          // EOM count completion (Food+Condiment) for the window's month.
+          (countSummary && countSummary.n) ? h(React.Fragment, { key: 'cc' },
+            div({ style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } },
+              span({ style: { flex: 1, color: 'var(--text2)' } }, 'Count complete (Food+Cond)'),
+              span({ style: { fontSize: '9px', color: 'var(--text3)' } }, 'avg ' + fmtV(countSummary.avgPct, '%')),
+              span({ style: { fontWeight: 700, color: countSummary.nDone === countSummary.n ? '#4ade80' : '#f5bc00', minWidth: 60, textAlign: 'right' } }, countSummary.nDone + '/' + countSummary.n)),
+            countSummary.behind.length ? div({ style: { fontSize: '9px', color: 'var(--text3)', padding: '0 0 3px 2px', lineHeight: 1.4 } },
+              span(null, '↳ behind: '),
+              ...countSummary.behind.map((b, i) => span({ key: i, style: { color: '#f5bc00' } }, (i ? ' · ' : '') + (sNameC(b.loc) || b.loc) + ' ' + fmtV(b.pct, '%')))) : null)
+          : (eomCount === null ? div({ key: 'ccl', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Count status loading…') : null)),
         // Scheduling / VLH (LifeLenz) — schedule-quality metrics distinct from actual labor.
         // Reconciled to the Scheduling panel via computeScheduleRollup (ratios of aggregates).
         showP('schedule') && (d.sched ? Section('Scheduling', '🗓',
