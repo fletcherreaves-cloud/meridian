@@ -144,7 +144,24 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   // unpadded like STORE_NAMES) — fobSnapshotByStore's output keys follow suit, so the lookup
   // must pad locStr to match, not strip it.
   const autoFob    = fobSnapshotByStore(ds.qsrFobRows || [], pmKey)[locStr.padStart(7, '0')];
-  const autoLaborPct = metricAvg(ds, locStr, monthRange, 'laborPct');   // punched %, auto-first
+  // EXACT dollar-weighted Punched Labor % (2026-08-03, replaces the %-blending approach below) —
+  // Σ qsr_labor_summary.crew_labor_dollars ÷ qsr_fob's Product Sales snapshot. qsr_labor_summary
+  // is a DAILY auto pull (unlike qsr_fob) with genuine per-day $ figures — crewLaborDollars is a
+  // SEPARATE API field from salariedManagerDollars (gross = crew + salaried, verified against raw
+  // rows), so it's the hourly/punched $ specifically, not contaminated by the FL salaried-manager-
+  // inclusion quirk that affects "Crew Labor %" elsewhere. Verified against the owner's own
+  // QSRSoft screenshot for TWO stores: 6178 (FL) → Σcrew$ $87,233.02 (exact match to the
+  // screenshot's Punched Labor $ column, $87,233.05) ÷ qsr_fob sales $375,586.72 = 23.2258%
+  // (screenshot Punched Labor %: 23.23%); 3708 (OK) → $76,071.81 ÷ $331,402.08 = 22.9545%
+  // (screenshot: 22.95%). Both essentially exact — this is materially more accurate than the
+  // %-averaging fallback below, which tops out around 23.7% for a store with contaminated
+  // historical ctrlRows data.
+  const _lsRows = (ds.opsLaborRows || []).filter(r =>
+    String(r.loc).padStart(7, '0') === locStr.padStart(7, '0') &&
+    r.date instanceof Date && r.date.getFullYear() === selYear && r.date.getMonth() + 1 === selMonth);
+  const _crewLaborDollarSum = _lsRows.reduce((s, r) => s + (Number(r.crew_labor_dollars) || 0), 0);
+  const dollarWeightedLaborPct = (_crewLaborDollarSum > 0 && autoFob?.sales > 0) ? _crewLaborDollarSum / autoFob.sales : null;
+  const autoLaborPct = metricAvg(ds, locStr, monthRange, 'laborPct');   // punched %, auto-first (fallback)
   const autoCashSeries = metricSeries(ds, locStr, monthRange, 'cashOSAmt');
   const autoCash = Object.keys(autoCashSeries).length
     ? Math.round(Object.values(autoCashSeries).reduce((a, b) => a + b, 0) * 100) / 100
@@ -173,13 +190,13 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   // rule (CLAUDE.md) — manual must never override auto, only fill a gap auto doesn't cover.
   const actFCPct    = autoFob?.pLFoodPct || fobRow?.pLFoodPct || null;
   const actFOBPct   = autoFob?.fobPct    || fobRow?.fobPct    || null; // Food Over Base % actual
-  // Crew Labor Actual — auto-first PUNCHED Labor % FIRST (2026-08-03 correction, same reasoning
-  // as actFCPct above). autoLaborPct already resolves ctrlRows→glimpseRows→laborRows PER DAY
-  // (metric-source.js), so it structurally subsumes monthlyLaborPct's own source (ds.laborRows)
-  // while also filling any day laborRows doesn't cover — monthlyLaborPct's manual-only July
-  // coverage was itself only 20 of 31 days (verified against the live DB), silently presented as
-  // the full month. monthlyLaborPct (sales-weighted) kept only as a final defensive fallback.
-  const actLaborPct = autoLaborPct || (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || monthlyLaborPct || null;
+  // Crew Labor Actual — EXACT dollar-weighted Punched Labor % FIRST (see dollarWeightedLaborPct
+  // above), then the %-blending auto-first fallback, then manual, in decreasing order of
+  // precision. dollarWeightedLaborPct requires both qsr_labor_summary and qsr_fob coverage for
+  // the period — when either is missing (e.g. a brand-new store, or before these auto pulls were
+  // live) it falls through to autoLaborPct, which still resolves ctrlRows→glimpseRows→laborRows
+  // per day and subsumes monthlyLaborPct's own source while filling gap days.
+  const actLaborPct = dollarWeightedLaborPct || autoLaborPct || (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || monthlyLaborPct || null;
 
   // Cash: Σ the auto-first cashOSAmt SERIES for the month (#52 follow-up, 2026-08-03) — NOT
   // "manual ctrlRows if any rows exist, else auto." July's manual Controls upload turned out to
