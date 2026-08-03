@@ -230,7 +230,7 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.771';
+const MERIDIAN_VERSION    = '4.772';
 const MERIDIAN_BUILD_DATE = '2026-08-01';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [

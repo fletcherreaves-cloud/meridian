@@ -2910,6 +2910,41 @@ export async function saveEventImpact(rows) {
   return { saved: error ? 0 : up.length, errors: error ? [error.message] : [] };
 }
 
+// ── Multi-tenant registry (Track B, read-side scaffolding) ────────────────────
+// Additive + fail-soft. These read the tenant tables created by
+// schema-multitenant-phase1.sql. They are NOT yet wired into the app — behavior is
+// unchanged until a future change routes the store registry through them. Until the
+// tables exist, every call returns an empty/null result and the app uses constants.js.
+export async function loadTenants() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.from('tenants').select('*');
+    if (error) return [];
+    return (data || []).map(r => ({ id: r.id, name: r.name, shortName: r.short_name, createdAt: r.created_at }));
+  } catch { return []; }
+}
+export async function loadTenantStores(tenantId = null) {
+  if (!supabase) return [];
+  try {
+    let q = supabase.from('tenant_stores').select('*');
+    if (tenantId) q = q.eq('tenant_id', tenantId);
+    const { data, error } = await q;
+    if (error) return [];
+    return (data || []).map(r => ({ tenantId: r.tenant_id, loc: String(r.loc), org: r.org }));
+  } catch { return []; }
+}
+// The logged-in user's tenant id (null if the column/tenant isn't set up yet).
+export async function loadMyTenantId() {
+  if (!supabase) return null;
+  try {
+    const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+    if (!uid) return null;
+    const { data, error } = await supabase.from('profiles').select('tenant_id').eq('id', uid).maybeSingle();
+    if (error) return null;
+    return data?.tenant_id || null;
+  } catch { return null; }
+}
+
 // ── Report subscriptions (Notes 49) ──────────────────────────────────────────
 // A per-user list of saved report configs (report + scope/grouping + period + panels).
 // localStorage is the instant/primary cache; Supabase (report_subscriptions.subs jsonb,
