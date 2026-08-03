@@ -150,30 +150,47 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
     ? Math.round(Object.values(autoCashSeries).reduce((a, b) => a + b, 0) * 100) / 100
     : null;
 
-  // Sales and labor % come from Operations Report (laborRows) — daily rows summed for the month.
-  // FOB report is fallback for sales/labor only; primary for food cost metrics (actFCPct, actFOBPct).
-  const actSales    = (monthlySales > 0 ? monthlySales : null)
+  // Sales — auto qsr_fob's Product Sales snapshot FIRST (2026-08-03 correction, same reasoning as
+  // actFCPct/actLaborPct above; this feeds refSales, the denominator for EVERY $ variance below,
+  // so an under-count here silently under-states every dollar figure in the panel). monthlySales
+  // (Σ manual ds.laborRows) covered only 17 of 31 July days for one spot-checked store — a SUM
+  // over partial days under-counts by exactly the missing fraction (verified: $183K manual vs
+  // the true $331K qsr_fob month total for that store, a 45% under-count). autoFob.sales is the
+  // SAME snapshot actFCPct's denominator already uses, so Sales and Food Cost % stay internally
+  // consistent with each other, not derived from two different partial pictures.
+  const actSales    = (autoFob?.sales > 0 ? autoFob.sales : null)
+                      || (monthlySales > 0 ? monthlySales : null)
                       || (fobRow?.sales > 0 ? fobRow.sales : null);
-  // Total Food Cost % actual — manual FOB report, then auto qsr_fob's P&L Food Cost snapshot (#52).
-  const actFCPct    = fobRow?.pLFoodPct  || autoFob?.pLFoodPct || null;
-  const actFOBPct   = fobRow?.fobPct     || autoFob?.fobPct    || null; // Food Over Base % actual
-  // Crew Labor Actual — manual (sales-weighted, best when present), then manual FOB report,
-  // then auto-first PUNCHED Labor % (#52 — was blank whenever Labor Analysis wasn't uploaded).
-  const actLaborPct = monthlyLaborPct || (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || autoLaborPct || null;
+  // Total Food Cost % / Food Over Base % actual — AUTO qsr_fob snapshot FIRST, manual FOB report
+  // as a last-resort fill only (2026-08-03 correction — this was backwards in the original #52
+  // fix and re-broke the same field it was meant to close). The manual FOB Report is a ONE-TIME
+  // monthly upload that can't self-refresh, unlike ctrlRows (uploaded ~daily, realistically fresh
+  // in practice) — QSRSoft's own P&L Food Cost figure keeps posting adjustments after the report
+  // is typically pulled, so a manual row from early/mid-month goes stale while qsr_fob keeps
+  // updating. Verified against the owner's own QSRSoft screenshot: store 5985 read 27.21% P&L
+  // Food Cost — auto qsr_fob's latest snapshot computed to 27.2128% (exact match); the manual
+  // fob_rows upload held a stale 27.46%. Matches the standing "auto/emailed-first, freshest-wins"
+  // rule (CLAUDE.md) — manual must never override auto, only fill a gap auto doesn't cover.
+  const actFCPct    = autoFob?.pLFoodPct || fobRow?.pLFoodPct || null;
+  const actFOBPct   = autoFob?.fobPct    || fobRow?.fobPct    || null; // Food Over Base % actual
+  // Crew Labor Actual — auto-first PUNCHED Labor % FIRST (2026-08-03 correction, same reasoning
+  // as actFCPct above). autoLaborPct already resolves ctrlRows→glimpseRows→laborRows PER DAY
+  // (metric-source.js), so it structurally subsumes monthlyLaborPct's own source (ds.laborRows)
+  // while also filling any day laborRows doesn't cover — monthlyLaborPct's manual-only July
+  // coverage was itself only 20 of 31 days (verified against the live DB), silently presented as
+  // the full month. monthlyLaborPct (sales-weighted) kept only as a final defensive fallback.
+  const actLaborPct = autoLaborPct || (fobRow?.laborPct > 0 ? fobRow.laborPct : null) || monthlyLaborPct || null;
 
-  // Cash: sum from ctrlRows for the month, else the auto-first cashOSAmt series (#52).
-  const cashFromCtrl = (() => {
-    const rows = (ds.ctrlRows || []).filter(r =>
-      String(r.loc) === locStr &&
-      r.date instanceof Date &&
-      r.date.getFullYear() === selYear &&
-      r.date.getMonth() + 1 === selMonth &&
-      (r.cashOSAmt || r.tCashOSAmt)
-    );
-    if (!rows.length) return autoCash;
-    const raw = rows.reduce((s, r) => s + (r.cashOSAmt || r.tCashOSAmt || 0), 0);
-    return Math.round(raw * 100) / 100;
-  })();
+  // Cash: Σ the auto-first cashOSAmt SERIES for the month (#52 follow-up, 2026-08-03) — NOT
+  // "manual ctrlRows if any rows exist, else auto." July's manual Controls upload turned out to
+  // be PARTIAL for every store (~15 of 31 days, verified against the live DB) — the old
+  // any-rows-exist gate summed only the covered days and silently presented that as "the month,"
+  // which is worse than no manual data at all (a store with zero manual rows got the full
+  // auto-blended total; a store with half a month's manual rows got half a total, mislabeled as
+  // whole). metricSeries already resolves ctrlRows→glimpseRows→cashRows→opsCashRows PER DAY (the
+  // standing auto-first rule), so summing its output blends manual days with auto-filled gap
+  // days correctly — ctrlRows still wins for any day it actually covers, no regression there.
+  const cashFromCtrl = autoCash;
 
   // Manual overrides / inputs for this store
   const m            = manual[locStr] || {};
