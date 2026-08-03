@@ -72,14 +72,7 @@ insert into public.tenant_stores (tenant_id, loc, org) values
   ('00000000-0000-0000-0000-000000000001','6972','mcdok')
 on conflict (tenant_id, loc) do nothing;
 
--- ── 3. current_tenant_id() helper (SECURITY DEFINER, avoids RLS recursion) ──────
--- Reads the caller's tenant from their profile. Phase-2 policies use this.
-create or replace function public.current_tenant_id()
-returns uuid language sql security definer stable as $$
-  select tenant_id from public.profiles where id = auth.uid();
-$$;
-
--- ── 4. Add nullable tenant_id to profiles + every tenant-scoped data table ──────
+-- ── 3. Add nullable tenant_id to profiles + every tenant-scoped data table ──────
 -- Nullable + backfilled = existing rows keep working; no RLS change here.
 -- EXCLUDED (intentionally shared/global, no tenant): qsrsoft_kb, qsr_field_definitions.
 -- org_config is handled separately in Phase 2 (its key becomes tenant-scoped).
@@ -121,11 +114,21 @@ begin
   end loop;
 end $$;
 
--- ── 4b. org_config gets tenant_id too (kept out of the loop; special backfill) ──
+-- ── 3b. org_config gets tenant_id too (kept out of the loop; special backfill) ──
 -- Its PK stays `key` for now (single-tenant safe). Before operator #2 SHARES this
 -- table, change the PK to (key, tenant_id) and update the app upsert onConflict.
 alter table public.org_config add column if not exists tenant_id uuid references public.tenants(id);
 update public.org_config set tenant_id = '00000000-0000-0000-0000-000000000001' where tenant_id is null;
+
+-- ── 4. current_tenant_id() helper (SECURITY DEFINER, avoids RLS recursion) ──────
+-- Reads the caller's tenant from their profile. Phase-2 policies use this.
+-- MUST be created AFTER profiles.tenant_id exists: a `language sql` function has
+-- its body validated at CREATE time, so defining it before the column above fails
+-- with 42703 (column "tenant_id" does not exist).
+create or replace function public.current_tenant_id()
+returns uuid language sql security definer stable as $$
+  select tenant_id from public.profiles where id = auth.uid();
+$$;
 
 -- ── 5. Default-tenant trigger (fills tenant_id on INSERT from the caller) ────────
 -- Attached to tables in Phase 2. Defined here so it exists for review.
