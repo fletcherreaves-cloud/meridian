@@ -87,8 +87,23 @@ insert into public.tenant_stores (tenant_id, loc, org) values
   ('00000000-0000-0000-0000-000000000001','6972','mcdok')
 on conflict (tenant_id, loc) do nothing;
 
--- ── 3. Add nullable tenant_id to profiles + every tenant-scoped data table ──────
--- Nullable + backfilled = existing rows keep working; no RLS change here.
+-- ── 3. Add tenant_id to profiles + every tenant-scoped data table ────────────────
+-- LIVE-DB SAFE: add the column WITH a constant DEFAULT of the owner's tenant. On
+-- PostgreSQL 11+ this is a METADATA-ONLY change — NO table rewrite and NO per-row
+-- backfill, even on multi-million-row tables — because existing rows read the default
+-- virtually. Each ALTER is therefore near-instant, so the whole loop holds its locks
+-- for a tiny window (the 65-table version with a row-rewriting UPDATE + index build in
+-- one transaction is what deadlocked against live traffic — 40P01).
+--   • No inline FK: a REFERENCES clause forces a validating scan of every row. Tenant
+--     integrity is instead held by the seeded tenants row + the Phase-2 insert trigger.
+--     (A NOT VALID FK can be added later if desired — see bottom.)
+--   • No index here: a CREATE INDEX holds a write-blocking ShareLock during its build.
+--     Add the tenant_id indexes separately with CREATE INDEX CONCURRENTLY (see bottom)
+--     when convenient — they only speed up the Phase-2 predicate, not correctness.
+--   • No backfill UPDATE: the DEFAULT already covers every existing row. (All prior
+--     runs failed transactionally, so no committed NULL tenant_id columns exist.)
+-- Phase 2 DROPS this default before attaching the insert trigger, so multi-tenant
+-- inserts get the CALLER's tenant instead of the owner default.
 -- EXCLUDED (intentionally shared/global, no tenant): qsrsoft_kb, qsr_field_definitions.
 -- org_config is handled separately in Phase 2 (its key becomes tenant-scoped).
 do $$
@@ -117,22 +132,18 @@ begin
     -- only touch tables that actually exist in this DB
     if exists (select 1 from information_schema.tables
                where table_schema='public' and table_name=t) then
+      -- metadata-only add + virtual backfill via the constant default
       execute format(
-        'alter table public.%I add column if not exists tenant_id uuid references public.tenants(id)', t);
-      -- backfill: everything currently in the DB is the current owner's tenant
-      execute format(
-        'update public.%I set tenant_id = ''00000000-0000-0000-0000-000000000001'' where tenant_id is null', t);
-      -- index for the Phase-2 RLS predicate
-      execute format(
-        'create index if not exists %I on public.%I (tenant_id)', t||'_tenant_idx', t);
+        'alter table public.%I add column if not exists tenant_id uuid default ''00000000-0000-0000-0000-000000000001''', t);
     end if;
   end loop;
 end $$;
 
--- ── 3b. org_config gets tenant_id too (kept out of the loop; special backfill) ──
--- Its PK stays `key` for now (single-tenant safe). Before operator #2 SHARES this
--- table, change the PK to (key, tenant_id) and update the app upsert onConflict.
-alter table public.org_config add column if not exists tenant_id uuid references public.tenants(id);
+-- ── 3b. org_config gets tenant_id too (kept out of the loop) ────────────────────
+-- Same metadata-only defaulted add. Its PK stays `key` for now (single-tenant safe).
+-- Before operator #2 SHARES this table, change the PK to (key, tenant_id) and update
+-- the app upsert onConflict.
+alter table public.org_config add column if not exists tenant_id uuid default '00000000-0000-0000-0000-000000000001';
 update public.org_config set tenant_id = '00000000-0000-0000-0000-000000000001' where tenant_id is null;
 
 -- ── 4. current_tenant_id() helper (SECURITY DEFINER, avoids RLS recursion) ──────
@@ -169,4 +180,23 @@ end $$;
 --   select public.current_tenant_id();
 --
 -- Only once that's confirmed for ALL real users, run schema-multitenant-phase2-rls.sql.
+--
+-- ── OPTIONAL follow-ups (run any time, NOT required for isolation) ───────────────
+-- These were pulled out of the main loop because each holds a lock during a scan/build
+-- and would widen the deadlock window on a live DB. Run them off the main migration.
+--
+-- (a) tenant_id indexes — speed up the Phase-2 RLS predicate on big tables. Run each
+--     ONE AT A TIME (CONCURRENTLY cannot run inside a transaction / DO block / with
+--     other statements). Only worth it on the high-row tables, e.g.:
+--       create index concurrently if not exists dar_rows_tenant_idx           on public.dar_rows (tenant_id);
+--       create index concurrently if not exists sales_ledger_daily_tenant_idx on public.sales_ledger_daily (tenant_id);
+--       create index concurrently if not exists daily_glimpse_daily_tenant_idx on public.daily_glimpse_daily (tenant_id);
+--       -- …repeat for any other large table.
+--
+-- (b) FK integrity (belt-and-suspenders on top of the trigger). NOT VALID skips the
+--     up-front full scan (brief lock); VALIDATE later is non-blocking:
+--       alter table public.dar_rows add constraint dar_rows_tenant_fk
+--         foreign key (tenant_id) references public.tenants(id) not valid;
+--       alter table public.dar_rows validate constraint dar_rows_tenant_fk;
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- ═══════════════════════════════════════════════════════════════════════════════

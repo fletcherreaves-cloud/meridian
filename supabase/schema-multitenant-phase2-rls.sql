@@ -63,6 +63,14 @@ begin
   foreach t in array tbls loop
     if exists (select 1 from information_schema.tables
                where table_schema='public' and table_name=t) then
+      -- Drop the Phase-1 column DEFAULT (owner tenant). Phase 1 added tenant_id WITH a
+      -- constant default purely so the add was metadata-only (instant backfill). With the
+      -- default in place a new row's tenant_id is never NULL, so the trigger below could
+      -- not override it with the CALLER's tenant — every operator's inserts would land on
+      -- the owner tenant. Dropping the default lets the trigger set the right tenant.
+      -- (profiles + org_config are handled specially below and KEEP their default so
+      -- single-tenant user/config onboarding still auto-joins the owner tenant.)
+      execute format('alter table public.%I alter column tenant_id drop default', t);
       -- default tenant_id on insert
       execute format('drop trigger if exists set_tenant_id_trg on public.%I', t);
       execute format('create trigger set_tenant_id_trg before insert on public.%I for each row execute function public.set_tenant_id()', t);
