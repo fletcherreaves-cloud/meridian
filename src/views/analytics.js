@@ -6969,7 +6969,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         // T-Red percents above; these were still manual-Controls-only, reading 0 with no upload.
         tRedACnt:ex.tRedACnt??o.tRedACnt,tRedBCnt:ex.tRedBCnt??o.tRedBCnt,
         cashRefCnt:ex.cashRefCnt??o.cashRefCnt,cashRefAmt:ex.cashRefAmt??o.cashRefAmt,
-        cashlessRefCnt:ex.cashlessRefCnt??o.cashlessRefCnt,cashlessRefAmt:ex.cashlessRefAmt??o.cashlessRefAmt});
+        cashlessRefCnt:ex.cashlessRefCnt??o.cashlessRefCnt,cashlessRefAmt:ex.cashlessRefAmt??o.cashlessRefAmt,
+        // Cash O/S % + $ (2026-08-04 follow-up) — missed in the first pass. Unlike the other
+        // opsCashRows fields above, this one OVERRIDES glimpseRows/cashRows rather than only
+        // filling gaps: both those layers already SET cashOSPct/cashOSAmt (often to exactly 0,
+        // not undefined) whenever they have any row for the day, so the usual `ex.field??o.field`
+        // gap-fill pattern would keep a stale/wrong 0 instead of the real opsCashRows number.
+        // qsr_cash_sheet's cash_over_or_short is the same field EOM Supervisor's Cash +/- fix
+        // (v4.796) already verified exact-to-the-penny against real QSRSoft data — treat it as
+        // authoritative here too, same trust order.
+        cashOSPct:o.cashOSPct??ex.cashOSPct,cashOSAmt:o.cashOSAmt??ex.cashOSAmt});
     }
     for(const q of (ds?.qsrActSummaryRows||[])){
       const key=kk(q);const ex=byKey.get(key)||{loc:q.loc,date:q.date};
@@ -7409,13 +7418,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const pr=f=>prior?prior[f]:null;
       // Disc/Coupon district total — verified 2026-08-04 the direct mtd.discCoupon computation
       // (same fobAgg() call that already produces real fobPct/pLFoodPct/baseFoodPct for the SAME
-      // scoped rows) sometimes came back blank even though the underlying qsr_fob data and the
-      // OK/FL regional splits were provably correct (district total ≈0.51% cross-checked against
-      // Supabase directly). Rather than ship an unexplained direct fix, backstop it with the
-      // dollar-weighted combination of the two regional splits — mathematically identical to the
-      // district figure by construction (Σdistrict = ΣOK + ΣFL), so it's correct regardless of
-      // what causes the direct path to occasionally miss.
-      const discCouponTotal = mtd.discCoupon ?? ((mtdOk||mtdFl) ?
+      // scoped rows) sometimes came back blank/zero even though the underlying qsr_fob data and
+      // the OK/FL regional splits were provably correct (district total ≈0.51% cross-checked
+      // against Supabase directly). Rather than ship an unexplained direct fix, backstop it with
+      // the dollar-weighted combination of the two regional splits — mathematically identical to
+      // the district figure by construction (Σdistrict = ΣOK + ΣFL), correct regardless of what
+      // causes the direct path to miss. Falsy check (not `??`) is deliberate — the first attempt
+      // used `??` and stayed broken because the direct path was landing on a literal 0, not
+      // null/undefined, so `??` never triggered the fallback; discCoupon is always ≥0 in practice
+      // (a discount amount), so treating 0 as "use the fallback" is safe here.
+      const discCouponTotal = mtd.discCoupon || ((mtdOk||mtdFl) ?
         (((mtdOk?.discCoupon||0)*(mtdOk?.sales||0) + (mtdFl?.discCoupon||0)*(mtdFl?.sales||0)) /
          (((mtdOk?.sales||0) + (mtdFl?.sales||0)) || 1)) : null);
       // Sales-weighted targets across the scope (owner: pass targets to the AAG tile like the

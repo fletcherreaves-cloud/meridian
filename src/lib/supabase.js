@@ -1848,6 +1848,9 @@ export const loadOpsCashSheet = async (d = 45) => {
     drawerOpens: r.drawer_opens_qty != null ? Number(r.drawer_opens_qty) : null,
     // Cash Over/Short $ (#52) — auto-first backstop for EOM Supervisor's Cash +/- actual.
     cashOSAmt: r.cash_over_or_short != null ? Number(r.cash_over_or_short) : null,
+    // Cash Over/Short % (2026-08-04) — same net-sales-weighted pattern as discPct/tRedAPct above;
+    // ctrlAuto only had this from glimpseRows/cashRows, which weren't covering the current week.
+    cashOSPct: (r.net_sales_amt > 0 && r.cash_over_or_short != null) ? r.cash_over_or_short / r.net_sales_amt : null,
     // T-Red counts + cash/cashless refund counts+$ (2026-08-04) — the AAG Controls & Integrity
     // tile only had the T-Red PERCENTS auto-sourced (above); the raw qty/amt counts were still
     // manual-only, so they read 0 whenever no manual Controls upload covered the period even
