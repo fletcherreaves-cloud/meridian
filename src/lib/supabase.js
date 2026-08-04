@@ -1661,7 +1661,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // + Promise.allSettled so a partial failure (free-tier egress throttle) still keeps the
   // RECENT days every current-window tile/form needs, and one bad page can't reject the whole
   // load. Aggregation is by (loc,dt) so page order doesn't affect the result.
-  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
+  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
   const PAGE = 1000;
   const { count } = await supabase.from('qsr_daily_activity')
     .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
@@ -1686,7 +1686,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     if (!map[key]) map[key] = {
       loc, date: new Date(r.dt + 'T00:00:00'),
       sales: 0, allNetSales: 0, gc: 0, txns: 0,
-      _dtTotal: 0, _dtStore: 0, _dtCars: 0,
+      _dtTotal: 0, _dtStore: 0, _dtCars: 0, _dtHeld: 0,
       _fcServe: 0, _fcDrawer: 0, _fcCnt: 0,
       projGC: 0, projSales: 0,
       lySales: 0, lyGc: 0,
@@ -1705,6 +1705,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key]._dtTotal     += r.dt_untilserve   || 0;
     map[key]._dtStore     += r.dt_untilstore   || 0;
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
+    map[key]._dtHeld      += r.dt_carsheld     || 0;
     // Front-counter timings for R2P (Receipt to Print). Sum the raw ms + counts
     // across hour slots, then count-weight below.
     map[key]._fcServe     += r.fc_untilserve      || 0;
@@ -1754,6 +1755,13 @@ export async function loadQsrActSummary(daysBack = 35) {
     // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
     // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
     oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
+    // DT Parked % (0–1 fraction) = cars held ÷ DT transactions served, count-weighted across
+    // the day. Reconciled EXACT to the Operations Report's own dt_cars_held/dt_serve_trans
+    // (store 3708, 2026-08-03: DAR 105/773=13.58% vs Ops Report 105/773=13.59%, rounding-only
+    // difference). Cloud-fresh + live intraday (unlike qsr_service_stats, which has no row
+    // until the day finalizes) — owner confirmed 2026-08-04 this was already available here,
+    // just not selected/wired through.
+    park: r._dtCars > 0 ? r._dtHeld / r._dtCars : null,
     // KVS Healthy Usage (0–1 fraction) = healthy ÷ (healthy + unhealthy) order-health counts,
     // summed across the day. Same 0–1 shape as the emailed Glimpse `kvsHealthy`, so it slots in
     // as a metric-source fallback (kvsHealthy) and the One-Pager / AAG KVS row fills cloud-fresh.

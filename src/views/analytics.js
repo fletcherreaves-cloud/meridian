@@ -7014,17 +7014,24 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Glimpse, freshest-per-day. R2P has no auto source, so it only shows from manual.
   const svcEffective = React.useMemo(()=>{
     // FIELD-AWARE merge (Notes: Jul-2026) — each metric takes its freshest available source,
-    // low→high precedence: auto DAR (oepe/r2p derived) → emailed Glimpse (oepe/park/kvs) →
-    // manual Ops (all). This lets R2P (and OEPE) fill from the current DAR even when the manual
-    // Ops report is stale (Ops stopped Jul 15). KVS/DT-Parked still need Glimpse/Ops (no DAR src).
+    // low→high precedence: auto DAR (oepe/r2p/park/kvs derived) → emailed Glimpse (oepe/park/kvs) →
+    // manual Ops (all). This lets R2P/OEPE/DT-Parked/KVS-Healthy all fill from the current DAR
+    // even when the manual Ops report is stale (Ops stopped Jul 15).
     const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
     const m=new Map();
     const layer=(rows,map)=>{ for(const r of (rows||[])){ if(!r||!r.date)continue; const k=kk(r); const ex=m.get(k)||{loc:r.loc,date:r.date}; for(const dst in map){ const v=r[map[dst]]; if(v!=null&&!isNaN(v)&&v!==0) ex[dst]=v; } m.set(k,ex); } };
-    // DAR carries MFY serve time → KVS Time derives from it too (its order-health counts are 0, so
-    // KVS Healthy stays null here and comes from the service-stats summary below).
-    layer(ds?.qsrActSummaryRows,{oepe:'oepe',r2p:'r2p',kvst:'kvst'});
-    // Auto Operations Report service-stats summary (cloud-fresh) — fills KVS Healthy + DT Parked (which
-    // the DAR can't) and backstops OEPE/KVS Time. Overrides the DAR where present, yields to Glimpse/manual.
+    // DAR carries MFY serve time → KVS Time derives from it too. park/kvsHealthy (2026-08-04) —
+    // owner pointed out DT-Parked/KVS-Healthy's raw ingredients (dt_carsheld, healthy_count/
+    // unhealthy_count) were already in qsr_daily_activity, just not selected/wired through; both
+    // now computed in loadQsrActSummary and reconciled exact against the Operations Report
+    // (store 3708 8/3: DAR park 13.58% vs Ops Report 13.59%). DAR is also LIVE intraday, unlike
+    // qsr_service_stats which has no row until the day finalizes — see memory/
+    // finding-live-intraday-operations-report-data.md.
+    layer(ds?.qsrActSummaryRows,{oepe:'oepe',r2p:'r2p',kvst:'kvst',park:'park',kvsu:'kvsHealthy'});
+    // Auto Operations Report service-stats summary — only has data for CLOSED/finalized days
+    // (confirmed 2026-08-04: zero rows for the in-progress day across repeated checks), so it
+    // mainly backstops/overrides DAR for days where BOTH exist; DAR remains the only live-intraday
+    // source for all of these fields. Yields to Glimpse/manual where those have data.
     layer(ds?.opsServiceRows,{oepe:'oepe',park:'park',kvst:'kvst',kvsu:'kvsHealthy'});
     layer(ds?.glimpseRows,{oepe:'oepe',park:'parkedPct',kvst:'kvst',kvsu:'kvsHealthy'});
     layer(ds?.opsRows,{oepe:'oepe',park:'park',kvst:'kvst',kvsu:'kvsu',r2p:'r2p'});
