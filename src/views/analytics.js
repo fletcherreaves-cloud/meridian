@@ -13,7 +13,7 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 
 const h=React.createElement;
@@ -6664,9 +6664,23 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const [secs,setSecs] = React.useState(()=>{
     try{const s=JSON.parse(localStorage.getItem('mf_kpi_secs')||'null');if(!s)return DEF_SECS;const merged=[...s];DEF_SECS.forEach(d=>{if(!merged.find(m=>m.id===d.id))merged.push(d);});return merged;}catch(e){return DEF_SECS;}
   });
+  // Cross-device sync (2026-08-04) — mf_kpi_secs was localStorage-only, so tile visibility
+  // (e.g. Labor on/off) silently diverged per device with no way to reconcile. Supabase is
+  // the source of truth once it responds; localStorage stays as the instant-paint cache
+  // (same architecture as every other client-cache-fallback-only setting per CLAUDE.md).
+  React.useEffect(()=>{
+    let live=true;
+    loadUserSetting('kpi_secs').then(remote=>{
+      if(!live||!Array.isArray(remote)||!remote.length) return;
+      const merged=[...remote];DEF_SECS.forEach(d=>{if(!merged.find(m=>m.id===d.id))merged.push(d);});
+      setSecs(merged);
+      try{localStorage.setItem('mf_kpi_secs',JSON.stringify(merged));}catch{}
+    }).catch(()=>{});
+    return ()=>{live=false;};
+  },[]);
   const [showSecCfg,setShowSecCfg] = React.useState(false);
   const [lbMetric,setLbMetric] = React.useState('sales'); // leaderboard selected metric
-  const saveSecs = s=>{setSecs(s);localStorage.setItem('mf_kpi_secs',JSON.stringify(s));};
+  const saveSecs = s=>{setSecs(s);try{localStorage.setItem('mf_kpi_secs',JSON.stringify(s));}catch{};saveUserSetting('kpi_secs',s).catch(()=>{});};
   // ── Per-section collapse (mobile, session-only) ───────────────
   const [collapsedSecs, setCollapsedSecs] = React.useState({});
   const collapseToggle = id => setCollapsedSecs(p => ({...p, [id]: !p[id]}));
@@ -7846,20 +7860,20 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     ),
 
     // ── ACTION CHECKLIST ───────────────────────────────────────
+    div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
+      padding:'6px 24px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'flex-end',gap:6}},
+      archivedCl.length>0&&btn({style:{fontSize:'9px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'},
+        onClick:()=>setShowArchive(!showArchive)},
+        (showArchive?'Hide':'Show')+' archive ('+archivedCl.length+')'),
+      btn({style:{fontSize:'10px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer',
+        padding:'2px 6px',borderRadius:3,border:'.5px solid var(--bdr)'},
+        onClick:()=>setShowSecCfg(!showSecCfg)},'Sections ☰')
+    ),
+
     allActiveItems.length>0&&div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
       padding:'10px 24px',flexShrink:0}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}},
-        div({style:{fontSize:'11px',fontWeight:700,color:'var(--amber)'}},
-          '📋 Action Checklist ('+allActiveItems.length+' active)'),
-        div({style:{display:'flex',gap:6}},
-          archivedCl.length>0&&btn({style:{fontSize:'9px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'},
-            onClick:()=>setShowArchive(!showArchive)},
-            (showArchive?'Hide':'Show')+' archive ('+archivedCl.length+')'),
-          btn({style:{fontSize:'10px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer',
-            padding:'2px 6px',borderRadius:3,border:'.5px solid var(--bdr)'},
-            onClick:()=>setShowSecCfg(!showSecCfg)},'Sections \u2630')
-        )
-      ),
+      div({style:{fontSize:'11px',fontWeight:700,color:'var(--amber)',marginBottom:6}},
+        '📋 Action Checklist ('+allActiveItems.length+' active)'),
       div({style:{display:'flex',flexDirection:'column',gap:4}},
         allActiveItems.map(item=>
           div({key:item.id,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 8px',
