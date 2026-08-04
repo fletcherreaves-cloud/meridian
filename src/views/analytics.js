@@ -6996,7 +6996,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return {rows:merged,auto:lab.length===0&&led.length>0};
   },[ds?.laborRows?.length,ds?.salesLedgerRows?.length,effectiveDateRange]);
 
-  const avgOf=(rows,field)=>{const v=rows.map(r=>r[field]).filter(x=>x!=null&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
+  // anyMode=true keeps 0 (and negative) values — for SIGNED/zero-legitimate fields (Cash O/S %,
+  // T-Reds %, Discount %, Promo %: a real 0% is good news, not "no data"), matching
+  // metric-source.js's own 'any' vs 'pos' mode split. Default (false) is unchanged everywhere
+  // else — a genuine 0 for OEPE/TPPH/Labor%/etc. really does mean no data for an operating store.
+  // 2026-08-04: was blanket-excluding 0 for ALL fields — a store with 0 T-Red incidents (great!)
+  // showed a blank "—" instead of "0.00%", which is exactly what "still missing a lot of data"
+  // on the AAG Controls & Integrity tile turned out to be (T-Red After Count showed 0 correctly
+  // via sumOf, which never filtered zeros, while T-Red After % showed "—" via this function).
+  const avgOf=(rows,field,anyMode)=>{const v=rows.map(r=>r[field]).filter(x=>x!=null&&!isNaN(x)&&(anyMode||x>0));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const sumOf=(rows,field)=>rows.reduce((a,r)=>a+(r[field]||0),0);
   const pctOf=(a,b)=>b>0?((a/b-1)*100).toFixed(1)+'%':null;
 
@@ -7021,11 +7029,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const fobByLoc=loc=>fobInRange.filter(r=>r.loc===String(loc));
 
   // ── Market averages ───────────────────────────────────────────
-  const mktAvg=(locs,rows,field,fn='avg')=>{
+  const mktAvg=(locs,rows,field,fn='avg',anyMode)=>{
     const vals=locs.map(loc=>{
       const r=rows.filter(row=>row.loc===String(loc));
-      return fn==='sum'?sumOf(r,field):avgOf(r,field);
-    }).filter(v=>v!=null&&v>0);
+      return fn==='sum'?sumOf(r,field):avgOf(r,field,anyMode);
+    }).filter(v=>v!=null&&(anyMode||v>0));
     return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
   };
 
@@ -7332,17 +7340,18 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const {rows:ctrlEff,isStale:ctrlSt,label:ctrlStaleLbl}=ctrlEffective;
     if(!ctrlEff.length)return null;
     const ctrlScoped=ctrlEff.filter(r=>allLocs.includes(String(r.loc)));
-    const a=f=>avgOf(ctrlScoped,f);
+    const a=(f,anyMode)=>avgOf(ctrlScoped,f,anyMode);
     const s=f=>sumOf(ctrlScoped,f);
-    // Field names match exactly what parseCtrlData stores
+    // Field names match exactly what parseCtrlData stores. T-Reds/Promo/Cash O/S are SIGNED,
+    // zero-legitimate fields (anyMode=true) — a real 0% is a good result, not "no data" (2026-08-04).
     return{
       // T-Reds (correct field names)
-      tRedBPct:a('tRedBPct'),tRedBCnt:s('tRedBCnt'),
-      tRedAPct:a('tRedAPct'),tRedACnt:s('tRedACnt'),
+      tRedBPct:a('tRedBPct',true),tRedBCnt:s('tRedBCnt'),
+      tRedAPct:a('tRedAPct',true),tRedACnt:s('tRedACnt'),
       // Promo — now correctly mapped to Promo Pct group (separate from Discount)
-      promoPct:a('promoPct'),promoCnt:s('promoCnt'),promoAmt:s('promoAmt'),
+      promoPct:a('promoPct',true),promoCnt:s('promoCnt'),promoAmt:s('promoAmt'),
       // Cash
-      cashOSPct:a('cashOSPct'),cashOSAmt:s('cashOSAmt'),
+      cashOSPct:a('cashOSPct',true),cashOSAmt:s('cashOSAmt'),
       // Refunds — separate cash and cashless in parseCtrlData
       cashRefCnt:s('cashRefCnt'),cashRefAmt:s('cashRefAmt'),
       cashlessRefCnt:s('cashlessRefCnt'),cashlessRefAmt:s('cashlessRefAmt'),
@@ -7353,13 +7362,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       // Meals
       empMealAmt:s('empMealAmt'),mgrMealAmt:s('mgrMealAmt'),
       // Labor (Controls Billable Sales group — the right source)
-      discPct:a('discPct'),tpph:a('tpph'),laborPct:a('laborPct'),
+      discPct:a('discPct',true),tpph:a('tpph'),laborPct:a('laborPct'),
       actVsNeed:a('actVsNeed'),otHrs:s('otHrs'),actHrs:s('actHrs'),
-      // Market averages
-      okTRedAPct:mktAvg(okLocs,ctrlEff,'tRedAPct'),flTRedAPct:mktAvg(flLocs,ctrlEff,'tRedAPct'),
-      okTRedBPct:mktAvg(okLocs,ctrlEff,'tRedBPct'),flTRedBPct:mktAvg(flLocs,ctrlEff,'tRedBPct'),
-      okPromoPct:mktAvg(okLocs,ctrlEff,'promoPct'),flPromoPct:mktAvg(flLocs,ctrlEff,'promoPct'),
-      okCashOSPct:mktAvg(okLocs,ctrlEff,'cashOSPct'),flCashOSPct:mktAvg(flLocs,ctrlEff,'cashOSPct'),
+      // Market averages (anyMode=true — same signed/zero-legitimate fields as above)
+      okTRedAPct:mktAvg(okLocs,ctrlEff,'tRedAPct',undefined,true),flTRedAPct:mktAvg(flLocs,ctrlEff,'tRedAPct',undefined,true),
+      okTRedBPct:mktAvg(okLocs,ctrlEff,'tRedBPct',undefined,true),flTRedBPct:mktAvg(flLocs,ctrlEff,'tRedBPct',undefined,true),
+      okPromoPct:mktAvg(okLocs,ctrlEff,'promoPct',undefined,true),flPromoPct:mktAvg(flLocs,ctrlEff,'promoPct',undefined,true),
+      okCashOSPct:mktAvg(okLocs,ctrlEff,'cashOSPct',undefined,true),flCashOSPct:mktAvg(flLocs,ctrlEff,'cashOSPct',undefined,true),
       isStale:ctrlSt,staleLabel:ctrlStaleLbl,
     };
   },[ctrlEffective,allLocs,okLocs,flLocs]);
@@ -7606,7 +7615,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         fmt:v=>Math.round(v)+'s',higherBetter:false,label:'OEPE W/O Parked',unit:'s'},
       labor:{getVal:loc=>avgOf((ctrlEffective.rows||[]).filter(r=>r.loc===String(loc)),'laborPct') ?? avgOf(labInRange.filter(r=>r.loc===String(loc)),'laborPct'),
         fmt:v=>((v||0)*100).toFixed(1)+'%',higherBetter:false,label:'Labor %',unit:'%'},
-      tred:{getVal:loc=>avgOf((ctrlEffective.rows||[]).filter(r=>r.loc===String(loc)),'tRedAPct') ?? avgOf(ctrlInRange.filter(r=>r.loc===String(loc)),'tRedAPct'),
+      tred:{getVal:loc=>avgOf((ctrlEffective.rows||[]).filter(r=>r.loc===String(loc)),'tRedAPct',true) ?? avgOf(ctrlInRange.filter(r=>r.loc===String(loc)),'tRedAPct',true),
         fmt:v=>((v||0)*100).toFixed(2)+'%',higherBetter:false,label:'T-Red After %',unit:'%'},
     };
     const m=META[lbMetric]||META.sales;
