@@ -242,14 +242,100 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         <tr><td>Combined (Fixed+Floor, % of Scheduled)</td><td style="text-align:right;font-weight:700;color:${cmbCol}">${fmtV(s.combinedPct, '%')}</td><td style="text-align:right;color:#666">cap ${fmtV(s.combinedMax, '%')}</td></tr>
       </table>`;
   };
+  // ── Print view (Notes 53 redesign) ────────────────────────────────────────────
+  // Old print = the flat briefLines() bullet list + the schedule band only. Owner: "I
+  // propose printing the dashboard screen... add the rollup in a clean well formatted
+  // way... list patch store details expanded in each area as well." Rebuilt as one
+  // section PER ENABLED PANEL, each with the same key metrics shown on screen (light,
+  // print-safe colors) PLUS — for multi-store scopes — that panel's own per-store
+  // drilldown table, reusing drilldownRows() so print can never drift from what the
+  // screen's drilldown shows. page-break-inside:avoid keeps a section's table from
+  // splitting mid-store-list across a page boundary.
+  const printBadge = (actual, target, lowerBetter) => {
+    if (actual == null || target == null) return '#666';
+    const good = lowerBetter ? actual <= target : actual >= target;
+    return good ? '#0a7d3c' : '#c0392b';
+  };
+  const printRow = (label, actual, target, fmt, lowerBetter) =>
+    `<tr><td>${label}</td><td style="text-align:right;font-weight:700;color:${printBadge(actual, target, lowerBetter)}">${fmtV(actual, fmt)}</td><td style="text-align:right;color:#666">${target != null ? 'tgt ' + fmtV(target, fmt) : ''}</td></tr>`;
+  const printDrilldownTable = (panelKey) => {
+    if (locs.length <= 1) return '';
+    const rows = drilldownRows(panelKey);
+    if (!rows.length) return '';
+    const colLabels = rows[0].cols.map(c => c[0]);
+    return `<div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-top:6px 0 2px">Per-store</div>
+      <table style="width:100%;border-collapse:collapse;font-size:9.5px">
+        <thead><tr><th style="text-align:left;color:#666;font-size:8px;text-transform:uppercase;padding:2px 4px;border-bottom:1px solid #ccc">Store</th>${colLabels.map(l => `<th style="text-align:right;color:#666;font-size:8px;text-transform:uppercase;padding:2px 4px;border-bottom:1px solid #ccc">${l}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r => `<tr><td style="padding:2px 4px;border-top:.5px solid #eee">${r.name}</td>${r.cols.map(c => `<td style="text-align:right;padding:2px 4px;border-top:.5px solid #eee">${c[1]}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>`;
+  };
+  const printSection = (title, icon, rowsHtml, panelKey) => `
+    <div style="page-break-inside:avoid;margin-bottom:16px">
+      <h2 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;color:#666">${icon} ${title}</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">${rowsHtml}</table>
+      ${printDrilldownTable(panelKey)}
+    </div>`;
   const printOnePager = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    const lines = briefLines().map(l => `<li>${esc(l)}</li>`).join('');
-    const aiHtml = ai ? `<h2>Analysis</h2><p>${esc(ai).replace(/\n/g, '<br>')}</p>` : '';
+    const d = data;
+    const sections = [];
+    if (showP('sales')) {
+      let rows = printRow('Product Sales', d.byKey.sales?.actual, null, '$')
+        + `<tr><td>Sales vs LY (Trading Day)</td><td style="text-align:right;font-weight:700;color:${(d.salesVsLY?.pct || 0) >= 0 ? '#0a7d3c' : '#c0392b'}">${pct(d.salesVsLY?.pct)}</td><td></td></tr>`
+        + `<tr><td>Guest Counts vs LY (Trading Day)</td><td style="text-align:right;font-weight:700;color:${(d.rv.gcVsLY || 0) >= 0 ? '#0a7d3c' : '#c0392b'}">${pct(d.rv.gcVsLY)}</td><td></td></tr>`;
+      if (d.rv.digitalAppPct != null) rows += printRow('Digital App % of Sales', d.rv.digitalAppPct, d.rv.digitalAppPctTarget, '%', false);
+      if (d.projSales) rows += `<tr><td>Pace to projection</td><td style="text-align:right;font-weight:700">${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}</td><td></td></tr>`;
+      if (lyWindowEvents.length) rows += `<tr><td colspan="3" style="color:#b45309;font-size:9.5px;padding-top:4px">⚠ LY window (${lyWindow.s} → ${lyWindow.e}) included: ${esc(lyEventCaveat())} — vs-LY comparisons above may be skewed</td></tr>`;
+      sections.push(printSection('Sales / GC', '💵', rows, 'sales'));
+    }
+    if (showP('fob')) {
+      let rows = printRow('FOB %', d.byKey.fobPct?.actual, d.byKey.fobPct?.target, '%', true);
+      if (d.lyFobPct != null) rows += `<tr><td>vs LY (Calendar)</td><td style="text-align:right;font-weight:700;color:${d.fobVsLyPp == null ? '#666' : (d.fobVsLyPp <= 0 ? '#0a7d3c' : '#c0392b')}">${d.fobVsLyPp == null ? '—' : (d.fobVsLyPp <= 0 ? '' : '+') + (d.fobVsLyPp * 100).toFixed(2) + 'pp'}</td><td style="text-align:right;color:#666">LY ${fmtV(d.lyFobPct, '%')}</td></tr>`;
+      rows += `<tr><td colspan="3" style="font-size:9.5px;color:#888">Σ$ ${fmtV(d.fob$, '$')} ÷ Σ prod-sales ${fmtV(d.fobProd, '$')} (dollar-weighted)</td></tr>`;
+      if (countSummary && countSummary.n) rows += `<tr><td>Count complete (Food+Cond)</td><td style="text-align:right;font-weight:700">${countSummary.nDone}/${countSummary.n}</td><td style="text-align:right;color:#666">avg ${fmtV(countSummary.avgPct, '%')}</td></tr>`;
+      sections.push(printSection('FOB / Food Cost', '🥗', rows, 'fob'));
+    }
+    if (showP('schedule') && d.sched) {
+      sections.push(`<div style="page-break-inside:avoid;margin-bottom:16px">${scheduleBandHtml()}${printDrilldownTable('schedule')}</div>`);
+    }
+    if (showP('labor')) {
+      const rows = printRow('Labor %', d.byKey.laborPct?.actual, d.byKey.laborPct?.target, '%', true)
+        + printRow('TPPH', d.byKey.tpph?.actual, d.byKey.tpph?.target, 'n', false);
+      sections.push(printSection('Labor', '👥', rows, 'labor'));
+    }
+    if (showP('service')) {
+      const rows = printRow('OEPE', d.byKey.oepe?.actual, d.byKey.oepe?.target, 's', true)
+        + printRow('R2P', d.byKey.r2p?.actual, d.byKey.r2p?.target, 's', true)
+        + printRow('KVS Time / GC', d.rv.kvsPerGc, d.rv.kvsTimeTarget, 's', true);
+      sections.push(printSection('Service', '🚗', rows, 'service'));
+    }
+    if (showP('controls')) {
+      let rows = printRow('Cash Over/Short %', d.controls.cashOS, null, '%', true)
+        + printRow('T-Reds After %', d.controls.tRedA, null, '%', true)
+        + printRow('Discount %', d.controls.disc, null, '%', true);
+      const co = d.controlsOut;
+      if (co) {
+        const worst = (key, label, signed) => { const o = co[key]; if (!o || !o.outliers || !o.outliers.length) return null; return `${label} ` + o.outliers.map(p => `${sNameC(p.loc) || p.loc} ${p.date.slice(5)} ${signed ? pct(p.val) : fmtV(p.val, '%')}`).join(', '); };
+        const parts = [worst('cashOSPct', 'Cash O/S:', true), worst('tRedAPct', 'T-Reds After:', false), worst('discPct', 'Discount:', false)].filter(Boolean);
+        if (parts.length) rows += `<tr><td colspan="3" style="font-size:9.5px;color:#b45309;padding-top:4px">Outliers — ${esc(parts.join(' | '))}</td></tr>`;
+      }
+      sections.push(printSection('Controls', '🎛', rows, 'controls'));
+    }
+    if (showP('voice')) {
+      let rows = printRow('OSAT 5★', d.rv.osat, d.rv.osatTarget, '%', false)
+        + printRow('OSAT B2B (1★)', d.rv.osatB2B, d.rv.osatB2BTarget, '%', true);
+      if (d.rv.smgMonth) rows += `<tr><td colspan="3" style="font-size:9.5px;color:#888">SMG month ${d.rv.smgMonth} · n-weighted</td></tr>`;
+      sections.push(printSection('Guest Voice', '💬', rows, 'voice'));
+    }
+    const upcomingHtml = upcoming.length
+      ? `<div style="page-break-inside:avoid;margin-bottom:16px"><h2 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;color:#666">📅 Upcoming Impacts (21 days)</h2>
+        <ul style="margin:0;padding-left:16px;font-size:10.5px">${upcoming.map(e => { const et = EVENT_TYPES[e.type] || EVENT_TYPES.other; return `<li>${e.dk.slice(5)} — ${esc(e.label || et.label)}</li>`; }).join('')}</ul></div>`
+      : '';
+    const aiHtml = ai ? `<div style="page-break-inside:avoid"><h2 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;color:#666">🧠 Analysis</h2><p style="font-size:11px;line-height:1.5">${esc(ai).replace(/\n/g, '<br>')}</p></div>` : '';
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Above-Store One-Pager — ${esc(scopeLabel)}</title>
-      <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;max-width:720px}h1{font-size:17px;margin:0 0 2px}h2{font-size:12px;text-transform:uppercase;color:#666;margin:16px 0 4px}.sub{color:#666;font-size:11px;margin-bottom:10px}ul{margin:0;padding-left:18px}li{margin:3px 0}table td{padding:3px 6px;border-top:1px solid #ddd}@media print{body{margin:0}}</style></head>
+      <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;max-width:760px}h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}table td,table th{padding:3px 6px}table td{border-top:.5px solid #ddd}@media print{body{margin:12px}}</style></head>
       <body><h1>Above-Store One-Pager — ${esc(scopeLabel)}</h1><div class="sub">${esc(range.label)} (${range.s} → ${range.e}) · printed ${new Date().toLocaleDateString()}</div>
-      <h2>Rollup</h2><ul>${lines}</ul>${scheduleBandHtml()}${aiHtml}</body></html>`;
+      ${sections.join('')}${upcomingHtml}${aiHtml}</body></html>`;
     const w = window.open('', '_blank'); if (!w) { alert('Allow pop-ups to print.'); return; }
     w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
