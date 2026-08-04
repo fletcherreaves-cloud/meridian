@@ -2180,25 +2180,23 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
       : '';
     const map={};
     augStores.forEach(s=>{ const k=keyOf(s); if(!k)return; (map[k]=map[k]||[]).push(s); });
-    const a=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&v>0);return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
-    const az=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
     const mean=arr=>{const v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
     const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
     return Object.entries(map).map(([name,members])=>{
       const locs=new Set(members.map(mm=>String(mm.loc)));
-      const inDR=r=>locs.has(String(r.loc))&&r.date>=DR.s&&r.date<=DR.e;
-      const cR=(ds.ctrlRows||[]).filter(inDR);
-      const lR=(ds.laborRows||[]).filter(r=>inDR(r)&&r.sales>0);
-      const oR=(ds.opsRows||[]).filter(inDR);
-      const curGc=(ds.laborRows||[]).filter(r=>inDR(r)&&r.gc>0).reduce((x,r)=>x+r.gc,0);
+      // Aggregate from each member's ALREADY-computed p.* (auto-first via metricAvg above,
+      // same as the ungrouped per-store view) — was re-deriving straight from raw ds.ctrlRows/
+      // ds.laborRows/ds.opsRows here, silently reverting every column to manual-only data the
+      // moment the location filter switched to Patch/Operator/State grouping (2026-08-04).
+      const curGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=DR.s&&r.date<=DR.e&&r.gc>0).reduce((x,r)=>x+r.gc,0);
       const lyGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=lyS&&r.date<=lyE&&r.gc>0).reduce((x,r)=>x+r.gc,0);
       return {
         loc:'__grp__'+name, name, city:members.length+' store'+(members.length>1?'s':''), isGroup:true, n:members.length,
         opsScore:mean(members.map(mm=>mm.opsScore))||0, ctrlScore:mean(members.map(mm=>mm.ctrlScore))||0,
         _gc: lyGc>10?(curGc-lyGc)/lyGc:null,
-        p:{ laborPct:a(cR,'laborPct')||a(lR,'laborPct'), tpph:a(cR,'tpph')||a(lR,'tpph'), oepe:a(oR,'oepe'), kvst:a(oR,'kvst'),
-            park:a(oR,'park'), otHrs:az(lR,'otHrs'), cashOSPct:az(cR,'cashOSPct'), tRedAPct:az(cR,'tRedAPct'), discPct:az(cR,'discPct'),
-            r2p:a(oR,'r2p'), sales:lR.reduce((x,r)=>x+(r.sales||0),0), t2w:mean(members.map(mm=>mm.p.t2w)) },
+        p:{ laborPct:mean(members.map(mm=>mm.p.laborPct)), tpph:mean(members.map(mm=>mm.p.tpph)), oepe:mean(members.map(mm=>mm.p.oepe)), kvst:mean(members.map(mm=>mm.p.kvst)),
+            park:mean(members.map(mm=>mm.p.park)), otHrs:mean(members.map(mm=>mm.p.otHrs)), cashOSPct:mean(members.map(mm=>mm.p.cashOSPct)), tRedAPct:mean(members.map(mm=>mm.p.tRedAPct)), discPct:mean(members.map(mm=>mm.p.discPct)),
+            r2p:mean(members.map(mm=>mm.p.r2p)), sales:members.reduce((x,mm)=>x+(mm.p.sales||0),0), t2w:mean(members.map(mm=>mm.p.t2w)) },
       };
     });
   },[groupDim,augStores,ds,DR.s,DR.e]);

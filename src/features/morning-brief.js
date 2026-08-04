@@ -3,6 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES } from '../constants.js';
 import { dKey } from '../utils/date.js';
 import { supabase } from '../lib/supabase.js';
+import { metricDaily } from '../engine/metric-source.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -327,15 +328,19 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
                 (DEFAULT_TARGETS[locStr]?.tJuneLaborPct>0 ? DEFAULT_TARGETS[locStr].tJuneLaborPct : null))),
     actVsNeed:  labor?.actVsNeed != null ? labor.actVsNeed : (ctrl?.actVsNeed ?? darActVsNeed),
     salesVsExp, gcVsExp, vsLYSales, vsLYGC,
-    // Controls fields — ctrl upload first, then email pipeline (glimpse > cash) as fallback
-    drawerOpens:  ctrl?.drawerOpens||null,
+    // Controls fields — ctrl upload first, then email pipeline (glimpse > cash) as fallback.
+    // T-Reds/drawerOpens route through metric-source.js (2026-08-04) — its registry already
+    // has an opsCashRows fallback (added for #37/analytics.js's ctrlAuto), but Morning Brief
+    // was still reading raw ctrl?.x only, so today's brief went blank on these whenever
+    // Controls wasn't uploaded even though the auto stream now covers them.
+    drawerOpens:  metricDaily(ds, loc, targetDate, 'drawerOpens'),
     posOverAmt:   ctrl?.posOverAmt ?? (glimpse?.posOverAmt ?? (cash?.posOverAmt ?? null)),
     manualRefAmt: ctrl?.manualRefAmt||null,
     refundAmt:    ctrl?.refundAmt != null ? ctrl.refundAmt :
                   ((ctrl?.cashRefAmt||0)+(ctrl?.cashlessRefAmt||0)||null) ??
                   (cash?.cashRefAmt!=null||cash?.cashlessRefAmt!=null ? (cash?.cashRefAmt||0)+(cash?.cashlessRefAmt||0) : null),
-    tRedAPct:     ctrl?.tRedAPct||null,
-    tRedBPct:     ctrl?.tRedBPct||null,
+    tRedAPct:     metricDaily(ds, loc, targetDate, 'tRedAPct'),
+    tRedBPct:     metricDaily(ds, loc, targetDate, 'tRedBPct'),
     cashOSAmt:    ctrl?.cashOSAmt ?? (glimpse?.cashOS ?? (cash?.cashOS ?? null)),
     // Service fields — 3 Peaks first, then Daily Glimpse (daily aggregate), then DAR-derived
     oepe: oepe ?? (glimpse?.oepe > 0 ? glimpse.oepe : darOepe),
