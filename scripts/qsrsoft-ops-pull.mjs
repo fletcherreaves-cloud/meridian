@@ -184,33 +184,20 @@ async function viaPlaywright(dates) {
     await page.fill('input[type="password"], input[name="password"]', pw);
     await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
     await page.waitForLoadState('networkidle', { timeout: 30000 });
-    await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', { waitUntil: 'networkidle', timeout: 30000 });
+    console.log('[auth] post-login url:', page.url());
+    // 2026-08-04 fix (v4.804): mirror qsrsoft-dar-pull.mjs's flow EXACTLY — go straight from login to
+    // Daily Activity, no intermediate Operations Report visit. Two prior attempts (v4.802/803) kept the
+    // Operations Report pre-visit and both failed identically ("Failed to fetch" on the trigger fetch)
+    // even after matching DAR's trigger URL exactly — the remaining variable was page/session state left
+    // behind by that extra navigation, which DAR's script never makes. Removing it entirely rather than
+    // guessing at another URL.
+    await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/dailyActivity', { waitUntil: 'networkidle', timeout: 30000 });
     await new Promise(r => setTimeout(r, 4000));
-    // The Operations Report page doesn't always auto-fire an api.reports.myqsrsoft.com request, so the
-    // token listener never sees one. The Daily Activity page reliably does (it's what the working DAR
-    // pull uses) — and it's the SAME X-Auth-Token for every api.reports endpoint, so grab it there.
+    console.log('[auth] daily activity url:', page.url(), '| token captured:', !!token);
     if (!token) {
-      console.log('[auth] no token from Operations Report — trying Daily Activity page…');
-      await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/dailyActivity', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 4000));
-    }
-    // 2026-08-04 fix: neither report page reliably auto-fires a request anymore (observed: both
-    // navigations complete with zero api.reports.myqsrsoft.com traffic, silently producing "0 rows
-    // upserted" every run since ~Aug 1 despite a valid login). qsrsoft-dar-pull.mjs's Playwright
-    // fallback already has a third step for exactly this — an in-browser fetch() (with the page's
-    // own session cookies) to ACTIVELY trigger the auth flow instead of waiting for a passive one.
-    // Ported here verbatim: any one real endpoint URL works as the trigger, the request listener
-    // above captures the X-Auth-Token from it the same way it would from an organic page request.
-    if (!token) {
-      console.log('[auth] no token from either report page — attempting in-browser fetch to trigger auth…');
-      // 2026-08-04: the first attempt used ENDPOINTS[0]'s /reporting/v2/... URL and got a browser
-      // "Failed to fetch" (a CORS-block symptom, not an HTTP error — the browser never lets JS see
-      // a response). qsrsoft-dar-pull.mjs's proven-working trigger hits a DIFFERENT API path
-      // (/v1/reports/shift/daily-activity-raw) — same api.reports.myqsrsoft.com host, but /v1/ vs
-      // /reporting/v2/ apparently have different CORS treatment from this page's origin. Use DAR's
-      // exact working path/params here too; only its RESPONSE is irrelevant — the point is
-      // provoking the app's own fetch interceptor into attaching a valid X-Auth-Token to SOME
-      // successful in-page request, which the listener above then captures.
+      console.log('[auth] no token from Daily Activity page — attempting in-browser fetch to trigger auth…');
+      // Same trigger URL/shape as DAR's proven-working buildUrl() — any one real endpoint works, only
+      // the request firing (and the listener above capturing its X-Auth-Token) matters, not the response.
       const triggerParams = new URLSearchParams({
         timeSegment: 'openClose', segmentBy: 'hour', segmentNames: 'open-close', segmentsSelected: 'open-close',
         nsd: 'd', nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
@@ -224,7 +211,7 @@ async function viaPlaywright(dates) {
       console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
       await new Promise(r => setTimeout(r, 2000));
     }
-    if (!token) { console.error('[auth] ✗ could not capture token from Operations Report, Daily Activity, or an in-browser fetch trigger'); return 0; }
+    if (!token) { console.error('[auth] ✗ could not capture token from Daily Activity page or an in-browser fetch trigger'); return 0; }
     console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s) × ${ENDPOINTS.length} endpoints…`);
     return await runAll(token, dates, page);
   } finally { await browser.close(); }
