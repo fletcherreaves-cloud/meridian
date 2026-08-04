@@ -250,7 +250,7 @@ function SupervisorAssignmentsEditor({ S, onUpdate }) {
         btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
 }
 
-function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStoreNotes}) {
+function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStoreNotes, onOpenAdmin}) {
   const S=settings;
   const [activeSection, setActiveSection] = useState('identity');
   const set=(path,val)=>{const keys=path.split('.');const next=JSON.parse(JSON.stringify(S));let cur=next;keys.slice(0,-1).forEach(k=>{if(!cur[k])cur[k]={};cur=cur[k];});cur[keys[keys.length-1]]=val;onUpdate(next);};
@@ -270,6 +270,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
               ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['supervisors','🗂 Patches'],
               ['ai','🤖 AI'],['store-notes','📍 Store Notes'],
+              ...(onOpenAdmin?[['users','👥 Users']]:[]),
               ...(userRole==='developer'?[['dev','🛠 Dev']]:[]),
               ...(userRole==='admin'||userRole==='developer'?[['data','🗄 Data']]:[])]
           .map(([k,l])=>div({key:k,
@@ -282,6 +283,14 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
         ),
         // ── Section content
         div({style:{flex:1,overflowY:'auto',padding:'14px 18px'}},
+
+        activeSection==='users'&&onOpenAdmin&&div({className:'set-sec'},
+          div({className:'set-sec-t'},'👥 Users'),
+          div({className:'set-note'},'Manage user roles, accessible stores, and org permissions.'),
+          div({className:'set-row'},
+            btn({className:'sbtn on',style:{fontSize:'11px',padding:'6px 14px'},onClick:onOpenAdmin},'Open User Management →')
+          )
+        ),
 
         activeSection==='ai'&&div({className:'set-sec'},
           div({className:'set-sec-t'},'🤖 AI & Integrations'),
