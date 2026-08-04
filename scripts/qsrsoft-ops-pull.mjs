@@ -194,7 +194,24 @@ async function viaPlaywright(dates) {
       await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/dailyActivity', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
       await new Promise(r => setTimeout(r, 4000));
     }
-    if (!token) { console.error('[auth] ✗ could not capture token from Operations Report or Daily Activity'); return 0; }
+    // 2026-08-04 fix: neither report page reliably auto-fires a request anymore (observed: both
+    // navigations complete with zero api.reports.myqsrsoft.com traffic, silently producing "0 rows
+    // upserted" every run since ~Aug 1 despite a valid login). qsrsoft-dar-pull.mjs's Playwright
+    // fallback already has a third step for exactly this — an in-browser fetch() (with the page's
+    // own session cookies) to ACTIVELY trigger the auth flow instead of waiting for a passive one.
+    // Ported here verbatim: any one real endpoint URL works as the trigger, the request listener
+    // above captures the X-Auth-Token from it the same way it would from an organic page request.
+    if (!token) {
+      console.log('[auth] no token from either report page — attempting in-browser fetch to trigger auth…');
+      const triggerUrl = ENDPOINTS[0].url(dates[0]);
+      const testResult = await page.evaluate(async ({ url }) => {
+        try { const r = await fetch(url, { credentials: 'include' }); return { status: r.status, ok: r.ok }; }
+        catch (e) { return { error: e.message }; }
+      }, { url: triggerUrl });
+      console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    if (!token) { console.error('[auth] ✗ could not capture token from Operations Report, Daily Activity, or an in-browser fetch trigger'); return 0; }
     console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s) × ${ENDPOINTS.length} endpoints…`);
     return await runAll(token, dates, page);
   } finally { await browser.close(); }
