@@ -253,8 +253,15 @@ async function viaPlaywright(dates, onlyKeys) {
 const ANOMALY_ABS_FLOOR = 300;   // ignore anything under $300 regardless of ratio — normal daily noise
 const ANOMALY_RATIO     = 4;     // flag when |today| > 4x the store's own trailing-day average magnitude
 async function checkCashAnomalies() {
-  const cutoff = fmtDate(addDay(new Date(), -5));
-  const { data, error } = await supabase.from('qsr_cash_sheet').select('loc,dt,metrics').gte('dt', cutoff).order('dt', { ascending: true });
+  // 2026-08-04 live-verified fix: the FIRST version of this check compared each store's
+  // latest row including TODAY — an in-progress day's cash sheet is inherently incomplete
+  // (the report only finalizes overnight, same fact behind every "as of last complete day"
+  // note elsewhere in this codebase), so it looked wildly anomalous vs closed days for
+  // 23 of 27 stores simultaneously on first run — a systematic false-positive, not real
+  // anomalies. Only ever evaluate the most recent COMPLETE (yesterday-or-earlier) day.
+  const todayStr = fmtDate(new Date());
+  const cutoff = fmtDate(addDay(new Date(), -6));
+  const { data, error } = await supabase.from('qsr_cash_sheet').select('loc,dt,metrics').gte('dt', cutoff).lt('dt', todayStr).order('dt', { ascending: true });
   if (error || !data?.length) return [];
   const byLoc = {};
   for (const r of data) (byLoc[r.loc] ||= []).push(r);
