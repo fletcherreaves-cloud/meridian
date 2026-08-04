@@ -105,6 +105,39 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
+// Supplements ds.laborRows (the manual Labor Report) with ds.qsrActSummaryRows (the DAR
+// auto-pull, ~60 days rolling) for the recent window, per the CLAUDE.md standing rule
+// ("Auto/emailed-first, freshest-wins... Manual uploads are last-resort fill only... must
+// never override auto/emailed data"). Auto WINS for any overlapping day here — verified
+// 2026-08-04 against 7 real overlap days (store 3708, 7/15-7/21): DAR matched manual exactly
+// on 4/7 days and within ~1.4% on the rest, zero corrupted/null values. (An earlier attempt
+// using ds.schedRows — LifeLenz's own auto sales sync — was reverted: it had a genuine
+// reliability problem, showing $80.57 and null on 2 of the same 7 days against a real
+// $10,644.71/$9,708.44 — a silent-corruption risk a null-check wouldn't even catch. DAR
+// doesn't share that problem.) Blast radius is naturally bounded to the recent ~60-day
+// window DAR covers — the deep multi-year history "MAPE Full" backtests use is untouched.
+// Closes the gap where ds.laborIdx (the forecast/backtest/DI-Calibration sales history
+// index) was built from laborRows ALONE with zero auto-pull fallback — DI Calibration's
+// trailing 6W/4W/2W/1W MAPE windows went blank whenever the manual Labor Report lapsed
+// (it had, 14 days stale) even though the DAR had real sales data through yesterday.
+function supplementLaborWithSched(laborRows, qsrActSummaryRows) {
+  if (!qsrActSummaryRows?.length) return laborRows;
+  const key = r => String(r.loc) + '|' + (r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10));
+  const autoByKey = new Map(qsrActSummaryRows.filter(r => r.sales > 0).map(r => [key(r), r]));
+  if (!autoByKey.size) return laborRows;
+  const manualByKey = new Set((laborRows || []).map(key));
+  let changed = false;
+  const kept = (laborRows || []).map(r => {
+    const auto = autoByKey.get(key(r));
+    if (!auto || auto.sales === r.sales) return r;
+    changed = true;
+    return { ...r, sales: auto.sales };   // auto wins the SALES figure for this day; other manual fields (laborPct/tpph/otHrs) untouched
+  });
+  const fillDays = [...autoByKey.entries()].filter(([k]) => !manualByKey.has(k)).map(([, r]) => r);
+  if (fillDays.length) changed = true;
+  return changed ? [...kept, ...fillDays] : laborRows;
+}
+
 // ── Planning hub ─────────────────────────────────────────────────────────────
 // Notes 24 IA merge: one nav entry ("Planning") tabbing across the five
 // forward-looking, same-mental-model panels (Targets / Monthly / Pace / Yearly /
@@ -1585,22 +1618,27 @@ function App() {
     setSupabaseClient(supabase);
     // Merge labor rows from Supabase so DI calibration history persists across cache clears and devices
     loadLaborRows().then(sbRows=>{
-      if(!sbRows?.length) return;
       const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
       setDs(prev=>{
-        const existing=new Set((prev?.laborRows||[]).map(r=>r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10))));
-        const fresh=sbRows.filter(r=>{
+        if(!prev) return prev;
+        const existing=new Set((prev.laborRows||[]).map(r=>r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10))));
+        const fresh=(sbRows||[]).filter(r=>{
           const k=r.loc+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
           return !existing.has(k);
         });
-        if(!fresh.length) return prev;
-        const merged=[...(prev?.laborRows||[]),...fresh].sort((a,b)=>{
+        let merged=fresh.length?[...(prev.laborRows||[]),...fresh].sort((a,b)=>{
           const da=a.date instanceof Date?a.date:new Date(a.date+'T00:00:00');
           const db=b.date instanceof Date?b.date:new Date(b.date+'T00:00:00');
           return da-db;
-        });
-        console.log(`[labor_rows] merged ${fresh.length} rows from Supabase`);
-        return {...prev, laborRows:merged, laborIdx:_mkIdx(merged), laborByLoc:bLocIdx(merged), storeIds:[...new Set(merged.map(r=>r.loc))].sort()};
+        }):prev.laborRows;
+        if(fresh.length) console.log(`[labor_rows] merged ${fresh.length} rows from Supabase`);
+        // Auto (DAR) wins the sales figure for the recent ~60-day overlap window; see
+        // supplementLaborWithSched's own comment for the rationale + verification. Runs every
+        // time this effect fires (idempotent — a day already matching auto is a no-op) so it
+        // applies whichever of loadLaborRows/the DAR load resolves last, regardless of order.
+        const supplemented=supplementLaborWithSched(merged,prev.qsrActSummaryRows);
+        if(supplemented===merged&&!fresh.length) return prev;
+        return {...prev, laborRows:supplemented, laborIdx:_mkIdx(supplemented), laborByLoc:bLocIdx(supplemented), storeIds:[...new Set(supplemented.map(r=>r.loc))].sort()};
       });
     }).catch(()=>{});
     syncReviewsFromSupabase(supabase).catch(()=>{});
@@ -1987,7 +2025,18 @@ function App() {
       try{
         const qsrActSummaryRows=await loadQsrActSummary(60);
         if(qsrActSummaryRows.length>0){
-          setDs(prev=>{if(!prev)return prev;return{...prev,qsrActSummaryRows};});
+          const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
+          setDs(prev=>{
+            if(!prev)return prev;
+            // Same DAR→laborRows sales supplement as the loadLaborRows effect, run here too
+            // since this can resolve AFTER labor_rows — whichever finishes last should still
+            // pick up both sources for ds.laborIdx (the DI Calibration / forecast engine's
+            // sales history index). See supplementLaborWithSched's comment for the rationale.
+            const supplemented=supplementLaborWithSched(prev.laborRows,qsrActSummaryRows);
+            const laborPatch=supplemented===prev.laborRows?{}:
+              {laborRows:supplemented, laborIdx:_mkIdx(supplemented), laborByLoc:bLocIdx(supplemented), storeIds:[...new Set(supplemented.map(r=>r.loc))].sort()};
+            return{...prev,qsrActSummaryRows,...laborPatch};
+          });
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
         }
       }catch(e){console.warn('[Meridian] QSRSoft act summary load failed:',e);}

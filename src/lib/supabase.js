@@ -463,7 +463,12 @@ export async function loadLifeLenzSchedule({ daysBack = 455, daysFwd = 30 } = {}
     .range(lo, hi));
   if (!data || !data.length) return [];
   return data.map(r => ({
-    loc:           r.loc,
+    // Strip zero-padding ("0003708" → "3708") — same normalization loadQsrActSummary/
+    // _loadOpsTable already apply. Without it, schedRows carries the padded NSN format while
+    // laborRows/allLocs/STORE_NAMES use unpadded, so any loc-keyed merge or allLocs.includes()
+    // check silently drops every schedRows row (2026-08-04, found while researching the DI
+    // Calibration trailing-MAPE gap — same bug class as v4.809).
+    loc:           String(parseInt(r.loc, 10)),
     date:          new Date(r.date + 'T12:00:00'),
     fcstSales:     r.fcst_sales,
     adjFcstSales:  r.adj_fcst_sales,
