@@ -298,6 +298,24 @@ async function checkCashAnomalies() {
     process.exit(0);
   }
 
+  // Live Pulse Phase 1 (2026-08-04, Notes 54 P1) — hourly capture of TODAY ONLY across the
+  // 3 endpoints confirmed to carry live, still-accumulating same-day data (cash, labor,
+  // salesMix — service-stats confirmed NOT live, has no row until finalized; see
+  // memory/finding-live-intraday-operations-report-data.md). No UI reads this yet — this is
+  // capture-only, observed for a few days before any Live Pulse panel gets built on top.
+  if (process.env.QSRSOFT_PULSE_PULL === '1') {
+    const today = fmtDate(new Date());
+    let total = 0;
+    const token = process.env.QSRSOFT_TOKEN;
+    const keys = ['cash', 'labor', 'salesMix'];
+    if (token) {
+      try { total = await runAll(token, [today], null, keys); }
+      catch (e) { if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright([today], keys); } else throw e; }
+    } else { total = await viaPlaywright([today], keys); }
+    console.log(`[pulse] done — ${total} rows upserted for ${today} across ${keys.join(', ')}.`);
+    process.exit(0);
+  }
+
   const dates = await getDates();
   console.log(`[ops] pulling ${dates.length} date(s): ${dates[0]}…${dates[dates.length - 1]}`);
   let total = 0;

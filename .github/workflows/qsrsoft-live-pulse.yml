@@ -1,0 +1,55 @@
+name: QSRSoft Live Pulse Capture
+
+on:
+  schedule:
+    # Hourly during business hours, US Central-anchored (GitHub cron is fixed UTC, no DST).
+    # Notes 54 P1 (owner ask, 2026-08-04): capture TODAY's cash/labor/sales-mix/FOB every
+    # hour so a future "Live Pulse" panel can show same-day trend — something QSRSoft's own
+    # UI can't show since its date picker blocks selecting today. Capture-only for now, no
+    # UI reads this yet; see memory/finding-live-intraday-operations-report-data.md.
+    - cron: '0 11-23 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Capture today's cash/labor/salesMix (confirmed live)
+        run: node scripts/qsrsoft-ops-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_PULSE_PULL:        '1'
+
+      - name: Capture today's FOB (observing whether it updates intraday)
+        run: node scripts/qsrsoft-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_PULSE_TODAY_ONLY:   '1'
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-pulse-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

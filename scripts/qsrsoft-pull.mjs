@@ -206,7 +206,13 @@ async function getLatestDate() {
 // Recent window always re-pulled (inventory counts can update any prior day's figures).
 // Older gaps filled on first run via DAYS_BACK.
 async function datesToFetch() {
-  const today      = new Date();
+  const today = new Date();
+  // Live-pulse mode (2026-08-04, Notes 54 P1): the normal 30-day DAYS_RECENT re-pull window
+  // is far too heavy to run hourly — this override captures ONLY today, for observing FOB's
+  // intraday behavior (does prod_sales_amt/etc. actually update through the day like cash/
+  // labor/sales-mix do, or does it only refresh once — see memory/
+  // finding-live-intraday-operations-report-data.md). Normal scheduled runs are unaffected.
+  if (process.env.QSRSOFT_PULSE_TODAY_ONLY === '1') return [fmtDate(today)];
   const latestDate = await getLatestDate();
 
   let daysBack;
