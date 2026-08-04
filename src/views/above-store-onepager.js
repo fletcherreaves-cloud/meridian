@@ -189,7 +189,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       L.push(`FOB %: ${fmtV(d.byKey.fobPct?.actual, '%')} (target ${fmtV(d.byKey.fobPct?.target, '%')})${d.lyFobPct != null ? `; vs LY ${fmtV(d.lyFobPct, '%')} (${d.fobVsLyPp <= 0 ? '' : '+'}${(d.fobVsLyPp * 100).toFixed(2)}pp, ${d.fobVsLyPp <= 0 ? 'better' : 'worse'})` : ''}`);
       if (countSummary && countSummary.n) L.push(`EOM count (Food+Cond, ${eomPeriod}): ${countSummary.nDone}/${countSummary.n} stores complete, avg ${fmtV(countSummary.avgPct, '%')}${countSummary.behind.length ? '; behind: ' + countSummary.behind.map(b => (sNameC(b.loc) || b.loc) + ' ' + fmtV(b.pct, '%')).join(', ') : ''}`);
     }
-    if (showP('schedule') && d.sched) L.push(`Scheduling: ${fmtHrs(d.sched.schedHrs)} sched vs ${fmtHrs(d.sched.fcstHrs)} fcst (${d.sched.hrsDiff >= 0 ? '+' : ''}${fmtHrs(d.sched.hrsDiff)}); Schd TPMH ${fmtV(d.sched.tpmh, 'n')}; Fixed ${fmtV(d.sched.fixedPct, '%')} / Floor ${fmtV(d.sched.floorPct, '%')} (combined ${fmtV(d.sched.combinedPct, '%')}, cap ${fmtV(d.sched.combinedMax, '%')})`);
+    if (showP('schedule') && d.sched) L.push(`Scheduling: Scheduled Labor % (Total) ${fmtV(d.sched.laborPctTotal, '%')}; ${fmtHrs(d.sched.schedHrs)} sched vs ${fmtHrs(d.sched.fcstHrs)} fcst (${d.sched.hrsDiff >= 0 ? '+' : ''}${fmtHrs(d.sched.hrsDiff)}); Schd TPMH ${fmtV(d.sched.tpmh, 'n')}; of total scheduled hours — Fixed ${fmtV(d.sched.fixedPct, '%')} / Floor ${fmtV(d.sched.floorPct, '%')} / VLH ${fmtV(d.sched.vlhPct, '%')} (Fixed+Floor combined ${fmtV(d.sched.combinedPct, '%')}, cap ${fmtV(d.sched.combinedMax, '%')})`);
     if (showP('labor')) L.push(`Labor %: ${fmtV(d.byKey.laborPct?.actual, '%')} (target ${fmtV(d.byKey.laborPct?.target, '%')}); TPPH ${fmtV(d.byKey.tpph?.actual, 'n')}`);
     if (showP('service')) L.push(`Service: OEPE ${fmtV(d.byKey.oepe?.actual, 's')} (tgt ${fmtV(d.byKey.oepe?.target, 's')}); R2P ${fmtV(d.byKey.r2p?.actual, 's')}; KVS/GC ${fmtV(d.rv.kvsPerGc, 's')}`);
     if (showP('controls')) {
@@ -226,13 +226,20 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     };
     const diffCol = s.hrsDiff == null ? '#999' : (s.hrsDiff <= 0 ? '#0a7d3c' : '#c0392b');
     const cmbCol = s.combinedPct == null ? '#999' : (s.combinedPct <= s.combinedMax ? '#0a7d3c' : '#c0392b');
+    const totalRow = s.laborPctTotal != null
+      ? `<tr><td style="font-weight:700">Scheduled Labor % (Total)</td><td colspan="2" style="text-align:right;font-weight:800;color:#b45309">${fmtV(s.laborPctTotal, '%')}</td></tr>` : '';
+    const vlhRow = s.vlhPct != null
+      ? `<tr><td>VLH (Variable, % of Scheduled)</td><td style="text-align:right">${fmtHrs(s.vlhHrs)}</td><td style="text-align:right;font-weight:700">${fmtV(s.vlhPct, '%')}</td></tr>` : '';
     return `<h2>Scheduling / VLH band</h2>
+      <div style="font-size:9px;color:#666;margin:0 0 4px">Fixed/Floor/VLH % are each metric's share of TOTAL SCHEDULED HOURS, not of sales.</div>
       <table style="width:100%;border-collapse:collapse;font-size:11px">
+        ${totalRow}
         <tr><td>Scheduled vs Forecast hrs</td><td style="text-align:right">${fmtHrs(s.schedHrs)} / ${fmtHrs(s.fcstHrs)}</td><td style="text-align:right;font-weight:700;color:${diffCol}">${(s.hrsDiff >= 0 ? '+' : '') + fmtHrs(s.hrsDiff)}</td></tr>
         <tr><td>Schd TPMH</td><td colspan="2" style="text-align:right">${fmtV(s.tpmh, 'n')}</td></tr>
-        ${band('Fixed labor %', s.fixedPct, s.segMin, s.segMax)}
-        ${band('Floor labor %', s.floorPct, s.segMin, s.segMax)}
-        <tr><td>Combined (Fixed+Floor)</td><td style="text-align:right;font-weight:700;color:${cmbCol}">${fmtV(s.combinedPct, '%')}</td><td style="text-align:right;color:#666">cap ${fmtV(s.combinedMax, '%')}</td></tr>
+        ${band('Fixed Hrs (% of Scheduled)', s.fixedPct, s.segMin, s.segMax)}
+        ${band('Floor Hrs (% of Scheduled)', s.floorPct, s.segMin, s.segMax)}
+        ${vlhRow}
+        <tr><td>Combined (Fixed+Floor, % of Scheduled)</td><td style="text-align:right;font-weight:700;color:${cmbCol}">${fmtV(s.combinedPct, '%')}</td><td style="text-align:right;color:#666">cap ${fmtV(s.combinedMax, '%')}</td></tr>
       </table>`;
   };
   const printOnePager = () => {
@@ -259,7 +266,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, target != null ? 'tgt ' + fmtV(target, fmt) : ''));
   // A metric measured against a BAND (min–max), not a single target — e.g. Fixed/Floor
   // labor % (owner standard 10–15% each). Green in-band, red out. Shows the band range.
-  const bandRow = (label, v, lo, hi) => div({ key: label, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
+  const bandRow = (label, v, lo, hi, title) => div({ key: label, title, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
     span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
     span({ style: { fontSize: '12px', fontWeight: 700, color: v == null ? 'var(--text3)' : (v >= lo && v <= hi ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(v, '%')),
     span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'band ' + (lo * 100).toFixed(0) + '–' + (hi * 100).toFixed(0) + '%'));
@@ -294,7 +301,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         cols = [['FOB %', fmtV(f.fobPct, '%')], ['vs LY (Cal)', vsLy == null ? '—' : (vsLy <= 0 ? '' : '+') + (vsLy * 100).toFixed(2) + 'pp']];
       } else if (panelKey === 'schedule') {
         const s = buildScheduleActuals(ds, [loc], range);
-        cols = s ? [['Sched/Fcst hrs', fmtHrs(s.schedHrs) + ' / ' + fmtHrs(s.fcstHrs)], ['Fixed %', fmtV(s.fixedPct, '%')], ['Floor %', fmtV(s.floorPct, '%')]] : [['No schedule rows', '—']];
+        cols = s ? [['Sched Labor % (Total)', fmtV(s.laborPctTotal, '%')], ['Sched/Fcst hrs', fmtHrs(s.schedHrs) + ' / ' + fmtHrs(s.fcstHrs)], ['Fixed % of Sched', fmtV(s.fixedPct, '%')], ['Floor % of Sched', fmtV(s.floorPct, '%')], ['VLH % of Sched', fmtV(s.vlhPct, '%')]] : [['No schedule rows', '—']];
       } else if (panelKey === 'labor') {
         cols = [['Labor %', fmtV(metricAvg(ds, loc, range, 'laborPct'), '%')], ['TPPH', fmtV(metricAvg(ds, loc, range, 'tpph'), 'n')]];
       } else if (panelKey === 'service') {
@@ -405,16 +412,32 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         // Scheduling / VLH (LifeLenz) — schedule-quality metrics distinct from actual labor.
         // Reconciled to the Scheduling panel via computeScheduleRollup (ratios of aggregates).
         showP('schedule') && (d.sched ? Section('Scheduling', '🗓', 'schedule',
+          // Scheduled Labor % (Total) — highlighted at TOP (Notes 53): LifeLenz's own
+          // "Labor % Sales" band figure, dollar-weighted scheduled labor cost ÷ forecasted
+          // sales. Distinct basis from Fixed/Floor/VLH below (those are shares of total
+          // SCHEDULED HOURS, not of sales) — kept visually separate so the two never blur.
+          d.sched.laborPctTotal != null ? div({ key: 'lpt', title: 'Scheduled labor cost ÷ forecasted sales for the period (LifeLenz’s own "Labor % Sales")', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 8px', marginBottom: 4, borderRadius: 6, background: 'rgba(245,188,0,.10)', border: '.5px solid rgba(245,188,0,.35)' } },
+            span({ style: { flex: 1, fontSize: '11px', fontWeight: 700, color: 'var(--text)' } }, 'Scheduled Labor % (Total)'),
+            span({ style: { fontSize: '13px', fontWeight: 800, color: '#f5bc00', fontVariantNumeric: 'tabular-nums' } }, fmtV(d.sched.laborPctTotal, '%'))) : null,
           // Scheduled vs Forecast hours + the gap (at/under forecast = green, over = red).
           div({ key: 'sh', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
             span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'Scheduled vs Forecast hrs'),
             span({ style: { fontSize: '10px', color: 'var(--text3)' } }, fmtHrs(d.sched.schedHrs) + ' / ' + fmtHrs(d.sched.fcstHrs)),
             span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.hrsDiff == null ? 'var(--text3)' : (d.sched.hrsDiff <= 0 ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 56, textAlign: 'right' } }, (d.sched.hrsDiff >= 0 ? '+' : '') + fmtHrs(d.sched.hrsDiff))),
           Row('Schd TPMH', d.sched.tpmh, null, 'n'),
-          bandRow('Fixed labor %', d.sched.fixedPct, d.sched.segMin, d.sched.segMax),
-          bandRow('Floor labor %', d.sched.floorPct, d.sched.segMin, d.sched.segMax),
-          div({ key: 'cmb', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
-            span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'Combined (Fixed+Floor)'),
+          // Fixed/Floor/VLH are all shares of TOTAL SCHEDULED HOURS, not of sales — labeled
+          // explicitly (Notes 53: "distinguished clearly... make up xx.xx% of total scheduled
+          // hours") so they're never read as a sales-basis %, matching Scheduled Labor % above.
+          bandRow('Fixed Hrs (% of Scheduled)', d.sched.fixedPct, d.sched.segMin, d.sched.segMax,
+            'Fixed hours make up this share of TOTAL SCHEDULED HOURS — not a % of sales'),
+          bandRow('Floor Hrs (% of Scheduled)', d.sched.floorPct, d.sched.segMin, d.sched.segMax,
+            'Floor hours make up this share of TOTAL SCHEDULED HOURS — not a % of sales'),
+          d.sched.vlhPct != null ? div({ key: 'vlh', title: 'Variable Labor Hours — the remainder of scheduled hours after Fixed + Floor, as a share of TOTAL SCHEDULED HOURS', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
+            span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'VLH (Variable, % of Scheduled)'),
+            span({ style: { fontSize: '10px', color: 'var(--text3)' } }, fmtHrs(d.sched.vlhHrs)),
+            span({ style: { fontSize: '12px', fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(d.sched.vlhPct, '%'))) : null,
+          div({ key: 'cmb', title: 'Fixed + Floor combined, as a share of TOTAL SCHEDULED HOURS', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
+            span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'Combined (Fixed+Floor, % of Scheduled)'),
             span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.combinedPct == null ? 'var(--text3)' : (d.sched.combinedPct <= d.sched.combinedMax ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(d.sched.combinedPct, '%')),
             span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'cap ' + fmtV(d.sched.combinedMax, '%')))
         ) : Section('Scheduling', '🗓', null,

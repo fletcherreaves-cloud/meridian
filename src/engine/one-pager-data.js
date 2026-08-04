@@ -299,11 +299,21 @@ export function buildReviewActuals(ds, locs, range) {
 export function buildScheduleActuals(ds, locs, range) {
   const band = computeScheduleRollup((ds && ds.schedRows) || [], locs, range);
   if (!band) return null;
+  // VLH (Variable Labor Hours) — the third component of scheduled hours alongside Fixed/Floor
+  // (schedHrsOf = schVLH + schFixHrs + schFloor in schedule-summary.js); derived here since
+  // rollup() tracks fixHrs/floorHrs/schedHrs but not VLH separately (Notes 53).
+  const vlhHrs = band.schedHrs - (band.fixHrs || 0) - (band.floorHrs || 0);
   return {
     schedHrs: band.schedHrs,
     fcstHrs: band.fcstHrs,
     hrsDiff: band.hrsDiff,                       // + = over-scheduled vs forecast, − = under
     tpmh: band.tpmh,                             // scheduled transactions per man-hour
+    // Scheduled Labor % (Total) — LifeLenz's own "Labor % Sales" band figure: dollar-weighted
+    // scheduled labor cost ÷ forecasted sales for the period (NOT the same basis as Fixed/Floor
+    // %, which are shares of total SCHEDULED HOURS — see below). Notes 53: highlight at top.
+    laborPctTotal: band.laborPct,
+    vlhHrs,                                     // Variable Labor Hours (scheduled)
+    vlhPct: band.schedHrs > 0 ? vlhHrs / band.schedHrs : null, // VLH ÷ total scheduled hrs
     fixedPct: band.fixedLaborPct,               // fixed hrs ÷ scheduled hrs (band 10–15%)
     floorPct: band.floorLaborPct,               // floor hrs ÷ scheduled hrs (band 10–15%)
     combinedPct: band.combinedFixedFloorPct,    // (fixed+floor) ÷ scheduled (cap ≤25%)
