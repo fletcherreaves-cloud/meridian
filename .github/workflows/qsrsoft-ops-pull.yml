@@ -56,3 +56,12 @@ jobs:
           QSRSOFT_OPS_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
           QSRSOFT_OPS_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
           QSRSOFT_OPS_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ops-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

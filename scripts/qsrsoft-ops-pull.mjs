@@ -181,7 +181,15 @@ async function viaPlaywright(dates) {
   const page = await (await browser.newContext({ userAgent: HDRS('')['User-Agent'] })).newPage();
   page.setDefaultTimeout(180000);
   let token = null;
-  page.on('request', req => { if (req.url().includes('api.reports.myqsrsoft.com')) { const t = req.headers()['x-auth-token']; if (t && t.length > 20 && !token) token = t; } });
+  const seenApiUrls = [];
+  page.on('request', req => {
+    if (!req.url().includes('api.reports.myqsrsoft.com')) return;
+    seenApiUrls.push(req.url().replace(/\?.*/, ''));
+    const t = req.headers()['x-auth-token'];
+    if (t && t.length > 20 && !token) token = t;
+  });
+  page.on('console', msg => { if (msg.type() === 'error') console.log('[page-console]', msg.text().slice(0, 200)); });
+  const snap = (name) => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
   try {
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
     const userSel = ['input[name="username"]','input[name="email"]','input[type="email"]','#username','#email','input[autocomplete="username"]'].join(', ');
@@ -191,15 +199,19 @@ async function viaPlaywright(dates) {
     await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('[auth] post-login url:', page.url());
+    await snap('ops-01-post-login.png');
     // 2026-08-04 fix (v4.804): mirror qsrsoft-dar-pull.mjs's flow EXACTLY — go straight from login to
-    // Daily Activity, no intermediate Operations Report visit. Two prior attempts (v4.802/803) kept the
-    // Operations Report pre-visit and both failed identically ("Failed to fetch" on the trigger fetch)
-    // even after matching DAR's trigger URL exactly — the remaining variable was page/session state left
-    // behind by that extra navigation, which DAR's script never makes. Removing it entirely rather than
-    // guessing at another URL.
+    // Daily Activity, no intermediate Operations Report visit. v4.802/803/805 (nav order, trigger URL,
+    // User-Agent) all failed identically. v4.805's own run showed DAR's LATEST success (10:47 today)
+    // never even used the trigger fetch — it got the token PASSIVELY from the dailyActivity navigation
+    // itself. So the real gap is: why does MY dailyActivity navigation not fire that organic
+    // token-bearing request? Adding screenshots + full api.reports request log (not just token hits) +
+    // page console errors to actually SEE the page state next run instead of guessing again.
     await page.goto('https://v3.myqsrsoft.com/reports/mcd/shift/dailyActivity', { waitUntil: 'networkidle', timeout: 30000 });
-    await new Promise(r => setTimeout(r, 4000));
+    await new Promise(r => setTimeout(r, 6000));
     console.log('[auth] daily activity url:', page.url(), '| token captured:', !!token);
+    console.log('[auth] api.reports requests seen so far:', seenApiUrls.length ? JSON.stringify(seenApiUrls) : '(none)');
+    await snap('ops-02-daily-activity.png');
     if (!token) {
       console.log('[auth] no token from Daily Activity page — attempting in-browser fetch to trigger auth…');
       // Same trigger URL/shape as DAR's proven-working buildUrl() — any one real endpoint works, only
@@ -212,12 +224,17 @@ async function viaPlaywright(dates) {
       const triggerUrl = `${BASE}/v1/reports/shift/daily-activity-raw?${triggerParams}`;
       const testResult = await page.evaluate(async ({ url }) => {
         try { const r = await fetch(url, { credentials: 'include' }); return { status: r.status, ok: r.ok }; }
-        catch (e) { return { error: e.message }; }
+        catch (e) { return { error: e.message, name: e.name }; }
       }, { url: triggerUrl });
       console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
       await new Promise(r => setTimeout(r, 2000));
+      await snap('ops-03-post-trigger.png');
     }
-    if (!token) { console.error('[auth] ✗ could not capture token from Daily Activity page or an in-browser fetch trigger'); return 0; }
+    if (!token) {
+      console.error('[auth] ✗ could not capture token from Daily Activity page or an in-browser fetch trigger');
+      console.log('[auth] final api.reports requests seen:', seenApiUrls.length ? JSON.stringify(seenApiUrls) : '(none)');
+      return 0;
+    }
     console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s) × ${ENDPOINTS.length} endpoints…`);
     return await runAll(token, dates, page);
   } finally { await browser.close(); }
