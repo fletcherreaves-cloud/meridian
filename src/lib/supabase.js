@@ -2509,7 +2509,12 @@ export async function loadQsrOnHand({ period } = {}) {
     return q;
   });
   return (data || []).map(r => ({
-    loc: r.loc, period: r.period, wrin: r.wrin, descr: r.descr, cls: r.cls,
+    // Strip zero-padding — same fix as loadQsrRawItemDetail (v4.821): this loader never
+    // normalized loc either, so byLoc/computeCountProgress lookups keyed by the app's
+    // unpadded convention silently found nothing (2026-08-05, "no indication of items
+    // counted" despite FOB numbers being right — FOB comes from a different, already-
+    // normalized source).
+    loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, descr: r.descr, cls: r.cls,
     cases: r.cases, packs: r.packs, loose: r.loose, totalUnits: r.total_units,
     unitPrice: r.unit_price, onHandAmt: r.on_hand_amt,
     lastCounted: _fromISO(r.last_counted), lastSubmitted: _fromISO(r.last_submitted),
@@ -2549,7 +2554,7 @@ export async function loadQsrVarianceStat({ period } = {}) {
     return q;
   });
   return (data || []).map(r => ({
-    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage,
     actUsage: r.act_usage, variance: r.variance, dolDiff: r.dol_diff,
     yield: r.yield_val, yieldLo: r.yield_lo, yieldHi: r.yield_hi,
@@ -2564,9 +2569,9 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
   if (!supabase || !loc || !periods.length) return [];
   const data = await fetchAll((from, to) =>
     supabase.from('qsr_variance_stat').select('*')
-      .eq('loc', String(loc)).in('period', periods).range(from, to));
+      .eq('loc', String(loc).padStart(7, '0')).in('period', periods).range(from, to));
   return (data || []).map(r => ({
-    loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
     variance: r.variance, dolDiff: r.dol_diff, yield: r.yield_val,
     yieldLo: r.yield_lo, yieldHi: r.yield_hi, pctOfSales: r.pct_sales,
   }));
@@ -2597,7 +2602,7 @@ export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = 
     const data = await fetchAll((from, to) => supabase.from('qsr_variance_stat')
       .select('loc,period,wrin,cls,descr,variance,dol_diff').in('period', periods).range(from, to));
     rows = (data || []).map(r => ({
-      loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+      loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
       variance: r.variance, dolDiff: r.dol_diff,
     }));
     _varHistCache.set(key, { at: Date.now(), rows });
@@ -2632,7 +2637,7 @@ export async function loadQsrWaste({ period } = {}) {
     return q;
   });
   return (data || []).map(r => ({
-    loc: r.loc, period: r.period, eventId: r.event_id, dt: r.busn_dt, tm: r.busn_tm,
+    loc: String(parseInt(r.loc, 10)), period: r.period, eventId: r.event_id, dt: r.busn_dt, tm: r.busn_tm,
     type: r.wtype, amount: r.amount, manager: r.manager, source: r.wsource,
     edited: r.edited, reason: r.reason, updatedAt: r.updated_at,
   }));
@@ -2668,7 +2673,7 @@ export async function loadQsrTransfers({ period } = {}) {
     return q;
   });
   return (data || []).map(r => ({
-    loc: r.loc, period: r.period, transferId: r.transfer_id, wrin: r.wrin, dir: r.dir,
+    loc: String(parseInt(r.loc, 10)), period: r.period, transferId: r.transfer_id, wrin: r.wrin, dir: r.dir,
     counterpartyNsn: r.counterparty, dt: r.busn_dt, status: r.status, lineAmt: r.line_amt,
     transferTotal: r.transfer_amt, manager: r.manager, descr: r.descr, cls: r.cls, units: r.units,
     updatedAt: r.updated_at,
@@ -2785,7 +2790,7 @@ export async function loadEomCountStatus({ period } = {}) {
     return q;
   });
   return (data || []).map(r => ({
-    loc: r.loc, period: r.period, itemsTotal: r.items_total, itemsCounted: r.items_counted,
+    loc: String(parseInt(r.loc, 10)), period: r.period, itemsTotal: r.items_total, itemsCounted: r.items_counted,
     pctCounted: r.pct_counted, foodDone: r.food_done, condimentDone: r.condiment_done,
     paperDone: r.paper_done, nonproductDone: r.nonproduct_done, lastActivityAt: r.last_activity_at,
     notified90: r.notified_90, notifiedAt: r.notified_at, diagnosisStatus: r.diagnosis_status,
