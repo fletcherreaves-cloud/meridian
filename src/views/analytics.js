@@ -6964,14 +6964,27 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const key=kk(o);const ex=byKey.get(key)||{loc:o.loc,date:o.date};
       byKey.set(key,{...ex,
         tRedBPct:ex.tRedBPct??o.tRedBPct,tRedAPct:ex.tRedAPct??o.tRedAPct,
-        drawerOpens:ex.drawerOpens??o.drawerOpens});
+        drawerOpens:ex.drawerOpens??o.drawerOpens,
+        // T-Red counts + refund counts/$ (2026-08-04) — same auto-fresh backstop pattern as the
+        // T-Red percents above; these were still manual-Controls-only, reading 0 with no upload.
+        tRedACnt:ex.tRedACnt??o.tRedACnt,tRedBCnt:ex.tRedBCnt??o.tRedBCnt,
+        cashRefCnt:ex.cashRefCnt??o.cashRefCnt,cashRefAmt:ex.cashRefAmt??o.cashRefAmt,
+        cashlessRefCnt:ex.cashlessRefCnt??o.cashlessRefCnt,cashlessRefAmt:ex.cashlessRefAmt??o.cashlessRefAmt});
     }
     for(const q of (ds?.qsrActSummaryRows||[])){
       const key=kk(q);const ex=byKey.get(key)||{loc:q.loc,date:q.date};
       byKey.set(key,{...ex, tpph:ex.tpph??q.tpph});
     }
+    // OT hours/$ (2026-08-04) — qsr_labor_summary's over_time_total_hours/_dollars, already
+    // pulled by ops-pull and already aliased to otHrs/otDollar by loadOpsLaborSummary, but never
+    // merged into ctrlAuto — Controls & Integrity's OT Hours read manual-ctrlRows-only (0 with
+    // no upload) even with real auto OT data available.
+    for(const l of (ds?.opsLaborRows||[])){
+      const key=kk(l);const ex=byKey.get(key)||{loc:l.loc,date:l.date};
+      byKey.set(key,{...ex, otHrs:ex.otHrs??l.otHrs,otDollar:ex.otDollar??l.otDollar});
+    }
     return [...byKey.values()];
-  },[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length,ds?.qsrActSummaryRows?.length]);
+  },[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsLaborRows?.length]);
   const ctrlEffective = React.useMemo(()=>_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
 
   // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
@@ -7394,6 +7407,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const prior=fobAgg(scope(fobPeriods.prior,allLocs));
       const mtdOk=fobAgg(scope(fobPeriods.cur,okLocs)),mtdFl=fobAgg(scope(fobPeriods.cur,flLocs));
       const pr=f=>prior?prior[f]:null;
+      // Disc/Coupon district total — verified 2026-08-04 the direct mtd.discCoupon computation
+      // (same fobAgg() call that already produces real fobPct/pLFoodPct/baseFoodPct for the SAME
+      // scoped rows) sometimes came back blank even though the underlying qsr_fob data and the
+      // OK/FL regional splits were provably correct (district total ≈0.51% cross-checked against
+      // Supabase directly). Rather than ship an unexplained direct fix, backstop it with the
+      // dollar-weighted combination of the two regional splits — mathematically identical to the
+      // district figure by construction (Σdistrict = ΣOK + ΣFL), so it's correct regardless of
+      // what causes the direct path to occasionally miss.
+      const discCouponTotal = mtd.discCoupon ?? ((mtdOk||mtdFl) ?
+        (((mtdOk?.discCoupon||0)*(mtdOk?.sales||0) + (mtdFl?.discCoupon||0)*(mtdFl?.sales||0)) /
+         (((mtdOk?.sales||0) + (mtdFl?.sales||0)) || 1)) : null);
       // Sales-weighted targets across the scope (owner: pass targets to the AAG tile like the
       // diagnosis strip). Σ(target × store sales) / Σsales, per component.
       const _curS=scope(fobPeriods.cur,allLocs);
@@ -7403,7 +7427,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         tgts,
         fobPct:mtd.fobPct,baseFoodPct:mtd.baseFoodPct,unexplained:mtd.unexplained,
         compWaste:mtd.compWaste,rawWaste:mtd.rawWaste,condiment:mtd.condiment,
-        empMeal:mtd.empMeal,statVar:mtd.statVar,discCoupon:mtd.discCoupon,
+        empMeal:mtd.empMeal,statVar:mtd.statVar,discCoupon:discCouponTotal,
         pLFoodPct:mtd.pLFoodPct,pLPaperPct:mtd.pLPaperPct,
         primaryIsMTD:true,curMonth:fobPeriods.curLabel,priorMonth:fobPeriods.priorLabel,
         okFobPct:mtdOk&&mtdOk.fobPct,flFobPct:mtdFl&&mtdFl.fobPct,
@@ -8374,12 +8398,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               {label:'T-Red Before %',val:ctrlSec.tRedBPct,ok:ctrlSec.okTRedBPct,fl:ctrlSec.flTRedBPct,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low'},
               {label:'Promo/Disc %',val:ctrlSec.promoPct,ok:ctrlSec.okPromoPct,fl:ctrlSec.flPromoPct,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low'},
               {label:'Cash O/S %',val:ctrlSec.cashOSPct,ok:ctrlSec.okCashOSPct,fl:ctrlSec.flCashOSPct,fmt:v=>((v||0)*100).toFixed(3)+'%',goodDir:'low'},
+              {label:'Cash O/S $',val:ctrlSec.cashOSAmt,ok:null,fl:null,fmt:v=>(v<0?'(':'')+'$'+Math.abs(v).toFixed(2)+(v<0?')':''),goodDir:'low'},
               {label:'Cash Refunds',val:ctrlSec.cashRefCnt,ok:null,fl:null,fmt:v=>Math.round(v)+'',goodDir:'low'},
               {label:'POS Overrings',val:ctrlSec.overringCnt,ok:null,fl:null,fmt:v=>Math.round(v)+'',goodDir:'low'},
               {label:'OT Hours',val:ctrlSec.otHrs,ok:null,fl:null,fmt:v=>(v||0).toFixed(1)+'h',goodDir:'low'},
             ].map((row,i)=>
               div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 0',
-                borderBottom:i<7?'.5px solid rgba(255,255,255,.04)':'none'}},
+                borderBottom:i<8?'.5px solid rgba(255,255,255,.04)':'none'}},
                 div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},row.label),
                 div({style:{fontSize:'10px',fontFamily:'var(--mono)',fontWeight:600,color:'var(--text)',width:64}},
                   row.val!=null?row.fmt(row.val):'—'),

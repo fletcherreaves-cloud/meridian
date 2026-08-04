@@ -1848,6 +1848,16 @@ export const loadOpsCashSheet = async (d = 45) => {
     drawerOpens: r.drawer_opens_qty != null ? Number(r.drawer_opens_qty) : null,
     // Cash Over/Short $ (#52) — auto-first backstop for EOM Supervisor's Cash +/- actual.
     cashOSAmt: r.cash_over_or_short != null ? Number(r.cash_over_or_short) : null,
+    // T-Red counts + cash/cashless refund counts+$ (2026-08-04) — the AAG Controls & Integrity
+    // tile only had the T-Red PERCENTS auto-sourced (above); the raw qty/amt counts were still
+    // manual-only, so they read 0 whenever no manual Controls upload covered the period even
+    // though real counts existed in qsr_cash_sheet all along.
+    tRedACnt: r.treds_after_qty != null ? Number(r.treds_after_qty) : null,
+    tRedBCnt: r.treds_before_qty != null ? Number(r.treds_before_qty) : null,
+    cashRefCnt: r.cash_refunds_qty != null ? Number(r.cash_refunds_qty) : null,
+    cashRefAmt: r.cash_refunds_amt != null ? Number(r.cash_refunds_amt) : null,
+    cashlessRefCnt: r.cashless_refunds_qty != null ? Number(r.cashless_refunds_qty) : null,
+    cashlessRefAmt: r.cashless_refunds_amt != null ? Number(r.cashless_refunds_amt) : null,
   }));
 };
 // OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that
