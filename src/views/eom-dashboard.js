@@ -1178,7 +1178,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const m = {};
     for (const r of (rawDetail || [])) {
       const counts = (r.history || []).filter(h => h.isCount);
-      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, history: r.history, counts, caseSz: r.caseSz, uom: r.uom });
+      // cls MUST be carried through — analyzeCountCadence (weekly-cadence.js) filters every item
+      // by normClass(r.cls) to bucket food/condiment; without it every item normClass'd to 'other'
+      // and got filtered out before any session could ever be detected, so weeklySessions stayed
+      // empty for EVERY store regardless of real count data (2026-08-05, found debugging Inventory
+      // Control's "no full weekly on record" false-negative alongside the loc-padding fix, v4.821).
+      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, cls: r.itemClass, history: r.history, counts, caseSz: r.caseSz, uom: r.uom });
     }
     return m;
   }, [rawDetail]);
