@@ -2691,14 +2691,22 @@ export async function saveQsrRawItemDetail(rows) {
 
 export async function loadQsrRawItemDetail({ period, loc } = {}) {
   if (!supabase) return [];
+  // qsr_raw_item_detail stores the padded NSN format ("0033109"); querying by an unpadded
+  // caller-supplied loc would never match, so pad it here (same direction as the padStart
+  // pattern elsewhere) — this is the QUERY side. The RETURN side needs the opposite: this
+  // loader never stripped the padding on the way OUT, unlike every other loader (loadQsrActSummary,
+  // _loadOpsTable, loadLifeLenzSchedule), so any consumer grouping by String(r.loc) against the
+  // app's unpadded convention (STORE_NAMES/allLocs/rows) silently fails to match — found 2026-08-05
+  // debugging eom-dashboard.js's Weekly Count Cadence showing "no full weekly on record" for
+  // stores with real, complete same-day counts already in the table.
   const data = await fetchAll((from, to) => {
     let q = supabase.from('qsr_raw_item_detail').select('*').range(from, to);
     if (period) q = q.eq('period', period);
-    if (loc) q = q.eq('loc', String(loc));
+    if (loc) q = q.eq('loc', String(loc).padStart(7, '0'));
     return q;
   });
   return (data || []).map(r => ({
-    loc: r.loc, period: r.period, wrin: r.wrin, descr: r.descr, itemClass: r.item_class,
+    loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, descr: r.descr, itemClass: r.item_class,
     history: Array.isArray(r.history) ? r.history : [], updatedAt: r.updated_at,
   }));
 }

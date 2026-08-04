@@ -14,7 +14,16 @@ import { normClass } from './eom-inventory.js';
 
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const WEEKDAY_NAMES = WD;
-const dayKey = d => String(d || '').slice(0, 10);
+// The raw QSRSoft `dt` field is "MM/DD/YYYY" (e.g. "08/04/2026") — also exactly 10 chars, so a
+// naive slice(0,10) silently passes it through unconverted. Every consumer of this key downstream
+// (weekdayOf, daysSince) appends 'T00:00:00' expecting ISO, which produces an Invalid Date for the
+// slash format — weekday detection returns null and days-since returns NaN instead of erroring
+// loudly, so it went unnoticed. Normalize to ISO here once; already-ISO input passes through as-is.
+const dayKey = d => {
+  const s = String(d || '');
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return mdy ? `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}` : s.slice(0, 10);
+};
 const weekdayOf = day => { const t = new Date(day + 'T00:00:00'); return isNaN(t) ? null : t.getDay(); };
 
 // Analyze one store's count cadence for a set of classes over whatever history is present.
