@@ -96,7 +96,13 @@ const ENDPOINTS = [
 ];
 
 // ── Fetch + upsert ──────────────────────────────────────────────────────────
-const HDRS = t => ({ 'X-Auth-Token': t, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' });
+// 2026-08-04 (v4.805): was 'Chrome/150.0.0.0' — a version number that doesn't exist yet. Playwright's
+// actual bundled Chromium still emits its REAL Sec-CH-UA client-hint headers regardless of this string,
+// so an impossible UA-vs-client-hints mismatch was a plausible cause of the Playwright fallback's
+// generic "Failed to fetch" (a CORS/bot-mitigation rejection never surfaces an HTTP status to JS).
+// Matched to qsrsoft-dar-pull.mjs's UA (a real, plausible Chrome version) since that script's identical
+// flow succeeds routinely.
+const HDRS = t => ({ 'X-Auth-Token': t, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' });
 
 async function fetchRows(url, token, evalPage) {
   if (evalPage) {
