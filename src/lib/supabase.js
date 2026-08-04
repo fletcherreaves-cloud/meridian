@@ -1817,7 +1817,16 @@ async function _loadOpsTable(table, daysBack, extra) {
     const data = await fetchAll((from, to) => supabase.from(table).select('*')
       .gte('dt', iso).order('dt', { ascending: false }).range(from, to));
     return (data || []).map(r => ({
-      loc: r.loc, date: new Date(r.dt + 'T00:00:00'),
+      // Strip zero-padding ("0003708" → "3708") — same normalization loadQsrActSummary already
+      // does. Without it, every ops*Rows stream (opsCashRows/opsLaborRows/opsServiceRows/
+      // opsSalesMixRows/opsPeaksRows) carries the qsr_* tables' padded NSN format while allLocs/
+      // STORE_NAMES/ctrlRows/glimpseRows use unpadded — any `allLocs.includes(String(r.loc))` or
+      // metric-source.js loc-keyed lookup then silently drops every row from these streams. Found
+      // 2026-08-04: DT Parked %/KVS Healthy Usage/T-Red %s reading real, complete DB data (verified
+      // via direct query) yet showing blank in the AAG — eom-supervisor.js's own reads were unaffected
+      // only because that file re-pads both sides before comparing (`.padStart(7,'0')`), which is a
+      // no-op either way and stays correct after this change.
+      loc: String(parseInt(r.loc, 10)), date: new Date(r.dt + 'T00:00:00'),
       ...(r.metrics || {}), ...(r.needed || {}),
       ...(r.time_slice != null ? { timeSlice: r.time_slice } : {}),
     }));
