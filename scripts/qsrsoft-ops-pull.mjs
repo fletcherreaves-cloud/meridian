@@ -307,7 +307,10 @@ async function checkCashAnomalies() {
     const today = fmtDate(new Date());
     let total = 0;
     const token = process.env.QSRSOFT_TOKEN;
-    const keys = ['cash', 'labor', 'salesMix'];
+    // 'service' included too (owner ask) even though the one sample checked had zero rows
+    // for today — worth hourly observation to see if/when it starts populating, same
+    // reasoning as FOB below.
+    const keys = ['cash', 'labor', 'salesMix', 'service'];
     if (token) {
       try { total = await runAll(token, [today], null, keys); }
       catch (e) { if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright([today], keys); } else throw e; }
