@@ -141,7 +141,7 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
     const lines = [cols.map(csvCell).join(',')];
     for (const e of sorted) lines.push([e.employee, e.role || '', e.homeStore || '', ...jobs.map(j => (e.skills || {})[j] ?? '')].map(csvCell).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' }); const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `skills-matrix-${store === 'all' ? 'all' : locNum(store)}.csv`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = `skills-matrix-${store === 'all' ? 'all' : locNum(store)}-${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
   };
   const printReport = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));

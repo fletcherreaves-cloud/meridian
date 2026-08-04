@@ -488,7 +488,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     for (const r of shown) lines.push([storeNm(r.loc), locNum(r.loc), csvNum(r.official), csvNum(r.smart), csvNum(r.current), r.vsOff == null ? '' : r.vsOff.toFixed(1), r.winner ? (METH_NAME[r.winner] || r.winner) : '', (r.winner && r.btPerMethod[r.winner]) ? r.btPerMethod[r.winner].mape : '', r.confidence, r.excludedDays, csvNum(r.baseline), csvNum(r.anchor), r.eventDelta || '', r.excludedManual || '', r.n, windowDays, targetLabel].map(csvCell).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}.csv`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = `smart-targets-${metricKey}-${targetLabel.replace(/\s+/g, '_')}-exported-${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
   };
   const printReport = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

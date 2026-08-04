@@ -2009,6 +2009,10 @@ function ExportDropdown({rows, columns, title, filename, extraHTML, btnClassName
     const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();
     setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},800);
   };
+  // Every export should say what it is + when (Notes 53: no bare "export.csv") — a caller-supplied
+  // filename is trusted as-is (it may already carry its own date/scope); otherwise fall back to
+  // the title (content) + today's date, never the literal word "export" alone.
+  const _baseName = () => filename || `${title || 'export'}-${new Date().toISOString().slice(0,10)}`;
 
   const toCSV = () => {
     if(!rows||!rows.length) return alert('No data to export.');
@@ -2020,14 +2024,14 @@ function ExportDropdown({rows, columns, title, filename, extraHTML, btnClassName
       if(typeof v==='number') return v;
       return '"'+String(v).replace(/"/g,'""')+'"';
     }).join(',')).join('\n');
-    dl(header+'\n'+body, (filename||title||'export')+'.csv', 'text/csv');
+    dl(header+'\n'+body, _baseName()+'.csv', 'text/csv');
     setOpen(false);
   };
 
   const toJSON = () => {
     if(!rows||!rows.length) return alert('No data to export.');
     dl(JSON.stringify({title,exportedAt:new Date().toISOString(),rows},null,2),
-      (filename||title||'export')+'.json','application/json');
+      _baseName()+'.json','application/json');
     setOpen(false);
   };
 
