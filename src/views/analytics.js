@@ -6933,10 +6933,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   };
 
   // Controls: manual Controls sheet merged with the CLEAN auto-synced fields from
-  // Daily Glimpse + Cash Sheet (promo, cash O/S, POS overrings, refunds, labor %) and,
+  // Daily Glimpse + Cash Sheet (promo, cash O/S, POS overrings, refunds, labor %),
   // since #37, the auto Operations Report cash-sheet for T-Reds Before/After % + drawer
-  // opens (loadOpsCashSheet derives these net-sales-weighted, same math as discPct).
-  // TPPH / meals still have no clean auto equivalent — manual-only.
+  // opens (loadOpsCashSheet derives these net-sales-weighted, same math as discPct), and
+  // since 2026-08-04, the auto DAR TPPH (real transactions ÷ actual punched hours — already
+  // reconciled to QSRSoft's own Shift Manager Summary transPerPunchedHour figure, see the
+  // `tpph` derivation in loadQsrActSummary/supabase.js). Act vs Need still has no clean auto
+  // equivalent — DAR's `total_needed_hours` uses a different "need" methodology than the
+  // Controls Report's own Act vs Need column, unverified against a real number, so it stays
+  // manual-only rather than shipping an unreconciled guess.
   const ctrlAuto = React.useMemo(()=>{
     const byKey=new Map();
     const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
@@ -6961,8 +6966,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         tRedBPct:ex.tRedBPct??o.tRedBPct,tRedAPct:ex.tRedAPct??o.tRedAPct,
         drawerOpens:ex.drawerOpens??o.drawerOpens});
     }
+    for(const q of (ds?.qsrActSummaryRows||[])){
+      const key=kk(q);const ex=byKey.get(key)||{loc:q.loc,date:q.date};
+      byKey.set(key,{...ex, tpph:ex.tpph??q.tpph});
+    }
     return [...byKey.values()];
-  },[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length]);
+  },[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length,ds?.qsrActSummaryRows?.length]);
   const ctrlEffective = React.useMemo(()=>_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
 
   // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
