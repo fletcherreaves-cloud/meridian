@@ -135,10 +135,12 @@ async function upsert(table, records, conflict) {
   return total;
 }
 
-// Run all endpoints across all dates with a given token (evalPage set → in-browser fetch).
-async function runAll(token, dates, evalPage) {
+// Run all endpoints (or just `onlyKeys`, e.g. ['cash']) across all dates with a given token
+// (evalPage set → in-browser fetch).
+async function runAll(token, dates, evalPage, onlyKeys) {
   let grand = 0;
   for (const ep of ENDPOINTS) {
+    if (onlyKeys && !onlyKeys.includes(ep.key)) continue;
     let epTotal = 0;
     for (const date of dates) {
       try {
@@ -173,7 +175,7 @@ async function getDates() {
 }
 
 // ── Playwright fallback (mirrors the DAR pull) ────────────────────────────────
-async function viaPlaywright(dates) {
+async function viaPlaywright(dates, onlyKeys) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot use Playwright fallback'); return null; }
   const { chromium } = await import('playwright');
@@ -235,14 +237,60 @@ async function viaPlaywright(dates) {
       console.log('[auth] final api.reports requests seen:', seenApiUrls.length ? JSON.stringify(seenApiUrls) : '(none)');
       return 0;
     }
-    console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s) × ${ENDPOINTS.length} endpoints…`);
-    return await runAll(token, dates, page);
+    console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s) × ${onlyKeys ? onlyKeys.length : ENDPOINTS.length} endpoints…`);
+    return await runAll(token, dates, page, onlyKeys);
   } finally { await browser.close(); }
+}
+
+// ── Cash anomaly detection + targeted re-pull ─────────────────────────────────
+// Owner ask (Notes 54): once a Cash-related report has been pulled, if a store's most
+// recent day looks "way off" vs its own recent norm, re-pull hourly until it settles —
+// e.g. store 10422 pulled -$3307.19 on 8/3 before finalizing, while store 24471 pulled
+// -$2708.83 that same day and self-corrected to +$4.17 on the next pull (2026-08-04
+// incident, see memory/incident-ops-pull-silent-failure.md-adjacent notes). Cheap check
+// (a single Supabase read) runs every invocation; only escalates to a live QSRSoft pull
+// when something's actually flagged, so idle hourly runs don't hit their site at all.
+const ANOMALY_ABS_FLOOR = 300;   // ignore anything under $300 regardless of ratio — normal daily noise
+const ANOMALY_RATIO     = 4;     // flag when |today| > 4x the store's own trailing-day average magnitude
+async function checkCashAnomalies() {
+  const cutoff = fmtDate(addDay(new Date(), -5));
+  const { data, error } = await supabase.from('qsr_cash_sheet').select('loc,dt,metrics').gte('dt', cutoff).order('dt', { ascending: true });
+  if (error || !data?.length) return [];
+  const byLoc = {};
+  for (const r of data) (byLoc[r.loc] ||= []).push(r);
+  const anomalies = [];
+  for (const [loc, rows] of Object.entries(byLoc)) {
+    if (rows.length < 2) continue;
+    const latest = rows[rows.length - 1];
+    const priorMags = rows.slice(0, -1).map(r => Math.abs(num(r.metrics?.cash_over_or_short) || 0));
+    const baseline = priorMags.length ? priorMags.reduce((a, b) => a + b, 0) / priorMags.length : 0;
+    const cur = Math.abs(num(latest.metrics?.cash_over_or_short) || 0);
+    if (cur > ANOMALY_ABS_FLOOR && cur > baseline * ANOMALY_RATIO) {
+      anomalies.push({ loc, dt: latest.dt, cur: num(latest.metrics?.cash_over_or_short), baseline: +baseline.toFixed(2) });
+    }
+  }
+  return anomalies;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 (async () => {
   if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) { console.error('Missing Supabase env'); process.exit(1); }
+
+  if (process.env.QSRSOFT_CASH_ANOMALY_CHECK === '1') {
+    const anomalies = await checkCashAnomalies();
+    if (!anomalies.length) { console.log('[cash-check] no anomalies — nothing to re-pull.'); process.exit(0); }
+    console.log(`[cash-check] ${anomalies.length} anomaly(s):`, JSON.stringify(anomalies));
+    const dates = [...new Set(anomalies.map(a => a.dt))].sort();
+    let total = 0;
+    const token = process.env.QSRSOFT_TOKEN;
+    if (token) {
+      try { total = await runAll(token, dates, null, ['cash']); }
+      catch (e) { if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright(dates, ['cash']); } else throw e; }
+    } else { total = await viaPlaywright(dates, ['cash']); }
+    console.log(`[cash-check] re-pull done — ${total} rows upserted for ${dates.join(', ')}.`);
+    process.exit(0);
+  }
+
   const dates = await getDates();
   console.log(`[ops] pulling ${dates.length} date(s): ${dates[0]}…${dates[dates.length - 1]}`);
   let total = 0;

@@ -1,0 +1,46 @@
+name: QSRSoft Cash Anomaly Check
+
+on:
+  schedule:
+    # US Central-anchored (GitHub cron is fixed UTC, no DST). Hourly from ~6:00 AM to
+    # ~2:00 PM CDT — matches the existing ops-pull "current-day refresh" cutoff (owner ask,
+    # Notes 54: re-pull hourly while a Cash anomaly is still unsettled, stop by 2pm CST so it
+    # doesn't run all day; if still anomalous by then it resolves on tomorrow's pull, or the
+    # owner can trigger a manual sync). Each run's cheap check (one Supabase read) always
+    # runs; only escalates to a live QSRSoft pull when something's actually flagged, so idle
+    # hours cost nothing against their site.
+    - cron: '0 11-19 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Check for Cash anomalies and re-pull if needed
+        run: node scripts/qsrsoft-ops-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_CASH_ANOMALY_CHECK: '1'
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cash-anomaly-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
