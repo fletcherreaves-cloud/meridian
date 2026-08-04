@@ -203,7 +203,20 @@ async function viaPlaywright(dates) {
     // above captures the X-Auth-Token from it the same way it would from an organic page request.
     if (!token) {
       console.log('[auth] no token from either report page — attempting in-browser fetch to trigger auth…');
-      const triggerUrl = ENDPOINTS[0].url(dates[0]);
+      // 2026-08-04: the first attempt used ENDPOINTS[0]'s /reporting/v2/... URL and got a browser
+      // "Failed to fetch" (a CORS-block symptom, not an HTTP error — the browser never lets JS see
+      // a response). qsrsoft-dar-pull.mjs's proven-working trigger hits a DIFFERENT API path
+      // (/v1/reports/shift/daily-activity-raw) — same api.reports.myqsrsoft.com host, but /v1/ vs
+      // /reporting/v2/ apparently have different CORS treatment from this page's origin. Use DAR's
+      // exact working path/params here too; only its RESPONSE is irrelevant — the point is
+      // provoking the app's own fetch interceptor into attaching a valid X-Auth-Token to SOME
+      // successful in-page request, which the listener above then captures.
+      const triggerParams = new URLSearchParams({
+        timeSegment: 'openClose', segmentBy: 'hour', segmentNames: 'open-close', segmentsSelected: 'open-close',
+        nsd: 'd', nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
+        startDate: dates[0], endDate: dates[0], compType: 'trading', weekStart: '3', timeInterval: 'hour',
+      });
+      const triggerUrl = `${BASE}/v1/reports/shift/daily-activity-raw?${triggerParams}`;
       const testResult = await page.evaluate(async ({ url }) => {
         try { const r = await fetch(url, { credentials: 'include' }); return { status: r.status, ok: r.ok }; }
         catch (e) { return { error: e.message }; }
