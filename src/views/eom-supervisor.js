@@ -257,8 +257,11 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   const laborAdjAmt  = laborVar$;
   const laborNewTotal= (laborAdjAmt || 0) + (laborXfers || 0) + (laborUnclk || 0);
 
-  // Total P&L impact — sum of all negative variances (things costing more than plan)
-  const totalShaded  = (fcVar$ || 0) + (fobVar$ || 0) + laborNewTotal + (otDollar || 0);
+  // Total of Shaded Boxes — Food Over Base + Crew Labor + Op Supplies ONLY (owner directive,
+  // 2026-08-04: Total Food Cost and OT $ are shown/shaded in their own cells but must NOT be
+  // folded into this total — Food Over Base is the actionable food-cost variance; Total Food
+  // Cost duplicates/overlaps it).
+  const totalShaded  = (fobVar$ || 0) + laborNewTotal + (opSup$ || 0);
   const pctImpact    = refSales > 0 ? totalShaded / refSales : null;
 
   return {
@@ -320,7 +323,9 @@ function computeRollup(stores) {
   const laborNewTotal= sumF('laborNewTotal');
   const otDollar     = sumF('otDollar');
   const opSup$       = anyF('opSup$') ? sumF('opSup$') : null;
-  const totalShaded  = fcVar$ + fobVar$ + laborNewTotal + otDollar;
+  // Total of Shaded Boxes — Food Over Base + Crew Labor + Op Supplies ONLY, same as the
+  // per-store total (owner directive, 2026-08-04) — Total Food Cost and OT $ excluded.
+  const totalShaded  = fobVar$ + laborNewTotal + (opSup$ || 0);
   const pctImpact    = refSales > 0 ? totalShaded / refSales : null;
 
   return {
