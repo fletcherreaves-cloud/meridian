@@ -44,9 +44,9 @@ const fmtMoney = (v, parens = true) => {
 const fmtPct = (v) => {
   if (v == null) return '—';
   const p = v > 1 ? v : v * 100;
-  return p.toFixed(4) + '%';
+  return p.toFixed(2) + '%';
 };
-const fmtPctDisplay = (v, dec = 4) => {
+const fmtPctDisplay = (v, dec = 2) => {
   if (v == null) return '—';
   const p = v > 1 ? v : v * 100;
   return p.toFixed(dec) + '%';
@@ -55,7 +55,7 @@ const fmtPctVar = (v) => {
   if (v == null) return '—';
   const p = v > 1 ? v : v * 100;
   const sign = p >= 0 ? '' : '';
-  return (p >= 0 ? '' : '') + p.toFixed(4) + '%';
+  return (p >= 0 ? '' : '') + p.toFixed(2) + '%';
 };
 const fmtNum  = (v, dec = 2) => v != null ? v.toFixed(dec) : '—';
 const norm    = (v) => v == null ? null : (v > 1 ? v / 100 : v); // ensure 0-1
@@ -162,10 +162,25 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   const _crewLaborDollarSum = _lsRows.reduce((s, r) => s + (Number(r.crew_labor_dollars) || 0), 0);
   const dollarWeightedLaborPct = (_crewLaborDollarSum > 0 && autoFob?.sales > 0) ? _crewLaborDollarSum / autoFob.sales : null;
   const autoLaborPct = metricAvg(ds, locStr, monthRange, 'laborPct');   // punched %, auto-first (fallback)
-  const autoCashSeries = metricSeries(ds, locStr, monthRange, 'cashOSAmt');
-  const autoCash = Object.keys(autoCashSeries).length
-    ? Math.round(Object.values(autoCashSeries).reduce((a, b) => a + b, 0) * 100) / 100
+  // EXACT Cash Over/Short $ (2026-08-03 follow-up — the metricSeries blend below still
+  // under-counted for several stores). qsr_cash_sheet (ds.opsCashRows, the ops-pull's
+  // "cash-sheet-extract" endpoint) is a genuine COMPLETE daily pull with its own
+  // cash_over_or_short $ field — same pattern as qsr_labor_summary's crew_labor_dollars.
+  // Verified against the owner's own QSRSoft screenshot for FOUR stores, all exact: 5985
+  // −$25.22, 10422 −$208.13, 33109 −$84.15, 43380 −$65.61 (31/31 days each, Σ cash_over_or_short
+  // matched to the cent). The metricSeries('cashOSAmt') blend (ctrlRows→glimpse→cash→opsCash)
+  // under-counted for these stores — kept only as the fallback below.
+  const _ocRows = (ds.opsCashRows || []).filter(r =>
+    String(r.loc).padStart(7, '0') === locStr.padStart(7, '0') &&
+    r.date instanceof Date && r.date.getFullYear() === selYear && r.date.getMonth() + 1 === selMonth);
+  const _cashOverShortSum = _ocRows.length
+    ? Math.round(_ocRows.reduce((s, r) => s + (Number(r.cash_over_or_short) || 0), 0) * 100) / 100
     : null;
+  const autoCashSeries = metricSeries(ds, locStr, monthRange, 'cashOSAmt');
+  const autoCash = _cashOverShortSum != null ? _cashOverShortSum
+    : (Object.keys(autoCashSeries).length
+      ? Math.round(Object.values(autoCashSeries).reduce((a, b) => a + b, 0) * 100) / 100
+      : null);
 
   // Sales — auto qsr_fob's Product Sales snapshot FIRST (2026-08-03 correction, same reasoning as
   // actFCPct/actLaborPct above; this feeds refSales, the denominator for EVERY $ variance below,
@@ -387,7 +402,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
   // pct variance display (basis points label)
   const varPctStr = (v) => {
     if (v == null) return '—';
-    const p = (v * 100).toFixed(4);
+    const p = (v * 100).toFixed(2);
     return (v > 0 ? '+' : '') + p + '%';
   };
   const varMoneyStr = (v) => {
@@ -395,8 +410,8 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
     if (v < 0) return `(${fmtMoney(v, false).replace('-', '')})`;
     return `$${fmtD(v)}`;
   };
-  const salesStr = (v) => v != null ? '$' + Math.round(v).toLocaleString() : '—';
-  const pctStr   = (v) => v != null ? (v * 100).toFixed(4) + '%' : '—';
+  const salesStr = (v) => v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  const pctStr   = (v) => v != null ? (v * 100).toFixed(2) + '%' : '—';
   const hrStr    = (v) => v != null ? v.toFixed(2) : '—';
 
   const rowBg = (i) => i % 2 === 0 ? 'rgba(255,255,255,.025)' : 'transparent';
@@ -538,7 +553,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
         h('span', {
           style: { fontSize: '13px', fontFamily: 'monospace', fontWeight: 700, marginLeft: '8px',
                    color: colPctImpact(pctImpact) }
-        }, pctImpact != null ? ((pctImpact * 100).toFixed(4) + '% impact to P&L') : '—')
+        }, pctImpact != null ? ((pctImpact * 100).toFixed(2) + '% impact to P&L') : '—')
       ),
     )
   );
