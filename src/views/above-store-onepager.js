@@ -468,11 +468,13 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         Section('Upcoming Impacts (21 days)', '📅', null,
           upcoming.length === 0 ? div({ style: { fontSize: '10px', color: 'var(--text3)', padding: '4px 0' } }, 'No tagged events in the next 3 weeks for this scope.')
           : div({ style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-            ...upcoming.map((e, i) => { const et = EVENT_TYPES[e.type] || EVENT_TYPES.other;
-              return div({ key: i, style: { display: 'flex', gap: 6, fontSize: '10px', alignItems: 'baseline', borderTop: i ? '1px solid var(--bdr)' : 'none', padding: '2px 0' } },
-                span({ style: { color: 'var(--text3)', minWidth: 42 } }, e.dk.slice(5)),
-                span(null, e.icon || et.icon),
-                span({ style: { color: 'var(--text2)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, e.label || et.label)); }))),
+            ...upcoming.map((e, i) => { const et = EVENT_TYPES[e.type] || EVENT_TYPES.other; const lbl = e.label || et.label;
+              return div({ key: i, style: { display: 'flex', gap: 6, fontSize: '10px', alignItems: 'flex-start', borderTop: i ? '1px solid var(--bdr)' : 'none', padding: '2px 0' } },
+                span({ style: { color: 'var(--text3)', minWidth: 42, paddingTop: 1 } }, e.dk.slice(5)),
+                span({ style: { paddingTop: 1 } }, e.icon || et.icon),
+                // Notes 53: long labels used to get ellipsis-truncated with no way to read the
+                // rest. Now wraps to additional lines AND carries the full text as a hover title.
+                span({ title: lbl, style: { color: 'var(--text2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'break-word', lineHeight: 1.35 } }, lbl)); }))),
         (d.perStore && d.perStore.length) ? h('div', { key: 'ps', style: { gridColumn: '1/-1', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', overflowX: 'auto' } }, [
           h('div', { key: 't', style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, '🏬 Per-store · worst sales vs LY first'),
           h('table', { key: 'tbl', style: { width: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
