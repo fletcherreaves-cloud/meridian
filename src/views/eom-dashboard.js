@@ -209,6 +209,29 @@ const statusColor = (v) => ({
 // FOB $/% per store for the period — the LATEST daily snapshot, NOT a sum (see fobSnapshotByStore).
 const fobByStore = fobSnapshotByStore;
 
+// Count Cycle mode's "By class" needs a DIFFERENT completion basis than Scoreboard/EOM Count —
+// those two read r.prog.byClass from computeCountProgress, which is scoped to the EOM close
+// window (the period's last 3 days) by design. Mid-month, a store's real WEEKLY Food+Condiment
+// count (the thing Count Cycle exists to track) always falls outside that window, so the EOM
+// chips read blank/0% even right after a genuine full weekly count — not a data-pull bug, but a
+// mismatched basis for this specific tab (found 2026-08-05, owner: "Class Count totals below
+// still don't show the count completion"). Build byClass from the cadence engine's own
+// classTotals + the most recent WEEKLY (full) session instead — same numbers CadenceMonitor
+// above already displays as "Last full count", so the two sections agree.
+function weeklyByClassFor(cadence) {
+  if (!cadence || !cadence.weeklySessions || !cadence.weeklySessions.length) return {};
+  const last = cadence.weeklySessions[cadence.weeklySessions.length - 1];
+  const byClass = {};
+  for (const cls of Object.keys(cadence.classTotals || {})) {
+    const total = cadence.classTotals[cls] || 0;
+    if (!total) continue;
+    const counted = (last.counts && last.counts[cls]) || 0;
+    const pct = counted / total;
+    byClass[cls] = { total, counted, pct, done: counted >= total };
+  }
+  return byClass;
+}
+
 function ClassChips({ byClass, uncounted, npDueToday }) {
   // Food/Condiment/Paper are due to 100% by EOD; Non-Product ('N') isn't due until tomorrow — UNLESS
   // today is the last day of the month, when it's due too (owner Notes 38). Muted "tmrw" tag only when
@@ -2220,7 +2243,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 ? span({ onClick: () => toggleException(r.loc, r.exception), title: `Early count (full count ${r.exception.acceptedDate || '?'}) accepted as this store's EOM count${r.exception.approvedBy ? ` — approved by ${r.exception.approvedBy}` : ''}${r.exception.note ? `\n${r.exception.note}` : ''}\n(click to remove)`, style: { display: 'inline-block', marginTop: '3px', fontSize: '9.5px', fontWeight: 700, color: '#4ade80', border: '1px solid #4ade80', borderRadius: '4px', padding: '0 5px', cursor: 'pointer' } }, `✓ count accepted${r.exception.acceptedDate ? ` ${r.exception.acceptedDate}` : ''}${r.exception.approvedBy ? ` · ${r.exception.approvedBy}` : ''}`)
                 : h('button', { onClick: () => toggleException(r.loc, null), title: "Accept this store's early count as its EOM count (logged + attributed to the approver)", style: { display: 'block', marginTop: '3px', fontSize: '9px', color: 'var(--text3)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' } }, 'grant count exception')),
             h('td', { style: { padding: '8px 10px' } }, h(ProgressBar, { value: r.prog.earlyPctCounted ?? r.prog.pctCounted })),
-            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, { byClass: r.prog.byClass, uncounted: r.uncountedByClass, npDueToday: r.prog.nonProductDueToday })),
+            h('td', { style: { padding: '8px 10px' } }, h(ClassChips, {
+              // Count Cycle → weekly-session basis (see weeklyByClassFor); Scoreboard/EOM Count → the
+              // EOM-window basis (computeCountProgress), unchanged.
+              byClass: mode === 'progress' ? weeklyByClassFor(cadenceByLoc[String(r.loc)]) : r.prog.byClass,
+              uncounted: r.uncountedByClass, npDueToday: r.prog.nonProductDueToday,
+            })),
             h('td', { style: { padding: '8px 10px', color: 'var(--text2)', whiteSpace: 'nowrap', fontSize: '12px' } },
               (() => { const cd = preferredCountDate(r); return cd ? cd.toLocaleDateString() : '—'; })(),
               mode === 'progress' && (() => {

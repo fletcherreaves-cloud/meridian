@@ -18,7 +18,7 @@ function _pushModelAssignments() {
   try { saveUserSetting('model_assignments', JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY) || '{}')); } catch {}
 }
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
-import { metricAvg } from '../engine/metric-source.js';
+import { metricAvg, metricSeries } from '../engine/metric-source.js';
 import { ExportDropdown } from './store-dash.js';
 
 const h=React.createElement;
@@ -1635,10 +1635,15 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // Always use calendar days for per-day normalization
       const normDays   = rangeDays;
       // ── Rate/percentage metrics ─────────────────────────────────────────────
-      // Period-average rates from Operations Report are correct as-is.
-      // Fallback chain: ctrlRows → laborRows
-      const laborPct  = _avg(cRows,'laborPct')  || _avg(lRows,'laborPct');
-      const tpph      = _avg(cRows,'tpph')      || _avg(lRows,'tpph');
+      // laborPct/tpph now route through metric-source.js's auto-first per-day resolver
+      // (2026-08-05) — both already had a registered ctrlRows→glimpseRows→laborRows/DAR
+      // fallback chain (used elsewhere, e.g. analytics.js's ctrlSec) that this panel wasn't
+      // using, so it went stale/blank whenever neither manual upload covered the range even
+      // though real auto data existed. avgRate/otHrs/actVsNeed still need their own
+      // METRIC_SOURCES entries before the same swap is safe — left as the manual
+      // ctrlRows→laborRows chain for now.
+      const laborPct  = metricAvg(ds,loc,range,'laborPct');
+      const tpph      = metricAvg(ds,loc,range,'tpph');
       const avgRate   = _avg(cRows,'avgRate')   || _avg(lRows,'avgRate');
       const actVsNeed = _avgZ(cRows.length?cRows:lRows,'actVsNeed');
       // ── Volume metrics (hours) ──────────────────────────────────────────────
@@ -1694,14 +1699,23 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   const DOW_N=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const dowStats = uM(()=>{
     if(!range||!ds) return [];
-    // DOW breakdown uses daily lRows only — period-summary ctrlRows have a single
-    // date and add no day-of-week signal. lRows requires sales>0 to filter bad rows.
+    // DOW breakdown uses daily lRows only for otHrs/actVsNeed — period-summary ctrlRows have
+    // a single date and add no day-of-week signal. lRows requires sales>0 to filter bad rows.
     const all=(ds.laborRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&r.sales>0&&activeLocs.includes(String(r.loc)));
+    // laborPct/tpph now bucketed from metricSeries's auto-first per-day values (2026-08-05)
+    // instead of raw laborRows — metricAvg itself wants one contiguous range, but its
+    // underlying per-day resolver works fine bucketed by weekday after the fact.
+    const byDow={}; for(let d=0;d<7;d++) byDow[d]={laborPct:[],tpph:[]};
+    for(const loc of activeLocs){
+      const lp=metricSeries(ds,loc,range,'laborPct'), tp=metricSeries(ds,loc,range,'tpph');
+      for(const dk in lp) byDow[new Date(dk+'T00:00:00').getDay()].laborPct.push(lp[dk]);
+      for(const dk in tp) byDow[new Date(dk+'T00:00:00').getDay()].tpph.push(tp[dk]);
+    }
+    const mean=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
     return DOW_N.map((name,dow)=>{
       const rows=all.filter(r=>new Date(r.date).getDay()===dow);
-      const avg=f=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
       const avgZ=f=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
-      return{name,dow,count:rows.length,laborPct:avg('laborPct'),tpph:avg('tpph'),otHrs:avgZ('otHrs'),actVsNeed:avgZ('actVsNeed')};
+      return{name,dow,count:rows.length,laborPct:mean(byDow[dow].laborPct),tpph:mean(byDow[dow].tpph),otHrs:avgZ('otHrs'),actVsNeed:avgZ('actVsNeed')};
     });
   },[range,activeLocs,ds]);
 
@@ -1711,11 +1725,13 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     const weeks=[];
     for(let w=5;w>=0;w--){
       const wEnd=addDx(today,-w*7), wStart=addDx(wEnd,-7);
-      // 6-week trend uses daily lRows only — ctrlRows period summaries skew weekly buckets
+      // laborPct/tpph/otHrs now auto-first via metricAvg (2026-08-05) — each weekly bucket IS
+      // a contiguous range, unlike the DOW breakdown above, so metricAvg applies directly.
+      // actVsNeed has no METRIC_SOURCES entry yet, so it stays a manual lRows-only average.
       const rows=(ds.laborRows||[]).filter(r=>r.date>=wStart&&r.date<wEnd&&r.sales>0&&activeLocs.includes(String(r.loc)));
-      const avg=f=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
       const avgZ=f=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
-      weeks.push({label:wEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'}),laborPct:avg('laborPct'),tpph:avg('tpph'),otHrs:avgZ('otHrs'),actVsNeed:avgZ('actVsNeed')});
+      const wr={s:wStart,e:addDx(wEnd,-1)};
+      weeks.push({label:wEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'}),laborPct:metricAvg(ds,activeLocs,wr,'laborPct'),tpph:metricAvg(ds,activeLocs,wr,'tpph'),otHrs:metricAvg(ds,activeLocs,wr,'otHrs'),actVsNeed:avgZ('actVsNeed')});
     }
     return weeks;
   },[activeLocs,ds]);

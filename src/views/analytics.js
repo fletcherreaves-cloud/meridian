@@ -2791,7 +2791,14 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   // the At-A-Glance / EOM dashboard: Σ$ ÷ Σsales). Total Food Cost % is NOT in this
   // feed, so cloud rows carry pLFoodPct=null and fall back to the Ops Report upload.
   const [qsrFobRows,setQsrFobRows]=React.useState(null); // null=loading
-  React.useEffect(()=>{let live=true;loadQsrFob().then(r=>{if(live)setQsrFobRows(r||[]);}).catch(()=>{if(live)setQsrFobRows([]);});return()=>{live=false;};},[]);
+  const [qsrFobErr,setQsrFobErr]=React.useState(null);
+  React.useEffect(()=>{let live=true;loadQsrFob().then(r=>{if(live){setQsrFobRows(r||[]);setQsrFobErr(null);}}).catch(e=>{
+    // Was a silent catch — a failed cloud fetch fell all the way back to manual-only fobRows with
+    // zero visible signal, which looked identical to "cloud stream has no data" (owner 2026-08-05:
+    // Food Cost panel stuck at last manual upload month). Log + surface so this is diagnosable.
+    console.warn('[FOBAnalysisPanel] loadQsrFob failed, falling back to manual fobRows only:',e?.message||e);
+    if(live){setQsrFobRows([]);setQsrFobErr(String(e?.message||e));}
+  });return()=>{live=false;};},[]);
   const cloudFobRows=React.useMemo(()=>(qsrFobRows||[]).map(r=>{
     const sales=+r.prodSalesAmt||0; if(sales<=0) return null;
     const dstr=typeof r.date==='string'?r.date:(r.date&&r.date.toISOString?r.date.toISOString().slice(0,10):null);
@@ -2979,6 +2986,8 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
         div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🥗 FOB Analysis'),
         fobHasCloud&&span({title:'FOB components fed by the auto qsr_fob cloud stream (no upload needed). Total Food Cost % still comes from an Operations Report upload.',
           style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'☁ Cloud auto'),
+        (qsrFobRows!==null&&!fobHasCloud)&&span({title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr}) — showing manual uploads only. Try reloading.`:'Cloud FOB stream returned no rows — showing manual uploads only.',
+          style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(248,113,113,.12)',color:'#f87171',border:'.5px solid rgba(248,113,113,.3)',cursor:'help'}},'⚠ manual only'),
         // Month selector
         div({style:{display:'flex',flexDirection:'column',gap:1}},
           div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Period'),
