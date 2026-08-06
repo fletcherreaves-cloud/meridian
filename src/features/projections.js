@@ -4,6 +4,7 @@ import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS } from '../consta
 import { dKey, sodOf, addD, eodOf, thisWeek } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, fetchLY, getStoreOrg, fetchLYDate, gcCrossCheck } from '../engine/forecast.js';
+import { weightedMean } from '../engine/weighted.js';
 import { computeEventFactors } from '../utils/events.js';
 import { TH, f$ } from '../utils/fmt.js';
 import { ForecastAudit, CurrentMonthPaceSection } from '../views/analytics.js';
@@ -342,9 +343,16 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
     // ── Ops snapshot: last 2 weeks metrics ──────────────────────────────
     const cut2w=addD(now,-14);
     const recentOps=(ds.opsRows||[]).filter(r=>locs.includes(String(r.loc))&&r.date>=cut2w&&r.oepe>0);
+    // OEPE and labor% stay plain means — neither source carries a weighting basis:
+    // opsRows have no car/GC count, and ctrlRows have hours but no sales (labor% needs
+    // sales to weight). Documented in memory/weighted-rollup-audit.md rather than guessed.
     const avgOEPE=recentOps.length?recentOps.reduce((a,r)=>a+r.oepe,0)/recentOps.length:null;
     const recentCtrl=(ds.ctrlRows||[]).filter(r=>locs.includes(String(r.loc))&&r.date>=cut2w&&r.tpph>0);
-    const avgTPPH=recentCtrl.length?recentCtrl.reduce((a,r)=>a+r.tpph,0)/recentCtrl.length:null;
+    // TPPH is transactions per person-hour, so it aggregates as Σtransactions/Σhours.
+    // ctrlRows carry actHrs, and transactions = tpph x actHrs, so weighting by hours
+    // reconstructs that exactly — a plain mean would let a 40-hour day count the same as
+    // a 300-hour one across the whole selected location set.
+    const avgTPPH=recentCtrl.length?(weightedMean(recentCtrl,r=>r.tpph,r=>r.actHrs)||null):null;
     const avgLaborPct=recentCtrl.length?recentCtrl.reduce((a,r)=>a+r.laborPct,0)/recentCtrl.length:null;
 
     // ── Model confidence: DI calibration status ─────────────────────────

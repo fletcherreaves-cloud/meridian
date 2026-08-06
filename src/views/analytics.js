@@ -5,6 +5,7 @@ import { dKey, addD, mwStart, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
+import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { EventEntryModal, EventRegistryModal } from '../features/calendar.js';
@@ -5535,13 +5536,22 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
       }).length/rows.length*100 : null;
       const opsRows = (ds.opsRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e);
       const ctrlRows = (ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e);
+      // OEPE stays a plain mean: opsRows carry only oepe/park/kvst/kvsu/r2p — no car or
+      // GC count — so there is no weighting basis in this source. Weighting by anything
+      // else would be a guess. See memory/weighted-rollup-audit.md.
       const avgOepe = opsRows.length?opsRows.reduce((a,r)=>a+(r.oepe||0),0)/opsRows.length:p.oepe||0;
-      // TPPH is in laborRows (not opsRows) — fix source
-      const avgTpph = rows.filter(r=>r.tpph>0).length ? rows.filter(r=>r.tpph>0).reduce((a,r)=>a+r.tpph,0)/rows.filter(r=>r.tpph>0).length : p.tpph||0;
-      // Only average days with actual labor data (exclude zero-labor days from avg)
+      // TPPH is in laborRows (not opsRows) — fix source.
+      // Transactions per person-hour aggregates as Σgc/Σhours; hours come from each row's
+      // own ratio so the rollup matches the basis the source system divided by.
+      const avgTpph = ratioOfSumsDerived(rows, r=>r.gc, r=>r.tpph) || p.tpph||0;
+      // Only count days with actual labor data (exclude zero-labor days)
       const _laborRows = rows.filter(r=>r.laborPct>0.01); // >1% to exclude missing data
-      const avgLabor = _laborRows.length ? _laborRows.reduce((a,r)=>a+r.laborPct,0)/_laborRows.length : p.laborPct||0;
-      const avgCheck = rows.filter(r=>r.avgCheck>0).reduce((a,r,_,arr)=>a+r.avgCheck/arr.length,0)||p.avgCheck||0;
+      // Sales-weighted, not a mean of daily percentages: labor% is labor$/sales, so the
+      // store figure must be Σ(labor$)/Σ(sales). A mean let a light Tuesday count as much
+      // as a heavy Saturday.
+      const avgLabor = weightedMean(_laborRows, r=>r.laborPct, r=>r.sales) || p.laborPct||0;
+      // Average check is Σsales/Σguests, not the mean of each day's check.
+      const avgCheck = ratioOfSums(rows, r=>r.sales, r=>r.gc, r=>r.avgCheck) || p.avgCheck||0;
       results.push({loc,name:STORE_NAMES[loc]||loc,days:rows.length,
         actualSales,fcSales,lySales,
         vsLY:lySales>0?(actualSales-lySales)/lySales:null,
