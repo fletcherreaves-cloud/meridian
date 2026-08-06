@@ -18,8 +18,13 @@ const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
 function buildFromLive(resp) {
   const live = resp && resp.live; if (!live) return null;
   const loc = resp.loc, period = resp.period;
+  // fobSnapshotByStore's keys inherit qsr_fob.loc's zero-padded 7-char NSN convention — a
+  // plain String(loc) lookup misses whenever `loc` arrives unpadded (the app's dominant
+  // convention), silently falling back to "the first store in Object.values" instead of the
+  // RIGHT store — happened to look correct only because live.fob is already single-store-
+  // scoped server-side (2026-08-06, found auditing qsr_fob loc-padding across consumers).
   const snap = fobSnapshotByStore(live.fob || [], period);
-  const components = snap[String(loc)] || Object.values(snap)[0] || null;
+  const components = snap[unpad(loc)] || snap[String(loc)] || Object.values(snap)[0] || null;
   const hasData = components || (live.onHand || []).length || (live.variance || []).length;
   if (!hasData) return null;
   const targets = DEFAULT_TARGETS[unpad(loc)] || DEFAULT_TARGETS[String(loc)] || {};

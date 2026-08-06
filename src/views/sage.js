@@ -111,7 +111,11 @@ function buildFobSummary(ds) {
   if (!period) return null;
 
   const snap = fobSnapshotByStore(rows, period);   // per loc: { sales, comp, raw, cond, emp, statv, unex, fob, fobPct }
-  const stores = Object.entries(snap).map(([loc, v]) => ({ loc, name: _storeName(loc), ...v })).filter(s => s.sales > 0);
+  // qsr_fob.loc is always zero-padded 7-char NSN at the DB level (scripts/qsrsoft-pull.mjs
+  // pads on write) — fobSnapshotByStore's keys inherit that padding, so _storeName(loc) (keyed
+  // by STORE_NAMES' unpadded convention) missed and fell back to "Store 0003708" for every
+  // store in this ranking (2026-08-06, found auditing qsr_fob loc-padding across consumers).
+  const stores = Object.entries(snap).map(([loc, v]) => { const L = String(parseInt(loc, 10)); return { loc: L, name: _storeName(L), ...v }; }).filter(s => s.sales > 0);
   if (!stores.length) return null;
 
   const sum = f => stores.reduce((a, s) => a + (s[f] || 0), 0);

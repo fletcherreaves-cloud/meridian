@@ -9524,8 +9524,13 @@ function computeMonthActuals(ds, year, month) {
     manualFob[k].totalFoodDol += (r.pLFoodPct || 0) * s;
   });
   // Auto qsr_fob fallback — the same dollar-weighted MTD-snapshot read used everywhere
-  // else in the app (EOM Dashboard, One-Pager, AAG FOB tiles).
-  const autoFob = fobSnapshotByStore(ds && ds.qsrFobRows || [], period);
+  // else in the app (EOM Dashboard, One-Pager, AAG FOB tiles). qsr_fob.loc is always
+  // zero-padded 7-char NSN at the DB level, so fobSnapshotByStore's keys inherit that
+  // padding — remap through unpad so they match DEFAULT_TARGETS/manualFob's unpadded keys
+  // (else every store gets a ghost duplicate entry under its padded loc — 2026-08-06,
+  // same bug class found + fixed in eom-dashboard.js's allRows and sage.js's FOB ranking).
+  const autoFobRaw = fobSnapshotByStore(ds && ds.qsrFobRows || [], period);
+  const autoFob = {}; for (const k in autoFobRaw) autoFob[String(parseInt(k, 10))] = autoFobRaw[k];
 
   const allLocs = new Set([...Object.keys(DEFAULT_TARGETS), ...Object.keys(manualFob), ...Object.keys(autoFob)]);
   const byLoc = {};
