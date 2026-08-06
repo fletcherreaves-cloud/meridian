@@ -140,18 +140,23 @@ export function deriveBand1FromSchedule(rows = [], { weekStart = null, asOf = ne
     if (!r || r.loc == null || r.date == null) continue;
     const iso = _isoDay(r.date); if (!iso || iso < wsIso || iso >= weIso) continue;
     const loc = _locNum(r.loc);
-    const a = acc[loc] || (acc[loc] = { loc, salesFcst: 0, gcFcst: 0, hoursFcst: 0, hoursSched: 0, schedFixedHrs: 0, laborDol: 0, salesForPct: 0, days: 0 });
+    const a = acc[loc] || (acc[loc] = { loc, salesFcst: 0, gcFcst: 0, hoursFcst: 0, hoursSched: 0, schedFixedHrs: 0, laborDol: 0, salesForPct: 0, hoursSchedForPct: 0, days: 0 });
     const fs = _n(r.fcstSales) || 0;
+    const dayHoursSched = (_n(r.schVLH) || 0) + (_n(r.schFixHrs) || 0) + (_n(r.schFloor) || 0);   // Sch VLH + Fixed + Floor
     a.salesFcst += fs;
     a.gcFcst    += _n(r.fcstTCs) || 0;
     a.hoursFcst += (_n(r.projVLH) || 0) + (_n(r.fixGuideHrs) || 0) + (_n(r.projFloor) || 0); // Proj VLH + Fixed + Floor
-    a.hoursSched += (_n(r.schVLH) || 0) + (_n(r.schFixHrs) || 0) + (_n(r.schFloor) || 0);     // Sch  VLH + Fixed + Floor
+    a.hoursSched += dayHoursSched;
     a.schedFixedHrs += _n(r.schFixHrs) || 0;
     // Daily labor $ = dayLabor% × dayForecastSales. Normalize the % if the source
     // stored it as 21.5 rather than 0.215.
     let lp = _n(r.laborPct);
     if (lp != null && Math.abs(lp) > 1.5) lp = lp / 100;
-    if (lp != null && fs > 0) { a.laborDol += lp * fs; a.salesForPct += fs; }
+    // hoursSchedForPct mirrors laborDol/salesForPct's day-coverage EXACTLY, so rate (below)
+    // divides $ by the hours that actually have $ behind them — not the full week's hours,
+    // which would dilute rate toward $0/hr on the same partial-week days that used to inflate
+    // Labor %/Sched Labor $ (see the laborPctActual comment below for the full mechanism).
+    if (lp != null && fs > 0) { a.laborDol += lp * fs; a.salesForPct += fs; a.hoursSchedForPct += dayHoursSched; }
     a.days++;
   }
 
@@ -159,8 +164,26 @@ export function deriveBand1FromSchedule(rows = [], { weekStart = null, asOf = ne
   for (const loc of Object.keys(acc)) {
     const a = acc[loc];
     if (!(a.salesFcst > 0)) continue;                    // no forecast → skip this store
-    const laborPctActual = a.salesForPct > 0 ? a.laborDol / a.salesForPct : null; // Σ$ / Σsales
-    const rate = (a.hoursSched > 0 && a.laborDol > 0) ? a.laborDol / a.hoursSched : null; // Σ$ / Σhrs
+    // Σ$ / Σ FULL-WEEK sales (salesFcst), NOT Σsales-of-days-with-a-%-value (salesForPct).
+    // LifeLenz only populates labor_pct for days that have actually happened/been scheduled —
+    // mid-week (or for a future week), later days in the window have laborDol/salesForPct
+    // both $0, so salesForPct silently becomes a small fraction of the full week. Dividing by
+    // it instead of salesFcst still gave an internally-correct "% of the days we have," but
+    // downstream computeLaborRow's Scheduled Labor $ = salesFcst × laborPctActual then
+    // multiplied that partial-coverage % back out across the FULL week's sales — inflating
+    // both Labor % and Scheduled Labor $ well past 100% (owner report 2026-08-05: OKC-I240/
+    // Sooner showed Labor % 105.0%, Sched Labor $ $76,111, vs a Rate-implied labor$ of only
+    // ~$31,930 — a scope mismatch, not a real number). Dividing by salesFcst makes Labor %/
+    // Sched Labor $/Rate all consistent (K=C*D collapses back to the real Σ$ once D's
+    // denominator matches C) — coverage gaps now UNDER-state cost instead of inflating it,
+    // which is the safe direction; daysCovered is still exposed for a completeness caveat.
+    const laborPctActual = a.salesFcst > 0 ? a.laborDol / a.salesFcst : null;
+    // Σ$ / Σ hours-that-have-$-behind-them (hoursSchedForPct), NOT the full week's hoursSched —
+    // dividing partial-coverage $ by full-week hours would understate rate on the same
+    // partial-week days that used to inflate Labor %/Sched Labor $ above (owner report
+    // 2026-08-05: displayed Rate $22.39 vs the subtotal's own recomputed $53.36 for the SAME
+    // single store — a dead giveaway two different day-scopes were mixed into one ratio).
+    const rate = (a.hoursSchedForPct > 0 && a.laborDol > 0) ? a.laborDol / a.hoursSchedForPct : null;
     const tpph = a.hoursSched > 0 ? a.gcFcst / a.hoursSched : null;               // Σgc / Σhrs
     const schedFixedPct = a.hoursSched > 0 ? a.schedFixedHrs / a.hoursSched : null;
     const tgt = orgTargetFor ? orgTargetFor(loc) : null;
@@ -171,6 +194,10 @@ export function deriveBand1FromSchedule(rows = [], { weekStart = null, asOf = ne
       laborTargetOrg: _n(tgt),
       actualHours: null, projSalesMonth: null,
       daysCovered: a.days, source: 'lifelenz_schedule',
+      // Share of the week's sales that actually had a labor_pct value behind laborPctActual —
+      // 1.0 = every day covered; well under 1.0 (e.g. mid-week, only elapsed days populated
+      // yet) means Labor %/Sched Labor $ are a real but INCOMPLETE-week number, not wrong.
+      laborPctCoverage: a.salesFcst > 0 ? a.salesForPct / a.salesFcst : null,
     };
   }
   return { weekStart: wsIso, weekEnd: weIso, rows: out };

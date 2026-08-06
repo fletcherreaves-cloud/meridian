@@ -65,14 +65,17 @@ const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['
 // Report columns: label, accessor, formatter, and (optional) a flag(row) → color.
 const COLS = [
   { k: 'salesFcst', h: 'Sales Fcst', f: money },
-  { k: 'laborPctActual', h: 'Labor %', f: pct, flag: r => (r.laborPctActual != null && r.laborTargetOrg != null && r.laborPctActual > r.laborTargetOrg) ? '#ef4444' : null },
+  { k: 'laborPctActual', h: 'Labor %', f: pct, flag: r => (r.laborPctActual != null && r.laborTargetOrg != null && r.laborPctActual > r.laborTargetOrg) ? '#ef4444' : null,
+    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — only ${Math.round(r.laborPctCoverage * 100)}% of this week's sales have a LifeLenz labor % reported so far (later days haven't posted one yet). Rises toward the true week figure as more days post.` : null },
   { k: 'laborTargetOrg', h: 'Target %', f: pct },
   { k: 'gcFcst', h: 'GC Fcst', f: v => v == null ? '—' : Math.round(v).toLocaleString() },
   { k: 'tpph', h: 'TPPH', f: num1 },
-  { k: 'rate', h: 'Rate', f: v => v == null ? '—' : '$' + (Math.round(v * 100) / 100).toFixed(2) },
+  { k: 'rate', h: 'Rate', f: v => v == null ? '—' : '$' + (Math.round(v * 100) / 100).toFixed(2),
+    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — blended $/hr from only the ${Math.round(r.laborPctCoverage * 100)}% of days with a reported labor % so far.` : null },
   { k: 'hoursFcst', h: 'Hrs Fcst', f: num1 },
   { k: 'hoursSched', h: 'Hrs Sched', f: num1 },
-  { k: 'scheduledLaborD', h: 'Sched Labor $', f: money },
+  { k: 'scheduledLaborD', h: 'Sched Labor $', f: money,
+    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — reflects only the ${Math.round(r.laborPctCoverage * 100)}% of sales with a reported labor % so far, not the full week's cost.` : null },
   { k: 'targetLaborD', h: 'Target Labor $', f: money },
   { k: 'projHrsTarget', h: 'Proj Hrs (Tgt)', f: num1 },
   { k: 'hrsVsForecast', h: 'Hrs ± Fcst', f: signNum, flag: r => r.hrsVsForecast == null ? null : r.hrsVsForecast > 0 ? '#f59e0b' : '#10b981' },
@@ -165,7 +168,11 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
   const th = { padding: '6px 8px', fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
   const td = { padding: '4px 8px', fontSize: 10.5, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
 
-  const cell = (r, col) => h('td', { key: col.k, style: { ...td, ...(col.flag && col.flag(r) ? { color: col.flag(r), fontWeight: 700 } : {}) } }, col.f(r[col.k]));
+  const cell = (r, col) => {
+    const tip = col.title ? col.title(r) : null;
+    return h('td', { key: col.k, title: tip || undefined, style: { ...td, cursor: tip ? 'help' : undefined, ...(col.flag && col.flag(r) ? { color: col.flag(r), fontWeight: 700 } : {}) } },
+      col.f(r[col.k]), tip ? span({ style: { marginLeft: 3, color: '#f59e0b' } }, '⚠') : null);
+  };
   const dataRow = r => h('tr', { key: r.loc, title: `${storeNm(r.loc)} #${locNum(r.loc)}` },
     h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(r.loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 8.5 } }, '#' + locNum(r.loc))),
     ...COLS.map(c => cell(r, c)));

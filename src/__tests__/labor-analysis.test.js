@@ -150,4 +150,29 @@ describe('labor-analysis — weekly Band-1 from daily LifeLenz schedule', () => 
     const o3 = deriveBand1FromSchedule(r3, { weekStart: '2026-07-20' });
     expect(o3.rows['1111']).toBeUndefined();
   });
+
+  // Owner report 2026-08-05 (OKC-I240/Sooner, week-in-progress): only the days that have
+  // already happened carry a labor_pct from LifeLenz — later days in the week are $10k
+  // sales but no % yet. laborPctActual must stay a real (<100%) number scaled to the FULL
+  // week's sales, not the partial-coverage subset — otherwise it (and Scheduled Labor $
+  // downstream, which multiplies it back by the full week's sales) blow past 100%.
+  it('a week with only some days reporting labor_pct does not inflate Labor % past reality', () => {
+    const covered = ['2026-07-20', '2026-07-21'].map(d => mk('0020475', d, { laborPct: 0.21 }));   // 2 days @ 21%
+    const uncovered = ['2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26']
+      .map(d => mk('0020475', d, { laborPct: null }));                                             // 5 days, no % yet
+    const o = deriveBand1FromSchedule([...covered, ...uncovered], { weekStart: '2026-07-20' });
+    const r = o.rows['20475'];
+    expect(r.salesFcst).toBeCloseTo(70000, 6);                     // full week still counted for sales
+    expect(r.laborPctActual).toBeCloseTo((0.21 * 10000 * 2) / 70000, 6); // Σ$ / FULL-week sales → ~6%, not 21%
+    expect(r.laborPctActual).toBeLessThan(1);                      // never a >100% headline number
+    expect(r.laborPctCoverage).toBeCloseTo(2 / 7, 6);               // 2 of 7 days had a real %
+    // Rate = Σ$ / hours-that-have-$-behind-them (2 covered days' 210hrs each = 420), NOT the
+    // full week's 1470 hours — the old full-week denominator diluted rate toward $0/hr on the
+    // very same partial-week days that inflated Labor %/Sched Labor $ above.
+    expect(r.rate).toBeCloseTo((0.21 * 10000 * 2) / 420, 6);        // = 10.0, same as full-coverage case
+    // Scheduled Labor $ (Band-2, C*D) must collapse back to the REAL summed $ once D's
+    // denominator matches C — no longer re-inflated by multiplying a partial % by full sales.
+    const row = analyzeStore(r);
+    expect(row.scheduledLaborD).toBeCloseTo(0.21 * 10000 * 2, 1);   // = the 2 covered days' real $
+  });
 });
