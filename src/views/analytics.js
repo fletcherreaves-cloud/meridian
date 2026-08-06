@@ -7072,19 +7072,35 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const pctOf=(a,b)=>b>0?((a/b-1)*100).toFixed(2)+'%':null;
 
   // ── "As of" tile freshness ────────────────────────────────────
-  // Newest business date (≤ today) in a tile's OWN source rows, so each tile
-  // states exactly how current its number is — removes date guesswork.
-  const _asOfDate = (rows) => {
-    let m=null; const tMs=today.getTime();
+  // Each tile states its timeframe from its OWN source rows (not the toolbar
+  // selection), so the label can never claim a period the tile isn't showing.
+  // Timeframe tag (v4.837). This used to render "as of 8/5" — the newest date only.
+  // That answers "how fresh is this?" but not the owner's actual question about the
+  // AAG tiles: "what am I looking at, time-frame-wise — MTD? a rolling 30? one day?"
+  // Now it renders the real SPAN of the rows being aggregated (the end of which is
+  // still the as-of date), in the same footprint, and says out loud when the tile has
+  // silently fallen off the selected period onto the 30-day fallback window.
+  const _spanTag = (rows) => {
+    const tMs=today.getTime(); let lo=null,hi=null; const days=new Set();
     for(const r of (rows||[])){ if(!r||!r.date)continue;
       const d=r.date instanceof Date?r.date:new Date(r.date); const ms=d.getTime();
-      if(!isNaN(ms)&&ms<=tMs&&(!m||ms>m.getTime()))m=d; }
-    return m;
+      if(isNaN(ms)||ms>tMs)continue;
+      if(!lo||ms<lo.getTime())lo=d;
+      if(!hi||ms>hi.getTime())hi=d;
+      days.add(dKey(d));
+    }
+    if(!hi) return null;
+    const f=d=>d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});
+    const one=!lo||f(lo)===f(hi);
+    const fb=!!(effectiveDateRange&&effectiveDateRange.isFallback);
+    const tip='Data shown spans '+(one?f(hi):f(lo)+'–'+f(hi))+' · '+days.size+' day'+(days.size===1?'':'s')+' present'
+      +(fb?'  ⚠ No data in the selected period ('+(dateRange&&dateRange.label||'selected range')
+        +') — showing the most recent 30 days of available data instead.':'');
+    return span({
+      style:{fontSize:'8px',color:fb?'#f59e0b':'var(--text3)',fontStyle:'italic',whiteSpace:'nowrap'},
+      title:tip},
+      (one?f(hi):f(lo)+'–'+f(hi))+(fb?' ⚠':''));
   };
-  const _asOfTag = (rows) => { const d=_asOfDate(rows); return d?span({
-    style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic',whiteSpace:'nowrap'},
-    title:'Newest data date shown in this tile'},
-    'as of '+d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'})):null; };
 
   const labByLoc=loc=>labInRange.filter(r=>r.loc===String(loc));
   const opsByLoc=loc=>opsInRange.filter(r=>r.loc===String(loc));
@@ -8349,7 +8365,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'💰'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Sales & Guest Counts'),
-            _asOfTag(labInRange),
+            _spanTag(labInRange),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             salesSec&&salesSec.salesVsLY!=null&&span({style:{fontSize:'10px',fontFamily:'var(--mono)',
               color:(salesSec.salesVsLY*100)>=0?'#10b981':'#f87171'}},
@@ -8403,7 +8419,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'👥'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Labor'),
-            _asOfTag(labInRange),
+            _spanTag(labInRange),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('labor')
           ),
@@ -8448,7 +8464,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'⚡'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Service'),
-            _asOfTag(svcEffective.rows),
+            _spanTag(svcEffective.rows),
             serviceSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},serviceSec.staleLabel),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('service')
@@ -8479,7 +8495,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onNav&&onNav('district')},
             span(null,'🔒'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Controls & Integrity'),
-            _asOfTag(ctrlEffective.rows),
+            _spanTag(ctrlEffective.rows),
             ctrlSec?.isStale&&span({style:{fontSize:'8px',color:'var(--text3)',fontStyle:'italic'}},ctrlSec.staleLabel),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('controls')
@@ -8540,7 +8556,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenBrief&&onOpenBrief()},
             span(null,'🍟'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'FOB & Food Cost'),
-            _asOfTag(fobAuto),
+            _spanTag(fobAuto),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('fob')
           ),
@@ -8630,7 +8646,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'\uD83D\uDCF1'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Digital Sales'),
-            _asOfTag(channelRows.rows),
+            _spanTag(channelRows.rows),
             digitalSec&&span({style:{fontSize:'9px',color:'#60a5fa',fontWeight:600}},
               'McDelivery + MOP + Kiosk'),
             span({style:{fontSize:'9px',color:'var(--amber)'}},' \u2192'),
@@ -8742,6 +8758,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)'}},
               span(null,'🎯'),
               span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'District Pulse'),
+              // The radar composites five metrics off FOUR different sources (sales/labor =
+              // labInRange, OEPE = svcEffective, T-Reds = ctrlEffective, FOB = fobAuto), which
+              // can span different windows. Tag their union — the honest outer span of
+              // everything feeding the shape — rather than picking one and implying the rest
+              // match it.
+              _spanTag([...labInRange,...(svcEffective.rows||[]),...(ctrlEffective.rows||[]),...(fobAuto||[])]),
               span({style:{fontSize:'9px',color:'var(--text3)',marginRight:4}},'Performance vs Targets'),
               collBtn('radar')
             ),
@@ -8823,6 +8845,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'🏆'),
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Store Leaderboard'),
+            // Metric-aware: each leaderboard tab reads a different source (Sales = labInRange,
+            // OEPE = svcEffective, Labor%/T-Reds = ctrlEffective), and those sources can span
+            // different windows. Tag the one the SELECTED tab actually uses.
+            _spanTag(lbMetric==='oepe'?svcEffective.rows
+                    :(lbMetric==='labor'||lbMetric==='tred')?ctrlEffective.rows
+                    :labInRange),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             collBtn('leaderboard')
           ),
