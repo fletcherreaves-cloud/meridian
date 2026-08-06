@@ -401,6 +401,13 @@ const EVENT_TYPES={
   school_break:        {label:'School Break (Multi-Day)', icon:'📕', col:'#a78bfa'},
   school_no_school:    {label:'No School Day',       icon:'🏫', col:'#fb923c'},
   school_early_release:{label:'Early Release Day',   icon:'⏰', col:'#fb923c'},
+  // ── Retail / Shopping (Event Lookup v1, Notes 56 #4) ─────────────────────
+  // Separate types (not one bucket) because the Event Impact Registry keys on
+  // (loc, event_type) — each shopping event earns its OWN measured per-store lift.
+  tax_free:     {label:'Sales-Tax Holiday',    icon:'🛍', col:'#38bdf8'},
+  black_friday: {label:'Black Friday',         icon:'🛒', col:'#f472b6'},
+  small_biz_sat:{label:'Small Business Saturday', icon:'🏬', col:'#c084fc'},
+  cyber_monday: {label:'Cyber Monday',         icon:'🖱', col:'#94a3b8'},
 };
 
 // Groups for the tag picker UI
@@ -411,6 +418,7 @@ const EVENT_TYPE_GROUPS=[
   {label:'🏪 Competition',items:['comp_new','comp_promo','comp_closure','comp_pricing','comp_media']},
   {label:'📋 Operations',items:['promo','holiday','staffing','cfv','ecosure','rgr','other']},
   {label:'📚 School Calendar',items:['school_start','school_end','school_break','school_no_school','school_early_release']},
+  {label:'🛍 Retail / Shopping',items:['tax_free','black_friday','small_biz_sat','cyber_monday']},
 ];
 
 const INV_ORG_COORDS={

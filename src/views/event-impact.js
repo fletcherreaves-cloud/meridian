@@ -13,7 +13,9 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
-const TYPES = [['sports', '🏈 Sports (Home/Away)'], ['event', '🎪 Festival / Fair'], ['weather', '🌧 Weather'], ['promo', '🍔 LTO / Promo'], ['holiday', '🎉 Holiday']];
+const TYPES = [['sports', '🏈 Sports (Home/Away)'], ['event', '🎪 Festival / Fair'], ['weather', '🌧 Weather'], ['promo', '🍔 LTO / Promo'], ['holiday', '🎉 Holiday'],
+  // Retail / shopping (Event Lookup v1, Notes 56 #4) — seeded by scripts/measure-retail-impact.mjs.
+  ['tax_free', '🛍 Sales-Tax Holiday'], ['black_friday', '🛒 Black Friday'], ['small_biz_sat', '🏬 Small Business Saturday'], ['cyber_monday', '🖱 Cyber Monday']];
 const STYPES = ['', 'rural', 'travel', 'metro'];
 const pctOf = v => v == null ? '' : (v * 100).toFixed(2);      // 0.093 → "9.30"
 const toFrac = s => { const n = parseFloat(String(s).replace('%', '')); return isNaN(n) ? null : n / 100; };

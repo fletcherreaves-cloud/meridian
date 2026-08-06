@@ -6,6 +6,7 @@ import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
 import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap } from '../engine/events-import.js';
+import { expandRetailEvents, defaultRetailYears } from '../engine/retail-events.js';
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
@@ -333,6 +334,24 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
     rows.slice(1).forEach((r,raw)=>{ if(r&&r[0]!==''&&r[0]!=null){ if(dataUrls[raw])map[fi]=dataUrls[raw]; fi++; } });
     return map;
   };
+  // Shared preview builder: type histogram + non-destructive conflict scan against the live calendar.
+  // Used by BOTH the workbook import and the generated retail-events import so the review-before-write
+  // guarantee is identical for either source.
+  const _buildPreview = (events, districts, fileName, extra={}) => {
+    const byType={}; events.forEach(e=>{ byType[e.type]=(byType[e.type]||0)+1; });
+    const iconFor=(t)=>(EVENT_TYPES[t]||EVENT_TYPES.other||{}).icon||'📌';
+    const dayMap = orgEventsToDayMap(events, iconFor);
+    const conflicts=[]; let newDays=0, refreshes=0;
+    for(const loc of Object.keys(dayMap)){
+      for(const dk of Object.keys(dayMap[loc])){
+        const ex=(userEvents||{})[loc]&&userEvents[loc][dk];
+        if(!ex) newDays++;
+        else if(ex.orgSourced) refreshes++;
+        else conflicts.push({loc,dk,existing:ex.label||ex.type,incoming:dayMap[loc][dk].label});
+      }
+    }
+    return {events, districts, conflicts, newDays, refreshes, byType, fileName, ...extra};
+  };
   const onBulkFile = async (file) => {
     if(!file) return;
     setBulkBusy(true); setBulkError(''); setBulkPreview(null);
@@ -342,25 +361,29 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
       const wb = XLSX.read(new Uint8Array(buf), {type:'array', cellDates:false});
       const evName = wb.SheetNames.find(n=>/event|staffing/i.test(n)&&!/district|overview/i.test(n));
       const scName = wb.SheetNames.find(n=>/district|school|overview/i.test(n));
-      let events=[], districts=[], byType={};
+      let events=[], districts=[];
       if(evName){ const {rows,urls}=_readSheet(XLSX,wb.Sheets[evName]); const r=parseStaffingEvents(rows,_urlMap(rows,urls)); events=r.events; }
       if(scName){ const {rows,urls}=_readSheet(XLSX,wb.Sheets[scName]); districts=parseSchoolDistricts(rows,_urlMap(rows,urls)); }
       if(!events.length && !districts.length){ setBulkError('No events or school-district rows found. Expected a "…Events" sheet and/or a "…District Overview" sheet.'); setBulkBusy(false); return; }
-      events.forEach(e=>{ byType[e.type]=(byType[e.type]||0)+1; });
-      // Conflict scan against existing calendar (down-project + compare to userEvents).
-      const iconFor=(t)=>(EVENT_TYPES[t]||EVENT_TYPES.other||{}).icon||'📌';
-      const dayMap = orgEventsToDayMap(events, iconFor);
-      const conflicts=[]; let newDays=0, refreshes=0;
-      for(const loc of Object.keys(dayMap)){
-        for(const dk of Object.keys(dayMap[loc])){
-          const ex=(userEvents||{})[loc]&&userEvents[loc][dk];
-          if(!ex) newDays++;
-          else if(ex.orgSourced) refreshes++;
-          else conflicts.push({loc,dk,existing:ex.label||ex.type,incoming:dayMap[loc][dk].label});
-        }
-      }
-      setBulkPreview({events, districts, conflicts, newDays, refreshes, byType, fileName:file.name});
+      setBulkPreview(_buildPreview(events, districts, file.name));
     }catch(e){ setBulkError('Could not read the file: '+(e.message||e)); }
+    setBulkBusy(false);
+  };
+
+  // ── Retail / shopping events (Event Lookup v1, Notes 56 #4) ─────────────────
+  // No file — the windows are rule-derived (OK tax-free weekend, Black Friday / Small Business
+  // Saturday / Cyber Monday) or hard-dated from the Florida DOR. Generated here, reviewed in the same
+  // preview modal, then written through the SAME saveOrgEvents path as every other event.
+  const onRetailGenerate = () => {
+    setBulkBusy(true); setBulkError(''); setBulkPreview(null);
+    try{
+      const stores = LOCS.map(l=>({loc:l, state:(INV_ORG_COORDS[l]||{}).state||'OK', city:(STORE_COORDS[l]||{}).city||null}));
+      const years = defaultRetailYears();
+      const events = expandRetailEvents(stores, {years});
+      if(!events.length){ setBulkError('No retail events generated for '+years[0]+'–'+years[years.length-1]+'.'); setBulkBusy(false); return; }
+      const est = events.filter(e=>e.verification!=='Confirmed').length;
+      setBulkPreview(_buildPreview(events, [], 'Generated — Retail & Shopping ('+years[0]+'–'+years[years.length-1]+')', {generated:true, estimated:est}));
+    }catch(e){ setBulkError('Could not generate retail events: '+(e.message||e)); }
     setBulkBusy(false);
   };
   const approveBulk = async () => {
@@ -370,7 +393,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
       const enteredBy = (settings&&settings._userEmail) || 'app import';
       let saveMsg='';
       if(bulkPreview.events.length){
-        const res = await saveOrgEvents(bulkPreview.events, {method:'bulk upload', enteredBy});
+        const res = await saveOrgEvents(bulkPreview.events, {method:bulkPreview.generated?'recurring rule':'bulk upload', enteredBy});
         if(res.errors&&res.errors.length){ setBulkError('Supabase save error: '+res.errors[0]); setBulkBusy(false); return; }
         saveMsg += res.saved+' events';
       }
@@ -629,6 +652,11 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
           title:'Bulk-import a staffing/school/sports events workbook to the cloud calendar (conflicts shown before anything is overwritten)',
           onClick:()=>{setShowBulk(true);setBulkPreview(null);setBulkError('');setBulkBusy(false);}},
           '📁 Bulk Import'),
+        btn({className:'btn btn-sm',
+          style:{fontSize:'9px',background:'rgba(56,189,248,.08)',borderColor:'rgba(56,189,248,.3)',color:'#7dd3fc'},
+          title:'Generate the retail/shopping calendar — OK tax-free weekend, FL back-to-school holiday, Black Friday / Small Business Saturday / Cyber Monday. Reviewed before anything is written.',
+          onClick:()=>{setShowBulk(true);setBulkError('');setBulkBusy(false);onRetailGenerate();}},
+          '🛍 Retail Events'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
 
@@ -640,10 +668,14 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
           borderRadius:'var(--rl)',width:'100%',maxWidth:640,maxHeight:'90vh',display:'flex',flexDirection:'column',
           boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
           div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',display:'flex',alignItems:'center',gap:10}},
-            span({style:{fontSize:'18px'}},'📁'),
+            span({style:{fontSize:'18px'}},bulkPreview&&bulkPreview.generated?'🛍':'📁'),
             div({style:{flex:1}},
-              div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Bulk Import Events'),
-              div({style:{fontSize:'9px',color:'var(--text3)'}},'Confirmed events only → cloud calendar (Supabase). School/sports/festival workbook.')),
+              div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},
+                bulkPreview&&bulkPreview.generated?'Retail & Shopping Events':'Bulk Import Events'),
+              div({style:{fontSize:'9px',color:'var(--text3)'}},
+                bulkPreview&&bulkPreview.generated
+                  ?'Rule-derived + DOR-dated shopping windows → cloud calendar (Supabase). No forecast movement until measured.'
+                  :'Confirmed events only → cloud calendar (Supabase). School/sports/festival workbook.')),
             btn({className:'btn btn-sm',style:{color:'var(--text3)'},disabled:bulkBusy,
               onClick:()=>{if(!bulkBusy){setShowBulk(false);setBulkPreview(null);setBulkError('');}}},'✕')),
           div({style:{padding:16,overflow:'auto',display:'flex',flexDirection:'column',gap:12}},
@@ -666,6 +698,10 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
               div({style:{fontSize:'10px',color:'var(--text2)'}},'Types: ',
                 Object.entries(bulkPreview.byType).sort((a,b)=>b[1]-a[1]).map(([t,n])=>((EVENT_TYPES[t]||{}).icon||'')+' '+((EVENT_TYPES[t]||{}).label||t)+' ('+n+')').join('  ·  ')),
               bulkPreview.districts.length>0&&div({style:{fontSize:'10px',color:'var(--text2)'}},'🏫 '+bulkPreview.districts.length+' school-district config(s) (term dates + bell times)'),
+              bulkPreview.generated&&div({style:{fontSize:'9.5px',color:'var(--text3)',lineHeight:1.55,padding:'8px 10px',background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)'}},
+                'These carry ',span({style:{color:'var(--text2)',fontWeight:700}},'Low'),' expected impact on purpose — they move no forecast until the Event Impact Registry has a ',
+                span({style:{color:'var(--text2)',fontWeight:700}},'measured'),' per-store lift for each type (run scripts/measure-retail-impact.mjs). ',
+                bulkPreview.estimated?span({style:{color:'#fbbf24'}},bulkPreview.estimated+' entr'+(bulkPreview.estimated===1?'y is':'ies are')+' marked Estimated (future Florida windows — re-verify at floridarevenue.com).'):'All dates are Confirmed against a primary source.'),
               bulkPreview.conflicts.length>0&&div({style:{border:'.5px solid rgba(245,158,11,.4)',borderRadius:'var(--r)',overflow:'hidden'}},
                 div({style:{padding:'6px 10px',background:'rgba(245,158,11,.12)',fontSize:'10px',fontWeight:700,color:'#fbbf24'}},
                   '⚠ '+bulkPreview.conflicts.length+' day(s) already have a hand-entered event — these will be KEPT, not overwritten:'),
@@ -677,7 +713,10 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
                       span({style:{color:'var(--text3)'}},'  (skip: '+c.incoming+')'))),
                   bulkPreview.conflicts.length>50&&div({style:{padding:'4px 10px',fontSize:'9px',color:'var(--text3)'}},'…and '+(bulkPreview.conflicts.length-50)+' more'))),
               div({style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}},
-                btn({className:'btn btn-sm',disabled:bulkBusy,onClick:()=>{setBulkPreview(null);setBulkError('');if(bulkFileRef.current)bulkFileRef.current.value='';}},'← Choose another'),
+                btn({className:'btn btn-sm',disabled:bulkBusy,onClick:()=>{
+                  if(bulkPreview.generated){ setShowBulk(false); setBulkPreview(null); setBulkError(''); return; }
+                  setBulkPreview(null);setBulkError('');if(bulkFileRef.current)bulkFileRef.current.value='';
+                }},bulkPreview.generated?'Cancel':'← Choose another'),
                 btn({className:'btn btn-sm',disabled:bulkBusy,
                   style:{background:'var(--adim)',borderColor:'rgba(245,158,11,.4)',color:'var(--amber)',fontWeight:700},
                   onClick:approveBulk},
