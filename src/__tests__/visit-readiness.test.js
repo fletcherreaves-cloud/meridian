@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits, READINESS_GAPS, srcMeta } from '../engine/visit-readiness.js';
+import { readinessReportHTML, readinessAuditCSV, reportFileBase } from '../views/visit-readiness-report.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 // Two real loc IDs that exist in DEFAULT_TARGETS.
@@ -156,6 +157,135 @@ describe('visit-readiness', () => {
     expect(r.overall.n).toBe(0);
     expect(r.dow).toEqual([]);
     expect(r.freq).toEqual([]);
+  });
+
+  // ── Calibration / audit trail (Notes 56 #2) ────────────────────────────────
+  it('audit: area contributions sum to the reported readiness', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD), badRows(BAD)));
+    for (const s of res.stores) {
+      const sum = s.audit.reduce((t, a) => t + (a.contribution || 0), 0);
+      expect(sum).toBeCloseTo(s.readiness, 1);
+    }
+  });
+
+  it('audit: effective weights renormalize to 1 over the areas that had data', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD)));
+    const s = res.stores.find(x => x.loc === GOOD);
+    const eff = s.audit.filter(a => !a.excluded).reduce((t, a) => t + a.effWeight, 0);
+    expect(eff).toBeCloseTo(1, 6);
+    // Excluded areas contribute nothing and carry a zero effective weight.
+    for (const a of s.audit.filter(x => x.excluded)) {
+      expect(a.effWeight).toBe(0);
+      expect(a.contribution).toBeNull();
+    }
+    // Nominal weights are untouched — the audit reports both.
+    expect(s.audit.find(a => a.key === 'speed').weight).toBe(READINESS_WEIGHTS.speed);
+  });
+
+  it('audit: renormalization holds when whole areas are missing (speed-only store)', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    const ds = { glimpseRows: [{ loc: GOOD, date: recent(1), oepe: t.tOepe * 0.8, kvst: t.tKvst * 0.8 }] };
+    const s = computeVisitReadiness(ds).stores.find(x => x.loc === GOOD);
+    const speed = s.audit.find(a => a.key === 'speed');
+    expect(speed.effWeight).toBeCloseTo(1, 6);           // speed carries the whole score
+    expect(speed.contribution).toBeCloseTo(s.readiness, 1);
+    expect(s.audit.filter(a => a.excluded).length).toBe(3);
+  });
+
+  it('provenance: every scored metric carries source, target basis, tolerance and as-of', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD)));
+    const s = res.stores.find(x => x.loc === GOOD);
+    const drivers = s.audit.flatMap(a => a.drivers);
+    expect(drivers.length).toBeGreaterThan(0);
+    for (const d of drivers) {
+      expect(d.source).toBeTruthy();
+      expect(d.field).toBeTruthy();
+      expect(srcMeta(d.source).system).toBeTruthy();
+      expect(['store', 'standard']).toContain(d.basis.kind);
+      expect(d.basis.ref).toBeTruthy();
+      expect(d.toleranceLabel).toBeTruthy();
+      expect(d.zeroAt).not.toBeNull();
+      expect(d.obs).toBeGreaterThan(0);
+      expect(d.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+    // A per-store target traces to that store's own DEFAULT_TARGETS entry…
+    const oepe = drivers.find(d => d.key === 'oepe');
+    expect(oepe.basis.kind).toBe('store');
+    expect(oepe.basis.ref).toBe(`DEFAULT_TARGETS[${GOOD}].tOepe`);
+    expect(oepe.target).toBe(DEFAULT_TARGETS[GOOD].tOepe);
+    // …while a fixed McDonald's standard is labelled as such.
+    const acc = drivers.find(d => d.key === 'accB2B');
+    expect(acc.basis.kind).toBe('standard');
+    expect(acc.target).toBe(95);
+  });
+
+  it('gaps: unmeasured metrics are listed honestly, never filled with a placeholder', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    const ds = { glimpseRows: [{ loc: GOOD, date: recent(1), oepe: t.tOepe * 0.8, kvst: t.tKvst * 0.8 }] };
+    const s = computeVisitReadiness(ds).stores.find(x => x.loc === GOOD);
+    const labels = s.notMeasured.map(m => m.label);
+    expect(labels).toContain('DT park rate');            // speed metric with no source row
+    expect(labels).toContain('SMG accuracy (B2B) %');    // whole accuracy area absent
+    for (const m of s.notMeasured) expect(m.reason).toBeTruthy();
+    // Nothing was invented to fill them.
+    const scored = s.audit.flatMap(a => a.drivers).map(d => d.key);
+    expect(scored).not.toContain('park');
+  });
+
+  it('scope: opts.locs restricts stores, district and the model check', () => {
+    const ds = mkDs(goodRows(GOOD), badRows(BAD));
+    const res = computeVisitReadiness(ds, { locs: [GOOD] });
+    expect(res.stores.length).toBe(1);
+    expect(res.stores[0].loc).toBe(GOOD);
+    expect(res.district.nStores).toBe(1);
+    // Zero-padded locs resolve the same way the qsr_* streams store them.
+    expect(computeVisitReadiness(ds, { locs: ['0' + GOOD] }).stores.length).toBe(1);
+  });
+
+  it('declares its coverage gaps and whether an EcoSure sample exists', () => {
+    const ds = mkDs(goodRows(GOOD));
+    ds.gradedVisits = [{ store: GOOD, dateISO: '2026-06-15', reportType: 'CFV', score: 88, pass: true }];
+    const res = computeVisitReadiness(ds);
+    expect(res.gaps).toBe(READINESS_GAPS);
+    expect(res.gaps.map(g => g.area)).toContain('Cleanliness');
+    expect(res.hasEcoSure).toBe(false);      // only a CFV on record
+    expect(res.visitTypes).toEqual(['CFV']);
+    expect(res.sourcesUsed).toContain('glimpseRows');
+  });
+
+  it('report: CSV explodes the composite and carries its own provenance preamble', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD), badRows(BAD)));
+    const csv = readinessAuditCSV(res, { scopeLabel: 'Oklahoma' });
+    expect(csv).toContain('Visit Readiness (PACE) calibration audit');
+    expect(csv).toContain('Oklahoma');
+    expect(csv).toContain('Area contribution (pts)');
+    expect(csv).toContain('Target basis');
+    expect(csv).toContain('Declared coverage gaps');
+    expect(csv).toContain('Cleanliness');
+    // One row per scored metric, plus header/preamble lines.
+    const metricCount = res.stores.reduce((t, s) => t + s.audit.reduce((u, a) => u + a.drivers.length, 0), 0);
+    expect(metricCount).toBeGreaterThan(0);
+    expect(csv.split('\n').length).toBeGreaterThan(metricCount);
+  });
+
+  it('report: HTML shows the composite math, the gaps and the model check', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD), badRows(BAD)));
+    const html = readinessReportHTML(res, { scopeLabel: 'All stores', detail: 'full' });
+    expect(html).toContain('Visit Readiness (PACE) — All stores');
+    expect(html).toContain('Σ contributions');
+    expect(html).toContain('Effective weight');
+    expect(html).toContain('Declared coverage gaps');
+    expect(html).toContain('Model check');
+    expect(html).toContain('No EcoSure / third-party food-safety result is loaded.');
+    // Summary mode drops the per-store audit but keeps the scope summary.
+    const summary = readinessReportHTML(res, { scopeLabel: 'All stores', detail: 'summary' });
+    expect(summary).not.toContain('Per-store calibration audit');
+    expect(summary).toContain('Scope summary');
+  });
+
+  it('report: export filename carries content + scope + date', () => {
+    const name = reportFileBase('Patch Brad Denley', 'audit');
+    expect(name).toMatch(/^visit-readiness-audit-patch-brad-denley-\d{4}-\d{2}-\d{2}$/);
   });
 
   it('calibration: positive rank correlation when predictions track actual visit scores', () => {

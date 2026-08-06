@@ -1400,6 +1400,7 @@ function App() {
   const [showYearly,   setShowYearly]  = useState(false); // Yearly Projections
   const [showPromoRoi, setShowPromoRoi]= useState(false); // Promo / Discount ROI
   const [showVisitReady,setShowVisitReady]=useState(false); // Visit Readiness
+  const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   const [showDICompare,setShowDICompare]= useState(false);
   const [showHelp,     setShowHelp]    = useState(false);
@@ -3059,7 +3060,7 @@ function App() {
       onOpenStoreConfig:()=>{setShowDataManager(false);setShowStoreVlhConfig(true);}}),
     showStoreVlhConfig&&h(StoreVlhConfigPanel,{onClose:()=>setShowStoreVlhConfig(false)}),
     showPromoRoi&&h(PromoRoiPanel,{ds,onClose:()=>setShowPromoRoi(false)}),
-    showVisitReady&&h(VisitReadinessPanel,{ds,onClose:()=>setShowVisitReady(false)}),
+    showVisitReady&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{setShowVisitReady(false);setVisitReadyInit(null);}}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
@@ -3072,6 +3073,7 @@ function App() {
       onLaunch:(sub)=>{
         setShowReportSubs(false);
         if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setShowCalendarManager(true); }
+        else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); setShowVisitReady(true); }
         else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); setShowAboveStore(true); }
       }}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),

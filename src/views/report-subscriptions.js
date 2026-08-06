@@ -21,6 +21,11 @@ const REPORTS = [
     desc: 'Sales/GC · FOB · Labor · Service · Controls · Voice rollup for a group + period.' },
   { key: 'calendar', label: 'Events Calendar', icon: '📅', periods: false, panels: false,
     desc: 'Tagged events (school/sports/festivals/LTOs) for the scope, print-ready.' },
+  // Notes 56 #2 — the first non-QSRSoft-source panel to get a real reporting layer.
+  // No period picker: readiness reads a fixed trailing window (daily metrics) plus the
+  // latest month on record (SMG / FOB), so a user-chosen period would misrepresent it.
+  { key: 'visit-readiness', label: 'Visit Readiness (PACE)', icon: '🛡️', periods: false, panels: false,
+    desc: 'Graded-visit readiness + calibration audit: contribution per area, every target and source, declared gaps.' },
 ];
 const PERIODS = [['mtd', 'Month-to-date'], ['lastweek', 'Last 7 days'], ['lastmonth', 'Last month']];
 
