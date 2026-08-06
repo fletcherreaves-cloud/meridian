@@ -5,6 +5,50 @@ import { generateSlideDeckHTML } from './scheduling-deck.js';
 
 const { useState, useMemo, useCallback } = React;
 
+// ── Weighted rollups (standing rule: never average averages) ─────────────────
+// Both of these were plain means of per-day values, which let a $2k Tuesday count
+// exactly as much as a $12k Saturday in every "Avg" card and store-table column on
+// this panel. engine/schedule-summary.js already aggregates the same two metrics
+// correctly (laborPctW/laborSalesW, ΣGC/Σhours); this brings the Scheduling
+// Intelligence panel in line with it so the two don't disagree on the same number.
+
+/**
+ * Labor % is labor$/sales, so a rollup must be Σ(labor$)/Σ(sales) — i.e. weighted by
+ * each day's sales, since labor$ = laborPct × sales.
+ */
+export function wAvgLaborPct(rows) {
+  let num = 0, den = 0;
+  for (const r of rows || []) {
+    const s = +r.sales || 0, lp = +r.laborPct || 0;
+    if (s > 0 && lp > 0) { num += lp * s; den += s; }
+  }
+  if (den > 0) return num / den;
+  // No sales on any row — a purely forward-looking schedule with no actuals yet.
+  // Fall back to the plain mean so the card shows the schedule's own figure rather
+  // than a misleading 0.
+  const v = (rows || []).map(r => +r.laborPct || 0).filter(x => x > 0);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+}
+
+/**
+ * TPMH is transactions per man-hour, so it aggregates as Σtransactions/Σhours.
+ * Each row's hours are recovered from its own ratio (hours = tcs/tpmh) rather than
+ * summing an hours column: LifeLenz's TPMH divides by a specific hours basis, and
+ * deriving it keeps the rollup consistent with the per-row TPMH values shown in the
+ * very same table. Picking the wrong hours column would make the total disagree with
+ * the rows above it.
+ */
+export function wAvgTPMH(rows) {
+  let tcs = 0, hrs = 0;
+  for (const r of rows || []) {
+    const t = +r.tcs || 0, m = +r.tpmh || 0;
+    if (t > 0 && m > 0) { tcs += t; hrs += t / m; }
+  }
+  if (hrs > 0) return tcs / hrs;
+  const v = (rows || []).map(r => +r.tpmh || 0).filter(x => x > 0);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+}
+
 // ── Time & Attendance data — Jun 1–28, 2026 ─────────────────────────────────
 // Update by uploading a new T&A report from LifeLenz
 const TA_DATA = {
@@ -162,8 +206,8 @@ function StoreScheduleTable({ rows }) {
 
 function StoreSection({ loc, rows }) {
   const sorted      = [...rows].sort((a,b) => a.date - b.date);
-  const avgLaborPct = rows.reduce((s,r) => s + (r.laborPct||0), 0) / rows.length;
-  const avgTPMH     = rows.reduce((s,r) => s + (r.tpmh||0), 0) / rows.length;
+  const avgLaborPct = wAvgLaborPct(rows);
+  const avgTPMH     = wAvgTPMH(rows);
   const totalHrsOver = rows.reduce((s,r) => s + (r.schVsIdealDiff||0), 0);
   const totalVLHOver = rows.reduce((s,r) => s + Math.max(0, r.schVLHOverNeed||0), 0);
   const noGuide      = rows.every(r => (r.fixGuideHrs||0) === 0);
@@ -202,8 +246,8 @@ function DistrictSummary({ schedRows }) {
   const locs = Object.keys(byLoc).sort();
 
   const totalDays    = schedRows.length;
-  const avgLabor     = schedRows.reduce((s,r) => s+(r.laborPct||0),0) / totalDays;
-  const avgTPMH      = schedRows.reduce((s,r) => s+(r.tpmh||0),0)     / totalDays;
+  const avgLabor     = wAvgLaborPct(schedRows);
+  const avgTPMH      = wAvgTPMH(schedRows);
   const totalVLHOver = schedRows.reduce((s,r) => s+Math.max(0,r.schVLHOverNeed||0),0);
   const totalHrsOver = schedRows.reduce((s,r) => s+Math.max(0,r.schVsIdealDiff||0),0);
 
@@ -227,8 +271,8 @@ function DistrictSummary({ schedRows }) {
         h('tbody', null,
           locs.map((loc, i) => {
             const rows = byLoc[loc];
-            const aLab  = rows.reduce((s,r) => s+(r.laborPct||0),0) / rows.length;
-            const aTpmh = rows.reduce((s,r) => s+(r.tpmh||0),0)     / rows.length;
+            const aLab  = wAvgLaborPct(rows);
+            const aTpmh = wAvgTPMH(rows);
             const vOver = rows.reduce((s,r) => s+Math.max(0,r.schVLHOverNeed||0),0);
             const cDiff = rows.reduce((s,r) => s+(r.schVsIdealDiff||0),0) / rows.length;
             const name  = sName(loc);
