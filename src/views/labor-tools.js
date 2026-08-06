@@ -1316,7 +1316,10 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         const laborPct   = metricAvg(ds,loc,range,'laborPct');
         const tpph       = metricAvg(ds,loc,range,'tpph');
         const oepe       = metricAvg(ds,loc,range,'oepe');
-        const otHrs      = _avg(lRows,'otHrs')||(_avg(cRows,'otHrs')!=null?(_avg(cRows,'otHrs')/rangeDays):null);
+        // otHrs now auto-first via metric-source.js (2026-08-06) — matches laborPct/tpph/oepe/
+        // cashOS above, which already routed through metricAvg; this one was still raw
+        // lRows/cRows-only with no auto (opsLaborRows) backstop.
+        const otHrs      = metricAvg(ds,loc,range,'otHrs');
         const cashOS     = metricAvg(ds,loc,range,'cashOSPct');
         const baseFoodPct= _avg(fRows,'baseFoodPct');
         const totFoodPct = _avg(fRows,'pLFoodPct');

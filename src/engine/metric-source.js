@@ -57,7 +57,12 @@ export const METRIC_SOURCES = {
   // costs nothing once ctrlRows data is clean again (both sources should then agree).
   laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']] },
   tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']] },
-  otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
+  // OT Hours — manual Controls, then manual Labor, then the auto-pulled Operations Report
+  // labor-summary stream (qsr_labor_summary → loadOpsLaborSummary, daily, already aliased to
+  // otHrs) — closes the labor-tools.js Operations Group Stats gap (cleanup-backlog Class 2,
+  // 2026-08-06): otHrs read raw ctrlRows/laborRows only, with no auto backstop, unlike
+  // laborPct/tpph/oepe/cashOS in the same panel which already route through this resolver.
+  otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs'], ['opsLaborRows', 'otHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
   cashOSPct: { mode: 'any', srcs: [['ctrlRows', 'cashOSPct'], ['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct']] },
   // Cash Over/Short $ (dollar, not %) — manual Controls, then emailed Glimpse/Cash Sheet, then
