@@ -37,6 +37,7 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { analyzeCountCadence, weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
+import { fobDailyTrace, annotateTouchpoints, biggestJumpDay } from '../engine/variance-trace.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -98,7 +99,7 @@ const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
 // Per-store FOB target (Food-Over-Base % of product sales) — over target = worse food cost =
 // prioritize the diagnosis (owner req 2026-07-30). tFOBTarget is a fraction (e.g. 0.0385 = 3.85%).
 const fobTgtOf = loc => { const t = DEFAULT_TARGETS[unpad(loc)]; return t && t.tFOBTarget != null ? Number(t.tFOBTarget) : null; };
-const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(0) + '%';
+const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%';
 const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%'; // FOB % — 2 decimals
 
 // Trigger a client-side file download (matches the app's export pattern).
@@ -312,9 +313,58 @@ function ProgressBar({ value }) {
     span({ style: { fontSize: '12px', fontWeight: 700, color, minWidth: '34px', textAlign: 'right' } }, pct(p)));
 }
 
+// Variance Trace chart (Notes 56 #1, 2026-08-06) — the store-aggregate companion to
+// windowsFor's item-level list below. Plots cumulative FOB % day-by-day across the period
+// (from qsr_fob's own MTD-cumulative snapshots — no invented theoretical-usage model), with
+// count touchpoints marked, and auto-flags the single biggest day-over-day jump + the
+// look-back window (bracketed to the nearest prior real count) it must have happened in.
+function VarianceTraceChart({ trace, jump }) {
+  const pts = (trace || []).filter(p => p.cumulative.fobPct != null);
+  if (pts.length < 2) return div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '6px 0' } }, 'Not enough daily FOB snapshots yet to trace a trend for this period.');
+  const ys = pts.map(p => p.cumulative.fobPct);
+  const minY = Math.min(...ys, 0) * (Math.min(...ys) < 0 ? 1.1 : 0.9);
+  const maxY = Math.max(...ys) * 1.15 || 0.01;
+  const W = 640, H = 120, pX = 12, pYt = 14, pYb = 20;
+  const xOf = i => pX + (i / Math.max(pts.length - 1, 1)) * (W - pX * 2);
+  const yOf = v => pYt + (1 - (v - minY) / (maxY - minY || 1)) * (H - pYt - pYb);
+  const poly = pts.map((p, i) => `${xOf(i).toFixed(1)},${yOf(p.cumulative.fobPct).toFixed(1)}`).join(' ');
+  const areaStr = poly + ` ${xOf(pts.length - 1).toFixed(1)},${(H - pYb).toFixed(1)} ${xOf(0).toFixed(1)},${(H - pYb).toFixed(1)}`;
+  const idxOf = d => pts.findIndex(p => p.date === d);
+  const jIdx = jump ? idxOf(jump.date) : -1;
+  const wIdx = jump ? idxOf(jump.windowStart) : -1;
+  const TP_STYLE = { weekly: { r: 4.5, fill: '#f5bc00', stroke: 'var(--surf2)' }, spot: { r: 2.5, fill: '#38bdf8', stroke: 'var(--surf2)' }, eom: { r: 5.5, fill: '#a78bfa', stroke: 'var(--surf2)' } };
+  const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
+  return div(null,
+    jump && Math.abs(jump.delta) >= 25 ? div({ style: { fontSize: '11px', color: 'var(--text2)', marginBottom: '6px' } },
+      span({ style: { fontWeight: 700, color: jump.delta > 0 ? '#f87171' : '#4ade80' } }, `${jump.delta > 0 ? '+' : ''}$${Math.round(jump.delta).toLocaleString()}`),
+      ` biggest single-pull jump landed on `, span({ style: { fontWeight: 700, color: 'var(--text)' } }, dLbl(jump.date)),
+      ' — look-back window: ', span({ style: { fontWeight: 600 } }, dLbl(jump.windowStart)), ' → ', span({ style: { fontWeight: 600 } }, dLbl(jump.date)),
+      wIdx < 0 ? ' (no earlier count on record — could be anywhere before this)' : '.') : null,
+    h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: H, display: 'block', overflow: 'visible' } },
+      h('defs', null, h('linearGradient', { id: 'lg_vt', x1: '0', y1: '0', x2: '0', y2: '1' },
+        h('stop', { offset: '0%', stopColor: '#f5bc00', stopOpacity: .16 }), h('stop', { offset: '100%', stopColor: '#f5bc00', stopOpacity: 0 }))),
+      jIdx >= 0 && wIdx >= 0 && h('rect', { x: xOf(wIdx), y: pYt, width: Math.max(xOf(jIdx) - xOf(wIdx), 1), height: H - pYt - pYb, fill: 'rgba(248,113,113,.10)' }),
+      h('polygon', { points: areaStr, fill: 'url(#lg_vt)' }),
+      h('polyline', { points: poly, fill: 'none', stroke: '#f5bc00', strokeWidth: 1.5, strokeLinejoin: 'round', strokeLinecap: 'round' }),
+      jIdx >= 0 && h('line', { x1: xOf(jIdx), y1: pYt, x2: xOf(jIdx), y2: H - pYb, stroke: '#f87171', strokeWidth: 1, strokeDasharray: '4,3' }),
+      ...pts.map((p, i) => {
+        const tp = p.touchpoint && TP_STYLE[p.touchpoint];
+        const px = xOf(i), py = yOf(p.cumulative.fobPct);
+        return h('circle', { key: i, cx: px, cy: py, r: tp ? tp.r : 1.6, fill: tp ? tp.fill : '#f5bc00', stroke: tp ? tp.stroke : 'none', strokeWidth: tp ? 1.2 : 0 },
+          h('title', null, `${dLbl(p.date)} — ${pct2(p.cumulative.fobPct)} FOB${p.touchpoint ? ` · ${p.touchpoint} count` : ''}`));
+      }),
+      pts.length <= 12 ? pts.map((p, i) => h('text', { key: 'x' + i, x: xOf(i), y: H, textAnchor: 'middle', fontSize: 7, fill: 'var(--text3)' }, dLbl(p.date))) : null,
+    ),
+    div({ style: { display: 'flex', gap: '10px', fontSize: '9px', color: 'var(--text3)', marginTop: '2px' } },
+      span(null, span({ style: { display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#f5bc00', marginRight: '3px' } }), 'Weekly count'),
+      span(null, span({ style: { display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#38bdf8', marginRight: '3px' } }), 'Spot count'),
+      span(null, span({ style: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#a78bfa', marginRight: '3px' } }), 'EOM count'),
+      span(null, 'Line = cumulative FOB % (MTD), from the auto qsr_fob pulls — no manual input needed.')));
+}
+
 // Weekly-count cadence monitor (Count Cycle view) — is each store running its weekly full Food+Condiment
 // count? Detected weekly day, last full count + days-since, weekly-vs-spot session mix. Overdue first.
-function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, nm }) {
+function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
   const [open, setOpen] = useState(null);   // loc expanded to its between-count variance windows
   const data = (rows || []).map(r => ({ loc: r.loc, name: r.name, c: cadenceByLoc[String(r.loc)] })).filter(x => x.c);
   if (!data.length) return null;
@@ -346,6 +396,8 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, nm }) {
         const label = c.daysSinceWeekly == null ? 'No full weekly' : c.daysSinceWeekly >= 8 ? `Overdue · ${c.daysSinceWeekly}d` : 'On track';
         const isOpen = open === loc;
         const wins = isOpen ? windowsFor(loc) : [];
+        const trace = isOpen ? annotateTouchpoints(fobDailyTrace(fobRows, { loc, period }), { sessions: c.sessions }) : [];
+        const jump = isOpen ? biggestJumpDay(trace) : null;
         const rowEls = [
           h('tr', { key: loc, onClick: () => setOpen(o => o === loc ? null : loc), style: { borderBottom: isOpen ? 'none' : '1px solid var(--bdr)', cursor: 'pointer' } },
             h('td', { style: { padding: '6px 10px', fontWeight: 600, color: 'var(--text)' } }, `${isOpen ? '▾' : '▸'} ${name}`,
@@ -357,10 +409,12 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, nm }) {
         ];
         if (isOpen) rowEls.push(
           h('tr', { key: loc + '-d', style: { borderBottom: '1px solid var(--bdr)' } },
-            h('td', { colSpan: 5, style: { padding: '2px 10px 10px 24px', background: 'var(--surf3)' } },
+            h('td', { colSpan: 5, style: { padding: '8px 10px 10px 24px', background: 'var(--surf3)' } },
+              div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '0 0 4px' } }, 'FOB variance trace — this period (Notes 56)'),
+              h(VarianceTraceChart, { trace, jump }),
+              div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '10px 0 3px' } }, 'Biggest between-count variance windows (where the movement happened)'),
               wins.length
                 ? div(null,
-                    div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '4px 0 3px' } }, 'Biggest between-count variance windows (where the movement happened)'),
                     ...wins.map((w, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '1px 0' } },
                       span({ style: { fontWeight: 600, color: 'var(--text)' } }, w.descr), ` — moved `,
                       span({ style: { fontWeight: 700, color: w.delta < 0 ? '#f87171' : '#4ade80' } }, `${w.delta >= 0 ? '+' : ''}${$(w.delta)}`),
@@ -1263,7 +1317,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   // before the count window opens (variance/waste/transfers land all month, while
   // on-hand only populates the last 3 days). Gating on on-hand alone hid everything.
   const allRows = useMemo(() => {
-    const fob = fobByStore(fobRows, period);
+    // loadQsrFob() doesn't strip the zero-padded NSN loc the way every other qsr_* loader in
+    // this session was fixed to (2026-08-06, found building the Variance Trace chart) — so
+    // fobByStore's keys may come out padded ("0003708") while byLoc/varByLoc/etc are always
+    // unpadded ("3708"). Left un-padded here, that mismatch creates a GHOST duplicate row per
+    // store (one with real on-hand/variance data + blank FOB, one with real FOB + everything
+    // else blank) that's easy to miss since nm() already self-corrects the padded loc to the
+    // right store NAME. Remap fob's keys through unpad() so the Set union below never doubles
+    // a store just because its FOB row happened to carry padding.
+    const fobRaw = fobByStore(fobRows, period);
+    const fob = {}; for (const k in fobRaw) fob[unpad(k)] = fobRaw[k];
     const asOf = new Date();
     const locs = new Set([
       ...Object.keys(byLoc), ...Object.keys(varByLoc), ...Object.keys(wasteByLoc),
@@ -1626,7 +1689,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       const dOf = m => { const p = pctOf(m.k); const t = DEFAULT_TARGETS[unpad(s.loc)]?.[m.tgt]; return (p != null && t != null) ? (p - t * 100) : null; };
       return [nm(s.loc), Math.round(s.sales), Math.round(s.fobD), s.fobPct != null ? (s.fobPct * 100).toFixed(2) : '', s.fobTgt != null ? (s.fobTgt * 100).toFixed(2) : '', s.deltaPp != null ? s.deltaPp.toFixed(2) : '',
         ...COMP_META.map(m => Math.round(s.comps[m.k])), ...COMP_META.map(m => { const p = pctOf(m.k); return p != null ? p.toFixed(2) : ''; }), ...COMP_META.map(m => { const d = dOf(m); return d != null ? d.toFixed(2) : ''; }),
-        s.countPct != null ? Math.round(s.countPct * 100) : '', ...CLASS_META.map(m => { const p = s.classPct[m.k]; return p != null ? Math.round(p * 100) : ''; }), s.believesDone ? 'yes' : 'no', s.uncountedFC, s.over$ != null ? Math.round(s.over$) : ''];
+        s.countPct != null ? (s.countPct * 100).toFixed(2) : '', ...CLASS_META.map(m => { const p = s.classPct[m.k]; return p != null ? (p * 100).toFixed(2) : ''; }), s.believesDone ? 'yes' : 'no', s.uncountedFC, s.over$ != null ? Math.round(s.over$) : ''];
     });
     return toCsv(H, rows2);
   };
@@ -1637,12 +1700,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const head = `<h1>District EOM Summary — ${scopeLabel()}</h1><p class="sub">${period} · ${r.nStores} store(s) · dollar-weighted FOB roll-up</p>
       <table><tbody>
       <tr><th>District FOB</th><td class="g">${pctS(r.fobPct)} · ${$(r.fob$)}</td><th>vs target</th><td>${pctS(r.fobTgt)}${r.fobPct != null && r.fobTgt != null ? ` (${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)}pp)` : ''}</td><th>Prod Sales</th><td>${$(r.sales)}</td></tr>
-      <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'} · ${d.completion.storesWithUncountedFC} Location(s) with uncounted Food/Condiment${d.completion.totalUncountedFC ? ` (${d.completion.totalUncountedFC} Items Total)` : ''}</td></tr>
-      <tr><th>By class</th><td colspan="5">${CLASS_META.map(m => { const p = d.completion.byClass[m.k]; return `${m.label} ${p != null ? Math.round(p * 100) + '%' : '—'}${m.k === 'nonproduct' ? ' (due tomorrow)' : ''}`; }).join(' · ')}</td></tr>
+      <tr><th>Count</th><td colspan="5">${d.completion.ready} ready · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? (d.completion.avgCountPct * 100).toFixed(2) + '%' : '—'} · ${d.completion.storesWithUncountedFC} Location(s) with uncounted Food/Condiment${d.completion.totalUncountedFC ? ` (${d.completion.totalUncountedFC} Items Total)` : ''}</td></tr>
+      <tr><th>By class</th><td colspan="5">${CLASS_META.map(m => { const p = d.completion.byClass[m.k]; return `${m.label} ${p != null ? (p * 100).toFixed(2) + '%' : '—'}${m.k === 'nonproduct' ? ' (due tomorrow)' : ''}`; }).join(' · ')}</td></tr>
       <tr><th>Opportunity</th><td colspan="5">${$(d.totalOver$)} over target across ${d.opportunity.length} store(s) · biggest component opportunity vs target: ${d.analysis.anyOverTarget ? `${d.analysis.biggestComp.label} (${d.analysis.biggestComp.deltaPp != null ? `+${d.analysis.biggestComp.deltaPp.toFixed(2)}pp · ` : ''}${$(d.analysis.biggestComp.over$)} over)` : 'all components at/under target'}</td></tr>
       </tbody></table>`;
     const rowsHtml = d.stores.slice().sort((a, b) => (b.over$ || -1e9) - (a.over$ || -1e9)).map(s =>
-      `<tr><td>${nm(s.loc)}</td><td class="${s.deltaPp > 0 ? 'r' : ''}">${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}</td><td>${$(s.fobD)}</td>${COMP_META.map(m => `<td>${$(s.comps[m.k])}</td>`).join('')}<td>${s.countPct != null ? Math.round(s.countPct * 100) + '%' : '—'}${s.uncountedFC ? ` <span class="r">(${s.uncountedFC} F/C)</span>` : ''}</td>${CLASS_META.map(m => { const p = s.classPct[m.k]; return `<td>${p != null ? Math.round(p * 100) + '%' : '—'}</td>`; }).join('')}<td>${s.believesDone ? '✓' : s.countPct > 0.01 ? 'counting' : '—'}</td></tr>`).join('');
+      `<tr><td>${nm(s.loc)}</td><td class="${s.deltaPp > 0 ? 'r' : ''}">${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}</td><td>${$(s.fobD)}</td>${COMP_META.map(m => `<td>${$(s.comps[m.k])}</td>`).join('')}<td>${s.countPct != null ? (s.countPct * 100).toFixed(2) + '%' : '—'}${s.uncountedFC ? ` <span class="r">(${s.uncountedFC} F/C)</span>` : ''}</td>${CLASS_META.map(m => { const p = s.classPct[m.k]; return `<td>${p != null ? (p * 100).toFixed(2) + '%' : '—'}</td>`; }).join('')}<td>${s.believesDone ? '✓' : s.countPct > 0.01 ? 'counting' : '—'}</td></tr>`).join('');
     const table = `<h1 style="margin-top:18px">By store</h1><table><thead><tr><th>Store</th><th>FOB % (±tgt)</th><th>FOB $</th>${COMP_META.map(m => `<th>${m.label}</th>`).join('')}<th>Count</th>${CLASS_META.map(m => `<th>${m.short}</th>`).join('')}<th>Ready</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
     return head + table;
   };
@@ -1928,7 +1991,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const exportCSV = useCallback(() => {
     const cols = [
       ['Store', r => r.name], ['State', r => (r.org === 'emerald' ? 'FL' : 'OK')],
-      ['Count %', r => { const v = r.prog.earlyPctCounted ?? r.prog.pctCounted; return v != null ? (v * 100).toFixed(0) : ''; }],
+      ['Count %', r => { const v = r.prog.earlyPctCounted ?? r.prog.pctCounted; return v != null ? (v * 100).toFixed(2) : ''; }],
       ['FOB %', r => r.fobPct != null ? (r.fobPct * 100).toFixed(2) : ''],
       ['FOB $', r => r.fob$ != null ? Math.round(r.fob$) : ''],
       ['Diagnosis', r => DIAG_LABEL[r.diagnosis] || r.diagnosis],
@@ -2177,7 +2240,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
     // Count Cycle view → weekly-cadence monitor above the store table (Notes 40 #1). Renders only when
     // it has cadence data; hidden in Scoreboard/EOM modes.
-    (mode === 'progress' && !loading && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, rawByLoc, nm }) : null,
+    (mode === 'progress' && !loading && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) : null,
 
     loading ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
@@ -2821,14 +2884,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               span({ style: { fontSize: '8.5px', fontWeight: 600, color: 'var(--text3)' } }, `${r.nStores} ${scopeLabel()} store${r.nStores === 1 ? '' : 's'} · MTD`))),
           // Completion + opportunity + analysis
           div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
-            span(null, span({ style: { color: '#4ade80', fontWeight: 700 } }, `${d.completion.ready} ready`), ` · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? Math.round(d.completion.avgCountPct * 100) + '%' : '—'}`),
+            span(null, span({ style: { color: '#4ade80', fontWeight: 700 } }, `${d.completion.ready} ready`), ` · ${d.completion.counting} counting · ${d.completion.notStarted} not started · avg ${d.completion.avgCountPct != null ? (d.completion.avgCountPct * 100).toFixed(2) + '%' : '—'}`),
             d.completion.storesWithUncountedFC ? span({ style: { color: '#fb923c', fontWeight: 700 } }, `⚠ ${d.completion.storesWithUncountedFC} Location${d.completion.storesWithUncountedFC === 1 ? '' : 's'} with uncounted Food/Condiment${d.completion.totalUncountedFC ? ` (${d.completion.totalUncountedFC} Item${d.completion.totalUncountedFC === 1 ? '' : 's'} Total)` : ''}`) : null),
           // District per-class completion (owner req) — Non-Product muted (not due today).
           div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '11.5px', color: 'var(--text3)' } },
             span({ style: { textTransform: 'uppercase', letterSpacing: '.04em', fontSize: '10px' } }, 'By class:'),
             ...CLASS_META.map(m => { const p = d.completion.byClass[m.k]; const late = m.k === 'nonproduct';
               return span({ key: m.k, style: { color: p == null ? 'var(--text3)' : late ? 'var(--text3)' : p >= 0.999 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#fb923c', fontWeight: 600, opacity: late ? 0.7 : 1 } },
-                `${m.label} ${p != null ? Math.round(p * 100) + '%' : '—'}${late ? ' (tmrw)' : ''}`); })),
+                `${m.label} ${p != null ? (p * 100).toFixed(2) + '%' : '—'}${late ? ' (tmrw)' : ''}`); })),
           div({ style: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '12px' } },
             span(null, span({ style: { color: '#f5bc00', fontWeight: 700 } }, `💰 ${$(d.totalOver$)} over target`), ` across ${d.opportunity.length} store${d.opportunity.length === 1 ? '' : 's'}`),
             d.analysis.anyOverTarget
@@ -2847,9 +2910,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: sc, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, `${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}`),
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' } }, $(s.fobD)),
                   ...COMP_META.map(m => h('td', { key: m.k, style: { padding: '4px 7px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, $(s.comps[m.k]))),
-                  h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.uncountedFC ? '#fb923c' : 'var(--text2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, s.countPct != null ? `${Math.round(s.countPct * 100)}%` : '—', s.uncountedFC ? ` ·${s.uncountedFC}` : ''),
+                  h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.uncountedFC ? '#fb923c' : 'var(--text2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, s.countPct != null ? `${(s.countPct * 100).toFixed(2)}%` : '—', s.uncountedFC ? ` ·${s.uncountedFC}` : ''),
                   ...CLASS_META.map(m => { const p = s.classPct[m.k]; const late = m.k === 'nonproduct';
-                    return h('td', { key: m.k, style: { padding: '4px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: p == null ? 'var(--text3)' : late ? 'var(--text3)' : p >= 0.999 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#fb923c', opacity: late ? 0.7 : 1 } }, p != null ? `${Math.round(p * 100)}%` : '—'); }),
+                    return h('td', { key: m.k, style: { padding: '4px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: p == null ? 'var(--text3)' : late ? 'var(--text3)' : p >= 0.999 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#fb923c', opacity: late ? 0.7 : 1 } }, p != null ? `${(p * 100).toFixed(2)}%` : '—'); }),
                   h('td', { style: { padding: '4px 7px', textAlign: 'center', color: s.believesDone ? '#4ade80' : 'var(--text3)' } }, s.believesDone ? '✓' : ''),
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.over$ > 0 ? '#f5bc00' : 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, s.over$ != null && s.over$ > 0 ? $(s.over$) : ''),
                 ]);
@@ -2929,7 +2992,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                         const e = s.engagement || {};
                         return h('td', { title: e.readLabel || '', style: { padding: '5px 7px', textAlign: 'right', fontWeight: 700, color: EV[e.verdict] || 'var(--text3)' } }, e.label || '—');
                       })(),
-                      h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, s.count.basePct != null && s.count.curPct != null ? `${Math.round(s.count.basePct * 100)}→${Math.round(s.count.curPct * 100)}%` : '—'),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, s.count.basePct != null && s.count.curPct != null ? `${(s.count.basePct * 100).toFixed(2)}→${(s.count.curPct * 100).toFixed(2)}%` : '—'),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHelped ? '#4ade80' : 'var(--text3)', fontWeight: s.nHelped ? 700 : 400 } }, s.nHelped || ''),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHurt ? '#f87171' : 'var(--text3)', fontWeight: s.nHurt ? 700 : 400 } }, s.nHurt || ''),
                       h('td', { title: s.nRecounted ? `${s.nRecounted} item${s.nRecounted === 1 ? '' : 's'} were RE-COUNTED since the baseline (their last-counted date changed). ↻ = a recount occurred, not a recommendation.` : '', style: { padding: '5px 7px', textAlign: 'right', color: s.nRecounted ? '#f5bc00' : 'var(--text3)', fontWeight: s.nRecounted ? 700 : 400 } }, s.nRecounted ? `↻ ${s.nRecounted}` : ''),
