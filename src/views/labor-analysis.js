@@ -210,6 +210,26 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
         DAYS.map(([d]) => (hrs[d] && hrs[d].hours != null) ? hrs[d].hours : '·').join(' / ')));
   };
 
+  // Export/print naming (standing rule): every filename + print title must say WHAT it is,
+  // WHAT SCOPE it covers, and WHAT PERIOD. This used to be `labor-analysis-${weekStart||'week'}.csv`
+  // — no scope token at all, and the literal word "week" whenever weekStart was missing.
+  const scopeLabel = useMemo(() => {
+    if (scope === 'all') return 'All Stores';
+    if (scope === 'fl') return 'Florida';
+    if (scope === 'ok') return 'Oklahoma';
+    if (scope.startsWith('__patch__')) return scope.slice(9);
+    return `${storeNm(scope)} #${locNum(scope)}`;
+  }, [scope]);
+  const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'scope';
+  // No weekStart = no week resolved at all; stamp the export date so the file is still
+  // self-identifying rather than falling back to the literal word "week".
+  const periodLabel = (week && week.weekStart)
+    ? `week of ${week.weekStart}`
+    : `no week resolved — exported ${new Date().toISOString().slice(0, 10)}`;
+  const fileStem = `labor-analysis-${slug(scopeLabel)}-${(week && week.weekStart)
+    ? `week-of-${week.weekStart}`
+    : `no-week-exported-${new Date().toISOString().slice(0, 10)}`}`;
+
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   const exportCSV = () => {
     const cols = ['Store', 'NSN', ...COLS.map(c => c.h)];
@@ -218,19 +238,19 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
     if (scopedSub) lines.push(['Subtotal', scopedSub.n, ...COLS.map(c => scopedSub[c.k] == null ? '' : scopedSub[c.k])].map(csvCell).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob); const a = document.createElement('a');
-    a.href = url; a.download = `labor-analysis-${(week && week.weekStart) || 'week'}.csv`; a.click(); URL.revokeObjectURL(url);
+    a.href = url; a.download = `${fileStem}.csv`; a.click(); URL.revokeObjectURL(url);
   };
   const printReport = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));
     const head = ['Store', ...COLS.map(c => c.h)].map(x => `<th>${esc(x)}</th>`).join('');
     const body = shown.map(r => `<tr><td class="s">${esc(storeNm(r.loc))} #${esc(locNum(r.loc))}</td>${COLS.map(c => `<td class="n">${esc(c.f(r[c.k]))}</td>`).join('')}</tr>`).join('');
     const sub = scopedSub ? `<tr class="sub"><td class="s">Subtotal (${scopedSub.n})</td>${COLS.map(c => `<td class="n">${esc(scopedSub[c.k] != null ? c.f(scopedSub[c.k]) : '—')}</td>`).join('')}</tr>` : '';
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Labor Analysis — ${esc((week && week.weekStart) || '')}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Labor Analysis — ${esc(scopeLabel)} — ${esc(periodLabel)}</title>
       <style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:18px;font-size:10px}h1{font-size:15px;margin:0 0 2px}.sub2{color:#666;font-size:10px;margin-bottom:10px}
       table{width:100%;border-collapse:collapse}th{text-align:right;font-size:8px;text-transform:uppercase;color:#666;border-bottom:2px solid #f5bc00;padding:4px 5px}th:first-child{text-align:left}
       td{padding:3px 5px;border-bottom:1px solid #eee}td.n{text-align:right;font-variant-numeric:tabular-nums}td.s{font-weight:600}tr.sub td{font-weight:800;background:#fff8e6}@media print{body{margin:0}}</style></head><body>
       <h1>Weekly Labor Analysis — Fixed Labor Hours</h1>
-      <div class="sub2">Week of <b>${esc((week && week.weekStart) || '—')}</b> · ${shown.length} stores · scope: ${esc(scope)} · generated ${esc(new Date().toLocaleDateString())}</div>
+      <div class="sub2">Week of <b>${esc((week && week.weekStart) || '—')}</b> · ${shown.length} stores · scope: <b>${esc(scopeLabel)}</b> · generated ${esc(new Date().toLocaleDateString())}</div>
       <table><thead><tr>${head}</tr></thead><tbody>${body}${sub}</tbody></table></body></html>`;
     const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
   };
@@ -270,7 +290,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
         </tbody></table></div>`;
     };
     // Tightened to fit one landscape page per store (3 floor + 22 fixed + totals).
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>FLH Worksheets — ${esc(shown.length)} stores</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>FLH Planning Worksheets — ${esc(scopeLabel)} (${esc(shown.length)} stores) — ${esc(periodLabel)}</title>
       <style>@page{size:landscape;margin:0.3in}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:0;font-size:7.5px}
       .store-sheet{page-break-before:always;page-break-inside:avoid}.store-sheet:first-child{page-break-before:auto}
       .note-strip{font-size:7px;color:#444;background:#fff8e6;border:1px solid #f0d060;border-radius:3px;padding:2px 5px;margin:0 0 3px;line-height:1.15}
