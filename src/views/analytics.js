@@ -15,6 +15,8 @@ import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
+import { metricSeries } from '../engine/metric-source.js';
+import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -9488,68 +9490,69 @@ function ChannelIntelligencePanel({stores, ds, onClose}) {
 // ── Monthly Targets Email Report ──────────────────────────────────────────────
 // Computes per-store actuals from loaded ds for a given year/month.
 // Returns { byLoc, minDate, maxDate, days } where byLoc[loc] = {sales,crewLaborPct,fobBasePct,fobTotalPct,tpph}
+// Feeds the SCHEDULED EMAILED Monthly Targets report — was manual-upload-only with zero
+// auto fallback (cleanup-backlog.md Class 2, 2026-08-06): labor/sales/TPPH only summed
+// ds.laborRows, gap-filled only from ds.schedRows (LifeLenz auto sync — found unreliable
+// this session, see DI Calibration precedent: 2/7 real-overlap days showed genuine
+// corruption, a non-null garbage value a presence-check wouldn't catch); FOB read ONLY
+// ds.fobRows with no auto qsr_fob fallback at all. Since a wrong figure here goes out the
+// door in an actual email (not just an in-app view), routed both through the app's
+// established, already-verified auto-first resolvers instead of hand-rolled priority
+// chains: metric-source.js's metricSeries for sales/laborPct/tpph (day-by-day auto-first,
+// summed to a Σ$/Σ$ month total — never averages a % directly), and eom-inventory.js's
+// fobSnapshotByStore for FOB (the same dollar-weighted MTD-snapshot read the EOM
+// Dashboard/One-Pager/AAG all already use). Manual rows still win outright whenever they
+// explicitly cover a (loc, month) — auto only fills what manual doesn't.
 function computeMonthActuals(ds, year, month) {
-  const labor = {}, fob = {};
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0);   // last day of the month
+  const range = { s: monthStart, e: monthEnd };
+  const period = `${year}-${String(month).padStart(2, '0')}`;
   const dates = new Set();
-  const laborCovered = new Set();
 
-  // Aggregate labor rows (manual uploads)
-  (ds&&ds.laborRows||[]).forEach(r => {
+  // Manual FOB Report upload — explicit per-(loc,month) coverage wins outright over auto.
+  const manualFob = {};
+  (ds && ds.fobRows || []).forEach(r => {
     if (!r.date || !r.loc) return;
     const d = r.date instanceof Date ? r.date : new Date(r.date);
-    if (d.getFullYear() !== year || d.getMonth()+1 !== month) return;
-    const dateStr = d.toISOString().slice(0,10);
-    dates.add(dateStr);
-    laborCovered.add(String(r.loc) + '|' + dateStr);
+    if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return;
     const k = String(r.loc);
-    if (!labor[k]) labor[k] = {sales:0, laborDol:0, tpphNum:0, tpphDen:0};
-    const s = r.sales||0;
-    labor[k].sales += s;
-    labor[k].laborDol += (r.laborPct||0) * s;
-    if (r.tpph > 0) { labor[k].tpphNum += r.tpph * s; labor[k].tpphDen += s; }
+    if (!manualFob[k]) manualFob[k] = { sales: 0, baseFoodDol: 0, totalFoodDol: 0 };
+    const s = r.sales || 0;
+    manualFob[k].sales += s;
+    manualFob[k].baseFoodDol += (r.baseFoodPct || 0) * s;
+    manualFob[k].totalFoodDol += (r.pLFoodPct || 0) * s;
   });
+  // Auto qsr_fob fallback — the same dollar-weighted MTD-snapshot read used everywhere
+  // else in the app (EOM Dashboard, One-Pager, AAG FOB tiles).
+  const autoFob = fobSnapshotByStore(ds && ds.qsrFobRows || [], period);
 
-  // Supplement with auto-synced LifeLenz schedRows for any loc+date not already
-  // covered by laborRows — prevents double-counting when both are loaded.
-  (ds&&ds.schedRows||[]).forEach(r => {
-    if (!r.date || !r.loc || !r.sales) return;
-    const d = r.date instanceof Date ? r.date : new Date(r.date);
-    if (d.getFullYear() !== year || d.getMonth()+1 !== month) return;
-    const dateStr = d.toISOString().slice(0,10);
-    if (laborCovered.has(String(r.loc) + '|' + dateStr)) return;
-    dates.add(dateStr);
-    const k = String(r.loc);
-    if (!labor[k]) labor[k] = {sales:0, laborDol:0, tpphNum:0, tpphDen:0};
-    const s = r.sales||0;
-    labor[k].sales += s;
-    labor[k].laborDol += (r.laborPct||0) * s;
-  });
-
-  // Aggregate FOB rows
-  (ds&&ds.fobRows||[]).forEach(r => {
-    if (!r.date || !r.loc) return;
-    const d = r.date instanceof Date ? r.date : new Date(r.date);
-    if (d.getFullYear() !== year || d.getMonth()+1 !== month) return;
-    const k = String(r.loc);
-    if (!fob[k]) fob[k] = {sales:0, baseFoodDol:0, totalFoodDol:0};
-    const s = r.sales||0;
-    fob[k].sales += s;
-    fob[k].baseFoodDol += (r.baseFoodPct||0) * s;
-    fob[k].totalFoodDol += (r.pLFoodPct||0) * s;
-  });
-
-  const allLocs = new Set([...Object.keys(labor), ...Object.keys(fob)]);
+  const allLocs = new Set([...Object.keys(DEFAULT_TARGETS), ...Object.keys(manualFob), ...Object.keys(autoFob)]);
   const byLoc = {};
   allLocs.forEach(loc => {
-    const lb = labor[loc]||{};
-    const fb = fob[loc]||{};
-    const sales = lb.sales||fb.sales||0;
+    // Sales/Labor%/TPPH — per-day auto-first (manual laborRows → DAR → …), summed across
+    // the month. Never averages a daily % directly — sums $ then divides (Σ$/Σ$).
+    const salesSeries = metricSeries(ds, loc, range, 'sales');
+    const laborSeries = metricSeries(ds, loc, range, 'laborPct');
+    const tpphSeries = metricSeries(ds, loc, range, 'tpph');
+    let sales = 0, laborDol = 0, tpphNum = 0, tpphDen = 0;
+    for (const dk in salesSeries) { sales += salesSeries[dk]; dates.add(dk); }
+    for (const dk in laborSeries) { const s = salesSeries[dk] || 0; if (s > 0) laborDol += laborSeries[dk] * s; }
+    for (const dk in tpphSeries) { const s = salesSeries[dk] || 0; if (s > 0 && tpphSeries[dk] > 0) { tpphNum += tpphSeries[dk] * s; tpphDen += s; } }
+
+    const mFob = manualFob[loc];
+    const aFob = autoFob[loc];
+    const fobFromManual = !!(mFob && mFob.sales > 0);
+    const fobSales = fobFromManual ? mFob.sales : (aFob ? aFob.sales : 0);
+    const fobBasePct = fobFromManual ? mFob.baseFoodDol / mFob.sales : (aFob ? aFob.baseFoodPct : null);
+    const fobTotalPct = fobFromManual ? mFob.totalFoodDol / mFob.sales : (aFob ? aFob.pLFoodPct : null);
+
+    if (!(sales > 0) && !(fobSales > 0)) return;   // nothing for this store this month
     byLoc[loc] = {
-      sales,
-      crewLaborPct: lb.sales > 0 ? lb.laborDol / lb.sales : null,
-      tpph:         lb.tpphDen > 0 ? lb.tpphNum / lb.tpphDen : null,
-      fobBasePct:   fb.sales > 0 ? fb.baseFoodDol / fb.sales : null,
-      fobTotalPct:  fb.sales > 0 ? fb.totalFoodDol / fb.sales : null,
+      sales: sales || fobSales,
+      crewLaborPct: sales > 0 ? laborDol / sales : null,
+      tpph: tpphDen > 0 ? tpphNum / tpphDen : null,
+      fobBasePct, fobTotalPct,
     };
   });
 
