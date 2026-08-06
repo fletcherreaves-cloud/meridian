@@ -7089,15 +7089,6 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const ctrlByLoc=loc=>ctrlInRange.filter(r=>r.loc===String(loc));
   const fobByLoc=loc=>fobInRange.filter(r=>r.loc===String(loc));
 
-  // ── Market averages ───────────────────────────────────────────
-  const mktAvg=(locs,rows,field,fn='avg',anyMode)=>{
-    const vals=locs.map(loc=>{
-      const r=rows.filter(row=>row.loc===String(loc));
-      return fn==='sum'?sumOf(r,field):avgOf(r,field,anyMode);
-    }).filter(v=>v!=null&&(anyMode||v>0));
-    return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
-  };
-
   // ── Data status ────────────────────────────────────────────────
   const latestLab=React.useMemo(()=>{
     // Newest actual business date across manual labor AND every auto-synced feed
@@ -7363,11 +7354,40 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const actHrs=sumOf(cScoped,'actHrs')||sumOf(lScoped,'actHrs');
     const crewHrs=sumOf(cScoped,'crewHrs');
     const avgRate=avgOf(cScoped,'avgRate')||avgOf(lScoped,'avgRate');
-    // Market averages — also from Controls sheet
-    const okLaborAvg=mktAvg(okLocs,cRows,'laborPct')||mktAvg(okLocs,lRows,'laborPct');
-    const flLaborAvg=mktAvg(flLocs,cRows,'laborPct')||mktAvg(flLocs,lRows,'laborPct');
-    const okTpphAvg=mktAvg(okLocs,cRows,'tpph')||mktAvg(okLocs,lRows,'tpph');
-    const flTpphAvg=mktAvg(flLocs,cRows,'tpph')||mktAvg(flLocs,lRows,'tpph');
+    // Market averages — sales-weighted Σ(pct×sales)/Σsales, NOT mktAvg's average-of-
+    // per-store-averages (2026-08-06, cleanup-backlog Class 1 — widest-blast-radius item:
+    // this fed every AAG OK-vs-FL market comparison tile with a number where a low-volume
+    // store's % counted exactly as much as a high-volume one, and each store's OWN daily
+    // average was itself unweighted). cRows (Controls) carries the preferred Punched Labor %/
+    // TPPH but has no sales column of its own, so weight it via a same-(loc,date) lookup into
+    // lRows (labInRange), which always carries `sales` (the app's established master sales
+    // source — project-data-redundancy.md).
+    const _dk=d=>d instanceof Date?d.toISOString().slice(0,10):String(d||'').slice(0,10);
+    const salesByKey=new Map();
+    for(const r of lRows){ if(r.sales>0) salesByKey.set(String(r.loc)+'|'+_dk(r.date),r.sales); }
+    const wMkt=(locs,field)=>{
+      let n=0,d=0;
+      for(const r of cRows){
+        if(!locs.includes(String(r.loc)))continue;
+        const v=r[field];if(v==null||isNaN(v))continue;
+        const s=salesByKey.get(String(r.loc)+'|'+_dk(r.date));if(!(s>0))continue;
+        n+=v*s;d+=s;
+      }
+      if(d>0)return n/d;
+      // No Controls row matched a sales figure (e.g. cRows empty this period) — weight lRows directly.
+      let n2=0,d2=0;
+      for(const r of lRows){
+        if(!locs.includes(String(r.loc)))continue;
+        const v=r[field],s=r.sales;
+        if(v==null||isNaN(v)||!(s>0))continue;
+        n2+=v*s;d2+=s;
+      }
+      return d2>0?n2/d2:null;
+    };
+    const okLaborAvg=wMkt(okLocs,'laborPct');
+    const flLaborAvg=wMkt(flLocs,'laborPct');
+    const okTpphAvg=wMkt(okLocs,'tpph');
+    const flTpphAvg=wMkt(flLocs,'tpph');
     const ranked=[...allLocs].map(loc=>{
       const cr=cRows.filter(r=>r.loc===String(loc));
       const lr=lRows.filter(r=>r.loc===String(loc));
@@ -7386,15 +7406,33 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const kvst=avgOf(opsScoped,'kvst');
     const kvsu=avgOf(opsScoped,'kvsu');
     const r2p=avgOf(opsScoped,'r2p');
+    // Market averages — GC-weighted Σ(metric×GC)/ΣGC, NOT mktAvg's average-of-per-store-
+    // averages (2026-08-06, cleanup-backlog Class 1). These are per-transaction SERVICE TIME
+    // metrics (seconds/fractions), not %-of-sales, so the natural weight is guest count
+    // (transactions), not dollars — opsEff has no GC column of its own, so weight via a
+    // same-(loc,date) lookup into labInRange's `gc` (STW GC).
+    const _dk=d=>d instanceof Date?d.toISOString().slice(0,10):String(d||'').slice(0,10);
+    const gcByKey=new Map();
+    for(const r of labInRange){ if(r.gc>0) gcByKey.set(String(r.loc)+'|'+_dk(r.date),r.gc); }
+    const wMkt=(locs,field)=>{
+      let n=0,d=0;
+      for(const r of opsEff){
+        if(!locs.includes(String(r.loc)))continue;
+        const v=r[field];if(v==null||isNaN(v)||v<=0)continue;
+        const g=gcByKey.get(String(r.loc)+'|'+_dk(r.date));if(!(g>0))continue;
+        n+=v*g;d+=g;
+      }
+      return d>0?n/d:null;
+    };
     return{
-      oepe,okOepe:mktAvg(okLocs,opsEff,'oepe'),flOepe:mktAvg(flLocs,opsEff,'oepe'),
-      park,okPark:mktAvg(okLocs,opsEff,'park'),flPark:mktAvg(flLocs,opsEff,'park'),
-      kvst,okKvst:mktAvg(okLocs,opsEff,'kvst'),flKvst:mktAvg(flLocs,opsEff,'kvst'),
-      kvsu,okKvsu:mktAvg(okLocs,opsEff,'kvsu'),flKvsu:mktAvg(flLocs,opsEff,'kvsu'),
-      r2p,okR2p:mktAvg(okLocs,opsEff,'r2p'),flR2p:mktAvg(flLocs,opsEff,'r2p'),
+      oepe,okOepe:wMkt(okLocs,'oepe'),flOepe:wMkt(flLocs,'oepe'),
+      park,okPark:wMkt(okLocs,'park'),flPark:wMkt(flLocs,'park'),
+      kvst,okKvst:wMkt(okLocs,'kvst'),flKvst:wMkt(flLocs,'kvst'),
+      kvsu,okKvsu:wMkt(okLocs,'kvsu'),flKvsu:wMkt(flLocs,'kvsu'),
+      r2p,okR2p:wMkt(okLocs,'r2p'),flR2p:wMkt(flLocs,'r2p'),
       isStale:opsSt,staleLabel:opsStaleLbl,auto:svcAuto,
     };
-  },[svcEffective,allLocs,okLocs,flLocs]);
+  },[svcEffective,allLocs,okLocs,flLocs,labInRange]);
 
   // ── Controls section ─────────────────────────────────────────
   const ctrlSec=React.useMemo(()=>{
@@ -7425,14 +7463,35 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       // Labor (Controls Billable Sales group — the right source)
       discPct:a('discPct',true),tpph:a('tpph'),laborPct:a('laborPct'),
       actVsNeed:a('actVsNeed'),otHrs:s('otHrs'),actHrs:s('actHrs'),
-      // Market averages (anyMode=true — same signed/zero-legitimate fields as above)
-      okTRedAPct:mktAvg(okLocs,ctrlEff,'tRedAPct',undefined,true),flTRedAPct:mktAvg(flLocs,ctrlEff,'tRedAPct',undefined,true),
-      okTRedBPct:mktAvg(okLocs,ctrlEff,'tRedBPct',undefined,true),flTRedBPct:mktAvg(flLocs,ctrlEff,'tRedBPct',undefined,true),
-      okPromoPct:mktAvg(okLocs,ctrlEff,'promoPct',undefined,true),flPromoPct:mktAvg(flLocs,ctrlEff,'promoPct',undefined,true),
-      okCashOSPct:mktAvg(okLocs,ctrlEff,'cashOSPct',undefined,true),flCashOSPct:mktAvg(flLocs,ctrlEff,'cashOSPct',undefined,true),
+      // Market averages — sales-weighted Σ($ ÷ sales × sales)/Σsales, NOT mktAvg's
+      // average-of-per-store-averages (2026-08-06, cleanup-backlog Class 1). ctrlEff has no
+      // sales column of its own (same gap as laborSec's cRows) — weight via a same-(loc,date)
+      // lookup into labInRange, which always carries `sales`. anyMode fields (0 is real data,
+      // not "missing") — only the weight (sales>0) gates inclusion, never the value itself.
+      ...(()=>{
+        const _dk=d=>d instanceof Date?d.toISOString().slice(0,10):String(d||'').slice(0,10);
+        const salesByKey=new Map();
+        for(const r of labInRange){ if(r.sales>0) salesByKey.set(String(r.loc)+'|'+_dk(r.date),r.sales); }
+        const wMkt=(locs,field)=>{
+          let n=0,d=0;
+          for(const r of ctrlEff){
+            if(!locs.includes(String(r.loc)))continue;
+            const v=r[field];if(v==null||isNaN(v))continue;
+            const sKey=salesByKey.get(String(r.loc)+'|'+_dk(r.date));if(!(sKey>0))continue;
+            n+=v*sKey;d+=sKey;
+          }
+          return d>0?n/d:null;
+        };
+        return {
+          okTRedAPct:wMkt(okLocs,'tRedAPct'),flTRedAPct:wMkt(flLocs,'tRedAPct'),
+          okTRedBPct:wMkt(okLocs,'tRedBPct'),flTRedBPct:wMkt(flLocs,'tRedBPct'),
+          okPromoPct:wMkt(okLocs,'promoPct'),flPromoPct:wMkt(flLocs,'promoPct'),
+          okCashOSPct:wMkt(okLocs,'cashOSPct'),flCashOSPct:wMkt(flLocs,'cashOSPct'),
+        };
+      })(),
       isStale:ctrlSt,staleLabel:ctrlStaleLbl,
     };
-  },[ctrlEffective,allLocs,okLocs,flLocs]);
+  },[ctrlEffective,allLocs,okLocs,flLocs,labInRange]);
 
   // ── FOB section ───────────────────────────────────────────────
   const fobSec=React.useMemo(()=>{
@@ -7487,25 +7546,31 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         priorCondiment:pr('condiment'),priorEmpMeal:pr('empMeal'),priorStatVar:pr('statVar'),priorDiscCoupon:pr('discCoupon'),
       };
     }
-    // Fallback: manual FOB Report only (no auto qsr_fob) — straight average of store %s.
+    // Fallback: manual FOB Report only (no auto qsr_fob). fobRecent rows here are the
+    // MANUAL upload's already-computed per-store-day %s (no raw $ amounts to re-sum the
+    // way fobAgg does for the auto MTD path above) — but they DO carry `sales`, so this
+    // can still be a real Σ(pct×sales)/Σsales weighted average instead of mktAvg's
+    // average-of-per-store-averages (2026-08-06, cleanup-backlog Class 1).
     if(!fobRecent.length)return null;
     const scoped=fobRecent.filter(r=>allLocs.includes(String(r.loc)));
     const a=f=>avgOf(scoped,f);
+    const wAvg=(rows,f)=>{let n=0,d=0;for(const r of rows){const v=r[f],s=r.sales||0;if(v!=null&&!isNaN(v)&&s>0){n+=v*s;d+=s;}}return d?n/d:null;};
+    const wScope=(locs,f)=>wAvg(fobRecent.filter(r=>locs.includes(String(r.loc))),f);
     return{
       fobPct:a('fobPct'),baseFoodPct:a('baseFoodPct'),unexplained:a('unexplained'),
       compWaste:a('compWaste'),rawWaste:a('rawWaste'),condiment:a('condiment'),
       empMeal:a('empMeal'),statVar:a('statVar'),discCoupon:a('discCoupon'),
       pLFoodPct:a('pLFoodPct'),pLPaperPct:a('pLPaperPct'),primaryIsMTD:false,
-      okFobPct:mktAvg(okLocs,fobRecent,'fobPct'),flFobPct:mktAvg(flLocs,fobRecent,'fobPct'),
-      okPLFoodPct:mktAvg(okLocs,fobRecent,'pLFoodPct'),flPLFoodPct:mktAvg(flLocs,fobRecent,'pLFoodPct'),
-      okBaseFoodPct:mktAvg(okLocs,fobRecent,'baseFoodPct'),flBaseFoodPct:mktAvg(flLocs,fobRecent,'baseFoodPct'),
-      okUnexp:mktAvg(okLocs,fobRecent,'unexplained'),flUnexp:mktAvg(flLocs,fobRecent,'unexplained'),
-      okCompWaste:mktAvg(okLocs,fobRecent,'compWaste'),flCompWaste:mktAvg(flLocs,fobRecent,'compWaste'),
-      okRawWaste:mktAvg(okLocs,fobRecent,'rawWaste'),flRawWaste:mktAvg(flLocs,fobRecent,'rawWaste'),
-      okCondiment:mktAvg(okLocs,fobRecent,'condiment'),flCondiment:mktAvg(flLocs,fobRecent,'condiment'),
-      okEmpMeal:mktAvg(okLocs,fobRecent,'empMeal'),flEmpMeal:mktAvg(flLocs,fobRecent,'empMeal'),
-      okStatVar:mktAvg(okLocs,fobRecent,'statVar'),flStatVar:mktAvg(flLocs,fobRecent,'statVar'),
-      okDiscCoupon:mktAvg(okLocs,fobRecent,'discCoupon'),flDiscCoupon:mktAvg(flLocs,fobRecent,'discCoupon'),
+      okFobPct:wScope(okLocs,'fobPct'),flFobPct:wScope(flLocs,'fobPct'),
+      okPLFoodPct:wScope(okLocs,'pLFoodPct'),flPLFoodPct:wScope(flLocs,'pLFoodPct'),
+      okBaseFoodPct:wScope(okLocs,'baseFoodPct'),flBaseFoodPct:wScope(flLocs,'baseFoodPct'),
+      okUnexp:wScope(okLocs,'unexplained'),flUnexp:wScope(flLocs,'unexplained'),
+      okCompWaste:wScope(okLocs,'compWaste'),flCompWaste:wScope(flLocs,'compWaste'),
+      okRawWaste:wScope(okLocs,'rawWaste'),flRawWaste:wScope(flLocs,'rawWaste'),
+      okCondiment:wScope(okLocs,'condiment'),flCondiment:wScope(flLocs,'condiment'),
+      okEmpMeal:wScope(okLocs,'empMeal'),flEmpMeal:wScope(flLocs,'empMeal'),
+      okStatVar:wScope(okLocs,'statVar'),flStatVar:wScope(flLocs,'statVar'),
+      okDiscCoupon:wScope(okLocs,'discCoupon'),flDiscCoupon:wScope(flLocs,'discCoupon'),
     };
   },[fobPeriods,fobRecent,allLocs,okLocs,flLocs]);
 
