@@ -6,7 +6,7 @@ import { addD, sodOf } from '../utils/date.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
-import { saveUserSetting } from '../lib/supabase.js';
+import { saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 
 // Cloud-persist model assignments (v4.544): after any local write (backtest,
@@ -16,6 +16,42 @@ import { computeInsights, normLoc } from '../engine/insights.js';
 // on startup in App.js).
 function _pushModelAssignments() {
   try { saveUserSetting('model_assignments', JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY) || '{}')); } catch {}
+}
+
+// ── Backtest RESULT persistence (v4.835) ────────────────────────────────────
+// v4.544 cloud-persisted the model ASSIGNMENTS (the winners + manual overrides)
+// but not the two backtest RESULT artifacts, which stayed in React state only and
+// died on panel close / reload / device switch:
+//   • the daily backtest run summary (run date + which assignments changed)
+//   • the Period-Total Scoreboard matrix — a 30–90s, 27-store × 5-model × 6-fold
+//     compute that had to be re-run from scratch every single time it was opened
+// Both now round-trip through user_settings (same per-user table + RLS as
+// model_assignments — no new table, no SQL for the owner to run). localStorage is
+// the instant read path; the cloud copy wins when it's newer, so a run on the Mac
+// shows up on the iPad. `savedAt` is the merge key.
+const BT_SUMMARY_KEY = 'mf_bt_summary';
+const PT_SCORE_KEY   = 'mf_period_scoreboard';
+
+function _pushBlob(lsKey, settingKey, obj) {
+  const stamped = {...obj, savedAt: Date.now()};
+  try { localStorage.setItem(lsKey, JSON.stringify(stamped)); } catch {}
+  try { saveUserSetting(settingKey, stamped); } catch {}
+  return stamped;
+}
+function _readBlobLocal(lsKey) {
+  try { const s = localStorage.getItem(lsKey); return s ? JSON.parse(s) : null; } catch { return null; }
+}
+// Hydrate a persisted blob: local first (instant), then cloud if it's strictly
+// newer. `apply` is called at most twice — once per source that wins.
+function _hydrateBlob(lsKey, settingKey, apply) {
+  const local = _readBlobLocal(lsKey);
+  if (local) apply(local);
+  loadUserSetting(settingKey).then(remote => {
+    if (!remote || typeof remote !== 'object') return;
+    if (local && (local.savedAt||0) >= (remote.savedAt||0)) return;
+    try { localStorage.setItem(lsKey, JSON.stringify(remote)); } catch {}
+    apply(remote);
+  }).catch(()=>{});
 }
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries } from '../engine/metric-source.js';
@@ -383,6 +419,15 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
   const cancelRef = React.useRef(false);
   const refresh = () => setTick(t=>t+1);
 
+  // Restore the last run's summary (local cache, then cloud if newer) so the
+  // banner + "Last backtest" header survive a reload and follow the user across
+  // devices. `dismissed` is respected — a dismissed banner stays dismissed.
+  React.useEffect(()=>{
+    _hydrateBlob(BT_SUMMARY_KEY,'model_backtest_summary',blob=>{
+      if(!blob.dismissed) setBtSummary(blob);
+    });
+  },[]);
+
   // ── Launch the backtest engine ──────────────────────────────────────────
   const runBacktest = async () => {
     if (!ds || !ds.laborRows || !ds.laborRows.length) {
@@ -410,7 +455,12 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
         }
       );
       if (!cancelRef.current) {
-        setBtSummary(result);
+        // Persist the summary only — the full per-store × horizon MAPE matrix
+        // (result.results) is already merged into the assignment blob by the
+        // engine, so re-storing it here would just duplicate it.
+        setBtSummary(_pushBlob(BT_SUMMARY_KEY,'model_backtest_summary',{
+          runDate: result.runDate, changedCount: result.changedCount, changes: result.changes,
+        }));
         _pushModelAssignments(); // sync backtest winners to cloud
         refresh(); // re-render table with updated assignments
       }
@@ -433,6 +483,19 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
   const mc = v=>v==null?'var(--text3)':v<6?'#10b981':v<8?'#34d399':v<10?'#f59e0b':v<14?'#f97316':'#ef4444';
 
   const ovr = React.useMemo(()=>{try{return JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY)||'{}')}catch{return{}}},[tick]);
+
+  // Newest backtestDate actually stamped on a live assignment. This is the honest
+  // answer to "when was this last backtested?" — previously the header fell back to
+  // a hardcoded "DI calibration 05/27/26" string, so after any real re-run the panel
+  // kept advertising a stale 2026-05 calibration date once the summary banner was
+  // dismissed or the page reloaded.
+  const lastBtDate = React.useMemo(()=>{
+    let best=null;
+    for(const hzMap of Object.values(ovr||{}))
+      for(const e of Object.values(hzMap||{}))
+        if(e&&e.backtestDate&&(!best||e.backtestDate>best)) best=e.backtestDate;
+    return best;
+  },[ovr]);
 
   const distro = React.useMemo(()=>{
     const c={weekly:{di:0,ly:0,dow:0},monthly:{di:0,ly:0,dow:0},yearly:{di:0,ly:0,dow:0}};
@@ -475,8 +538,10 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
             btSummary
               ? `Last backtest: ${btSummary.runDate} — ${btSummary.changedCount} assignment${btSummary.changedCount!==1?'s':''} updated`
-              : 'Walk-forward backtest: Labor Analysis 01/01/22–05/06/26 + DI calibration 05/27/26. ' +
-                'Fixed v4.194: Projection Workspace now uses correct model per horizon.')
+              : lastBtDate
+                ? `Last backtest: ${lastBtDate} (newest date stamped on a live assignment)`
+                : 'No backtest run on this account yet — assignments are the shipped defaults. ' +
+                  'Walk-forward baseline: Labor Analysis 01/01/22–05/06/26 + DI calibration 05/27/26.')
         ),
         btn({className:'btn btn-sm',
           style:{fontSize:'8px',
@@ -558,7 +623,10 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
             '…+'+(btSummary.changes.length-4)+' more')
         ),
         btn({className:'btn btn-sm',style:{fontSize:'8px',color:'var(--text3)',flexShrink:0},
-          onClick:()=>setBtSummary(null)},'✕ Dismiss')
+          // Persist the dismissal too, so the banner doesn't reappear on reload —
+          // but keep runDate/changedCount so the header line still reports it.
+          onClick:()=>{_pushBlob(BT_SUMMARY_KEY,'model_backtest_summary',{...btSummary,dismissed:true});setBtSummary(null);}},
+          '✕ Dismiss')
       ),
 
       // ── Distribution + filters (hidden while backtest running) ─────────
@@ -676,6 +744,15 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
   const [applied, setApplied] = React.useState(null); // {applied, changes} after Apply
   const cancelRef = React.useRef({current:false});
 
+  // Restore the last scoreboard instead of forcing a fresh 30–90s recompute every
+  // time the panel is opened (and on every device). Cloud copy wins if newer.
+  React.useEffect(()=>{
+    _hydrateBlob(PT_SCORE_KEY,'model_period_scoreboard',blob=>{
+      if(blob.result) setResult(blob.result);
+      if(blob.applied) setApplied(blob.applied);
+    });
+  },[]);
+
   const applyWinners = () => {
     if (!result) return;
     const engWins = (result.winnerCounts && (result.winnerCounts.ae||0)+(result.winnerCounts.ewma||0)+(result.winnerCounts.di||0)+(result.winnerCounts.dow||0)) || 0;
@@ -687,6 +764,7 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
     )) return;
     const res = applyPeriodTotalWinners(result);
     _pushModelAssignments(); // sync the applied monthly/yearly winners to cloud
+    _pushBlob(PT_SCORE_KEY,'model_period_scoreboard',{result, applied:res});
     setApplied(res);
   };
 
@@ -702,7 +780,10 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
       const res = await runPeriodTotalBacktest(ds, settings, userEvents,
         (info)=>{ if(!cancelRef.current.current) setProg({...info}); },
         {cancelRef:cancelRef.current});
-      if(!cancelRef.current.current) setResult(res);
+      if(!cancelRef.current.current){
+        setResult(res);
+        _pushBlob(PT_SCORE_KEY,'model_period_scoreboard',{result:res, applied:null});
+      }
     } catch(e){ alert('Scoreboard error: '+String(e)); }
     setRunning(false); setProg(null);
   };
@@ -727,7 +808,10 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Period-Total Model Scoreboard'),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
-            'Grades each model on 28-day TOTALS — the metric Simple was discovered on. Read-only; changes no assignments.')
+            'Grades each model on 28-day TOTALS — the metric Simple was discovered on. Read-only; changes no assignments.',
+            // Stamp the run date on a restored scoreboard so a cached result is never
+            // mistaken for one that just ran against today's data.
+            result && result.runDate ? span({style:{color:'var(--amber)'}},` · Run ${result.runDate}`) : null)
         ),
         !running && result && btn({className:'btn btn-sm',
           style:{fontSize:'8px',fontWeight:700,background:applied?'rgba(16,185,129,.14)':'rgba(52,211,153,.12)',
