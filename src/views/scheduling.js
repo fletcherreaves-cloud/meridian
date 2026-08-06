@@ -37,6 +37,16 @@ const TA_DATA = {
   '43701':{empCount:343, attendRating:0.8374, onTimeRating:0.7368, daysOnSched:658,  missedShifts:107, punchInLate:145},
 };
 const TA_PERIOD = 'Jun 1–28, 2026';
+// TA_DATA has NO live source — LifeLenz's own site markets Time & Attendance as a first-class
+// feature (actual-vs-scheduled hours, punch in/out, missed-break flags) and the original commit
+// that added this block was captioned "Update by uploading a new T&A report from LifeLenz," but
+// no pull/upload path was ever built — it's a one-time hand-entered snapshot that's now frozen.
+// 2026-08-06 scoping: feasible to auto-source (same X-Auth-Token/X-Business-Id auth
+// scripts/lifelenz-pull.mjs already uses, just needs the report-name endpoint captured via
+// DevTools while viewing the T&A report live in LifeLenz's own UI) — filed, not built, since it
+// needs the owner's LifeLenz session to discover. Until then, flag the staleness plainly instead
+// of letting a 2-month-old snapshot read as current.
+const TA_STALE_DAYS = Math.round((new Date() - new Date('2026-06-28T00:00:00')) / 86400000);
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 
@@ -469,7 +479,10 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
         ),
         div({ style: { flex:1 } }),
         (laborRows && laborRows.length > 0) && div({ style: { fontSize:10, color:BLUE } }, `✓ QSR ops data loaded — cross-reference enabled`),
-        div({ style: { fontSize:10, color:TEXT3 } }, `T&A: ${TA_PERIOD} (monthly)`)
+        div({
+          style: { fontSize:10, color: TA_STALE_DAYS > 35 ? AMBER : TEXT3, fontWeight: TA_STALE_DAYS > 35 ? 700 : 400 },
+          title: TA_STALE_DAYS > 35 ? `Static snapshot, ${TA_STALE_DAYS}d old — no live LifeLenz T&A pull exists yet, this data does not update. See Notes 56.` : undefined,
+        }, `${TA_STALE_DAYS > 35 ? '⚠ ' : ''}T&A: ${TA_PERIOD} (monthly)${TA_STALE_DAYS > 35 ? ' · static, not current' : ''}`)
       )
     ),
 
@@ -520,7 +533,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
         h(MetricCard, { label:'Sched vs Target $',  value: (distTot.excessCost > 0 ? '+' : '−') + fmt$(Math.abs(distTot.excessCost)),  sub: fmtN(analysis.reduce((s,a)=>s+Math.max(0,a.tot.excessVsTgt),0),1)+' hrs over-scheduled', color: distTot.excessCost > 0 ? RED : GREEN }),
         h(MetricCard, { label:'Labor "Controlled" Back', value: fmt$(distTot.controlCost), sub: fmtN(distTot.controlled,1)+' hrs sched but not worked', color: AMBER }),
         h(MetricCard, { label:'Stores Over Target', value: overTgt.length, sub: 'scheduled above actual target', color: overTgt.length > 0 ? RED : GREEN }),
-        h(MetricCard, { label:'Missed Shifts', value: totalMissed.toLocaleString(), sub: TA_PERIOD+' (monthly)', color: RED }),
+        h(MetricCard, { label:'Missed Shifts', value: totalMissed.toLocaleString(), sub: TA_PERIOD+(TA_STALE_DAYS>35?' · static snapshot':' (monthly)'), color: RED }),
       )
     ),
 
