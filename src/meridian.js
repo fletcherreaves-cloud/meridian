@@ -1,5 +1,6 @@
 // @ts-nocheck
 import './polyfills.js'; // MUST be first — older-iOS shims before any module (pdfjs) runs
+import { initLoadTrace } from './utils/load-trace.js';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import './meridian.css';
@@ -7,6 +8,9 @@ import { ErrorBoundary } from './features/session.js';
 import App from './app/App.js';
 import { AuthGate } from './components/AuthGate.js';
 import { EomShareView } from './views/eom-share-view.js';
+
+// Startup load tracer (?trace=1). No-op unless enabled; must run before any module fetches.
+initLoadTrace();
 
 window._cdnError = function(name) {
   var msg = '<div style="padding:30px;font-family:monospace;background:#090e18;color:#e2e8f0;min-height:100vh">'
