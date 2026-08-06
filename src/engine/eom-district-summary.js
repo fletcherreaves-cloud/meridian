@@ -36,6 +36,14 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
     const deltaPp = (fobPct != null && fobTgt != null) ? (fobPct - fobTgt) * 100 : null;
     const over$ = (fobPct != null && fobTgt != null) ? (fobPct - fobTgt) * sales : null;
     const countPct = r.prog ? (r.prog.earlyPctCounted ?? r.prog.pctCounted ?? null) : null;
+    // Raw item counts behind countPct, so district completion can be item-weighted
+    // (Σcounted/Σtotal) instead of a mean of store percentages. Mirrors countPct's OWN
+    // basis: early classes (Food+Condiment+Paper — today's target) when there are any,
+    // else all classes. Using a different basis would make the district figure
+    // incomparable to the per-store percentages shown beside it.
+    const _useEarly = !!(r.prog && num(r.prog.earlyTotal) > 0);
+    const countedItems = r.prog ? num(_useEarly ? r.prog.earlyCounted : r.prog.itemsCounted) : 0;
+    const totalItems   = r.prog ? num(_useEarly ? r.prog.earlyTotal   : r.prog.itemsTotal)   : 0;
     let uncountedFC = 0;
     // Per-class count completion (owner req): Food / Condiment / Paper / Non-Product each.
     const classPct = {}, classCounted = {}, classTotal = {};
@@ -49,7 +57,8 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
     const comps = {}; for (const k of COMP_KEYS) comps[k] = num(c[k]);
     return {
       loc: r.loc, name: r.name, sales, fobD, fobPct, fobTgt, deltaPp, over$, comps,
-      countPct, believesDone: !!(r.prog && r.prog.believesDone), uncountedFC,
+      countPct, countedItems, totalItems,
+      believesDone: !!(r.prog && r.prog.believesDone), uncountedFC,
       classPct, classCounted, classTotal,
       diagnosis: r.diagnosis, comms: r.comms,
     };
@@ -83,7 +92,16 @@ export function buildDistrictSummary(rows = [], targetsByLoc = {}) {
     ready: stores.filter(s => s.believesDone).length,
     counting: stores.filter(s => !s.believesDone && num(s.countPct) > 0.01).length,
     notStarted: stores.filter(s => num(s.countPct) <= 0.01).length,
-    avgCountPct: withProg.length ? withProg.reduce((a, s) => a + s.countPct, 0) / withProg.length : null,
+    // Item-weighted, not a mean of store percentages (owner 2026-08-06): total items
+    // counted across the stores divided by total items in those stores. A 40-item store
+    // at 100% no longer offsets a 400-item store at 50%. Same Σcounted/Σtotal shape the
+    // byClass block below already used.
+    avgCountPct: (() => {
+      const cnt = sum(s => s.countedItems || 0), tot = sum(s => s.totalItems || 0);
+      if (tot > 0) return cnt / tot;
+      // No item counts available — fall back to the old mean so the tile still reports.
+      return withProg.length ? withProg.reduce((a, s) => a + s.countPct, 0) / withProg.length : null;
+    })(),
     storesWithUncountedFC: stores.filter(s => s.uncountedFC > 0).length,
     totalUncountedFC: stores.reduce((a, s) => a + (num(s.uncountedFC) || 0), 0),
     // District per-class completion = Σ counted / Σ total across stores (item-weighted).
