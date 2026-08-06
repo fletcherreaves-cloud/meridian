@@ -70,7 +70,7 @@ const isoOf = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 
 //   monthly:true  → a period TOTAL (summed, projected × days) — median-of-simple.
 //   ratio:true    → a weighted LEVEL (Σ(value·weight)/Σweight — never averaged);
 //                   `weight` gives the per-day denominator (sales, cars).
-const pct1 = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+const pct1 = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const pct2 = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const secs = v => v == null ? '—' : Math.round(v) + 's';
 
@@ -457,7 +457,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     h('td', { style: td }, metric.fmt(r.official)),
     h('td', { style: { ...td, fontWeight: 800, color: 'var(--amber)' } }, metric.fmt(r.smart)),
     h('td', { style: td }, metric.fmt(r.current)),
-    h('td', { style: { ...td, fontWeight: 700, color: r.vsGood == null ? 'var(--text3)' : r.vsGood ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'),
+    h('td', { style: { ...td, fontWeight: 700, color: r.vsGood == null ? 'var(--text3)' : r.vsGood ? '#10b981' : '#ef4444' } }, r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(2) + '%'),
     model.doBacktest ? h('td', { style: { ...td, textAlign: 'center', fontFamily: 'inherit' }, title: btTitle(r) },
       r.winner
         ? span(null, span({ style: { fontSize: 8.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: r.winner === PRIMARY_KEY ? 'rgba(245,188,0,.16)' : 'rgba(255,255,255,.06)', color: r.winner === PRIMARY_KEY ? 'var(--amber)' : 'var(--text2)' } }, METH_SHORT[r.winner] || r.winner),
@@ -492,7 +492,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
   };
   const printReport = () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    const rowsHtml = shown.map(r => `<tr><td>${esc(storeNm(r.loc))} <span class="m">#${esc(locNum(r.loc))}</span></td><td class="n">${esc(metric.fmt(r.official))}</td><td class="n b">${esc(metric.fmt(r.smart))}</td><td class="n">${esc(metric.fmt(r.current))}</td><td class="n ${r.vsGood == null ? '' : r.vsGood ? 'up' : 'dn'}">${r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(1) + '%'}</td><td class="c">${esc(r.confidence)}</td><td class="n">${r.excludedDays || 0}</td></tr>`).join('');
+    const rowsHtml = shown.map(r => `<tr><td>${esc(storeNm(r.loc))} <span class="m">#${esc(locNum(r.loc))}</span></td><td class="n">${esc(metric.fmt(r.official))}</td><td class="n b">${esc(metric.fmt(r.smart))}</td><td class="n">${esc(metric.fmt(r.current))}</td><td class="n ${r.vsGood == null ? '' : r.vsGood ? 'up' : 'dn'}">${r.vsOff == null ? '—' : (r.vsOff >= 0 ? '+' : '') + r.vsOff.toFixed(2) + '%'}</td><td class="c">${esc(r.confidence)}</td><td class="n">${r.excludedDays || 0}</td></tr>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Smart Targets — ${esc(targetLabel)}</title>
       <style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:26px;font-size:12px}
       h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}

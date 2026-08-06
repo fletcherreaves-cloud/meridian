@@ -318,8 +318,8 @@ function TrendChart({dayRows}) {
     if(!dayRows||!dayRows.length) return null;
     const labels = dayRows.map(r => DOW_BASE[r.date.getDay()]);
     return new Chart(canvas, {type:'bar', data:{labels, datasets:[
-      {label:'T2W %', data:dayRows.map(r=>+(r.t2*100).toFixed(1)), backgroundColor:dayRows.map(r=>r.t2>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.5)'), borderColor:dayRows.map(r=>r.t2>=0?'#4ade80':'#f87171'), borderWidth:1},
-      {label:'T6W %', data:dayRows.map(r=>+(r.t6*100).toFixed(1)), backgroundColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.25)':'rgba(248,113,113,.25)'), borderColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.5)'), borderWidth:1},
+      {label:'T2W %', data:dayRows.map(r=>+(r.t2*100).toFixed(2)), backgroundColor:dayRows.map(r=>r.t2>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.5)'), borderColor:dayRows.map(r=>r.t2>=0?'#4ade80':'#f87171'), borderWidth:1},
+      {label:'T6W %', data:dayRows.map(r=>+(r.t6*100).toFixed(2)), backgroundColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.25)':'rgba(248,113,113,.25)'), borderColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.5)'), borderWidth:1},
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:LEG,tooltip:{...TT,callbacks:{label:c=>`${c.dataset.label}: ${c.raw}%`}}},
       scales:{x:{...AX},y:{...AX,ticks:{...AX.ticks,callback:v=>v+'%'}}}}});
@@ -504,15 +504,15 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
         div({style:{fontFamily:'var(--mono)',fontWeight:700}},f$(r.forecast)),
         r.lyAdj>0?div({style:{fontSize:'8px',
           color:r.forecast>=r.lyAdj?'#10b981':'#f87171',fontWeight:600}},
-          (r.forecast>=r.lyAdj?'+':'')+((r.forecast-r.lyAdj)/r.lyAdj*100).toFixed(1)+'% vs LY'):null
+          (r.forecast>=r.lyAdj?'+':'')+((r.forecast-r.lyAdj)/r.lyAdj*100).toFixed(2)+'% vs LY'):null
       ):'—'),
     // GC column: actual guest count (past days) or cross-check indicator (future days)
     td({style:{textAlign:'center',padding:'2px 4px',verticalAlign:'middle',
         cursor:(!r.isFuture&&r.actualGC>0)||(r.isFuture&&gcCheck&&gcCheck.flag)?'help':'default'},
         title:r.isFuture&&gcCheck
-          ?'GC Forecast: '+(gcCheck.gcForecast||r.forecastGC||0)+' guests\nImplied Avg Check: $'+gcCheck.impliedCheck+'\nStore Norm: $'+gcCheck.normCheck+' ('+(gcCheck.deviation*100>=0?'+':'')+(gcCheck.deviation*100).toFixed(1)+'%)'
+          ?'GC Forecast: '+(gcCheck.gcForecast||r.forecastGC||0)+' guests\nImplied Avg Check: $'+gcCheck.impliedCheck+'\nStore Norm: $'+gcCheck.normCheck+' ('+(gcCheck.deviation*100>=0?'+':'')+(gcCheck.deviation*100).toFixed(2)+'%)'
           :!r.isFuture&&r.actualGC>0
-          ?'Actual: '+r.actualGC+' guests'+(r.lyGC>0?'\nLY: '+r.lyGC+' ('+(r.actualGC>=r.lyGC?'+':'')+((r.actualGC-r.lyGC)/r.lyGC*100).toFixed(1)+'% YOY)':'')+(r.forecastGC>0?'\nFcst: '+r.forecastGC:'')
+          ?'Actual: '+r.actualGC+' guests'+(r.lyGC>0?'\nLY: '+r.lyGC+' ('+(r.actualGC>=r.lyGC?'+':'')+((r.actualGC-r.lyGC)/r.lyGC*100).toFixed(2)+'% YOY)':'')+(r.forecastGC>0?'\nFcst: '+r.forecastGC:'')
           :r.forecastGC>0?'Forecast GC: '+r.forecastGC+' guests':undefined},
       r.isFuture
         ? (gcCheck&&gcCheck.flag==='alert'?span({style:{color:'#f87171',fontSize:'10px'}},'🔴')
@@ -523,22 +523,22 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
         : r.actualGC>0
           ? div({style:{display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.25}},
               span({style:{fontWeight:700,color:'var(--text2)',fontFamily:'var(--mono)',fontSize:'9px'}},r.actualGC.toLocaleString()),
-              r.lyGC>0?span({style:{fontSize:'8px',color:r.actualGC>=r.lyGC?'#10b981':'#f87171'}},(r.actualGC>=r.lyGC?'+':'')+Math.round((r.actualGC-r.lyGC)/r.lyGC*100)+'%')
+              r.lyGC>0?span({style:{fontSize:'8px',color:r.actualGC>=r.lyGC?'#10b981':'#f87171'}},(r.actualGC>=r.lyGC?'+':'')+((r.actualGC-r.lyGC)/r.lyGC*100).toFixed(2)+'%')
               :null)
           : span({style:{color:'var(--text3)',fontSize:'9px'}},'—')
     ),
     td(null, r.actual>0?f$(r.actual):'—'),
     td({style:{color:'#4ade80'}}, r.goal>0?f$(r.goal):'—'),
-    td({style:{color:gc(r.t2)}}, (r.t2*100).toFixed(1)+'%'),
-    td({style:{color:gc(r.t6)}}, (r.t6*100).toFixed(1)+'%'),
+    td({style:{color:gc(r.t2)}}, (r.t2*100).toFixed(2)+'%'),
+    td({style:{color:gc(r.t6)}}, (r.t6*100).toFixed(2)+'%'),
     td({style:{color:r.oepe>0&&tgt.tOepe>0?(r.oepe<=tgt.tOepe?'#4ade80':'#f97316'):'inherit'}}, r.oepe>0?Math.round(r.oepe)+'s':'—'),
     td({style:{color:r.tpph>0&&tgt.tTpph>0?(r.tpph>=tgt.tTpph?'#4ade80':'#f97316'):'inherit'}}, r.tpph>0?r.tpph.toFixed(2):'—'),
-    td({style:{color:laborCol.color}}, r.labor>0?(fP(r.labor,1)+laborCol.arrow):'—'),
+    td({style:{color:laborCol.color}}, r.labor>0?(fP(r.labor,2)+laborCol.arrow):'—'),
     td({style:{textAlign:'center',fontFamily:'var(--mono)',fontSize:'10px'}},
-      r.opsFactor>0?((r.opsFactor>=1?'+':'')+((r.opsFactor-1)*100).toFixed(1)+'%'):'—'),
+      r.opsFactor>0?((r.opsFactor>=1?'+':'')+((r.opsFactor-1)*100).toFixed(2)+'%'):'—'),
     td({style:{textAlign:'center',fontFamily:'var(--mono)',fontSize:'10px',
       color:r.varPct!=null?(r.varPct>=0?'#4ade80':'#f87171'):'inherit'}},
-      r.varPct!=null?((r.varPct>=0?'+':'')+fP(r.varPct,1)):'—'),
+      r.varPct!=null?((r.varPct>=0?'+':'')+fP(r.varPct,2)):'—'),
     td(null, r.pass===true?span({className:'pass'},'PASS'):r.pass===false?span({className:'fail'},'MISS'):r.isFuture?span({className:'proj'},'PROJ'):null),
     td({style:{textAlign:'center',verticalAlign:'top',padding:'4px 2px'}}, (()=>{
       if(!hasWxData) return span({style:{fontSize:'13px',color:'var(--text3)'},title:wxR?'No data':''},wxR?'—':'');
@@ -570,7 +570,7 @@ function BacktestChart({actualDays}) {
     const labels = sorted.map(r=>DOW_BASE[r.date.getDay()].slice(0,3)+' '+r.date.toLocaleDateString('en-US',{month:'numeric',day:'numeric'}));
     const fc = sorted.map(r=>Math.round(r.forecast));
     const ac = sorted.map(r=>Math.round(r.actual));
-    const absErrs = sorted.map(r=>+Math.abs((r.forecast-r.actual)/r.actual*100).toFixed(1));
+    const absErrs = sorted.map(r=>+Math.abs((r.forecast-r.actual)/r.actual*100).toFixed(2));
     const errColors = absErrs.map(e=>e<5?'rgba(16,185,129,.65)':e<10?'rgba(245,158,11,.65)':'rgba(239,68,68,.65)');
     const errBorders = absErrs.map(e=>e<5?'#10b981':e<10?'#f59e0b':'#ef4444');
     return new Chart(canvas,{type:'bar',data:{labels,datasets:[
@@ -647,7 +647,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
     const accuracy = Math.max(0,Math.min(100,100-mape));
     const best = actualDays.reduce((b,r)=>Math.abs(r.actual-r.forecast)<Math.abs(b.actual-b.forecast)?r:b);
     const worst= actualDays.reduce((b,r)=>Math.abs(r.actual-r.forecast)>Math.abs(b.actual-b.forecast)?r:b);
-    return{mape:+mape.toFixed(1),bias:+bias.toFixed(1),passRate:+passRate.toFixed(0),accuracy:+accuracy.toFixed(1),n:actualDays.length,best,worst};
+    return{mape:+mape.toFixed(2),bias:+bias.toFixed(2),passRate:+passRate.toFixed(2),accuracy:+accuracy.toFixed(2),n:actualDays.length,best,worst};
   })() : null;
 
   // ── Miss diagnosis ─────────────────────────
@@ -658,7 +658,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
     const r=backtest.best;const ev=userEvents&&userEvents[loc]&&userEvents[loc][dKey(r.date)];
     const d=[];
     if(ev) d.push(ev.icon+' '+ev.label);
-    if((r.wAdj||0)>0.01) d.push('☀️ Favorable weather (+'+((r.wAdj||0)*100).toFixed(1)+'%)');
+    if((r.wAdj||0)>0.01) d.push('☀️ Favorable weather (+'+((r.wAdj||0)*100).toFixed(2)+'%)');
     if((r.opsFactor||1)>1.01) d.push('⚙️ Strong ops execution');
     if((r.t2||0)>0.02) d.push('📈 Positive T2W trend');
     return d.length?d.join(' · '):'Model aligned — no single dominant driver.';
@@ -686,7 +686,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
         backtest.best&&div({style:{flex:1,minWidth:200,background:'rgba(16,185,129,.06)',border:'.5px solid rgba(16,185,129,.2)',borderRadius:'var(--r)',padding:'9px 12px'}},
           div({style:{fontSize:'9px',color:'#34d399',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},'✓ Most Accurate Forecast'),
           div({style:{fontSize:'12px',fontWeight:600}},DOW_BASE[(backtest.best.date instanceof Date?backtest.best.date:new Date(backtest.best.date)).getDay()]+' '+(backtest.best.date instanceof Date?backtest.best.date:new Date(backtest.best.date)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})),
-          div({style:{fontSize:'10px',color:'var(--text2)',marginTop:2}},f$(backtest.best.forecast)+' forecast · '+f$(backtest.best.actual)+' actual · ',span({style:{color:'#34d399',fontWeight:600}},fPct((backtest.best.forecast-backtest.best.actual)/backtest.best.actual)+' off')),
+          div({style:{fontSize:'10px',color:'var(--text2)',marginTop:2}},f$(backtest.best.forecast)+' forecast · '+f$(backtest.best.actual)+' actual · ',span({style:{color:'#34d399',fontWeight:600}},fPct((backtest.best.forecast-backtest.best.actual)/backtest.best.actual,2)+' off')),
           bestDrivers&&div({style:{fontSize:'10px',color:'#34d399',marginTop:5,lineHeight:1.4}},bestDrivers)
         ),
         backtest.worst&&(()=>{
@@ -704,8 +704,8 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 (backtest.worst.actual>backtest.worst.forecast?'📈 Beat Forecast +':'')+
                 (backtest.worst.actual<=backtest.worst.forecast?'':'')+(backtest.worst.actual>backtest.worst.forecast?'':'')+
                 (backtest.worst.actual>backtest.worst.forecast
-                  ? fPct((backtest.worst.actual-backtest.worst.forecast)/backtest.worst.forecast)+' vs fcst'
-                  : fPct((backtest.worst.actual-backtest.worst.forecast)/backtest.worst.forecast)+' vs fcst')
+                  ? fPct((backtest.worst.actual-backtest.worst.forecast)/backtest.worst.forecast,2)+' vs fcst'
+                  : fPct((backtest.worst.actual-backtest.worst.forecast)/backtest.worst.forecast,2)+' vs fcst')
               )
             ),
             // Cross-store summary banner if multi-store
@@ -799,7 +799,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
         if(base<=0) return null;
         const lo = Math.round(base*(1-calMape));
         const hi = Math.round(base*(1+calMape));
-        const mapeLabel = (calMape*100).toFixed(1)+'% MAPE';
+        const mapeLabel = (calMape*100).toFixed(2)+'% MAPE';
         return [
           div({style:{flex:'0 0 auto',textAlign:'center',background:'rgba(239,68,68,.06)',
             border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'6px 14px'}},
@@ -851,7 +851,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 span({style:{fontSize:'10px',color:'var(--text3)'}},inf.t)
               ),
               div({style:{fontFamily:'var(--mono)',fontSize:'18px',fontWeight:700,marginBottom:4}},f$(Math.round(dp.total))),
-              div({style:{fontSize:'10px',color:avgTrend>=0?'#10b981':'#f87171'}},(avgTrend>=0?'▲ +':'▼ ')+(avgTrend*100).toFixed(1)+'% trend vs LY'),
+              div({style:{fontSize:'10px',color:avgTrend>=0?'#10b981':'#f87171'}},(avgTrend>=0?'▲ +':'▼ ')+(avgTrend*100).toFixed(2)+'% trend vs LY'),
               div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},dp.days+' days · '+f$(Math.round(dp.total/dp.days))+'/day avg')
             );
           })
@@ -937,7 +937,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 div(null,
                   div({style:{fontFamily:'var(--mono)',fontWeight:700}},f$(totFC)),
                   totLY>0?div({style:{fontSize:'8px',fontWeight:600,
-                    color:totFC>=totLY?'#10b981':'#f87171'}},(totFC>=totLY?'+':'')+((totFC-totLY)/totLY*100).toFixed(1)+'% vs LY'):null
+                    color:totFC>=totLY?'#10b981':'#f87171'}},(totFC>=totLY?'+':'')+((totFC-totLY)/totLY*100).toFixed(2)+'% vs LY'):null
                 )),
               // GC column — period total of actual GC, or forecast GC
               (()=>{
@@ -953,12 +953,12 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 div(null,
                   div(null,totAct>0?f$(totAct):'—'),
                   totAct>0&&totLY>0?div({style:{fontSize:'8px',fontWeight:600,
-                    color:totAct>=totLY?'#10b981':'#f87171'}},(totAct>=totLY?'+':'')+((totAct-totLY)/totLY*100).toFixed(1)+'% vs LY'):null
+                    color:totAct>=totLY?'#10b981':'#f87171'}},(totAct>=totLY?'+':'')+((totAct-totLY)/totLY*100).toFixed(2)+'% vs LY'):null
                 )),
               td({style:{fontFamily:'var(--mono)',fontWeight:600,color:'#4ade80'}},totGoal>0?f$(totGoal):'—'),
               td({colSpan:7},null), // T2W, T6W, OEPE, TPPH, Labor%, OPS×, AI VS ACT
               td({style:{fontFamily:'var(--mono)',fontSize:'11px',fontWeight:700,color:pctVal!=null?(pctVal>=0?'#4ade80':'#f87171'):'var(--text3)'}},
-                pctVal!=null?fPct(pctVal)+' '+pctLabel:'—'),
+                pctVal!=null?fPct(pctVal,2)+' '+pctLabel:'—'),
               td(null)
             );
           })()
@@ -977,7 +977,7 @@ function Brief({store, rangeTotal, rangeLY}) {
   // If we have live range totals, re-compute the forecast finding with correct numbers
   const findings = rangeTotal&&rangeLY
     ? store.findings.filter(f=>f.t!=='fc').concat([{t:'fc',
-        m:'AI FORECAST: '+f$(rangeTotal)+' projected this period ('+fPct((rangeTotal-rangeLY)/rangeLY)+' vs LY '+f$(rangeLY)+'). '
+        m:'AI FORECAST: '+f$(rangeTotal)+' projected this period ('+fPct((rangeTotal-rangeLY)/rangeLY,2)+' vs LY '+f$(rangeLY)+'). '
           +(rangeTotal>=rangeLY?'Bullish — sustained momentum across T2/T4/T6 trend windows.':'Model reflects current operational headwinds and trend pressure.')
       }])
     : store.findings;
@@ -1023,7 +1023,7 @@ function OpsScorecard({store, settings}) {
   const fmtVal = (v, fmt) => {
     if(v==null||v===0&&fmt==='pct') return '—';
     if(fmt==='sec') return v>0?Math.round(v)+'s':'—';
-    if(fmt==='pct') return v>0||v<0?fP(v/100,1):'—';
+    if(fmt==='pct') return v>0||v<0?fP(v/100,2):'—';
     if(fmt==='dollar') return v>0?'$'+fN(v,2):'—';
     if(fmt==='num') return v!=null?fN(v,v<10?2:0):'—';
     return v!=null?String(v):'—';
@@ -1065,7 +1065,7 @@ function OpsScorecard({store, settings}) {
         color:'rgba(255,255,255,.35)'}}, fmtVal(v6, fmt)),
       td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',
         color:tgt!=null?'var(--text3)':'rgba(255,255,255,.25)'}},
-        tgt!=null?(fmt==='pct'?fP(tgt/100,1):fmt==='sec'?tgt+'s':fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—'),
+        tgt!=null?(fmt==='pct'?fP(tgt/100,2):fmt==='sec'?tgt+'s':fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—'),
       td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',
         fontWeight:600,color:vcol}}, vstr),
       td({style:{padding:'5px 8px',fontSize:'9px',color:'var(--text3)'}}, note)
@@ -1170,9 +1170,9 @@ function CtrlScorecard({store}) {
 
   const fmtV = (v, fmt) => {
     if(v==null) return '—';
-    if(fmt==='pct3') return fP(v,3);
+    if(fmt==='pct3') return fP(v,2);
     if(fmt==='pct2') return fP(v,2);
-    if(fmt==='pct1') return fP(v,1);
+    if(fmt==='pct1') return fP(v,2);
     if(fmt==='num1') return fN(v,1);
     if(fmt==='dollar') return '$'+fN(v,2);
     return fN(v,1);
@@ -1192,7 +1192,7 @@ function CtrlScorecard({store}) {
           h('thead',null, h(THead)),
           h('tbody',null, g.rows.map(([l,v6,v2,v4,tgt,passFn,fmt,note],ri) => {
             const pass = passFn&&v2!=null ? passFn(v2) : null;
-            const tgtStr = tgt!=null?(fmt.startsWith('pct')?fP(tgt,1):fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—';
+            const tgtStr = tgt!=null?(fmt.startsWith('pct')?fP(tgt,2):fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—';
             const varV = v2!=null&&tgt!=null ? v2-tgt : null;
             const varS = varV!=null ? ((varV>=0?'+':'')+fmtV(Math.abs(varV),fmt).replace('$','')).replace('--','-') : '—';
             return tr({key:ri},
@@ -1312,7 +1312,7 @@ function PeaksTab({ds, loc, tgt, settings}) {
             {l:'OEPE',v:p.oepe>0?Math.round(p.oepe)+'s':'—',ok:oepeOk,tg:tgt.tOepe?'Target: '+tgt.tOepe+'s':''},
             {l:'R2P',v:p.r2p>0?Math.round(p.r2p)+'s':'—',ok:r2pOk,tg:'Target: ≤90s'},
             {l:'KVS Time',v:p.kvst>0?Math.round(p.kvst)+'s':'—',ok:p.kvst>0&&tgt.tKvst>0?p.kvst<=tgt.tKvst:null,tg:tgt.tKvst?'Target: '+tgt.tKvst+'s':''},
-            {l:'DT Parked %',v:p.parkPct>0?fP(p.parkPct,1):'—',ok:p.parkPct>0&&tgt.tPark>0?p.parkPct<=tgt.tPark:null,tg:tgt.tPark?'Target: '+fP(tgt.tPark):''},
+            {l:'DT Parked %',v:p.parkPct>0?fP(p.parkPct,2):'—',ok:p.parkPct>0&&tgt.tPark>0?p.parkPct<=tgt.tPark:null,tg:tgt.tPark?'Target: '+fP(tgt.tPark):''},
             {l:'Net Sales',v:p.netSales>0?f$(p.netSales):'—',ok:null,tg:'Peak window total'},
             {l:'Transactions',v:p.gc>0?Math.round(p.gc):'—',ok:null,tg:'Peak window GC'},
             {l:'Avg Check',v:p.avgCheck>0?'$'+p.avgCheck.toFixed(2):'—',ok:null,tg:'Peak avg check'},
@@ -1395,9 +1395,9 @@ function generatePlan(store, settings) {
   if(Math.abs(p.cashOSPct||0)>.003) {
     actions.push({
       priority:Math.abs(p.cashOSPct||0)>.005?'CRITICAL':'HIGH', category:'Cash Integrity', icon:'🔒',
-      issue:`Cash Over/Short at ${((p.cashOSPct||0)*100).toFixed(3)}% of sales`,
+      issue:`Cash Over/Short at ${((p.cashOSPct||0)*100).toFixed(2)}% of sales`,
       target:'< 0.10% average',
-      gap:`${(Math.abs(p.cashOSPct||0)*100-.1).toFixed(3)}% above threshold`,
+      gap:`${(Math.abs(p.cashOSPct||0)*100-.1).toFixed(2)}% above threshold`,
       cost:`~$${Math.round(Math.abs(p.cashOSPct||0)*(p.laborPct>0?120000:80000))}/yr estimated exposure`,
       steps:[
         'Pull register-level report for last 30 days — identify which drawers/shifts are driving variance',
@@ -1463,9 +1463,9 @@ function generatePlan(store, settings) {
   if(t.tLabor>0&&Math.abs(laborDiff)>yellow) {
     actions.push({
       priority:Math.abs(laborDiff)>.03?'HIGH':'MEDIUM', category:'Labor Management', icon:'👥',
-      issue:`Labor % at ${((p.laborPct||0)*100).toFixed(1)}% vs ${((t.tLabor||0)*100).toFixed(1)}% target`,
-      target:`${((t.tLabor||0)*100).toFixed(1)}% ± ${(yellow*100).toFixed(1)}%`,
-      gap:`${(Math.abs(laborDiff)*100).toFixed(1)}% ${laborDiff>0?'over':'under'} target`,
+      issue:`Labor % at ${((p.laborPct||0)*100).toFixed(2)}% vs ${((t.tLabor||0)*100).toFixed(2)}% target`,
+      target:`${((t.tLabor||0)*100).toFixed(2)}% ± ${(yellow*100).toFixed(2)}%`,
+      gap:`${(Math.abs(laborDiff)*100).toFixed(2)}% ${laborDiff>0?'over':'under'} target`,
       cost:laborDiff>0?`~$${Math.round(laborDiff*80000*12/52)}/week above labor budget`:'Under-labor may be impacting service',
       steps:[
         laborDiff>0?'Verify floor management compliance first — incomplete floor notations inflate variable hours':'Confirm staffing levels are meeting traffic demand',
@@ -1477,7 +1477,7 @@ function generatePlan(store, settings) {
       week1:'Complete schedule vs punch audit for last 2 weeks. Document gaps.',
       week2:'Revised scheduling process live. First full week of new approach.',
       week3:'Measure improvement. Is labor % moving toward target?',
-      week4:`Target: ${((t.tLabor||0)*100).toFixed(1)}% ± ${(yellow*100).toFixed(1)}%. Adjust and continue.`
+      week4:`Target: ${((t.tLabor||0)*100).toFixed(2)}% ± ${(yellow*100).toFixed(2)}%. Adjust and continue.`
     });
   }
 
@@ -1751,7 +1751,7 @@ function StoreCard({store, onSelect}) {
             span({style:{fontFamily:'var(--mono)',fontWeight:700,color:'var(--amber)'}}
               ,fmtSales(pSales)),
             vsLY!=null&&span({style:{fontSize:'7.5px',color:vsLY>=0?'#10b981':'#f87171',fontWeight:600}},
-              (vsLY>=0?'+':'')+((vsLY*100).toFixed(1))+'%')
+              (vsLY>=0?'+':'')+((vsLY*100).toFixed(2))+'%')
           )
         ),
         // Labor row
@@ -1760,7 +1760,7 @@ function StoreCard({store, onSelect}) {
           span({style:{color:'var(--text3)'}},'Labor'),
           span({style:{fontFamily:'var(--mono)',fontWeight:700,
             color:metCol(p.laborPct,t.tLabor,true)}},
-            p.laborPct>0?(p.laborPct*100).toFixed(1)+'%':'—')
+            p.laborPct>0?(p.laborPct*100).toFixed(2)+'%':'—')
         ),
         // OEPE row
         div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
@@ -2119,17 +2119,17 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     {id:'oepe',     l:'OEPE (lower=better)',fn:s=>s.p.oepe||0,                    fmt:v=>v>0?Math.round(v)+'s':'—', higherBetter:false},
     {id:'tpph',     l:'TPPH (higher=better)',fn:s=>s.p.tpph||0,                  fmt:v=>v>0?v.toFixed(2):'—', higherBetter:true},
     {id:'kvst',     l:'KVS Time',          fn:s=>s.p.kvst||0,                     fmt:v=>v>0?Math.round(v)+'s':'—', higherBetter:false},
-    {id:'park',     l:'DT Parked%',        fn:s=>s.p.park||0,                     fmt:v=>v>0?fP(v,1):'—',    higherBetter:null},
-    {id:'labor',    l:'Labor %',           fn:s=>s.p.laborPct||0,                 fmt:v=>v>0?fP(v,1):'—',    higherBetter:false},
-    {id:'t2w',      l:'2-Wk vs LY',            fn:s=>s.p.t2w||0,                      fmt:v=>fPct(v),            higherBetter:true},
-    {id:'gc',       l:'GC vs LY',              fn:s=>s._gc!==undefined?(s._gc==null?-999:s._gc):(gcVsLYMap[String(s.loc)]??-999),  fmt:v=>v>-999?(v>=0?'+':'')+(v*100).toFixed(1)+'%':'—', higherBetter:true},
-    {id:'cashOS',   l:'Cash O/S',          fn:s=>Math.abs(s.p.cashOSPct||0),      fmt:v=>fP(v,3),            higherBetter:false},
-    {id:'tRedA',    l:'T-Red After%',      fn:s=>s.p.tRedAPct||0,                 fmt:v=>fP(v,3),            higherBetter:false},
+    {id:'park',     l:'DT Parked%',        fn:s=>s.p.park||0,                     fmt:v=>v>0?fP(v,2):'—',    higherBetter:null},
+    {id:'labor',    l:'Labor %',           fn:s=>s.p.laborPct||0,                 fmt:v=>v>0?fP(v,2):'—',    higherBetter:false},
+    {id:'t2w',      l:'2-Wk vs LY',            fn:s=>s.p.t2w||0,                      fmt:v=>fPct(v,2),            higherBetter:true},
+    {id:'gc',       l:'GC vs LY',              fn:s=>s._gc!==undefined?(s._gc==null?-999:s._gc):(gcVsLYMap[String(s.loc)]??-999),  fmt:v=>v>-999?(v>=0?'+':'')+(v*100).toFixed(2)+'%':'—', higherBetter:true},
+    {id:'cashOS',   l:'Cash O/S',          fn:s=>Math.abs(s.p.cashOSPct||0),      fmt:v=>fP(v,2),            higherBetter:false},
+    {id:'tRedA',    l:'T-Red After%',      fn:s=>s.p.tRedAPct||0,                 fmt:v=>fP(v,2),            higherBetter:false},
     {id:'ot',       l:'OT Hours',          fn:s=>s.p.otHrs||0,                    fmt:v=>v>0?v.toFixed(1):'—', higherBetter:false},
     {id:'r2p',      l:'R2P (lower=better)',fn:s=>s.p.r2p||0,                     fmt:v=>v>0?Math.round(v)+'s':'—', higherBetter:false},
     {id:'disc',     l:'Discount%',         fn:s=>s.p.discPct||0,                  fmt:v=>v>0?fP(v,2):'—',    higherBetter:false},
     {id:'mape',     l:'Forecast MAPE',     fn:s=>settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape!=null?settings.dialedIn[s.loc].mape:999,
-                    fmt:v=>v<900?v.toFixed(1)+'%':'—',                             higherBetter:false},
+                    fmt:v=>v<900?v.toFixed(2)+'%':'—',                             higherBetter:false},
   ];
   const m=METRICS.find(x=>x.id===metric)||METRICS[0];
   // ── LOCAL metric recomputation based on selected DR ──────────────────────
@@ -2226,7 +2226,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
             rows:sorted.map(s=>({
               Store: sName(s.loc),
               [m.l]: m.fmt(m.fn(s)),
-              'Labor %': s.p.laborPct!=null?((s.p.laborPct*100).toFixed(1)+'%'):'—',
+              'Labor %': s.p.laborPct!=null?((s.p.laborPct*100).toFixed(2)+'%'):'—',
               'TPPH': s.p.tpph!=null?s.p.tpph.toFixed(2):'—',
               'OEPE': s.p.oepe?Math.round(s.p.oepe)+'s':'—',
               'Sales': s.p.sales>0?f$(s.p.sales):'—',
@@ -2371,7 +2371,7 @@ function PerformanceCalculator({stores, ds, settings, onClose}) {
   const delta = (v,unit,reverse)=>{
     const sign = v>=0?'+':'';
     const formatted = unit==='$'?sign+'$'+(Math.abs(v)<1000?v.toFixed(0):(v/1000).toFixed(1)+'k'):
-      unit==='%'?sign+v.toFixed(1)+'%':sign+v.toFixed(1);
+      unit==='%'?sign+v.toFixed(2)+'%':sign+v.toFixed(1);
     const color = (v>0&&!reverse)||( v<0&&reverse) ? '#10b981' :
                   (v<0&&!reverse)||(v>0&&reverse)  ? '#ef4444' : 'var(--text3)';
     return span({style:{color,fontWeight:700,fontFamily:'var(--mono)'}},(formatted));

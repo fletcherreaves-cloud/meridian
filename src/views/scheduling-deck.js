@@ -36,7 +36,7 @@ export function generateSlideDeckHTML(analysis, distTot, weekInfo, scopeLabel) {
     const col = gap > 1 ? '#d94f4f' : '#e8a040';
     return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid #f0ece6">'
       + '<span style="color:#4a5a6a;font-weight:600">' + d.name + '</span>'
-      + '<span style="color:' + col + ';font-weight:700">+' + gap.toFixed(1) + '% over target</span>'
+      + '<span style="color:' + col + ';font-weight:700">+' + gap.toFixed(2) + '% over target</span>'
       + '</div>';
   }).join('');
 
@@ -375,9 +375,9 @@ function buildBarChart(containerId, data, maxPct) {
     trackWrap.appendChild(track);
     const val = document.createElement('div');
     val.style.cssText = 'width:44px;font-size:10px;font-weight:700;color:' + color + ';text-align:left;flex-shrink:0';
-    val.textContent = d.actPct.toFixed(1) + '%';
+    val.textContent = d.actPct.toFixed(2) + '%';
     const gapBadge = document.createElement('div');
-    const gapStr = (tgtGap > 0 ? '+' : '') + tgtGap.toFixed(1) + '%';
+    const gapStr = (tgtGap > 0 ? '+' : '') + tgtGap.toFixed(2) + '%';
     gapBadge.style.cssText = 'width:60px;font-size:9.5px;font-weight:700;text-align:right;flex-shrink:0;color:' + (tgtGap > 0 ? color : '#28a870');
     gapBadge.textContent = gapStr;
     row.appendChild(name); row.appendChild(trackWrap); row.appendChild(val); row.appendChild(gapBadge);
@@ -408,7 +408,7 @@ function buildMissedChart(containerId, data) {
     count.textContent = d.missedShifts;
     const rate = document.createElement('div');
     rate.style.cssText = 'width:46px;font-size:9.5px;color:#9aabb8;text-align:right;flex-shrink:0';
-    rate.textContent = (d.attendRating * 100).toFixed(0) + '% att';
+    rate.textContent = (d.attendRating * 100).toFixed(2) + '% att';
     row.appendChild(name); row.appendChild(track); row.appendChild(count); row.appendChild(rate);
     el.appendChild(row);
   });
@@ -458,8 +458,8 @@ function buildStats() {
   set('kpiOverBuf',    overTgt.length);
   set('kpiWeekly',     fmt$(weeklyExcess));
   set('kpiMissed',     Math.round(totalMissed / 4).toLocaleString());
-  set('kpiAvgLabor',   avgAct.toFixed(1) + '%');
-  set('kpiAvgLaborSub', avgAct.toFixed(1) + '% actual vs. ' + avgTgt.toFixed(1) + '% target (+' + gapPp.toFixed(1) + 'pp)');
+  set('kpiAvgLabor',   avgAct.toFixed(2) + '%');
+  set('kpiAvgLaborSub', avgAct.toFixed(2) + '% actual vs. ' + avgTgt.toFixed(2) + '% target (+' + gapPp.toFixed(1) + 'pp)');
   set('slide6Weekly',  fmt$(weeklyExcess) + ' / wk');
   set('slide6Annual',  fmt$(annualExcess) + ' / yr projected');
   set('slideTotalMissed', Math.round(totalMissed / 4).toLocaleString());
@@ -471,7 +471,7 @@ function buildStats() {
   const bestAtt = [...STORE_DATA].sort((a,b) => b.attendRating - a.attendRating).slice(0,3);
   const attEl   = document.getElementById('bestAttendList');
   if (attEl) attEl.innerHTML = bestAtt.map(d =>
-    '<div style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px solid #ede8e1"><span style="color:#4a5a6a;font-weight:500">' + d.name + '</span><span style="color:#28a870;font-weight:700">' + (d.attendRating*100).toFixed(1) + '%</span></div>'
+    '<div style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px solid #ede8e1"><span style="color:#4a5a6a;font-weight:500">' + d.name + '</span><span style="color:#28a870;font-weight:700">' + (d.attendRating*100).toFixed(2) + '%</span></div>'
   ).join('');
 }
 

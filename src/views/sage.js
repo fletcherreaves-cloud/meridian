@@ -87,13 +87,13 @@ function buildLaborSummary(ds) {
     .sort((a,b) => b.laborPct - a.laborPct);
 
   let out = `LABOR & STAFFING (${working.length} daily records):
-  District avg: Labor ${_fmt(distAvgLabor)}% | TPPH ${_fmt(distAvgTpph)} | Total OT: ${_dollar(totalOtDollar)} (${Math.round(totalOtHrs)}h)
+  District avg: Labor ${_fmt(distAvgLabor, 2)}% | TPPH ${_fmt(distAvgTpph)} | Total OT: ${_dollar(totalOtDollar)} (${Math.round(totalOtHrs)}h)
 `;
   if (stores.length) {
     out += '\n  STORE LABOR% RANKING (worst to best):\n';
     out += `  | # | Store | Labor% | TPPH | OT $ |\n  | - | ----- | ------ | ---- | ---- |\n`;
     stores.forEach((s, i) => {
-      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.laborPct)}% | ${_fmt(s.tpph)} | ${s.otDollar > 50 ? _dollar(s.otDollar) : '—'} |\n`;
+      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.laborPct, 2)}% | ${_fmt(s.tpph)} | ${s.otDollar > 50 ? _dollar(s.otDollar) : '—'} |\n`;
     });
   }
   return out;
@@ -120,7 +120,7 @@ function buildFobSummary(ds) {
   const comps = [['comp', 'Comp Waste'], ['raw', 'Raw Waste'], ['cond', 'Condiments'], ['emp', 'Emp/Mgr Meals'], ['statv', 'Stat Variance'], ['unex', 'Unexplained']];
 
   let out = `FOB / FOOD COST — auto qsr_fob stream, MTD ${period}, DOLLAR-WEIGHTED (Σ$ ÷ Σ product sales). Authoritative — use these, not any uploaded food-cost file:
-  District FOB: ${_fmt(distPct)}%  ·  FOB $${Math.round(totFob).toLocaleString()} on $${Math.round(totSales).toLocaleString()} product sales (${stores.length} stores)
+  District FOB: ${_fmt(distPct, 2)}%  ·  FOB $${Math.round(totFob).toLocaleString()} on $${Math.round(totSales).toLocaleString()} product sales (${stores.length} stores)
 `;
   out += '\n  COMPONENT BREAKDOWN (district, dollar-weighted % of sales):\n';
   for (const [k, label] of comps) {
@@ -135,7 +135,7 @@ function buildFobSummary(ds) {
     const pct = (s.fobPct || 0) * 100;
     const vsDist = distPct != null ? pct - distPct : null;
     const drv = comps.map(([k, label]) => ({ label, share: s.sales ? (s[k] || 0) / s.sales : 0, $: s[k] || 0 })).sort((a, b) => b.share - a.share)[0];
-    out += `  | ${i + 1} | ${s.name} (${s.loc}) | ${_fmt(pct)}% | $${Math.round(s.fob || 0).toLocaleString()} | ${vsDist != null ? (vsDist >= 0 ? '+' : '') + _fmt(vsDist) + 'pp' : '—'} | ${drv ? `${drv.label} ${_fmt(drv.share * 100, 2)}%` : '—'} |\n`;
+    out += `  | ${i + 1} | ${s.name} (${s.loc}) | ${_fmt(pct, 2)}% | $${Math.round(s.fob || 0).toLocaleString()} | ${vsDist != null ? (vsDist >= 0 ? '+' : '') + _fmt(vsDist) + 'pp' : '—'} | ${drv ? `${drv.label} ${_fmt(drv.share * 100, 2)}%` : '—'} |\n`;
   });
   return out;
 }
@@ -165,13 +165,13 @@ function buildOpsSummary(ds) {
     .sort((a,b) => b.oepe - a.oepe);
 
   let out = `SERVICE TIMES / OEPE (${working.length} records):
-  District avg OEPE: ${_fmt(distOepe, 0)}s | Park rate: ${_fmt(distPark, 1)}%
+  District avg OEPE: ${_fmt(distOepe, 0)}s | Park rate: ${_fmt(distPark, 2)}%
 `;
   if (stores.length) {
     out += '\n  STORE OEPE RANKING (slowest first):\n';
     out += `  | # | Store | OEPE | Park% |\n  | - | ----- | ---- | ----- |\n`;
     stores.forEach((s, i) => {
-      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.oepe, 0)}s | ${s.park != null ? _fmt(s.park,1)+'%' : '—'} |\n`;
+      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.oepe, 0)}s | ${s.park != null ? _fmt(s.park,2)+'%' : '—'} |\n`;
     });
   }
   return out;
@@ -204,14 +204,14 @@ function buildSmgSummary(ds) {
   const distOsat = _avg(stores.map(s => s.osatTop2));
 
   let out = `SMG VOICE / CUSTOMER SATISFACTION:
-  District avg OSAT top-2: ${_fmt(distOsat, 1)}% (target ≥90%)
+  District avg OSAT top-2: ${_fmt(distOsat, 2)}% (target ≥90%)
 `;
   if (stores.length) {
     out += '\n  STORE OSAT RANKING (worst first):\n';
     out += `  | # | Store | OSAT% | DT Problem% | Period |\n  | - | ----- | ----- | ----------- | ------ |\n`;
     stores.forEach((s, i) => {
       const flag = s.osatTop2 != null && s.osatTop2 < 90 ? ' ⚠' : '';
-      out += `  | ${i+1} | ${s.name} (${s.loc})${flag} | ${_fmt(s.osatTop2, 1)}% | ${s.dtProblem != null ? _fmt(s.dtProblem,1)+'%' : '—'} | ${s.period} |\n`;
+      out += `  | ${i+1} | ${s.name} (${s.loc})${flag} | ${_fmt(s.osatTop2, 2)}% | ${s.dtProblem != null ? _fmt(s.dtProblem,2)+'%' : '—'} | ${s.period} |\n`;
     });
   }
   return out;

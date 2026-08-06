@@ -343,7 +343,7 @@ function FobSettingsEditor({ settings, onChange }) {
           background:'var(--surf)',color:'var(--text)',fontSize:11,textAlign:'right'}}),
       span({style:{fontSize:'10px',color:'var(--text3)'}},'%')
     ),
-    span({style:{fontSize:'9px',color:'var(--text3)'}},'Green ≤ target · Yellow ≤ +'+(Math.round(local.yellowBand*10000)/100)+'% · Red above'),
+    span({style:{fontSize:'9px',color:'var(--text3)'}},'Green ≤ target · Yellow ≤ +'+(local.yellowBand*100).toFixed(2)+'% · Red above'),
     btn({onClick:save,style:{padding:'3px 10px',borderRadius:4,background:'var(--accent)',color:'#fff',
       border:'none',cursor:'pointer',fontSize:10,fontWeight:600}},'Save'),
   );
@@ -545,7 +545,7 @@ function ComplianceSection({complianceIssues, onHand}) {
   return div({style:{padding:12}},
     div({style:{display:'flex',gap:12,marginBottom:12,flexWrap:'wrap'}},
       div({style:{flex:'0 0 auto',background:pct===100?'rgba(16,185,129,.06)':'rgba(245,158,11,.06)',border:`.5px solid ${statusColor}40`,borderRadius:6,padding:'8px 14px',textAlign:'center'}},
-        div({style:{fontSize:'18px',fontFamily:'var(--mono)',fontWeight:700,color:statusColor}},pct+'%'),
+        div({style:{fontSize:'18px',fontFamily:'var(--mono)',fontWeight:700,color:statusColor}},pct.toFixed(2)+'%'),
         div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},'Compliance Rate'),
         div({style:{fontSize:'9px',color:'var(--text3)'}},''+counted+' / '+total+' items counted')
       ),

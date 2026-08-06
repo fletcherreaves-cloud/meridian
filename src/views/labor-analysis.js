@@ -58,7 +58,7 @@ const isFL = l => FL_LOCS.has(locNum(l));
 
 const money = v => v == null || Number.isNaN(v) ? '—' : '$' + Math.round(v).toLocaleString();
 const num1 = v => v == null || Number.isNaN(v) ? '—' : (Math.round(v * 10) / 10).toLocaleString();
-const pct = v => v == null || Number.isNaN(v) ? '—' : (v * 100).toFixed(1) + '%';
+const pct = v => v == null || Number.isNaN(v) ? '—' : (v * 100).toFixed(2) + '%';
 const signNum = v => v == null || Number.isNaN(v) ? '—' : (v >= 0 ? '+' : '') + (Math.round(v * 10) / 10).toLocaleString();
 const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 
@@ -66,16 +66,16 @@ const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['
 const COLS = [
   { k: 'salesFcst', h: 'Sales Fcst', f: money },
   { k: 'laborPctActual', h: 'Labor %', f: pct, flag: r => (r.laborPctActual != null && r.laborTargetOrg != null && r.laborPctActual > r.laborTargetOrg) ? '#ef4444' : null,
-    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — only ${Math.round(r.laborPctCoverage * 100)}% of this week's sales have a LifeLenz labor % reported so far (later days haven't posted one yet). Rises toward the true week figure as more days post.` : null },
+    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — only ${(r.laborPctCoverage * 100).toFixed(2)}% of this week's sales have a LifeLenz labor % reported so far (later days haven't posted one yet). Rises toward the true week figure as more days post.` : null },
   { k: 'laborTargetOrg', h: 'Target %', f: pct },
   { k: 'gcFcst', h: 'GC Fcst', f: v => v == null ? '—' : Math.round(v).toLocaleString() },
   { k: 'tpph', h: 'TPPH', f: num1 },
   { k: 'rate', h: 'Rate', f: v => v == null ? '—' : '$' + (Math.round(v * 100) / 100).toFixed(2),
-    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — blended $/hr from only the ${Math.round(r.laborPctCoverage * 100)}% of days with a reported labor % so far.` : null },
+    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — blended $/hr from only the ${(r.laborPctCoverage * 100).toFixed(2)}% of days with a reported labor % so far.` : null },
   { k: 'hoursFcst', h: 'Hrs Fcst', f: num1 },
   { k: 'hoursSched', h: 'Hrs Sched', f: num1 },
   { k: 'scheduledLaborD', h: 'Sched Labor $', f: money,
-    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — reflects only the ${Math.round(r.laborPctCoverage * 100)}% of sales with a reported labor % so far, not the full week's cost.` : null },
+    title: r => (r.laborPctCoverage != null && r.laborPctCoverage < 0.95) ? `Partial week — reflects only the ${(r.laborPctCoverage * 100).toFixed(2)}% of sales with a reported labor % so far, not the full week's cost.` : null },
   { k: 'targetLaborD', h: 'Target Labor $', f: money },
   { k: 'projHrsTarget', h: 'Proj Hrs (Tgt)', f: num1 },
   { k: 'hrsVsForecast', h: 'Hrs ± Fcst', f: signNum, flag: r => r.hrsVsForecast == null ? null : r.hrsVsForecast > 0 ? '#f59e0b' : '#10b981' },

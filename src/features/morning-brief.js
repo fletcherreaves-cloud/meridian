@@ -67,11 +67,11 @@ const MORNING_RULES = [
       if(v==null||v===0) return null;
       const pct=v>1?v:v*100; // normalize to %
       if(pct>=3) return {severity:'RED',
-        headline:`T-Red After Total at ${pct.toFixed(1)}% — controls concern`,
+        headline:`T-Red After Total at ${pct.toFixed(2)}% — controls concern`,
         detail:`T-Reds After Total represent voids after the Total button — a strong indicator of cash integrity issues. Rates above 3% warrant immediate review.`,
         action:`Review individual T-Red transactions. Cross-reference with drawer opens and cash O/S for the same shift.`};
       if(pct>=1.5) return {severity:'AMBER',
-        headline:`T-Red After Total at ${pct.toFixed(1)}% — elevated`,
+        headline:`T-Red After Total at ${pct.toFixed(2)}% — elevated`,
         detail:`Above normal range. Monitor for trend. Could indicate training issues or deliberate manipulation.`,
         action:`Review T-Red transactions and confirm with shift manager.`};
       return null;
@@ -85,7 +85,7 @@ const MORNING_RULES = [
       if(salesVsExp < -5 && gcVsExp > -2 && diverge >= 8) {
         const sev = diverge >= 15 ? 'RED' : 'AMBER';
         return {severity: sev,
-          headline:`Sales ${salesVsExp.toFixed(1)}% below projection but GC only ${gcVsExp>0?'+':''}${gcVsExp.toFixed(1)}% — ${diverge.toFixed(0)}pp divergence`,
+          headline:`Sales ${salesVsExp.toFixed(2)}% below projection but GC only ${gcVsExp>0?'+':''}${gcVsExp.toFixed(2)}% — ${diverge.toFixed(0)}pp divergence`,
           detail:`Normal operations show sales and guest counts move together. When sales drop significantly but guest counts hold, the average check has collapsed — a pattern consistent with systematic POS reductions (voids, refunds, discounts, comp meals) inflating the gap.`,
           action:`Immediately review POS reductions for this period: manual refunds, voids, discounts, and comp meals. Calculate if reduction totals are proportionate to the sales gap. This pattern requires prompt investigation.`};
       }
@@ -99,7 +99,7 @@ const MORNING_RULES = [
       const staffOk = Math.abs(actVsNeed) <= 2;
       const oepeHigh = oepe > oepeNorm * 1.15;
       if(!staffOk||!oepeHigh) return null;
-      const pctOver = Math.round((oepe/oepeNorm-1)*100);
+      const pctOver = ((oepe/oepeNorm-1)*100).toFixed(2);
       const sev = oepe > oepeNorm * 1.30 ? 'RED' : 'AMBER';
       return {severity: sev,
         headline:`OEPE ${Math.round(oepe)}s (${pctOver}% above norm) with adequate staffing (${actVsNeed>0?'+':''}${actVsNeed} vs needed)`,
@@ -116,7 +116,7 @@ const MORNING_RULES = [
       const parkLow = dtPark <= 5;
       if(!staffOk||!oepeHigh||!parkLow) return null;
       return {severity:'AMBER',
-        headline:`OEPE ${Math.round(oepe)}s with DT Parked at ${Math.round(dtPark||0)}% — manager not pulling cars`,
+        headline:`OEPE ${Math.round(oepe)}s with DT Parked at ${(dtPark||0).toFixed(2)}% — manager not pulling cars`,
         detail:`Adequate staffing and high OEPE with near-zero DT Parking indicates the manager is not using the park position to manage drive-through clock times. Customers are likely pulling off rather than waiting, representing lost sales and potentially inflating speed numbers through attrition.`,
         action:`Coach MOD on proactive DT parking to prevent pull-offs and maintain flow. Review DT window positioning procedures during peak periods.`};
     }},
@@ -149,7 +149,7 @@ const MORNING_RULES = [
       const oepeHigh = oepe > (oepeNorm||160) * 1.08;
       if(!kvsLow||!staffOk||!oepeHigh) return null;
       return {severity:'AMBER',
-        headline:`KVS usage ${Math.round(kvsU||0)}% with adequate staffing and high OEPE`,
+        headline:`KVS usage ${(kvsU||0).toFixed(2)}% with adequate staffing and high OEPE`,
         detail:`Low KVS utilization during adequate staffing windows with elevated OEPE strongly suggests the manager is operating only one side of the kitchen. At this volume level, single-side kitchen operation is a major constraint on speed and is a correctable management issue.`,
         action:`Confirm with MOD: are both kitchen sides being utilized during peak periods? Coach on dual-side kitchen management standards. KVS dual-side utilization with adequate staffing should be non-negotiable.`};
     }},
@@ -189,11 +189,11 @@ const MORNING_RULES = [
       if(raw==null) return null;
       const pct = raw>1?raw:raw*100; // normalize to %
       if(pct>=33) return {severity:'RED',
-        headline:`Base Food Cost ${pct.toFixed(1)}% — significantly above standard`,
+        headline:`Base Food Cost ${pct.toFixed(2)}% — significantly above standard`,
         detail:`Base food cost above 33% indicates a serious variance from the McDonald's food cost model. Primary culprits: over-portioning, waste/spoilage, donation mis-recording, or food theft. This needs a waste log audit and portion observation before assuming supply-price movements are the cause.`,
         action:`Pull waste log for the period covered by this report. Conduct a portion audit on highest-cost items (beef, chicken). Verify donation log accuracy. Cross-reference with delivery invoices for any pricing anomalies.`};
       if(pct>=30) return {severity:'AMBER',
-        headline:`Base Food Cost ${pct.toFixed(1)}% — above target, monitor closely`,
+        headline:`Base Food Cost ${pct.toFixed(2)}% — above target, monitor closely`,
         detail:`Food cost is trending above the 30% target. Could be early waste or portioning drift. Worth verifying before it becomes a larger variance.`,
         action:`Review waste log trends. Spot-check portions on primary proteins during next visit.`};
       return null;
@@ -205,11 +205,11 @@ const MORNING_RULES = [
       if(raw==null) return null;
       const pct = raw>1?raw:raw*100; // normalize to %
       if(pct<65) return {severity:'RED',
-        headline:`OSAT Top-2 ${pct.toFixed(0)}% (${d.smgMonth||'recent'}) — below standard`,
+        headline:`OSAT Top-2 ${pct.toFixed(2)}% (${d.smgMonth||'recent'}) — below standard`,
         detail:`OSAT below 65% is a leading indicator of guest experience failure. At this level, a meaningful portion of customers are actively dissatisfied — not just neutral. This correlates strongly with drive-through speed issues, service inconsistency, and staff attitude problems.`,
         action:`Pull SMG verbatim comments for this period. Identify the top recurring themes. Address directly in crew training and next 1:1 with the store manager. Review paired OEPE and service metrics for the same period.`};
       if(pct<72) return {severity:'AMBER',
-        headline:`OSAT Top-2 ${pct.toFixed(0)}% (${d.smgMonth||'recent'}) — below comfort zone`,
+        headline:`OSAT Top-2 ${pct.toFixed(2)}% (${d.smgMonth||'recent'}) — below comfort zone`,
         detail:`OSAT below 72% warrants attention. While not at a critical threshold, this is below where the district should be operating and typically reflects service inconsistencies that compound over time.`,
         action:`Review SMG verbatim comments. Coach store manager on the top 1-2 service themes. Confirm speed improvement initiatives are in place if OEPE is also elevated.`};
       return null;
@@ -514,33 +514,33 @@ function StoreBriefCard({store, expanded, setExpanded}){
         [
           ['Sales',  sales!=null?'$'+(sales/1000).toFixed(1)+'K':'—'],
           ['Projected',projSales!=null?'$'+(projSales/1000).toFixed(1)+'K':'—'],
-          ['vs Proj', store.salesVsExp!=null?(store.salesVsExp>0?'+':'')+store.salesVsExp.toFixed(1)+'%':'—',
+          ['vs Proj', store.salesVsExp!=null?(store.salesVsExp>0?'+':'')+store.salesVsExp.toFixed(2)+'%':'—',
             store.salesVsExp!=null?(store.salesVsExp>-3?'#10b981':store.salesVsExp>-8?'#f59e0b':'#ef4444'):null],
           ['GC',     gc!=null?gc.toFixed(0):'—'],
-          ...(vsLYSales!=null?[['vs LY Sales',(vsLYSales>0?'+':'')+vsLYSales.toFixed(1)+'%',
+          ...(vsLYSales!=null?[['vs LY Sales',(vsLYSales>0?'+':'')+vsLYSales.toFixed(2)+'%',
             vsLYSales>=0?'#10b981':vsLYSales>=-5?'#f59e0b':'#ef4444']]:[]),
-          ...(vsLYGC!=null?[['vs LY GC',(vsLYGC>0?'+':'')+vsLYGC.toFixed(1)+'%',
+          ...(vsLYGC!=null?[['vs LY GC',(vsLYGC>0?'+':'')+vsLYGC.toFixed(2)+'%',
             vsLYGC>=0?'#10b981':vsLYGC>=-5?'#f59e0b':'#ef4444']]:[]),
           ['OEPE',   oepe!=null?oepe.toFixed(0)+'s':'—', oepeNorm&&oepe?oepe>oepeNorm*1.15?'#ef4444':oepe>oepeNorm*1.05?'#f59e0b':'#10b981':null],
           ['OEPE Norm',oepeNorm!=null?oepeNorm.toFixed(0)+'s':'—'],
           ['KVS',    kvst!=null?kvst.toFixed(0)+'s':'—'],
-          ['DT Parked',dtPark!=null?dtPark.toFixed(0)+'%':'—'],
+          ['DT Parked',dtPark!=null?dtPark.toFixed(2)+'%':'—'],
           ['Act vs Need',actVsNeed!=null?(actVsNeed>0?'+':'')+actVsNeed.toFixed(1):'—',
             actVsNeed!=null?(Math.abs(actVsNeed)<=2?'#10b981':Math.abs(actVsNeed)<=4?'#f59e0b':'#ef4444'):null],
           ['TPPH',   tpph!=null?tpph.toFixed(1):'—'],
-          ['Labor%', laborPct!=null?((laborPct>1?laborPct:laborPct*100).toFixed(1))+'%':'—'],
+          ['Labor%', laborPct!=null?((laborPct>1?laborPct:laborPct*100).toFixed(2))+'%':'—'],
           ['Drawer Opens',drawerOpens!=null?drawerOpens.toFixed(0):'—',
             drawerOpens!=null?(drawerOpens<5?'#10b981':drawerOpens<10?'#f59e0b':'#ef4444'):null],
           ...(baseFoodPct!=null?[
-            ['Base Food%', ((baseFoodPct>1?baseFoodPct:baseFoodPct*100).toFixed(1))+'%'+(fobMonth?' '+fobMonth:''),
+            ['Base Food%', ((baseFoodPct>1?baseFoodPct:baseFoodPct*100).toFixed(2))+'%'+(fobMonth?' '+fobMonth:''),
               (()=>{const p=baseFoodPct>1?baseFoodPct:baseFoodPct*100;return p>=33?'#ef4444':p>=30?'#f59e0b':'#10b981';})()],
           ]:[]),
           ...(totFoodPct!=null?[
-            ['Tot Food%', ((totFoodPct>1?totFoodPct:totFoodPct*100).toFixed(1))+'%',
+            ['Tot Food%', ((totFoodPct>1?totFoodPct:totFoodPct*100).toFixed(2))+'%',
               (()=>{const p=totFoodPct>1?totFoodPct:totFoodPct*100;return p>=35?'#ef4444':p>=32?'#f59e0b':'#10b981';})()],
           ]:[]),
           ...(smgOsat!=null?[
-            ['OSAT'+(smgMonth?' '+smgMonth:''), ((smgOsat>1?smgOsat:smgOsat*100).toFixed(0))+'%',
+            ['OSAT'+(smgMonth?' '+smgMonth:''), ((smgOsat>1?smgOsat:smgOsat*100).toFixed(2))+'%',
               (()=>{const p=smgOsat>1?smgOsat:smgOsat*100;return p<65?'#ef4444':p<72?'#f59e0b':'#10b981';})()],
           ]:[]),
         ].map(([lbl,val,clr])=>
@@ -662,12 +662,12 @@ function TodayPaceCard({date, darRows}) {
         ),
         pctVsMean != null && h('div',{style:{textAlign:'right'}},
           h('div',{style:{fontFamily:'monospace',fontSize:'20px',fontWeight:800,color:paceColor,lineHeight:1,letterSpacing:'-1px'}},
-            (pctVsMean >= 0 ? '+' : '') + (pctVsMean * 100).toFixed(1) + '%'),
+            (pctVsMean >= 0 ? '+' : '') + (pctVsMean * 100).toFixed(2) + '%'),
           h('div',{style:{fontSize:'8px',color:'#4a6080',marginTop:1}},'vs mean'),
         ),
         pctVsLY != null && h('div',{style:{textAlign:'right'}},
           h('div',{style:{fontFamily:'monospace',fontSize:'14px',fontWeight:700,color:pctClr(pctVsLY),lineHeight:1}},
-            (pctVsLY >= 0 ? '+' : '') + (pctVsLY * 100).toFixed(1) + '%'),
+            (pctVsLY >= 0 ? '+' : '') + (pctVsLY * 100).toFixed(2) + '%'),
           h('div',{style:{fontSize:'8px',color:'#4a6080',marginTop:1}},'vs LY')
         ),
         totalProj > 0 && h('div',{style:{textAlign:'right'}},
@@ -687,7 +687,7 @@ function TodayPaceCard({date, darRows}) {
           h('div',{style:{fontFamily:'monospace',fontSize:'12px',fontWeight:700,color:'var(--text)',lineHeight:1}},
             fK(dp.actual)),
           dp.pct != null && h('div',{style:{fontSize:'8px',fontWeight:600,color:pctClr(dp.pct),marginTop:2}},
-            (dp.pct>=0?'+':'')+(dp.pct*100).toFixed(1)+'% vs mean')
+            (dp.pct>=0?'+':'')+(dp.pct*100).toFixed(2)+'% vs mean')
         )
       )
     )
@@ -887,15 +887,15 @@ function exportBriefHTML(brief){
     const metricsHTML = [
       ['Sales',      s.sales!=null?'$'+(s.sales/1000).toFixed(1)+'K':'—'],
       ['Projected',  s.projSales!=null?'$'+(s.projSales/1000).toFixed(1)+'K':'—'],
-      ['vs Proj',    s.salesVsExp!=null?(s.salesVsExp>0?'+':'')+s.salesVsExp.toFixed(1)+'%':'—'],
+      ['vs Proj',    s.salesVsExp!=null?(s.salesVsExp>0?'+':'')+s.salesVsExp.toFixed(2)+'%':'—'],
       ['OEPE',       s.oepe!=null?s.oepe.toFixed(0)+'s':'—'],
       ['KVS',        s.kvst!=null?s.kvst.toFixed(0)+'s':'—'],
-      ['DT Park%',   s.dtPark!=null?s.dtPark.toFixed(0)+'%':'—'],
+      ['DT Park%',   s.dtPark!=null?s.dtPark.toFixed(2)+'%':'—'],
       ['Act vs Need',s.actVsNeed!=null?(s.actVsNeed>=0?'+':'')+s.actVsNeed.toFixed(1):'—'],
       ['D.Opens',    s.drawerOpens!=null?s.drawerOpens.toFixed(0):'—'],
-      ['Labor%',     s.laborPct!=null?((s.laborPct>1?s.laborPct:s.laborPct*100).toFixed(1))+'%':'—'],
-      ...(s.baseFoodPct!=null?[['Base Food%',((s.baseFoodPct>1?s.baseFoodPct:s.baseFoodPct*100).toFixed(1))+'%']]:[] ),
-      ...(s.smgOsat!=null?[['OSAT',((s.smgOsat>1?s.smgOsat:s.smgOsat*100).toFixed(0))+'%']]:[] ),
+      ['Labor%',     s.laborPct!=null?((s.laborPct>1?s.laborPct:s.laborPct*100).toFixed(2))+'%':'—'],
+      ...(s.baseFoodPct!=null?[['Base Food%',((s.baseFoodPct>1?s.baseFoodPct:s.baseFoodPct*100).toFixed(2))+'%']]:[] ),
+      ...(s.smgOsat!=null?[['OSAT',((s.smgOsat>1?s.smgOsat:s.smgOsat*100).toFixed(2))+'%']]:[] ),
     ].map(([l,v])=>`<div class="metric"><div class="metric-val">${v}</div><div class="metric-lbl">${l}</div></div>`).join('');
     return `<div class="store-card sev-${s.severity.toLowerCase()}">
       <div class="store-hdr">

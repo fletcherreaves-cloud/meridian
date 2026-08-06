@@ -194,7 +194,7 @@ export function buildItemJourney(detail = {}, { period, asOf } = {}) {
     signals.push({
       kind: 'inference',
       lane: 'waste',
-      text: `Waste is ${Math.round(wasteShare * 100)}% of this item's outflow (${Math.round(totals.waste)} units wasted vs ${Math.round(totals.used)} used on POS). Usage here is being driven by waste, not sales — review waste discipline before blaming the count.`,
+      text: `Waste is ${(wasteShare * 100).toFixed(2)}% of this item's outflow (${Math.round(totals.waste)} units wasted vs ${Math.round(totals.used)} used on POS). Usage here is being driven by waste, not sales — review waste discipline before blaming the count.`,
     });
   }
 

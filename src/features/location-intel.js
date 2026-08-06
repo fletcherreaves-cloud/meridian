@@ -175,14 +175,14 @@ function liBuildRoadmap(stats){
   if(stats.oepe&&stats.oepe.pct!=null&&Math.abs(stats.oepe.pct)>0.01){
     opps.push({cat:'Service Speed',icon:'⏱',metric:'OEPE',
       finding:'Drive-thru speed directly correlates with daily revenue at this location.',
-      detail:'OEPE above target on '+stats.oepe.above+' days measured. '+(stats.oepe.pct<0?'Faster service days averaged '+(Math.abs(stats.oepe.pct)*100).toFixed(1)+'% more in sales than slower days.':'Slower service days show '+(Math.abs(stats.oepe.pct)*100).toFixed(1)+'% lower sales vs. on-target days.'),
+      detail:'OEPE above target on '+stats.oepe.above+' days measured. '+(stats.oepe.pct<0?'Faster service days averaged '+(Math.abs(stats.oepe.pct)*100).toFixed(2)+'% more in sales than slower days.':'Slower service days show '+(Math.abs(stats.oepe.pct)*100).toFixed(2)+'% lower sales vs. on-target days.'),
       action:'Implement structured car-pull discipline and pre-staging during peak windows. Target: under '+stats.oepe.oepeTgt+'s consistently.',
       dollarOpp:Math.abs(stats.oepe.pct)*ann});
   }
   if(stats.opp&&stats.opp.annualized>500){
     opps.push({cat:'Revenue Capture',icon:'💰',metric:'Opportunity Cost',
       finding:'Measurable OEPE-related lost sales are recoverable with consistent service focus.',
-      detail:'Avg $'+Math.round(stats.opp.totalOpp/stats.opp.rows).toLocaleString()+'/day in opportunity cost over '+stats.opp.rows+' measured days. Annualized: $'+Math.round(stats.opp.annualized).toLocaleString()+' ('+( stats.opp.pctRev*100).toFixed(1)+'% of revenue).',
+      detail:'Avg $'+Math.round(stats.opp.totalOpp/stats.opp.rows).toLocaleString()+'/day in opportunity cost over '+stats.opp.rows+' measured days. Annualized: $'+Math.round(stats.opp.annualized).toLocaleString()+' ('+( stats.opp.pctRev*100).toFixed(2)+'% of revenue).',
       action:'Target OEPE consistently below '+( stats.tgt.tOepe||240)+'s. Prioritize peak-hour service flow and disciplined car-pull protocol.',
       dollarOpp:stats.opp.annualized});
   }
@@ -190,14 +190,14 @@ function liBuildRoadmap(stats){
     var dolOpp=Math.abs(stats.labor.impact)*stats.labor.pctUnder*ann;
     opps.push({cat:'Staffing',icon:'👥',metric:'Labor Coverage',
       finding:'Understaffed days are statistically linked to lower sales performance.',
-      detail:(stats.labor.pctUnder*100).toFixed(0)+'% of days run more than 1 hour under needed labor. '+(stats.labor.impact<0?'Understaffed days average '+(Math.abs(stats.labor.impact)*100).toFixed(1)+'% less in sales vs. adequately-staffed days.':''),
+      detail:(stats.labor.pctUnder*100).toFixed(2)+'% of days run more than 1 hour under needed labor. '+(stats.labor.impact<0?'Understaffed days average '+(Math.abs(stats.labor.impact)*100).toFixed(2)+'% less in sales vs. adequately-staffed days.':''),
       action:'Review weekly scheduling templates for recurring gaps. Ensure floor management coverage during all peak dayparts.',
       dollarOpp:dolOpp>0?dolOpp:0});
   }
   if(stats.weather&&stats.weather.rainImpact!=null&&Math.abs(stats.weather.rainImpact)>0.02){
     opps.push({cat:'Weather Awareness',icon:'🌧',metric:'Weather Sensitivity',
       finding:'This location shows measurable weather-related sales variance worth planning around.',
-      detail:'Rain days average '+(Math.abs(stats.weather.rainImpact)*100).toFixed(1)+'% '+(stats.weather.rainImpact<0?'lower':'higher')+' sales vs. dry days (based on '+stats.weather.rainDays+' rainy days). '+(stats.weather.avgCold?'Cold-weather (<40°F) days also show distinct patterns.':''),
+      detail:'Rain days average '+(Math.abs(stats.weather.rainImpact)*100).toFixed(2)+'% '+(stats.weather.rainImpact<0?'lower':'higher')+' sales vs. dry days (based on '+stats.weather.rainDays+' rainy days). '+(stats.weather.avgCold?'Cold-weather (<40°F) days also show distinct patterns.':''),
       action:'Build weather-aware scheduling templates. Adjust staffing and product mix prep based on forecast.',
       dollarOpp:Math.abs(stats.weather.rainImpact)*ann*(stats.weather.rainDays/Math.max(1,stats.weather.n))});
   }
@@ -209,7 +209,7 @@ function liGenerateExportHTML(stats,roadmap,aiContent,mode,districtName){
   var now=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   var dname=esc(districtName||'MCDOK');
   var fmtD=function(v){return v==null?'—':'$'+Math.round(v).toLocaleString();};
-  var fmtP=function(v){return v==null?'—':(v>=0?'+':'')+(v*100).toFixed(1)+'%';};
+  var fmtP=function(v){return v==null?'—':(v>=0?'+':'')+(v*100).toFixed(2)+'%';};
   var css='*{box-sizing:border-box;margin:0;padding:0}'
     +'body{font-family:-apple-system,Helvetica Neue,Arial,sans-serif;color:#1e293b;background:#fff;font-size:12px}'
     +'.hdr{background:#090e18;color:#fff;padding:20px 28px;display:flex;align-items:center;gap:14px}'
@@ -254,9 +254,9 @@ function liGenerateExportHTML(stats,roadmap,aiContent,mode,districtName){
     +'<div class="kpi"><div class="kpi-lbl">Historical Data Points</div><div class="kpi-val">'+stats.dataRows+'</div></div>'
     +'<div class="kpi"><div class="kpi-lbl">Total Opp / Year</div><div class="kpi-val green">'+fmtD(roadmap.reduce(function(s,o){return s+o.dollarOpp;},0))+'</div></div>'
     +'</div>'
-    +(stats.oepe?'<div class="stat"><span class="stat-lbl">OEPE Correlation:</span> '+(stats.oepe.r!=null?'r\u2009=\u2009'+stats.oepe.r+' ('+stats.oepe.n+' paired days)':'insufficient data')+(stats.oepe.pct!=null?' \u2014 '+(Math.abs(stats.oepe.pct)*100).toFixed(1)+'% sales variance vs. target adherence.':'')+'</div>':'')
+    +(stats.oepe?'<div class="stat"><span class="stat-lbl">OEPE Correlation:</span> '+(stats.oepe.r!=null?'r\u2009=\u2009'+stats.oepe.r+' ('+stats.oepe.n+' paired days)':'insufficient data')+(stats.oepe.pct!=null?' \u2014 '+(Math.abs(stats.oepe.pct)*100).toFixed(2)+'% sales variance vs. target adherence.':'')+'</div>':'')
     +(stats.weather?'<div class="stat"><span class="stat-lbl">Weather Impact:</span> Rain days '+(stats.weather.rainImpact!=null?fmtP(stats.weather.rainImpact)+' vs. dry-day average':'insufficient data')+'.</div>':'')
-    +(stats.opp?'<div class="stat"><span class="stat-lbl">Opportunity Cost:</span> '+fmtD(stats.opp.annualized)+'/yr annualized ('+(stats.opp.pctRev*100).toFixed(1)+'% of revenue, '+stats.opp.rows+' days).</div>':'');
+    +(stats.opp?'<div class="stat"><span class="stat-lbl">Opportunity Cost:</span> '+fmtD(stats.opp.annualized)+'/yr annualized ('+(stats.opp.pctRev*100).toFixed(2)+'% of revenue, '+stats.opp.rows+' days).</div>':'');
 
   // Growth Roadmap
   var oppHTML=roadmap.map(function(o,i){
@@ -274,18 +274,18 @@ function liGenerateExportHTML(stats,roadmap,aiContent,mode,districtName){
   if(stats.oepe){
     var oepeColor=stats.oepe.pct!=null?(Math.abs(stats.oepe.pct)>0.03?'#ef4444':'#64748b'):'#64748b';
     corrHTML+='<div class="corr-row"><div style="flex:1"><div class="corr-label">\u23f1 OEPE \u2192 Sales</div>'
-      +'<div class="corr-detail">'+(stats.oepe.pct!=null?(stats.oepe.pct<0?'Faster service days average '+(Math.abs(stats.oepe.pct)*100).toFixed(1)+'% more in sales. Target: '+stats.oepe.oepeTgt+'s.':'Slower days show '+(Math.abs(stats.oepe.pct)*100).toFixed(1)+'% lower sales vs. on-target days.'):'Insufficient paired data.')+'<br><em>'+stats.oepe.n+' paired days analyzed.</em></div>'
+      +'<div class="corr-detail">'+(stats.oepe.pct!=null?(stats.oepe.pct<0?'Faster service days average '+(Math.abs(stats.oepe.pct)*100).toFixed(2)+'% more in sales. Target: '+stats.oepe.oepeTgt+'s.':'Slower days show '+(Math.abs(stats.oepe.pct)*100).toFixed(2)+'% lower sales vs. on-target days.'):'Insufficient paired data.')+'<br><em>'+stats.oepe.n+' paired days analyzed.</em></div>'
       +'</div><div class="corr-val" style="color:'+oepeColor+'">'+(stats.oepe.r!=null?'r\u2009=\u2009'+stats.oepe.r:'—')+'</div></div>';
   }
   if(stats.labor){
     var labColor=stats.labor.impact!=null?(stats.labor.impact<-0.02?'#ef4444':'#10b981'):'#64748b';
     corrHTML+='<div class="corr-row"><div style="flex:1"><div class="corr-label">\uD83D\uDC65 Labor Coverage \u2192 Sales</div>'
-      +'<div class="corr-detail">Understaffed days (>1hr under needed): '+(stats.labor.pctUnder*100).toFixed(0)+'% of periods. '+(stats.labor.avgUnder&&stats.labor.avgOk?'Understaffed avg: '+fmtD(stats.labor.avgUnder)+' vs. adequate: '+fmtD(stats.labor.avgOk)+'.':'')+'</div>'
+      +'<div class="corr-detail">Understaffed days (>1hr under needed): '+(stats.labor.pctUnder*100).toFixed(2)+'% of periods. '+(stats.labor.avgUnder&&stats.labor.avgOk?'Understaffed avg: '+fmtD(stats.labor.avgUnder)+' vs. adequate: '+fmtD(stats.labor.avgOk)+'.':'')+'</div>'
       +'</div><div class="corr-val" style="color:'+labColor+'">'+(stats.labor.impact!=null?fmtP(stats.labor.impact):'—')+'</div></div>';
   }
   if(stats.opp){
     corrHTML+='<div class="corr-row"><div style="flex:1"><div class="corr-label">\uD83D\uDCB0 Opportunity Cost</div>'
-      +'<div class="corr-detail">Avg $'+Math.round(stats.opp.totalOpp/stats.opp.rows).toLocaleString()+'/day over '+stats.opp.rows+' days. '+(stats.opp.pctRev*100).toFixed(1)+'% of revenue.</div>'
+      +'<div class="corr-detail">Avg $'+Math.round(stats.opp.totalOpp/stats.opp.rows).toLocaleString()+'/day over '+stats.opp.rows+' days. '+(stats.opp.pctRev*100).toFixed(2)+'% of revenue.</div>'
       +'</div><div class="corr-val" style="color:#f59e0b">'+fmtD(stats.opp.annualized)+'/yr</div></div>';
   }
   if(stats.avgCheck){
@@ -310,7 +310,7 @@ function liGenerateExportHTML(stats,roadmap,aiContent,mode,districtName){
         +'<div class="dow-lbl">'+DAYS[i]+'</div>'
         +'<div class="dow-bar-wrap"><div class="dow-bar" style="width:'+bar.toFixed(1)+'%"></div></div>'
         +'<div class="dow-val">'+fmtD(avg)+'</div>'
-        +'<div class="dow-vs" style="'+vc+'">'+(vsG>=0?'+':'')+(vsG*100).toFixed(0)+'%</div>'
+        +'<div class="dow-vs" style="'+vc+'">'+(vsG>=0?'+':'')+(vsG*100).toFixed(2)+'%</div>'
         +'</div>';
     });
     dowHTML+='</div>';
@@ -417,7 +417,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
   };
   var noData=!ds||!ds.loaded;
   var fmtD=function(v){return v==null?'—':'$'+Math.round(v).toLocaleString();};
-  var fmtPct=function(v){return v==null?'—':(v>=0?'+':'')+(v*100).toFixed(1)+'%';};
+  var fmtPct=function(v){return v==null?'—':(v>=0?'+':'')+(v*100).toFixed(2)+'%';};
   var mapeC=function(v){return v==null?'var(--text3)':Math.abs(v)<0.25?'#10b981':Math.abs(v)<0.5?'#f59e0b':'#ef4444';};
   var S={
     sec:{marginBottom:16,background:'var(--surf2)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr)',overflow:'hidden'},
@@ -528,15 +528,15 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
               div({style:S.secHdr},'📈 Operational Correlations'),
               div({style:S.secBody},
                 [stats.oepe&&{label:'OEPE → Sales',icon:'⏱',val:stats.oepe.r!=null?'r = '+stats.oepe.r:'—',
-                    detail:stats.oepe.pct!=null?(stats.oepe.pct<0?'Faster service days average '+(Math.abs(stats.oepe.pct)*100).toFixed(1)+'% more in sales. Target: '+stats.oepe.oepeTgt+'s.':'Slower days show '+(Math.abs(stats.oepe.pct)*100).toFixed(1)+'% lower sales vs. on-target days. Target: '+stats.oepe.oepeTgt+'s.'):'Insufficient paired OEPE + sales data.',
+                    detail:stats.oepe.pct!=null?(stats.oepe.pct<0?'Faster service days average '+(Math.abs(stats.oepe.pct)*100).toFixed(2)+'% more in sales. Target: '+stats.oepe.oepeTgt+'s.':'Slower days show '+(Math.abs(stats.oepe.pct)*100).toFixed(2)+'% lower sales vs. on-target days. Target: '+stats.oepe.oepeTgt+'s.'):'Insufficient paired OEPE + sales data.',
                     sub:(stats.oepe.n||0)+' paired days | '+stats.oepe.above+' above target / '+stats.oepe.at+' at/below',
                     c:stats.oepe.r!=null?mapeC(Math.abs(stats.oepe.r)-0.25):'var(--text3)'},
                   stats.labor&&{label:'Labor Coverage → Sales',icon:'👥',val:stats.labor.impact!=null?fmtPct(stats.labor.impact):'—',
-                    detail:'Understaffed days (>1hr under needed): '+(stats.labor.pctUnder*100).toFixed(0)+'% of periods. '+(stats.labor.avgUnder&&stats.labor.avgOk?'Understaffed avg: '+fmtD(stats.labor.avgUnder)+' vs. adequate: '+fmtD(stats.labor.avgOk)+'.':''),
+                    detail:'Understaffed days (>1hr under needed): '+(stats.labor.pctUnder*100).toFixed(2)+'% of periods. '+(stats.labor.avgUnder&&stats.labor.avgOk?'Understaffed avg: '+fmtD(stats.labor.avgUnder)+' vs. adequate: '+fmtD(stats.labor.avgOk)+'.':''),
                     sub:(stats.labor.rows||0)+' days with act-vs-need data',
                     c:stats.labor.impact!=null?(stats.labor.impact<-0.02?'#ef4444':'#10b981'):'var(--text3)'},
                   stats.opp&&{label:'Opportunity Cost',icon:'💰',val:fmtD(stats.opp.annualized)+'/yr',
-                    detail:'Avg $'+Math.round(stats.opp.totalOpp/stats.opp.rows).toLocaleString()+'/day captured over '+stats.opp.rows+' days. '+(stats.opp.pctRev*100).toFixed(1)+'% of revenue.',
+                    detail:'Avg $'+Math.round(stats.opp.totalOpp/stats.opp.rows).toLocaleString()+'/day captured over '+stats.opp.rows+' days. '+(stats.opp.pctRev*100).toFixed(2)+'% of revenue.',
                     sub:'Source: Opportunity Cost $ field in operations data',c:'#f59e0b'},
                   stats.avgCheck&&{label:'Avg Check Trend',icon:'💳',val:stats.avgCheck.trend!=null?fmtPct(stats.avgCheck.trend)+' recent':'—',
                     detail:'Check↔GC correlation: r = '+(stats.avgCheck.r||'—')+'. Recent avg: $'+(stats.avgCheck.recentAvg||0).toFixed(2)+' vs. older: $'+(stats.avgCheck.olderAvg||0).toFixed(2)+'.',
@@ -570,7 +570,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
                       ),
                       div({style:{width:76,fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right',flexShrink:0}},fmtD(avg)),
                       div({style:{width:44,fontSize:'9px',textAlign:'right',flexShrink:0,color:vsG>0.02?'#10b981':vsG<-0.02?'#ef4444':'var(--text3)'}},
-                        (vsG>=0?'+':''+(vsG*100).toFixed(0)+'%'))
+                        (vsG>=0?'+':''+(vsG*100).toFixed(2)+'%'))
                     );
                   })
                 )
@@ -585,7 +585,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
                     div({style:{fontSize:'10px',fontWeight:700,color:'var(--text)',marginBottom:8}},'Precipitation'),
                     div({style:S.findRow},div(null,'☀ Dry days ('+stats.weather.dryDays+')'),div({style:{fontFamily:'var(--mono)',fontSize:'10px'}},fmtD(stats.weather.avgDry))),
                     div({style:S.findRow},div(null,'🌧 Rain days ('+stats.weather.rainDays+')'),div({style:{fontFamily:'var(--mono)',fontSize:'10px',color:stats.weather.rainImpact<-0.02?'#ef4444':stats.weather.rainImpact>0.02?'#10b981':'var(--text)'}},fmtD(stats.weather.avgRain))),
-                    stats.weather.rainImpact&&div({style:{marginTop:6,fontSize:'10px',color:'var(--text2)'}},'Rain impact: '+(stats.weather.rainImpact>=0?'+':'')+(stats.weather.rainImpact*100).toFixed(1)+'% vs. dry days')
+                    stats.weather.rainImpact&&div({style:{marginTop:6,fontSize:'10px',color:'var(--text2)'}},'Rain impact: '+(stats.weather.rainImpact>=0?'+':'')+(stats.weather.rainImpact*100).toFixed(2)+'% vs. dry days')
                   ),
                   div(null,
                     div({style:{fontSize:'10px',fontWeight:700,color:'var(--text)',marginBottom:8}},'Temperature Bands'),

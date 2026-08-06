@@ -63,7 +63,7 @@ export function scanWaste(wasteRows, { period, staticRepeats = 4, sessionFactor 
     if (mgrs.length > 1) {
       for (const m of mgrs) {
         const share = total ? byMgr[m] / total : 0;
-        if (share >= shareFlag && byMgr[m] >= shareMin) flags.push({ kind: 'concentration', label: `${m} = ${Math.round(share * 100)}% of this store's waste ($${Math.round(byMgr[m])})`, dollars: byMgr[m], manager: m, share, sev: 1 });
+        if (share >= shareFlag && byMgr[m] >= shareMin) flags.push({ kind: 'concentration', label: `${m} = ${(share * 100).toFixed(2)}% of this store's waste ($${Math.round(byMgr[m])})`, dollars: byMgr[m], manager: m, share, sev: 1 });
       }
     }
 

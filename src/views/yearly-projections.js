@@ -19,7 +19,7 @@ const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald'));
 const locNum = s => { const n = parseInt(s, 10); return Number.isNaN(n) ? String(s == null ? '' : s) : String(n); };
 const storeNm = l => STORE_NAMES[locNum(l)] || locNum(l);
 const money = v => v == null || Number.isNaN(v) ? '—' : '$' + Math.round(v).toLocaleString();
-const pctFmt = v => v == null || Number.isNaN(v) ? '—' : (v >= 0 ? '' : '') + v.toFixed(1) + '%';
+const pctFmt = v => v == null || Number.isNaN(v) ? '—' : (v >= 0 ? '' : '') + v.toFixed(2) + '%';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // One store's annual figures. curMonth/dayFrac describe "today" within `year`.

@@ -15,7 +15,7 @@ const btn = (p, ...c) => h('button', p, ...c);
 
 const TYPES = [['sports', '🏈 Sports (Home/Away)'], ['event', '🎪 Festival / Fair'], ['weather', '🌧 Weather'], ['promo', '🍔 LTO / Promo'], ['holiday', '🎉 Holiday']];
 const STYPES = ['', 'rural', 'travel', 'metro'];
-const pctOf = v => v == null ? '' : (Math.round(v * 1000) / 10).toString();      // 0.093 → "9.3"
+const pctOf = v => v == null ? '' : (v * 100).toFixed(2);      // 0.093 → "9.30"
 const toFrac = s => { const n = parseFloat(String(s).replace('%', '')); return isNaN(n) ? null : n / 100; };
 
 export function EventImpactPanel({ onClose }) {

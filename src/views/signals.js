@@ -601,7 +601,7 @@ function fmtSecs(s) {
 
 function fmtPct(v) {
   if (v == null || isNaN(v)) return '—';
-  return v.toFixed(0) + '%';
+  return v.toFixed(2) + '%';
 }
 
 function metricDot(col) {
@@ -726,7 +726,7 @@ function HourlyDetail({ slots }) {
           return h('tr', { key: r.hour_slot, style: { borderTop: `1px solid rgba(255,255,255,.04)` } },
             h('td', { style: lbl }, `${fmt(start)}–${fmt(end)}`),
             h('td', { style: cellStyle }, r.product_sales != null ? `$${r.product_sales.toLocaleString('en-US', {maximumFractionDigits:0})}` : '—'),
-            h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(0)}%` : '—'),
+            h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(2)}%` : '—'),
             h('td', { style: { ...cellStyle, color: speedColor(dt), fontWeight: dt != null && dt > DT_AMB ? 700 : 400 } }, dt != null ? fmtSecs(dt) : '—'),
             h('td', { style: { ...cellStyle, color: laborColor(lab), fontWeight: lab != null && lab > LABOR_AMB ? 700 : 400 } }, lab != null ? fmtPct(lab) : '—'),
             h('td', { style: { ...cellStyle, color: gapColor, fontWeight: gap != null && gap <= -1 ? 700 : 400 } }, gap != null ? `${gap > 0 ? '+' : ''}${gap.toFixed(1)}` : '—'),
@@ -756,7 +756,7 @@ function StoreRow({ store, expanded, onToggle }) {
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
         metricDot(paceColor(store.salesPct)),
         h('span', { style: { fontFamily: 'monospace', fontSize: 12, color: paceColor(store.salesPct), fontWeight: store.salesPct != null && store.salesPct < PACE_AMB ? 700 : 400 } },
-          store.salesPct != null ? `${store.salesPct.toFixed(0)}%` : '—'),
+          store.salesPct != null ? `${store.salesPct.toFixed(2)}%` : '—'),
       ),
       // DT speed
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' } },
@@ -935,8 +935,8 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
           ? (divv > 0 ? '⚠ traffic ahead of sales — check avg down' : '⚠ sales ahead of traffic — check avg up')
           : 'guests vs projection';
         return [
-          card('Pace vs Plan ($)', p != null ? `${p.toFixed(0)}%` : '—', pc, p != null ? (p >= 100 ? 'ahead of projection' : 'behind projection') : 'no projection'),
-          ...(planPace.hasGC ? [card('Pace vs Plan (GC)', gcp != null ? `${gcp.toFixed(0)}%` : '—', gcpc, gcSub)] : []),
+          card('Pace vs Plan ($)', p != null ? `${p.toFixed(2)}%` : '—', pc, p != null ? (p >= 100 ? 'ahead of projection' : 'behind projection') : 'no projection'),
+          ...(planPace.hasGC ? [card('Pace vs Plan (GC)', gcp != null ? `${gcp.toFixed(2)}%` : '—', gcpc, gcSub)] : []),
           card('Projected EOD', money(planPace.projectedEOD), 'var(--text)', planPace.hasGC ? num(planPace.projectedEODGC) + ' guests' : 'actual so far + remaining plan'),
           card('Full-Day Plan', money(planPace.fullProj), muted, planPace.hasGC ? num(planPace.fullProjGC) + ' guests projected' : 'QSRSoft projected sales'),
         ];

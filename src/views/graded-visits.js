@@ -30,7 +30,7 @@ function VisitPatternBar({ patterns }) {
     return span({ key: label, style: { fontSize: 11, padding: '4px 9px', borderRadius: 6, background: 'var(--surf2)', border: '.5px solid var(--bdr)', display: 'inline-flex', gap: 6, alignItems: 'center' } },
       span({ style: { color: 'var(--text3)' } }, label + ':'),
       span({ style: { fontWeight: 700, color: 'var(--text)' } }, String(top.key)),
-      span({ style: { color: 'var(--text3)', fontSize: 10 } }, `n=${top.n}${top.passRate != null ? ` · ${Math.round(top.passRate * 100)}% pass` : ''}`));
+      span({ style: { color: 'var(--text3)', fontSize: 10 } }, `n=${top.n}${top.passRate != null ? ` · ${(top.passRate * 100).toFixed(2)}% pass` : ''}`));
   };
   return div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 2px' } },
     span({ style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, 'Most likely visit →'),
@@ -40,7 +40,7 @@ function VisitPatternBar({ patterns }) {
     chip('Weekpart', patterns.weekpart && patterns.weekpart[0]));
 }
 const scoreColor = s => s == null ? 'var(--text3)' : s >= PASS ? '#10b981' : s >= 70 ? '#f59e0b' : '#ef4444';
-const fmtPct = v => v == null ? '—' : (Math.round(v * 10) / 10) + '%';
+const fmtPct = v => v == null ? '—' : v.toFixed(2) + '%';
 const niceDate = iso => { if (!iso) return '—'; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
 // DAR timing is Σuntilserve/Σtrans/1000 seconds.
 const secOf = (us, cnt) => cnt > 0 ? Math.round(us / cnt / 1000) : null;
@@ -235,7 +235,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
       <div class="sub">${filtered.length} visit(s) · pass ≥ ${PASS}% · generated ${esc(niceDate(new Date().toISOString().slice(0, 10)))}</div>
       <div class="kpis">
         <div class="kpi"><b>${filtered.length}</b><span>Visits</span></div>
-        <div class="kpi"><b>${scored.length ? Math.round(passN / scored.length * 100) : '—'}%</b><span>Pass Rate</span></div>
+        <div class="kpi"><b>${scored.length ? (passN / scored.length * 100).toFixed(2) : '—'}%</b><span>Pass Rate</span></div>
         <div class="kpi"><b>${scored.length ? fmtPct(scored.reduce((a, v) => a + v.score, 0) / scored.length) : '—'}</b><span>Avg Score</span></div>
       </div>
       <table><thead><tr><th>Type</th><th>Store</th><th>Date</th><th>Channel / Status</th><th style="text-align:right">Score</th><th>Result</th><th>Modules</th></tr></thead><tbody>${rows}</tbody></table>
@@ -293,8 +293,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
   // One column spec (logical order) drives the hourly table, the Day/Visit-hour
   // summary, and the export. hot = red above, warn = amber above, gap = signed color.
   const _mSec = v => v == null ? '—' : v + 's';
-  const _mComp = v => v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(1) + '%';
-  const _mPct1 = v => v == null ? '—' : v.toFixed(1) + '%';
+  const _mComp = v => v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+  const _mPct1 = v => v == null ? '—' : v.toFixed(2) + '%';
   const _mHr = v => v == null ? '—' : v.toFixed(1);
   const METRICS = [
     { key: 'prodSales',        label: 'Prod Sales',        fmt: v => v == null ? '—' : '$' + Math.round(v).toLocaleString() },
@@ -406,8 +406,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
       dchip('OEPE', daily.oepe != null ? Math.round(daily.oepe) + 's' : null),
       dchip('R2P', daily.r2p != null ? Math.round(daily.r2p) + 's' : null),
       dchip('KVS Time', daily.kvst != null ? Math.round(daily.kvst) + 's' : null),
-      dchip('KVS Healthy', daily.kvsH != null ? Math.round(daily.kvsH * 100) + '%' : null),
-      dchip('Labor %', daily.laborPct != null ? (daily.laborPct * 100).toFixed(1) + '%' : null),
+      dchip('KVS Healthy', daily.kvsH != null ? (daily.kvsH * 100).toFixed(2) + '%' : null),
+      dchip('Labor %', daily.laborPct != null ? (daily.laborPct * 100).toFixed(2) + '%' : null),
       dchip('Sales', daily.sales != null ? '$' + Math.round(daily.sales).toLocaleString() : null),
       dchip('Guests', daily.gc != null ? Math.round(daily.gc).toLocaleString() : null),
     ].join('')}</div>` : '';
@@ -497,8 +497,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
         chip('OEPE', daily.oepe != null ? Math.round(daily.oepe) + 's' : null),
         chip('R2P', daily.r2p != null ? Math.round(daily.r2p) + 's' : null),
         chip('KVS Time', daily.kvst != null ? Math.round(daily.kvst) + 's' : null),
-        chip('KVS Healthy', daily.kvsH != null ? Math.round(daily.kvsH * 100) + '%' : null),
-        chip('Labor %', daily.laborPct != null ? (daily.laborPct * 100).toFixed(1) + '%' : null),
+        chip('KVS Healthy', daily.kvsH != null ? (daily.kvsH * 100).toFixed(2) + '%' : null),
+        chip('Labor %', daily.laborPct != null ? (daily.laborPct * 100).toFixed(2) + '%' : null),
         chip('Sales', daily.sales != null ? '$' + Math.round(daily.sales).toLocaleString() : null),
         chip('Guests', daily.gc != null ? Math.round(daily.gc).toLocaleString() : null)),
       // Peaks by daypart (segment view) when available

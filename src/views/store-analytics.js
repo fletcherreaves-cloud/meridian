@@ -105,8 +105,8 @@ function detectAnomalies(ds, userEvents){
           metric:'Sales',actual:r.sales,mean:Math.round(mean),std:Math.round(std),z:+z.toFixed(2),
           direction:z>0?'above':'below',eventTag:ev||null,
           severity:ev?'medium':Math.abs(z)>=3.5?'critical':Math.abs(z)>=3?'high':'medium',
-          note:(z>0?'Sales '+Math.round(((r.sales-mean)/mean)*100)+'% above':
-                   'Sales '+Math.round(((mean-r.sales)/mean)*100)+'% below')+
+          note:(z>0?'Sales '+(((r.sales-mean)/mean)*100).toFixed(2)+'% above':
+                   'Sales '+(((mean-r.sales)/mean)*100).toFixed(2)+'% below')+
                ' normal '+DOW_BASE[r.date.getDay()]+evNote});
       }
     }
@@ -229,7 +229,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
       [{l:'OEPE',v:data.oepe>0?Math.round(data.oepe)+'s':'—',ok:oepeOk},
        {l:'R2P', v:data.r2p>0?Math.round(data.r2p)+'s':'—',ok:data.r2p>0?data.r2p<=90:null},
        {l:'KVS', v:data.kvst>0?Math.round(data.kvst)+'s':'—',ok:data.kvst>0&&t.tKvst>0?data.kvst<=t.tKvst:null},
-       {l:'Parked',v:data.parkPct>0?fP(data.parkPct,1):'—',ok:null},
+       {l:'Parked',v:data.parkPct>0?fP(data.parkPct,2):'—',ok:null},
        {l:'Sales',v:data.netSales>0?f$(Math.round(data.netSales)):'—',ok:null},
        {l:'TPPH', v:data.tpph>0?data.tpph.toFixed(2):'—',ok:data.tpph>0&&t.tTpph>0?data.tpph>=t.tTpph:null},
       ].map((m,i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<5?'.5px solid var(--bdr)':'none'}},
@@ -298,7 +298,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
         ].map((k,i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'10px 14px',flex:1,minWidth:120}},
           div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:4}},k.label),
           div({style:{fontFamily:'var(--mono)',fontSize:'17px',fontWeight:700,color:k.col}},
-            k.isPct?fPct(k.val):k.val>0?f$(Math.round(k.val)):'—'),k.tip&&div({title:k.tip,style:{fontSize:'8px',color:'var(--text3)',marginTop:2,cursor:'help'}},k.label==='Wknd Premium'?'ℹ Sat/Sun avg vs Mon–Fri avg':'')
+            k.isPct?fPct(k.val,2):k.val>0?f$(Math.round(k.val)):'—'),k.tip&&div({title:k.tip,style:{fontSize:'8px',color:'var(--text3)',marginTop:2,cursor:'help'}},k.label==='Wknd Premium'?'ℹ Sat/Sun avg vs Mon–Fri avg':'')
         ))
       )
     ),
@@ -345,11 +345,11 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
               td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:600}},d.sales>0?f$(Math.round(d.sales)):'—'),
               td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(oepeOk)}},d.oepe>0?Math.round(d.oepe)+'s':'—'),
               td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(kvstOk)}},d.kvst>0?Math.round(d.kvst)+'s':'—'),
-              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(parkOk)}},d.park>0?fP(d.park,1):'—'),
+              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(parkOk)}},d.park>0?fP(d.park,2):'—'),
               td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(r2pOk)}},d.r2p>0?Math.round(d.r2p)+'s':'—'),
               td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(tpphOk)}},d.tpph>0?d.tpph.toFixed(2):'—'),
-              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:d.kvsu>0&&t.tKvsu>0?(d.kvsu>=t.tKvsu?'#10b981':'#ef4444'):'var(--text3)'}},d.kvsu>0?fP(d.kvsu,1):'—'),
-              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(laborOk)}},d.labor>0?fP(d.labor,1):'—'),
+              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:d.kvsu>0&&t.tKvsu>0?(d.kvsu>=t.tKvsu?'#10b981':'#ef4444'):'var(--text3)'}},d.kvsu>0?fP(d.kvsu,2):'—'),
+              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(laborOk)}},d.labor>0?fP(d.labor,2):'—'),
               td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:c2(otOk)}},d.ot>0?d.ot.toFixed(1):'—')
             );
           }))
@@ -392,13 +392,13 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
                   return div({key:i,style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}},
                     div({style:{width:'100%',height:20,background:bg,borderRadius:3,position:'relative',
                       border:d===bd?'.5px solid '+ch.col:'none'},
-                      title:d.dow+': '+(d[ch.key]*100).toFixed(1)+'%'}),
+                      title:d.dow+': '+(d[ch.key]*100).toFixed(2)+'%'}),
                     div({style:{fontSize:'8px',color:isWknd?'#f59e0b':'var(--text3)',fontWeight:isWknd?600:400}},d.dow.slice(0,2))
                   );
                 })
               ),
               div({style:{width:38,textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',color:ch.col,flexShrink:0}},
-                bd&&bd[ch.key]>0?(bd[ch.key]*100).toFixed(0)+'%':'—')
+                bd&&bd[ch.key]>0?(bd[ch.key]*100).toFixed(2)+'%':'—')
             );
           })
         ),
@@ -462,14 +462,14 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
               sg.allAbove&&div({style:{fontSize:'8px',color:'#f59e0b',marginBottom:4}},'All days above target — comparing worst vs best half'),
               div({style:{display:'flex',justifyContent:'space-between',fontSize:'10px',marginBottom:3}},
                 span({style:{color:'var(--text3)'}},'High-OEPE days labor'),
-                span({style:{fontFamily:'var(--mono)',color:'#f87171'}},fP(sg.highL,1))
+                span({style:{fontFamily:'var(--mono)',color:'#f87171'}},fP(sg.highL,2))
               ),
               div({style:{display:'flex',justifyContent:'space-between',fontSize:'10px',marginBottom:6}},
                 span({style:{color:'var(--text3)'}},(sg.allAbove?'Best-OEPE days labor':'On-target days labor')),
-                span({style:{fontFamily:'var(--mono)',color:'#10b981'}},fP(sg.okL,1))
+                span({style:{fontFamily:'var(--mono)',color:'#10b981'}},fP(sg.okL,2))
               ),
               div({style:{fontSize:'9px',fontWeight:700,color:findingCol,padding:'2px 6px',background:findingCol+'15',borderRadius:3}},
-                findingLabel+' ('+fP(Math.abs(sg.gap),1)+' diff)')
+                findingLabel+' ('+fP(Math.abs(sg.gap),2)+' diff)')
             );
           })
         )
@@ -521,7 +521,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
         div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
           div({style:{fontSize:'10px',fontWeight:700,color:'#f87171'}},'🏪 Competitive Intelligence'),
           div({style:{fontSize:'9px',fontFamily:'var(--mono)',color:avgImpact>=0?'#10b981':'#f87171',fontWeight:700}},
-            'Avg impact: '+(avgImpact>=0?'+':'')+((avgImpact||0)*100).toFixed(1)+'%')
+            'Avg impact: '+(avgImpact>=0?'+':'')+((avgImpact||0)*100).toFixed(2)+'%')
         ),
         div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:6}},impacts.length+' tagged competition event'+(impacts.length>1?'s':'')+' vs DOW baseline:'),
         impacts.slice(0,5).map((e,i)=>{
@@ -532,7 +532,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
             div({style:{flex:1,fontSize:'9px',color:'var(--text2)'}},
               e.evDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · '+typeLabel.label+(e.note?' · '+e.note.slice(0,30):'')),
             div({style:{fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,color:impCol,flexShrink:0}},
-              e.impact!=null?((e.impact>=0?'+':'')+((e.impact||0)*100).toFixed(1)+'% vs avg'):'—')
+              e.impact!=null?((e.impact>=0?'+':'')+((e.impact||0)*100).toFixed(2)+'% vs avg'):'—')
           );
         })
       );
@@ -542,8 +542,8 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
       label:'AI Labor & Shift Analysis',
       buildPrompt:()=>{
         const storeName = STORE_NAMES[loc]||loc;
-        const laborPct = p.laborPct>0?(p.laborPct*100).toFixed(1)+'%':'N/A';
-        const targetLab = t.tLabor?(t.tLabor*100).toFixed(1)+'%':'N/A';
+        const laborPct = p.laborPct>0?(p.laborPct*100).toFixed(2)+'%':'N/A';
+        const targetLab = t.tLabor?(t.tLabor*100).toFixed(2)+'%':'N/A';
         const tpph = p.tpph>0?p.tpph.toFixed(2):'N/A';
         return 'You are a McDonald\'s labor management expert. Analyze shift data for '+storeName+' (store #'+loc+').\n\n'+
           'Labor %: '+laborPct+' (target: '+targetLab+')\n'+
@@ -623,7 +623,7 @@ function ModelComparisonPanel({loc, date, ds, settings, userEvents}) {
         div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},
           accuracy&&accuracy._best
             ? '★ Most accurate: '+(MODEL_NAMES[accuracy._best]||accuracy._best)+
-              (accuracy[accuracy._best]?' ('+accuracy[accuracy._best].mape.toFixed(1)+'% avg error)':'')
+              (accuracy[accuracy._best]?' ('+accuracy[accuracy._best].mape.toFixed(2)+'% avg error)':'')
             : 'Hit ⚡ Score to backtest all 5 models — the winner gets a star.'
         )
       ),
@@ -645,7 +645,7 @@ function ModelComparisonPanel({loc, date, ds, settings, userEvents}) {
           div({style:{fontSize:'9px',fontWeight:600,color:MODEL_COLS[i],marginBottom:4}},m.name),
           div({style:{fontFamily:'var(--mono)',fontSize:'18px',fontWeight:700,marginBottom:2}},f$(m.forecast)),
           acc&&div({style:{fontSize:'9px',color:acc.mape<=5?'#10b981':acc.mape<=10?'#f59e0b':'#ef4444',fontWeight:600}},
-            acc.accuracy+'% acc · '+acc.mape.toFixed(1)+'% err')
+            acc.accuracy+'% acc · '+acc.mape.toFixed(2)+'% err')
         );
       })
     ),
@@ -677,10 +677,10 @@ function ModelComparisonPanel({loc, date, ds, settings, userEvents}) {
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700}},f$(wk.totalAct)),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},wk.totM1>0?f$(wk.totM1):'—'),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:600,color:varM1col}},
-                wk.varM1!==null?((wk.varM1>=0?'+':'')+fPct(wk.varM1)):'—'),
+                wk.varM1!==null?((wk.varM1>=0?'+':'')+fPct(wk.varM1,2)):'—'),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},wk.totEns>0?f$(wk.totEns):'—'),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:600,color:varEnscol}},
-                wk.varEns!==null?((wk.varEns>=0?'+':'')+fPct(wk.varEns)):'—')
+                wk.varEns!==null?((wk.varEns>=0?'+':'')+fPct(wk.varEns,2)):'—')
             ),
             // Drill-down rows
             isOpen&&wk.days.map((day,di)=>
@@ -693,12 +693,12 @@ function ModelComparisonPanel({loc, date, ds, settings, userEvents}) {
                   day.m1>0?f$(day.m1):'—'),
                 td({style:{padding:'3px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',
                   color:day.m1>0?Math.abs(day.actual-day.m1)/day.actual<.02?'#10b981':'#f87171':'var(--text3)'}},
-                  day.m1>0?((day.actual>=day.m1?'+':'')+fPct((day.actual-day.m1)/day.m1)):'—'),
+                  day.m1>0?((day.actual>=day.m1?'+':'')+fPct((day.actual-day.m1)/day.m1,2)):'—'),
                 td({style:{padding:'3px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}},
                   day.ens>0?f$(day.ens):'—'),
                 td({style:{padding:'3px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',
                   color:day.ens>0?Math.abs(day.actual-day.ens)/day.actual<.02?'#10b981':'#f87171':'var(--text3)'}},
-                  day.ens>0?((day.actual>=day.ens?'+':'')+fPct((day.actual-day.ens)/day.ens)):'—')
+                  day.ens>0?((day.actual>=day.ens?'+':'')+fPct((day.actual-day.ens)/day.ens,2)):'—')
               )
             )
           ];
@@ -763,7 +763,7 @@ function computeRevenueOpportunity(store, ds, settings) {
       if(avgByBucket.length>0) {
         result.parkOpt = {
           optimalParkPct:avgByBucket[0].pct,
-          currentParkPct:Math.round(p.park*100),
+          currentParkPct:+(p.park*100).toFixed(2),
           bestTPPH:+avgByBucket[0].tpph.toFixed(2),
           currentTPPH:p.tpph||0,
           note:avgByBucket[0].pct<14?'Your data shows TPPH peaks at lower park rates — you may be over-parking.':
@@ -806,7 +806,7 @@ function computeRevenueOpportunity(store, ds, settings) {
         bestSlice:bestSlice[0], bestTrend:bestSlice[1].trend,
         competitiveSignal: isAsymmetric && worstSlice[1].trend<-0.05,
         explanation: isAsymmetric && worstSlice[1].trend<-0.05
-          ? `${worstSlice[0].charAt(0).toUpperCase()+worstSlice[0].slice(1)} is declining ${fPct(Math.abs(worstSlice[1].trend))} while other dayparts hold — this is the signature of a nearby competitor taking market share in a specific window, not an overall traffic issue. Check what opened near this store in the last 90 days.`
+          ? `${worstSlice[0].charAt(0).toUpperCase()+worstSlice[0].slice(1)} is declining ${fPct(Math.abs(worstSlice[1].trend),2)} while other dayparts hold — this is the signature of a nearby competitor taking market share in a specific window, not an overall traffic issue. Check what opened near this store in the last 90 days.`
           : overallTrend<-0.03
           ? 'All dayparts declining proportionally — likely a traffic, economic, or macro-level issue rather than a competitive threat.'
           : 'Daypart mix is stable. No asymmetric erosion detected.'
@@ -864,7 +864,7 @@ function computeRevenueOpportunity(store, ds, settings) {
       const mom=(ac2-ac6)/ac6, wkGC=p.avgGC||500;
       result.avgCheckMomentum={current:+ac2.toFixed(2),prior:+ac6.toFixed(2),momentum:+mom.toFixed(4),
         direction:mom>=0?'up':'down',weeklyImpact:+(mom*ac6*wkGC*7).toFixed(0),
-        note:'Avg check '+(mom>=0?'up':'down')+' '+(Math.abs(mom)*100).toFixed(1)+'% vs prior 4 wks. '
+        note:'Avg check '+(mom>=0?'up':'down')+' '+(Math.abs(mom)*100).toFixed(2)+'% vs prior 4 wks. '
           +(mom<-0.02?'Investigate upsell, suggestive selling, combo attachment.':mom>0.02?'Positive momentum — protect with LTO & combo focus.':'Avg check stable.')};
     }
   }
@@ -877,7 +877,7 @@ function computeRevenueOpportunity(store, ds, settings) {
     if(Math.abs(gap)>0.03)
       result.dtSalesMix={actual:+dtMix.toFixed(4),target:+tDT.toFixed(4),gap:+gap.toFixed(4),
         weeklyImpact:+(Math.abs(gap)*(p.weeklySales||30000)).toFixed(0),
-        note:'DT mix '+(dtMix*100).toFixed(1)+'% vs '+(tDT*100).toFixed(0)+'% target. '
+        note:'DT mix '+(dtMix*100).toFixed(2)+'% vs '+(tDT*100).toFixed(2)+'% target. '
           +(gap>0.05?'Under-performing DT — check window time, headset, pre-sell.':gap<-0.05?'Strong DT mix. Monitor FC/Kiosk.':'Within range.')};
   }
 
@@ -900,7 +900,7 @@ function computeRevenueOpportunity(store, ds, settings) {
     if(pPct>0.02)
       result.promoDrag={avgDaily:+avgD.toFixed(2),promoPct:+pPct.toFixed(4),
         weeklyImpact:+(avgD*7).toFixed(0),annualImpact:+(avgD*365).toFixed(0),
-        note:'Avg $'+avgD.toFixed(0)+'/day promos ('+(pPct*100).toFixed(1)+'% of sales). '
+        note:'Avg $'+avgD.toFixed(0)+'/day promos ('+(pPct*100).toFixed(2)+'% of sales). '
           +(pPct>0.08?'HIGH — investigate unauthorized discounts/meal abuse.':pPct>0.04?'ELEVATED — review authorization workflow.':'Monitor.')};
   }
 
@@ -1021,7 +1021,7 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
                 div({style:{display:'flex',gap:10}},
                   span({style:{fontFamily:'var(--mono)',color:'var(--text3)'}},f$(data.avgRecent)+'/day'),
                   span({style:{fontFamily:'var(--mono)',fontWeight:700,color:data.trend>=0?'#10b981':'#f87171'}},
-                    (data.trend>=0?'+':'')+fPct(data.trend))
+                    (data.trend>=0?'+':'')+fPct(data.trend,2))
                 )
               ))
             ):div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'14px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',color:'var(--text3)',fontSize:'11px',textAlign:'center',gap:4}},
@@ -1035,7 +1035,7 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
               div({style:{fontSize:'10px',color:'var(--text2)',marginBottom:8}},opData.parkOpt.note),
               div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}},
                 [{l:'Your optimal (by data)',v:opData.parkOpt.optimalParkPct+'%',c:'#a5b4fc'},
-                 {l:'Current avg',v:opData.parkOpt.currentParkPct+'%',c:'var(--text)'},
+                 {l:'Current avg',v:opData.parkOpt.currentParkPct.toFixed(2)+'%',c:'var(--text)'},
                  {l:'Best TPPH found',v:opData.parkOpt.bestTPPH.toFixed(2),c:'#a5b4fc'},
                  {l:'Current TPPH',v:(opData.parkOpt.currentTPPH||0).toFixed(2),c:'var(--text)'},
                 ].map((k,i)=>div({key:i,style:{textAlign:'center',background:'var(--surf3)',borderRadius:'var(--r)',padding:'6px'}},
@@ -1144,8 +1144,8 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
             div({style:{fontSize:'11px',fontWeight:700,color:'#60a5fa',marginBottom:4}},'🚗 DT Sales Mix'),
             div({style:{fontSize:'10px',color:'var(--text2)',marginBottom:8}},opData.dtSalesMix.note),
             div({style:{display:'flex',gap:8}},
-              ...[['Actual',fP(opData.dtSalesMix.actual,1)],
-                  ['Target',fP(opData.dtSalesMix.target,1)],
+              ...[['Actual',fP(opData.dtSalesMix.actual,2)],
+                  ['Target',fP(opData.dtSalesMix.target,2)],
                   ['Wk Opp',f$(opData.dtSalesMix.weeklyImpact)]
               ].map(([l,v],i)=>div({key:i,style:{flex:1,background:'var(--surf2)',borderRadius:'var(--r)',padding:'8px',textAlign:'center'}},
                 div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:2}},l),
@@ -1255,7 +1255,7 @@ function RegisterAuditNarrative({auditData, store, ds}) {
 
   // Opening: overall picture
   const totalRisk = highRisk.length;
-  const riskPct = Math.round(totalRisk/employees.length*100);
+  const riskPct = (totalRisk/employees.length*100).toFixed(2);
   paras.push({
     type: totalRisk>5?'crit':totalRisk>2?'watch':'ok',
     title: 'Overall Controls Picture',
@@ -1298,7 +1298,7 @@ function RegisterAuditNarrative({auditData, store, ds}) {
     paras.push({
       type: (worst.discPct||0)>.25?'crit':'watch',
       title: 'Discount & Meal Activity',
-      text: `${worst.emp||'Unknown'} is applying discounts on ${fP(worst.discPct||0,1)} of transactions — ${(worst.discPct||0)>.20?'well above':(worst.discPct||0)>.12?'above':'near'} the expected range. Discount rates above 15% on a consistent basis either indicate a misunderstanding of discount eligibility, a habit of applying unauthorized discounts to drive tips or personal relationships, or systematic meal fraud. Cross-reference these transactions with the Meal Activity report to determine if the employee meals policy explains the rate or if there's an unexplained gap.`
+      text: `${worst.emp||'Unknown'} is applying discounts on ${fP(worst.discPct||0,2)} of transactions — ${(worst.discPct||0)>.20?'well above':(worst.discPct||0)>.12?'above':'near'} the expected range. Discount rates above 15% on a consistent basis either indicate a misunderstanding of discount eligibility, a habit of applying unauthorized discounts to drive tips or personal relationships, or systematic meal fraud. Cross-reference these transactions with the Meal Activity report to determine if the employee meals policy explains the rate or if there's an unexplained gap.`
     });
   }
 
@@ -1410,7 +1410,7 @@ function RegisterAuditTab({ds, loc}) {
           Cell(e.refundCnt||0, e.refundCnt>3?'#f59e0b':'var(--text)','right'),
           Cell(e.posOver||0, e.posOver>5?'#f59e0b':'var(--text)','right'),
           Cell(((e.cashOS||0)>=0?'+':'')+((e.cashOS||0).toFixed(2)), Math.abs(e.cashOS||0)>5?'#f87171':Math.abs(e.cashOS||0)>2?'#f59e0b':'var(--text)','right'),
-          Cell((e.discPct||0)>0?fP(e.discPct,1):'—', (e.discPct||0)>.2?'#f87171':(e.discPct||0)>.1?'#f59e0b':'var(--text)','right')
+          Cell((e.discPct||0)>0?fP(e.discPct,2):'—', (e.discPct||0)>.2?'#f87171':(e.discPct||0)>.1?'#f59e0b':'var(--text)','right')
         )))
       )
     ),
@@ -1472,7 +1472,7 @@ function RegisterAuditTab({ds, loc}) {
           Cell(((e.cashOS||0)>=0?'+':'')+((e.cashOS||0).toFixed(2)), Math.abs(e.cashOS||0)>5?'#f87171':Math.abs(e.cashOS||0)>2?'#f59e0b':'var(--text)','right'),
           Cell(e.drawerOpens||0,'var(--text3)','right'),
           Cell(e.avgDrawerOpens>0?e.avgDrawerOpens.toFixed(1):'—', e.avgDrawerOpens>8?'#f59e0b':'var(--text)','right'),
-          Cell((e.discPct||0)>0?fP(e.discPct,1):'—', (e.discPct||0)>.2?'#f87171':(e.discPct||0)>.1?'#f59e0b':'var(--text)','right'),
+          Cell((e.discPct||0)>0?fP(e.discPct,2):'—', (e.discPct||0)>.2?'#f87171':(e.discPct||0)>.1?'#f59e0b':'var(--text)','right'),
           Cell(e.promoAmt>0?'$'+e.promoAmt.toFixed(2):'—','var(--text3)','right')
         )))
       )
@@ -1595,8 +1595,8 @@ function DaypartPaceCard({loc}) {
           const pl = totLY>0?(totAct-totLY)/totLY:null;
           return div({style:{display:'flex',gap:12,marginBottom:10,paddingBottom:8,borderBottom:'.5px solid rgba(255,255,255,.06)',flexWrap:'wrap'}},
             div({style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:800,color:pctClr(pm)}},fK(totAct)),
-            pm!=null&&span({style:{fontSize:'10px',fontWeight:700,color:pctClr(pm),alignSelf:'center'}},(pm>=0?'+':'')+(pm*100).toFixed(1)+'% vs mean'),
-            pl!=null&&span({style:{fontSize:'10px',color:pctClr(pl),alignSelf:'center'}},(pl>=0?'+':'')+(pl*100).toFixed(1)+'% vs LY'),
+            pm!=null&&span({style:{fontSize:'10px',fontWeight:700,color:pctClr(pm),alignSelf:'center'}},(pm>=0?'+':'')+(pm*100).toFixed(2)+'% vs mean'),
+            pl!=null&&span({style:{fontSize:'10px',color:pctClr(pl),alignSelf:'center'}},(pl>=0?'+':'')+(pl*100).toFixed(2)+'% vs LY'),
             totProj>0&&span({style:{fontSize:'9px',color:'#60a5fa',alignSelf:'center'}},fK(totProj)+' full-day proj'),
             span({style:{fontSize:'8px',color:'#4a6080',alignSelf:'center',marginLeft:'auto'}},
               completedSlots.length+' hr'+(completedSlots.length!==1?'s':'')+' · '+targetDate)
@@ -1624,9 +1624,9 @@ function DaypartPaceCard({loc}) {
               // vs mean / LY
               div({style:{display:'flex',gap:6,flexWrap:'wrap'}},
                 dp.pctMean!=null&&span({style:{fontSize:'8px',color:pctClr(dp.pctMean),fontWeight:600}},
-                  (dp.pctMean>=0?'+':'')+(dp.pctMean*100).toFixed(1)+'% mean'),
+                  (dp.pctMean>=0?'+':'')+(dp.pctMean*100).toFixed(2)+'% mean'),
                 dp.pctLY!=null&&span({style:{fontSize:'8px',color:pctClr(dp.pctLY)}},
-                  (dp.pctLY>=0?'+':'')+(dp.pctLY*100).toFixed(1)+'% LY'),
+                  (dp.pctLY>=0?'+':'')+(dp.pctLY*100).toFixed(2)+'% LY'),
               ),
               // DT speed
               dp.avgDT!=null&&dp.avgDT>0&&div({style:{fontSize:'8px',color:'#94a3b8',marginTop:3}},
@@ -1713,13 +1713,13 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
   // KPI cards
   const lyV = store.pLY>0?(store.pSales-store.pLY)/store.pLY:null;
   const kpis=[
-    {l:'Period Sales',  v:wkLoading&&wk.length===0?'…':mode==='past'&&rangeAct>0?f$(rangeAct):f$(rangeTotal), s:rangeVar!=null?fPct(rangeVar)+' vs LY':ds&&ds.loaded?'Live':'Mock', c:rangeVar!=null?(rangeVar>=0?'#10b981':'#ef4444'):'#94a3b8'},
+    {l:'Period Sales',  v:wkLoading&&wk.length===0?'…':mode==='past'&&rangeAct>0?f$(rangeAct):f$(rangeTotal), s:rangeVar!=null?fPct(rangeVar,2)+' vs LY':ds&&ds.loaded?'Live':'Mock', c:rangeVar!=null?(rangeVar>=0?'#10b981':'#ef4444'):'#94a3b8'},
     {l:'Ops Score',     v:store.opsScore+'/100',  s:'Operations health',    c:store.opsScore>=80?'#10b981':store.opsScore>=65?'#f59e0b':'#ef4444'},
     {l:'Controls',      v:store.ctrlScore+'/100', s:'Controls health',      c:store.ctrlScore>=80?'#10b981':store.ctrlScore>=65?'#f59e0b':'#ef4444'},
     {l:'OEPE',          v:p.oepe>0?Math.round(p.oepe)+'s':'—',   s:'Target '+( t.tOepe||'—')+'s · 6-wk avg',  c:p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8'},
     {l:'TPPH',          v:p.tpph>0?p.tpph.toFixed(2):'—',         s:'Target '+(t.tTpph||'—')+' · 6-wk avg',       c:p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8'},
-    {l:'Labor %',       v:p.laborPct>0?fP(p.laborPct,1):'—',      s:'Target '+(t.tLabor?(t.tLabor*100).toFixed(1)+'%':'—')+' · 6-wk avg', c:laborColor(p.laborPct,t.tLabor,settings).color},
-    {l:'T2W Trend',     v:p.t2w!=null?fPct(p.t2w):'—',            s:p.t2w!=null?'2-wk vs prior 2-wk avg (rolling)':'Insufficient data (need 3+ days each period)',              c:p.t2w!=null?(p.t2w>=0?'#10b981':'#ef4444'):'#94a3b8'},
+    {l:'Labor %',       v:p.laborPct>0?fP(p.laborPct,2):'—',      s:'Target '+(t.tLabor?(t.tLabor*100).toFixed(2)+'%':'—')+' · 6-wk avg', c:laborColor(p.laborPct,t.tLabor,settings).color},
+    {l:'T2W Trend',     v:p.t2w!=null?fPct(p.t2w,2):'—',            s:p.t2w!=null?'2-wk vs prior 2-wk avg (rolling)':'Insufficient data (need 3+ days each period)',              c:p.t2w!=null?(p.t2w>=0?'#10b981':'#ef4444'):'#94a3b8'},
     {l:'Cash O/S',      v:(ds?.ctrlRows||[]).some(r=>r.loc===store.loc)?((p.cashOSPct||0)>=0?'+':'')+((p.cashOSPct||0)*100).toFixed(3)+'%':'—', s:'Target <0.10% · 6-wk avg · +over −short', c:Math.abs(p.cashOSPct||0)<.001?'#10b981':Math.abs(p.cashOSPct||0)<.003?'#f59e0b':'#ef4444'},
   ];
 
@@ -1859,11 +1859,11 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
            bad:p.oepe>0&&t.tOepe>0&&p.oepe>t.tOepe*1.05,
            detail:'target '+(t.tOepe||'—')+'s · 6-wk avg'},
           {icon:'👷',l:'Labor %',
-           v:p.laborPct>0?fP(p.laborPct,1):'—',
+           v:p.laborPct>0?fP(p.laborPct,2):'—',
            ok:p.laborPct>0&&t.tLabor>0&&p.laborPct<=t.tLabor*1.01,
            warn:p.laborPct>0&&t.tLabor>0&&p.laborPct<=t.tLabor*1.03,
            bad:p.laborPct>0&&t.tLabor>0&&p.laborPct>t.tLabor*1.03,
-           detail:'target '+(t.tLabor?(t.tLabor*100).toFixed(1)+'%':'—')+' · 6-wk avg'},
+           detail:'target '+(t.tLabor?(t.tLabor*100).toFixed(2)+'%':'—')+' · 6-wk avg'},
           {icon:'🧾',l:'TPPH',
            v:p.tpph>0?p.tpph.toFixed(2):'—',
            ok:p.tpph>0&&t.tTpph>0&&p.tpph>=t.tTpph,
@@ -2000,7 +2000,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
               const avgMape=calStores.length?calStores.reduce((a,s)=>a+settings.dialedIn[s.loc].mape,0)/calStores.length:null;
               return div(null,
                 div({style:{fontFamily:'var(--mono)',fontWeight:800,fontSize:'20px',color:avgMape!=null?(avgMape<6?'#10b981':avgMape<10?'#f59e0b':'#f87171'):'var(--text3)'}},
-                  avgMape!=null?'±'+avgMape.toFixed(1)+'% MAPE':'Not Calibrated'),
+                  avgMape!=null?'±'+avgMape.toFixed(2)+'% MAPE':'Not Calibrated'),
                 div({style:{fontSize:'9px',color:'var(--text3)',marginTop:4}},
                   calStores.length+'/'+districtStores.length+' stores calibrated')
               );
@@ -2029,7 +2029,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
                 span({style:{fontSize:'12px',color:col}},[arrow]),
                 div({style:{flex:1,fontSize:'10px',color:'var(--text)'}},[name]),
                 div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:col}},
-                  (s.p.t2w>=0?'+':'')+( s.p.t2w*100).toFixed(1)+'%')
+                  (s.p.t2w>=0?'+':'')+( s.p.t2w*100).toFixed(2)+'%')
               );
             })
         )
@@ -2056,8 +2056,8 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
                 div({style:{fontSize:'10px',color:'var(--text3)',minWidth:20,fontWeight:600}},i+1),
                 div({style:{flex:1,fontSize:'10px',color:'var(--text)'}},[name]),
                 div({style:{textAlign:'right'}},
-                  div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:col}},cal.mape.toFixed(1)+'%'),
-                  recent!=null&&div({style:{fontSize:'8px',color:'var(--text3)'}},['4wk: '+recent.toFixed(1)+'%'])
+                  div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:col}},cal.mape.toFixed(2)+'%'),
+                  recent!=null&&div({style:{fontSize:'8px',color:'var(--text3)'}},['4wk: '+recent.toFixed(2)+'%'])
                 )
               );
             })
@@ -2086,7 +2086,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
                   [{l:'Stores',v:groupStores.length,c:'var(--text)'},
                    {l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
                    {l:'Ops Score',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'#f59e0b':'#f87171'},
-                   {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(1)+'%'):'—',
+                   {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(2)+'%'):'—',
                     c:avgTrend!=null?(avgTrend>=0?'#10b981':'#f87171'):'var(--text3)'}
                   ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
                     div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
@@ -2122,7 +2122,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
               [{l:'Stores',v:groupStores.length,c:'var(--text)'},
                {l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
                {l:'Ops Score',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'#f59e0b':'#f87171'},
-               {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(1)+'%'):'—',
+               {l:'T2W Trend',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(2)+'%'):'—',
                 c:avgTrend!=null?(avgTrend>=0?'#10b981':'#f87171'):'var(--text3)'}
               ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
                 div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},k.l),
@@ -2163,7 +2163,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             div({style:{display:'flex',gap:12,flexWrap:'wrap',marginBottom:8}},
               [{l:'4-Wk Sales',v:f$(Math.round(totalSales)),c:'var(--text)'},
                {l:'Avg Ops',v:Math.round(avgOps)+'/100',c:avgOps>=80?'#10b981':avgOps>=65?'#f59e0b':'#f87171'},
-               {l:'Avg T2W',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(1)+'%'):'—',
+               {l:'Avg T2W',v:avgTrend!=null?((avgTrend>=0?'+':'')+( avgTrend*100).toFixed(2)+'%'):'—',
                 c:avgTrend!=null?(avgTrend>=0?'#10b981':'#f87171'):'var(--text3)'},
                {l:'Top Store',v:topStore?(STORE_NAMES[topStore.loc]||topStore.loc).split('-').pop().trim():'—',c:'var(--text2)'}
               ].map((k,j)=>div({key:j,style:{textAlign:'center'}},
@@ -2194,9 +2194,9 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             const issues=[];
             if(p.oepe>0&&t.tOepe>0&&p.oepe>t.tOepe) issues.push('OEPE '+Math.round(p.oepe)+'s vs '+t.tOepe+'s target');
             if(p.tpph>0&&t.tTpph>0&&p.tpph<t.tTpph) issues.push('TPPH '+p.tpph.toFixed(2)+' vs '+t.tTpph+' target');
-            if(p.laborPct>0&&t.tLabor>0&&p.laborPct>t.tLabor) issues.push('Labor '+(p.laborPct*100).toFixed(1)+'% vs '+(t.tLabor*100).toFixed(1)+'% target');
+            if(p.laborPct>0&&t.tLabor>0&&p.laborPct>t.tLabor) issues.push('Labor '+(p.laborPct*100).toFixed(2)+'% vs '+(t.tLabor*100).toFixed(2)+'% target');
             const vsLY=rangeLY>0?(rangeTotal-rangeLY)/rangeLY*100:null;
-            if(vsLY!==null) issues.push('Sales '+(vsLY>=0?'+':'')+vsLY.toFixed(1)+'% vs LY');
+            if(vsLY!==null) issues.push('Sales '+(vsLY>=0?'+':'')+vsLY.toFixed(2)+'% vs LY');
             return 'McDonald\'s operations consultant reviewing '+storeName+'. Key metrics: '+issues.join(', ')+'. Give a prioritized 3-action plan for THIS WEEK. Each action must be specific, measurable, and tied directly to these metrics. Lead with the highest-impact item.';
           }
         })
@@ -2299,8 +2299,8 @@ function MultiStoreComparison({stores, ds, settings, onSelectStore, onClose}) {
     {label:'OEPE',fn:s=>s.p.oepe||0,fmt:v=>Math.round(v)+'s',higherBetter:false},
     {label:'TPPH',fn:s=>s.p.tpph||0,fmt:v=>v.toFixed(2),higherBetter:true},
     {label:'KVS Time',fn:s=>s.p.kvst||0,fmt:v=>Math.round(v)+'s',higherBetter:false},
-    {label:'DT Parked%',fn:s=>s.p.park||0,fmt:v=>fP(v,1),higherBetter:'range'},
-    {label:'Labor%',fn:s=>s.p.laborPct||0,fmt:v=>fP(v,1),higherBetter:'target'},
+    {label:'DT Parked%',fn:s=>s.p.park||0,fmt:v=>fP(v,2),higherBetter:'range'},
+    {label:'Labor%',fn:s=>s.p.laborPct||0,fmt:v=>fP(v,2),higherBetter:'target'},
     {label:'OT Hrs',fn:s=>s.p.otHrs||0,fmt:v=>v.toFixed(1),higherBetter:false},
   ];
   const getBest=(m,vals)=>{const nz=vals.filter(v=>v>0);if(!nz.length)return null;return m.higherBetter===false?Math.min(...nz):m.higherBetter===true?Math.max(...nz):null;};
@@ -2433,7 +2433,7 @@ function DevDashboard({ds, settings, stores, userEvents, onClose}) {
       const dates=lR.map(r=>r.date).sort((a,b)=>a-b);
       const first=dates[0],last=dates[dates.length-1];
       const exp=first&&last?Math.round((last-first)/86400000)+1:0;
-      const cov=exp>0?+(lR.length/exp*100).toFixed(0):0;
+      const cov=exp>0?+(lR.length/exp*100).toFixed(2):0;
       return{loc,name:STORE_NAMES[loc]||loc,labor:lR.length,ops:oR.length,ctrl:cR.length,weather:wR.length,peaks:pR.length,audit:(ds.auditRows||[]).filter(r=>r.loc===loc).length,first,last,coverage:cov,ok:lR.length>0&&oR.length>0&&cR.length>0};
     });
   },[ds]);
@@ -2455,7 +2455,7 @@ function DevDashboard({ds, settings, stores, userEvents, onClose}) {
             h('tbody',null,audit.map((a,i)=>tr({key:a.loc,style:{borderBottom:'.5px solid var(--bdr)'}},
               td({style:{padding:'4px 8px',fontWeight:500}},a.name),
               ...[a.labor,a.ops,a.ctrl,a.weather,a.peaks,a.audit].map((v,j)=>td({key:j,style:{padding:'4px 8px',fontFamily:'var(--mono)',color:v>0?'#10b981':'#ef4444'}},v)),
-              td({style:{padding:'4px 8px',color:a.coverage>=90?'#10b981':a.coverage>=70?'#f59e0b':'#ef4444',fontFamily:'var(--mono)'}},a.coverage>0?a.coverage+'%':'—'),
+              td({style:{padding:'4px 8px',color:a.coverage>=90?'#10b981':a.coverage>=70?'#f59e0b':'#ef4444',fontFamily:'var(--mono)'}},a.coverage>0?a.coverage.toFixed(2)+'%':'—'),
               td({style:{padding:'4px 8px'}},span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',borderRadius:2,background:a.ok?'rgba(16,185,129,.1)':'rgba(245,158,11,.1)',color:a.ok?'#10b981':'#f59e0b'}},a.ok?'Full':'Partial'))
             )))
           )
@@ -2474,10 +2474,10 @@ function DevDashboard({ds, settings, stores, userEvents, onClose}) {
              ['T6W Trend',(traceResult.t6*100).toFixed(2)+'%'],
              ['Ops Factor',(traceResult.opsFactor||1).toFixed(4)+'×'],
              ['Weather Adj',((traceResult.wAdj||0)*100).toFixed(2)+'%'],
-             ['Plus-Up',effectivePlusUp(traceResult.loc,settings).toFixed(1)+'%'],
+             ['Plus-Up',effectivePlusUp(traceResult.loc,settings).toFixed(2)+'%'],
              ['══ FORECAST',f$(traceResult.forecast)],
              ['Actual',traceResult.actual>0?f$(traceResult.actual):'(future)'],
-             ['Variance',traceResult.varPct!=null?fPct(traceResult.varPct):'—'],
+             ['Variance',traceResult.varPct!=null?fPct(traceResult.varPct,2):'—'],
             ].map(([k,v],i)=>div({key:i,style:{display:'flex',gap:10,padding:'4px 0',borderBottom:'.5px solid var(--bdr)',fontSize:'11px',background:k.startsWith('══')?'rgba(245,158,11,.05)':'transparent'}},
               span({style:{minWidth:180,color:'var(--text3)'}}),k,
               span({style:{fontFamily:'var(--mono)',fontWeight:k.startsWith('══')?700:400,color:k.startsWith('══')?'var(--amber)':'var(--text)'}}),v

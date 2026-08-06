@@ -19,7 +19,7 @@ const SMART_METRICS = [
    fmt:function(v){return v?v.toFixed(2):'—';}, tgtKey:'tTpph',
    desc:'Transactions Per Punched Hour. Higher = better labor efficiency.'},
   {k:'laborPct',   src:'labor', field:'laborPct',  dir:'lower', label:'Labor %',
-   fmt:function(v){return v?(v*100).toFixed(1)+'%':'—';}, tgtKey:'tLabor',
+   fmt:function(v){return v?(v*100).toFixed(2)+'%':'—';}, tgtKey:'tLabor',
    desc:'Labor cost as % of net sales.'},
   {k:'cashOSPct',  src:'ctrl',  field:'cashOSPct', dir:'lower', label:'Cash O/S %',
    fmt:function(v){return v!=null?(v*100).toFixed(3)+'%':'—';}, tgtKey:'tCashOSPct', absDir:true,
@@ -28,7 +28,7 @@ const SMART_METRICS = [
    fmt:function(v){return v?(v*100).toFixed(3)+'%':'—';}, tgtKey:'tRedAPct',
    desc:'Post-total transaction reductions. Lower = better integrity.'},
   {k:'salesGrowth',src:'labor', field:'sales',     dir:'higher',label:'Sales Growth',
-   fmt:function(v){return v!=null?(v>=0?'+':'')+v.toFixed(1)+'%':'—';}, tgtKey:'tGrowth', computed:true,
+   fmt:function(v){return v!=null?(v>=0?'+':'')+v.toFixed(2)+'%':'—';}, tgtKey:'tGrowth', computed:true,
    desc:'Year-over-year sales growth vs same period LY.'},
   {k:'fobPct',     src:'fob',   field:'fobPct',    dir:'lower', label:'FOB %',
    fmt:function(v){return v?(v*100).toFixed(2)+'%':'—';}, tgtKey:'tFOBTarget',
@@ -37,7 +37,7 @@ const SMART_METRICS = [
    fmt:function(v){return v?'$'+v.toFixed(2):'—';}, tgtKey:'tAvgCheck',
    desc:'Average transaction value. Higher = better mix/upsell.'},
   {k:'passRate',  src:'ops',   field:'park',      dir:'lower', label:'Pass %',
-   fmt:function(v){return v!=null?(v*100).toFixed(1)+'%':'—';}, tgtKey:'tPassRate',
+   fmt:function(v){return v!=null?(v*100).toFixed(2)+'%':'—';}, tgtKey:'tPassRate',
    desc:'DT Parked %. Lower = fewer cars pulled without completing order.'},
   {k:'oppCostPct',src:'labor', field:'oppCostPct',dir:'lower', label:'Opp Cost %',
    fmt:function(v){return v!=null?(v*100).toFixed(2)+'%':'—';}, tgtKey:'tOppCost',
@@ -201,8 +201,8 @@ function computeSmartTargets(loc, ds, settings){
         const baseCapped=Math.min(MAX_G,Math.max(MIN_G,base));
         const trendAdj=improving?2:declining?-1:0.5;
         proposedYearly=roundTarget(Math.min(MAX_G,Math.max(MIN_G,baseCapped+trendAdj)),metric.tgtKey);
-        yearlyReasoning='6W comp: '+(avg6w!=null?(avg6w>=0?'+':'')+avg6w.toFixed(1)+'%':'—')+
-          ' | Trend adj: '+(trendAdj>=0?'+':'')+trendAdj.toFixed(1)+'% | Cap: '+MAX_G+'%';
+        yearlyReasoning='6W comp: '+(avg6w!=null?(avg6w>=0?'+':'')+avg6w.toFixed(2)+'%':'—')+
+          ' | Trend adj: '+(trendAdj>=0?'+':'')+trendAdj.toFixed(2)+'% | Cap: '+MAX_G+'%';
       } else {
         const anchor=bestSust!==null?bestSust:recent;
         let stretched=anchor;

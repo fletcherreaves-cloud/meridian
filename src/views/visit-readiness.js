@@ -15,7 +15,7 @@ const FS = { low: { c: '#10b981', l: 'FS low' }, watch: { c: '#f59e0b', l: 'FS w
 
 const fmt = (v, unit) => {
   if (v == null) return '—';
-  if (unit === 'pct') { const p = Math.abs(v) <= 1.5 ? v * 100 : v; return p.toFixed(p < 10 ? 2 : 1) + '%'; }
+  if (unit === 'pct') { const p = Math.abs(v) <= 1.5 ? v * 100 : v; return p.toFixed(2) + '%'; }
   if (unit === 's') return Math.round(v) + 's';
   if (unit === 'hrs') return v.toFixed(1) + 'h';
   return (Math.round(v * 10) / 10).toString();
@@ -42,7 +42,7 @@ function storeReportHTML(s) {
   // Recommended focus = the worst 3 drivers, phrased as actions.
   const focus = (s.topDrivers || []).filter(d => d.score < 0.85).slice(0, 3)
     .map(d => `<li><b>${esc(d.label.split('(')[0].trim())}</b> — currently ${esc(fmt(d.actual, d.unit))}, target ${esc(fmt(d.target, d.unit))}. Close this gap to lift readiness.</li>`).join('');
-  const lv = s.lastVisit ? `Last actual visit: ${esc(s.lastVisit.type || 'visit')} ${Math.round(s.lastVisit.score)}%${s.lastVisit.pass === false ? ' (did not pass)' : s.lastVisit.pass ? ' (pass)' : ''}${s.lastVisit.dateISO ? ' · ' + esc(s.lastVisit.dateISO) : ''}` : 'No recent actual graded visit on record.';
+  const lv = s.lastVisit ? `Last actual visit: ${esc(s.lastVisit.type || 'visit')} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' (did not pass)' : s.lastVisit.pass ? ' (pass)' : ''}${s.lastVisit.dateISO ? ' · ' + esc(s.lastVisit.dateISO) : ''}` : 'No recent actual graded visit on record.';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(sName(s.loc))} — Visit Readiness</title><style>
     body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:760px;margin:32px auto;font-size:12px;line-height:1.5}
     h1{font-size:20px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}
@@ -60,7 +60,7 @@ function storeReportHTML(s) {
     <h1>${esc(sName(s.loc))} <span style="color:#999;font-weight:400;font-size:13px">#${esc(s.loc)}</span></h1>
     <div class="sub">Visit Readiness coaching report · ${date}</div>
     <div><span class="score">${Math.round(s.readiness)}</span><span class="band">${b.l}</span><span class="fs">${fs.l.replace('FS', 'Food safety:')}</span>
-      ${s.coverage < 1 ? `<span style="color:#999;font-size:11px;margin-left:8px">${Math.round(s.coverage * 100)}% data coverage</span>` : ''}</div>
+      ${s.coverage < 1 ? `<span style="color:#999;font-size:11px;margin-left:8px">${(s.coverage * 100).toFixed(2)}% data coverage</span>` : ''}</div>
     <div class="why"><b>Why:</b> ${esc(s.why || '')}</div>
     <h2>Recommended focus</h2>
     ${focus ? `<ol>${focus}</ol>` : '<p>No material gaps — hold the standard and stay visit-ready.</p>'}
@@ -101,8 +101,8 @@ function StoreRow({ s, expanded, onToggle }) {
         h('div', { style: { display: 'flex', gap: 6, marginTop: 3, alignItems: 'center', flexWrap: 'wrap' } },
           h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: b.c, background: b.c + '22' } }, b.l),
           h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: fs.c, background: fs.c + '18' } }, fs.l),
-          s.coverage < 1 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, Math.round(s.coverage * 100) + '% data'),
-          s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${Math.round(s.lastVisit.score)}%${s.lastVisit.pass === false ? ' ✗' : ''}`))),
+          s.coverage < 1 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, (s.coverage * 100).toFixed(2) + '% data'),
+          s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' ✗' : ''}`))),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
         sub('Speed', s.subs.speed.score), sub('Accuracy', s.subs.accuracy.score),
         sub('Quality', s.subs.quality.score), sub('Leadership', s.subs.leadership.score)),
@@ -141,7 +141,7 @@ function CalibrationCard({ cal }) {
         h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: rC } }, cal.r == null ? '—' : cal.r.toFixed(2)),
         h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'rank corr' + (cal.strength ? ' (' + cal.strength + ')' : ''))),
       cal.hitRate != null && h('div', null,
-        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: cal.hitRate >= 0.6 ? '#10b981' : '#f59e0b' } }, Math.round(cal.hitRate * 100) + '%'),
+        h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: cal.hitRate >= 0.6 ? '#10b981' : '#f59e0b' } }, (cal.hitRate * 100).toFixed(2) + '%'),
         h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${cal.hits}/${cal.n})`)),
       h('div', { style: { flex: 1, minWidth: 180, fontSize: 9.5, color: 'var(--text3)', lineHeight: 1.5 } },
         cal.r == null ? 'Correlation needs more visits.'
@@ -160,7 +160,7 @@ function VisitPatterns({ ds }) {
   const gv = ds?.gradedVisits || ds?.graded_visits || [];
   const a = useMemo(() => analyzeGradedVisits(gv, { type }), [gv, type]);
   if (!gv.length) return null;
-  const pr = v => v == null ? '—' : Math.round(v * 100) + '%';
+  const pr = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
   const prCol = v => v == null ? '#6b7280' : v >= 0.85 ? '#10b981' : v >= 0.6 ? '#f59e0b' : '#ef4444';
   const bar = (v, col) => h('div', { style: { width: 46, height: 5, borderRadius: 3, background: 'var(--bdr)', display: 'inline-block', verticalAlign: 'middle' } },
     h('div', { style: { width: (v == null ? 0 : Math.max(2, v * 100)) + '%', height: '100%', background: col, borderRadius: 3 } }));

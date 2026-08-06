@@ -517,7 +517,7 @@ function RecentBreakersTab({ data, windowDays, onWindowChange }) {
                   td({style:{...S.tdR,fontWeight:600,color:'var(--acc)'}}, fVal(b.val)),
                   td({style:S.tdMR}, b.prev!=null ? fVal(b.prev) : span({style:{color:'var(--txt3)'}}, 'first record')),
                   td({style:{...S.tdR,color:impr!=null?'#10b981':'var(--txt3)'}},
-                    impr!=null ? `+${impr.toFixed(1)}%` : '—'),
+                    impr!=null ? `+${impr.toFixed(2)}%` : '—'),
                 );
               }),
             ),

@@ -117,7 +117,7 @@ function FormattedNumInput({value, onChange, placeholder, style={}, disabled, do
     if (n == null || isNaN(parseFloat(n))) return '';
     const v = parseFloat(n);
     if (dollar) return '$' + Math.round(v).toLocaleString('en-US');
-    if (pct)    return v.toFixed(1) + '%';
+    if (pct)    return v.toFixed(2) + '%';
     return Number.isInteger(v) ? String(v) : v.toFixed(1);
   };
   const toRaw = n => {
@@ -404,7 +404,7 @@ function CustomizePanel({cfg, onSave, onReset}) {
   const dc = (x) => JSON.parse(JSON.stringify(x));
 
   const save = () => {
-    if (!wv.ok) { alert('Weights must total 100% before saving.\n' + wv.errors.map(e => `• ${e.scope}: ${(e.sum * 100).toFixed(1)}%`).join('\n')); return; }
+    if (!wv.ok) { alert('Weights must total 100% before saving.\n' + wv.errors.map(e => `• ${e.scope}: ${(e.sum * 100).toFixed(2)}%`).join('\n')); return; }
     onSave(local); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -477,8 +477,8 @@ function CustomizePanel({cfg, onSave, onReset}) {
       selTpl&&GhostBtn({onClick:duplicateTpl,style:{fontSize:11}},'Duplicate'),
       selTpl&&GhostBtn({onClick:deleteTpl,style:{fontSize:11,color:'#f87171'}},'Delete'),
       span({style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:wv.ok?'#10b981':'#f87171'},
-        title:wv.ok?'Every weight group totals 100%':wv.errors.map(e=>`${e.scope}: ${(e.sum*100).toFixed(1)}%`).join(' · ')},
-        wv.ok?'✓ Weights 100%':`⚠ ${wv.errors[0].scope} = ${(wv.errors[0].sum*100).toFixed(1)}%`)),
+        title:wv.ok?'Every weight group totals 100%':wv.errors.map(e=>`${e.scope}: ${(e.sum*100).toFixed(2)}%`).join(' · ')},
+        wv.ok?'✓ Weights 100%':`⚠ ${wv.errors[0].scope} = ${(wv.errors[0].sum*100).toFixed(2)}%`)),
     // Save bar
     div({style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',
       borderBottom:`1px solid ${BDR}`,background:S2}},
@@ -549,7 +549,7 @@ function WeightsSection({local, set}) {
           span({style:{fontSize:12,color:TEXT3}},'%')
         ),
         span(null), span({style:{fontSize:10,color:ov.metrics+ov.behavioral===1?'#10b981':'#ef4444'}},
-          `Total: ${Math.round((ov.metrics+ov.behavioral)*100)}% ${ov.metrics+ov.behavioral!==1?'(must equal 100%)':''}`)
+          `Total: ${((ov.metrics+ov.behavioral)*100).toFixed(2)}% ${ov.metrics+ov.behavioral!==1?'(must equal 100%)':''}`)
       )
     ),
     // Category weights
@@ -577,7 +577,7 @@ function WeightsSection({local, set}) {
         span(null),
         span({style:{fontSize:10,color:
           Math.abs(Object.values(local.categoryWeights).reduce((a,c)=>a+c.weight,0)-1)<0.01?'#10b981':'#ef4444'}},
-          `Total: ${Math.round(Object.values(local.categoryWeights).reduce((a,c)=>a+c.weight,0)*100)}%`)
+          `Total: ${(Object.values(local.categoryWeights).reduce((a,c)=>a+c.weight,0)*100).toFixed(2)}%`)
       )
     ),
     // Metric weights per category
@@ -610,7 +610,7 @@ function WeightsSection({local, set}) {
           span(null),
           span({style:{fontSize:10,color:
             Math.abs(mets.reduce((a,m)=>a+m.weight,0)-1)<0.01?'#10b981':'#ef4444'}},
-            `Total: ${Math.round(mets.reduce((a,m)=>a+m.weight,0)*100)}%`),
+            `Total: ${(mets.reduce((a,m)=>a+m.weight,0)*100).toFixed(2)}%`),
           span(null), span(null)
         ),
         // KPI-directory dropdown: add a metric by selecting it (controls the source, not free-text)
@@ -651,7 +651,7 @@ function ThresholdsSection({local, set}) {
   const explain = (m) => {
     const [t1, t2, t3] = m.t;
     const p = m.unit === 'pct';
-    const f = v => p ? `${v>=0?'+':''}${Math.round(v*100)}%` : `${v>=0?'+':''}${v}`;
+    const f = v => p ? `${v>=0?'+':''}${(v*100).toFixed(2)}%` : `${v>=0?'+':''}${v}`;
     if (m.better === 'higher')
       return `4 ≥${f(t1)} · 3 ≥${f(t2)} · 2 ≥${f(t3)} · 1 else  (raise T1 → Exceeds harder; lower T3 → more reach Needs Imp)`;
     return `4 ≤${f(t1)} · 3 ≤${f(t2)} · 2 ≤${f(t3)} · 1 else  (lower T1 → Exceeds harder; raise T3 → more reach Needs Imp)`;
@@ -906,7 +906,7 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
         return span({style:{fontSize:11,fontWeight:700,color:col,
           background:col+'22',border:`1px solid ${col}44`,borderRadius:R,
           padding:'3px 8px',whiteSpace:'nowrap'}},
-          `${Math.round((s/4)*100)}% overall`);
+          `${((s/4)*100).toFixed(2)}% overall`);
       })(),
       orgLogo
         ? h('img',{src:orgLogo,alt:orgLabel,style:{height:30,objectFit:'contain',opacity:.9}})
@@ -1014,7 +1014,7 @@ function KPITab({review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAut
           style:{padding:'5px 12px',border:`1px solid ${kpiCat===cat?AMBER:BDR}`,borderRadius:R,
             background:kpiCat===cat?`${AMBER}20`:'transparent',color:kpiCat===cat?AMBER:TEXT2,
             fontSize:11,fontWeight:kpiCat===cat?700:400,cursor:'pointer'}},
-          `${CAT_LABELS[cat]||cat} (${Math.round((cw?.weight||0)*100)}%)`)
+          `${CAT_LABELS[cat]||cat} (${((cw?.weight||0)*100).toFixed(2)}%)`)
       })
     ),
     // KPI grid for selected category
@@ -1294,7 +1294,7 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
   const fmtVal = (v, m) => {
     if (v==null) return '—';
     if (m.dollar)   return '$' + Math.round(v).toLocaleString('en-US');
-    if (m.pctInput) return (v*100).toFixed(1)+'%';
+    if (m.pctInput) return (v*100).toFixed(2)+'%';
     return Number.isInteger(v) ? String(v) : v.toFixed(1);
   };
 
@@ -1302,7 +1302,7 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
     if (actual==null||target==null) return '—';
     const dev = unit==='pct' ? (actual-target)/Math.abs(target||1) : actual-target;
     const sign = dev>=0?'+':'';
-    return unit==='pct' ? `${sign}${(dev*100).toFixed(1)}%` : `${sign}${dev.toFixed(1)}`;
+    return unit==='pct' ? `${sign}${(dev*100).toFixed(2)}%` : `${sign}${dev.toFixed(1)}`;
   };
 
   const catSections = CAT_KEYS.map(catKey => {
@@ -1437,7 +1437,7 @@ function printBlankForm(review, cfg, orgLabel, orgLogo) {
       </tr>`;
     }).join('');
     return `
-      <h3>${esc(cw?.label||catKey)} <span style="font-weight:400;font-size:9px;color:#9ca3af">${Math.round((cw?.weight||0)*100)}% of KPI score</span></h3>
+      <h3>${esc(cw?.label||catKey)} <span style="font-weight:400;font-size:9px;color:#9ca3af">${((cw?.weight||0)*100).toFixed(2)}% of KPI score</span></h3>
       <table>
         <tr>
           <th>Metric</th>
@@ -1687,7 +1687,7 @@ function printReview(review, cfg, orgLabel, orgLogo) {
   ${Object.entries(cfg.categoryWeights).map(([cat,cw])=>{
     const metrics = (cfg.metrics[cat]||[]).filter(m=>m.scored);
     if(!metrics.length) return '';
-    return `<h3>${esc(cw.label||cat)} (${Math.round(cw.weight*100)}% category weight)</h3>
+    return `<h3>${esc(cw.label||cat)} (${(cw.weight*100).toFixed(2)}% category weight)</h3>
     <table>
       <tr><th>Metric</th>${qKeys.map(q=>`<th style="text-align:center">${qLabel(q)} Avg</th>`).join('')}</tr>
       ${metrics.map(m=>{
@@ -1759,7 +1759,7 @@ function ScoreBreakdownPanel({review, cfg}) {
     if (dev == null) return '—';
     const sign = dev >= 0 ? '+' : '';
     return unit === 'pct'
-      ? `${sign}${(dev * 100).toFixed(1)}%`
+      ? `${sign}${(dev * 100).toFixed(2)}%`
       : `${sign}${dev.toFixed(1)}`;
   };
 
@@ -1768,7 +1768,7 @@ function ScoreBreakdownPanel({review, cfg}) {
     if (Math.abs(v) >= 10000) return v.toLocaleString('en-US', {maximumFractionDigits:0});
     if (Math.abs(v) >= 100)   return v.toFixed(0);
     if (Math.abs(v) >= 1)     return v.toFixed(1);
-    return (v * 100).toFixed(1) + '%';
+    return (v * 100).toFixed(2) + '%';
   };
 
   const hasData = bd.metricsScore != null || bd.behavioralScore != null;
@@ -1806,7 +1806,7 @@ function ScoreBreakdownPanel({review, cfg}) {
         border:`1px solid ${BDR}`, marginBottom:16,
         fontSize:11, color:TEXT2, ...mono,
       }},
-        `Overall Score  =  (Metrics × ${Math.round(bd.mw*100)}%)  +  (Behavioral × ${Math.round(bd.bw*100)}%)`
+        `Overall Score  =  (Metrics × ${(bd.mw*100).toFixed(2)}%)  +  (Behavioral × ${(bd.bw*100).toFixed(2)}%)`
       ),
 
       // Category sections
@@ -1821,7 +1821,7 @@ function ScoreBreakdownPanel({review, cfg}) {
             border:`1px solid ${BDR}`, borderBottom:'none',
           }},
             span({style:{fontSize:11,fontWeight:700,color:AMBER}}, cat.label),
-            span({style:{fontSize:10,color:TEXT3}}, `${Math.round(cat.categoryWeight*100)}% of Metrics`)
+            span({style:{fontSize:10,color:TEXT3}}, `${(cat.categoryWeight*100).toFixed(2)}% of Metrics`)
           ),
 
           // Metrics table
@@ -1874,7 +1874,7 @@ function ScoreBreakdownPanel({review, cfg}) {
                       : span({style:{color:TEXT3}}, '—')
                   ),
                   div({style:{textAlign:'center',color:TEXT3,fontSize:10}},
-                    `${Math.round(m.weight*100)}%`),
+                    `${(m.weight*100).toFixed(2)}%`),
                   div({style:{textAlign:'right',color:TEXT2,...mono,fontSize:11}},
                     m.contribution != null ? m.contribution.toFixed(3) : '—')
                 ),
@@ -1964,7 +1964,7 @@ function ScoreBreakdownPanel({review, cfg}) {
                   : span({style:{color:TEXT3}}, '—')
               ),
               span({style:{textAlign:'center', color:TEXT3, fontSize:10}},
-                `×${Math.round(cat.categoryWeight*100)}%`),
+                `×${(cat.categoryWeight*100).toFixed(2)}%`),
               span({style:{textAlign:'right', ...mono, color: cat.categoryContrib != null ? AMBER : TEXT3}},
                 cat.categoryContrib != null ? `${cat.categoryContrib.toFixed(3)}` : '—'
               )
@@ -1982,10 +1982,10 @@ function ScoreBreakdownPanel({review, cfg}) {
         marginTop:4, ...mono, fontSize:11,
       }},
         div({style:{display:'flex',justifyContent:'space-between',color:TEXT2,marginBottom:3}},
-          span(null, `Metrics Score × ${Math.round(bd.mw*100)}%`),
+          span(null, `Metrics Score × ${(bd.mw*100).toFixed(2)}%`),
           span(null,
             bd.metricsScore != null
-              ? `${bd.metricsScore.toFixed(3)} × ${Math.round(bd.mw*100)}% = ${(bd.metricsScore*bd.mw).toFixed(3)}`
+              ? `${bd.metricsScore.toFixed(3)} × ${(bd.mw*100).toFixed(2)}% = ${(bd.metricsScore*bd.mw).toFixed(3)}`
               : '—')
         ),
         // Per-quarter behavioral detail
@@ -1996,10 +1996,10 @@ function ScoreBreakdownPanel({review, cfg}) {
           )
         ),
         div({style:{display:'flex',justifyContent:'space-between',color:TEXT2,marginBottom:3}},
-          span(null, `Behavioral Score × ${Math.round(bd.bw*100)}%`),
+          span(null, `Behavioral Score × ${(bd.bw*100).toFixed(2)}%`),
           span(null,
             bd.behavioralScore != null
-              ? `${bd.behavioralScore.toFixed(3)} × ${Math.round(bd.bw*100)}% = ${(bd.behavioralScore*bd.bw).toFixed(3)}`
+              ? `${bd.behavioralScore.toFixed(3)} × ${(bd.bw*100).toFixed(2)}% = ${(bd.behavioralScore*bd.bw).toFixed(3)}`
               : '—')
         ),
         div({style:{borderTop:`1px solid ${BDR}`,margin:'8px 0'}}),
@@ -2024,7 +2024,7 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
   const half = review.half;
   const halfLabel = half==='H1' ? 'Mid-Year' : 'End of Year';
   const halfScore = scores.half?.overall;
-  const halfPct   = halfScore!=null ? Math.round((halfScore/4)*100) : null;
+  const halfPct   = halfScore!=null ? +((halfScore/4)*100).toFixed(2) : null;
   const heroCol   = halfScore!=null ? ratingColor(Math.round(halfScore)) : 'var(--txt3)';
 
   const ScoreCard = ({label,ms,bs,overall,highlight}) =>
@@ -2057,7 +2057,7 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
       div({style:{
         fontSize:56,fontWeight:800,color:heroCol,lineHeight:1,
         fontFamily:'var(--mono)',letterSpacing:-1,
-      }}, halfPct!=null ? `${halfPct}%` : '—'),
+      }}, halfPct!=null ? `${halfPct.toFixed(2)}%` : '—'),
       div({style:{flex:1}},
         div({style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:2}},
           `${halfLabel} Overall Score`),
@@ -2066,11 +2066,11 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
         div({style:{display:'flex',alignItems:'center',gap:12,fontSize:11,color:TEXT3}},
           span(null, `Results Achieved (70%): `),
           span({style:{fontWeight:700,color:scores.half?.metrics!=null?ratingColor(Math.round(scores.half.metrics)):'var(--txt3)'}},
-            scores.half?.metrics!=null ? `${Math.round((scores.half.metrics/4)*100)}%` : '—'),
+            scores.half?.metrics!=null ? `${((scores.half.metrics/4)*100).toFixed(2)}%` : '—'),
           span(null, ' · '),
           span(null, `Behavioral (30%): `),
           span({style:{fontWeight:700,color:scores.half?.behavioral!=null?ratingColor(Math.round(scores.half.behavioral)):'var(--txt3)'}},
-            scores.half?.behavioral!=null ? `${Math.round((scores.half.behavioral/4)*100)}%` : '—'),
+            scores.half?.behavioral!=null ? `${((scores.half.behavioral/4)*100).toFixed(2)}%` : '—'),
         ),
         halfPct!=null && div({style:{marginTop:8,height:6,borderRadius:3,background:'var(--bdr)',overflow:'hidden'}},
           div({style:{height:'100%',width:`${halfPct}%`,borderRadius:3,background:heroCol,transition:'width .6s'}})),
@@ -2108,7 +2108,7 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
       div({style:{fontWeight:700,color:TEXT3}},'Category'),
       ...qKeys.map(q => div({key:q,style:{fontWeight:700,color:TEXT3,textAlign:'center'}},qLabel(q))),
       ...Object.entries(cfg.categoryWeights).map(([cat,cw]) => [
-        div({key:cat+'-l',style:{color:TEXT2}},`${cw.label||cat} (${Math.round(cw.weight*100)}%)`),
+        div({key:cat+'-l',style:{color:TEXT2}},`${cw.label||cat} (${(cw.weight*100).toFixed(2)}%)`),
         ...qKeys.map(q => {
           const qMths = qMonths(q).filter(m=>mths.includes(m));
           const moArr = qMths.map(mn=>(review.kpis?.months||{})[mn]).filter(Boolean);

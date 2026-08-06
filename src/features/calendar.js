@@ -498,7 +498,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
       const dayEvents=[];
       scopeLocs.forEach(loc=>{ const ev=(userEvents||{})[loc]&&userEvents[loc][dk]; if(ev) dayEvents.push({loc,...ev}); });
       dayEvents.sort((a,b)=>(EVENT_TYPES[a.type]?.label||a.type||'').localeCompare(EVENT_TYPES[b.type]?.label||b.type||'')||(a.label||'').localeCompare(b.label||''));
-      const dp=(v)=>v==null?null:((v>0?'+':'')+Math.round(v*100)+'%');
+      const dp=(v)=>v==null?null:((v>0?'+':'')+(v*100).toFixed(2)+'%');
       const hostOf=(u)=>{try{return new URL(u).hostname.replace(/^www\./,'');}catch{return 'source';}};
       const dl=(txt)=>({breakfast:'Breakfast / Morning',afternoon:'Afternoon',day:'Day Shift',dinner:'Dinner / Late Night',all:'All Shifts',gameday:'Game Day'}[txt]||txt);
       // Pull opponent + home/away out of a game label ("OU vs UTEP (Home)" → {opponent:'UTEP', homeAway:'Home'}).
@@ -808,7 +808,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
             span(null,'Searching '+searchProg.storeName+' · '+searchProg.done+' of '+searchProg.total),
             btn({style:{fontSize:'8px',color:'#f87171',background:'none',border:'none',cursor:'pointer'},onClick:cancelBatchSearch},'⏹ Cancel')),
           div({style:{height:5,background:'var(--surf2)',borderRadius:99,overflow:'hidden'}},
-            div({style:{height:'100%',width:Math.round(searchProg.done/searchProg.total*100)+'%',
+            div({style:{height:'100%',width:(searchProg.done/searchProg.total*100).toFixed(2)+'%',
               background:'var(--amber)',borderRadius:99,transition:'width .3s'}}))
         ),
         // Legend
@@ -1288,7 +1288,7 @@ async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
     <div class="card" data-idx="${i}" data-dk="${r.dKeyStr||r.dateStr}" data-var="${r.varPct.toFixed(2)}">
       <div class="card-header">
         <div class="date">${r.dateStr} <span class="dow">${r.dow||''}</span></div>
-        <div class="variance" style="color:${vc}">${r.varPct>0?'+':''}${r.varPct.toFixed(1)}%</div>
+        <div class="variance" style="color:${vc}">${r.varPct>0?'+':''}${r.varPct.toFixed(2)}%</div>
       </div>
       <div class="amounts">Sales: <strong>$${Math.round(r.actual).toLocaleString()}</strong> &nbsp;Baseline: $${Math.round(r.forecast).toLocaleString()}</div>
       ${sug?`<div class="suggestion">💡 ${sug}</div>`:''}

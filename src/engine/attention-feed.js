@@ -58,7 +58,7 @@ export function salesBehindLY(rows = [], storeName = String, { minGap = 1000 } =
         id: 'ly-' + r.loc, severity: gap < -r.ly * 0.05 ? 'warn' : 'info',
         category: 'Sales', icon: '📉',
         title: `${storeName(r.loc)} — behind last year`,
-        detail: `${money(gap)} vs LY (${((gap / r.ly) * 100).toFixed(1)}%)`,
+        detail: `${money(gap)} vs LY (${((gap / r.ly) * 100).toFixed(2)}%)`,
         dollars: gap, loc: r.loc, nav: 'analytics',
       });
     }

@@ -203,13 +203,13 @@ function saveSmgSettings(s) {
 // Build FS_METRICS array driven by current settings
 function buildFsMetrics(s) {
   return [
-    { key:'osat5',         label:'OSAT (5★)',    fmt:p=>p!=null?(p*100).toFixed(1)+'%':'—', better:'higher', std:s.osatStd,    yellow:s.osatYellow,   unit:'pct' },
-    { key:'osatTop2',      label:'Top-2 Box',    fmt:p=>p!=null?(p*100).toFixed(1)+'%':'—', better:'higher', std:s.osatStd,    yellow:s.osatYellow,   unit:'pct' },
+    { key:'osat5',         label:'OSAT (5★)',    fmt:p=>p!=null?(p*100).toFixed(2)+'%':'—', better:'higher', std:s.osatStd,    yellow:s.osatYellow,   unit:'pct' },
+    { key:'osatTop2',      label:'Top-2 Box',    fmt:p=>p!=null?(p*100).toFixed(2)+'%':'—', better:'higher', std:s.osatStd,    yellow:s.osatYellow,   unit:'pct' },
     { key:'osatAvg',       label:'OSAT Avg',     fmt:v=>v!=null?v.toFixed(2):'—',           better:'higher', std:s.avgStd,     yellow:s.avgYellow,    unit:'raw' },
-    { key:'osatB2B',       label:'OSAT B2B',     fmt:p=>p!=null?(p*100).toFixed(1)+'%':'—', better:'higher', std:s.osatStd,    yellow:s.osatYellow,   unit:'pct' },
-    { key:'accuracyB2B',   label:'Accuracy B2B', fmt:p=>p!=null?(p*100).toFixed(1)+'%':'—', better:'higher', std:s.accStd,     yellow:s.accYellow,    unit:'pct' },
-    { key:'dtProblem',     label:'DT Problem',   fmt:p=>p!=null?(p*100).toFixed(1)+'%':'—', better:'lower',  std:s.dtProbStd,  yellow:s.dtProbYellow, unit:'pct' },
-    { key:'overallProblem',label:'Any Problem',  fmt:p=>p!=null?(p*100).toFixed(1)+'%':'—', better:'lower',  std:s.ovProbStd,  yellow:s.ovProbYellow, unit:'pct' },
+    { key:'osatB2B',       label:'OSAT B2B',     fmt:p=>p!=null?(p*100).toFixed(2)+'%':'—', better:'higher', std:s.osatStd,    yellow:s.osatYellow,   unit:'pct' },
+    { key:'accuracyB2B',   label:'Accuracy B2B', fmt:p=>p!=null?(p*100).toFixed(2)+'%':'—', better:'higher', std:s.accStd,     yellow:s.accYellow,    unit:'pct' },
+    { key:'dtProblem',     label:'DT Problem',   fmt:p=>p!=null?(p*100).toFixed(2)+'%':'—', better:'lower',  std:s.dtProbStd,  yellow:s.dtProbYellow, unit:'pct' },
+    { key:'overallProblem',label:'Any Problem',  fmt:p=>p!=null?(p*100).toFixed(2)+'%':'—', better:'lower',  std:s.ovProbStd,  yellow:s.ovProbYellow, unit:'pct' },
   ];
 }
 
@@ -367,7 +367,7 @@ function SmgSettingsEditor({ settings, onChange, fsRows }) {
         pctIn('osatStd',    'Standard (green ≥)'),
         pctIn('osatYellow', 'Yellow band (pp)'),
         h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:2 } },
-          `Green ≥ ${(local.osatStd*100).toFixed(0)}% · Yellow ≥ ${((local.osatStd-local.osatYellow)*100).toFixed(0)}% · Red below`)
+          `Green ≥ ${(local.osatStd*100).toFixed(2)}% · Yellow ≥ ${((local.osatStd-local.osatYellow)*100).toFixed(2)}% · Red below`)
       ),
 
       h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
@@ -378,7 +378,7 @@ function SmgSettingsEditor({ settings, onChange, fsRows }) {
         pctIn('ovProbStd',    'Any Problem (green ≤)'),
         pctIn('ovProbYellow', 'Yellow band (pp)'),
         h('div', { style: { fontSize:9, color:'var(--text3)', marginTop:2 } },
-          `DT: ≤${(local.dtProbStd*100).toFixed(0)}% green · >${((local.dtProbStd+local.dtProbYellow)*100).toFixed(0)}% red`)
+          `DT: ≤${(local.dtProbStd*100).toFixed(2)}% green · >${((local.dtProbStd+local.dtProbYellow)*100).toFixed(2)}% red`)
       ),
 
       h('div', { style: { display:'flex', flexDirection:'column', gap:8 } },
@@ -463,7 +463,7 @@ function FullScalePanel({ fsRows, stores, inScope, storeSel }) {
     borderRight:'1px solid var(--bdr)',
   });
 
-  const stdPct = Math.round(settings.osatStd * 100);
+  const stdPct = (settings.osatStd * 100).toFixed(2);
 
   return h('div', {style:{overflowY:'auto',flex:1,display:'flex',flexDirection:'column'}},
 
@@ -523,8 +523,8 @@ function FullScalePanel({ fsRows, stores, inScope, storeSel }) {
                 h('br'),
                 h('span',{style:{fontSize:8,fontWeight:400,opacity:.7}},
                   m.better==='higher'
-                    ? `↑ std ${m.unit==='pct'?Math.round(m.std*100)+'%':m.std.toFixed(1)}`
-                    : `↓ std ${Math.round(m.std*100)}%`)
+                    ? `↑ std ${m.unit==='pct'?(m.std*100).toFixed(2)+'%':m.std.toFixed(1)}`
+                    : `↓ std ${(m.std*100).toFixed(2)}%`)
               ))
             ),
             // District avg row
@@ -755,7 +755,7 @@ function OpportunitiesPanel({ result, scopeText }) {
         h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, 'Detractors'),
       ),
       h('div', { style: { fontSize: 11, color: 'var(--text2)', maxWidth: 320, lineHeight: 1.5 } },
-        `${district.neg} unhappy of ${district.total} comments (${Math.round(district.negRate * 100)}%) across ${stores.length} stores in ${scopeText}. `,
+        `${district.neg} unhappy of ${district.total} comments (${(district.negRate * 100).toFixed(2)}%) across ${stores.length} stores in ${scopeText}. `,
         'Ranked by detractors — the most real guests to win back first.'),
       district.themes.length ? h('div', { style: { marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', maxWidth: 380, justifyContent: 'flex-end' } },
         h('span', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', fontWeight: 700 } }, 'Top issues:'),
@@ -780,7 +780,7 @@ function OpportunitiesPanel({ result, scopeText }) {
           h('td', { style: { padding: '6px 8px', textAlign: 'center', color: 'var(--text2)' } }, s.total),
           h('td', { style: { padding: '6px 8px', textAlign: 'center', fontWeight: 800, color: s.neg ? '#ef4444' : 'var(--text3)' } }, s.neg),
           h('td', { style: { padding: '6px 8px', textAlign: 'center', color: s.negRate >= 0.1 ? '#ef4444' : s.negRate >= 0.05 ? '#f59e0b' : 'var(--text2)', fontWeight: 700 } },
-            `${Math.round(s.negRate * 100)}%`,
+            `${(s.negRate * 100).toFixed(2)}%`,
             s.thin ? h('span', { title: `Thin sample (< ${MIN_N} comments) — rate is noisy`, style: { fontSize: 8, color: 'var(--text3)', marginLeft: 3 } }, '⚠') : null),
           h('td', { style: { padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: s.avgScore >= 4.5 ? '#28a870' : s.avgScore >= 3.5 ? '#e8a040' : '#d94f4f' } }, s.avgScore != null ? s.avgScore.toFixed(2) : '—'),
           h('td', { style: { padding: '6px 8px' } },
@@ -1062,10 +1062,10 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
           h('div', { style: { marginLeft: 'auto' } }, h(ExportButtons, {
             onCsv: () => exportCSV(`VOICE_Opportunities_${orgDesc(orgFilter, storeSel, nameOf).replace(/[^a-z0-9]+/gi, '_')}.csv`,
               ['Rank', 'Store', 'NSN', 'Comments', 'Detractors', 'Neg %', 'Avg', 'Top Issues'],
-              oppResult.stores.map((s, i) => [i + 1, s.name, s.loc, s.total, s.neg, Math.round(s.negRate * 100) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
+              oppResult.stores.map((s, i) => [i + 1, s.name, s.loc, s.total, s.neg, (s.negRate * 100).toFixed(2) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
             onPrint: () => printReport('VOICE Store Opportunities', `${orgDesc(orgFilter, storeSel, nameOf)} · ${oppResult.stores.length} stores`,
               ['Rank', 'Store', 'Comments', 'Detractors', 'Neg %', 'Avg', 'Top Issues'],
-              oppResult.stores.map((s, i) => [i + 1, s.name, s.total, s.neg, Math.round(s.negRate * 100) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
+              oppResult.stores.map((s, i) => [i + 1, s.name, s.total, s.neg, (s.negRate * 100).toFixed(2) + '%', s.avgScore != null ? s.avgScore.toFixed(2) : '', s.topThemes.slice(0, 4).map(t => `${t.label}(${t.count})`).join('; ')])),
           })),
         ),
         h(OpportunitiesPanel, { result: oppResult, scopeText: orgDesc(orgFilter, storeSel, nameOf) }),
@@ -1154,7 +1154,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
                 const total = (storeSel === 'all' ? scopedRows : (storeMap[storeSel]?.rows||[])).length;
                 if (!c) return null;
                 return h('span', { key: l, style: { fontSize: 10, color: scoreColor(l).text } },
-                  `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')}: ${c} (${Math.round(c/total*100)}%)`
+                  `${SCORE_LABEL_SHORT[l].split(' ').slice(1).join(' ')}: ${c} (${(c/total*100).toFixed(2)}%)`
                 );
               })
             ),

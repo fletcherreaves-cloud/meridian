@@ -129,7 +129,7 @@ function LockConfirmationModal({storeSummaries, periodLabel, lockType, onConfirm
         ...[
           {l:'Stores',    v:storeSummaries.length},
           {l:'Total Proj',v:f$(totalProj)},
-          {l:'vs LY',     v:vsLY!=null?(vsLY>=0?'+':'')+vsLY.toFixed(1)+'%':'—',
+          {l:'vs LY',     v:vsLY!=null?(vsLY>=0?'+':'')+vsLY.toFixed(2)+'%':'—',
             c:vsLY!=null?(vsLY>=0?'#10b981':'#ef4444'):'var(--text3)'},
           {l:'Already Locked', v:alreadyLocked+' / '+storeSummaries.length,
             c:alreadyLocked===storeSummaries.length?'#10b981':'var(--text3)'},
@@ -154,11 +154,11 @@ function LockConfirmationModal({storeSummaries, periodLabel, lockType, onConfirm
               td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},s.weekTotal>0?f$(s.weekTotal):'—'),
               td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,
                 color:s.vsLY!=null?(s.vsLY>=0?'#10b981':'#ef4444'):'var(--text3)'}},
-                s.vsLY!=null?(s.vsLY>=0?'+':'')+s.vsLY.toFixed(1)+'%':'—'),
+                s.vsLY!=null?(s.vsLY>=0?'+':'')+s.vsLY.toFixed(2)+'%':'—'),
               td({style:{padding:'4px 8px',textAlign:'right',fontSize:'8px',color:'var(--text3)'}},s.model||'Default'),
               td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',
                 color:s.mape!=null?mapeCol(s.mape):'var(--text3)',fontWeight:isWarn?700:400}},
-                s.mape!=null?s.mape.toFixed(1)+'%':'—'),
+                s.mape!=null?s.mape.toFixed(2)+'%':'—'),
               td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',
                 color:s.health!=null?healthCol(s.health):'var(--text3)'}},
                 s.health!=null?s.health+'/100':'—'),
@@ -448,11 +448,11 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
               return div({key:i,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'6px 10px',minWidth:90,textAlign:'center'}},
                 div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},w.label),
                 div({style:{fontSize:'12px',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text)'}},f$(w.actual)),
-                w.vsLY!=null&&div({style:{fontSize:'9px',fontWeight:600,color:vc}},(w.vsLY>=0?'+':'')+(w.vsLY*100).toFixed(1)+'% vs LY'));
+                w.vsLY!=null&&div({style:{fontSize:'9px',fontWeight:600,color:vc}},(w.vsLY>=0?'+':'')+(w.vsLY*100).toFixed(2)+'% vs LY'));
             })
           ),
           avgVsLY!=null&&div({style:{fontSize:'10px',color:trendCol,fontWeight:600}},
-            trendIcon+' District is running '+(avgVsLY>=0?'+':'')+(avgVsLY*100).toFixed(1)+'% vs LY · Trend: '+trendDir)
+            trendIcon+' District is running '+(avgVsLY>=0?'+':'')+(avgVsLY*100).toFixed(2)+'% vs LY · Trend: '+trendDir)
         )
       ),
 
@@ -481,9 +481,9 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
         div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
           [['OEPE',avgOEPE?Math.round(avgOEPE)+'s':'—','Target ≤150s',avgOEPE&&avgOEPE>170?'#f59e0b':avgOEPE&&avgOEPE>150?'#f97316':'#10b981'],
            ['TPPH',avgTPPH?avgTPPH.toFixed(2):'—','Target ≥5.0',avgTPPH&&avgTPPH<4.5?'#f59e0b':'#10b981'],
-           ['Labor %',avgLaborPct?(avgLaborPct*100).toFixed(1)+'%':'—','Target ~22%',avgLaborPct?(avgLaborPct>0.28?'#f87171':avgLaborPct>0.25?'#f59e0b':'#10b981'):null],
+           ['Labor %',avgLaborPct?(avgLaborPct*100).toFixed(2)+'%':'—','Target ~22%',avgLaborPct?(avgLaborPct>0.28?'#f87171':avgLaborPct>0.25?'#f59e0b':'#10b981'):null],
            ['DI Calibrated',calibrated+'/'+totalLocs,'stores','#a5b4fc'],
-           ['Model MAPE',distMAPE?distMAPE.toFixed(1)+'%':'—','6-week avg',distMAPE&&distMAPE<8?'#10b981':distMAPE&&distMAPE<12?'#f59e0b':'#f87171']
+           ['Model MAPE',distMAPE?distMAPE.toFixed(2)+'%':'—','6-week avg',distMAPE&&distMAPE<8?'#10b981':distMAPE&&distMAPE<12?'#f59e0b':'#f87171']
           ].map(([l,v,sub,col],i)=>div({key:i,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'8px 12px',minWidth:100}},
             div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}}),
             div({style:{fontSize:'8px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginBottom:2}},l),
@@ -1057,7 +1057,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     const gcaTot=rows.reduce((a,r)=>a+(r.forecastGCA||0),0);
     const lyTot=rows.reduce((a,r)=>a+(r.forecast||0),0);
     if(!gcaTot||!lyTot) return null;
-    const diff=((gcaTot-lyTot)/lyTot*100).toFixed(1);
+    const diff=((gcaTot-lyTot)/lyTot*100).toFixed(2);
     const colCnt=(projPeriod==='week'?7:projWeeks.length)+3;
     return tr({key:'gca_'+loc,style:{background:'rgba(96,165,250,.04)',borderBottom:'.5px solid var(--bdr)'}},
       td({style:{padding:'1px 8px 1px 20px',fontSize:'8px',color:'#60a5fa',whiteSpace:'nowrap'}},
@@ -1131,7 +1131,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     // when at least one day in this period has been week-refined after a month lock.
     const asLockedTotal=weekDays.reduce((a,d)=>a+asLockedAmt(loc,d),0);
     const hasRefinement = projPeriod!=='week' && Math.round(asLockedTotal)!==Math.round(weekTotal);
-    const vsLY=lyTotal>0?((weekTotal-lyTotal)/lyTotal*100).toFixed(1):null;
+    const vsLY=lyTotal>0?((weekTotal-lyTotal)/lyTotal*100).toFixed(2):null;
     const allLocked=weekDays.every(d=>{const k=loc+'_'+dKey(d);return lockedProjections&&lockedProjections[k]&&lockedProjections[k].mode!=='auto';});
     const allApproved=weekDays.every(d=>{const k=loc+'_'+dKey(d);return lockedProjections&&lockedProjections[k]&&lockedProjections[k].mode==='approved';});
     const mape=settings.dialedIn&&settings.dialedIn[loc]&&settings.dialedIn[loc].mape;
@@ -1147,7 +1147,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             deepStore===loc?'▼':'▶'),
           span({style:{fontSize:'10px',fontWeight:600}},[name]),
           mape!=null&&span({style:{fontSize:'8px',color:mape<6?'#10b981':mape<10?'#f59e0b':'#f87171',
-            marginLeft:2}},['±'+mape.toFixed(0)+'%'])
+            marginLeft:2}},['±'+mape.toFixed(2)+'%'])
         )
       ),
       // Day cells — weekly (7 cols) or week-subtotals (N cols for month/custom)
@@ -1356,7 +1356,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
           else if(daysLeftToLock<=3){ status='due in '+daysLeftToLock+'d'; statusColor='var(--amber)'; }
           else { status='not yet locked'; statusColor='var(--text3)'; }
         } else if(anyRefined){
-          status=(pctDiff>=0?'🔄 refined +':'🔄 refined ')+pctDiff.toFixed(1)+'% vs plan';
+          status=(pctDiff>=0?'🔄 refined +':'🔄 refined ')+pctDiff.toFixed(2)+'% vs plan';
           statusColor='#818cf8';
         } else {
           status='locked, no refinement'; statusColor='var(--green)';
@@ -1428,7 +1428,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
               const dayAmts=weekDays.map(d=>fcstAmt(loc,d));
               const wkTotal=dayAmts.reduce((a,v)=>a+v,0);
               const lyTotal=weekDays.reduce((tot,d)=>tot+lyAmt(loc,d),0);
-              const vsLY=lyTotal>0?((wkTotal-lyTotal)/lyTotal*100).toFixed(1)+'%':'—';
+              const vsLY=lyTotal>0?((wkTotal-lyTotal)/lyTotal*100).toFixed(2)+'%':'—';
               const allApproved=weekDays.every(d=>{const k=loc+'_'+dKey(d);return lockedProjections&&lockedProjections[k]&&lockedProjections[k].mode==='approved';});
               const allLocked=weekDays.every(d=>{const k=loc+'_'+dKey(d);return lockedProjections&&lockedProjections[k];});
               return [name,...dayAmts.map(v=>v||0),wkTotal||0,lyTotal>0?Math.round(lyTotal):0,vsLY,allApproved?'Approved':allLocked?'Locked':'Draft'];
@@ -1786,7 +1786,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                                 // not a raw calendar 365-day shift + fuzzy window.
                                 const _rowLY=(r.lyAdj>0&&r.lyAdj!==r.forecast)?r.lyAdj:
                                   (fetchLY(ds.laborIdx,ds.laborRows,r.loc||loc,r.date,settings._userEvents)||0);
-    const vsLY=_rowLY>0?((r.forecast-_rowLY)/_rowLY*100).toFixed(1):null;
+    const vsLY=_rowLY>0?((r.forecast-_rowLY)/_rowLY*100).toFixed(2):null;
                                 const gc=r.forecast>0&&ds?gcCrossCheck(deepStore,r.date,ds,settings,r.forecast):null;
                                 return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
                                   td({style:{padding:'3px 6px',fontWeight:600}},r.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
@@ -1809,7 +1809,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                                     vsLY!=null?((+vsLY>=0?'+':'')+vsLY+'%'):'—'),
                                   td({style:{padding:'3px 6px',textAlign:'right',
                                     color:r.trend>=0?'#10b981':'#f87171'}},
-                                    r.trend!=null?((r.trend>=0?'+':'')+( r.trend*100).toFixed(1)+'%'):'—'),
+                                    r.trend!=null?((r.trend>=0?'+':'')+( r.trend*100).toFixed(2)+'%'):'—'),
                                   td({style:{padding:'3px 6px',textAlign:'right',color:'var(--text3)'}},
                                     r.opsFactor!=null?r.opsFactor.toFixed(3):'—'),
                                   td({style:{padding:'3px 6px',textAlign:'center'}},

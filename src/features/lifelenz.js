@@ -150,8 +150,8 @@ function LifelenzGapPanel({ds, settings, onClose}) {
           ...[
             {l:'Meridian Wins',     v:summary.improved,     sub:'Better MAPE than Lifelenz', c:'#10b981'},
             {l:'Lifelenz Wins',     v:summary.degraded,     sub:'Lifelenz more accurate',    c:'#ef4444'},
-            {l:'Avg Lifelenz MAPE', v:summary.avgLfz.toFixed(1)+'%', sub:'Post-cutover avg', c:mapeColor(summary.avgLfz)},
-            {l:'Avg Meridian MAPE', v:summary.avgMer.toFixed(1)+'%', sub:'AE model · same window', c:mapeColor(summary.avgMer)},
+            {l:'Avg Lifelenz MAPE', v:summary.avgLfz.toFixed(2)+'%', sub:'Post-cutover avg', c:mapeColor(summary.avgLfz)},
+            {l:'Avg Meridian MAPE', v:summary.avgMer.toFixed(2)+'%', sub:'AE model · same window', c:mapeColor(summary.avgMer)},
             {l:'Under-Forecast',    v:summary.underForecast+' stores', sub:'Consistently below actual', c:'#f59e0b'},
             {l:'Total $ Gap Impact',v:'$'+Math.round(summary.totalImpact/1000)+'K', sub:'Cumulative MAPE difference', c:'var(--amber)'},
           ].map((k,i)=>div({key:i,style:{background:'var(--surf)',border:'.5px solid var(--bdr)',
@@ -197,15 +197,15 @@ function LifelenzGapPanel({ds, settings, onClose}) {
                     'Model: '+(DEFAULT_MODEL_ASSIGNMENTS[r.loc]?.monthly?.model||'—').toUpperCase())
                 ),
                 h('td',{style:{padding:'7px 8px',textAlign:'right',fontFamily:'var(--mono)',
-                  fontWeight:700,color:mapeColor(r.lfzMape)}},r.lfzMape?r.lfzMape.toFixed(1)+'%':'—'),
+                  fontWeight:700,color:mapeColor(r.lfzMape)}},r.lfzMape?r.lfzMape.toFixed(2)+'%':'—'),
                 h('td',{style:{padding:'7px 8px',textAlign:'right',fontFamily:'var(--mono)',
-                  fontWeight:700,color:mapeColor(r.mMape)}},r.mMape?r.mMape.toFixed(1)+'%':'—'),
+                  fontWeight:700,color:mapeColor(r.mMape)}},r.mMape?r.mMape.toFixed(2)+'%':'—'),
                 h('td',{style:{padding:'7px 8px',textAlign:'right',fontFamily:'var(--mono)',
                   fontWeight:800,color:gapColor(r.gap)}},
                   r.gap!=null?(r.gap>0?'+':'')+r.gap.toFixed(1)+'pp':'—'),
                 h('td',{style:{padding:'7px 8px',textAlign:'right',fontFamily:'var(--mono)',
                   color:(r.bias||0)>0?'#f97316':'#34d399',fontWeight:600}},
-                  r.bias!=null?((r.bias>0?'↓ Under ':'↑ Over ')+Math.abs(r.bias).toFixed(1)+'%'):'—'),
+                  r.bias!=null?((r.bias>0?'↓ Under ':'↑ Over ')+Math.abs(r.bias).toFixed(2)+'%'):'—'),
                 h('td',{style:{padding:'7px 8px',textAlign:'right',fontFamily:'var(--mono)',
                   color:'var(--amber)',fontWeight:700}},
                   r.dollarImpact?'$'+Math.round(r.dollarImpact/1000)+'K':'—'),
@@ -282,7 +282,7 @@ function computeLifeLenzHistoricalBias(loc, ds, settings, weeksBack=12){
     });
     const avgBiasPct = dayRows.reduce((a,r)=>a+(r.sales-r.projSales)/r.sales,0)/dayRows.length*100;
     return {dow, n:dayRows.length, avgBiasPct:+avgBiasPct.toFixed(1),
-      meridianWinRate:+(meridianWins/dayRows.length*100).toFixed(0)};
+      meridianWinRate:meridianWins/dayRows.length*100};
   });
 
   const overall = {
@@ -409,7 +409,7 @@ function runLifeLenzBridgeScan(loc, ds, settings, userEvents, daysForward=14){
         const counts = {event:0,regional:0,weather:0,isolated_anomaly:0,contributing_factors:0,unexplained:0};
         dowRows.forEach(r=>{counts[r.bucket]=(counts[r.bucket]||0)+1;});
         const topBucket = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-        const topPct = Math.round(topBucket[1]/total*100);
+        const topPct = topBucket[1]/total*100;
         const labelMap = {event:'event-driven',regional:'regional pattern',weather:'weather-driven',
           isolated_anomaly:'store-specific',contributing_factors:'mixed factors',unexplained:'model gap'};
         return {dow, n:total, topBucket:topBucket[0], topPct, label:labelMap[topBucket[0]]||topBucket[0],
@@ -500,7 +500,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
   };
 
   const fmtPlain$ = v => '$'+Math.round(Math.abs(v)).toLocaleString();
-  const fmtPct = v => (v>=0?'+':'')+v.toFixed(1)+'%';
+  const fmtPct = v => (v>=0?'+':'')+v.toFixed(2)+'%';
 
   const copyTable = () => {
     if(!scanResult) return;
@@ -600,9 +600,9 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
                     border:'.5px solid var(--bdr)',fontSize:'8px'}},
                     span({style:{color:'var(--text3)',fontWeight:700}},DOW_NAMES[d.dow]+': '),
                     span({style:{color:d.avgBiasPct>=0?'#10b981':'#f87171',fontWeight:700}},fmtPct(d.avgBiasPct)),
-                    span({style:{color:'var(--text3)'}},' · Meridian wins '+d.meridianWinRate+'%'),
+                    span({style:{color:'var(--text3)'}},' · Meridian wins '+d.meridianWinRate.toFixed(2)+'%'),
                     attr&&attr.label&&span({style:{display:'block',fontSize:'7px',color:attrCol,marginTop:2}},
-                      '🔬 '+attr.label+(attr.topPct?' ('+attr.topPct+'%)':'')+
+                      '🔬 '+attr.label+(attr.topPct?' ('+attr.topPct.toFixed(2)+'%)':'')+
                       (attr.confidenceNote?' — '+attr.confidenceNote:''))
                   );
                 })
@@ -660,7 +660,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
         districtRunning&&districtProg&&div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},
           div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
             span(null,'Store '+districtProg.done+' of '+districtProg.total+' · '+districtProg.storeName),
-            span(null,Math.round(districtProg.done/districtProg.total*100)+'%')),
+            span(null,(districtProg.done/districtProg.total*100).toFixed(2)+'%')),
           div({style:{height:5,background:'var(--surf2)',borderRadius:99,overflow:'hidden'}},
             div({style:{height:'100%',width:Math.round(districtProg.done/districtProg.total*100)+'%',
               background:'var(--amber)',borderRadius:99,transition:'width .3s'}}))

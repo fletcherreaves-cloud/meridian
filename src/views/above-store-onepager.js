@@ -181,7 +181,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     const d = data; if (d.err) return [];
     const L = [];
     if (showP('sales')) {
-      L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}` : ''}`);
+      L.push(`Sales: ${fmtV(d.byKey.sales?.actual, '$')}; vs LY ${pct(d.salesVsLY?.pct)}; GC vs LY ${pct(d.rv.gcVsLY)}${d.projSales ? `; pace to projection ${d.pace ? (d.pace * 100).toFixed(2) + '%' : '—'}` : ''}`);
       if (d.rv.digitalAppPct != null) L.push(`  Digital App % of Sales: ${fmtV(d.rv.digitalAppPct, '%')} (target ${fmtV(d.rv.digitalAppPctTarget, '%')})`);
       if (lyWindowEvents.length) L.push(`  ⚠ LY window (${lyWindow.s} → ${lyWindow.e}) included: ${lyEventCaveat()} — vs-LY comparisons above may be skewed`);
     }
@@ -222,7 +222,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     const band = (label, v, lo, hi) => {
       const ok = v != null && v >= lo && v <= hi;
       const col = v == null ? '#999' : (ok ? '#0a7d3c' : '#c0392b');
-      return `<tr><td>${label}</td><td style="text-align:right;font-weight:700;color:${col}">${fmtV(v, '%')}</td><td style="text-align:right;color:#666">band ${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}%</td></tr>`;
+      return `<tr><td>${label}</td><td style="text-align:right;font-weight:700;color:${col}">${fmtV(v, '%')}</td><td style="text-align:right;color:#666">band ${(lo * 100).toFixed(2)}–${(hi * 100).toFixed(2)}%</td></tr>`;
     };
     const diffCol = s.hrsDiff == null ? '#999' : (s.hrsDiff <= 0 ? '#0a7d3c' : '#c0392b');
     const cmbCol = s.combinedPct == null ? '#999' : (s.combinedPct <= s.combinedMax ? '#0a7d3c' : '#c0392b');
@@ -284,7 +284,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         + `<tr><td>Sales vs LY (Trading Day)</td><td style="text-align:right;font-weight:700;color:${(d.salesVsLY?.pct || 0) >= 0 ? '#0a7d3c' : '#c0392b'}">${pct(d.salesVsLY?.pct)}</td><td></td></tr>`
         + `<tr><td>Guest Counts vs LY (Trading Day)</td><td style="text-align:right;font-weight:700;color:${(d.rv.gcVsLY || 0) >= 0 ? '#0a7d3c' : '#c0392b'}">${pct(d.rv.gcVsLY)}</td><td></td></tr>`;
       if (d.rv.digitalAppPct != null) rows += printRow('Digital App % of Sales', d.rv.digitalAppPct, d.rv.digitalAppPctTarget, '%', false);
-      if (d.projSales) rows += `<tr><td>Pace to projection</td><td style="text-align:right;font-weight:700">${d.pace ? (d.pace * 100).toFixed(0) + '%' : '—'}</td><td></td></tr>`;
+      if (d.projSales) rows += `<tr><td>Pace to projection</td><td style="text-align:right;font-weight:700">${d.pace ? (d.pace * 100).toFixed(2) + '%' : '—'}</td><td></td></tr>`;
       if (lyWindowEvents.length) rows += `<tr><td colspan="3" style="color:#b45309;font-size:9.5px;padding-top:4px">⚠ LY window (${lyWindow.s} → ${lyWindow.e}) included: ${esc(lyEventCaveat())} — vs-LY comparisons above may be skewed</td></tr>`;
       sections.push(printSection('Sales / GC', '💵', rows, 'sales'));
     }
@@ -355,7 +355,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   const bandRow = (label, v, lo, hi, title) => div({ key: label, title, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
     span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
     span({ style: { fontSize: '12px', fontWeight: 700, color: v == null ? 'var(--text3)' : (v >= lo && v <= hi ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(v, '%')),
-    span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'band ' + (lo * 100).toFixed(0) + '–' + (hi * 100).toFixed(0) + '%'));
+    span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'band ' + (lo * 100).toFixed(2) + '–' + (hi * 100).toFixed(2) + '%'));
   // Worst store-days behind a Controls metric ("who + when"). signed=true shows +/-
   // (Cash Over/Short: over vs short). Renders nothing when there are no offenders.
   const ctrlOut = (key, signed) => {
@@ -469,7 +469,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.salesVsLY?.pct))),
           div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.rv.gcVsLY))),
           d.rv.digitalAppPct != null ? Row('Digital App % of Sales', d.rv.digitalAppPct, d.rv.digitalAppPctTarget, '%', false) : null,
-          d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(0) + '%' : '—')) : null,
+          d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(2) + '%' : '—')) : null,
           lyWindowEvents.length ? div({ key: 'lyev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null),
         // FOB
         showP('fob') && Section('FOB / Food Cost', '🥗', 'fob',

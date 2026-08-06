@@ -833,7 +833,7 @@ function applyPeriodTotalWinners(result, opts = {}) {
       if (!merged[loc]) merged[loc] = {};
       merged[loc][hz] = {
         model: s.winner, mape: pm ? pm.mape : null,
-        ref: `📊 Period-total ${result.runDate}: ${String(s.winner).toUpperCase()} ${pm ? pm.mape : '?'}% (${result.folds}×${result.periodDays}d totals)`,
+        ref: `📊 Period-total ${result.runDate}: ${String(s.winner).toUpperCase()} ${pm ? pm.mape.toFixed(2) : '?'}% (${result.folds}×${result.periodDays}d totals)`,
         backtestDate: result.runDate, periodTotal: true,
       };
       if (priorModel !== s.winner) changes.push({ loc, storeName: s.storeName, hz, from: priorModel, to: s.winner, mape: pm ? pm.mape : null });

@@ -452,7 +452,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
                 onChange:e=>set('trendAlpha',+e.target.value),
                 style:{width:120}}),
               div({style:{fontSize:'11px',fontFamily:'var(--mono)',color:'var(--amber)',fontWeight:700,minWidth:30}},
-                (((S.trendAlpha??0.30)*100).toFixed(0))+'%'),
+                (((S.trendAlpha??0.30)*100).toFixed(2))+'%'),
               div({style:{fontSize:'9px',color:'var(--text3)'}},
                 '0% = ignore trend · 30% = moderate · 60% = strong trend following')
             )

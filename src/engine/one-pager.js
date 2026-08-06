@@ -20,7 +20,7 @@ export const METRIC_DIRECTION = {
   gcPerDay: 'higher', sales: 'higher', gc: 'higher', tpph: 'higher', csat: 'higher',
 };
 
-const fmtPct = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+const fmtPct = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const fmt$   = v => v == null ? '—' : '$' + Math.round(v).toLocaleString();
 
 // ── Suggested actions ─────────────────────────────────────────────────────────

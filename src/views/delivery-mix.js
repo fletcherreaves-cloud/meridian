@@ -72,15 +72,15 @@ function PlatformBar({ dd = 0, ue = 0, gh = 0 }) {
     style: { display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden', width: '100%', gap: 1 }
   },
     dd > 0 && h('div', {
-      title: `DoorDash ${(dd/total*100).toFixed(1)}%`,
+      title: `DoorDash ${(dd/total*100).toFixed(2)}%`,
       style: { width: (dd/total*100)+'%', background: DD_COLOR, minWidth: 2 }
     }),
     ue > 0 && h('div', {
-      title: `UberEats ${(ue/total*100).toFixed(1)}%`,
+      title: `UberEats ${(ue/total*100).toFixed(2)}%`,
       style: { width: (ue/total*100)+'%', background: UE_COLOR, minWidth: 2 }
     }),
     gh > 0 && h('div', {
-      title: `Grubhub ${(gh/total*100).toFixed(1)}%`,
+      title: `Grubhub ${(gh/total*100).toFixed(2)}%`,
       style: { width: (gh/total*100)+'%', background: GH_COLOR, minWidth: 2 }
     }),
   );

@@ -31,7 +31,7 @@ const iso = d => d.toISOString().slice(0, 10);
 function weekStartOf(date, wsd = WW_START) { const d = new Date(date); d.setHours(0, 0, 0, 0); const diff = (d.getDay() - wsd + 7) % 7; d.setDate(d.getDate() - diff); return d; }
 function weekRangeFrom(date, wsd = WW_START) { const s = weekStartOf(date, wsd); const e = new Date(s); e.setDate(e.getDate() + 6); return { s: iso(s), e: iso(e) }; }
 
-const pctFmt = (v, lower) => v == null ? '—' : (v * 100).toFixed(1) + '%';
+const pctFmt = (v, lower) => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const valFmt = (v, fmt) => v == null ? '—'
   : fmt === '$' ? f$(v) : fmt === '%' ? (v * 100).toFixed(2) + '%' : fmt === 's' ? Math.round(v) + 's' : (+v).toFixed(1);
 
@@ -370,7 +370,7 @@ function TopBottomStrip({ rows }) {
   const byState = {};
   for (const r of rows) { const s = stateOf(r.loc); if (s) (byState[s] = byState[s] || []).push(r); }
   const states = Object.keys(byState).filter(s => (byState[s] || []).length >= 2);
-  const pct = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const pct = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
   const cell = (tag, r, color) => div({ style: { flex: 1, minWidth: 150, background: 'var(--surf)', border: '1px solid var(--bdr)', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '7px 10px' } },
     div({ style: { fontSize: 9.5, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.3px' } }, tag),
     div({ style: { fontSize: 13, fontWeight: 800, color: 'var(--text)' } }, nm(r.loc)),
@@ -401,7 +401,7 @@ function PerLocationTable({ rows }) {
           h('td', { style: { padding: '4px 8px', fontSize: 11.5, color: 'var(--text)', whiteSpace: 'nowrap' } }, nm(r.loc)),
           cell(r.netSales, '$'),
           h('td', { style: { textAlign: 'right', padding: '4px 8px', fontSize: 11.5, whiteSpace: 'nowrap', color: r.salesVsLYPct == null ? 'var(--text3,var(--text2))' : r.salesVsLYPct < 0 ? '#ef4444' : '#10b981' } },
-            r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'),
+            r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(2) + '%'),
           cell(r.fobPct, '%', r.fobTarget, true),
           cell(r.laborPct, '%', r.laborTarget, true),
           cell(r.oepe, 's', r.oepeTarget, true),
@@ -446,7 +446,7 @@ function ActionPlan({ actions, setActionStatus, removeAction }) {
 function perLocTableHtml(page, esc) {
   const rows = page.perLocation || [];
   if (!rows.length) return '';
-  const body = rows.map(r => `<tr><td style="text-align:left">${esc(nm(r.loc))}</td><td>${esc(f$(r.netSales))}</td><td>${r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(1) + '%'}</td><td>${esc(valFmt(r.fobPct, '%'))}</td><td>${esc(valFmt(r.laborPct, '%'))}</td><td>${esc(valFmt(r.oepe, 's'))}</td><td>${esc(valFmt(r.r2p, 's'))}</td><td>${r.oppWk ? esc(f$(r.oppWk)) : '—'}</td></tr>`).join('');
+  const body = rows.map(r => `<tr><td style="text-align:left">${esc(nm(r.loc))}</td><td>${esc(f$(r.netSales))}</td><td>${r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(2) + '%'}</td><td>${esc(valFmt(r.fobPct, '%'))}</td><td>${esc(valFmt(r.laborPct, '%'))}</td><td>${esc(valFmt(r.oepe, 's'))}</td><td>${esc(valFmt(r.r2p, 's'))}</td><td>${r.oppWk ? esc(f$(r.oppWk)) : '—'}</td></tr>`).join('');
   return `<h2>By location (${rows.length}) — worst sales vs LY first</h2><table>
     <tr><td><b>Store</b></td><td><b>Product Sales</b></td><td><b>vs LY</b></td><td><b>FOB %</b></td><td><b>Labor %</b></td><td><b>OEPE</b></td><td><b>R2P</b></td><td><b>Opp $/wk</b></td></tr>
     ${body}</table>`;
@@ -473,7 +473,7 @@ function patchAccountabilityHtml(page, esc) {
     if (!stores.length) continue;
     const focus = stores.slice().sort((a, b) => (b.oppWk || 0) - (a.oppWk || 0) || (a.salesVsLYPct ?? 0) - (b.salesVsLYPct ?? 0))[0];
     const gap = [];
-    if (focus.salesVsLYPct != null) gap.push(`Sales ${(focus.salesVsLYPct >= 0 ? '+' : '') + focus.salesVsLYPct.toFixed(1)}% vs LY`);
+    if (focus.salesVsLYPct != null) gap.push(`Sales ${(focus.salesVsLYPct >= 0 ? '+' : '') + focus.salesVsLYPct.toFixed(2)}% vs LY`);
     if (focus.oppWk > 0) gap.push(`${f$(focus.oppWk)}/wk opp`);
     rows.push({ sup, focus: nm(focus.loc), gap: gap.join(' · ') || '—' });
   }
@@ -489,7 +489,7 @@ function patchAccountabilityHtml(page, esc) {
 function topBottomHtml(page, esc) {
   const rows = page.perLocation || [];
   if (rows.length < 2) return '';
-  const pctS = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const pctS = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
   const line = (label, tb) => tb ? `<div style="margin:3px 0"><b>${esc(label)}</b> &nbsp;🏆 ${esc(nm(tb.top.loc))} (${pctS(tb.top.salesVsLYPct)}) &nbsp;·&nbsp; ⚠️ ${esc(nm(tb.bottom.loc))} (${pctS(tb.bottom.salesVsLYPct)})</div>` : '';
   const byState = {};
   for (const r of rows) { const s = stateOf(r.loc); if (s) (byState[s] = byState[s] || []).push(r); }
@@ -613,7 +613,7 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
   // Target column pre-fills and On-Track auto-deduces (Notes 35). Targets: speed/labor/FOB
   // from the scope's own DEFAULT_TARGETS (via currentState); Product Sales vs its projection;
   // GC ≥ LY; Voice vs the standing thresholds (OSAT ≥90%, Accuracy B2B ≥95%). blank → both blank.
-  const fmtDelta = v => (v == null) ? null : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
+  const fmtDelta = v => (v == null) ? null : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
   const fmtVal = (v, fmt) => fmt === 'd' ? fmtDelta(v) : valFmt(v, fmt);
   const onTrackOf = (v, t, dir) => (v == null || t == null) ? null : (dir === 'lower' ? v <= t : v >= t);
   const otCell = (ot) => (blank || ot == null)

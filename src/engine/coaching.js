@@ -118,7 +118,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
   // ── Prompt construction ─────────────────────────────────────────────────────
   const buildPrompt = (ctx) => {
     const fmt$=v=>v?'$'+Math.round(v).toLocaleString():'unknown';
-    const fmtP=v=>v!=null?(v*100).toFixed(1)+'%':'unknown';
+    const fmtP=v=>v!=null?(v*100).toFixed(2)+'%':'unknown';
     const orgLabel = ctx.state==='FL'?'Florida (Emerald Arches)':'Oklahoma (MCDOK)';
     const gmFirst = ctx.gm ? ctx.gm.split(' ')[0] : null;
 
@@ -151,8 +151,8 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
       const topBucketDesc=topBucket?BUCKET_SHORT[topBucket[0]]||topBucket[0]:'';
       const worstDOW=ws.worstDOW?DOW_NAMES[ws.worstDOW.dow]:null;
       accuracyBlock='\nForecast accuracy (last 4 weeks, '+ws.n+' days):\n'+
-        '- MAPE: '+ws.mape+'% ('+(ws.mape<8?'excellent':ws.mape<12?'acceptable':'needs attention')+')\n'+
-        '- Misses explained: '+ws.explainedPct+'% (main cause: '+(topBucketDesc||'mixed')+')\n'+
+        '- MAPE: '+ws.mape.toFixed(2)+'% ('+(ws.mape<8?'excellent':ws.mape<12?'acceptable':'needs attention')+')\n'+
+        '- Misses explained: '+ws.explainedPct.toFixed(2)+'% (main cause: '+(topBucketDesc||'mixed')+')\n'+
         (ws.bucketCounts.unexplained?' - Unexplained misses: '+ws.bucketCounts.unexplained+' days — no clear cause identified\n':'')+
         (worstDOW?' - Worst day-of-week for forecast accuracy: '+worstDOW+'\n':'')+
         (ws.avgWeatherDollars&&Math.abs(ws.avgWeatherDollars)>20?' - Avg weather adjustment: '+(ws.avgWeatherDollars>0?'+':'')+Math.round(ws.avgWeatherDollars)+'/day\n':'')+
@@ -166,7 +166,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 '\nTrend (most recent 6 weeks, showing trajectory):\n'+
 (lines||'Insufficient trend data this period.')+'\n\n'+
 'Scores: Ops '+(ctx.opsScore!=null?ctx.opsScore+'/100':'unknown')+' . Controls '+(ctx.ctrlScore!=null?ctx.ctrlScore+'/100':'unknown')+' (0-100 scale, 90+ = elite, 80+ = strong)\n'+
-'Sales (4wk): '+fmt$(ctx.pSales)+(ctx.vsLY!=null?' ('+(ctx.vsLY>=0?'+':'')+(ctx.vsLY*100).toFixed(1)+'% vs LY)':'')+'\n\n'+
+'Sales (4wk): '+fmt$(ctx.pSales)+(ctx.vsLY!=null?' ('+(ctx.vsLY>=0?'+':'')+(ctx.vsLY*100).toFixed(2)+'% vs LY)':'')+'\n\n'+
 'Specific findings this period:\n'+findingsBlock+'\n\n'+
 (accuracyBlock||'')+
 (ctx.fcLine?'Forward signal: '+stripPrefix(ctx.fcLine.m)+'\n':'')+
@@ -174,7 +174,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 '[WIN] One specific, genuine win. Reference an actual strength or trend from the data above. Be precise, not hollow.\n'+
 '[FOCUS] The single most important opportunity this week.'+(hasCritical?' A CRITICAL finding is present above -- this section MUST address it directly and specifically. Do not write something generic instead.':' Use the WATCH findings or trend data to identify the sharpest opportunity.')+'\n'+
 '[ACTION] One concrete action the GM can take this week. Be specific -- name, time, daypart, or metric.\n'+
-'[INSIGHT] One non-obvious insight the GM might not have made themselves. '+(ctx.whyScan&&ctx.whyScan.explainedPct<50?' The forecast accuracy data shows '+(100-ctx.whyScan.explainedPct)+'% of misses have no clear cause -- consider whether the GM is missing event context (untagged closures, local events) or whether a specific pattern (like '+( ctx.whyScan.worstDOW?DOW_NAMES[ctx.whyScan.worstDOW.dow]+' accuracy':'')+') suggests a scheduling or pricing opportunity.':'Link a trend, a metric, and a finding together in a way that reveals something the GM\'s gut-check alone would miss.')+'\n'+
+'[INSIGHT] One non-obvious insight the GM might not have made themselves. '+(ctx.whyScan&&ctx.whyScan.explainedPct<50?' The forecast accuracy data shows '+(100-ctx.whyScan.explainedPct).toFixed(2)+'% of misses have no clear cause -- consider whether the GM is missing event context (untagged closures, local events) or whether a specific pattern (like '+( ctx.whyScan.worstDOW?DOW_NAMES[ctx.whyScan.worstDOW.dow]+' accuracy':'')+') suggests a scheduling or pricing opportunity.':'Link a trend, a metric, and a finding together in a way that reveals something the GM\'s gut-check alone would miss.')+'\n'+
 '[NEXT WEEK] What to watch for next week and why, grounded in the forward signal if provided.\n\n'+
 'Rules:\n'+
 '- Write directly TO the GM'+(gmFirst?' by name ('+gmFirst+')':'')+', as a coach would. Use "you" and "your team."\n'+
@@ -438,7 +438,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
             ctx.opsScore!=null&&span(null,'Ops '+ctx.opsScore+'/100'),
             ctx.ctrlScore!=null&&span(null,'Controls '+ctx.ctrlScore+'/100'),
             ctx.crits.length>0&&span({style:{color:'#ef4444',fontWeight:700}},'🚨 '+ctx.crits.length+' critical'),
-            ctx.vsLY!=null&&span(null,(ctx.vsLY>=0?'+':'')+(ctx.vsLY*100).toFixed(1)+'% vs LY')
+            ctx.vsLY!=null&&span(null,(ctx.vsLY>=0?'+':'')+(ctx.vsLY*100).toFixed(2)+'% vs LY')
           );
         })(),
         div({style:{flex:1,overflowY:'auto',padding:'14px 16px'}},
@@ -491,7 +491,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
         batchRunning&&batchProg&&div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},
           div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
             span(null,'Store '+batchProg.done+' of '+batchProg.total+' · '+batchProg.storeName),
-            span(null,Math.round(batchProg.done/batchProg.total*100)+'%')
+            span(null,(batchProg.done/batchProg.total*100).toFixed(2)+'%')
           ),
           div({style:{height:6,background:'var(--surf2)',borderRadius:99,overflow:'hidden'}},
             div({style:{height:'100%',width:Math.round(batchProg.done/batchProg.total*100)+'%',

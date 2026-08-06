@@ -325,7 +325,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
             {l:'Family Groups',v:data.length},
             {l:'Total Units',  v:data.reduce((a,f)=>a+f.units,0).toLocaleString()},
             {l:'Disc Units',   v:data.reduce((a,f)=>a+f.disc,0).toLocaleString()},
-            {l:'Overall Disc Rate',v:((data.reduce((a,f)=>a+f.disc,0)/Math.max(data.reduce((a,f)=>a+f.units,0),1))*100).toFixed(1)+'%'},
+            {l:'Overall Disc Rate',v:((data.reduce((a,f)=>a+f.disc,0)/Math.max(data.reduce((a,f)=>a+f.units,0),1))*100).toFixed(2)+'%'},
             {l:'Files Loaded', v:Object.keys(ds.pmixData||{}).length},
           ].map((k,i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
             borderRadius:'var(--r)',padding:'8px 12px',flex:'1 1 80px'}},
@@ -344,9 +344,9 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
                 span({style:{fontWeight:600,color:'var(--text)'}},(f.family)),
                 div({style:{display:'flex',gap:12}},
                   span({style:{fontFamily:'var(--mono)',color:col,fontWeight:700}},f.units.toLocaleString()+' units'),
-                  span({style:{color:'var(--text3)'}},(f.unitPct*100).toFixed(1)+'% mix'),
+                  span({style:{color:'var(--text3)'}},(f.unitPct*100).toFixed(2)+'% mix'),
                   span({style:{color:(f.discRate>.1?'#f87171':'var(--text3)'),fontFamily:'var(--mono)'}},
-                    (f.discRate*100).toFixed(1)+'% discounted')
+                    (f.discRate*100).toFixed(2)+'% discounted')
                 )
               ),
               div({style:{height:12,background:'rgba(255,255,255,.05)',borderRadius:4,overflow:'hidden'}},
@@ -363,7 +363,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
           span({style:{fontWeight:700,color:'var(--text)'}},'Discount Exposure: '),
           sorted.filter(f=>f.discRate>.10).length>0
             ?`${sorted.filter(f=>f.discRate>.10).length} family group(s) with >10% discount rate: `
-              +sorted.filter(f=>f.discRate>.10).map(f=>f.family+' ('+((f.discRate*100).toFixed(0))+'%)').join(', ')
+              +sorted.filter(f=>f.discRate>.10).map(f=>f.family+' ('+((f.discRate*100).toFixed(2))+'%)').join(', ')
               +'. High discount rates may indicate promo over-reliance or operational comp-out issues.'
             :'No family groups exceed 10% discount rate. Discount exposure appears controlled.'
         )
@@ -506,11 +506,11 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
           div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
             span(null,`Store ${btProg.storesDone} of ${btProg.storesTotal}`),
             span(null,btProg.storesDone && btProg.storesTotal
-              ? Math.round(btProg.storesDone/btProg.storesTotal*100)+'%' : '—')
+              ? (btProg.storesDone/btProg.storesTotal*100).toFixed(2)+'%' : '—')
           ),
           div({style:{height:6,background:'var(--surf)',borderRadius:99,overflow:'hidden'}},
             div({style:{height:'100%',width:(btProg.storesTotal
-              ? Math.round(btProg.storesDone/btProg.storesTotal*100)+'%' : '0%'),
+              ? (btProg.storesDone/btProg.storesTotal*100).toFixed(2)+'%' : '0%'),
               background:'var(--amber)',borderRadius:99,transition:'width .3s'}})
           )
         ),
@@ -765,9 +765,9 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
         div({style:{width:'100%',maxWidth:480}},
           div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
             span(null,`Store ${prog.storesDone} of ${prog.storesTotal}`),
-            span(null,prog.storesTotal?Math.round(prog.storesDone/prog.storesTotal*100)+'%':'—')),
+            span(null,prog.storesTotal?(prog.storesDone/prog.storesTotal*100).toFixed(2)+'%':'—')),
           div({style:{height:6,background:'var(--surf)',borderRadius:99,overflow:'hidden'}},
-            div({style:{height:'100%',width:(prog.storesTotal?Math.round(prog.storesDone/prog.storesTotal*100)+'%':'0%'),
+            div({style:{height:'100%',width:(prog.storesTotal?(prog.storesDone/prog.storesTotal*100).toFixed(2)+'%':'0%'),
               background:'#f5bc00',borderRadius:99,transition:'width .3s'}}))
         ),
         div({style:{textAlign:'center',fontSize:'9.5px',color:'var(--text2)',lineHeight:1.7}},
@@ -1355,7 +1355,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
   const hasFOB = uM(()=>opStats.some(o=>o.baseFoodPct!=null),[opStats]);
 
   // Formatting helpers
-  const fPO=(v,d=1)=>v!=null?(v*100).toFixed(d)+'%':'—';
+  const fPO=(v,d=2)=>v!=null?(v*100).toFixed(d)+'%':'—';
   const fNO=(v,d=2)=>v!=null?v.toFixed(d):'—';
   const lbCol=(pct,tgt)=>{if(!pct||!tgt)return'var(--text2)';const d=Math.abs(pct-tgt)*100;return d<=.5?'#10b981':d<=1.5?'#f59e0b':'#ef4444';};
   const tpCol=(v,tgt)=>{if(!v||!tgt)return'var(--text2)';return v>=tgt?'#10b981':v>=tgt*.9?'#f59e0b':'#ef4444';};
@@ -1391,10 +1391,10 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
               Stores:        op.storeCount,
               'Sales':       op.totSales>0?f$(op.totSales):'—',
               'LY Sales':    op.totLY>0?f$(op.totLY):'—',
-              'vs LY':       op.vsLY!=null?((op.vsLY>=0?'+':'')+((op.vsLY*100).toFixed(1))+'%'):'—',
-              'Labor %':     op.laborPct!=null?((op.laborPct*100).toFixed(1)+'%'):'—',
-              'Base Food %': op.baseFoodPct!=null?((op.baseFoodPct*100).toFixed(1)+'%'):'—',
-              'Total Food %':op.totFoodPct!=null?((op.totFoodPct*100).toFixed(1)+'%'):'—',
+              'vs LY':       op.vsLY!=null?((op.vsLY>=0?'+':'')+((op.vsLY*100).toFixed(2))+'%'):'—',
+              'Labor %':     op.laborPct!=null?((op.laborPct*100).toFixed(2)+'%'):'—',
+              'Base Food %': op.baseFoodPct!=null?((op.baseFoodPct*100).toFixed(2)+'%'):'—',
+              'Total Food %':op.totFoodPct!=null?((op.totFoodPct*100).toFixed(2)+'%'):'—',
               'TPPH':        op.tpph!=null?op.tpph.toFixed(2):'—',
               'OEPE (s)':    op.oepe?Math.round(op.oepe)+'s':'—',
               'OT/Day':      op.otHrs!=null?op.otHrs.toFixed(1):'—',
@@ -1409,7 +1409,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
               sortedOps.map(op=>
                 '<div class="op-card"><div class="op-hdr">'+groupIcon+' '+op.op+
                 ' <span class="op-meta">'+op.state+' · '+op.storeCount+' stores · Sales: '+f$(op.totSales)+
-                (op.vsLY!=null?' · vs LY: '+(op.vsLY>=0?'+':'')+((op.vsLY*100).toFixed(1))+'%':'')+'</span></div>'+
+                (op.vsLY!=null?' · vs LY: '+(op.vsLY>=0?'+':'')+((op.vsLY*100).toFixed(2))+'%':'')+'</span></div>'+
                 '<table style="width:100%;border-collapse:collapse">'+
                 '<thead><tr>'+['Store','Sales','LY Sales','vs LY','Labor%','Tgt','Base Food','Tot Food','TPPH','OEPE','OT/Day'].map((h,i)=>
                   '<th style="'+thS+(i===0?';text-align:left':'')+'">'+h+'</th>').join('')+'</tr></thead>'+
@@ -1419,11 +1419,11 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
                     '<td style="'+tdS+';font-weight:600">'+s.storeName+'</td>'+
                     '<td style="'+tdSr+'">'+( s.sales>0?f$(s.sales):'—')+'</td>'+
                     '<td style="'+tdSr+';color:#666">'+( s.lySales>0?f$(s.lySales):'—')+'</td>'+
-                    '<td style="'+tdSr+';color:'+(vsLY!=null?(vsLY>=0?'#10b981':'#ef4444'):'#999')+'">'+( vsLY!=null?((vsLY>=0?'+':'')+((vsLY*100).toFixed(1))+'%'):'—')+'</td>'+
-                    '<td style="'+tdSr+'">'+( s.laborPct!=null?((s.laborPct*100).toFixed(1)+'%'):'—')+'</td>'+
-                    '<td style="'+tdSr+';color:#999">'+( s.tgt.tLabor?((s.tgt.tLabor*100).toFixed(1)+'%'):'—')+'</td>'+
-                    '<td style="'+tdSr+'">'+( s.baseFoodPct!=null?((s.baseFoodPct*100).toFixed(1)+'%'):'—')+'</td>'+
-                    '<td style="'+tdSr+'">'+( s.totFoodPct!=null?((s.totFoodPct*100).toFixed(1)+'%'):'—')+'</td>'+
+                    '<td style="'+tdSr+';color:'+(vsLY!=null?(vsLY>=0?'#10b981':'#ef4444'):'#999')+'">'+( vsLY!=null?((vsLY>=0?'+':'')+((vsLY*100).toFixed(2))+'%'):'—')+'</td>'+
+                    '<td style="'+tdSr+'">'+( s.laborPct!=null?((s.laborPct*100).toFixed(2)+'%'):'—')+'</td>'+
+                    '<td style="'+tdSr+';color:#999">'+( s.tgt.tLabor?((s.tgt.tLabor*100).toFixed(2)+'%'):'—')+'</td>'+
+                    '<td style="'+tdSr+'">'+( s.baseFoodPct!=null?((s.baseFoodPct*100).toFixed(2)+'%'):'—')+'</td>'+
+                    '<td style="'+tdSr+'">'+( s.totFoodPct!=null?((s.totFoodPct*100).toFixed(2)+'%'):'—')+'</td>'+
                     '<td style="'+tdSr+'">'+( s.tpph!=null?s.tpph.toFixed(2):'—')+'</td>'+
                     '<td style="'+tdSr+'">'+( s.oepe?Math.round(s.oepe)+'s':'—')+'</td>'+
                     '<td style="'+tdSr+'">'+( s.otHrs!=null?s.otHrs.toFixed(1):'—')+'</td>'+
@@ -1737,7 +1737,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   },[activeLocs,ds]);
 
   // ── Formatters ──
-  const pFmtL = (v,d=1)=>v!=null?(v*100).toFixed(d)+'%':'—';
+  const pFmtL = (v,d=2)=>v!=null?(v*100).toFixed(d)+'%':'—';
   const nFmtL = (v,d=2)=>v!=null?v.toFixed(d):'—';
   const avnFmt= v=>v!=null?((v>0?'+':'')+v.toFixed(0)+' hrs'):'—';
 
@@ -1782,7 +1782,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     const labDiffPP=dist.laborPct&&distTgt.tLabor?(dist.laborPct-distTgt.tLabor)*100:null;
     const cards=[
       {l:'Labor %',      v:pFmtL(dist.laborPct),
-       sub:distTgt.tLabor?(labDiffPP!=null?(labDiffPP>0?'▲ ':'▼ ')+Math.abs(labDiffPP).toFixed(1)+'% vs '+pFmtL(distTgt.tLabor)+' target':'—'):'No target set',
+       sub:distTgt.tLabor?(labDiffPP!=null?(labDiffPP>0?'▲ ':'▼ ')+Math.abs(labDiffPP).toFixed(2)+'% vs '+pFmtL(distTgt.tLabor)+' target':'—'):'No target set',
        col:lbCol(dist.laborPct,distTgt.tLabor),
        bg:labDiffPP!=null&&labDiffPP>(settings.laborYellowPct||1.5)?'rgba(239,68,68,.06)':labDiffPP!=null&&labDiffPP>(settings.laborGreenPct||0.5)?'rgba(245,158,11,.06)':'rgba(16,185,129,.06)'},
       {l:'TPPH',         v:nFmtL(dist.tpph),
@@ -1843,7 +1843,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
             td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}},s.storeName),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lc}},pFmtL(s.laborPct)),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8.5px'}},s.tgt.tLabor?pFmtL(s.tgt.tLabor):'—'),
-            td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lc,fontSize:'8.5px'}},ld!=null?(ld>0?'+':'')+ld.toFixed(1)+'%':'—'),
+            td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lc,fontSize:'8.5px'}},ld!=null?(ld>0?'+':'')+ld.toFixed(2)+'%':'—'),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:tc}},nFmtL(s.tpph)),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8.5px'}},s.tgt.tTpph?nFmtL(s.tgt.tTpph,1):'—'),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:oc}},nFmtL(s.otHrs,1)),
@@ -1910,7 +1910,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         return tr({key:i,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:d.count>0?i%2?'rgba(255,255,255,.015)':'transparent':'transparent',opacity:d.count>0?1:.35}},
           td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',width:60}},d.name),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lbCol(d.laborPct,distTgt.tLabor)}},pFmtL(d.laborPct)),
-          td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:lbCol(d.laborPct,distTgt.tLabor)}},lpDiff!=null?(lpDiff>0?'+':'')+lpDiff.toFixed(1)+'%':'—'),
+          td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:lbCol(d.laborPct,distTgt.tLabor)}},lpDiff!=null?(lpDiff>0?'+':'')+lpDiff.toFixed(2)+'%':'—'),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:tpCol(d.tpph,distTgt.tTpph)}},nFmtL(d.tpph)),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:tpCol(d.tpph,distTgt.tTpph)}},tpDiff!=null?(tpDiff>0?'+':'')+tpDiff.toFixed(2):'—'),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:otCol(d.otHrs)}},nFmtL(d.otHrs,1)),
@@ -2007,8 +2007,8 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       if(lpDiff!=null&&lpDiff>=2) {
         insights.push({
           level:'critical', loc:s.loc, metric:'laborPct',
-          headline:`Labor ${(s.laborPct*100).toFixed(1)}% — +${lpPP}pp over target`,
-          detail:`${lpPP} percentage points above the ${(s.tgt.tLabor*100).toFixed(1)}% target. `+
+          headline:`Labor ${(s.laborPct*100).toFixed(2)}% — +${lpPP}pp over target`,
+          detail:`${lpPP} percentage points above the ${(s.tgt.tLabor*100).toFixed(2)}% target. `+
             (excessDollar>0?`Estimated excess cost this period: ${f$(excessDollar)}.`:''),
           action:'Audit next week\'s schedule. Reduce over-assignments on low-traffic shifts. Tighten OT approvals.',
           impact:excessDollar,
@@ -2018,7 +2018,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       else if(lpDiff!=null&&lpDiff>=1) {
         insights.push({
           level:'warning', loc:s.loc, metric:'laborPct',
-          headline:`Labor ${(s.laborPct*100).toFixed(1)}% — +${lpPP}pp over target`,
+          headline:`Labor ${(s.laborPct*100).toFixed(2)}% — +${lpPP}pp over target`,
           detail:`Approaching the critical threshold. Estimated excess: ${f$(excessDollar)}.`,
           action:'Review current week schedule. Flag for GM discussion before next week locks.',
           impact:excessDollar,
@@ -2029,7 +2029,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       if(lpDiff!=null&&lpDiff<=-2) {
         insights.push({
           level:'warning', loc:s.loc, metric:'underLabor',
-          headline:`Labor ${(s.laborPct*100).toFixed(1)}% — −${lpPP}pp under target`,
+          headline:`Labor ${(s.laborPct*100).toFixed(2)}% — −${lpPP}pp under target`,
           detail:`Understaffing at this level risks service degradation, OEPE pressure, and crew burnout.`,
           action:'Verify open positions are filled. Check if crew is breaking properly. Review peak-hour coverage.',
           impact:0,
@@ -2060,7 +2060,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
 
       // ── Warning: TPPH < 88% of target ────────────────────────────────
       if(s.tpph!=null&&s.tgt.tTpph&&s.tpph<s.tgt.tTpph*0.88) {
-        const shortfall = ((1-s.tpph/s.tgt.tTpph)*100).toFixed(0);
+        const shortfall = ((1-s.tpph/s.tgt.tTpph)*100).toFixed(2);
         insights.push({
           level:'warning', loc:s.loc, metric:'tpph',
           headline:`TPPH ${s.tpph.toFixed(2)} — ${shortfall}% below target`,
@@ -2237,9 +2237,9 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
             filename:'labor_analytics_'+selPeriod+'_'+new Date().toISOString().slice(0,10),
             rows:locStats.map(s=>({
               'Store':           s.storeName,
-              'Labor %':         s.laborPct!=null?((s.laborPct*100).toFixed(1)+'%'):'—',
-              'Target Labor %':  s.tgt.tLabor?((s.tgt.tLabor*100).toFixed(1)+'%'):'—',
-              'vs Target':       (s.laborPct&&s.tgt.tLabor)?((s.laborPct-s.tgt.tLabor)*100>0?'+':'')+((s.laborPct-s.tgt.tLabor)*100).toFixed(1)+'%':'—',
+              'Labor %':         s.laborPct!=null?((s.laborPct*100).toFixed(2)+'%'):'—',
+              'Target Labor %':  s.tgt.tLabor?((s.tgt.tLabor*100).toFixed(2)+'%'):'—',
+              'vs Target':       (s.laborPct&&s.tgt.tLabor)?((s.laborPct-s.tgt.tLabor)*100>0?'+':'')+((s.laborPct-s.tgt.tLabor)*100).toFixed(2)+'%':'—',
               'TPPH':            s.tpph!=null?s.tpph.toFixed(2):'—',
               'Target TPPH':     s.tgt.tTpph?s.tgt.tTpph.toFixed(1):'—',
               'OT Hrs/Day':      s.otHrs!=null?s.otHrs.toFixed(1):'—',

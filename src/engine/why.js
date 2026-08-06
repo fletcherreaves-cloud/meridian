@@ -94,7 +94,7 @@ function diagnoseMiss(loc, ds, userEvents, r) {
   // ── 2. Cross-store correlation ────────────
   const cross = crossStoreCheck(loc, ds, r.date, missDir);
   if(cross&&cross.sameDir.length>=2) {
-    const pct = Math.round(cross.sameDir.length/cross.total*100);
+    const pct = (cross.sameDir.length/cross.total*100).toFixed(2);
     const names = cross.sameDir.slice(0,4).map(s=>s.name.split(' ')[0]).join(', ')+(cross.sameDir.length>4?' +more':'');
     const severity = cross.sameDir.length>=8?'DISTRICT-WIDE':cross.sameDir.length>=4?'MULTI-STORE':'REGIONAL';
     causes.push({icon:'🏪',color:cross.sameDir.length>=8?'#ef4444':cross.sameDir.length>=4?'#f97316':'#f59e0b',
@@ -113,7 +113,7 @@ function diagnoseMiss(loc, ds, userEvents, r) {
     const wxDesc=rain>1.5?'heavy rain ('+rain.toFixed(1)+'")':rain>0.25?'rain ('+rain.toFixed(1)+'")':tmax>100?'extreme heat ('+tmax+'F)':tmax>95?'very hot ('+tmax+'F)':tmax<28?'freezing ('+tmax+'F)':tmax<35?'very cold ('+tmax+'F)':wind>30?'high winds ('+wind+'mph)':''
     const mismatch=(missDir==='under'&&wAdj<0)||(missDir==='over'&&wAdj>0);
     causes.push({icon:'🌦',color:'#93c5fd',weight:mismatch?'PRIMARY':'CONTRIBUTING',
-      text:'Weather adj: '+(wAdj*100>0?'+':'')+(wAdj*100).toFixed(1)+'% for '+wxDesc+'. '+(mismatch?'Weather impact exceeded model estimate.':'Weather model aligned but other factors drove miss.')});
+      text:'Weather adj: '+(wAdj*100>0?'+':'')+(wAdj*100).toFixed(2)+'% for '+wxDesc+'. '+(mismatch?'Weather impact exceeded model estimate.':'Weather model aligned but other factors drove miss.')});
   } else if(wRow&&wRow.rain>1.0) {
     causes.push({icon:'🌧',color:'#93c5fd',weight:'CONTRIBUTING',
       text:'Rain detected ('+wRow.rain.toFixed(1)+'in): model note — minimal weather adjustment applied. Calibrate weather coefficients if needed.'});
@@ -122,16 +122,16 @@ function diagnoseMiss(loc, ds, userEvents, r) {
   // ── 4. Ops factor ─────────────────────────
   const opsFactor=r.opsFactor||1;
   if(Math.abs(opsFactor-1)>0.02) causes.push({icon:'⚙️',color:'#f59e0b',weight:'CONTRIBUTING',
-    text:'Ops factor: '+(opsFactor>=1?'+':'')+((opsFactor-1)*100).toFixed(1)+'% on this date. '+(
+    text:'Ops factor: '+(opsFactor>=1?'+':'')+((opsFactor-1)*100).toFixed(2)+'% on this date. '+(
       opsFactor<1&&r.actual<r.forecast?'Below-average execution likely suppressed transactions — ops drag aligned with the miss.':
-      opsFactor<1&&r.actual>r.forecast?'Despite ops headwinds ('+((opsFactor-1)*100).toFixed(1)+'% drag), crew outperformed the forecast — strong execution overcame model expectations.':
+      opsFactor<1&&r.actual>r.forecast?'Despite ops headwinds ('+((opsFactor-1)*100).toFixed(2)+'% drag), crew outperformed the forecast — strong execution overcame model expectations.':
       opsFactor>=1&&r.actual>r.forecast?'Strong execution drove volume above the forecast.':
       'Favorable ops metrics, though actual came in below forecast — other factors may have offset the advantage.'
     )});
 
   // ── 5. Trend divergence ───────────────────
   if(Math.abs((r.t2||0)-(r.t6||0))>0.04) causes.push({icon:'📈',color:'#84cc16',weight:'CONTRIBUTING',
-    text:'Trend divergence: T2W='+(((r.t2||0)*100)>0?'+':'')+((r.t2||0)*100).toFixed(1)+'% vs T6W='+(((r.t6||0)*100)>0?'+':'')+((r.t6||0)*100).toFixed(1)+'%. Blended forecast carries higher uncertainty when short and long trend windows disagree.'});
+    text:'Trend divergence: T2W='+(((r.t2||0)*100)>0?'+':'')+((r.t2||0)*100).toFixed(2)+'% vs T6W='+(((r.t6||0)*100)>0?'+':'')+((r.t6||0)*100).toFixed(2)+'%. Blended forecast carries higher uncertainty when short and long trend windows disagree.'});
 
   // ── 6. No LY data ─────────────────────────
   if(r.noLYData) causes.push({icon:'📂',color:'#94a3b8',weight:'PRIMARY',

@@ -66,7 +66,7 @@ const RECENT_DAYS = 45;
 // Human-readable value for a "why" sentence (the view formats its own cells).
 function _fmtVal(v, unit) {
   if (v == null) return '—';
-  if (unit === 'pct') { const p = Math.abs(v) <= 1.5 ? v * 100 : v; return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; }
+  if (unit === 'pct') { const p = Math.abs(v) <= 1.5 ? v * 100 : v; return p.toFixed(2) + '%'; }
   if (unit === 's') return Math.round(v) + 's';
   if (unit === 'hrs') return v.toFixed(1) + 'h';
   return String(Math.round(v * 10) / 10);

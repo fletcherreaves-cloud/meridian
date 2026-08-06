@@ -58,7 +58,7 @@ const shortLoc = loc => String(parseInt(loc, 10) || loc);
 
 function fmt$(v) { return '$' + (v||0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 function fmtN(v, dec=1) { return (v||0).toFixed(dec); }
-function fmtPct(v) { return (v||0).toFixed(1) + '%'; }
+function fmtPct(v) { return (v||0).toFixed(2) + '%'; }
 
 function colorForLaborPct(v) {
   if(!v) return TEXT3;
@@ -566,7 +566,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
                 h('td', { style: tdS(hrColor(schedVsNeed)) }, pluSign(schedVsNeed) + ' hrs'),
                 h('td', { style: tdS(s.tot.controlled > 5 ? AMBER : TEXT3) }, s.tot.controlled > 0.5 ? '−'+fmtN(s.tot.controlled,1)+' hrs' : '—'),
                 h('td', { style: tdS(colorForLaborPct(avgPunched)) }, fmtPct(avgPunched)),
-                h('td', { style: { ...tdS(tCol), fontWeight: Math.abs(vsTarget) > 0.01 ? 700 : 400 } }, (vsTarget > 0 ? '+' : '') + (vsTarget*100).toFixed(1) + '%'),
+                h('td', { style: { ...tdS(tCol), fontWeight: Math.abs(vsTarget) > 0.01 ? 700 : 400 } }, (vsTarget > 0 ? '+' : '') + (vsTarget*100).toFixed(2) + '%'),
                 h('td', { style: tdS(excessCol) }, Math.abs(s.excessCost) > 10 ? (s.excessCost > 0 ? '+' : '−') + fmt$(Math.abs(s.excessCost)) : '—'),
                 h('td', { style: tdS(s.ta.missedShifts > 150 ? RED : s.ta.missedShifts > 90 ? AMBER : GREEN) }, s.ta.missedShifts || '—'),
                 h('td', { style: { ...tdS(TEXT3), paddingRight:10 } }, isExp ? '▲' : '▼'),
@@ -622,10 +622,10 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
                               tds.push(
                                 h('td', { key:'qsrpct', style: { ...tdDay(qc), borderLeft:`1px solid rgba(59,130,246,.2)` } }, d.qsrLaborPct != null ? fmtPct(d.qsrLaborPct) : '—'),
                                 h('td', { key:'qsrhrs', style: tdDay(TEXT3) }, d.qsrActHrs ? fmtN(d.qsrActHrs,1) : '—'),
-                                h('td', { key:'diff', style: { ...tdDay(diffCol), borderRight:`1px solid rgba(59,130,246,.2)` } }, qsrDiff != null ? (qsrDiff > 0 ? '+' : '') + fmtN(qsrDiff,1) + '%' : '—'),
+                                h('td', { key:'diff', style: { ...tdDay(diffCol), borderRight:`1px solid rgba(59,130,246,.2)` } }, qsrDiff != null ? (qsrDiff > 0 ? '+' : '') + fmtN(qsrDiff,2) + '%' : '—'),
                               );
                             }
-                            tds.push(h('td', { key:'vst', style: tdDay(vst > 0.01 ? RED : vst > -0.005 ? AMBER : GREEN) }, (vst>0?'+':'')+(vst*100).toFixed(1)+'%'));
+                            tds.push(h('td', { key:'vst', style: tdDay(vst > 0.01 ? RED : vst > -0.005 ? AMBER : GREEN) }, (vst>0?'+':'')+(vst*100).toFixed(2)+'%'));
                             return h('tr', { key:j }, ...tds);
                           })
                         )
@@ -668,7 +668,7 @@ function generateOpportunityHTML(analysis, weekInfo, distTot, totalMissed) {
   const overTgt = analysis.filter(s => s.tot.excessVsTgt > 1);
   const fmt$ = v => '$' + Math.round(v||0).toLocaleString();
   const fmtN = (v,d=1) => (v||0).toFixed(d);
-  const pct  = v => (v||0).toFixed(1) + '%';
+  const pct  = v => (v||0).toFixed(2) + '%';
   const plu  = v => (v>0?'+':'')+v.toFixed(1);
 
   const storeRows = analysis.map((s, idx) => {
@@ -698,7 +698,7 @@ function generateOpportunityHTML(analysis, weekInfo, distTot, totalMissed) {
         <td>${fmtN(d.crewHrs)}</td>
         <td style="color:${d.controlled>2?'#f59e0b':'#475569'}">${d.controlled>0.5?'−'+fmtN(d.controlled):'—'}</td>
         <td style="color:${lc};font-weight:600">${pct(d.laborPct)}</td>
-        <td style="color:${vc};font-weight:${Math.abs(vst)>0.01?700:400}">${(vst>0?'+':'')+(vst*100).toFixed(1)}%</td>
+        <td style="color:${vc};font-weight:${Math.abs(vst)>0.01?700:400}">${(vst>0?'+':'')+(vst*100).toFixed(2)}%</td>
       </tr>`;
     }).join('');
     return `

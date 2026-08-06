@@ -398,7 +398,7 @@ export const DEFAULT_CHECKS = [
         if (!shareHot && !editedFlag) continue;
         const f = mkFinding('waste-patterns', shareHot ? SEVERITY.medium : SEVERITY.info,
           `Waste concentration: ${m.manager}`,
-          `$${Math.round(m.total)} (${Math.round(m.share * 100)}% of period waste) across ${m.count} entries${editedFlag ? ` · ${m.edited} edited` : ''}`,
+          `$${Math.round(m.total)} (${(m.share * 100).toFixed(2)}% of period waste) across ${m.count} entries${editedFlag ? ` · ${m.edited} edited` : ''}`,
           m.total, { manager: m.manager, share: m.share, edited: m.edited });
         out.push(f);
       }
@@ -867,7 +867,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const c = [v.dolDiff < 0 ? `{{bad|SHORT ${money(Math.abs(v.dolDiff))}}}` : `{{info|OVER ${money(Math.abs(v.dolDiff))}}}`];
     if ((recountByWrin[v.wrin] || '').startsWith('recount may')) c.push('{{warn|recount-worthy}}');
     const yp = yieldPct(v);
-    if (overPortioned(v)) c.push(`{{bad|over-portioned ${Math.round(yp * 100)}% of std}}`);
+    if (overPortioned(v)) c.push(`{{bad|over-portioned ${(yp * 100).toFixed(2)}% of std}}`);
     else if (yieldByWrin[v.wrin]) c.push('{{warn|yield off?}}');
     if (noWaste(v)) c.push('{{warn|no waste logged}}');
     return c.join(' ');
@@ -875,7 +875,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // Recount qty expressed in full cases — "look for ~3 cases" beats "≈2,091 units" (owner req).
   const casesOf = v => { const cs = Number(caseSzByWrin[String(v.wrin)]); return (cs > 0 && v.variance) ? Number(v.variance) / cs : null; };
   const casesNote = v => { const c = casesOf(v); return c != null && Math.abs(c) >= 0.1 ? ` · ~${c > 0 ? '+' : ''}${c.toFixed(1)} cs` : ''; };
-  const actionFor = v => overPortioned(v) ? `over-portioning — audit the station recipe/portion (running ${Math.round(yieldPct(v) * 100)}% of standard yield)`
+  const actionFor = v => overPortioned(v) ? `over-portioning — audit the station recipe/portion (running ${(yieldPct(v) * 100).toFixed(2)}% of standard yield)`
     : yieldByWrin[v.wrin] ? 'check yield setting, then recount'
     : noWaste(v) ? 'verify waste logging, then recount'
     : (recountByWrin[v.wrin] || '').startsWith('recount may') ? 'recount now — still recoverable'
@@ -932,7 +932,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
     .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
   V.filter(v => overPortioned(v) && isFC(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
-    .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Fix portioning on ${v.descr || v.wrin}** — running ${Math.round(yieldPct(v) * 100)}% of standard yield; audit the station's recipe/portion now.` }));
+    .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Fix portioning on ${v.descr || v.wrin}** — running ${(yieldPct(v) * 100).toFixed(2)}% of standard yield; audit the station's recipe/portion now.` }));
   const staleFC = _unc.filter(u => u.state === 'stale' && isFCcls(u.cls));
   if (staleFC.length) {
     const sv = sumVR(staleFC);
@@ -1220,7 +1220,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     L.push('## 🎚️ Portioning watch — running below standard yield', '');
     portio.slice(0, 12).forEach(v => {
       const std = (Number(v.yieldLo) + Number(v.yieldHi)) / 2;
-      L.push(`- **${v.descr || v.wrin}** — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (**${Math.round(yieldPct(v) * 100)}% of std**${v.dolDiff != null ? `, ${money(v.dolDiff)}` : ''})`);
+      L.push(`- **${v.descr || v.wrin}** — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (**${(yieldPct(v) * 100).toFixed(2)}% of std**${v.dolDiff != null ? `, ${money(v.dolDiff)}` : ''})`);
     });
     L.push('_Low actual-vs-standard yield = more product used per serving than the recipe allows — audit the station\'s portion/recipe, not the count._', '');
   }
@@ -1231,7 +1231,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     if (exemptBev.length) {
       L.push(`## 🥤 Fountain beverages below yield — expected (self-serve tower)`, '');
       L.push(`_This store has a self-serve beverage tower, so low fountain yield is STRUCTURAL (guests take allowed free refills we can't meter) — NOT over-portioning, not flagged. Only investigate if a value is far beyond this store's usual (then check BIB connections / syrup ratios)._`, '');
-      exemptBev.slice(0, 12).forEach(v => { const std = (Number(v.yieldLo) + Number(v.yieldHi)) / 2; L.push(`- ${v.descr || v.wrin} — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (${Math.round(yieldPct(v) * 100)}% of std) — expected`); });
+      exemptBev.slice(0, 12).forEach(v => { const std = (Number(v.yieldLo) + Number(v.yieldHi)) / 2; L.push(`- ${v.descr || v.wrin} — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (${(yieldPct(v) * 100).toFixed(2)}% of std) — expected`); });
       L.push('');
     }
   }

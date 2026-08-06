@@ -53,7 +53,7 @@ describe('buildItemJourney', () => {
     ]), { period: '2026-07' });
     const w = j.signals.find(s => s.kind === 'inference' && s.lane === 'waste');
     expect(w).toBeTruthy();
-    expect(w.text).toMatch(/Waste is \d+%/);
+    expect(w.text).toMatch(/Waste is \d+(\.\d+)?%/);
   });
 
   it('nets counts to a clean verdict when variance is immaterial', () => {

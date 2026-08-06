@@ -811,7 +811,7 @@ function modelHealthScore(loc, ds, settings) {
     score+=mp;
     const drift=m2!=null&&m6!=null&&m2>m6+5?' (⚠ drifting)':'';
     const mLabel=di.mape6w!=null?'6W MAPE':di.mape4w!=null?'4W MAPE':'Full MAPE';
-    reasons.push({cat:'Accuracy',pts:mp,max:25,msg:mp>=20?m.toFixed(1)+'% '+mLabel+drift:m.toFixed(1)+'% '+mLabel+' — recalibrate'+drift});
+    reasons.push({cat:'Accuracy',pts:mp,max:25,msg:mp>=20?m.toFixed(2)+'% '+mLabel+drift:m.toFixed(2)+'% '+mLabel+' — recalibrate'+drift});
   } else {
     reasons.push({cat:'Accuracy',pts:0,max:25,msg:'Run Dialed-In to measure accuracy'});
   }
@@ -883,7 +883,7 @@ function compute6wk(loc,ds,wb){
       depositBaseline=Math.max(0.10,med-0.12); // flag if 12pts below store"s own median
     }
   }
-  r.depositBaseline=+(depositBaseline*100).toFixed(0)+'%';
+  r.depositBaseline=(depositBaseline*100).toFixed(2)+'%';
   r.depositSuspect=r.depositVsSalesRatio!==null&&r.depositVsSalesRatio<depositBaseline;
   // T2W trend: last 2 weeks avg sales vs prior 2 weeks avg sales
   const t2wCut = new Date(Date.now()-14*86400000);
@@ -1675,13 +1675,13 @@ function getDIRecommendation(r) {
       detail:'Sub-5.5% recent MAPE — best-in-class accuracy. Strong DI benefit.'};
   if(improving && !highErr)
     return{label:'✅ Improving',color:'#34d399',bg:'rgba(52,211,153,.1)',border:'rgba(52,211,153,.3)',
-      detail:'Recent MAPE trending down ('+m6.toFixed(1)+'%→'+m4.toFixed(1)+'%→'+m2.toFixed(1)+'%). DI is working well.'};
+      detail:'Recent MAPE trending down ('+m6.toFixed(2)+'%→'+m4.toFixed(2)+'%→'+m2.toFixed(2)+'%). DI is working well.'};
   if(stable && !highErr && !degrading)
     return{label:'→ Stable',color:'#60a5fa',bg:'rgba(96,165,250,.1)',border:'rgba(96,165,250,.3)',
-      detail:'MAPE consistent across windows ('+m6.toFixed(1)+'%/'+m4.toFixed(1)+'%/'+m2.toFixed(1)+'%). DI holding steady.'};
+      detail:'MAPE consistent across windows ('+m6.toFixed(2)+'%/'+m4.toFixed(2)+'%/'+m2.toFixed(2)+'%). DI holding steady.'};
   if(degrading && !highErr)
     return{label:'⚠ Recalibrate',color:'#f59e0b',bg:'rgba(245,158,11,.1)',border:'rgba(245,158,11,.3)',
-      detail:'Recent 2W MAPE ('+m2.toFixed(1)+'%) higher than 6W ('+m6.toFixed(1)+'%). Re-run calibration with latest data.'};
+      detail:'Recent 2W MAPE ('+m2.toFixed(2)+'%) higher than 6W ('+m6.toFixed(2)+'%). Re-run calibration with latest data.'};
   if(highErr)
     return{label:'❌ Review',color:'#f87171',bg:'rgba(248,113,113,.1)',border:'rgba(248,113,113,.3)',
       detail:'MAPE above 11% in recent windows. Consider using default params or investigate anomalies.'};
@@ -1744,10 +1744,10 @@ function computeModelHealth(loc, settings, ds) {
     const isDrifting = mape2w != null && mape6w != null && mape2w > mape6w + 5;
     const isImproving = mape2w != null && mape6w != null && mape2w < mape6w - 2;
     if (bestMape != null) {
-      if (bestMape < 5) { mapeScore = 25; mapeNote = 'MAPE excellent ('+bestMape.toFixed(1)+'%)'; }
-      else if (bestMape < 8) { mapeScore = 20; mapeNote = 'MAPE good ('+bestMape.toFixed(1)+'%)'; }
-      else if (bestMape < 12) { mapeScore = 13; mapeNote = 'MAPE fair ('+bestMape.toFixed(1)+'%)'; }
-      else { mapeScore = 5; mapeNote = 'MAPE high ('+bestMape.toFixed(1)+'%) — check events'; }
+      if (bestMape < 5) { mapeScore = 25; mapeNote = 'MAPE excellent ('+bestMape.toFixed(2)+'%)'; }
+      else if (bestMape < 8) { mapeScore = 20; mapeNote = 'MAPE good ('+bestMape.toFixed(2)+'%)'; }
+      else if (bestMape < 12) { mapeScore = 13; mapeNote = 'MAPE fair ('+bestMape.toFixed(2)+'%)'; }
+      else { mapeScore = 5; mapeNote = 'MAPE high ('+bestMape.toFixed(2)+'%) — check events'; }
       if (isDrifting) { mapeScore = Math.max(0, mapeScore - 8); mapeNote += ' · drifting ⚠'; }
       if (isImproving) { mapeNote += ' · improving ▼'; }
     } else {

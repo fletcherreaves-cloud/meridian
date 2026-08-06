@@ -165,10 +165,10 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
 
   // ── CRITICAL FLAGS ────────────────────────────
   if(Math.abs(p.cashOSPct||0)>.005) f.push({t:'crit',m:'CRITICAL — CASH INTEGRITY: Cash Over/Short averaging '+(((p.cashOSPct||0)*100).toFixed(2))+'% of sales. Exceeds 0.5% threshold. Immediate video audit and deposit cross-reference required. This is the highest-priority integrity signal in the system.'});
-  if((t.tRedAPct||0)>0&&(p.tRedAPct||0)>t.tRedAPct*1.5) f.push({t:'crit',m:'CRITICAL — POS INTEGRITY: Post-close T-Reds at '+((p.tRedAPct||0)*100).toFixed(2)+'% vs '+(t.tRedAPct*100).toFixed(2)+'% target ('+Math.round((p.tRedAPct/t.tRedAPct-1)*100)+'% over). After-close voids are the easiest and most common mechanism for skimming. Cross-reference register video for all after-hours activity.'});
+  if((t.tRedAPct||0)>0&&(p.tRedAPct||0)>t.tRedAPct*1.5) f.push({t:'crit',m:'CRITICAL — POS INTEGRITY: Post-close T-Reds at '+((p.tRedAPct||0)*100).toFixed(2)+'% vs '+(t.tRedAPct*100).toFixed(2)+'% target ('+((p.tRedAPct/t.tRedAPct-1)*100).toFixed(2)+'% over). After-close voids are the easiest and most common mechanism for skimming. Cross-reference register video for all after-hours activity.'});
   if((p.otHrs||0)>5) f.push({t:'crit',m:'CRITICAL — OVERTIME: Averaging '+(p.otHrs||0).toFixed(1)+' hrs/day of OT. At '+'$'+(p.avgRate||12).toFixed(2)+'/hr avg rate, this is adding ~$'+Math.round((p.otHrs||0)*1.5*(p.avgRate||12))+'/day in premium cost. Primary cause is typically scheduling structure, not traffic volume. Immediate schedule restructure required.'});
   if(p.hasPettyCash) f.push({t:'crit',m:'CRITICAL — PETTY CASH: Activity detected. This organization does not use petty cash — any amount present is an automatic integrity flag requiring immediate investigation.'});
-  if(p.depositSuspect) f.push({t:'crit',m:'CRITICAL — DEPOSIT: Avg deposit is '+((p.depositVsSalesRatio||0)*100).toFixed(0)+'% of sales vs '+p.depositBaseline+' expected baseline for this location. Consistent shortfall is a cash diversion indicator. Cross-reference deposit slips vs POS daily reports.'});
+  if(p.depositSuspect) f.push({t:'crit',m:'CRITICAL — DEPOSIT: Avg deposit is '+((p.depositVsSalesRatio||0)*100).toFixed(2)+'% of sales vs '+p.depositBaseline+' expected baseline for this location. Consistent shortfall is a cash diversion indicator. Cross-reference deposit slips vs POS daily reports.'});
 
   // ── CROSS-SIGNAL INTEGRITY ──────────────────
   if(p.r2pSuspect&&(p.tRedAPct||0)>(t.tRedAPct||.003)*1.2) f.push({t:'crit',m:'INTEGRITY ALERT — COMPOUND SIGNAL: R2P averaging '+Math.round(p.r2p||0)+'s (below 60s — early serve-off pattern) AND T-Red After elevated at '+((p.tRedAPct||0)*100).toFixed(2)+'%. Both signals appearing together strongly indicate order manipulation. Do not address separately — this warrants a coordinated video/register review.'});
@@ -177,9 +177,9 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
 
   // ── SCHEDULING COMPLIANCE ───────────────────
   if(p.floorCompliance!==null&&p.floorCompliance!==undefined&&(p.floorMgmtNeeded||0)>0){
-    if(p.floorCompliance<0.75) f.push({t:'crit',m:'CRITICAL — SCHEDULING: Floor management compliance at '+((p.floorCompliance||0)*100).toFixed(0)+'%. Managers are not notating required floor hours on schedules. This inflates variable hour allocation and artificially increases labor cost calculations. Fix schedules before addressing labor%.'});
-    else if(p.floorCompliance<0.90) f.push({t:'watch',m:'WATCH — SCHEDULING: Floor management compliance at '+((p.floorCompliance||0)*100).toFixed(0)+'% (target ≥90%). Incomplete floor hour notations are causing variable hour over-allocation. Coaching needed on schedule-building process.'});
-    else f.push({t:'ok',m:'STRENGTH — SCHEDULING: Floor management compliance at '+((p.floorCompliance||0)*100).toFixed(0)+'%. Managers are correctly notating floor hours, enabling accurate variable hour allocation and reliable labor modeling.'});
+    if(p.floorCompliance<0.75) f.push({t:'crit',m:'CRITICAL — SCHEDULING: Floor management compliance at '+((p.floorCompliance||0)*100).toFixed(2)+'%. Managers are not notating required floor hours on schedules. This inflates variable hour allocation and artificially increases labor cost calculations. Fix schedules before addressing labor%.'});
+    else if(p.floorCompliance<0.90) f.push({t:'watch',m:'WATCH — SCHEDULING: Floor management compliance at '+((p.floorCompliance||0)*100).toFixed(2)+'% (target ≥90%). Incomplete floor hour notations are causing variable hour over-allocation. Coaching needed on schedule-building process.'});
+    else f.push({t:'ok',m:'STRENGTH — SCHEDULING: Floor management compliance at '+((p.floorCompliance||0)*100).toFixed(2)+'%. Managers are correctly notating floor hours, enabling accurate variable hour allocation and reliable labor modeling.'});
   }
 
   // ── OPS WATCH FLAGS ─────────────────────────
@@ -190,11 +190,11 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
     f.push({t:'ok',m:'STRENGTH — OEPE: '+Math.round(p.oepe||0)+'s vs '+t.tOepe+'s target. Drive-thru speed is meeting store-specific standard. Window execution and pull-time management are working.'});
   }
 
-  if((t.tLabor||0)>0&&(p.laborPct||0)>t.tLabor+.02) f.push({t:'watch',m:'WATCH — LABOR: '+((p.laborPct||0)*100).toFixed(1)+'% vs '+(t.tLabor*100).toFixed(1)+'% target (+'+Math.round(((p.laborPct||0)-t.tLabor)*100*10)/10+'%). '+((p.otHrs||0)>2?'Overtime is the primary driver ($'+Math.round((p.otHrs||0)*1.5*(p.avgRate||12))+'/day premium). Restructure scheduling before cutting crew.':'Likely a volume-vs-schedule alignment issue. Review schedule build process and floor hour compliance.')});
+  if((t.tLabor||0)>0&&(p.laborPct||0)>t.tLabor+.02) f.push({t:'watch',m:'WATCH — LABOR: '+((p.laborPct||0)*100).toFixed(2)+'% vs '+(t.tLabor*100).toFixed(2)+'% target (+'+(Math.round(((p.laborPct||0)-t.tLabor)*100*100)/100)+'%). '+((p.otHrs||0)>2?'Overtime is the primary driver ($'+Math.round((p.otHrs||0)*1.5*(p.avgRate||12))+'/day premium). Restructure scheduling before cutting crew.':'Likely a volume-vs-schedule alignment issue. Review schedule build process and floor hour compliance.')});
 
-  if((p.discPct||0)>.065) f.push({t:'watch',m:'WATCH — DISCOUNTS: '+((p.discPct||0)*100).toFixed(1)+'% of sales. P90 across district is 6.5%. Verify against active LTO calendar. Unauthorized discounting erodes net sales without corresponding traffic benefit.'});
+  if((p.discPct||0)>.065) f.push({t:'watch',m:'WATCH — DISCOUNTS: '+((p.discPct||0)*100).toFixed(2)+'% of sales. P90 across district is 6.5%. Verify against active LTO calendar. Unauthorized discounting erodes net sales without corresponding traffic benefit.'});
 
-  if((t.tPark||0)>0&&(p.park||0)>t.tPark*1.3) f.push({t:'watch',m:'WATCH — DT PARKING: '+((p.park||0)*100).toFixed(1)+'% vs '+(t.tPark*100).toFixed(1)+'% target. Kitchen is not keeping pace with DT demand. Review pull-time targets, pre-assembly process, and expediter positioning.'});
+  if((t.tPark||0)>0&&(p.park||0)>t.tPark*1.3) f.push({t:'watch',m:'WATCH — DT PARKING: '+((p.park||0)*100).toFixed(2)+'% vs '+(t.tPark*100).toFixed(2)+'% target. Kitchen is not keeping pace with DT demand. Review pull-time targets, pre-assembly process, and expediter positioning.'});
 
   if((t.tTpph||0)>0&&(p.tpph||0)>0&&(p.tpph||0)<t.tTpph*.9) f.push({t:'watch',m:'WATCH — THROUGHPUT: TPPH at '+(p.tpph||0).toFixed(2)+' vs '+t.tTpph.toFixed(1)+' target. Throughput is below standard — crew is not processing transactions efficiently relative to schedule. Review peak staffing alignment and window crew deployment.'});
 
@@ -203,9 +203,9 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
   // ── SPECIFIC STRENGTHS ────────────────────────
   const critOrWatch = f.some(x=>x.t==='crit'||x.t==='watch');
   if(!critOrWatch) {
-    if(cs>=90) f.push({t:'ok',m:'STRENGTH — CONTROLS ELITE ('+cs+'/100): Cash O/S '+((p.cashOSPct||0)*100).toFixed(3)+'% · T-Red After '+((p.tRedAPct||0)*100).toFixed(2)+'% · Drawer Opens '+(p.drawerOpens||0).toFixed(1)+'/day. All controls metrics within excellent ranges. This store is a cash integrity model.'});
-    else if(cs>=80) f.push({t:'ok',m:'STRENGTH — CONTROLS ('+(cs)+'/100): Cash handling, POS activity, and refund patterns are within acceptable ranges. Cash O/S '+((p.cashOSPct||0)*100).toFixed(3)+'% · T-Red After '+((p.tRedAPct||0)*100).toFixed(2)+'%.'});
-    if(os>=90) f.push({t:'ok',m:'STRENGTH — OPS ELITE ('+os+'/100): OEPE '+(p.oepe>0?Math.round(p.oepe)+'s':' on target')+' · TPPH '+(p.tpph||0).toFixed(2)+' · DT Parked '+((p.park||0)*100).toFixed(1)+'%. Exceptional operational execution across speed, throughput, and positioning metrics.'});
+    if(cs>=90) f.push({t:'ok',m:'STRENGTH — CONTROLS ELITE ('+cs+'/100): Cash O/S '+((p.cashOSPct||0)*100).toFixed(2)+'% · T-Red After '+((p.tRedAPct||0)*100).toFixed(2)+'% · Drawer Opens '+(p.drawerOpens||0).toFixed(1)+'/day. All controls metrics within excellent ranges. This store is a cash integrity model.'});
+    else if(cs>=80) f.push({t:'ok',m:'STRENGTH — CONTROLS ('+(cs)+'/100): Cash handling, POS activity, and refund patterns are within acceptable ranges. Cash O/S '+((p.cashOSPct||0)*100).toFixed(2)+'% · T-Red After '+((p.tRedAPct||0)*100).toFixed(2)+'%.'});
+    if(os>=90) f.push({t:'ok',m:'STRENGTH — OPS ELITE ('+os+'/100): OEPE '+(p.oepe>0?Math.round(p.oepe)+'s':' on target')+' · TPPH '+(p.tpph||0).toFixed(2)+' · DT Parked '+((p.park||0)*100).toFixed(2)+'%. Exceptional operational execution across speed, throughput, and positioning metrics.'});
     else if(os>=80) f.push({t:'ok',m:'STRENGTH — OPS ('+os+'/100): Speed and throughput are performing well vs store-specific targets. OEPE '+(p.oepe>0?Math.round(p.oepe)+'s / target '+t.tOepe+'s':'')+' · TPPH '+(p.tpph||0).toFixed(2)+'.'});
   }
 
@@ -317,7 +317,7 @@ function buildStore(loc,ds,settings){
     const ratePerWeek = vel.laborPct / 2;
     const weeksToBreachEst = gap / ratePerWeek;
     if(weeksToBreachEst < 8 && weeksToBreachEst > 0) {
-      findings.push({t:'watch',m:'TREND ALERT — LABOR TRAJECTORY: Currently '+(p.laborPct*100).toFixed(1)+'% (under the '+(t.tLabor*100).toFixed(1)+'% target) but trending higher at '+((vel.laborPct||0)*100).toFixed(1)+'pp per 2 weeks. Projected to exceed target in ~'+Math.round(weeksToBreachEst)+' week'+(weeksToBreachEst>=2?'s':'')+'. Review scheduling trends before it becomes a finding.'});
+      findings.push({t:'watch',m:'TREND ALERT — LABOR TRAJECTORY: Currently '+(p.laborPct*100).toFixed(2)+'% (under the '+(t.tLabor*100).toFixed(2)+'% target) but trending higher at '+((vel.laborPct||0)*100).toFixed(1)+'pp per 2 weeks. Projected to exceed target in ~'+Math.round(weeksToBreachEst)+' week'+(weeksToBreachEst>=2?'s':'')+'. Review scheduling trends before it becomes a finding.'});
     }
   }
 

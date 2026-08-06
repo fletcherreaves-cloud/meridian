@@ -12,7 +12,7 @@ import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
 const f$ = n => (n == null ? '—' : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString());
-const fPct = n => (n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(1) + '%');
+const fPct = n => (n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%');
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
 
 const VERDICT = {

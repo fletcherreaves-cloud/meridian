@@ -646,7 +646,7 @@ function DistrictLensPanel({stores, ds, settings, onClose}) {
   const fmtVal = (pid,v)=>{
     if(v==null) return '—';
     if(pid==='oepe'||pid==='r2p') return Math.round(v)+'s';
-    if(['park','labor','cashOS','tRedA','discPct','fobPct'].includes(pid)) return (v*100).toFixed(1)+'%';
+    if(['park','labor','cashOS','tRedA','discPct','fobPct'].includes(pid)) return (v*100).toFixed(2)+'%';
     if(pid==='tpph') return v.toFixed(1);
     if(pid==='otHrs') return v.toFixed(1)+'h';
     return v.toFixed(1);
@@ -852,7 +852,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
             td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},fmtVal(o.metric.id,o.sa)),
             td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},fmtVal(o.metric.id,o.da)),
             td({style:{padding:'6px 8px',textAlign:'right',color:o.gap>0.15?'#f87171':'var(--text3)'}},
-              o.gap>0.01?'+'+Math.round(o.gap*100)+'%':'—'),
+              o.gap>0.01?'+'+(o.gap*100).toFixed(2)+'%':'—'),
             td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:sc}},
               o.score.toFixed(2))
           );
@@ -1021,20 +1021,20 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     const oepe=avg(oR,'oepe');
     const fob=avg(cR,'fobPct');
     if(vsLY!=null){obs.push(vsLY>=0
-      ?`Sales trending ${(vsLY*100).toFixed(1)}% above last year — positive trajectory`
-      :`Sales ${Math.abs(vsLY*100).toFixed(1)}% below last year — review traffic patterns`);}
+      ?`Sales trending ${(vsLY*100).toFixed(2)}% above last year — positive trajectory`
+      :`Sales ${Math.abs(vsLY*100).toFixed(2)}% below last year — review traffic patterns`);}
     if(tgt.tOepe&&oepe){const gap=oepe-tgt.tOepe;obs.push(gap>15
       ?`OEPE averaging ${Math.round(oepe)}s — ${Math.round(gap)}s above ${tgt.tOepe}s target; throughput opportunity`
       :`OEPE at ${Math.round(oepe)}s — within ${Math.abs(Math.round(gap))}s of ${tgt.tOepe}s target`);}
     if(tgt.tLabor&&laborPct){const gap=(laborPct-tgt.tLabor)*100;obs.push(Math.abs(gap)<1
-      ?`Labor % on target at ${(laborPct*100).toFixed(1)}%`
+      ?`Labor % on target at ${(laborPct*100).toFixed(2)}%`
       :gap>0?`Labor ${gap.toFixed(1)}pp above target — scheduling review recommended`:`Labor ${Math.abs(gap).toFixed(1)}pp below target`);}
     if(byDOW.length>0){const best=byDOW.reduce((a,b)=>((b.sales||0)>(a.sales||0)?b:a));
       const worst=byDOW.reduce((a,b)=>((b.sales||0)<(a.sales||0)?b:a));
       obs.push(`Strongest day: ${best.day} (avg $${Math.round(best.sales||0).toLocaleString()}) — consider additional staffing`);}
     if(fob&&tgt.tFOBBase){const gap=(fob-tgt.tFOBBase)*100;obs.push(gap>0.5
-      ?`FOB ${(fob*100).toFixed(1)}% — ${gap.toFixed(1)}pp above ${(tgt.tFOBBase*100).toFixed(1)}% target`
-      :`FOB on track at ${(fob*100).toFixed(1)}%`);}
+      ?`FOB ${(fob*100).toFixed(2)}% — ${gap.toFixed(1)}pp above ${(tgt.tFOBBase*100).toFixed(2)}% target`
+      :`FOB on track at ${(fob*100).toFixed(2)}%`);}
 
     return {lR,oR,cR,n,tgt,kb,assign,org,byDOW,vsLY,lyAvgSales,
       sales:curAvgSales,gc:avg(lR,'gc'),check:avg(lR,'avgCheck'),
@@ -1044,7 +1044,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
   const generateAndPrint = () => {
     const d=data;
     const fmt$=v=>v?'$'+Math.round(v).toLocaleString():'—';
-    const fmtP=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+    const fmtP=v=>v!=null?(v*100).toFixed(2)+'%':'—';
     const fmtN=v=>v!=null?v.toFixed(1):'—';
     const tgt=d.tgt;
     const store=STORE_NAMES[selLoc]||selLoc;
@@ -1091,7 +1091,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
       return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6">
         <span style="width:80px;font-size:12px;color:#6b7280">${icon} ${label}</span>
         <span style="background:${mc}22;color:${mc};padding:2px 10px;border-radius:99px;font-weight:700;font-size:12px">${ml[m]}</span>
-        ${a.mape?`<span style="font-family:monospace;font-size:12px;color:#374151">${a.mape.toFixed(1)}% MAPE</span>`:''}
+        ${a.mape?`<span style="font-family:monospace;font-size:12px;color:#374151">${a.mape.toFixed(2)}% MAPE</span>`:''}
         ${a.ref?`<span style="font-size:11px;color:#9ca3af;margin-left:4px">${a.ref.slice(0,50)}</span>`:''}
       </div>`;
     };
@@ -1139,7 +1139,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     <!-- LY comparison banner -->
     ${d.vsLY!=null?`<div style="margin-top:16px;padding:10px 16px;background:${d.vsLY>=0?'rgba(5,150,105,.2)':'rgba(220,38,38,.2)'};border-radius:8px;display:inline-block">
       <span style="font-size:13px;font-weight:700;color:${d.vsLY>=0?'#34d399':'#f87171'}">
-        ${d.vsLY>=0?'↑':'↓'} ${Math.abs(d.vsLY*100).toFixed(1)}% vs Prior Year
+        ${d.vsLY>=0?'↑':'↓'} ${Math.abs(d.vsLY*100).toFixed(2)}% vs Prior Year
       </span>
       <span style="font-size:12px;color:#94a3b8;margin-left:8px">Avg daily: ${fmt$(d.sales)} vs LY ${fmt$(d.lyAvgSales)}</span>
     </div>`:''}
@@ -1258,7 +1258,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
           borderRadius:'var(--r)',border:'.5px solid rgba(245,158,11,.2)',fontSize:'9px',color:'var(--text3)'}},
           `Preview: ${STORE_NAMES[selLoc]} · Avg daily sales ${data.sales?'$'+Math.round(data.sales).toLocaleString():'—'} · `,
           data.n+' days of data · ',
-          (data.vsLY!=null?`${data.vsLY>=0?'+':''}${(data.vsLY*100).toFixed(1)}% vs LY`:' LY comparison unavailable')
+          (data.vsLY!=null?`${data.vsLY>=0?'+':''}${(data.vsLY*100).toFixed(2)}% vs LY`:' LY comparison unavailable')
         ),
         div({style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}},
           btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'Cancel'),
@@ -2080,7 +2080,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
       const storedMape = masgn&&masgn.mape!=null ? masgn.mape : null;
       const calGap = storedMape!=null && storedMape>12 && crits.length===0 && watches.length===0;
       const calGapWatch = calGap
-        ? {t:'watch', m:'FORECAST ACCURACY — weekly MAPE '+storedMape.toFixed(1)+'% (threshold 12%). '
+        ? {t:'watch', m:'FORECAST ACCURACY — weekly MAPE '+storedMape.toFixed(2)+'% (threshold 12%). '
             +'Why Engine scan recommended: high MAPE with no operational flags usually means missing event tags or model calibration drift, not a performance issue.'}
         : null;
 
@@ -2186,7 +2186,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
       ? '$'+(s.pSales>=1e6?(s.pSales/1e6).toFixed(1)+'M':(s.pSales/1e3).toFixed(1)+'K') : '—';
     const salesTrendCol = t2w!=null?(t2w>=.02?'#10b981':t2w<=-.02?'#ef4444':'var(--text3)'):'var(--text3)';
     const salesTrendLbl = t2w!=null
-      ? (t2w>=.02?'▲':t2w<=-.02?'▼':'—')+' '+(t2w>=0?'+':'')+((t2w*100).toFixed(1))+'%'
+      ? (t2w>=.02?'▲':t2w<=-.02?'▼':'—')+' '+(t2w>=0?'+':'')+((t2w*100).toFixed(2))+'%'
       : null;
 
     const tileBdr = tierCol==='#ef4444'?'rgba(239,68,68,.3)':tierCol==='#f59e0b'?'rgba(245,158,11,.25)':'rgba(16,185,129,.2)';
@@ -2242,7 +2242,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
             div({style:{fontSize:'6.5px',color:'var(--text3)',textTransform:'uppercase',
               letterSpacing:'.3px',marginBottom:2}},'Labor'),
             div({style:{fontSize:'10px',fontWeight:800,lineHeight:1.1,color:metCol(laborStatus)}},
-              labor!=null?((labor*100).toFixed(1)+'%'):'—'),
+              labor!=null?((labor*100).toFixed(2)+'%'):'—'),
             metLbl(laborStatus,true)&&div({style:{fontSize:'6.5px',marginTop:1,color:metCol(laborStatus)}},
               metLbl(laborStatus,true))
           ),
@@ -2398,7 +2398,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
         ),
         pulse.vsLY!=null&&div({style:{fontSize:'9px',color:'var(--text3)',borderLeft:'.5px solid var(--bdr)',paddingLeft:12}},
           '4-Week vs LY: ',span({style:{color:pulse.vsLY>=0?'#10b981':'#f87171',fontWeight:700}},
-            (pulse.vsLY>=0?'+':'')+((pulse.vsLY*100).toFixed(1))+'%'),
+            (pulse.vsLY>=0?'+':'')+((pulse.vsLY*100).toFixed(2))+'%'),
           '  ·  Sales: ',span({style:{color:'var(--text)',fontWeight:600}},f$(pulse.totS))
         ),
         // Focus recommendation
@@ -2594,9 +2594,9 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
           scanResult&&React.createElement(React.Fragment,null,
             // Summary card
             div({style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}},
-              [['MAPE',scanResult.mape+'%','var(--amber)'],
+              [['MAPE',scanResult.mape.toFixed(2)+'%','var(--amber)'],
                ['Days Scanned',scanResult.n,'var(--text)'],
-               ['Explained',scanResult.explainedPct+'%','#10b981'],
+               ['Explained',scanResult.explainedPct.toFixed(2)+'%','#10b981'],
                ['Worst DOW',scanResult.worstDOW?DOW_NAMES[scanResult.worstDOW.dow]:'—','#f59e0b']
               ].map(([l,v,c],i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
                 borderRadius:'var(--r)',padding:'10px',textAlign:'center'}},
@@ -2647,7 +2647,7 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
                     span({style:{fontSize:'9px',fontWeight:700,color:'var(--text)'}},
                       m.date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
                     span({style:{fontSize:'9px',fontWeight:700,color:isUnder?'#10b981':'#ef4444'}},
-                      fmt$(m.missDollars)+' ('+(m.missPct>=0?'+':'')+m.missPct.toFixed(1)+'%)'),
+                      fmt$(m.missDollars)+' ('+(m.missPct>=0?'+':'')+m.missPct.toFixed(2)+'%)'),
                     span({style:{fontSize:'8px',color:(BUCKET_LABELS[m.bucket]||{}).col||'var(--text3)'}},
                       (BUCKET_LABELS[m.bucket]||{}).icon+' '+(BUCKET_LABELS[m.bucket]||{}).label),
                     span({style:{marginLeft:'auto',fontSize:'9px',color:'var(--text3)'}},isExp?'▲':'▼')
@@ -2719,8 +2719,8 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
                     cursor:'pointer'},onClick:()=>jumpToStore(loc)},
                     h('td',{style:{padding:'7px 8px',fontWeight:700,color:'var(--amber)'}},sNameC(loc)),
                     h('td',{style:{padding:'7px 8px',textAlign:'center',
-                      color:r.mape>12?'#ef4444':r.mape>8?'#f59e0b':'#10b981',fontWeight:700}},r.mape+'%'),
-                    h('td',{style:{padding:'7px 8px',textAlign:'center',color:'var(--text2)'}},r.explainedPct+'%'),
+                      color:r.mape>12?'#ef4444':r.mape>8?'#f59e0b':'#10b981',fontWeight:700}},r.mape.toFixed(2)+'%'),
+                    h('td',{style:{padding:'7px 8px',textAlign:'center',color:'var(--text2)'}},r.explainedPct.toFixed(2)+'%'),
                     h('td',{style:{padding:'7px 8px',textAlign:'center',color:bl.col||'var(--text3)'}},
                       (bl.icon||'')+' '+(bl.label||'—')),
                     h('td',{style:{padding:'7px 8px',textAlign:'center',color:'var(--text3)'}},
@@ -3012,12 +3012,12 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
             filename:'fob_analysis_'+(selMonth||'all')+'_'+new Date().toISOString().slice(0,10),
             rows:(metrics&&metrics.byLoc?metrics.byLoc.map(s=>({
               Store: String(s.loc)+' — '+(STORE_NAMES[s.loc]||s.loc),
-              'FOB %': s.fobPct!=null?((s.fobPct*100).toFixed(1)+'%'):'—',
-              'FC %': s.fcPct!=null?((s.fcPct*100).toFixed(1)+'%'):'—',
-              'Debit %': s.debitPct!=null?((s.debitPct*100).toFixed(1)+'%'):'—',
-              'Credit %': s.creditPct!=null?((s.creditPct*100).toFixed(1)+'%'):'—',
-              'MOP %': s.mopPct!=null?((s.mopPct*100).toFixed(1)+'%'):'—',
-              'Kiosk %': s.kioskPct!=null?((s.kioskPct*100).toFixed(1)+'%'):'—',
+              'FOB %': s.fobPct!=null?((s.fobPct*100).toFixed(2)+'%'):'—',
+              'FC %': s.fcPct!=null?((s.fcPct*100).toFixed(2)+'%'):'—',
+              'Debit %': s.debitPct!=null?((s.debitPct*100).toFixed(2)+'%'):'—',
+              'Credit %': s.creditPct!=null?((s.creditPct*100).toFixed(2)+'%'):'—',
+              'MOP %': s.mopPct!=null?((s.mopPct*100).toFixed(2)+'%'):'—',
+              'Kiosk %': s.kioskPct!=null?((s.kioskPct*100).toFixed(2)+'%'):'—',
             })):[]),
           }),
           btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕'))
@@ -3115,7 +3115,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
   const curP = PERIODS.find(p=>p.id===selPeriod)||PERIODS[2];
 
   const mapeCol = v=>v==null?'var(--text3)':v<5?'#10b981':v<8?'#f59e0b':'#ef4444';
-  const mapeFmt = v=>v==null?'—':v.toFixed(1)+'%';
+  const mapeFmt = v=>v==null?'—':v.toFixed(2)+'%';
   const avg = arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
   const DOW_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const MODELS = [
@@ -3377,7 +3377,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             const bx=x+bi*(bW+gW),bh=bH(v),by=H-24-bh;
             return h('g',{key:bi},
               h('rect',{x:bx,y:by,width:bW,height:bh,rx:2,fill:COLS[bi],fillOpacity:.75}),
-              bh>14&&h('text',{x:bx+bW/2,y:by+bh/2+3,textAnchor:'middle',fontSize:6.5,fill:'rgba(255,255,255,.9)',fontWeight:'700'},v.toFixed(1)+'%'));
+              bh>14&&h('text',{x:bx+bW/2,y:by+bh/2+3,textAnchor:'middle',fontSize:6.5,fill:'rgba(255,255,255,.9)',fontWeight:'700'},v.toFixed(2)+'%'));
           }),
           h('text',{x:x+sW/2-grp/2,y:H-10,textAnchor:'middle',fontSize:6.5,fill:'rgba(255,255,255,.45)'},nm)
         );
@@ -3654,7 +3654,7 @@ function computeOpsAnalysis(row, ds) {
       if(isDown && d > 0.10) {
         // Slow OEPE on a SLOW day = red flag — no volume excuse
         addSig('OEPE','⏱', Math.round(dayOepe)+'s', Math.round(bl_oepe)+'s', 'slow','negative',
-          'Service was '+(d*100).toFixed(0)+'% slower than baseline on a below-average sales day — with fewer cars in line, OEPE should be faster. This suggests an equipment issue, staffing problem, or operational disruption independent of demand.');
+          'Service was '+(d*100).toFixed(2)+'% slower than baseline on a below-average sales day — with fewer cars in line, OEPE should be faster. This suggests an equipment issue, staffing problem, or operational disruption independent of demand.');
       } else if(isDown && d < -0.12) {
         // Fast OEPE on a slow day — expected, but note it
         addSig('OEPE','⏱', Math.round(dayOepe)+'s', Math.round(bl_oepe)+'s', 'fast','informational',
@@ -3664,7 +3664,7 @@ function computeOpsAnalysis(row, ds) {
         const expectedSlowdown = salesDelta * 0.40; // rough expected: 40% of sales delta
         if(d > expectedSlowdown + 0.15) {
           addSig('OEPE','⏱', Math.round(dayOepe)+'s', Math.round(bl_oepe)+'s', 'slow','warning',
-            'Service '+(d*100).toFixed(0)+'% slower on a +'+(row.varPct||0).toFixed(0)+'% sales day — slowdown exceeds what volume alone explains. Possible operational bottleneck on top of demand pressure.');
+            'Service '+(d*100).toFixed(2)+'% slower on a +'+(row.varPct||0).toFixed(2)+'% sales day — slowdown exceeds what volume alone explains. Possible operational bottleneck on top of demand pressure.');
         }
       }
       // Moderate OEPE slowdown on a busy day = expected/demand-driven → no signal
@@ -3678,7 +3678,7 @@ function computeOpsAnalysis(row, ds) {
       if(isDown && d < -0.12) {
         // Low TPPH on a slow day = real problem — no volume to blame
         addSig('TPPH','📉', dayTpph.toFixed(1), bl_tpph.toFixed(1), 'low','negative',
-          'Transaction rate '+(Math.abs(d)*100).toFixed(0)+'% below baseline despite lower-than-normal sales volume — throughput should be at least normal on a quiet day. Suggests crew efficiency or execution issue.');
+          'Transaction rate '+(Math.abs(d)*100).toFixed(2)+'% below baseline despite lower-than-normal sales volume — throughput should be at least normal on a quiet day. Suggests crew efficiency or execution issue.');
       } else if(isUp && d > 0.12) {
         addSig('TPPH','📈', dayTpph.toFixed(1), bl_tpph.toFixed(1), 'high','positive',
           'Above-average throughput on a busy day — strong crew execution handled elevated volume efficiently.');
@@ -3694,15 +3694,15 @@ function computeOpsAnalysis(row, ds) {
     const diff = dayLabor - bl_labor;
     if(isDown && diff > 0.04) {
       // High labor% on a slow day = cost problem (labor fixed cost shows in lean revenue)
-      addSig('Labor %','👥', (dayLabor*100).toFixed(1)+'%', (bl_labor*100).toFixed(1)+'%', 'over','cost',
+      addSig('Labor %','👥', (dayLabor*100).toFixed(2)+'%', (bl_labor*100).toFixed(2)+'%', 'over','cost',
         'Labor '+(diff*100).toFixed(1)+'pp above baseline on a below-average sales day — fixed labor costs are amplified when revenue is low. This compounds the financial impact of the sales shortfall.');
     } else if(diff < -0.04 && isDown) {
       // Low labor% on a slow day — could be aggressive cut or reduced hours
-      addSig('Labor %','👥', (dayLabor*100).toFixed(1)+'%', (bl_labor*100).toFixed(1)+'%', 'under','informational',
+      addSig('Labor %','👥', (dayLabor*100).toFixed(2)+'%', (bl_labor*100).toFixed(2)+'%', 'under','informational',
         'Labor % below baseline on a slow day — may reflect appropriate staffing cuts or reduced operating hours.');
     } else if(isUp && diff > 0.05) {
       // High labor% on a big day — possibly not enough people to handle volume efficiently
-      addSig('Labor %','👥', (dayLabor*100).toFixed(1)+'%', (bl_labor*100).toFixed(1)+'%', 'over','warning',
+      addSig('Labor %','👥', (dayLabor*100).toFixed(2)+'%', (bl_labor*100).toFixed(2)+'%', 'over','warning',
         'Labor cost elevated even on a strong sales day — crew may not have scaled to volume efficiently.');
     }
   }
@@ -3739,8 +3739,8 @@ function computeOpsAnalysis(row, ds) {
   if(dayKvsu && bl_kvsu) {
     const d = dev(dayKvsu, bl_kvsu);
     if(d != null && d < -0.15) {
-      addSig('KVS Usage','📺', (dayKvsu*100).toFixed(0)+'%', (bl_kvsu*100).toFixed(0)+'%', 'low','negative',
-        'KVS healthy usage '+(Math.abs(d)*100).toFixed(0)+'% below typical — possible system issue or process breakdown. On a '+(isDown?'slow':'busy')+' day this '+(isDown?'amplifies any ops-related sales drag':'may have constrained throughput')+' .');
+      addSig('KVS Usage','📺', (dayKvsu*100).toFixed(2)+'%', (bl_kvsu*100).toFixed(2)+'%', 'low','negative',
+        'KVS healthy usage '+(Math.abs(d)*100).toFixed(2)+'% below typical — possible system issue or process breakdown. On a '+(isDown?'slow':'busy')+' day this '+(isDown?'amplifies any ops-related sales drag':'may have constrained throughput')+' .');
     }
   }
 
@@ -3752,7 +3752,7 @@ function computeOpsAnalysis(row, ds) {
   let conclusion, conclusionType, suggestedTag;
   if(neg.length === 0 && signals.filter(s=>s.impact!=='informational').length === 0) {
     if(isDown) {
-      conclusion = 'No operational anomalies detected on a below-average sales day. Operational metrics were within normal range — the sales '+(row.varPct).toFixed(0)+'% deviation is consistent with an external factor (weather, local event, road closure, competitor promotion, or other traffic driver).';
+      conclusion = 'No operational anomalies detected on a below-average sales day. Operational metrics were within normal range — the sales '+(row.varPct).toFixed(2)+'% deviation is consistent with an external factor (weather, local event, road closure, competitor promotion, or other traffic driver).';
     } else {
       conclusion = 'No operational red flags on this above-average sales day. Strong results with clean ops likely reflect external demand lift (local event, competitor closure, weather, promotional traffic).';
     }
@@ -4008,7 +4008,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       const tagCell=tag
         ?`<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;background:${tag.aiMatched?'rgba(96,165,250,.15)':'rgba(16,185,129,.15)'};color:${tag.aiMatched?'#60a5fa':'#10b981'};border:.5px solid ${tag.aiMatched?'rgba(96,165,250,.4)':'rgba(16,185,129,.4)'};">${tag.aiMatched?'AI Matched':'Manual'} — ${tag.label||''} ${tag.aiMatched?'('+tag.aiConfidence+'%)':''}</span>${tag.note?'<br><span style="font-size:8px;color:#94a3b8;">'+tag.note+'</span>':''}`
         :'<span style="color:#475569;font-size:9px;">Untagged</span>';
-      return `<tr style="border-bottom:.5px solid rgba(255,255,255,.05)${r.isHoliday?';background:rgba(165,180,252,.04)':''}"><td style="padding:5px 10px;font-weight:600;color:#f5bc00;white-space:nowrap;">${name}</td><td style="padding:5px 10px;white-space:nowrap;">${r.dateStr}</td><td style="padding:5px 10px;color:#94a3b8;">${r.dow}</td><td style="padding:5px 10px;text-align:right;font-family:monospace;">${'$'+Math.round(r.actual).toLocaleString()}</td><td style="padding:5px 10px;text-align:right;font-family:monospace;color:#475569;">${'$'+Math.round(r.forecast).toLocaleString()}</td><td style="padding:5px 10px;text-align:right;font-family:monospace;font-weight:700;color:${vc(r.varPct)};">${(r.varPct>0?'+':'')+r.varPct.toFixed(1)+'%'}</td><td style="padding:5px 10px;">${tagCell}</td></tr>`;
+      return `<tr style="border-bottom:.5px solid rgba(255,255,255,.05)${r.isHoliday?';background:rgba(165,180,252,.04)':''}"><td style="padding:5px 10px;font-weight:600;color:#f5bc00;white-space:nowrap;">${name}</td><td style="padding:5px 10px;white-space:nowrap;">${r.dateStr}</td><td style="padding:5px 10px;color:#94a3b8;">${r.dow}</td><td style="padding:5px 10px;text-align:right;font-family:monospace;">${'$'+Math.round(r.actual).toLocaleString()}</td><td style="padding:5px 10px;text-align:right;font-family:monospace;color:#475569;">${'$'+Math.round(r.forecast).toLocaleString()}</td><td style="padding:5px 10px;text-align:right;font-family:monospace;font-weight:700;color:${vc(r.varPct)};">${(r.varPct>0?'+':'')+r.varPct.toFixed(2)+'%'}</td><td style="padding:5px 10px;">${tagCell}</td></tr>`;
     };
     const minDate=allRows.reduce((a,r)=>r.date<a?r.date:a,allRows[0]?.date||new Date());
     const maxDate=allRows.reduce((a,r)=>r.date>a?r.date:a,allRows[0]?.date||new Date());
@@ -4377,7 +4377,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       if(ev){tagged++;if(ev.aiMatched)aiTagged++;else if(ev.source==='Auto-Holiday Scan')holTagged++;else manual++;}
     }
     const tot=allFlatRows.length,untagged=tot-tagged;
-    return{tot,tagged,aiTagged,manual,holTagged,hols,untagged,pct:tot?Math.round(tagged/tot*100):0};
+    return{tot,tagged,aiTagged,manual,holTagged,hols,untagged,pct:tot?+(tagged/tot*100).toFixed(2):0};
   },[allFlatRows,_uev]);
 
   // Tab-filtered rows (tab selector narrows sortedRows)
@@ -4467,12 +4467,12 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
           '$'+Math.round(row.forecast).toLocaleString()),
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,fontSize:'9px',
           color:varCol(row),background:varBg,borderRadius:3}},
-          (row.varPct>0?'+':'')+row.varPct.toFixed(1)+'%'),
+          (row.varPct>0?'+':'')+row.varPct.toFixed(2)+'%'),
         // vs LY: same calendar date 52 weeks prior — secondary context column
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',
           color:row.lyVarPct!=null?(row.lyVarPct>0?'#34d399':row.lyVarPct<0?'#f87171':'var(--text3)'):'var(--text3)'},
           title:row.lyActual>0?'LY actual: $'+Math.round(row.lyActual).toLocaleString():undefined},
-          row.lyVarPct!=null?(row.lyVarPct>0?'+':'')+row.lyVarPct.toFixed(1)+'%':'—'),
+          row.lyVarPct!=null?(row.lyVarPct>0?'+':'')+row.lyVarPct.toFixed(2)+'%':'—'),
         td({style:{padding:'5px 6px',minWidth:140}},tagBadge(row)),
         td({style:{padding:'5px 6px',textAlign:'right',whiteSpace:'nowrap'}},
           div({style:{display:'flex',gap:3,justifyContent:'flex-end',alignItems:'center'}},
@@ -4687,7 +4687,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
                 const bg=rows.length?cellBg(rows):'transparent';
                 const brd=isT2?'1.5px solid #10b981':rows.length?'.5px solid rgba(255,255,255,.08)':'.5px solid transparent';
                 const varP=rows.length?rows[0].varPct:0;
-                return td({key:loc,title:rows.length?((STORE_NAMES[loc]||loc).split('-').pop().trim()+': '+(varP>0?'+':'')+varP.toFixed(1)+'%'):'',
+                return td({key:loc,title:rows.length?((STORE_NAMES[loc]||loc).split('-').pop().trim()+': '+(varP>0?'+':'')+varP.toFixed(2)+'%'):'',
                   style:{padding:'1px 2px',cursor:rows.length?'pointer':'default'},
                   onClick:()=>rows.length&&(setScanTab('all'),setSelLoc(loc))},
                   div({style:{width:26,height:16,borderRadius:2,background:bg,border:brd,
@@ -4741,7 +4741,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
                   event.candidates.map((c,ci)=>div({key:ci,style:{fontSize:'8.5px',
                     background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'3px 8px'}},
                     sNameC(c.loc)+
-                    ' · '+c.dist.toFixed(0)+'mi · '+(c.varPct>0?'+':'')+c.varPct.toFixed(1)+'%')))),
+                    ' · '+c.dist.toFixed(0)+'mi · '+(c.varPct>0?'+':'')+c.varPct.toFixed(2)+'%')))),
               div({style:{display:'flex',gap:6}},
                 btn({className:'btn btn-a',style:{fontSize:'9px'},onClick:()=>{
                   event.candidates.forEach(c=>onTagEvent(c.loc,nDK(c.dKeyStr)||c.dateStr,event.fullNote,event.event.eventType||'other',{
@@ -5142,8 +5142,8 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
                       ['Ctrl Score',selectedItem.store.ctrlScore+'/100'],
                       ['OEPE',selectedItem.store.p.oepe>0?Math.round(selectedItem.store.p.oepe)+'s':'—'],
                       ['TPPH',selectedItem.store.p.tpph>0?selectedItem.store.p.tpph.toFixed(2):'—'],
-                      ['Labor%',selectedItem.store.p.laborPct>0?(selectedItem.store.p.laborPct*100).toFixed(1)+'%':'—'],
-                      ['T2W Trend',selectedItem.store.p.t2w!=null?((selectedItem.store.p.t2w>=0?'+':'')+selectedItem.store.p.t2w.toFixed(1)+'%'):'—'],
+                      ['Labor%',selectedItem.store.p.laborPct>0?(selectedItem.store.p.laborPct*100).toFixed(2)+'%':'—'],
+                      ['T2W Trend',selectedItem.store.p.t2w!=null?((selectedItem.store.p.t2w>=0?'+':'')+selectedItem.store.p.t2w.toFixed(2)+'%'):'—'],
                     ].map(([l,v],i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',
                       fontSize:'9px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:2}},
                       span({style:{color:'var(--text3)'}},l),
@@ -5296,9 +5296,9 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
          title:(avgMape!=='—'&&medianMape!=='—'&&Math.abs(+avgMape-+medianMape)>5)
            ?'Mean and median diverge significantly — likely 1-2 stores with known historical data anomalies (bad early periods, recent data fine) are pulling the mean up. Check the Rec. column below for ⚠ Recalibrate / ❌ Review flags. Median is more representative of typical store performance.'
            :'Average forecast error across all calibrated stores, full eval window.'},
-       {l:'Avg 6W MAPE',...(()=>{const vals=(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape6w!=null);const avg=vals.length?vals.reduce((a,s)=>a+settings.dialedIn[s.loc].mape6w,0)/vals.length:null;return{v:avg!=null?avg.toFixed(1)+'%':'—',c:avg!=null?mapeColor(avg):'var(--text3)'};})()},
-       {l:'Avg 4W MAPE',...(()=>{const vals=(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape4w!=null);const avg=vals.length?vals.reduce((a,s)=>a+settings.dialedIn[s.loc].mape4w,0)/vals.length:null;return{v:avg!=null?avg.toFixed(1)+'%':'—',c:avg!=null?mapeColor(avg):'var(--text3)'};})()},
-       {l:'Avg 2W MAPE',...(()=>{const vals=(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape2w!=null);const avg=vals.length?vals.reduce((a,s)=>a+settings.dialedIn[s.loc].mape2w,0)/vals.length:null;return{v:avg!=null?avg.toFixed(1)+'%':'—',c:avg!=null?mapeColor(avg):'var(--text3)'};})()},
+       {l:'Avg 6W MAPE',...(()=>{const vals=(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape6w!=null);const avg=vals.length?vals.reduce((a,s)=>a+settings.dialedIn[s.loc].mape6w,0)/vals.length:null;return{v:avg!=null?avg.toFixed(2)+'%':'—',c:avg!=null?mapeColor(avg):'var(--text3)'};})()},
+       {l:'Avg 4W MAPE',...(()=>{const vals=(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape4w!=null);const avg=vals.length?vals.reduce((a,s)=>a+settings.dialedIn[s.loc].mape4w,0)/vals.length:null;return{v:avg!=null?avg.toFixed(2)+'%':'—',c:avg!=null?mapeColor(avg):'var(--text3)'};})()},
+       {l:'Avg 2W MAPE',...(()=>{const vals=(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&settings.dialedIn&&settings.dialedIn[s.loc]&&settings.dialedIn[s.loc].mape2w!=null);const avg=vals.length?vals.reduce((a,s)=>a+settings.dialedIn[s.loc].mape2w,0)/vals.length:null;return{v:avg!=null?avg.toFixed(2)+'%':'—',c:avg!=null?mapeColor(avg):'var(--text3)'};})()},
        {l:'Status',v:running?('⏳ '+curStore+'…'):'Ready',c:running?'#60a5fa':'#10b981'},
       ].map((k,i)=>div({key:i,title:k.title,style:{flex:1,minWidth:100,background:'var(--surf2)',borderRadius:'var(--r)',
         padding:'6px 12px',textAlign:'center',cursor:k.title?'help':'default'}},
@@ -5392,9 +5392,9 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
                 // recentOnly stores with inflated full-period MAPE: show 6W as primary
                 (r.recentOnlyFlag&&r.mape>25&&r.mape6w!=null)
                   ? span(null,
-                      r.mape6w.toFixed(1)+'% ',
+                      r.mape6w.toFixed(2)+'% ',
                       h('span',{style:{fontSize:'8px',color:'var(--text3)',fontWeight:400}},'(6W — use this)'),
-                      h('span',{title:'Historical data anomaly: all-time MAPE '+r.mape.toFixed(0)+'% is contaminated by bad early data ('+
+                      h('span',{title:'Historical data anomaly: all-time MAPE '+r.mape.toFixed(2)+'% is contaminated by bad early data ('+
                         (loc==='33222'?'Jan 2026 OK snow storm closure / travel stop opening anomaly':
                          loc==='37566'?'Jun 2025 opening anomaly at Love\'s Travel Stop':
                          'opening/anomaly period')+
@@ -5412,26 +5412,26 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
               ),
               // Trend sparkline: 6W→4W→2W→1W direction
               td({style:{padding:'5px 8px',textAlign:'center',fontSize:'11px'},
-                title:r.mape6w!=null&&r.mape1w!=null?('6W:'+r.mape6w.toFixed(1)+'% → 1W:'+r.mape1w.toFixed(1)+'%'):'Run calibration to see trend'},
+                title:r.mape6w!=null&&r.mape1w!=null?('6W:'+r.mape6w.toFixed(2)+'% → 1W:'+r.mape1w.toFixed(2)+'%'):'Run calibration to see trend'},
                 r.mape6w!=null&&r.mape1w!=null?(
                   r.mape1w<r.mape6w-2?span({style:{color:'#10b981'}},'▼ Better'):
                   r.mape1w>r.mape6w+2?span({style:{color:'#f87171'}},'▲ Worse'):
                   span({style:{color:'#f59e0b'}},'→ Stable')
                 ):'—'),
-              td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape6w!=null?mapeColor(r.mape6w):'var(--text3)',fontFamily:'var(--mono)'}},r.mape6w!=null?r.mape6w.toFixed(1)+'%':'—'),
-              td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape4w!=null?mapeColor(r.mape4w):'var(--text3)',fontFamily:'var(--mono)'}},r.mape4w!=null?r.mape4w.toFixed(1)+'%':'—'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape6w!=null?mapeColor(r.mape6w):'var(--text3)',fontFamily:'var(--mono)'}},r.mape6w!=null?r.mape6w.toFixed(2)+'%':'—'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape4w!=null?mapeColor(r.mape4w):'var(--text3)',fontFamily:'var(--mono)'}},r.mape4w!=null?r.mape4w.toFixed(2)+'%':'—'),
               td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape2w!=null?mapeColor(r.mape2w):'var(--text3)',fontFamily:'var(--mono)',fontWeight:r.mape2w!=null?700:400}},
                 // Drift indicator: if 2W MAPE is 5+ points worse than 6W
-                r.mape2w!=null?span(null,r.mape2w.toFixed(1)+'%',
+                r.mape2w!=null?span(null,r.mape2w.toFixed(2)+'%',
                   r.mape6w!=null&&r.mape2w>r.mape6w+5?span({style:{marginLeft:4,color:'#f87171'},title:'Model drifting — consider recalibrating'},'⚠')
                   :r.mape6w!=null&&r.mape2w<r.mape6w-3?span({style:{marginLeft:4,color:'#10b981'},title:'Model improving'},'▲'):null
                 ):'—'),
               td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape1w!=null?mapeColor(r.mape1w):'var(--text3)',fontFamily:'var(--mono)',fontWeight:r.mape1w!=null?700:400},
                 title:'Last 7 days — most comparable to a Date Range Report for Last Week'},
-                r.mape1w!=null?r.mape1w.toFixed(1)+'%':'—'),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)'}},(r.t2*100).toFixed(0)+'%'),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)'}},((r.t4||0)*100).toFixed(0)+'%'),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)'}},(r.t6*100).toFixed(0)+'%'),
+                r.mape1w!=null?r.mape1w.toFixed(2)+'%':'—'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)'}},(r.t2*100).toFixed(2)+'%'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)'}},((r.t4||0)*100).toFixed(2)+'%'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)'}},(r.t6*100).toFixed(2)+'%'),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)'}},(r.opsMult||1).toFixed(2)+'x'),
               td({style:{padding:'5px 8px',textAlign:'right',color:'var(--text3)'}},r.samples),
               td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:'var(--text3)'}},r.runDate||'—'),
@@ -5558,14 +5558,14 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
     const hdr = ['Store','Days','Actual Sales','vs LY%','vs Forecast%','MAPE%','Pass Rate%','Avg Check','OEPE','TPPH','Labor%','Ops Score','Ctrl Score'];
     const rows = report.results.map(r=>[
       r.name,r.days,r.actualSales.toFixed(0),
-      r.vsLY!=null?(r.vsLY*100).toFixed(1):'—',
-      r.vsFc!=null?(r.vsFc*100).toFixed(1):'—',
-      r.mape!=null?r.mape.toFixed(1):'—',
-      r.passRate!=null?r.passRate.toFixed(0):'—',
+      r.vsLY!=null?(r.vsLY*100).toFixed(2):'—',
+      r.vsFc!=null?(r.vsFc*100).toFixed(2):'—',
+      r.mape!=null?r.mape.toFixed(2):'—',
+      r.passRate!=null?r.passRate.toFixed(2):'—',
       r.avgCheck>0?r.avgCheck.toFixed(2):'—',
       r.avgOepe>0?r.avgOepe.toFixed(0):'—',
       r.avgTpph>0?r.avgTpph.toFixed(2):'—',
-      r.avgLabor>0?(r.avgLabor*100).toFixed(1):'—',
+      r.avgLabor>0?(r.avgLabor*100).toFixed(2):'—',
       r.opsScore||'—',r.ctrlScore||'—'
     ]);
     const csv=[hdr,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
@@ -5651,19 +5651,19 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
               td2(r.name,'var(--text)','left'),
               td2(r.days,'var(--text3)'),
               td2(f$(r.actualSales),'var(--text)'),
-              td2(r.vsLY!=null?((r.vsLY>=0?'+':'')+( r.vsLY*100).toFixed(1)+'%'):'—',
+              td2(r.vsLY!=null?((r.vsLY>=0?'+':'')+( r.vsLY*100).toFixed(2)+'%'):'—',
                 r.vsLY!=null?(r.vsLY>=0?'#10b981':'#f87171'):'var(--text3)'),
-              td2(r.vsFc!=null?((r.vsFc>=0?'+':'')+(r.vsFc*100).toFixed(1)+'%'):'—',
+              td2(r.vsFc!=null?((r.vsFc>=0?'+':'')+(r.vsFc*100).toFixed(2)+'%'):'—',
                 r.vsFc!=null?(r.vsFc>=0?'#10b981':'#f87171'):'var(--text3)'),
-              td2(r.mape!=null?r.mape.toFixed(1)+'%':'—',
+              td2(r.mape!=null?r.mape.toFixed(2)+'%':'—',
                 r.mape!=null?(r.mape<5?'#10b981':r.mape<10?'#f59e0b':'#f87171'):'var(--text3)'),
-              td2(r.passRate!=null?r.passRate.toFixed(0)+'%':'—',
+              td2(r.passRate!=null?r.passRate.toFixed(2)+'%':'—',
                 r.passRate!=null?(r.passRate>=80?'#10b981':r.passRate>=60?'#f59e0b':'#f87171'):'var(--text3)'),
               td2(r.avgCheck>0?'$'+r.avgCheck.toFixed(2):'—'),
               td2(r.avgOepe>0?Math.round(r.avgOepe)+'s':'—',
                 r.avgOepe>0?'var(--text)':'var(--text3)'),
               td2(r.avgTpph>0?r.avgTpph.toFixed(2):'—'),
-              td2(r.avgLabor>0?(r.avgLabor*100).toFixed(1)+'%':'—',
+              td2(r.avgLabor>0?(r.avgLabor*100).toFixed(2)+'%':'—',
                 r.avgLabor>0?'var(--text)':'var(--text3)'),
               td2(r.opsScore!=null?r.opsScore+'/100':'—',
                 r.opsScore!=null?(r.opsScore>=80?'#10b981':r.opsScore>=65?'#f59e0b':'#f87171'):'var(--text3)'),
@@ -5800,10 +5800,10 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
             div({style:{display:'flex',gap:20,flexWrap:'wrap',marginTop:8}},
               [{l:'AI Forecast',v:f$(audit.row.forecast),c:'#a5b4fc'},
                {l:'Actual',v:audit.row.actual>0?f$(audit.row.actual):'—',c:'#10b981'},
-               {l:'vs Actual',v:audit.row.actual>0?((audit.row.actual>audit.row.forecast?'+':'')+((audit.row.actual-audit.row.forecast)/audit.row.forecast*100).toFixed(1)+'%'):'—',
+               {l:'vs Actual',v:audit.row.actual>0?((audit.row.actual>audit.row.forecast?'+':'')+((audit.row.actual-audit.row.forecast)/audit.row.forecast*100).toFixed(2)+'%'):'—',
                 c:audit.row.actual>0?(audit.row.actual>=audit.row.forecast?'#10b981':'#f87171'):'var(--text3)'},
                {l:'Holiday',v:audit.holidayInfo?audit.holidayInfo.label:'None',c:audit.holidayInfo?'#f59e0b':'var(--text3)'},
-               {l:'Dialed-In',v:settings.dialedInEnabled&&audit.cal?'Enabled ('+(audit.cal.mape||'?').toFixed(1)+'% MAPE)':'Off',c:settings.dialedInEnabled&&audit.cal?'#10b981':'var(--text3)'}
+               {l:'Dialed-In',v:settings.dialedInEnabled&&audit.cal?'Enabled ('+(audit.cal.mape||'?').toFixed(2)+'% MAPE)':'Off',c:settings.dialedInEnabled&&audit.cal?'#10b981':'var(--text3)'}
               ].map((k,i)=>div({key:i,style:{textAlign:'center'}},
                 div({style:{fontSize:'9px',color:'var(--text3)'}},[k.l]),
                 div({style:{fontFamily:'var(--mono)',fontWeight:700,color:k.c,fontSize:'13px'}},[k.v])
@@ -5835,10 +5835,10 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
             div({style:{fontSize:'11px',fontWeight:700,color:'#f59e0b',marginBottom:8,borderBottom:'.5px solid var(--bdr)',paddingBottom:4}},'🎯 STEP 2: Dialed-In Calibration'),
             settings.dialedInEnabled&&audit.cal
               ? div(null,
-                  fRow('lyW (LY weight)',((audit.cal.lyW||1)*100).toFixed(0)+'%','Blend: store LY ×'+(( audit.cal.lyW||1)*100).toFixed(0)+'% + district avg ×'+(100-( audit.cal.lyW||1)*100).toFixed(0)+'%'),
-                  fRow('Trend Weights','t2:'+((audit.cal.t2||.5)*100).toFixed(0)+'% · t4:'+((audit.cal.t4||.25)*100).toFixed(0)+'% · t6:'+((audit.cal.t6||.25)*100).toFixed(0)+'%'),
+                  fRow('lyW (LY weight)',((audit.cal.lyW||1)*100).toFixed(2)+'%','Blend: store LY ×'+(( audit.cal.lyW||1)*100).toFixed(2)+'% + district avg ×'+(100-( audit.cal.lyW||1)*100).toFixed(2)+'%'),
+                  fRow('Trend Weights','t2:'+((audit.cal.t2||.5)*100).toFixed(2)+'% · t4:'+((audit.cal.t4||.25)*100).toFixed(2)+'% · t6:'+((audit.cal.t6||.25)*100).toFixed(2)+'%'),
                   fRow('opsMult',audit.cal.opsMult!=null?audit.cal.opsMult.toFixed(2):'1.00','Ops influence scaling (1.0=normal)'),
-                  fRow('Calibrated MAPE',audit.cal.mape!=null?audit.cal.mape.toFixed(1)+'%':'—'),
+                  fRow('Calibrated MAPE',audit.cal.mape!=null?audit.cal.mape.toFixed(2)+'%':'—'),
                   fRow('Last run',audit.cal.runDate||'—')
                 )
               : fRow('Status',settings.dialedInEnabled?'No calibration data yet — run Dialed-In':'Off — using global defaults',null,'var(--text3)')
@@ -5847,9 +5847,9 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
           // Trend
           div({style:{marginBottom:16}},
             div({style:{fontSize:'11px',fontWeight:700,color:'#84cc16',marginBottom:8,borderBottom:'.5px solid var(--bdr)',paddingBottom:4}},'📈 STEP 3: Trend Signal'),
-            fRow('T2W trend (2wk YOY)',audit.row.t2!=null?(audit.row.t2>=0?'+':'')+( audit.row.t2*100).toFixed(1)+'%':'—'),
-            fRow('T4W trend (4wk YOY)',audit.row.t4!=null?(audit.row.t4>=0?'+':'')+( audit.row.t4*100).toFixed(1)+'%':'—'),
-            fRow('T6W trend (6wk YOY)',audit.row.t6!=null?(audit.row.t6>=0?'+':'')+( audit.row.t6*100).toFixed(1)+'%':'—'),
+            fRow('T2W trend (2wk YOY)',audit.row.t2!=null?(audit.row.t2>=0?'+':'')+( audit.row.t2*100).toFixed(2)+'%':'—'),
+            fRow('T4W trend (4wk YOY)',audit.row.t4!=null?(audit.row.t4>=0?'+':'')+( audit.row.t4*100).toFixed(2)+'%':'—'),
+            fRow('T6W trend (6wk YOY)',audit.row.t6!=null?(audit.row.t6>=0?'+':'')+( audit.row.t6*100).toFixed(2)+'%':'—'),
             fRow('Blended trend (wTrend)',audit.row.trend!=null?(audit.row.trend>=0?'+':'')+( audit.row.trend*100).toFixed(2)+'%':'computed','65% global + 35% DOW-specific','var(--amber)')
           ),
 
@@ -6196,7 +6196,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
           span({style:{color:'var(--text3)'}},'MAPE trend:'),
           groupWeekTotals.map((gt,i)=>div({key:i,style:{
             color:gt.avgMape!=null?mapeColor(gt.avgMape):'var(--text3)',
-            fontWeight:600,fontFamily:'var(--mono)'}},[gt.avgMape!=null?gt.avgMape.toFixed(1)+'%':'—']))
+            fontWeight:600,fontFamily:'var(--mono)'}},[gt.avgMape!=null?gt.avgMape.toFixed(2)+'%':'—']))
         )
       ),
       tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
@@ -6226,12 +6226,12 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                   wk?div(null,
                     div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,
                       color:mapeColor(wk.mape),display:'flex',alignItems:'center',gap:3,justifyContent:'center'}},
-                      wk.mape!=null?wk.mape.toFixed(1)+'%':'—',
+                      wk.mape!=null?wk.mape.toFixed(2)+'%':'—',
                       wk.mape!=null&&span({style:{fontWeight:400,fontSize:'8px',color:'var(--text3)'}},
                         wk.mape<6?' ✓ Excellent':wk.mape<10?' ~ OK':' ✗ Missed')),
                     div({style:{fontSize:'8px',display:'flex',gap:6,justifyContent:'center',marginTop:1}},
                       div({style:{color:wk.vsLY!=null?(wk.vsLY>=0?'#10b981':'#f87171'):'var(--text3)'}},
-                        wk.vsLY!=null?((wk.vsLY>=0?'+':'')+wk.vsLY+'% vs LY'):'—'),
+                        wk.vsLY!=null?((wk.vsLY>=0?'+':'')+wk.vsLY.toFixed(2)+'% vs LY'):'—'),
                       div({style:{color:'var(--text3)'}},f$(wk.wkAct))),
                     div({style:{fontSize:'7px',color:'var(--amber)',marginTop:2}},
                       expandedCell===loc+'_'+i?'▲ collapse':'▼ expand days'),
@@ -6249,9 +6249,9 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                           gap:4,padding:'2px 0',borderBottom:'.5px solid rgba(255,255,255,.04)',fontSize:'8px'}},
                           span({style:{color:'var(--text3)'}},[dow+' '+day.date.getDate()]),
                           span({style:{fontFamily:'var(--mono)',color:'var(--text)'}},[f$(day.actual)]),
-                          span({style:{color:sc,fontWeight:600}},[status+(err!=null?' '+err+'%':'')]),
+                          span({style:{color:sc,fontWeight:600}},[status+(err!=null?' '+err.toFixed(2)+'%':'')]),
                           vsLY!=null?span({style:{color:vsLY>=0?'#10b981':'#f87171',fontSize:'7px'}},
-                            [(vsLY>=0?'+':'')+vsLY+'% LY']):span({style:{color:'var(--text3)'}},'—')
+                            [(vsLY>=0?'+':'')+vsLY.toFixed(2)+'% LY']):span({style:{color:'var(--text3)'}},'—')
                         );
                       })
                     )
@@ -6260,7 +6260,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
               ),
               td({style:{padding:'4px 8px',textAlign:'center'}},
                 div({style:{fontFamily:'var(--mono)',fontWeight:700,color:mapeColor(avgMape)}},
-                  avgMape!=null?avgMape.toFixed(1)+'%':'—'),
+                  avgMape!=null?avgMape.toFixed(2)+'%':'—'),
                 mapeDir&&div({style:{fontSize:'8px',color:'var(--text3)',marginTop:1}},mapeDir),
                 div({style:{fontSize:'8px',color:'var(--text3)'}},allMapes.length+'wk data')
               )
@@ -6281,7 +6281,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                   div({style:{display:'flex',flexWrap:'wrap',gap:5}},
                     wk.days.map((day,di)=>{
                       const err=day.actual>0?Math.abs(day.forecast-day.actual)/day.actual*100:null;
-                      const vsLY=day.lyAdj>0?((day.actual-day.lyAdj)/day.lyAdj*100).toFixed(1):null;
+                      const vsLY=day.lyAdj>0?((day.actual-day.lyAdj)/day.lyAdj*100).toFixed(2):null;
                       return div({key:di,style:{background:'var(--surf)',borderRadius:4,
                         padding:'4px 7px',border:'.5px solid var(--bdr)',minWidth:88}},
                         div({style:{fontSize:'8px',fontWeight:700,color:'var(--text2)'}},
@@ -6290,7 +6290,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                         div({style:{fontSize:'8px',color:'var(--text3)'}},['Fcst: '+f$(day.forecast)]),
                         err!=null&&div({style:{fontSize:'8px',fontWeight:600,
                           color:err<5?'#10b981':err<10?'#f59e0b':'#f87171'}},
-                          (err<5?'✓ ':err<10?'~ ':'✗ ')+err.toFixed(1)+'% err'),
+                          (err<5?'✓ ':err<10?'~ ':'✗ ')+err.toFixed(2)+'% err'),
                         vsLY&&div({style:{fontSize:'8px',fontWeight:600,
                           color:+vsLY>=0?'#10b981':'#f87171'}},
                           (+vsLY>=0?'+':'')+vsLY+'% vs LY')
@@ -6309,10 +6309,10 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
               td({key:i,style:{padding:'5px 8px',textAlign:'center'}},
                 gt.avgMape!=null?div(null,
                   div({style:{fontFamily:'var(--mono)',fontWeight:700,color:mapeColor(gt.avgMape)}},
-                    gt.avgMape.toFixed(1)+'% avg'),
+                    gt.avgMape.toFixed(2)+'% avg'),
                   div({style:{fontSize:'8px',display:'flex',gap:6,justifyContent:'center'}},
                     div({style:{color:gt.vsLY!=null?(gt.vsLY>=0?'#10b981':'#f87171'):'var(--text3)'}},
-                      gt.vsLY!=null?((gt.vsLY>=0?'+':'')+gt.vsLY+'% vs LY'):'—'),
+                      gt.vsLY!=null?((gt.vsLY>=0?'+':'')+gt.vsLY.toFixed(2)+'% vs LY'):'—'),
                     div({style:{color:'var(--text3)'}},f$(gt.tAct)))
                 ):div({style:{color:'var(--text3)'}},['—'])
               )
@@ -6320,7 +6320,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
             td({style:{padding:'5px 8px',textAlign:'center',fontFamily:'var(--mono)',fontWeight:700,color:'var(--amber)'}},
               groupWeekTotals.filter(g=>g.avgMape!=null).length?
               (groupWeekTotals.filter(g=>g.avgMape!=null).reduce((a,g)=>a+g.avgMape,0)/
-              groupWeekTotals.filter(g=>g.avgMape!=null).length).toFixed(1)+'%':'—')
+              groupWeekTotals.filter(g=>g.avgMape!=null).length).toFixed(2)+'%':'—')
           )
         )
       )
@@ -6357,11 +6357,11 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
             gLocs.forEach(loc=>{
               const wkM=(report.weeks||[]).map(wk=>{
                 const d=report.results[loc]&&report.results[loc].find(w=>dKey(w.weekStart)===dKey(wk));
-                return d&&d.mape!=null?d.mape.toFixed(1)+'%':'—';
+                return d&&d.mape!=null?d.mape.toFixed(2)+'%':'—';
               });
               const allM=wkM.filter(m=>m!=='—').map(parseFloat);
               rows.push([gName,(STORE_NAMES[String(loc)]||loc),...wkM,
-                allM.length?(allM.reduce((a,v)=>a+v,0)/allM.length).toFixed(1)+'%':'—']);
+                allM.length?(allM.reduce((a,v)=>a+v,0)/allM.length).toFixed(2)+'%':'—']);
             });
           });
           const csv=rows.map(r=>r.map(v=>'"'+v+'"').join(',')).join('\n');
@@ -6400,12 +6400,12 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
               return{loc,avg:m.length?m.reduce((a,v)=>a+v,0)/m.length:99};
             }).sort((a,b)=>a.avg-b.avg)[0];
             return [
-              {l:'District Avg MAPE',v:avgMape!=null?avgMape+'%':'—',c:mapeColor(avgMape),
+              {l:'District Avg MAPE',v:avgMape!=null?avgMape.toFixed(2)+'%':'—',c:mapeColor(avgMape),
                 sub:avgMape!=null?(avgMape<6?'Excellent accuracy':avgMape<10?'Good accuracy':'Needs attention'):''},
-              {l:'Avg vs Last Year',v:avgVsLY!=null?((avgVsLY>=0?'+':'')+avgVsLY+'%'):'—',
+              {l:'Avg vs Last Year',v:avgVsLY!=null?((avgVsLY>=0?'+':'')+avgVsLY.toFixed(2)+'%'):'—',
                 c:avgVsLY!=null?(avgVsLY>=0?'#10b981':'#f87171'):'var(--text3)',sub:weeksBack+'-week rolling'},
               {l:'Most Accurate',v:bestStore?(STORE_NAMES[String(bestStore.loc)]||bestStore.loc):'—',
-                c:'#10b981',sub:bestStore?bestStore.avg.toFixed(1)+'% avg MAPE':''},
+                c:'#10b981',sub:bestStore?bestStore.avg.toFixed(2)+'% avg MAPE':''},
               {l:'Weeks Analyzed',v:String(weeksBack),c:'var(--amber)',sub:report.allLocs.length+' locations'},
             ].map((k,i)=>div({key:i,style:{flex:'1 1 160px',background:'var(--surf2)',
               border:'.5px solid var(--bdr)',borderRadius:'var(--rl)',padding:'10px 14px'}},
@@ -7067,7 +7067,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // via sumOf, which never filtered zeros, while T-Red After % showed "—" via this function).
   const avgOf=(rows,field,anyMode)=>{const v=rows.map(r=>r[field]).filter(x=>x!=null&&!isNaN(x)&&(anyMode||x>0));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const sumOf=(rows,field)=>rows.reduce((a,r)=>a+(r[field]||0),0);
-  const pctOf=(a,b)=>b>0?((a/b-1)*100).toFixed(1)+'%':null;
+  const pctOf=(a,b)=>b>0?((a/b-1)*100).toFixed(2)+'%':null;
 
   // ── "As of" tile freshness ────────────────────────────────────
   // Newest business date (≤ today) in a tile's OWN source rows, so each tile
@@ -7689,7 +7689,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       oepe:{getVal:loc=>avgOf((svcEffective.rows||[]).filter(r=>r.loc===String(loc)),'oepe') ?? avgOf(opsInRange.filter(r=>r.loc===String(loc)),'oepe'),
         fmt:v=>Math.round(v)+'s',higherBetter:false,label:'OEPE W/O Parked',unit:'s'},
       labor:{getVal:loc=>avgOf((ctrlEffective.rows||[]).filter(r=>r.loc===String(loc)),'laborPct') ?? avgOf(labInRange.filter(r=>r.loc===String(loc)),'laborPct'),
-        fmt:v=>((v||0)*100).toFixed(1)+'%',higherBetter:false,label:'Labor %',unit:'%'},
+        fmt:v=>((v||0)*100).toFixed(2)+'%',higherBetter:false,label:'Labor %',unit:'%'},
       tred:{getVal:loc=>avgOf((ctrlEffective.rows||[]).filter(r=>r.loc===String(loc)),'tRedAPct',true) ?? avgOf(ctrlInRange.filter(r=>r.loc===String(loc)),'tRedAPct',true),
         fmt:v=>((v||0)*100).toFixed(2)+'%',higherBetter:false,label:'T-Red After %',unit:'%'},
     };
@@ -7783,7 +7783,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const wkTotal=rowDays.reduce((a,r)=>a+r.fc,0);
       const lyTotal=rowDays.reduce((a,r)=>a+r.ly,0);
       const actualTotal=rowDays.reduce((a,r)=>a+r.act,0);
-      const vsLY=lyTotal>0?((wkTotal-lyTotal)/lyTotal*100).toFixed(1):null;
+      const vsLY=lyTotal>0?((wkTotal-lyTotal)/lyTotal*100).toFixed(2):null;
       return{loc,name:STORE_NAMES[String(loc)]||loc,wkTotal,lyTotal,actualTotal,vsLY,org:orgOf(loc),rowDays};
     }).sort((a,b)=>b.wkTotal-a.wkTotal);
     return{storeProjs,weekDays,wsKey};
@@ -7846,12 +7846,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         div({style:{fontSize:'9px',color:ageClr}},
           '● Data: '+(latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' ('+dataAge+'d ago)':'Not loaded')),
         salesRecon.count>=2&&div({
-          title:(salesRecon.r.ok?'Product-sales sources agree within 2%':'Product-sales sources disagree by '+((salesRecon.r.relative||0)*100).toFixed(1)+'% (>2%)')
+          title:(salesRecon.r.ok?'Product-sales sources agree within 2%':'Product-sales sources disagree by '+((salesRecon.r.relative||0)*100).toFixed(2)+'% (>2%)')
             +'\nDAR (Σ product sales): $'+Math.round(salesRecon.darTot).toLocaleString()
             +'\nSales Ledger (product): $'+Math.round(salesRecon.ledTot).toLocaleString()
             +(salesRecon.labTot>0?'\nLabor (net basis — reference only, not reconciled): $'+Math.round(salesRecon.labTot).toLocaleString():''),
           style:{fontSize:'9px',fontWeight:700,color:salesRecon.r.ok?'#10b981':'#f59e0b',cursor:'default',whiteSpace:'nowrap'}},
-          salesRecon.r.ok?'✓ Sales reconciled':'⚠ Sales sources differ '+((salesRecon.r.relative||0)*100).toFixed(1)+'%')
+          salesRecon.r.ok?'✓ Sales reconciled':'⚠ Sales sources differ '+((salesRecon.r.relative||0)*100).toFixed(2)+'%')
       )
     ),
 
@@ -7865,9 +7865,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         'sales & DT speed · as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
       (moversStrip.up.length||moversStrip.down.length)&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Sales vs LY'),
       ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
-        '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(1)+'%')),
+        '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(2)+'%')),
       ...moversStrip.down.map((r,i)=>span({key:'d'+i,style:{color:'#f87171',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
-        '▼ '+(STORE_NAMES[r.loc]||r.loc)+' '+r.salesVsLYPct.toFixed(1)+'%')),
+        '▼ '+(STORE_NAMES[r.loc]||r.loc)+' '+r.salesVsLYPct.toFixed(2)+'%')),
       moversStrip.slowDT.length&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Slowest DT'),
       ...moversStrip.slowDT.map((r,i)=>span({key:'dt'+i,style:{color:'var(--text2)',whiteSpace:'nowrap'},title:'Average drive-thru until-serve time today'},
         '🚗 '+(STORE_NAMES[r.loc]||r.loc)+' '+Math.round(r.dt)+'s')),
@@ -8051,38 +8051,38 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
           const signals=[
             {icon:'💰',label:'Sales vs LY (comp)',
-             val:svLY!=null?(svLY>=0?'+':'')+(svLY*100).toFixed(1)+'%':'—',
+             val:svLY!=null?(svLY>=0?'+':'')+(svLY*100).toFixed(2)+'%':'—',
              sub:sl?'$'+(sl.totSales/1000).toFixed(0)+'K total · '+(sl.totGC||0).toLocaleString()+' guests':'Load Operations Report',
              col:svLY==null?'var(--text3)':svLY>=0.01?'#10b981':svLY>=-0.03?'#f59e0b':'#ef4444',
              dot:svLY==null?'—':svLY>=0?'🟢':svLY>=-0.03?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('ranking:t2w')},
             {icon:'👥',label:'Guest Count vs LY (comp)',
-             val:gcVLY!=null?(gcVLY>=0?'+':'')+(gcVLY*100).toFixed(1)+'%':'—',
-             sub:gcVLY!=null?'Check Avg: $'+(sl?.avgChk||0).toFixed(2)+(sl?.avgCheckVsLY!=null?' ('+(sl.avgCheckVsLY>=0?'+':'')+(sl.avgCheckVsLY*100).toFixed(1)+'% vs LY)':''):'No LY guest count data',
+             val:gcVLY!=null?(gcVLY>=0?'+':'')+(gcVLY*100).toFixed(2)+'%':'—',
+             sub:gcVLY!=null?'Check Avg: $'+(sl?.avgChk||0).toFixed(2)+(sl?.avgCheckVsLY!=null?' ('+(sl.avgCheckVsLY>=0?'+':'')+(sl.avgCheckVsLY*100).toFixed(2)+'% vs LY)':''):'No LY guest count data',
              col:gcVLY==null?'var(--text3)':gcVLY>=0?'#10b981':gcVLY>=-0.03?'#f59e0b':'#ef4444',
              dot:gcVLY==null?'—':gcVLY>=0?'🟢':gcVLY>=-0.03?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('ranking:gc')},
             {icon:'👷',label:'Labor %',
-             val:labor!=null?(labor*100).toFixed(1)+'%':'—',
-             sub:it&&labor!=null?'Target '+((it.laborTgt||0)*100).toFixed(1)+'% · '+(labor-(it.laborTgt||0)>=0?'+':'')+((labor-(it.laborTgt||0))*100).toFixed(1)+'pts vs target'+(it.laborSt>0?' · ⚠ '+it.laborSt+' loc over':''):'No labor data',
+             val:labor!=null?(labor*100).toFixed(2)+'%':'—',
+             sub:it&&labor!=null?'Target '+((it.laborTgt||0)*100).toFixed(2)+'% · '+(labor-(it.laborTgt||0)>=0?'+':'')+((labor-(it.laborTgt||0))*100).toFixed(2)+'pts vs target'+(it.laborSt>0?' · ⚠ '+it.laborSt+' loc over':''):'No labor data',
              col:labor==null?'var(--text3)':labor>(it?.laborTgt||0.22)+0.02?'#ef4444':labor>(it?.laborTgt||0.22)?'#f59e0b':'#10b981',
              dot:labor==null?'—':labor>(it?.laborTgt||0.22)+0.02?'🔴':labor>(it?.laborTgt||0.22)?'🟡':'🟢',
              nav:()=>onOpenModal&&onOpenModal('labor-analytics')},
             {icon:'🥗',label:'Total Food Cost %',
-             val:fobFC!=null?(fobFC*100).toFixed(1)+'%':'—',
-             sub:it&&fobFC!=null?'Target '+((it.fobTgt||0)*100).toFixed(1)+'% · '+(fobFC-(it.fobTgt||0)>=0?'+':'')+((fobFC-(it.fobTgt||0))*100).toFixed(2)+'pts vs target'+(fb?.unexplained>0.001?' · ❓ Unexplained: '+(fb.unexplained*100).toFixed(2)+'%':''):'Load FOB data',
+             val:fobFC!=null?(fobFC*100).toFixed(2)+'%':'—',
+             sub:it&&fobFC!=null?'Target '+((it.fobTgt||0)*100).toFixed(2)+'% · '+(fobFC-(it.fobTgt||0)>=0?'+':'')+((fobFC-(it.fobTgt||0))*100).toFixed(2)+'pts vs target'+(fb?.unexplained>0.001?' · ❓ Unexplained: '+(fb.unexplained*100).toFixed(2)+'%':''):'Load FOB data',
              col:fobFC==null?'var(--text3)':fobFC>(it?.fobTgt||0.279)+0.005?'#ef4444':fobFC>(it?.fobTgt||0.279)?'#f59e0b':'#10b981',
              dot:fobFC==null?'—':fobFC>(it?.fobTgt||0.279)+0.005?'🔴':fobFC>(it?.fobTgt||0.279)?'🟡':'🟢',
              nav:()=>onOpenModal&&onOpenModal('fob-analysis')},
             {icon:'🎯',label:'Forecast Accuracy (MAPE)',
-             val:mape!=null?mape.toFixed(1)+'%':'—',
+             val:mape!=null?mape.toFixed(2)+'%':'—',
              sub:mape!=null?(projSec.locked||0)+'/'+allLocs.length+' locked · '+(projSec.locked===allLocs.length?'All projections locked':'Locks pending')+'  · Model health: 🟢'+projSec.health.green+' 🟡'+projSec.health.yellow+' 🔴'+projSec.health.red:'Run Dialed-In calibration to compute MAPE',
              col:mape==null?'var(--text3)':mape<5?'#10b981':mape<8?'#f59e0b':'#ef4444',
              dot:mape==null?'—':mape<5?'🟢':mape<8?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('fcst-accuracy')},
             oepe!=null&&{icon:'⚡',label:'OEPE / Drive-Thru Speed',
              val:Math.round(oepe)+'s',
-             sub:it?'Target '+Math.round(it.oepeTgt||140)+'s · DT Parked: '+((park||0)*100).toFixed(1)+'%'+(park>(it.parkTgt||0.12)?' ⚠ Over target':''):'No service data',
+             sub:it?'Target '+Math.round(it.oepeTgt||140)+'s · DT Parked: '+((park||0)*100).toFixed(2)+'%'+(park>(it.parkTgt||0.12)?' ⚠ Over target':''):'No service data',
              col:oepe<(it?.oepeTgt||140)?'#10b981':oepe<(it?.oepeTgt||140)+15?'#f59e0b':'#ef4444',
              dot:oepe<(it?.oepeTgt||140)?'🟢':oepe<(it?.oepeTgt||140)+15?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('ranking:oepe')},
@@ -8152,9 +8152,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             div({style:{textAlign:'center'}},
               div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
                 color:projSec.avgMape!=null?(projSec.avgMape<8?'#10b981':projSec.avgMape<12?'#f59e0b':'#f87171'):'var(--text3)'}},
-                projSec.avgMape!=null?projSec.avgMape.toFixed(1)+'%':'—'),
+                projSec.avgMape!=null?projSec.avgMape.toFixed(2)+'%':'—'),
               div({style:{fontSize:'8px',color:'var(--text3)',letterSpacing:'.5px',textTransform:'uppercase'}},'Avg MAPE (6W)'),
-              MktBadge({ok:projSec.okMape,fl:projSec.flMape,fmt:v=>v.toFixed(1)+'%'})
+              MktBadge({ok:projSec.okMape,fl:projSec.flMape,fmt:v=>v.toFixed(2)+'%'})
             ),
             div({style:{textAlign:'center'}},
               div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
@@ -8187,7 +8187,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               driftStores.length>0&&div({style:{display:'flex',gap:4,flexWrap:'wrap'}},
                 driftStores.slice(0,4).map(({s,d})=>{
                   const col=d.status==='recalibrate'?'#f87171':'#f59e0b';
-                  return span({key:s.loc,title:(STORE_NAMES[s.loc]||s.loc)+' — MAPE drift: '+d.mape2w+'% (2wk) vs '+d.mape6w+'% (6wk)',
+                  return span({key:s.loc,title:(STORE_NAMES[s.loc]||s.loc)+' — MAPE drift: '+d.mape2w.toFixed(2)+'% (2wk) vs '+d.mape6w.toFixed(2)+'% (6wk)',
                     style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,background:col+'22',
                       color:col,border:'.5px solid '+col+'44',fontWeight:600,cursor:'default'}},
                     sNameC(s.loc).split(' ').pop()+' ⚠')})
@@ -8216,7 +8216,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       wk.label||'—'),
                     wk.vsLY!=null&&h('text',{x:x+bw/2,y:58,textAnchor:'middle',fontSize:'8',fontWeight:'600',
                       fill:wk.vsLY>=0?'#10b981':'#f87171'},
-                      (wk.vsLY>=0?'+':'')+((wk.vsLY*100).toFixed(1))+'%')
+                      (wk.vsLY>=0?'+':'')+((wk.vsLY*100).toFixed(2))+'%')
                   );
                 })
               );
@@ -8275,7 +8275,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
             salesSec&&salesSec.salesVsLY!=null&&span({style:{fontSize:'10px',fontFamily:'var(--mono)',
               color:(salesSec.salesVsLY*100)>=0?'#10b981':'#f87171'}},
-              ((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(1)+'% vs LY'),
+              ((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(2)+'% vs LY'),
             collBtn('sales')
           ),
           !collapsedSecs['sales']&&(salesSec?div({style:{padding:'10px 12px'}},
@@ -8287,10 +8287,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Net Sales'),
                 salesSec.salesVsLY!=null&&div({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,
                   color:salesSec.salesVsLY>=0?'#10b981':'#f87171',marginTop:2}},
-                  (salesSec.salesVsLY>=0?'+':'')+(salesSec.salesVsLY*100).toFixed(1)+'% vs LY'),
+                  (salesSec.salesVsLY>=0?'+':'')+(salesSec.salesVsLY*100).toFixed(2)+'% vs LY'),
                 MktBadge({ok:salesSec.okSalesVsLY!=null?(salesSec.okSalesVsLY*100):null,
                           fl:salesSec.flSalesVsLY!=null?(salesSec.flSalesVsLY*100):null,
-                          fmt:v=>(v>=0?'+':'')+v.toFixed(1)+'%'})
+                          fmt:v=>(v>=0?'+':'')+v.toFixed(2)+'%'})
               ),
               div({style:{textAlign:'center'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
@@ -8310,7 +8310,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 salesSec.channels.filter(c=>c.sales>0).map(ch=>
                   div({key:ch.key,style:{textAlign:'center',padding:'4px 2px',borderRadius:4,background:'rgba(255,255,255,.04)'}},
                     div({style:{fontSize:'11px',fontWeight:700,fontFamily:'var(--mono)',color:'var(--text)'}},
-                      ch.pct!=null?(ch.pct*100).toFixed(0)+'%':'—'),
+                      ch.pct!=null?(ch.pct*100).toFixed(2)+'%':'—'),
                     div({style:{fontSize:'8px',color:'var(--text3)',lineHeight:1.2}},ch.label)
                   )
                 )
@@ -8334,9 +8334,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{textAlign:'center'}},
                 div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
                   color:laborSec.laborPct!=null?(laborSec.laborPct<.28?'#10b981':laborSec.laborPct<.32?'#f59e0b':'#f87171'):'var(--text3)'}},
-                  laborSec.laborPct!=null?((laborSec.laborPct||0)*100).toFixed(1)+'%':'—'),
+                  laborSec.laborPct!=null?((laborSec.laborPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Labor %'),
-                MktBadge({ok:laborSec.okLaborAvg,fl:laborSec.flLaborAvg,fmt:v=>((v||0)*100).toFixed(1)+'%'})
+                MktBadge({ok:laborSec.okLaborAvg,fl:laborSec.flLaborAvg,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
               div({style:{textAlign:'center'}},
                 div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
@@ -8378,9 +8378,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           !collapsedSecs['service']&&(serviceSec?div({style:{padding:'10px 12px'}},
             [
               {label:'OEPE W/O Parked',val:serviceSec.oepe,ok:serviceSec.okOepe,fl:serviceSec.flOepe,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:160},
-              {label:'DT Parked %',val:serviceSec.park,ok:serviceSec.okPark,fl:serviceSec.flPark,fmt:v=>((v||0)*100).toFixed(1)+'%',goodDir:'low',tgt:.10},
+              {label:'DT Parked %',val:serviceSec.park,ok:serviceSec.okPark,fl:serviceSec.flPark,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low',tgt:.10},
               {label:'KVS Time Per GC',val:serviceSec.kvst,ok:serviceSec.okKvst,fl:serviceSec.flKvst,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:55},
-              {label:'KVS Healthy Usage',val:serviceSec.kvsu,ok:serviceSec.okKvsu,fl:serviceSec.flKvsu,fmt:v=>((v||0)*100).toFixed(1)+'%',goodDir:'high',tgt:.90},
+              {label:'KVS Healthy Usage',val:serviceSec.kvsu,ok:serviceSec.okKvsu,fl:serviceSec.flKvsu,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'high',tgt:.90},
               {label:'R2P',val:serviceSec.r2p,ok:serviceSec.okR2p,fl:serviceSec.flR2p,fmt:v=>Math.round(v)+'s',goodDir:'low',tgt:90},
             ].map((row,i)=>{
               const clr=row.tgt!=null&&row.val!=null?(row.goodDir==='low'?row.val<=row.tgt:row.val>=row.tgt)?'#10b981':'#f87171':'var(--text)';
@@ -8414,7 +8414,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}},
                 [
                   {lbl:'Labor %',v:laborSec.laborPct,ok:laborSec.okLaborAvg,fl:laborSec.flLaborAvg,
-                   fmt:v=>((v||0)*100).toFixed(1)+'%',clr:(laborSec.laborPct||0)<.22?'#10b981':(laborSec.laborPct||0)<.26?'#f59e0b':'#f87171'},
+                   fmt:v=>((v||0)*100).toFixed(2)+'%',clr:(laborSec.laborPct||0)<.22?'#10b981':(laborSec.laborPct||0)<.26?'#f59e0b':'#f87171'},
                   {lbl:'TPPH',v:laborSec.tpph,ok:laborSec.okTpphAvg,fl:laborSec.flTpphAvg,
                    fmt:v=>(v||0).toFixed(1),clr:(laborSec.tpph||0)>=5?'#10b981':(laborSec.tpph||0)>=4?'#f59e0b':'#f87171'},
                   {lbl:'Act vs Need',v:laborSec.avn,ok:null,fl:null,
@@ -8439,7 +8439,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               {label:'T-Red After Count',val:ctrlSec.tRedACnt,ok:null,fl:null,fmt:v=>Math.round(v)+'',goodDir:'low'},
               {label:'T-Red Before %',val:ctrlSec.tRedBPct,ok:ctrlSec.okTRedBPct,fl:ctrlSec.flTRedBPct,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low'},
               {label:'Promo/Disc %',val:ctrlSec.promoPct,ok:ctrlSec.okPromoPct,fl:ctrlSec.flPromoPct,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low'},
-              {label:'Cash O/S %',val:ctrlSec.cashOSPct,ok:ctrlSec.okCashOSPct,fl:ctrlSec.flCashOSPct,fmt:v=>((v||0)*100).toFixed(3)+'%',goodDir:'low'},
+              {label:'Cash O/S %',val:ctrlSec.cashOSPct,ok:ctrlSec.okCashOSPct,fl:ctrlSec.flCashOSPct,fmt:v=>((v||0)*100).toFixed(2)+'%',goodDir:'low'},
               {label:'Cash O/S $',val:ctrlSec.cashOSAmt,ok:null,fl:null,fmt:v=>(v<0?'(':'')+'$'+Math.abs(v).toFixed(2)+(v<0?')':''),goodDir:'low'},
               {label:'Cash Refunds',val:ctrlSec.cashRefCnt,ok:null,fl:null,fmt:v=>Math.round(v)+'',goodDir:'low'},
               {label:'POS Overrings',val:ctrlSec.overringCnt,ok:null,fl:null,fmt:v=>Math.round(v)+'',goodDir:'low'},
@@ -8481,17 +8481,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               ),
               div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'rgba(255,255,255,.04)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
-                  fobSec.pLFoodPct!=null?((fobSec.pLFoodPct||0)*100).toFixed(1)+'%':'—'),
+                  fobSec.pLFoodPct!=null?((fobSec.pLFoodPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'P&L Food Cost %'+(fobSec.primaryIsMTD?' · MTD':'')),
-                fobSec.priorPLFoodPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorPLFoodPct||0)*100).toFixed(1)+'% '+(fobSec.priorMonth||'')),
-                MktBadge({ok:fobSec.okPLFoodPct,fl:fobSec.flPLFoodPct,fmt:v=>((v||0)*100).toFixed(1)+'%'})
+                fobSec.priorPLFoodPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorPLFoodPct||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
+                MktBadge({ok:fobSec.okPLFoodPct,fl:fobSec.flPLFoodPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
               div({style:{textAlign:'center',padding:'8px',borderRadius:5,background:'rgba(255,255,255,.04)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
-                  fobSec.baseFoodPct!=null?((fobSec.baseFoodPct||0)*100).toFixed(1)+'%':'—'),
+                  fobSec.baseFoodPct!=null?((fobSec.baseFoodPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Base Food %'+(fobSec.primaryIsMTD?' · MTD':'')),
-                fobSec.priorBaseFoodPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorBaseFoodPct||0)*100).toFixed(1)+'% '+(fobSec.priorMonth||'')),
-                MktBadge({ok:fobSec.okBaseFoodPct,fl:fobSec.flBaseFoodPct,fmt:v=>((v||0)*100).toFixed(1)+'%'})
+                fobSec.priorBaseFoodPct!=null&&div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1},title:'Last completed month (final)'},((fobSec.priorBaseFoodPct||0)*100).toFixed(2)+'% '+(fobSec.priorMonth||'')),
+                MktBadge({ok:fobSec.okBaseFoodPct,fl:fobSec.flBaseFoodPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               )
             ),
             // Waste components
@@ -8564,10 +8564,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{textAlign:'center',padding:'8px',borderRadius:6,
                 background:'rgba(96,165,250,.1)',border:'.5px solid rgba(96,165,250,.2)'}},
                 div({style:{fontSize:'22px',fontWeight:900,fontFamily:'var(--mono)',color:'#60a5fa'}},
-                  digitalSec.digitalPct!=null?((digitalSec.digitalPct||0)*100).toFixed(1)+'%':'--'),
+                  digitalSec.digitalPct!=null?((digitalSec.digitalPct||0)*100).toFixed(2)+'%':'--'),
                 div({style:{fontSize:'8px',color:'rgba(96,165,250,.7)',letterSpacing:'.5px',
                   textTransform:'uppercase',marginTop:2}},'Digital Mix'),
-                MktBadge({ok:digitalSec.okDigPct,fl:digitalSec.flDigPct,fmt:v=>((v||0)*100).toFixed(1)+'%'})
+                MktBadge({ok:digitalSec.okDigPct,fl:digitalSec.flDigPct,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ),
               div({style:{textAlign:'center',padding:'8px',borderRadius:6,background:'rgba(255,255,255,.04)'}},
                 div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},
@@ -8592,10 +8592,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   borderRadius:'4px 0 0 4px',transition:'width .8s ease',
                   display:'flex',alignItems:'center',justifyContent:'center',
                   fontSize:'7px',color:'#fff',fontWeight:700,overflow:'hidden'}},
-                  ((digitalSec.digitalPct||0)*100)>8?((digitalSec.digitalPct||0)*100).toFixed(1)+'%':''),
+                  ((digitalSec.digitalPct||0)*100)>8?((digitalSec.digitalPct||0)*100).toFixed(2)+'%':''),
                 div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
                   fontSize:'7px',color:'rgba(255,255,255,.4)'}},
-                  (((1-(digitalSec.digitalPct||0))*100).toFixed(1))+'%')
+                  (((1-(digitalSec.digitalPct||0))*100).toFixed(2))+'%')
               )
             ),
             // ── Channel breakdown ─────────────────────────────────────
@@ -8610,9 +8610,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 background:'rgba(255,255,255,.03)',border:'.5px solid rgba(255,255,255,.07)'}},
                 div({style:{fontSize:'10px',marginBottom:2}},ch.icon),
                 div({style:{fontSize:'12px',fontWeight:800,fontFamily:'var(--mono)',color:ch.clr}},
-                  ch.pct!=null?((ch.pct||0)*100).toFixed(1)+'%':'--'),
+                  ch.pct!=null?((ch.pct||0)*100).toFixed(2)+'%':'--'),
                 div({style:{fontSize:'7px',color:'var(--text3)',marginBottom:3}},ch.label),
-                MktBadge({ok:ch.ok,fl:ch.fl,fmt:v=>((v||0)*100).toFixed(1)+'%'})
+                MktBadge({ok:ch.ok,fl:ch.fl,fmt:v=>((v||0)*100).toFixed(2)+'%'})
               ))
             ),
             // ── Strategy note ──────────────────────────────────────────
@@ -8633,7 +8633,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           const METRICS=[
             {label:'Sales vs LY',short:'Sales',icon:'💰',angle:270,
               score:salesSec?.salesVsLY!=null?clamp(0.5+(salesSec.salesVsLY*10),0,1):0.5,
-              display:salesSec?.salesVsLY!=null?((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(1)+'%':'—',
+              display:salesSec?.salesVsLY!=null?((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(2)+'%':'—',
               hint:'Target: flat or better vs last year'},
             {label:'Service',short:'OEPE',icon:'⚡',angle:342,
               score:serviceSec?.oepe?clamp(150/serviceSec.oepe,0,1):0.5,
@@ -8641,7 +8641,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               hint:'Target: ≤150s OEPE'},
             {label:'Labor',short:'Labor%',icon:'👥',angle:54,
               score:laborSec?.laborPct?clamp(0.22/Math.max(0.01,laborSec.laborPct),0,1):0.5,
-              display:laborSec?.laborPct?((laborSec.laborPct||0)*100).toFixed(1)+'%':'—',
+              display:laborSec?.laborPct?((laborSec.laborPct||0)*100).toFixed(2)+'%':'—',
               hint:'Target: ≤22% labor'},
             {label:'T-Reds',short:'T-Red',icon:'🔒',angle:126,
               score:ctrlSec?.tRedAPct?clamp(0.003/Math.max(0.001,ctrlSec.tRedAPct),0,1):0.5,
@@ -8649,7 +8649,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               hint:'Target: ≤0.30% T-Red After'},
             {label:'FOB',short:'FOB%',icon:'🍟',angle:198,
               score:fobSec?.fobPct?clamp(0.04/Math.max(0.005,fobSec.fobPct),0,1):0.5,
-              display:fobSec?.fobPct?((fobSec.fobPct||0)*100).toFixed(1)+'%':'—',
+              display:fobSec?.fobPct?((fobSec.fobPct||0)*100).toFixed(2)+'%':'—',
               hint:'Target: ≤4.0% FOB'},
           ];
           const overallScore=Math.round(METRICS.reduce((a,m)=>a+m.score,0)/METRICS.length*100);
@@ -8790,7 +8790,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                     ),
                     vsAvg!=null&&span({style:{fontSize:'7px',fontFamily:'monospace',flexShrink:0,
                       color:((higherBetter&&vsAvg>=0)||(!higherBetter&&vsAvg<=0))?'rgba(16,185,129,.7)':'rgba(248,113,113,.7)'}},
-                      (vsAvg>=0?'+':'')+vsAvg.toFixed(1)+'% vs avg')
+                      (vsAvg>=0?'+':'')+vsAvg.toFixed(2)+'% vs avg')
                   )
                 );
               };
@@ -8819,7 +8819,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         const DOWabbr=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
         const distTotal=storeProjs.reduce((a,s)=>a+s.wkTotal,0);
         const distLY=storeProjs.reduce((a,s)=>a+s.lyTotal,0);
-        const distVsLY=distLY>0?((distTotal-distLY)/distLY*100).toFixed(1):null;
+        const distVsLY=distLY>0?((distTotal-distLY)/distLY*100).toFixed(2):null;
         return div({style:{marginTop:16,borderTop:'.5px solid var(--bdr)',paddingTop:12}},
           // Header row
           div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
@@ -8868,9 +8868,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   const actualTotal=sp.actualTotal;
                   const hasActuals=actualTotal>0;
                   const lyForActualDays=rowDays.reduce((a,r)=>a+(r.act>0?r.ly:0),0);
-                  const vsLYAct=lyForActualDays>0&&hasActuals?((actualTotal-lyForActualDays)/lyForActualDays*100).toFixed(1):null;
+                  const vsLYAct=lyForActualDays>0&&hasActuals?((actualTotal-lyForActualDays)/lyForActualDays*100).toFixed(2):null;
                   const projForActualDays=rowDays.reduce((a,r)=>a+(r.act>0?r.fc:0),0);
-                  const accPct=hasActuals&&projForActualDays>0?(Math.abs(actualTotal-projForActualDays)/actualTotal*100).toFixed(1):null;
+                  const accPct=hasActuals&&projForActualDays>0?(Math.abs(actualTotal-projForActualDays)/actualTotal*100).toFixed(2):null;
                   const accClr=accPct==null?'var(--text3)':parseFloat(accPct)<5?'#10b981':parseFloat(accPct)<10?'#f59e0b':'#f87171';
                   const vsLYNum=sp.vsLY!=null?parseFloat(sp.vsLY):null;
                   const vsClr=vsLYNum==null?'var(--text3)':vsLYNum>=0?'#10b981':'#f87171';
@@ -9080,8 +9080,8 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
                 const r=report.results[loc]; if(!r) return;
                 const name=sName(loc);
                 rows.push([gn,name,r.hasDI?'Yes':'No',
-                  r.mapeDI!=null?r.mapeDI+'%':'—',r.mapeBase!=null?r.mapeBase+'%':'—',
-                  r.improvement!=null?(r.improvement>0?'+':'')+r.improvement+'%':'—',
+                  r.mapeDI!=null?r.mapeDI.toFixed(2)+'%':'—',r.mapeBase!=null?r.mapeBase.toFixed(2)+'%':'—',
+                  r.improvement!=null?(r.improvement>0?'+':'')+r.improvement.toFixed(2)+'%':'—',
                   r.verdict,r.wkAct||0,r.wkFcDI||0,r.wkFcBase||0]);
               });
             });
@@ -9112,12 +9112,12 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
         // District summary KPIs
         div({style:{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}},
           [
-            {l:'District MAPE — Dialed-In',v:report.districtDI!=null?report.districtDI+'%':'—',
+            {l:'District MAPE — Dialed-In',v:report.districtDI!=null?report.districtDI.toFixed(2)+'%':'—',
               c:mapeColor(report.districtDI),sub:'with calibration'},
-            {l:'District MAPE — Default',v:report.districtBase!=null?report.districtBase+'%':'—',
+            {l:'District MAPE — Default',v:report.districtBase!=null?report.districtBase.toFixed(2)+'%':'—',
               c:mapeColor(report.districtBase),sub:'without calibration'},
             {l:'Calibration Improvement',
-              v:report.districtImprovement!=null?(report.districtImprovement>0?'+':'')+report.districtImprovement+'%':'—',
+              v:report.districtImprovement!=null?(report.districtImprovement>0?'+':'')+report.districtImprovement.toFixed(2)+'%':'—',
               c:report.districtImprovement>0?'#10b981':report.districtImprovement<0?'#f87171':'#94a3b8',
               sub:report.districtImprovement>0?'Dialed-In is helping':'Default is competitive'},
             {l:'Stores with Dialed-In',
@@ -9166,7 +9166,7 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
               gImprove!=null&&div({style:{fontSize:'9px',fontWeight:600,padding:'1px 8px',borderRadius:10,
                 background:gImprove>0?'rgba(16,185,129,.1)':'rgba(239,68,68,.1)',
                 color:gImprove>0?'#10b981':'#f87171',border:'.5px solid '+(gImprove>0?'rgba(16,185,129,.3)':'rgba(239,68,68,.3)')}},
-                'Group improvement: '+(gImprove>0?'+':'')+gImprove+'%')
+                'Group improvement: '+(gImprove>0?'+':'')+gImprove.toFixed(2)+'%')
             ),
             tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
               h('thead',null,tr(null,
@@ -9191,10 +9191,10 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
                       r.hasDI?span({style:{color:'#10b981',fontWeight:700}},'✓ Yes'):
                                span({style:{color:'#f87171'}},'— No')
                     ]),
-                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:mapeColor(r.mapeDI)}},[r.mapeDI!=null?r.mapeDI+'%':'—']),
-                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(r.mapeBase)}},[r.mapeBase!=null?r.mapeBase+'%':'—']),
+                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:mapeColor(r.mapeDI)}},[r.mapeDI!=null?r.mapeDI.toFixed(2)+'%':'—']),
+                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(r.mapeBase)}},[r.mapeBase!=null?r.mapeBase.toFixed(2)+'%':'—']),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:impColor}},
-                      [r.improvement!=null?(r.improvement>0?'+':'')+r.improvement+'%':'—']),
+                      [r.improvement!=null?(r.improvement>0?'+':'')+r.improvement.toFixed(2)+'%':'—']),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)'}},[r.wkAct>0?f$(r.wkAct):'—']),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(r.mapeDI)}},[r.wkFcDI>0?f$(r.wkFcDI):'—']),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},[r.wkFcBase>0?f$(r.wkFcBase):'—']),
@@ -9206,11 +9206,11 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
                   td({style:{padding:'5px 8px',color:'var(--amber)'}},[groupName+' Total']),
                   td({style:{padding:'5px 8px',textAlign:'center',fontSize:'9px',color:'var(--text3)'}},
                     [gLocs.filter(l=>report.results[l]&&report.results[l].hasDI).length+'/'+gLocs.length+' calibrated']),
-                  td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(gAvgDI)}},[gAvgDI!=null?gAvgDI+'%':'—']),
-                  td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(gAvgBase)}},[gAvgBase!=null?gAvgBase+'%':'—']),
+                  td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(gAvgDI)}},[gAvgDI!=null?gAvgDI.toFixed(2)+'%':'—']),
+                  td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(gAvgBase)}},[gAvgBase!=null?gAvgBase.toFixed(2)+'%':'—']),
                   td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
                     color:gImprove!=null?(gImprove>0?'#10b981':gImprove<0?'#f87171':'#94a3b8'):'var(--text3)'}},
-                    [gImprove!=null?(gImprove>0?'+':'')+gImprove+'%':'—']),
+                    [gImprove!=null?(gImprove>0?'+':'')+gImprove.toFixed(2)+'%':'—']),
                   td({colSpan:4,style:{padding:'5px 8px',textAlign:'center',fontSize:'9px',
                     color:gImprove!=null?(gImprove>0?'#10b981':'#f87171'):'var(--text3)'}},
                     [gImprove!=null?(gImprove>0?'Calibration is helping this group':'Consider recalibrating'):'No data'])
@@ -9286,7 +9286,7 @@ function ChannelIntelligencePanel({stores, ds, onClose}) {
   );
 
   const fmtS = v => v>=1000000?'$'+(v/1000000).toFixed(2)+'M':v>=1000?'$'+(v/1000).toFixed(1)+'k':'$'+Math.round(v);
-  const fmtP = v => (v*100).toFixed(1)+'%';
+  const fmtP = v => (v*100).toFixed(2)+'%';
 
   const focusCh = CHANNELS.find(c=>c.key===focus)||CHANNELS[0];
 
@@ -9724,15 +9724,15 @@ function buildEmailReportHTML(mt, ds, settings, selPeriod) {
 // ── Monthly Projections Panel ─────────────────────────────────────────────────
 const PROJ_FIELDS = [
   {g:'Sales & Labor', key:'tProdSales',   l:'Sales $',    fmt:v=>v!=null?v.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}):'—', dollar:true},
-  {g:'Sales & Labor', key:'tCrewLabor',   l:'Crew Labor', fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
-  {g:'Sales & Labor', key:'tBonusLabor',  l:'Bonus Cr',   fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
+  {g:'Sales & Labor', key:'tCrewLabor',   l:'Crew Labor', fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
+  {g:'Sales & Labor', key:'tBonusLabor',  l:'Bonus Cr',   fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Sales & Labor', key:'tTpph',        l:'TPPH',       fmt:v=>v!=null?v.toFixed(2):'—'},
   // Service targets (#40) — already carried per-store in DEFAULT_TARGETS/monthly_targets
   // (tOepe/tKvst/tKvsu/tR2p) but were never surfaced in this grid. rollupProj is fully
   // generic (sales-weighted avg for anything but tProdSales/tOpSupply) so no rollup change.
   {g:'Service',       key:'tOepe',        l:'OEPE',       fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
   {g:'Service',       key:'tKvst',        l:'KVS Time',   fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
-  {g:'Service',       key:'tKvsu',        l:'KVS Hlthy',  fmt:v=>v!=null?(v*100).toFixed(1)+'%':'—'},
+  {g:'Service',       key:'tKvsu',        l:'KVS Hlthy',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Service',       key:'tR2p',         l:'R2P',        fmt:v=>v!=null?v.toFixed(1)+'s':'—'},
   {g:'Food Cost',     key:'tFOBBase',     l:'Base Food',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
   {g:'Food Cost',     key:'tDiscCoupPct', l:'Disc Coup',  fmt:v=>v!=null?(v*100).toFixed(2)+'%':'—'},
@@ -10027,7 +10027,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
       span({style:{fontSize:10,fontWeight:700,color:'var(--text2)',minWidth:104,textAlign:'center'}},monthLbl), stepBtn(1,'›')),
     hasActuals&&span({style:{fontSize:9,fontWeight:600,color:'var(--text3)'}},'as of '+new Date(actuals.maxDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · day '+dayOfMax+' of '+daysInMonth+' · Pace = MTD ÷ days × month'),
     !mtIsThisMonth&&loadedMt!==null&&tgtSum<=0&&span({style:{fontSize:9,color:'#f59e0b'}},'no targets loaded for this month'),
-    hasActuals&&totVs!=null&&span({style:{marginLeft:'auto',fontSize:11,fontWeight:800,color:pctCol(totVs)}},'District pace '+(totVs>=0?'+':'')+totVs.toFixed(1)+'% vs target'));
+    hasActuals&&totVs!=null&&span({style:{marginLeft:'auto',fontSize:11,fontWeight:800,color:pctCol(totVs)}},'District pace '+(totVs>=0?'+':'')+totVs.toFixed(2)+'% vs target'));
 
   if(!hasActuals) return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)'}},
     header, div({style:{padding:'4px 20px 10px',fontSize:10,color:'var(--text3)'}}, 'No actuals loaded for '+monthLbl+' yet — step ‹ › to a month with data.'));
@@ -10039,7 +10039,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
     h('td',{style:td2},money(r.tgt)),
     h('td',{style:td2},money(r.act)),
     h('td',{style:td2},money(r.pace)),
-    h('td',{style:{...td2,color:pctCol(r.vs),fontWeight:700}},r.vs==null?'—':(r.vs>=0?'+':'')+r.vs.toFixed(1)+'%'));
+    h('td',{style:{...td2,color:pctCol(r.vs),fontWeight:700}},r.vs==null?'—':(r.vs>=0?'+':'')+r.vs.toFixed(2)+'%'));
   return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)',maxHeight:240,overflowY:'auto'}},
     header,
     h('table',{style:{width:'100%',borderCollapse:'collapse'}},
