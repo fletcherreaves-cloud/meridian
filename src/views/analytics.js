@@ -15,7 +15,7 @@ import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
-import { metricSeries } from '../engine/metric-source.js';
+import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 
 const h=React.createElement;
@@ -7349,8 +7349,19 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(!cRows.length&&!lRows.length)return null;
     const cScoped=cRows.filter(r=>allLocs.includes(String(r.loc)));
     const lScoped=lRows.filter(r=>allLocs.includes(String(r.loc)));
-    const laborPct=avgOf(cScoped,'laborPct')||avgOf(lScoped,'laborPct');
-    const tpph=avgOf(cScoped,'tpph')||avgOf(lScoped,'tpph');
+    // Labor %/TPPH now auto-first per-day via metric-source.js (2026-08-06) instead of pooling
+    // ALL rows into one flat avgOf — that pooled-average approach silently returned "--" for
+    // TPPH whenever the current window's MANUAL ctrlRows upload existed but its sheet format
+    // predates a TPPH column: parseCtrlData defaults the field to `0` (not null) when the Excel
+    // column is missing, and mergeFresh's whole-row override meant that manual $0 TPPH row
+    // entirely replaced the day's ctrlAuto row (which DID have real TPPH from qsr_act_summary),
+    // even though avgOf itself correctly excludes 0 (v>0 filter) — the auto DATA never reached
+    // cScoped in the first place. metricAvg resolves per-day, per-source, treating a 0/missing
+    // manual value as "keep looking" (mode:'pos') rather than letting one blank column block
+    // every other source for that day. Root-caused investigating the AAG Controls & Integrity
+    // TPPH "--" gap first reported 2026-08-04 (v4.808's fix didn't fully close it).
+    const laborPct=metricAvg(ds,allLocs,effectiveDateRange,'laborPct');
+    const tpph=metricAvg(ds,allLocs,effectiveDateRange,'tpph');
     const avn=avgOf(cScoped,'actVsNeed')||avgOf(lScoped,'actVsNeed');
     const otHrs=sumOf(cScoped,'otHrs')||sumOf(lScoped,'otHrs');
     const actHrs=sumOf(cScoped,'actHrs')||sumOf(lScoped,'actHrs');
@@ -7396,7 +7407,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       return{loc,laborPct:avgOf(cr,'laborPct')||avgOf(lr,'laborPct'),tpph:avgOf(cr,'tpph')||avgOf(lr,'tpph')};
     }).filter(x=>x.laborPct!=null).sort((a,b)=>a.laborPct-b.laborPct);
     return{laborPct,tpph,avn,otHrs,actHrs,crewHrs,avgRate,okLaborAvg,flLaborAvg,okTpphAvg,flTpphAvg,ranked};
-  },[labInRange,ctrlEffective,allLocs,okLocs,flLocs]);
+  },[labInRange,ctrlEffective,allLocs,okLocs,flLocs,ds,effectiveDateRange]);
 
   // ── Service section ───────────────────────────────────────────
   const serviceSec=React.useMemo(()=>{
