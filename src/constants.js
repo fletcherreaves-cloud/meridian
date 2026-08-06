@@ -394,6 +394,11 @@ const EVENT_TYPES={
   cfv:          {label:'CFV (Unannounced)',     icon:'🔍',  col:'#f97316'},
   ecosure:      {label:'EcoSure Visit',        icon:'🌿',  col:'#22c55e'},
   rgr:          {label:'RGR (Annual Grade)',   icon:'📋',  col:'#818cf8'},
+  // Own type, not `other`: the Event Impact Registry keys on (loc, event_type), so
+  // training days bucketed into `other` would pool with every unrelated miscellaneous
+  // event and never earn a measurable lift/drag of their own. Managers off the floor
+  // for a multi-day session is a real operational signal worth measuring.
+  training:     {label:'Training / Leadership', icon:'🎓', col:'#60a5fa'},
   other:        {label:'Other',                icon:'📌',  col:'#94a3b8'},
   // ── School Calendar (v4.200) ─────────────────────────────────────────────
   school_start:        {label:'School Year Begins',  icon:'🎒', col:'#34d399'},
@@ -416,7 +421,7 @@ const EVENT_TYPE_GROUPS=[
   {label:'🏪 Store Events',items:['tech','utilities','maintenance','power','outage']},
   {label:'🚨 Community / External',items:['pub_emergency','road_closure','construction','event','sports','comp']},
   {label:'🏪 Competition',items:['comp_new','comp_promo','comp_closure','comp_pricing','comp_media']},
-  {label:'📋 Operations',items:['promo','holiday','staffing','cfv','ecosure','rgr','other']},
+  {label:'📋 Operations',items:['promo','holiday','staffing','cfv','ecosure','rgr','training','other']},
   {label:'📚 School Calendar',items:['school_start','school_end','school_break','school_no_school','school_early_release']},
   {label:'🛍 Retail / Shopping',items:['tax_free','black_friday','small_biz_sat','cyber_monday']},
 ];
