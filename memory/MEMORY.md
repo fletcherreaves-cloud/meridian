@@ -13,6 +13,9 @@
   correlations, real-world decision trees, "learn and burn."
 
 ## 🗂 Owner "Notes" working queues (most recent = most relevant)
+- [Notes 59](notes-59-online-reputation.md) — online reputation/social analytics: Google/FB/Yelp/Reddit/3PO
+  ratings + reviews per location, local news, community-sentiment source tracing. Key constraint:
+  **prominence beats recency** (what is displayed as current matters, even if old)
 - [Notes 58](notes-58-queue.md) — Inventory Control weekly-count rules (Food+Condiment every week,
   floating mid-month Paper count); per-item variance charts; Items Recounted tile blank;
   ⚠️ **absolute must** — one-directional swing alarm w/ click-ack + auto-compiled cause report (store 10422)
