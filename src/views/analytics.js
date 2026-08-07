@@ -4993,9 +4993,11 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
     return (stores||[])
       .map(s=>({
         store:s,
-        crits:s.findings.filter(f=>f.t==='crit'),
-        warns:s.findings.filter(f=>f.t==='warn'),
-        total:s.findings.filter(f=>f.t==='crit'||f.t==='warn').length
+        crits:(s.findings||[]).filter(f=>f.t==='crit'),
+        // buildBrief emits 'watch', never 'warn'. Until v4.858 this matched nothing, so the
+        // "🟡 Watch" tab was permanently empty and the header always read "0 stores on watch".
+        warns:(s.findings||[]).filter(f=>f.t==='warn'||f.t==='watch'),
+        total:(s.findings||[]).filter(f=>f.t==='crit'||f.t==='warn'||f.t==='watch').length
       }))
       .filter(x=>x.total>0)
       .sort((a,b)=>b.crits.length-a.crits.length||b.warns.length-a.warns.length);
