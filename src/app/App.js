@@ -1827,7 +1827,9 @@ function App() {
           .order('uploaded_at',{ascending:true})
           .limit(50);
         if(!manualFiles?.length) return;
-        const toProcess=manualFiles.filter(f=>!synced.has(f.id));
+        let failedIds={};
+        try{failedIds=JSON.parse(localStorage.getItem('mf_failed_report_ids')||'{}');}catch{}
+        const toProcess=manualFiles.filter(f=>!synced.has(f.id)&&(failedIds[f.id]||0)<2);
         if(!toProcess.length) return;
         console.log(`[Meridian] ${toProcess.length} manual report(s) to sync from cloud`);
         const filesToSync=[];
@@ -1839,7 +1841,22 @@ function App() {
               .select('file_data')
               .eq('id',rec.id)
               .single();
-            if(fetchErr||!row?.file_data){console.warn('[Meridian] No file_data for',rec.filename);continue;}
+            if(fetchErr||!row?.file_data){
+              // Don't retry the same file forever. One 12.37 MB base64 blob (a Labor
+              // report) exceeded the statement timeout on EVERY load, producing a
+              // recurring 500 and wasted round-trip that nothing surfaced. Count
+              // attempts, give up after two, and say so by name so a file that never
+              // syncs is visible rather than quietly absent.
+              try{
+                const fk='mf_failed_report_ids';
+                const f=JSON.parse(localStorage.getItem(fk)||'{}');
+                f[rec.id]=(f[rec.id]||0)+1;
+                localStorage.setItem(fk,JSON.stringify(f));
+                if(f[rec.id]>=2) console.warn(`[Meridian] "${rec.filename}" has failed to sync ${f[rec.id]}x and will no longer be retried — it is likely too large to fetch in one request. Re-upload it on this device if you need it.`);
+              }catch{}
+              console.warn('[Meridian] No file_data for',rec.filename,fetchErr?.message||'');
+              continue;
+            }
             const binary=atob(row.file_data);
             const bytes=new Uint8Array(binary.length);
             for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
