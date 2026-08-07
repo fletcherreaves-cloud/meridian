@@ -976,9 +976,13 @@ function Brief({store, rangeTotal, rangeLY}) {
   const tcls={crit:'bitext bt-crit',watch:'bitext bt-watch',ok:'bitext bt-ok',fc:'bitext bt-fc'};
   // If we have live range totals, re-compute the forecast finding with correct numbers
   const findings = rangeTotal&&rangeLY
-    ? store.findings.filter(f=>f.t!=='fc').concat([{t:'fc',
+    // rule:'forecast' must stay on this rebuilt finding — attachFindingMeta tags the one
+    // buildBrief emits, and replacing it here without the rule would silently strip the
+    // structured fields (severity/category/title/detail) on the store dashboard only.
+    ? store.findings.filter(f=>f.t!=='fc').concat([{rule:'forecast',t:'fc',
         m:'AI FORECAST: '+f$(rangeTotal)+' projected this period ('+fPct((rangeTotal-rangeLY)/rangeLY,2)+' vs LY '+f$(rangeLY)+'). '
-          +(rangeTotal>=rangeLY?'Bullish — sustained momentum across T2/T4/T6 trend windows.':'Model reflects current operational headwinds and trend pressure.')
+          +(rangeTotal>=rangeLY?'Bullish — sustained momentum across T2/T4/T6 trend windows.':'Model reflects current operational headwinds and trend pressure.'),
+        severity:'info',category:'Forecast',icon:'🔮',dollars:0
       }])
     : store.findings;
   return div(null,
