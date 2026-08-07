@@ -51,7 +51,16 @@ export const COVER_FRAC = 0.75;
 export const WEEKLY_DUE_DAYS = 9;
 
 const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
-const dOnly = (d) => (d ? String(d).slice(0, 10) : null);
+const dOnly = (d) => {
+  if (!d) return null;
+  // Accept a Date (what loadQsrOnHand returns) or an ISO string (what the pull script and
+  // raw REST return). Getting this wrong is silent: the engine would find no dates and
+  // report every store as never-counted.
+  if (d instanceof Date) return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+};
+/** Read the count date from either the DB shape (last_counted) or the app shape (lastCounted). */
+const countedOf = (r) => dOnly(r.last_counted != null ? r.last_counted : r.lastCounted);
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
 
 /** Last calendar day of the month a YYYY-MM-DD falls in. */
@@ -79,7 +88,7 @@ export function detectSessions(rows = []) {
     const loc = unpad(r.loc);
     (totals[loc] || (totals[loc] = {}));
     totals[loc][r.cls] = (totals[loc][r.cls] || 0) + 1;
-    const d = dOnly(r.last_counted);
+    const d = countedOf(r);
     if (!d) continue;
     ((byDate[loc] || (byDate[loc] = {}))[d] || (byDate[loc][d] = {}));
     byDate[loc][d][r.cls] = (byDate[loc][d][r.cls] || 0) + 1;

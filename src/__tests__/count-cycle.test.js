@@ -180,3 +180,30 @@ describe('robustness and rollup', () => {
     expect(WEEKLY_DUE_DAYS).toBe(9);
   });
 });
+
+describe('row-shape compatibility', () => {
+  // loadQsrOnHand returns camelCase with a Date; the pull script and raw REST return
+  // snake_case with an ISO string. Supporting only one silently reports every store as
+  // never-counted, which would look like a data outage rather than a bug.
+  const universe = (shape) => [
+    ...Array.from({ length: 118 }, (_, i) => ({ loc: 'A', cls: 'Food', wrin: `F${i}`, ...shape(i, 'Food') })),
+    ...Array.from({ length: 36 }, (_, i) => ({ loc: 'A', cls: 'Condiment', wrin: `C${i}`, ...shape(i, 'Condiment') })),
+  ];
+
+  it('reads the DB shape: last_counted as an ISO string', () => {
+    const rows = universe(() => ({ last_counted: '2026-08-06' }));
+    expect(cycleCompliance(rows, { asOf: '2026-08-07' })[0].status).toBe('ok');
+  });
+
+  it('reads the app shape: lastCounted as a Date', () => {
+    const rows = universe(() => ({ lastCounted: new Date('2026-08-06T00:00:00') }));
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' });
+    expect(c[0].status).toBe('ok');
+    expect(c[0].lastWeekly.date).toBe('2026-08-06');
+  });
+
+  it('ignores an invalid Date rather than crashing', () => {
+    const rows = universe(() => ({ lastCounted: new Date('nonsense') }));
+    expect(() => cycleCompliance(rows, { asOf: '2026-08-07' })).not.toThrow();
+  });
+});

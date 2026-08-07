@@ -41,6 +41,7 @@ const lazyPanel = (importFn) => React.lazy(() => importFn().catch((err) => {
   throw err;
 }));
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
+const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 import { SchedulingPanel } from '../views/scheduling.js';
 import { AdminPanel } from '../views/admin.js';
@@ -1385,6 +1386,7 @@ function App() {
   const [showDev, setShowDev]          = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showAnoms, setShowAnoms]      = useState(false);
+  const [showCountCycle, setShowCountCycle] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
   const [showDialedIn, setShowDialedIn]= useState(false);
   const [showReport,   setShowReport]  = useState(false);
@@ -2917,7 +2919,7 @@ function App() {
   // by v4.855 fifteen panels had drifted out of this list, so panel-registry.test.js
   // now FAILS the build if any openable panel is missing from it or from the
   // Escape handler below. Keep the list hand-written; the test keeps it honest.
-  const anyModalOpen = showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
+  const anyModalOpen = showCountCycle||showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
     showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
     showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
     showPriorities||showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
@@ -2956,7 +2958,7 @@ function App() {
       setShowFormsPrint(false);setShowLeaderOnePager(false);setShowMetricLineage(false);
       setShowPriorities(false);setShowPromoRoi(false);setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
-      setShowVisitReady(false);
+      setShowVisitReady(false);setShowCountCycle(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -3054,6 +3056,7 @@ function App() {
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
         if(modal==='inventory')      perm('analytics.store')&&setShowInventory(true);
+        if(modal==='count-cycle')    perm('analytics.store')&&setShowCountCycle(true);
         if(modal==='fob-analysis')   perm('analytics.store')&&setShowFOB(true);
         if(modal==='fob-eom')        perm('analytics.store')&&setShowFOBEOM(true);
         if(modal==='smg-voice')      perm('analytics.store')&&setShowSMGVoice(true);
@@ -3291,6 +3294,7 @@ function App() {
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
+    showCountCycle&&h(CountCyclePanel,{onClose:()=>setShowCountCycle(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},
