@@ -76,6 +76,8 @@ import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/
 import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
+import { SwingAlarm } from '../components/SwingAlarm.js';
+import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt.js';
 import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts } from '../features/morning-brief.js';
@@ -2455,6 +2457,35 @@ function App() {
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
 
   const goStore=(s)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');};
+
+  // ── Swing alarm (Notes 58 #4) ────────────────────────────────────────────
+  // A large sustained one-directional move in sales or guest counts must be impossible
+  // to miss. Acks persist to user_settings so they follow the user across devices, and
+  // are keyed to the situation (store + week + severity) so acknowledging one week never
+  // silences the next — see src/engine/swing-feed.js.
+  const [swingAcks, setSwingAcks] = React.useState({});
+  React.useEffect(() => {
+    let live = true;
+    loadUserSetting(ACK_SETTING_KEY).then(v => { if (live && v && typeof v === 'object') setSwingAcks(v); }).catch(()=>{});
+    return () => { live = false; };
+  }, []);
+  const swingItems = React.useMemo(() => {
+    try { return buildSwingFeed(ds?.qsrActSummaryRows || [], { storeName: sName }); }
+    catch (e) { console.warn('[swing]', e); return []; }
+  }, [ds?.qsrActSummaryRows]);
+  const ackSwing = React.useCallback((item) => {
+    // Who acknowledged matters — this is an audit trail, not just a dismissal. There is
+    // no userEmail binding in this component, so read it from the live session.
+    (async () => {
+      let who = null;
+      try { who = (await supabase?.auth?.getUser())?.data?.user?.email || null; } catch {}
+      setSwingAcks(prev => {
+        const next = pruneAcks(acknowledge(prev, item, who), swingItems);
+        saveUserSetting(ACK_SETTING_KEY, next).catch(()=>{});
+        return next;
+      });
+    })();
+  }, [swingItems]);
   const critCount = stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='crit').length,0);
 
   const dsRef = useRef(ds);
@@ -3058,6 +3089,10 @@ function App() {
 
     // ── RIGHT MAIN AREA ────────────────────────────────────────────
     div({style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}},
+
+      h(SwingAlarm, { items: swingItems, acks: swingAcks, onAck: ackSwing,
+        onOpenStore: (loc) => { const st=(stores||[]).find(x=>String(x.loc)===String(loc)); if(st) goStore(st); },
+        onOpenPanel: () => setShowSignals(true) }),
 
       // Slim topbar
       h(AppTopbar,{
