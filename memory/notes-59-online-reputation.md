@@ -462,3 +462,56 @@ NewsAPI.org (free tier bans internal production use).
 **Vendors** ($16k–42k/yr for the ones with real 3PO review coverage — Chatmeter, Momos)
 are only worth considering for the Uber Eats / Grubhub gap, and probably not even then,
 given DoorDash and Google are both obtainable free.
+
+---
+
+# GBP setup runbook (started 2026-08-07)
+
+Ordered steps. Step 3 is the long pole — file it early, everything else can wait.
+
+**0. Check existing access** — sign into `business.google.com` with the operator account.
+   How many of the 27 appear, and what role? **Manager is sufficient** (Google's own docs
+   recommend partners be manager, not owner; Managers can respond to reviews and pull
+   insights). If the 27 are already there, the corporate ask never happens.
+
+**1. Only if missing — the corporate ask.** Narrow: *"Manager role on our 27 location IDs,
+   or add our Google Cloud project to the relevant location group."* Corporate keeps
+   Primary Owner and the locked NAP/category fields. Roles assign at location-GROUP level,
+   so Oklahoma can be granted without exposing anything else. Route: McDonald's US digital
+   marketing org, not the field consultant.
+
+**2. Enable in Google Cloud** (project "My First Project", org mcreaves.com):
+   Google My Business API (legacy — this is the one serving reviews) ·
+   My Business Account Management API · My Business Business Information API
+
+**3. File the access application** — `support.google.com/business/contact/api_default`
+   → "Application for Basic API Access". Three things decide approval:
+     · apply from **@mcreaves.com** (rejections cluster on applicant domain ≠ business site)
+     · name the GCP project (number + id)
+     · concrete use case, e.g. "internal operations dashboard for our 27 franchised
+       locations; read reviews/ratings to track guest sentiment per store and respond"
+   Stated 7–10 business days; real-world 4 days to 6 weeks.
+
+**4. After approval** quota goes 0 → 300 QPM. ⚠️ If the console shows **0 QPM that means
+   NOT APPROVED** — do not file a quota-increase request, it is the wrong form.
+
+**5. Then** create an OAuth client ID with scope `https://www.googleapis.com/auth/business.manage`.
+   API keys return 401 on GBP — it is not public data, so Google requires proof of WHO is
+   asking and that they are authorised on the listing. This is the only point at which the
+   OAuth consent screen matters.
+
+## YouTube — key live 2026-08-07, and what it actually returns
+
+`YOUTUBE_API_KEY` is in `.env.local` and GitHub secrets. Restricted to YouTube Data API v3,
+no application restriction (GitHub runners have no stable IP). Verified working.
+
+⚠️ **Measured yield is near zero, and that is expected, not a bug:**
+```
+"McDonald's" "Durant" "Oklahoma"  → 0 results
+"McDonald's" "Atoka" "Oklahoma"   → 0 results
+"Atoka" "Oklahoma"                → 5 results (crappie fishing, Reba's Place)
+```
+Same pattern as TripAdvisor and the RSS brand column: rural OK/FL simply has thin coverage.
+Worth running anyway **because it is free and it is insurance** — if something about a store
+does go viral, YouTube is where it shows, and a pull returning nothing 51 weeks a year costs
+nothing. Do NOT read an empty result as broken.
