@@ -2005,7 +2005,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const summary = useMemo(() => {
     const n = rows.length;
     const done = rows.filter(r => r.prog.believesDone).length;
-    const avg = n ? rows.reduce((s, r) => s + (r.prog.earlyPctCounted ?? r.prog.pctCounted), 0) / n : 0;
+    // Item-weighted, not a mean of store percentages (owner 2026-08-06): total items
+    // counted across the stores divided by total items in those stores, so a 40-item
+    // store at 100% can't offset a 400-item store at 50%. Each store contributes on the
+    // SAME basis its own displayed percentage uses — early classes (Food+Condiment+Paper,
+    // today's target) when it has any, else all classes — so the summary stays
+    // comparable to the per-store column beside it.
+    let _cnt = 0, _tot = 0;
+    for (const r of rows) {
+      const p = r.prog || {};
+      const useEarly = (+p.earlyTotal || 0) > 0;
+      _cnt += (+(useEarly ? p.earlyCounted : p.itemsCounted) || 0);
+      _tot += (+(useEarly ? p.earlyTotal   : p.itemsTotal)   || 0);
+    }
+    // Fall back to the old mean only when no store reports item counts at all.
+    const avg = _tot > 0
+      ? _cnt / _tot
+      : (n ? rows.reduce((s, r) => s + (r.prog.earlyPctCounted ?? r.prog.pctCounted), 0) / n : 0);
     return { n, done, avg };
   }, [rows]);
 

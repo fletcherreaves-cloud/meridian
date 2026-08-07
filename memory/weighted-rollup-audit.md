@@ -94,26 +94,43 @@ labor % needs sales to weight. Could be closed by joining `laborRows` sales on
 
 ---
 
-## 🤔 Left alone — judgment call, needs owner intent
+## ✅ Resolved by owner (2026-08-06)
 
-These are per-store means where the unweighted figure may be the intended statistic.
-Weighting would change *what the number means*, not just its accuracy.
+Raised as judgment calls; the owner ruled on all four.
 
-| Where | Metric | Question |
-|---|---|---|
-| `views/store-analytics.js:2000` | avg MAPE across stores | "average store's accuracy" is a legitimate stat — probably correct as-is |
-| `engine/eom-district-summary.js:86` | `avgCountPct` | weight by item count, or keep as per-store average? |
-| `views/eom-dashboard.js:2008` | avg `pctCounted` | same |
-| `views/analytics.js:4591,4599` | avg `varPct` | inventory variance % — dollar-weighting is arguably right, but changes the meaning |
+**MAPE across stores** (`views/store-analytics.js:2000`) — *"leave, you are right on this
+one."* Averaging MAPE across stores is a legitimate "average store's accuracy" statistic.
+Unchanged.
 
-Ask before changing any of these.
+**EOM completion percentages** — owner: *"# of items counted divided by total number of
+items by class … total items counted across all classes being averaged divided by total
+items in those classes."* Both sites are now item-weighted (v4.844):
+- `engine/eom-district-summary.js` `avgCountPct`
+- `views/eom-dashboard.js` `summary.avg`
+
+> **Basis note.** Each store contributes on the SAME basis its own displayed percentage
+> uses — early classes (Food + Condiment + Paper, today's target) when it has any, else
+> all classes — because `countPct` is `earlyPctCounted ?? pctCounted`. Widening the
+> district figure to all four classes while the per-store column stays on the early basis
+> would make the two incomparable. Non-Product isn't due until the following day, so
+> folding it in would also drag completion down for a reason that isn't a real shortfall.
+> If the owner wants an all-class district number, it should be a *separate* figure, not a
+> redefinition of this one.
+
+**`varPct`** (`views/analytics.js:4592,4600`) — ⚠️ **this audit originally mislabeled it as
+inventory variance.** It is not. Both sites average sales-vs-forecast variance % purely to
+pick a calendar cell's **background and text colour**. It is display-only heat-map shading,
+never a reported figure, so the owner's item-count logic doesn't apply. A separate sweep
+confirmed there is **no** inventory-variance average-of-averages anywhere in the codebase —
+so the metric the owner had in mind has no offending site. Left unchanged; sales-weighting
+the shading is possible but would only shift colour thresholds.
 
 ---
 
 ## Follow-up
 
-- Once **PR #84** merges, replace `views/scheduling.js`'s local `wAvgLaborPct` /
-  `wAvgTPMH` with the shared `engine/weighted.js` primitives. They were written first and
-  are behaviourally identical; the duplication is temporary, only because the two changes
-  were on separate branches.
+- ✅ #84 and #85 both merged 2026-08-06. `views/scheduling.js` still carries local
+  `wAvgLaborPct` / `wAvgTPMH` that duplicate `engine/weighted.js`; collapse them into the
+  shared primitives (behaviourally identical — they were written first, on a separate
+  branch).
 - Consider re-sourcing OEPE from DAR (above) — closes four sites at once.
