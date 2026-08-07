@@ -268,10 +268,16 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.875';
+const MERIDIAN_VERSION    = '4.881';
 const MERIDIAN_BUILD_DATE = '2026-08-07';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.881', date:'2026-08-07', changes:[
+    'NEW — Local News. Stories from nine local outlets covering the towns our restaurants are in, attributed to the right store and filtered to what could plausibly affect a restaurant: road closures, crime, weather, business openings. Prep sports and obituaries are filtered out. A story in a two-store town (Ardmore, DeFuniak Springs) is shown as belonging to EITHER store rather than being guessed at. Also searches YouTube nightly, though these towns carry almost no video coverage.',
+  ]},
+  {version:'4.880', date:'2026-08-07', changes:[
+    'The swing alarm now shows what was happening locally around a store\'s decline. Crucially it looks BACK before the decline started, because a cause comes before its effect — for the Atoka alert it surfaces storm-damaged roads and restoration work from weeks earlier. Headed "worth checking", never presented as the explanation.',
+  ]},
   {version:'4.875', date:'2026-08-07', changes:[
     'Inventory variance trace now loops back to the last ACTUAL PHYSICAL COUNT instead of the calendar month, so the chart brackets the window a variance actually occurred in. The header names the window ("since the last count (Aug 5)"). It deliberately walks back past a count taken in the last few days — anchoring on yesterday would collapse the chart to two points. Note the trace still cannot cross a month boundary: qsr_fob snapshots are month-to-date cumulative and reset at month start.',
   ]},
