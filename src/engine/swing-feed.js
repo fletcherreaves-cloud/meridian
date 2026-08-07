@@ -20,17 +20,41 @@ import { detectSwing, swingItem } from './swing-detect.js';
 export const ACK_SETTING_KEY = 'swing_acks';
 
 const dKey = (d) => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
+const pad = (n) => String(n).padStart(2, '0');
+
+/**
+ * The current McDonald's business date, accounting for the 4:00am ABC cutover — at 2am
+ * the business day is still yesterday's.
+ *
+ * This exists because of a real miss: weeklyBuckets counted 7 ROWS as a complete week,
+ * but the 7th row was TODAY, still filling. Measured on 2026-08-07, store 10422 had rung
+ * $7,359 against a typical closed day of $11,003 — 67% — so the current week was being
+ * judged on ~$3,600 of sales that had not happened yet. Worse, the figure moved through
+ * the day: scarier in the morning, milder by close. An alarm whose number changes while
+ * you look at it is an alarm nobody trusts.
+ */
+export function businessDate(now = new Date()) {
+  const d = new Date(now.getTime() - 4 * 3600e3);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 /**
  * Bucket a store's daily rows into complete trailing weeks, most recent last.
  * Only COMPLETE weeks are returned — a partial current week would read as a collapse
  * every single time, which is exactly how an alarm trains people to ignore it.
  */
-export function weeklyBuckets(rows = [], { weeks = 8, asOf = null } = {}) {
+export function weeklyBuckets(rows = [], { weeks = 8, asOf = null, now = null } = {}) {
   const sorted = [...(rows || [])].filter(r => r && r.date).sort((a, b) => a.date - b.date);
   if (!sorted.length) return [];
-  const end = asOf ? new Date(asOf) : sorted[sorted.length - 1].date;
-  const usable = sorted.filter(r => r.date <= end);
+  // Only CLOSED business days count. `asOf` is an explicit override for replay/tests and
+  // is taken at face value; otherwise everything from the current business date onward is
+  // dropped because that day is still accumulating.
+  const cutoff = asOf ? dKey(asOf) : null;
+  const openDay = businessDate(now || new Date());
+  const usable = sorted.filter(r => {
+    const k = dKey(r.date);
+    return cutoff ? k <= cutoff : k < openDay;
+  });
 
   const out = [];
   for (let i = usable.length; i > 0; i -= 7) {
@@ -51,7 +75,7 @@ export function weeklyBuckets(rows = [], { weeks = 8, asOf = null } = {}) {
  * Build swing alerts for every store present in the data.
  * `rows` is ds.qsrActSummaryRows (or anything with {loc, date, sales, gc, lySales, lyGc}).
  */
-export function buildSwingFeed(rows = [], { storeName = String, asOf = null, weeks = 8, opts = {} } = {}) {
+export function buildSwingFeed(rows = [], { storeName = String, asOf = null, now = null, weeks = 8, opts = {} } = {}) {
   const byLoc = {};
   for (const r of (rows || [])) {
     if (!r || !r.loc) continue;
@@ -59,7 +83,7 @@ export function buildSwingFeed(rows = [], { storeName = String, asOf = null, wee
   }
   const out = [];
   for (const loc of Object.keys(byLoc)) {
-    const periods = weeklyBuckets(byLoc[loc], { weeks, asOf });
+    const periods = weeklyBuckets(byLoc[loc], { weeks, asOf, now });
     if (periods.length < 2) continue;                     // can't judge a run on one week
     const swing = detectSwing(periods, opts);
     const item = swingItem(loc, swing, storeName);

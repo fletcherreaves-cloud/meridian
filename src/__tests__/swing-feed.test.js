@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { weeklyBuckets, buildSwingFeed, ackKey, partitionAcked, blocking,
-         acknowledge, pruneAcks } from '../engine/swing-feed.js';
+         acknowledge, pruneAcks, businessDate } from '../engine/swing-feed.js';
 
 const day = (i) => new Date(2026, 5, 1 + i);          // 2026-06-01 + i
 /** n days of rows for one store at a given vs-LY ratio. */
@@ -148,5 +148,42 @@ describe('pruneAcks', () => {
   it('keeps recent acks even when not currently live, to avoid re-alarming on a blip', () => {
     const recent = { 'A:x:crit': { at: new Date().toISOString() } };
     expect(Object.keys(pruneAcks(recent, []))).toHaveLength(1);
+  });
+});
+
+describe('the still-open business day is excluded', () => {
+  // Found on preview 2026-08-07: the alarm counted TODAY as part of a complete week.
+  // Store 10422 had rung $7,359 against a typical closed day of $11,003 — 67% — so the
+  // week was judged on ~$3,600 of sales that had not happened yet, and the headline
+  // number drifted through the day. An alarm whose number moves while you look at it is
+  // an alarm nobody trusts.
+  const daily = (loc, n, from) => Array.from({ length: n }, (_, i) => ({
+    loc, date: new Date(2026, 7, from + i), sales: 10000, lySales: 10000, gc: 800, lyGc: 800,
+  }));
+
+  it('drops rows on the current business date', () => {
+    // 14 closed days + today. Today must not form part of a bucket.
+    const rows = daily('A', 15, 1);                        // 08-01 .. 08-15
+    const b = weeklyBuckets(rows, { now: new Date(2026, 7, 15, 12, 0, 0) });
+    expect(b.map(w => w.label)).toEqual(['2026-08-07', '2026-08-14']);
+    expect(b.some(w => w.label === '2026-08-15')).toBe(false);
+  });
+
+  it('honours the 4am ABC cutover — at 2am the business day is still yesterday', () => {
+    expect(businessDate(new Date(2026, 7, 8, 2, 0, 0))).toBe('2026-08-07');
+    expect(businessDate(new Date(2026, 7, 8, 5, 0, 0))).toBe('2026-08-08');
+  });
+
+  it('an explicit asOf is still taken at face value, for replay', () => {
+    const rows = daily('A', 15, 1);
+    const b = weeklyBuckets(rows, { asOf: new Date(2026, 7, 14) });
+    expect(b[b.length - 1].label).toBe('2026-08-14');
+  });
+
+  it('buildSwingFeed threads `now` through so the whole feed excludes today', () => {
+    const rows = [...daily('A', 14, 1), { loc: 'A', date: new Date(2026, 7, 15), sales: 2000, lySales: 10000, gc: 150, lyGc: 800 }];
+    // That partial day is -80%; if it leaked in it would drag the last week hard.
+    const feed = buildSwingFeed(rows, { now: new Date(2026, 7, 15, 12, 0, 0), storeName: l => l });
+    expect(feed).toEqual([]);                              // flat weeks only — nothing fires
   });
 });
