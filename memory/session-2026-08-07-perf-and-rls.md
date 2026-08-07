@@ -75,11 +75,33 @@ Three load-bearing details:
 
 Files: `supabase/schema-rls-my-locs.sql` (run first), `schema-rls-phase2-loc.sql`.
 
+### ⚠️ The off-by-one that found six unprotected tables
+
+After the rollout the restrictive-policy count came back **52**, not the expected 51 —
+one MORE than predicted, i.e. the benign direction, and easy to wave off. Chasing it
+instead found:
+
+`scripts/metric-inventory.mjs` builds its table list from `CREATE TABLE` in
+`supabase/*.sql`, so it only knows tables whose DDL was committed there. **The live
+API exposes 78 tables; the inventory saw 67.** Among the eleven it missed:
+`qsr_daily_activity` — the largest table in the database, 367,562 rows, DDL living in
+`memory/project-qsrsoft-daily-activity.md` — and four ops-pull tables.
+
+The RLS rollout was generated from that list, so **six loc-keyed tables had no policy
+at all**: `eom_item_disposition`, `qsr_labor_summary`, `qsr_peaks_sales`,
+`qsr_sales_mix`, `qsr_service_stats`, `store_vlh_config`. Closed; final count **58**.
+
+**Rule that follows:** for anything security- or coverage-related, enumerate from the
+live API (`GET /rest/v1/` → `definitions`), never from schema files. Schema files
+describe what *should* exist; only the database knows what does. And when a count
+comes back off by one in the harmless direction, that is exactly when to look.
+
 ## Security findings
 
 - **`tasks` and `session_notes` were publicly READABLE AND WRITABLE** by the anon
   key. Closed — tenant-scoped like the other 68 tables.
 - **`qsrsoft_kb`** had public write. Now read-only; writes via service role.
+- Per-loc scoping ended at **58 tables** (see the off-by-one above), not 51.
 - **The "68 tables with defeated isolation" alarm was WRONG.** The diagnostic counted
   `qual IS NULL` as world-open — that is how *every INSERT policy* looks. Tenant
   isolation was real all along. ⚠️ Any future audit must test
