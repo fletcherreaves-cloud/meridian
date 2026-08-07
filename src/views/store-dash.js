@@ -976,9 +976,13 @@ function Brief({store, rangeTotal, rangeLY}) {
   const tcls={crit:'bitext bt-crit',watch:'bitext bt-watch',ok:'bitext bt-ok',fc:'bitext bt-fc'};
   // If we have live range totals, re-compute the forecast finding with correct numbers
   const findings = rangeTotal&&rangeLY
-    ? store.findings.filter(f=>f.t!=='fc').concat([{t:'fc',
+    // rule:'forecast' must stay on this rebuilt finding — attachFindingMeta tags the one
+    // buildBrief emits, and replacing it here without the rule would silently strip the
+    // structured fields (severity/category/title/detail) on the store dashboard only.
+    ? store.findings.filter(f=>f.t!=='fc').concat([{rule:'forecast',t:'fc',
         m:'AI FORECAST: '+f$(rangeTotal)+' projected this period ('+fPct((rangeTotal-rangeLY)/rangeLY,2)+' vs LY '+f$(rangeLY)+'). '
-          +(rangeTotal>=rangeLY?'Bullish — sustained momentum across T2/T4/T6 trend windows.':'Model reflects current operational headwinds and trend pressure.')
+          +(rangeTotal>=rangeLY?'Bullish — sustained momentum across T2/T4/T6 trend windows.':'Model reflects current operational headwinds and trend pressure.'),
+        severity:'info',category:'Forecast',icon:'🔮',dollars:0
       }])
     : store.findings;
   return div(null,
@@ -1819,7 +1823,9 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
     let s=[...stores];
     if(search) s=s.filter(st=>st.name.toLowerCase().includes(search.toLowerCase())||String(st.loc).includes(search));
     if(filter==='crit') s=s.filter(st=>st.findings.some(f=>f.t==='crit'));
-    if(filter==='watch') s=s.filter(st=>st.findings.some(f=>f.t==='warn'));
+    // buildBrief emits 'watch', never 'warn' — this filter matched nothing at all until
+    // v4.858. Accept both, as line 1714 already does.
+    if(filter==='watch') s=s.filter(st=>st.findings.some(f=>f.t==='warn'||f.t==='watch'));
     s.sort((a,b)=>{
       if(sort==='score') return (b.opsScore*0.6+b.ctrlScore*0.4)-(a.opsScore*0.6+a.ctrlScore*0.4);
       if(sort==='oepe') return (a.p.oepe||999)-(b.p.oepe||999);
@@ -1865,7 +1871,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
       [{l:'District Score',v:distScore+'/100',c:distScore>=80?'#10b981':distScore>=65?'#f59e0b':'#ef4444'},
        {l:'Stores Loaded',v:(ds&&ds.storeIds?ds.storeIds.length:0)+'/'+Object.keys(STORE_NAMES).length,c:ds&&ds.loaded?'#10b981':'#94a3b8'},
        {l:'Critical Findings',v:critCount,c:critCount>0?'#ef4444':'#10b981'},
-       {l:'Watch Flags',v:stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='warn').length,0),c:'#f59e0b'},
+       {l:'Watch Flags',v:stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='warn'||f.t==='watch').length,0),c:'#f59e0b'},
        {l:'Data Status',v:ds&&ds.loaded?'Live':'Mock',c:ds&&ds.loaded?'#10b981':'#94a3b8',/* click removed — showDataStatus not implemented */},
       ].map((k,i)=>div({key:i,className:'kpi-card',
         style:{flex:1,minWidth:100,cursor:k.click?'pointer':'default',

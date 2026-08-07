@@ -41,6 +41,7 @@ const lazyPanel = (importFn) => React.lazy(() => importFn().catch((err) => {
   throw err;
 }));
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
+const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 import { SchedulingPanel } from '../views/scheduling.js';
 import { AdminPanel } from '../views/admin.js';
@@ -76,6 +77,8 @@ import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/
 import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
+import { SwingAlarm } from '../components/SwingAlarm.js';
+import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt.js';
 import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts } from '../features/morning-brief.js';
@@ -1383,6 +1386,7 @@ function App() {
   const [showDev, setShowDev]          = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showAnoms, setShowAnoms]      = useState(false);
+  const [showCountCycle, setShowCountCycle] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
   const [showDialedIn, setShowDialedIn]= useState(false);
   const [showReport,   setShowReport]  = useState(false);
@@ -1823,7 +1827,9 @@ function App() {
           .order('uploaded_at',{ascending:true})
           .limit(50);
         if(!manualFiles?.length) return;
-        const toProcess=manualFiles.filter(f=>!synced.has(f.id));
+        let failedIds={};
+        try{failedIds=JSON.parse(localStorage.getItem('mf_failed_report_ids')||'{}');}catch{}
+        const toProcess=manualFiles.filter(f=>!synced.has(f.id)&&(failedIds[f.id]||0)<2);
         if(!toProcess.length) return;
         console.log(`[Meridian] ${toProcess.length} manual report(s) to sync from cloud`);
         const filesToSync=[];
@@ -1835,7 +1841,22 @@ function App() {
               .select('file_data')
               .eq('id',rec.id)
               .single();
-            if(fetchErr||!row?.file_data){console.warn('[Meridian] No file_data for',rec.filename);continue;}
+            if(fetchErr||!row?.file_data){
+              // Don't retry the same file forever. One 12.37 MB base64 blob (a Labor
+              // report) exceeded the statement timeout on EVERY load, producing a
+              // recurring 500 and wasted round-trip that nothing surfaced. Count
+              // attempts, give up after two, and say so by name so a file that never
+              // syncs is visible rather than quietly absent.
+              try{
+                const fk='mf_failed_report_ids';
+                const f=JSON.parse(localStorage.getItem(fk)||'{}');
+                f[rec.id]=(f[rec.id]||0)+1;
+                localStorage.setItem(fk,JSON.stringify(f));
+                if(f[rec.id]>=2) console.warn(`[Meridian] "${rec.filename}" has failed to sync ${f[rec.id]}x and will no longer be retried — it is likely too large to fetch in one request. Re-upload it on this device if you need it.`);
+              }catch{}
+              console.warn('[Meridian] No file_data for',rec.filename,fetchErr?.message||'');
+              continue;
+            }
             const binary=atob(row.file_data);
             const bytes=new Uint8Array(binary.length);
             for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
@@ -1854,11 +1875,23 @@ function App() {
       }catch(e){console.warn('[Meridian] Cross-device sync failed:',e);}
     })();
     // ── Supabase table diagnostic — logs row counts for all key tables ────────
-    (async()=>{
+    // GATED behind ?tablecounts=1 since v4.872 — deliberately NOT ?trace=1. Putting it
+    // behind the trace flag was a mistake: the one person measuring startup is exactly
+    // the person who must not be handed ten extra table scans, and it silently
+    // invalidated the first trace run after the fix.
+    // This fired on EVERY login: ten unfiltered
+    // count(*) full-table scans in parallel, purely to console.log the numbers. Measured
+    // 2026-08-07 — qsr_fob 7.8s and ctrl_rows 8.3s BOTH exceeded the statement timeout
+    // and returned HTTP 500, peaks_rows took 5.5s, and the whole burst competed with the
+    // real startup loads. It contributed nothing a user could see, and its failures were
+    // invisible because fetchAll swallowed them (see v4.870).
+    // count:'estimated' uses planner stats instead of a scan — good enough for a
+    // diagnostic, and O(1).
+    if (new URLSearchParams(location.search).get('tablecounts') === '1') (async()=>{
       try{
         const tables=['labor_rows','fob_rows','ops_rows','ctrl_rows','dar_rows','peaks_rows','audit_rows','qsr_fob','lifelenz_schedule','smg_fullscale'];
-        const counts=await Promise.all(tables.map(t=>supabase.from(t).select('*',{count:'exact',head:true}).then(({count,error})=>({t,count:error?`ERR:${error.message}`:count}))));
-        console.log('[Meridian] Supabase table row counts:',Object.fromEntries(counts.map(({t,count})=>[t,count])));
+        const counts=await Promise.all(tables.map(t=>supabase.from(t).select('*',{count:'estimated',head:true}).then(({count,error})=>({t,count:error?`ERR:${error.message}`:count}))));
+        console.log('[Meridian] Supabase table row counts (estimated):',Object.fromEntries(counts.map(({t,count})=>[t,count])));
       }catch(e){console.warn('[Meridian] Diagnostic count failed:',e);}
     })();
     // ── Auto-load ALL monthly targets from Supabase ───────────────────────────
@@ -2455,6 +2488,35 @@ function App() {
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
 
   const goStore=(s)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');};
+
+  // ── Swing alarm (Notes 58 #4) ────────────────────────────────────────────
+  // A large sustained one-directional move in sales or guest counts must be impossible
+  // to miss. Acks persist to user_settings so they follow the user across devices, and
+  // are keyed to the situation (store + week + severity) so acknowledging one week never
+  // silences the next — see src/engine/swing-feed.js.
+  const [swingAcks, setSwingAcks] = React.useState({});
+  React.useEffect(() => {
+    let live = true;
+    loadUserSetting(ACK_SETTING_KEY).then(v => { if (live && v && typeof v === 'object') setSwingAcks(v); }).catch(()=>{});
+    return () => { live = false; };
+  }, []);
+  const swingItems = React.useMemo(() => {
+    try { return buildSwingFeed(ds?.qsrActSummaryRows || [], { storeName: sName }); }
+    catch (e) { console.warn('[swing]', e); return []; }
+  }, [ds?.qsrActSummaryRows]);
+  const ackSwing = React.useCallback((item) => {
+    // Who acknowledged matters — this is an audit trail, not just a dismissal. There is
+    // no userEmail binding in this component, so read it from the live session.
+    (async () => {
+      let who = null;
+      try { who = (await supabase?.auth?.getUser())?.data?.user?.email || null; } catch {}
+      setSwingAcks(prev => {
+        const next = pruneAcks(acknowledge(prev, item, who), swingItems);
+        saveUserSetting(ACK_SETTING_KEY, next).catch(()=>{});
+        return next;
+      });
+    })();
+  }, [swingItems]);
   const critCount = stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='crit').length,0);
 
   const dsRef = useRef(ds);
@@ -2882,8 +2944,14 @@ function App() {
   // safe to be over-inclusive here (pausing AtAGlance during a small popup
   // that doesn't fully cover it costs nothing, since it's instant to resume).
   // New panels: add their show-flag here, or they'll silently reintroduce
-  // this exact bug for themselves.
-  const anyModalOpen = showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
+  // this exact bug for themselves. That warning was not enough on its own —
+  // by v4.855 fifteen panels had drifted out of this list, so panel-registry.test.js
+  // now FAILS the build if any openable panel is missing from it or from the
+  // Escape handler below. Keep the list hand-written; the test keeps it honest.
+  const anyModalOpen = showCountCycle||showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
+    showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
+    showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
+    showPriorities||showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
@@ -2912,6 +2980,14 @@ function App() {
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);setShowPanelManager(false);
+      // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
+      // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
+      setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
+      setShowFOBEOM(false);setShowFeatureRequests(false);setShowFormsLibrary(false);
+      setShowFormsPrint(false);setShowLeaderOnePager(false);setShowMetricLineage(false);
+      setShowPriorities(false);setShowPromoRoi(false);setShowReportSubs(false);
+      setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
+      setShowVisitReady(false);setShowCountCycle(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -3009,6 +3085,7 @@ function App() {
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
         if(modal==='inventory')      perm('analytics.store')&&setShowInventory(true);
+        if(modal==='count-cycle')    perm('analytics.store')&&setShowCountCycle(true);
         if(modal==='fob-analysis')   perm('analytics.store')&&setShowFOB(true);
         if(modal==='fob-eom')        perm('analytics.store')&&setShowFOBEOM(true);
         if(modal==='smg-voice')      perm('analytics.store')&&setShowSMGVoice(true);
@@ -3044,6 +3121,10 @@ function App() {
 
     // ── RIGHT MAIN AREA ────────────────────────────────────────────
     div({style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}},
+
+      h(SwingAlarm, { items: swingItems, acks: swingAcks, onAck: ackSwing,
+        onOpenStore: (loc) => { const st=(stores||[]).find(x=>String(x.loc)===String(loc)); if(st) goStore(st); },
+        onOpenPanel: () => setShowSignals(true) }),
 
       // Slim topbar
       h(AppTopbar,{
@@ -3242,6 +3323,7 @@ function App() {
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
+    showCountCycle&&h(CountCyclePanel,{onClose:()=>setShowCountCycle(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
       div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},

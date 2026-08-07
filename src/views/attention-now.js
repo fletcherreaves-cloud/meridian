@@ -9,6 +9,7 @@
 import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
+import { metricAvg } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { buildAttentionFeed, SEV_META } from '../engine/attention-feed.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
@@ -77,9 +78,21 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
     const salesLY = allLocs.map(loc => { const m = matchedVsLY(ds, [loc], dateRange); return { loc, cur: m.cur, ly: m.ly }; })
       .filter(r => r.ly > 0);
 
+    // Drive-thru speed vs each store's own OEPE target. The slowDT detector has been
+    // implemented and tested since the engine was written but was never fed inputs, so
+    // it silently contributed nothing. Sourced through metricAvg (auto-first per day)
+    // per the standing rule — never filter opsRows directly.
+    // Note: OEPE is a mean of daily values, not car-weighted — the source stores it as a
+    // ratio with no car count (see memory/notes-57-metric-registry-plan.md §4).
+    const dtRows = allLocs.map(loc => {
+      const dt = metricAvg(ds, [loc], dateRange, 'oepe');
+      const tgt = (DEFAULT_TARGETS[unpad(loc)] || {}).tOepe;
+      return (dt != null && tgt != null) ? { loc, dt, target: Number(tgt) } : null;
+    }).filter(Boolean);
+
     const countExceptionRows = Object.entries(exceptions || {}).map(([loc, e]) => ({ loc, acceptedDate: e.acceptedDate, approvedBy: e.approvedBy }));
     const integrityItems = (integrity || []).map(f => ({ id: `intg-${f.loc}-${f.kind}`, loc: f.loc, severity: f.severity, dollars: f.dollars, title: `${nm(f.loc)} — ${f.title || 'integrity flag'}`, detail: f.detail, nav: 'analytics' }));
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, storeName: nm, max: 20 });
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, storeName: nm, max: 20 });
   }, [ds, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity]);
 
   const counts = feed.reduce((a, i) => { a[i.severity] = (a[i.severity] || 0) + 1; return a; }, {});
@@ -127,5 +140,5 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
             })),
 
       div({ style: { padding: '8px 20px', borderTop: '.5px solid var(--bdr)', fontSize: '9.5px', color: 'var(--text3)', fontStyle: 'italic' } },
-        'Fuses food-cost outliers · behind-LY · sync health · visit-readiness & food-safety risk · fading saved signals.')));
+        'Fuses food-cost outliers · behind-LY · drive-thru speed · sync health · visit-readiness & food-safety risk · fading saved signals.')));
 }
