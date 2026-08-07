@@ -2226,7 +2226,14 @@ function App() {
       // DAR is NOT in T1 anymore. v4.847 split it 14-day/60-day, which fetched
       // qsr_daily_activity TWICE — 16 of that run's 24 HTTP 500s were this table. One
       // load, in T2.
-      await Promise.all([_stMonthlyTargets(), _stCloudEmailReport()]);
+      // T1 = what the owner waits on. Owner, watching the console 2026-08-07: "when
+      // that line popped up, the tiles populated" — the line being the Ops Report
+      // streams'. Sales/Service/Controls/FOB fill from those five tables (~9,800 rows
+      // total), which were in T2 only because that is where I put them.
+      // DAR joins T1 too now that the rollup table makes it ~1,650 rows in 2 requests
+      // instead of ~40,000 in ~40 — it was pulled out of T1 in v4.848 purely because
+      // of that cost.
+      await Promise.all([_stMonthlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
       const _t2 = Promise.all([
         _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
@@ -2234,8 +2241,7 @@ function App() {
         _stGradedVisits(), _stQsrsoftFob(), _stPeaksRows(),
         _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
         _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
-        _stQsrsoftActSummary(60),   // the ONLY DAR load
-        _stOpsReportStream(), _stLockedProjections(), _stAeParams(),
+        _stLockedProjections(), _stAeParams(),
         _stModelAssignments(), _stOrgEventsHydration(), _stEventImpact(),
       ]);
       _t2.then(() => console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`));
