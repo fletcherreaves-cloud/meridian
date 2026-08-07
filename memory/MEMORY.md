@@ -71,6 +71,8 @@
 
 ## 🏗 Data-refresh sprint & standards (standing rules)
 - [Data-refresh sprint handoff](handoff-data-refresh-sprint.md) — the At-A-Glance freshest-wins rework.
+- [⭐ Measure it, don't reason about it](feedback-measure-dont-reason.md) — **standing rule.** Diagnose by
+  reproducing, not by plausibility; verify a command's output before reporting it. Real costs from 2026-08-07.
 - [Data-sourcing standard](data-sourcing-standard.md) — metric-source.js / vs-ly.js; never filter raw
   rows for a metric. **Standing rule.**
 - [Data source redundancy](project-data-redundancy.md) — auto/emailed-first, manual = last-resort fill.

@@ -201,6 +201,15 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ## Dev Rules
 
+- **Measure it, don't reason about it (standing rule).** Reproduce a failure against the real
+  system *before* forming a theory, and read a command's OUTPUT before reporting what it did.
+  Be most suspicious when a cause feels obvious because it matches a past incident in this repo
+  — on 2026-08-07 that instinct produced two confidently wrong RLS diagnoses in a row, and an
+  owner-run `EXPLAIN ANALYZE` refuted the second one and prevented a pointless migration across
+  18 tables. `curl`-ing the actual failing request found the real cause in seconds. The same
+  rule sets thresholds: the swing alarm's -10% comes from 676 measured store-weeks, and the
+  count-completeness 75% from a measured bimodal distribution, not from numbers that felt right.
+  Full evidence in `memory/feedback-measure-dont-reason.md`.
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.
 - No TypeScript — plain JS with `// @ts-nocheck`.
