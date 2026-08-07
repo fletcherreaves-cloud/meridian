@@ -2226,7 +2226,19 @@ function App() {
       // DAR is NOT in T1 anymore. v4.847 split it 14-day/60-day, which fetched
       // qsr_daily_activity TWICE — 16 of that run's 24 HTTP 500s were this table. One
       // load, in T2.
-      await Promise.all([_stMonthlyTargets(), _stCloudEmailReport()]);
+      // T1 = what the OWNER waits on, not what makes the app technically respond.
+      // Owner observation 2026-08-07: "when that line popped up in console, the tiles
+      // populated" — the line being _stOpsReportStream's. Sales/Service/Controls/FOB
+      // all fill from the five Ops Report streams, which were sitting in T2 behind
+      // every other stream, so the measured 5.4s T1 was reporting a milestone that
+      // isn't the one being waited for.
+      //
+      // Those five tables total ~9,800 rows (cash 1404, labor 1404, svc 1377,
+      // mix 1404, peaks 4209). They are in T2 only because that is where I put them.
+      // qsr_sales_mix is the heaviest at ~1.6MB (a 1,455-byte JSON metrics blob per
+      // row) and was the one timing out under T2 contention — logged as `mix:0` while
+      // its four siblings loaded fine.
+      await Promise.all([_stMonthlyTargets(), _stCloudEmailReport(), _stOpsReportStream()]);
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
       const _t2 = Promise.all([
         _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
@@ -2235,7 +2247,7 @@ function App() {
         _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
         _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
         _stQsrsoftActSummary(60),   // the ONLY DAR load
-        _stOpsReportStream(), _stLockedProjections(), _stAeParams(),
+        _stLockedProjections(), _stAeParams(),
         _stModelAssignments(), _stOrgEventsHydration(), _stEventImpact(),
       ]);
       _t2.then(() => console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`));
