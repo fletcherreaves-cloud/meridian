@@ -109,6 +109,13 @@ async function fetchAll(builderFn, pageSize = 1000, label = '') {
     if (error) {
       console.warn(`[Meridian] fetchAll(${label || '?'}) truncated after ${all.length} rows — read error:`, error.message || error);
       try { Object.defineProperty(all, '_partial', { value: true, enumerable: false }); } catch {}
+      // The _partial marker alone is NOT enough and never was: 14 of the 37 fetchAll
+      // callers .map() the result, and a non-enumerable property does not survive map,
+      // so the marker silently vanishes before any caller can read it. That is why six
+      // tables returning HTTP 500 produced no warning anywhere in the UI — the failures
+      // rendered as ordinary empty states ("No ledger detail yet"). Record globally so
+      // the DataErrorBanner fires regardless of what the caller does with the array.
+      _recordDataError(label || 'a data table', 1, 0, error.message || 'read failed');
       break;
     }
     if (!data?.length) break;
@@ -2714,7 +2721,7 @@ export async function loadQsrOnHand({ period } = {}) {
     let q = supabase.from('qsr_onhand').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'qsr_onhand');
   return (data || []).map(r => ({
     // Strip zero-padding — same fix as loadQsrRawItemDetail (v4.821): this loader never
     // normalized loc either, so byLoc/computeCountProgress lookups keyed by the app's
@@ -2916,7 +2923,7 @@ export async function loadQsrRawItemDetail({ period, loc } = {}) {
     if (period) q = q.eq('period', period);
     if (loc) q = q.eq('loc', String(loc).padStart(7, '0'));
     return q;
-  });
+  }, 1000, 'qsr_raw_item_detail');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, descr: r.descr, itemClass: r.item_class,
     history: Array.isArray(r.history) ? r.history : [], updatedAt: r.updated_at,
