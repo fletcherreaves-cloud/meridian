@@ -6577,17 +6577,29 @@ function ItemsRecountedTile({ onOpenModal }) {
   // In the first week the just-closed PRIOR month is the interesting period; otherwise this month.
   const target = (day <= 7) ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : now;
   const period = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
-  const [diff, setDiff] = React.useState(undefined);   // undefined=loading, null=error, {}=result
+  // undefined = still loading · null = genuinely no rows · {} = result
+  const [diff, setDiff] = React.useState(undefined);
+  // Separate from `diff`. Until v4.864 a failed read and an empty period both set
+  // diff=null, so a transient 500 rendered "No ledger detail" — indistinguishable from
+  // "nothing was recounted". Verified 2026-08-07: period 2026-07 held 695 rows across 27
+  // stores (54 items recounted, $3,680 net recovered) while the tile showed no data.
+  const [loadErr, setLoadErr] = React.useState(null);
+  const [tryN, setTryN] = React.useState(0);
   React.useEffect(() => {
     if (!inWindow) return;
     let live = true;
     (async () => {
+      let failed = false;
       try {
         const [rawDetail, variance] = await Promise.all([
-          loadQsrRawItemDetail({ period }).catch(() => []),
+          loadQsrRawItemDetail({ period }).catch(() => { failed = true; return []; }),
           loadQsrVarianceStat({ period }).catch(() => []),
         ]);
         if (!live) return;
+        // fetchAll marks a truncated read non-enumerably rather than throwing.
+        if (rawDetail && rawDetail._partial) failed = true;
+        if (failed) { setLoadErr('read failed'); setDiff(undefined); return; }
+        setLoadErr(null);
         if (!rawDetail || !rawDetail.length) { setDiff(null); return; }
         const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
         const rawByLoc = {}, perLoc = {};
@@ -6602,10 +6614,13 @@ function ItemsRecountedTile({ onOpenModal }) {
         }
         for (const k of Object.keys(rawByLoc)) if (!perLoc[k]) perLoc[k] = { closeWindowStart: closeWindowStartFor(period, 3), statVar: {} };
         setDiff(ledgerScopeDiff(rawByLoc, perLoc));
-      } catch { if (live) setDiff(null); }
+      } catch { if (live) { setLoadErr('read failed'); setDiff(undefined); } }
     })();
     return () => { live = false; };
-  }, [inWindow, period]);
+    // tryN is in the deps so a retry actually re-runs. Without it the effect's deps
+    // (inWindow, period) never change during a session, so ONE transient failure at
+    // cold start pinned the tile to its empty state until a full reload.
+  }, [inWindow, period, tryN]);
   if (!inWindow) return null;
 
   const totalRecounted = diff && diff.stores ? diff.stores.reduce((s, x) => s + (x.nRecounted || 0), 0) : 0;
@@ -6626,6 +6641,16 @@ function ItemsRecountedTile({ onOpenModal }) {
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Items Recounted'),
       h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' close window · did recounts help or hurt')),
     totalRecounted > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: DIR[dir][1], background: 'rgba(255,255,255,.05)', borderRadius: 10, padding: '2px 8px', border: '.5px solid ' + DIR[dir][1] } }, DIR[dir][0]) : null);
+  // A failed read is NOT "no data" — say so, and offer a way out. The tile fires an
+  // uncoordinated district-wide read at dashboard mount, competing with the cold-start
+  // burst, so a transient 500 here is expected rather than exceptional.
+  if (loadErr) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } },
+    h('div', { style: { color: '#f59e0b', fontWeight: 700, marginBottom: 4 } }, 'Could not load ledger detail'),
+    h('div', null, 'The read failed — this is not the same as "no recounts". '),
+    h('button', {
+      onClick: (e) => { e.stopPropagation(); setLoadErr(null); setDiff(undefined); setTryN(n => n + 1); },
+      style: { marginTop: 8, background: 'none', border: '1px solid var(--bdr2,#3a4050)', borderRadius: 6, color: 'var(--text2,#9aa4b2)', padding: '4px 10px', cursor: 'pointer', fontSize: 11 },
+    }, '↻ Retry')));
   if (diff === undefined) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
   if (diff === null) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No ledger detail for ' + perLbl + ' yet — recounts appear here once stores count in the close window.'));
   if (totalRecounted === 0) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No recounts detected yet across ' + (diff.nStores || 0) + ' stores. A recount = an item re-verified on a later day of the close window.'));
