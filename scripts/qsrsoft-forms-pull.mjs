@@ -85,7 +85,20 @@ async function captureToken() {
   try {
     await page.waitForSelector(userSel, { timeout: 20000 });
     await page.fill(userSel, u); await page.fill(passSel, p); await page.click(subSel);
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    // Wait for the login to actually COMPLETE, not for network idle.
+    // networkidle resolves after 500ms of quiet, which on this SPA happens between the
+    // click and the auth request firing — it returned in ~3s with the button still
+    // reading "Signing in". Same race that broke qsrsoft-pull.mjs (v4.853); this script
+    // has no token interceptor, so the completion signal is the password field
+    // detaching as the SPA leaves the login screen.
+    {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const stillOnLogin = await page.locator(passSel).count().catch(() => 1);
+        if (!stillOnLogin) break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
   } catch (e) { console.log('[auth] login step:', e.message); }
   await new Promise(r => setTimeout(r, 3000)); // let the SPA hydrate + persist tokens
 
