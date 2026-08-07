@@ -128,6 +128,12 @@ export function searchQuery(loc, { style = 'boolean', brand = "McDonald's" } = {
   if (!l) return null;
 
   if (style === 'plain') {
+    // A metro town has no usable single-word keyword: store 20475's most distinctive
+    // word is "Oklahoma", which fired at five newspapers returns statewide news that the
+    // `broad` attribution guard then discards anyway — five requests doing no work.
+    // Return null so keyword feeds skip it; the store is still reachable via boolean
+    // queries and via whole-feed attribution.
+    if (l.broad) return null;
     // TownNews RSS q= takes ONE unquoted term; quoted phrases break the endpoint.
     // Use the most distinctive single word available.
     return l.town.split(' ').sort((a, b) => b.length - a.length)[0];

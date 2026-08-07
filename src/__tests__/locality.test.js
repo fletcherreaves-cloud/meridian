@@ -171,3 +171,21 @@ describe('broad metro towns need more than the town name', () => {
     expect(attribute('I-35 closed near Purcell due to a crash').locs).toEqual(['11657']);
   });
 });
+
+describe('plain-style keyword terms', () => {
+  it('returns null for a metro town — its best single word is useless as a filter', () => {
+    // Store 20475's most distinctive word is "Oklahoma". Fired at five newspapers it
+    // returns statewide news that the `broad` guard discards, so the requests do nothing.
+    expect(searchQuery('20475', { style: 'plain' })).toBeNull();
+  });
+
+  it('still returns a usable term for every non-broad store', () => {
+    const bad = LOCALITIES.filter(l => !l.broad)
+      .filter(l => { const t = searchQuery(l.loc, { style: 'plain' }); return !t || /["']/.test(t) || t.includes(' '); });
+    expect(bad.map(l => l.loc), 'unusable plain term').toEqual([]);
+  });
+
+  it('boolean style still covers the metro store', () => {
+    expect(searchQuery('20475')).toContain('Oklahoma City');
+  });
+});
