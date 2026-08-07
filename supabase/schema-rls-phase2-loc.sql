@@ -127,18 +127,18 @@ end $$;
 -- do $$
 -- declare t text; tbls text[] := array[
 --     'audit_rows','cash_sheet_daily','ctrl_rows','daily_glimpse_daily',
-    'dar_rows','digital_app_monthly','employee_skills','eom_count_exceptions',
-    'eom_count_progress_log','eom_count_status','eom_count_status_history','eom_integrity_flags',
-    'eom_secondary_review','eom_share_links','eom_snapshots','event_impact',
-    'fob_rows','forecast_snapshots','graded_visits','labor_rows',
-    'lifelenz_job_hours','lifelenz_labor_week','lifelenz_schedule','mcdelivery_monthly',
-    'monthly_targets','one_pager_action_items','ops_rows','org_events',
-    'org_school_config','peaks_rows','qsr_cash_sheet','qsr_ebos_daily',
-    'qsr_fob','qsr_inventory_summary','qsr_onhand','qsr_raw_item_detail',
-    'qsr_transfers','qsr_variance_stat','qsr_waste','roster_role_counts',
-    'roster_statistics','sales_ledger_daily','shift_manager_monthly','smart_target_adjustments',
-    'smg_comments','smg_fullscale','smg_voice_daypart','smg_voice_performance',
-    'store_labor_config','tenant_stores','turnover_monthly'
+--     'dar_rows','digital_app_monthly','employee_skills','eom_count_exceptions',
+--     'eom_count_progress_log','eom_count_status','eom_count_status_history','eom_integrity_flags',
+--     'eom_secondary_review','eom_share_links','eom_snapshots','event_impact',
+--     'fob_rows','forecast_snapshots','graded_visits','labor_rows',
+--     'lifelenz_job_hours','lifelenz_labor_week','lifelenz_schedule','mcdelivery_monthly',
+--     'monthly_targets','one_pager_action_items','ops_rows','org_events',
+--     'org_school_config','peaks_rows','qsr_cash_sheet','qsr_ebos_daily',
+--     'qsr_fob','qsr_inventory_summary','qsr_onhand','qsr_raw_item_detail',
+--     'qsr_transfers','qsr_variance_stat','qsr_waste','roster_role_counts',
+--     'roster_statistics','sales_ledger_daily','shift_manager_monthly','smart_target_adjustments',
+--     'smg_comments','smg_fullscale','smg_voice_daypart','smg_voice_performance',
+--     'store_labor_config','tenant_stores','turnover_monthly'
 --   ];
 -- begin
 --   foreach t in array tbls loop
