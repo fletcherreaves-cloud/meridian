@@ -2882,8 +2882,14 @@ function App() {
   // safe to be over-inclusive here (pausing AtAGlance during a small popup
   // that doesn't fully cover it costs nothing, since it's instant to resume).
   // New panels: add their show-flag here, or they'll silently reintroduce
-  // this exact bug for themselves.
+  // this exact bug for themselves. That warning was not enough on its own —
+  // by v4.855 fifteen panels had drifted out of this list, so panel-registry.test.js
+  // now FAILS the build if any openable panel is missing from it or from the
+  // Escape handler below. Keep the list hand-written; the test keeps it honest.
   const anyModalOpen = showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
+    showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
+    showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
+    showPriorities||showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
@@ -2912,6 +2918,14 @@ function App() {
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);setShowPanelManager(false);
+      // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
+      // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
+      setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
+      setShowFOBEOM(false);setShowFeatureRequests(false);setShowFormsLibrary(false);
+      setShowFormsPrint(false);setShowLeaderOnePager(false);setShowMetricLineage(false);
+      setShowPriorities(false);setShowPromoRoi(false);setShowReportSubs(false);
+      setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
+      setShowVisitReady(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
