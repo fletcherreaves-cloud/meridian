@@ -17,6 +17,37 @@ export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 // instead of walking pages sequentially. Much faster for the multi-thousand-row current-
 // window streams, and a partial/throttled read keeps whatever pages returned (ordered
 // newest-first) instead of rejecting. Use for big date-windowed reads.
+// ── Global in-flight cap ─────────────────────────────────────────────────────
+// Measured on production 2026-08-07, before and after v4.846's tiered startup.
+//
+// Every paginated loader here fires ALL its pages at once. That was fine while the
+// startup chain ran stages one after another — the serialisation was accidentally
+// rate-limiting us, keeping each stream's page-burst in its own time window. v4.846
+// removed the serialisation without replacing that rate limiting, so ~100+ requests
+// (qsr_daily_activity ~40 pages + labor_rows ~45 + ops_rows ~44 + ctrl_rows ~45) went
+// out simultaneously. Result: qsr_daily_activity took 46s to paginate where it took
+// 13.3s with the pipe to itself, and HTTP 500s went from 3 to 8.
+//
+// So: keep the parallelism, add the back-pressure the serial chain used to provide by
+// accident. Pages queue past the cap instead of being fired into a wall.
+const _MAX_INFLIGHT = 6;
+let _inflight = 0;
+const _waiting = [];
+function _acquire() {
+  if (_inflight < _MAX_INFLIGHT) { _inflight++; return Promise.resolve(); }
+  return new Promise(resolve => _waiting.push(resolve));
+}
+function _release() {
+  const next = _waiting.shift();
+  if (next) next();            // hand the slot straight over, don't decrement
+  else _inflight--;
+}
+/** Run fn() with at most _MAX_INFLIGHT concurrent Supabase requests in flight. */
+async function _limited(fn) {
+  await _acquire();
+  try { return await fn(); } finally { _release(); }
+}
+
 async function _pagedParallel({ table, select, gteCol, gteVal, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
   if (!supabase) return [];
   let head = supabase.from(table).select(orderCol || 'loc', { count: 'exact', head: true });
@@ -29,9 +60,9 @@ async function _pagedParallel({ table, select, gteCol, gteVal, orderCol, ascendi
     if (gteCol) q = q.gte(gteCol, gteVal);
     q = q.order(orderCol, { ascending });
     for (const oc of extraOrder) q = q.order(oc);
-    reqs.push(q.range(p * pageSize, p * pageSize + pageSize - 1));
+    reqs.push(() => q.range(p * pageSize, p * pageSize + pageSize - 1));
   }
-  const settled = await Promise.allSettled(reqs);
+  const settled = await Promise.allSettled(reqs.map(f => _limited(f)));
   const data = []; let failed = 0;
   for (const s of settled) {
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
@@ -1668,11 +1699,11 @@ export async function loadQsrActSummary(daysBack = 35) {
   const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
   const reqs = [];
   for (let p = 0; p < pages; p++) {
-    reqs.push(supabase.from('qsr_daily_activity').select(SELECT).gte('dt', cutoffStr)
+    reqs.push(() => supabase.from('qsr_daily_activity').select(SELECT).gte('dt', cutoffStr)
       .order('dt', { ascending: false }).order('loc').order('hour_slot')
       .range(p * PAGE, p * PAGE + PAGE - 1));
   }
-  const settled = await Promise.allSettled(reqs);
+  const settled = await Promise.allSettled(reqs.map(f => _limited(f)));
   const data = []; let failedPages = 0;
   for (const s of settled) {
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
