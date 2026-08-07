@@ -56,6 +56,20 @@ const SCRIPTS = readAll(SCRIPT_FILES);
 const APP_CODE = SRC.filter((x) => !x.f.includes('__tests__'));
 
 // ── 1. Supabase tables + columns ─────────────────────────────────────────────
+// ⚠️ SOURCE-OF-TRUTH LIMITATION, found the hard way 2026-08-07.
+// This reads CREATE TABLE out of supabase/*.sql — so it only knows tables whose DDL
+// was committed there. The live database exposed 78 tables; this saw 67. The eleven
+// it missed included qsr_daily_activity (the LARGEST table, 367k rows, DDL lives in
+// memory/project-qsrsoft-daily-activity.md) and four ops-pull tables.
+//
+// That gap caused a real security miss: a per-loc RLS rollout built from this list
+// left SIX loc-keyed tables unprotected, and it was only caught because a policy
+// count came back 52 instead of the expected 51.
+//
+// For anything SECURITY- or COVERAGE-related, enumerate from the live API instead:
+//   curl "$VITE_SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"
+// and read `definitions` — that is authoritative. This function is fine for
+// schema-file archaeology and nothing else.
 function sqlTables() {
   const dir = join(ROOT, 'supabase');
   const tables = {};
