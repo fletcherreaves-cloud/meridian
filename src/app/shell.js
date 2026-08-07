@@ -356,6 +356,46 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdm
 }
 
 // ── App Topbar (slim contextual header) ─────────────────────────────
+// ── Data-load failure banner ─────────────────────────────────────────────────
+// Systemic bug class 4 (silent emptiness), the visible half. src/lib/supabase.js records
+// every partial page-load failure and dispatches `mf:data-error`; this makes that visible
+// instead of leaving it in a console nobody has open.
+//
+// Measured on production 2026-08-07: 22 page requests returned HTTP 500 and every panel
+// rendered anyway, showing understated numbers with no indication anything was missing.
+// A wrong number that looks right is worse than a blank one.
+//
+// Deliberately does NOT block or retry — a short dataset still renders, because recent
+// days beat nothing. It just refuses to be quiet about it.
+function DataErrorBanner() {
+  const [errs, setErrs] = React.useState([]);
+  const [dismissed, setDismissed] = React.useState(false);
+  React.useEffect(() => {
+    const onErr = e => { setErrs(prev => [...prev, e.detail]); setDismissed(false); };
+    window.addEventListener('mf:data-error', onErr);
+    return () => window.removeEventListener('mf:data-error', onErr);
+  }, []);
+  if (!errs.length || dismissed) return null;
+  const totalFailed = errs.reduce((a, x) => a + (x.failed || 0), 0);
+  const sources = [...new Set(errs.map(x => x.label))];
+  return div({
+    style: {
+      display: 'flex', alignItems: 'center', gap: 10, padding: '5px 12px',
+      background: 'rgba(239,68,68,.14)', borderBottom: '.5px solid rgba(239,68,68,.45)',
+      fontSize: 11, color: '#fca5a5', fontFamily: 'var(--mono)',
+    },
+    title: errs.map(x => `${x.label}: ${x.failed}/${x.total} page(s) failed${x.detail ? ' — ' + x.detail : ''}`).join('\n'),
+  },
+    span({ style: { fontWeight: 700 } }, '⚠ DATA INCOMPLETE'),
+    span(null, `${totalFailed} page(s) failed to load across ${sources.length} source(s): ${sources.join(', ')}. Figures from ${sources.length > 1 ? 'these sources' : 'this source'} are UNDERSTATED — reload before acting on them.`),
+    h('button', {
+      onClick: () => setDismissed(true),
+      style: { marginLeft: 'auto', background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 13, lineHeight: 1 },
+      title: 'Dismiss (the failures stay in mfDataErrors())',
+    }, '×')
+  );
+}
+
 function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChange, locScope, onScopeChange,
                     onOpenModal, onLoadFiles, onSaveSession, loadMsg, setView,
                     sessionBanner, onClearSession, userRole, onOpenAdmin, perm,
@@ -382,7 +422,9 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
     return w;
   },[settings.weekStartDay]);
 
-  return div({style:{height:44,background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
+  return h(React.Fragment, null,
+    h(DataErrorBanner),
+    div({style:{height:44,background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
     display:'flex',alignItems:'center',padding:'0 8px',gap:isMb?4:12,flexShrink:0}},
 
     // Hamburger (mobile only)
@@ -463,7 +505,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
       // change password, sign out (previously crowded the top bar / unreachable on mobile)
       h(ProfileMenu, {userRole, settings, onOpenModal, onSaveSession, onOpenAdmin, onToggleBeta, betaMode, onLoadFiles, perm})
     )
-  );
+  ));
 }
 
 export { DatePicker, AppSidebar, AppTopbar };

@@ -17,6 +17,31 @@ export const supabase = (URL && KEY) ? createClient(URL, KEY) : null;
 // instead of walking pages sequentially. Much faster for the multi-thousand-row current-
 // window streams, and a partial/throttled read keeps whatever pages returned (ordered
 // newest-first) instead of rejecting. Use for big date-windowed reads.
+// ── Data-load failure registry ───────────────────────────────────────────────
+// Systemic bug class 4: silent emptiness. Measured on production 2026-08-07 — 22 page
+// requests returned HTTP 500 and the app rendered the short dataset without a word.
+// Four genuinely different failures had one indistinguishable symptom (a slightly-wrong
+// number): a legitimately empty result, a row-cap truncation, a pull that silently
+// returned 0 rows, and an upstream column rename. You cannot tell "no data" from
+// "we lost some data" by looking at a tile.
+//
+// This makes partial loads announce themselves. It does NOT retry and does NOT change
+// what renders — a short dataset still renders, because showing recent days beats
+// showing nothing. It just stops the loss being invisible.
+const _dataErrors = [];
+export function dataLoadErrors() { return _dataErrors.slice(); }
+export function clearDataLoadErrors() { _dataErrors.length = 0; }
+function _recordDataError(label, failed, total, detail) {
+  const entry = { label, failed, total, detail: detail || null, at: new Date().toISOString() };
+  _dataErrors.push(entry);
+  console.error(
+    `%c[Meridian] DATA INCOMPLETE — ${label}: ${failed}/${total} page(s) failed. Values from this source are UNDERSTATED.`,
+    'color:#ef4444;font-weight:700', detail || '');
+  try {
+    window.dispatchEvent(new CustomEvent('mf:data-error', { detail: entry }));
+  } catch { /* non-browser context */ }
+}
+
 // ── Global in-flight cap ─────────────────────────────────────────────────────
 // Measured on production 2026-08-07, before and after v4.846's tiered startup.
 //
@@ -68,7 +93,7 @@ async function _pagedParallel({ table, select, gteCol, gteVal, orderCol, ascendi
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
     else failed++;
   }
-  if (failed) console.warn(`[Meridian] ${label || table}: ${failed}/${pages} page(s) failed (egress throttle?) — newest-first keeps recent days`);
+  if (failed) _recordDataError(label || table, failed, pages, 'egress throttle or server error — newest-first keeps the recent days');
   return data;
 }
 
@@ -750,11 +775,12 @@ export async function loadPeaksRows(daysBack = 400) {
   if (!supabase) return [];
   const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
   const _cutStr = _cut.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase
-    .from('peaks_rows').select('*')
-    .gte('date', _cutStr)
-    .order('date', { ascending: false })
-    .range(from, to));
+  // PARALLEL pagination (bounded by the global in-flight cap) rather than fetchAll's
+  // sequential page-after-page loop. Measured 2026-08-07: audit_rows paged 23 times
+  // strictly one after another and owned the entire tail of the load — t=119s to t=156s,
+  // the last 37 seconds, on its own. It runs in T3 so it never blocked usability, but it
+  // was 37s of wall clock for no reason.
+  const data = await _pagedParallel({ table: 'peaks_rows', select: '*', gteCol: 'date', gteVal: _cutStr, orderCol: 'date', ascending: false, label: 'peaks_rows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:         r.loc,
@@ -845,11 +871,12 @@ export async function loadAuditRows(daysBack = 400) {
   if (!supabase) return [];
   const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
   const _cutStr = _cut.toISOString().slice(0, 10);
-  const data = await fetchAll((from, to) => supabase
-    .from('audit_rows').select('*')
-    .gte('date', _cutStr)
-    .order('date', { ascending: false })
-    .range(from, to));
+  // PARALLEL pagination (bounded by the global in-flight cap) rather than fetchAll's
+  // sequential page-after-page loop. Measured 2026-08-07: audit_rows paged 23 times
+  // strictly one after another and owned the entire tail of the load — t=119s to t=156s,
+  // the last 37 seconds, on its own. It runs in T3 so it never blocked usability, but it
+  // was 37s of wall clock for no reason.
+  const data = await _pagedParallel({ table: 'audit_rows', select: '*', gteCol: 'date', gteVal: _cutStr, orderCol: 'date', ascending: false, label: 'audit_rows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:            r.loc,
@@ -1742,11 +1769,97 @@ export async function loadEbosDaily(daysBack = 400) {
 // ── QSRSoft daily-activity aggregated summary ─────────────────────────────────
 // Returns one row per (loc, date) with sales/GC/DT totals summed across hour slots.
 // Used by AtAGlance as a zero-upload fallback when laborRows is empty.
+// ── Shared derivations for the DAR daily summary ────────────────────────────
+// Both paths below (server-side rollup view, and the hourly fallback) produce the SAME
+// summed shape, then run it through this one finalizer. The derived metrics live here
+// and ONLY here: each carries the store/date it was reconciled against the QSRSoft
+// report, and duplicating that math into SQL would create a second definition free to
+// drift from this one.
+function _finalizeQsrAct(rows) {
+  return rows.map(r => ({
+    ...r,
+    salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+    // Derived cloud TPPH = TRANSACTIONS ÷ actual punched labor hours. Uses the DAR's
+    // real `transactions` count — NOT healthy+unhealthy (a KVS order-health count that
+    // massively understated TPPH, e.g. 0.1 vs a ~5 target). Matches the Shift Manager
+    // Summary's transPerPunchedHour. Both come from the auto-pulled DAR (cloud-fresh);
+    // manual Ops/Controls TPPH still wins first via metric-source ordering.
+    tpph: r.actHrs > 0 && r.txns > 0 ? r.txns / r.actHrs : null,
+    // R2P (Receipt to Print, sec) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt ÷ 1000.
+    // Reconciled EXACTLY to the QSRSoft Daily Activity report's R2P column across every
+    // active hour (store 3708, 2026-07-28). fc_untilserve alone = "Avg Win TTL" (window
+    // total) — NOT R2P; subtracting drawer-close time yields the receipt-to-print interval.
+    // Cloud-fresh (DAR pulls run ~8a/10a/2p CT), so current-day One-Pager R2P populates.
+    r2p: r._fcCnt > 0 ? (r._fcServe - r._fcDrawer) / r._fcCnt / 1000 : null,
+    // OEPE (Order-to-Exit Peak Efficiency, sec) = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt ÷ 1000,
+    // count-weighted across the day. Reconciled EXACTLY to the DAR report's OEPE column (store 3708,
+    // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
+    // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
+    oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
+    // DT Parked % (0–1 fraction) = cars held ÷ DT transactions served, count-weighted across
+    // the day. Reconciled EXACT to the Operations Report's own dt_cars_held/dt_serve_trans
+    // (store 3708, 2026-08-03: DAR 105/773=13.58% vs Ops Report 105/773=13.59%, rounding-only
+    // difference). Cloud-fresh + live intraday (unlike qsr_service_stats, which has no row
+    // until the day finalizes) — owner confirmed 2026-08-04 this was already available here,
+    // just not selected/wired through.
+    park: r._dtCars > 0 ? r._dtHeld / r._dtCars : null,
+    // KVS Healthy Usage (0–1 fraction) = healthy ÷ (healthy + unhealthy) order-health counts,
+    // summed across the day. Same 0–1 shape as the emailed Glimpse `kvsHealthy`, so it slots in
+    // as a metric-source fallback (kvsHealthy) and the One-Pager / AAG KVS row fills cloud-fresh.
+    kvsHealthy: (r._kvsH + r._kvsU) > 0 ? r._kvsH / (r._kvsH + r._kvsU) : null,
+    // KVS Time per GC (seconds) = total MFY serve time ÷ total MFY transaction count ÷ 1000.
+    // Reconciled EXACTLY to the DAR report's "KVS Time Per GC" column (store 3708, 2026-07-30:
+    // 06:00 1,192,796÷14÷1000 = 85s ✓ · 07:00 46.6s→47 ✓ · 08:00 61.4s→60 ✓). Cloud-fresh, so the
+    // One-Pager / AAG KVS-Time row fills from the DAR when the emailed Glimpse lags/omits KVS.
+    kvst: r._mfyCnt > 0 ? r._mfyTime / r._mfyCnt / 1000 : null,
+    // Derive a QSR labor % from the day's product sales when an average crew rate
+    // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
+  }));
+}
+
+// Build the summed shape from one already-aggregated (loc, dt) row.
+function _qsrActFromSummed(loc, dt, v) {
+  return {
+    loc, date: new Date(dt + 'T00:00:00'),
+    sales: v.product_sales || 0, allNetSales: v.product_sales || 0,
+    gc: v.transactions || 0, txns: v.transactions || 0,
+    _dtTotal: v.dt_untilserve || 0, _dtStore: v.dt_untilstore || 0,
+    _dtCars: v.dt_trans_cnt || 0, _dtHeld: v.dt_carsheld || 0,
+    _fcServe: v.fc_untilserve || 0, _fcDrawer: v.fc_untilclosedrawer || 0,
+    _fcCnt: v.fc_trans_cnt || 0,
+    projGC: v.proj_total_transactions || 0, projSales: v.proj_sales_dollars || 0,
+    lySales: v.ly_product_sales || 0, lyGc: v.ly_transactions || 0,
+    actHrs: v.actual_punched_hours || 0, needHrs: v.total_needed_hours || 0,
+    _kvsH: v.healthy_count || 0, _kvsU: v.unhealthy_count || 0,
+    _mfyTime: v.mfy_untilserve || 0, _mfyCnt: v.mfy_trans_cnt || 0,
+    _isQsrAct: true,
+  };
+}
+
+// Daily DAR summary. Prefers the server-side rollup view (supabase/schema-qsr-daily-summary.sql):
+// 27 stores x 60 days is ~1,620 rows = ONE page, versus ~40,000 hourly rows over ~40 pages.
+// Measured 2026-08-07: the hourly path was the largest remaining stream AND produced 18 of 22
+// HTTP 500s, failing in batches of exactly the client's concurrency cap.
+//
+// Falls back to the hourly path automatically when the view is absent, so the app works
+// identically before and after the SQL is run — deploying first is safe.
 export async function loadQsrActSummary(daysBack = 35) {
   if (!supabase) return [];
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const viewRows = await _limited(() => supabase
+    .from('qsr_daily_activity_daily').select('*').gte('dt', cutoffStr)
+    .order('dt', { ascending: false }).range(0, 9999));
+  if (viewRows && !viewRows.error && Array.isArray(viewRows.data)) {
+    const out = viewRows.data.map(r => _qsrActFromSummed(String(parseInt(r.loc, 10)), r.dt, r));
+    console.log(`[Meridian] qsr act summary via daily rollup view — ${out.length} rows, 1 request`);
+    return _finalizeQsrAct(out);
+  }
+  console.warn('[Meridian] qsr_daily_activity_daily view unavailable — falling back to hourly pagination. Run supabase/schema-qsr-daily-summary.sql to remove ~40 requests/login.',
+    viewRows && viewRows.error ? viewRows.error.message : '');
+
   // Paginate — qsr_daily_activity has ~675 rows/day, so a single query hits the
   // 1000-row cap and returns only the oldest ~1.5 days. fetchAll pages through all.
   // PARALLEL pagination (count → fire every page at once) instead of ~39 sequential
@@ -1771,7 +1884,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
     else failedPages++;
   }
-  if (failedPages) console.warn(`[Meridian] loadQsrActSummary: ${failedPages}/${pages} page(s) failed (egress throttle?) — newest-first keeps recent days`);
+  if (failedPages) _recordDataError('qsr act summary (hourly fallback)', failedPages, pages, 'run supabase/schema-qsr-daily-summary.sql to replace ~40 requests with 1');
   const map = {};
   for (const r of data || []) {
     const loc = String(parseInt(r.loc, 10)); // strip zero-padding ("0003708" → "3708")
@@ -1828,45 +1941,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key]._mfyTime     += (r.mfy1_untilserve || 0) + (r.mfy2_untilserve || 0);
     map[key]._mfyCnt      += (r.mfy1_trans_cnt  || 0) + (r.mfy2_trans_cnt  || 0);
   }
-  return Object.values(map).map(r => ({
-    ...r,
-    salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
-    // Derived cloud TPPH = TRANSACTIONS ÷ actual punched labor hours. Uses the DAR's
-    // real `transactions` count — NOT healthy+unhealthy (a KVS order-health count that
-    // massively understated TPPH, e.g. 0.1 vs a ~5 target). Matches the Shift Manager
-    // Summary's transPerPunchedHour. Both come from the auto-pulled DAR (cloud-fresh);
-    // manual Ops/Controls TPPH still wins first via metric-source ordering.
-    tpph: r.actHrs > 0 && r.txns > 0 ? r.txns / r.actHrs : null,
-    // R2P (Receipt to Print, sec) = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt ÷ 1000.
-    // Reconciled EXACTLY to the QSRSoft Daily Activity report's R2P column across every
-    // active hour (store 3708, 2026-07-28). fc_untilserve alone = "Avg Win TTL" (window
-    // total) — NOT R2P; subtracting drawer-close time yields the receipt-to-print interval.
-    // Cloud-fresh (DAR pulls run ~8a/10a/2p CT), so current-day One-Pager R2P populates.
-    r2p: r._fcCnt > 0 ? (r._fcServe - r._fcDrawer) / r._fcCnt / 1000 : null,
-    // OEPE (Order-to-Exit Peak Efficiency, sec) = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt ÷ 1000,
-    // count-weighted across the day. Reconciled EXACTLY to the DAR report's OEPE column (store 3708,
-    // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
-    // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
-    oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
-    // DT Parked % (0–1 fraction) = cars held ÷ DT transactions served, count-weighted across
-    // the day. Reconciled EXACT to the Operations Report's own dt_cars_held/dt_serve_trans
-    // (store 3708, 2026-08-03: DAR 105/773=13.58% vs Ops Report 105/773=13.59%, rounding-only
-    // difference). Cloud-fresh + live intraday (unlike qsr_service_stats, which has no row
-    // until the day finalizes) — owner confirmed 2026-08-04 this was already available here,
-    // just not selected/wired through.
-    park: r._dtCars > 0 ? r._dtHeld / r._dtCars : null,
-    // KVS Healthy Usage (0–1 fraction) = healthy ÷ (healthy + unhealthy) order-health counts,
-    // summed across the day. Same 0–1 shape as the emailed Glimpse `kvsHealthy`, so it slots in
-    // as a metric-source fallback (kvsHealthy) and the One-Pager / AAG KVS row fills cloud-fresh.
-    kvsHealthy: (r._kvsH + r._kvsU) > 0 ? r._kvsH / (r._kvsH + r._kvsU) : null,
-    // KVS Time per GC (seconds) = total MFY serve time ÷ total MFY transaction count ÷ 1000.
-    // Reconciled EXACTLY to the DAR report's "KVS Time Per GC" column (store 3708, 2026-07-30:
-    // 06:00 1,192,796÷14÷1000 = 85s ✓ · 07:00 46.6s→47 ✓ · 08:00 61.4s→60 ✓). Cloud-fresh, so the
-    // One-Pager / AAG KVS-Time row fills from the DAR when the emailed Glimpse lags/omits KVS.
-    kvst: r._mfyCnt > 0 ? r._mfyTime / r._mfyCnt / 1000 : null,
-    // Derive a QSR labor % from the day's product sales when an average crew rate
-    // is unavailable here — left null; Daily Glimpse laborPct is the primary %.
-  }));
+  return _finalizeQsrAct(Object.values(map));
 }
 
 // Fast daily product-sales per (loc,date) for a window — minimal columns and
