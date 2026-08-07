@@ -30,6 +30,7 @@
 //   any prod.ebos.qsrsoft.com/api/inv/ request → copy X-Auth-Token → update QSRSOFT_EBOS_TOKEN secret.
 
 import { chromium } from 'playwright';
+import { COVER_FRAC, sessionKind } from '../src/engine/count-cycle.js';
 import { createClient } from '@supabase/supabase-js';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
 import { computeCountProgress, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
@@ -326,6 +327,7 @@ async function main() {
   let totalSaved = 0, storesWithData = 0, authFailed = false;
   const statusRows = [];
   const progressLog = [];   // timestamped per-store completion snapshots (one row / store / hour)
+  const sessionRows = [];   // append-only count-session history (one row / store / count date / class)
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
     const rows = [];
@@ -361,6 +363,12 @@ async function main() {
       progressLog.push({ loc, period, snapshot_hour: nowIso.slice(0, 13), snapshot_at: nowIso, ...st._log });
       delete st._log;
       statusRows.push(st);
+      // Snapshot the count SESSIONS visible right now. qsr_onhand.last_counted is
+      // rolling-latest — a recount overwrites the prior date — so unless we append them
+      // here, history is lost and "were all four weekly counts complete?" can never be
+      // answered. Idempotent: the same session seen on consecutive days upserts the
+      // same (loc, count_date, cls) row rather than duplicating.
+      sessionRows.push(...deriveSessionRows(loc, period, deduped));
     }
     if (DEBUG) console.log(`  ${nsn}: ${deduped.length} items`);
   }
@@ -379,8 +387,57 @@ async function main() {
     else console.log(`[onhand-pull] progress-log: ${progressLog.length} snapshots`);
   }
 
+  // Append the count-session history (supabase/schema-inv-count-sessions.sql).
+  if (sessionRows.length) {
+    const CH = 500;
+    let saved = 0, failed = 0;
+    for (let i = 0; i < sessionRows.length; i += CH) {
+      const { error } = await supabase.from('inv_count_sessions')
+        .upsert(sessionRows.slice(i, i + CH), { onConflict: 'loc,count_date,cls' });
+      if (error) { failed++; console.warn('[inv_count_sessions] upsert error (table may not exist yet):', error.message); }
+      else saved += Math.min(CH, sessionRows.length - i);
+    }
+    if (!failed) console.log(`[onhand-pull] count-sessions: ${saved} rows`);
+  }
+
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);
   if (authFailed) process.exit(1);
 }
 
 main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });
+
+// ── Count-session derivation ─────────────────────────────────────────────────
+// Groups a store's on-hand rows into sessions by last_counted, one row per class, and
+// tags coverage using the SAME threshold as src/engine/count-cycle.js. Imported from the
+// engine rather than redefined so the script and the UI can never disagree about what
+// "a complete count" means.
+function deriveSessionRows(loc, period, rows) {
+  const totals = {};
+  for (const r of rows) if (r.cls) totals[r.cls] = (totals[r.cls] || 0) + 1;
+
+  const byDate = {};
+  for (const r of rows) {
+    if (!r.cls || !r.last_counted) continue;
+    ((byDate[r.last_counted] || (byDate[r.last_counted] = {})));
+    byDate[r.last_counted][r.cls] = (byDate[r.last_counted][r.cls] || 0) + 1;
+  }
+
+  const out = [];
+  for (const [date, counts] of Object.entries(byDate)) {
+    const n = Object.values(counts).reduce((a, b) => a + b, 0);
+    const covered = Object.keys(counts).filter(c =>
+      counts[c] >= (totals[c] || Infinity) * COVER_FRAC);
+    const kind = sessionKind(date, covered, n);
+    for (const [cls, items] of Object.entries(counts)) {
+      out.push({
+        loc, count_date: date, cls, period,
+        items_counted: items,
+        class_total: totals[cls] || 0,
+        covered: items >= (totals[cls] || Infinity) * COVER_FRAC,
+        session_kind: kind,
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+  return out;
+}
