@@ -115,7 +115,7 @@ end $$;
 --   select public.can_see_loc('3708');     -- expect true (padding-insensitive)
 --   select count(*) from public.qsr_fob;   -- expect your normal row count
 --
--- Then with a THROWAWAY restricted profile (accessible_locs = '["3708"]'::jsonb):
+-- Then with a THROWAWAY restricted profile (accessible_locs = array['3708']):
 --   select count(distinct loc) from public.qsr_fob;   -- expect 1
 --   select count(distinct loc) from public.labor_rows;-- expect 1
 -- Confirm BOTH a padded table (qsr_*) and an unpadded one, or the padding fix is
