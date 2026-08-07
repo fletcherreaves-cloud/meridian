@@ -174,6 +174,61 @@ function mapRow(row, date) {
   };
 }
 
+// ── Daily rollup maintenance ─────────────────────────────────────────────────
+// qsr_daily_activity is HOURLY (~675 rows/day). The client used to page ~40,000 of
+// those rows over ~40 requests to build a per-(loc,dt) summary on every login — the
+// single heaviest load in the app. qsr_daily_activity_rollup holds that summary
+// pre-aggregated (~1,650 rows for a 60-day window, 2 requests).
+//
+// So the rollup MUST be refreshed whenever the hourly rows change, or the app shows
+// data frozen at the last backfill. Summing `records` is exact: fetchDayDirect returns
+// the WHOLE day for every store, so a batch is the complete set for that date — the
+// same grouping the backfill does in SQL.
+//
+// tenant_id is deliberately not set here. The set_tenant_id() trigger
+// (schema-qsr-rollup-tenant-trigger.sql) supplies it, exactly as it does for every
+// other table this script writes — service_role has no auth.uid() to derive it from.
+async function refreshRollup(records, date) {
+  const byLoc = new Map();
+  const add = (o, k, v) => { o[k] = (o[k] || 0) + (Number(v) || 0); };
+  for (const r of records) {
+    if (!byLoc.has(r.loc)) byLoc.set(r.loc, { loc: r.loc, dt: date });
+    const a = byLoc.get(r.loc);
+    add(a, 'product_sales',           r.product_sales);
+    add(a, 'transactions',            r.transactions);
+    add(a, 'healthy_count',           r.healthy_count);
+    add(a, 'unhealthy_count',         r.unhealthy_count);
+    add(a, 'dt_untilserve',           r.dt_untilserve);
+    add(a, 'dt_untilstore',           r.dt_untilstore);
+    add(a, 'dt_trans_cnt',            r.dt_trans_cnt);
+    add(a, 'dt_carsheld',             r.dt_carsheld);
+    add(a, 'fc_untilserve',           r.fc_untilserve);
+    add(a, 'fc_untilclosedrawer',     r.fc_untilclosedrawer);
+    add(a, 'fc_trans_cnt',            r.fc_trans_cnt);
+    // mfy1 + mfy2 collapse to one pair, matching the backfill and the client's own
+    // KVS-time derivation.
+    add(a, 'mfy_untilserve',          (Number(r.mfy1_untilserve) || 0) + (Number(r.mfy2_untilserve) || 0));
+    add(a, 'mfy_trans_cnt',           (Number(r.mfy1_trans_cnt)  || 0) + (Number(r.mfy2_trans_cnt)  || 0));
+    add(a, 'proj_total_transactions', r.proj_total_transactions);
+    add(a, 'proj_sales_dollars',      r.proj_sales_dollars);
+    add(a, 'ly_product_sales',        r.ly_product_sales);
+    add(a, 'ly_transactions',         r.ly_transactions);
+    add(a, 'actual_punched_hours',    r.actual_punched_hours);
+    add(a, 'total_needed_hours',      r.total_needed_hours);
+  }
+  const rows = [...byLoc.values()].map(r => ({ ...r, refreshed_at: new Date().toISOString() }));
+  if (!rows.length) return 0;
+  const { error } = await supabase
+    .from('qsr_daily_activity_rollup')
+    .upsert(rows, { onConflict: 'loc,dt' });
+  if (error) {
+    // Non-fatal: the hourly rows are already saved and the client falls back to them.
+    console.error(`[dar-pull]   rollup refresh FAILED for ${date}: ${error.message}`);
+    return 0;
+  }
+  return rows.length;
+}
+
 // ── Supabase upsert ───────────────────────────────────────────────────────────
 async function upsertBatch(records) {
   if (!records.length) return 0;
@@ -231,7 +286,8 @@ async function runDirect(token, dates) {
       const records = rows.map(r => mapRow(r, date));
       const n = await upsertBatch(records);
       totalRows += n;
-      console.log(`[dar-pull]   ${date}: ${rows.length} rows → ${n} upserted`);
+      const rolled = await refreshRollup(records, date);
+      console.log(`[dar-pull]   ${date}: ${rows.length} rows → ${n} upserted, ${rolled} rollup`);
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) throw e; // bubble up for fallback
       console.error(`[dar-pull]   ${date} ERROR: ${e.message}`);
@@ -360,7 +416,11 @@ async function pullViaPlaywright(dates) {
         const records = result.rows.map(r => mapRow(r, date));
         const n = await upsertBatch(records);
         totalUpserted += n;
-        console.log(`[dar-pull]   ${date}: ${result.rows.length} rows → ${n} upserted`);
+        // Same rollup refresh as the direct path — without it, any day pulled via the
+        // Playwright fallback would land in qsr_daily_activity but never reach the
+        // rollup, and the app (which now reads the rollup) would silently miss it.
+        const rolled = await refreshRollup(records, date);
+        console.log(`[dar-pull]   ${date}: ${result.rows.length} rows → ${n} upserted, ${rolled} rollup`);
       }
       if (i < dates.length - 1) await new Promise(r => setTimeout(r, 100));
     }
