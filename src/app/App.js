@@ -2040,9 +2040,9 @@ function App() {
       // as a zero-upload fallback and by the Scheduling QSR columns so actual
       // labor hours are cloud-fresh on every device — back into June, not just
       // the days a manual report happened to cover.
-      const _stQsrsoftActSummary = async () => {
+      const _stQsrsoftActSummary = async (_days = 60) => {
       try{
-        const qsrActSummaryRows=await loadQsrActSummary(60);
+        const qsrActSummaryRows=await loadQsrActSummary(_days);
         if(qsrActSummaryRows.length>0){
           const _mkIdx=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
           setDs(prev=>{
@@ -2215,7 +2215,13 @@ function App() {
       //     loc/date the cloud doesn't cover, without ever blocking first paint.
       const _t0 = performance.now();
       const _ms = () => Math.round(performance.now() - _t0);
-      await Promise.all([_stMonthlyTargets(), _stQsrsoftActSummary(), _stCloudEmailReport()]);
+      // T1 loads a NARROW DAR window. qsr_daily_activity is hourly (~675 rows/day), so 60
+      // days is ~40k rows over ~41 pages — measured at 46s, and it was the entire reason
+      // T1 came in at 53.6s rather than the single-digit seconds the tiering was meant to
+      // buy. 14 days is what the current-window tiles actually paint from; T2 re-loads the
+      // full 60 and replaces it (setDs assigns qsrActSummaryRows wholesale, so the wider
+      // load simply wins once it lands).
+      await Promise.all([_stMonthlyTargets(), _stQsrsoftActSummary(14), _stCloudEmailReport()]);
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
       const _t2 = Promise.all([
         _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
@@ -2223,6 +2229,7 @@ function App() {
         _stGradedVisits(), _stQsrsoftFob(), _stPeaksRows(),
         _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
         _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
+        _stQsrsoftActSummary(60),   // full-window backfill; replaces T1's 14-day set
         _stOpsReportStream(), _stLockedProjections(), _stAeParams(),
         _stModelAssignments(), _stOrgEventsHydration(), _stEventImpact(),
       ]);
