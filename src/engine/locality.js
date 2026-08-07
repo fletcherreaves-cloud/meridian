@@ -66,7 +66,12 @@ export const LOCALITIES = [
   { loc: '11657', town: 'Purcell',           state: 'OK', risk: 'medium' },
   { loc: '13113', town: 'Madill',            state: 'OK', risk: 'low'    },
   { loc: '18213', town: 'Lindsay',           state: 'OK', risk: 'medium' },
-  { loc: '20475', town: 'Oklahoma City',     state: 'OK', risk: 'medium' },
+  // `broad` — the town is a large metro, so a bare town match means nothing: every OKC
+  // story would attribute to this one store at I-240/Sooner. Requires the brand or a
+  // specific area marker before attribution. Verified against the live KFOR feed, where
+  // an OKC Streetcar fares story matched on town name alone.
+  { loc: '20475', town: 'Oklahoma City',     state: 'OK', risk: 'medium', broad: true,
+    aliases: ['OKC'], markers: ['I-240', 'I240', 'Sooner Rd', 'Sooner Road', 'SE 44th'] },
   { loc: '29760', town: 'Duncan',            state: 'OK', risk: 'medium' },
   { loc: '31357', town: 'Pauls Valley',      state: 'OK', risk: 'low'    },
   { loc: '32525', town: 'Sulphur',           state: 'OK', risk: 'high'   },
@@ -139,12 +144,16 @@ export function searchQuery(loc, { style = 'boolean', brand = "McDonald's" } = {
  * Attribute a piece of text to stores. Deliberately conservative: returns every
  * plausible store and flags when it cannot narrow to one, rather than guessing.
  */
-export function attribute(text) {
+export function attribute(text, { brandTerms = ["mcdonald's", 'mcdonalds', 'mcdonald\u2019s'] } = {}) {
   const s = String(text || '').toLowerCase();
+  const hasBrand = brandTerms.some(b => s.includes(b));
   const hits = new Set();
   for (const l of LOCALITIES) {
     const names = [l.town, l.addressTown, ...(l.aliases || [])].filter(Boolean);
-    if (names.some(n => s.includes(n.toLowerCase()))) hits.add(l.loc);
+    if (!names.some(n => s.includes(n.toLowerCase()))) continue;
+    // A metro-sized town name on its own is not evidence about one store.
+    if (l.broad && !hasBrand && !(l.markers || []).some(m => s.includes(m.toLowerCase()))) continue;
+    hits.add(l.loc);
   }
   // A highway mention separates the two DeFuniak-address stores.
   if (hits.has('6838') && hits.has('37566')) {

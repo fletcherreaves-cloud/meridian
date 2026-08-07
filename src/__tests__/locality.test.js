@@ -150,3 +150,24 @@ describe('attribution is conservative', () => {
     expect(attribute(undefined).locs).toEqual([]);
   });
 });
+
+describe('broad metro towns need more than the town name', () => {
+  // Store 20475 sits at I-240/Sooner in a 700k-person metro. Matching every "Oklahoma
+  // City" story to it is meaningless — verified against the live KFOR feed, where a
+  // streetcar-fares story attributed to this store on the town name alone.
+  it('a generic Oklahoma City story does NOT attribute to store 20475', () => {
+    expect(attribute('COTPA adopts resolution offering free fares on OKC Streetcar').locs).toEqual([]);
+  });
+
+  it('attributes when the brand is named', () => {
+    expect(attribute("Oklahoma City McDonald's cited by health inspectors").locs).toEqual(['20475']);
+  });
+
+  it('attributes when a specific area marker appears', () => {
+    expect(attribute('Crash closes I-240 near Sooner Rd in Oklahoma City').locs).toEqual(['20475']);
+  });
+
+  it('small towns still match on the name alone — they are specific enough', () => {
+    expect(attribute('I-35 closed near Purcell due to a crash').locs).toEqual(['11657']);
+  });
+});
