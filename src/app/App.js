@@ -266,10 +266,46 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.779';
-const MERIDIAN_BUILD_DATE = '2026-08-01';
+const MERIDIAN_VERSION    = '4.875';
+const MERIDIAN_BUILD_DATE = '2026-08-07';
 if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.875', date:'2026-08-07', changes:[
+    'Inventory variance trace now loops back to the last ACTUAL PHYSICAL COUNT instead of the calendar month, so the chart brackets the window a variance actually occurred in. The header names the window ("since the last count (Aug 5)"). It deliberately walks back past a count taken in the last few days — anchoring on yesterday would collapse the chart to two points. Note the trace still cannot cross a month boundary: qsr_fob snapshots are month-to-date cumulative and reset at month start.',
+  ]},
+  {version:'4.874', date:'2026-08-07', changes:[
+    'A manual report that is too large to sync (one 12.37 MB file) was being re-fetched and failing on EVERY load. It now stops retrying after two attempts and names the file so a report that never synced is visible instead of silently absent.',
+  ]},
+  {version:'4.871', date:'2026-08-07', changes:[
+    'Startup: removed ten full-table row-count scans that ran on every single login purely to write numbers to the browser console. Two of them exceeded the database statement timeout and failed outright, and all ten competed with the real data loads during startup. Time to a usable app dropped by about 7 seconds. The diagnostic is still available at ?tablecounts=1.',
+  ]},
+  {version:'4.870', date:'2026-08-07', changes:[
+    'Failed data loads are no longer silent. A read that errored was indistinguishable from a table that genuinely had no data — the failure marker was being destroyed before any panel could see it, across 37 loaders. That is how six tables returning server errors went unnoticed, each one rendering as a normal "no data yet" empty state. Failures now raise the DATA INCOMPLETE banner and name the source.',
+  ]},
+  {version:'4.869', date:'2026-08-07', changes:[
+    'Swing alarm now measures only CLOSED business days. It was counting today as a full day, so a store part-way through trading looked worse than it was and the headline number drifted through the day. Honours the 4am business-day cutover.',
+  ]},
+  {version:'4.867', date:'2026-08-07', changes:[
+    'NEW — Swing alarm. A store whose sales or guest counts fall sharply for two weeks running now opens a blocking alert that cannot be dismissed by clicking away; acknowledging is the only exit, and it records who acknowledged and when. Thresholds were calibrated against 676 store-weeks of real data rather than picked: two consecutive weeks at or below -10% vs LY isolates exactly the genuinely struggling store. Acknowledging one week does NOT silence the next, and does not silence an escalation — so a store that keeps getting worse keeps surfacing.',
+  ]},
+  {version:'4.868', date:'2026-08-07', changes:[
+    'NEW — Count Cycle panel (Operations → Count Cycle). Enforces the count rules per store: every weekly count needs a full Food AND Condiment count, and Paper is mandatory on the mid-month count. The mid-month count floats with each store\'s own count day, so it is identified by Paper being counted outside the close window rather than by a fixed date. Opens on the stores that need chasing, with the rest collapsed. Reads the full item universe (qsr_onhand) rather than the top-variance table, which carries no Condiment items at all.',
+  ]},
+  {version:'4.866', date:'2026-08-07', changes:[
+    'Count history is now recorded permanently. On-hand data only ever kept each item\'s LAST count date, so a recount erased the previous one — meaning "was the last weekly complete?" was answerable but "were all four weekly counts complete last month?" never could be. A daily snapshot now preserves each count session as it happens. History builds forward from today; counts already overwritten cannot be recovered.',
+  ]},
+  {version:'4.864', date:'2026-08-07', changes:[
+    'The Items Recounted tile was reporting "No ledger detail" for a period that held 695 rows across all 27 stores (54 items recounted, $3,680 net recovered). The read was timing out on a 16 MB request, not coming back empty. Fixed the request size, and the tile now distinguishes a failed load from a genuinely empty one, with a Retry.',
+  ]},
+  {version:'4.858', date:'2026-08-07', changes:[
+    'Watch counts were always zero. The "Watch Flags" tile, the Watch filter on Store Dashboard, and the Watch tab in Needs Attention all filtered for a severity tag the system has never emitted, so all three had silently read zero since they were built. About 12 categories of watch findings were being detected and then dropped. Expect these counts to jump off zero.',
+  ]},
+  {version:'4.859', date:'2026-08-07', changes:[
+    'Drive-thru speed now contributes to the attention feed. The detector had been written and tested but was never given data, so it silently contributed nothing.',
+  ]},
+  {version:'4.856', date:'2026-08-07', changes:[
+    'Panel plumbing rebuilt (no visible change) and 31 gaps closed as a result: 15 panels left the dashboard recomputing behind them, and 16 could not be closed with the Escape key. Adding a panel used to mean updating six separate lists by hand; the build now fails if any of them disagree.',
+  ]},
   {version:'4.779', date:'2026-08-03', changes:[
     'At-A-Glance polish: the Sales & Guest Counts, Labor, and Service tiles now show "Loading…" instead of "No … data for this period" during the brief post-reload window before the cloud streams finish loading. The empty-state was reading as "no data exists" when the data was simply still in flight (the blank-tile-on-hard-reload report) — now it only says "no data" once the streams have loaded and the selected period genuinely has none.',
   ]},
