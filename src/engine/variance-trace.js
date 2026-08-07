@@ -37,14 +37,23 @@ const _COMP_FIELD = {
 // `fobRows` may span more than the period (harmless — extra rows outside it are only
 // used to seed same-month lookback, never cross-month: MTD resets at month start, so
 // day 1 of any period always deltas vs $0, not against the prior month's total).
-export function fobDailyTrace(fobRows, { loc, period } = {}) {
+export function fobDailyTrace(fobRows, { loc, period, since = null } = {}) {
   const rows = (fobRows || []).filter(r => _unpad(r.loc) === _unpad(loc));
   // One row per day — if a day pulled more than once (multiple intraday runs), keep the LAST
   // (freshest) one for that date.
   const byDay = {};
   for (const r of rows) { const k = _dk(r.date); if (k) byDay[k] = r; }
   const days = Object.keys(byDay).sort();
-  const inPeriod = d => !period || d.slice(0, 7) === period;
+  // `since` (Notes 58 #2) narrows the domain to start at the last ACTUAL PHYSICAL COUNT
+  // instead of the calendar-month boundary — the owner's "loopback needs to go back to
+  // the last submitted count".
+  //
+  // CONSTRAINT, and it is a hard one: qsr_fob rows are MONTH-TO-DATE CUMULATIVE, so the
+  // snapshot resets at month start and the delta logic below refuses to difference across
+  // that boundary. A `since` earlier than the period start therefore cannot be honoured —
+  // the curve would show the reset as a cliff. It is clamped to the period, and callers
+  // can detect that from the returned trace's first date.
+  const inPeriod = d => (!period || d.slice(0, 7) === period) && (!since || d >= since);
 
   let prevCum = null, prevDay = null;
   const out = [];
@@ -70,6 +79,24 @@ export function fobDailyTrace(fobRows, { loc, period } = {}) {
     prevCum = cum; prevDay = day;
   }
   return out;
+}
+
+/**
+ * The count day to anchor a variance trace on: the most recent real count that still
+ * leaves a usable span of chart. Anchoring on a count taken yesterday would produce a
+ * one-point chart, so this walks back until the window is at least `minSpanDays` wide.
+ *
+ * `sessions` is analyzeCountCadence's output ({ day, kind }); `eomDay` is the explicit
+ * close-count day when one is known.
+ */
+export function lastCountAnchor(sessions = [], { asOf = null, eomDay = null, minSpanDays = 7 } = {}) {
+  const days = [...new Set([...(sessions || []).map(s => s && s.day), eomDay].filter(Boolean))].sort();
+  if (!days.length) return null;
+  const end = asOf || days[days.length - 1];
+  for (let i = days.length - 1; i >= 0; i--) {
+    if (_daysBetween(days[i], end) >= minSpanDays) return days[i];
+  }
+  return days[0];
 }
 
 function _daysBetween(a, b) {

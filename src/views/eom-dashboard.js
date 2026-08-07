@@ -37,7 +37,7 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { analyzeCountCadence, weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
-import { fobDailyTrace, annotateTouchpoints, biggestJumpDay } from '../engine/variance-trace.js';
+import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -396,7 +396,14 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
         const label = c.daysSinceWeekly == null ? 'No full weekly' : c.daysSinceWeekly >= 8 ? `Overdue · ${c.daysSinceWeekly}d` : 'On track';
         const isOpen = open === loc;
         const wins = isOpen ? windowsFor(loc) : [];
-        const trace = isOpen ? annotateTouchpoints(fobDailyTrace(fobRows, { loc, period }), { sessions: c.sessions }) : [];
+        // Notes 58 #2: the loopback starts at the last ACTUAL PHYSICAL COUNT, not the
+        // calendar-month boundary. lastCountAnchor walks back until the window is at
+        // least a week wide, so a count taken yesterday doesn't collapse the chart to a
+        // single point. It clamps to the period start — qsr_fob is month-to-date
+        // cumulative, so the curve cannot cross a month boundary without showing the
+        // reset as a cliff.
+        const anchor = isOpen ? lastCountAnchor(c.sessions, { asOf: c.lastWeekly || undefined }) : null;
+        const trace = isOpen ? annotateTouchpoints(fobDailyTrace(fobRows, { loc, period, since: anchor }), { sessions: c.sessions }) : [];
         const jump = isOpen ? biggestJumpDay(trace) : null;
         const rowEls = [
           h('tr', { key: loc, onClick: () => setOpen(o => o === loc ? null : loc), style: { borderBottom: isOpen ? 'none' : '1px solid var(--bdr)', cursor: 'pointer' } },
@@ -410,7 +417,10 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
         if (isOpen) rowEls.push(
           h('tr', { key: loc + '-d', style: { borderBottom: '1px solid var(--bdr)' } },
             h('td', { colSpan: 5, style: { padding: '8px 10px 10px 24px', background: 'var(--surf3)' } },
-              div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '0 0 4px' } }, 'FOB variance trace — this period (Notes 56)'),
+              div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '0 0 4px' } },
+                trace.length && anchor && trace[0].date >= anchor
+                  ? `FOB variance trace — since the last count (${fmtDay(anchor)})`
+                  : 'FOB variance trace — this period'),
               h(VarianceTraceChart, { trace, jump }),
               div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '10px 0 3px' } }, 'Biggest between-count variance windows (where the movement happened)'),
               wins.length

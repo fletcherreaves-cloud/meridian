@@ -12,6 +12,9 @@
 - [North-star discovery lens](north-star-discovery-lens.md) — bridge QSRSoft's gaps, don't clone it;
   correlations, real-world decision trees, "learn and burn."
 
+- [Docs + changelog refresh TODO](docs-refresh-todo.md) — owed after the v4.856–v4.875 sprint;
+  lists exactly what is stale in the in-app changelog, CLAUDE.md and the panel catalog
+
 ## 🗂 Owner "Notes" working queues (most recent = most relevant)
 - [Notes 59](notes-59-online-reputation.md) — online reputation/social analytics: Google/FB/Yelp/Reddit/3PO
   ratings + reviews per location, local news, community-sentiment source tracing. Key constraint:
