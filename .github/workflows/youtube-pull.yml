@@ -1,0 +1,35 @@
+name: YouTube Mentions Pull
+
+# Deliberately off the 10:00 UTC pack so it does not compete with the QSRSoft pulls,
+# and after the news RSS pull at 11:40 so both land in news_mentions in one window.
+on:
+  schedule:
+    - cron: '10 12 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Lookback window in days'
+        required: false
+        default: '90'
+      dry_run:
+        description: 'Dry run (do not write)'
+        required: false
+        default: 'false'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Pull YouTube mentions
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          YT_DAYS: ${{ github.event.inputs.days || '90' }}
+          YT_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
+        run: node scripts/youtube-pull.mjs
