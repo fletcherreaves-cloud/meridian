@@ -123,7 +123,17 @@ Both are compatible with everything the owner asked for.
 | **YouTube** | ✅ **Build** | **$0** |
 | **Instagram** | ❌ **Not viable** via official API — accept the gap | — |
 | **TripAdvisor** | ❌ **Don't build** | — |
-| Google Business Profile, Facebook, Yelp, Reddit, 3PO, news | research still outstanding | — |
+| **Google Business Profile** | ✅ **Build FIRST — the anchor** | **$0** |
+| **DoorDash Reporting API** | ✅ **Build second** — only 3PO with a real review feed | **$0** |
+| **Local news RSS (direct)** | ✅ **Build** — 9 confirmed feeds | **$0** |
+| **Facebook / Meta** | ❌ **Dead** — Meta deprecated reviews entirely | — |
+| **Yelp** | ❌ Unusable as built — **24-hour storage limit** | $229–643/mo |
+| **Google Places API** | ❌ Not a data source — 5 reviews max, storage banned | — |
+| **Uber Eats** | ⚠️ No reviews API — manual portal CSV | — |
+| **Grubhub** | ❌ Skip — partner-gated, ~8wk cert, no reviews API found | — |
+| **Reddit** | ⚠️ Low priority — signal isn't there for these towns | — |
+| **Apple Business Insights** | ⚠️ Nice-to-have — funnel metrics, no reviews | — |
+| **Bing** | ❌ Nothing to ingest — no first-party reviews | — |
 
 ## X — the economics changed, and recently
 
@@ -228,3 +238,213 @@ licensing changes**, and vendors face the *same* Instagram limits we do, so thei
 coverage is largely hashtag/owned-account based too. **Run the free Brand24 trial with all
 27 town names first** — if it surfaces nothing for Tishomingo or Holdenville, the
 low-volume rural coverage being sold isn't actually there.
+
+---
+
+# Research findings, part 2 — rating platforms, 3PO, news (2026-08-07)
+
+## ⚡ PHASE 0 — do this before anything else, costs nothing
+
+**Sign into `business.google.com` with the operator Google account and inventory actual
+GBP access across all 27 locations.** This single check determines the entire shape of
+the project. Many franchise brands already grant franchisees **Manager** on their own
+locations without announcing it — precisely because Managers can respond to reviews. If
+that access is already there, the GBP API application can be filed today and the
+corporate question never arises.
+
+## Google Business Profile — the anchor
+
+Free, complete, **full historical review text**, **legally storable** (it's our own
+business's data), and it supports replying through the API.
+
+- Reviews live in the **legacy My Business API v4.9**, which survived the 2021–22 API
+  split. `accounts.locations.reviews` is **not** in the deprecation table and has no v1
+  replacement — it is still supported.
+- Returns full `comment` text (not truncated), 1–5 `starRating`, reviewer, create/update
+  timestamps, and `reviewReply` with state and any policy violation.
+- `batchGetReviews` takes an array of locations — **one call across all 27 stores**.
+- Paginate `pageSize=50` back to the beginning of each location's history.
+- **Auth:** OAuth 2.0, scope `business.manage`. API keys return 401. Fits the existing
+  GitHub Actions refresh-token pattern.
+- **Quota: 0 QPM until approved, 300 QPM after.** If the console shows 0, that means *not
+  approved* — file the access application, **not** a quota increase.
+- **Application:** `support.google.com/business/contact/api_default` → "Application for
+  Basic API Access." Stated 7–10 business days; real-world 4 days to 6 weeks. Rejections
+  cluster on vague use-case text and on the applying email domain not matching the
+  business website — **apply from an @mcreaves.com address** and describe the internal
+  dashboard concretely. Start this early; it's the long pole.
+
+**Manager role is sufficient.** Google's roles matrix confirms Managers can respond to
+reviews and download insights; Owner-only powers are user management, profile deletion,
+and editing all URLs. Google's own API FAQ *recommends* third parties be added as manager
+rather than owner. Roles are assignable at the **location-group** level, so corporate can
+grant "Manager on the Oklahoma group" without exposing anything else — a narrow,
+defensible ask.
+
+### Two free bonuses worth wiring
+
+- **Pub/Sub push instead of polling.** The Notifications API publishes `NEW_REVIEW`,
+  `UPDATED_REVIEW`, `NEW_CUSTOMER_MEDIA`, `GOOGLE_UPDATE`, `DUPLICATE_LOCATION`,
+  `VOICE_OF_MERCHANT_UPDATED` to a topic we own. A new one-star review can reach Meridian
+  in near-real-time. (Q&A notification types were discontinued 2025-11-03.)
+- **Performance API daily metrics** per store: impressions split desktop/mobile ×
+  maps/search, direction requests, call clicks, website clicks, and — genuinely novel for
+  us — **`BUSINESS_FOOD_ORDERS`** and `BUSINESS_FOOD_MENU_CLICKS`. Google-attributed food
+  ordering per store, daily.
+
+## Facebook — closed by Meta, not by McDonald's
+
+**Meta deprecated Page recommendations and ratings in Graph API v22.0 (2025-01-21)**,
+extended to all API versions 2025-09-09. Reading a recommendation returns error code 12
+and ratings webhooks no longer fire.
+
+⚠️ Meta's own `/page/ratings` reference page still exists with no deprecation banner —
+that's a documentation inconsistency, **not** a live capability. Trust the changelog.
+
+Even pre-deprecation this was blocked: parent Page tokens cannot read child Page
+recommendations, and franchise brands use the parent-child Locations structure.
+
+**Do not spend political capital asking corporate for Facebook access.** There is no
+supported API path at any permission level.
+
+## The trap that matters most — storage licensing, not scraping
+
+The biggest constraint on this whole module is **not** anti-bot brittleness or ToS risk
+around scraping. It is that several platforms have clean APIs that would hand over the
+data and then **contractually forbid warehousing it**. A trend dashboard is by definition
+a warehouse.
+
+| Source | What the licence forbids |
+|---|---|
+| **Yelp** | Storing data **> 24 hours**. Also bans semantic analysis without approval, and bans blending Yelp ratings with other sources — i.e. exactly a unified reputation index. |
+| **Google Places API** | Only `place_id` storable indefinitely (coords 30 days). Names, ratings, reviews, photos: no caching or storing. Also hard-capped at **5 reviews**. |
+| **TripAdvisor** | `location_id` only. Nothing else may be cached, stored or indexed. |
+
+All three are fine for **live display with attribution**; none can back a historical
+trend store. Yelp does grant exceptions — `api@yelp.com` — but that's a negotiation, not
+a build. **Do not build first and ask later.**
+
+This is the failure mode most likely to catch an engineer who assumes "it has an API, so
+it's fine."
+
+## DoorDash — the one 3PO that works, and it's free
+
+The **Reporting API** (not the Marketplace API) exposes a **`CONSUMER_FEEDBACK`** report
+with `merchant_rating` (1–5), `merchant_emoji_rating`, **`comments` (actual review
+text)**, `review_type`, local-timezone date, and `store_id`/`business_id` to join on.
+**No reviewer name — DoorDash anonymises**, which is the right model anyway (see ethics).
+
+Mechanics worth noting before building: `POST /dataexchange/v1/reports` → `report_id`,
+then `GET .../reportlink`. Output is a ZIP of CSVs, generation can take 5 minutes, and
+**the download link expires in 20 seconds** — the script must fetch immediately, not
+queue. JWT auth (HS256, `dd-ver: DD-JWT-V1`), **max 30-minute token lifetime**.
+
+Access is gated: interest form → review → 1–2 business days after approval before data
+flows, and **store IDs must be individually whitelisted** or requests 403. Same
+corporate pressure point as Google if a corporate DoorDash account sits above our stores.
+
+*Unverified:* pricing (appears free), rate limits, history depth. Portal Report Builder
+allows "within the last two years" as a proxy for retention.
+
+## Uber Eats / Grubhub / Postmates
+
+- **Uber Eats: no reviews or ratings endpoint in any of the six documented API suites** —
+  verified against the store object directly, zero rating fields. Uber Eats *Manager* has
+  "Customer and Delivery Feedback" and "Menu Item Feedback" reports with comments, but
+  **31-day max range** and reports **expire 48 hours** after preparation. Plan on monthly
+  manual CSV through Data Manager. One open question worth an email to the Uber partner
+  manager: whether those feedback reports are exposed via the Reporting API (their
+  OpenAPI spec wouldn't render).
+- **Grubhub:** no ratings/reviews API found; access designed for POS vendors, ~8 weeks to
+  certify. Skip.
+- **Postmates:** merged into Uber Eats infrastructure. Build for Uber, get Postmates free.
+
+## Local news — free RSS is the backbone
+
+Publishing a feed is an invitation to consume it: no ToS grey area, no cost. **Nine feeds
+verified live**, incl. KFOR, WMBB/mypanhandle, KOKH, KTEN, The Ada News, Duncan Banner,
+Chickasha Express-Star, Pauls Valley Daily Democrat, Daily Ardmoreite.
+
+**Best single finding:** the TownNews/CNHI papers accept a **`q=` keyword parameter on
+the RSS endpoint**, giving a pre-filtered per-outlet feed —
+`kten.com/search/?f=rss&t=article&q=Tishomingo&...`. Two gotchas: results sort by date
+not relevance, and **quoted phrases break it** — use unquoted single terms.
+
+**Dead ends confirmed:** Gannett killed RSS platform-wide (The Oklahoman, NWF Daily
+News), Gray Television stations (WJHG, KSWO, KXII) have none, Durant Daily Democrat has
+no working feed, and chipleypaper.com is a dead WordPress placeholder still carrying the
+default "Hello world!" post.
+
+⚠️ **Google News RSS: works but `news.google.com/robots.txt` disallows `/rss/`.** Fine for
+a prototype, not a production backbone — and naive queries are unusable anyway
+(`"McDonald's" "Durant" Oklahoma` returns a wall of **Kevin Durant** coverage). Gap-fill
+with **SerpApi at ~$25/mo** using per-outlet `site:` queries instead; that's the clean way
+to reach the Gannett/Gray/Hearst/Durant outlets.
+
+**GDELT** is the only source with an unambiguous unlimited commercial licence, but it has
+no geographic disambiguation — a `Tishomingo` query returned articles about Tishomingo
+County, **Mississippi**. Free wide net, not a primary.
+
+## Identifier mapping — anchor on Google Place ID
+
+`accounts.locations.list` with a readMask including `metadata` returns **`metadata.placeId`**
+per location, free. **That makes Place ID the cross-platform join key at zero cost.**
+Store it once in a `store_platform_ids` table alongside NSN and hand-verify the rest —
+27 stores is small enough that a one-time manual mapping beats fuzzy matching and
+eliminates a whole class of silent data-quality bugs. (Same loc-canonicalisation
+discipline that already bites elsewhere.)
+
+## The competitive gap, quantified
+
+Across all 12,376 US McDonald's locations: **18,139,827 Google reviews, 3.5-star average,
+and a 0.52% reply rate.** Nobody is systematically responding. McDonald's *is* a Yext
+customer, but that's listing-data accuracy, not review response.
+
+Two consequences: **there is no incumbent process to conflict with**, and responding at
+all is a differentiator that costs nothing but attention.
+
+## Ethics / compliance — the three drifts to design against
+
+The monitoring itself is the intended use of every official API here. Risk comes from
+three specific drifts:
+
+1. **Storing what a licence forbids** — see the storage table above.
+2. **Reaching for data behind a login.** Rule of thumb: *if you can't see it in an
+   incognito browser, don't take it.* Never create accounts to get behind a wall; never
+   join private groups under false pretenses.
+3. **Turning aggregate sentiment into individual-person analysis.**
+   **Concrete build rule: the GBP API returns `reviewer.displayName` and
+   `profilePhotoUrl` — store the review, DROP the reviewer identity** unless a GM needs it
+   to resolve a specific complaint. Keep rating, text, date, store, reply state. Nothing
+   is lost analytically and an entire category of data-protection exposure disappears.
+   DoorDash already anonymises reviewers — treat that as the model.
+
+⚠️ **FTC Rule on Consumer Reviews (16 CFR Part 465, effective 2024-10-21)** bans fake or
+AI-generated reviews, buying positive *or* negative reviews, and review suppression.
+Relevant here because reputation dashboards create pressure to improve the number:
+**"review gating"** — soliciting feedback then routing only happy customers to Google — is
+squarely prohibited. If this module ever grows a solicitation feature, it must ask
+**every** customer, not the pre-screened ones.
+
+## Build order
+
+**Phase 0 (today, free):** check `business.google.com` access. Determines everything.
+
+**Phase 1:** file the GBP API application (long lead — start now) · request DoorDash
+Reporting API access · build the direct-RSS news backbone (works today, no dependencies).
+
+**Phase 2 (once approved):** GBP review backfill via `batchGetReviews`, reviewer identity
+dropped → Supabase · Pub/Sub `NEW_REVIEW` notifications → near-real-time alerting ·
+Performance API daily metrics incl. `BUSINESS_FOOD_ORDERS` · DoorDash `CONSUMER_FEEDBACK`
+nightly (mind the 20-second link expiry) · SerpApi ~$25/mo for the news gaps.
+
+**Phase 3:** Uber Eats manual CSV (or API if the partner manager confirms) · Apple
+Business Insights if franchise eligibility clears.
+
+**Skip entirely:** Facebook (deprecated), TripAdvisor (storage), Bing (nothing to ingest),
+Postmates (already in Uber), Grubhub (partner-gated), Google Places as a data source,
+NewsAPI.org (free tier bans internal production use).
+
+**Vendors** ($16k–42k/yr for the ones with real 3PO review coverage — Chatmeter, Momos)
+are only worth considering for the Uber Eats / Grubhub gap, and probably not even then,
+given DoorDash and Google are both obtainable free.
