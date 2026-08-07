@@ -1,9 +1,28 @@
 // @ts-nocheck
 // ── Metric source resolver (auto-first, single global implementation) ─────────
 // ONE place that knows, for each operational metric, WHERE its per-(loc,date) value
-// comes from and in what priority — manual uploads first (the authoritative Operations
-// Report / Controls), then the auto-synced streams (emailed Daily Glimpse, DAR) as a
-// fallback. Panels should read metrics through metricDaily / metricAvg instead of each
+// comes from and in what priority — AUTO/EMAILED FIRST (DAR, qsr_* pulls, emailed Daily
+// Glimpse / Cash Sheet / Sales Ledger), with manual uploads LAST as a last-resort fill.
+//
+// This was manual-first until 2026-08-07, contradicting CLAUDE.md's standing rule that
+// manual uploads "must never override auto/emailed data or be a tile's primary source."
+// 27 of 30 chains led with a manual source. It had not bitten yet only because manual
+// uploads stopped mid-July, so recent dates fell through to auto anyway.
+//
+// Why auto wins on the merits, not just by policy: DAR is HOURLY (even quarter-hourly)
+// while the manual Operations Report is a day total. You can always derive the day from
+// the hours, never the reverse. Verified 2026-08-07 that DAR is deterministic — re-pulling
+// a date returned byte-identical values for all 27 stores — so it is a stable source, not
+// an eventually-consistent one.
+//
+// Manual is deliberately KEPT, last in every chain: it holds history back to 2022-01-01
+// that DAR (2025-01-01) does not, and metricDaily resolves PER DAY, so a date the auto
+// stream cannot cover falls through to manual automatically. It is also the escape hatch
+// when an upstream API changes.
+//
+// KNOWN, DOCUMENTED: DAR-summed daily sales differ from the manual Ops Report total on
+// ~15% of store-days, median under $1 on a $10-20k day (~0.01%), consistently DAR-higher.
+// Definitional, not drift. See memory/dar-vs-ops-reconciliation.md. Panels should read metrics through metricDaily / metricAvg instead of each
 // filtering `ds.laborRows`/`ds.ctrlRows` itself — which is exactly why "recent windows
 // look empty" kept cropping up (a manual-only read shows blank when only auto data exists).
 //
@@ -19,8 +38,8 @@ const _dk = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10
 // srcs are tried in order; first source with a usable value for that day wins.
 export const METRIC_SOURCES = {
   // Sales / guests — sales & gc also flow through vs-ly.js for the matched-day comparison.
-  sales:     { mode: 'pos', srcs: [['laborRows', 'sales'], ['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales']] },
-  gc:        { mode: 'pos', srcs: [['laborRows', 'gc'], ['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc']] },
+  sales: { mode: 'pos', srcs: [['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales'], ['laborRows', 'sales']] },
+  gc: { mode: 'pos', srcs: [['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc'], ['laborRows', 'gc']] },
   // Projected (plan) guests / sales per day — QSRSoft's own forecast (DAR proj_total_transactions
   // / proj_sales_dollars). The "what the store should deliver" baseline. projSales drives the
   // One-Pager GC/sales-to-plan opportunity ($ shortfall vs plan — bounded + sane).
@@ -30,21 +49,21 @@ export const METRIC_SOURCES = {
   // OEPE — manual Ops Report, then emailed Daily Glimpse, then the cloud-fresh DAR-derived
   // OEPE = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt (reconciled exactly to the DAR
   // OEPE column) so current-day / recent windows populate before the Glimpse email lands.
-  oepe:      { mode: 'pos', srcs: [['opsRows', 'oepe'], ['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe']] },
+  oepe: { mode: 'pos', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']] },
   // KVS Time per GC (seconds) — manual Ops, then emailed Glimpse, then the cloud-fresh DAR
   // (= total MFY serve time ÷ total MFY trans, reconciled to the DAR report's KVS Time Per GC
   // column). The KVS stations are the MFY make-lines, so the DAR carries it without a new field.
-  kvst:      { mode: 'pos', srcs: [['opsRows', 'kvst'], ['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst']] },
+  kvst: { mode: 'pos', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['opsRows', 'kvst']] },
   // KVS Healthy Usage (2nd-side) as a 0–1 fraction — manual Ops calls it `kvsu`, the emailed
   // Daily Glimpse calls it `kvsHealthy`, and the auto-pulled DAR derives it from healthy/unhealthy
   // order-health counts (cloud-fresh, so recent windows fill even when the Glimpse email lags/omits
   // KVS). Ordered Ops → Glimpse → DAR so a manual value still wins but auto always backstops.
-  kvsHealthy: { mode: 'pos', srcs: [['opsRows', 'kvsu'], ['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy']] },
-  park:      { mode: 'pos', srcs: [['opsRows', 'park'], ['glimpseRows', 'parkedPct'], ['opsServiceRows', 'park']] },
+  kvsHealthy: { mode: 'pos', srcs: [['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy'], ['opsRows', 'kvsu']] },
+  park: { mode: 'pos', srcs: [['glimpseRows', 'parkedPct'], ['opsServiceRows', 'park'], ['opsRows', 'park']] },
   // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
-  r2p:       { mode: 'pos', srcs: [['opsRows', 'r2p'], ['qsrActSummaryRows', 'r2p']] },
+  r2p: { mode: 'pos', srcs: [['qsrActSummaryRows', 'r2p'], ['opsRows', 'r2p']] },
   // Labor — PUNCHED Labor % for ALL locations (Notes 35 + 2026-08-03 correction). Glimpse FIRST,
   // then Controls, then manual Labor rows. Controls (ctrlRows.laborPct) was supposed to already
   // be punched, but parseCtrlData had a bug (fixed 2026-08-03) that preferred "Actual Labor %"
@@ -56,27 +75,27 @@ export const METRIC_SOURCES = {
   // ordering it first gets today's best available number without waiting on a re-upload, and
   // costs nothing once ctrlRows data is clean again (both sources should then agree).
   laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']] },
-  tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']] },
+  tpph: { mode: 'pos', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']] },
   // OT Hours — manual Controls, then manual Labor, then the auto-pulled Operations Report
   // labor-summary stream (qsr_labor_summary → loadOpsLaborSummary, daily, already aliased to
   // otHrs) — closes the labor-tools.js Operations Group Stats gap (cleanup-backlog Class 2,
   // 2026-08-06): otHrs read raw ctrlRows/laborRows only, with no auto backstop, unlike
   // laborPct/tpph/oepe/cashOS in the same panel which already route through this resolver.
-  otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs'], ['opsLaborRows', 'otHrs']] },
+  otHrs: { mode: 'any', srcs: [['opsLaborRows', 'otHrs'], ['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
-  cashOSPct: { mode: 'any', srcs: [['ctrlRows', 'cashOSPct'], ['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct']] },
+  cashOSPct: { mode: 'any', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']] },
   // Cash Over/Short $ (dollar, not %) — manual Controls, then emailed Glimpse/Cash Sheet, then
   // the auto-pulled Operations Report cash-sheet. Closes EOM Supervisor's Cash +/- gap (#52).
-  cashOSAmt: { mode: 'any', srcs: [['ctrlRows', 'cashOSAmt'], ['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['opsCashRows', 'cashOSAmt']] },
+  cashOSAmt: { mode: 'any', srcs: [['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['opsCashRows', 'cashOSAmt'], ['ctrlRows', 'cashOSAmt']] },
   // T-Reds Before/After % — manual Controls, then the cloud-fresh Operations Report cash-sheet
   // (treds $ ÷ net sales, same net-sales-weighted math as discPct). Closes #37 for T-Reds.
-  tRedAPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedAPct'], ['opsCashRows', 'tRedAPct']] },
-  tRedBPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedBPct'], ['opsCashRows', 'tRedBPct']] },
+  tRedAPct: { mode: 'any', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']] },
+  tRedBPct: { mode: 'any', srcs: [['opsCashRows', 'tRedBPct'], ['ctrlRows', 'tRedBPct']] },
   // Drawer opens (count) — manual Controls, then the auto-pulled Operations Report cash-sheet.
-  drawerOpens: { mode: 'any', srcs: [['ctrlRows', 'drawerOpens'], ['opsCashRows', 'drawerOpens']] },
+  drawerOpens: { mode: 'any', srcs: [['opsCashRows', 'drawerOpens'], ['ctrlRows', 'drawerOpens']] },
   // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
   // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
-  discPct:   { mode: 'any', srcs: [['ctrlRows', 'discPct'], ['opsCashRows', 'discPct']] },
+  discPct: { mode: 'any', srcs: [['opsCashRows', 'discPct'], ['ctrlRows', 'discPct']] },
 
   // ── Notes 57 Phase 1 (v4.845) ──────────────────────────────────────────────
   // The inventory (scripts/metric-inventory.mjs) found 29 metrics described in
@@ -94,32 +113,32 @@ export const METRIC_SOURCES = {
 
   // Refunds — manual Controls, then the auto Operations Report cash-sheet, then the
   // emailed Cash Sheet. All three already emit these exact field names.
-  cashRefAmt:     { mode: 'any', srcs: [['ctrlRows', 'cashRefAmt'],     ['opsCashRows', 'cashRefAmt'],     ['cashRows', 'cashRefAmt']] },
-  cashRefCnt:     { mode: 'any', srcs: [['ctrlRows', 'cashRefCnt'],     ['opsCashRows', 'cashRefCnt'],     ['cashRows', 'cashRefCnt']] },
-  cashlessRefAmt: { mode: 'any', srcs: [['ctrlRows', 'cashlessRefAmt'], ['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt']] },
-  cashlessRefCnt: { mode: 'any', srcs: [['ctrlRows', 'cashlessRefCnt'], ['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt']] },
+  cashRefAmt: { mode: 'any', srcs: [['opsCashRows', 'cashRefAmt'], ['cashRows', 'cashRefAmt'], ['ctrlRows', 'cashRefAmt']] },
+  cashRefCnt: { mode: 'any', srcs: [['opsCashRows', 'cashRefCnt'], ['cashRows', 'cashRefCnt'], ['ctrlRows', 'cashRefCnt']] },
+  cashlessRefAmt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt'], ['ctrlRows', 'cashlessRefAmt']] },
+  cashlessRefCnt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt'], ['ctrlRows', 'cashlessRefCnt']] },
 
   // POS Over $ / count — manual Controls, then emailed Glimpse, then emailed Cash Sheet.
-  posOverAmt:     { mode: 'any', srcs: [['ctrlRows', 'posOverAmt'],     ['glimpseRows', 'posOverAmt'],     ['cashRows', 'posOverAmt']] },
-  posOverCnt:     { mode: 'any', srcs: [['ctrlRows', 'posOverCnt'],     ['glimpseRows', 'posOverCnt'],     ['cashRows', 'posOverCnt']] },
+  posOverAmt: { mode: 'any', srcs: [['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
+  posOverCnt: { mode: 'any', srcs: [['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
 
   // Promo $ / % — manual Controls, then emailed Glimpse. (promoCnt deliberately NOT
   // added: no auto/emailed stream emits it, so a chain would be single-source theatre.)
-  promoAmt:       { mode: 'any', srcs: [['ctrlRows', 'promoAmt'],       ['glimpseRows', 'promoAmt']] },
-  promoPct:       { mode: 'any', srcs: [['ctrlRows', 'promoPct'],       ['glimpseRows', 'promoPct']] },
+  promoAmt: { mode: 'any', srcs: [['glimpseRows', 'promoAmt'], ['ctrlRows', 'promoAmt']] },
+  promoPct: { mode: 'any', srcs: [['glimpseRows', 'promoPct'], ['ctrlRows', 'promoPct']] },
 
   // T-Red Before/After COUNTS — the % versions already had chains to opsCashRows since
   // #37; the counts beside them did not, so the same tile could show a fresh % next to a
   // stale count.
-  tRedACnt:       { mode: 'any', srcs: [['ctrlRows', 'tRedACnt'],       ['opsCashRows', 'tRedACnt']] },
-  tRedBCnt:       { mode: 'any', srcs: [['ctrlRows', 'tRedBCnt'],       ['opsCashRows', 'tRedBCnt']] },
+  tRedACnt: { mode: 'any', srcs: [['opsCashRows', 'tRedACnt'], ['ctrlRows', 'tRedACnt']] },
+  tRedBCnt: { mode: 'any', srcs: [['opsCashRows', 'tRedBCnt'], ['ctrlRows', 'tRedBCnt']] },
 
   // Average check — manual Labor, then emailed Glimpse / Cash Sheet / Sales Ledger.
   // 'pos' because a real avg check is never legitimately 0.
-  avgCheck:       { mode: 'pos', srcs: [['laborRows', 'avgCheck'], ['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck']] },
+  avgCheck: { mode: 'pos', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']] },
 
   // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name).
-  dtMixPct:       { mode: 'pos', srcs: [['laborRows', 'dtPctTotal'], ['salesLedgerRows', 'dtPctTotal']] },
+  dtMixPct: { mode: 'pos', srcs: [['salesLedgerRows', 'dtPctTotal'], ['laborRows', 'dtPctTotal']] },
 };
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);

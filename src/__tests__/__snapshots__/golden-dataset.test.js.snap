@@ -1,0 +1,20 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`computed metrics are stable (pin the numbers) > TPPH aggregates as Σtxns/Σhours, not a mean of rates 1`] = `5.3057`;
+
+exports[`computed metrics are stable (pin the numbers) > district sales total from the auto stream 1`] = `320483.72`;
+
+exports[`computed metrics are stable (pin the numbers) > metricAvg over the window, per metric 1`] = `
+{
+  "avgCheck": null,
+  "cashOSPct": 0,
+  "gc": 1407.9524,
+  "laborPct": 0.2207,
+  "sales": 15261.1295,
+  "tpph": 5.1717,
+}
+`;
+
+exports[`computed metrics are stable (pin the numbers) > sales-weighted labor % beats a plain mean 1`] = `0.2195`;
+
+exports[`computed metrics are stable (pin the numbers) > sales-weighted labor % beats a plain mean 2`] = `0.2236`;

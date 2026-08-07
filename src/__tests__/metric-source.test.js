@@ -5,15 +5,15 @@ const d = s => new Date(s + 'T00:00:00');
 const range = { s: d('2026-06-01'), e: d('2026-06-30') };
 
 describe('metric-source resolver (auto-first)', () => {
-  it('metricDaily prefers manual Ops over Glimpse, then falls back to Glimpse', () => {
+  it('metricDaily prefers Glimpse (emailed) over manual Ops, then falls back', () => {
     const ds = {
-      opsRows: [{ loc: '1', date: d('2026-06-01'), oepe: 150 }],       // manual for day 1
+      opsRows: [{ loc: '1', date: d('2026-06-01'), oepe: 150 }],       // manual
       glimpseRows: [
-        { loc: '1', date: d('2026-06-01'), oepe: 999 },                 // manual should win
-        { loc: '1', date: d('2026-06-02'), oepe: 165 },                 // glimpse fills day 2
+        { loc: '1', date: d('2026-06-01'), oepe: 999 },                 // emailed WINS (v4.855)
+        { loc: '1', date: d('2026-06-02'), oepe: 165 },
       ],
     };
-    expect(metricDaily(ds, '1', d('2026-06-01'), 'oepe')).toBe(150);
+    expect(metricDaily(ds, '1', d('2026-06-01'), 'oepe')).toBe(999);
     expect(metricDaily(ds, '1', d('2026-06-02'), 'oepe')).toBe(165);
     expect(metricDaily(ds, '1', d('2026-06-03'), 'oepe')).toBeNull();
   });
@@ -96,6 +96,9 @@ describe('metric-source resolver (auto-first)', () => {
     // manual Controls TPPH still wins first
     const ds2 = { ctrlRows: [{ loc: '1', date: d('2026-06-05'), tpph: 6.0 }],
                   qsrActSummaryRows: [{ loc: '1', date: d('2026-06-05'), tpph: 5.4 }] };
-    expect(metricDaily(ds2, '1', d('2026-06-05'), 'tpph')).toBe(6.0);
+    // v4.855: the DAR-derived value now wins over the manual Controls upload.
+    // DAR is hourly and deterministic (verified 2026-08-07 — a re-pull returned
+    // byte-identical values for all 27 stores); Controls is a hand-uploaded day total.
+    expect(metricDaily(ds2, '1', d('2026-06-05'), 'tpph')).toBe(5.4);
   });
 });
