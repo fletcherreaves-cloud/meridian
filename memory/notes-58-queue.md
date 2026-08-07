@@ -62,8 +62,15 @@ Requirements as stated:
    to establish whether the cause is **operational or otherwise**.
 4. **Use AI to scour** for anything missed that could explain a sudden swing.
 
-**Live case to validate against: store 10422** — major hit to sales and guest counts over
+**Live case to validate against: store 10422 = Atoka-Mississippi** — major hit to sales and guest counts over
 the last few weeks, and the app did not make that unmissable.
+
+⚠️ **Correction to the v4.861 commit body:** it renders the example alarm as
+"Durant — sales down -20.8%". That store name was a placeholder passed into a console
+preview and is WRONG. **10422 is Atoka-Mississippi**; Durant is 5985. All the numbers
+(-20.8% sales, -22.4% guests, $38,711 vs LY, and the whole threshold calibration) are
+correct and belong to 10422 — only the label was wrong. The committed tests key on the
+loc number, not the name, so no code is affected.
 
 ### Why this connects to the notifications work
 
