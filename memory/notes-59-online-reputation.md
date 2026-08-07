@@ -198,19 +198,33 @@ at 2.3, DeFuniak Springs 36 at 2.6 and a second listing at 2.0, Chipley 13 at 2.
 The FL stores sit on the US-331/I-10 corridor feeding beach traffic — exactly the
 traveller who uses TripAdvisor — while OK stores serve local trade that never opens it.
 
-⚠️ **Data-hygiene task for the owner:** **DeFuniak Springs has two listings** at different
-addresses. Confirm which we operate, and expect duplicate/stale listings portfolio-wide.
+✅ **RESOLVED by the owner (2026-08-07) — it is NOT a duplicate.** The two TripAdvisor
+listings are two distinct stores that share a DeFuniak Springs mailing address:
+
+| Store | Address | TripAdvisor listing | Rating |
+|---|---|---|---|
+| **6838** DeFuniak Springs | 2370 US Highway **331** S | 4610515 (Hwy 331) · 36 reviews | 2.6 |
+| **37566** Mossy Head | 17750 State Highway **285** Dr S | 12030001 (SR 285) · 19 reviews | **2.0** |
+
+The highway in each listing name maps them exactly. **Mossy Head is the 2.0-rated store**
+— the lowest found in the portfolio. Encoded in [[locality]], which uses the 331-vs-285
+highway number to separate them when a mention names one.
 
 **Suggested handling:** skip the integration; hand-collect the 27 Location IDs once and
 eyeball the FL panhandle pages quarterly. ~90% of the available value, ~0% of the
 engineering and legal exposure.
 
-## The single highest-value next action
+## The Atoka X backfill — DEFERRED by the owner (2026-08-07)
 
-A **one-time X full-archive query over the 5-week window for Atoka (10422)** costs about
-$5 and directly tests the viral hypothesis behind that store's 24% traffic loss. If it
-comes back empty, the hypothesis is cheaply ruled out and we stop. Do this **before**
-building any pipeline.
+A one-time X full-archive query over the 5-week window for Atoka (10422) would cost ~$5
+and directly test the viral hypothesis behind that store's 24% traffic loss. **The owner
+asked to hold the spend and see other results first — keep the method available, do not
+run it yet.** Do not re-propose unprompted; raise it again only if other avenues come up
+empty or the owner asks.
+
+The method, preserved: X full-archive search (`/2/tweets/search/all`, now open to
+pay-per-use at $0.005/post read) over 2026-06-19 → 2026-08-07 using the Atoka query
+`searchQuery('10422')` from [[locality]].
 
 ## Design notes carried forward
 
