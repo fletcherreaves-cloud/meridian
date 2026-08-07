@@ -19,6 +19,7 @@
 import * as React from 'react';
 import { KIND_LABEL } from '../engine/swing-detect.js';
 import { ackKey } from '../engine/swing-feed.js';
+import { contextSummary } from '../engine/swing-context.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -29,7 +30,7 @@ const money = (n) => Math.round(Math.abs(n || 0)).toLocaleString('en-US', {
 const pct = (n) => `${n >= 0 ? '+' : ''}${(n || 0).toFixed(1)}%`;
 
 /** The blocking modal for a single critical swing. */
-function CriticalSwing({ item, onAck, onOpenStore }) {
+function CriticalSwing({ item, onAck, onOpenStore, context = [] }) {
   const s = item.swing || {};
   const down = s.direction === 'down';
   const col = down ? '#ef4444' : '#10b981';
@@ -72,7 +73,19 @@ function CriticalSwing({ item, onAck, onOpenStore }) {
         div({ style: { fontSize: 12, color: 'var(--text,#e8eaed)', lineHeight: 1.55, padding: '9px 12px',
                        background: 'var(--surf2,#0f1117)', borderRadius: 8, border: '.5px solid var(--bdr,#2a2f3a)' } },
           span({ style: { fontWeight: 700 } }, 'What this looks like: '),
-          KIND_LABEL[s.kind] || '')),
+          KIND_LABEL[s.kind] || ''),
+
+        // Local context. Deliberately headed "worth checking" and never "why this
+        // happened" — roadworks and a sales drop in the same month is a coincidence
+        // until somebody checks. The engine ranks candidates; it does not establish cause.
+        context.length ? div({ style: { marginTop: 10 } },
+          div({ style: { fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text3,#6b7280)', marginBottom: 5 } },
+            'Worth checking — ' + (contextSummary(context) || 'local news around this window')),
+          ...context.slice(0, 3).map((n, i) => div({ key: i, style: { fontSize: 11.5, color: 'var(--text2,#9aa4b2)', padding: '3px 0', lineHeight: 1.45 } },
+            n.url
+              ? h('a', { href: n.url, target: '_blank', rel: 'noopener noreferrer', style: { color: 'var(--text,#e8eaed)', textDecoration: 'none' } }, n.title)
+              : span({ style: { color: 'var(--text,#e8eaed)' } }, n.title),
+            span({ style: { color: 'var(--text3,#6b7280)', marginLeft: 6, fontSize: 10 } }, '· ' + n.whenRelative)))) : null),
 
       div({ style: { padding: '12px 20px', borderTop: '.5px solid var(--bdr,#2a2f3a)',
                      display: 'flex', gap: 8, alignItems: 'center' } },
@@ -95,7 +108,7 @@ function CriticalSwing({ item, onAck, onOpenStore }) {
  *
  * props: { items, acks, onAck(item), onOpenStore(loc), onOpenPanel() }
  */
-export function SwingAlarm({ items = [], acks = {}, onAck, onOpenStore, onOpenPanel }) {
+export function SwingAlarm({ items = [], acks = {}, onAck, onOpenStore, onOpenPanel, contextFor = null }) {
   const pending = (items || []).filter(i => !acks || !acks[ackKey(i)]);
   const crits = pending.filter(i => i.requiresAck);
   const rest = pending.filter(i => !i.requiresAck);
@@ -103,7 +116,7 @@ export function SwingAlarm({ items = [], acks = {}, onAck, onOpenStore, onOpenPa
   // One at a time — acknowledging should be a decision per store, not a bulk dismissal.
   if (crits.length) {
     return h(React.Fragment, null,
-      h(CriticalSwing, { item: crits[0], onAck, onOpenStore }),
+      h(CriticalSwing, { item: crits[0], onAck, onOpenStore, context: contextFor ? contextFor(crits[0]) : [] }),
       crits.length > 1
         ? div({ style: { position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)',
                          zIndex: 9001, fontSize: 11, color: '#fca5a5', fontFamily: 'var(--mono)' } },
