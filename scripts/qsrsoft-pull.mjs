@@ -139,8 +139,33 @@ async function getAuthTokenPlaywright() {
     await page.screenshot({ path: `${screenshotDir}/qsr-02-filled.png` });
     await page.click(subSel);
 
-    // Wait for navigation away from login page
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    // Wait for the TOKEN, not for network idle.
+    //
+    // This was `waitForLoadState('networkidle', { timeout: 30000 })`, which resolves
+    // after 500ms of quiet — and on this SPA that happens BETWEEN the click and the
+    // auth request firing. So it returned almost immediately, the script read an
+    // unchanged URL, tried one fallback and gave up ~7s after clicking. The 30s
+    // timeout was never reached because the condition was wrong, not slow.
+    //
+    // Diagnosed 2026-08-07 from the run's own screenshot: email and password filled
+    // correctly, submit clicked, and the button still read "Signing in" when the
+    // script quit. Credentials were never the problem — both QSRSoft pulls had been
+    // failing on a race.
+    //
+    // authToken is set by the request/response interceptors above, so poll for it.
+    // Also stop early if the password field detaches, which means the SPA has moved
+    // past the login screen.
+    {
+      const deadline = Date.now() + 60000;
+      while (!authToken && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 500));
+        if (!authToken) {
+          const stillOnLogin = await page.locator(passSel).count().catch(() => 1);
+          if (!stillOnLogin) break;   // logged in; token may arrive on the next call
+        }
+      }
+      console.log(`[auth] post-click wait ended after ${Math.round((Date.now() - (deadline - 60000)) / 1000)}s — token ${authToken ? 'captured' : 'not yet captured'}`);
+    }
     await page.screenshot({ path: `${screenshotDir}/qsr-03-post-login.png` });
     console.log('[auth] post-login url:', page.url());
 
@@ -172,7 +197,10 @@ async function getAuthTokenPlaywright() {
     if (!authToken) {
       console.log('[auth] token not yet captured — triggering API request…');
       await page.goto('https://v3.myqsrsoft.com/reports', { waitUntil: 'networkidle', timeout: 20000 }).catch(()=>{});
-      await new Promise(r => setTimeout(r, 3000));
+      // Poll rather than a flat 3s — the report page's first API call is what carries
+      // the header we're intercepting, and it is not always inside that window.
+      const d2 = Date.now() + 20000;
+      while (!authToken && Date.now() < d2) await new Promise(r => setTimeout(r, 500));
     }
 
   } catch (e) {
