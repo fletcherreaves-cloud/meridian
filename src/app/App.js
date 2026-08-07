@@ -1865,6 +1865,7 @@ function App() {
     // Loads every available period so EOM can look up any month without
     // additional Supabase calls.
     (async()=>{
+      const _stMonthlyTargets = async () => {
       try{
         const all = await loadAllMonthlyTargets();
         const periods = Object.keys(all);
@@ -1881,7 +1882,8 @@ function App() {
           });
           console.log(`[Meridian] ✓ Loaded monthly targets for ${periods.join(', ')} (${Object.values(all[latestKey]||{}).length} stores/period)`);
         }
-      }catch(e){console.warn('[Meridian] Monthly targets load failed:',e);}
+      }catch(e){console.warn('[Meridian] Monthly targets load failed:',e);} };
+      const _stSmgFullscale = async () => {
       try{
         const fsRows = await loadSmgFullscale();
         if(fsRows.length>0){
@@ -1891,7 +1893,8 @@ function App() {
           });
           console.log(`[Meridian] ✓ Loaded ${fsRows.length} SMG FullScale records from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] SMG FullScale load failed:',e);}
+      }catch(e){console.warn('[Meridian] SMG FullScale load failed:',e);} };
+      const _stVoicePerformance = async () => {
       try{
         const vpRows = await loadVoicePerf();
         if(vpRows.length>0){
@@ -1901,14 +1904,16 @@ function App() {
           });
           console.log(`[Meridian] ✓ Loaded ${vpRows.length} VOICE Performance rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] VOICE Performance load failed:',e);}
+      }catch(e){console.warn('[Meridian] VOICE Performance load failed:',e);} };
+      const _stVoiceDaypart = async () => {
       try{
         const dpRows = await loadVoiceDaypart();
         if(dpRows.length>0){
           setDs(prev=>prev?{...prev, voiceDaypart: dpRows}:prev);
           console.log(`[Meridian] ✓ Loaded ${dpRows.length} VOICE Daypart rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] VOICE Daypart load failed:',e);}
+      }catch(e){console.warn('[Meridian] VOICE Daypart load failed:',e);} };
+      const _stSmgComments = async () => {
       try{
         // Cloud-persisted SMG comments (v4.546) — previously OPFS-only/device-local.
         const cmts = await loadSmgComments();
@@ -1921,7 +1926,8 @@ function App() {
           });
           console.log(`[Meridian] ✓ Loaded ${cmts.length} SMG comments from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] SMG comments load failed:',e);}
+      }catch(e){console.warn('[Meridian] SMG comments load failed:',e);} };
+      const _stLifelenz = async () => {
       try{
         const lfzRows = await loadLifeLenzSchedule();
         if(lfzRows.length>0){
@@ -1931,7 +1937,8 @@ function App() {
           });
           console.log(`[Meridian] ✓ Loaded ${lfzRows.length} LifeLenz schedule rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);}
+      }catch(e){console.warn('[Meridian] LifeLenz load failed:',e);} };
+      const _stLifelenzJobHours = async () => {
       try{
         const jobRows = await loadLifeLenzJobHours();
         if(jobRows.length>0){
@@ -1941,7 +1948,8 @@ function App() {
           });
           console.log(`[Meridian] ✓ Loaded ${jobRows.length} LifeLenz per-job rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] LifeLenz job-hours load failed:',e);}
+      }catch(e){console.warn('[Meridian] LifeLenz job-hours load failed:',e);} };
+      const _stGradedVisits = async () => {
       try{
         // Graded visits — same Supabase source the Graded Visits panel uses, loaded into
         // ds.gradedVisits so Visit Readiness (Model check, Visit Patterns, last-visit) sees them.
@@ -1950,23 +1958,26 @@ function App() {
           setDs(prev=>{if(!prev)return prev;return {...prev, gradedVisits: gv};});
           console.log(`[Meridian] ✓ Loaded ${gv.length} graded visits from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] Graded visits load failed:',e);}
+      }catch(e){console.warn('[Meridian] Graded visits load failed:',e);} };
       // ── FOB / Ops / Controls / DAR ──────────────────────────────────────────
       const _mkIdx2=(rows)=>{const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;};
+      const _stFobRows = async () => {
       try{
         const fobRows=await loadFobRows();
         if(fobRows.length>0){
           setDs(prev=>{if(!prev)return prev;return {...prev,fobRows};});
           console.log(`[Meridian] ✓ Loaded ${fobRows.length} FOB rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] FOB rows load failed:',e);}
+      }catch(e){console.warn('[Meridian] FOB rows load failed:',e);} };
+      const _stQsrsoftFob = async () => {
       try{
         const qsrFobRows=await loadQsrFob();
         if(qsrFobRows.length>0){
           setDs(prev=>{if(!prev)return prev;return {...prev,qsrFobRows};});
           console.log(`[Meridian] ✓ Loaded ${qsrFobRows.length} QSRSoft FOB rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] QSRSoft FOB load failed:',e);}
+      }catch(e){console.warn('[Meridian] QSRSoft FOB load failed:',e);} };
+      const _stPeaksRows = async () => {
       try{
         const sbPeaks=await loadPeaksRows();
         if(sbPeaks.length>0){
@@ -1975,54 +1986,61 @@ function App() {
           setDs(prev=>{if(!prev)return prev;return {...prev,peaksSvcRows,peaksSalesRows};});
           console.log(`[Meridian] ✓ Loaded ${sbPeaks.length} peaks rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] Peaks rows load failed:',e);}
+      }catch(e){console.warn('[Meridian] Peaks rows load failed:',e);} };
+      const _stAuditRows = async () => {
       try{
         const sbAudit=await loadAuditRows();
         if(sbAudit.length>0){
           setDs(prev=>{if(!prev)return prev;return {...prev,auditRows:sbAudit};});
           console.log(`[Meridian] ✓ Loaded ${sbAudit.length} audit rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] Audit rows load failed:',e);}
+      }catch(e){console.warn('[Meridian] Audit rows load failed:',e);} };
+      const _stOpsRows = async () => {
       try{
         const opsRows=await loadOpsRows();
         if(opsRows.length>0){
           setDs(prev=>{if(!prev)return prev;return {...prev,opsRows,opsIdx:_mkIdx2(opsRows),opsByLoc:bLocIdx(opsRows)};});
           console.log(`[Meridian] ✓ Loaded ${opsRows.length} ops rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] Ops rows load failed:',e);}
+      }catch(e){console.warn('[Meridian] Ops rows load failed:',e);} };
+      const _stCtrlRows = async () => {
       try{
         const ctrlRows=await loadCtrlRows();
         if(ctrlRows.length>0){
           setDs(prev=>{if(!prev)return prev;return {...prev,ctrlRows,ctrlIdx:_mkIdx2(ctrlRows),ctrlByLoc:bLocIdx(ctrlRows)};});
           console.log(`[Meridian] ✓ Loaded ${ctrlRows.length} ctrl rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] Ctrl rows load failed:',e);}
+      }catch(e){console.warn('[Meridian] Ctrl rows load failed:',e);} };
+      const _stDarRows = async () => {
       try{
         const darRows=await loadDarRows();
         if(darRows.length>0){
           setDs(prev=>{if(!prev)return prev;return {...prev,darRows,darByLoc:bLocIdx(darRows)};});
           console.log(`[Meridian] ✓ Loaded ${darRows.length} DAR rows from Supabase`);
         }
-      }catch(e){console.warn('[Meridian] DAR rows load failed:',e);}
+      }catch(e){console.warn('[Meridian] DAR rows load failed:',e);} };
+      const _stCustomSignals = async () => {
       try{
         const customDefs=await loadCustomSignals();
         if(customDefs.length>0){
           setCustomSignalDefs(customDefs);
           console.log(`[Meridian] ✓ Loaded ${customDefs.length} custom signal definitions`);
         }
-      }catch(e){console.warn('[Meridian] Custom signals load failed:',e);}
+      }catch(e){console.warn('[Meridian] Custom signals load failed:',e);} };
+      const _stQsrFieldDefs = async () => {
       try{
         const qsrFieldDefs=await loadQsrFieldDefs();
         if(Object.keys(qsrFieldDefs).length>0){
           setDs(prev=>{if(!prev)return prev;return{...prev,qsrFieldDefs};});
           console.log(`[Meridian] ✓ Loaded QSRSoft field definitions`);
         }
-      }catch(e){console.warn('[Meridian] QSR field defs load failed:',e);}
+      }catch(e){console.warn('[Meridian] QSR field defs load failed:',e);} };
       // QSRSoft daily-activity summary: 60-day aggregated daily totals per store
       // (sales, DT, and auto-pulled actual/needed labor hours). Used by AtAGlance
       // as a zero-upload fallback and by the Scheduling QSR columns so actual
       // labor hours are cloud-fresh on every device — back into June, not just
       // the days a manual report happened to cover.
+      const _stQsrsoftActSummary = async () => {
       try{
         const qsrActSummaryRows=await loadQsrActSummary(60);
         if(qsrActSummaryRows.length>0){
@@ -2040,38 +2058,42 @@ function App() {
           });
           console.log(`[Meridian] ✓ Loaded ${qsrActSummaryRows.length} QSRSoft act summary rows`);
         }
-      }catch(e){console.warn('[Meridian] QSRSoft act summary load failed:',e);}
+      }catch(e){console.warn('[Meridian] QSRSoft act summary load failed:',e);} };
       // eBOS daily op-supplies purchases → ds.ebosRows. Auto-pulled cloud stream that
       // feeds the Perf-Review "Op Supplies vs Budget" actual (Notes 32 #4) — 400-day
       // window so a full review year is covered on any device.
+      const _stEbosOpSupplies = async () => {
       try{
         const ebosRows=await loadEbosDaily(400);
         if(ebosRows.length>0){
           setDs(prev=>{if(!prev)return prev;return{...prev,ebosRows};});
           console.log(`[Meridian] ✓ Loaded ${ebosRows.length} eBOS op-supplies rows`);
         }
-      }catch(e){console.warn('[Meridian] eBOS op-supplies load failed:',e);}
+      }catch(e){console.warn('[Meridian] eBOS op-supplies load failed:',e);} };
       // QSRSoft People reports (monthly per-loc) → Perf-Review People metrics (Notes 32):
       // Roster Statistics (headcount), Employee Roster role counts (shift-cert), Turnover (0-90).
+      const _stPeopleReports = async () => {
       try{
         const [rosterStatsRows,rosterRoleCounts,turnoverRows]=await Promise.all([loadRosterStatistics(),loadRosterRoleCounts(),loadTurnoverMonthly()]);
         if(rosterStatsRows.length||rosterRoleCounts.length||turnoverRows.length){
           setDs(prev=>{if(!prev)return prev;return{...prev,rosterStatsRows,rosterRoleCounts,turnoverRows};});
           console.log(`[Meridian] ✓ Loaded People reports — rosterStats ${rosterStatsRows.length}, roleCounts ${rosterRoleCounts.length}, turnover ${turnoverRows.length}`);
         }
-      }catch(e){console.warn('[Meridian] People reports load failed:',e);}
+      }catch(e){console.warn('[Meridian] People reports load failed:',e);} };
       // QSRSoft Digital App + McDelivery 3PO (monthly per-loc) → Perf-Review
       // Digital App GC/R/D + Delivery GC/R/D metrics (Notes 32).
+      const _stDigitalDeliveryShiftmgr = async () => {
       try{
         const [digitalAppRows,mcdeliveryRows,shiftManagerRows]=await Promise.all([loadDigitalAppMonthly(),loadMcdeliveryMonthly(),loadShiftManagerMonthly()]);
         if(digitalAppRows.length||mcdeliveryRows.length||shiftManagerRows.length){
           setDs(prev=>{if(!prev)return prev;return{...prev,digitalAppRows,mcdeliveryRows,shiftManagerRows};});
           console.log(`[Meridian] ✓ Loaded Digital/Delivery/ShiftMgr — digital ${digitalAppRows.length}, mcdelivery ${mcdeliveryRows.length}, shiftMgr ${shiftManagerRows.length}`);
         }
-      }catch(e){console.warn('[Meridian] Digital/Delivery/ShiftMgr load failed:',e);}
+      }catch(e){console.warn('[Meridian] Digital/Delivery/ShiftMgr load failed:',e);} };
       // Server-parsed QSRSoft email reports (Daily Glimpse, Cash Sheet, Sales Ledger).
       // Cloud-first source of truth — override the device-local IDB rows only when
       // the Supabase tables have data, so freshness follows the app on any device.
+      const _stCloudEmailReport = async () => {
       try{
         const [glimpse,cash,ledger]=await Promise.all([loadGlimpse(60),loadCash(60),loadSalesLedger(60)]);
         if(glimpse.length||cash.length||ledger.length){
@@ -2081,10 +2103,11 @@ function App() {
             ...(ledger.length?{salesLedgerRows:ledger}:{})};});
           console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
         }
-      }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);}
+      }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);} };
       // Operations Report streams (#37) — Controls / Labor(OT) / Service / Sales-mix / 3 Peaks,
       // store-daily with LY, from the qsrsoft-ops-pull. Loaded into ds for the tile-wiring phase
       // (ctrlAuto discount%/T-Reds, OT, service, etc.). Fails soft before the tables exist/populate.
+      const _stOpsReportStream = async () => {
       try{
         const [oCash,oLabor,oSvc,oMix,oPeaks]=await Promise.all([
           loadOpsCashSheet(60),loadOpsLaborSummary(60),loadOpsServiceStats(60),loadOpsSalesMix(60),loadOpsPeaksSales(60)]);
@@ -2097,8 +2120,9 @@ function App() {
             ...(oPeaks.length?{opsPeaksRows:oPeaks}:{})};});
           console.log(`[Meridian] ✓ Ops Report streams — cash:${oCash.length} labor:${oLabor.length} svc:${oSvc.length} mix:${oMix.length} peaks:${oPeaks.length}`);
         }
-      }catch(e){console.warn('[Meridian] Ops Report stream load failed:',e);}
+      }catch(e){console.warn('[Meridian] Ops Report stream load failed:',e);} };
       // Load cross-device user settings (locked projections, AE calibration params)
+      const _stLockedProjections = async () => {
       try{
         const remoteProj=await loadUserSetting('locked_projections');
         if(remoteProj&&typeof remoteProj==='object'&&Object.keys(remoteProj).length>0){
@@ -2106,14 +2130,16 @@ function App() {
           try{localStorage.setItem('mf_locked_projections',JSON.stringify(remoteProj));}catch{}
           console.log('[Meridian] ✓ Loaded locked projections from Supabase');
         }
-      }catch(e){console.warn('[Meridian] locked projections load failed:',e);}
+      }catch(e){console.warn('[Meridian] locked projections load failed:',e);} };
+      const _stAeParams = async () => {
       try{
         const remoteAE=await loadUserSetting('ae_params');
         if(remoteAE?.params&&typeof remoteAE.params==='object'){
           try{localStorage.setItem('mf_ae_params',JSON.stringify(remoteAE));}catch{}
           console.log('[Meridian] ✓ Loaded AE calibration params from Supabase');
         }
-      }catch(e){console.warn('[Meridian] AE params load failed:',e);}
+      }catch(e){console.warn('[Meridian] AE params load failed:',e);} };
+      const _stModelAssignments = async () => {
       try{
         // Cloud-persisted model assignments (v4.544): hydrate the device-local
         // cache from Supabase so backtest winners + manual overrides follow the
@@ -2126,7 +2152,8 @@ function App() {
           _masgnInvalidate();
           console.log('[Meridian] ✓ Loaded model assignments from Supabase');
         }
-      }catch(e){console.warn('[Meridian] model assignments load failed:',e);}
+      }catch(e){console.warn('[Meridian] model assignments load failed:',e);} };
+      const _stOrgEventsHydration = async () => {
       try{
         // Cloud org calendar events (Notes 46): Supabase `org_events` is the source of
         // truth (cross-device). Down-project into the per-day `mf_events` map every
@@ -2155,7 +2182,8 @@ function App() {
             console.log(`[Meridian] ✓ Hydrated ${orgEvents.length} cloud events (${added} new, ${refreshed} refreshed)`);
           }
         }
-      }catch(e){console.warn('[Meridian] org events hydration failed:',e);}
+      }catch(e){console.warn('[Meridian] org events hydration failed:',e);} };
+      const _stEventImpact = async () => {
       try{
         // Event Impact Registry (Notes 47): measured per-store × event-type sales lifts → forecast cache.
         const ei=await loadEventImpact();
@@ -2165,7 +2193,44 @@ function App() {
           setEventImpact(map);
           console.log(`[Meridian] ✓ Loaded ${ei.length} event-impact rows`);
         }
-      }catch(e){console.warn('[Meridian] event impact load failed:',e);}
+      }catch(e){console.warn('[Meridian] event impact load failed:',e);} };
+
+      // ── Tiered startup load (v4.846) ──────────────────────────────────────
+      // Measured with ?trace=1 on production 2026-08-07: these 28 stages ran strictly
+      // one after another for a 182.9s wall clock — ~250,000 rows across ~250 paginated
+      // requests. Pagination WITHIN each stream was already parallel (v4.594); the
+      // serialisation left was BETWEEN streams. The Sales chip's own source
+      // (qsr_daily_activity) did not finish paginating until t=150s, because it sat at
+      // stage 22 of 28.
+      //
+      // Each stage above is an independent thunk — its own try/catch, its own setDs
+      // patch — so ordering them is a scheduling decision, not a data-flow one. Nothing
+      // below changes what any stage does.
+      //
+      // T1  what the app is unusable without — Sales chip + targets. Awaited.
+      // T2  every other auto/emailed stream. Fired in parallel, not awaited before paint.
+      // T3  the four MANUAL uploads. By the standing auto/emailed-first rule these are
+      //     "last-resort fill only, never a tile's primary source" — yet they accounted
+      //     for ~90 of the 183 seconds. They load last so they can still backfill a
+      //     loc/date the cloud doesn't cover, without ever blocking first paint.
+      const _t0 = performance.now();
+      const _ms = () => Math.round(performance.now() - _t0);
+      await Promise.all([_stMonthlyTargets(), _stQsrsoftActSummary(), _stCloudEmailReport()]);
+      console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
+      const _t2 = Promise.all([
+        _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
+        _stSmgComments(), _stLifelenz(), _stLifelenzJobHours(),
+        _stGradedVisits(), _stQsrsoftFob(), _stPeaksRows(),
+        _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
+        _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
+        _stOpsReportStream(), _stLockedProjections(), _stAeParams(),
+        _stModelAssignments(), _stOrgEventsHydration(), _stEventImpact(),
+      ]);
+      _t2.then(() => console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`));
+      const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stAuditRows(), _stOpsRows(), _stCtrlRows()]));
+      await Promise.allSettled([_t2, _t3]);
+      console.log(`[Meridian] T3 manual-fallback backfill complete — ${_ms()}ms (total)`);
+
     })();
   },[]);
 
