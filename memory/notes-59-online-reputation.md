@@ -20,8 +20,32 @@ Owner (2026-08-07). A new capability area, not an extension of an existing panel
   sentiment. Trace where negativity and disinformation originate. *Owner was explicit
   that factual negative information matters just as much as disinformation* — the point
   is to know, not to dismiss. Include subgroups, community groups, chats.
-- **Explicitly named:** Reddit, Yelp, and the 3PO delivery platforms (DoorDash, Uber
-  Eats, GrubHub, Postmates, plus any others found).
+- **Explicitly named:** Reddit, Yelp, the 3PO delivery platforms (DoorDash, Uber Eats,
+  GrubHub, Postmates, plus any others found), and — added by the owner in a follow-up —
+  **X (Twitter), Instagram and YouTube**.
+
+### Two different classes of source, which need different handling
+
+Worth separating up front, because a single "reviews" data model will not fit both:
+
+| | examples | carries | keyed by |
+|---|---|---|---|
+| **Rating platforms** | Google, Facebook, Yelp, the 3PO apps | star rating + review text, tied to a specific listing | location listing id |
+| **Mention platforms** | X, Instagram, YouTube, Reddit, community groups | posts, videos, comments — no rating at all | *search* for the town / store / brand term |
+
+Rating platforms answer "what is our score." Mention platforms answer "what is being
+said, and where did it start" — which is the owner's source-tracing requirement, and the
+harder of the two. Mentions have no listing id to key on, so location attribution has to
+come from search terms and geo, and will be fuzzy. Expect false positives and design for
+review-before-trust rather than auto-attribution.
+
+**Why mention platforms matter operationally, not just for PR:** store 10422 lost ~24% of
+its guest traffic over five weeks with no identified operational cause (see
+[[notes-58-queue]] #4 and [[swing-detect]]). A local post or video going around is
+exactly the sort of thing that produces that shape and is invisible to every operational
+metric Meridian already has. The swing alarm firing on a store is a natural trigger to go
+look at that store's mention feed for the same window — that link is the real payoff of
+building both.
 
 ## The owner's sharpest requirement — prominence over recency
 
@@ -49,8 +73,16 @@ building. There may also be a McDonald's franchisee brand/social-media policy th
 constrains this.
 
 Research into the concrete API landscape (endpoints, auth, cost, rate limits, historical
-availability, and the corporate-ownership question) was commissioned 2026-08-07; findings
-belong in this file when they land.
+availability, and the corporate-ownership question) was commissioned 2026-08-07 in two
+parts — rating platforms + news, and the three mention platforms X/Instagram/YouTube.
+Findings belong in this file when they land.
+
+Cost is expected to be the deciding factor on the mention side rather than capability:
+X's useful API tiers became materially expensive after 2023, and location-level mention
+monitoring is exactly the kind of low-volume-but-broad query those tiers price badly. If
+the honest answer for a platform is "not economically viable via the official API," that
+belongs in this file too — a documented no is more useful than a half-built scraper that
+breaks silently.
 
 ## Boundaries to build within
 
