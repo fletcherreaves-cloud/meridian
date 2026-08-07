@@ -49,6 +49,7 @@ export const PANELS = [
   { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
   { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics' },
+  { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'operations' },
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },

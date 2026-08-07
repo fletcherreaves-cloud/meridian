@@ -2715,6 +2715,31 @@ export async function saveQsrOnHand(rows) {
   return _chunkUpsert('qsr_onhand', up, 'loc,period,wrin');
 }
 
+// ── Local news mentions (Notes 59) ────────────────────────────────────────────
+// news_mentions holds ONE ROW PER (article, attributed store) — a story about a
+// two-store town writes two rows with ambiguous=true. Callers that want articles
+// rather than article-store pairs should dedupe on item_key.
+export async function loadNewsMentions({ days = 120, loc = null, tier = null } = {}) {
+  if (!supabase) return [];
+  const cut = new Date(Date.now() - days * 86400000).toISOString();
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('news_mentions').select('*').range(from, to)
+      .or(`published.gte.${cut},published.is.null`)
+      .order('published', { ascending: false, nullsFirst: false });
+    if (loc) q = q.eq('loc', String(loc).replace(/^0+/, ''));
+    if (tier) q = q.eq('tier', tier);
+    return q;
+  }, 500, 'news_mentions');
+  return (data || []).map(r => ({
+    itemKey: r.item_key, loc: r.loc, feedId: r.feed_id, outlet: r.outlet,
+    title: r.title, url: r.url, summary: r.summary,
+    published: r.published ? new Date(r.published) : null,
+    tier: r.tier, signals: r.signals || [], score: r.score,
+    locs: r.locs || [], ambiguous: !!r.ambiguous,
+    firstSeen: r.first_seen ? new Date(r.first_seen) : null,
+  }));
+}
+
 export async function loadQsrOnHand({ period } = {}) {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => {
