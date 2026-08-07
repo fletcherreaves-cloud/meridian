@@ -10,6 +10,12 @@
 -- Tenant scoping stops operator A seeing operator B. It does NOT stop a GM inside
 -- your own org from seeing all 27 stores. That is what this file adds.
 --
+-- ⚠️  accessible_locs IS text[], NOT jsonb — verified against the live database
+-- 2026-08-07 (information_schema.columns: data_type=ARRAY, udt_name=_text). An earlier
+-- draft of this file used jsonb_array_length()/jsonb_array_elements_text() and would
+-- have failed on execution. The existing inline policies on event_impact and org_events
+-- already used array syntax (`loc = any(p.accessible_locs)`), which was the clue.
+--
 -- ⚠️  WHY THESE POLICIES ARE `AS RESTRICTIVE`
 -- Postgres ORs permissive policies together. Adding a permissive per-loc policy
 -- beside the existing permissive `auth.uid() is not null` policy would GRANT MORE
@@ -52,11 +58,11 @@ as $$
       and (
         -- null / empty accessible_locs = unrestricted (owner, admin)
         pr.accessible_locs is null
-        or jsonb_array_length(pr.accessible_locs) = 0
+        or cardinality(pr.accessible_locs) = 0
         -- otherwise compare with BOTH sides zero-stripped (see padding note above)
         or ltrim(coalesce(p_loc, ''), '0') in (
              select ltrim(x, '0')
-             from jsonb_array_elements_text(pr.accessible_locs) as t(x)
+             from unnest(pr.accessible_locs) as t(x)
            )
       )
   );
