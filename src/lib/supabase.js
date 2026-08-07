@@ -1849,30 +1849,36 @@ export async function loadQsrActSummary(daysBack = 35) {
   cutoff.setDate(cutoff.getDate() - daysBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-  // Probe the view with a cheap head-count. This distinguishes "view doesn't exist"
-  // (fall back to hourly) from "view exists and is empty" — two states that look
-  // identical if you only check whether rows came back.
+  // Probe the view with a LIMIT 1. Deliberately NOT count:'exact' — on an aggregating
+  // view an exact count forces Postgres to compute the whole GROUP BY just to count the
+  // rows, so the "cheap probe" costs more than the query it guards. Measured on
+  // production 2026-08-07: the count probe took 22.9s and returned HTTP 500, and the app
+  // silently fell back to the 40-request hourly path it was meant to replace.
   const probe = await _limited(() => supabase
-    .from('qsr_daily_activity_daily').select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr));
+    .from('qsr_daily_activity_daily').select('loc').gte('dt', cutoffStr).limit(1));
   if (probe && !probe.error) {
-    // MUST paginate. This project enforces db-max-rows = 1000 and .range(0, 9999) does
-    // NOT override it: a 60-day window is ~1,647 daily rows, so a single request returns
-    // 1,000 of them and reports success. That is a silent truncation — the same failure
-    // class the DATA INCOMPLETE banner exists to expose — so it goes through the shared
-    // paginator, which counts pages, bounds concurrency, and records partial failures.
-    const rows = await _pagedParallel({
-      table: 'qsr_daily_activity_daily', select: '*',
-      gteCol: 'dt', gteVal: cutoffStr, orderCol: 'dt', ascending: false,
-      label: 'qsr act summary (rollup view)',
-    });
-    const out = rows.map(r => _qsrActFromSummed(String(parseInt(r.loc, 10)), r.dt, r));
-    const pages = Math.max(1, Math.ceil((probe.count || 0) / 1000));
-    console.log(`[Meridian] qsr act summary via daily rollup view — ${out.length}/${probe.count ?? '?'} rows, ${pages} request(s)`);
-    if (probe.count && out.length < probe.count) {
-      _recordDataError('qsr act summary (rollup view)', 1, pages,
-        `expected ${probe.count} rows, got ${out.length}`);
+    // Page until a short page. db-max-rows is 1000 here and .range() does NOT raise it,
+    // so a 60-day window (~1,647 rows) MUST be paged or it silently truncates. Two
+    // iterations in practice; no count query needed to know when to stop.
+    const PAGE = 1000, rows = [];
+    for (let p = 0; p < 20; p++) {
+      const res = await _limited(() => supabase
+        .from('qsr_daily_activity_daily').select('*').gte('dt', cutoffStr)
+        .order('dt', { ascending: false }).order('loc')
+        .range(p * PAGE, p * PAGE + PAGE - 1));
+      if (!res || res.error) {
+        _recordDataError('qsr act summary (rollup view)', 1, p + 1,
+          res && res.error ? res.error.message : 'page failed');
+        break;
+      }
+      rows.push(...(res.data || []));
+      if (!res.data || res.data.length < PAGE) break;   // short page = done
     }
-    return _finalizeQsrAct(out);
+    const out = rows.map(r => _qsrActFromSummed(String(parseInt(r.loc, 10)), r.dt, r));
+    console.log(`[Meridian] qsr act summary via daily rollup view — ${out.length} rows`);
+    if (out.length) return _finalizeQsrAct(out);
+    // View exists but returned nothing — fall through to hourly rather than report
+    // an empty day as fact.
   }
   console.warn('[Meridian] qsr_daily_activity_daily view unavailable — falling back to hourly pagination. Run supabase/schema-qsr-daily-summary.sql to remove ~40 requests/login.',
     probe && probe.error ? probe.error.message : '');
