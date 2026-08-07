@@ -1858,7 +1858,11 @@ function App() {
       }catch(e){console.warn('[Meridian] Cross-device sync failed:',e);}
     })();
     // ── Supabase table diagnostic — logs row counts for all key tables ────────
-    // GATED behind ?trace=1 since v4.871. This fired on EVERY login: ten unfiltered
+    // GATED behind ?tablecounts=1 since v4.872 — deliberately NOT ?trace=1. Putting it
+    // behind the trace flag was a mistake: the one person measuring startup is exactly
+    // the person who must not be handed ten extra table scans, and it silently
+    // invalidated the first trace run after the fix.
+    // This fired on EVERY login: ten unfiltered
     // count(*) full-table scans in parallel, purely to console.log the numbers. Measured
     // 2026-08-07 — qsr_fob 7.8s and ctrl_rows 8.3s BOTH exceeded the statement timeout
     // and returned HTTP 500, peaks_rows took 5.5s, and the whole burst competed with the
@@ -1866,7 +1870,7 @@ function App() {
     // invisible because fetchAll swallowed them (see v4.870).
     // count:'estimated' uses planner stats instead of a scan — good enough for a
     // diagnostic, and O(1).
-    if (new URLSearchParams(location.search).get('trace') === '1') (async()=>{
+    if (new URLSearchParams(location.search).get('tablecounts') === '1') (async()=>{
       try{
         const tables=['labor_rows','fob_rows','ops_rows','ctrl_rows','dar_rows','peaks_rows','audit_rows','qsr_fob','lifelenz_schedule','smg_fullscale'];
         const counts=await Promise.all(tables.map(t=>supabase.from(t).select('*',{count:'estimated',head:true}).then(({count,error})=>({t,count:error?`ERR:${error.message}`:count}))));
