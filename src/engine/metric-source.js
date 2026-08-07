@@ -77,6 +77,49 @@ export const METRIC_SOURCES = {
   // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
   // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
   discPct:   { mode: 'any', srcs: [['ctrlRows', 'discPct'], ['opsCashRows', 'discPct']] },
+
+  // ── Notes 57 Phase 1 (v4.845) ──────────────────────────────────────────────
+  // The inventory (scripts/metric-inventory.mjs) found 29 metrics described in
+  // signal-registry with NO resolution chain — resolving from one hard-coded source,
+  // with no freshest-wins and no fallback. That is the population the recurring
+  // "manual-only / blank tile" bugs came from (v4.808-v4.833).
+  //
+  // These 12 are the ones where an auto or emailed stream already emits the SAME field
+  // name, so the chain is a pure addition — no loader change, no derivation. Every one
+  // was previously pinned to a MANUAL upload (ctrlRows = Controls Excel, laborRows =
+  // Labor Excel), meaning it went blank on any device that hadn't uploaded.
+  //
+  // Ordering follows the existing convention here: manual Controls/Labor first (the
+  // authoritative uploaded report), then emailed, then auto-pulled.
+
+  // Refunds — manual Controls, then the auto Operations Report cash-sheet, then the
+  // emailed Cash Sheet. All three already emit these exact field names.
+  cashRefAmt:     { mode: 'any', srcs: [['ctrlRows', 'cashRefAmt'],     ['opsCashRows', 'cashRefAmt'],     ['cashRows', 'cashRefAmt']] },
+  cashRefCnt:     { mode: 'any', srcs: [['ctrlRows', 'cashRefCnt'],     ['opsCashRows', 'cashRefCnt'],     ['cashRows', 'cashRefCnt']] },
+  cashlessRefAmt: { mode: 'any', srcs: [['ctrlRows', 'cashlessRefAmt'], ['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt']] },
+  cashlessRefCnt: { mode: 'any', srcs: [['ctrlRows', 'cashlessRefCnt'], ['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt']] },
+
+  // POS Over $ / count — manual Controls, then emailed Glimpse, then emailed Cash Sheet.
+  posOverAmt:     { mode: 'any', srcs: [['ctrlRows', 'posOverAmt'],     ['glimpseRows', 'posOverAmt'],     ['cashRows', 'posOverAmt']] },
+  posOverCnt:     { mode: 'any', srcs: [['ctrlRows', 'posOverCnt'],     ['glimpseRows', 'posOverCnt'],     ['cashRows', 'posOverCnt']] },
+
+  // Promo $ / % — manual Controls, then emailed Glimpse. (promoCnt deliberately NOT
+  // added: no auto/emailed stream emits it, so a chain would be single-source theatre.)
+  promoAmt:       { mode: 'any', srcs: [['ctrlRows', 'promoAmt'],       ['glimpseRows', 'promoAmt']] },
+  promoPct:       { mode: 'any', srcs: [['ctrlRows', 'promoPct'],       ['glimpseRows', 'promoPct']] },
+
+  // T-Red Before/After COUNTS — the % versions already had chains to opsCashRows since
+  // #37; the counts beside them did not, so the same tile could show a fresh % next to a
+  // stale count.
+  tRedACnt:       { mode: 'any', srcs: [['ctrlRows', 'tRedACnt'],       ['opsCashRows', 'tRedACnt']] },
+  tRedBCnt:       { mode: 'any', srcs: [['ctrlRows', 'tRedBCnt'],       ['opsCashRows', 'tRedBCnt']] },
+
+  // Average check — manual Labor, then emailed Glimpse / Cash Sheet / Sales Ledger.
+  // 'pos' because a real avg check is never legitimately 0.
+  avgCheck:       { mode: 'pos', srcs: [['laborRows', 'avgCheck'], ['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck']] },
+
+  // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name).
+  dtMixPct:       { mode: 'pos', srcs: [['laborRows', 'dtPctTotal'], ['salesLedgerRows', 'dtPctTotal']] },
 };
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);
