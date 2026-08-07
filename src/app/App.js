@@ -285,11 +285,11 @@ const MERIDIAN_CHANGELOG  = [
   {version:'4.869', date:'2026-08-07', changes:[
     'Swing alarm now measures only CLOSED business days. It was counting today as a full day, so a store part-way through trading looked worse than it was and the headline number drifted through the day. Honours the 4am business-day cutover.',
   ]},
-  {version:'4.867', date:'2026-08-07', changes:[
-    'NEW — Swing alarm. A store whose sales or guest counts fall sharply for two weeks running now opens a blocking alert that cannot be dismissed by clicking away; acknowledging is the only exit, and it records who acknowledged and when. Thresholds were calibrated against 676 store-weeks of real data rather than picked: two consecutive weeks at or below -10% vs LY isolates exactly the genuinely struggling store. Acknowledging one week does NOT silence the next, and does not silence an escalation — so a store that keeps getting worse keeps surfacing.',
-  ]},
   {version:'4.868', date:'2026-08-07', changes:[
     'NEW — Count Cycle panel (Operations → Count Cycle). Enforces the count rules per store: every weekly count needs a full Food AND Condiment count, and Paper is mandatory on the mid-month count. The mid-month count floats with each store\'s own count day, so it is identified by Paper being counted outside the close window rather than by a fixed date. Opens on the stores that need chasing, with the rest collapsed. Reads the full item universe (qsr_onhand) rather than the top-variance table, which carries no Condiment items at all.',
+  ]},
+  {version:'4.867', date:'2026-08-07', changes:[
+    'NEW — Swing alarm. A store whose sales or guest counts fall sharply for two weeks running now opens a blocking alert that cannot be dismissed by clicking away; acknowledging is the only exit, and it records who acknowledged and when. Thresholds were calibrated against 676 store-weeks of real data rather than picked: two consecutive weeks at or below -10% vs LY isolates exactly the genuinely struggling store. Acknowledging one week does NOT silence the next, and does not silence an escalation — so a store that keeps getting worse keeps surfacing.',
   ]},
   {version:'4.866', date:'2026-08-07', changes:[
     'Count history is now recorded permanently. On-hand data only ever kept each item\'s LAST count date, so a recount erased the previous one — meaning "was the last weekly complete?" was answerable but "were all four weekly counts complete last month?" never could be. A daily snapshot now preserves each count session as it happens. History builds forward from today; counts already overwritten cannot be recovered.',
@@ -297,11 +297,11 @@ const MERIDIAN_CHANGELOG  = [
   {version:'4.864', date:'2026-08-07', changes:[
     'The Items Recounted tile was reporting "No ledger detail" for a period that held 695 rows across all 27 stores (54 items recounted, $3,680 net recovered). The read was timing out on a 16 MB request, not coming back empty. Fixed the request size, and the tile now distinguishes a failed load from a genuinely empty one, with a Retry.',
   ]},
-  {version:'4.858', date:'2026-08-07', changes:[
-    'Watch counts were always zero. The "Watch Flags" tile, the Watch filter on Store Dashboard, and the Watch tab in Needs Attention all filtered for a severity tag the system has never emitted, so all three had silently read zero since they were built. About 12 categories of watch findings were being detected and then dropped. Expect these counts to jump off zero.',
-  ]},
   {version:'4.859', date:'2026-08-07', changes:[
     'Drive-thru speed now contributes to the attention feed. The detector had been written and tested but was never given data, so it silently contributed nothing.',
+  ]},
+  {version:'4.858', date:'2026-08-07', changes:[
+    'Watch counts were always zero. The "Watch Flags" tile, the Watch filter on Store Dashboard, and the Watch tab in Needs Attention all filtered for a severity tag the system has never emitted, so all three had silently read zero since they were built. About 12 categories of watch findings were being detected and then dropped. Expect these counts to jump off zero.',
   ]},
   {version:'4.856', date:'2026-08-07', changes:[
     'Panel plumbing rebuilt (no visible change) and 31 gaps closed as a result: 15 panels left the dashboard recomputing behind them, and 16 could not be closed with the Escape key. Adding a panel used to mean updating six separate lists by hand; the build now fails if any of them disagree.',
