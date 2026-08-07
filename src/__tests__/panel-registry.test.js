@@ -57,6 +57,24 @@ describe('registry matches the live code', () => {
     expect(orphans, `registered but unopenable: ${orphans.join(', ')}`).toEqual([]);
   });
 
+  it('optional panels use the labels and icons Panel Manager shows', () => {
+    // OPTIONAL_PANELS is what the Panel Manager renders. If the registry disagrees, the
+    // same panel is called two different things in two places. (The first cut of this
+    // registry titleized the ids — "Pmix", "Aiscan" — and dropped the real labels.)
+    const CONST = readFileSync(new URL('../constants.js', import.meta.url), 'utf8');
+    const seg = CONST.slice(CONST.indexOf('const OPTIONAL_PANELS'));
+    const body = seg.slice(0, seg.indexOf('\n]'));
+    const bad = [];
+    for (const m of body.matchAll(/id:'([^']+)',\s*label:'([^']+)',\s*icon:'([^']*)'/g)) {
+      const [, id, label, icon] = m;
+      const p = PANEL_BY_ID[id];
+      if (!p) { bad.push(`${id}: missing from registry`); continue; }
+      if (p.label !== label) bad.push(`${id}: label registry='${p.label}' constants='${label}'`);
+      if (p.icon !== icon) bad.push(`${id}: icon registry='${p.icon}' constants='${icon}'`);
+    }
+    expect(bad).toEqual([]);
+  });
+
   it('permissions agree with what shell.js gates on', () => {
     // Guards against the registry granting access the current nav withholds.
     const gated = [...SHELL.matchAll(/pis?\('([a-z.]+)',\s*'[^']+',\s*'[^']*',\s*\(\)\s*=>\s*onOpenModal\('([a-z0-9:_-]+)'\)/g)];
