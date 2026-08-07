@@ -2923,7 +2923,12 @@ export async function loadQsrRawItemDetail({ period, loc } = {}) {
     if (period) q = q.eq('period', period);
     if (loc) q = q.eq('loc', String(loc).padStart(7, '0'));
     return q;
-  }, 1000, 'qsr_raw_item_detail');
+  // PAGE SIZE 200, not the 1000 default. `history` is JSONB averaging ~22.5 KB per row,
+  // so a 1000-row page is a ~21 MB response — measured 2026-08-07: the period request
+  // returned 16.3 MB and hit "canceling statement due to statement timeout" under real
+  // startup concurrency, which is what left the Items Recounted tile blank. 200 rows is
+  // ~4.9 MB and completes in 0.6s.
+  }, 200, 'qsr_raw_item_detail');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, descr: r.descr, itemClass: r.item_class,
     history: Array.isArray(r.history) ? r.history : [], updatedAt: r.updated_at,
