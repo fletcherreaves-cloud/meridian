@@ -62,7 +62,13 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
 
   const visitStores = useMemo(() => {
     if (!gradedVisits) return [];
-    try { return computeVisitReadiness({ ...ds, gradedVisits }); } catch { return []; }
+    // computeVisitReadiness returns { stores, district, weights, ... } — NOT an array.
+    // visitRisk() does `for (const s of (stores || []))`, so passing the whole object
+    // throws "(e || []) is not iterable" and takes the panel down. This was latent from
+    // v4.552: the try/catch returned [] whenever the call THREW for want of graded-visit
+    // data, which masked it. It only surfaced once the data was complete enough to
+    // succeed — a crash that appears when the data gets better.
+    try { return computeVisitReadiness({ ...ds, gradedVisits })?.stores || []; } catch { return []; }
   }, [ds, gradedVisits]);
 
   const feed = useMemo(() => {
