@@ -72,20 +72,28 @@ describe('resolution behaviour', () => {
     expect(metricDaily(ds, '3708', D, 'cashRefAmt')).toBe(42);
   });
 
-  it('prefers the manual Controls upload when both are present', () => {
+  it('prefers the AUTO stream over the manual upload when both are present', () => {
+    // Inverted deliberately in v4.855. This asserted manual-first, which contradicted
+    // CLAUDE.md's standing rule that manual uploads "must never override auto/emailed
+    // data or be a tile's primary source". 27 of 30 chains led with manual until then.
     const ds = {
-      ctrlRows: [row({ cashRefAmt: 10 })],
-      opsCashRows: [row({ cashRefAmt: 99 })],
+      ctrlRows: [row({ cashRefAmt: 10 })],       // manual
+      opsCashRows: [row({ cashRefAmt: 99 })],    // auto-pulled Operations Report
     };
+    expect(metricDaily(ds, '3708', D, 'cashRefAmt')).toBe(99);
+  });
+
+  it('still falls through to manual when the auto stream has no row for that day', () => {
+    // The reason manual is KEPT last rather than removed: it holds history back to
+    // 2022-01-01 that DAR (2025-01-01) does not, and resolution is per-day.
+    const ds = { ctrlRows: [row({ cashRefAmt: 10 })] };
     expect(metricDaily(ds, '3708', D, 'cashRefAmt')).toBe(10);
   });
 
   it('keeps a legitimate 0 rather than falling through to a staler source', () => {
-    const ds = {
-      ctrlRows: [row({ tRedACnt: 0 })],
-      opsCashRows: [row({ tRedACnt: 7 })],
-    };
-    // 0 T-Reds is a clean day, not missing data — mode 'any' must return it.
+    // 0 T-Reds is a clean day, not missing data — mode 'any' must return it rather than
+    // falling through. Source here is the AUTO stream, which now leads the chain.
+    const ds = { opsCashRows: [row({ tRedACnt: 0 })], ctrlRows: [row({ tRedACnt: 7 })] };
     expect(metricDaily(ds, '3708', D, 'tRedACnt')).toBe(0);
   });
 
