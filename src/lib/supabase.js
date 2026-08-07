@@ -593,9 +593,21 @@ export async function saveLaborRows(rows) {
 }
 
 // Load all labor rows from Supabase (for DI calibration history accumulation)
-export async function loadLaborRows() {
+// WINDOWED (v4.848). This loader previously fetched the ENTIRE table history on every
+// login. Measured on production: labor_rows/ops_rows/ctrl_rows/audit_rows/peaks_rows
+// together were ~150k of the ~250k rows per login, and request latency degraded from
+// ~1-4s early in a load to 10-18s late — the signature of cumulative egress throttling,
+// which _pagedParallel's own "egress throttle?" warning already suspected. Volume is the
+// binding constraint, not ordering: two scheduling changes (v4.846, v4.847) both made
+// total wall time worse while fetching the same bytes.
+// 400 days is deliberate, not round: it covers matched-day vs-LY (365) and the
+// documented backtest window (BT_DAYS=400). Anything shorter would silently break
+// last-year comparisons and model backtests.
+export async function loadLaborRows(daysBack = 400) {
   if (!supabase) return [];
-  const data = await _pagedParallel({ table: 'labor_rows', select: '*', orderCol: 'report_date', ascending: false, label: 'laborRows' });
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await _pagedParallel({ gteCol: 'report_date', gteVal: _cutStr, table: 'labor_rows', select: '*', orderCol: 'report_date', ascending: false, label: 'laborRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:      r.loc,
@@ -724,10 +736,23 @@ export async function savePeaksRows(rows) {
   return { saved, errors };
 }
 
-export async function loadPeaksRows() {
+// WINDOWED (v4.848). This loader previously fetched the ENTIRE table history on every
+// login. Measured on production: labor_rows/ops_rows/ctrl_rows/audit_rows/peaks_rows
+// together were ~150k of the ~250k rows per login, and request latency degraded from
+// ~1-4s early in a load to 10-18s late — the signature of cumulative egress throttling,
+// which _pagedParallel's own "egress throttle?" warning already suspected. Volume is the
+// binding constraint, not ordering: two scheduling changes (v4.846, v4.847) both made
+// total wall time worse while fetching the same bytes.
+// 400 days is deliberate, not round: it covers matched-day vs-LY (365) and the
+// documented backtest window (BT_DAYS=400). Anything shorter would silently break
+// last-year comparisons and model backtests.
+export async function loadPeaksRows(daysBack = 400) {
   if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
   const data = await fetchAll((from, to) => supabase
     .from('peaks_rows').select('*')
+    .gte('date', _cutStr)
     .order('date', { ascending: false })
     .range(from, to));
   if (!data.length) return [];
@@ -806,10 +831,23 @@ export async function saveAuditRows(rows) {
   return { saved, errors };
 }
 
-export async function loadAuditRows() {
+// WINDOWED (v4.848). This loader previously fetched the ENTIRE table history on every
+// login. Measured on production: labor_rows/ops_rows/ctrl_rows/audit_rows/peaks_rows
+// together were ~150k of the ~250k rows per login, and request latency degraded from
+// ~1-4s early in a load to 10-18s late — the signature of cumulative egress throttling,
+// which _pagedParallel's own "egress throttle?" warning already suspected. Volume is the
+// binding constraint, not ordering: two scheduling changes (v4.846, v4.847) both made
+// total wall time worse while fetching the same bytes.
+// 400 days is deliberate, not round: it covers matched-day vs-LY (365) and the
+// documented backtest window (BT_DAYS=400). Anything shorter would silently break
+// last-year comparisons and model backtests.
+export async function loadAuditRows(daysBack = 400) {
   if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
   const data = await fetchAll((from, to) => supabase
     .from('audit_rows').select('*')
+    .gte('date', _cutStr)
     .order('date', { ascending: false })
     .range(from, to));
   if (!data.length) return [];
@@ -933,9 +971,21 @@ export async function saveOpsRows(rows) {
   return { saved, errors };
 }
 
-export async function loadOpsRows() {
+// WINDOWED (v4.848). This loader previously fetched the ENTIRE table history on every
+// login. Measured on production: labor_rows/ops_rows/ctrl_rows/audit_rows/peaks_rows
+// together were ~150k of the ~250k rows per login, and request latency degraded from
+// ~1-4s early in a load to 10-18s late — the signature of cumulative egress throttling,
+// which _pagedParallel's own "egress throttle?" warning already suspected. Volume is the
+// binding constraint, not ordering: two scheduling changes (v4.846, v4.847) both made
+// total wall time worse while fetching the same bytes.
+// 400 days is deliberate, not round: it covers matched-day vs-LY (365) and the
+// documented backtest window (BT_DAYS=400). Anything shorter would silently break
+// last-year comparisons and model backtests.
+export async function loadOpsRows(daysBack = 400) {
   if (!supabase) return [];
-  const data = await _pagedParallel({ table: 'ops_rows', select: '*', orderCol: 'date', ascending: false, label: 'opsRows' });
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await _pagedParallel({ gteCol: 'date', gteVal: _cutStr, table: 'ops_rows', select: '*', orderCol: 'date', ascending: false, label: 'opsRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:  r.loc,
@@ -1001,9 +1051,21 @@ export async function saveCtrlRows(rows) {
   return { saved, errors };
 }
 
-export async function loadCtrlRows() {
+// WINDOWED (v4.848). This loader previously fetched the ENTIRE table history on every
+// login. Measured on production: labor_rows/ops_rows/ctrl_rows/audit_rows/peaks_rows
+// together were ~150k of the ~250k rows per login, and request latency degraded from
+// ~1-4s early in a load to 10-18s late — the signature of cumulative egress throttling,
+// which _pagedParallel's own "egress throttle?" warning already suspected. Volume is the
+// binding constraint, not ordering: two scheduling changes (v4.846, v4.847) both made
+// total wall time worse while fetching the same bytes.
+// 400 days is deliberate, not round: it covers matched-day vs-LY (365) and the
+// documented backtest window (BT_DAYS=400). Anything shorter would silently break
+// last-year comparisons and model backtests.
+export async function loadCtrlRows(daysBack = 400) {
   if (!supabase) return [];
-  const data = await _pagedParallel({ table: 'ctrl_rows', select: '*', orderCol: 'date', ascending: false, label: 'ctrlRows' });
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await _pagedParallel({ gteCol: 'date', gteVal: _cutStr, table: 'ctrl_rows', select: '*', orderCol: 'date', ascending: false, label: 'ctrlRows' });
   if (!data.length) return [];
   return data.map(r => ({
     loc:            r.loc,

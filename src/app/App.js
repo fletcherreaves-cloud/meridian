@@ -2221,7 +2221,12 @@ function App() {
       // buy. 14 days is what the current-window tiles actually paint from; T2 re-loads the
       // full 60 and replaces it (setDs assigns qsrActSummaryRows wholesale, so the wider
       // load simply wins once it lands).
-      await Promise.all([_stMonthlyTargets(), _stQsrsoftActSummary(14), _stCloudEmailReport()]);
+      // T1 is now targets + the emailed reports ONLY. Measured: those completed at ~4.5s
+      // and ~7.6s respectively, while awaiting DAR held T1 at 38.7s.
+      // DAR is NOT in T1 anymore. v4.847 split it 14-day/60-day, which fetched
+      // qsr_daily_activity TWICE — 16 of that run's 24 HTTP 500s were this table. One
+      // load, in T2.
+      await Promise.all([_stMonthlyTargets(), _stCloudEmailReport()]);
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
       const _t2 = Promise.all([
         _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
@@ -2229,7 +2234,7 @@ function App() {
         _stGradedVisits(), _stQsrsoftFob(), _stPeaksRows(),
         _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
         _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
-        _stQsrsoftActSummary(60),   // full-window backfill; replaces T1's 14-day set
+        _stQsrsoftActSummary(60),   // the ONLY DAR load
         _stOpsReportStream(), _stLockedProjections(), _stAeParams(),
         _stModelAssignments(), _stOrgEventsHydration(), _stEventImpact(),
       ]);
