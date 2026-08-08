@@ -151,14 +151,37 @@ export const METRIC_SOURCES = {
 // ⚠️ Consequence worth knowing: anything computed from these is manual-upload-only, so it
 // goes stale the moment uploads stop and is blank on a device that never uploaded. The
 // Controls scorecard renders '—' for them rather than 0 since v4.888.
+// ── Derived metrics ─────────────────────────────────────────────────────────
+// Computed per day from other resolvable metrics rather than read from a field. Each
+// input resolves auto-first through its own chain, so these inherit the full fallback
+// depth of their parts.
+// ⚠️ ROLLUP CAVEAT for these ratios. metricAvg returns the MEAN OF DAILY VALUES, which is
+// its documented contract for rate metrics. For a ratio like SPPH the dollar-weighted
+// Σsales ÷ Σhours is arguably the more correct district figure — measured on store 5985
+// for 2026-08: mean-of-daily $70.18/hr vs Σ/Σ $67.04/hr, a $3.14 gap. Per-day derivation
+// is still strictly better than the manual precomputed column, but a consumer that needs
+// a true weighted rollup should sum the parts itself rather than call metricAvg. This is
+// the numerator/denominator gap notes-57-metric-registry-plan §4 describes.
+export const DERIVED_METRICS = {
+  // Sales per person-hour. No stream carries it; sales and actual hours both resolve, and
+  // actHrs now chains to the DAR (v4.889), so this is available wherever the DAR is.
+  spph:    { mode: 'pos', derive: { inputs: ['sales', 'actHrs'],
+             fn: (sales, hrs) => (hrs > 0 ? sales / hrs : null) } },
+
+  // Average labour rate $/hr = labour dollars ÷ actual hours, and labour dollars =
+  // laborPct × sales. NOT avg_check, which is $/transaction — a different metric that an
+  // earlier name-match wrongly proposed as a source.
+  avgRate: { mode: 'pos', derive: { inputs: ['laborPct', 'sales', 'actHrs'],
+             fn: (pct, sales, hrs) => (hrs > 0 && pct > 0 ? (pct * sales) / hrs : null) } },
+};
+Object.assign(METRIC_SOURCES, DERIVED_METRICS);
+
 export const MANUAL_ONLY_METRICS = {
   // Controls report
   empMealAmt:   'Employee meals $ — Controls upload only',
   mgrMealAmt:   'Manager meals $ — Controls upload only',
   manualRefAmt: 'Manual refunds $ — Controls upload only',
   depositAmt:   'Deposit $ — Controls upload only',
-  spph:         'Sales per person-hour — Controls upload only',
-  avgRate:      'Average labor rate $/hr — Controls upload only (avg_check is $/transaction, a different metric)',
   // Labor / MBI report
   floorMgmtNeeded:  'Floor management hours needed — Labor upload only',
   floorHrsSched:    'Floor management hours scheduled — Labor upload only',
@@ -221,10 +244,35 @@ export function metricDaily(ds, loc, date, key) {
 // Date objects (cloud streams via _mkDate) OR strings — normalize both sides to
 // "YYYY-MM-DD" before comparing so a Date-vs-string mix doesn't silently drop rows
 // (a Date >= a bare date-string coerces to NaN and is always false).
-export function metricSeries(ds, loc, range, key) {
+export function metricSeries(ds, loc, range, key, _depth = 0) {
   const spec = METRIC_SOURCES[key];
   const out = {};
   if (!ds || !spec) return out;
+
+  // ── DERIVED metrics ────────────────────────────────────────────────────────
+  // Some metrics are not carried by ANY stream but are computable from ones that are.
+  // Before this, coverage was judged as "does a source emit this field", which understated
+  // what is actually available: sales-per-person-hour is not in any feed, but sales and
+  // actual hours both are, so it is resolvable — and computing it per DAY from
+  // auto-first inputs is strictly better than reading a manual-only precomputed column.
+  //
+  // Derivation happens PER DATE, not on aggregates. Deriving from averages would average
+  // a ratio (Σsales/n ÷ Σhours/n), which is the "never average an average" error this
+  // codebase has been bitten by before. Each day resolves its own inputs auto-first, and a
+  // day is emitted only when EVERY input is present for it — a partial input set produces
+  // no value rather than a wrong one.
+  if (spec.derive) {
+    if (_depth > 3) return out;                       // guard against a cyclic definition
+    const parts = spec.derive.inputs.map(k => metricSeries(ds, loc, range, k, _depth + 1));
+    const days = new Set(parts.flatMap(p => Object.keys(p)));
+    for (const dk of days) {
+      const vals = parts.map(p => p[dk]);
+      if (vals.some(v => v == null)) continue;        // incomplete inputs → no value
+      const v = spec.derive.fn(...vals);
+      if (_ok(v, spec.mode)) out[dk] = v;
+    }
+    return out;
+  }
   const L = String(loc);
   const rs = _dk(range.s), re = _dk(range.e);
   // Collect every date in range that any source has for this loc, then resolve auto-first.

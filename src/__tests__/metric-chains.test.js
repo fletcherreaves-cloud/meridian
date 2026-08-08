@@ -40,11 +40,39 @@ describe('Phase 1 resolution chains', () => {
   it('only names fields the source loader actually emits', () => {
     const bad = [];
     for (const [key, def] of Object.entries(METRIC_SOURCES)) {
+      if (!def.srcs) continue;                    // derived metric — validated below
       for (const [src, field] of def.srcs) {
         if (EMITS[src] && !EMITS[src].includes(field)) bad.push(`${key}: ${src}.${field}`);
       }
     }
     expect(bad).toEqual([]);
+  });
+
+  // Derived metrics compute from other metrics rather than reading a field. Their inputs
+  // must themselves be resolvable, or the derivation silently yields nothing.
+  it('every derived metric names inputs that are themselves registered', () => {
+    const bad = [];
+    for (const [key, def] of Object.entries(METRIC_SOURCES)) {
+      if (!def.derive) continue;
+      for (const input of def.derive.inputs) {
+        if (!METRIC_SOURCES[input]) bad.push(`${key} depends on unregistered "${input}"`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('no metric is both a direct read and a derivation', () => {
+    const both = Object.entries(METRIC_SOURCES)
+      .filter(([, d]) => d.srcs && d.derive).map(([k]) => k);
+    expect(both).toEqual([]);
+  });
+
+  it('every derived metric has a mode and a function arity matching its inputs', () => {
+    for (const [key, def] of Object.entries(METRIC_SOURCES)) {
+      if (!def.derive) continue;
+      expect(def.mode, key).toBeTruthy();
+      expect(def.derive.fn.length, `${key} fn arity`).toBe(def.derive.inputs.length);
+    }
   });
 
   it('uses mode "any" for metrics where zero is a legitimate reading', () => {
