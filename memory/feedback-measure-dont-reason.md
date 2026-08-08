@@ -125,6 +125,38 @@ trend periods across 5 stores, and separated a PRE-EXISTING failure (Ponce de Le
 - **Revert first, then fix.** The owner had a broken panel; restoring known-good behaviour
   came before diagnosing.
 
+## Half 5 — Verify with the EXIT CODE, never by grepping for a success marker
+
+Added 2026-08-08 after pushing a build that did not compile and reporting it as clean.
+
+**What happened:** the v4.912 changelog entry was written through a Python heredoc whose
+escaping produced `\\'` inside a single-quoted JS string. That terminates the string, and
+`App.js` failed to parse — the deployed bundle would not have loaded at all.
+
+**Why I did not notice:** all session I verified builds with
+
+    npm run build 2>&1 | grep -E "^✓|error"
+
+That greps for a SUCCESS MARKER. When the build fails with a stack trace the pattern prints
+nothing useful, and because of the pipe `$?` reports **grep's** exit status, not vite's. A
+failing build produced output that skimmed as passing. I had substituted a grep for reading
+the output — which is exactly what Half 2 of this rule already forbids.
+
+**The correct form:**
+
+    npm run build > /tmp/build.log 2>&1; echo "exit: $?"
+
+Check the exit code. If it is non-zero, read the log. The same applies to `npm test`.
+
+**Generalisable:** a filter that only shows you what you hope to see is not a check, it is a
+way of not looking. Any verification whose failure mode is *silence* is not verification.
+Prefer the signal that is loud on failure (exit code, explicit count, a diff) over the one
+that is quiet.
+
+**Also:** a passing test suite did not catch this, because vitest transforms modules
+independently and never parsed the broken literal. Tests and builds fail differently — green
+tests are not evidence that the app compiles.
+
 ## How to apply
 
 - **Before diagnosing:** reproduce the failure directly — `curl` the endpoint, run the
