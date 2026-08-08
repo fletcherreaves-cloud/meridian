@@ -546,17 +546,36 @@ async function calibrateStore(loc, ds, settings, onProgress) {
       const t=r.date instanceof Date?'Date':typeof r.date;
       _dateTypes[t]=(_dateTypes[t]||0)+1;
     }
-    // Sample the LY lookups fetchLY would perform for the three most recent eval rows.
-    const _samples=evalRows.slice(-3).map(row=>{
-      const want=dKey(addD(row.date,-364));
-      return {row:dKey(row.date), lyWant:want, inIdx:!!_lIdx[loc+'_'+want]};
+    // Walk fetchLY's OWN candidate chain and record why each candidate was rejected.
+    // The previous version only reported whether the index key existed — it did (HIT), and the
+    // rows demonstrably carry real sales in Supabase, so "HIT" was true and useless. fetchLY
+    // rejects a candidate for exactly three reasons; this reports which one fires.
+    const _cands=[-364,-357,-371,-378,-350,-385,-343];
+    const _samples=evalRows.slice(-2).map(row=>{
+      const tDow=dowOf(row.date);
+      const trail=_cands.map(off=>{
+        const dt=addD(row.date,off);
+        const dk=dKey(dt);
+        const rows=_lIdx[loc+'_'+dk];
+        const sales=rows&&rows.length?(rows.find(r=>!r.isPeriodSummary)||rows[0]).sales:null;
+        return off+':'+dk
+          +(dowOf(dt)!==tDow?' DOW':'')
+          +(isHoliday(dt)?' HOL':'')
+          +(_uev[dk]?' UEV':'')
+          +(!rows||!rows.length?' NOROW':' sales='+sales);
+      });
+      return {row:dKey(row.date), chain:trail};
     });
+    // How many days this loc has tagged as user events at all — if fetchLY is being starved by
+    // exclusions rather than by missing data, this is where it shows.
+    const _uevCount=Object.keys(_uev).length;
     return {
       _why:'precomputed<35 ('+precomputed.length+'/'+evalRows.length+' rows had valid LY)',
       _diag:{
         locIdxKeys:_locKeys.length,
         idxSpan:_locKeys.length?(_locKeys[0]+'..'+_locKeys[_locKeys.length-1]):'(none)',
         laborRowDateTypes:_dateTypes,
+        uevTaggedDays:_uevCount,
         evalSpan:evalRows.length?(dKey(evalRows[0].date)+'..'+dKey(evalRows[evalRows.length-1].date)):'(none)',
         lySamples:_samples,
       },

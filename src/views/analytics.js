@@ -5413,7 +5413,8 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
               'idx '+s.diag.locIdxKeys+' keys '+s.diag.idxSpan
               +' · eval '+s.diag.evalSpan
               +' · rowDateTypes '+JSON.stringify(s.diag.laborRowDateTypes)
-              +' · LY '+(s.diag.lySamples||[]).map(x=>x.row+'→'+x.lyWant+(x.inIdx?' HIT':' MISS')).join(', ')):null
+              +' · uevTaggedDays '+s.diag.uevTaggedDays
+              +(s.diag.lySamples||[]).map(x=>'  ||  LY for '+x.row+': '+x.chain.join(' | ')).join('')):null
           );
         })
       ),
