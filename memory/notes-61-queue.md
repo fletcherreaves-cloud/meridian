@@ -35,7 +35,13 @@ to put us in a really good place prior to a redesign."*
 - **Snack daypart (District View #1)** — v4.903, in store-analytics.js and morning-brief.js.
   **Left alone:** `dt-speedofservice.js:49` also labels a daypart 'PM' but over 14:00-16:00, a
   different window — renaming it would be a guess. **Owner should confirm.**
-- **Dialed-In 1W/2W/4W/6W trend** — v4.904. `calibrateStore` read `ds.laborRows` raw. That is
+- **Dialed-In 1W/2W/4W/6W trend** — v4.904 BROKE calibration for all 27 stores, fixed in
+  v4.906. Re-sourcing the shared `rows` set was too wide a blast radius; the auto-first read is
+  now scoped to `_computePeriodMape` alone. Verified against live data on 5 stores — Full MAPE
+  bit-identical to before, all four trend periods populate. **Pre-existing, still open:** Ponce
+  de Leon (43701) fails with `recentOnly window starts 2027-04-16`, a FUTURE date out of
+  `detectCleanDataStart` — this is why the panel reads 25/27, and it ties to #12 below.
+  See [[feedback-measure-dont-reason]] Half 4. Original diagnosis: v4.904. `calibrateStore` read `ds.laborRows` raw. That is
   cloud-backed (`labor_rows` table) but MANUAL-fed, and measured 16 days stale on 2026-08-08
   (newest 07-23) while `qsr_labor_summary` had all 27 stores through 08-08. The 1W filter
   therefore matched zero rows → null → "—". Now sourced through `metricSeries('sales')`.

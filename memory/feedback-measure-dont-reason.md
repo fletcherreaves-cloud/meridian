@@ -90,6 +90,41 @@ instrument instead.
 "The build passed" is not evidence the change is correct — an unused variable, a banner
 rendered in the wrong container, and a misplaced closing paren all compile.
 
+## Half 4 — A fix that touches shared state must be verified against the REAL system
+
+Added 2026-08-08 after breaking Dialed-In calibration for all 27 stores (v4.904 → v4.906).
+
+**What happened:** to fix blank 1W/2W trend columns, I re-sourced `calibrateStore`'s `rows`
+from the metric resolver. `rows` turned out to feed three things, not one — the grid search,
+`detectCleanDataStart`, and the `fetchLY` precompute. LY resolves against `ds.laborIdx`, so
+rows from one universe + LY from another silently invalidates the pairing. Every store failed.
+The owner found it with a screenshot; my 988 tests were all green.
+
+**Then I guessed at the cause and was wrong again.** I decided a 420-day range cap was the
+culprit and "fixed" it to 2600 days. Only then did I build a harness that runs the real
+`calibrateStore` against real `labor_rows` + `qsr_daily_activity_rollup` pulled from Supabase —
+and **420 and 2600 both succeeded with identical numbers.** The cap was never the problem. That
+guess would have shipped as a second broken fix on top of the first.
+
+**What the harness bought, in one run:** it proved the revert restored the exact prior Full
+MAPE (7.05% before, 7.05% after — bit-identical), proved the scoped fix populated all four
+trend periods across 5 stores, and separated a PRE-EXISTING failure (Ponce de Leon's
+`detectCleanDataStart` returning a future window start, which is why the panel always read
+25/27) from damage I had caused. None of that was available from reading code.
+
+**The generalisable lessons:**
+- **Before re-sourcing a variable, find every consumer.** `rows` looked local; it was shared.
+  One `grep` for the variable inside its own function would have shown three uses.
+- **A green suite is not proof for engine changes.** 988 tests passed while every store failed
+  in production, because no test ran `calibrateStore` end-to-end against real data.
+- **When a change is hard to unit-test, build the real-data harness instead of shipping on
+  reasoning.** It took one short script and it answered every question definitively.
+- **Prefer the SMALLEST scope that fixes the reported symptom.** Only `_computePeriodMape`
+  needed recent days. Re-sourcing the shared row set to fix it was a blast radius nobody asked
+  for. The scoped version leaves chosen parameters and Full MAPE bit-identical.
+- **Revert first, then fix.** The owner had a broken panel; restoring known-good behaviour
+  came before diagnosing.
+
 ## How to apply
 
 - **Before diagnosing:** reproduce the failure directly — `curl` the endpoint, run the
