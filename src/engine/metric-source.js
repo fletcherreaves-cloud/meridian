@@ -266,6 +266,11 @@ Object.assign(METRIC_SOURCES, {
   // Controls loader emitted it. Single-source for now: no auto stream carries deposits,
   // so this is fallback depth of one until a cash-sheet pull adds it.
   depositAmt:   { mode: 'pos', srcs: [['ctrlRows', 'depositAmt']] },
+  // Meal COUNTS beside the amounts. auditRows carries a manager count; there is no
+  // employee-count equivalent there (emp_meal_ch is a charge, not a count), so that one
+  // is Glimpse-only until another source appears.
+  empMealCnt:   { mode: 'pos', srcs: [['glimpseRows', 'empMealCnt']] },
+  mgrMealCnt:   { mode: 'pos', srcs: [['glimpseRows', 'mgrMealCnt'], ['auditRows', 'mgrMealCnt']] },
 });
 
 export const MANUAL_ONLY_METRICS = {

@@ -6,12 +6,12 @@ import { METRIC_SOURCES, metricDaily, metricSeries, MANUAL_ONLY_METRICS } from '
 // names a field its source doesn't emit resolves to nothing and silently falls through —
 // exactly the blank-tile failure this work exists to remove — so pin them.
 const EMITS = {
-  auditRows: ['empMealDisc', 'mgrMealAmt', 'manualRefAmt', 'drawerOpens', 'posOverCnt'],
+  auditRows: ['empMealDisc', 'mgrMealAmt', 'mgrMealCnt', 'manualRefAmt', 'drawerOpens', 'posOverCnt'],
   ctrlRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'posOverAmt',
              'posOverCnt', 'promoAmt', 'promoPct', 'tRedACnt', 'tRedBCnt', 'laborPct',
              'tpph', 'otHrs', 'cashOSPct', 'cashOSAmt', 'tRedAPct', 'tRedBPct',
              'drawerOpens', 'discPct', 'actHrs', 'actVsNeed', 'salaryMgrHrs',
-             'empMealAmt', 'mgrMealAmt', 'manualRefAmt', 'depositAmt'],   // ⚠️ this list has now
+             'empMealAmt', 'mgrMealAmt', 'empMealCnt', 'mgrMealCnt', 'manualRefAmt', 'depositAmt'],   // ⚠️ this list has now
              // been stale THREE times in one day. It is hand-maintained against loaders that keep
              // gaining fields; it should be generated from src/lib/supabase.js instead.   // actHrs added 2026-08-08 — supabase.js:1143 maps act_hrs
   opsCashRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'tRedACnt',
@@ -20,7 +20,7 @@ const EMITS = {
   cashRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'posOverAmt',
              'posOverCnt', 'avgCheck', 'cashOS', 'cashOSPct'],
   glimpseRows: ['posOverAmt', 'posOverCnt', 'promoAmt', 'promoPct', 'avgCheck', 'laborPct',
-                'cashOS', 'cashOSPct', 'gc', 'kvst', 'kvsHealthy', 'oepe', 'parkedPct', 'empMealAmt', 'mgrMealAmt'],
+                'cashOS', 'cashOSPct', 'gc', 'kvst', 'kvsHealthy', 'oepe', 'parkedPct', 'empMealAmt', 'mgrMealAmt', 'empMealCnt', 'mgrMealCnt'],
   salesLedgerRows: ['avgCheck', 'dtPctTotal'],
   schedRows: ['needFloor', 'schFloor', 'needVLH', 'schVLH', 'fixGuideHrs', 'schFixHrs', 'salMgrHrs', 'crewHrs', 'schedTotHrs'],
   laborRows: ['avgCheck', 'dtPctTotal', 'sales', 'gc', 'laborPct', 'tpph', 'otHrs'],

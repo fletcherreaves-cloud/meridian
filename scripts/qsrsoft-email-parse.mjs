@@ -91,6 +91,7 @@ function mapGlimpse(r) {
     // this map is an explicit column list rather than a passthrough. Manager meals come
     // from the Glimpse column labelled "Manager Discount Amt".
     emp_meal_amt: num(r.empMealAmt), mgr_meal_amt: num(r.mgrMealAmt),
+    emp_meal_cnt: num(r.empMealCnt), mgr_meal_cnt: num(r.mgrMealCnt),
     promo_amt: num(r.promoAmt), promo_pct: num(r.promoPct),
     pos_over_cnt: num(r.posOverCnt), pos_over_amt: num(r.posOverAmt),
     cash_os: num(r.cashOS), cash_os_pct: num(r.cashOSPct),
