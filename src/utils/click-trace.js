@@ -54,6 +54,19 @@ export function mark(name, fn) {
   }
 }
 
+// React commit timings, via the built-in Profiler. mark() can only wrap plain function calls —
+// it cannot see inside React's render/commit, which is precisely where the unattributed time
+// was hiding: on 2026-08-08 the three named startup spans accounted for 325ms of 169,537ms.
+let _renders = [];   // { phase, actual, base }
+export function reportRender(id, phase, actualDuration, baseDuration) {
+  if (!_on) return;
+  if (actualDuration < 5) return;
+  _renders.push({ id, phase, actual: actualDuration, base: baseDuration });
+  if (_renders.length > 600) _renders.shift();
+  if (actualDuration >= 200)
+    console.log(`%c[click-trace] React ${phase} ${Math.round(actualDuration)}ms  (${id})`, 'color:#fb923c');
+}
+
 export function printClickTrace() {
   if (!_tasks.length && !_marks.length) {
     console.log('%c[click-trace] nothing recorded yet — click something first', 'color:#f5bc00');
@@ -82,6 +95,19 @@ export function printClickTrace() {
     Object.entries(byName).sort((a, b) => b[1].total - a[1].total).slice(0, 15)
       .forEach(([name, s]) =>
         console.log(`  ${name.padEnd(26)} ${s.n}x · worst ${Math.round(s.worst)}ms · total ${Math.round(s.total)}ms`));
+  }
+  if (_renders.length) {
+    const by = {};
+    for (const r of _renders) {
+      const k = `${r.id} (${r.phase})`;
+      (by[k] ||= { n: 0, total: 0, worst: 0 });
+      by[k].n++; by[k].total += r.actual;
+      if (r.actual > by[k].worst) by[k].worst = r.actual;
+    }
+    console.log('%c─── React commits (render + commit time) ───', 'color:#f5bc00;font-weight:700');
+    Object.entries(by).sort((a, b) => b[1].total - a[1].total).slice(0, 12)
+      .forEach(([k, s2]) =>
+        console.log(`  ${k.padEnd(24)} ${s2.n}x · worst ${Math.round(s2.worst)}ms · total ${Math.round(s2.total)}ms`));
   }
   console.log('%cmfClickTrace.reset() to clear · mfClickTrace.off() to disable', 'color:#6b7280');
 }
@@ -121,7 +147,7 @@ export function initClickTrace() {
     }
 
     window.mfClickTrace = printClickTrace;
-    window.mfClickTrace.reset = () => { _tasks = []; _marks = []; };
+    window.mfClickTrace.reset = () => { _tasks = []; _marks = []; _renders = []; };
     window.mfClickTrace.off = () => { try { sessionStorage.removeItem(KEY); } catch {} _on = false; };
     console.log('%c[click-trace] on — click around, then run mfClickTrace()', 'color:#f5bc00');
   } catch (e) { /* never break the app for a diagnostic */ }

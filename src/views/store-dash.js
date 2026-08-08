@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
+import { businessDate } from '../engine/swing-feed.js';
 import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
@@ -638,7 +639,18 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
 
   // Backtest accuracy — compute when we have both forecast and actual
   // actualDays: days with both real actuals and model forecast in selected range
-  const actualDays = weekDays.filter(r=>r.actual>0&&r.forecast>0);
+  // EXCLUDE THE CURRENT BUSINESS DAY. A day still filling has only its sales-so-far recorded,
+  // and comparing that against a WHOLE-day forecast makes it look like a catastrophic miss —
+  // so it wins "Biggest Miss" almost every time and drags MAPE, bias and pass rate with it.
+  // Worse, the number moves through the day: alarming at 10am, fine by close (Notes 61).
+  //
+  // This is the same defect the swing alarm hit on 2026-08-07, and businessDate() is the helper
+  // written for it — it carries McDonald's 4am ABC cutover, so "today" ends at 4am, not
+  // midnight. Reused rather than re-deriving the boundary here; hand-rolled date arithmetic is
+  // how 23 different week-start implementations happened.
+  const _todayBiz = businessDate();
+  const _todayRow = weekDays.find(r=>r.actual>0&&dKey(r.date)===_todayBiz);
+  const actualDays = weekDays.filter(r=>r.actual>0&&r.forecast>0&&dKey(r.date)!==_todayBiz);
   const backtest = actualDays.length >= 2 ? (()=>{
     const errs = actualDays.map(r=>Math.abs(r.actual-r.forecast)/r.actual);
     const mape = errs.reduce((a,v)=>a+v,0)/errs.length*100;
@@ -681,6 +693,15 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},k.s)
         ))
       ),
+      // Today is excluded from the grades above, so say so and show it separately — a number
+      // that vanishes without explanation reads as a bug. It is labelled in-progress rather
+      // than scored, because a part-day variance is not a miss.
+      _todayRow&&div({style:{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap',
+        background:'var(--surf2)',border:'.5px dashed var(--bdr2)',borderRadius:'var(--r)',
+        padding:'6px 10px',marginBottom:8,fontSize:'10px'}},
+        span({style:{fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px'}},'Today — in progress'),
+        span({style:{color:'var(--text2)'}},f$(_todayRow.actual)+' so far vs '+f$(_todayRow.forecast)+' full-day forecast'),
+        span({style:{color:'var(--text3)',marginLeft:'auto',fontStyle:'italic'}},'not graded — the day is still filling')),
       h(BacktestChart,{actualDays}),
       div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
         backtest.best&&div({style:{flex:1,minWidth:200,background:'rgba(16,185,129,.06)',border:'.5px solid rgba(16,185,129,.2)',borderRadius:'var(--r)',padding:'9px 12px'}},
