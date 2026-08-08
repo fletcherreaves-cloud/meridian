@@ -24,7 +24,7 @@
 
 import * as React from 'react';
 import { loadNewsMentions } from '../lib/supabase.js';
-import { sName } from '../constants.js';
+import { sName, STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -140,14 +140,17 @@ export function NewsPanel({ onClose, initialLoc = null }) {
           div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Local News'),
           div({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', marginTop: 2 } },
             rows === null ? 'loading…'
-              : `${articles.length} stories near our stores · last 120 days · ${byLoc.length} locations`)),
+              : `${articles.length} stories · last 120 days · ${byLoc.length} of ${Object.keys(STORE_NAMES).filter(k=>/^\d+$/.test(k)).length} stores have coverage`)),
         h('button', { onClick: onClose, style: { background: 'none', border: '1px solid var(--bdr2,#3a4050)', borderRadius: 6, color: 'var(--text3,#6b7280)', padding: '5px 10px', cursor: 'pointer', fontSize: 12 } }, '✕ Close')),
 
       articles.length ? div({ style: { display: 'flex', gap: 5, flexWrap: 'wrap', padding: '9px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
         chip(!signalFilter && !locFilter, 'All', () => { setSignalFilter(null); setLocFilter(null); }, 'all'),
         ...Object.entries(SIGNAL_META).map(([k, m]) =>
           chip(signalFilter === k, `${m.icon} ${m.label}`, () => setSignalFilter(signalFilter === k ? null : k), k)),
-        ...byLoc.slice(0, 8).map(([l, n]) =>
+        // Every location that HAS a story gets a chip. This was capped at 8, so the header could
+        // read "17 locations" while only 8 were selectable (Notes 62). The header counts stores
+        // with coverage, not the 27-store estate — most towns simply have no local story.
+        ...byLoc.map(([l, n]) =>
           chip(locFilter === l, `${sName(l) || l} ${n}`, () => setLocFilter(locFilter === l ? null : l), 'loc' + l))) : null,
 
       div({ style: { maxHeight: '60vh', overflowY: 'auto' } }, body),
