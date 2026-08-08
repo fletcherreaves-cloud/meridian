@@ -571,7 +571,7 @@ function StoreBriefCard({store, expanded, setExpanded}){
 const DAR_DAYPARTS = [
   {id:'bfst', label:'Breakfast', slots:['06:00','07:00','08:00','09:00','10:00','11:00']},
   {id:'lnch', label:'Lunch',     slots:['12:00','13:00','14:00']},
-  {id:'pm',   label:'PM',        slots:['15:00','16:00','17:00']},
+  {id:'pm',   label:'Snack',     slots:['15:00','16:00','17:00']},
   {id:'din',  label:'Dinner',    slots:['18:00','19:00','20:00','21:00']},
   {id:'late', label:'Late Night',slots:['22:00','23:00','24:00','25:00','26:00','27:00','28:00']},
 ];

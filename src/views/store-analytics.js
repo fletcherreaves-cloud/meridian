@@ -1376,7 +1376,8 @@ function RegisterAuditTab({ds, loc}) {
        {l:'Watch',v:employees.filter(e=>e.riskScore>=40&&e.riskScore<70).length,c:'#f59e0b'},
        {l:'T-Red After (total)',v:employees.reduce((a,e)=>a+e.tRedACnt,0),c:'#f87171'},
        {l:'T-Red $ (total)',v:'$'+employees.reduce((a,e)=>a+e.tRedADollar,0).toFixed(2),c:'#f87171'},
-       {l:'Refunds (total)',v:employees.reduce((a,e)=>a+e.refundCnt,0),c:'#f59e0b'},
+       {l:'Refunds (count)',v:employees.reduce((a,e)=>a+e.refundCnt,0),c:'#f59e0b'},
+       {l:'Refunds $ (total)',v:'$'+(employees.reduce((a,e)=>a+(e.refundCash||0)+(e.refundCashless||0),0)).toFixed(2),c:'#f59e0b'},
        {l:'POS Overrings',v:employees.reduce((a,e)=>a+e.posOver,0),c:'#fb923c'},
        {l:'Avg O/S',v:'$'+(Math.round(employees.reduce((a,e)=>a+Math.abs(e.cashOS||0),0)/Math.max(1,employees.length)*100)/100).toFixed(2),c:'var(--text)'},
       ].map((k,i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'6px 10px',textAlign:'center',flex:1,minWidth:70}},
@@ -1496,7 +1497,7 @@ function RegisterAuditTab({ds, loc}) {
 const DAYPARTS_DEF = [
   {id:'bfst', label:'Breakfast', emoji:'🌅', slots:['06:00','07:00','08:00','09:00','10:00','11:00']},
   {id:'lnch', label:'Lunch',     emoji:'☀',  slots:['12:00','13:00','14:00']},
-  {id:'pm',   label:'PM',        emoji:'🌤',  slots:['15:00','16:00','17:00']},
+  {id:'pm',   label:'Snack',     emoji:'🌤',  slots:['15:00','16:00','17:00']},
   {id:'din',  label:'Dinner',    emoji:'🌆',  slots:['18:00','19:00','20:00','21:00']},
   {id:'late', label:'Late Night',emoji:'🌙',  slots:['22:00','23:00','24:00','25:00','26:00','27:00','28:00']},
 ];
