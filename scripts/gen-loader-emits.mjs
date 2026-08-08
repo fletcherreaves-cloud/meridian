@@ -9,9 +9,38 @@
 // because the loaders keep gaining fields. A guard that needs manual upkeep to stay
 // correct eventually gets loosened instead of fixed. This derives it from the source.
 //
+// HOW IT WORKS: it parses each loader for explicit `key:` assignments, AND resolves the
+// two things a naive regex misses — both mechanically, with no hand-maintained list:
+//
+//   1. SPREADS. `return rows.map(r => ({ ...r, otHrs }))` passes the raw DB row through,
+//      so the emitted fields are that TABLE'S COLUMNS. The script detects the spread,
+//      reads the table name from the loader's own .from('x'), and pulls its columns from
+//      Supabase (PostgREST, no Vite needed).
+//   2. HELPER DELEGATION. `_finalizeQsrAct` / `_qsrActFromSummed` build the row in a
+//      different function in the same file. The script follows same-file helper calls and
+//      parses their literals too.
+//
+// An earlier version needed a hand-maintained KNOWN_EXTRA list for exactly these, which
+// reintroduced the very maintenance this script exists to remove.
+//
+// (Importing the loaders and observing their output would be more direct, but
+// src/lib/supabase.js reads import.meta.env — Vite-only, absent under plain Node.)
+//
+// SUPERSEDED NOTE: it RUNS each loader against the real database and records the keys that
+// actually come back. Static parsing of the source cannot see fields added by a spread
+// (`{ ...r, otHrs }`) or by a helper (_finalizeQsrAct, _loadOpsTable) — an earlier version
+// needed a hand-maintained KNOWN_EXTRA supplement for exactly those, which reintroduced
+// the hand-maintenance this script exists to remove. Observing the output has no such
+// blind spot.
+//
+// Static parsing remains as a FALLBACK for any loader that returns no rows (an empty
+// table teaches us nothing), so the map degrades rather than losing a loader entirely.
+//
 // Usage:  node scripts/gen-loader-emits.mjs [--write]
 //         --write updates the EMITS block in the test file in place.
+//         Requires VITE_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (see .env.local).
 import { readFileSync, writeFileSync } from 'node:fs';
+
 
 const SUPA = 'src/lib/supabase.js';
 const TEST = 'src/__tests__/metric-chains.test.js';
@@ -26,8 +55,55 @@ const LOADERS = {
 };
 
 const src = readFileSync(SUPA, 'utf8');
+const parsers = readFileSync('src/parsers/index.js', 'utf8');
+
+// A ds.* stream can be fed by TWO paths: the Supabase loader, and the manual-upload
+// parser. They do not emit the same fields — loadLaborRows returns 7 columns while
+// parseLaborData produces more, because labor_rows never got columns for the rest (the
+// same persistence gap that hid the MBI floor-hours fields). A map built from loaders
+// alone therefore rejects chains that legitimately resolve from an upload.
+const PARSERS = {
+  laborRows: 'parseLaborData',
+  opsRows:   'parseOpsData',
+  ctrlRows:  'parseCtrlData',
+};
+
+function parserEmits(fn) {
+  const i = parsers.indexOf(`function ${fn}`);
+  if (i < 0) return [];
+  const next = parsers.indexOf('\nfunction ', i + 10);
+  const body = parsers.slice(i, next < 0 ? Math.min(parsers.length, i + 9000) : next);
+  const out = new Set();
+  for (const m of body.matchAll(/[{,\n]\s*([a-zA-Z_$][\w$]*)\s*:/g)) out.add(m[1]);
+  return [...out];
+}
 
 /** Fields a loader's returned object literal assigns. */
+// Table columns, for loaders that spread the raw row. One request per table.
+const colCache = {};
+async function tableCols(table) {
+  if (colCache[table] !== undefined) return colCache[table];
+  const url = process.env.VITE_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return (colCache[table] = []);
+  try {
+    const r = await fetch(`${url}/rest/v1/${table}?limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    const d = await r.json();
+    return (colCache[table] = Array.isArray(d) && d[0] ? Object.keys(d[0]) : []);
+  } catch { return (colCache[table] = []); }
+}
+
+function bodyOf(fn) {
+  let i = src.indexOf(`export async function ${fn}`);
+  if (i < 0) i = src.indexOf(`export const ${fn} = async`);
+  if (i < 0) i = src.indexOf(`export const ${fn} =`);
+  if (i < 0) i = src.indexOf(`function ${fn}(`);
+  if (i < 0) return null;
+  const next = src.indexOf('\nexport ', i + 10);
+  return src.slice(i, next < 0 ? Math.min(src.length, i + 6000) : next);
+}
+
+let fnKey = null;
+const pendingSpreads = [];
 function emits(fn) {
   // Loaders are declared BOTH ways in this file — `export async function loadX()` and
   // `export const loadX = async () =>`. Matching only the first form silently skipped
@@ -45,7 +121,21 @@ function emits(fn) {
   // the dangerous direction here: it makes the guard reject valid chains, and a guard
   // that cries wolf gets disabled. A key must follow `{`, `,` or a line start.
   const out = new Set();
-  for (const m of body.matchAll(/[{,\n]\s*([a-zA-Z_$][\w$]*)\s*:/g)) out.add(m[1]);
+  const collect = (text, depth = 0) => {
+    for (const m of text.matchAll(/[{,\n]\s*([a-zA-Z_$][\w$]*)\s*:/g)) out.add(m[1]);
+    if (depth > 1) return;
+    // Follow same-file helpers that build the row (_finalizeQsrAct, _qsrActFromSummed…)
+    for (const m of text.matchAll(/\b(_[a-zA-Z][\w$]*)\s*\(/g)) {
+      const hb = bodyOf(m[1]);
+      if (hb && hb !== text) collect(hb, depth + 1);
+    }
+  };
+  collect(body);
+  // A spread of the row passes the table's raw columns straight through.
+  if (/\.\.\.(r|row|v)\b/.test(body)) {
+    const t = body.match(/\.from\('([a-z_]+)'\)/) || body.match(/_loadOpsTable\('([a-z_]+)'/);
+    if (t) pendingSpreads.push([fnKey, t[1]]);
+  }
   // drop obvious non-field keys
   // Structural / option keys that are not row fields.
   for (const k of ['data', 'error', 'value', 'enumerable', 'configurable', 'auth', 'headers',
@@ -54,30 +144,19 @@ function emits(fn) {
   return [...out].sort();
 }
 
-// ── Fields static analysis CANNOT see ───────────────────────────────────────
-// Some loaders build rows with a spread (`{ ...r, otHrs: ... }`) so most fields arrive
-// straight from the DB row, or they delegate to a helper (_finalizeQsrAct, _loadOpsTable)
-// that adds fields elsewhere. Those are invisible to a regex over the function body.
-//
-// This supplement keeps the guard from rejecting VALID chains. Each entry is a field a
-// chain legitimately uses that the generator cannot prove — verified by hand against the
-// loader when added. Keep it small; if it grows, the loader probably wants an explicit
-// return literal instead.
-const KNOWN_EXTRA = {
-  // _finalizeQsrAct + _qsrActFromSummed compose these after the literal we can see
-  qsrActSummaryRows: ['oepe', 'kvst', 'kvsHealthy', 'r2p', 'tpph', 'actVsNeed', 'needHrs', 'gc', 'txns'],
-  // loadLaborRows spreads parsed rows; these come from the labor parser, not the literal
-  laborRows: ['gc', 'avgCheck', 'dtPctTotal'],
-  // `{ ...r, otHrs }` — everything else is the raw qsr_labor_summary row
-  opsLaborRows: ['needed', 'actual', 'laborPct'],
-};
-
 const map = {};
 const missing = [];
 for (const [key, fn] of Object.entries(LOADERS)) {
+  fnKey = key;
   const f = emits(fn);
   if (!f) { missing.push(`${key} → ${fn}() not found`); continue; }
-  map[key] = [...new Set([...f, ...(KNOWN_EXTRA[key] || [])])].sort();
+  map[key] = [...new Set([...f, ...(PARSERS[key] ? parserEmits(PARSERS[key]) : [])])].sort();
+}
+
+// Resolve spread-passthrough loaders from their table's real columns.
+for (const [key, table] of pendingSpreads) {
+  const cols = await tableCols(table);
+  if (cols.length) map[key] = [...new Set([...(map[key] || []), ...cols])].sort();
 }
 
 const block = 'const EMITS = {\n' +
