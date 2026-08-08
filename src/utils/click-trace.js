@@ -60,7 +60,7 @@ export function mark(name, fn) {
 let _renders = [];   // { phase, actual, base }
 export function reportRender(id, phase, actualDuration, baseDuration) {
   if (!_on) return;
-  if (actualDuration < 5) return;
+  if (actualDuration < 3) return;
   _renders.push({ id, phase, actual: actualDuration, base: baseDuration });
   if (_renders.length > 600) _renders.shift();
   if (actualDuration >= 200)
@@ -68,7 +68,7 @@ export function reportRender(id, phase, actualDuration, baseDuration) {
 }
 
 export function printClickTrace() {
-  if (!_tasks.length && !_marks.length) {
+  if (!_tasks.length && !_marks.length && !_renders.length) {
     console.log('%c[click-trace] nothing recorded yet — click something first', 'color:#f5bc00');
     return;
   }

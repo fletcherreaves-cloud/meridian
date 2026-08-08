@@ -1,7 +1,7 @@
 // @ts-nocheck
 import './polyfills.js'; // MUST be first — older-iOS shims before any module (pdfjs) runs
 import { initLoadTrace } from './utils/load-trace.js';
-import { initClickTrace, reportRender } from './utils/click-trace.js';
+import { initClickTrace } from './utils/click-trace.js';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import './meridian.css';
@@ -51,11 +51,7 @@ try {
   const _tree = _shareToken
     ? React.createElement(ErrorBoundary, null, React.createElement(EomShareView, { token: _shareToken }))
     : React.createElement(ErrorBoundary, null,
-        React.createElement(AuthGate, null, React.createElement(React.Suspense, { fallback: _fallback },
-          // Profiler is inert unless ?clicktrace=1 — reportRender returns immediately when off.
-          // This is the one place mark() cannot reach: React's own render/commit work.
-          React.createElement(React.Profiler, { id: 'App', onRender: reportRender },
-            React.createElement(App)))));
+        React.createElement(AuthGate, null, React.createElement(React.Suspense, { fallback: _fallback }, React.createElement(App))));
   createRoot(document.getElementById('root')).render(_tree);
 } catch(e) {
   document.getElementById('root').innerHTML =
