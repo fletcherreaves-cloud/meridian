@@ -1,11 +1,25 @@
 // @ts-nocheck
 // ── Metric source resolver (auto-first, single global implementation) ─────────
 // ONE place that knows, for each operational metric, WHERE its per-(loc,date) value
-// comes from and in what priority — manual uploads first (the authoritative Operations
-// Report / Controls), then the auto-synced streams (emailed Daily Glimpse, DAR) as a
-// fallback. Panels should read metrics through metricDaily / metricAvg instead of each
-// filtering `ds.laborRows`/`ds.ctrlRows` itself — which is exactly why "recent windows
-// look empty" kept cropping up (a manual-only read shows blank when only auto data exists).
+// comes from and in what priority.
+//
+// ORDER IS AUTO-FIRST. Every chain lists the auto/emailed cloud streams first and the
+// manual-upload streams LAST, as last-resort fill only. This is the standing rule, and
+// until 2026-08-08 the resolver violated it in 30 of its 35 chains — this header used to
+// say the opposite ("manual uploads first... then the auto-synced streams as a fallback").
+//
+// WHY IT MATTERS, MEASURED: `labor_rows` (manual Labor Report) had no data newer than
+// 2026-07-23 while `qsr_daily_activity_rollup` carried all 27 stores through 2026-08-08.
+// With laborRows ahead of the auto stream, every metric it touched preferred a stale value
+// on any day both covered, and went blank entirely on the 16 days only the cloud had.
+//
+// A manual row being IN Supabase does not make it auto. labor_rows / ops_rows / ctrl_rows /
+// audit_rows all have loaders, but they are POPULATED by an upload, so they go stale the
+// moment the owner stops uploading. What matters is what FEEDS the table, not where it lives.
+//
+// Panels should read metrics through metricDaily / metricAvg instead of each filtering
+// `ds.laborRows`/`ds.ctrlRows` itself — which is exactly why "recent windows look empty"
+// kept cropping up (a manual-only read shows blank when only auto data exists).
 //
 // This complements engine/vs-ly.js (which owns the matched-day CURRENT-vs-LAST-YEAR math
 // for sales/gc). Together they are the standing global system for sourcing operating data.
@@ -14,13 +28,24 @@
 //   'pos' — a real value is > 0 (sales, gc, speed times, %s that are never legitimately 0)
 //   'any' — 0 / negative are legitimate (cash O/S, T-Reds, OT hours, discounts)
 
+// Streams POPULATED BY A MANUAL UPLOAD. Each has a Supabase loader and a table, so being
+// cloud-readable is not the test — what feeds it is. These three are written by the parsers
+// in src/parsers/index.js (parseLaborData / parseOpsData / parseCtrlData), and audit_rows by
+// the Register Audit upload. Everything else (qsrActSummaryRows, glimpseRows, cashRows,
+// salesLedgerRows, opsCashRows, opsLaborRows, opsServiceRows, schedRows) is auto-pulled or
+// emailed and stays current without anyone touching it.
+//
+// This is the single source of truth for the ordering rule, and metric-source-order.test.js
+// asserts against it: no chain may place a manual stream ahead of an auto one.
+export const MANUAL_FED_SOURCES = Object.freeze(['laborRows', 'opsRows', 'ctrlRows', 'auditRows']);
+
 const _dk = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
 
 // srcs are tried in order; first source with a usable value for that day wins.
 export const METRIC_SOURCES = {
   // Sales / guests — sales & gc also flow through vs-ly.js for the matched-day comparison.
-  sales:     { mode: 'pos', srcs: [['laborRows', 'sales'], ['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales']] },
-  gc:        { mode: 'pos', srcs: [['laborRows', 'gc'], ['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc']] },
+  sales:     { mode: 'pos', srcs: [['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales'], ['laborRows', 'sales']] },
+  gc:        { mode: 'pos', srcs: [['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc'], ['laborRows', 'gc']] },
   // Projected (plan) guests / sales per day — QSRSoft's own forecast (DAR proj_total_transactions
   // / proj_sales_dollars). The "what the store should deliver" baseline. projSales drives the
   // One-Pager GC/sales-to-plan opportunity ($ shortfall vs plan — bounded + sane).
@@ -30,21 +55,21 @@ export const METRIC_SOURCES = {
   // OEPE — manual Ops Report, then emailed Daily Glimpse, then the cloud-fresh DAR-derived
   // OEPE = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt (reconciled exactly to the DAR
   // OEPE column) so current-day / recent windows populate before the Glimpse email lands.
-  oepe:      { mode: 'pos', srcs: [['opsRows', 'oepe'], ['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe']] },
+  oepe:      { mode: 'pos', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']] },
   // KVS Time per GC (seconds) — manual Ops, then emailed Glimpse, then the cloud-fresh DAR
   // (= total MFY serve time ÷ total MFY trans, reconciled to the DAR report's KVS Time Per GC
   // column). The KVS stations are the MFY make-lines, so the DAR carries it without a new field.
-  kvst:      { mode: 'pos', srcs: [['opsRows', 'kvst'], ['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst']] },
+  kvst:      { mode: 'pos', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['opsRows', 'kvst']] },
   // KVS Healthy Usage (2nd-side) as a 0–1 fraction — manual Ops calls it `kvsu`, the emailed
   // Daily Glimpse calls it `kvsHealthy`, and the auto-pulled DAR derives it from healthy/unhealthy
   // order-health counts (cloud-fresh, so recent windows fill even when the Glimpse email lags/omits
   // KVS). Ordered Ops → Glimpse → DAR so a manual value still wins but auto always backstops.
-  kvsHealthy: { mode: 'pos', srcs: [['opsRows', 'kvsu'], ['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy']] },
-  park:      { mode: 'pos', srcs: [['opsRows', 'park'], ['glimpseRows', 'parkedPct'], ['opsServiceRows', 'park']] },
+  kvsHealthy: { mode: 'pos', srcs: [['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy'], ['opsRows', 'kvsu']] },
+  park:      { mode: 'pos', srcs: [['glimpseRows', 'parkedPct'], ['opsServiceRows', 'park'], ['opsRows', 'park']] },
   // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
-  r2p:       { mode: 'pos', srcs: [['opsRows', 'r2p'], ['qsrActSummaryRows', 'r2p']] },
+  r2p:       { mode: 'pos', srcs: [['qsrActSummaryRows', 'r2p'], ['opsRows', 'r2p']] },
   // Labor — PUNCHED Labor % for ALL locations (Notes 35 + 2026-08-03 correction). Glimpse FIRST,
   // then Controls, then manual Labor rows. Controls (ctrlRows.laborPct) was supposed to already
   // be punched, but parseCtrlData had a bug (fixed 2026-08-03) that preferred "Actual Labor %"
@@ -56,7 +81,7 @@ export const METRIC_SOURCES = {
   // ordering it first gets today's best available number without waiting on a re-upload, and
   // costs nothing once ctrlRows data is clean again (both sources should then agree).
   laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']] },
-  tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']],
+  tpph:      { mode: 'pos', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],
                     derive: { inputs: ['gc', 'actHrs'], fn: (gc, hrs) => (hrs > 0 && gc > 0 ? gc / hrs : null) } },
   // TPPH = transactions ÷ actual hours. TRANSACTIONS AND GUEST COUNTS ARE THE SAME THING
   // here (owner-confirmed 2026-08-08) — the DAR calls it `transactions`, Glimpse and the
@@ -70,21 +95,21 @@ export const METRIC_SOURCES = {
   // otHrs) — closes the labor-tools.js Operations Group Stats gap (cleanup-backlog Class 2,
   // 2026-08-06): otHrs read raw ctrlRows/laborRows only, with no auto backstop, unlike
   // laborPct/tpph/oepe/cashOS in the same panel which already route through this resolver.
-  otHrs:     { mode: 'any', srcs: [['ctrlRows', 'otHrs'], ['laborRows', 'otHrs'], ['opsLaborRows', 'otHrs']] },
+  otHrs:     { mode: 'any', srcs: [['opsLaborRows', 'otHrs'], ['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
-  cashOSPct: { mode: 'any', srcs: [['ctrlRows', 'cashOSPct'], ['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct']] },
+  cashOSPct: { mode: 'any', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']] },
   // Cash Over/Short $ (dollar, not %) — manual Controls, then emailed Glimpse/Cash Sheet, then
   // the auto-pulled Operations Report cash-sheet. Closes EOM Supervisor's Cash +/- gap (#52).
-  cashOSAmt: { mode: 'any', srcs: [['ctrlRows', 'cashOSAmt'], ['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['opsCashRows', 'cashOSAmt']] },
+  cashOSAmt: { mode: 'any', srcs: [['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['opsCashRows', 'cashOSAmt'], ['ctrlRows', 'cashOSAmt']] },
   // T-Reds Before/After % — manual Controls, then the cloud-fresh Operations Report cash-sheet
   // (treds $ ÷ net sales, same net-sales-weighted math as discPct). Closes #37 for T-Reds.
-  tRedAPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedAPct'], ['opsCashRows', 'tRedAPct']] },
-  tRedBPct:  { mode: 'any', srcs: [['ctrlRows', 'tRedBPct'], ['opsCashRows', 'tRedBPct']] },
+  tRedAPct:  { mode: 'any', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']] },
+  tRedBPct:  { mode: 'any', srcs: [['opsCashRows', 'tRedBPct'], ['ctrlRows', 'tRedBPct']] },
   // Drawer opens (count) — manual Controls, then the auto-pulled Operations Report cash-sheet.
-  drawerOpens: { mode: 'any', srcs: [['ctrlRows', 'drawerOpens'], ['opsCashRows', 'drawerOpens']] },
+  drawerOpens: { mode: 'any', srcs: [['opsCashRows', 'drawerOpens'], ['ctrlRows', 'drawerOpens']] },
   // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
   // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
-  discPct:   { mode: 'any', srcs: [['ctrlRows', 'discPct'], ['opsCashRows', 'discPct']] },
+  discPct:   { mode: 'any', srcs: [['opsCashRows', 'discPct'], ['ctrlRows', 'discPct']] },
 
   // ── Notes 57 Phase 1 (v4.845) ──────────────────────────────────────────────
   // The inventory (scripts/metric-inventory.mjs) found 29 metrics described in
@@ -102,32 +127,32 @@ export const METRIC_SOURCES = {
 
   // Refunds — manual Controls, then the auto Operations Report cash-sheet, then the
   // emailed Cash Sheet. All three already emit these exact field names.
-  cashRefAmt:     { mode: 'any', srcs: [['ctrlRows', 'cashRefAmt'],     ['opsCashRows', 'cashRefAmt'],     ['cashRows', 'cashRefAmt']] },
-  cashRefCnt:     { mode: 'any', srcs: [['ctrlRows', 'cashRefCnt'],     ['opsCashRows', 'cashRefCnt'],     ['cashRows', 'cashRefCnt']] },
-  cashlessRefAmt: { mode: 'any', srcs: [['ctrlRows', 'cashlessRefAmt'], ['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt']] },
-  cashlessRefCnt: { mode: 'any', srcs: [['ctrlRows', 'cashlessRefCnt'], ['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt']] },
+  cashRefAmt:     { mode: 'any', srcs: [['opsCashRows', 'cashRefAmt'], ['cashRows', 'cashRefAmt'], ['ctrlRows', 'cashRefAmt']] },
+  cashRefCnt:     { mode: 'any', srcs: [['opsCashRows', 'cashRefCnt'], ['cashRows', 'cashRefCnt'], ['ctrlRows', 'cashRefCnt']] },
+  cashlessRefAmt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt'], ['ctrlRows', 'cashlessRefAmt']] },
+  cashlessRefCnt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt'], ['ctrlRows', 'cashlessRefCnt']] },
 
   // POS Over $ / count — manual Controls, then emailed Glimpse, then emailed Cash Sheet.
-  posOverAmt:     { mode: 'any', srcs: [['ctrlRows', 'posOverAmt'],     ['glimpseRows', 'posOverAmt'],     ['cashRows', 'posOverAmt']] },
-  posOverCnt:     { mode: 'any', srcs: [['ctrlRows', 'posOverCnt'],     ['glimpseRows', 'posOverCnt'],     ['cashRows', 'posOverCnt']] },
+  posOverAmt:     { mode: 'any', srcs: [['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
+  posOverCnt:     { mode: 'any', srcs: [['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
 
   // Promo $ / % — manual Controls, then emailed Glimpse. (promoCnt deliberately NOT
   // added: no auto/emailed stream emits it, so a chain would be single-source theatre.)
-  promoAmt:       { mode: 'any', srcs: [['ctrlRows', 'promoAmt'],       ['glimpseRows', 'promoAmt']] },
-  promoPct:       { mode: 'any', srcs: [['ctrlRows', 'promoPct'],       ['glimpseRows', 'promoPct']] },
+  promoAmt:       { mode: 'any', srcs: [['glimpseRows', 'promoAmt'], ['ctrlRows', 'promoAmt']] },
+  promoPct:       { mode: 'any', srcs: [['glimpseRows', 'promoPct'], ['ctrlRows', 'promoPct']] },
 
   // T-Red Before/After COUNTS — the % versions already had chains to opsCashRows since
   // #37; the counts beside them did not, so the same tile could show a fresh % next to a
   // stale count.
-  tRedACnt:       { mode: 'any', srcs: [['ctrlRows', 'tRedACnt'],       ['opsCashRows', 'tRedACnt']] },
-  tRedBCnt:       { mode: 'any', srcs: [['ctrlRows', 'tRedBCnt'],       ['opsCashRows', 'tRedBCnt']] },
+  tRedACnt:       { mode: 'any', srcs: [['opsCashRows', 'tRedACnt'], ['ctrlRows', 'tRedACnt']] },
+  tRedBCnt:       { mode: 'any', srcs: [['opsCashRows', 'tRedBCnt'], ['ctrlRows', 'tRedBCnt']] },
 
   // Average check — manual Labor, then emailed Glimpse / Cash Sheet / Sales Ledger.
   // 'pos' because a real avg check is never legitimately 0.
-  avgCheck:       { mode: 'pos', srcs: [['laborRows', 'avgCheck'], ['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck']] },
+  avgCheck:       { mode: 'pos', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']] },
 
   // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name).
-  dtMixPct:       { mode: 'pos', srcs: [['laborRows', 'dtPctTotal'], ['salesLedgerRows', 'dtPctTotal']] },
+  dtMixPct:       { mode: 'pos', srcs: [['salesLedgerRows', 'dtPctTotal'], ['laborRows', 'dtPctTotal']] },
 
   // Actual punched hours — manual Controls, then the auto DAR rollup. Added 2026-08-08:
   // an audit of compute6wk found 14 of its 28 fields had no chain, and this was the ONLY
@@ -136,14 +161,14 @@ export const METRIC_SOURCES = {
   // ctrlRows.actHrs (supabase.js maps act_hrs) then the auto DAR rollup
   // (actual_punched_hours). laborRows is NOT in this chain — its loader emits only
   // loc/date/sales/laborPct/tpph/otHrs/otDollar, and the chain test caught that.
-  actHrs:         { mode: 'pos', srcs: [['ctrlRows', 'actHrs'], ['qsrActSummaryRows', 'actHrs']] },
+  actHrs:         { mode: 'pos', srcs: [['qsrActSummaryRows', 'actHrs'], ['ctrlRows', 'actHrs']] },
 
   // Actual vs needed hours — a SIGNED HOUR DIFFERENCE (actual − needed), not a percent.
   // mode:'any' is load-bearing: 'pos' would discard every NEGATIVE reading, i.e. exactly
   // the understaffed store-days worth seeing, and 0 (dead on target) is legitimate too.
   // Owner corrected an earlier assessment that this was manual-only — it is carried by
   // the Controls upload AND derivable from the DAR, which has both hour columns.
-  actVsNeed:      { mode: 'any', srcs: [['ctrlRows', 'actVsNeed'], ['qsrActSummaryRows', 'actVsNeed']] },
+  actVsNeed:      { mode: 'any', srcs: [['qsrActSummaryRows', 'actVsNeed'], ['ctrlRows', 'actVsNeed']] },
 };
 
 // ── Deliberately manual-only ────────────────────────────────────────────────
@@ -193,7 +218,7 @@ Object.assign(METRIC_SOURCES, {
   schedHrs:         { mode: 'pos', srcs: [['schedRows', 'schedTotHrs']] },
 
   // Salaried manager hours — was unchained on the Ops scorecard too.
-  salaryMgrHrs:     { mode: 'pos', srcs: [['ctrlRows', 'salaryMgrHrs'],     ['schedRows', 'salMgrHrs']] },
+  salaryMgrHrs:     { mode: 'pos', srcs: [['schedRows', 'salMgrHrs'],       ['ctrlRows', 'salaryMgrHrs']] },
 });
 
 // ── Derived metrics ─────────────────────────────────────────────────────────

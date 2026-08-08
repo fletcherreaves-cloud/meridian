@@ -5,15 +5,20 @@ const d = s => new Date(s + 'T00:00:00');
 const range = { s: d('2026-06-01'), e: d('2026-06-30') };
 
 describe('metric-source resolver (auto-first)', () => {
-  it('metricDaily prefers manual Ops over Glimpse, then falls back to Glimpse', () => {
+  it('metricDaily prefers auto Glimpse over the manual Ops upload, and manual fills gaps', () => {
+    // Corrected 2026-08-08: this asserted manual-wins, contradicting the auto-first rule.
     const ds = {
-      opsRows: [{ loc: '1', date: d('2026-06-01'), oepe: 150 }],       // manual for day 1
+      opsRows: [
+        { loc: '1', date: d('2026-06-01'), oepe: 150 },                 // manual — must NOT win
+        { loc: '1', date: d('2026-06-04'), oepe: 143 },                 // manual FILLS a day glimpse lacks
+      ],
       glimpseRows: [
-        { loc: '1', date: d('2026-06-01'), oepe: 999 },                 // manual should win
-        { loc: '1', date: d('2026-06-02'), oepe: 165 },                 // glimpse fills day 2
+        { loc: '1', date: d('2026-06-01'), oepe: 999 },                 // auto wins day 1
+        { loc: '1', date: d('2026-06-02'), oepe: 165 },                 // glimpse-only day
       ],
     };
-    expect(metricDaily(ds, '1', d('2026-06-01'), 'oepe')).toBe(150);
+    expect(metricDaily(ds, '1', d('2026-06-01'), 'oepe')).toBe(999);
+    expect(metricDaily(ds, '1', d('2026-06-04'), 'oepe')).toBe(143);   // last-resort fill still works
     expect(metricDaily(ds, '1', d('2026-06-02'), 'oepe')).toBe(165);
     expect(metricDaily(ds, '1', d('2026-06-03'), 'oepe')).toBeNull();
   });
@@ -96,6 +101,6 @@ describe('metric-source resolver (auto-first)', () => {
     // manual Controls TPPH still wins first
     const ds2 = { ctrlRows: [{ loc: '1', date: d('2026-06-05'), tpph: 6.0 }],
                   qsrActSummaryRows: [{ loc: '1', date: d('2026-06-05'), tpph: 5.4 }] };
-    expect(metricDaily(ds2, '1', d('2026-06-05'), 'tpph')).toBe(6.0);
+    expect(metricDaily(ds2, '1', d('2026-06-05'), 'tpph')).toBeCloseTo(5.4, 4); // auto DAR wins over manual ctrl
   });
 });

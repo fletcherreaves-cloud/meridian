@@ -26,7 +26,7 @@ const TODAY     = '2026-08-08';
 
 function dsWithStaleManual() {
   const laborRows = [];
-  for (let i = 0; i < 10; i++) {           // ...through 2026-07-23, then nothing
+  for (let i = 0; i < 30; i++) {           // 2026-06-24 through 2026-07-23, then nothing
     const dt = new Date(d(STALE_END)); dt.setDate(dt.getDate() - i);
     laborRows.push({ loc: '43380', date: dt, sales: 10000 + i });
   }
@@ -39,10 +39,22 @@ function dsWithStaleManual() {
 }
 
 describe('Dialed-In calibration — sales sourcing gap-fill', () => {
-  it('the manual row still wins on a day it covers', () => {
+  it('the AUTO stream wins on a day both cover', () => {
     const ds = dsWithStaleManual();
-    // 2026-07-23 exists in BOTH streams. laborRows is first in the chain, so it wins.
-    expect(metricDaily(ds, '43380', d(STALE_END), 'sales')).toBe(10000);
+    // 2026-07-23 exists in BOTH streams. Auto-first: qsrActSummaryRows wins, laborRows does
+    // not override it. (This test asserted the reverse when first written — see the ordering
+    // fix in metric-source.js; manual is last-resort FILL, never an override.)
+    expect(metricDaily(ds, '43380', d(STALE_END), 'sales')).toBe(20016);
+  });
+
+  it('the manual upload still FILLS a day the auto stream does not cover', () => {
+    // Last-resort fill must keep working — that is the half of the rule that makes manual
+    // uploads worth having at all. Auto starts 2026-07-10; manual reaches back to 06-24, so
+    // 06-24..07-09 is manual-only territory.
+    const ds = dsWithStaleManual();
+    const old = metricDaily(ds, '43380', d('2026-07-01'), 'sales');
+    expect(old).toBeGreaterThan(9000);
+    expect(old).toBeLessThan(11000);   // came from laborRows, the only stream covering it
   });
 
   it('the auto stream fills every day after the manual upload stops', () => {
@@ -68,9 +80,9 @@ describe('Dialed-In calibration — sales sourcing gap-fill', () => {
     const ds = dsWithStaleManual();
     const sixWeek = metricSeries(ds, '43380', { s: d('2026-07-14'), e: d(TODAY) }, 'sales');
 
-    // Days before the seam come from manual (10k band), after it from auto (20k band).
-    expect(sixWeek['2026-07-20']).toBeGreaterThan(9000);
-    expect(sixWeek['2026-07-20']).toBeLessThan(11000);
+    // Auto covers 2026-07-10 onward, so every day in this window resolves from auto (20k
+    // band) even where manual also has it. Manual only shows through before auto begins.
+    expect(sixWeek['2026-07-20']).toBeGreaterThan(19000);
     expect(sixWeek['2026-08-05']).toBeGreaterThan(19000);
 
     // No holes: every date in the union of the two streams resolves.

@@ -40,6 +40,34 @@ to put us in a really good place prior to a redesign."*
   (newest 07-23) while `qsr_labor_summary` had all 27 stores through 08-08. The 1W filter
   therefore matched zero rows → null → "—". Now sourced through `metricSeries('sales')`.
 
+## 🔴 Resolver was manual-first in 30 of 35 chains — fixed v4.905
+
+Found because the owner caught a sentence in my summary: I described v4.904 as "manual still
+wins where it exists and auto fills the gap" and they replied **"Not our rule. need to fix
+please."** They were right, and I had the rule backwards twice in one session — I also called
+the `sales` chain ordering "legitimate" earlier because `laborRows` has a Supabase loader.
+
+**Being in Supabase does not make a stream auto.** `labor_rows` / `ops_rows` / `ctrl_rows` /
+`audit_rows` all have loaders and tables, but are POPULATED BY AN UPLOAD, so they go stale the
+moment uploading stops. What feeds the table is the test, not where it lives.
+
+Audit found **30 of 35 multi-source chains put a manual stream ahead of an auto one** —
+`sales`, `gc`, `oepe`, `kvst`, `tpph`, `actHrs`, `actVsNeed`, all the Controls metrics. The
+file header documented the inverted doctrine as if intended. Every one of those metrics
+preferred a stale manual value on any day both tiers covered.
+
+Fixed by stable partition (auto in existing relative order, then manual), so deliberate
+ordering AMONG auto sources is untouched — `laborPct` still prefers Glimpse because Glimpse is
+confirmed punched. Now guarded structurally by `src/__tests__/metric-source-order.test.js`
+against the exported `MANUAL_FED_SOURCES` list, mutation-verified.
+
+**Six existing tests failed on the fix because they asserted manual-wins** — they had encoded
+the bug as intended behaviour, including one I wrote an hour earlier. All rewritten to assert
+auto-wins AND that last-resort fill still works.
+
+**⚠️ The owner should eyeball values where both tiers cover the same day** — this changes
+displayed numbers for those 30 metrics wherever manual and auto disagree.
+
 ## ⚠️ Live data-pipeline finding, 2026-08-08 — needs the owner
 
 Measured freshness across every stream:

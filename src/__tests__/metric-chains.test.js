@@ -115,18 +115,30 @@ describe('resolution behaviour', () => {
     expect(metricDaily(ds, '3708', D, 'cashRefAmt')).toBe(42);
   });
 
-  it('prefers the manual Controls upload when both are present', () => {
+  it('prefers the AUTO stream over the manual Controls upload when both cover the day', () => {
+    // Corrected 2026-08-08. This test previously asserted the opposite — that the manual
+    // Controls upload won — which encoded the very bug the auto-first rule forbids. Manual
+    // is last-resort FILL: it may cover a day the cloud lacks, never override one it has.
     const ds = {
-      ctrlRows: [row({ cashRefAmt: 10 })],
-      opsCashRows: [row({ cashRefAmt: 99 })],
+      ctrlRows: [row({ cashRefAmt: 10 })],       // manual — must NOT win
+      opsCashRows: [row({ cashRefAmt: 99 })],    // auto qsr_cash_sheet — wins
     };
+    expect(metricDaily(ds, '3708', D, 'cashRefAmt')).toBe(99);
+  });
+
+  it('still falls back to the manual upload on a day the auto stream does not cover', () => {
+    // The other half of the rule: last-resort fill must still WORK.
+    const ds = { ctrlRows: [row({ cashRefAmt: 10 })] };
     expect(metricDaily(ds, '3708', D, 'cashRefAmt')).toBe(10);
   });
 
   it('keeps a legitimate 0 rather than falling through to a staler source', () => {
+    // The 0 sits in the AUTO source, which is what the chain now consults first. (Before the
+    // 2026-08-08 ordering fix this fixture had the 0 in ctrlRows and relied on manual being
+    // first — it was testing zero-preservation through an ordering that was itself wrong.)
     const ds = {
-      ctrlRows: [row({ tRedACnt: 0 })],
-      opsCashRows: [row({ tRedACnt: 7 })],
+      opsCashRows: [row({ tRedACnt: 0 })],   // auto, clean day
+      ctrlRows: [row({ tRedACnt: 7 })],      // manual fill — must not override a real 0
     };
     // 0 T-Reds is a clean day, not missing data — mode 'any' must return it.
     expect(metricDaily(ds, '3708', D, 'tRedACnt')).toBe(0);
