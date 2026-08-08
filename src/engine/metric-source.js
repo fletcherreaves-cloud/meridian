@@ -56,7 +56,15 @@ export const METRIC_SOURCES = {
   // ordering it first gets today's best available number without waiting on a re-upload, and
   // costs nothing once ctrlRows data is clean again (both sources should then agree).
   laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']] },
-  tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']] },
+  tpph:      { mode: 'pos', srcs: [['ctrlRows', 'tpph'], ['laborRows', 'tpph'], ['qsrActSummaryRows', 'tpph']],
+                    derive: { inputs: ['gc', 'actHrs'], fn: (gc, hrs) => (hrs > 0 && gc > 0 ? gc / hrs : null) } },
+  // TPPH = transactions ÷ actual hours. TRANSACTIONS AND GUEST COUNTS ARE THE SAME THING
+  // here (owner-confirmed 2026-08-08) — the DAR calls it `transactions`, Glimpse and the
+  // labor report call it `gc`, and metric-source resolves both under the `gc` key. Stated
+  // explicitly because the two names invite the assumption that they differ.
+  // The derivation is a FALLBACK: a precomputed tpph from any source wins. It exists for
+  // days covered by Glimpse (guest counts) and Controls (hours) but not the DAR, which
+  // previously produced nothing despite both halves being present.
   // OT Hours — manual Controls, then manual Labor, then the auto-pulled Operations Report
   // labor-summary stream (qsr_labor_summary → loadOpsLaborSummary, daily, already aliased to
   // otHrs) — closes the labor-tools.js Operations Group Stats gap (cleanup-backlog Class 2,
@@ -261,18 +269,20 @@ export function metricSeries(ds, loc, range, key, _depth = 0) {
   // codebase has been bitten by before. Each day resolves its own inputs auto-first, and a
   // day is emitted only when EVERY input is present for it — a partial input set produces
   // no value rather than a wrong one.
-  if (spec.derive) {
-    if (_depth > 3) return out;                       // guard against a cyclic definition
+  const _derive = (into) => {
+    if (!spec.derive || _depth > 3) return into;      // depth guard: cyclic definitions
     const parts = spec.derive.inputs.map(k => metricSeries(ds, loc, range, k, _depth + 1));
     const days = new Set(parts.flatMap(p => Object.keys(p)));
     for (const dk of days) {
+      if (into[dk] != null) continue;                 // a real source already answered
       const vals = parts.map(p => p[dk]);
       if (vals.some(v => v == null)) continue;        // incomplete inputs → no value
       const v = spec.derive.fn(...vals);
-      if (_ok(v, spec.mode)) out[dk] = v;
+      if (_ok(v, spec.mode)) into[dk] = v;
     }
-    return out;
-  }
+    return into;
+  };
+  if (spec.derive && !spec.srcs) return _derive(out);  // derivation-only metric
   const L = String(loc);
   const rs = _dk(range.s), re = _dk(range.e);
   // Collect every date in range that any source has for this loc, then resolve auto-first.
@@ -290,7 +300,11 @@ export function metricSeries(ds, loc, range, key, _depth = 0) {
       if (rows) { let hit = false; for (const r of rows) { const v = r[field]; if (_ok(v, spec.mode)) { out[dk] = v; hit = true; break; } } if (hit) break; }
     }
   }
-  return out;
+  // LAST RESORT: compute the metric for days no source could answer. A precomputed value
+  // from a real source always wins — derivation only fills gaps. This matters for TPPH: a
+  // day with Glimpse (guest counts) and Controls (hours) but no DAR previously produced
+  // nothing, even though both halves of transactions ÷ hours were sitting right there.
+  return _derive(out);
 }
 
 // Mean of the daily values across one or more locs over a range (auto-first per day).

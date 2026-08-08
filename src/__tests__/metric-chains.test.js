@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { METRIC_SOURCES, metricDaily } from '../engine/metric-source.js';
+import { METRIC_SOURCES, metricDaily, metricSeries } from '../engine/metric-source.js';
 
 // Field names each loader is known to emit, taken from src/lib/supabase.js. A chain that
 // names a field its source doesn't emit resolves to nothing and silently falls through —
@@ -61,10 +61,24 @@ describe('Phase 1 resolution chains', () => {
     expect(bad).toEqual([]);
   });
 
-  it('no metric is both a direct read and a derivation', () => {
-    const both = Object.entries(METRIC_SOURCES)
-      .filter(([, d]) => d.srcs && d.derive).map(([k]) => k);
-    expect(both).toEqual([]);
+  // This assertion originally read "no metric is both a direct read and a derivation".
+  // That was wrong, and TPPH is the counter-example: a precomputed tpph should win when a
+  // source has it, but a day with Glimpse (guest counts) and Controls (hours) and no DAR
+  // can still be computed. Chain first, derive to fill the gaps.
+  it('a hybrid metric prefers a real source and only derives to fill gaps', () => {
+    const hybrid = Object.entries(METRIC_SOURCES).filter(([, d]) => d.srcs && d.derive);
+    expect(hybrid.length, 'expected at least one hybrid').toBeGreaterThan(0);
+    const ds = {
+      // day 1: a real precomputed tpph AND the parts — the source must win
+      ctrlRows: [{ loc: '1', date: new Date('2026-08-01'), tpph: 9.99, actHrs: 100 }],
+      // day 2: only the parts — derivation should fill it
+      glimpseRows: [{ loc: '1', date: new Date('2026-08-02'), gc: 800 }],
+      qsrActSummaryRows: [{ loc: '1', date: new Date('2026-08-02'), actHrs: 100 }],
+    };
+    const r = { s: new Date('2026-07-25'), e: new Date('2026-08-10') };
+    const out = metricSeries(ds, '1', r, 'tpph');
+    expect(out['2026-08-01'], 'precomputed source must win').toBe(9.99);
+    expect(out['2026-08-02'], 'derived gap-fill').toBeCloseTo(8, 6);
   });
 
   it('every derived metric has a mode and a function arity matching its inputs', () => {
