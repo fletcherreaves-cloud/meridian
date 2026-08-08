@@ -4,6 +4,7 @@ import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MO
 import { dKey, addD, mwStart, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
+import { businessDate } from '../engine/swing-feed.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -14,7 +15,7 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
@@ -3152,7 +3153,15 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // by the DI live-backtest fix below. Same class of bug as the documented
     // ds?.laborRows fix elsewhere in the app (v5.37a).
     const rows=(ds?.laborRows||[]).filter(r=>
+      // `!r.isFuture` is INERT here — nothing ever sets isFuture on labor rows (grep:
+      // only store-dash.js sets it, on its own view models). Meanwhile every period
+      // preset ends at `e: today`, and supplementLaborWithSched backfills today's PARTIAL
+      // sales from the DAR, so a part-finished day was being scored against a full-day
+      // projection. Same class as the swing-alarm partial-day bug (v4.869). Exclude any
+      // day on or after the current business date — accuracy is only meaningful on
+      // CLOSED days.
       r.date>=range.s&&r.date<=range.e&&r.sales>100&&!r.isFuture&&
+      dateKey(r.date)<businessDate()&&
       locs.includes(String(r.loc))
     ).sort((a,b)=>a.date-b.date);
     if(!rows.length){alert('No completed sales records in this period.');setRunning(false);return;}
@@ -3175,19 +3184,15 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // Sum proj_sales_dollars across all hour slots per loc+dt to get a daily total,
     // then compare against ds.laborRows actuals to compute QSRSoft's own MAPE.
     const dateKey=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd;};
-    const qsrProjLookup={};
-    if(supabase){
-      const dtFrom=dateKey(range.s),dtTo=dateKey(range.e);
-      const nsnLocs=locs.map(l=>String(l).padStart(7,'0'));
-      const {data:qsrData}=await supabase.from('qsr_daily_activity')
-        .select('loc,dt,proj_sales_dollars')
-        .in('loc',nsnLocs).gte('dt',dtFrom).lte('dt',dtTo);
-      (qsrData||[]).forEach(r=>{
-        const lk=String(parseInt(r.loc,10));
-        if(!qsrProjLookup[lk]) qsrProjLookup[lk]={};
-        qsrProjLookup[lk][r.dt]=(qsrProjLookup[lk][r.dt]||0)+(r.proj_sales_dollars||0);
-      });
-    }
+    // Was a BARE select with no pagination — capped at 1000 rows while a 6-week ×
+    // 27-store window needs ~28,350, so the Sched Proj MAPE was averaged over roughly a
+    // day and a half of data and read far too high. The error was discarded too, so the
+    // truncation was invisible. loadQsrProjections paginates, reads the rollup (already
+    // summed per day), and reports failures to the DATA INCOMPLETE banner.
+    let qsrProjLookup={};
+    try{
+      qsrProjLookup=await loadQsrProjections({locs,from:dateKey(range.s),to:dateKey(range.e)});
+    }catch(e){ console.warn('[forecast-accuracy] scheduled projections failed:',e?.message||e); }
 
     const CHUNK=40;
     for(let i=0;i<rows.length;i+=CHUNK){

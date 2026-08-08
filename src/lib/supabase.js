@@ -2059,6 +2059,38 @@ export async function loadDailySales(days = 120) {
   return Object.values(map);
 }
 
+// Scheduled (LifeLenz-derived) sales projections per (loc, date) for a window.
+//
+// Added 2026-08-08 for the Forecast Accuracy "Sched Proj" column, which was running a
+// BARE select with no pagination — capped at Supabase's 1000-row server limit while a
+// 6-week × 27-store window needs ~28,350 hourly rows, i.e. it saw about 3.5% of the
+// window and silently averaged a MAPE over roughly a day and a half. It also discarded
+// the query `error`, so a truncation or 500 was invisible.
+//
+// Reads the ROLLUP, where proj_sales_dollars is already summed per day — so this is one
+// row per (loc,dt) rather than ~25, and no client-side re-summing (which was also where a
+// double-count could creep in). Paginated + labelled via fetchAll.
+export async function loadQsrProjections({ locs = null, from, to } = {}) {
+  if (!supabase || !from || !to) return {};
+  const padded = locs ? locs.map(l => String(l).padStart(7, '0')) : null;
+  const rows = await fetchAll((a, b) => {
+    let q = supabase.from('qsr_daily_activity_rollup')
+      .select('loc,dt,proj_sales_dollars')
+      .gte('dt', from).lte('dt', to)
+      .order('dt').order('loc')
+      .range(a, b);
+    if (padded) q = q.in('loc', padded);
+    return q;
+  }, 1000, 'scheduled projections');
+
+  const out = {};
+  for (const r of rows) {
+    const lk = String(parseInt(r.loc, 10));
+    (out[lk] || (out[lk] = {}))[r.dt] = r.proj_sales_dollars || 0;
+  }
+  return out;
+}
+
 // ── Cloud-first emailed-report loaders ────────────────────────────────────────
 // Load the server-parsed QSRSoft email reports from Supabase and return them in
 // the SAME camelCase shape the client parsers produce, so existing consumers
