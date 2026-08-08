@@ -311,6 +311,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.916', date:'2026-08-08', changes:[
+    'The interaction tracer now names the heavy startup work — index building, the register-audit analysis and the insights pass — so a freeze on load can be attributed to something specific instead of appearing as anonymous script.',
+  ]},
   {version:'4.915', date:'2026-08-08', changes:[
     'Clicks no longer wait for the store rebuild. Every time a data loader finished, the app rebuilt all 27 stores immediately and the screen froze until it was done — measured at up to half a second each, and it ran sixteen times in one session. That work now happens at low priority, so a click, a menu or closing a panel goes through first. The numbers are unchanged; they just no longer block what you are doing.',
   ]},
@@ -1670,13 +1673,16 @@ function App() {
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
-          laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
-          laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
-          weatherIdx:bIdx(weather||[]), wxByDate:wxIdx,
+          ...(_traceMark('bIdx+bLocIdx (all streams)', () => ({
+            laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
+            laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
+            weatherIdx:bIdx(weather||[]),
+          }))),
+          wxByDate:wxIdx,
           storeIds:[...new Set(labor.map(r=>r.loc))].sort(),
           lastActual:lastAct,
         };
-        if(audit.length>0) try{restoredDs.empRisk=analyzeRegisterAudit(audit);}catch(e){}
+        if(audit.length>0) try{restoredDs.empRisk=_traceMark('analyzeRegisterAudit',()=>analyzeRegisterAudit(audit));}catch(e){}
         // Compute non-React side-effects synchronously before the transition
         let _taggedEvents=null,_autoTaggedCount=0;
         try{
@@ -1702,7 +1708,7 @@ function App() {
         React.startTransition(()=>{
           setDs(restoredDs);
           if(_autoTaggedCount>0) setUserEvents(_taggedEvents);
-          try { setSignals(computeInsights(restoredDs)); } catch(e) { console.warn('[insights] restore compute failed:', e); }
+          try { setSignals(_traceMark('computeInsights(restore)',()=>computeInsights(restoredDs))); } catch(e) { console.warn('[insights] restore compute failed:', e); }
         });
       } else {
         // No local IDB data (fresh install / PWA cold start / storage cleared).
@@ -2957,7 +2963,7 @@ function App() {
       setDs(currentDS);
       if(_uploadEvents) setUserEvents(_uploadEvents);
     });
-    try { setSignals(computeInsights(currentDS)); } catch(e) { console.warn('[insights] error:', e); }
+    try { setSignals(_traceMark('computeInsights(live)',()=>computeInsights(currentDS))); } catch(e) { console.warn('[insights] error:', e); }
     // Recompute custom signals and persist history
     if(customSignalDefs.length>0){
       try{
