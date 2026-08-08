@@ -311,6 +311,10 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.919', date:'2026-08-08', changes:[
+    'Events & Tags gains a location filter, with each store showing how many days it has tagged and the heaviest listed first. Any store tagged on more than a year of days now carries a warning, because tagged days are skipped when the forecast looks for the same day last year — one store had 450 tagged days and nothing in the app said so.',
+    'Local News now states when it updates in the footer, not only when there is nothing to show.',
+  ]},
   {version:'4.918', date:'2026-08-08', changes:[
     'Render timing in the tracer now actually works in the live app. The previous attempt used a React feature that is removed from production builds, so it silently recorded nothing.',
   ]},

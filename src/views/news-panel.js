@@ -157,5 +157,9 @@ export function NewsPanel({ onClose, initialLoc = null }) {
 
       div({ style: { padding: '9px 18px', borderTop: '.5px solid var(--bdr,#2a2f3a)', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.55 } },
         'Local outlets only — this is context near our restaurants, not brand monitoring. These feeds carry almost no McDonald’s mentions; ',
-        'a story marked EITHER belongs to a town with two of our stores and has not been assigned to one.')));
+        'a story marked EITHER belongs to a town with two of our stores and has not been assigned to one. ',
+        // Notes 62: the owner asked "when does this update and how?" — the answer only appeared
+        // in the empty state, which is exactly when you cannot see it.
+        h('span', { style: { color: 'var(--text2,#9aa4b2)' } },
+          'Updated nightly at 11:40 UTC from nine local RSS feeds; run it on demand from Data Manager → Sync.'))));
 }

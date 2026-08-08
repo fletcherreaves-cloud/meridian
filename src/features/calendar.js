@@ -1413,6 +1413,7 @@ function submitReview(){
 function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
   const [search, setSearch] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState('all');
+  const [locFilter, setLocFilter] = React.useState('all');
   const [sortBy, setSortBy] = React.useState('date-desc');
 
   // Build flat array from userEvents: {loc, dk, date, ...eventData}
@@ -1442,10 +1443,25 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
     return[...types].sort();
   },[allEvents]);
 
+  // Per-location tag counts, HIGHEST FIRST. Ordered by count rather than name on purpose: on
+  // 2026-08-08 one store carried 450 tagged days, which starved every last-year lookup and
+  // silently broke Dialed-In calibration for the whole district (see v4.910). Nothing in the
+  // app showed that, because the list was sorted alphabetically and read as normal. A store
+  // with an implausible number of tags should be the first thing visible here.
+  const locCounts = React.useMemo(()=>{
+    const c={};
+    for(const e of allEvents) c[e.loc]=(c[e.loc]||0)+1;
+    return Object.entries(c).sort((a,b)=>b[1]-a[1]);
+  },[allEvents]);
+  // A day is only ever ONE tag per store, so "tagged days" and "events" are the same count.
+  // Flag anything past a year of coverage — that is a recurring rule expanding, not real events.
+  const HEAVY_TAGS = 300;
+
   // Filter + sort
   const filtered = React.useMemo(()=>{
     let evs=allEvents;
     if(typeFilter!=='all') evs=evs.filter(e=>e.type===typeFilter);
+    if(locFilter!=='all') evs=evs.filter(e=>String(e.loc)===String(locFilter));
     if(search.trim()){
       const s=search.toLowerCase();
       evs=evs.filter(e=>
@@ -1461,7 +1477,7 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
     else if(sortBy==='loc') evs.sort((a,b)=>(STORE_NAMES[a.loc]||a.loc).localeCompare(STORE_NAMES[b.loc]||b.loc));
     else if(sortBy==='type') evs.sort((a,b)=>a.type.localeCompare(b.type));
     return evs;
-  },[allEvents,typeFilter,search,sortBy]);
+  },[allEvents,typeFilter,locFilter,search,sortBy]);
 
   const exportCSV=()=>{
     const hdr=['Date','Day','Location','Loc #','Event Type','Label','Note','Source','AI?'];
@@ -1511,6 +1527,18 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
         )
       ),
       // ── Controls ───────────────────────────────────────────────────
+      // Heavy-tagging warning. Every tagged day is skipped when the forecast looks for the same
+      // day last year, so a store tagged on most of the calendar loses its comparison entirely —
+      // that is exactly what broke Dialed-In for all 27 stores on 2026-08-08 with 450 tagged
+      // days on one store, and nothing in the app said so.
+      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 16px',
+        borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
+        color:'#f59e0b',lineHeight:1.5,flexShrink:0}},
+        '⚠ ',
+        locCounts.filter(([,n])=>n>=HEAVY_TAGS).map(([l,n])=>(STORE_NAMES[l]||l)+' ('+n+')').join(', '),
+        ' — over a year of tagged days. Tagged days are skipped when the forecast looks for the ',
+        'same day last year, so heavy tagging can leave a store with no comparison at all. ',
+        'Worth checking these are real events and not a recurring rule filling the calendar.'),
       div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
         display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
         h('input',{type:'text',value:search,onChange:e=>setSearch(e.target.value),
@@ -1523,6 +1551,15 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
           h('option',{value:'all'},'All Types ('+allEvents.length+')'),
           typeOptions.map(t=>h('option',{key:t,value:t},
             (EVENT_TYPES[t]||{}).icon+' '+(EVENT_TYPES[t]||{}).label||t+' ('+allEvents.filter(e=>e.type===t).length+')'))
+        ),
+        // Locations ordered by TAG COUNT, not alphabetically, and each option shows its count —
+        // so a store with an implausible number of tagged days is visible without hunting.
+        h('select',{value:locFilter,onChange:e=>setLocFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          h('option',{value:'all'},'All Locations ('+locCounts.length+')'),
+          locCounts.map(([l,n])=>h('option',{key:l,value:l},
+            (n>=HEAVY_TAGS?'⚠ ':'')+(STORE_NAMES[l]||l)+' — '+n+' tagged'))
         ),
         h('select',{value:sortBy,onChange:e=>setSortBy(e.target.value),
           style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
