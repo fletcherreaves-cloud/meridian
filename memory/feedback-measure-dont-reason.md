@@ -66,6 +66,30 @@ did. Running a script is not the same as the script succeeding.
 
 ---
 
+## Half 3 — Never guess in place of the owner's answer, and never guess twice
+
+Added 2026-08-08 at the owner's request, after guessing twice on one bug in one morning.
+
+**The rule:** when a first hypothesis is disproven, the next step is a MEASUREMENT, not a
+second hypothesis. Two guesses in a row on the same problem is the signal to stop and
+instrument instead.
+
+**What it cost (Notes 60 bug #1, FOB Analysis stuck at May 2026):**
+1. Guess one — *"qsr_fob was among the tables 500ing, so v4.871 probably fixed it."*
+   Reported to the owner as "probably already fixed". They checked. It was not.
+2. Guess two — injected a warning banner into what I assumed was the panel's top-level
+   render. It landed inside a KPI-strip renderer, created an unused variable, and the
+   build passed anyway because an unused const is legal. Had to be backed out.
+3. What actually worked: replicating the browser's exact request with curl, which showed
+   page 1 returning 2 bytes for anon vs 1.4 MB for service role — and then READING the
+   render before touching it, which revealed the panel **already had** a fallback
+   indicator. The real fix was making the existing 8px tooltip legible, not adding a
+   second one.
+
+**The generalisable failure:** I wrote code into a file I had not read at that location.
+"The build passed" is not evidence the change is correct — an unused variable, a banner
+rendered in the wrong container, and a misplaced closing paren all compile.
+
 ## How to apply
 
 - **Before diagnosing:** reproduce the failure directly — `curl` the endpoint, run the
@@ -79,7 +103,17 @@ did. Running a script is not the same as the script succeeding.
 - **When choosing a threshold**, pull the real distribution first. State the measurement in
   the code comment so the number can be re-derived and challenged later.
 - **State uncertainty as uncertainty.** "My leading suspicion is X, not acted on" is
-  useful. "It's X" when unverified is not.
+  useful. "It's X" when unverified is not. Never tell the owner something is "probably
+  fixed" — either verify it or say it is unverified.
+- **After one disproven hypothesis, instrument — do not hypothesise again.** Two guesses
+  in a row on the same bug means stop and measure.
+- **Read the code at the exact location before writing there.** Not the file, the
+  LOCATION. Grep-and-inject lands in the wrong function and still compiles.
+- **Before adding a UI affordance, check whether one already exists.** The FOB panel
+  already warned about manual-only fallback; it was simply too quiet to notice. Making
+  the existing signal legible beat adding a second one.
+- **A passing build is not verification.** Unused variables, mis-parented JSX and dead
+  code all build cleanly. Verify the behaviour, not the compile.
 
 Related: [[data-sourcing-standard]] and the v4.870 lesson that a failed read must never be
 indistinguishable from an empty one — the same family of error, at the system level.

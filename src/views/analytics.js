@@ -2989,8 +2989,16 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
         div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🥗 FOB Analysis'),
         fobHasCloud&&span({title:'FOB components fed by the auto qsr_fob cloud stream (no upload needed). Total Food Cost % still comes from an Operations Report upload.',
           style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'☁ Cloud auto'),
-        (qsrFobRows!==null&&!fobHasCloud)&&span({title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr}) — showing manual uploads only. Try reloading.`:'Cloud FOB stream returned no rows — showing manual uploads only.',
-          style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(248,113,113,.12)',color:'#f87171',border:'.5px solid rgba(248,113,113,.3)',cursor:'help'}},'⚠ manual only'),
+        // Notes 60 bug #1. This indicator already existed but was an 8px pill whose
+        // explanation lived in a TOOLTIP, so the owner read the truncated month list as
+        // missing data rather than a failed cloud read — the months stop at the last
+        // manual upload carrying sales (May 2026), which looks exactly like "no data
+        // after May". Say it in words, at a readable size, next to the Period selector
+        // that is showing the truncated list.
+        (qsrFobRows!==null&&!fobHasCloud)&&span({
+          title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr})`:'Cloud FOB stream returned no rows',
+          style:{fontSize:'10px',fontWeight:700,padding:'4px 9px',borderRadius:5,background:'rgba(248,113,113,.14)',color:'#f87171',border:'.5px solid rgba(248,113,113,.45)',cursor:'help',maxWidth:360,lineHeight:1.35}},
+          '⚠ Manual uploads only — the cloud FOB stream returned nothing, so Period stops at your last upload.'),
         // Month selector
         div({style:{display:'flex',flexDirection:'column',gap:1}},
           div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Period'),

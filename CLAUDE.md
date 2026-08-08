@@ -209,6 +209,11 @@ AI advisor built into Meridian. Fully deployed at v4.284.
   18 tables. `curl`-ing the actual failing request found the real cause in seconds. The same
   rule sets thresholds: the swing alarm's -10% comes from 676 measured store-weeks, and the
   count-completeness 75% from a measured bimodal distribution, not from numbers that felt right.
+  **No second guesses:** once a hypothesis is disproven, the next step is a MEASUREMENT, not
+  another hypothesis — and never tell the owner something is "probably fixed" without
+  verifying it. **Read the code at the exact LOCATION before writing there** (grep-and-inject
+  lands in the wrong function and still compiles), and **check whether an affordance already
+  exists** before adding one. A passing build is not verification.
   Full evidence in `memory/feedback-measure-dont-reason.md`.
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.

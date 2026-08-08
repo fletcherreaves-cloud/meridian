@@ -930,7 +930,14 @@ export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
     if (dates?.length) q = q.in('date', dates);
     else if (daysBack) q = q.gte('date', cutoffStr);
     return q;
-  });
+    // Labelled + smaller pages (Notes 60 bug #1). A 500-day window is ~13,200 rows and a
+    // 1000-row page is ~1.45 MB, so a full read is ~19 MB across 14 sequential requests —
+    // the same size class that timed out on qsr_raw_item_detail (v4.873). fetchAll returns
+    // [] if the FIRST page fails, and the FOB Analysis panel treats an empty cloud result
+    // as "no cloud data" and silently falls back to the manual stream, whose last month
+    // with sales is May 2026 — exactly the symptom reported. The label makes a failure
+    // name itself in the DATA INCOMPLETE banner instead of looking like stale months.
+  }, 400, 'qsr_fob');
   if (!data.length) return [];
   return data.map(r => ({
     loc:                       r.loc,
