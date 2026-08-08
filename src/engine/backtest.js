@@ -423,6 +423,34 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   // still returned a bad-period value). Auto-detection works for any
   // current or future recentOnly-flagged store with no per-store hardcoded
   // date; falls back to no restriction if it isn't confident, by design.
+  // ── Not-yet-eligible check: a store younger than its own LY lookback ──────────
+  // Dialed-In is an LY-based model — fetchLY resolves ~364 days back and every eval row
+  // without a real LY value is dropped. A store that has not been open a full year therefore
+  // has ZERO eligible rows, no matter how much recent data it has. This is arithmetic, not a
+  // data problem, and it cannot be fixed by widening a window.
+  //
+  // It used to surface as a red failure row identical to a genuine error — Ponce de Leon
+  // (43701, opened 2026-03-13) reported "recentOnly window starts 2027-04-16", which reads
+  // like a corrupted date rather than "this store is five months old". Verified 2026-08-08:
+  // 43701 has 133 rows spanning 2026-03-13 -> 2026-07-23 and ZERO rows before 2026, so its
+  // earliest possible LY lookup (2025-03-14) lands in a period when the store did not exist.
+  //
+  // Detected here, before the expensive work, so the panel can say so plainly.
+  const _firstRowDate = rows.length ? rows[0].date : null;   // rows are sorted ascending above
+  if(_firstRowDate){
+    const _lyReadyFrom = addD(_firstRowDate, 364);           // first day that can have a real LY
+    if(_lyReadyFrom > cutoff){
+      return {
+        _why:'not yet eligible — store opened '+dKey(_firstRowDate)+', needs a full year of '
+            +'history for LY-based calibration (eligible from '+dKey(_lyReadyFrom)+')',
+        _notYetEligible:true,
+        _openedOn:dKey(_firstRowDate),
+        _eligibleFrom:dKey(_lyReadyFrom),
+        _historyDays:Math.round((rows[rows.length-1].date-_firstRowDate)/864e5),
+      };
+    }
+  }
+
   const _modelAssign = DEFAULT_MODEL_ASSIGNMENTS[loc];
   const _isRecentOnly = !!(_modelAssign&&_modelAssign.recentOnly);
   let _windowStart = null;

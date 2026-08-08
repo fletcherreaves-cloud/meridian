@@ -1,6 +1,28 @@
 // @ts-nocheck
 const addD=(d,n)=>new Date(new Date(d).getTime()+n*86400000);
-const dKey=d=>{const dt=new Date(d);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');};
+// dKey: calendar day → "YYYY-MM-DD". Builds every per-(loc,date) index key in the app, so a
+// row's day must not depend on which representation it happens to carry.
+//
+// The string guard is load-bearing. `new Date('2025-07-15')` parses as UTC midnight while
+// getFullYear/getMonth/getDate read LOCAL, so in America/Chicago (UTC-5) that Date is
+// 2025-07-14 19:00 local and the old implementation returned "2025-07-14". Rows built by
+// loaders (`new Date(report_date + 'T00:00:00')` — local midnight) keyed correctly; rows
+// rehydrated from cache as strings keyed one day EARLY.
+//
+// Nothing fails while both sides of a lookup use the same form. It breaks when they diverge:
+// fetchLY queries laborIdx with dKey(date - 364d) as a Date against an index built from
+// string-dated rows, so every lookup missed — "0/146 rows had valid LY" (Notes 61).
+//
+// A date-only or ISO string ALREADY names a calendar day; round-tripping it through a timezone
+// can only corrupt it. Take the prefix verbatim, exactly as nDK does below.
+const dKey=d=>{
+  if(typeof d==='string'){
+    const m=/^(\d{4}-\d{2}-\d{2})/.exec(d);
+    if(m) return m[1];
+  }
+  const dt=d instanceof Date?d:new Date(d);
+  return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+};
 // nDK: normalize ANY date key → YYYY-MM-DD ISO string.
 // Handles: Date objects, full ISO datetimes ("2023-11-23T12:00:00.000Z"), date-only strings.
 // Used everywhere tag lookups happen so storage format never drifts.

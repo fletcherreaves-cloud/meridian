@@ -5226,7 +5226,11 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
         log.push({loc,status:'ok',mape:cal.mape,rows:rowCount});
       } else {
         const _reason=cal&&cal._why?cal._why:'returned bare null';
-        log.push({loc,status:'null',detail:_reason,rows:rowCount});
+        // A store that has not been open a full year cannot be DI-calibrated at all — the
+        // model resolves LY ~364 days back and there is nothing there. That is a STATUS, not
+        // a failure, so it is tracked separately and rendered as information below.
+        log.push({loc,status:cal&&cal._notYetEligible?'ineligible':'null',detail:_reason,rows:rowCount,
+                  eligibleFrom:cal&&cal._eligibleFrom,openedOn:cal&&cal._openedOn});
       }
       setStoreLog([...log]);
       await new Promise(r=>setTimeout(r,0));
@@ -5376,17 +5380,28 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
         div({style:{display:'flex',justifyContent:'space-between',padding:'4px 10px',
           background:'var(--surf3)',fontWeight:700,fontSize:'9px',color:'var(--text2)'}},
           span(null,'Last Calibration Run — '+storeLog.length+' stores processed'),
-          span({style:{color:'#10b981'}},storeLog.filter(s=>s.status==='ok').length+' succeeded')
+          span(null,
+            span({style:{color:'#10b981'}},storeLog.filter(s=>s.status==='ok').length+' succeeded'),
+            storeLog.filter(s=>s.status==='ineligible').length
+              ? span({style:{color:'var(--text3)'}},' · '+storeLog.filter(s=>s.status==='ineligible').length+' not yet eligible')
+              : null,
+            storeLog.filter(s=>s.status==='null'||s.status==='error').length
+              ? span({style:{color:'#f87171'}},' · '+storeLog.filter(s=>s.status==='null'||s.status==='error').length+' failed')
+              : null)
         ),
-        storeLog.filter(s=>s.status!=='ok').map((s,i)=>
-          div({key:i,style:{display:'flex',gap:8,padding:'3px 10px',
-            borderTop:'.5px solid var(--bdr)',background:'rgba(239,68,68,.04)'}},
-            span({style:{color:'#f87171',fontWeight:700,minWidth:14}},'✗'),
-            span({style:{fontWeight:600,minWidth:120}},sNameC(s.loc)),
+        storeLog.filter(s=>s.status!=='ok').map((s,i)=>{
+          // Not-yet-eligible is neutral: nothing is broken and there is nothing to fix until
+          // the store has a year of history. Showing it in red alongside real failures made a
+          // five-month-old store look like a bug (Notes 61 — Ponce de Leon).
+          const _inel=s.status==='ineligible';
+          return div({key:i,style:{display:'flex',gap:8,padding:'3px 10px',
+            borderTop:'.5px solid var(--bdr)',background:_inel?'transparent':'rgba(239,68,68,.04)'}},
+            span({style:{color:_inel?'var(--text3)':'#f87171',fontWeight:700,minWidth:14}},_inel?'ⓘ':'✗'),
+            span({style:{fontWeight:600,minWidth:120,color:_inel?'var(--text2)':undefined}},sNameC(s.loc)),
             span({style:{color:'var(--text3)'}},'Rows: '+s.rows),
-            span({style:{color:'#f87171',flex:1}},'→ '+s.detail)
-          )
-        )
+            span({style:{color:_inel?'var(--text3)':'#f87171',flex:1}},'→ '+s.detail)
+          );
+        })
       ),
       calibCount===0&&!running&&div({style:{textAlign:'center',padding:32,color:'var(--text3)',fontSize:'11px'}},
         'No calibrations yet. Hit "Calibrate All" to run.\nEach store needs ~60+ days of history to calibrate.\nTakes about 10-15 seconds for the full district.'),
