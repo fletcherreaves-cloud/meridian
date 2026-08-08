@@ -86,6 +86,11 @@ function mapGlimpse(r) {
     all_net_sales: num(r.allNetSales), sales_vs_prior: num(r.salesVsPrior), sales_vs_prior_pct: num(r.salesVsPriorPct),
     dt_sales: num(r.dtSales), dt_gc: num(r.dtGC), dt_avg_check: num(r.dtAvgCheck),
     gc: num(r.gc), avg_check: num(r.avgCheck), labor_pct: num(r.laborPct),
+    // Employee / manager meals (Notes 60). parseDailyGlimpse extracts these; without
+    // them listed HERE the values are silently dropped on the way to Supabase, since
+    // this map is an explicit column list rather than a passthrough. Manager meals come
+    // from the Glimpse column labelled "Manager Discount Amt".
+    emp_meal_amt: num(r.empMealAmt), mgr_meal_amt: num(r.mgrMealAmt),
     promo_amt: num(r.promoAmt), promo_pct: num(r.promoPct),
     pos_over_cnt: num(r.posOverCnt), pos_over_amt: num(r.posOverAmt),
     cash_os: num(r.cashOS), cash_os_pct: num(r.cashOSPct),
