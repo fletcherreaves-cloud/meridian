@@ -311,6 +311,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.915', date:'2026-08-08', changes:[
+    'Clicks no longer wait for the store rebuild. Every time a data loader finished, the app rebuilt all 27 stores immediately and the screen froze until it was done — measured at up to half a second each, and it ran sixteen times in one session. That work now happens at low priority, so a click, a menu or closing a panel goes through first. The numbers are unchanged; they just no longer block what you are doing.',
+  ]},
   {version:'4.914', date:'2026-08-08', changes:[
     'Added an interaction tracer for the sluggish-click report. Load the app with ?clicktrace=1, click around, then run mfClickTrace() in the console — it lists which clicks blocked the screen and for how long, and names the work that ran. Off unless switched on.',
   ]},
@@ -2650,10 +2653,27 @@ function App() {
     return merged;
   },[ds,userTargets]);
 
+  // ── rawStores: the single most expensive computation in the app ──────────────
+  // buildStore runs compute6wk + buildBrief for all 27 stores. MEASURED with ?clicktrace=1 on
+  // the owner's machine, 2026-08-08: 16 recomputes, worst 496ms, TOTAL 7,100ms of blocked main
+  // thread. That is the "[Violation] 'click' handler took 1382ms" report — closing a panel cost
+  // up to 6,492ms because the close triggered a render that landed on this.
+  //
+  // The memo's dependencies were already correct; the problem is how OFTEN they legitimately
+  // change. There are 32 setDs call sites, and startup fires many of them as each loader
+  // resolves — so `ds` gets a new identity a dozen-plus times and every one rebuilds all 27
+  // stores SYNCHRONOUSLY, blocking whatever the user is trying to do.
+  //
+  // useDeferredValue marks this recompute as low-priority: React 19 renders the urgent update
+  // (the click, the panel opening) first and rebuilds the stores afterwards, interruptibly. The
+  // work is unchanged and the result is identical — it simply stops owning the main thread at
+  // the moment of a click. The store list may lag one frame behind a fresh `ds`, which is
+  // invisible here and vastly preferable to a half-second freeze per loader.
+  const dsDeferred = React.useDeferredValue(ds);
   const rawStores = useMemo(()=>{
-    if(!ds) return [];
-    return _traceMark('rawStores(buildStore x27)', () => ds.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,ds,{...settings,targets:mergedTargets})));
-  },[ds,settings,mergedTargets]);
+    if(!dsDeferred) return [];
+    return _traceMark('rawStores(buildStore x27)', () => dsDeferred.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,dsDeferred,{...settings,targets:mergedTargets})));
+  },[dsDeferred,settings,mergedTargets]);
 
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
 
