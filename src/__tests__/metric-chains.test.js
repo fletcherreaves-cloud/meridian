@@ -6,24 +6,19 @@ import { METRIC_SOURCES, metricDaily, metricSeries, MANUAL_ONLY_METRICS } from '
 // names a field its source doesn't emit resolves to nothing and silently falls through —
 // exactly the blank-tile failure this work exists to remove — so pin them.
 const EMITS = {
-  auditRows: ['empMealDisc', 'mgrMealAmt', 'mgrMealCnt', 'manualRefAmt', 'drawerOpens', 'posOverCnt'],
-  ctrlRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'posOverAmt',
-             'posOverCnt', 'promoAmt', 'promoPct', 'tRedACnt', 'tRedBCnt', 'laborPct',
-             'tpph', 'otHrs', 'cashOSPct', 'cashOSAmt', 'tRedAPct', 'tRedBPct',
-             'drawerOpens', 'discPct', 'actHrs', 'actVsNeed', 'salaryMgrHrs',
-             'empMealAmt', 'mgrMealAmt', 'empMealCnt', 'mgrMealCnt', 'manualRefAmt', 'depositAmt'],   // ⚠️ this list has now
-             // been stale THREE times in one day. It is hand-maintained against loaders that keep
-             // gaining fields; it should be generated from src/lib/supabase.js instead.   // actHrs added 2026-08-08 — supabase.js:1143 maps act_hrs
-  opsCashRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'tRedACnt',
-                'tRedBCnt', 'tRedAPct', 'tRedBPct', 'cashOSAmt', 'cashOSPct', 'discPct',
-                'drawerOpens'],
-  cashRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'posOverAmt',
-             'posOverCnt', 'avgCheck', 'cashOS', 'cashOSPct'],
-  glimpseRows: ['posOverAmt', 'posOverCnt', 'promoAmt', 'promoPct', 'avgCheck', 'laborPct',
-                'cashOS', 'cashOSPct', 'gc', 'kvst', 'kvsHealthy', 'oepe', 'parkedPct', 'empMealAmt', 'mgrMealAmt', 'empMealCnt', 'mgrMealCnt'],
-  salesLedgerRows: ['avgCheck', 'dtPctTotal'],
-  schedRows: ['needFloor', 'schFloor', 'needVLH', 'schVLH', 'fixGuideHrs', 'schFixHrs', 'salMgrHrs', 'crewHrs', 'schedTotHrs'],
-  laborRows: ['avgCheck', 'dtPctTotal', 'sales', 'gc', 'laborPct', 'tpph', 'otHrs'],
+  laborRows: ['avgCheck', 'date', 'dtPctTotal', 'gc', 'gteCol', 'gteVal', 'label', 'laborPct', 'loc', 'orderCol', 'otDollar', 'otHrs', 'sales', 'select', 'table', 'tpph'],
+  ctrlRows: ['actHrs', 'actVsNeed', 'avgRate', 'cashOSAmt', 'cashOSPct', 'cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'crewHrs', 'date', 'depositAmt', 'discAmt', 'discCnt', 'discPct', 'drawerOpens', 'empMealAmt', 'gteCol', 'gteVal', 'label', 'laborPct', 'loc', 'manualRefAmt', 'mgrMealAmt', 'orderCol', 'otDollar', 'otHrs', 'pettyAmt', 'posOverAmt', 'posOverCnt', 'promoAmt', 'promoCnt', 'promoPct', 'salaryMgrHrs', 'select', 'spph', 'tRedACnt', 'tRedAPct', 'tRedBCnt', 'tRedBPct', 'table', 'tpph'],
+  opsRows: ['date', 'gteCol', 'gteVal', 'kvst', 'kvsu', 'label', 'loc', 'oepe', 'orderCol', 'park', 'r2p', 'select', 'table'],
+  auditRows: ['avgCheck', 'cashOSDollar', 'cashOSPct', 'date', 'drawerGC', 'drawerOpens', 'drawerSales', 'emp', 'empMealCh', 'empMealDisc', 'gteCol', 'gteVal', 'label', 'loc', 'manualRefAmt', 'mgrMealAmt', 'mgrMealCnt', 'orderCol', 'posOverAmt', 'posOverCnt', 'promoAmt', 'promoCnt', 'promoPct', 'refundCash', 'refundCashless', 'refundCnt', 'select', 'tRedAAvg', 'tRedACnt', 'tRedADollar', 'tRedAPct', 'tRedBAvg', 'tRedBCnt', 'tRedBDollar', 'tRedBPct', 'table'],
+  peaksRows: ['_peakSvc', 'avgCTP', 'avgCheck', 'avgDTTTL', 'date', 'dtGC', 'dtLineTime', 'dtOrderTime', 'dtWin1', 'dtWin2', 'gc', 'gteCol', 'gteVal', 'kvst', 'kvsu', 'label', 'loc', 'netSales', 'oepe', 'orderCol', 'parkCnt', 'parkPct', 'parkTime', 'prodSales', 'r2p', 'select', 'slice', 'spph', 'table', 'tpph'],
+  glimpseRows: ['_isCloud', 'allNetSales', 'appPctSales', 'avgCheck', 'brkCarCnt', 'cashOS', 'cashOSPct', 'date', 'digitalPctSales', 'dnCarCnt', 'dtAvgCheck', 'dtGC', 'dtSales', 'empMealAmt', 'empMealCnt', 'gc', 'gteCol', 'gteVal', 'kvsHealthy', 'kvsItems', 'kvst', 'label', 'laborPct', 'loc', 'luCarCnt', 'mgrMealAmt', 'mgrMealCnt', 'oepe', 'oepeFull', 'orderCol', 'parkedPct', 'posOverAmt', 'posOverCnt', 'promoAmt', 'promoPct', 'salesVsPrior', 'salesVsPriorPct', 'select', 'tRedDeletedCnt', 'tRedVoidCnt', 'table'],
+  cashRows: ['_isCloud', 'allNetSales', 'avgCheck', 'cashOS', 'cashOSPct', 'cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'date', 'doorDashGC', 'doorDashSales', 'gc', 'grubhubGC', 'grubhubSales', 'gteCol', 'gteVal', 'kioskEatIn', 'kioskTakeout', 'label', 'loc', 'mopEatIn', 'mopTakeout', 'orderCol', 'posOverAmt', 'posOverCnt', 'select', 'tRedDeletedCnt', 'tRedVoidCnt', 'table', 'total3poGC', 'total3poSales', 'uberEatsGC', 'uberEatsSales'],
+  salesLedgerRows: ['_isCloudLedger', 'actHrs', 'allNetSales', 'allNetSalesLY', 'avgCheck', 'bfAvgChk', 'bfGC', 'bfPctTotal', 'bfSales', 'date', 'delivAvgChk', 'delivGC', 'delivPctTotal', 'delivSales', 'dtAvgChk', 'dtGC', 'dtPctTotal', 'dtSales', 'eatInGC', 'eatInSales', 'fcGC', 'fcPctTotal', 'fcSales', 'gc', 'gteCol', 'gteVal', 'inStoreGC', 'inStorePctTotal', 'inStoreSales', 'kioskAvgChk', 'kioskGC', 'kioskPctTotal', 'kioskSales', 'label', 'laborPct', 'loc', 'mopAvgChk', 'mopGC', 'mopPctTotal', 'mopSales', 'orderCol', 'otHrs', 'sales', 'salesVsLYPct', 'select', 'spph', 'table', 'tpph'],
+  schedRows: ['adjFcstSales', 'crewHrs', 'date', 'fcstSales', 'fcstTCs', 'fixGuideHrs', 'idealTotHrs', 'laborPct', 'loc', 'needFloor', 'needVLH', 'projFloor', 'projVLH', 'salMgrHrs', 'sales', 'salesDiff', 'schFixHrs', 'schFloor', 'schVLH', 'schVLHOverNeed', 'schVsIdealDiff', 'schedTotHrs', 'tcs', 'tcsDiff', 'totHrsDiff', 'tpmh', 'vlhDiff'],
+  opsCashRows: ['cashOSAmt', 'cashOSPct', 'cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'discPct', 'drawerOpens', 'mealDiscAmt', 'tRedACnt', 'tRedAPct', 'tRedBCnt', 'tRedBPct'],
+  opsLaborRows: ['actual', 'laborPct', 'needed', 'otDollar', 'otHrs'],
+  opsServiceRows: ['kvsHealthy', 'kvst', 'oepe', 'park'],
+  qsrActSummaryRows: ['_dtCars', '_dtHeld', '_dtStore', '_dtTotal', '_fcCnt', '_fcDrawer', '_fcServe', '_isQsrAct', '_kvsH', '_kvsU', '_mfyCnt', '_mfyTime', 'actHrs', 'actVsNeed', 'allNetSales', 'date', 'gc', 'kvsHealthy', 'kvst', 'lyGc', 'lySales', 'needHrs', 'oepe', 'projGC', 'projSales', 'r2p', 'sales', 'tpph', 'txns'],
 };
 
 const NEW_IN_PHASE1 = [

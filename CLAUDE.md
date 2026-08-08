@@ -201,6 +201,11 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ## Dev Rules
 
+- **Regenerate the loader field map after touching a loader:** `node scripts/gen-loader-emits.mjs --write`.
+  `src/__tests__/metric-chains.test.js` asserts every metric chain names a field its loader
+  actually emits — it caught a real error on every round of the 2026-08-08 data-contract work
+  (four chains would otherwise have shipped as silent zeros). Its field list used to be typed by
+  hand and went stale four times in that one day.
 - **Measure it, don't reason about it (standing rule).** Reproduce a failure against the real
   system *before* forming a theory, and read a command's OUTPUT before reporting what it did.
   Be most suspicious when a cause feels obvious because it matches a past incident in this repo
