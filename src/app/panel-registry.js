@@ -33,7 +33,7 @@
 //   section  NEW information architecture (Notes 54). Used by the v2 sidebar only —
 //            the v1 sidebar keeps its existing literal list until v2 is adopted.
 export const PANELS = [
-  { id:'about', label:'Changelog', icon:'ℹ️', perm:null, kind:'nav', section:'help' },
+  { id:'about', label:'About', icon:'ℹ️', perm:null, kind:'nav', section:'help' },
   { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'reports' },
   { id:'aiscan', label:'Anomaly Scan', icon:'🔍', perm:'analytics.ai', kind:'optional', section:'intelligence' },
   { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'notifications' },
