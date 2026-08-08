@@ -362,24 +362,27 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
 
 async function calibrateStore(loc, ds, settings, onProgress) {
   try{
-  // Phase 1: Gather deduplicated rows — AUTO-FIRST, per the standing data-sourcing rule.
+  // Phase 1: Gather deduplicated rows
   //
-  // This previously read ds.laborRows directly. ds.laborRows is cloud-backed (loadLaborRows
-  // reads the labor_rows table), so it LOOKED safe — but that table is fed by the manual Labor
-  // Report upload and lags badly: on 2026-08-08 its newest row was 2026-07-23, sixteen days
-  // stale, while qsr_labor_summary carried all 27 stores through that same day. The recent
-  // windows are the ones that fall off a cliff first, which is exactly why the Dialed-In
-  // 1W/2W/4W/6W trend columns rendered "—" (Notes 61): _computePeriodMape(1) filters to the
-  // last 7 days, found zero rows, and returned null.
+  // DELIBERATELY ds.laborRows, NOT the metric-source resolver. v4.904 changed this to
+  // metricSeries('sales') to fix the Dialed-In 1W/2W trend columns and BROKE CALIBRATION FOR
+  // ALL 27 STORES ("precomputed<35 (21/195 rows had valid LY)"). Reverted in v4.906.
   //
-  // metricSeries resolves the 'sales' chain per DAY (laborRows -> qsrActSummaryRows), so days
-  // the manual upload covers are unchanged and the gap since the last upload is filled from
-  // the auto stream. Deduping is inherent — the series is keyed by date.
-  const _calEnd = new Date();
-  const _calSeries = metricSeries(ds, loc, { s: addD(_calEnd, -420), e: _calEnd }, 'sales');
-  const rows = Object.entries(_calSeries)
-    .filter(([, v]) => v > 0)
-    .map(([dk, v]) => ({ loc, date: new Date(dk + 'T00:00:00'), sales: v }));
+  // The reason is structural, not a tuning problem: this row set feeds THREE things that all
+  // assume a single coherent history — the grid search, detectCleanDataStart (which derives a
+  // store's clean-data boundary from row shape, and produced absurd late boundaries when the
+  // row set changed: Mossy Head's window started 2026-07-25, leaving 0 eval rows), and the
+  // fetchLY precompute, which resolves LY against ds.laborIdx. Feeding rows from one universe
+  // while LY resolves against another silently invalidates the pairing.
+  //
+  // The staleness problem this was trying to solve is REAL — labor_rows had nothing newer than
+  // 2026-07-23 on 2026-08-08 — but it belongs in _computePeriodMape, which is the only part
+  // that actually needs recent days. See the auto-first note there.
+  const seen=new Set();
+  const rows=ds.laborRows.filter(r=>{
+    if(r.loc!==loc||r.sales<=0)return false;
+    const k=dKey(r.date);if(seen.has(k))return false;seen.add(k);return true;
+  });
   // CRITICAL FIX (v4.195): rows was never sorted by date before .slice(-400)
   // below — meaning "last 400 rows" actually meant "whatever 400 rows happen
   // to be last in ds.laborRows's array order," which depends on upload order
@@ -598,13 +601,32 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   // existed here previously (old code did ly*lyW + ly*(1-lyW), using `ly`
   // on both sides instead of `ly` and `distDOWAvg` — lyW had zero effect on
   // these displayed numbers regardless of what the grid search found).
+  // AUTO-FIRST, but scoped to the trend windows only (v4.906).
+  //
+  // These 6W/4W/2W/1W numbers are the ONLY part of calibration that needs recent days, and
+  // they were rendering "—" because `rows` comes from ds.laborRows, whose table had nothing
+  // newer than 2026-07-23 on 2026-08-08 — so the 1W filter matched zero rows and returned null.
+  //
+  // v4.904 tried to fix that by re-sourcing `rows` itself and broke calibration for all 27
+  // stores, because `rows` also feeds the grid search, detectCleanDataStart and the fetchLY
+  // precompute. Scoping the auto-first read to HERE fixes the reported symptom without touching
+  // any of that: the chosen parameters, the eval window and the Full MAPE are bit-identical.
+  //
+  // LY still resolves against ds.laborIdx below, which is correct — laborRows holds multi-year
+  // history (back to 2022-01-01), so a recent day's -364 lookup lands in real data even though
+  // the recent END of that table is stale.
+  const _periodSeries=metricSeries(ds,loc,{s:new Date(Date.now()-6*7*864e5),e:new Date()},'sales');
+  const _periodRowsAll=Object.entries(_periodSeries)
+    .map(([dk,v])=>({loc,date:new Date(dk+'T00:00:00'),sales:v}))
+    .sort((a,b)=>a.date-b.date);
+
   const _computePeriodMape=(weeks)=>{
     const cut=new Date(Date.now()-weeks*7*864e5);
     // Same recentOnly window restriction as the main eval window above —
     // for consistency, and to correctly handle brand-new stores where even
     // a 6-week-back cut could still overlap the LY-lookback-contamination
     // zone near the very start of available history.
-    const periodRows=rows.filter(r=>r.date>=cut&&r.sales>0&&!_uev[dKey(r.date)]&&(!_windowStart||r.date>=_windowStart));
+    const periodRows=_periodRowsAll.filter(r=>r.date>=cut&&r.sales>0&&!_uev[dKey(r.date)]&&(!_windowStart||r.date>=_windowStart));
     if(!periodRows.length||!bestParams) return null;
     const apes=[];
     for(const row of periodRows){
