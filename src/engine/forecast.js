@@ -883,9 +883,9 @@ function compute6wk(loc,ds,wb){
     // Verified 2026-08-08 against the live column lists of the auto/emailed tables; see
     // MANUAL_ONLY_METRICS in metric-source.js. Routing them through the resolver would
     // add nothing, so they keep the direct avg6 read.
-    empMealAmt:avg6(ctrlL,loc,'empMealAmt',wb),mgrMealAmt:avg6(ctrlL,loc,'mgrMealAmt',wb),
-    manualRefAmt:avg6(ctrlL,loc,'manualRefAmt',wb),
-    depositAmt:avg6(ctrlL,loc,'depositAmt',wb),
+    empMealAmt:M('empMealAmt'),mgrMealAmt:M('mgrMealAmt'),
+    manualRefAmt:M('manualRefAmt'),
+    depositAmt:M('depositAmt'),
     floorMgmtNeeded:M('floorMgmtNeeded'),
     floorHrsSched:M('floorHrsSched'),
     fixedContractHrs:M('fixedContractHrs'),

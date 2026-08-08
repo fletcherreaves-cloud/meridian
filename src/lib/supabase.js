@@ -2212,6 +2212,8 @@ export async function loadGlimpse(daysBack = 45) {
     allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
     dtSales: r.dt_sales, dtGC: r.dt_gc, dtAvgCheck: r.dt_avg_check,
     gc: r.gc, avgCheck: r.avg_check, laborPct: r.labor_pct,
+    empMealAmt:  r.emp_meal_amt,
+    mgrMealAmt:  r.mgr_meal_amt,
     promoAmt: r.promo_amt, promoPct: r.promo_pct,
     posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
     cashOS: r.cash_os, cashOSPct: r.cash_os_pct,

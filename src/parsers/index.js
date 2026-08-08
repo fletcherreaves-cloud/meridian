@@ -1368,6 +1368,13 @@ function parseDailyGlimpse(wb, dateHint){
     tRedDeletedCnt: fc(h,'T Red After: Deleted','T-Red After Deleted','Deleted Cnt','T Red Deleted'),
     oepe:     fc(h,'OEPE W/O Parked','OEPE Without Parked','OEPE W/o Parked'),
     oepeFull: fc(h,'OEPE W/ Parked','OEPE With Parked','OEPE w/ Parked'),
+    // Employee / manager meals (Notes 60, owner-confirmed 2026-08-08: both are in the
+    // Daily Glimpse, and MANAGER MEALS IS LABELLED "Manager Discount Amt" in the report —
+    // an odd label, so several candidates are listed rather than assuming one.
+    // fc() tries each name in turn and yields 0 when none match, so an unmatched header
+    // degrades to "no data" rather than breaking the parse.
+    empMealAmt: fc(h,'Emp Meal Amt','Emp Meal $','Employee Meal Amt','Emp Meal Disc $'),
+    mgrMealAmt: fc(h,'Manager Discount Amt','Mgr Discount Amt','Manager Meal Amt','Mgr Meal $'),
     parkedPct:fc(h,'Parked %','DT Parked %'),
     kvst:     fc(h,'KVS Time Per GC','KVS Time/GC','KVS Time'),
     kvsItems: fc(h,'KVS Items / GC','KVS Items/GC'),
@@ -1393,6 +1400,8 @@ function parseDailyGlimpse(wb, dateHint){
       dtAvgCheck:parseNum(r[C.dtAvgCheck]),
       gc:parseNum(r[C.stwGC]),
       avgCheck:parseNum(r[C.avgCheck]),
+      empMealAmt:parseNum(r[C.empMealAmt]),
+      mgrMealAmt:parseNum(r[C.mgrMealAmt]),
       laborPct:parsePct(r[C.laborPct]),
       promoAmt:parseNum(r[C.promoAmt]),
       promoPct:parsePct(r[C.promoPct]),

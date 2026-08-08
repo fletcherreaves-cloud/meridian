@@ -246,13 +246,31 @@ export const DERIVED_METRICS = {
 };
 Object.assign(METRIC_SOURCES, DERIVED_METRICS);
 
+// ── Meals & manual refunds (Notes 60, owner-confirmed 2026-08-08) ───────────
+// The owner corrected these off the manual-only list: employee and manager meals are in
+// the Daily Glimpse (manager meals labelled "Manager Discount Amt"), and manual refunds
+// are on the Register Audit. Glimpse is EMAILED/auto so it leads the manual Controls
+// upload; auditRows sits last as deeper history — it is a manual upload with no pull
+// script (newest row 2026-06-30 when checked), so it adds fallback depth, not freshness.
+//
+// ⚠️ The Glimpse leg only starts producing values once daily_glimpse_daily has the two new
+// columns AND a report has been parsed since — see supabase/schema-glimpse-meals.sql.
+// Until then this chain resolves from Controls/Audit exactly as before, so wiring it early
+// is safe.
+Object.assign(METRIC_SOURCES, {
+  empMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'empMealAmt'], ['ctrlRows', 'empMealAmt'], ['auditRows', 'empMealDisc']] },
+  mgrMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'mgrMealAmt'], ['ctrlRows', 'mgrMealAmt'], ['auditRows', 'mgrMealAmt']] },
+  manualRefAmt: { mode: 'pos', srcs: [['ctrlRows', 'manualRefAmt'], ['auditRows', 'manualRefAmt']] },
+  // Deposit $ — ctrl_rows carries it with 41,287 non-zero rows. It was on the manual-only
+  // list purely because I checked the EMAILED streams and never checked whether the
+  // Controls loader emitted it. Single-source for now: no auto stream carries deposits,
+  // so this is fallback depth of one until a cash-sheet pull adds it.
+  depositAmt:   { mode: 'pos', srcs: [['ctrlRows', 'depositAmt']] },
+});
+
 export const MANUAL_ONLY_METRICS = {
-  // Controls report
-  empMealAmt:   'Employee meals $ — Controls upload only',
-  mgrMealAmt:   'Manager meals $ — Controls upload only',
-  manualRefAmt: 'Manual refunds $ — Controls upload only',
-  depositAmt:   'Deposit $ — Controls upload only',
-  // Labor / MBI report
+  // Empty as of 2026-08-08. Every metric compute6wk reads now resolves through a chain
+  // or a derivation. Kept as the documented home for anything genuinely source-less.
 };
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);
