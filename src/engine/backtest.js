@@ -5,6 +5,7 @@ import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, DEF_SETTINGS, MODEL_ASSIGNM
 import { forecastDay, getModelAssignment, saveModelOverride, compute6wk, calcOpsF, getDOWTrend,
   effectivePlusUp, fetchLY, getStoreOrg, getDOWSpecificTrend, getWxAdj, _masgnInvalidate } from '../engine/forecast.js';
 import { TH } from '../utils/fmt.js';
+import { metricSeries } from './metric-source.js';
 
 // CALIBRATE STORE — Per-store grid search for optimal forecast params
 // v4.195 rewrite: previously the grid search's evaluation formula was a
@@ -361,12 +362,24 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
 
 async function calibrateStore(loc, ds, settings, onProgress) {
   try{
-  // Phase 1: Gather deduplicated rows
-  const seen=new Set();
-  const rows=ds.laborRows.filter(r=>{
-    if(r.loc!==loc||r.sales<=0)return false;
-    const k=dKey(r.date);if(seen.has(k))return false;seen.add(k);return true;
-  });
+  // Phase 1: Gather deduplicated rows — AUTO-FIRST, per the standing data-sourcing rule.
+  //
+  // This previously read ds.laborRows directly. ds.laborRows is cloud-backed (loadLaborRows
+  // reads the labor_rows table), so it LOOKED safe — but that table is fed by the manual Labor
+  // Report upload and lags badly: on 2026-08-08 its newest row was 2026-07-23, sixteen days
+  // stale, while qsr_labor_summary carried all 27 stores through that same day. The recent
+  // windows are the ones that fall off a cliff first, which is exactly why the Dialed-In
+  // 1W/2W/4W/6W trend columns rendered "—" (Notes 61): _computePeriodMape(1) filters to the
+  // last 7 days, found zero rows, and returned null.
+  //
+  // metricSeries resolves the 'sales' chain per DAY (laborRows -> qsrActSummaryRows), so days
+  // the manual upload covers are unchanged and the gap since the last upload is filled from
+  // the auto stream. Deduping is inherent — the series is keyed by date.
+  const _calEnd = new Date();
+  const _calSeries = metricSeries(ds, loc, { s: addD(_calEnd, -420), e: _calEnd }, 'sales');
+  const rows = Object.entries(_calSeries)
+    .filter(([, v]) => v > 0)
+    .map(([dk, v]) => ({ loc, date: new Date(dk + 'T00:00:00'), sales: v }));
   // CRITICAL FIX (v4.195): rows was never sorted by date before .slice(-400)
   // below — meaning "last 400 rows" actually meant "whatever 400 rows happen
   // to be last in ds.laborRows's array order," which depends on upload order
