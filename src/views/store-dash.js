@@ -1172,6 +1172,26 @@ function CtrlScorecard({store}) {
     ]},
   ];
 
+  // A metric with ZERO observations must render '—', not 0.00%. avg6 returns 0 for both
+  // "no data" and a genuine zero, so compute6wk now ships a `_cov` observation-count map.
+  // Without this a store with no Controls upload showed a full column of 0.00% AND the
+  // pass functions graded every one of them GREEN — missing data presented as compliance,
+  // which is worse than showing nothing.
+  //
+  // The row tuples carry values rather than field names, so this maps label → field once
+  // instead of restructuring twenty tuples.
+  const COV_FIELD = {
+    'Cash Over/Short %':'cashOSPct', 'Drawer Opens/Day':'drawerOpens',
+    'T-Red After %':'tRedAPct', 'T-Red Before %':'tRedBPct',
+    'POS Overrings/Day':'posOverCnt', 'Manual Refund/Day':'manualRefAmt',
+    'Cash Refund/Day':'cashRefCnt', 'Discount % Sales':'discPct',
+    'Emp Meal/Day':'empMealAmt', 'Mgr Meal/Day':'mgrMealAmt', 'OT Hours/Day':'otHrs',
+  };
+  const _cov = (store.p && store.p._cov) || null;
+  const _noData = (label) => {
+    const f = COV_FIELD[label];
+    return !!(f && _cov && _cov[f] === 0);
+  };
   const fmtV = (v, fmt) => {
     if(v==null) return '—';
     if(fmt==='pct3') return fP(v,2);
@@ -1195,15 +1215,18 @@ function CtrlScorecard({store}) {
         tbl({className:'sc-tbl', style:{borderTop:'none',borderRadius:'0 0 6px 6px'}},
           h('thead',null, h(THead)),
           h('tbody',null, g.rows.map(([l,v6,v2,v4,tgt,passFn,fmt,note],ri) => {
-            const pass = passFn&&v2!=null ? passFn(v2) : null;
+            // Do not grade a metric we have no observations for — an absent value must
+            // not score as a pass.
+            const noData = _noData(l);
+            const pass = (!noData && passFn && v2!=null) ? passFn(v2) : null;
             const tgtStr = tgt!=null?(fmt.startsWith('pct')?fP(tgt,2):fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—';
-            const varV = v2!=null&&tgt!=null ? v2-tgt : null;
+            const varV = (!noData && v2!=null && tgt!=null) ? v2-tgt : null;
             const varS = varV!=null ? ((varV>=0?'+':'')+fmtV(Math.abs(varV),fmt).replace('$','')).replace('--','-') : '—';
             return tr({key:ri},
               td({style:{padding:'5px 8px',fontSize:'10px',color:'var(--text2)'}}, l),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,color:'var(--text)'}}, fmtV(v2,fmt)),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, fmtV(v4,fmt)),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'rgba(255,255,255,.3)'}}, fmtV(v6,fmt)),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,color:'var(--text)'}}, (noData?'—':fmtV(v2,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, (noData?'—':fmtV(v4,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'rgba(255,255,255,.3)'}}, (noData?'—':fmtV(v6,fmt))),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, tgtStr),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,
                 color:pass===null?'var(--text3)':pass?'#10b981':'#ef4444'}}, varV!=null?varS:'—'),

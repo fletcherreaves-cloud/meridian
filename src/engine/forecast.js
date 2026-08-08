@@ -420,6 +420,20 @@ function avg6(rows,loc,field,wb){
   return cnt?sum/cnt:0;
 }
 
+// How many observations avg6 actually found. avg6 returns 0 for "no data", which is
+// indistinguishable from a real zero — and the scorecards only dash on null, so a store
+// with no Controls upload rendered a wall of 0.00% that the pass functions then graded
+// as PASSING GREEN. Missing data was being presented as compliance.
+//
+// avg6's contract is deliberately unchanged (26 call sites, and most consumers do
+// arithmetic on the result). This adds the missing information instead of altering it.
+function obs6(rows,loc,field,wb){
+  const cut=new Date(Date.now()-wb*7*86400000);
+  let cnt=0;
+  for(const r of rows){if(r.loc!==loc||r.date<cut)continue;const v=r[field];if(typeof v==='number'&&v!==0)cnt++;}
+  return cnt;
+}
+
 // SECTION 5: ANALYTICS ENGINE
 function fetchLY(lIdx,lRows,loc,date,userEvents){
   // Returns the ACTUAL historical sales for the same DOW, ~52 weeks back.
@@ -861,6 +875,17 @@ function compute6wk(loc,ds,wb){
     variableNeeded:avg6(laborL,loc,'variableNeeded',wb),
     oppCostPct:avg6(laborL,loc,'oppCostPct',wb),
     oppCostDollar:avg6(laborL,loc,'oppCostDollar',wb)};
+  // Coverage map: how many real observations backed each metric. avg6 returns 0 for
+  // "no data", which the scorecards graded as a passing zero — see obs6's note. Consumers
+  // can now tell a genuine 0 from an absent metric and render '—' instead of green.
+  r._cov=(()=>{
+    const c={};
+    const add=(rows,fields)=>{for(const f of fields)c[f]=obs6(rows,loc,f,wb);};
+    add(ctrlL,['cashOSPct','tRedAPct','tRedBPct','drawerOpens','posOverCnt','cashRefCnt',
+               'discPct','manualRefAmt','empMealAmt','mgrMealAmt','otHrs','tpph','laborPct']);
+    add(opsL, ['oepe','r2p','kvst','park','kvsu']);
+    return c;
+  })();
   let kvsuS=0,kvsuC=0;const cut=new Date(Date.now()-wb*7*86400000);
   for(const row of opsL){if(row.date<cut||!row.kvsu)continue;kvsuS+=row.kvsu;kvsuC++;}
   r.kvsu=kvsuC?kvsuS/kvsuC:0;
@@ -1325,6 +1350,12 @@ function InfoIcon({articleKey, inline}) {
 function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(!ds)return{date,loc,ly:0,lyAdj:0,t2:0,t4:0,t6:0,forecast:0,actual:0,goal:0,varPct:null,pass:null,isFuture:true,opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:true};
   const t=tgt||ds.targets[loc]||DEFAULT_TARGETS[loc]||{};
+  // Goal = last year grown by the store's target growth. The main pipeline computes this
+  // at the bottom of the function, but the AE / EWMA / simple short-circuits above it all
+  // returned `goal:0` — and since all 27 stores are assigned model 'ae', the Goal column
+  // was dead for every store, always. Same formula, hoisted so every return path can use
+  // it. Falls back to 0 when there is no LY, which is honest: no LY, no goal.
+  const _goalOf=(ly)=>(ly>0?Math.round(ly*(1+(t.tGrowth||.05))):0);
   const anchor=(ds.lastActual&&ds.lastActual[loc])||addD(new Date(),-1);
   // isFuture: date is after the last known actual OR after today (whichever is more conservative)
   const todayStart=sodOf(new Date());
@@ -1361,10 +1392,19 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date,settings&&settings._aeStrictParams);
     if(_aeFcst&&_aeFcst>0){
       const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
-      const _aeORow=fetchRow(ds.opsIdx,loc,date);const _aeCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
+      // WAS: fetchRow(ds.opsIdx/ds.ctrlIdx) — raw ds.opsRows / ds.ctrlRows, i.e. the
+      // MANUAL uploads only. That violates the standing auto-first rule and is why the
+      // Forecast Table showed '—' for OEPE / TPPH / Labor% on recent days: those days are
+      // served by Glimpse and the DAR, which the raw read cannot see. Not an edge case —
+      // all 27 stores are assigned weekly:{model:'ae'}, so this branch IS the universal
+      // path for that table. metricDaily resolves auto-first per day, and for laborPct it
+      // matters twice over: the chain puts glimpseRows FIRST because pre-2026-08-03
+      // ctrlRows.laborPct holds the wrong (Actual, not Punched) value — so the raw read
+      // could also show a known-wrong number, not just a blank.
+      // The 'simple' branch below already did this correctly.
       const _aeIsFuture=date>sodOf(new Date());
-      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:0,varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
-        oepe:_aeORow?(_aeORow.oepe||0):0,tpph:_aeCtrlRow?(_aeCtrlRow.tpph||0):0,labor:_aeCtrlRow?(_aeCtrlRow.laborPct||0):0,
+      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
+        oepe:_aeIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_aeIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_aeIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_aeAct>0?(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].gc||0:0;})():0,forecastGC:0,lyGC:0,
         noLYData:!lyRaw,modelUsed:'ae'};
     }
@@ -1373,9 +1413,10 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     const _ewmaFcst=forecastEWMA(_locLaborRows,ds.laborIdx,loc,date);
     if(_ewmaFcst&&_ewmaFcst>0){
       const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
-      const _ewmaORow=fetchRow(ds.opsIdx,loc,date);const _ewmaCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
-      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:0,varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
-        oepe:_ewmaORow?(_ewmaORow.oepe||0):0,tpph:_ewmaCtrlRow?(_ewmaCtrlRow.tpph||0):0,labor:_ewmaCtrlRow?(_ewmaCtrlRow.laborPct||0):0,
+      // Same raw-read bug as the AE branch above — resolved auto-first via metricDaily.
+      const _ewmaIsFuture=date>sodOf(new Date());
+      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
+        oepe:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:0,forecastGC:0,lyGC:0,noLYData:false,modelUsed:'ewma'};
     }
   }
@@ -1391,7 +1432,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       const _sAct=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales')):0;
       const _sActGC=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?(rr[0].gc||0):0;})()||fetchRow(_qsrActIdx(ds),loc,date,'gc')):0;
       return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_sVal,t4:_sVal,t6:_sVal,
-        actual:_sAct,goal:0,varPct:_sAct>0?(_sAct-_sVal)/_sAct:null,pass:null,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
+        actual:_sAct,goal:_goalOf(lyRaw),varPct:_sAct>0?(_sAct-_sVal)/_sAct:null,pass:null,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
         oepe:_sFut?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_sFut?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_sFut?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_sActGC,forecastGC:Math.round(_sf.gc||0),lyGC:0,noLYData:!lyRaw,modelUsed:'simple'};
     }
