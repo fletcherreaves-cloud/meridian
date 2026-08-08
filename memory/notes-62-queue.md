@@ -99,3 +99,48 @@ SAGE and the report builder from one place.
 
 Related: [[notes-61-queue]], [[feedback-performance-budget]], [[feedback-measure-dont-reason]],
 [[project-sage]], [[feedback-selector-ui-standard]].
+
+---
+
+## 🔴 RESOLVED DIAGNOSIS — the startup/interaction freeze is React render (2026-08-08)
+
+Five traces, four wrong hypotheses, then a definitive answer.
+
+**Final measurement (v4.918, owner's machine, casual usage):**
+
+```
+App tree (render+commit)  34x · worst 9480ms · total 174,272ms
+(no click)                86x · worst 9480ms · total 170,394ms
+rawStores(buildStore x27) 32x · worst  518ms · total  10,089ms
+computeInsights(restore)   1x                ·         305ms
+bIdx+bLocIdx               1x                ·          60ms
+analyzeRegisterAudit       1x                ·          11ms
+```
+
+**React commit total ≈ total long-task time, and the worst case is identical (9,480ms).**
+So ~100% of main-thread blocking is React rendering the App tree — 34 commits averaging
+~5.1 seconds. Every data-layer computation combined is under 6%.
+
+**Hypotheses that were WRONG along the way** (kept so they are not re-tried):
+1. The `onActivity` click listener — throttled to 30 min, cleared by reading it.
+2. `rawStores` dependencies being unstable — deps were correct; it is the FREQUENCY of
+   legitimate `ds` changes (32 `setDs` sites), and it is only 6% of the cost anyway.
+3. Index building (`bIdx`/`bLocIdx`) — I called it a prime suspect at "tens of thousands of
+   rows, all synchronous". It is **60ms**.
+4. React `<Profiler onRender>` as the instrument — **compiled out of production builds**, so
+   v4.917 recorded nothing and the empty section read as "nothing to report".
+
+**The fix direction (not yet done):**
+- **Reduce render COUNT.** 32 `setDs` call sites each trigger a full commit. Coalescing
+  startup loader updates is the single biggest lever — ~10x fewer commits.
+- **Reduce render COST.** `useDeferredValue` is already applied to `rawStores` (v4.915) but the
+  App tree still renders synchronously on every `ds` change. Passing `dsDeferred` to the heavy
+  view components — not just to the one memo — would let clicks and nav render at full speed
+  while the expensive tree updates at low priority.
+- Closed panels are already conditional (`showX && h(Panel)`), so they are NOT the cost.
+
+**Also seen and unexplained:** the At-A-Glance "SAGE Scheduled Runs" tile appears twice as the
+worst click (5,944ms and 6,224ms in separate sessions). It is `DEF_SECS[0]`, the first tile.
+Worth checking on its own.
+
+Tooling built for this: `src/utils/click-trace.js` (`?clicktrace=1`, then `mfClickTrace()`).
