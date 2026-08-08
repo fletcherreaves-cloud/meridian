@@ -311,8 +311,8 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
   {version:'4.912', date:'2026-08-08', changes:[
-    'FIXED — the 6-Week Performance chart could plot impossible numbers (a y-axis reaching 1,200,000%). Year-over-year growth was measured against last year\\'s same weekday even when that day was a closure with almost no sales — Christmas, Thanksgiving, the January ice storm. Dividing by an $8.98 day turns a normal day into a six-figure percentage. Those days are now left out of the trend instead of being treated as a real comparison.',
-    'The cutoff is drawn from the data, not picked: of 40,000 store-days, 98.4% fall at or above 70% of their own store\\'s typical day and only 76 fall below 25%. Genuine strong years and real declines are still reported in full.',
+    'FIXED — the 6-Week Performance chart could plot impossible numbers (a y-axis reaching 1,200,000%). Year-over-year growth was measured against last year\'s same weekday even when that day was a closure with almost no sales — Christmas, Thanksgiving, the January ice storm. Dividing by an $8.98 day turns a normal day into a six-figure percentage. Those days are now left out of the trend instead of being treated as a real comparison.',
+    'The cutoff is drawn from the data, not picked: of 40,000 store-days, 98.4% fall at or above 70% of their own store\'s typical day and only 76 fall below 25%. Genuine strong years and real declines are still reported in full.',
   ]},
   {version:'4.911', date:'2026-08-08', changes:[
     'Local News now shows a chip for every location that has a story. It was capped at eight, so the header could say 17 locations while only 8 were selectable. The header now reads how many of the 27 stores have any coverage at all.',
