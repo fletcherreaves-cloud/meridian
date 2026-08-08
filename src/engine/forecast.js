@@ -888,10 +888,10 @@ function compute6wk(loc,ds,wb){
     depositAmt:avg6(ctrlL,loc,'depositAmt',wb),
     floorMgmtNeeded:M('floorMgmtNeeded'),
     floorHrsSched:M('floorHrsSched'),
-    fixedContractHrs:avg6(laborL,loc,'fixedContractHrs',wb),
+    fixedContractHrs:M('fixedContractHrs'),
     variableNeeded:M('variableNeeded'),
-    oppCostPct:avg6(laborL,loc,'oppCostPct',wb),
-    oppCostDollar:avg6(laborL,loc,'oppCostDollar',wb)};
+    oppCostPct:M('oppCostPct'),
+    oppCostDollar:M('oppCostDollar')};
   // Coverage map: how many real observations backed each metric. avg6 returns 0 for
   // "no data", which the scorecards graded as a passing zero — see obs6's note. Consumers
   // can now tell a genuine 0 from an absent metric and render '—' instead of green.

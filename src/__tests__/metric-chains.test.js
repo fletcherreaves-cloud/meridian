@@ -18,7 +18,7 @@ const EMITS = {
   glimpseRows: ['posOverAmt', 'posOverCnt', 'promoAmt', 'promoPct', 'avgCheck', 'laborPct',
                 'cashOS', 'cashOSPct', 'gc', 'kvst', 'kvsHealthy', 'oepe', 'parkedPct'],
   salesLedgerRows: ['avgCheck', 'dtPctTotal'],
-  schedRows: ['needFloor', 'schFloor', 'needVLH', 'schVLH', 'fixGuideHrs', 'schFixHrs', 'salMgrHrs', 'crewHrs'],
+  schedRows: ['needFloor', 'schFloor', 'needVLH', 'schVLH', 'fixGuideHrs', 'schFixHrs', 'salMgrHrs', 'crewHrs', 'schedTotHrs'],
   laborRows: ['avgCheck', 'dtPctTotal', 'sales', 'gc', 'laborPct', 'tpph', 'otHrs'],
 };
 

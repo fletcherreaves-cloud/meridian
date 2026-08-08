@@ -183,6 +183,15 @@ Object.assign(METRIC_SOURCES, {
   floorMgmtNeeded:  { mode: 'pos', srcs: [['schedRows', 'needFloor']] },
   floorHrsSched:    { mode: 'pos', srcs: [['schedRows', 'schFloor']] },
   variableNeeded:   { mode: 'pos', srcs: [['schedRows', 'needVLH']] },
+  // Fixed contract hours = LifeLenz "fix guide hrs" (owner-confirmed 2026-08-08).
+  // sch_fix_hrs is a DIFFERENT thing — how many fixed hours were actually scheduled.
+  // ⚠️ Sparse: fix_guide_hrs was populated on only 33 of 400 completed-day rows sampled,
+  // so expect gaps. That is a source-coverage fact, not a wiring fault.
+  fixedContractHrs: { mode: 'pos', srcs: [['schedRows', 'fixGuideHrs']] },
+
+  // Total scheduled hours — variable + fixed + floor, summed in the loader.
+  schedHrs:         { mode: 'pos', srcs: [['schedRows', 'schedTotHrs']] },
+
   // Salaried manager hours — was unchained on the Ops scorecard too.
   salaryMgrHrs:     { mode: 'pos', srcs: [['ctrlRows', 'salaryMgrHrs'],     ['schedRows', 'salMgrHrs']] },
 });
@@ -199,6 +208,31 @@ Object.assign(METRIC_SOURCES, {
 // a true weighted rollup should sum the parts itself rather than call metricAvg. This is
 // the numerator/denominator gap notes-57-metric-registry-plan §4 describes.
 export const DERIVED_METRICS = {
+  // Opportunity cost $ = the hours gap vs NEEDED, priced at the labour rate
+  // (owner-confirmed: "actual hours +/- needed hours x average rate of pay").
+  // actVsNeed is already the signed hour difference, so this is one multiply.
+  // Signed on purpose: overstaffed is positive cost, understaffed negative — mode 'any'.
+  oppCostDollar: { mode: 'any', derive: { inputs: ['actVsNeed', 'avgRate'],
+                   fn: (gap, rate) => (rate > 0 ? gap * rate : null) } },
+
+  // Opportunity cost as a share of sales, so it compares across stores of different size.
+  // ⚠️ THE DENOMINATOR IS AN ASSUMPTION — the owner specified the dollar formula but not
+  // this one. Sales is the natural basis and matches how every other pct metric here
+  // works, but confirm before relying on it.
+  oppCostPct:    { mode: 'any', derive: { inputs: ['oppCostDollar', 'sales'],
+                   fn: (dollars, sales) => (sales > 0 ? dollars / sales : null) } },
+
+  // ── NEW (owner's idea, 2026-08-08) ──────────────────────────────────────────
+  // Act-vs-Sched Opportunity: (actual hours ± SCHEDULED hours) × average rate.
+  // The existing opportunity cost measures actual against what was NEEDED. This measures
+  // actual against what was PLANNED, which is the number a manager can act on: the hope is
+  // that they move the schedule — up or down — toward needed, based on what actually got
+  // used. Signed, so over- and under-scheduling are distinguishable.
+  actVsSched:     { mode: 'any', derive: { inputs: ['actHrs', 'schedHrs'],
+                    fn: (act, sched) => (act > 0 && sched > 0 ? act - sched : null) } },
+  actVsSchedOpp:  { mode: 'any', derive: { inputs: ['actVsSched', 'avgRate'],
+                    fn: (gap, rate) => (rate > 0 ? gap * rate : null) } },
+
   // Sales per person-hour. No stream carries it; sales and actual hours both resolve, and
   // actHrs now chains to the DAR (v4.889), so this is available wherever the DAR is.
   spph:    { mode: 'pos', derive: { inputs: ['sales', 'actHrs'],
@@ -219,9 +253,6 @@ export const MANUAL_ONLY_METRICS = {
   manualRefAmt: 'Manual refunds $ — Controls upload only',
   depositAmt:   'Deposit $ — Controls upload only',
   // Labor / MBI report
-  fixedContractHrs: 'Fixed contract hours — Labor upload only',
-  oppCostPct:       'Opportunity cost % — Labor upload only',
-  oppCostDollar:    'Opportunity cost $ — Labor upload only',
 };
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);

@@ -549,6 +549,10 @@ export async function loadLifeLenzSchedule({ daysBack = 455, daysFwd = 30 } = {}
     schFixHrs:     r.sch_fix_hrs,
     projFloor:     r.proj_floor,
     schFloor:      r.sch_floor,
+    // Total scheduled hours = variable + fixed + floor. Emitted as one field so
+    // METRIC_SOURCES can chain to it directly rather than deriving from three separate
+    // chains that would each need their own registration.
+    schedTotHrs:   (r.sch_vlh || 0) + (r.sch_fix_hrs || 0) + (r.sch_floor || 0),
     needFloor:     r.need_floor,
     idealTotHrs:   r.ideal_tot_hrs,
     salMgrHrs:     r.sal_mgr_hrs,
