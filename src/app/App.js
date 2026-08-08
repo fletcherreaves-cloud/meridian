@@ -18,37 +18,78 @@ import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
 import { CalendarManagerPanel, EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { EventImpactPanel } from '../views/event-impact.js';
 import { ReportSubscriptions } from '../views/report-subscriptions.js';
-import { AboveStoreOnePager } from '../views/above-store-onepager.js';
 import { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { parseInventoryData, InventoryIntelligence } from '../views/inventory.js';
 import { computeSmartTargets, SmartTargetPanel } from '../features/smart-targets.js';
-import { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor } from '../views/labor-tools.js';
+// labor-tools.js / store-analytics.js are panel-only modules (155 KB + 161 KB of source) and
+// nothing in them is needed to paint the home screen, so they load on first open instead of being
+// parsed at startup. See the lazyPanel note below for why each gets its own Suspense boundary.
 import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief } from '../features/projections.js';
-import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard } from '../views/store-analytics.js';
+// ShiftAnalysisTab / ModelComparisonPanel / RegisterAuditTab / StoreRecordsTab were imported here
+// and never rendered — dead imports that pulled all 161 KB of store-analytics.js into the entry
+// chunk for nothing. They are still exported and used inside store-analytics.js itself.
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 // Lazy panel with stale-chunk recovery: after a new deploy, an open tab's index.html references old
 // hashed chunk filenames that are gone from the server, so a dynamic import 404s ("Failed to fetch
 // dynamically imported module"). Reload ONCE (throttled) to pull the fresh index.html + chunk map.
-const lazyPanel = (importFn) => React.lazy(() => importFn().catch((err) => {
-  try {
-    const KEY = 'meridian_chunk_reload_at';
-    const last = Number(sessionStorage.getItem(KEY) || 0);
-    if (Date.now() - last > 15000) { sessionStorage.setItem(KEY, String(Date.now())); location.reload(); return new Promise(() => {}); }
-  } catch {}
-  throw err;
-}));
+//
+// Each lazy panel also gets its OWN Suspense boundary here. meridian.js wraps the whole app in a
+// single Suspense whose fallback is a 100vh "Loading…" screen — so without this, opening any lazy
+// panel unmounts the entire app (nav, shell, tiles) and replaces it with a full-page spinner until
+// the chunk lands. On a phone that reads as the app crashing. A local boundary means the chunk load
+// blanks only the panel's own overlay. This is what makes it safe to lazy-load heavy panels at all.
+const _panelFallback = () => React.createElement('div', {
+  style: {
+    position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', background: 'rgba(0,0,0,.75)',
+    color: '#f5bc00', font: "600 13px/1 ui-sans-serif,system-ui,sans-serif",
+  },
+}, 'Loading…');
+
+const lazyPanel = (importFn) => {
+  const Inner = React.lazy(() => importFn().catch((err) => {
+    try {
+      const KEY = 'meridian_chunk_reload_at';
+      const last = Number(sessionStorage.getItem(KEY) || 0);
+      if (Date.now() - last > 15000) { sessionStorage.setItem(KEY, String(Date.now())); location.reload(); return new Promise(() => {}); }
+    } catch {}
+    throw err;
+  }));
+  const Wrapped = (props) => React.createElement(
+    React.Suspense, { fallback: React.createElement(_panelFallback) },
+    React.createElement(Inner, props));
+  Wrapped.displayName = 'LazyPanel';
+  return Wrapped;
+};
+const _laborTools = () => import('../views/labor-tools.js');
+const DARDaypartPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.DARDaypartPanel })));
+const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.ProductMixPanel })));
+const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: m.LaborAnalyticsPanel })));
+const OperatorSummaryPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.OperatorSummaryPanel })));
+const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ModelAssignmentPanel })));
+const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })));
+
+const _storeAnalytics = () => import('../views/store-analytics.js');
+const AnomalyPanel        = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AnomalyPanel })));
+const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.RevenueIntelligence })));
+const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
+const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
+const AIInsightsLog       = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AIInsightsLog })));
+const DevDashboard        = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.DevDashboard })));
+
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
-import { SchedulingPanel } from '../views/scheduling.js';
+const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
+const SchedulingPanel = lazyPanel(() => import('../views/scheduling.js').then(m => ({ default: m.SchedulingPanel })));
 import { AdminPanel } from '../views/admin.js';
 const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
 const FOBEOMPanel = lazyPanel(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
-import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
+const EOMSupervisorPanel = lazyPanel(() => import('../views/eom-supervisor.js').then(m => ({ default: m.EOMSupervisorPanel })));
 const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
 import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
 import { FormsPrintPanel } from '../views/forms-print.js';
