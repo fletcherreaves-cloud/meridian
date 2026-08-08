@@ -26,6 +26,37 @@ to put us in a really good place prior to a redesign."*
   resolving 28/28 with zero raw `avg6`. Now a standing audit in
   [[feedback-performance-budget]].
 - **Speed-check policy** — written as a standing rule with a measured budget, same file.
+- **Register Audit units bug (District View #9)** — v4.903. Reported as "fix rounding to 2
+  decimals"; it was not rounding. `refundCnt` (a count) had `refundCashless` (dollars, column
+  `'Refund Cashless $'`) summed into it. The cents were the mild symptom — the real damage was
+  the table's `>3`/`>5` amber thresholds firing on dollar amounts, so anyone with cashless
+  refund activity looked like a refund outlier. Split into 'Refunds (count)' + 'Refunds $
+  (total)'. Mutation-verified guard.
+- **Snack daypart (District View #1)** — v4.903, in store-analytics.js and morning-brief.js.
+  **Left alone:** `dt-speedofservice.js:49` also labels a daypart 'PM' but over 14:00-16:00, a
+  different window — renaming it would be a guess. **Owner should confirm.**
+- **Dialed-In 1W/2W/4W/6W trend** — v4.904. `calibrateStore` read `ds.laborRows` raw. That is
+  cloud-backed (`labor_rows` table) but MANUAL-fed, and measured 16 days stale on 2026-08-08
+  (newest 07-23) while `qsr_labor_summary` had all 27 stores through 08-08. The 1W filter
+  therefore matched zero rows → null → "—". Now sourced through `metricSeries('sales')`.
+
+## ⚠️ Live data-pipeline finding, 2026-08-08 — needs the owner
+
+Measured freshness across every stream:
+
+| stream | newest | |
+|---|---|---|
+| `labor_rows` | **2026-07-23** | **16 days stale — manual Labor Report upload** |
+| `qsr_labor_summary` | 2026-08-08 | 27 stores |
+| `qsr_daily_activity` | 2026-08-08 | |
+| `qsr_fob` | 2026-08-08 | |
+| `sales_ledger_daily` / `daily_glimpse_daily` / `cash_sheet_daily` / `qsr_ebos_daily` | 2026-08-07 | |
+
+Every auto stream is current. **Only the manual-fed one is stale.** v4.904 routes the Dialed-In
+calibration around it, but **anything else still reading `laborRows` raw has the same 16-day
+hole.** Per the standing rule that manual sourcing is temporary, `labor_rows` wants an automated
+feed — `qsr_labor_summary` already carries the same days for all 27 stores. **Worth a sweep for
+other raw `ds.laborRows` readers.**
 
 ---
 
