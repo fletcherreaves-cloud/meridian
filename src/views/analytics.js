@@ -5223,14 +5223,17 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
       }
       if(cal&&!cal._why){
         updated[loc]=cal;
-        log.push({loc,status:'ok',mape:cal.mape,rows:rowCount});
+        // Surface the trend diagnostic for the FIRST successful store only — enough to explain
+        // why 6W/4W/2W/1W render "—" without turning the log into a wall of text.
+        log.push({loc,status:'ok',mape:cal.mape,rows:rowCount,
+                  trendDiag:(cal.mape6w==null&&!log.some(l=>l.trendDiag))?cal._trendDiag:null});
       } else {
         const _reason=cal&&cal._why?cal._why:'returned bare null';
         // A store that has not been open a full year cannot be DI-calibrated at all — the
         // model resolves LY ~364 days back and there is nothing there. That is a STATUS, not
         // a failure, so it is tracked separately and rendered as information below.
         log.push({loc,status:cal&&cal._notYetEligible?'ineligible':'null',detail:_reason,rows:rowCount,
-                  eligibleFrom:cal&&cal._eligibleFrom,openedOn:cal&&cal._openedOn});
+                  eligibleFrom:cal&&cal._eligibleFrom,openedOn:cal&&cal._openedOn,diag:cal&&cal._diag});
       }
       setStoreLog([...log]);
       await new Promise(r=>setTimeout(r,0));
@@ -5389,6 +5392,12 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
               ? span({style:{color:'#f87171'}},' · '+storeLog.filter(s=>s.status==='null'||s.status==='error').length+' failed')
               : null)
         ),
+        (storeLog.find(s=>s.trendDiag)||{}).trendDiag
+          ? div({style:{padding:'3px 10px',borderTop:'.5px solid var(--bdr)',fontFamily:'var(--mono)',
+              fontSize:'8px',color:'var(--text3)'}},
+              'trend "—" diagnostic ('+(storeLog.find(s=>s.trendDiag).loc)+'): '
+              +JSON.stringify(storeLog.find(s=>s.trendDiag).trendDiag))
+          : null,
         storeLog.filter(s=>s.status!=='ok').map((s,i)=>{
           // Not-yet-eligible is neutral: nothing is broken and there is nothing to fix until
           // the store has a year of history. Showing it in red alongside real failures made a
@@ -5399,7 +5408,12 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
             span({style:{color:_inel?'var(--text3)':'#f87171',fontWeight:700,minWidth:14}},_inel?'ⓘ':'✗'),
             span({style:{fontWeight:600,minWidth:120,color:_inel?'var(--text2)':undefined}},sNameC(s.loc)),
             span({style:{color:'var(--text3)'}},'Rows: '+s.rows),
-            span({style:{color:_inel?'var(--text3)':'#f87171',flex:1}},'→ '+s.detail)
+            span({style:{color:_inel?'var(--text3)':'#f87171',flex:1}},'→ '+s.detail),
+            s.diag?span({style:{fontFamily:'var(--mono)',fontSize:'8px',color:'var(--text3)',flexBasis:'100%'}},
+              'idx '+s.diag.locIdxKeys+' keys '+s.diag.idxSpan
+              +' · eval '+s.diag.evalSpan
+              +' · rowDateTypes '+JSON.stringify(s.diag.laborRowDateTypes)
+              +' · LY '+(s.diag.lySamples||[]).map(x=>x.row+'→'+x.lyWant+(x.inIdx?' HIT':' MISS')).join(', ')):null
           );
         })
       ),

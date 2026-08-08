@@ -534,7 +534,34 @@ async function calibrateStore(loc, ds, settings, onProgress) {
       opsF:baseOpsF,
     };
   }).filter(Boolean);
-  if(precomputed.length<35)return{_why:'precomputed<35 ('+precomputed.length+'/'+evalRows.length+' rows had valid LY — check laborIdx or date parsing)'};
+  if(precomputed.length<35){
+    // DIAGNOSTIC, not a guess. "0/146 rows had valid LY" says the lookups failed but not why,
+    // and three separate hypotheses for it have now been wrong. Report what is actually in the
+    // index at the exact keys fetchLY asks for, so one re-run settles it.
+    const _lIdx=ds.laborIdx||{};
+    const _locKeys=Object.keys(_lIdx).filter(k=>k.startsWith(loc+'_')).map(k=>k.slice(loc.length+1)).sort();
+    const _dateTypes={};
+    for(const r of (ds.laborRows||[])){
+      if(String(r.loc)!==String(loc)) continue;
+      const t=r.date instanceof Date?'Date':typeof r.date;
+      _dateTypes[t]=(_dateTypes[t]||0)+1;
+    }
+    // Sample the LY lookups fetchLY would perform for the three most recent eval rows.
+    const _samples=evalRows.slice(-3).map(row=>{
+      const want=dKey(addD(row.date,-364));
+      return {row:dKey(row.date), lyWant:want, inIdx:!!_lIdx[loc+'_'+want]};
+    });
+    return {
+      _why:'precomputed<35 ('+precomputed.length+'/'+evalRows.length+' rows had valid LY)',
+      _diag:{
+        locIdxKeys:_locKeys.length,
+        idxSpan:_locKeys.length?(_locKeys[0]+'..'+_locKeys[_locKeys.length-1]):'(none)',
+        laborRowDateTypes:_dateTypes,
+        evalSpan:evalRows.length?(dKey(evalRows[0].date)+'..'+dKey(evalRows[evalRows.length-1].date)):'(none)',
+        lySamples:_samples,
+      },
+    };
+  }
 
   // Shared evaluation formula (v4.195) — used by BOTH the grid search below
   // and _computePeriodMape further down, so there is exactly one place that
@@ -706,9 +733,27 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   const mape4w=_computePeriodMape(4);
   const mape2w=_computePeriodMape(2);
   const mape1w=_computePeriodMape(1);
+
+  // DIAGNOSTIC for the blank 6W/4W/2W/1W columns. These are null for EVERY store in the app
+  // while computing fine in an offline harness, so the difference is in the data the app holds,
+  // not the arithmetic. _computePeriodMape can return null two ways — no rows in the window, or
+  // rows present but every LY lookup failing — and the displayed "—" cannot tell them apart.
+  const _trendDiag=(()=>{
+    const cut6=new Date(Date.now()-6*7*864e5);
+    const inWin=_periodRowsAll.filter(r=>r.date>=cut6);
+    let lyOk=0;
+    for(const row of inWin) if((fetchLY(ds.laborIdx,ds.laborRows,loc,row.date,settings._userEvents)||0)>0) lyOk++;
+    return {
+      seriesDays:Object.keys(_periodSeries).length,   // what metricSeries returned for 6 weeks
+      inWindow:inWin.length,                          // after the window + event filters
+      lyResolved:lyOk,                                // how many of those had a real LY
+      span:inWin.length?(dKey(inWin[0].date)+'..'+dKey(inWin[inWin.length-1].date)):'(none)',
+      windowStart:_windowStart?dKey(_windowStart):null,
+    };
+  })();
   const _settingsFp=JSON.stringify({lyOutlierThreshold:settings.lyOutlierThreshold,opsNorm:settings.opsNorm});
 
-  return{...bestParams,mape:+bestMape.toFixed(2),trimmedN:_trimmedN,mape6w,mape4w,mape2w,mape1w,
+  return{...bestParams,mape:+bestMape.toFixed(2),trimmedN:_trimmedN,mape6w,mape4w,mape2w,mape1w,_trendDiag,
     samples:precomputed.length,runDate:new Date().toISOString().slice(0,10),
     settingsFp:_settingsFp,
     // recentOnly detection transparency (v4.195) — visible in results so
