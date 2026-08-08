@@ -194,6 +194,49 @@ matters because manual is the fallback that has to work when cloud fails.
 
 ---
 
+---
+
+## DATA CONTRACT — measured 2026-08-08, foundation for Spine 1
+
+The owner chose to fix the data contract BEFORE migrating Food Cost / FOB to the District
+View template — correct, because migrating onto a broken contract would replicate the
+manual-only sourcing bug into two more panels.
+
+**What the audit + measurement found.** `compute6wk` (forecast.js) is the sole source for
+both scorecards, all KPI tiles, StoreCard and RankingView's inputs, and it uses
+metric-source.js **nowhere** — it slices raw `ds.opsRows` / `ds.ctrlRows` / `ds.laborRows`.
+Of its 28 avg6 fields:
+
+| | count |
+|---|---|
+| have a METRIC_SOURCES chain (resolver available, simply unused) | **14** |
+| no chain, but a real auto source EXISTS and was unused | **1** — `actHrs` ✅ added |
+| no chain and **no auto source anywhere** — genuinely manual-only | **13** ✅ documented |
+
+Checked against the live column lists of `daily_glimpse_daily`, `cash_sheet_daily`,
+`sales_ledger_daily` and `qsr_daily_activity_rollup`. Two apparent matches were rejected
+on inspection: `avgRate` is $/hour while `avg_check` is $/transaction, and `actVsNeed` is
+not DAR transactions.
+
+`MANUAL_ONLY_METRICS` in metric-source.js now names all 13 explicitly, so their absence
+reads as a decision rather than an oversight. Adding a chain for any of them requires a
+**new upstream feed**, not a code change.
+
+### Remaining step — route compute6wk through the resolver
+
+The 15 resolvable fields should read via `metricSeries`/`metricAvg` instead of raw arrays.
+⚠️ This CHANGES DISPLAYED NUMBERS (auto-first instead of manual-only) — which is the point,
+but it is a core engine touched by every store card, so it wants its own careful pass
+rather than being tacked onto another change.
+
+Two things to fix in the same pass:
+- `avg6` **skips zeros** (`v !== 0`), which is wrong for `mode:'any'` metrics like cash
+  over/short, T-Reds, discounts and OT where 0 is a legitimate reading. `metricSeries`
+  already handles this correctly via `_ok(v, mode)`.
+- `avg6` returns **0 for "no data"**, which is why the scorecard graded absent metrics as
+  passing green (fixed at the presentation layer in v4.888 via the `_cov` map; the engine
+  should stop producing the ambiguity in the first place).
+
 ## SUGGESTED ORDER
 
 1. **Spine 1 pilot on Inventory Control** — shared date/export/location controls + the

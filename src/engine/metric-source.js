@@ -120,6 +120,46 @@ export const METRIC_SOURCES = {
 
   // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name).
   dtMixPct:       { mode: 'pos', srcs: [['laborRows', 'dtPctTotal'], ['salesLedgerRows', 'dtPctTotal']] },
+
+  // Actual punched hours — manual Controls, then the auto DAR rollup. Added 2026-08-08:
+  // an audit of compute6wk found 14 of its 28 fields had no chain, and this was the ONLY
+  // one with a real auto source sitting unused (qsr_daily_activity_rollup carries
+  // actual_punched_hours, already loaded by loadQsrActSummary as `actHrs`).
+  // ctrlRows.actHrs (supabase.js maps act_hrs) then the auto DAR rollup
+  // (actual_punched_hours). laborRows is NOT in this chain — its loader emits only
+  // loc/date/sales/laborPct/tpph/otHrs/otDollar, and the chain test caught that.
+  actHrs:         { mode: 'pos', srcs: [['ctrlRows', 'actHrs'], ['qsrActSummaryRows', 'actHrs']] },
+};
+
+// ── Deliberately manual-only ────────────────────────────────────────────────
+// These metrics have NO auto or emailed stream that carries them — verified 2026-08-08
+// against the live column lists of daily_glimpse_daily, cash_sheet_daily,
+// sales_ledger_daily and qsr_daily_activity_rollup. They are listed explicitly so their
+// absence from METRIC_SOURCES reads as a decision rather than an oversight, and so that
+// anyone auditing coverage can tell "no chain yet" from "no source exists".
+//
+// Adding a chain for these requires a NEW upstream feed, not a code change. If one of
+// these ever appears in an auto stream, move it into METRIC_SOURCES above.
+//
+// ⚠️ Consequence worth knowing: anything computed from these is manual-upload-only, so it
+// goes stale the moment uploads stop and is blank on a device that never uploaded. The
+// Controls scorecard renders '—' for them rather than 0 since v4.888.
+export const MANUAL_ONLY_METRICS = {
+  // Controls report
+  empMealAmt:   'Employee meals $ — Controls upload only',
+  mgrMealAmt:   'Manager meals $ — Controls upload only',
+  manualRefAmt: 'Manual refunds $ — Controls upload only',
+  depositAmt:   'Deposit $ — Controls upload only',
+  spph:         'Sales per person-hour — Controls upload only',
+  actVsNeed:    'Actual vs needed hours — Controls upload only (transactions in the DAR are not this)',
+  avgRate:      'Average labor rate $/hr — Controls upload only (avg_check is $/transaction, a different metric)',
+  // Labor / MBI report
+  floorMgmtNeeded:  'Floor management hours needed — Labor upload only',
+  floorHrsSched:    'Floor management hours scheduled — Labor upload only',
+  fixedContractHrs: 'Fixed contract hours — Labor upload only',
+  variableNeeded:   'Variable hours needed — Labor upload only',
+  oppCostPct:       'Opportunity cost % — Labor upload only',
+  oppCostDollar:    'Opportunity cost $ — Labor upload only',
 };
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);
