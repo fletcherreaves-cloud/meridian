@@ -309,10 +309,74 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.881';
-const MERIDIAN_BUILD_DATE = '2026-08-07';
-if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.910', date:'2026-08-08', changes:[
+    'FIXED — Dialed-In calibration and the 6W/4W/2W/1W trend columns. A last-year comparison was skipped whenever the day it pointed at carried an event tag, and one store had 450 tagged days, so every candidate was rejected and the comparison came back empty for 146 of 146 days. Real sales existed on every one of those days. Last-year lookups now fall back to using a tagged day rather than giving up; genuine closures are still excluded.',
+    'The version shown in the footer is now taken from the top of this changelog instead of being typed separately. The two had drifted 20 versions apart, so a hard refresh looked like it had failed.',
+  ]},
+  {version:'4.909', date:'2026-08-08', changes:[
+    'Dialed-In diagnostics now report WHY a last-year lookup was rejected, not just whether the day existed. The previous version only proved the index key was present — which it was — while the value still came back empty, so it answered the wrong question.',
+  ]},
+  {version:'4.908', date:'2026-08-08', changes:[
+    'Added instrumentation to the Dialed-In calibration log instead of shipping a fourth guess at why Tishomingo fails and the 6W/4W/2W/1W trend columns render blank.',
+  ]},
+  {version:'4.907', date:'2026-08-08', changes:[
+    'Fixed a date bug that shifted any text-form date back one day (a date string is read as UTC midnight but displayed in local time). It builds the index key for every store-and-day lookup in the app, so a cached row could sit one day off from where everything else looked for it.',
+    'New stores are now reported honestly. Ponce de Leon showed a window starting in April 2027, which read like corruption but was arithmetic — it opened in March 2026 and Dialed-In needs a full year of history. It now says so plainly and no longer counts as a failure.',
+  ]},
+  {version:'4.906', date:'2026-08-08', changes:[
+    'Fixed a regression that broke Dialed-In calibration for all 27 stores. The auto-first sourcing added in 4.904 was applied to a row set shared by the grid search, the clean-data detector and the last-year lookup; it is now scoped to the trend columns alone, which are the only part that needs recent days.',
+  ]},
+  {version:'4.905', date:'2026-08-08', changes:[
+    'Corrected the metric resolver: 30 of 35 source chains were consulting manual uploads BEFORE the automatic feeds, so a stale manual value could override cloud-fresh data. Being stored in the cloud does not make a stream automatic — what matters is what feeds it. Now enforced by a test, so it cannot drift back.',
+  ]},
+  {version:'4.904', date:'2026-08-08', changes:[
+    'Dialed-In trend columns re-sourced to auto-first data. Superseded by 4.906 — see above.',
+  ]},
+  {version:'4.903', date:'2026-08-08', changes:[
+    'Register Audit: refund COUNT had refund DOLLARS added into it. The visible symptom was stray cents in the total; the real damage was the amber warning thresholds firing on dollar amounts, so anyone with cashless refund activity looked like an outlier. Split into a count and a dollar total.',
+    'The afternoon daypart is now labelled Snack rather than PM.',
+  ]},
+  {version:'4.902', date:'2026-08-08', changes:[
+    'Two standing rules recorded: a measured performance budget for every change, and a commitment that manually-sourced metrics are always temporary and get automated.',
+  ]},
+  {version:'4.901', date:'2026-08-08', changes:[
+    'Mobile performance: 795 KB removed from the initial download (3518 KB to 2722 KB). Slow first load, an unresponsive menu and the long blank screen when returning from another app were all the same cause — too much code parsed before the app could respond.',
+    'Opening a panel that loads on demand no longer blanks the entire app while it downloads.',
+  ]},
+  {version:'4.900', date:'2026-08-08', changes:[
+    'The loader field map is fully generated — no hand-maintained supplement remains.',
+  ]},
+  {version:'4.899', date:'2026-08-08', changes:[
+    'The loader field map is now generated from the code rather than typed by hand, after going stale four times in one day. Employee and manager meal figures seeded from the real file.',
+  ]},
+  {version:'4.898', date:'2026-08-08', changes:[
+    'Meal counts wired alongside the amounts, with header names verified against a real Daily Glimpse file.',
+  ]},
+  {version:'4.897', date:'2026-08-08', changes:[
+    'Fixed the meals data path, which was broken one link from the end.',
+  ]},
+  {version:'4.896', date:'2026-08-08', changes:[
+    'All 28 six-week comparison fields now resolve from data, and the manual-only metric list is empty.',
+  ]},
+  {version:'4.895', date:'2026-08-08', changes:[
+    'Opportunity cost is now derived rather than uploaded, and a new Actual-vs-Scheduled opportunity metric was added.',
+  ]},
+  {version:'4.894', date:'2026-08-08', changes:[
+    'LifeLenz now resolves four more metrics. Floor hours turned out never to have been saved at all.',
+  ]},
+  {version:'4.893', date:'2026-08-08', changes:[
+    'The six-week comparison is routed through the metric resolver — the payoff for the sourcing work.',
+  ]},
+  {version:'4.892', date:'2026-08-08', changes:[
+    'Derivation became a gap-filling fallback rather than a replacement, so a directly-reported value still wins when one exists.',
+  ]},
+  {version:'4.891', date:'2026-08-08', changes:[
+    'Metric coverage now means “can we compute it”, not “does a feed carry it”.',
+  ]},
+  {version:'4.890', date:'2026-08-08', changes:[
+    'Actual-vs-needed hours are auto-available after all — an incorrect rejection caught by the owner.',
+  ]},
   {version:'4.881', date:'2026-08-07', changes:[
     'NEW — Local News. Stories from nine local outlets covering the towns our restaurants are in, attributed to the right store and filtered to what could plausibly affect a restaurant: road closures, crime, weather, business openings. Prep sports and obituaries are filtered out. A story in a two-store town (Ardmore, DeFuniak Springs) is shown as belonging to EITHER store rather than being guessed at. Also searches YouTube nightly, though these towns carry almost no video coverage.',
   ]},
@@ -1311,6 +1375,15 @@ const MERIDIAN_CHANGELOG  = [
     'Mobile v2 — Convention Demo Mode, Beat LFZ badges, head-to-head hero card',
   ]},
 ];
+
+// Derived from the changelog's newest entry, NOT typed separately. Both were hand-maintained
+// until 2026-08-08 and drifted 20 versions apart — the app footer read 4.881 while 4.909 was
+// deployed, so the owner had no way to tell which build was loaded and a hard refresh looked
+// like it had failed. Adding a changelog entry IS the version bump now; the two cannot drift.
+// changelog-version.test.js fails the build if the list is out of order or misshapen.
+const MERIDIAN_VERSION    = MERIDIAN_CHANGELOG[0].version;
+const MERIDIAN_BUILD_DATE = MERIDIAN_CHANGELOG[0].date;
+if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 
 // ── Data Policy Banner — shown once per session, dismissed via localStorage ──
 const DATA_POLICY_KEY = 'mf_data_policy_v1';

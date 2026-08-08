@@ -457,6 +457,27 @@ function fetchLY(lIdx,lRows,loc,date,userEvents){
     const v = fetchRow(lIdx, loc, dt, 'sales');
     if(v>0) return v;                        // first clean actual value wins
   }
+  // SECOND PASS — ignore the user-event tag when it has eliminated EVERY candidate.
+  //
+  // The exclusion above is meant to skip anomalous days. It silently becomes catastrophic once
+  // a store has many tagged days: on 2026-08-08 Tishomingo had 450 tagged days, so all seven
+  // offsets came back UEV and this returned 0 — for 146 of 146 eval rows. Calibration then died
+  // on "precomputed<35", and the Dialed-In 6W/4W/2W/1W columns rendered "—" for every store.
+  // Diagnosed from the live app: each rejected candidate carried a real, verified sales figure
+  // (e.g. 2025-07-25 = $6,376.90).
+  //
+  // Discarding a real historical value to avoid a tagged one is the wrong trade when the choice
+  // is between an imperfect LY and NO forecast at all. Holidays are still honoured in this pass
+  // — a Christmas closure genuinely has no comparable sales — but a routine tag no longer
+  // destroys the comparison. Preferring the -364 candidate keeps the same-week-last-year
+  // alignment the primary pass aims for.
+  for(const off of candidates){
+    const dt = addD(date, off);
+    if(dowOf(dt)!==tDow) continue;
+    if(isHoliday(dt)) continue;              // closures stay excluded — no comparable sales exist
+    const v = fetchRow(lIdx, loc, dt, 'sales');
+    if(v>0) return v;
+  }
   return 0;
 }
 
@@ -476,6 +497,15 @@ function fetchLYDate(lIdx, loc, date, userEvents){
     const dt=addD(date,off);
     if(dowOf(dt)!==tDow)continue;
     if(isExcluded(dt))continue;
+    const v=fetchRow(lIdx,loc,dt,'sales');
+    if(v>0)return dt;
+  }
+  // Mirrors fetchLY's second pass exactly, so the DISPLAYED LY date always matches the value
+  // fetchLY actually used. If these two drift, the UI attributes a number to the wrong day.
+  for(const off of candidates){
+    const dt=addD(date,off);
+    if(dowOf(dt)!==tDow)continue;
+    if(isHoliday(dt))continue;
     const v=fetchRow(lIdx,loc,dt,'sales');
     if(v>0)return dt;
   }
