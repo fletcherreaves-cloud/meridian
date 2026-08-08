@@ -8,6 +8,7 @@ import '../meridian.css'
 const ReactDOM = { createRoot }
 
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
+import { mark as _traceMark } from '../utils/click-trace.js';
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon, setEventImpact, getEventImpact } from '../engine/forecast.js';
@@ -310,6 +311,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.914', date:'2026-08-08', changes:[
+    'Added an interaction tracer for the sluggish-click report. Load the app with ?clicktrace=1, click around, then run mfClickTrace() in the console — it lists which clicks blocked the screen and for how long, and names the work that ran. Off unless switched on.',
+  ]},
   {version:'4.912', date:'2026-08-08', changes:[
     'FIXED — the 6-Week Performance chart could plot impossible numbers (a y-axis reaching 1,200,000%). Year-over-year growth was measured against last year\'s same weekday even when that day was a closure with almost no sales — Christmas, Thanksgiving, the January ice storm. Dividing by an $8.98 day turns a normal day into a six-figure percentage. Those days are now left out of the trend instead of being treated as a real comparison.',
     'The cutoff is drawn from the data, not picked: of 40,000 store-days, 98.4% fall at or above 70% of their own store\'s typical day and only 76 fall below 25%. Genuine strong years and real declines are still reported in full.',
@@ -2648,7 +2652,7 @@ function App() {
 
   const rawStores = useMemo(()=>{
     if(!ds) return [];
-    return ds.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,ds,{...settings,targets:mergedTargets}));
+    return _traceMark('rawStores(buildStore x27)', () => ds.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,ds,{...settings,targets:mergedTargets})));
   },[ds,settings,mergedTargets]);
 
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
