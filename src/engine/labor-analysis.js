@@ -113,13 +113,27 @@ export function analyzeSheet(inputRows = [], isFL = () => false) {
 // never a mean of daily ratios. Rate/Labor$ come from the daily Labor % × that
 // day's forecast sales (the schedule carries no rate column).
 
-// Monday (local) of the week containing `d`, at 00:00.
-export function isoWeekMonday(d) {
+import { weekStartOf } from '../utils/date.js';
+
+// Week start (local) of the week containing `d`, at 00:00 — HONOURING the configured
+// week-start setting rather than assuming Monday.
+//
+// This was hardcoded to Monday and is the bug the owner reported: this org's setting is
+// WEDNESDAY (constants.js DEF_SETTINGS.weekStartDay = 3), so every week this panel
+// displayed was offset by two days.
+//
+// Second-order damage the fix also clears: the manual MBI gap-fill in
+// views/labor-analysis.js compares `manual.weekStart` — a WEDNESDAY, taken straight off
+// the MBI sheet header — against this function's output. While this returned Monday those
+// strings could never be equal, so that branch was dead code and had never filled a
+// single store.
+//
+// Name kept for now because it is exported and referenced elsewhere; it no longer means
+// "Monday". Renaming is a follow-up.
+export function isoWeekMonday(d, wsd) {
   const dt = d instanceof Date ? new Date(d) : new Date(d);
   if (Number.isNaN(+dt)) return null;
-  const dow = (dt.getDay() + 6) % 7;            // 0=Mon … 6=Sun
-  dt.setDate(dt.getDate() - dow); dt.setHours(0, 0, 0, 0);
-  return dt;
+  return weekStartOf(dt, wsd);
 }
 
 const _isoDay = d => { const x = d instanceof Date ? d : new Date(d); return Number.isNaN(+x) ? null : x.toISOString().slice(0, 10); };

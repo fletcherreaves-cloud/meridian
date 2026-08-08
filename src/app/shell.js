@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
-import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode } from '../utils/date.js';
+import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -421,9 +421,11 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
 
   // Week label for projection context
   const wStart = React.useMemo(()=>{
-    const d=new Date(); const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
-    const diff=(wsd-d.getDay()+7)%7; const w=new Date(d); w.setDate(d.getDate()-diff);
-    return w;
+    // Was `(wsd - getDay() + 7) % 7`, which is the FORWARD distance — subtracting it
+    // landed on the wrong week on every day except the week-start day itself. Verified
+    // 2026-08-08: Friday 08/07 with a Wednesday start returned 08/02 instead of 08/05.
+    // weekStartOf() is now the single implementation; do not hand-roll this again.
+    return weekStartOf(new Date(), settings.weekStartDay != null ? settings.weekStartDay : 3);
   },[settings.weekStartDay]);
 
   return h(React.Fragment, null,

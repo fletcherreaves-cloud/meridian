@@ -4,6 +4,7 @@ import {
   hoursOpen, fracToTime, FLH_THRESHOLDS,
   isoWeekMonday, deriveBand1FromSchedule,
 } from '../engine/labor-analysis.js';
+import { setWeekStartDay } from '../utils/date.js';
 
 // Real inputs from the source sheet, store 3708 (row 4). Hours Forecast/Scheduled
 // are [h]:mm durations — the PARSER converts day-serials to real hours (×24), so
@@ -102,8 +103,26 @@ describe('labor-analysis — hours of operation', () => {
 });
 
 describe('labor-analysis — weekly Band-1 from daily LifeLenz schedule', () => {
-  it('isoWeekMonday returns the Monday of the week', () => {
-    expect(isoWeekMonday(new Date('2026-07-22T12:00:00')).getDay()).toBe(1); // Wed → Mon
+  // This test used to assert Monday, and in doing so enshrined the bug: the engine
+  // hardcoded `(getDay() + 6) % 7` while this org's setting is WEDNESDAY, so every week
+  // the Labor Analysis panel displayed was two days off. Now asserts that the configured
+  // week start is HONOURED, whatever it is set to.
+  it('isoWeekMonday honours the configured week start, not a hardcoded Monday', () => {
+    const fri = new Date('2026-08-07T12:00:00');
+    setWeekStartDay(3);                                     // Wed — this org's setting
+    expect(isoWeekMonday(fri).toISOString().slice(0, 10)).toBe('2026-08-05');
+    setWeekStartDay(1);                                     // Mon
+    expect(isoWeekMonday(fri).toISOString().slice(0, 10)).toBe('2026-08-03');
+    setWeekStartDay(0);                                     // Sun
+    expect(isoWeekMonday(fri).toISOString().slice(0, 10)).toBe('2026-08-02');
+    setWeekStartDay(3);                                     // restore
+  });
+
+  it('accepts an explicit week-start override without touching the global', () => {
+    setWeekStartDay(3);
+    const fri = new Date('2026-08-07T12:00:00');
+    expect(isoWeekMonday(fri, 0).toISOString().slice(0, 10)).toBe('2026-08-02');
+    expect(isoWeekMonday(fri).toISOString().slice(0, 10)).toBe('2026-08-05'); // global intact
   });
 
   // A store with 7 clean days in the target week, plus one row in the NEXT week

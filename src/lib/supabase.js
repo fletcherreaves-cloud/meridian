@@ -1997,36 +1997,64 @@ export async function loadQsrActSummary(daysBack = 35) {
   return _finalizeQsrAct(Object.values(map));
 }
 
-// Fast daily product-sales per (loc,date) for a window — minimal columns and
-// PARALLEL pagination (count → fire all page requests at once), so a long window
-// loads in seconds instead of ~60 sequential round-trips. Used by Smart Targets.
+// Daily product-sales per (loc,date) for a window. Used by Smart Targets.
+//
+// REWRITTEN 2026-08-08 — this hung the Smart Targets panel indefinitely ("Loading sales
+// history…" forever). Three compounding faults, all measured:
+//
+//   1. It read the HOURLY table. qsr_daily_activity is ~675 rows/day across 27 stores, so
+//      Smart Targets' 405-day window is ~273,000 rows ≈ 274 pages ≈ 16-19 MB — about 75%
+//      of the entire table, to produce ~11,000 daily values.
+//   2. It fired all ~274 page requests AT ONCE, bypassing the _limited() gate
+//      (_MAX_INFLIGHT = 6) that every other paginated loader here uses. This file already
+//      records that SIX concurrent queries on this exact table produced 18 of 22 HTTP 500s.
+//   3. Promise.all with no timeout. All-or-nothing: one stalled stream leaves the promise
+//      permanently pending, so the panel's .then/.catch never run and `loading` stays true
+//      forever. That is the reported symptom exactly — not slow, STUCK.
+//
+// Now reads the qsr_daily_activity_rollup TABLE (already used by loadQsrActSummary), which
+// is one row per (loc, dt) — ~11,000 rows for the same window instead of 273,000, roughly
+// 11 pages instead of 274. Goes through fetchAll, so it is sequential, capped, labelled,
+// and reports failures to the DATA INCOMPLETE banner instead of hanging.
+//
+// Falls back to the hourly table ONLY if the rollup is unavailable, and that fallback is
+// gated + allSettled so a single bad page degrades the result rather than hanging it.
 export async function loadDailySales(days = 120) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const PAGE = 1000;
-  const { count } = await supabase.from('qsr_daily_activity')
-    .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
-  const total = count || 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE));
-  // Deterministic order so parallel .range() slices partition without gaps/overlap.
-  const reqs = [];
-  for (let p = 0; p < pages; p++) {
-    reqs.push(supabase.from('qsr_daily_activity')
-      .select('loc,dt,product_sales')
-      .gte('dt', cutoffStr)
-      .order('dt').order('loc').order('hour_slot')
-      .range(p * PAGE, p * PAGE + PAGE - 1));
+
+  const rows = await fetchAll((from, to) => supabase
+    .from('qsr_daily_activity_rollup')
+    .select('loc,dt,product_sales')
+    .gte('dt', cutoffStr)
+    .order('dt').order('loc')
+    .range(from, to), 1000, 'daily sales (rollup)');
+
+  if (rows.length) {
+    return rows.map(r => ({
+      loc: String(parseInt(r.loc, 10)),
+      date: new Date(r.dt + 'T00:00:00'),
+      sales: r.product_sales || 0,
+    }));
   }
-  const results = await Promise.all(reqs);
+
+  // Fallback: sum the hourly table. Sequential + capped + labelled — never the old
+  // fire-274-at-once pattern.
+  console.warn('[Meridian] daily sales: rollup empty, falling back to hourly qsr_daily_activity');
+  const hourly = await fetchAll((from, to) => supabase
+    .from('qsr_daily_activity')
+    .select('loc,dt,product_sales')
+    .gte('dt', cutoffStr)
+    .order('dt').order('loc').order('hour_slot')
+    .range(from, to), 1000, 'daily sales (hourly fallback)');
+
   const map = {};
-  for (const res of results) {
-    for (const r of (res && res.data) || []) {
-      const loc = String(parseInt(r.loc, 10));
-      const k = loc + '|' + r.dt;
-      if (!map[k]) map[k] = { loc, date: new Date(r.dt + 'T00:00:00'), sales: 0 };
-      map[k].sales += r.product_sales || 0;
-    }
+  for (const r of hourly) {
+    const loc = String(parseInt(r.loc, 10));
+    const k = loc + '|' + r.dt;
+    if (!map[k]) map[k] = { loc, date: new Date(r.dt + 'T00:00:00'), sales: 0 };
+    map[k].sales += r.product_sales || 0;
   }
   return Object.values(map);
 }
