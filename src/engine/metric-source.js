@@ -159,6 +159,34 @@ export const METRIC_SOURCES = {
 // ⚠️ Consequence worth knowing: anything computed from these is manual-upload-only, so it
 // goes stale the moment uploads stop and is blank on a device that never uploaded. The
 // Controls scorecard renders '—' for them rather than 0 since v4.888.
+// ── LifeLenz schedule chains (2026-08-08) ───────────────────────────────────
+// The owner pushed back on these being "manual-only" and was right: LifeLenz carries the
+// hours. ds.schedRows (lifelenz_schedule, 14,632 rows) has them, and coverage on COMPLETED
+// days was measured before wiring — future-dated rows are mostly null because the schedule
+// is not built yet, which would have looked like a dead source if sampled naively.
+//
+//   need_floor    400/400 rows populated
+//   sch_vlh       400/400
+//   sch_fix_hrs   391/400
+//   need_vlh      346/400
+//   sch_floor     324/400
+//
+// mode:'pos' throughout — an hours figure of 0 means "not scheduled/needed", which is
+// genuinely absent rather than a reading worth averaging.
+Object.assign(METRIC_SOURCES, {
+  // ⚠️ laborRows is NOT a source for these. The chain test rejected it, and checking why
+  // turned up a real gap: the labor_rows TABLE has no floor/variable/contract columns at
+  // all (loc, report_date, sales, labor_pct, tpph, ot_hrs, ot_dollar, ids only). The MBI
+  // parser produces these fields, but they are NEVER PERSISTED — so they existed only in
+  // the browser session that did the upload and were 0 on every reload. LifeLenz is
+  // therefore not a fallback here, it is the ONLY durable source.
+  floorMgmtNeeded:  { mode: 'pos', srcs: [['schedRows', 'needFloor']] },
+  floorHrsSched:    { mode: 'pos', srcs: [['schedRows', 'schFloor']] },
+  variableNeeded:   { mode: 'pos', srcs: [['schedRows', 'needVLH']] },
+  // Salaried manager hours — was unchained on the Ops scorecard too.
+  salaryMgrHrs:     { mode: 'pos', srcs: [['ctrlRows', 'salaryMgrHrs'],     ['schedRows', 'salMgrHrs']] },
+});
+
 // ── Derived metrics ─────────────────────────────────────────────────────────
 // Computed per day from other resolvable metrics rather than read from a field. Each
 // input resolves auto-first through its own chain, so these inherit the full fallback
@@ -191,10 +219,7 @@ export const MANUAL_ONLY_METRICS = {
   manualRefAmt: 'Manual refunds $ — Controls upload only',
   depositAmt:   'Deposit $ — Controls upload only',
   // Labor / MBI report
-  floorMgmtNeeded:  'Floor management hours needed — Labor upload only',
-  floorHrsSched:    'Floor management hours scheduled — Labor upload only',
   fixedContractHrs: 'Fixed contract hours — Labor upload only',
-  variableNeeded:   'Variable hours needed — Labor upload only',
   oppCostPct:       'Opportunity cost % — Labor upload only',
   oppCostDollar:    'Opportunity cost $ — Labor upload only',
 };

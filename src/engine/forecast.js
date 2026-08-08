@@ -886,10 +886,10 @@ function compute6wk(loc,ds,wb){
     empMealAmt:avg6(ctrlL,loc,'empMealAmt',wb),mgrMealAmt:avg6(ctrlL,loc,'mgrMealAmt',wb),
     manualRefAmt:avg6(ctrlL,loc,'manualRefAmt',wb),
     depositAmt:avg6(ctrlL,loc,'depositAmt',wb),
-    floorMgmtNeeded:avg6(laborL,loc,'floorMgmtNeeded',wb),
-    floorHrsSched:avg6(laborL,loc,'floorHrsSched',wb),
+    floorMgmtNeeded:M('floorMgmtNeeded'),
+    floorHrsSched:M('floorHrsSched'),
     fixedContractHrs:avg6(laborL,loc,'fixedContractHrs',wb),
-    variableNeeded:avg6(laborL,loc,'variableNeeded',wb),
+    variableNeeded:M('variableNeeded'),
     oppCostPct:avg6(laborL,loc,'oppCostPct',wb),
     oppCostDollar:avg6(laborL,loc,'oppCostDollar',wb)};
   // Coverage map: how many real observations backed each metric. avg6 returns 0 for
