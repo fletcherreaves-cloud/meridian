@@ -610,6 +610,29 @@ function fetchRampSales(laborRows, laborIdx, loc, date, ds) {
   return 0;
 }
 
+// A same-DOW year-over-year growth point is only meaningful if BOTH days were normal trading
+// days. A closure day has sales just above zero, and `ly > 0` alone lets it through as a
+// DENOMINATOR — which is how the 6-Week Performance chart came to plot a 1,200,000% axis
+// (Notes 62). Real examples in labor_rows: $8.98 on 2026-01-25, $9.38 on Christmas 2024,
+// $30.07 on the 2025-01-22 ice storm. An $8.98 last-year denominator against a $10k day is
+// +111,300%, and averaging even one of those destroys the trend it is meant to measure.
+//
+// THE BOUND IS MEASURED, NOT CHOSEN. Across 40,000 store-days in 26 stores, 39,357 (98.4%)
+// fall at or above 70% of their own store's median day, and only 76 fall below 25%. Those 76
+// are the closures and severe-weather days. A day at 25% of median against a median day is
+// exactly +300% growth, so ±300% is where the real distribution ends and artifacts begin —
+// the cut is the measurement, not a round number that felt safe.
+//
+// Points are DROPPED, not clamped: clamping a +12,000 outlier to +3 still drags the mean up
+// and would keep reporting a fake surge. A closure is missing information, not a big number.
+const YOY_MAX_GROWTH = 3.0;    // +300% — LY day at 25% of median vs a normal current day
+const YOY_MIN_GROWTH = -0.75;  // -75%  — current day at 25% of median vs a normal LY day
+const _yoyPoint = (cur, ly) => {
+  if (!(cur > 0) || !(ly > 0)) return null;
+  const g = (cur - ly) / ly;
+  return (g > YOY_MAX_GROWTH || g < YOY_MIN_GROWTH) ? null : g;
+};
+
 function getDOWTrend(lIdx,loc,tDt,eDt,wkS,wkE){
   // Collect YOY growth for same DOW in the specific week range [wkS..wkE]
   const tDow=dowOf(tDt);const points=[];
@@ -621,7 +644,7 @@ function getDOWTrend(lIdx,loc,tDt,eDt,wkS,wkE){
     if(weekIdx>=wkS&&weekIdx<=wkE&&dowOf(chk)===tDow){
       const cur=fetchRow(lIdx,loc,chk,'sales');
       const ly=fetchRow(lIdx,loc,addD(chk,-364),'sales');
-      if(cur>0&&ly>0) points.push((cur-ly)/ly);
+      { const _g=_yoyPoint(cur,ly); if(_g!==null) points.push(_g); }
     }
     if(weekIdx>wkE+1) break;
   }
@@ -638,7 +661,7 @@ function getDOWSpecificTrend(lIdx, loc, targetDow, eDt, weeksBack) {
     if(weekIdx<=weeksBack&&dowOf(chk)===targetDow){
       const cur=fetchRow(lIdx,loc,chk,'sales');
       const ly=fetchRow(lIdx,loc,addD(chk,-364),'sales');
-      if(cur>0&&ly>0) points.push((cur-ly)/ly);
+      { const _g=_yoyPoint(cur,ly); if(_g!==null) points.push(_g); }
     }
     if(weekIdx>weeksBack+1) break;
   }
