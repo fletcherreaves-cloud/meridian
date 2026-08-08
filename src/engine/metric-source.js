@@ -129,6 +129,13 @@ export const METRIC_SOURCES = {
   // (actual_punched_hours). laborRows is NOT in this chain — its loader emits only
   // loc/date/sales/laborPct/tpph/otHrs/otDollar, and the chain test caught that.
   actHrs:         { mode: 'pos', srcs: [['ctrlRows', 'actHrs'], ['qsrActSummaryRows', 'actHrs']] },
+
+  // Actual vs needed hours — a SIGNED HOUR DIFFERENCE (actual − needed), not a percent.
+  // mode:'any' is load-bearing: 'pos' would discard every NEGATIVE reading, i.e. exactly
+  // the understaffed store-days worth seeing, and 0 (dead on target) is legitimate too.
+  // Owner corrected an earlier assessment that this was manual-only — it is carried by
+  // the Controls upload AND derivable from the DAR, which has both hour columns.
+  actVsNeed:      { mode: 'any', srcs: [['ctrlRows', 'actVsNeed'], ['qsrActSummaryRows', 'actVsNeed']] },
 };
 
 // ── Deliberately manual-only ────────────────────────────────────────────────
@@ -151,7 +158,6 @@ export const MANUAL_ONLY_METRICS = {
   manualRefAmt: 'Manual refunds $ — Controls upload only',
   depositAmt:   'Deposit $ — Controls upload only',
   spph:         'Sales per person-hour — Controls upload only',
-  actVsNeed:    'Actual vs needed hours — Controls upload only (transactions in the DAR are not this)',
   avgRate:      'Average labor rate $/hr — Controls upload only (avg_check is $/transaction, a different metric)',
   // Labor / MBI report
   floorMgmtNeeded:  'Floor management hours needed — Labor upload only',

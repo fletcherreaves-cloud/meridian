@@ -8,7 +8,7 @@ const EMITS = {
   ctrlRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'posOverAmt',
              'posOverCnt', 'promoAmt', 'promoPct', 'tRedACnt', 'tRedBCnt', 'laborPct',
              'tpph', 'otHrs', 'cashOSPct', 'cashOSAmt', 'tRedAPct', 'tRedBPct',
-             'drawerOpens', 'discPct', 'actHrs'],   // actHrs added 2026-08-08 — supabase.js:1143 maps act_hrs
+             'drawerOpens', 'discPct', 'actHrs', 'actVsNeed'],   // actHrs added 2026-08-08 — supabase.js:1143 maps act_hrs
   opsCashRows: ['cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'tRedACnt',
                 'tRedBCnt', 'tRedAPct', 'tRedBPct', 'cashOSAmt', 'cashOSPct', 'discPct',
                 'drawerOpens'],

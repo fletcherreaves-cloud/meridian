@@ -1844,6 +1844,12 @@ function _qsrActFromSummed(loc, dt, v) {
     projGC: v.proj_total_transactions || 0, projSales: v.proj_sales_dollars || 0,
     lySales: v.ly_product_sales || 0, lyGc: v.ly_transactions || 0,
     actHrs: v.actual_punched_hours || 0, needHrs: v.total_needed_hours || 0,
+    // Signed HOUR DIFFERENCE (actual − needed), matching ctrl_rows.act_vs_need's units —
+    // verified 2026-08-08 against live rows: ctrl_rows ranges -60.38..+80.18 hours, and
+    // the DAR's actual−needed gives the same shape (+27.8h, -1.9h). Negative = understaffed
+    // vs need, and that is the case you most want to see, so this metric is mode:'any'.
+    // Emitted here as a field so METRIC_SOURCES can chain to it directly.
+    actVsNeed: (v.actual_punched_hours || 0) - (v.total_needed_hours || 0),
     _kvsH: v.healthy_count || 0, _kvsU: v.unhealthy_count || 0,
     _mfyTime: v.mfy_untilserve || 0, _mfyCnt: v.mfy_trans_cnt || 0,
     _isQsrAct: true,

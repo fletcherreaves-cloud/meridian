@@ -210,13 +210,34 @@ Of its 28 avg6 fields:
 | | count |
 |---|---|
 | have a METRIC_SOURCES chain (resolver available, simply unused) | **14** |
-| no chain, but a real auto source EXISTS and was unused | **1** — `actHrs` ✅ added |
-| no chain and **no auto source anywhere** — genuinely manual-only | **13** ✅ documented |
+| no chain, but a real auto source EXISTS and was unused | **2** — `actHrs`, `actVsNeed` ✅ added |
+| no chain and **no auto source anywhere** — genuinely manual-only | **12** ✅ documented |
 
 Checked against the live column lists of `daily_glimpse_daily`, `cash_sheet_daily`,
-`sales_ledger_daily` and `qsr_daily_activity_rollup`. Two apparent matches were rejected
-on inspection: `avgRate` is $/hour while `avg_check` is $/transaction, and `actVsNeed` is
-not DAR transactions.
+`sales_ledger_daily` and `qsr_daily_activity_rollup`. `avgRate` was rejected on inspection —
+it is $/hour while `avg_check` is $/transaction.
+
+⚠️ **`actVsNeed` was WRONGLY rejected first time and the owner caught it.** I grep-matched
+field NAMES ("act…" hit `transactions`) instead of thinking about what the metric is. It is
+hours: the DAR rollup carries **both** `actual_punched_hours` and `total_needed_hours`, so
+the difference is directly derivable. Now chained.
+
+Two things that verification turned up, both of which would have made a naive chain wrong:
+- `ctrl_rows.act_vs_need` is a **signed HOUR DIFFERENCE**, not a percent. The negative
+  values (-60.38 .. +80.18) are the tell; an automated units guess said "percent" and was
+  wrong.
+- It must therefore be **`mode:'any'`**. `'pos'` would discard every negative reading —
+  i.e. exactly the understaffed store-days worth looking at — and 0 (dead on target) is
+  legitimate too.
+
+Units proven equal on the same store-days rather than assumed:
+`43380 3.13/3.13 · 6972 80.18/80.17 · 10422 26.37/26.37 · 10034 -53.83/-53.62`.
+
+Owner also named Labor Analysis and the Operations Report as sources. `ops_rows` has **no**
+hours columns (verified live), so it cannot serve this. Labor Analysis derives hours from
+the LifeLenz schedule — a computed engine output rather than a raw row stream, so it would
+need a different integration than a METRIC_SOURCES chain. Worth revisiting if the
+ctrl→DAR pair proves insufficient.
 
 `MANUAL_ONLY_METRICS` in metric-source.js now names all 13 explicitly, so their absence
 reads as a decision rather than an oversight. Adding a chain for any of them requires a
