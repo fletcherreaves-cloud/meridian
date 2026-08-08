@@ -86,6 +86,8 @@
 - [LifeLenz session](lifelenz-session.md) — token lifecycle, dead ends. [VLH config](project-vlh-config.md).
 - [Labor Analysis FLH](project-labor-analysis-flh.md) · [LifeLenz schedule/jobs](project-lifelenz-schedule-jobs.md)
   · [Crew skills matrix](project-crew-skills-matrix.md) · [Feature Requests](feature-requests.md)
+- [Performance budget + manual-sourcing audit](feedback-performance-budget.md) — speed is a feature; MANUAL_ONLY stays 0
+- [Notes 61 queue](notes-61-queue.md) — mobile perf, District View pass, the Resolver engine concept, SMG definitions
 - [PWA Share bug](project-pwa-share-bug.md) · [Backlog](project-backlog.md) · [Meridian status](project-meridian.md)
 
 ---
