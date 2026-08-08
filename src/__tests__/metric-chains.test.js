@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { METRIC_SOURCES, metricDaily, metricSeries } from '../engine/metric-source.js';
+import { METRIC_SOURCES, metricDaily, metricSeries, MANUAL_ONLY_METRICS } from '../engine/metric-source.js';
 
 // Field names each loader is known to emit, taken from src/lib/supabase.js. A chain that
 // names a field its source doesn't emit resolves to nothing and silently falls through —
@@ -141,5 +142,41 @@ describe('resolution behaviour', () => {
 
   it('returns null when no source has the day at all', () => {
     expect(metricDaily({}, '3708', D, 'cashRefAmt')).toBeNull();
+  });
+});
+
+describe('compute6wk sourcing (v4.893)', () => {
+  // compute6wk is the sole source for both scorecards, every KPI tile, StoreCard and
+  // RankingView's inputs. Until 2026-08-08 it read raw manual-upload arrays for all 28 of
+  // its fields — the standing-rule violation that made recent windows blank or stale
+  // everywhere it feeds.
+  //
+  // It now splits: resolvable metrics go through metricAvg (auto-first per day), and only
+  // the genuinely manual-only ones keep the direct avg6 read. THE TWO LISTS MUST AGREE —
+  // a field kept on avg6 that HAS a chain is silently manual-only again, which is the
+  // exact regression this whole migration exists to undo.
+  const FORECAST = readFileSync(new URL('../engine/forecast.js', import.meta.url), 'utf8');
+  const body = (() => {
+    const i = FORECAST.indexOf("const r={oepe:M(");
+    return FORECAST.slice(i, FORECAST.indexOf('};', i));
+  })();
+
+  it('every field still on avg6 is genuinely manual-only', () => {
+    const onAvg6 = [...body.matchAll(/(\w+):avg6\(/g)].map(m => m[1]);
+    const wrong = onAvg6.filter(f => !MANUAL_ONLY_METRICS[f]);
+    expect(wrong, `these have a chain but still read raw rows: ${wrong.join(', ')}`).toEqual([]);
+  });
+
+  it('every documented manual-only metric is accounted for', () => {
+    const onAvg6 = new Set([...body.matchAll(/(\w+):avg6\(/g)].map(m => m[1]));
+    const missing = Object.keys(MANUAL_ONLY_METRICS).filter(f => !onAvg6.has(f));
+    expect(missing, `documented manual-only but not read: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('every resolver-routed field is actually registered', () => {
+    const routed = [...body.matchAll(/(\w+):M\('(\w+)'\)/g)].map(m => m[2]);
+    expect(routed.length).toBeGreaterThanOrEqual(18);
+    const unregistered = routed.filter(k => !METRIC_SOURCES[k]);
+    expect(unregistered, `routed but unregistered: ${unregistered.join(', ')}`).toEqual([]);
   });
 });

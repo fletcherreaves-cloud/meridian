@@ -12,7 +12,7 @@ function normSlice(s){return PEAK_SLICES[s.toLowerCase().trim()]||s.toLowerCase(
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
-import { metricDaily } from './metric-source.js';
+import { metricDaily, metricAvg } from './metric-source.js';
 import { weightedRecencyProjection, robustBaseline, _isNum as _stIsNum } from './smart-targets.js';
 import { impactWeight } from './events-import.js';
 
@@ -855,17 +855,34 @@ function compute6wk(loc,ds,wb){
   const opsL  = locRows(ds.opsByLoc, ds.opsRows, loc);
   const ctrlL = locRows(ds.ctrlByLoc, ds.ctrlRows, loc);
   const laborL= locRows(ds.laborByLoc, ds.laborRows, loc);
-  const r={oepe:avg6(opsL,loc,'oepe',wb),kvst:avg6(opsL,loc,'kvst',wb),
-    park:avg6(opsL,loc,'park',wb),r2p:avg6(opsL,loc,'r2p',wb),
-    tpph:avg6(ctrlL,loc,'tpph',wb)||avg6(laborL,loc,'tpph',wb),
-    spph:avg6(ctrlL,loc,'spph',wb),laborPct:avg6(ctrlL,loc,'laborPct',wb)||avg6(laborL,loc,'laborPct',wb),
-    actVsNeed:avg6(ctrlL,loc,'actVsNeed',wb),otHrs:avg6(ctrlL,loc,'otHrs',wb),
-    cashOSPct:avg6(ctrlL,loc,'cashOSPct',wb),tRedAPct:avg6(ctrlL,loc,'tRedAPct',wb),
-    tRedBPct:avg6(ctrlL,loc,'tRedBPct',wb),
-    discPct:avg6(ctrlL,loc,'discPct',wb),cashRefCnt:avg6(ctrlL,loc,'cashRefCnt',wb),
-    posOverCnt:avg6(ctrlL,loc,'posOverCnt',wb),drawerOpens:avg6(ctrlL,loc,'drawerOpens',wb),
-    avgRate:avg6(ctrlL,loc,'avgRate',wb)||avg6(laborL,loc,'avgRate',wb),
-    actHrs:avg6(ctrlL,loc,'actHrs',wb),
+  // ── Resolvable metrics go through metric-source.js (auto-first per day) ──────
+  // These 18 previously read raw ds.opsRows / ds.ctrlRows / ds.laborRows — the MANUAL
+  // uploads only — which is the standing-rule violation that made recent windows blank or
+  // stale everywhere compute6wk feeds: both scorecards, every KPI tile, StoreCard and
+  // RankingView's inputs. metricAvg resolves each DAY auto-first through that metric's
+  // chain, so a day covered by Glimpse or the DAR now counts.
+  //
+  // ⚠️ THIS CHANGES DISPLAYED NUMBERS, deliberately. laborPct in particular: the chain
+  // puts glimpseRows FIRST because pre-2026-08-03 ctrlRows.laborPct holds the wrong
+  // (Actual, not Punched) value — so some stores will move, and the new number is the
+  // correct one.
+  //
+  // `?? 0` preserves avg6's contract for the ~30 consumers that do arithmetic on these.
+  // The no-data signal lives in r._cov below, which is what the scorecards read.
+  const _range = { s: new Date(Date.now() - wb * 7 * 86400000), e: new Date() };
+  const M = (key) => metricAvg(ds, [loc], _range, key) ?? 0;
+
+  const r={oepe:M('oepe'),kvst:M('kvst'),park:M('park'),r2p:M('r2p'),
+    tpph:M('tpph'),spph:M('spph'),laborPct:M('laborPct'),
+    actVsNeed:M('actVsNeed'),otHrs:M('otHrs'),actHrs:M('actHrs'),avgRate:M('avgRate'),
+    cashOSPct:M('cashOSPct'),tRedAPct:M('tRedAPct'),tRedBPct:M('tRedBPct'),
+    discPct:M('discPct'),cashRefCnt:M('cashRefCnt'),
+    posOverCnt:M('posOverCnt'),drawerOpens:M('drawerOpens'),
+
+    // ── Manual-only: no auto stream carries these and no derivation exists ───────
+    // Verified 2026-08-08 against the live column lists of the auto/emailed tables; see
+    // MANUAL_ONLY_METRICS in metric-source.js. Routing them through the resolver would
+    // add nothing, so they keep the direct avg6 read.
     empMealAmt:avg6(ctrlL,loc,'empMealAmt',wb),mgrMealAmt:avg6(ctrlL,loc,'mgrMealAmt',wb),
     manualRefAmt:avg6(ctrlL,loc,'manualRefAmt',wb),
     depositAmt:avg6(ctrlL,loc,'depositAmt',wb),

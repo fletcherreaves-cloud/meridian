@@ -220,6 +220,25 @@ export function dailyDataFreshness(ds) {
 
 // Lazy per-source index (loc_date → rows[]), cached non-enumerably on ds so it rebuilds
 // automatically when ds is replaced (setDs makes a new object).
+// Per-source, per-loc sorted date keys, cached on ds alongside _srcIdx. Built once from
+// the same single pass, so adding it costs nothing beyond the memory for the keys.
+function _srcDates(ds, src) {
+  const cacheKey = '_msDates_' + src;
+  if (!ds[cacheKey]) {
+    const byLoc = {};
+    for (const r of (ds?.[src] || [])) {
+      if (!r || r.loc == null || !r.date) continue;
+      const l = String(r.loc);
+      (byLoc[l] || (byLoc[l] = new Set())).add(_dk(r.date));
+    }
+    const out = {};
+    for (const l in byLoc) out[l] = [...byLoc[l]].sort();
+    try { Object.defineProperty(ds, cacheKey, { value: out, enumerable: false, configurable: true }); }
+    catch { ds[cacheKey] = out; }
+  }
+  return ds[cacheKey];
+}
+
 function _srcIdx(ds, src) {
   const cacheKey = '_msIdx_' + src;
   if (!ds[cacheKey]) {
@@ -286,11 +305,17 @@ export function metricSeries(ds, loc, range, key, _depth = 0) {
   const L = String(loc);
   const rs = _dk(range.s), re = _dk(range.e);
   // Collect every date in range that any source has for this loc, then resolve auto-first.
+  //
+  // This used to scan the FULL source array on every call. That is fine for a panel
+  // resolving one metric, but compute6wk resolves ~18 metrics, 3 times per store, across
+  // 27 stores — roughly 4,000 full-array passes over multi-year tables. The comment at the
+  // top of compute6wk documents a previous fix for exactly that pathology, so routing it
+  // through here without this would have re-created the problem it warns about.
+  // _srcDates caches a per-source, per-loc sorted date list on ds, so collection is O(days
+  // for this store) instead of O(all rows).
   const dates = new Set();
   for (const [src] of spec.srcs) {
-    for (const r of (ds?.[src] || [])) {
-      if (String(r.loc) !== L || !r.date) continue;
-      const dk = _dk(r.date);
+    for (const dk of (_srcDates(ds, src)[L] || [])) {
       if (dk >= rs && dk <= re) dates.add(dk);
     }
   }
