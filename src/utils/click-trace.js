@@ -57,21 +57,31 @@ export function mark(name, fn) {
 // React commit timings, via the built-in Profiler. mark() can only wrap plain function calls —
 // it cannot see inside React's render/commit, which is precisely where the unattributed time
 // was hiding: on 2026-08-08 the three named startup spans accounted for 325ms of 169,537ms.
-let _renders = [];   // { phase, actual, base }
+//
+// Aggregated totals (count/worst/total per id) answer "is this slow overall" but not "what was
+// the user doing" — the same gap longtask attribution already closes via _lastClick. Every
+// render entry gets the same treatment (2026-08-09: a fix that should have cut the worst single
+// render measured no better on re-test, and the aggregate view gave no way to tell whether the
+// worst render was one-time startup cost or a specific recurring click — this closes that gap).
+let _renders = [];   // { id, phase, actual, base, at, label }
 export function reportRender(id, phase, actualDuration, baseDuration) {
   if (!_on) return;
   if (actualDuration < 3) return;
-  _renders.push({ id, phase, actual: actualDuration, base: baseDuration });
+  const at = performance.now();
+  const near = _lastClick && (at - _lastClick.at) < 1000 && (at - _lastClick.at) > -50;
+  _renders.push({ id, phase, actual: actualDuration, base: baseDuration, at, label: near ? _lastClick.label : '(no click — startup/background)' });
   if (_renders.length > 600) _renders.shift();
   if (actualDuration >= 200)
     console.log(`%c[click-trace] React ${phase} ${Math.round(actualDuration)}ms  (${id})`, 'color:#fb923c');
 }
 
-export function printClickTrace() {
+// Builds the same report both printClickTrace() (console) and the on-screen overlay (phones
+// with no attached debugger) render — one source of truth for the numbers, two presentations.
+function buildReportLines() {
   if (!_tasks.length && !_marks.length && !_renders.length) {
-    console.log('%c[click-trace] nothing recorded yet — click something first', 'color:#f5bc00');
-    return;
+    return ['nothing recorded yet — click something first'];
   }
+  const lines = [];
   const byLabel = {};
   for (const t of _tasks) {
     const k = t.label || '(no click)';
@@ -79,10 +89,14 @@ export function printClickTrace() {
     byLabel[k].n++; byLabel[k].total += t.ms;
     if (t.ms > byLabel[k].worst) byLabel[k].worst = t.ms;
   }
-  console.log('%c─── click-trace: long main-thread tasks (>50ms) ───', 'color:#f5bc00;font-weight:700');
-  Object.entries(byLabel).sort((a, b) => b[1].worst - a[1].worst).slice(0, 15)
-    .forEach(([label, s]) =>
-      console.log(`  worst ${Math.round(s.worst)}ms · ${s.n}x · total ${Math.round(s.total)}ms  ←  ${label}`));
+  if (_tasks.length) {
+    lines.push('── long main-thread tasks (>50ms) ──');
+    Object.entries(byLabel).sort((a, b) => b[1].worst - a[1].worst).slice(0, 15)
+      .forEach(([label, s]) =>
+        lines.push(`worst ${Math.round(s.worst)}ms · ${s.n}x · total ${Math.round(s.total)}ms  ←  ${label}`));
+  } else {
+    lines.push('(no longtask entries — unsupported on this browser, e.g. iOS Safari; named spans below still work)');
+  }
 
   if (_marks.length) {
     const byName = {};
@@ -91,10 +105,10 @@ export function printClickTrace() {
       byName[m.name].n++; byName[m.name].total += m.ms;
       if (m.ms > byName[m.name].worst) byName[m.name].worst = m.ms;
     }
-    console.log('%c─── named spans (what actually ran) ───', 'color:#f5bc00;font-weight:700');
+    lines.push('', '── named spans (what actually ran) ──');
     Object.entries(byName).sort((a, b) => b[1].total - a[1].total).slice(0, 15)
       .forEach(([name, s]) =>
-        console.log(`  ${name.padEnd(26)} ${s.n}x · worst ${Math.round(s.worst)}ms · total ${Math.round(s.total)}ms`));
+        lines.push(`${name}  ${s.n}x · worst ${Math.round(s.worst)}ms · total ${Math.round(s.total)}ms`));
   }
   if (_renders.length) {
     const by = {};
@@ -104,12 +118,98 @@ export function printClickTrace() {
       by[k].n++; by[k].total += r.actual;
       if (r.actual > by[k].worst) by[k].worst = r.actual;
     }
-    console.log('%c─── React commits (render + commit time) ───', 'color:#f5bc00;font-weight:700');
+    lines.push('', '── React commits (render + commit time) ──');
     Object.entries(by).sort((a, b) => b[1].total - a[1].total).slice(0, 12)
       .forEach(([k, s2]) =>
-        console.log(`  ${k.padEnd(24)} ${s2.n}x · worst ${Math.round(s2.worst)}ms · total ${Math.round(s2.total)}ms`));
+        lines.push(`${k}  ${s2.n}x · worst ${Math.round(s2.worst)}ms · total ${Math.round(s2.total)}ms`));
+
+    // Background/startup churn (ds re-resolving as each loader finishes — a separate, real,
+    // already-documented issue, see v4.212's own comments on ~32 setDs call sites) and actual
+    // click-triggered jank are two different problems. Mixing them into one "top 10 slowest"
+    // list lets startup noise bury the click data entirely — exactly what happened on the
+    // 2026-08-09 capture, where all 10 slowest entries were startup and zero were clicks, even
+    // though the reported complaint is specifically about clicks. Split them.
+    const withClick = _renders.filter(r => r.label !== '(no click — startup/background)');
+    const noClick = _renders.filter(r => r.label === '(no click — startup/background)');
+    lines.push('', `── slowest CLICK-attributed renders (${withClick.length} of ${_renders.length} total) ──`);
+    if (!withClick.length) {
+      lines.push('(none — every recorded render happened with no click in the preceding second; the slowness above is background/startup work, not a click)');
+    } else {
+      [...withClick].sort((a, b) => b.actual - a.actual).slice(0, 10)
+        .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})  ←  ${r.label}`));
+    }
+    lines.push('', `── slowest background/startup renders (${noClick.length} of ${_renders.length} total) ──`);
+    [...noClick].sort((a, b) => b.actual - a.actual).slice(0, 5)
+      .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})`));
   }
+  return lines;
+}
+
+export function printClickTrace() {
+  const lines = buildReportLines();
+  console.log('%c─── click-trace report ───', 'color:#f5bc00;font-weight:700');
+  lines.forEach(l => console.log(l));
   console.log('%cmfClickTrace.reset() to clear · mfClickTrace.off() to disable', 'color:#6b7280');
+}
+
+// ── On-screen overlay (no attached debugger needed — e.g. iPhone with no Mac handy) ──────────
+// A small floating button that toggles a plain-text report + a Copy button, so the report can
+// be pasted straight into a chat/message. Pure DOM, no React — this file runs before React
+// mounts and must stay usable even if the app itself is struggling to render.
+function mountOnScreenButton() {
+  try {
+    if (document.getElementById('mf-clicktrace-btn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'mf-clicktrace-btn';
+    btn.textContent = '📊';
+    btn.setAttribute('aria-label', 'Show click-trace report');
+    Object.assign(btn.style, {
+      position: 'fixed', bottom: '14px', right: '14px', zIndex: 999999,
+      width: '44px', height: '44px', borderRadius: '50%', border: '1px solid #4b5563',
+      background: '#111827', color: '#f5bc00', fontSize: '18px', lineHeight: '1',
+      cursor: 'pointer', opacity: '0.55', boxShadow: '0 2px 10px rgba(0,0,0,.4)',
+    });
+
+    let overlay = null;
+    const close = () => { if (overlay) { overlay.remove(); overlay = null; } };
+    btn.onclick = () => {
+      if (overlay) { close(); return; }
+      overlay = document.createElement('div');
+      Object.assign(overlay.style, {
+        position: 'fixed', inset: '0', zIndex: 999998, background: 'rgba(0,0,0,.92)',
+        color: '#e5e7eb', font: '11px/1.6 ui-monospace,monospace', padding: '16px',
+        overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+      });
+      const text = buildReportLines().join('\n');
+      const bar = document.createElement('div');
+      Object.assign(bar.style, { display: 'flex', gap: '8px', marginBottom: '10px', position: 'sticky', top: '0' });
+      const mkBtn = (label, onClick) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        Object.assign(b.style, {
+          padding: '8px 14px', minHeight: '44px', borderRadius: '6px', border: '1px solid #4b5563',
+          background: '#1f2937', color: '#f5bc00', fontSize: '12px', cursor: 'pointer',
+        });
+        b.onclick = onClick;
+        return b;
+      };
+      const copyBtn = mkBtn('Copy report', () => {
+        navigator.clipboard?.writeText(text).then(
+          () => { copyBtn.textContent = 'Copied!'; setTimeout(() => { copyBtn.textContent = 'Copy report'; }, 1500); },
+          () => { copyBtn.textContent = 'Copy failed — select text manually'; }
+        );
+      });
+      bar.appendChild(copyBtn);
+      bar.appendChild(mkBtn('Reset', () => { window.mfClickTrace.reset(); close(); }));
+      bar.appendChild(mkBtn('Close ✕', close));
+      const pre = document.createElement('div');
+      pre.textContent = text;
+      overlay.appendChild(bar);
+      overlay.appendChild(pre);
+      document.body.appendChild(overlay);
+    };
+    document.body.appendChild(btn);
+  } catch (e) { /* never break the app for a diagnostic */ }
 }
 
 export function initClickTrace() {
@@ -150,5 +250,11 @@ export function initClickTrace() {
     window.mfClickTrace.reset = () => { _tasks = []; _marks = []; _renders = []; };
     window.mfClickTrace.off = () => { try { sessionStorage.removeItem(KEY); } catch {} _on = false; };
     console.log('%c[click-trace] on — click around, then run mfClickTrace()', 'color:#f5bc00');
+
+    // Phones with no attached debugger (e.g. iPhone, no Mac handy) still need a way to see this —
+    // a small floating button + on-screen report. document.body exists by here: module scripts
+    // execute after the document is parsed.
+    if (document.body) mountOnScreenButton();
+    else document.addEventListener('DOMContentLoaded', mountOnScreenButton, { once: true });
   } catch (e) { /* never break the app for a diagnostic */ }
 }
