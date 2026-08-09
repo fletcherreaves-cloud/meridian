@@ -7,17 +7,24 @@
 // -10% and the count-completeness 0.75 were picked from measured bucket boundaries
 // (memory/feedback-measure-dont-reason.md).
 //
-// Covers two deferred sites from the sweep plan:
+// Covers three deferred sites from the sweep plan:
 //   A) src/lib/supabase.js `_finalizeQsrAct` — tpph/r2p/oepe/park/kvst day-level rate metrics.
 //      Denominators: actHrs (tpph), fc_trans_cnt (r2p), dt_trans_cnt (oepe/park), mfy_trans_cnt (kvst).
 //      Same formulas as _finalizeQsrAct (lines ~1810-1849) — kept in sync by hand; if that function's
 //      math changes, update the mirrored formulas below too.
 //   B) src/views/graded-visits.js `hourMetrics` — hourly stwGcCompPct/prodSalesCompPct vs LY.
 //      Denominators: ly_transactions, ly_product_sales, PER HOUR SLOT (not per day).
+//   C) src/views/signals.js `planPace` — same-day cumulative pacePct/gcPacePct.
+//      Denominators: cumulative proj_sales_dollars / proj_total_transactions elapsed so far.
 //
-//   node scripts/measure-denominator-floors.mjs               # both A and B, default 120-day window for B
+// dt-speedofservice.js's early/late `us/cnt` split (also flagged in the sweep plan) is NOT covered
+// here — it's a coarser aggregate of the SAME dt_trans_cnt field Part A already measures (summed
+// over ~half a multi-day window per store, vs Part A's single-day-per-store), so it's strictly
+// safer than what Part A already showed to rarely get small. See the sweep memory doc.
+//
+//   node scripts/measure-denominator-floors.mjs               # A, B, and C — default 120-day window for B/C
 //   node scripts/measure-denominator-floors.mjs --skip-hourly # A only (fast — one page via the daily view)
-//   node scripts/measure-denominator-floors.mjs --days 60     # B's hourly pull window
+//   node scripts/measure-denominator-floors.mjs --days 60     # B/C's hourly pull window
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (qsr_daily_activity is RLS-scoped; the
 // anon key this environment has access to returns 0 rows for it — confirmed live, not assumed. See
@@ -147,6 +154,38 @@ if (!SKIP_HOURLY) {
   console.log(`\nly_transactions === 1 in ${zeroToOne} of ${total} hour-slots with any LY count `
     + `(${total ? (zeroToOne / total * 100).toFixed(1) : '0'}%) — the sweep plan's concern that "1 is `
     + `normal, not an edge case" (e.g. overnight hours) is either confirmed or refuted by that share.`);
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // C) Same-day cumulative pacing — src/views/signals.js planPace's pacePct/gcPacePct (Signature
+  // #1, deferred: "partial-day-so-far denominator... the missing piece is a magnitude guard, not
+  // a date cutoff"). Reconstructs, for every real store-day, the cumulative doneActual/doneProj
+  // (and GC equivalents) at EVERY hour position through the day — i.e. "what would this ratio
+  // have shown if read at this exact hour" — using historical (already-complete) days as a stand-
+  // in for the many possible elapsed-hours states a live read can land on.
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  console.log(`\n\n═══ C) Same-day cumulative pacing denominators (${DAYS}-day window) ═══`);
+  const paceRows = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity')
+    .select('loc,dt,hour_slot,product_sales,proj_sales_dollars,transactions,proj_total_transactions')
+    .gte('dt', since).range(from, to));
+  const byDay = {};
+  for (const r of paceRows) { const k = r.loc + '|' + r.dt; (byDay[k] = byDay[k] || []).push(r); }
+  const paceSamples = [];
+  for (const dayRows of Object.values(byDay)) {
+    dayRows.sort((a, b) => String(a.hour_slot).localeCompare(String(b.hour_slot)));
+    let doneActual = 0, doneProj = 0, doneGC = 0, doneProjGC = 0;
+    for (const r of dayRows) {
+      doneActual += r.product_sales || 0; doneProj += r.proj_sales_dollars || 0;
+      doneGC += r.transactions || 0; doneProjGC += r.proj_total_transactions || 0;
+      paceSamples.push({
+        doneProj, pacePct: doneProj > 0 ? doneActual / doneProj * 100 : null,
+        doneProjGC, gcPacePct: doneProjGC > 0 ? doneGC / doneProjGC * 100 : null,
+      });
+    }
+  }
+  console.log(`${paceSamples.length} cumulative same-day snapshots (one per hour-elapsed, `
+    + `${Object.keys(byDay).length} store-days).\n`);
+  printBuckets('Sales Pace % (cumulative $ so far)', '%', paceSamples.filter(r => r.doneProj > 0), 'doneProj', 'pacePct', [1, 25, 50, 100, 250, 500, 1000, 2500]);
+  printBuckets('GC Pace % (cumulative guests so far)', '%', paceSamples.filter(r => r.doneProjGC > 0), 'doneProjGC', 'gcPacePct', [1, 2, 5, 10, 25, 50, 100, 250]);
 } else {
-  console.log('\n(--skip-hourly: part B not run)');
+  console.log('\n(--skip-hourly: parts B and C not run)');
 }

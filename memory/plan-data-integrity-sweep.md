@@ -324,6 +324,35 @@ consolidation pass on its own, separate from fixing individual sites.
 **Not yet fixed** — this needs owner prioritization before touching ~15+ HIGH-confidence sites
 across that many files in one sweep; picking up here in a future session.
 
+## Signature #1 — remaining deferred items reviewed (2026-08-09, session part 3)
+
+Went back through the 3 items still open after v4.926/v4.930's fixes:
+
+- **`backtest.js` `detectCleanDataStart`'s `cv=mean>0?...:Infinity`** — reviewed in detail, **no
+  fix needed**. An `Infinity` CV always fails the `cvPass` stability check, so a single all-zero-
+  sales week just prevents that window from being called "stable" — and the function's own
+  documented fallback for low confidence is `return null` → "apply no restriction," which is
+  already the safe direction (a missed detection is no worse than today; this can't make it
+  falsely assert bad data is clean). Fails safe by construction. Closing this out rather than
+  leaving it as a vague "lower priority" TODO forever.
+- **`dt-speedofservice.js`'s `us/cnt` sites** — reviewed, **no fix needed**, no new measurement
+  required. Every site here (`storeData`'s early/late split, `stationData`, `hourData`,
+  `daypartData`) aggregates the SAME `dt_trans_cnt`/`fc_trans_cnt`/`mfy_trans_cnt` fields Part A of
+  `measure-denominator-floors.mjs` already measured for the day-level rate metrics — just summed
+  over MORE days and/or MORE stores per bucket (coarser, not finer). More summing only grows a
+  count denominator, never shrinks it, so this is strictly safer than what Part A already showed
+  rarely gets small in practice.
+- **`signals.js` `pacePct`/`gcPacePct`** — genuinely different shape (cumulative-so-far WITHIN a
+  single day, potentially just the first 1-2 hours after opening), not covered by Part A's
+  day-level analysis. Extended `scripts/measure-denominator-floors.mjs` with a new **Part C**:
+  reconstructs, for every real store-day, the cumulative `doneActual`/`doneProj` (and GC
+  equivalents) at every hour position through the day — i.e. what the ratio would have shown if
+  read at that exact hour — bucketed by the cumulative `proj_sales_dollars`/`proj_total_transactions`
+  so far. **Not run** — this session's `SUPABASE_SERVICE_ROLE_KEY` was a one-time inline value the
+  owner pasted for the earlier Part A/B run, not persisted to the environment, so it wasn't
+  available for this follow-up. Needs a future run with the key (env var or another one-time
+  paste) to actually derive the floor.
+
 ## Method
 
 1. Enumerate sites per signature (the counts above are a first pass, already run).
