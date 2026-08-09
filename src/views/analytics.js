@@ -4127,6 +4127,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     const allResults = {};
     const locs = ds.storeIds;
 
+    const fullRange = {s:new Date('2000-01-01'), e:new Date()};
     for(let li=0;li<locs.length;li++){
       const loc = locs[li];
       setProgress(Math.round(li/locs.length*100));
@@ -4135,14 +4136,17 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       // Build per-DOW rolling median from ALL available actuals for this store.
       // Flag days where actual deviates from that DOW's median by > threshold.
       // This is model-independent: no forecast needed, purely historical baseline.
-
-      // Deduplicate by date (include $0 days — they're valid anomalies)
-      const allForLoc = ds.laborRows.filter(r=>r.loc===loc&&r.sales!=null&&r.sales>=0);
-      const seenDates = new Set();
-      const laborRows = allForLoc.filter(r=>{
-        const dk = dKey(r.date); if(seenDates.has(dk)) return false;
-        seenDates.add(dk); return true;
-      });
+      // Auto-first (data-integrity sweep signature #2, MEDIUM item — confirmed real, not
+      // theoretical): labor_rows stopped receiving new rows around 2026-07-23 (documented in
+      // engine/metric-source.js's header) while the auto DAR covers every store through today,
+      // so this scanner has been silently blind to the most recent weeks of real anomalies.
+      // Date keys are re-derived via dKey() from a noon-anchored Date (matches the pattern
+      // used everywhere else this session) so the event-calendar/holiday lookups stay
+      // consistent with dKey's local-calendar convention rather than metricSeries' UTC keys.
+      const salesSeries = metricSeries(ds, loc, fullRange, 'sales');
+      const laborRows = Object.keys(salesSeries).map(k=>{
+        const date=new Date(k+'T12:00:00'); return {date, dk:dKey(date), sales:salesSeries[k]};
+      }).sort((a,b)=>a.date-b.date);
       // Need 21 rows with actual sales for a meaningful baseline
       if(laborRows.filter(r=>r.sales>0).length < 21) continue;
 
@@ -4178,7 +4182,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
         const isHol = isHoliday(r.date);
         // vs LY: same calendar date 52 weeks ago — secondary signal for trend context
         const lyDate364 = addD(r.date,-364);
-        const lyActual  = fetchRow(ds.laborIdx,loc,lyDate364,'sales')||0;
+        const lyActual  = metricDaily(ds,loc,lyDate364,'sales')||0;
         const lyVarPct  = lyActual>0 ? (r.sales-lyActual)/lyActual*100 : null;
         anomalies.push({
           date: r.date,
@@ -4189,7 +4193,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
           flag: varPct > 0 ? 'over' : 'under',
           dow: r.date.toLocaleDateString('en-US',{weekday:'short',timeZone:'UTC'}),
           dateStr: r.date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}),
-          dKeyStr: dKey(r.date), // ISO key for event calendar storage
+          dKeyStr: r.dk, // ISO key for event calendar storage
           loc,
           isHoliday: !!isHol,
           holidayName: isHol ? isHol.label : null,

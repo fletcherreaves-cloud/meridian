@@ -76,24 +76,31 @@ async function fetchHistoricalWeather(locs, startDate, endDate) {
 }
 
 
+// Auto-first (data-integrity sweep signature #2, MEDIUM item — confirmed real, not
+// theoretical): labor_rows stopped receiving new rows around 2026-07-23 (documented in
+// engine/metric-source.js's header) while the auto DAR covers every store through today, so
+// this scanner has been silently blind to the most recent weeks of real sales anomalies.
+// Date keys are re-derived via dKey() from a noon-anchored Date rather than used raw from
+// metricSeries (which keys off UTC, unlike dKey's local-calendar keys used everywhere else
+// for userEvents lookups) — noon-anchoring keeps both conventions on the same calendar day.
 function detectAnomalies(ds, userEvents){
-  if(!ds||!ds.loaded||!ds.laborRows.length)return[];
+  if(!ds||!ds.loaded)return[];
   const anoms=[];
   const storeIds=ds.storeIds||Object.keys(DEFAULT_TARGETS);
+  const range={s:new Date('2000-01-01'), e:new Date()};
   for(const loc of storeIds){
-    const rows=ds.laborRows.filter(r=>r.loc===loc&&r.sales>0).sort((a,b)=>a.date-b.date);
-    if(rows.length<7)continue;
+    const salesSeries=metricSeries(ds,loc,range,'sales');
+    const days=Object.keys(salesSeries).map(k=>{const date=new Date(k+'T12:00:00');return{date,dk:dKey(date),sales:salesSeries[k]};}).sort((a,b)=>a.date-b.date);
+    if(days.length<7)continue;
     const byDow={};
     // Build baseline excluding event-tagged dates (closures, remodels etc.)
-    for(const r of rows){
-      const dk=dKey(r.date);
-      const ev=userEvents&&userEvents[loc]&&userEvents[loc][dk];
+    for(const r of days){
+      const ev=userEvents&&userEvents[loc]&&userEvents[loc][r.dk];
       if(ev&&(ev.type==='closure'||ev.type==='remodel'||ev.type==='weather')) continue; // exclude from baseline
       const d=r.date.getDay();if(!byDow[d])byDow[d]=[];byDow[d].push(r.sales);
     }
-    for(const r of rows){
-      const dk=dKey(r.date);
-      const ev=userEvents&&userEvents[loc]&&userEvents[loc][dk];
+    for(const r of days){
+      const ev=userEvents&&userEvents[loc]&&userEvents[loc][r.dk];
       if(ev&&ev.type==='closure') continue; // closed days never anomalies
       const d=r.date.getDay(),vals=byDow[d];if(!vals||vals.length<4)continue;
       const mean=vals.reduce((a,v)=>a+v,0)/vals.length;
