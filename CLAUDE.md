@@ -191,9 +191,18 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 **✅ Period-Total Scoreboard shipped (v4.534)** — Model Assignment panel → **📊 Period-Total Scoreboard** (read-only, `runPeriodTotalBacktest` in `backtest.js`). Re-validates the Simple-wins finding on the metric it was *discovered* on: grades simple/dow/ae/ewma/di on rolling 28-day **period totals** (not daily MAPE), strictly leak-free (Back Test mode; Simple already asOf=start). Per-store winner + district tally + median-Simple-vs-best-engineered verdict banner. **Why it matters:** the daily Model-Assignment/Forecast-Accuracy backtests grade *daily* MAPE (day-level noise + exact DOW placement dominate — the engineered models' home turf), whereas the v4.483 discovery graded *totals* where day errors cancel. This closes that gap so "does Simple still sweep?" is answered like-for-like. Simple's daily-level branch is unchanged: same `weightedRecencyProjection` reused verbatim + a same-DOW shape multiplier (required to forecast a single day; sums back to the winning monthly total). Also **v4.534:** Simple filter chip + distribution count in the Model Assignment top bar.
 
+**✅ RESOLVED (already shipped, confirmed 2026-08-09 — do NOT re-implement):** Model Assignment
+backtest results/overrides ARE cloud-persisted — this line had gone stale. `_pushModelAssignments()`
+(`src/views/labor-tools.js`) pushes the whole `MODEL_ASSIGNMENT_KEY` blob to Supabase `user_settings`
+(key `model_assignments`) after every backtest run, apply-winners, manual override, or reset
+(v4.544); the two backtest RESULT artifacts (daily summary + Period-Total Scoreboard matrix) round-
+trip the same way under `mf_bt_summary`/`mf_period_scoreboard` (v4.835). App.js hydrates from cloud
+on startup (`loadUserSetting('model_assignments')`, ~line 2426). localStorage stays the instant
+read path; cloud wins when newer. Before assuming a "next up" item is undone, verify against the
+actual code — this note nearly caused a duplicate reimplementation.
+
 **Next candidate areas:**
 - FR: TPPH auto-target calc. "As of [date]" labels on tiles.
-- Model Assignment: persist backtest results/overrides to Supabase (currently localStorage — device-local). **← next up (1b).**
 - Product Mix pull → Pricing Engine + Filet-O-Fish-Fridays correlation (Notes 25 #1 / 28 #5).
 - SAGE conversation persistence; multi-tenant deployment.
 
