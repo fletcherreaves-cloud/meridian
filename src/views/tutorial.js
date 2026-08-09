@@ -147,7 +147,7 @@ export function TutorialOverlay({ onClose }) {
           onClick: finish,
           style: { background: 'none', border: 'none', color: 'var(--text3)',
             fontSize: 18, cursor: 'pointer', padding: '0 0 4px 4px', lineHeight: 1 }
-        }, '×')
+        }, '✕')
       ),
 
       // Body

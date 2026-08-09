@@ -1135,7 +1135,7 @@ function EventEntryModal({stores, settings, onTagEvent, onClose}) {
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
             'Tag any location and date — no scan required. Supports single days or multi-day ranges.')
         ),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
+        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
       ),
       div({style:{overflowY:'auto',padding:'14px 18px',flex:1,display:'flex',flexDirection:'column',gap:14}},
 

@@ -4736,7 +4736,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
             div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},
               'AI detected broad events affecting multiple stores. Review and approve tagging.')),
           btn({onClick:()=>setShowRegional(false),style:{marginLeft:'auto',background:'none',
-            border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')),
+            border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')),
         div({style:{overflowY:'auto',padding:'12px 18px',flex:1}},
           pendingRegional.map((event,ei)=>{
             const coords=STORE_COORDS[event.primaryRow.loc];
@@ -5308,7 +5308,7 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
       ),
       div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
 
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
+        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
       )
     ),
 
@@ -5649,7 +5649,7 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
       ),
       div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
 
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
+        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
       )
     ),
 
@@ -5816,7 +5816,7 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
       ),
       div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
 
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
+        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
       )
     ),
 
@@ -6101,7 +6101,7 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
           'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap')
       ),
       btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',
-        color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
+        color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
     ),
 
     // Store selector (for multi-store scopes)

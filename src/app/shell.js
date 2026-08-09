@@ -396,7 +396,7 @@ function DataErrorBanner() {
       onClick: () => setDismissed(true),
       style: { marginLeft: 'auto', background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 13, lineHeight: 1 },
       title: 'Dismiss (the failures stay in mfDataErrors())',
-    }, '×')
+    }, '✕')
   );
 }
 
