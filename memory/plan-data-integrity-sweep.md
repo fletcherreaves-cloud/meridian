@@ -439,6 +439,32 @@ Went back through the 3 items still open after v4.926/v4.930's fixes:
   non-cumulative ratio for comparison and surfaced a real afternoon-bias lead — spun out into its
   own shipped feature, see `memory/project-hourly-projection-accuracy.md`.
 
+## Signature #3 — VERIFIED CLEAN (2026-08-09)
+
+The intro table's original note ("small; `*Cnt` sites scanned clean apart from that") never got
+its own write-up or a fresh live scan — closing that out. Full re-scan of `src/` for the class
+(a `*Cnt` field assigned/incremented/averaged from a `*Amt`/`*Dollar`/`*Cash`/`*Sales` value, or
+a parser column-mapping crossing "Count"/"#" and "Amt"/"$"/"Dollar" labels) came back clean:
+
+- `src/parsers/index.js` — every `fooCnt: fc(h,'...Cnt'/'...#'/'...Count')` maps to a
+  count-labeled header; every `fooAmt: fc(h,'...Amt'/'...$'/'...Dollar')` maps to a
+  dollar-labeled header, across all 6 sheet parsers (Controls, Smart Targets, Register Audit,
+  Cash Sheet, Daily Glimpse, 3-Peaks). No crossed mappings found.
+- `src/lib/supabase.js`'s snake_case↔camelCase table mappings, `src/engine/metric-source.js`'s
+  chain table, `src/engine/signal-registry.js`'s `unit:'count'` vs `unit:'currency'` signal
+  declarations, `src/views/store-dash.js`'s target-editor field config — all name-consistent,
+  no `*Cnt` metric/field ever absorbs a `*Amt` source or vice versa.
+- The one known real instance (`refundCnt += refundCashless`, v4.903/Notes 61) is still fixed
+  and commented in `src/utils/register-audit.js`, and already has a dedicated class-level guard:
+  `src/__tests__/register-audit-units.test.js` asserts counts stay integral and never absorb
+  dollar figures — this already satisfies the sweep Method's step 4 ("add a guard for the CLASS,
+  not the instance"), so no new test was needed.
+
+**No code changes required.** Signature #3 is now closed. All 8 signatures from the original
+table are accounted for: 1 (partially swept, remaining items reviewed/closed), 2 (swept), 3
+(verified clean, this entry), 4 (swept), 5 (swept), 6 (resolved as a byproduct), 7 and 8
+(resolved, guarded by tests).
+
 ## Method
 
 1. Enumerate sites per signature (the counts above are a first pass, already run).
