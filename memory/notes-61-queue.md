@@ -177,8 +177,8 @@ the client.
 
 ## Still open
 
-- **Dialed-In Calibration: no trend data for 1w/2w/4w/6w.** Owner: *"This one is very important
-  to me."* Highest-priority functional item outside the District View block.
+- ~~**Dialed-In Calibration trend data**~~ — ✅ FIXED v4.910 (event tags were starving every
+  last-year lookup). All four periods populate; 26/27 stores calibrate.
 - **SMG/VOICE metric definitions.** Owner supplied OSAT: `count(5 ratings) ÷ count(all ratings)`
   — only a 5 counts. Need to determine B2B, EPB2B and the rest, then add all to Metric Lineage.
 - **Complete listing of every metric we have access to.** Owner wants it to help wire data and

@@ -16,7 +16,8 @@
 import { describe, it, expect } from 'vitest';
 import { calibrateStore } from '../engine/backtest.js';
 
-const dKey = d => d.toISOString().slice(0, 10);
+import { dKey as _dk, addD } from '../utils/date.js';
+const dKey = d => _dk(d);
 const bIdx = rows => {
   const i = {};
   for (const r of rows) { if (!r.loc || !r.date) continue; (i[r.loc + '_' + dKey(r.date)] ||= []).push(r); }
@@ -51,9 +52,12 @@ describe('calibrateStore — store younger than its own LY lookback', () => {
     const ds = dsWithHistory('99002', 100);
     const res = await calibrateStore('99002', ds, { weeksBack: 6, _userEvents: {} });
 
+    // Use the SAME helper the engine uses. The original version did raw millisecond
+    // arithmetic (first.getTime() + 364*864e5), which diverges from addD across a DST
+    // boundary — so this passed when written and failed a day later for no code reason.
+    // A test whose result depends on when it runs is worse than no test.
     const first = ds.laborRows[0].date;
-    const expected = new Date(first.getTime() + 364 * 864e5);
-    expect(res._eligibleFrom).toBe(dKey(expected));
+    expect(res._eligibleFrom).toBe(dKey(addD(first, 364)));
     expect(res._historyDays).toBe(99);   // 100 rows spanning 99 day-gaps
   });
 
