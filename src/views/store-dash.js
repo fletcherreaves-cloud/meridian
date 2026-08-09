@@ -1878,7 +1878,12 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
       if(sort==='score') return (b.opsScore*0.6+b.ctrlScore*0.4)-(a.opsScore*0.6+a.ctrlScore*0.4);
       if(sort==='oepe') return (a.p.oepe||999)-(b.p.oepe||999);
       if(sort==='tpph') return (b.p.tpph||0)-(a.p.tpph||0);
-      if(sort==='labor') return (a.p.laborPct||0)-(b.p.laborPct||0);
+      // labor is "lower is better," so — unlike tpph just above, where a missing-data 0 already
+      // sorts to the bottom by construction — a bare ||0 here sorted a store with NO labor/
+      // controls data to rank #1 (best in the district). Data-integrity sweep signature #5
+      // (2026-08-09): use the same 999 "missing → worst" sentinel oepe already uses, gated on
+      // p._cov (forecast.js compute6wk's observation-count map) actually having a laborPct read.
+      if(sort==='labor') { const lv=x=>(x.p._cov&&x.p._cov.laborPct>0)?x.p.laborPct:999; return lv(a)-lv(b); }
       if(sort==='t2w') return (b.p.t2w||0)-(a.p.t2w||0);
       if(sort==='vel') return ((b.vel&&b.vel.opsScore)||0)-((a.vel&&a.vel.opsScore)||0);
       return 0;
