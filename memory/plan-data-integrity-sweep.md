@@ -371,27 +371,37 @@ already-decided exceptions: `LaborAnalyticsPanel`, `store-analytics.js` `dowData
 - `morning-brief.js:284-295`/`:220-282` — hand-rolled vs-LY + oepe/kvst/park/kvsu, duplicates the
   resolver. Matches this doc's own earlier "remaining candidate: morning-brief peaks metrics."
 
-**MEDIUM confidence / owner judgment calls:**
-- `store-dash.js:2366-2378` `PerformanceCalculator` — comment claims "no registered auto source
-  yet" for avgCheck/avgRate, which is now false (both are in METRIC_SOURCES); low stakes (slider
-  starting points only).
-- `analytics.js:7840-7856` `weeklyTrend` — sales/vsLY manual-only, sitting directly next to code
-  that already documents migrating OEPE/Labor/T-Reds in the same view for the same reason.
-- `labor-tools.js:1394-1414` `OperatorSummaryPanel` — mostly migrated correctly; FOB % still
-  reads raw `ds.fobRows` with no `qsr_fob` fallback (the fallback pattern already exists
-  elsewhere, `eom-supervisor.js`'s `fobSnapshotByStore`). Also: `lRows`/`cRows`/`oRows` in the
-  same function look like dead leftovers from before the migration.
+**MEDIUM confidence / owner judgment calls — 4 of 7 fixed (2026-08-09 evening), 3 left alone:**
+
+Fixed:
+- `store-dash.js` `PerformanceCalculator` — avgCheck/avgRate baselines now route through
+  `metricAvg` like every other baseline in the function; the "no registered auto source yet"
+  comment was stale (both are in `METRIC_SOURCES`, avgRate as a derived metric).
+- `analytics.js` `weeklyTrend` — district-wide 6-week sales/vsLY now via `metricSeries` per loc,
+  summed; finishes the migration already done for OEPE/Labor/T-Reds in the same view.
+- `labor-tools.js` `OperatorSummaryPanel` — FOB% now falls back to the auto `qsr_fob` snapshot
+  (via the same `fobSnapshotByStore` helper `eom-supervisor.js` uses, manual-first since FOB is
+  a deliberate monthly submission) when the manual FOB Report is missing for the period. Removed
+  confirmed-dead `lRows`/`cRows`/`oRows` locals.
+- `store-analytics.js` `detectAnomalies` + `analytics.js` `runScan` (DOW baseline anomaly
+  scanners) — **confirmed real, not theoretical**, before touching: `labor_rows` stopped
+  receiving new rows around 2026-07-23 (documented in `metric-source.js`'s own header, from the
+  incident that motivated the whole auto-first migration) while the auto DAR covers every store
+  through today, so both scanners had been silently blind to ~2+ weeks of real anomalies. Fixed
+  via `metricSeries`, with date keys re-derived through `dKey()` from a noon-anchored
+  `new Date(k+'T12:00:00')` (not used raw from `metricSeries`, which keys off UTC while `dKey`
+  reads local calendar fields for the userEvents/holiday lookups) — verified the round-trip is
+  timezone-invariant with a standalone script before committing.
+
+Left alone, still owner judgment calls (not touched, no sign-off requested yet this session):
 - `analytics.js:3144-3200` & `:6180-6212` `ForecastAccuracyPanel` backtest + weekly scan, and
-  `analytics.js:7758-7838` `computeStoreSigma`/MAPE-drift — same shape, BUT `backtest.js` has an
-  explicit documented precedent (v4.904 comment) that switching calibration reads to
-  `metricSeries('sales')` broke calibration for all 27 stores. Flagging for owner judgment, not
-  asserting these are wrong — backtest-shaped consumers may need to stay conservative on purpose.
+  `analytics.js:7758-7838` `computeStoreSigma`/MAPE-drift — `backtest.js` has an explicit
+  documented precedent (v4.904 comment) that switching calibration reads to
+  `metricSeries('sales')` broke calibration for all 27 stores. Backtest-shaped consumers may
+  need to stay conservative on purpose.
 - `analytics.js:7945-7957` weekly store-projections cloud-actuals supplement — a hand-rolled
   per-day auto-fill, documented as a real fix for a real bug, functionally reasonable but
-  duplicates the resolver instead of calling it.
-- `store-analytics.js:78-100` `detectAnomalies` and `analytics.js:4105-4140` (DOW baseline
-  anomaly scanner) — same shape as the exempted `dowData`, but unlike it, these could silently
-  stop flagging anomalies on auto-only days. Borderline.
+  duplicates the resolver instead of calling it. Lowest priority — refactor only, no bug.
 - `eom-supervisor.js:74-230` `computeStoreEOM` — extensive, heavily-commented, owner-verified
   (cross-checked against QSRSoft screenshots) parallel auto-first logic. Looks deliberate, in the
   same spirit as the `visit-readiness.js` exception, not an oversight.
