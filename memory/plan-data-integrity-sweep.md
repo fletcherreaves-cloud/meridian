@@ -228,6 +228,99 @@ hourly table on a query ERROR, not just on an empty result. Re-ran successfully 
   just eyeballed). `supabase.js`'s day-level tpph/r2p/oepe/park/kvst were left un-fixed per Part
   A's finding above (real denominators rarely get small enough to matter at the daily grain).
 
+## Signature #5 — SWEPT, 3 fixed (v4.931, 2026-08-09)
+
+An Explore pass found 6 candidates matching "missing data indistinguishable from a real zero
+where it flows into a grade/sort/color." Fixed the 3 highest-confidence, highest-impact:
+
+1. `src/engine/pipeline.js` `computeCtrlScore` — no data-presence gate AT ALL (unlike its sibling
+   `computeOpsScore`, which correctly gates every term on `t.X>0&&p.X>0`). A store with zero
+   controls data scored every "lower is better" component as a perfect 0 → `ctrlScore≈100` →
+   `buildBrief`'s "STRENGTH — CONTROLS ELITE... this store is a cash integrity model" for a store
+   with NO data. Fixed using `p._cov` (forecast.js `compute6wk`'s observation-count map — existed
+   already, built for exactly this, but only ever consumed by store-dash.js's Controls table).
+2. `src/views/store-dash.js` `DistrictGrid`'s `'labor'` sort — missing labor data ranked #1 (best)
+   in the district since a bare `||0` is the best possible value for a lower-is-better metric. The
+   adjacent `'oepe'` sort already used a 999 "missing→worst" sentinel; `'labor'` never got it.
+3. `src/views/smg-voice.js` "By Store — Best → Worst" rail — `avgScore` was already correctly
+   `null` for a no-comment store, but the row color and star bar both re-masked it back to
+   "worst score" (red, 0 filled stars) — inconsistent with the adjacent numeric label on the same
+   row, which already showed "—". Extracted to a tested `storeScoreColor()`.
+
+**Deferred, documented, not fixed:** `smart-targets.js`'s `avg12w` fallback (medium confidence —
+could silently zero an annual-target proposal's baseline), `insights.js`'s sales-weighted monthly
+labor/tpph averages (medium — a missing day's metric still counts its full sales in the
+denominator, skewing toward zero), a low-severity `store-analytics.js` NaN→0 site with no observed
+user-facing effect (its only call site already treats 0 as falsy and falls through correctly).
+
+## Signature #2 — RE-MEASURED, NOT YET SWEPT (2026-08-09)
+
+The original "56 metric reads, 210 structural" count (top of this doc) is **stale** — a fresh
+Explore pass found **349 raw `ds.*Rows` occurrences across 33 files**, and that old 56/210 split
+doesn't map cleanly onto the current code. Most are structural/fine (loaders, coverage displays,
+already-decided exceptions: `LaborAnalyticsPanel`, `store-analytics.js` `dowData`,
+`visit-readiness.js`). Full triage from the Explore pass, by confidence:
+
+**HIGH confidence (should call `metricDaily`/`metricAvg`/`matchedVsLY` instead):**
+- `store-dash.js:2245-2246` `RankingView` group-rollup `curGc`/`lyGc` — the comment directly above
+  says every OTHER column in this function was already fixed for exactly this bug; GC was missed.
+- `store-dash.js:3582-3597` `CompareLineChart` — 42-day sales trend from `ds.laborRows` only, no
+  auto fallback. This is literally the "Dialed-In blank trend" shape the signature is named for.
+- `analytics.js:5563-5610` `DateRangeReport` avgOepe/avgTpph/avgLabor/avgCheck — manual-only.
+- `analytics.js:987-1030` `StoreOnePager` — hand-rolled vs-LY + manual-only averages, feeds the
+  printed one-pager.
+- `analytics.js:367-384` `computeMetricAverages` (feeds `MetricCorrelationExplorer`) — 9 covered
+  metrics, manual-only.
+- `analytics.js:3601-3618` `computeOpsAnalysis` (Ops Metrics Anomaly Cross-Check) — hand-rolled
+  ctrl/labor priority, no Glimpse/DAR fallback.
+- `analytics.js:5993-5996` AI Pre-Forecast/District Brief context — feeds the AI prompt itself.
+- `store-analytics.js:725-899` `computeRevenueOpportunity` — avg-check momentum, DT mix,
+  salaried-manager compliance, promo drag, all manual-only.
+- `store-analytics.js:574-599` `ModelComparisonPanel`'s `weekHistory` — manual-only sales.
+- `scheduling.js:333-352` `OpportunityReport` — a line-for-line reimplementation of a chain
+  already in `metric-source.js`, done inline instead of calling it.
+- `record-day.js:115-154` `computeRecords` (the Records feature) — manual-only, so a record set on
+  an auto-only recent day would never surface.
+- `morning-brief.js:284-295`/`:220-282` — hand-rolled vs-LY + oepe/kvst/park/kvsu, duplicates the
+  resolver. Matches this doc's own earlier "remaining candidate: morning-brief peaks metrics."
+
+**MEDIUM confidence / owner judgment calls:**
+- `store-dash.js:2366-2378` `PerformanceCalculator` — comment claims "no registered auto source
+  yet" for avgCheck/avgRate, which is now false (both are in METRIC_SOURCES); low stakes (slider
+  starting points only).
+- `analytics.js:7840-7856` `weeklyTrend` — sales/vsLY manual-only, sitting directly next to code
+  that already documents migrating OEPE/Labor/T-Reds in the same view for the same reason.
+- `labor-tools.js:1394-1414` `OperatorSummaryPanel` — mostly migrated correctly; FOB % still
+  reads raw `ds.fobRows` with no `qsr_fob` fallback (the fallback pattern already exists
+  elsewhere, `eom-supervisor.js`'s `fobSnapshotByStore`). Also: `lRows`/`cRows`/`oRows` in the
+  same function look like dead leftovers from before the migration.
+- `analytics.js:3144-3200` & `:6180-6212` `ForecastAccuracyPanel` backtest + weekly scan, and
+  `analytics.js:7758-7838` `computeStoreSigma`/MAPE-drift — same shape, BUT `backtest.js` has an
+  explicit documented precedent (v4.904 comment) that switching calibration reads to
+  `metricSeries('sales')` broke calibration for all 27 stores. Flagging for owner judgment, not
+  asserting these are wrong — backtest-shaped consumers may need to stay conservative on purpose.
+- `analytics.js:7945-7957` weekly store-projections cloud-actuals supplement — a hand-rolled
+  per-day auto-fill, documented as a real fix for a real bug, functionally reasonable but
+  duplicates the resolver instead of calling it.
+- `store-analytics.js:78-100` `detectAnomalies` and `analytics.js:4105-4140` (DOW baseline
+  anomaly scanner) — same shape as the exempted `dowData`, but unlike it, these could silently
+  stop flagging anomalies on auto-only days. Borderline.
+- `eom-supervisor.js:74-230` `computeStoreEOM` — extensive, heavily-commented, owner-verified
+  (cross-checked against QSRSoft screenshots) parallel auto-first logic. Looks deliberate, in the
+  same spirit as the `visit-readiness.js` exception, not an oversight.
+
+**Architectural finding, bigger than any single site:** there are now at least **4 independently-
+maintained reimplementations** of the "manual-first, then auto/emailed, freshest-per-day" merge
+`metric-source.js` exists to centralize — `analytics.js:6892-7154` (`labInRange`/`ctrlEffective`/
+`svcEffective`), `store-dash.js:2601-2680+` (`UnifiedTargetsPanel`'s `SPEC`/`valuesForLoc`),
+`smart-targets.js:108-185` (`cloudLabor`/`cloudOps`/`cloudCtrl`/`cloudFob`), and
+`promo-roi.js:19-54` (`buildDailyRecords`). None is confidently "broken" today, but this is
+exactly the failure mode `data-sourcing-standard.md`'s opening paragraph warns about. Worth a
+consolidation pass on its own, separate from fixing individual sites.
+
+**Not yet fixed** — this needs owner prioritization before touching ~15+ HIGH-confidence sites
+across that many files in one sweep; picking up here in a future session.
+
 ## Method
 
 1. Enumerate sites per signature (the counts above are a first pass, already run).
