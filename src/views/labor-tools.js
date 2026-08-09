@@ -56,6 +56,7 @@ function _hydrateBlob(lsKey, settingKey, apply) {
 }
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries } from '../engine/metric-source.js';
+import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { ExportDropdown } from './store-dash.js';
 
 const h=React.createElement;
@@ -1392,9 +1393,6 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
     return opGroups.map(g=>{
       const storeData=g.locs.map(loc=>{
         const tgt=(settings.targets&&settings.targets[loc])||DEFAULT_TARGETS[loc]||{};
-        const lRows=(ds.laborRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&r.sales>0&&String(r.loc)===loc);
-        const cRows=(ds.ctrlRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
-        const oRows=(ds.opsRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         const fRows=(ds.fobRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         // Sales + vs-LY via the shared auto-first + matched-day helper (engine/vs-ly.js) —
         // ONE implementation for every current-vs-LY comparison (fixes the "everyone ~-32%").
@@ -1410,8 +1408,24 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         // lRows/cRows-only with no auto (opsLaborRows) backstop.
         const otHrs      = metricAvg(ds,loc,range,'otHrs');
         const cashOS     = metricAvg(ds,loc,range,'cashOSPct');
-        const baseFoodPct= _avg(fRows,'baseFoodPct');
-        const totFoodPct = _avg(fRows,'pLFoodPct');
+        // FOB — manual FOB Report (an intentional monthly submission) preferred; when missing
+        // for this store/period, fall back to the auto qsr_fob snapshot via the SAME
+        // fobSnapshotByStore helper eom-supervisor.js already uses (data-integrity sweep
+        // signature #2, MEDIUM item). qsr_fob rows are period-to-date SNAPSHOTS, never a daily
+        // increment — summing them inflates $ ~30x (see eom-inventory.js's own warning) — so
+        // filter to this range first, then let fobSnapshotByStore pick the latest-in-range row
+        // per store rather than summing or averaging.
+        let baseFoodPct = _avg(fRows,'baseFoodPct');
+        let totFoodPct  = _avg(fRows,'pLFoodPct');
+        if(baseFoodPct==null || totFoodPct==null){
+          const qFobRows=(ds.qsrFobRows||[]).filter(r=>{
+            const d=r.date instanceof Date?r.date:new Date(r.date);
+            return !isNaN(d)&&d>=range.s&&d<=range.e&&String(r.loc).padStart(7,'0')===String(loc).padStart(7,'0');
+          });
+          const snap=fobSnapshotByStore(qFobRows,null)[String(loc).padStart(7,'0')];
+          if(baseFoodPct==null) baseFoodPct=snap?.fobPct??null;
+          if(totFoodPct==null)  totFoodPct=snap?.pLFoodPct??null;
+        }
         return{loc,tgt,sales,lySales,matchedCur,vsLY,laborPct,tpph,oepe,otHrs,cashOS,baseFoodPct,totFoodPct,days:rangeDays,
           storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
       });

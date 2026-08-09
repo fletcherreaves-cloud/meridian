@@ -256,7 +256,91 @@ skew the average toward zero; 4 new tests). **Signature #5 is now fully closed**
 findings fixed, the 6th (`store-analytics.js` NaN→0) has no observed user-facing effect since its
 only call site already falls through correctly.
 
-## Signature #2 — RE-MEASURED, NOT YET SWEPT (2026-08-09)
+## Signature #2 — SWEPT, all 12 HIGH-confidence sites fixed (v4.933-continued, 2026-08-09)
+
+All 12 HIGH-confidence sites below (11 new + `RankingView`'s GC fix already merged from an
+earlier coordinator commit) now route through `metric-source.js`/`vs-ly.js` instead of reading
+`ds.laborRows`/`ds.opsRows`/`ds.ctrlRows` directly. `npm test` (1064/1064) and `npm run build`
+both pass clean after the sweep. Detail per site:
+
+- `store-dash.js` `RankingView` GC rollup — already fixed (fd8e7fe, pre-existing on the branch).
+- `store-dash.js` `CompareLineChart` — 42-day trend now via `metricSeries(ds,loc,range,'sales')`
+  per selected store instead of `ds.laborRows` only.
+- `analytics.js` `DateRangeReport` — `rows` (drives actualSales/fcSales/lySales/MAPE/passRate)
+  now built from `metricSeries(...,'sales')`'s auto-first date set; avgOepe/avgTpph/avgLabor/
+  avgCheck pull their per-day inputs from the resolver, then still run through the SAME
+  weighted-rollup helpers (`ratioOfSumsDerived`/`weightedMean`/`ratioOfSums`) as before — only
+  the per-day sourcing changed, not the aggregation math.
+- `analytics.js` `StoreOnePager` — `lR`/`oR` rebuilt from `metricSeries` (sales/gc/avgCheck/
+  oepe/park/laborPct/tpph); `laborPct`/`tpph` simplified to a single `avg(lR,...)` call since
+  the resolver's chain already puts ctrlRows ahead of laborRows (the old `avg(cR,...)||avg(lR,...)`
+  double-read is now redundant). `vsLY` sourced via a matching auto-first LY sales series. FOB
+  stays on raw `ctrlRows` — confirmed no `fobPct` chain exists in `metric-source.js` yet.
+- `analytics.js` `computeMetricAverages` — all 9 `CORR_PREDICTORS` (oepe/park/r2p/labor/tpph/
+  otHrs/cashOS/tRedA/discPct) now resolve via `metricAvg` through a small id→key map; the
+  `MetricCorrelationExplorer`'s own separate raw reads (~line 395-397) were NOT touched — flagging
+  as a smaller follow-up, not urgent (was MEDIUM-adjacent in the original triage, not HIGH).
+- `analytics.js` `computeOpsAnalysis` — day values via `metricDaily`; DOW trimmed-mean baselines
+  via `metricSeries` + a DOW filter, replacing the `[...peerCtrl,...peerLab]` pooled-array trim
+  (which double-counted a date if BOTH ctrlRows and laborRows had it — the new version reads one
+  auto-first-resolved value per date, which is more correct, not just auto-first).
+- `analytics.js` AI Brief context (`buildBriefContext`, feeds the `LocationBrief` prompt directly)
+  — totalSales/avgCheck now via `metricSeries('sales'/'gc')` instead of `ds.laborRows` only.
+- `store-analytics.js` `computeRevenueOpportunity` items #9-12 (avg-check momentum, DT sales mix,
+  salaried-manager compliance, promo/discount drag) — all four now via `metricSeries` against
+  their existing `metric-source.js` chains (`avgCheck`/`dtMixPct`/`salaryMgrHrs`/`promoAmt`, all
+  of which already existed — this was purely a "not calling the resolver" gap, not a missing chain).
+- `store-analytics.js` `ModelComparisonPanel`'s `weekHistory` — per-week actual sales now via
+  `metricSeries('sales')` instead of `ds.laborRows` only.
+- `scheduling.js` `OpportunityReport`'s `laborIdx` — replaced the hand-rolled glimpse→ctrl→labor
+  / dar→ctrl→labor priority loops with `metricDaily` calls against a small `ds`-shim object
+  (`{glimpseRows,ctrlRows,laborRows,qsrActSummaryRows:qsrActRows}`, since this component receives
+  the four source arrays as separate props, not a full `ds`). Confirmed behavior-neutral: the
+  `laborRows.actHrs` fallback leg was already dead in both the old code and metric-source.js's
+  chain (that loader never emits `actHrs` — documented in metric-source.js's own comment), and
+  the `src:'glimpse'|'ctrl'|'labor'|'dar'` labels the old code tracked were never actually read
+  by any consumer, so dropping them is not a behavior change.
+- `record-day.js` `computeRecords` — rebuilt to iterate `metricSeries` per loc (sales/gc/
+  avgCheck/oepe/kvst/r2p) instead of only scanning `ds.laborRows` then conditionally layering
+  `ds.opsRows` on top of days `laborRows` already had an entry for (the exact "auto-only day
+  never gets a chance to set/break a record" bug the triage flagged). `dataEnd` now uses the
+  shared `dailyDataFreshness(ds)` helper instead of scanning `laborRows` alone. Breakfast sales
+  and the inStoreGC/dtGC split stay manual-only (`ds.laborRows`) — no auto chain exists for
+  either field; `gc` itself now uses the resolver's combined `gc` chain instead of manually
+  summing `inStoreGC+dtGC`, which is a genuine improvement (more coverage, same field meaning).
+- `morning-brief.js` — three changes, all additive fallbacks (nothing removed from the existing
+  hand-rolled priority order, so a store that already had peaks/glimpse/dar data sees identical
+  output):
+  1. `computeStoreNorms`'s `oepeNorm`/`kvstNorm`/`gcSalesRatio` (8-week baseline, gates 4
+     correlation rules on `!oepeNorm`) now fall back to `metricAvg`/`metricSeries` when a store
+     has no 3-Peaks upload at all — previously such a store's `oepeNorm` was permanently `null`
+     and silently disabled every rule depending on it.
+  2. `oepe`/`kvst`/`kvsu`/`dtPark` in `assembleBriefStoreData` gained a final `metricDaily`
+     fallback tier after peaks→glimpse→dar — closes a real gap where `opsServiceRows`/`opsRows`
+     (the manual Ops Report) were never read by this file at all.
+  3. The LY comparison (`lySales`/`lyGC`) now falls back to `autoFirstDaily`'s same-date DAR LY
+     field when `laborRows` has no matching historical row — previously vs-LY was blank for any
+     historical date only the auto DAR covered, even when the current-side data was fine. The
+     current-side (`curSales`/`curGC`) matching logic (±2-day tolerance) was deliberately left
+     untouched to avoid narrowing its existing slop.
+
+**Deferred, not part of this pass:**
+- The "4 independently-maintained reimplementations" architectural finding (analytics.js's
+  `labInRange`/`ctrlEffective`/`svcEffective`, store-dash.js's `UnifiedTargetsPanel` `SPEC`,
+  smart-targets.js's `cloudLabor`/etc., promo-roi.js's `buildDailyRecords`) — a consolidation
+  pass on its own, not attempted here.
+- The MEDIUM-confidence judgment calls from the original triage (`PerformanceCalculator`,
+  `weeklyTrend`, `OperatorSummaryPanel`'s FOB%, `ForecastAccuracyPanel`/`computeStoreSigma`
+  backtest-shaped consumers — flagged as possibly-deliberately-conservative, `weekly store-
+  projections cloud-actuals supplement`, `detectAnomalies`/DOW baseline scanner, `eom-supervisor.js`
+  `computeStoreEOM`) — still open, still owner-judgment calls, not touched.
+- `MetricCorrelationExplorer`'s own raw `ds.laborRows`/`opsRows`/`ctrlRows` reads (separate from
+  `computeMetricAverages`, same file) — noticed while fixing `computeMetricAverages` next to it,
+  not in the original HIGH-confidence list, left alone.
+
+<details><summary>Original triage (2026-08-09, before the sweep above)</summary>
+
+## Signature #2 — RE-MEASURED, NOT YET SWEPT (2026-08-09) [STALE — see swept section above]
 
 The original "56 metric reads, 210 structural" count (top of this doc) is **stale** — a fresh
 Explore pass found **349 raw `ds.*Rows` occurrences across 33 files**, and that old 56/210 split
@@ -287,27 +371,37 @@ already-decided exceptions: `LaborAnalyticsPanel`, `store-analytics.js` `dowData
 - `morning-brief.js:284-295`/`:220-282` — hand-rolled vs-LY + oepe/kvst/park/kvsu, duplicates the
   resolver. Matches this doc's own earlier "remaining candidate: morning-brief peaks metrics."
 
-**MEDIUM confidence / owner judgment calls:**
-- `store-dash.js:2366-2378` `PerformanceCalculator` — comment claims "no registered auto source
-  yet" for avgCheck/avgRate, which is now false (both are in METRIC_SOURCES); low stakes (slider
-  starting points only).
-- `analytics.js:7840-7856` `weeklyTrend` — sales/vsLY manual-only, sitting directly next to code
-  that already documents migrating OEPE/Labor/T-Reds in the same view for the same reason.
-- `labor-tools.js:1394-1414` `OperatorSummaryPanel` — mostly migrated correctly; FOB % still
-  reads raw `ds.fobRows` with no `qsr_fob` fallback (the fallback pattern already exists
-  elsewhere, `eom-supervisor.js`'s `fobSnapshotByStore`). Also: `lRows`/`cRows`/`oRows` in the
-  same function look like dead leftovers from before the migration.
+**MEDIUM confidence / owner judgment calls — 4 of 7 fixed (2026-08-09 evening), 3 left alone:**
+
+Fixed:
+- `store-dash.js` `PerformanceCalculator` — avgCheck/avgRate baselines now route through
+  `metricAvg` like every other baseline in the function; the "no registered auto source yet"
+  comment was stale (both are in `METRIC_SOURCES`, avgRate as a derived metric).
+- `analytics.js` `weeklyTrend` — district-wide 6-week sales/vsLY now via `metricSeries` per loc,
+  summed; finishes the migration already done for OEPE/Labor/T-Reds in the same view.
+- `labor-tools.js` `OperatorSummaryPanel` — FOB% now falls back to the auto `qsr_fob` snapshot
+  (via the same `fobSnapshotByStore` helper `eom-supervisor.js` uses, manual-first since FOB is
+  a deliberate monthly submission) when the manual FOB Report is missing for the period. Removed
+  confirmed-dead `lRows`/`cRows`/`oRows` locals.
+- `store-analytics.js` `detectAnomalies` + `analytics.js` `runScan` (DOW baseline anomaly
+  scanners) — **confirmed real, not theoretical**, before touching: `labor_rows` stopped
+  receiving new rows around 2026-07-23 (documented in `metric-source.js`'s own header, from the
+  incident that motivated the whole auto-first migration) while the auto DAR covers every store
+  through today, so both scanners had been silently blind to ~2+ weeks of real anomalies. Fixed
+  via `metricSeries`, with date keys re-derived through `dKey()` from a noon-anchored
+  `new Date(k+'T12:00:00')` (not used raw from `metricSeries`, which keys off UTC while `dKey`
+  reads local calendar fields for the userEvents/holiday lookups) — verified the round-trip is
+  timezone-invariant with a standalone script before committing.
+
+Left alone, still owner judgment calls (not touched, no sign-off requested yet this session):
 - `analytics.js:3144-3200` & `:6180-6212` `ForecastAccuracyPanel` backtest + weekly scan, and
-  `analytics.js:7758-7838` `computeStoreSigma`/MAPE-drift — same shape, BUT `backtest.js` has an
-  explicit documented precedent (v4.904 comment) that switching calibration reads to
-  `metricSeries('sales')` broke calibration for all 27 stores. Flagging for owner judgment, not
-  asserting these are wrong — backtest-shaped consumers may need to stay conservative on purpose.
+  `analytics.js:7758-7838` `computeStoreSigma`/MAPE-drift — `backtest.js` has an explicit
+  documented precedent (v4.904 comment) that switching calibration reads to
+  `metricSeries('sales')` broke calibration for all 27 stores. Backtest-shaped consumers may
+  need to stay conservative on purpose.
 - `analytics.js:7945-7957` weekly store-projections cloud-actuals supplement — a hand-rolled
   per-day auto-fill, documented as a real fix for a real bug, functionally reasonable but
-  duplicates the resolver instead of calling it.
-- `store-analytics.js:78-100` `detectAnomalies` and `analytics.js:4105-4140` (DOW baseline
-  anomaly scanner) — same shape as the exempted `dowData`, but unlike it, these could silently
-  stop flagging anomalies on auto-only days. Borderline.
+  duplicates the resolver instead of calling it. Lowest priority — refactor only, no bug.
 - `eom-supervisor.js:74-230` `computeStoreEOM` — extensive, heavily-commented, owner-verified
   (cross-checked against QSRSoft screenshots) parallel auto-first logic. Looks deliberate, in the
   same spirit as the `visit-readiness.js` exception, not an oversight.
@@ -323,6 +417,8 @@ consolidation pass on its own, separate from fixing individual sites.
 
 **Not yet fixed** — this needs owner prioritization before touching ~15+ HIGH-confidence sites
 across that many files in one sweep; picking up here in a future session.
+
+</details>
 
 ## Signature #1 — remaining deferred items reviewed (2026-08-09, session part 3)
 
@@ -352,6 +448,32 @@ Went back through the 3 items still open after v4.926/v4.930's fixes:
   investigation was purely confirmatory. Part E (added after) measured the STANDALONE
   non-cumulative ratio for comparison and surfaced a real afternoon-bias lead — spun out into its
   own shipped feature, see `memory/project-hourly-projection-accuracy.md`.
+
+## Signature #3 — VERIFIED CLEAN (2026-08-09)
+
+The intro table's original note ("small; `*Cnt` sites scanned clean apart from that") never got
+its own write-up or a fresh live scan — closing that out. Full re-scan of `src/` for the class
+(a `*Cnt` field assigned/incremented/averaged from a `*Amt`/`*Dollar`/`*Cash`/`*Sales` value, or
+a parser column-mapping crossing "Count"/"#" and "Amt"/"$"/"Dollar" labels) came back clean:
+
+- `src/parsers/index.js` — every `fooCnt: fc(h,'...Cnt'/'...#'/'...Count')` maps to a
+  count-labeled header; every `fooAmt: fc(h,'...Amt'/'...$'/'...Dollar')` maps to a
+  dollar-labeled header, across all 6 sheet parsers (Controls, Smart Targets, Register Audit,
+  Cash Sheet, Daily Glimpse, 3-Peaks). No crossed mappings found.
+- `src/lib/supabase.js`'s snake_case↔camelCase table mappings, `src/engine/metric-source.js`'s
+  chain table, `src/engine/signal-registry.js`'s `unit:'count'` vs `unit:'currency'` signal
+  declarations, `src/views/store-dash.js`'s target-editor field config — all name-consistent,
+  no `*Cnt` metric/field ever absorbs a `*Amt` source or vice versa.
+- The one known real instance (`refundCnt += refundCashless`, v4.903/Notes 61) is still fixed
+  and commented in `src/utils/register-audit.js`, and already has a dedicated class-level guard:
+  `src/__tests__/register-audit-units.test.js` asserts counts stay integral and never absorb
+  dollar figures — this already satisfies the sweep Method's step 4 ("add a guard for the CLASS,
+  not the instance"), so no new test was needed.
+
+**No code changes required.** Signature #3 is now closed. All 8 signatures from the original
+table are accounted for: 1 (partially swept, remaining items reviewed/closed), 2 (swept), 3
+(verified clean, this entry), 4 (swept), 5 (swept), 6 (resolved as a byproduct), 7 and 8
+(resolved, guarded by tests).
 
 ## Method
 

@@ -3,7 +3,8 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES } from '../constants.js';
 import { dKey } from '../utils/date.js';
 import { supabase } from '../lib/supabase.js';
-import { metricDaily } from '../engine/metric-source.js';
+import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
+import { autoFirstDaily } from '../engine/vs-ly.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -217,16 +218,28 @@ const MORNING_RULES = [
 ];
 
 // ── Compute 8-week rolling norms per store ───────────────────────────────────
+// Auto-first fallback (data-integrity sweep signature #2): the 3-Peaks upload
+// (peaksSvcRows) is preferred when present — store-specific precision the district-wide
+// resolver doesn't have — but falls back to the shared resolver's 8-week average for a
+// store that never uploads 3-Peaks at all. Previously that left oepeNorm/kvstNorm
+// permanently null for such stores, silently disabling every correlation rule below that
+// depends on them (they all early-return on `!oepeNorm`).
 function computeStoreNorms(loc, ds){
   const cutoff = new Date(Date.now()-56*24*3600*1000); // 8 weeks back
+  const range = {s:cutoff, e:new Date()};
   const peaks = (ds.peaksSvcRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date>=cutoff&&r.oepe>0);
   const labors = (ds.laborRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date>=cutoff&&r.sales>0);
   const avg = (arr,f) => arr.length ? arr.reduce((s,r)=>s+(r[f]||0),0)/arr.length : null;
   const gcSalesRatios = labors.filter(r=>r.sales>0&&r.gc>0).map(r=>r.gc/r.sales);
+  const salesSeries = metricSeries(ds, loc, range, 'sales');
+  const gcSeries = metricSeries(ds, loc, range, 'gc');
+  const autoRatioKeys = Object.keys(gcSeries).filter(k=>gcSeries[k]>0&&salesSeries[k]>0);
+  const autoRatios = autoRatioKeys.map(k=>gcSeries[k]/salesSeries[k]);
   return {
-    oepeNorm: avg(peaks,'oepe'),
-    kvstNorm: avg(peaks.filter(r=>r.kvst>0),'kvst'),
-    gcSalesRatio: gcSalesRatios.length ? gcSalesRatios.reduce((a,b)=>a+b,0)/gcSalesRatios.length : null,
+    oepeNorm: avg(peaks,'oepe') ?? metricAvg(ds, loc, range, 'oepe'),
+    kvstNorm: avg(peaks.filter(r=>r.kvst>0),'kvst') ?? metricAvg(ds, loc, range, 'kvst'),
+    gcSalesRatio: gcSalesRatios.length ? gcSalesRatios.reduce((a,b)=>a+b,0)/gcSalesRatios.length
+                : (autoRatios.length ? autoRatios.reduce((a,b)=>a+b,0)/autoRatios.length : null),
   };
 }
 
@@ -281,14 +294,20 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
   const expGC = (norms.gcSalesRatio && laborSales) ? laborSales*norms.gcSalesRatio : null;
   const gcVsExp = (expGC && labor?.gc) ? ((labor.gc-expGC)/expGC*100) : null;
 
-  // LY comparison: same date last year from laborRows
+  // LY comparison: laborRows first, then the auto DAR's own same-date LY field via the
+  // shared resolver (data-integrity sweep signature #2 — this previously only checked
+  // laborRows for the LY side, so vs-LY was blank on any historical date only the auto
+  // DAR covered, even when today's side had real data).
   const lyTarget = new Date(targetDate);
   lyTarget.setFullYear(lyTarget.getFullYear()-1);
   const lyDk = dKey(lyTarget);
   const lyLabor = (ds.laborRows||[]).find(r=>String(r.loc)===locStr&&dKey(r.date)===lyDk)
                ||(ds.laborRows||[]).find(r=>String(r.loc)===locStr&&Math.abs(r.date-lyTarget)<2*86400000);
-  const lySales = lyLabor?.sales>0 ? lyLabor.sales : null;
-  const lyGC    = lyLabor?.gc>0    ? lyLabor.gc    : null;
+  const dkTarget = dKey(targetDate);
+  const { lyByDate: lySalesByDate } = autoFirstDaily(ds, loc, {s:targetDate,e:targetDate}, 'sales');
+  const { lyByDate: lyGCByDate }    = autoFirstDaily(ds, loc, {s:targetDate,e:targetDate}, 'gc');
+  const lySales = lyLabor?.sales>0 ? lyLabor.sales : (lySalesByDate[dkTarget] ?? null);
+  const lyGC    = lyLabor?.gc>0    ? lyLabor.gc    : (lyGCByDate[dkTarget] ?? null);
   const curSales = labor?.sales>0 ? labor.sales : darSales;
   const curGC    = labor?.gc>0 ? labor.gc : null;
   const vsLYSales = (curSales&&lySales) ? ((curSales-lySales)/lySales*100) : null;
@@ -342,11 +361,14 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
     tRedAPct:     metricDaily(ds, loc, targetDate, 'tRedAPct'),
     tRedBPct:     metricDaily(ds, loc, targetDate, 'tRedBPct'),
     cashOSAmt:    ctrl?.cashOSAmt ?? (glimpse?.cashOS ?? (cash?.cashOS ?? null)),
-    // Service fields — 3 Peaks first, then Daily Glimpse (daily aggregate), then DAR-derived
-    oepe: oepe ?? (glimpse?.oepe > 0 ? glimpse.oepe : darOepe),
-    kvst: kvst ?? (glimpse?.kvst > 0 ? glimpse.kvst : null),
-    kvsu,
-    dtPark: dtPark ?? (glimpse?.parkedPct > 0 ? Math.round(glimpse.parkedPct * 1000) / 10 : null),
+    // Service fields — 3 Peaks first, then Daily Glimpse (daily aggregate), then DAR-derived,
+    // then the shared resolver as a final fallback (data-integrity sweep signature #2 — this
+    // never read opsServiceRows/opsRows at all, so a store covered only by those went blank).
+    oepe: oepe ?? (glimpse?.oepe > 0 ? glimpse.oepe : (darOepe ?? metricDaily(ds, loc, targetDate, 'oepe'))),
+    kvst: kvst ?? (glimpse?.kvst > 0 ? glimpse.kvst : metricDaily(ds, loc, targetDate, 'kvst')),
+    kvsu: kvsu ?? (()=>{const v=metricDaily(ds, loc, targetDate, 'kvsHealthy'); return v==null?null:(v<=1?v*100:v);})(),
+    dtPark: dtPark ?? (glimpse?.parkedPct > 0 ? Math.round(glimpse.parkedPct * 1000) / 10
+      : (()=>{const v=metricDaily(ds, loc, targetDate, 'park'); return v==null?null:(v<=1?Math.round(v*1000)/10:v);})()),
     oepeNorm: norms.oepeNorm,
     kvstNorm: norms.kvstNorm,
     // Daypart data
