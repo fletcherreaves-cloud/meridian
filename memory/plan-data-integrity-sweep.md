@@ -247,11 +247,14 @@ where it flows into a grade/sort/color." Fixed the 3 highest-confidence, highest
    "worst score" (red, 0 filled stars) — inconsistent with the adjacent numeric label on the same
    row, which already showed "—". Extracted to a tested `storeScoreColor()`.
 
-**Deferred, documented, not fixed:** `smart-targets.js`'s `avg12w` fallback (medium confidence —
-could silently zero an annual-target proposal's baseline), `insights.js`'s sales-weighted monthly
-labor/tpph averages (medium — a missing day's metric still counts its full sales in the
-denominator, skewing toward zero), a low-severity `store-analytics.js` NaN→0 site with no observed
-user-facing effect (its only call site already treats 0 as falsy and falls through correctly).
+**Also fixed (v4.932):** `smart-targets.js`'s salesGrowth `base` fallback (full `!=null` chain
+through avg6w→avg12w→avg26w→avg52w, matching `recent`'s own window order — previously dead-ended
+at a bare `avg12w||0` if both short windows were null) and `insights.js`'s
+`monthlyLaborSummary`/`monthlyLaborExtended` (each metric now has its own coverage-weighted
+denominator instead of sharing `sales`, which let a missing laborPct/tpph on a real-sales day
+skew the average toward zero; 4 new tests). **Signature #5 is now fully closed** — 5 of 6 Explore
+findings fixed, the 6th (`store-analytics.js` NaN→0) has no observed user-facing effect since its
+only call site already falls through correctly.
 
 ## Signature #2 — RE-MEASURED, NOT YET SWEPT (2026-08-09)
 
