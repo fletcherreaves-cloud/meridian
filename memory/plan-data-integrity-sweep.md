@@ -221,9 +221,12 @@ hourly table on a query ERROR, not just on an empty result. Re-ran successfully 
   **Also refutes an assumption in this doc's own earlier entry:** "an hour-slot's LY count of 1
   is normal, not an edge case" turned out to be wrong — measured `ly_transactions === 1` in only
   **75 of 29,109** hour-slots with any LY count at all (0.3%). Rare, not normal.
-- **Not yet applied to code** — the owner was asked to pick the exact floor value before
-  `graded-visits.js`/`supabase.js` get changed; a future session should pick up from here once
-  that's decided, using these measured numbers rather than re-measuring from scratch.
+- **Applied (v4.930):** owner chose stability over max coverage — floor at the tier where IQR
+  reaches its stable baseline, not the first tier where it merely improves.
+  `MIN_LY_TXN_FOR_COMP = 40` / `MIN_LY_SALES_FOR_COMP = 800`, wired into `graded-visits.js`
+  `hourMetrics()` (extracted to a module-level exported pure function so this is unit-tested, not
+  just eyeballed). `supabase.js`'s day-level tpph/r2p/oepe/park/kvst were left un-fixed per Part
+  A's finding above (real denominators rarely get small enough to matter at the daily grain).
 
 ## Method
 
