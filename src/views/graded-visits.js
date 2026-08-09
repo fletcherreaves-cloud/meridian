@@ -45,7 +45,10 @@ const niceDate = iso => { if (!iso) return '—'; const d = new Date(iso + 'T00:
 // DAR timing is Σuntilserve/Σtrans/1000 seconds.
 const secOf = (us, cnt) => cnt > 0 ? Math.round(us / cnt / 1000) : null;
 const fmtSec = v => v == null ? '—' : v + 's';
-const hourLabel = slot => { const end = parseInt(slot, 10); if (isNaN(end)) return slot; const start = (end - 1 + 24) % 24; const f = h => h === 0 ? '12a' : h <= 11 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p'; return f(start) + '–' + f(end); };
+// hour_slot can run past 24 (25, 26...) for a store still open after midnight (confirmed live
+// 2026-08-09 — see src/engine/projection-accuracy.js) — f(end) must be modulo 24 or a late-night
+// slot mislabels as an afternoon hour (e.g. slot 25 rendered "1pm" instead of "1am").
+const hourLabel = slot => { const end = parseInt(slot, 10); if (isNaN(end)) return slot; const start = (end - 1 + 24) % 24; const f = h => h === 0 ? '12a' : h <= 11 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p'; return f(start) + '–' + f(end % 24); };
 // visit completion "01:05 PM" → ending hour_slot number (e.g. 13)
 const completionHour = t => { if (!t) return null; const m = String(t).match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i); if (!m) return null; let h = +m[1] % 12; if (/pm/i.test(m[3] || '')) h += 12; return h + 1; };
 

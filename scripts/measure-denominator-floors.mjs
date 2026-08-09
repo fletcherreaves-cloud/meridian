@@ -102,7 +102,10 @@ function printHourBuckets(title, unit, rows, hourKey, valueKey, baseline = null)
   console.log('hour block'.padEnd(12) + 'n'.padEnd(8) + 'p10'.padEnd(10) + 'p25'.padEnd(10) + 'median'.padEnd(10) + 'p75'.padEnd(10) + 'p90'.padEnd(10) + 'IQR'.padEnd(8) + biasHdr);
   for (const h of hours) {
     const end = parseInt(h, 10);
-    const label = isNaN(end) ? h : `${fmt((end - 1 + 24) % 24)}-${fmt(end)}`;
+    // hour_slot runs past 24 for a store still open after midnight (confirmed live: the "12a-13p",
+    // "1a-14p"... labels in this script's own earlier output were this exact bug) — fmt(end) needs
+    // modulo 24 or a late-night slot mislabels as an afternoon hour.
+    const label = isNaN(end) ? h : `${fmt((end - 1 + 24) % 24)}-${fmt(end % 24)}`;
     const st = bucketStats(byHour[h]);
     if (!st) { console.log(label.padEnd(12) + '0'); continue; }
     const bias = baseline != null ? (st.median - baseline >= 0 ? '+' : '') + (st.median - baseline).toFixed(1) : '';

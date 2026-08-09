@@ -342,16 +342,16 @@ Went back through the 3 items still open after v4.926/v4.930's fixes:
   over MORE days and/or MORE stores per bucket (coarser, not finer). More summing only grows a
   count denominator, never shrinks it, so this is strictly safer than what Part A already showed
   rarely gets small in practice.
-- **`signals.js` `pacePct`/`gcPacePct`** — genuinely different shape (cumulative-so-far WITHIN a
-  single day, potentially just the first 1-2 hours after opening), not covered by Part A's
-  day-level analysis. Extended `scripts/measure-denominator-floors.mjs` with a new **Part C**:
-  reconstructs, for every real store-day, the cumulative `doneActual`/`doneProj` (and GC
-  equivalents) at every hour position through the day — i.e. what the ratio would have shown if
-  read at that exact hour — bucketed by the cumulative `proj_sales_dollars`/`proj_total_transactions`
-  so far. **Not run** — this session's `SUPABASE_SERVICE_ROLE_KEY` was a one-time inline value the
-  owner pasted for the earlier Part A/B run, not persisted to the environment, so it wasn't
-  available for this follow-up. Needs a future run with the key (env var or another one-time
-  paste) to actually derive the floor.
+- **`signals.js` `pacePct`/`gcPacePct`** — **RESOLVED (session part 4): no code change.** Extended
+  `measure-denominator-floors.mjs` with Part C (cumulative-so-far, district-wide — `planPace` sums
+  every store together for one date, not per-store, a mismatch an earlier draft of Part C got
+  wrong and the owner caught by asking "what are the impacts" before applying anything) and Part D
+  (the separately-real per-store `salesPct` metric, vs `mean_sales`). Measured live: district-wide
+  stabilizes fast (IQR down to single digits by ~9am); per-store takes until afternoon. Owner
+  decision: **keep cumulative as-is, no floor** — the existing formula was already right, this
+  investigation was purely confirmatory. Part E (added after) measured the STANDALONE
+  non-cumulative ratio for comparison and surfaced a real afternoon-bias lead — spun out into its
+  own shipped feature, see `memory/project-hourly-projection-accuracy.md`.
 
 ## Method
 

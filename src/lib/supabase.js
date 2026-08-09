@@ -1572,6 +1572,22 @@ export async function loadDailyActivityRange(startDate, endDate) {
     .range(lo, hi));
 }
 
+// ── Hourly Projection Accuracy (2026-08-09) ──────────────────────────────────
+// Reads the small daily-computed rollup (supabase/schema-hourly-projection-accuracy.sql,
+// scripts/compute-hourly-projection-accuracy.mjs) instead of the raw qsr_daily_activity table —
+// stays fast for a multi-week/month lookback where the raw table times out. loc=null reads every
+// store (the Projection Accuracy panel sums across stores itself for the district-wide view).
+export async function loadHourlyProjectionAccuracy(startDate, endDate, loc = null) {
+  if (!supabase) return [];
+  return fetchAll((lo, hi) => {
+    let q = supabase.from('hourly_projection_accuracy')
+      .select('dt,hour_slot,loc,actual_sales,proj_sales,actual_gc,proj_gc')
+      .gte('dt', startDate).lte('dt', endDate).order('dt').order('hour_slot').range(lo, hi);
+    if (loc) q = q.eq('loc', String(loc));
+    return q;
+  }, 1000, 'hourly_projection_accuracy');
+}
+
 // ── Speed-of-Service history (all stations) ──────────────────────────────────
 // Includes per-station until-serve + transaction counts so the panel can show
 // where the bottleneck is (DT window vs front counter vs kitchen make-line vs
