@@ -486,6 +486,12 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
 
     // Right: actions
     div({style:{display:'flex',alignItems:'center',gap:2,flexShrink:0}},
+      // SAGE quick-access — persistent so it's always one tap away, regardless of view
+      btn({className:'btn btn-sm',
+        style:{fontSize:'9px',color:'#a78bfa',borderColor:'rgba(167,139,250,.35)',
+          background:'rgba(167,139,250,.08)',marginRight:4,fontWeight:700},
+        title:'Open SAGE — AI analytics advisor',
+        onClick:()=>onOpenModal&&onOpenModal('sage')},isMb?'🧠':'🧠 SAGE'),
       // Pre-Forecast Brief quick-access
       !isMb&&ds&&ds.loaded&&btn({className:'btn btn-sm',
         style:{fontSize:'9px',color:'var(--gold)',borderColor:'rgba(245,188,0,.3)',

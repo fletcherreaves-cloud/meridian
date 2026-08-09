@@ -3398,7 +3398,7 @@ function App() {
         if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
         if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),setShowSchedHub(true));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),setShowSchedHub(true));
-        if(modal==='sage')              setShowSage(true);
+        if(modal==='sage')              {setShowSage(true);setSageMin(false);}
         if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
@@ -3550,19 +3550,19 @@ function App() {
     showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
-    showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 16px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
-        span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em'}},'📡 Signals'),
-        h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'✕'),
-      ),
-      div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
-        h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar}),
-      ),
+    showSignals&&h(ModalShell,{
+      title:'📡 Signals',
+      onClose:()=>setShowSignals(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar})
     ),
     // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
     // running in the background and you can look at other Meridian data at the
     // same time. The floating pill (below) shows red while thinking, green when ready.
-    showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
+    // Right-anchored drawer (not a full-screen backdrop) — the rest of the app
+    // stays visible and interactive while SAGE is open, same intent the minimize
+    // pill served before but without having to minimize to get it.
+    showSage&&div({style:{position:'fixed',top:0,right:0,bottom:0,width:'min(460px,100vw)',background:'var(--surf)',borderLeft:'.5px solid var(--bdr2)',boxShadow:'-12px 0 40px rgba(0,0,0,.45)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
         div({style:{display:'flex',alignItems:'center',gap:8}},
           span({style:{width:8,height:8,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 6px '+(sageBusy?'#ef4444':'#10b981')}}),
