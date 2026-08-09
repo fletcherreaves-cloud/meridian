@@ -124,6 +124,59 @@ measurable findings:
 None of these were given an invented threshold — per the standing caution below, a made-up
 number is not a fix. Pick this back up once Supabase access lets real distributions get pulled.
 
+## 2026-08-09 session — org_events round-trip verified (bug found + fixed), Black Friday
+## cleanup shipped, denominator-floor measurement tooling prepared
+
+Picked up three deferred items. Confirmed live (not assumed) that this Claude Code web/remote
+environment only has `VITE_SUPABASE_ANON_KEY` — no `SUPABASE_SERVICE_ROLE_KEY` and no way to mint
+a real user JWT. `curl`-ing `org_events` and `qsr_daily_activity` with the anon key returns HTTP
+200 with an empty array (RLS correctly blocking an unauthenticated caller), not a connection
+failure — reachability (CLAUDE.md's "egress allowlisted" note) and authenticated access are two
+different things, and this environment only ever had the first. Every item below hit this same
+wall; each was handled by building something a human (or a future session with real credentials)
+can act on, rather than guessing.
+
+1. **org_events cloud-sync round-trip (v4.923) — verified by code audit, found and fixed a real
+   bug (v4.927).** `syncUserEventsToCloud`'s delete/edit cleanup called
+   `deleteOrgEventsByLocDate(loc, date)` with no label — deleting EVERY row for that date, even
+   though org_events intentionally allows multiple events per day (a sports game AND a school
+   closure on the same date) while the local `mf_events` registry it mirrors allows exactly one.
+   Editing or deleting the one event visible locally on a multi-event day would silently wipe any
+   OTHER cloud event sharing that date — no error, no local symptom (the deleted sibling was never
+   visible locally to notice missing). Fixed by scoping every delete to the removed/replaced
+   entry's own label, matching org_events' actual `unique (loc, date_start, label)` key. Also
+   extracted the diff logic into a pure, exported `diffUserEventsForCloudSync` (events-import.js)
+   with 7 unit tests — this is what makes the round-trip logic verifiable at all without live
+   Supabase access.
+
+2. **Black Friday duplicate-tagging cleanup — shipped as an in-app tool (v4.928), not a live
+   cleanup.** The bad data (5 tagged Black-Friday days for 2026, per the owner's report) lives in
+   the owner's browser localStorage, which this session cannot reach, and any copy that made it to
+   the cloud is behind the same RLS wall as everything else. `findFloatingDateMismatches()`
+   (retail-events.js) matches `userEvents` entries by LABEL (the buggy rule's default TYPE was
+   'school_break', not a retail type, so type-matching would have missed every instance) against
+   RETAIL_EVENT_RULES, flags any tagged date that doesn't fall in that rule's real computed window
+   for its year, and Calendar Manager's Recurring Rules tab now shows a one-click cleanup banner.
+   Generalizes past Black Friday to Small Business Saturday/Cyber Monday/tax-free weekends — any
+   rule sharing this failure mode. 8 unit tests reproduce the exact reported case (Thanksgiving
+   2026 = Nov 26, computed live via the real `thanksgiving()` rule; only Nov 27 is correct).
+
+3. **Denominator-floor measurement tooling — written, not run.** `scripts/measure-denominator-
+   floors.mjs` (follows the `scripts/measure-retail-impact.mjs` convention: requires
+   `SUPABASE_SERVICE_ROLE_KEY`, read-only, `--dry`-equivalent by default since it never writes)
+   pulls real distributions for the two clearest deferred sites — tpph/r2p/oepe/park/kvst day-
+   level denominators (actual_punched_hours / fc_trans_cnt / dt_trans_cnt / mfy_trans_cnt, via the
+   `qsr_daily_activity_daily` rollup view with a raw-hourly fallback) and the graded-visits.js
+   hourly `ly_transactions`/`ly_product_sales` LY-comparison denominators — and prints
+   percentile/IQR buckets by denominator size. It does NOT choose a threshold; it measures and
+   prints, the same shape as the swing-alarm (-10%, 676 store-weeks) and count-completeness (0.75,
+   bimodal distribution) derivations already in this codebase, so a human picks the floor from the
+   printed buckets. Needs the owner (or a session with `SUPABASE_SERVICE_ROLE_KEY`) to actually run
+   it — this session could not. Still not covered by this script: `signals.js`
+   `pacePct`/`gcPacePct` (a magnitude guard on a different shape — partial-day-elapsed, not a count
+   floor), `backtest.js` `detectCleanDataStart`'s `cv`, and the `dt-speedofservice.js` `us/cnt`
+   sites — left for a future pass, still not given invented thresholds.
+
 ## Method
 
 1. Enumerate sites per signature (the counts above are a first pass, already run).
