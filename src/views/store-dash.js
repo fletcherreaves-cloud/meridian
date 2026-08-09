@@ -3352,6 +3352,10 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   const [editNote, setEditNote] = useState('');
   const [editLoc, setEditLoc] = useState('');
   const [editDate, setEditDate] = useState(fmtDI(new Date()));
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [locFilter, setLocFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('date-desc');
 
   const allEvents = useMemo(()=>{
     const ev=[];
@@ -3362,6 +3366,39 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
     }
     return ev.sort((a,b)=>b.date-a.date);
   },[userEvents]);
+
+  const typeOptions = useMemo(()=>[...new Set(allEvents.map(e=>e.type||'other'))].sort(),[allEvents]);
+
+  // Locations ordered by tag count, highest first, each showing its count — a store with an
+  // implausible number of tagged days (450 on one store broke Dialed-In calibration district-wide,
+  // v4.910) should be the first thing visible here, not buried in an alphabetical list.
+  const locCounts = useMemo(()=>{
+    const c={};
+    for(const e of allEvents) c[e.loc]=(c[e.loc]||0)+1;
+    return Object.entries(c).sort((a,b)=>b[1]-a[1]);
+  },[allEvents]);
+  const HEAVY_TAGS = 300;
+
+  const filtered = useMemo(()=>{
+    let evs=allEvents;
+    if(typeFilter!=='all') evs=evs.filter(e=>(e.type||'other')===typeFilter);
+    if(locFilter!=='all') evs=evs.filter(e=>String(e.loc)===String(locFilter));
+    if(search.trim()){
+      const s=search.toLowerCase();
+      evs=evs.filter(e=>
+        (e.note||'').toLowerCase().includes(s)||
+        (e.label||'').toLowerCase().includes(s)||
+        (STORE_NAMES[e.loc]||e.loc).toLowerCase().includes(s)||
+        e.dk.includes(s)
+      );
+    }
+    evs=[...evs];
+    if(sortBy==='date-asc') evs.sort((a,b)=>a.date-b.date);
+    else if(sortBy==='loc') evs.sort((a,b)=>(STORE_NAMES[a.loc]||a.loc).localeCompare(STORE_NAMES[b.loc]||b.loc));
+    else if(sortBy==='type') evs.sort((a,b)=>(a.type||'other').localeCompare(b.type||'other'));
+    else evs.sort((a,b)=>b.date-a.date);
+    return evs;
+  },[allEvents,typeFilter,locFilter,search,sortBy]);
 
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
@@ -3379,7 +3416,8 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:20,overflowY:'auto'}},
     div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:900,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'auto',overflow:'hidden'}},
       div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div(null,div({style:{fontSize:'15px',fontWeight:700}},'📅 Event Calendar'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},allEvents.length+' events tagged')),
+        div(null,div({style:{fontSize:'15px',fontWeight:700}},'📅 Event Calendar'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},
+          allEvents.length+' events tagged'+(filtered.length!==allEvents.length?' · '+filtered.length+' shown':''))),
         btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');}},'+Add Event'),
         btn({className:'btn btn-sm',style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
           onClick:()=>{
@@ -3405,6 +3443,42 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
           }},'🗓 Auto-Tag Holidays'),
         btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
       ),
+      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 18px',
+        borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
+        color:'#f59e0b',lineHeight:1.5}},
+        '⚠ ',
+        locCounts.filter(([,n])=>n>=HEAVY_TAGS).map(([l,n])=>(STORE_NAMES[l]||l)+' ('+n+')').join(', '),
+        ' — over a year of tagged days. Tagged days are skipped when the forecast looks for the ',
+        'same day last year, so heavy tagging can leave a store with no comparison at all.'),
+      div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:8,
+        alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
+        inp({type:'text',value:search,onChange:e=>setSearch(e.target.value),
+          placeholder:'Search location, type, note…',
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 8px',minWidth:180,outline:'none'}}),
+        sel({value:typeFilter,onChange:e=>setTypeFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'all'},'All Types ('+allEvents.length+')'),
+          typeOptions.map(t=>opt({key:t,value:t},
+            (EVENT_TYPES[t]?.icon||'')+' '+(EVENT_TYPES[t]?.label||t)+' ('+allEvents.filter(e=>(e.type||'other')===t).length+')'))
+        ),
+        sel({value:locFilter,onChange:e=>setLocFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'all'},'All Locations ('+locCounts.length+')'),
+          locCounts.map(([l,n])=>opt({key:l,value:l},
+            (n>=HEAVY_TAGS?'⚠ ':'')+(STORE_NAMES[l]||l)+' — '+n+' tagged'))
+        ),
+        sel({value:sortBy,onChange:e=>setSortBy(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'date-desc'},'Newest first'),
+          opt({value:'date-asc'},'Oldest first'),
+          opt({value:'loc'},'By Location'),
+          opt({value:'type'},'By Event Type')
+        )
+      ),
       (editKey!=null)&&div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)'}},
         div({style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}},
           inp({type:'date',value:editDate,onChange:e=>setEditDate(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}}),
@@ -3420,8 +3494,9 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
         )
       ),
       div({style:{overflowY:'auto',flex:1}},
-        !allEvents.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.'),
-        allEvents.map((ev,i)=>{
+        !filtered.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},
+          allEvents.length===0?'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.':'No events match your search/filter.'),
+        filtered.map((ev,i)=>{
           const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
           return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)'}},
             span({style:{fontSize:'18px'}}),ev.icon||et.icon,
