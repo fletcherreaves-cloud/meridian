@@ -121,6 +121,7 @@ import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { newsContextFor } from '../engine/swing-context.js';
 import { LocationIntelligence } from '../features/location-intel.js';
@@ -3397,7 +3398,7 @@ function App() {
         if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
         if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),setShowSchedHub(true));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),setShowSchedHub(true));
-        if(modal==='sage')              setShowSage(true);
+        if(modal==='sage')              {setShowSage(true);setSageMin(false);}
         if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
@@ -3549,19 +3550,19 @@ function App() {
     showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
-    showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 16px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
-        span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em'}},'📡 Signals'),
-        h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×'),
-      ),
-      div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
-        h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar}),
-      ),
+    showSignals&&h(ModalShell,{
+      title:'📡 Signals',
+      onClose:()=>setShowSignals(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar})
     ),
     // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
     // running in the background and you can look at other Meridian data at the
     // same time. The floating pill (below) shows red while thinking, green when ready.
-    showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
+    // Right-anchored drawer (not a full-screen backdrop) — the rest of the app
+    // stays visible and interactive while SAGE is open, same intent the minimize
+    // pill served before but without having to minimize to get it.
+    showSage&&div({style:{position:'fixed',top:0,right:0,bottom:0,width:'min(460px,100vw)',background:'var(--surf)',borderLeft:'.5px solid var(--bdr2)',boxShadow:'-12px 0 40px rgba(0,0,0,.45)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
         div({style:{display:'flex',alignItems:'center',gap:8}},
           span({style:{width:8,height:8,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 6px '+(sageBusy?'#ef4444':'#10b981')}}),
@@ -3569,7 +3570,7 @@ function App() {
           sageBusy&&span({style:{fontSize:'10px',color:'#ef4444',fontWeight:700}},'working…')),
         div({style:{display:'flex',alignItems:'center',gap:2}},
           h('button',{onClick:()=>setSageMin(true),title:'Minimize — keep SAGE running while you look at other data',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'22px',lineHeight:1,padding:'4px 8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'—'),
-          h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×')),
+          h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'✕')),
       ),
       div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
         h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy}),
@@ -3586,21 +3587,20 @@ function App() {
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
-    showFcstRef&&h('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:400,display:'flex',flexDirection:'column',padding:'20px'},onClick:e=>{if(e.target===e.currentTarget)setShowFcstRef(false);}},
-      h('div',{style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',display:'flex',flexDirection:'column',flex:1,maxWidth:1100,margin:'0 auto',width:'100%',overflow:'hidden'}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:12,padding:'12px 18px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},
-          h('span',{style:{fontSize:'14px',fontWeight:700}},'📐 Forecasting Reference'),
-          h('span',{style:{fontSize:'10px',color:'var(--text3)',flex:1}},'All calculation formulas, model weights, and calibration parameters'),
-          h('button',{onClick:()=>{const f=document.getElementById('fcst-ref-frame');if(f)f.contentWindow.print();},
-            style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600,marginRight:6}},
-            '⬇ Download PDF'),
-          h('button',{onClick:()=>window.open('/forecast-reference.html','_blank'),
-            style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600,marginRight:6}},
-            '↗ Open Full Page'),
-          h('button',{onClick:()=>setShowFcstRef(false),style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer',lineHeight:1}},'×')
-        ),
-        h('iframe',{id:'fcst-ref-frame',src:'/forecast-reference.html',style:{flex:1,border:'none',background:'#fff'}})
-      )
+    showFcstRef&&h(ModalShell,{
+      title:'📐 Forecasting Reference',
+      subtitle:'All calculation formulas, model weights, and calibration parameters',
+      onClose:()=>setShowFcstRef(false),closeOnBackdrop:true,maxWidth:1100,zIndex:Z.nested,
+      bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
+      headerExtra:div({style:{display:'flex',gap:6}},
+        h('button',{onClick:()=>{const f=document.getElementById('fcst-ref-frame');if(f)f.contentWindow.print();},
+          style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600}},
+          '⬇ Download PDF'),
+        h('button',{onClick:()=>window.open('/forecast-reference.html','_blank'),
+          style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600}},
+          '↗ Open Full Page'))
+    },
+      h('iframe',{id:'fcst-ref-frame',src:'/forecast-reference.html',style:{flex:1,border:'none',background:'#fff',width:'100%'}})
     ),
     showFcstAccuracy&&h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>setShowFcstAccuracy(false)}),
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
@@ -3616,13 +3616,11 @@ function App() {
     showCountCycle&&h(CountCyclePanel,{onClose:()=>setShowCountCycle(false)}),
     showNews&&h(NewsPanel,{onClose:()=>setShowNews(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
-    showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},
-        div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center'}},
-          div({style:{fontSize:'13px',fontWeight:700}},'🔍 Historical Sales Anomaly Scan'),
-          btn({onClick:()=>setShowAIScan(false),style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-        ),
-        div({style:{padding:'16px'}},h(AIBacktestScanner,{stores,ds,settings,userEvents,onTagEvent:(loc,dk,note,evType,opts)=>{
+    showAIScan&&h(ModalShell,{
+      title:'🔍 Historical Sales Anomaly Scan',
+      onClose:()=>setShowAIScan(false),maxWidth:940,zIndex:Z.modal,bodyStyle:{padding:'16px'}
+    },
+      h(AIBacktestScanner,{stores,ds,settings,userEvents,onTagEvent:(loc,dk,note,evType,opts)=>{
           // Handle _refresh_ signal from EventEntryModal — receives complete new state
           // already written to localStorage; just sync React state with it.
           if(loc==='_refresh_'&&opts&&opts._refreshState){
@@ -3648,13 +3646,15 @@ function App() {
             syncUserEventsToCloud(prev,next);
             try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
             return next;
-          });}}))
-      )
+          });}})
     ),
-    showProj&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'96vw',maxWidth:1700,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections,onClose:()=>setShowProj(false)})
-      )
+    showProj&&h(ModalShell,{
+      title:'📋 Projection Workspace',
+      subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
+      onClose:()=>setShowProj(false),maxWidth:1700,zIndex:Z.modal,
+      bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
+    },
+      h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections})
     ),
     // ── Standalone Pre-Forecast Brief (from topbar shortcut or nav) ──────
     showProjBriefSA&&h(PreForecastBrief,{
@@ -3664,41 +3664,37 @@ function App() {
       onRun:()=>{setShowProjBriefSA(false);setShowProj(true);},
       onClose:()=>setShowProjBriefSA(false)
     }),
-    showReport&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:1100,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>setShowReport(false)})
-      )
+    showReport&&h(ModalShell,{
+      title:'📊 Date-Range Comprehensive Report',
+      subtitle:'Compares all metrics for any date range across selected locations.',
+      onClose:()=>setShowReport(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
+    },
+      h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>setShowReport(false)})
     ),
-    showDICompare&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:370,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:1100,display:'flex',flexDirection:'column',maxHeight:'94vh'}},
-        h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>setShowDICompare(false)})
-      )
+    showDICompare&&h(ModalShell,{
+      title:'⚡ Dialed-In vs Default Comparison',
+      subtitle:'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement',
+      onClose:()=>setShowDICompare(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>setShowDICompare(false)})
     ),
-    showPVSA&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:360,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:1100,display:'flex',flexDirection:'column',maxHeight:'94vh'}},
-        h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
-      )
+    showPVSA&&h(ModalShell,{
+      title:'📊 Projection vs Actuals Report',
+      subtitle:'AI forecast accuracy vs actual results — click any cell to expand daily detail',
+      onClose:()=>setShowPVSA(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
-    showHelp&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:400,
-      display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:800,maxHeight:'94vh',display:'flex',flexDirection:'column'}},
-        // Help header
-        div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
-          display:'flex',alignItems:'center',gap:10,flexShrink:0}},
-          div({style:{fontSize:'16px',fontWeight:800}},'📖 Meridian — Workflow Guide'),
-          btn({
-            onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
-            style:{marginLeft:'auto',padding:'5px 12px',fontSize:11,fontWeight:700,
-              background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
-          },'▶ Start Tour'),
-          btn({onClick:()=>setShowHelp(false),style:{background:'none',border:'none',
-            color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
-        ),
-        // Help content
-        div({style:{overflowY:'auto',padding:'16px 20px',fontSize:'11px',lineHeight:1.7}},
+    showHelp&&h(ModalShell,{
+      title:'📖 Meridian — Workflow Guide',
+      onClose:()=>setShowHelp(false),maxWidth:800,zIndex:Z.nested,
+      bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
+      headerExtra:btn({
+        onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
+        style:{padding:'5px 12px',fontSize:11,fontWeight:700,
+          background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
+      },'▶ Start Tour')
+    },
           ...[
             {day:'DAILY (Every day you open the app)',color:'#10b981',items:[
               {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report (Sales + Service + Controls + FOB sheets) and Register Audit. Drag files onto the Data Manager or use the Load button. Target: data no older than 3 days. Also load Labor Analysis for Shift Analysis features.'},
@@ -3748,36 +3744,28 @@ function App() {
               ))
             )
           ))
-        )
-      )
     ),
-    showBrief&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:720,display:'flex',flexDirection:'column',maxHeight:'92vh'}},
-        h(LocationBrief,{
-          stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
-          ds,settings,
-          scope:briefScope.scope,
-          scopeLabel:briefScope.label,
-          onClose:()=>setShowBrief(false)
-        })
-      )
+    showBrief&&h(ModalShell,{
+      icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
+      subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',
+      onClose:()=>setShowBrief(false),maxWidth:720,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(LocationBrief,{
+        stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
+        ds,settings,
+        scope:briefScope.scope,
+        scopeLabel:briefScope.label,
+        onClose:()=>setShowBrief(false)
+      })
     ),
-    showAbout&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:370,
-      display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:720,position:'relative'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',
-          padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,
-          background:'var(--surf)',zIndex:10}},
-          h('div',null,
-            h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800}},
-              'Meridian. v'+MERIDIAN_VERSION),
-            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},
-              'QSR Forecasting & Intelligence · '+(settings.districtName||'District')+' · '+Object.keys(STORE_NAMES).length+' Locations · Build '+MERIDIAN_BUILD_DATE)),
-          h('button',{onClick:()=>setShowAbout(false),
-            style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer'}},'✕')),
-        div({style:{padding:'20px 24px',overflowY:'auto',maxHeight:'80vh'}},
+    showAbout&&h(ModalShell,{
+      title:h(React.Fragment,null,
+        h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800}},
+          'Meridian. v'+MERIDIAN_VERSION),
+        h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px',fontWeight:400}},
+          'QSR Forecasting & Intelligence · '+(settings.districtName||'District')+' · '+Object.keys(STORE_NAMES).length+' Locations · Build '+MERIDIAN_BUILD_DATE)),
+      onClose:()=>setShowAbout(false),maxWidth:720,zIndex:Z.nested,bodyStyle:{padding:'20px 24px'}
+    },
           // Stats row
           div({style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'10px',marginBottom:'24px'}},
             [['27','Stores'],['5','Forecast Models'],
@@ -3812,50 +3800,45 @@ function App() {
             div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:'1.8',marginTop:'4px'}},
               '🔒 Cloud-first: data saved to Supabase and loaded on any device, row-level-security scoped per role / accessible locations · magic-link sign-in')
           )
-        )
-      )
     ),
-        showMorningBrief&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:920,position:'relative'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
-          h('div',null,
-            h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800,letterSpacing:'-.02em'}},'☀️ Morning Intelligence Brief'),
-            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Correlation engine · 9 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority')),
-          h('button',{onClick:()=>setShowMorningBrief(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
-        div({style:{overflowY:'auto',maxHeight:'88vh'}},
-          h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar}))
-      )
+        showMorningBrief&&h(ModalShell,{
+      icon:'☀️',title:'Morning Intelligence Brief',
+      subtitle:'Correlation engine · 9 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',
+      onClose:()=>setShowMorningBrief(false),maxWidth:920,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+          h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar})
     ),
-        showEOMSummary&&div({className:'mf-eom-print-modal',style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({className:'mf-eom-print-card',style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1140,position:'relative'}},
-        h('div',{className:'mf-eom-modal-chrome',style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
-          h('div',null,
-            h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800,letterSpacing:'-.02em'}},'📊 EOM Supervisor Summary'),
-            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Monthly P&L variance by store — filter by supervisor, operator, or all')),
-          h('button',{onClick:()=>setShowEOMSummary(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
-        div({style:{overflowY:'auto',maxHeight:'88vh'}},
-          h(EOMSupervisorPanel,{ds,settings,supabase}))
-      )
+        showEOMSummary&&h(ModalShell,{
+      icon:'📊',title:'EOM Supervisor Summary',
+      subtitle:'Monthly P&L variance by store — filter by supervisor, operator, or all',
+      onClose:()=>setShowEOMSummary(false),maxWidth:1140,zIndex:Z.nested,bodyStyle:{padding:0},
+      backdropClassName:'mf-eom-print-modal',cardClassName:'mf-eom-print-card',headerClassName:'mf-eom-modal-chrome'
+    },
+          h(EOMSupervisorPanel,{ds,settings,supabase})
     ),
-        showEOMDash&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1240,position:'relative'}},
-        div({style:{overflowY:'auto',maxHeight:'92vh'}},
-          h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}))
-      )
+        showEOMDash&&h(ModalShell,{
+      title:'📦 Inventory Control',
+      onClose:()=>setShowEOMDash(false),maxWidth:1240,zIndex:Z.nested,bodyStyle:{padding:'20px'}
+    },
+      h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)})
     ),
-        showAudit&&selStore&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:980,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(ForecastAudit,{
-          store:stores.find(s=>s.loc===(selStore&&selStore.loc?selStore.loc:selStore))||null,
-          ds,settings,userEvents,dateRange,
-          onClose:()=>setShowAudit(false)
-        })
-      )
+        showAudit&&selStore&&h(ModalShell,{
+      title:'🔬 Forecast Audit — '+(STORE_NAMES[(selStore&&selStore.loc?selStore.loc:selStore)]||(selStore&&selStore.loc?selStore.loc:selStore)),
+      subtitle:'Full transparency: every input, weight, and multiplier used to compute each day forecast.',
+      onClose:()=>setShowAudit(false),maxWidth:980,zIndex:Z.modal,bodyStyle:{padding:0,display:'flex',overflow:'hidden'}
+    },
+      h(ForecastAudit,{
+        store:stores.find(s=>s.loc===(selStore&&selStore.loc?selStore.loc:selStore))||null,
+        ds,settings,userEvents,dateRange,
+        onClose:()=>setShowAudit(false)
+      })
     ),
-    showDialedIn&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:1100,margin:'0 auto',maxHeight:'90vh',display:'flex',flexDirection:'column'}},
-        h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
-      )
+    showDialedIn&&h(ModalShell,{
+      title:'🎯 Dialed-In — Per-Store Calibration Engine',
+      subtitle:'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',
+      onClose:()=>setShowDialedIn(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
+    },
+      h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
     ),
     // ── First-run tutorial overlay (zIndex 500 — above everything) ──────────
     showTutorial&&h(TutorialOverlay,{onClose:()=>setShowTutorial(false)}),

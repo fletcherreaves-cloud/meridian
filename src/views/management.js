@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { DEF_SETTINGS, sName, sNameC, STORE_NAMES, groupsAt, seedAssignmentsFromGroups } from '../constants.js';
 import { InfoIcon, calibrateWeather } from '../engine/forecast.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -257,13 +258,10 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
   const inp2=({path,...rest})=>inp({...rest,value:S[path]??'',onChange:e=>set(path,isNaN(e.target.value)?e.target.value:+e.target.value)});
   const Toggle=({label,path,options})=>div({className:'set-row'},div({className:'set-lbl'},label),div({style:{display:'flex',gap:4}},options.map(([l,v])=>btn({key:String(l),className:'sbtn'+(S[path]===v?' on':''),onClick:()=>set(path,v),style:{fontSize:'10px',padding:'2px 8px'}},l))));
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:300,overflowY:'auto',display:'flex',justifyContent:'flex-start',padding:'20px 20px 20px 8px'}},
-    div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:640,height:'fit-content'}},
-      div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div({style:{fontSize:'15px',fontWeight:700}},'⚙ Settings'),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-      ),
-      div({style:{display:'flex',flex:1,overflow:'hidden'}},
+  return h(ModalShell,{
+    title:'⚙ Settings', onClose, maxWidth:640, zIndex:Z.modal,
+    justify:'flex-start', bodyStyle:{padding:0,display:'flex',overflow:'hidden'},
+  },
         // ── Sidebar menu
         div({style:{width:140,flexShrink:0,borderRight:'.5px solid var(--bdr)',
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
@@ -532,9 +530,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           )
         )
       )// close content div
-    )// close flex row (sidebar+content)
-  )// close inner panel
-);
+  );
 }
 
 export { Settings };

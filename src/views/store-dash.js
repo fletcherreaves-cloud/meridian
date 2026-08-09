@@ -2293,7 +2293,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
               'Sales': s.p.sales>0?f$(s.p.sales):'—',
             })),
           }),
-          btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×'))
+          btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕'))
       ),
       onDateChange&&div({style:{padding:'5px 14px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:3,flexWrap:'wrap',background:'var(--surf2)'}},
         span({style:{fontSize:'8px',color:'var(--text3)',alignSelf:'center',marginRight:4}},'Filter period:'),
@@ -3456,7 +3456,7 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
             onUpdate(next);
             alert('Auto-tagged '+count+' holiday events across all stores (current year ±1). Pre-existing tags were preserved.');
           }},'🗓 Auto-Tag Holidays'),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
+        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')
       ),
       locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 18px',
         borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
