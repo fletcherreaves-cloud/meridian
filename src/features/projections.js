@@ -9,6 +9,7 @@ import { computeEventFactors } from '../utils/events.js';
 import { TH, f$ } from '../utils/fmt.js';
 import { ForecastAudit, CurrentMonthPaceSection } from '../views/analytics.js';
 import { supabase } from '../lib/supabase.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -405,12 +406,10 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
     onRun();
   };
 
-  if(!brief) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
-    div({style:{color:'var(--text3)',textAlign:'center'}},
-      div({style:{fontSize:32,marginBottom:8}},'📋'),
+  if(!brief) return h(ModalShell,{title:'Pre-Forecast Brief',icon:'📋',onClose,maxWidth:420,zIndex:Z.nested},
+    div({style:{color:'var(--text3)',textAlign:'center',padding:'24px 20px'}},
       div(null,'Load data to see Pre-Forecast Brief'),
       div({style:{marginTop:12,display:'flex',gap:8,justifyContent:'center'}},
-        btn({className:'btn btn-sm',onClick:onClose},'Cancel'),
         btn({className:'btn btn-a',onClick:onRun},'Skip Brief & Run Projections'))));
 
   const{trendWeeks,avgVsLY,trendDir,calEvents,lyRisks,avgOEPE,avgTPPH,avgLaborPct,calibrated,totalLocs,distMAPE,weekFcEst,wsDate}=brief;
@@ -426,26 +425,18 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
       span(null,title)),
     children);
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:450,
-    display:'flex',alignItems:'flex-start',justifyContent:'center',overflowY:'auto',padding:'20px 16px 40px'}},
-    div({style:{width:'100%',maxWidth:820,background:'var(--surf)',borderRadius:12,
-      border:'.5px solid var(--bdr2)',boxShadow:'0 24px 64px rgba(0,0,0,.6)',
-      display:'flex',flexDirection:'column',overflow:'hidden'}},
-      // Sticky header
-      div({style:{position:'sticky',top:0,zIndex:10,background:'var(--surf2)',
-        borderBottom:'1.5px solid var(--bdr2)',padding:'12px 18px',
-        display:'flex',alignItems:'center',gap:12}},
-        div({style:{fontSize:'20px'}},'📋'),
-        div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--gold)',letterSpacing:'-.2px'}},'Projection Preflight Analysis'),
-          div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
-            'Week starting '+(wsDate.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}))+
-            ' · '+totalLocs+' locations · '+new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}))),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕ Cancel'),
-        btn({className:'btn btn-a',style:{padding:'7px 18px',fontWeight:700},onClick:handleRun},'▶ Run Projections →')
-      ),
-      // Scrollable body
-      div({style:{padding:'18px 20px 24px',overflowY:'auto'}},
+  return h(ModalShell,{
+    title:'Projection Preflight Analysis',icon:'📋',onClose,maxWidth:820,zIndex:Z.nested,
+    subtitle:'Week starting '+(wsDate.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}))+
+      ' · '+totalLocs+' locations · '+new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),
+    headerExtra: btn({className:'btn btn-a',style:{padding:'7px 18px',fontWeight:700},onClick:handleRun},'▶ Run Projections →'),
+    bodyStyle:{padding:'18px 20px 24px'},
+    footer: div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      div({style:{fontSize:'9px',color:'var(--text3)'}},
+        'This analysis is saved as a moment-in-time snapshot with your projection.'),
+      btn({className:'btn btn-a',style:{padding:'8px 24px',fontWeight:800,fontSize:'11px'},onClick:handleRun},
+        '▶ Run Projections →')),
+  },
 
       // ── Sales Trend ─────────────────────────────────────────────────────
       sectionCard(trendIcon,'Sales Trend — Last 4 Weeks',trendCol,
@@ -523,21 +514,8 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
           ?div({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.7}},aiSummary)
           :div({style:{fontSize:'9px',color:'var(--text3)',fontStyle:'italic'}},
               apiKey?'Click "Generate Summary" for an AI-powered executive brief of this projection period.':'Add API key in Settings to enable AI summary.')
-      ),
-
-        // ── Footer actions ───────────────────────────────────────────────
-        div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',
-          borderTop:'.5px solid var(--bdr)',paddingTop:14,marginTop:4}},
-          div({style:{fontSize:'9px',color:'var(--text3)'}},
-            'This analysis is saved as a moment-in-time snapshot with your projection.'),
-          div({style:{display:'flex',gap:8}},
-            btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'← Back'),
-            btn({className:'btn btn-a',style:{padding:'8px 24px',fontWeight:800,fontSize:'11px'},onClick:handleRun},
-              '▶ Run Projections →'))
-        )
-      ) // end body
-    )   // end panel
-  );   // end overlay
+      )
+  );
 }
 
 // PROJECTION WORKSPACE — Enterprise One-Stop Projection Hub

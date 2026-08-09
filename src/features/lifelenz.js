@@ -5,6 +5,7 @@ import { DEFAULT_MODEL_ASSIGNMENTS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYP
 import { forecastDay, getModelAssignment } from '../engine/forecast.js';
 import { runWhyEngineScan, runWhyEngineDistrict, diagnoseMiss } from '../engine/why.js';
 import { grade } from '../utils/fmt.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -523,37 +524,22 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
     navigator.clipboard.writeText(lines.join('\n')).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
   };
 
-  if(!ds||!ds.loaded) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:465,display:'flex',alignItems:'center',justifyContent:'center'}},
+  if(!ds||!ds.loaded) return h(ModalShell,{title:'LifeLenz Bridge',icon:'🌉',onClose,maxWidth:480,zIndex:Z.nested},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-      div({style:{fontSize:40,marginBottom:12}},'🌉'),
-      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
-      div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load a Labor Analysis file (with Projected Sales column) to run the LifeLenz Bridge.'),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      div({style:{fontSize:'11px',lineHeight:1.6}},'Load a Labor Analysis file (with Projected Sales column) to run the LifeLenz Bridge.')));
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:465,
-    display:'flex',alignItems:'flex-start',justifyContent:'center',padding:20,paddingTop:24}},
-    div({style:{background:'var(--surf)',border:'.5px solid var(--bdr2)',borderRadius:'var(--rl)',
-      width:'100%',maxWidth:920,maxHeight:'92vh',display:'flex',flexDirection:'column',
-      boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
-
-      // Header
-      div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',
-        display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
-        span({style:{fontSize:'18px'}},'🌉'),
-        div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'LifeLenz Bridge'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'One number to type into LifeLenz before the schedule locks — no API, this is the manual-entry workflow')
-        ),
-        div({style:{display:'flex',gap:3}},
-          ...[['single','📍 Single Store'],['district','🏙 District']].map(([id,l])=>
-            btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',
-              background:mode===id?'var(--adim)':'transparent',
-              color:mode===id?'var(--amber)':'var(--text3)',
-              border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
-              onClick:()=>setMode(id)},l))
-        ),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
-      ),
+  return h(ModalShell,{
+    title:'LifeLenz Bridge',icon:'🌉',onClose,maxWidth:920,zIndex:Z.nested,
+    subtitle:'One number to type into LifeLenz before the schedule locks — no API, this is the manual-entry workflow',
+    headerExtra: div({style:{display:'flex',gap:3}},
+      ...[['single','📍 Single Store'],['district','🏙 District']].map(([id,l])=>
+        btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',
+          background:mode===id?'var(--adim)':'transparent',
+          color:mode===id?'var(--amber)':'var(--text3)',
+          border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
+          onClick:()=>setMode(id)},l))
+    ),
+  },
 
       // ════════ SINGLE STORE MODE ════════
       mode==='single'&&React.createElement(React.Fragment,null,
@@ -700,8 +686,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
           )
         )
       )
-    )
-  );
+    );
 }
 // ── end LifeLenzBridgePanel ───────────────────────────────────────────────────
 

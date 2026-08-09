@@ -746,14 +746,23 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
     style:{fontSize:'9px',color:activeSection===n?'#000':(col||'var(--text3)')},
     onClick:()=>setActiveSection(n)},label+(count?' ('+count+')':''));
 
-  if(!locs.length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:460,
-    display:'flex',alignItems:'center',justifyContent:'center'}},
-    div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-      div({style:{fontSize:40,marginBottom:12}},'📦'),
-      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Inventory Data Loaded'),
-      div({style:{fontSize:'11px',color:'var(--text3)',marginBottom:16,lineHeight:1.6}},
-        'Drop your inventory files (e.g. 3708 - Inventory Summary and Usage.xlsx) into the app.',div(null,'Each location needs its own file. Filename must start with the location number.')),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+  // Both branches share the same bottom-sheet chrome (click-catcher strip, header
+  // row, ✕ close style) so the close affordance never changes shape between states.
+  if(!locs.length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
+    div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
+    div({style:{flex:1,background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',
+      maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
+      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',
+        gap:8,flexShrink:0,background:'var(--surf2)'}},
+        div({style:{fontSize:'13px',fontWeight:800,color:'var(--gold)',flex:1}},'📦 Inventory Intelligence'),
+        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
+      ),
+      div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
+        div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
+          div({style:{fontSize:40,marginBottom:12}},'📦'),
+          div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Inventory Data Loaded'),
+          div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:1.6}},
+            'Drop your inventory files (e.g. 3708 - Inventory Summary and Usage.xlsx) into the app.',div(null,'Each location needs its own file. Filename must start with the location number.'))))));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
     div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
@@ -785,7 +794,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
         btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
           title:'Export all loaded locations in one combined report',
           onClick:()=>generateBulkInventoryReport(ds.inventoryRows||[],threshold,excldWrap,classFilter,settings)},'📄 Export All Locations'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕')
+        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       // ── Section tabs ─────────────────────────────────────────────────────
       div({style:{padding:'7px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:6,flexWrap:'wrap',
