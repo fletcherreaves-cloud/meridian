@@ -177,6 +177,54 @@ can act on, rather than guessing.
    floor), `backtest.js` `detectCleanDataStart`'s `cv`, and the `dt-speedofservice.js` `us/cnt`
    sites — left for a future pass, still not given invented thresholds.
 
+## 2026-08-09 session, part 2 — PR #101 review fix + the measurement script actually run
+
+**v4.929 — fixed a real, confirmed bug in v4.928 before merge.** An independent review (a
+coordinator session, on PR #101 before merge) caught and reproduced that `findFloatingDateMismatches`
+checked a tagged date against `shoppingAnchor()`'s collapsed scheduling sub-window instead of the
+retail rule's TRUE window. For long statutory spans (`fl_back_to_school`, a full month) this made
+the new one-click "Remove all mistagged" cleanup capable of deleting a correctly-tagged real event
+just because it fell outside the anchored opening weekend — the exact class of destructive bug
+v4.927 (earlier in the same PR) was written to prevent, reintroduced by the new tool built on top
+of it. Fixed by checking `inst.start`/`inst.end` (the rule's real window) directly; 2 new
+regression tests. Also documented (deferred, lower severity per the same review) a second gap:
+`diffUserEventsForCloudSync` can't correctly clean up a single day of a multi-day org-sourced
+event via the generic label-based path (inert no-op, not destructive — see the code comment at
+the site in events-import.js for the full reasoning on why a real fix needs a shape change).
+**Lesson for future sweep work:** a second independent reviewer caught what code-review-by-the-
+same-session missed, on the FIRST tool this sweep shipped with real delete power. Worth an
+adversarial second pass on any future data-destructive tooling before merge, not just tests.
+
+**The owner supplied `SUPABASE_SERVICE_ROLE_KEY` and the measurement script was actually run** —
+first attempt timed out even with service-role access (bypasses RLS, so this was a genuine
+performance problem, not an access one): `qsr_daily_activity_daily` is a plain SQL `view`, not
+materialized, so it re-runs the full `GROUP BY` over the entire underlying table on every read,
+and that table is large enough for an unbounded read to hit Postgres's statement timeout. Fixed
+the script to bound part A by `--days` (same as part B already did) and fall back to the raw
+hourly table on a query ERROR, not just on an empty result. Re-ran successfully with `--days 60`.
+
+**Results (60-day window, 2026-06-10 → today):**
+
+- **Part A (tpph/r2p/oepe/park/kvst day-level denominators) — mostly a non-issue in practice.**
+  1,645 of 1,647 real (loc, date) rows had `actual_punched_hours ≥ 24`; `fc_trans_cnt`/
+  `dt_trans_cnt`/`mfy_trans_cnt` rarely fell below ~50 for a full day, and where they did (a
+  handful of rows) the metric value wasn't dramatically more extreme than the well-populated
+  buckets. The `>0` guard the sweep flagged as risky essentially never triggers in real daily
+  data — lower priority than assumed. Left un-fixed; a defensive floor (~10) would be cheap
+  insurance but isn't urgent.
+- **Part B (hourly LY-comparison %, graded-visits.js `hourMetrics`) — real and measured.**
+  `ly_transactions` bucketed against the resulting comp-%'s IQR: **1 → IQR 1000** (n=75, p10
+  -100%/p90 +2200%), **2 → IQR 500** (n=49), **3-4 → IQR 195.8** (n=99), **20-39 → IQR 39.1**
+  (n=5,885), **40+ → IQR 23.4** (n=21,282, the stable baseline). A defensible floor sits around
+  `ly_transactions ≥ 20` (~1.7× baseline IQR) to `≥ 40` (fully stable) — a judgment call left to
+  the owner, per the standing "no invented threshold" rule; the script does not choose one.
+  **Also refutes an assumption in this doc's own earlier entry:** "an hour-slot's LY count of 1
+  is normal, not an edge case" turned out to be wrong — measured `ly_transactions === 1` in only
+  **75 of 29,109** hour-slots with any LY count at all (0.3%). Rare, not normal.
+- **Not yet applied to code** — the owner was asked to pick the exact floor value before
+  `graded-visits.js`/`supabase.js` get changed; a future session should pick up from here once
+  that's decided, using these measured numbers rather than re-measuring from scratch.
+
 ## Method
 
 1. Enumerate sites per signature (the counts above are a first pass, already run).

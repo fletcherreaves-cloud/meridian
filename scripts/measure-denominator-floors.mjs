@@ -33,11 +33,15 @@ const sb = createClient(URL, KEY, { auth: { persistSession: false } });
 const SKIP_HOURLY = process.argv.includes('--skip-hourly');
 const DAYS = (() => { const i = process.argv.indexOf('--days'); return i >= 0 && process.argv[i + 1] ? +process.argv[i + 1] : 120; })();
 
-async function fetchAllPaged(build, pageSize = 1000) {
+async function fetchAllPaged(build, pageSize = 1000, { fatal = true } = {}) {
   const out = [];
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await build(from, from + pageSize - 1);
-    if (error) { console.error('read error:', error.message); process.exit(1); }
+    if (error) {
+      if (fatal) { console.error('read error:', error.message); process.exit(1); }
+      console.log('read error (falling back):', error.message);
+      return null;
+    }
     if (!data || !data.length) break;
     out.push(...data);
     if (data.length < pageSize) break;
@@ -71,14 +75,18 @@ function printBuckets(title, unit, rows, denomKey, valueKey, edges) {
 // A) Daily rate metrics — tpph/r2p/oepe/park/kvst, via the qsr_daily_activity_daily rollup view.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 console.log('═══ A) Daily rate-metric denominators (tpph/r2p/oepe/park/kvst) ═══');
-let daily = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity_daily').select('*').range(from, to));
-if (!daily.length) {
-  console.log('qsr_daily_activity_daily view returned 0 rows — falling back to the raw hourly table, grouped here.');
+const sinceA = new Date(Date.now() - DAYS * 86400000).toISOString().slice(0, 10);
+console.log(`(bounded to the last ${DAYS} days, since ${sinceA} — the view/table has no cache and a full-table `
+  + `GROUP BY timed out unbounded; pass --days to widen once you know this window is fast enough)\n`);
+let daily = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity_daily').select('*').gte('dt', sinceA).range(from, to), 1000, { fatal: false });
+if (!daily || !daily.length) {
+  console.log((daily ? 'qsr_daily_activity_daily view returned 0 rows' : 'qsr_daily_activity_daily view failed')
+    + ' — falling back to the raw hourly table, grouped here.');
   const hourly = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity').select(
     'loc,dt,product_sales,transactions,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,' +
     'fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,' +
     'actual_punched_hours,healthy_count,unhealthy_count'
-  ).range(from, to));
+  ).gte('dt', sinceA).range(from, to)) || [];
   const map = {};
   for (const r of hourly) {
     const k = r.loc + '|' + r.dt;
