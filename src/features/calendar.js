@@ -6,7 +6,7 @@ import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
 import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap } from '../engine/events-import.js';
-import { expandRetailEvents, defaultRetailYears } from '../engine/retail-events.js';
+import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES } from '../engine/retail-events.js';
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
@@ -477,12 +477,34 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   };
 
   // ── Recurring rule form ─────────────────────────────────────────────────────
+  // durationDays defaults to 1, not a multi-day span — a rule saved unedited should tag exactly
+  // one day, not silently commit to a week. (Was 5: an unedited "Black Friday" rule saved with
+  // this default spanned Nov 25-29 every year, wrong every year since Black Friday's real date
+  // shifts with Thanksgiving — found 2026-08-09 from a live report of 5 Black-Friday-tagged days.)
   const newRuleDraft = () => ({id:'rule_'+Date.now(), label:'', type:'school_break',
-    locs:[], month:11, day:25, durationDays:5, active:true, source:'manual', createdAt:new Date().toISOString()});
+    locs:[], month:11, day:25, durationDays:1, active:true, source:'manual', createdAt:new Date().toISOString()});
 
+  // Fixed month/day rules can never correctly represent a floating-date event (Black Friday,
+  // Small Business Saturday, Cyber Monday, tax-free weekends) — those shift every year with
+  // Thanksgiving or statute. Those are already generated correctly, every year, by the
+  // retail/shopping calendar (RETAIL_EVENT_RULES → "Generate the retail/shopping calendar" above).
+  // A manual fixed-date rule sharing one of those types would tag the SAME calendar date forever,
+  // drifting further wrong each year and colliding with the correct auto-generated entry — the
+  // exact failure this comment documents. Reused live from RETAIL_EVENT_RULES so this warning
+  // can't drift out of sync if that list ever grows.
+  const _retailRuleTypes = new Set(RETAIL_EVENT_RULES.map(r=>r.type));
   const saveRule = () => {
     if(!ruleDraft.label.trim()){ alert('Enter a label.'); return; }
     if(!ruleDraft.locs.length){ alert('Select at least one store.'); return; }
+    if(_retailRuleTypes.has(ruleDraft.type)){
+      const proceed=window.confirm(
+        '"'+(RETAIL_EVENT_RULES.find(r=>r.type===ruleDraft.type)||{}).label+'" is already generated correctly, every year, '+
+        'by "Generate the retail/shopping calendar" above — its real date shifts with Thanksgiving/statute, which this '+
+        'fixed month/day/duration rule cannot follow. Saving this manual rule will tag the same calendar date every '+
+        'year regardless, drifting wrong and colliding with the correct entry.\n\nSave anyway?'
+      );
+      if(!proceed) return;
+    }
     const next = rules.some(r=>r.id===ruleDraft.id)
       ? rules.map(r=>r.id===ruleDraft.id?ruleDraft:r)
       : [...rules, ruleDraft];
