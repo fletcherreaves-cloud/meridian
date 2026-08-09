@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   expandRetailEvents, shoppingAnchor, thanksgiving, measureEventLift, shrinkLifts,
   RETAIL_EVENT_RULES, RETAIL_EVENT_TYPES, ANCHOR_MAX_DAYS, defaultRetailYears,
+  findFloatingDateMismatches,
 } from '../engine/retail-events.js';
 import { impactWeight } from '../engine/events-import.js';
 
@@ -133,6 +134,72 @@ describe('event records are shaped like the staffing-workbook parser output', ()
     const y = defaultRetailYears(new Date('2026-08-06T12:00:00'));
     expect(y[0]).toBe(2022);
     expect(y[y.length - 1]).toBe(2027);
+  });
+});
+
+// v4.928 — real-world repro of the bug v4.925 stopped from recurring: a fixed-date recurring
+// rule (default durationDays:5, month:11, day:25) saved unedited for "Black Friday" tags Nov
+// 25-29 every year. Thanksgiving 2026 is Nov 26, so Black Friday 2026 is Nov 27 — only that one
+// of the five tagged days is correct.
+describe('findFloatingDateMismatches', () => {
+  const blackFridayRuleSpan = (loc = '20475') => {
+    const map = { [loc]: {} };
+    for (const day of [25, 26, 27, 28, 29]) {
+      map[loc][`2026-11-${day}`] = { type: 'school_break', label: 'Black Friday', source: 'manual' };
+    }
+    return map;
+  };
+
+  it('flags every mistagged day and clears exactly the one real date', () => {
+    const out = findFloatingDateMismatches(blackFridayRuleSpan());
+    const flaggedDays = out.map(m => m.dk);
+    expect(flaggedDays).toEqual(['2026-11-25', '2026-11-26', '2026-11-28', '2026-11-29']);
+    expect(flaggedDays).not.toContain('2026-11-27');
+    expect(out.every(m => m.ruleKey === 'black_friday')).toBe(true);
+    expect(out[0].expected).toEqual(['2026-11-27']);
+  });
+
+  it('does not flag the correctly auto-generated date', () => {
+    const map = { '20475': { '2026-11-27': { type: 'black_friday', label: 'Black Friday', orgSourced: true } } };
+    expect(findFloatingDateMismatches(map)).toEqual([]);
+  });
+
+  it('ignores events whose label does not match a known floating-date rule', () => {
+    const map = { '20475': { '2026-11-25': { type: 'school_break', label: 'Regional Teacher In-Service' } } };
+    expect(findFloatingDateMismatches(map)).toEqual([]);
+  });
+
+  it('matches an "— Opening Weekend" anchored label back to its base rule', () => {
+    // OK tax-free weekend 2026: 1st Friday of August = Aug 7-9. A day just outside it should flag;
+    // a day inside should not — same label format expandRetailEvents actually produces.
+    const inside = { '20475': { '2026-08-08': { type: 'tax_free', label: 'Oklahoma Tax-Free Weekend' } } };
+    const outside = { '20475': { '2026-08-14': { type: 'tax_free', label: 'Oklahoma Tax-Free Weekend' } } };
+    expect(findFloatingDateMismatches(inside)).toEqual([]);
+    expect(findFloatingDateMismatches(outside)).toHaveLength(1);
+  });
+
+  it('does not flag a day correctly tagged inside a long window but outside its anchored ' +
+     'opening weekend (PR #101 review finding, pre-merge)', () => {
+    // fl_back_to_school 2026 is a full statutory month (2026-07-20 → 2026-08-20,
+    // FL_BTS_WINDOWS). shoppingAnchor() collapses that to just the opening Fri-Sun for NEW-tag
+    // scheduling purposes — that collapsed window is not a definition of "correct", so a real day
+    // legitimately tagged elsewhere in the true month (here, deep in early August) must survive.
+    const map = { '38609': { '2026-08-05': { type: 'tax_free', label: 'Florida Back-to-School Tax Holiday' } } };
+    expect(findFloatingDateMismatches(map)).toEqual([]);
+  });
+
+  it('still flags a day genuinely outside the long window entirely', () => {
+    const map = { '38609': { '2026-09-01': { type: 'tax_free', label: 'Florida Back-to-School Tax Holiday' } } };
+    const out = findFloatingDateMismatches(map);
+    expect(out).toHaveLength(1);
+    expect(out[0].ruleKey).toBe('fl_back_to_school');
+  });
+
+  it('checks each store independently', () => {
+    const map = blackFridayRuleSpan('20475');
+    map['43380'] = { '2026-11-27': { type: 'black_friday', label: 'Black Friday' } }; // correct at this store
+    const out = findFloatingDateMismatches(map);
+    expect(out.every(m => m.loc === '20475')).toBe(true);
   });
 });
 

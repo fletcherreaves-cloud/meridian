@@ -198,6 +198,18 @@ describe('smart-targets — owner weighted-recency projector', () => {
     const r = weightedRecencyProjection(series, { asOf, targetDays: 30 });
     expect(r.projection).toBeNull();
   });
+
+  // Data-integrity sweep, signature #4: every live caller (Smart Targets panel,
+  // Dialed-In backtest, labor tools, etc.) depends on this exclusive boundary to
+  // keep the still-open business day out of the target-setting math. Confirms the
+  // contract directly rather than only through call sites that happen to honor it.
+  it('excludes the row dated exactly at asOf — the still-open business day', () => {
+    const series = dailyFrom('2026-08-01', 22, (i) => (i === 21 ? 999999 : 1000)); // last row = "today"
+    const asOf = new Date('2026-08-01T00:00:00');
+    const w = windowRate(series, asOf, 21, { k: 3 });
+    expect(w.n).toBe(21);
+    expect(w.rate).toBeCloseTo(1000, 6);
+  });
 });
 
 describe('smart-targets — weighted ratio level (labor %, speed)', () => {

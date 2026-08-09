@@ -45,7 +45,10 @@ const niceDate = iso => { if (!iso) return '—'; const d = new Date(iso + 'T00:
 // DAR timing is Σuntilserve/Σtrans/1000 seconds.
 const secOf = (us, cnt) => cnt > 0 ? Math.round(us / cnt / 1000) : null;
 const fmtSec = v => v == null ? '—' : v + 's';
-const hourLabel = slot => { const end = parseInt(slot, 10); if (isNaN(end)) return slot; const start = (end - 1 + 24) % 24; const f = h => h === 0 ? '12a' : h <= 11 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p'; return f(start) + '–' + f(end); };
+// hour_slot can run past 24 (25, 26...) for a store still open after midnight (confirmed live
+// 2026-08-09 — see src/engine/projection-accuracy.js) — f(end) must be modulo 24 or a late-night
+// slot mislabels as an afternoon hour (e.g. slot 25 rendered "1pm" instead of "1am").
+const hourLabel = slot => { const end = parseInt(slot, 10); if (isNaN(end)) return slot; const start = (end - 1 + 24) % 24; const f = h => h === 0 ? '12a' : h <= 11 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p'; return f(start) + '–' + f(end % 24); };
 // visit completion "01:05 PM" → ending hour_slot number (e.g. 13)
 const completionHour = t => { if (!t) return null; const m = String(t).match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i); if (!m) return null; let h = +m[1] % 12; if (/pm/i.test(m[3] || '')) h += 12; return h + 1; };
 
@@ -57,6 +60,48 @@ const primaryModule = v => {
 const counterModule = v => {
   const e = Object.entries(v.modules || {}).find(([k]) => k.toLowerCase() === 'behind the counter');
   return e ? e[1].pct : null;
+};
+
+// Minimum LY denominator before an hourly vs-LY comp% is trusted enough to show. Measured
+// 2026-08-09 against 60 days of real qsr_daily_activity (memory/plan-data-integrity-sweep.md,
+// "session part 2"): bucketed by ly_transactions, the comp%'s IQR runs 1000 at count=1 down to
+// a stable 23.4 baseline at count>=40 (73% of real hour-slots already clear that bar) — a
+// single-digit LY count produces a near-meaningless swing (-100%/+2200% at the 10th/90th
+// percentile when count=1). Below the floor the day-level total still carries the real signal;
+// only the noisy per-hour cell is suppressed. Same shape for dollars: ly_product_sales's IQR
+// reaches a comparably stable 24.4 at >=800 (vs 1295 at the smallest bucket).
+export const MIN_LY_TXN_FOR_COMP = 40;
+export const MIN_LY_SALES_FOR_COMP = 800;
+
+// Per-hour derived metrics — shared by the hourly table, the two-row Day/Visit summary, and the
+// print/CSV export. Exact QSRSoft formulas (see memory/project-qsrsoft-dar-columns.md): each rate
+// is Σµs / Σtrans / 1000 = sec, so feeding a *summed* pseudo-row yields correctly dollar/count-
+// weighted day aggregates (never an average of hourly averages) — which is also why the MIN_LY_*
+// floors above rarely suppress the two-row Day summary, only individually thin hourly cells.
+// Difference metrics are guarded on their subtrahend being present so a not-yet-backfilled field
+// shows "—" instead of silently equaling the total time. Pure (module-level, not a component
+// closure) so it's directly unit-testable — see graded-visits-hour-metrics.test.js.
+export const hourMetrics = (x, cutoff) => {
+  const dt   = secOf(x.dt_untilserve, x.dt_trans_cnt);                                    // Avg DT TTL
+  const oepe = (x.dt_untilstore || 0) > 0 ? secOf((x.dt_untilserve - x.dt_untilstore) - (x.dt_heldtime || 0), x.dt_trans_cnt) : null; // OEPE w/o parked
+  const ctp  = (x.dt_untilrecall || 0) > 0 ? secOf(x.dt_untilserve - x.dt_untilrecall, x.dt_trans_cnt) : null; // Avg CTP
+  const r2p  = (x.fc_untilclosedrawer || 0) > 0 ? secOf(x.fc_untilserve - x.fc_untilclosedrawer, x.fc_trans_cnt) : null; // R2P (front counter)
+  const kit  = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0)); // KVS Time Per GC
+  const bev  = secOf(x.bev_untilserve, x.bev_trans_cnt);                                  // Bev TTL
+  const kvsDen = (x.healthy_count || 0) + (x.unhealthy_count || 0);
+  const kvsHealthy = kvsDen > 0 ? (x.healthy_count || 0) / kvsDen * 100 : null;           // KVS Healthy Usage %
+  const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
+  const laborPct = (x.prod_sales_scrubbed || 0) > 0 ? (x.actual_punched_dollars || 0) / x.prod_sales_scrubbed * 100 : null; // Punch Labor %
+  const prodSales = x.product_sales != null ? x.product_sales : null;
+  const prodSalesCompPct = (x.ly_product_sales || 0) >= MIN_LY_SALES_FOR_COMP ? ((x.product_sales || 0) - x.ly_product_sales) / x.ly_product_sales * 100 : null;
+  const stwGc = x.transactions != null ? x.transactions : null;
+  const stwGcCompPct = (x.ly_transactions || 0) >= MIN_LY_TXN_FOR_COMP ? ((x.transactions || 0) - x.ly_transactions) / x.ly_transactions * 100 : null;
+  const punch = x.actual_punched_hours, need = x.total_needed_hours, sched = x.total_scheduled_hours;
+  const gap = (punch != null && need != null) ? punch - need : null;
+  const rel = cutoff ? parseInt(x.hour_slot, 10) - cutoff : null; // 0 = during, -1 = before, +1 = after
+  return { hourSlot: x.hour_slot, label: hourLabel(x.hour_slot),
+    prodSales, prodSalesCompPct, stwGc, stwGcCompPct, oepe, dt, ctp, r2p, kit, kvsHealthy, bev, pullFwd, laborPct, punch, sched, need, gap,
+    rel, visitHr: rel === 0, nearVisit: rel === -1 || rel === 1 };
 };
 
 export function GradedVisitsPanel({ ds, onClose }) {
@@ -259,36 +304,6 @@ export function GradedVisitsPanel({ ds, onClose }) {
   const _sameDay = (r, iso) => { const d = r.date instanceof Date ? r.date : new Date(r.date); return d && !isNaN(d) && d.toISOString().slice(0, 10) === iso; };
   const _pickDay = (arr, v) => (arr || []).filter(r => r && r.loc && r.date && _sameLoc(r, v.store) && _sameDay(r, v.dateISO));
   const _num = (...xs) => { for (const x of xs) if (typeof x === 'number' && !isNaN(x)) return x; return null; };
-
-  // Per-hour derived metrics — shared by the hourly table, the two-row Day/Visit
-  // summary, and the print/CSV export. Exact QSRSoft formulas (see
-  // memory/project-qsrsoft-dar-columns.md): each rate is Σµs / Σtrans / 1000 = sec,
-  // so feeding a *summed* pseudo-row yields correctly dollar/count-weighted day
-  // aggregates (never an average of hourly averages). Difference metrics are
-  // guarded on their subtrahend being present so a not-yet-backfilled field shows
-  // "—" instead of silently equaling the total time.
-  const hourMetrics = (x, cutoff) => {
-    const dt   = secOf(x.dt_untilserve, x.dt_trans_cnt);                                    // Avg DT TTL
-    const oepe = (x.dt_untilstore || 0) > 0 ? secOf((x.dt_untilserve - x.dt_untilstore) - (x.dt_heldtime || 0), x.dt_trans_cnt) : null; // OEPE w/o parked
-    const ctp  = (x.dt_untilrecall || 0) > 0 ? secOf(x.dt_untilserve - x.dt_untilrecall, x.dt_trans_cnt) : null; // Avg CTP
-    const r2p  = (x.fc_untilclosedrawer || 0) > 0 ? secOf(x.fc_untilserve - x.fc_untilclosedrawer, x.fc_trans_cnt) : null; // R2P (front counter)
-    const kit  = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0)); // KVS Time Per GC
-    const bev  = secOf(x.bev_untilserve, x.bev_trans_cnt);                                  // Bev TTL
-    const kvsDen = (x.healthy_count || 0) + (x.unhealthy_count || 0);
-    const kvsHealthy = kvsDen > 0 ? (x.healthy_count || 0) / kvsDen * 100 : null;           // KVS Healthy Usage %
-    const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
-    const laborPct = (x.prod_sales_scrubbed || 0) > 0 ? (x.actual_punched_dollars || 0) / x.prod_sales_scrubbed * 100 : null; // Punch Labor %
-    const prodSales = x.product_sales != null ? x.product_sales : null;
-    const prodSalesCompPct = (x.ly_product_sales || 0) > 0 ? ((x.product_sales || 0) - x.ly_product_sales) / x.ly_product_sales * 100 : null;
-    const stwGc = x.transactions != null ? x.transactions : null;
-    const stwGcCompPct = (x.ly_transactions || 0) > 0 ? ((x.transactions || 0) - x.ly_transactions) / x.ly_transactions * 100 : null;
-    const punch = x.actual_punched_hours, need = x.total_needed_hours, sched = x.total_scheduled_hours;
-    const gap = (punch != null && need != null) ? punch - need : null;
-    const rel = cutoff ? parseInt(x.hour_slot, 10) - cutoff : null; // 0 = during, -1 = before, +1 = after
-    return { hourSlot: x.hour_slot, label: hourLabel(x.hour_slot),
-      prodSales, prodSalesCompPct, stwGc, stwGcCompPct, oepe, dt, ctp, r2p, kit, kvsHealthy, bev, pullFwd, laborPct, punch, sched, need, gap,
-      rel, visitHr: rel === 0, nearVisit: rel === -1 || rel === 1 };
-  };
 
   // One column spec (logical order) drives the hourly table, the Day/Visit-hour
   // summary, and the export. hot = red above, warn = amber above, gap = signed color.
@@ -535,7 +550,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
                 return h('td', { key: j, style: { ...td2, color: col, fontWeight: fw } }, mt.fmt(val));
               }));
           })))),
-      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6, lineHeight: 1.5 } }, 'Day vs Visit-hour + hourly, from qsr_daily_activity (QSRSoft formulas): OEPE = (DT serve − store − held)/GC, w/o parked · DT TTL = DT serve/GC · Avg CTP = (DT serve − recall)/GC · R2P = (FC serve − close-drawer)/GC, front counter · KVS Time Per GC = (MFY1+MFY2 serve)/kitchen GC · KVS Healthy = healthy/(healthy+unhealthy) · Labor % = punch $ / prod sales · DT Pull Forward % = cars-held/GC · +/- % = vs last year. Day totals are dollar/count-weighted, not averaged. R2P & Avg CTP show “—” until a DAR re-pull backfills fc-close-drawer / dt-recall. Print / CSV export this summary + the chosen hourly rows.'));
+      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6, lineHeight: 1.5 } }, 'Day vs Visit-hour + hourly, from qsr_daily_activity (QSRSoft formulas): OEPE = (DT serve − store − held)/GC, w/o parked · DT TTL = DT serve/GC · Avg CTP = (DT serve − recall)/GC · R2P = (FC serve − close-drawer)/GC, front counter · KVS Time Per GC = (MFY1+MFY2 serve)/kitchen GC · KVS Healthy = healthy/(healthy+unhealthy) · Labor % = punch $ / prod sales · DT Pull Forward % = cars-held/GC · +/- % = vs last year (hourly cell shows “—” below a measured-stable LY count: <40 transactions or <$800 sales — a thinner LY hour swings too wildly to trust, e.g. -100%/+2200% at a single-digit count). Day totals are dollar/count-weighted, not averaged. R2P & Avg CTP show “—” until a DAR re-pull backfills fc-close-drawer / dt-recall. Print / CSV export this summary + the chosen hourly rows.'));
   };
 
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },

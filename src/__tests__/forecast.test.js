@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect, beforeEach } from 'vitest';
-import { forecastDay } from '../engine/forecast.js';
+import { forecastDay, fetchLY, fetchLYDate, fetchGC } from '../engine/forecast.js';
 
 const LOC = '3708';
 
@@ -63,6 +63,88 @@ const BASE_SETTINGS = {
   dialedInSkipped: [],
   _userEvents: {},
 };
+
+// ── fetchLY / fetchLYDate / fetchGC — measured anomaly, not tag presence (v4.924) ──────────────
+// Owner directive: "the only time a date should be excluded from forecasting is if it is a true
+// anomaly in sales or GC" — tagging is informational, never itself a reason to drop a day. These
+// functions no longer take a userEvents argument at all; a candidate is only skipped if its own
+// value is a measured statistical outlier among its peer candidates (same test as robustBaseline
+// elsewhere), or if it's a calendar holiday (genuinely no comparable sales to test).
+describe('fetchLY — measured anomaly test, no tag involvement', () => {
+  // All 7 candidate offsets are exact multiples of 7 days, so they always share date's DOW —
+  // build one labor row per offset, all on a fixed reference date so the test is time-independent.
+  const REF = new Date('2026-08-09T12:00:00');
+  const OFFS = [-364,-357,-371,-378,-350,-385,-343];
+  function addD_(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+
+  function buildRows(valueByOffset) {
+    const rows = [];
+    for (const off of OFFS) {
+      const v = valueByOffset[off];
+      if (v == null) continue;
+      rows.push({ loc: LOC, date: addD_(REF, off), sales: v, gc: Math.round(v / 10) });
+    }
+    return { rows, idx: buildLaborIdx(rows) };
+  }
+
+  it('picks the -364 candidate normally when every candidate looks alike', () => {
+    const { idx } = buildRows({ '-364': 10000, '-357': 9800, '-371': 10200, '-378': 9900, '-350': 10100 });
+    expect(fetchLY(idx, null, LOC, REF)).toBe(10000);
+  });
+
+  it('a tagged-but-normal candidate is used — there is no tag input to this function at all', () => {
+    // Same fixture as above; the historical "userEvents" bug was skipping a candidate purely
+    // because a human tagged it. fetchLY's signature no longer accepts that input, so there is
+    // nothing that COULD skip it — the value returned is exactly the real, unadjusted actual.
+    const { idx } = buildRows({ '-364': 10000, '-357': 9800, '-371': 10200, '-378': 9900, '-350': 10100 });
+    expect(fetchLY(idx, null, LOC, REF)).toBe(10000);
+  });
+
+  it('skips a candidate that measures as a genuine outlier among its peers, regardless of tags', () => {
+    // -364 is a wild outlier (a closure-like $500 day) against five otherwise-consistent ~$10K
+    // peers — the measured test should reject it and fall through to the next candidate in
+    // priority order (-357), exactly the "true anomaly in sales" case the owner described.
+    const { idx } = buildRows({ '-364': 500, '-357': 9800, '-371': 10200, '-378': 9900, '-350': 10100, '-385': 9950 });
+    expect(fetchLY(idx, null, LOC, REF)).toBe(9800);
+  });
+
+  it('still excludes a holiday candidate — a closure has no comparable sales to measure', () => {
+    // Dec 24, 2026 minus 364 days lands exactly on Dec 25, 2025 (both Thursdays) — chosen
+    // deliberately so the -364 candidate IS Christmas. Every candidate gets an identical,
+    // perfectly normal sales value, so this isolates the holiday check from the value-based
+    // outlier test: if -364 were skipped anyway, it must be because of isHoliday(), not because
+    // its value looked unusual (it doesn't — they're all the same).
+    const forecastDate = new Date('2026-12-24T12:00:00');
+    const xmas = addD_(forecastDate, -364);
+    expect(dKey(xmas)).toBe('2025-12-25');
+    const rows = OFFS.map(off => ({ loc: LOC, date: addD_(forecastDate, off), sales: 10000, gc: 1000 }));
+    const idx = buildLaborIdx(rows);
+    const used = fetchLYDate(idx, LOC, forecastDate);
+    expect(dKey(used)).not.toBe(dKey(xmas)); // Christmas must be skipped even with a "normal" value
+  });
+
+  it('with only one valid candidate, nothing to compare against — it is used as-is', () => {
+    const { idx } = buildRows({ '-364': 500 }); // only one candidate, however unusual
+    expect(fetchLY(idx, null, LOC, REF)).toBe(500);
+  });
+
+  it('fetchLYDate returns the same date whose value fetchLY actually used', () => {
+    const { idx } = buildRows({ '-364': 500, '-357': 9800, '-371': 10200, '-378': 9900, '-350': 10100, '-385': 9950 });
+    const usedDate = fetchLYDate(idx, LOC, REF);
+    expect(dKey(usedDate)).toBe(dKey(addD_(REF, -357)));
+  });
+});
+
+describe('fetchGC — same measured test as fetchLY, no tag involvement', () => {
+  const REF = new Date('2026-08-09T12:00:00');
+  function addD_(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  it('skips a GC outlier candidate the same way fetchLY skips a sales outlier', () => {
+    const offs = { '-364': 5, '-357': 1000, '-371': 1020, '-378': 990, '-350': 1010, '-385': 995 };
+    const rows = Object.entries(offs).map(([off, gc]) => ({ loc: LOC, date: addD_(REF, +off), gc, sales: gc * 10 }));
+    const idx = buildLaborIdx(rows);
+    expect(fetchGC(idx, null, LOC, REF)).toBe(1000);
+  });
+});
 
 // ── forecastDay ───────────────────────────────────────────────────────────────
 

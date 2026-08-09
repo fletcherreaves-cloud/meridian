@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseImpact, impactWeight, parseConfirmation, parseDates, eventTypeFor, parseStaffingEvents, orgEventsToDayMap, IMPACT_WEIGHTS, GAMEDAY_WEIGHT } from '../engine/events-import.js';
+import { parseImpact, impactWeight, parseConfirmation, parseDates, eventTypeFor, parseStaffingEvents, orgEventsToDayMap, diffUserEventsForCloudSync, IMPACT_WEIGHTS, GAMEDAY_WEIGHT } from '../engine/events-import.js';
 
 describe('parseImpact', () => {
   it('decomposes magnitude × daypart', () => {
@@ -104,5 +104,89 @@ describe('orgEventsToDayMap', () => {
     expect(map['3708']['2026-09-10'].rangeDayNum).toBe(3);
     const rid = map['3708']['2026-09-08'].rangeId;
     expect(days.every(d => map['3708'][d].rangeId === rid)).toBe(true);
+  });
+});
+
+// v4.923 built the org_events UPLOAD path (localStorage mf_events → cloud); v4.927 found and
+// fixed a bug in it. These verify the round-trip's write-side diff logic without needing a live
+// authenticated Supabase session (this environment only has an anon key, which RLS blocks).
+describe('diffUserEventsForCloudSync', () => {
+  it('a brand-new hand-entered day produces one upsert and no deletes', () => {
+    const prev = {};
+    const next = { '3708': { '2026-11-27': { type: 'holiday', label: 'Thanksgiving', note: 'closed' } } };
+    const { upserts, deleteKeys, staleKeys } = diffUserEventsForCloudSync(prev, next);
+    expect(upserts).toEqual([{ loc: '3708', dateStart: '2026-11-27', dateEnd: '2026-11-27', span: false,
+      type: 'holiday', label: 'Thanksgiving', note: 'closed', method: 'manual' }]);
+    expect(deleteKeys).toEqual([]);
+    expect(staleKeys).toEqual([]);
+  });
+
+  it('editing a day\'s label upserts the new label and clears the OLD label, not the whole date', () => {
+    const prev = { '3708': { '2026-11-27': { type: 'holiday', label: 'Thanksgiving' } } };
+    const next = { '3708': { '2026-11-27': { type: 'holiday', label: 'Thanksgiving Day' } } };
+    const { upserts, staleKeys, deleteKeys } = diffUserEventsForCloudSync(prev, next);
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].label).toBe('Thanksgiving Day');
+    expect(staleKeys).toEqual([{ loc: '3708', dk: '2026-11-27', label: 'Thanksgiving' }]);
+    expect(deleteKeys).toEqual([]);
+  });
+
+  it('deleting a day removes only that entry\'s own label, not every row for the date', () => {
+    const prev = { '3708': { '2026-11-27': { type: 'holiday', label: 'Thanksgiving' } } };
+    const next = { '3708': {} };
+    const { deleteKeys, upserts, staleKeys } = diffUserEventsForCloudSync(prev, next);
+    expect(deleteKeys).toEqual([{ loc: '3708', dk: '2026-11-27', label: 'Thanksgiving' }]);
+    expect(upserts).toEqual([]);
+    expect(staleKeys).toEqual([]);
+  });
+
+  it('an unchanged orgSourced entry is never re-uploaded', () => {
+    const orgDay = { type: 'sports', label: 'Homecoming Game', orgSourced: true, orgEventId: 42 };
+    const prev = { '3708': { '2026-10-10': orgDay } };
+    const next = { '3708': { '2026-10-10': orgDay } };
+    const { upserts, deleteKeys, staleKeys } = diffUserEventsForCloudSync(prev, next);
+    expect(upserts).toEqual([]); expect(deleteKeys).toEqual([]); expect(staleKeys).toEqual([]);
+  });
+
+  it('overriding an org-sourced day with a hand tag deletes ONLY the org event\'s own label — ' +
+     'a same-day sibling event under a different label must survive (the v4.927 bug)', () => {
+    // Two cloud events already share this date (org_events allows >1/day); the local per-day
+    // registry can only ever surface one, here the sports game — the school closure exists in
+    // the cloud but is invisible locally. The scanner overwrites the visible slot with a new
+    // hand-typed tag; the fix must scope the cleanup delete to the sports game's own label so
+    // the school closure (a different label, same date) is never touched.
+    const prev = { '3708': { '2026-10-10': { type: 'sports', label: 'Homecoming Game', orgSourced: true, orgEventId: 42 } } };
+    const next = { '3708': { '2026-10-10': { type: 'other', label: 'Field trip conflict', note: 'staffing note' } } };
+    const { upserts, staleKeys, deleteKeys } = diffUserEventsForCloudSync(prev, next);
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].label).toBe('Field trip conflict');
+    expect(staleKeys).toEqual([{ loc: '3708', dk: '2026-10-10', label: 'Homecoming Game' }]);
+    expect(deleteKeys).toEqual([]);
+  });
+
+  it('identical prev/next produces no writes at all', () => {
+    const day = { type: 'holiday', label: 'Christmas', note: 'closed' };
+    const prev = { '3708': { '2026-12-25': day } };
+    const next = { '3708': { '2026-12-25': { ...day } } };
+    const { upserts, deleteKeys, staleKeys } = diffUserEventsForCloudSync(prev, next);
+    expect(upserts).toEqual([]); expect(deleteKeys).toEqual([]); expect(staleKeys).toEqual([]);
+  });
+
+  it('falls back to typeLabelFor when a hand-tagged entry has no explicit label', () => {
+    const prev = {};
+    const next = { '3708': { '2026-07-04': { type: 'holiday' } } };
+    const { upserts } = diffUserEventsForCloudSync(prev, next, t => (t === 'holiday' ? 'Holiday' : null));
+    expect(upserts[0].label).toBe('Holiday');
+  });
+
+  it('diffs each store independently', () => {
+    const prev = { '3708': { '2026-11-27': { type: 'holiday', label: 'Thanksgiving' } } };
+    const next = {
+      '3708': { '2026-11-27': { type: 'holiday', label: 'Thanksgiving' } },
+      '4004': { '2026-11-27': { type: 'holiday', label: 'Thanksgiving' } },
+    };
+    const { upserts } = diffUserEventsForCloudSync(prev, next);
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].loc).toBe('4004');
   });
 });

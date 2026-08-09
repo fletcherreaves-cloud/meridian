@@ -1,0 +1,36 @@
+name: Hourly Projection Accuracy
+
+# Computes yesterday's (loc, hour_slot) actual vs QSRSoft-projected sales/GC into
+# hourly_projection_accuracy — a small table purpose-built so the Projection Accuracy report can
+# look back over weeks/months without re-scanning the large raw qsr_daily_activity table (which
+# times out past ~30 days). Reads only what's already in Supabase — no QSRSoft auth, no
+# Playwright. See supabase/schema-hourly-projection-accuracy.sql.
+
+on:
+  schedule:
+    - cron: '0 11 * * *'   # 11:00 UTC = ~6:00 AM CT — after the prior day's daily pulls (10:00 UTC) finish
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Force a specific date YYYY-MM-DD (default: yesterday, US Central).'
+        required: false
+        default: ''
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compute hourly projection accuracy
+        run: node scripts/compute-hourly-projection-accuracy.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          HPA_DATE:                  ${{ github.event.inputs.date || '' }}

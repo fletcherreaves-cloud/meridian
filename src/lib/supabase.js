@@ -1572,6 +1572,22 @@ export async function loadDailyActivityRange(startDate, endDate) {
     .range(lo, hi));
 }
 
+// ── Hourly Projection Accuracy (2026-08-09) ──────────────────────────────────
+// Reads the small daily-computed rollup (supabase/schema-hourly-projection-accuracy.sql,
+// scripts/compute-hourly-projection-accuracy.mjs) instead of the raw qsr_daily_activity table —
+// stays fast for a multi-week/month lookback where the raw table times out. loc=null reads every
+// store (the Projection Accuracy panel sums across stores itself for the district-wide view).
+export async function loadHourlyProjectionAccuracy(startDate, endDate, loc = null) {
+  if (!supabase) return [];
+  return fetchAll((lo, hi) => {
+    let q = supabase.from('hourly_projection_accuracy')
+      .select('dt,hour_slot,loc,actual_sales,proj_sales,actual_gc,proj_gc')
+      .gte('dt', startDate).lte('dt', endDate).order('dt').order('hour_slot').range(lo, hi);
+    if (loc) q = q.eq('loc', String(loc));
+    return q;
+  }, 1000, 'hourly_projection_accuracy');
+}
+
 // ── Speed-of-Service history (all stations) ──────────────────────────────────
 // Includes per-station until-serve + transaction counts so the panel can show
 // where the bottleneck is (DT window vs front counter vs kitchen make-line vs
@@ -1793,10 +1809,24 @@ export async function loadEbosDaily(daysBack = 400) {
 // and ONLY here: each carries the store/date it was reconciled against the QSRSoft
 // report, and duplicating that math into SQL would create a second definition free to
 // drift from this one.
+// Measured YoY sanity band (data-integrity sweep signature #1) — reused verbatim from
+// forecast.js's getDOWTrend fix (v4.912): ±300%/-75%, derived from 40,000 store-days of real
+// data. A closure/severe-weather day as the LY denominator produces an implausible ratio without
+// this (the original bug: 1,200,000% on a chart axis) — same day-level sales-ratio shape, same
+// failure mode, just reached through this DAR/QSRSoft cloud path instead of laborRows. Drops the
+// point rather than clamping it: an unmeasurable comparison is different from a small one, and
+// clamping would fabricate a wrong-but-plausible-looking number. Reimplemented here rather than
+// imported — lib/ has no existing dependency on engine/, and this is two constants, not a module.
+const _YOY_MAX = 3.0, _YOY_MIN = -0.75;
+function _yoyPct(cur, ly) {
+  if (!(cur > 0) || !(ly > 0)) return null;
+  const g = (cur - ly) / ly;
+  return (g > _YOY_MAX || g < _YOY_MIN) ? null : g * 100;
+}
 function _finalizeQsrAct(rows) {
   return rows.map(r => ({
     ...r,
-    salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+    salesVsLYPct: _yoyPct(r.sales, r.lySales),
     // Derived cloud TPPH = TRANSACTIONS ÷ actual punched labor hours. Uses the DAR's
     // real `transactions` count — NOT healthy+unhealthy (a KVS order-health count that
     // massively understated TPPH, e.g. 0.1 vs a ~5 target). Matches the Shift Manager
@@ -3219,6 +3249,21 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
 export async function deleteOrgEvent(id) {
   if (!supabase || id == null) return { error: 'no-id' };
   const { error } = await supabase.from('org_events').delete().eq('id', id);
+  return { error: error?.message || null };
+}
+// Delete org_events row(s) for one (loc, date), optionally scoped to a single label — org_events
+// allows more than one event per day (multiple sports games, a festival plus a school closure);
+// the hand-tag registry (EventCalendar/EventRegistryModal, the localStorage `mf_events` map)
+// allows exactly one. Used before a manual single-day upsert so a changed tag/label doesn't leave
+// a stale duplicate row. ALWAYS pass `label` when the caller knows it (matches the table's own
+// `unique (loc, date_start, label)` key) — omitting it deletes every row for that date, which
+// silently destroys unrelated same-day events. v4.927: found live where a plain delete-by-date
+// call from the diff-based sync path could wipe a same-day event it never touched.
+export async function deleteOrgEventsByLocDate(loc, dateStr, label = null) {
+  if (!supabase || !loc || !dateStr) return { error: null };
+  let q = supabase.from('org_events').delete().eq('loc', String(loc)).eq('date_start', dateStr);
+  if (label) q = q.eq('label', label);
+  const { error } = await q;
   return { error: error?.message || null };
 }
 // Update a single org_events row by id (in-app editing: time/opponent/impact/status/note changes).

@@ -761,7 +761,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     if(_r.lyAdj>0&&_r.lyAdj!==_r.forecast)return _r.lyAdj;
     // Trading-day-aligned LY (#55) — same weekday-exact/holiday-excluding resolver forecast.js
     // itself uses, not a raw calendar 365-day shift + fuzzy window.
-    return fetchLY(ds.laborIdx,ds.laborRows,loc,d,settings._userEvents)||0;
+    return fetchLY(ds.laborIdx,ds.laborRows,loc,d)||0;
   };
 
   // As-originally-locked amount: the month-plan number for (loc,d), ignoring
@@ -1793,7 +1793,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                                 // Trading-day-aligned LY (#55) — same resolver as lyAmt() above,
                                 // not a raw calendar 365-day shift + fuzzy window.
                                 const _rowLY=(r.lyAdj>0&&r.lyAdj!==r.forecast)?r.lyAdj:
-                                  (fetchLY(ds.laborIdx,ds.laborRows,r.loc||loc,r.date,settings._userEvents)||0);
+                                  (fetchLY(ds.laborIdx,ds.laborRows,r.loc||loc,r.date)||0);
     const vsLY=_rowLY>0?((r.forecast-_rowLY)/_rowLY*100).toFixed(2):null;
                                 const gc=r.forecast>0&&ds?gcCrossCheck(deepStore,r.date,ds,settings,r.forecast):null;
                                 return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
@@ -1806,7 +1806,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                                           div(null,f$(Math.round(r.lyAdj))),
                                           div({style:{fontSize:'7px',color:'var(--text3)',opacity:.7,marginTop:1}},
                                             (()=>{
-                                              const lyDt=fetchLYDate(ds.laborIdx,deepStore,r.date,settings._userEvents);
+                                              const lyDt=fetchLYDate(ds.laborIdx,deepStore,r.date);
                                               return lyDt?lyDt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'';
                                             })()
                                           )
