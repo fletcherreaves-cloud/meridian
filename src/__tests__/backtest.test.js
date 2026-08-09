@@ -158,6 +158,26 @@ describe('calibrateStore — successful calibration', () => {
   });
 });
 
+// ── forecast-exclusion redesign (v4.924): tagging is informational, only a measured anomaly
+// excludes a day. Regression guard for the exact failure this replaces: on 2026-08-08,
+// Tishomingo had 450 tagged days and every eval row got dropped via tag presence, so
+// calibration died with "precomputed<35" for every store district-wide. Reproduces that shape
+// (every eval-band day tagged) and asserts calibration now succeeds with the SAME sample count
+// as an untagged run — tags no longer remove a single row from the eval set.
+describe('calibrateStore — tagging every eval day no longer breaks calibration', () => {
+  it('a fully-tagged eval band calibrates identically to an untagged one', async () => {
+    const ds = buildDs();
+    const base = await calibrateStore(LOC, ds, BASE_SETTINGS);
+    const taggedEvents = { [LOC]: {} };
+    for (const r of ds.laborRows) taggedEvents[LOC][localDK(r.date)] = { type: 'other', label: 'Tagged', note: 'heavy tagging test' };
+    const taggedSettings = { ...BASE_SETTINGS, _userEvents: taggedEvents };
+    const tagged = await calibrateStore(LOC, ds, taggedSettings);
+    expect(base._why).toBeUndefined();
+    expect(tagged._why).toBeUndefined(); // must NOT die on "precomputed<35" like the old bug
+    expect(tagged.samples).toBe(base.samples);
+  });
+});
+
 // ── signature #4 (data-integrity sweep): the still-open business day must not
 // leak into the 6W/4W/2W/1W period MAPEs — same defect class v4.917 fixed for
 // the Biggest Miss table, reached here through a separate function.

@@ -7,6 +7,29 @@ import { forecastDay, getModelAssignment, saveModelOverride, compute6wk, calcOps
 import { TH } from '../utils/fmt.js';
 import { metricSeries } from './metric-source.js';
 import { businessDate } from './swing-feed.js';
+import { median, mad } from './smart-targets.js';
+
+// Measured anomaly test (v4.924) — replaces "is this day tagged?" with "does this day's actual
+// sales look like an outlier for its own day-of-week," per owner directive: tagging an event is
+// informational, never itself a reason to drop a day from calibration/grading — only a genuinely
+// anomalous sales day should be excluded. Same median ± k·MAD test used throughout this codebase
+// (robustBaseline, fetchLY) for the identical purpose, computed once per store from its own
+// history so every consumer below (grid search, model-assignment eligibility, displayed period
+// MAPE) shares one measured test instead of three separate tag lookups.
+function _buildDowAnomalyBands(rows, k = 3) {
+  const groups = {};
+  for (const r of (rows || [])) { if (!(r.sales > 0)) continue; const d = dowOf(r.date); (groups[d] = groups[d] || []).push(r.sales); }
+  const bands = {};
+  for (const d of Object.keys(groups)) {
+    const vals = groups[d]; const med = median(vals), md = mad(vals, med);
+    bands[d] = md > 0 ? { med, thr: 1.4826 * md * k } : null;
+  }
+  return bands;
+}
+function _isMeasuredSalesAnomaly(bands, r) {
+  const band = bands[dowOf(r.date)];
+  return !!band && r.sales > 0 && Math.abs(r.sales - band.med) > band.thr;
+}
 
 // CALIBRATE STORE — Per-store grid search for optimal forecast params
 // v4.195 rewrite: previously the grid search's evaluation formula was a
@@ -168,9 +191,9 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
     storeRows.sort((a,b) => a.date - b.date);
 
     const tgt            = (ds.targets && ds.targets[loc]) || DEFAULT_TARGETS[loc] || {};
-    const uev            = (userEvents||{})[loc] || {};
     const settingsUev    = {...settings, _userEvents: userEvents||{}};
     const hasDI          = !!(settings.dialedInEnabled && settings.dialedIn && settings.dialedIn[loc]);
+    const _dowBands      = _buildDowAnomalyBands(storeRows);
 
     // ── recentOnly window guard (mirrors calibrateStore exactly) ──────────
     const _mAssign    = DEFAULT_MODEL_ASSIGNMENTS[loc];
@@ -193,7 +216,7 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
         if (r.date < windowFloor)            return false;
         if (r.date >= cutoff14)              return false; // too recent for clean LY
         if (isHoliday(r.date))              return false;
-        if (uev[dKey(r.date)])              return false; // tagged anomaly / closure
+        if (_isMeasuredSalesAnomaly(_dowBands, r)) return false; // measured, not tagged
         if (_windowStart && r.date < _windowStart) return false;
         return true;
       });
@@ -400,8 +423,9 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   rows.sort((a,b)=>a.date-b.date);
   if(rows.length<60)return{_why:'rows<60 ('+rows.length+' deduped rows for loc '+loc+' — store needs more history)'};
   const cutoff=new Date(Date.now()-14*864e5);
-  // Hoist _uev to outer scope so all inner functions can access it
-  const _uev=(settings._userEvents||{})[loc]||{};
+  // Hoist to outer scope so all inner functions can access it. Measured, not tagged (v4.924) —
+  // see _buildDowAnomalyBands above.
+  const _dowBands=_buildDowAnomalyBands(rows);
 
   // recentOnly handling (v4.195) — for stores flagged recentOnly:true in
   // DEFAULT_MODEL_ASSIGNMENTS (currently Elgin, Mossy Head, Tishomingo, Ponce
@@ -475,8 +499,7 @@ async function calibrateStore(loc, ds, settings, onProgress) {
     if(r.date>=cutoff||!r.sales||r.sales<=0) return false;
     if(isHoliday(r.date)) return false;
     if(_windowStart&&r.date<_windowStart) return false;
-    const dk=dKey(r.date);
-    if(_uev[dk]) return false;
+    if(_isMeasuredSalesAnomaly(_dowBands,r)) return false; // measured, not tagged
     return true;
   });
   const evalRows=allEvalRows.slice(-400);
@@ -495,7 +518,7 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   // it once and reusing it preserves the original "precompute once, evaluate
   // cheaply many times" performance strategy.
   const precomputed=evalRows.map(row=>{
-    const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date,settings._userEvents)||0;
+    const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date)||0;
     if(lyRaw<=0)return null;
     const _dow=row.date.getDay();
     const _calOrg=getStoreOrg(loc);
@@ -562,21 +585,21 @@ async function calibrateStore(loc, ds, settings, onProgress) {
         return off+':'+dk
           +(dowOf(dt)!==tDow?' DOW':'')
           +(isHoliday(dt)?' HOL':'')
-          +(_uev[dk]?' UEV':'')
+          +(sales>0&&_isMeasuredSalesAnomaly(_dowBands,{date:dt,sales})?' ANOM':'')
           +(!rows||!rows.length?' NOROW':' sales='+sales);
       });
       return {row:dKey(row.date), chain:trail};
     });
-    // How many days this loc has tagged as user events at all — if fetchLY is being starved by
-    // exclusions rather than by missing data, this is where it shows.
-    const _uevCount=Object.keys(_uev).length;
+    // How many rows measure as a DOW anomaly (v4.924: measured, not tagged) — if fetchLY is
+    // being starved by exclusions rather than by missing data, this is where it shows.
+    const _anomCount=evalRows.filter(r=>_isMeasuredSalesAnomaly(_dowBands,r)).length;
     return {
       _why:'precomputed<35 ('+precomputed.length+'/'+evalRows.length+' rows had valid LY)',
       _diag:{
         locIdxKeys:_locKeys.length,
         idxSpan:_locKeys.length?(_locKeys[0]+'..'+_locKeys[_locKeys.length-1]):'(none)',
         laborRowDateTypes:_dateTypes,
-        uevTaggedDays:_uevCount,
+        measuredAnomalyDays:_anomCount,
         evalSpan:evalRows.length?(dKey(evalRows[0].date)+'..'+dKey(evalRows[evalRows.length-1].date)):'(none)',
         lySamples:_samples,
       },
@@ -707,11 +730,11 @@ async function calibrateStore(loc, ds, settings, onProgress) {
     // for consistency, and to correctly handle brand-new stores where even
     // a 6-week-back cut could still overlap the LY-lookback-contamination
     // zone near the very start of available history.
-    const periodRows=_periodRowsAll.filter(r=>r.date>=cut&&r.sales>0&&!_uev[dKey(r.date)]&&(!_windowStart||r.date>=_windowStart));
+    const periodRows=_periodRowsAll.filter(r=>r.date>=cut&&r.sales>0&&!_isMeasuredSalesAnomaly(_dowBands,r)&&(!_windowStart||r.date>=_windowStart));
     if(!periodRows.length||!bestParams) return null;
     const apes=[];
     for(const row of periodRows){
-      const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date,settings._userEvents)||0;
+      const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date)||0;
       if(lyRaw<=0) continue;
       const _dow=row.date.getDay();
       const _calOrg=getStoreOrg(loc);
@@ -768,7 +791,7 @@ async function calibrateStore(loc, ds, settings, onProgress) {
     const cut6=new Date(Date.now()-6*7*864e5);
     const inWin=_periodRowsAll.filter(r=>r.date>=cut6);
     let lyOk=0;
-    for(const row of inWin) if((fetchLY(ds.laborIdx,ds.laborRows,loc,row.date,settings._userEvents)||0)>0) lyOk++;
+    for(const row of inWin) if((fetchLY(ds.laborIdx,ds.laborRows,loc,row.date)||0)>0) lyOk++;
     return {
       seriesDays:Object.keys(_periodSeries).length,   // what metricSeries returned for 6 weeks
       inWindow:inWin.length,                          // after the window + event filters

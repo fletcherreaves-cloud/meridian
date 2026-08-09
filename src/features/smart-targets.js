@@ -137,7 +137,7 @@ function computeSmartTargets(loc, ds, settings){
         // Cloud rows carry salesVsLYPct directly; manual rows need an LY lookup.
         let g=null;
         if(typeof r.salesVsLYPct==='number') g=r.salesVsLYPct;
-        else { const ly=fetchLY(ds.laborIdx,ds.laborRows,loc,r.date,settings._userEvents)||0; if(ly>0&&r.sales>0) g=(r.sales-ly)/ly*100; }
+        else { const ly=fetchLY(ds.laborIdx,ds.laborRows,loc,r.date)||0; if(ly>0&&r.sales>0) g=(r.sales-ly)/ly*100; }
         if(g!=null){
           if(r.date>cut6w) vals6w.push(g);
           if(r.date>cut12w) vals12w.push(g);
