@@ -2363,25 +2363,22 @@ function PerformanceCalculator({stores, ds, settings, onClose}) {
   const [laborP, setLaborP] = uSt(22);
   const [avgChk, setAvgChk] = uSt(10.50);
 
-  // Compute baseline actuals from last 6W data. oepe/laborPct/tpph/sales/gc route through
-  // metric-source.js's auto-first resolver (2026-08-06) — these are just slider STARTING
+  // Compute baseline actuals from last 6W data. oepe/laborPct/tpph/sales/gc/avgCheck/avgRate
+  // all route through metric-source.js's auto-first resolver — these are just slider STARTING
   // POINTS the user freely adjusts from, so staleness here was always low-stakes (unlike a
-  // live monitoring number), but the fix is the same one-line swap used everywhere else this
-  // session, and closes out the last item on cleanup-backlog.md's Class 2 sweep. avgCheck/
-  // avgRate have no registered auto source yet (not worth adding just for this calculator),
-  // so those two stay on the manual-laborRows-only average.
+  // live monitoring number). avgCheck and avgRate (derived: laborPct×sales÷actHrs) are both
+  // in METRIC_SOURCES now (data-integrity sweep, MEDIUM-confidence item — the old comment here
+  // claiming "no registered auto source yet" for them was stale).
   const baseline = uM(()=>{
     const cutoff = addDR(new Date(),-42);
     const range = {s: cutoff, e: new Date()};
-    const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.sales>0);
-    const avg = (rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v>0);return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
     const baseOepe  = metricAvg(ds,selLoc,range,'oepe') || 140;
     const baseLab   = (metricAvg(ds,selLoc,range,'laborPct')||.22) * 100;
-    const baseChk   = avg(lR,'avgCheck') || 10.50;
+    const baseChk   = metricAvg(ds,selLoc,range,'avgCheck') || 10.50;
     const baseDailySales = metricAvg(ds,selLoc,range,'sales') || 12000;
     const baseGC    = metricAvg(ds,selLoc,range,'gc') || Math.round(baseDailySales/baseChk);
     const baseTpph  = metricAvg(ds,selLoc,range,'tpph') || 5.5;
-    const baseHours = baseDailySales * (baseLab/100) / (avg(lR,'avgRate')||15);
+    const baseHours = baseDailySales * (baseLab/100) / (metricAvg(ds,selLoc,range,'avgRate')||15);
     return {baseOepe,baseLab,baseChk,baseDailySales,baseGC,baseTpph,baseHours};
   },[ds,selLoc]);
 
@@ -3591,11 +3588,13 @@ function CompareLineChart({selStores, COLS, ds}) {
   useChart(ref, canvas => {
     if(!ds||!ds.loaded||!selStores.length) return null;
     const cut=new Date(Date.now()-42*86400000);
-    const locSet=new Set(selStores.map(s=>s.loc));
-    const allDates=[...new Set(ds.laborRows.filter(r=>r.date>=cut&&locSet.has(r.loc)).map(r=>dKey(r.date)))].sort();
+    const range={s:cut,e:new Date()};
+    // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only.
+    const seriesByLoc=Object.fromEntries(selStores.map(s=>[s.loc,_msSeries(ds,s.loc,range,'sales')]));
+    const allDates=[...new Set(Object.values(seriesByLoc).flatMap(s=>Object.keys(s)))].sort();
     const labels=allDates.map(dk=>{const d=new Date(dk+'T12:00:00');return DOW_BASE[d.getDay()].slice(0,2)+' '+d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});});
     return new Chart(canvas,{type:'line',data:{labels,datasets:selStores.map((s,i)=>{
-      const data=allDates.map(dk=>{const rows=ds.laborIdx[s.loc+'_'+dk];return rows&&rows[0]&&rows[0].sales>0?Math.round(rows[0].sales):null;});
+      const data=allDates.map(dk=>{const v=seriesByLoc[s.loc][dk];return v>0?Math.round(v):null;});
       return{label:s.name,data,borderColor:COLS[i],backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:.3,spanGaps:false};
     })},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:LEG,tooltip:{...TT,callbacks:{label:c=>`${c.dataset.label}: $${(c.raw||0).toLocaleString()}`}}},

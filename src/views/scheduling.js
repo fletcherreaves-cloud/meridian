@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { generateSlideDeckHTML } from './scheduling-deck.js';
+import { metricDaily } from '../engine/metric-source.js';
 
 const { useState, useMemo, useCallback } = React;
 
@@ -330,24 +331,31 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
   // don't cover yet — they never override auto/emailed data. Because the cloud
   // streams load 60 days deep on every device, the columns populate back into
   // June regardless of which manual reports happened to be uploaded.
+  // Auto-first (data-integrity sweep signature #2) — this used to hand-roll the same
+  // glimpse→ctrl→labor / dar→ctrl→labor priority engine/metric-source.js already encodes
+  // (a line-for-line reimplementation of its laborPct/actHrs chains). Now resolves through
+  // the shared resolver instead of duplicating its priority order here.
   const laborIdx = useMemo(() => {
+    const dsShim = { glimpseRows, ctrlRows, laborRows, qsrActSummaryRows: qsrActRows };
     const pctIdx = {}, hrsIdx = {};
     const toDateStr = r => {
       if(!r.date || !r.loc) return null;
       const dt = r.date instanceof Date ? r.date : new Date(r.date);
       return isNaN(dt) ? null : normLoc(r.loc) + '|' + dt.toISOString().slice(0,10);
     };
-    // laborPct is stored as a 0-1 fraction (parsePct) across all these sources;
-    // normalize to 0-100 to match the panel's fmtPct and LifeLenz % column.
-    const norm = v => (v && Math.abs(v) < 1.5) ? v * 100 : v;
-    // ── Labor % — Glimpse (emailed) primary, manual fill only where absent ──
-    for(const r of (glimpseRows||[])) { const k=toDateStr(r); if(k && r.laborPct) pctIdx[k]={pct:norm(r.laborPct),src:'glimpse'}; }
-    for(const r of (ctrlRows||[]))    { const k=toDateStr(r); if(k && !pctIdx[k] && r.laborPct) pctIdx[k]={pct:norm(r.laborPct),src:'ctrl'}; }
-    for(const r of (laborRows||[]))   { const k=toDateStr(r); if(k && !pctIdx[k] && r.laborPct) pctIdx[k]={pct:norm(r.laborPct),src:'labor'}; }
-    // ── Hours — DAR (auto-pulled) primary, manual fill only where absent ──
-    for(const r of (qsrActRows||[]))  { const k=toDateStr(r); if(k && r.actHrs) hrsIdx[k]={hrs:r.actHrs,src:'dar'}; }
-    for(const r of (ctrlRows||[]))    { const k=toDateStr(r); if(k && !hrsIdx[k] && r.actHrs) hrsIdx[k]={hrs:r.actHrs,src:'ctrl'}; }
-    for(const r of (laborRows||[]))   { const k=toDateStr(r); if(k && !hrsIdx[k] && r.actHrs) hrsIdx[k]={hrs:r.actHrs,src:'labor'}; }
+    const keys = new Set();
+    for(const r of (glimpseRows||[]))  { const k=toDateStr(r); if(k) keys.add(k); }
+    for(const r of (ctrlRows||[]))     { const k=toDateStr(r); if(k) keys.add(k); }
+    for(const r of (laborRows||[]))    { const k=toDateStr(r); if(k) keys.add(k); }
+    for(const r of (qsrActRows||[]))   { const k=toDateStr(r); if(k) keys.add(k); }
+    for(const k of keys) {
+      const [loc, dateStr] = k.split('|');
+      // laborPct resolves as a 0-1 fraction; ×100 to match the panel's fmtPct/LifeLenz % column.
+      const pct = metricDaily(dsShim, loc, dateStr, 'laborPct');
+      if(pct != null) pctIdx[k] = {pct: pct*100};
+      const hrs = metricDaily(dsShim, loc, dateStr, 'actHrs');
+      if(hrs != null) hrsIdx[k] = {hrs};
+    }
     return { pctIdx, hrsIdx };
   }, [glimpseRows, qsrActRows, ctrlRows, laborRows]);
 

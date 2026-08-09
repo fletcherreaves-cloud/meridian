@@ -1,8 +1,9 @@
 // @ts-nocheck
 import * as React from 'react';
-import { sName } from '../constants.js';
+import { sName, STORE_NAMES } from '../constants.js';
 import { dKey } from '../utils/date.js';
 import { f$, fN } from '../utils/fmt.js';
+import { metricSeries, dailyDataFreshness } from '../engine/metric-source.js';
 
 const h        = React.createElement;
 const { useState, useMemo, useCallback } = React;
@@ -113,58 +114,61 @@ function mergeStores(saved, computed) {
 // ── Core computation ──────────────────────────────────────────────────────────
 
 function computeRecords(ds, windowDays) {
-  if (!ds?.loaded || !ds.laborRows?.length) return null;
+  if (!ds?.loaded) return null;
 
-  // Most recent date in dataset → reference for window
-  let dataEnd = null;
-  for (const r of ds.laborRows) {
-    if (r.date && (!dataEnd || r.date > dataEnd)) dataEnd = r.date;
-  }
+  // Most recent date across ALL core daily streams (not just laborRows) → reference for
+  // window, via the shared cross-stream freshness helper.
+  const dataEnd = dailyDataFreshness(ds);
+  if (!dataEnd) return null;
   const windowStart = new Date(dataEnd.getTime() - windowDays * 86400000);
 
-  // ── Daily aggregates from laborRows ──────────────────────────────
+  // Auto-first (data-integrity sweep signature #2) — this used to build its daily map
+  // ONLY from ds.laborRows (manual-only), and only ADDED opsRows speed data to a day that
+  // already had a laborRows entry — so a Records-worthy day covered solely by an auto/
+  // emailed stream (sales via the DAR, speed via Glimpse/DAR) never got an entry at all,
+  // and never had a chance to set or break a record.
   // Cap: a single McDonald's daily sales above $80K is almost certainly a
   // period-summary total loaded from Supabase before the isPeriodSummary flag existed.
   const DAILY_SALES_MAX = 80000;
-  const dayMap = {};
-  for (const r of ds.laborRows) {
-    if (!r.loc || !r.date || r.isPeriodSummary || r.sales > DAILY_SALES_MAX) continue;
-    const dk = dKey(r.date);
-    const k  = r.loc + '_' + dk;
-    if (!dayMap[k]) {
-      dayMap[k] = { loc:r.loc, dk, date:r.date, sales:0, gc:0, bf:0,
-                    avgChkRows:[], oepeVals:[], kvsVals:[], r2pVals:[] };
+  // Exclude period-summary rows from the laborRows leg only — metric-source.js's other
+  // legs (qsrActSummaryRows etc.) never carry period-summary totals in the first place.
+  const dsClean = { ...ds, laborRows: (ds.laborRows||[]).filter(r=>!r.isPeriodSummary) };
+  const LOCS = ds.storeIds?.length ? ds.storeIds : Object.keys(STORE_NAMES);
+  const range = { s:new Date('2000-01-01'), e:dataEnd };
+
+  const days = [];
+  for (const loc of LOCS) {
+    const salesSeries = metricSeries(dsClean, loc, range, 'sales');
+    const dateKeys = Object.keys(salesSeries);
+    if (!dateKeys.length) continue;
+    const gcSeries    = metricSeries(dsClean, loc, range, 'gc');
+    const checkSeries = metricSeries(dsClean, loc, range, 'avgCheck');
+    const oepeSeries  = metricSeries(dsClean, loc, range, 'oepe');
+    const kvsSeries   = metricSeries(dsClean, loc, range, 'kvst');
+    const r2pSeries   = metricSeries(dsClean, loc, range, 'r2p');
+    // Breakfast sales has no auto/emailed chain yet — stays manual (laborRows only).
+    const bfByDate = {};
+    for (const r of (dsClean.laborRows||[])) {
+      if (String(r.loc)!==String(loc) || !r.date) continue;
+      const dk = dKey(r.date);
+      bfByDate[dk] = (bfByDate[dk]||0) + (r.bfSales||0);
     }
-    const d = dayMap[k];
-    d.sales += r.sales || 0;
-    d.gc    += (r.inStoreGC || 0) + (r.dtGC || 0);
-    d.bf    += r.bfSales || 0;
-    if (r.avgCheck > 0) d.avgChkRows.push(r.avgCheck);
+    for (const dk of dateKeys) {
+      const sales = salesSeries[dk];
+      if (sales > DAILY_SALES_MAX) continue;
+      const date = new Date(dk+'T12:00:00');
+      days.push({
+        loc, dk, date, sales,
+        gc:     gcSeries[dk]||0,
+        bf:     bfByDate[dk]||0,
+        avgChk: checkSeries[dk]||null,
+        oepe:   oepeSeries[dk]||null,
+        kvs:    kvsSeries[dk]||null,
+        r2p:    r2pSeries[dk]||null,
+        dow:    date.getDay(),
+      });
+    }
   }
-
-  // Add speed metrics from opsRows
-  for (const r of ds.opsRows || []) {
-    if (!r.loc || !r.date) continue;
-    const dk = dKey(r.date);
-    const k  = r.loc + '_' + dk;
-    if (!dayMap[k]) continue;
-    if (r.oepe > 0) dayMap[k].oepeVals.push(r.oepe);
-    if (r.kvst > 0) dayMap[k].kvsVals.push(r.kvst);
-    if (r.r2p  > 0) dayMap[k].r2pVals.push(r.r2p);
-  }
-
-  const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
-
-  const days = Object.values(dayMap)
-    .filter(d => d.sales > 0)
-    .map(d => ({
-      ...d,
-      avgChk: avg(d.avgChkRows),
-      oepe:   avg(d.oepeVals),
-      kvs:    avg(d.kvsVals),
-      r2p:    avg(d.r2pVals),
-      dow:    (d.date instanceof Date ? d.date : new Date(d.dk + 'T00:00:00')).getDay(),
-    }));
 
   // ── Weekly aggregates ─────────────────────────────────────────────
   const weekMap = {}, weekGCMap = {};
