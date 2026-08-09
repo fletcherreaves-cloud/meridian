@@ -332,6 +332,11 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.941', date:'2026-08-09', changes:[
+    'Every popup and panel in the app now closes the same way. Different screens used different close controls for the same action — sometimes three different ones on the same panel depending on what was loaded (a "Close" word, a plain X, an arrow) — and a few used the X for two different things on the same screen (closing the panel and deleting an item). Every popup now closes with the same X, in the same place, sized properly for touch.',
+    'SAGE now has its own button in the bar at the top of every screen, so it is one tap away no matter what you are looking at, instead of buried in a menu. It also now opens as a panel on the right side of the screen rather than covering everything, so you can keep looking at your data while talking to it. Reopening it after minimizing now actually reopens it (it could get stuck invisible before).',
+    'Signals no longer takes over the whole screen when opened.',
+  ]},
   {version:'4.920', date:'2026-08-08', changes:[
     'FIXED — washed-out text across the whole app. The muted colour used for almost every label and caption failed readability standards in six of the eight theme-and-mode combinations, worst at roughly half the required contrast. The gold accent failed in three light themes. All eight now meet the accessibility standard, and a test blocks any future change that drops below it.',
   ]},
