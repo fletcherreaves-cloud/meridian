@@ -6,7 +6,7 @@ import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
 import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap } from '../engine/events-import.js';
-import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES } from '../engine/retail-events.js';
+import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES, findFloatingDateMismatches } from '../engine/retail-events.js';
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
@@ -522,6 +522,24 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   };
   const toggleRuleLoc = (loc) => setRuleDraft(d=>({...d, locs: d.locs.includes(loc)?d.locs.filter(l=>l!==loc):[...d.locs,loc]}));
 
+  // ── Mistagged floating-date cleanup (v4.928) — finds already-tagged instances of the exact bug
+  // v4.925 stopped from happening again (a fixed-date rule tagging Black Friday/Small Business
+  // Saturday/Cyber Monday/tax-free weekends on the wrong day for that year). See findFloatingDateMismatches.
+  const floatingMismatches = uM(()=>findFloatingDateMismatches(userEvents), [userEvents]);
+  const [mismatchBusy, setMismatchBusy] = uSt(false);
+  const cleanupFloatingMismatches = () => {
+    if(!floatingMismatches.length) return;
+    if(!window.confirm('Remove '+floatingMismatches.length+' mistagged event(s)? Each is tagged on a date that '+
+      'does not match the real (floating) date of that event for its year. This also removes them from the '+
+      'cloud if they were previously synced.')) return;
+    setMismatchBusy(true);
+    const next = JSON.parse(JSON.stringify(userEvents||{}));
+    for(const m of floatingMismatches){ if(next[m.loc]){ delete next[m.loc][m.dk]; if(!Object.keys(next[m.loc]).length) delete next[m.loc]; } }
+    try{ localStorage.setItem('mf_events', JSON.stringify(next)); }catch(e){}
+    onUpdate(next);
+    setMismatchBusy(false);
+  };
+
   const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DOW_LETTERS=['S','M','T','W','T','F','S'];
 
@@ -937,6 +955,19 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
             'A rule fires every year automatically as a pending confirmation — dates are never auto-written, since school calendars shift slightly year to year.'),
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700,fontSize:'9px',flexShrink:0},
             onClick:()=>{setRuleDraft(newRuleDraft());setShowRuleForm(true);}},'➕ New Rule')
+        ),
+        floatingMismatches.length>0&&div({style:{border:'.5px solid rgba(245,188,0,.4)',borderRadius:'var(--r)',
+            padding:'10px 12px',marginBottom:12,background:'rgba(245,188,0,.08)'}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:4}},
+            '⚠ '+floatingMismatches.length+' mistagged floating-date event(s) found'),
+          div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:8,lineHeight:1.5}},
+            'These are tagged on a FIXED date, but the real date shifts every year (Black Friday, Small '+
+            'Business Saturday, Cyber Monday, tax-free weekends). Likely from a recurring rule saved before '+
+            'v4.925 added the mismatch warning. ',
+            floatingMismatches.slice(0,6).map(m=>(sNameC(m.loc)||m.loc)+' · '+m.dk+' "'+m.label+'"').join('  ·  '),
+            floatingMismatches.length>6?'  …and '+(floatingMismatches.length-6)+' more':''),
+          btn({className:'btn btn-sm btn-red',style:{fontSize:'8px'},disabled:mismatchBusy,onClick:cleanupFloatingMismatches},
+            mismatchBusy?'Removing…':'🧹 Remove all mistagged')
         ),
         !rules.length&&div({style:{color:'var(--text3)',textAlign:'center',padding:'40px 20px',fontSize:'11px'}},
           div({style:{fontSize:36,marginBottom:10}},'🔁'),

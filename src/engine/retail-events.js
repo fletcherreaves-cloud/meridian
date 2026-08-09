@@ -208,6 +208,42 @@ export function expandRetailEvents(stores, opts = {}) {
   return out.sort((a, b) => a.dateStart.localeCompare(b.dateStart) || String(a.loc).localeCompare(String(b.loc)));
 }
 
+// ── Detect mistagged floating-date events (v4.928, Notes 62) ──────────────────────────────────────
+// A recurring rule tags a FIXED month/day every year (see calendar.js's `newRuleDraft`/`saveRule`).
+// That can never correctly represent an event whose real date shifts with Thanksgiving or statute
+// (Black Friday, Small Business Saturday, Cyber Monday, the tax-free weekends) — RETAIL_EVENT_RULES
+// already generates those correctly every year. v4.925 added a save-time warning; this finds
+// instances that were ALREADY mistagged before that warning existed (the real-world trigger: a
+// "Black Friday" rule saved with the old durationDays:5 default tagged Nov 24,25,26,27,29 for 2026 —
+// only the 27th, Thanksgiving+1, is correct).
+// Matches by LABEL (not event type) because the buggy rule's default type was 'school_break', not a
+// retail type — the mistagged rows never carried a retail event_type to match on.
+// `userEvents` = the `mf_events` day-map shape `{ loc: { 'YYYY-MM-DD': { label, ... } } }`.
+export function findFloatingDateMismatches(userEvents, rules = RETAIL_EVENT_RULES) {
+  const byLabel = new Map(rules.map(r => [r.label.toLowerCase(), r]));
+  const out = [];
+  for (const loc of Object.keys(userEvents || {})) {
+    const dkMap = userEvents[loc] || {};
+    for (const dk of Object.keys(dkMap)) {
+      const ev = dkMap[dk];
+      if (!ev || !ev.label || !/^\d{4}-\d{2}-\d{2}$/.test(dk)) continue;
+      const baseLabel = String(ev.label).trim().replace(/\s*—\s*Opening Weekend$/i, '').toLowerCase();
+      const rule = byLabel.get(baseLabel);
+      if (!rule) continue;
+      const year = +dk.slice(0, 4);
+      const insts = rule.instances(year) || [];
+      if (!insts.length) continue; // rule has nothing to say about this year (e.g. unverified FL window) — not a claim of wrongness
+      const anchors = insts.map(inst => shoppingAnchor(inst.start, inst.end));
+      if (anchors.some(a => dk >= a.start && dk <= a.end)) continue; // matches a real window — fine
+      out.push({
+        loc, dk, label: String(ev.label).trim(), ruleKey: rule.key,
+        expected: anchors.map(a => a.start === a.end ? a.start : (a.start + '→' + a.end)),
+      });
+    }
+  }
+  return out.sort((a, b) => a.loc.localeCompare(b.loc) || a.dk.localeCompare(b.dk));
+}
+
 // History deep enough to MEASURE against (labor_rows is backfilled to 2022) plus next year to forecast.
 export function defaultRetailYears(now = new Date()) {
   const y = now.getFullYear();
