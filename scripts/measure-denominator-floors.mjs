@@ -7,24 +7,30 @@
 // -10% and the count-completeness 0.75 were picked from measured bucket boundaries
 // (memory/feedback-measure-dont-reason.md).
 //
-// Covers three deferred sites from the sweep plan:
+// Covers four deferred sites from the sweep plan:
 //   A) src/lib/supabase.js `_finalizeQsrAct` — tpph/r2p/oepe/park/kvst day-level rate metrics.
 //      Denominators: actHrs (tpph), fc_trans_cnt (r2p), dt_trans_cnt (oepe/park), mfy_trans_cnt (kvst).
 //      Same formulas as _finalizeQsrAct (lines ~1810-1849) — kept in sync by hand; if that function's
 //      math changes, update the mirrored formulas below too.
 //   B) src/views/graded-visits.js `hourMetrics` — hourly stwGcCompPct/prodSalesCompPct vs LY.
 //      Denominators: ly_transactions, ly_product_sales, PER HOUR SLOT (not per day).
-//   C) src/views/signals.js `planPace` — same-day cumulative pacePct/gcPacePct.
+//   C) src/views/signals.js `planPace` — same-day cumulative pacePct/gcPacePct, DISTRICT-WIDE
+//      (sums every store's rows together for one date — no per-loc grouping in the real code).
 //      Denominators: cumulative proj_sales_dollars / proj_total_transactions elapsed so far.
+//   D) src/views/signals.js `aggregateByStore`'s `salesPct` (StoreRow "Sales pace" column) — a
+//      SEPARATE, genuinely PER-STORE cumulative pace metric on a DIFFERENT field than C: this one
+//      compares cumulative actual sales to cumulative `mean_sales` (this store's own historical
+//      same-hour average), not the QSRSoft projection. Easy to conflate with C since both render
+//      as "pace" cards in the same panel — they are different computations needing different floors.
 //
 // dt-speedofservice.js's early/late `us/cnt` split (also flagged in the sweep plan) is NOT covered
 // here — it's a coarser aggregate of the SAME dt_trans_cnt field Part A already measures (summed
 // over ~half a multi-day window per store, vs Part A's single-day-per-store), so it's strictly
 // safer than what Part A already showed to rarely get small. See the sweep memory doc.
 //
-//   node scripts/measure-denominator-floors.mjs               # A, B, and C — default 120-day window for B/C
+//   node scripts/measure-denominator-floors.mjs               # A, B, C, D — default 120-day window for B/C/D
 //   node scripts/measure-denominator-floors.mjs --skip-hourly # A only (fast — one page via the daily view)
-//   node scripts/measure-denominator-floors.mjs --days 60     # B/C's hourly pull window
+//   node scripts/measure-denominator-floors.mjs --days 60     # B/C/D's hourly pull window
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (qsr_daily_activity is RLS-scoped; the
 // anon key this environment has access to returns 0 rows for it — confirmed live, not assumed. See
@@ -73,6 +79,27 @@ function printBuckets(title, unit, rows, denomKey, valueKey, edges) {
     const label = hi === Infinity ? `${lo}+` : (lo === hi ? `${lo}` : `${lo}-${hi}`);
     if (!st) { console.log(label.padEnd(14) + '0'); continue; }
     console.log(label.padEnd(14) + String(st.n).padEnd(8) +
+      st.p10.toFixed(1).padEnd(10) + st.p25.toFixed(1).padEnd(10) + st.median.toFixed(1).padEnd(10) +
+      st.p75.toFixed(1).padEnd(10) + st.p90.toFixed(1).padEnd(10) + st.iqr.toFixed(1));
+  }
+}
+// Same stats, bucketed by TIME OF DAY (the hour_slot each cumulative sample was taken at) instead
+// of by denominator magnitude — answers "by what hour does this normalize" directly, rather than
+// "how many dollars/guests does it take" (printBuckets above). hour_slot is the END hour of a
+// 1-hour block (e.g. slot '6' = 5am-6am), same convention as HourlyDetail/dt-speedofservice.js.
+function printHourBuckets(title, unit, rows, hourKey, valueKey) {
+  console.log(`\n── ${title} (by hour-of-day, value in ${unit}) ──`);
+  const byHour = {};
+  for (const r of rows) { const h = String(r[hourKey]); (byHour[h] = byHour[h] || []).push(r[valueKey]); }
+  const hours = Object.keys(byHour).sort((a, b) => (+a) - (+b));
+  const fmt = x => x === 0 ? '12a' : x <= 11 ? `${x}a` : x === 12 ? '12p' : `${x - 12}p`;
+  console.log('hour block'.padEnd(12) + 'n'.padEnd(8) + 'p10'.padEnd(10) + 'p25'.padEnd(10) + 'median'.padEnd(10) + 'p75'.padEnd(10) + 'p90'.padEnd(10) + 'IQR');
+  for (const h of hours) {
+    const end = parseInt(h, 10);
+    const label = isNaN(end) ? h : `${fmt((end - 1 + 24) % 24)}-${fmt(end)}`;
+    const st = bucketStats(byHour[h]);
+    if (!st) { console.log(label.padEnd(12) + '0'); continue; }
+    console.log(label.padEnd(12) + String(st.n).padEnd(8) +
       st.p10.toFixed(1).padEnd(10) + st.p25.toFixed(1).padEnd(10) + st.median.toFixed(1).padEnd(10) +
       st.p75.toFixed(1).padEnd(10) + st.p90.toFixed(1).padEnd(10) + st.iqr.toFixed(1));
   }
@@ -158,34 +185,86 @@ if (!SKIP_HOURLY) {
   // ════════════════════════════════════════════════════════════════════════════════════════════
   // C) Same-day cumulative pacing — src/views/signals.js planPace's pacePct/gcPacePct (Signature
   // #1, deferred: "partial-day-so-far denominator... the missing piece is a magnitude guard, not
-  // a date cutoff"). Reconstructs, for every real store-day, the cumulative doneActual/doneProj
-  // (and GC equivalents) at EVERY hour position through the day — i.e. "what would this ratio
+  // a date cutoff"). planPace sums EVERY store's rows together for one calendar date (LiveOpsTab
+  // loads DAR rows with no loc filter) — it is a DISTRICT-WIDE aggregate, not per-store. An
+  // earlier version of this script grouped by (loc,dt), measuring single-store pacing noise —
+  // caught before use (owner asked "what are the impacts" before applying the resulting floor,
+  // which is what surfaced the mismatch) and fixed here to group by DATE ONLY, summing all
+  // stores' same-hour rows together before accumulating cumulatively through the day — matching
+  // planPace's actual computation shape. Reconstructs, for every real date, the cumulative
+  // doneActual/doneProj (and GC equivalents) at EVERY hour position — i.e. "what would this ratio
   // have shown if read at this exact hour" — using historical (already-complete) days as a stand-
   // in for the many possible elapsed-hours states a live read can land on.
   // ════════════════════════════════════════════════════════════════════════════════════════════
-  console.log(`\n\n═══ C) Same-day cumulative pacing denominators (${DAYS}-day window) ═══`);
+  console.log(`\n\n═══ C) Same-day cumulative pacing denominators, district-wide (${DAYS}-day window) ═══`);
   const paceRows = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity')
-    .select('loc,dt,hour_slot,product_sales,proj_sales_dollars,transactions,proj_total_transactions')
+    .select('loc,dt,hour_slot,product_sales,proj_sales_dollars,transactions,proj_total_transactions,mean_sales')
     .gte('dt', since).range(from, to));
-  const byDay = {};
-  for (const r of paceRows) { const k = r.loc + '|' + r.dt; (byDay[k] = byDay[k] || []).push(r); }
+  const byDate = {};
+  for (const r of paceRows) { (byDate[r.dt] = byDate[r.dt] || []).push(r); }
   const paceSamples = [];
-  for (const dayRows of Object.values(byDay)) {
-    dayRows.sort((a, b) => String(a.hour_slot).localeCompare(String(b.hour_slot)));
+  for (const dateRows of Object.values(byDate)) {
+    // Sum ALL stores' rows for this date together per hour_slot first (matching planPace, which
+    // never groups by loc), then walk hour_slot in order accumulating cumulatively.
+    const byHour = {};
+    for (const r of dateRows) {
+      const h = r.hour_slot;
+      const b = byHour[h] || (byHour[h] = { actual: 0, proj: 0, gc: 0, projGC: 0 });
+      b.actual += r.product_sales || 0; b.proj += r.proj_sales_dollars || 0;
+      b.gc += r.transactions || 0; b.projGC += r.proj_total_transactions || 0;
+    }
     let doneActual = 0, doneProj = 0, doneGC = 0, doneProjGC = 0;
-    for (const r of dayRows) {
-      doneActual += r.product_sales || 0; doneProj += r.proj_sales_dollars || 0;
-      doneGC += r.transactions || 0; doneProjGC += r.proj_total_transactions || 0;
+    for (const h of Object.keys(byHour).sort()) {
+      const b = byHour[h];
+      doneActual += b.actual; doneProj += b.proj;
+      doneGC += b.gc; doneProjGC += b.projGC;
       paceSamples.push({
+        hourSlot: h,
         doneProj, pacePct: doneProj > 0 ? doneActual / doneProj * 100 : null,
         doneProjGC, gcPacePct: doneProjGC > 0 ? doneGC / doneProjGC * 100 : null,
       });
     }
   }
   console.log(`${paceSamples.length} cumulative same-day snapshots (one per hour-elapsed, `
-    + `${Object.keys(byDay).length} store-days).\n`);
-  printBuckets('Sales Pace % (cumulative $ so far)', '%', paceSamples.filter(r => r.doneProj > 0), 'doneProj', 'pacePct', [1, 25, 50, 100, 250, 500, 1000, 2500]);
-  printBuckets('GC Pace % (cumulative guests so far)', '%', paceSamples.filter(r => r.doneProjGC > 0), 'doneProjGC', 'gcPacePct', [1, 2, 5, 10, 25, 50, 100, 250]);
+    + `${Object.keys(byDate).length} district-days, ALL stores summed per hour).\n`);
+  // Bucket edges widened ~10-30x vs a per-store measurement — this is now a 27-store sum, so even
+  // the first business hour plausibly clears what a single store would take all morning to reach.
+  printBuckets('Sales Pace % (cumulative $ so far, district)', '%', paceSamples.filter(r => r.doneProj > 0), 'doneProj', 'pacePct', [1, 500, 1000, 2500, 5000, 10000, 20000, 40000]);
+  printBuckets('GC Pace % (cumulative guests so far, district)', '%', paceSamples.filter(r => r.doneProjGC > 0), 'doneProjGC', 'gcPacePct', [1, 25, 50, 100, 250, 500, 1000, 2000]);
+  printHourBuckets('Sales Pace % (district)', '%', paceSamples.filter(r => r.doneProj > 0), 'hourSlot', 'pacePct');
+  printHourBuckets('GC Pace % (district)', '%', paceSamples.filter(r => r.doneProjGC > 0), 'hourSlot', 'gcPacePct');
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // D) Per-store cumulative pace vs historical mean — aggregateByStore's salesPct (StoreRow's
+  // "Sales pace" column + its expandable HourlyDetail per-hour pace, both in signals.js). A
+  // DIFFERENT metric from C, on a DIFFERENT field: denominator is cumulative mean_sales (this
+  // store's own historical same-hour average), summed across only its COMPLETED hours
+  // (product_sales>0) so far today — genuinely per-store, the metric the owner correctly recalled
+  // existing here that Part C's district-wide planPace measurement doesn't cover.
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  console.log(`\n\n═══ D) Per-store cumulative pace-vs-mean denominators (${DAYS}-day window) ═══`);
+  const byStoreDate = {};
+  for (const r of paceRows) { const k = r.loc + '|' + r.dt; (byStoreDate[k] = byStoreDate[k] || []).push(r); }
+  const storePaceSamples = [];
+  for (const dayRows of Object.values(byStoreDate)) {
+    dayRows.sort((a, b) => String(a.hour_slot).localeCompare(String(b.hour_slot)));
+    let sales = 0, meanSales = 0;
+    for (const r of dayRows) {
+      if ((r.product_sales || 0) > 0) { // only completed hours, matching aggregateByStore exactly
+        sales += r.product_sales || 0;
+        meanSales += r.mean_sales || 0;
+        storePaceSamples.push({ hourSlot: r.hour_slot, meanSales, salesPct: meanSales > 0 ? sales / meanSales * 100 : null });
+      }
+    }
+  }
+  console.log(`${storePaceSamples.length} cumulative per-store same-day snapshots (one per completed `
+    + `hour, ${Object.keys(byStoreDate).length} store-days).\n`);
+  printBuckets('Store Sales Pace % (cumulative $ vs own mean)', '%', storePaceSamples.filter(r => r.meanSales > 0), 'meanSales', 'salesPct', [1, 25, 50, 100, 250, 500, 1000, 2500]);
+  printHourBuckets('Store Sales Pace % (per-store)', '%', storePaceSamples.filter(r => r.meanSales > 0), 'hourSlot', 'salesPct');
+
+  console.log('\nNote: signals.js\'s separate per-hour "Baseline Anomalies" detector (not measured here) already');
+  console.log('has its own MIN_MEAN=300 floor on this same mean_sales field — lower priority, already guarded,');
+  console.log('though whether 300 was itself measured or just chosen is unconfirmed. See the sweep memory doc.');
 } else {
-  console.log('\n(--skip-hourly: parts B and C not run)');
+  console.log('\n(--skip-hourly: parts B, C, and D not run)');
 }
