@@ -6,6 +6,7 @@ import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt
 import { STORE_NAMES } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb, useMemo: uMemo } = React;
@@ -1419,9 +1420,8 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
 
 // Past-conversation history ("tabs") — reopen or delete an archived session.
 function SessionsModal({ sessions, onClose, onReopen, onDelete }) {
-  return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
-    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
-      h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '🕘 Conversation history'),
+  return h(ModalShell, { title: '🕘 Conversation history', onClose, maxWidth: 560, zIndex: Z.nested, closeOnBackdrop: true },
+    h('div', { style: { padding: '12px 16px' } },
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Reopen a past SAGE conversation. Your current chat is archived here automatically when you start a new one.'),
       !sessions.length && h('div', { style: { fontSize: 12, color: muted, padding: 16, textAlign: 'center', border: '1px dashed rgba(255,255,255,.12)', borderRadius: 8 } }, 'No past conversations yet.'),
       sessions.map(s => h('div', { key: s.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,.08)', marginBottom: 6 } },
@@ -1429,7 +1429,5 @@ function SessionsModal({ sessions, onClose, onReopen, onDelete }) {
           h('div', { style: { fontSize: 12, fontWeight: 600, color: 'var(--text,#f1f5f9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, s.title || 'Conversation'),
           h('div', { style: { fontSize: 10, color: muted } }, (s.count || 0) + ' messages')),
         h('button', { onClick: () => onReopen(s), style: { padding: '4px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' } }, 'Reopen'),
-        h('button', { onClick: () => onDelete(s.id), title: 'Delete', style: { padding: '4px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, '✕'))),
-      h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 10 } },
-        h('button', { onClick: onClose, style: { padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Close'))));
+        h('button', { onClick: () => onDelete(s.id), title: 'Delete conversation', style: { padding: '4px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, '🗑')))));
 }
