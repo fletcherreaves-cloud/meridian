@@ -139,15 +139,39 @@ function computeOpsScore(p,t,sc){
   return max?+(score/max*100).toFixed(1):50;
 }
 
+// Data-integrity sweep, signature #5 (2026-08-09): this function used to score every component
+// off a bare `||0` with NO data-presence check at all — unlike its sibling computeOpsScore just
+// above, which gates every term on `t.X>0&&p.X>0`. Since every one of these metrics is
+// "lower is better," a store with NO controls data (cashOSPct/tRedAPct/otHrs/cashRefCnt/discPct
+// all missing) defaulted every term to 0 and scored it as PERFECT — producing ctrlScore≈100 and
+// triggering buildBrief's "STRENGTH — CONTROLS ELITE... cash integrity model" for a store with
+// literally no data. Fixed using p._cov (forecast.js compute6wk's observation-count map, built
+// for exactly this — previously only store-dash.js's Controls table read it) to skip scoring an
+// uncovered component and shrink the denominator by that component's point-share instead, so a
+// fully-covered store's score is numerically UNCHANGED (denominator starts at the same 40 the
+// original hardcoded) and a partially/never-covered store no longer scores as if every missing
+// metric were a verified zero.
 function computeCtrlScore(p,sc){
-  let score=0;const ac=Math.abs(p.cashOSPct||0);const{cashPts,tredPts,otPts,refundPts,discPts}=sc;
-  if(ac<=sc.cashT1)score+=cashPts[0];else if(ac<=sc.cashT2)score+=cashPts[1];else if(ac<=sc.cashT3)score+=cashPts[2];else if(ac<=sc.cashT4)score+=cashPts[3];
-  const tra=p.tRedAPct||0;if(tra<=sc.tredT1)score+=tredPts[0];else if(tra<=sc.tredT2)score+=tredPts[1];else if(tra<=sc.tredT3)score+=tredPts[2];
-  score+=3;
-  const ot=p.otHrs||0;if(ot<=sc.otT1)score+=otPts[0];else if(ot<=sc.otT2)score+=otPts[1];else if(ot<=sc.otT3)score+=otPts[2];else if(ot<=sc.otT4)score+=otPts[3];
-  const rc=p.cashRefCnt||0;if(rc<=sc.refundT1)score+=refundPts[0];else if(rc<=sc.refundT2)score+=refundPts[1];else if(rc<=sc.refundT3)score+=refundPts[2];
-  const dp=p.discPct||0;if(dp<=sc.discT1)score+=discPts[0];else if(dp<=sc.discT2)score+=discPts[1];else if(dp<=sc.discT3)score+=discPts[2];
-  return +Math.min(100,score/40*100).toFixed(1);
+  let score=0,max=40;
+  const cov=p._cov||{};
+  const{cashPts,tredPts,otPts,refundPts,discPts}=sc;
+  if((cov.cashOSPct||0)>0){const ac=Math.abs(p.cashOSPct||0);
+    if(ac<=sc.cashT1)score+=cashPts[0];else if(ac<=sc.cashT2)score+=cashPts[1];else if(ac<=sc.cashT3)score+=cashPts[2];else if(ac<=sc.cashT4)score+=cashPts[3];
+  }else max-=10;
+  if((cov.tRedAPct||0)>0){const tra=p.tRedAPct||0;
+    if(tra<=sc.tredT1)score+=tredPts[0];else if(tra<=sc.tredT2)score+=tredPts[1];else if(tra<=sc.tredT3)score+=tredPts[2];
+  }else max-=6;
+  score+=3; // flat structural allowance — no per-metric coverage signal maps to it, unchanged from original
+  if((cov.otHrs||0)>0){const ot=p.otHrs||0;
+    if(ot<=sc.otT1)score+=otPts[0];else if(ot<=sc.otT2)score+=otPts[1];else if(ot<=sc.otT3)score+=otPts[2];else if(ot<=sc.otT4)score+=otPts[3];
+  }else max-=8;
+  if((cov.cashRefCnt||0)>0){const rc=p.cashRefCnt||0;
+    if(rc<=sc.refundT1)score+=refundPts[0];else if(rc<=sc.refundT2)score+=refundPts[1];else if(rc<=sc.refundT3)score+=refundPts[2];
+  }else max-=6;
+  if((cov.discPct||0)>0){const dp=p.discPct||0;
+    if(dp<=sc.discT1)score+=discPts[0];else if(dp<=sc.discT2)score+=discPts[1];else if(dp<=sc.discT3)score+=discPts[2];
+  }else max-=6;
+  return max>0?+Math.min(100,score/max*100).toFixed(1):50; // zero coverage at all → neutral, matching computeOpsScore's own no-data fallback
 }
 
 function normalizeScores(stores,mode){

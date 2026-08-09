@@ -36,6 +36,323 @@ every instance produced a number that was *plausible but wrong* — the worst ki
 nobody investigates a number that looks reasonable. `businessDate()` (4am ABC cutover) already
 exists as the shared helper; the sweep is finding every place that should use it and does not.
 
+## Signature #4 — SWEPT (2026-08-09)
+
+An Explore pass enumerated candidates beyond the 3 already-fixed instances (swing-feed
+`weeklyBuckets`, store-dash "Biggest Miss" v4.917, count-completeness threshold). 7 more sites
+matched, all fixed the same way — exclude the still-open business day via `businessDate()` (or
+the store-dash `RankingView`'s own `addDR(now,-1)` convention, matched locally for consistency):
+
+1. `src/engine/backtest.js` `_computePeriodMape` — Dialed-In 6W/4W/2W/1W MAPE columns.
+2. `src/views/above-store-onepager.js` MTD range.
+3. `src/views/labor-tools.js` — both PERIODS arrays (2wk/4wk/6wk/mtd/3m/6m/ytd all ended at
+   literal "today"; graded against a tight ±0.5–1.5pt band, the most user-visible of the group).
+4. `src/views/store-dash.js` `UnifiedTargetsPanel`'s `_inRangeMs` — no upper bound at all.
+5. `src/views/smart-targets.js` — the live panel's `now` was passed straight through as `asOf`
+   to `weightedRecencyLevel`/`medianProject`; the engine functions themselves were already
+   correct (exclusive `dt < end`), the bug was purely in the caller's boundary, one day away
+   from being baked into `monthly_targets` via "Apply as Official."
+6. `src/views/analytics.js` `StoreOnePager` (print/export narrative).
+7. `src/views/store-dash.js` `RankingView`'s `MTD` preset — its own LW/L2W/L4W/L6W siblings
+   already excluded today; only MTD was missed.
+
+Explicitly checked and left alone: `pace-to-target.js`/`CurrentMonthPaceSection` (correct
+day-elapsed pacing), `schedule-summary.js` `normLaborPct` (handles it via a value-band filter,
+not a date cutoff — different mechanism, same correctness), `backtest.js`'s main "Full" MAPE
+(already has a 14-day cutoff), and every preset that already did `addDR(now,-1)`.
+
+Regression guards added (class-level, not per-instance): `backtest.test.js` — a partial "today"
+row with a resolvable LY must not move mape6w/4w/2w/1w; `smart-targets.test.js` — `windowRate`
+excludes a row dated exactly at the exclusive `asOf` boundary, the contract every live caller
+above depends on.
+
+Signatures 1 (ratio >0 guard, partially swept below), 2 (ds.\*Rows direct reads), 3 (unit
+mismatches), 5 (missing vs zero) are still open.
+
+## Signature 6 — RESOLVED as a byproduct (v4.924, 2026-08-09)
+
+The named instance (`fetchLY` skipping all 7 LY offsets because every candidate was tagged,
+e.g. Tishomingo's 450 tagged days) can no longer happen: v4.924 removed tag presence from
+`fetchLY`/`fetchLYDate`/`fetchGC`'s exclusion logic entirely, per an owner directive that tagging
+must never itself exclude a day — only a measured anomaly (median ± k·MAD against the day's own
+peer candidates) does. See the v4.924 commit and `memory/vision-and-roadmap.md` if a dedicated
+write-up gets added. Not re-verified against every OTHER "multi-candidate fallback chain" the
+signature's method calls for — only the LY-lookup chain that produced the real bug.
+
+## Signature 1 — PARTIALLY SWEPT (2026-08-09)
+
+An Explore pass ranked the ~132 candidates by whether the denominator is plausibly small in real
+data (a single day/hour's count or dollar figure) versus structurally large (weekly/monthly/
+district aggregates — most of the 132, correctly fine). Fixed the highest-confidence, most
+measurable findings:
+
+1. `src/lib/supabase.js` `_finalizeQsrAct`'s `salesVsLYPct` — same day-level YoY sales-ratio
+   shape as the original `getDOWTrend` bug, just reached through the DAR/QSRSoft cloud path.
+   Drives sort order + color coding + a printed executive report in `one-pager.js` — a single
+   closure-day LY value could have put a mediocre store at the top. Fixed by reusing the exact
+   measured ±300%/-75% band from v4.912 (`_yoyPoint` in forecast.js), reimplemented locally in
+   supabase.js as `_yoyPct` (lib/ has no existing dependency on engine/, so two constants were
+   copied rather than importing across that layer boundary).
+2. `src/engine/forecast.js` `varPct` (the per-day forecast-error %) — denominator is that day's
+   own actual, so a closure-day actual against a normal forecast rendered nonsense like
+   "-111,000%" in the Forecast Table (`store-dash.js`). Different fix shape than #1: this
+   percentage's grading (`pass`/`Math.abs(varPct)<=tolerance`) is already correct even at extreme
+   magnitudes — a huge miss should fail — so nothing about `varPct` or `pass` changed. Only the
+   store-dash.js table CELL is capped at a display-only ±300% (with a trailing '+' marking a
+   true value beyond it); sorting/grading elsewhere still sees the real number.
+3. `src/views/store-dash.js` `lyVar` in the weekly-scenario projection — turned out to be dead
+   code (computed, never read; `scenarios.bull/base/cons` use fixed ±4% multipliers, not it).
+   Deleted rather than fixed.
+
+**Deferred, not fixed — would need real data to measure a threshold, not a decision to skip:**
+- `src/views/graded-visits.js` hourly LY comparison % — an hour-slot's LY transaction count of 1
+  is normal (e.g. overnight), not an edge case, so the day-level ±300% band does NOT transfer;
+  needs its own measured floor from real hourly data.
+- `src/lib/supabase.js` `tpph`/`r2p`/`oepe`/`park`/`kvst` (rate-per-day metrics, `_finalizeQsrAct`)
+  and the matching `tpph`/`avgChk` cloud fallback in `store-dash.js` — same shape, needs a
+  measured minimum-count floor on the denominator (actHrs/cars/orders that day), not a percentage
+  band.
+- `src/views/signals.js` `pacePct`/`gcPacePct` — partial-day-so-far denominator; overlaps
+  signature #4's territory but the missing piece here is a magnitude guard, not a date cutoff.
+- `src/engine/backtest.js` `detectCleanDataStart`'s `cv=mean>0?...:Infinity` — low visibility
+  (internal calibration-window decision, not user-facing), lower priority.
+- `src/views/dt-speedofservice.js` several `us/cnt` sites — lower confidence, would want one
+  shared measured floor rather than per-site fixes.
+- `src/features/lifelenz.js` `lfzErr`/`mErr` — already pre-filtered to `sales>100`, likely fine
+  as-is; the `>0` guard flagged in the sweep is on the wrong variable but low real-world risk.
+
+None of these were given an invented threshold — per the standing caution below, a made-up
+number is not a fix. Pick this back up once Supabase access lets real distributions get pulled.
+
+## 2026-08-09 session — org_events round-trip verified (bug found + fixed), Black Friday
+## cleanup shipped, denominator-floor measurement tooling prepared
+
+Picked up three deferred items. Confirmed live (not assumed) that this Claude Code web/remote
+environment only has `VITE_SUPABASE_ANON_KEY` — no `SUPABASE_SERVICE_ROLE_KEY` and no way to mint
+a real user JWT. `curl`-ing `org_events` and `qsr_daily_activity` with the anon key returns HTTP
+200 with an empty array (RLS correctly blocking an unauthenticated caller), not a connection
+failure — reachability (CLAUDE.md's "egress allowlisted" note) and authenticated access are two
+different things, and this environment only ever had the first. Every item below hit this same
+wall; each was handled by building something a human (or a future session with real credentials)
+can act on, rather than guessing.
+
+1. **org_events cloud-sync round-trip (v4.923) — verified by code audit, found and fixed a real
+   bug (v4.927).** `syncUserEventsToCloud`'s delete/edit cleanup called
+   `deleteOrgEventsByLocDate(loc, date)` with no label — deleting EVERY row for that date, even
+   though org_events intentionally allows multiple events per day (a sports game AND a school
+   closure on the same date) while the local `mf_events` registry it mirrors allows exactly one.
+   Editing or deleting the one event visible locally on a multi-event day would silently wipe any
+   OTHER cloud event sharing that date — no error, no local symptom (the deleted sibling was never
+   visible locally to notice missing). Fixed by scoping every delete to the removed/replaced
+   entry's own label, matching org_events' actual `unique (loc, date_start, label)` key. Also
+   extracted the diff logic into a pure, exported `diffUserEventsForCloudSync` (events-import.js)
+   with 7 unit tests — this is what makes the round-trip logic verifiable at all without live
+   Supabase access.
+
+2. **Black Friday duplicate-tagging cleanup — shipped as an in-app tool (v4.928), not a live
+   cleanup.** The bad data (5 tagged Black-Friday days for 2026, per the owner's report) lives in
+   the owner's browser localStorage, which this session cannot reach, and any copy that made it to
+   the cloud is behind the same RLS wall as everything else. `findFloatingDateMismatches()`
+   (retail-events.js) matches `userEvents` entries by LABEL (the buggy rule's default TYPE was
+   'school_break', not a retail type, so type-matching would have missed every instance) against
+   RETAIL_EVENT_RULES, flags any tagged date that doesn't fall in that rule's real computed window
+   for its year, and Calendar Manager's Recurring Rules tab now shows a one-click cleanup banner.
+   Generalizes past Black Friday to Small Business Saturday/Cyber Monday/tax-free weekends — any
+   rule sharing this failure mode. 8 unit tests reproduce the exact reported case (Thanksgiving
+   2026 = Nov 26, computed live via the real `thanksgiving()` rule; only Nov 27 is correct).
+
+3. **Denominator-floor measurement tooling — written, not run.** `scripts/measure-denominator-
+   floors.mjs` (follows the `scripts/measure-retail-impact.mjs` convention: requires
+   `SUPABASE_SERVICE_ROLE_KEY`, read-only, `--dry`-equivalent by default since it never writes)
+   pulls real distributions for the two clearest deferred sites — tpph/r2p/oepe/park/kvst day-
+   level denominators (actual_punched_hours / fc_trans_cnt / dt_trans_cnt / mfy_trans_cnt, via the
+   `qsr_daily_activity_daily` rollup view with a raw-hourly fallback) and the graded-visits.js
+   hourly `ly_transactions`/`ly_product_sales` LY-comparison denominators — and prints
+   percentile/IQR buckets by denominator size. It does NOT choose a threshold; it measures and
+   prints, the same shape as the swing-alarm (-10%, 676 store-weeks) and count-completeness (0.75,
+   bimodal distribution) derivations already in this codebase, so a human picks the floor from the
+   printed buckets. Needs the owner (or a session with `SUPABASE_SERVICE_ROLE_KEY`) to actually run
+   it — this session could not. Still not covered by this script: `signals.js`
+   `pacePct`/`gcPacePct` (a magnitude guard on a different shape — partial-day-elapsed, not a count
+   floor), `backtest.js` `detectCleanDataStart`'s `cv`, and the `dt-speedofservice.js` `us/cnt`
+   sites — left for a future pass, still not given invented thresholds.
+
+## 2026-08-09 session, part 2 — PR #101 review fix + the measurement script actually run
+
+**v4.929 — fixed a real, confirmed bug in v4.928 before merge.** An independent review (a
+coordinator session, on PR #101 before merge) caught and reproduced that `findFloatingDateMismatches`
+checked a tagged date against `shoppingAnchor()`'s collapsed scheduling sub-window instead of the
+retail rule's TRUE window. For long statutory spans (`fl_back_to_school`, a full month) this made
+the new one-click "Remove all mistagged" cleanup capable of deleting a correctly-tagged real event
+just because it fell outside the anchored opening weekend — the exact class of destructive bug
+v4.927 (earlier in the same PR) was written to prevent, reintroduced by the new tool built on top
+of it. Fixed by checking `inst.start`/`inst.end` (the rule's real window) directly; 2 new
+regression tests. Also documented (deferred, lower severity per the same review) a second gap:
+`diffUserEventsForCloudSync` can't correctly clean up a single day of a multi-day org-sourced
+event via the generic label-based path (inert no-op, not destructive — see the code comment at
+the site in events-import.js for the full reasoning on why a real fix needs a shape change).
+**Lesson for future sweep work:** a second independent reviewer caught what code-review-by-the-
+same-session missed, on the FIRST tool this sweep shipped with real delete power. Worth an
+adversarial second pass on any future data-destructive tooling before merge, not just tests.
+
+**The owner supplied `SUPABASE_SERVICE_ROLE_KEY` and the measurement script was actually run** —
+first attempt timed out even with service-role access (bypasses RLS, so this was a genuine
+performance problem, not an access one): `qsr_daily_activity_daily` is a plain SQL `view`, not
+materialized, so it re-runs the full `GROUP BY` over the entire underlying table on every read,
+and that table is large enough for an unbounded read to hit Postgres's statement timeout. Fixed
+the script to bound part A by `--days` (same as part B already did) and fall back to the raw
+hourly table on a query ERROR, not just on an empty result. Re-ran successfully with `--days 60`.
+
+**Results (60-day window, 2026-06-10 → today):**
+
+- **Part A (tpph/r2p/oepe/park/kvst day-level denominators) — mostly a non-issue in practice.**
+  1,645 of 1,647 real (loc, date) rows had `actual_punched_hours ≥ 24`; `fc_trans_cnt`/
+  `dt_trans_cnt`/`mfy_trans_cnt` rarely fell below ~50 for a full day, and where they did (a
+  handful of rows) the metric value wasn't dramatically more extreme than the well-populated
+  buckets. The `>0` guard the sweep flagged as risky essentially never triggers in real daily
+  data — lower priority than assumed. Left un-fixed; a defensive floor (~10) would be cheap
+  insurance but isn't urgent.
+- **Part B (hourly LY-comparison %, graded-visits.js `hourMetrics`) — real and measured.**
+  `ly_transactions` bucketed against the resulting comp-%'s IQR: **1 → IQR 1000** (n=75, p10
+  -100%/p90 +2200%), **2 → IQR 500** (n=49), **3-4 → IQR 195.8** (n=99), **20-39 → IQR 39.1**
+  (n=5,885), **40+ → IQR 23.4** (n=21,282, the stable baseline). A defensible floor sits around
+  `ly_transactions ≥ 20` (~1.7× baseline IQR) to `≥ 40` (fully stable) — a judgment call left to
+  the owner, per the standing "no invented threshold" rule; the script does not choose one.
+  **Also refutes an assumption in this doc's own earlier entry:** "an hour-slot's LY count of 1
+  is normal, not an edge case" turned out to be wrong — measured `ly_transactions === 1` in only
+  **75 of 29,109** hour-slots with any LY count at all (0.3%). Rare, not normal.
+- **Applied (v4.930):** owner chose stability over max coverage — floor at the tier where IQR
+  reaches its stable baseline, not the first tier where it merely improves.
+  `MIN_LY_TXN_FOR_COMP = 40` / `MIN_LY_SALES_FOR_COMP = 800`, wired into `graded-visits.js`
+  `hourMetrics()` (extracted to a module-level exported pure function so this is unit-tested, not
+  just eyeballed). `supabase.js`'s day-level tpph/r2p/oepe/park/kvst were left un-fixed per Part
+  A's finding above (real denominators rarely get small enough to matter at the daily grain).
+
+## Signature #5 — SWEPT, 3 fixed (v4.931, 2026-08-09)
+
+An Explore pass found 6 candidates matching "missing data indistinguishable from a real zero
+where it flows into a grade/sort/color." Fixed the 3 highest-confidence, highest-impact:
+
+1. `src/engine/pipeline.js` `computeCtrlScore` — no data-presence gate AT ALL (unlike its sibling
+   `computeOpsScore`, which correctly gates every term on `t.X>0&&p.X>0`). A store with zero
+   controls data scored every "lower is better" component as a perfect 0 → `ctrlScore≈100` →
+   `buildBrief`'s "STRENGTH — CONTROLS ELITE... this store is a cash integrity model" for a store
+   with NO data. Fixed using `p._cov` (forecast.js `compute6wk`'s observation-count map — existed
+   already, built for exactly this, but only ever consumed by store-dash.js's Controls table).
+2. `src/views/store-dash.js` `DistrictGrid`'s `'labor'` sort — missing labor data ranked #1 (best)
+   in the district since a bare `||0` is the best possible value for a lower-is-better metric. The
+   adjacent `'oepe'` sort already used a 999 "missing→worst" sentinel; `'labor'` never got it.
+3. `src/views/smg-voice.js` "By Store — Best → Worst" rail — `avgScore` was already correctly
+   `null` for a no-comment store, but the row color and star bar both re-masked it back to
+   "worst score" (red, 0 filled stars) — inconsistent with the adjacent numeric label on the same
+   row, which already showed "—". Extracted to a tested `storeScoreColor()`.
+
+**Also fixed (v4.932):** `smart-targets.js`'s salesGrowth `base` fallback (full `!=null` chain
+through avg6w→avg12w→avg26w→avg52w, matching `recent`'s own window order — previously dead-ended
+at a bare `avg12w||0` if both short windows were null) and `insights.js`'s
+`monthlyLaborSummary`/`monthlyLaborExtended` (each metric now has its own coverage-weighted
+denominator instead of sharing `sales`, which let a missing laborPct/tpph on a real-sales day
+skew the average toward zero; 4 new tests). **Signature #5 is now fully closed** — 5 of 6 Explore
+findings fixed, the 6th (`store-analytics.js` NaN→0) has no observed user-facing effect since its
+only call site already falls through correctly.
+
+## Signature #2 — RE-MEASURED, NOT YET SWEPT (2026-08-09)
+
+The original "56 metric reads, 210 structural" count (top of this doc) is **stale** — a fresh
+Explore pass found **349 raw `ds.*Rows` occurrences across 33 files**, and that old 56/210 split
+doesn't map cleanly onto the current code. Most are structural/fine (loaders, coverage displays,
+already-decided exceptions: `LaborAnalyticsPanel`, `store-analytics.js` `dowData`,
+`visit-readiness.js`). Full triage from the Explore pass, by confidence:
+
+**HIGH confidence (should call `metricDaily`/`metricAvg`/`matchedVsLY` instead):**
+- `store-dash.js:2245-2246` `RankingView` group-rollup `curGc`/`lyGc` — the comment directly above
+  says every OTHER column in this function was already fixed for exactly this bug; GC was missed.
+- `store-dash.js:3582-3597` `CompareLineChart` — 42-day sales trend from `ds.laborRows` only, no
+  auto fallback. This is literally the "Dialed-In blank trend" shape the signature is named for.
+- `analytics.js:5563-5610` `DateRangeReport` avgOepe/avgTpph/avgLabor/avgCheck — manual-only.
+- `analytics.js:987-1030` `StoreOnePager` — hand-rolled vs-LY + manual-only averages, feeds the
+  printed one-pager.
+- `analytics.js:367-384` `computeMetricAverages` (feeds `MetricCorrelationExplorer`) — 9 covered
+  metrics, manual-only.
+- `analytics.js:3601-3618` `computeOpsAnalysis` (Ops Metrics Anomaly Cross-Check) — hand-rolled
+  ctrl/labor priority, no Glimpse/DAR fallback.
+- `analytics.js:5993-5996` AI Pre-Forecast/District Brief context — feeds the AI prompt itself.
+- `store-analytics.js:725-899` `computeRevenueOpportunity` — avg-check momentum, DT mix,
+  salaried-manager compliance, promo drag, all manual-only.
+- `store-analytics.js:574-599` `ModelComparisonPanel`'s `weekHistory` — manual-only sales.
+- `scheduling.js:333-352` `OpportunityReport` — a line-for-line reimplementation of a chain
+  already in `metric-source.js`, done inline instead of calling it.
+- `record-day.js:115-154` `computeRecords` (the Records feature) — manual-only, so a record set on
+  an auto-only recent day would never surface.
+- `morning-brief.js:284-295`/`:220-282` — hand-rolled vs-LY + oepe/kvst/park/kvsu, duplicates the
+  resolver. Matches this doc's own earlier "remaining candidate: morning-brief peaks metrics."
+
+**MEDIUM confidence / owner judgment calls:**
+- `store-dash.js:2366-2378` `PerformanceCalculator` — comment claims "no registered auto source
+  yet" for avgCheck/avgRate, which is now false (both are in METRIC_SOURCES); low stakes (slider
+  starting points only).
+- `analytics.js:7840-7856` `weeklyTrend` — sales/vsLY manual-only, sitting directly next to code
+  that already documents migrating OEPE/Labor/T-Reds in the same view for the same reason.
+- `labor-tools.js:1394-1414` `OperatorSummaryPanel` — mostly migrated correctly; FOB % still
+  reads raw `ds.fobRows` with no `qsr_fob` fallback (the fallback pattern already exists
+  elsewhere, `eom-supervisor.js`'s `fobSnapshotByStore`). Also: `lRows`/`cRows`/`oRows` in the
+  same function look like dead leftovers from before the migration.
+- `analytics.js:3144-3200` & `:6180-6212` `ForecastAccuracyPanel` backtest + weekly scan, and
+  `analytics.js:7758-7838` `computeStoreSigma`/MAPE-drift — same shape, BUT `backtest.js` has an
+  explicit documented precedent (v4.904 comment) that switching calibration reads to
+  `metricSeries('sales')` broke calibration for all 27 stores. Flagging for owner judgment, not
+  asserting these are wrong — backtest-shaped consumers may need to stay conservative on purpose.
+- `analytics.js:7945-7957` weekly store-projections cloud-actuals supplement — a hand-rolled
+  per-day auto-fill, documented as a real fix for a real bug, functionally reasonable but
+  duplicates the resolver instead of calling it.
+- `store-analytics.js:78-100` `detectAnomalies` and `analytics.js:4105-4140` (DOW baseline
+  anomaly scanner) — same shape as the exempted `dowData`, but unlike it, these could silently
+  stop flagging anomalies on auto-only days. Borderline.
+- `eom-supervisor.js:74-230` `computeStoreEOM` — extensive, heavily-commented, owner-verified
+  (cross-checked against QSRSoft screenshots) parallel auto-first logic. Looks deliberate, in the
+  same spirit as the `visit-readiness.js` exception, not an oversight.
+
+**Architectural finding, bigger than any single site:** there are now at least **4 independently-
+maintained reimplementations** of the "manual-first, then auto/emailed, freshest-per-day" merge
+`metric-source.js` exists to centralize — `analytics.js:6892-7154` (`labInRange`/`ctrlEffective`/
+`svcEffective`), `store-dash.js:2601-2680+` (`UnifiedTargetsPanel`'s `SPEC`/`valuesForLoc`),
+`smart-targets.js:108-185` (`cloudLabor`/`cloudOps`/`cloudCtrl`/`cloudFob`), and
+`promo-roi.js:19-54` (`buildDailyRecords`). None is confidently "broken" today, but this is
+exactly the failure mode `data-sourcing-standard.md`'s opening paragraph warns about. Worth a
+consolidation pass on its own, separate from fixing individual sites.
+
+**Not yet fixed** — this needs owner prioritization before touching ~15+ HIGH-confidence sites
+across that many files in one sweep; picking up here in a future session.
+
+## Signature #1 — remaining deferred items reviewed (2026-08-09, session part 3)
+
+Went back through the 3 items still open after v4.926/v4.930's fixes:
+
+- **`backtest.js` `detectCleanDataStart`'s `cv=mean>0?...:Infinity`** — reviewed in detail, **no
+  fix needed**. An `Infinity` CV always fails the `cvPass` stability check, so a single all-zero-
+  sales week just prevents that window from being called "stable" — and the function's own
+  documented fallback for low confidence is `return null` → "apply no restriction," which is
+  already the safe direction (a missed detection is no worse than today; this can't make it
+  falsely assert bad data is clean). Fails safe by construction. Closing this out rather than
+  leaving it as a vague "lower priority" TODO forever.
+- **`dt-speedofservice.js`'s `us/cnt` sites** — reviewed, **no fix needed**, no new measurement
+  required. Every site here (`storeData`'s early/late split, `stationData`, `hourData`,
+  `daypartData`) aggregates the SAME `dt_trans_cnt`/`fc_trans_cnt`/`mfy_trans_cnt` fields Part A of
+  `measure-denominator-floors.mjs` already measured for the day-level rate metrics — just summed
+  over MORE days and/or MORE stores per bucket (coarser, not finer). More summing only grows a
+  count denominator, never shrinks it, so this is strictly safer than what Part A already showed
+  rarely gets small in practice.
+- **`signals.js` `pacePct`/`gcPacePct`** — **RESOLVED (session part 4): no code change.** Extended
+  `measure-denominator-floors.mjs` with Part C (cumulative-so-far, district-wide — `planPace` sums
+  every store together for one date, not per-store, a mismatch an earlier draft of Part C got
+  wrong and the owner caught by asking "what are the impacts" before applying anything) and Part D
+  (the separately-real per-store `salesPct` metric, vs `mean_sales`). Measured live: district-wide
+  stabilizes fast (IQR down to single digits by ~9am); per-store takes until afternoon. Owner
+  decision: **keep cumulative as-is, no floor** — the existing formula was already right, this
+  investigation was purely confirmatory. Part E (added after) measured the STANDALONE
+  non-cumulative ratio for comparison and surfaced a real afternoon-bias lead — spun out into its
+  own shipped feature, see `memory/project-hourly-projection-accuracy.md`.
+
 ## Method
 
 1. Enumerate sites per signature (the counts above are a first pass, already run).

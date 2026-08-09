@@ -539,7 +539,12 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
       r.opsFactor>0?((r.opsFactor>=1?'+':'')+((r.opsFactor-1)*100).toFixed(2)+'%'):'—'),
     td({style:{textAlign:'center',fontFamily:'var(--mono)',fontSize:'10px',
       color:r.varPct!=null?(r.varPct>=0?'#4ade80':'#f87171'):'inherit'}},
-      r.varPct!=null?((r.varPct>=0?'+':'')+fP(r.varPct,2)):'—'),
+      // Display-only magnitude cap (data-integrity sweep signature #1) — varPct's denominator is
+      // that day's own actual, so a near-zero actual (closure, storm) against a normal forecast
+      // can render a nonsensical number like "-111,000%". This does NOT touch r.varPct/r.pass —
+      // grading and sorting elsewhere still see the real value; only this cell's TEXT is capped
+      // at a familiar ±300%, with a trailing '+' signaling the true value ran past the cap.
+      r.varPct!=null?((r.varPct>=0?'+':'')+fP(Math.max(-3,Math.min(3,r.varPct)),2)+(Math.abs(r.varPct)>3?'+':'')):'—'),
     td(null, r.pass===true?span({className:'pass'},'PASS'):r.pass===false?span({className:'fail'},'MISS'):r.isFuture?span({className:'proj'},'PROJ'):null),
     td({style:{textAlign:'center',verticalAlign:'top',padding:'4px 2px'}}, (()=>{
       if(!hasWxData) return span({style:{fontSize:'13px',color:'var(--text3)'},title:wxR?'No data':''},wxR?'—':'');
@@ -624,7 +629,6 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
   let scenarios = null;
   if(futureDays.length>0) {
     const base = pastTotal + futureTotal;
-    const lyVar = futureDays.reduce((a,r)=>a+(r.lyAdj>0?(r.forecast-r.lyAdj)/r.lyAdj:0),0)/futureDays.length;
     const t2avg = futureDays.reduce((a,r)=>a+r.t2,0)/futureDays.length;
     const t6avg = futureDays.reduce((a,r)=>a+r.t6,0)/futureDays.length;
     const allBull = t2avg>0&&t6avg>0, allBear = t2avg<0&&t6avg<0;
@@ -1874,7 +1878,12 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
       if(sort==='score') return (b.opsScore*0.6+b.ctrlScore*0.4)-(a.opsScore*0.6+a.ctrlScore*0.4);
       if(sort==='oepe') return (a.p.oepe||999)-(b.p.oepe||999);
       if(sort==='tpph') return (b.p.tpph||0)-(a.p.tpph||0);
-      if(sort==='labor') return (a.p.laborPct||0)-(b.p.laborPct||0);
+      // labor is "lower is better," so — unlike tpph just above, where a missing-data 0 already
+      // sorts to the bottom by construction — a bare ||0 here sorted a store with NO labor/
+      // controls data to rank #1 (best in the district). Data-integrity sweep signature #5
+      // (2026-08-09): use the same 999 "missing → worst" sentinel oepe already uses, gated on
+      // p._cov (forecast.js compute6wk's observation-count map) actually having a laborPct read.
+      if(sort==='labor') { const lv=x=>(x.p._cov&&x.p._cov.laborPct>0)?x.p.laborPct:999; return lv(a)-lv(b); }
       if(sort==='t2w') return (b.p.t2w||0)-(a.p.t2w||0);
       if(sort==='vel') return ((b.vel&&b.vel.opsScore)||0)-((a.vel&&a.vel.opsScore)||0);
       return 0;
@@ -2157,7 +2166,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     {l:'Yest',    id:'yest',  fn:()=>{const d=addDR(new Date(),-1);return{s:d,e:d,label:'Yesterday'}}},
     {l:'LW',      id:'lw',    fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-6);return{s,e,label:'Last Week'}}},
     {l:'L2W',     id:'l2w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-13);return{s,e,label:'Last 2 Weeks'}}},
-    {l:'MTD',     id:'mtd',   fn:()=>{const t=new Date();return{s:new Date(t.getFullYear(),t.getMonth(),1),e:t,label:'Month to Date'}}},
+    {l:'MTD',     id:'mtd',   fn:()=>{const t=new Date();const e=addDR(t,-1);return{s:new Date(t.getFullYear(),t.getMonth(),1),e,label:'Month to Date'}}},
     {l:'L4W',     id:'l4w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-27);return{s,e,label:'Last 4 Weeks'}}},
     {l:'L6W',     id:'l6w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-41);return{s,e,label:'Last 6 Weeks'}}},
   ];
@@ -2233,13 +2242,15 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     const mean=arr=>{const v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
     const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
     return Object.entries(map).map(([name,members])=>{
-      const locs=new Set(members.map(mm=>String(mm.loc)));
       // Aggregate from each member's ALREADY-computed p.* (auto-first via metricAvg above,
       // same as the ungrouped per-store view) — was re-deriving straight from raw ds.ctrlRows/
       // ds.laborRows/ds.opsRows here, silently reverting every column to manual-only data the
       // moment the location filter switched to Patch/Operator/State grouping (2026-08-04).
-      const curGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=DR.s&&r.date<=DR.e&&r.gc>0).reduce((x,r)=>x+r.gc,0);
-      const lyGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=lyS&&r.date<=lyE&&r.gc>0).reduce((x,r)=>x+r.gc,0);
+      // GC was missed in that fix — still read raw ds.laborRows (manual-only), unlike every
+      // other column here (data-integrity sweep signature #2). Now sums metricSeries' auto-first
+      // per-day values across the group's members, same pattern as `sales` in localStats above.
+      const curGc=members.reduce((tot,mm)=>tot+Object.values(_msSeries(ds,String(mm.loc),DR,'gc')).reduce((a,b)=>a+b,0),0);
+      const lyGc=members.reduce((tot,mm)=>tot+Object.values(_msSeries(ds,String(mm.loc),{s:lyS,e:lyE},'gc')).reduce((a,b)=>a+b,0),0);
       return {
         loc:'__grp__'+name, name, city:members.length+' store'+(members.length>1?'s':''), isGroup:true, n:members.length,
         opsScore:mean(members.map(mm=>mm.opsScore))||0, ctrlScore:mean(members.map(mm=>mm.ctrlScore))||0,
@@ -2625,7 +2636,14 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
     avgChk: {man:{src:'laborRows',f:'avgCheck'},  cloud:{src:'qsrActSummaryRows',fn:r=>r.gc>0?r.sales/r.gc:null}},
     sales:  {man:{src:'laborRows',f:'sales'},     cloud:{src:'qsrActSummaryRows',f:'sales'}},
   };
-  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); return d && !isNaN(d) && d.getTime() >= ms; };
+  // Excludes the still-open business day (businessDate(), 4am ABC cutover) — every caller uses
+  // this to build a trailing baseline/current-value window (robustBaseline over histMs/l4wMs
+  // below), so a partial today would otherwise dilute the baseline every time this panel is
+  // opened mid-day, the same distortion already fixed for the Biggest Miss table (v4.917) and
+  // the swing alarm. Unlike those two, this has no explicit test coverage yet — add one if this
+  // scorecard proves to need re-touching.
+  const _openDayMs = new Date(businessDate() + 'T00:00:00').getTime();
+  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); const t = d && !isNaN(d) ? d.getTime() : NaN; return !isNaN(t) && t >= ms && t < _openDayMs; };
   const _keep = (v, spec) => typeof v === 'number' && !isNaN(v) && (spec.keepZero || v !== 0);
   // qsr_fob is MTD-cumulative → collapse to one value per (loc,month): the final
   // (max-date) row = that month's actual. Returns [{val, num, den, date}].
@@ -3352,6 +3370,10 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   const [editNote, setEditNote] = useState('');
   const [editLoc, setEditLoc] = useState('');
   const [editDate, setEditDate] = useState(fmtDI(new Date()));
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [locFilter, setLocFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('date-desc');
 
   const allEvents = useMemo(()=>{
     const ev=[];
@@ -3362,6 +3384,39 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
     }
     return ev.sort((a,b)=>b.date-a.date);
   },[userEvents]);
+
+  const typeOptions = useMemo(()=>[...new Set(allEvents.map(e=>e.type||'other'))].sort(),[allEvents]);
+
+  // Locations ordered by tag count, highest first, each showing its count — a store with an
+  // implausible number of tagged days (450 on one store broke Dialed-In calibration district-wide,
+  // v4.910) should be the first thing visible here, not buried in an alphabetical list.
+  const locCounts = useMemo(()=>{
+    const c={};
+    for(const e of allEvents) c[e.loc]=(c[e.loc]||0)+1;
+    return Object.entries(c).sort((a,b)=>b[1]-a[1]);
+  },[allEvents]);
+  const HEAVY_TAGS = 300;
+
+  const filtered = useMemo(()=>{
+    let evs=allEvents;
+    if(typeFilter!=='all') evs=evs.filter(e=>(e.type||'other')===typeFilter);
+    if(locFilter!=='all') evs=evs.filter(e=>String(e.loc)===String(locFilter));
+    if(search.trim()){
+      const s=search.toLowerCase();
+      evs=evs.filter(e=>
+        (e.note||'').toLowerCase().includes(s)||
+        (e.label||'').toLowerCase().includes(s)||
+        (STORE_NAMES[e.loc]||e.loc).toLowerCase().includes(s)||
+        e.dk.includes(s)
+      );
+    }
+    evs=[...evs];
+    if(sortBy==='date-asc') evs.sort((a,b)=>a.date-b.date);
+    else if(sortBy==='loc') evs.sort((a,b)=>(STORE_NAMES[a.loc]||a.loc).localeCompare(STORE_NAMES[b.loc]||b.loc));
+    else if(sortBy==='type') evs.sort((a,b)=>(a.type||'other').localeCompare(b.type||'other'));
+    else evs.sort((a,b)=>b.date-a.date);
+    return evs;
+  },[allEvents,typeFilter,locFilter,search,sortBy]);
 
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
@@ -3379,7 +3434,8 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:20,overflowY:'auto'}},
     div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:900,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'auto',overflow:'hidden'}},
       div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div(null,div({style:{fontSize:'15px',fontWeight:700}},'📅 Event Calendar'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},allEvents.length+' events tagged')),
+        div(null,div({style:{fontSize:'15px',fontWeight:700}},'📅 Event Calendar'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},
+          allEvents.length+' events tagged'+(filtered.length!==allEvents.length?' · '+filtered.length+' shown':''))),
         btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');}},'+Add Event'),
         btn({className:'btn btn-sm',style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
           onClick:()=>{
@@ -3405,6 +3461,42 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
           }},'🗓 Auto-Tag Holidays'),
         btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')
       ),
+      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 18px',
+        borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
+        color:'#f59e0b',lineHeight:1.5}},
+        '⚠ ',
+        locCounts.filter(([,n])=>n>=HEAVY_TAGS).map(([l,n])=>(STORE_NAMES[l]||l)+' ('+n+')').join(', '),
+        ' — over a year of tagged days. Tagged days are skipped when the forecast looks for the ',
+        'same day last year, so heavy tagging can leave a store with no comparison at all.'),
+      div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:8,
+        alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
+        inp({type:'text',value:search,onChange:e=>setSearch(e.target.value),
+          placeholder:'Search location, type, note…',
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 8px',minWidth:180,outline:'none'}}),
+        sel({value:typeFilter,onChange:e=>setTypeFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'all'},'All Types ('+allEvents.length+')'),
+          typeOptions.map(t=>opt({key:t,value:t},
+            (EVENT_TYPES[t]?.icon||'')+' '+(EVENT_TYPES[t]?.label||t)+' ('+allEvents.filter(e=>(e.type||'other')===t).length+')'))
+        ),
+        sel({value:locFilter,onChange:e=>setLocFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'all'},'All Locations ('+locCounts.length+')'),
+          locCounts.map(([l,n])=>opt({key:l,value:l},
+            (n>=HEAVY_TAGS?'⚠ ':'')+(STORE_NAMES[l]||l)+' — '+n+' tagged'))
+        ),
+        sel({value:sortBy,onChange:e=>setSortBy(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'date-desc'},'Newest first'),
+          opt({value:'date-asc'},'Oldest first'),
+          opt({value:'loc'},'By Location'),
+          opt({value:'type'},'By Event Type')
+        )
+      ),
       (editKey!=null)&&div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)'}},
         div({style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}},
           inp({type:'date',value:editDate,onChange:e=>setEditDate(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}}),
@@ -3420,8 +3512,9 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
         )
       ),
       div({style:{overflowY:'auto',flex:1}},
-        !allEvents.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.'),
-        allEvents.map((ev,i)=>{
+        !filtered.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},
+          allEvents.length===0?'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.':'No events match your search/filter.'),
+        filtered.map((ev,i)=>{
           const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
           return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)'}},
             span({style:{fontSize:'18px'}}),ev.icon||et.icon,

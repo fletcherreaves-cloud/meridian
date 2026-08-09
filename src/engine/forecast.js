@@ -13,7 +13,7 @@ import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
 import { metricDaily, metricAvg } from './metric-source.js';
-import { weightedRecencyProjection, robustBaseline, _isNum as _stIsNum } from './smart-targets.js';
+import { weightedRecencyProjection, robustBaseline, median, mad, _isNum as _stIsNum } from './smart-targets.js';
 import { impactWeight } from './events-import.js';
 
 // ── Event Impact Registry cache (Notes 47) — { normLoc: { eventType: {home, away} } } ─────────────
@@ -435,99 +435,95 @@ function obs6(rows,loc,field,wb){
 }
 
 // SECTION 5: ANALYTICS ENGINE
-function fetchLY(lIdx,lRows,loc,date,userEvents){
+//
+// Robust, tag-INDEPENDENT replacement for "is this candidate day excluded?" (v4.924). Owner
+// directive: "the only time a date should be excluded from forecasting is if it is a true
+// anomaly in sales or GC" — tagging an event is informational (a human explanation for a swing),
+// never itself a reason to drop a day. A prior version skipped any candidate with a user-event
+// tag, full stop, with no check on whether that day's actual value was unusual at all. That
+// silently became catastrophic once a store had many tagged days: on 2026-08-08 Tishomingo had
+// 450 tagged days, so every candidate came back excluded and calibration died district-wide
+// (the fix at the time was a tag-ignoring second pass — a patch, not a redesign). This replaces
+// tag presence with the SAME median ± k·MAD outlier test already proven elsewhere in this
+// codebase (robustBaseline, Smart Targets, the "Simple" model): a candidate is dropped only if
+// its own actual value doesn't look like it belongs with its peers — the other same-DOW
+// candidates in this same offset window. Holidays are still excluded before the statistical
+// test runs, because a closure genuinely has no comparable sales to test in the first place.
+function _robustCandidates(found, k = 3) {
+  if (found.length <= 1) return found; // nothing to compare against — nothing to judge
+  const vals = found.map(f => f.v);
+  const med = median(vals), md = mad(vals, med);
+  const thr = md != null && md > 0 ? 1.4826 * md * k : Infinity;
+  const clean = found.filter(f => Math.abs(f.v - med) <= thr);
+  return clean.length ? clean : found; // never end up with zero purely from the filter
+}
+function fetchLY(lIdx,lRows,loc,date){
   // Returns the ACTUAL historical sales for the same DOW, ~52 weeks back.
   // Priority chain: -364 (same DOW, exactly 52wk), then -357/-371/-378/-350 as fallbacks.
   // NO blending across multiple dates — LY must match real data the user can verify.
-  // NO outlier dampening — that was creating synthetic values that didn't correspond
-  //   to any real sales day, breaking user trust and distorting forecasts.
-  // If a candidate is a tagged event or holiday, skip it and try the next.
+  // NO outlier dampening on the RETURNED value — that was creating synthetic values that
+  //   didn't correspond to any real sales day, breaking user trust and distorting forecasts.
+  //   The outlier test below only decides which CANDIDATE to use, never alters the value.
   const tDow = dowOf(date);
   const candidates = [-364,-357,-371,-378,-350,-385,-343];
-  const isExcluded = dt => {
-    if(isHoliday(dt)) return true;
-    if(!userEvents) return false;
-    const dk = dKey(dt);
-    return !!(userEvents[loc]&&userEvents[loc][dk]);
-  };
+  const found = [];
   for(const off of candidates){
     const dt = addD(date, off);
     if(dowOf(dt)!==tDow) continue;          // must be same day of week
-    if(isExcluded(dt)) continue;             // skip holidays/events
+    if(isHoliday(dt)) continue;             // closures: no comparable sales, not testable
     const v = fetchRow(lIdx, loc, dt, 'sales');
-    if(v>0) return v;                        // first clean actual value wins
+    if(v>0) found.push({off,v});
   }
-  // SECOND PASS — ignore the user-event tag when it has eliminated EVERY candidate.
-  //
-  // The exclusion above is meant to skip anomalous days. It silently becomes catastrophic once
-  // a store has many tagged days: on 2026-08-08 Tishomingo had 450 tagged days, so all seven
-  // offsets came back UEV and this returned 0 — for 146 of 146 eval rows. Calibration then died
-  // on "precomputed<35", and the Dialed-In 6W/4W/2W/1W columns rendered "—" for every store.
-  // Diagnosed from the live app: each rejected candidate carried a real, verified sales figure
-  // (e.g. 2025-07-25 = $6,376.90).
-  //
-  // Discarding a real historical value to avoid a tagged one is the wrong trade when the choice
-  // is between an imperfect LY and NO forecast at all. Holidays are still honoured in this pass
-  // — a Christmas closure genuinely has no comparable sales — but a routine tag no longer
-  // destroys the comparison. Preferring the -364 candidate keeps the same-week-last-year
-  // alignment the primary pass aims for.
-  for(const off of candidates){
-    const dt = addD(date, off);
-    if(dowOf(dt)!==tDow) continue;
-    if(isHoliday(dt)) continue;              // closures stay excluded — no comparable sales exist
-    const v = fetchRow(lIdx, loc, dt, 'sales');
-    if(v>0) return v;
+  if(!found.length) return 0;
+  const clean = _robustCandidates(found);
+  for(const off of candidates){             // priority order preserved among survivors
+    const hit = clean.find(f=>f.off===off);
+    if(hit) return hit.v;
   }
   return 0;
 }
 
 // Get how many days of history a store has
 // fetchLYDate — returns the actual calendar date used for the LY lookup (for UI display).
-// Mirrors fetchLY's priority chain exactly so the displayed date matches the value shown.
-function fetchLYDate(lIdx, loc, date, userEvents){
+// Mirrors fetchLY's priority chain + outlier test exactly so the displayed date always matches
+// the value fetchLY actually used — if these two drift, the UI attributes a number to the wrong day.
+function fetchLYDate(lIdx, loc, date){
   const tDow=dowOf(date);
   const candidates=[-364,-357,-371,-378,-350,-385,-343];
-  const isExcluded=dt=>{
-    if(isHoliday(dt))return true;
-    if(!userEvents)return false;
-    const dk=dKey(dt);
-    return !!(userEvents[loc]&&userEvents[loc][dk]);
-  };
-  for(const off of candidates){
-    const dt=addD(date,off);
-    if(dowOf(dt)!==tDow)continue;
-    if(isExcluded(dt))continue;
-    const v=fetchRow(lIdx,loc,dt,'sales');
-    if(v>0)return dt;
-  }
-  // Mirrors fetchLY's second pass exactly, so the DISPLAYED LY date always matches the value
-  // fetchLY actually used. If these two drift, the UI attributes a number to the wrong day.
+  const found=[];
   for(const off of candidates){
     const dt=addD(date,off);
     if(dowOf(dt)!==tDow)continue;
     if(isHoliday(dt))continue;
     const v=fetchRow(lIdx,loc,dt,'sales');
-    if(v>0)return dt;
+    if(v>0) found.push({off,dt,v});
   }
-  return addD(date,-364); // default to 52-week prior if no data
+  if(!found.length) return addD(date,-364); // default to 52-week prior if no data
+  const clean=_robustCandidates(found);
+  for(const off of candidates){
+    const hit=clean.find(f=>f.off===off);
+    if(hit) return hit.dt;
+  }
+  return addD(date,-364);
 }
 
-// fetchGC — actual historical guest count for same DOW, 52 weeks back (mirrors fetchLY fix)
-function fetchGC(lIdx,lRows,loc,date,userEvents){
+// fetchGC — actual historical guest count for same DOW, 52 weeks back (mirrors fetchLY)
+function fetchGC(lIdx,lRows,loc,date){
   const tDow=dowOf(date);
   const candidates=[-364,-357,-371,-378,-350,-385,-343];
-  const isExcluded=dt=>{
-    if(isHoliday(dt))return true;
-    if(!userEvents)return false;
-    const dk=dKey(dt);
-    return !!(userEvents[loc]&&userEvents[loc][dk]);
-  };
+  const found=[];
   for(const off of candidates){
     const dt=addD(date,off);
     if(dowOf(dt)!==tDow)continue;
-    if(isExcluded(dt))continue;
+    if(isHoliday(dt))continue;
     const v=fetchRow(lIdx,loc,dt,'gc')||fetchRow(lIdx,loc,dt,'guestCount')||0;
-    if(v>0) return v;
+    if(v>0) found.push({off,v});
+  }
+  if(!found.length) return 0;
+  const clean=_robustCandidates(found);
+  for(const off of candidates){
+    const hit=clean.find(f=>f.off===off);
+    if(hit) return hit.v;
   }
   return 0;
 }
@@ -536,8 +532,7 @@ function fetchGC(lIdx,lRows,loc,date,userEvents){
 // Returns {gcForecast, impliedCheck, normCheck, deviation, flag}
 // flag: null | 'watch' (>10%) | 'alert' (>20%)
 function gcCrossCheck(loc,date,ds,settings,salesForecast){
-  const userEvents=settings._userEvents||{};
-  const gcLY=fetchGC(ds.laborIdx,ds.laborRows,loc,date,userEvents);
+  const gcLY=fetchGC(ds.laborIdx,ds.laborRows,loc,date);
   if(!gcLY||gcLY<1)return null;
 
   // GC trend — use same trend signal as sales
@@ -1431,7 +1426,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   const todayStart=sodOf(new Date());
   const isFuture=date>anchor&&date>=todayStart;
   const eDt=settings.mode==='Back Test'?date:anchor;
-  let lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,date,settings._userEvents);
+  let lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,date);
   const noLYData=lyRaw===0;
   // For new stores (<365 days history), use the ramp model instead of LY lookup
   if(noLYData&&ds&&ds.laborRows) {
@@ -1917,7 +1912,7 @@ export {
   getWeatherNote, isWeatherExtreme, calibrateWeather,
   forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble,
   _wxCache, getForecastWeather,
-  fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales,
+  fetchRow, fetchWx, fetchLY, fetchLYDate, fetchGC, storeAgeDays, fetchRampSales,
   getDOWTrend, getDOWSpecificTrend,
   forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF,
   forecastDay, forecastRange, forecastRangeAsync,

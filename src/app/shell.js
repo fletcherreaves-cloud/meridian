@@ -4,6 +4,7 @@ import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
 import { supabase } from '../lib/supabase.js';
+import { reportRender as _traceRender } from '../utils/click-trace.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -89,6 +90,15 @@ function DatePicker({value, onChange}) {
 }
 
 function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm, betaMode, panelVis}) {
+  // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
+  // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
+  // OWN local state — a child's local update should not force the App() parent to re-render at
+  // all. Two possibilities: this component's own render is genuinely that expensive (stores is
+  // a 27-item array with per-store nav badge computation), or the App-tree instrumentation is
+  // catching an unrelated, coincidentally-overlapping commit within the 1s attribution window.
+  // This mark answers which, directly, instead of guessing further.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('AppSidebar', 'render+commit', performance.now() - _rt0); });
   const [collapsed, setCollapsed] = React.useState(false);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);

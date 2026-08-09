@@ -113,8 +113,8 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, loadOrgSchoolConfig, loadEventImpact } from '../lib/supabase.js';
-import { orgEventsToDayMap } from '../engine/events-import.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact } from '../lib/supabase.js';
+import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -183,6 +183,26 @@ function supplementLaborWithSched(laborRows, qsrActSummaryRows) {
   const fillDays = [...autoByKey.entries()].filter(([k]) => !manualByKey.has(k)).map(([, r]) => r);
   if (fillDays.length) changed = true;
   return changed ? [...kept, ...fillDays] : laborRows;
+}
+
+// ── Event-tag cloud sync (Notes 46 gap, closed) ───────────────────────────────
+// org_events + its RLS + the cloud→local hydration in the effect below were built as "the
+// cloud-first replacement for localStorage mf_events" (supabase/schema-org-events.sql), but only
+// the download direction was ever wired up — hand-entered tags (EventCalendar add/edit/delete/
+// Auto-Tag-Holidays, the scanner quick-tag DOM events, upload-triggered auto-tagging) only ever
+// wrote to this browser's localStorage, so they were invisible on any other device. This diffs
+// the day-map before/after a write and pushes the delta to org_events with the SAME table the
+// hydration effect already reads back down — no new table, no new RLS. The actual diff (what to
+// upsert/delete) is `diffUserEventsForCloudSync` in events-import.js — pure and unit-tested, so
+// the round-trip logic itself is verified without needing a live authenticated Supabase session.
+async function syncUserEventsToCloud(prev, next) {
+  try {
+    const { upserts, deleteKeys, staleKeys } = diffUserEventsForCloudSync(
+      prev, next, t => (EVENT_TYPES[t] || {}).label || null);
+    for (const { loc, dk, label } of deleteKeys) await deleteOrgEventsByLocDate(loc, dk, label);
+    for (const { loc, dk, label } of staleKeys) await deleteOrgEventsByLocDate(loc, dk, label);
+    if (upserts.length) await saveOrgEvents(upserts, { method: 'manual' });
+  } catch (e) { console.warn('[Meridian] event cloud sync failed:', e); }
 }
 
 // ── Planning hub ─────────────────────────────────────────────────────────────
@@ -1493,6 +1513,27 @@ function UploadSummaryModal({ report, onClose }) {
   );
 }
 
+// ── useDebouncedValue (v4.936 — performance) ─────────────────────────────
+// Startup fires ~32 independent setDs() calls, one per data source (labor, ops, controls,
+// weather, DAR, FOB, ...), each resolving on its own schedule. `dsDeferred` (useDeferredValue)
+// already stops one of those updates from blocking a simultaneous click, but it does nothing
+// about the AGGREGATE cost: a real ?clicktrace=1 capture showed rawStores(buildStore x27)
+// recomputing 39 times in one session — every single loader resolution triggers its own full
+// 27-store rebuild, worst case 878ms — because `ds` gets a brand-new object identity each time.
+// Restructuring all 32 call sites into one batched setDs would remove the progressive-loading
+// UX (data appearing as each source arrives) and is real surgery on the app's core data flow —
+// too much change for what's needed here. Debouncing rawStores's OWN input instead: skip every
+// intermediate `ds` identity during a burst of updates and only recompute once things go quiet
+// for `delay`ms, so a rapid-fire startup sequence pays for ONE final rebuild instead of ~32.
+function useDebouncedValue(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 function App() {
   // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
   // from production React, so the v4.917 attempt recorded nothing at all in the deployed app.
@@ -1710,7 +1751,10 @@ function App() {
         try{
           const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
           ({events:_taggedEvents,tagged:_autoTaggedCount}=autoTagHolidays(restoredDs.laborRows,_existingEvents));
-          if(_autoTaggedCount>0) localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
+          if(_autoTaggedCount>0){
+            localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
+            syncUserEventsToCloud(_existingEvents,_taggedEvents);
+          }
         }catch(e){console.warn('Auto-holiday-tag on IDB restore failed:',e);}
         // coverage and wx cache from data already in memory — no second IDB read
         const cov = coverageFromLoadedRows(labor, ops, ctrl, fob, audit, peaks, dar, weather);
@@ -2542,7 +2586,10 @@ function App() {
     }
   },[]);
 
-  const saveUserEvents = useCallback((next)=>{setUserEvents(next);try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}}, []);
+  const saveUserEvents = useCallback((next)=>{
+    setUserEvents(prev=>{syncUserEventsToCloud(prev,next);return next;});
+    try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+  }, []);
   // ── One-time migration: normalize legacy Date.toString() tag keys → YYYY-MM-DD ──
   // Tags saved before v4_164 used Date.toString() keys like "Thu Jan 23 2026 06:00:00 GMT-0600"
   // which nDK() can't match against ISO "2026-01-23". This runs once on mount and fixes them.
@@ -2645,6 +2692,7 @@ function App() {
       setUserEvents(prev=>{
         const next=JSON.parse(JSON.stringify(prev));
         tagLocs.forEach(l=>{if(!next[l])next[l]={};next[l][dk]={type,note,icon:et.icon,label:et.label};});
+        syncUserEventsToCloud(prev,next);
         try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
         return next;
       });
@@ -2654,6 +2702,7 @@ function App() {
       setUserEvents(prev=>{
         const next=JSON.parse(JSON.stringify(prev));
         if(next[loc]){delete next[loc][dk];if(!Object.keys(next[loc]).length)delete next[loc];}
+        syncUserEventsToCloud(prev,next);
         try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
         return next;
       });
@@ -2697,7 +2746,14 @@ function App() {
   // work is unchanged and the result is identical — it simply stops owning the main thread at
   // the moment of a click. The store list may lag one frame behind a fresh `ds`, which is
   // invisible here and vastly preferable to a half-second freeze per loader.
-  const dsDeferred = React.useDeferredValue(ds);
+  // 250ms: short enough that a human loading indicator doesn't register the delay, long enough
+  // to coalesce a burst of loaders resolving within the same or adjacent macrotasks (the actual
+  // shape of the 39-recompute capture) without meaningfully changing "time to usable" for
+  // loaders that are genuinely spaced out (each of those settles on its own well before the
+  // next arrives, same as today). Debounce BEFORE deferring: coalesce first, then keep the
+  // eventual real update non-blocking for whatever the user is doing when it lands.
+  const dsDebounced = useDebouncedValue(ds, 250);
+  const dsDeferred = React.useDeferredValue(dsDebounced);
   const rawStores = useMemo(()=>{
     if(!dsDeferred) return [];
     return _traceMark('rawStores(buildStore x27)', () => dsDeferred.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,dsDeferred,{...settings,targets:mergedTargets})));
@@ -2979,12 +3035,14 @@ function App() {
     // Re-sync userEvents from localStorage before the transition — autoTagHolidays
     // runs inside mergeDS and writes directly to localStorage; read it back now
     // so the transition render gets the correct events on first pass.
+    const _prevEventsForSync=userEvents;
     let _uploadEvents=null;
     try{_uploadEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');}catch(e){console.warn('userEvents re-sync after load failed:',e);}
     React.startTransition(()=>{
       setDs(currentDS);
       if(_uploadEvents) setUserEvents(_uploadEvents);
     });
+    if(_uploadEvents) syncUserEventsToCloud(_prevEventsForSync,_uploadEvents);
     try { setSignals(_traceMark('computeInsights(live)',()=>computeInsights(currentDS))); } catch(e) { console.warn('[insights] error:', e); }
     // Recompute custom signals and persist history
     if(customSignalDefs.length>0){
@@ -3411,7 +3469,7 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
+      view==='command'&&!anyModalOpen&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
         onOpenStore:s=>{goStore(s);},
         onOpenProjections:()=>setShowProj(true),
         onOpenPVSA:()=>setShowPVSA(true),
@@ -3429,9 +3487,9 @@ function App() {
           else if(modal==='fcst-accuracy')setShowFcstAccuracy&&setShowFcstAccuracy(true);
         }}),
       view==='district'&&!selStore&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
-      view==='patch'&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
-      view==='org'&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'})
+      view==='store'&&selStore&&!anyModalOpen&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
+      view==='patch'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
+      view==='org'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'})
     )  // close main content scroll area
     )  // close right panel flex-col
 
@@ -3587,6 +3645,7 @@ function App() {
               aiNote:opts&&opts.aiNote?opts.aiNote:'',
               ...(opts&&opts.aiMatched?{aiMatched:true,aiConfidence:opts.aiConfidence,source:'AI Batch Scan'}:{source:'Manual'})
             };
+            syncUserEventsToCloud(prev,next);
             try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
             return next;
           });}}))

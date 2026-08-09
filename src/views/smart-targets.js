@@ -9,6 +9,7 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
 import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
+import { businessDate } from '../engine/swing-feed.js';
 import { loadDailySales, loadGlimpse, loadQsrFob, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
 
 // The three simple trailing projectors. A 2026-07 backtest across all 27 stores
@@ -228,7 +229,13 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     const target = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const daysInMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
     const cutoff = isoOf(new Date(Date.now() - windowDays * 86400000));
-    const nowIso = isoOf(now);
+    // The still-open business day (4am ABC cutover) is excluded from every learning/backtest
+    // series below, not just clamped as an inclusive "today" boundary — a partial day would
+    // otherwise dilute the T3W window (heaviest-weighted, 21 days) every time this panel is
+    // opened mid-day, and a diluted number here can be one click ("Apply as Official") from
+    // becoming next month's actual target.
+    const openDay = businessDate();
+    const openDayDate = new Date(openDay + 'T00:00:00');
     // Known-event exclusions: one-off days the owner marked to drop from LEARNING
     // (not from the backtest, which stays a raw method-accuracy measure).
     const exclByLoc = {};
@@ -243,7 +250,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
     for (const r of (hist || [])) {
       if (!r || !r.date || !r.loc) continue;
       const d = isoOf(r.date);
-      if (d > nowIso) continue;
+      if (d >= openDay) continue;
       const v = metric.daily(r);
       if (typeof v !== 'number' || isNaN(v) || v <= 0) continue;
       const loc = locNum(r.loc);
@@ -293,7 +300,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
         // toward the good-direction quartile of like-sized same-state peers.
         const dailyW = entries.map(x => ({ date: x.d, value: x.v, weight: x.w }));
         const wl = weightedLevel(entries.map(x => ({ value: x.v, weight: x.w })));
-        const rec = weightedRecencyLevel(dailyW, { asOf: now });
+        const rec = weightedRecencyLevel(dailyW, { asOf: openDayDate });
         baseline = wl.level;
         own = _isNum(rec.level) ? rec.level : wl.level;                 // recency level
         const vol = entries.reduce((a, x) => a + (x.w || 0), 0);
@@ -320,7 +327,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
         // Falls back to the peer-anchored computeSmartTarget only if the simple
         // family can't compute (too-thin history).
         const learnSeries = entries.map(x => ({ date: x.d, value: x.v }));
-        const primary = medianProject(learnSeries, { asOf: now, targetDays: daysInMonth });
+        const primary = medianProject(learnSeries, { asOf: openDayDate, targetDays: daysInMonth });
         smart = _isNum(primary) ? primary : toMonthly(r.smart);
         if (_isNum(smart) && eventDelta) smart += eventDelta;   // known-event adjustment
         stretch = toMonthly(r.smart);

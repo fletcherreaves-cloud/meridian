@@ -160,6 +160,53 @@ export function orgEventsToDayMap(events, iconFor = () => '📌') {
   return map;
 }
 
+// Diff two `mf_events` day-maps (prev → next) into the org_events cloud writes needed to upload
+// the delta — the write half of the org_events round-trip (orgEventsToDayMap above is the read
+// half). Pure: takes a `typeLabelFor(type)` resolver instead of importing EVENT_TYPES, so this
+// stays dependency-free and testable like the rest of this file. Entries already `orgSourced`
+// are skipped as an upsert source — they came FROM org_events, re-uploading them is a no-op.
+// Every delete is scoped to the OLD entry's own label, not just (loc, date) — org_events allows
+// multiple rows per day (a sports game AND a school closure on the same date), so a bare
+// date-only delete would also destroy an unrelated same-day event still on the cloud (v4.927 —
+// found live: editing or deleting one event on a multi-event day could silently wipe a sibling).
+//
+// KNOWN GAP (PR #101 review, lower severity — inert, not destructive): orgEventsToDayMap suffixes
+// each day of a multi-day org-sourced span with " (Day N of M)", a label the underlying org_events
+// row never carries (nor does that row's date_start match any day but the first of the span). So a
+// delete/stale-cleanup derived from a multi-day org-sourced entry's local (label, dk) here matches
+// zero cloud rows — silently does nothing, rather than the wrong thing. Not a live risk in practice:
+// calendar.js's dedicated edit/delete UI for org-sourced events (saveEdit/deleteEvt/quickStatus)
+// already writes/deletes those rows correctly by orgEventId BEFORE this diff ever runs, so this path
+// is only reachable for a hand-tag override of one day of a multi-day span (rare), where the effect
+// is an orphaned-but-harmless cloud row, not data loss. Deferred rather than fixed here — fixing it
+// needs the range's true (date_start, date_end) threaded through per-day entries, which is a real
+// design change to orgEventsToDayMap's shape, not a one-line guard.
+export function diffUserEventsForCloudSync(prev, next, typeLabelFor = () => null) {
+  const upserts = []; const deleteKeys = []; const staleKeys = [];
+  const locs = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
+  for (const loc of locs) {
+    const p = (prev && prev[loc]) || {}; const n = (next && next[loc]) || {};
+    const dks = new Set([...Object.keys(p), ...Object.keys(n)]);
+    for (const dk of dks) {
+      const pe = p[dk], ne = n[dk];
+      if (pe && !ne) { deleteKeys.push({ loc, dk, label: pe.label }); continue; }
+      if (ne && !ne.orgSourced && JSON.stringify(ne) !== JSON.stringify(pe)) {
+        upserts.push({ loc, dateStart: dk, dateEnd: dk, span: false,
+          type: ne.type || 'other', label: ne.label || typeLabelFor(ne.type) || 'Event',
+          note: ne.note || null,
+          method: ne.autoTagged ? 'holiday-auto-tag' : (ne.source === 'ai_search' ? 'ai search' : 'manual') });
+        // Only a genuine EDIT (a prior local entry already existed here) risks leaving a
+        // stale duplicate under the old label — org_events allows >1 event/day, this
+        // registry allows exactly 1. A brand-new day has nothing to clear, so Auto-Tag
+        // Holidays (hundreds of new entries, zero prior local entries) skips this entirely
+        // instead of paying a serial delete round-trip per row before the bulk upsert.
+        if (pe) staleKeys.push({ loc, dk, label: pe.label });
+      }
+    }
+  }
+  return { upserts, deleteKeys, staleKeys };
+}
+
 // School District Overview sheet → per-store config (term dates + bell times) for the daypart signal.
 // Columns: Store# | City | State | District | First Day | Last Day | Start | Stop | Status | URL.
 export function parseSchoolDistricts(rows, urlByRowIndex = {}) {
