@@ -36,10 +36,17 @@ export function ModalShell({
   subHeader,
   footer,
   bodyStyle,
+  // Print-targeted hooks (e.g. eom-supervisor.js's @media print rules key off
+  // exact classNames on the backdrop/card/header) — undefined by default so
+  // ordinary callers are unaffected.
+  backdropClassName,
+  cardClassName,
+  headerClassName,
   children,
 }) {
   return div(
     {
+      className: backdropClassName,
       style: {
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex,
         display: 'flex', alignItems: 'center', justifyContent: justify, padding: 20,
@@ -48,6 +55,7 @@ export function ModalShell({
     },
     div(
       {
+        className: cardClassName,
         style: {
           background: 'var(--surf)', borderRadius: 'var(--rl)', border: '.5px solid var(--bdr2)',
           width: '100%', maxWidth, display: 'flex', flexDirection: 'column',
@@ -56,6 +64,7 @@ export function ModalShell({
       },
       div(
         {
+          className: headerClassName,
           style: {
             padding: '10px 18px', borderBottom: '.5px solid var(--bdr)',
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',

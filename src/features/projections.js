@@ -520,7 +520,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
 
 // PROJECTION WORKSPACE — Enterprise One-Stop Projection Hub
 // Wed-Tue work week | Group toggles | Inline overrides | Lock workflow
-function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections, onSaveLocked, onClose}) {
+function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections, onSaveLocked}) {
   const ALL_LOCS = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
 
   // ── State ──────────────────────────────────────────────
@@ -1367,11 +1367,6 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     // ── Header ──
     div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:800}},'📋 Projection Workspace'),
-        div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
-          'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶ · ✕ to collapse')
-      ),
       // Custom date-range inputs — only rendered when the Custom range toggle
       // (on the rail's Week card) is active. The old "Using Weekly/Monthly
       // Assignments" header badge was removed here (v4.195) since the rail's
@@ -1427,8 +1422,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
           }},'⬇ CSV'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},
           title:'View all projection lock events with dates, totals, and notes',
-          onClick:()=>setShowLockHistory(true)},'📋 History'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕')
+          onClick:()=>setShowLockHistory(true)},'📋 History')
       )
     ),
 
