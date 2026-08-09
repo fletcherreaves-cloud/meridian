@@ -10,6 +10,7 @@ import { AIInsightsTab, ModelHealthBadge } from './analytics.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -130,18 +131,15 @@ function AnomalyPanel({ds, stores, userEvents, initFilter, onSelectStore, onClos
     });
   },[ds,stores,filter,search]);
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:20,overflowY:'auto'}},
-    div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:800,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'hidden'}},
-      div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div(null,div({style:{fontSize:'15px',fontWeight:700}},'⚠ Anomaly Detection'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},anoms.length+' anomalies · '+filter)),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-      ),
-      div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
-        ['all','crit','warn'].map(f=>btn({key:f,className:'sbtn'+(filter===f?' on':''),onClick:()=>setFilter(f)},
-          {all:'All',crit:'⚠ Critical',warn:'Warning'}[f])),
-        inp({className:'srch',placeholder:'Search…',value:search,onChange:e=>setSearch(e.target.value),style:{marginLeft:'auto',width:130}})
-      ),
-      div({style:{overflowY:'auto',flex:1}},
+  return h(ModalShell,{
+    title:'⚠ Anomaly Detection', onClose, maxWidth:800, zIndex:Z.modal,
+    subtitle:anoms.length+' anomalies · '+filter,
+    subHeader: div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
+      ['all','crit','warn'].map(f=>btn({key:f,className:'sbtn'+(filter===f?' on':''),onClick:()=>setFilter(f)},
+        {all:'All',crit:'⚠ Critical',warn:'Warning'}[f])),
+      inp({className:'srch',placeholder:'Search…',value:search,onChange:e=>setSearch(e.target.value),style:{marginLeft:'auto',width:130}})
+    ),
+  },
         !ds||!ds.loaded&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},'Load real data to run anomaly detection.'),
         anoms.length===0&&ds&&ds.loaded&&div({style:{padding:30,textAlign:'center',color:'#10b981',fontSize:'13px'}},'✓ No anomalies detected for current filter.'),
         anoms.map((a,i)=>{
@@ -168,9 +166,7 @@ function AnomalyPanel({ds, stores, userEvents, initFilter, onSelectStore, onClos
               )
             )
           );
-        })
-      )
-    )
+        }),
   );
 }
 
@@ -934,22 +930,11 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
 
   const totalDistrictOpp = districtOps.reduce((a,s)=>a+(s.oepeMo||0),0);
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:'16px',overflowY:'auto'}},
-    div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1000,display:'flex',flexDirection:'column',maxHeight:'94vh',overflow:'hidden'}},
-
-      div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}},
-        div(null,
-          div({style:{fontSize:'15px',fontWeight:700}},'💡 Revenue Intelligence Engine'),
-          div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},
-            'OEPE dollar value · Unrealized revenue · Daypart erosion · Competitive pressure signals · Multi-model projections')
-        ),
-        div({style:{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}},
-          btn({onClick:()=>window.print(),className:'btn btn-sm',style:{fontSize:'9px'},title:'Print / Save as PDF'},'🖨 Print / PDF'),
-          btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-        )
-      ),
-
-      div({style:{overflowY:'auto',flex:1}},
+  return h(ModalShell,{
+    title:'💡 Revenue Intelligence Engine', onClose, maxWidth:1000, zIndex:Z.modal,
+    subtitle:'OEPE dollar value · Unrealized revenue · Daypart erosion · Competitive pressure signals · Multi-model projections',
+    headerExtra: btn({onClick:()=>window.print(),className:'btn btn-sm',style:{fontSize:'9px'},title:'Print / Save as PDF'},'🖨 Print / PDF'),
+  },
 
         // District opportunity summary
         div({style:{padding:'12px 18px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)'}},
@@ -1229,8 +1214,6 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
             )
           )
         )
-      )
-    )
   );
 }
 
@@ -2306,15 +2289,10 @@ function MultiStoreComparison({stores, ds, settings, onSelectStore, onClose}) {
   ];
   const getBest=(m,vals)=>{const nz=vals.filter(v=>v>0);if(!nz.length)return null;return m.higherBetter===false?Math.min(...nz):m.higherBetter===true?Math.max(...nz):null;};
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:'20px',overflowY:'auto'}},
-    div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:940,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'hidden'}},
-      div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div(null,
-          div({style:{fontSize:'15px',fontWeight:700}},'📊 Multi-Store Comparison'),
-          div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},selected.length>=2?selected.length+' stores selected':'Select 2–5 stores to compare')
-        ),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-      ),
+  return h(ModalShell,{
+    title:'📊 Multi-Store Comparison', onClose, maxWidth:940, zIndex:Z.modal,
+    subtitle:selected.length>=2?selected.length+' stores selected':'Select 2–5 stores to compare',
+    subHeader: div(null,
       div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:5,flexWrap:'wrap'}},
         stores.map(s=>{const idx=selected.indexOf(s.loc);const col=idx>=0?COLS[idx]:null;
           return btn({key:s.loc,style:{fontSize:'10px',padding:'3px 8px',borderRadius:4,border:`.5px solid ${col||'var(--bdr)'}`,background:col?col+'22':'transparent',color:col||'var(--text2)',cursor:'pointer',opacity:!col&&selected.length>=5?.4:1},onClick:()=>toggle(s.loc)},
@@ -2324,6 +2302,8 @@ function MultiStoreComparison({stores, ds, settings, onSelectStore, onClose}) {
       selected.length>=2&&div({style:{borderBottom:'.5px solid var(--bdr)',display:'flex'}},
         [['scorecard','Scorecard'],['chart','Radar'],['sales','Sales Trend']].map(([id,l])=>div({key:id,className:'tab'+(tab===id?' on':''),onClick:()=>setTab(id),style:{fontSize:'11px'}},l))
       ),
+    ),
+  },
       selected.length<2
         ?div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},'Select at least 2 stores to compare')
         :div({style:{overflowY:'auto',flex:1}},
@@ -2351,7 +2331,6 @@ function MultiStoreComparison({stores, ds, settings, onSelectStore, onClose}) {
           tab==='chart'&&h(CompareRadarChart,{selStores,COLS,METRICS}),
           tab==='sales'&&h(CompareLineChart,{selStores,COLS,ds})
         )
-    )
   );
 }
 
@@ -2372,13 +2351,12 @@ function AIInsightsLog({stores, settings, onClose}) {
   const upd=(id,patch)=>{const ins=insights.map(i=>i.id===id?{...i,...patch}:i);setInsights(ins);saveInsights(ins);};
   const rem=id=>{const ins=insights.filter(i=>i.id!==id);setInsights(ins);saveInsights(ins);};
   const displayed=insights.filter(i=>{if(filter==='starred'&&!i.starred)return false;if(filter==='implemented'&&!i.implemented)return false;if(filter==='pending'&&(i.implemented||i.status==='dismissed'))return false;if(search&&!i.text.toLowerCase().includes(search.toLowerCase()))return false;return true;});
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:'20px',overflowY:'auto'}},
-    div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:800,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'hidden'}},
-      div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div(null,div({style:{fontSize:'15px',fontWeight:700}},'🧠 AI Insights Log'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},insights.length+' insights · '+insights.filter(i=>i.implemented).length+' implemented')),
-        btn({className:'btn btn-sm',onClick:()=>setAddOpen(o=>!o)},addOpen?'✕ Cancel':'+ Add'),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-      ),
+  return h(ModalShell,{
+    title:'🧠 AI Insights Log', onClose, maxWidth:800, zIndex:Z.modal,
+    subtitle:insights.length+' insights · '+insights.filter(i=>i.implemented).length+' implemented',
+    headerExtra: btn({className:'btn btn-sm',onClick:()=>setAddOpen(o=>!o)},addOpen?'✕ Cancel':'+ Add'),
+    bodyStyle:{padding:'10px 18px'},
+    subHeader: div(null,
       addOpen&&div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)'}},
         div({style:{display:'flex',gap:6,marginBottom:6}},
           sel({value:addCat,onChange:e=>setAddCat(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'4px 8px'}},Object.entries(CATS).map(([k,v])=>opt({key:k,value:k},v.l))),
@@ -2393,7 +2371,8 @@ function AIInsightsLog({stores, settings, onClose}) {
         [['all','All'],['pending','Pending'],['starred','Starred'],['implemented','Done']].map(([k,l])=>btn({key:k,className:'sbtn'+(filter===k?' on':''),onClick:()=>setFilter(k)},l)),
         inp({className:'srch',placeholder:'Search...',value:search,onChange:e=>setSearch(e.target.value),style:{width:130,marginLeft:'auto'}})
       ),
-      div({style:{overflowY:'auto',flex:1,padding:'10px 18px'}},
+    ),
+  },
         !insights.length&&div({className:'empty-st'},div({className:'empty-st-t'},'No insights yet'),div({className:'empty-st-s'},'AI findings and manual notes appear here.')),
         displayed.map((ins,i)=>{const cat=CATS[ins.cat||ins.category]||CATS.other;
           return div({key:ins.id,style:{background:ins.implemented?'rgba(52,211,153,.04)':'var(--surf2)',border:`.5px solid ${ins.implemented?'rgba(52,211,153,.2)':'var(--bdr)'}`,borderRadius:'var(--r)',padding:'10px 12px',marginBottom:8}},
@@ -2413,9 +2392,7 @@ function AIInsightsLog({stores, settings, onClose}) {
               )
             )
           );
-        })
-      )
-    )
+        }),
   );
 }
 
@@ -2439,17 +2416,17 @@ function DevDashboard({ds, settings, stores, userEvents, onClose}) {
     });
   },[ds]);
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:'20px',overflowY:'auto'}},
-    div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:940,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'hidden'}},
-      div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div(null,div({style:{fontSize:'15px',fontWeight:700}},'🛠 Developer Dashboard'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},ds&&ds.loaded?'Live data — '+( ds.storeIds||[]).length+' stores':'Mock data')),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-      ),
+  return h(ModalShell,{
+    title:'🛠 Developer Dashboard', onClose, maxWidth:940, zIndex:Z.modal,
+    subtitle:ds&&ds.loaded?'Live data — '+( ds.storeIds||[]).length+' stores':'Mock data',
+    bodyStyle:{padding:'12px 18px'},
+    subHeader: div(null,
       div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:14,flexWrap:'wrap',background:'var(--surf2)'}},
         Object.entries({Labor:totals.labor,'Ops':totals.ops,'Ctrl':totals.ctrl,'Wx':totals.weather,'Peaks':totals.peaks,'Audit':totals.audit}).map(([k,v])=>div({key:k,style:{textAlign:'center',minWidth:60}},div({style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:700,color:v>0?'#10b981':'#ef4444'}},v.toLocaleString()),div({style:{fontSize:'9px',color:'var(--text3)',textTransform:'uppercase'}},k)))
       ),
       div({className:'tabs'},['audit','trace','settings_dump'].map(t2=>div({key:t2,className:'tab'+(tab===t2?' on':''),onClick:()=>setTab(t2),style:{fontSize:'11px'}},t2==='audit'?'Data Audit':t2==='trace'?'Engine Trace':'Settings Dump'))),
-      div({style:{overflowY:'auto',flex:1,padding:'12px 18px'}},
+    ),
+  },
         tab==='audit'&&(audit?div({style:{overflowX:'auto'}},
           tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
             h('thead',null,tr(null,...['Store','Labor','Ops','Ctrl','Wx','Peaks','Audit','Coverage','Status'].map(l=>th({style:{padding:'4px 8px',background:'var(--surf3)',fontSize:'8px',textTransform:'uppercase',color:'var(--text2)',textAlign:'left',borderBottom:'.5px solid var(--bdr)'}},l)))),
@@ -2487,9 +2464,7 @@ function DevDashboard({ds, settings, stores, userEvents, onClose}) {
         ),
         tab==='settings_dump'&&h('pre',{style:{fontSize:'10px',color:'var(--text2)',background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'12px',overflowX:'auto',lineHeight:1.6,maxHeight:400}},
           JSON.stringify({mode:settings.mode,cascade:settings.cascade,plusUp:settings.plusUp,tolerance:settings.tolerance,weeksBack:settings.weeksBack,scoringMode:settings.scoringMode,ctrlWeight:settings.ctrlWeight,useEmpirical:settings.useEmpirical,metricActive:settings.metricActive,storesLoaded:ds?ds.storeIds.length:0},null,2)
-        )
-      )
-    )
+        ),
   );
 }
 
