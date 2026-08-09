@@ -5301,20 +5301,7 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
   })();
   const mapeColor = m => m<4?'#10b981':m<6?'#f59e0b':m<9?'#fb923c':'#ef4444';
 
-  return div({style:{display:'flex',flexDirection:'column',height:'80vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:700}},'🎯 Dialed-In — Per-Store Calibration Engine'),
-        div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},
-          'Grid-searches '+lyWs_label+' parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.')
-      ),
-      div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
-
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
-      )
-    ),
-
+  return h(React.Fragment,null,
     // Stats bar
     div({style:{display:'flex',gap:8,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',flexWrap:'wrap'}},
       [{l:'Calibrated Stores',v:calibCount+'/'+stores.length,c:'var(--amber)'},
@@ -5642,20 +5629,7 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
   const td2 = (v,c='var(--text)',align='right') => td({style:{padding:'5px 8px',
     fontFamily:'var(--mono)',fontSize:'10px',color:c,textAlign:align}},v);
 
-  return div({style:{display:'flex',flexDirection:'column',height:'90vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:700}},'📊 Date-Range Comprehensive Report'),
-        div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},
-          'Compares all metrics for any date range across selected locations.')
-      ),
-      div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
-
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
-      )
-    ),
-
+  return h(React.Fragment,null,
     // Controls
     div({style:{padding:'12px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}},
       div(null,
@@ -5810,19 +5784,7 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
       note&&div({style:{fontSize:'9px',color:'var(--text3)',marginLeft:'auto'}},note)
     );
 
-  return div({style:{display:'flex',flexDirection:'column',height:'90vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:700}},'🔬 Forecast Audit — '+(STORE_NAMES[loc]||loc)),
-        div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},'Full transparency: every input, weight, and multiplier used to compute each day forecast.')
-      ),
-      div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
-
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
-      )
-    ),
-
+  return h(React.Fragment,null,
     div({style:{display:'flex',flex:1,overflow:'hidden'}},
       // Date selector sidebar
       div({style:{width:140,borderRight:'.5px solid var(--bdr)',overflowY:'auto',padding:'8px 0'}},
@@ -6089,24 +6051,7 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
   const activeLocs = getLocs();
   const activeLabel = scope==='store'?(STORE_NAMES[selStore]||selStore||''):scopeLabel;
 
-  return div({style:{display:'flex',flexDirection:'column',height:'90vh',maxHeight:'90vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
-      display:'flex',alignItems:'center',gap:10,flexShrink:0}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:800,display:'flex',alignItems:'center',gap:6}},
-          span({style:{fontSize:'16px'}},'🧠'),
-          'Intelligence Brief',
-          div({style:{fontSize:'10px',background:'var(--adim)',color:'var(--amber)',
-            padding:'1px 8px',borderRadius:10,fontWeight:600}},activeLabel)
-        ),
-        div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-          'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap')
-      ),
-      btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',
-        color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
-    ),
-
+  return h(React.Fragment,null,
     // Store selector (for multi-store scopes)
     scope!=='store'&&div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',flexShrink:0}},
@@ -6387,16 +6332,11 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
     );
   };
 
-  return div({style:{display:'flex',flexDirection:'column',height:'92vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
+  return h(React.Fragment,null,
+    // Controls toolbar
+    div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',flexShrink:0}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:800}},['📊 Projection vs Actuals Report']),
-        div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-          ['AI forecast accuracy vs actual results — click any cell to expand daily detail'])
-      ),
-      div({style:{display:'flex',gap:6,marginLeft:8,alignItems:'center',flexWrap:'wrap'}},
+      div({style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
         div({style:{fontSize:'9px',color:'var(--text3)'}},'Look back:'),
         [2,4,6].map(n=>btn({key:n,className:'btn btn-sm'+(weeksBack===n?' btn-a':''),
           style:{fontSize:'9px',padding:'2px 8px'},onClick:()=>setWeeksBack(n)},n+'W')),
@@ -6429,8 +6369,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
           a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
           a.download='ProjVsActuals_L'+weeksBack+'W_'+dKey(new Date())+'.csv';
           a.click();
-        }},'⬇ CSV'),
-        btn({className:'btn btn-sm',onClick:onClose},['✕ Close'])
+        }},'⬇ CSV')
       )
     ),
     // Body
@@ -9233,15 +9172,10 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
 
   // TH (table header style) now comes from the module-scope constant above.
 
-  return div({style:{display:'flex',flexDirection:'column',height:'92vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
+  return h(React.Fragment,null,
+    // Controls toolbar
+    div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',flexShrink:0}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:800}},'⚡ Dialed-In vs Default Comparison'),
-        div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-          'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement')
-      ),
       // Week picker
       div({style:{display:'flex',alignItems:'center',gap:6,marginLeft:8}},
         btn({className:'btn btn-sm',onClick:()=>navWeek(-1)},'← Prev'),
@@ -9278,8 +9212,7 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
             const fn='DIComparison_'+weekStart+'_'+groupBy+'.csv';
             const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
             a.download=fn;a.click();
-          }},'⬇ CSV'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕')
+          }},'⬇ CSV')
       )
     ),
 

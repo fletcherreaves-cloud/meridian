@@ -121,6 +121,7 @@ import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { newsContextFor } from '../engine/swing-context.js';
 import { LocationIntelligence } from '../features/location-intel.js';
@@ -3664,22 +3665,26 @@ function App() {
       onRun:()=>{setShowProjBriefSA(false);setShowProj(true);},
       onClose:()=>setShowProjBriefSA(false)
     }),
-    showReport&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:1100,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>setShowReport(false)})
-      )
+    showReport&&h(ModalShell,{
+      title:'📊 Date-Range Comprehensive Report',
+      subtitle:'Compares all metrics for any date range across selected locations.',
+      onClose:()=>setShowReport(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
+    },
+      h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>setShowReport(false)})
     ),
-    showDICompare&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:370,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:1100,display:'flex',flexDirection:'column',maxHeight:'94vh'}},
-        h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>setShowDICompare(false)})
-      )
+    showDICompare&&h(ModalShell,{
+      title:'⚡ Dialed-In vs Default Comparison',
+      subtitle:'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement',
+      onClose:()=>setShowDICompare(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>setShowDICompare(false)})
     ),
-    showPVSA&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:360,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:1100,display:'flex',flexDirection:'column',maxHeight:'94vh'}},
-        h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
-      )
+    showPVSA&&h(ModalShell,{
+      title:'📊 Projection vs Actuals Report',
+      subtitle:'AI forecast accuracy vs actual results — click any cell to expand daily detail',
+      onClose:()=>setShowPVSA(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
     showHelp&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:400,
       display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
@@ -3751,17 +3756,18 @@ function App() {
         )
       )
     ),
-    showBrief&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:720,display:'flex',flexDirection:'column',maxHeight:'92vh'}},
-        h(LocationBrief,{
-          stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
-          ds,settings,
-          scope:briefScope.scope,
-          scopeLabel:briefScope.label,
-          onClose:()=>setShowBrief(false)
-        })
-      )
+    showBrief&&h(ModalShell,{
+      icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
+      subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',
+      onClose:()=>setShowBrief(false),maxWidth:720,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(LocationBrief,{
+        stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
+        ds,settings,
+        scope:briefScope.scope,
+        scopeLabel:briefScope.label,
+        onClose:()=>setShowBrief(false)
+      })
     ),
     showAbout&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:370,
       display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
@@ -3843,19 +3849,23 @@ function App() {
           h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}))
       )
     ),
-        showAudit&&selStore&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:980,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(ForecastAudit,{
-          store:stores.find(s=>s.loc===(selStore&&selStore.loc?selStore.loc:selStore))||null,
-          ds,settings,userEvents,dateRange,
-          onClose:()=>setShowAudit(false)
-        })
-      )
+        showAudit&&selStore&&h(ModalShell,{
+      title:'🔬 Forecast Audit — '+(STORE_NAMES[(selStore&&selStore.loc?selStore.loc:selStore)]||(selStore&&selStore.loc?selStore.loc:selStore)),
+      subtitle:'Full transparency: every input, weight, and multiplier used to compute each day forecast.',
+      onClose:()=>setShowAudit(false),maxWidth:980,zIndex:Z.modal,bodyStyle:{padding:0,display:'flex',overflow:'hidden'}
+    },
+      h(ForecastAudit,{
+        store:stores.find(s=>s.loc===(selStore&&selStore.loc?selStore.loc:selStore))||null,
+        ds,settings,userEvents,dateRange,
+        onClose:()=>setShowAudit(false)
+      })
     ),
-    showDialedIn&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:1100,margin:'0 auto',maxHeight:'90vh',display:'flex',flexDirection:'column'}},
-        h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
-      )
+    showDialedIn&&h(ModalShell,{
+      title:'🎯 Dialed-In — Per-Store Calibration Engine',
+      subtitle:'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',
+      onClose:()=>setShowDialedIn(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
+    },
+      h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
     ),
     // ── First-run tutorial overlay (zIndex 500 — above everything) ──────────
     showTutorial&&h(TutorialOverlay,{onClose:()=>setShowTutorial(false)}),
