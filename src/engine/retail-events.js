@@ -233,11 +233,17 @@ export function findFloatingDateMismatches(userEvents, rules = RETAIL_EVENT_RULE
       const year = +dk.slice(0, 4);
       const insts = rule.instances(year) || [];
       if (!insts.length) continue; // rule has nothing to say about this year (e.g. unverified FL window) — not a claim of wrongness
-      const anchors = insts.map(inst => shoppingAnchor(inst.start, inst.end));
-      if (anchors.some(a => dk >= a.start && dk <= a.end)) continue; // matches a real window — fine
+      // Check against the rule's TRUE window (inst.start..inst.end), NOT shoppingAnchor()'s
+      // collapsed sub-window. shoppingAnchor exists to pick a short tagging window when GENERATING
+      // a new event for a long statutory span (e.g. fl_back_to_school's full month) — it is not a
+      // definition of "correct". A day legitimately tagged elsewhere in that month (outside the
+      // anchored opening weekend) is real and must not be flagged, let alone deleted by the
+      // one-click cleanup below. (Found in PR review before merge — the anchored check would have
+      // made this cleanup tool destroy correctly-tagged FL back-to-school days.)
+      if (insts.some(inst => dk >= inst.start && dk <= inst.end)) continue; // matches the real window — fine
       out.push({
         loc, dk, label: String(ev.label).trim(), ruleKey: rule.key,
-        expected: anchors.map(a => a.start === a.end ? a.start : (a.start + '→' + a.end)),
+        expected: insts.map(inst => inst.start === inst.end ? inst.start : (inst.start + '→' + inst.end)),
       });
     }
   }

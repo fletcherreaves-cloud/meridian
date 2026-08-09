@@ -169,6 +169,18 @@ export function orgEventsToDayMap(events, iconFor = () => '📌') {
 // multiple rows per day (a sports game AND a school closure on the same date), so a bare
 // date-only delete would also destroy an unrelated same-day event still on the cloud (v4.927 —
 // found live: editing or deleting one event on a multi-event day could silently wipe a sibling).
+//
+// KNOWN GAP (PR #101 review, lower severity — inert, not destructive): orgEventsToDayMap suffixes
+// each day of a multi-day org-sourced span with " (Day N of M)", a label the underlying org_events
+// row never carries (nor does that row's date_start match any day but the first of the span). So a
+// delete/stale-cleanup derived from a multi-day org-sourced entry's local (label, dk) here matches
+// zero cloud rows — silently does nothing, rather than the wrong thing. Not a live risk in practice:
+// calendar.js's dedicated edit/delete UI for org-sourced events (saveEdit/deleteEvt/quickStatus)
+// already writes/deletes those rows correctly by orgEventId BEFORE this diff ever runs, so this path
+// is only reachable for a hand-tag override of one day of a multi-day span (rare), where the effect
+// is an orphaned-but-harmless cloud row, not data loss. Deferred rather than fixed here — fixing it
+// needs the range's true (date_start, date_end) threaded through per-day entries, which is a real
+// design change to orgEventsToDayMap's shape, not a one-line guard.
 export function diffUserEventsForCloudSync(prev, next, typeLabelFor = () => null) {
   const upserts = []; const deleteKeys = []; const staleKeys = [];
   const locs = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);

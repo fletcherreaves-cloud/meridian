@@ -178,6 +178,23 @@ describe('findFloatingDateMismatches', () => {
     expect(findFloatingDateMismatches(outside)).toHaveLength(1);
   });
 
+  it('does not flag a day correctly tagged inside a long window but outside its anchored ' +
+     'opening weekend (PR #101 review finding, pre-merge)', () => {
+    // fl_back_to_school 2026 is a full statutory month (2026-07-20 → 2026-08-20,
+    // FL_BTS_WINDOWS). shoppingAnchor() collapses that to just the opening Fri-Sun for NEW-tag
+    // scheduling purposes — that collapsed window is not a definition of "correct", so a real day
+    // legitimately tagged elsewhere in the true month (here, deep in early August) must survive.
+    const map = { '38609': { '2026-08-05': { type: 'tax_free', label: 'Florida Back-to-School Tax Holiday' } } };
+    expect(findFloatingDateMismatches(map)).toEqual([]);
+  });
+
+  it('still flags a day genuinely outside the long window entirely', () => {
+    const map = { '38609': { '2026-09-01': { type: 'tax_free', label: 'Florida Back-to-School Tax Holiday' } } };
+    const out = findFloatingDateMismatches(map);
+    expect(out).toHaveLength(1);
+    expect(out[0].ruleKey).toBe('fl_back_to_school');
+  });
+
   it('checks each store independently', () => {
     const map = blackFridayRuleSpan('20475');
     map['43380'] = { '2026-11-27': { type: 'black_friday', label: 'Black Friday' } }; // correct at this store
