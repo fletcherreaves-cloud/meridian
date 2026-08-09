@@ -6,6 +6,7 @@ import {
   getOrgRoles, saveOrgRoles, pushOrgRolesToSupabase,
   defaultPermissionsForLevel, makeRoleId,
 } from '../engine/permissions.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h    = React.createElement;
 const div  = (p,...c) => h('div',p,...c);
@@ -483,38 +484,20 @@ export function AdminPanel({ onClose, orgRoles: initRoles, setOrgRoles: setAppRo
     { key:'roles', label:'Roles & Permissions' },
   ];
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:200,
-    display:'flex',alignItems:'center',justifyContent:'center'}},
-    div({style:{width:'min(960px,96vw)',maxHeight:'90vh',background:SURF,
-      borderRadius:R,display:'flex',flexDirection:'column',overflow:'hidden',
-      boxShadow:'0 20px 60px rgba(0,0,0,.4)',border:`1px solid ${BDR}`}},
-
-      // Header
-      div({style:{display:'flex',alignItems:'center',gap:12,padding:'14px 20px',
-        borderBottom:`1px solid ${BDR}`,flexShrink:0,background:S2}},
-        span({style:{fontSize:20}},'👤'),
-        div({style:{flex:1}},
-          div({style:{fontWeight:700,fontSize:15,color:TEXT}},'User Management'),
-          div({style:{fontSize:11,color:TEXT3}},'Manage users, roles, permissions, and store assignments')),
-        btn({onClick:onClose,style:{background:'none',border:`1px solid ${BDR}`,color:TEXT2,
-          borderRadius:R,padding:'4px 10px',fontSize:11,cursor:'pointer'}},'✕ Close')
-      ),
-
-      // Tab bar
-      div({style:{display:'flex',gap:0,borderBottom:`1px solid ${BDR}`,flexShrink:0}},
-        ...tabs.map(t => btn({key:t.key,onClick:()=>setTab(t.key),
-          style:{padding:'9px 18px',background:'none',border:'none',
-            borderBottom:tab===t.key?`2px solid ${AMBER}`:'2px solid transparent',
-            color:tab===t.key?AMBER:TEXT2,fontSize:12,fontWeight:tab===t.key?700:400,
-            cursor:'pointer',transition:'all .15s',marginBottom:-1}},
-          t.label))
-      ),
-
-      // Body
-      div({style:{flex:1,overflowY:'auto',padding:20}},
-        tab==='users' && h(UsersTab,{orgRoles}),
-        tab==='roles' && h(RolesTab,{orgRoles,setOrgRoles:handleSetRoles})
-      )
-    )
+  return h(ModalShell,{
+    title:'User Management', icon:'👤', onClose, maxWidth:960, zIndex:Z.modal,
+    subtitle:'Manage users, roles, permissions, and store assignments',
+    bodyStyle:{padding:20},
+    subHeader: div({style:{display:'flex',gap:0,borderBottom:`1px solid ${BDR}`,flexShrink:0}},
+      ...tabs.map(t => btn({key:t.key,onClick:()=>setTab(t.key),
+        style:{padding:'9px 18px',background:'none',border:'none',
+          borderBottom:tab===t.key?`2px solid ${AMBER}`:'2px solid transparent',
+          color:tab===t.key?AMBER:TEXT2,fontSize:12,fontWeight:tab===t.key?700:400,
+          cursor:'pointer',transition:'all .15s',marginBottom:-1}},
+        t.label))
+    ),
+  },
+    tab==='users' && h(UsersTab,{orgRoles}),
+    tab==='roles' && h(RolesTab,{orgRoles,setOrgRoles:handleSetRoles}),
   );
 }

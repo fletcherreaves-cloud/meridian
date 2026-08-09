@@ -30,8 +30,10 @@ export function ModalShell({
   onClose,
   maxWidth = 640,
   zIndex = Z.modal,
+  justify = 'center',
   closeOnBackdrop = false,
   headerExtra,
+  subHeader,
   footer,
   bodyStyle,
   children,
@@ -40,7 +42,7 @@ export function ModalShell({
     {
       style: {
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        display: 'flex', alignItems: 'center', justifyContent: justify, padding: 20,
       },
       onClick: closeOnBackdrop ? (e => { if (e.target === e.currentTarget) onClose?.(); }) : undefined,
     },
@@ -68,6 +70,7 @@ export function ModalShell({
         headerExtra || null,
         btn({ className: 'btn btn-sm', style: CLOSE_STYLE, onClick: onClose, 'aria-label': 'Close' }, '✕'),
       ),
+      subHeader || null,
       div({ style: { flex: 1, overflowY: 'auto', ...bodyStyle } }, children),
       footer ? div({ style: { padding: '10px 18px', borderTop: '.5px solid var(--bdr)', flexShrink: 0 } }, footer) : null,
     ),
