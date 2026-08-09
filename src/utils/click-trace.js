@@ -57,11 +57,19 @@ export function mark(name, fn) {
 // React commit timings, via the built-in Profiler. mark() can only wrap plain function calls —
 // it cannot see inside React's render/commit, which is precisely where the unattributed time
 // was hiding: on 2026-08-08 the three named startup spans accounted for 325ms of 169,537ms.
-let _renders = [];   // { phase, actual, base }
+//
+// Aggregated totals (count/worst/total per id) answer "is this slow overall" but not "what was
+// the user doing" — the same gap longtask attribution already closes via _lastClick. Every
+// render entry gets the same treatment (2026-08-09: a fix that should have cut the worst single
+// render measured no better on re-test, and the aggregate view gave no way to tell whether the
+// worst render was one-time startup cost or a specific recurring click — this closes that gap).
+let _renders = [];   // { id, phase, actual, base, at, label }
 export function reportRender(id, phase, actualDuration, baseDuration) {
   if (!_on) return;
   if (actualDuration < 3) return;
-  _renders.push({ id, phase, actual: actualDuration, base: baseDuration });
+  const at = performance.now();
+  const near = _lastClick && (at - _lastClick.at) < 1000 && (at - _lastClick.at) > -50;
+  _renders.push({ id, phase, actual: actualDuration, base: baseDuration, at, label: near ? _lastClick.label : '(no click — startup/background)' });
   if (_renders.length > 600) _renders.shift();
   if (actualDuration >= 200)
     console.log(`%c[click-trace] React ${phase} ${Math.round(actualDuration)}ms  (${id})`, 'color:#fb923c');
@@ -114,6 +122,13 @@ function buildReportLines() {
     Object.entries(by).sort((a, b) => b[1].total - a[1].total).slice(0, 12)
       .forEach(([k, s2]) =>
         lines.push(`${k}  ${s2.n}x · worst ${Math.round(s2.worst)}ms · total ${Math.round(s2.total)}ms`));
+
+    // Aggregates answer "is this slow" but not "what were you doing" — list the individual
+    // worst renders with their attributed click so a specific repeat offender is visible
+    // instead of hiding inside an average.
+    lines.push('', '── slowest individual renders (what click preceded each) ──');
+    [..._renders].sort((a, b) => b.actual - a.actual).slice(0, 10)
+      .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})  ←  ${r.label}`));
   }
   return lines;
 }
