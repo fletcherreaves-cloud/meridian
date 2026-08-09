@@ -1428,7 +1428,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},
           title:'View all projection lock events with dates, totals, and notes',
           onClick:()=>setShowLockHistory(true)},'📋 History'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕ Close')
+        btn({className:'btn btn-sm',onClick:onClose},'✕')
       )
     ),
 

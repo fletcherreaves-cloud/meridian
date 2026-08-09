@@ -1455,7 +1455,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         div({style:{fontSize:40,marginBottom:12}},'📊'),
         div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
         div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load an Operations Report or Labor Analysis.'),
-        btn({className:'btn btn-sm',onClick:onClose},'Close')));
+        btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
     div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
@@ -1861,7 +1861,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       div({style:{fontSize:40,marginBottom:12}},'👷'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Labor Data Loaded'),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load a Labor Analysis or Operations Report to populate this dashboard.'),
-      !embedded&&btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      !embedded&&btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   // ── KPI cards ──
   const kpiCards=()=>{

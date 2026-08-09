@@ -2305,7 +2305,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
         div({style:{fontSize:40,marginBottom:12}},'🎯'),
         div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
         div({style:{fontSize:'11px',lineHeight:1.6,marginBottom:16}},'Load an Operations Report or Labor Analysis to generate the Priority Brief.'),
-        btn({className:'btn btn-sm',onClick:onClose},'Close')));
+        btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:451,display:'flex',flexDirection:'column',paddingTop:20}},
     div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
@@ -2541,7 +2541,7 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
       div({style:{fontSize:40,marginBottom:12}},'🔬'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load a Labor Analysis or Operations Report to run the Why Engine.'),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:464,
     display:'flex',alignItems:'flex-start',justifyContent:'center',padding:20,paddingTop:24}},
@@ -2977,7 +2977,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
       div({style:{fontSize:40,marginBottom:12}},'🥗'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},qsrFobRows===null?'Loading FOB data…':'No FOB Data Yet'),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},qsrFobRows===null?'Checking the cloud FOB stream…':'The cloud FOB stream (qsr_fob) is empty for now — or load an Operations Report file (its FOB sheet parses automatically) for Total Food Cost detail.'),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
     div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
@@ -5041,7 +5041,7 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
             critStores.length+' stores with critical issues · '+warnStores.length+' stores on watch · '+
             storeFindings.reduce((a,x)=>a+x.crits.length,0)+' total critical flags')
         ),
-        btn({className:'btn btn-sm',onClick:onClose},'✕ Close')
+        btn({className:'btn btn-sm',onClick:onClose},'✕')
       ),
 
       // Tab bar
@@ -9276,7 +9276,7 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
             const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
             a.download=fn;a.click();
           }},'⬇ CSV'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕ Close')
+        btn({className:'btn btn-sm',onClick:onClose},'✕')
       )
     ),
 
