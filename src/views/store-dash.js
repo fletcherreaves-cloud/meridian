@@ -2363,25 +2363,22 @@ function PerformanceCalculator({stores, ds, settings, onClose}) {
   const [laborP, setLaborP] = uSt(22);
   const [avgChk, setAvgChk] = uSt(10.50);
 
-  // Compute baseline actuals from last 6W data. oepe/laborPct/tpph/sales/gc route through
-  // metric-source.js's auto-first resolver (2026-08-06) — these are just slider STARTING
+  // Compute baseline actuals from last 6W data. oepe/laborPct/tpph/sales/gc/avgCheck/avgRate
+  // all route through metric-source.js's auto-first resolver — these are just slider STARTING
   // POINTS the user freely adjusts from, so staleness here was always low-stakes (unlike a
-  // live monitoring number), but the fix is the same one-line swap used everywhere else this
-  // session, and closes out the last item on cleanup-backlog.md's Class 2 sweep. avgCheck/
-  // avgRate have no registered auto source yet (not worth adding just for this calculator),
-  // so those two stay on the manual-laborRows-only average.
+  // live monitoring number). avgCheck and avgRate (derived: laborPct×sales÷actHrs) are both
+  // in METRIC_SOURCES now (data-integrity sweep, MEDIUM-confidence item — the old comment here
+  // claiming "no registered auto source yet" for them was stale).
   const baseline = uM(()=>{
     const cutoff = addDR(new Date(),-42);
     const range = {s: cutoff, e: new Date()};
-    const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.sales>0);
-    const avg = (rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v>0);return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
     const baseOepe  = metricAvg(ds,selLoc,range,'oepe') || 140;
     const baseLab   = (metricAvg(ds,selLoc,range,'laborPct')||.22) * 100;
-    const baseChk   = avg(lR,'avgCheck') || 10.50;
+    const baseChk   = metricAvg(ds,selLoc,range,'avgCheck') || 10.50;
     const baseDailySales = metricAvg(ds,selLoc,range,'sales') || 12000;
     const baseGC    = metricAvg(ds,selLoc,range,'gc') || Math.round(baseDailySales/baseChk);
     const baseTpph  = metricAvg(ds,selLoc,range,'tpph') || 5.5;
-    const baseHours = baseDailySales * (baseLab/100) / (avg(lR,'avgRate')||15);
+    const baseHours = baseDailySales * (baseLab/100) / (metricAvg(ds,selLoc,range,'avgRate')||15);
     return {baseOepe,baseLab,baseChk,baseDailySales,baseGC,baseTpph,baseHours};
   },[ds,selLoc]);
 

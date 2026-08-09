@@ -7876,23 +7876,25 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[ds&&ds.laborRows&&ds.laborRows.length,stores&&stores.length]);
 
-  const weeklyTrend=React.useMemo(()=>{    if(!ds?.laborRows?.length)return[];
+  // Auto-first (data-integrity sweep signature #2, MEDIUM item) — was ds.laborRows only,
+  // manual-only; sits next to code elsewhere in this view that already migrated OEPE/Labor/
+  // T-Reds for the same reason.
+  const weeklyTrend=React.useMemo(()=>{    if(!ds?.loaded||!allLocs?.length)return[];
     const wsd=settings?.weekStartDay??3;
     const getWS=d=>{const w=new Date(d);while(w.getDay()!==wsd)w.setDate(w.getDate()-1);w.setHours(0,0,0,0);return w;};
+    const sumSales=range=>allLocs.reduce((tot,loc)=>tot+Object.values(metricSeries(ds,loc,range,'sales')).reduce((a,b)=>a+b,0),0);
     const result=[];
     for(let w=6;w>=1;w--){
       const ws=getWS(addD(today,-(w*7))),we=addD(new Date(ws),6);we.setHours(23,59,59,999);
-      const wRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=ws&&r.date<=we&&allLocs.includes(String(r.loc)));
-      const sales=wRows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
+      const sales=sumSales({s:ws,e:we});
       if(!sales){result.push({label:'—',sales:0,vsLY:null});continue;}
       const lyWs=addD(new Date(ws),-364),lyWe=addD(new Date(we),-364);
-      const lyRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=lyWs&&r.date<=lyWe&&allLocs.includes(String(r.loc)));
-      const lySales=lyRows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
+      const lySales=sumSales({s:lyWs,e:lyWe});
       result.push({label:ws.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
         sales,lySales,vsLY:lySales>0?(sales-lySales)/lySales:null});
     }
     return result;
-  },[ds?.laborRows?.length,allLocs]);
+  },[ds,allLocs,settings?.weekStartDay]);
 
   // ── Leaderboard store rankings ────────────────────────────────────────
   const lbData=React.useMemo(()=>{
