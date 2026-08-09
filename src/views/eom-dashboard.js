@@ -2080,11 +2080,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return d >= countWindowStart(period);
   }, [period]);
 
-  return div({ style: { padding: '20px', maxWidth: '1200px', margin: '0 auto' } },
-    // header
-    div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' } },
+  return h(React.Fragment, null,
+    // toolbar
+    div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' } },
       div(null,
-        h('h2', { style: { margin: 0, fontSize: '20px', color: 'var(--text)' } }, '📦 Inventory Control'),
         span({ style: { fontSize: '12px', color: 'var(--text3)' } },
           mode === 'eom'
             ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
@@ -2191,8 +2190,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           title: 'Pull fresh Variance / Raw-Item detail now',
           style: { background: 'rgba(245,188,0,.14)', color: '#f5bc00', border: '1px solid rgba(245,188,0,.4)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: pulling === 'variance' ? 'default' : 'pointer' },
         }, pulling === 'variance' ? '…' : '↻ Variance'),
-        pullMsg && span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : '#f87171', maxWidth: '260px' } }, pullMsg.text),
-        onClose && h('button', { onClick: onClose, style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '20px', cursor: 'pointer' } }, '✕'))),
+        pullMsg && span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : '#f87171', maxWidth: '260px' } }, pullMsg.text))),
 
     // location picker — state pills (All / OK / FL) + single-store dropdown
     div({ style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' } },

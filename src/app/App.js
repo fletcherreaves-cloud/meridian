@@ -3843,11 +3843,11 @@ function App() {
           h(EOMSupervisorPanel,{ds,settings,supabase}))
       )
     ),
-        showEOMDash&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1240,position:'relative'}},
-        div({style:{overflowY:'auto',maxHeight:'92vh'}},
-          h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}))
-      )
+        showEOMDash&&h(ModalShell,{
+      title:'📦 Inventory Control',
+      onClose:()=>setShowEOMDash(false),maxWidth:1240,zIndex:Z.nested,bodyStyle:{padding:'20px'}
+    },
+      h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)})
     ),
         showAudit&&selStore&&h(ModalShell,{
       title:'🔬 Forecast Audit — '+(STORE_NAMES[(selStore&&selStore.loc?selStore.loc:selStore)]||(selStore&&selStore.loc?selStore.loc:selStore)),
