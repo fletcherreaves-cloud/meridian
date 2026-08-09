@@ -158,6 +158,37 @@ describe('calibrateStore — successful calibration', () => {
   });
 });
 
+// ── signature #4 (data-integrity sweep): the still-open business day must not
+// leak into the 6W/4W/2W/1W period MAPEs — same defect class v4.917 fixed for
+// the Biggest Miss table, reached here through a separate function.
+describe('calibrateStore — excludes the still-open business day from period MAPEs', () => {
+  it('a partial "today" row (with a resolvable LY) does not move mape6w/4w/2w/1w', async () => {
+    const ds = buildDs();
+    const baseline = await calibrateStore(LOC, ds, BASE_SETTINGS);
+    if (baseline._why) return;
+
+    // Today's row, wildly different from every other day, PLUS its LY counterpart
+    // (exactly 364 days back) so fetchLY resolves and the row is actually eligible
+    // to be scored — without the LY row, it would be skipped for an unrelated
+    // reason (lyRaw<=0) and the test would pass without exercising the fix.
+    const today = new Date(); today.setHours(12, 0, 0, 0);
+    const todayLY = new Date(today); todayLY.setDate(todayLY.getDate() - 364);
+    const rowsWithToday = [
+      ...ds.laborRows,
+      { loc: LOC, date: today, sales: 1, laborPct: 0.28 },
+      { loc: LOC, date: todayLY, sales: 9000, laborPct: 0.28 },
+    ];
+    const dsWithToday = { ...ds, laborRows: rowsWithToday, laborIdx: buildLaborIdx(rowsWithToday), laborByLoc: { [LOC]: rowsWithToday } };
+    const withToday = await calibrateStore(LOC, dsWithToday, BASE_SETTINGS);
+    if (withToday._why) return;
+
+    expect(withToday.mape6w).toBe(baseline.mape6w);
+    expect(withToday.mape4w).toBe(baseline.mape4w);
+    expect(withToday.mape2w).toBe(baseline.mape2w);
+    expect(withToday.mape1w).toBe(baseline.mape1w);
+  });
+});
+
 // ── runPeriodTotalBacktest (Period-Total Scoreboard, v4.534) ────────────────
 
 describe('runPeriodTotalBacktest — guards', () => {

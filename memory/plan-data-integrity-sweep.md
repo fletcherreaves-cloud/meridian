@@ -36,6 +36,39 @@ every instance produced a number that was *plausible but wrong* — the worst ki
 nobody investigates a number that looks reasonable. `businessDate()` (4am ABC cutover) already
 exists as the shared helper; the sweep is finding every place that should use it and does not.
 
+## Signature #4 — SWEPT (2026-08-09)
+
+An Explore pass enumerated candidates beyond the 3 already-fixed instances (swing-feed
+`weeklyBuckets`, store-dash "Biggest Miss" v4.917, count-completeness threshold). 7 more sites
+matched, all fixed the same way — exclude the still-open business day via `businessDate()` (or
+the store-dash `RankingView`'s own `addDR(now,-1)` convention, matched locally for consistency):
+
+1. `src/engine/backtest.js` `_computePeriodMape` — Dialed-In 6W/4W/2W/1W MAPE columns.
+2. `src/views/above-store-onepager.js` MTD range.
+3. `src/views/labor-tools.js` — both PERIODS arrays (2wk/4wk/6wk/mtd/3m/6m/ytd all ended at
+   literal "today"; graded against a tight ±0.5–1.5pt band, the most user-visible of the group).
+4. `src/views/store-dash.js` `UnifiedTargetsPanel`'s `_inRangeMs` — no upper bound at all.
+5. `src/views/smart-targets.js` — the live panel's `now` was passed straight through as `asOf`
+   to `weightedRecencyLevel`/`medianProject`; the engine functions themselves were already
+   correct (exclusive `dt < end`), the bug was purely in the caller's boundary, one day away
+   from being baked into `monthly_targets` via "Apply as Official."
+6. `src/views/analytics.js` `StoreOnePager` (print/export narrative).
+7. `src/views/store-dash.js` `RankingView`'s `MTD` preset — its own LW/L2W/L4W/L6W siblings
+   already excluded today; only MTD was missed.
+
+Explicitly checked and left alone: `pace-to-target.js`/`CurrentMonthPaceSection` (correct
+day-elapsed pacing), `schedule-summary.js` `normLaborPct` (handles it via a value-band filter,
+not a date cutoff — different mechanism, same correctness), `backtest.js`'s main "Full" MAPE
+(already has a 14-day cutoff), and every preset that already did `addDR(now,-1)`.
+
+Regression guards added (class-level, not per-instance): `backtest.test.js` — a partial "today"
+row with a resolvable LY must not move mape6w/4w/2w/1w; `smart-targets.test.js` — `windowRate`
+excludes a row dated exactly at the exclusive `asOf` boundary, the contract every live caller
+above depends on.
+
+Signatures 1 (ratio >0 guard), 2 (ds.\*Rows direct reads), 3 (unit mismatches), 5 (missing vs
+zero), 6 (exclusion-eliminates-everything) are still open.
+
 ## Method
 
 1. Enumerate sites per signature (the counts above are a first pass, already run).

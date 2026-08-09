@@ -6,6 +6,7 @@ import { forecastDay, getModelAssignment, saveModelOverride, compute6wk, calcOps
   effectivePlusUp, fetchLY, getStoreOrg, getDOWSpecificTrend, getWxAdj, _masgnInvalidate } from '../engine/forecast.js';
 import { TH } from '../utils/fmt.js';
 import { metricSeries } from './metric-source.js';
+import { businessDate } from './swing-feed.js';
 
 // CALIBRATE STORE — Per-store grid search for optimal forecast params
 // v4.195 rewrite: previously the grid search's evaluation formula was a
@@ -689,8 +690,14 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   // LY still resolves against ds.laborIdx below, which is correct — laborRows holds multi-year
   // history (back to 2022-01-01), so a recent day's -364 lookup lands in real data even though
   // the recent END of that table is stale.
+  // Excludes the still-open business day (see businessDate() in swing-feed.js) — otherwise a
+  // day that has only rung its sales SO FAR gets compared against a whole-day forecast, the
+  // same defect v4.917 fixed for the Biggest Miss table, just reached here through a separate
+  // function that read straight off Date.now() instead.
+  const _openDay=businessDate();
   const _periodSeries=metricSeries(ds,loc,{s:new Date(Date.now()-6*7*864e5),e:new Date()},'sales');
   const _periodRowsAll=Object.entries(_periodSeries)
+    .filter(([dk])=>dk<_openDay)
     .map(([dk,v])=>({loc,date:new Date(dk+'T00:00:00'),sales:v}))
     .sort((a,b)=>a.date-b.date);
 

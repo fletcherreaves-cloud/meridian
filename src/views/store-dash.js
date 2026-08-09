@@ -2157,7 +2157,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     {l:'Yest',    id:'yest',  fn:()=>{const d=addDR(new Date(),-1);return{s:d,e:d,label:'Yesterday'}}},
     {l:'LW',      id:'lw',    fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-6);return{s,e,label:'Last Week'}}},
     {l:'L2W',     id:'l2w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-13);return{s,e,label:'Last 2 Weeks'}}},
-    {l:'MTD',     id:'mtd',   fn:()=>{const t=new Date();return{s:new Date(t.getFullYear(),t.getMonth(),1),e:t,label:'Month to Date'}}},
+    {l:'MTD',     id:'mtd',   fn:()=>{const t=new Date();const e=addDR(t,-1);return{s:new Date(t.getFullYear(),t.getMonth(),1),e,label:'Month to Date'}}},
     {l:'L4W',     id:'l4w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-27);return{s,e,label:'Last 4 Weeks'}}},
     {l:'L6W',     id:'l6w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-41);return{s,e,label:'Last 6 Weeks'}}},
   ];
@@ -2625,7 +2625,14 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
     avgChk: {man:{src:'laborRows',f:'avgCheck'},  cloud:{src:'qsrActSummaryRows',fn:r=>r.gc>0?r.sales/r.gc:null}},
     sales:  {man:{src:'laborRows',f:'sales'},     cloud:{src:'qsrActSummaryRows',f:'sales'}},
   };
-  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); return d && !isNaN(d) && d.getTime() >= ms; };
+  // Excludes the still-open business day (businessDate(), 4am ABC cutover) — every caller uses
+  // this to build a trailing baseline/current-value window (robustBaseline over histMs/l4wMs
+  // below), so a partial today would otherwise dilute the baseline every time this panel is
+  // opened mid-day, the same distortion already fixed for the Biggest Miss table (v4.917) and
+  // the swing alarm. Unlike those two, this has no explicit test coverage yet — add one if this
+  // scorecard proves to need re-touching.
+  const _openDayMs = new Date(businessDate() + 'T00:00:00').getTime();
+  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); const t = d && !isNaN(d) ? d.getTime() : NaN; return !isNaN(t) && t >= ms && t < _openDayMs; };
   const _keep = (v, spec) => typeof v === 'number' && !isNaN(v) && (spec.keepZero || v !== 0);
   // qsr_fob is MTD-cumulative → collapse to one value per (loc,month): the final
   // (max-date) row = that month's actual. Returns [{val, num, den, date}].

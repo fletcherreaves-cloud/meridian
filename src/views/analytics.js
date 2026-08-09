@@ -988,9 +988,12 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     const cutoff = period==='mtd'
       ? new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       : addD(new Date(), -(periodDays[period]||28));
-    const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.sales>0);
-    const oR = (ds.opsRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff);
-    const cR = (ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff);
+    // Excludes the still-open business day — otherwise a partial today averages into the
+    // printed one-pager's narrative sentences (labor%/OEPE/sales) as if it were a full day.
+    const _openDay = new Date(businessDate()+'T00:00:00');
+    const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay&&r.sales>0);
+    const oR = (ds.opsRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay);
+    const cR = (ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay);
     const lyR= (ds.laborRows||[]).filter(r=>{
       const ly=new Date(r.date); ly.setFullYear(ly.getFullYear()-1);
       return String(r.loc)===selLoc&&r.date>=addD(cutoff,-364)&&r.date<addD(new Date(),-364)&&r.sales>0;

@@ -3,6 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB } from '../constants.js';
 import { avg6, forecastDay, getModelAssignment, saveModelOverride } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
+import { businessDate } from '../engine/swing-feed.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
@@ -1335,15 +1336,19 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
 
   const today = new Date();
   const addDx = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+  // Trailing windows end on the last CLOSED business day (businessDate() accounts for the 4am
+  // ABC cutover), not literal "today" — otherwise a still-filling day averages into labor%/TPPH/
+  // OEPE against the tight red-yellow-green grading bands below as if it were a complete day.
+  const lastClosed = addDx(new Date(businessDate()+'T00:00:00'), -1);
   const PERIODS=[
-    {id:'2wk', l:'2 Wk',    fn:()=>({s:sodOf(addDx(today,-13)),  e:today})},
-    {id:'4wk', l:'4 Wk',    fn:()=>({s:sodOf(addDx(today,-27)),  e:today})},
-    {id:'6wk', l:'6 Wk',    fn:()=>({s:sodOf(addDx(today,-41)),  e:today})},
-    {id:'mtd', l:'MTD',     fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1),e:today})},
+    {id:'2wk', l:'2 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-13)),  e:lastClosed})},
+    {id:'4wk', l:'4 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-27)),  e:lastClosed})},
+    {id:'6wk', l:'6 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-41)),  e:lastClosed})},
+    {id:'mtd', l:'MTD',     fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1),e:lastClosed})},
     {id:'lm',  l:'Last Mo', fn:()=>({s:new Date(today.getFullYear(),today.getMonth()-1,1),e:new Date(today.getFullYear(),today.getMonth(),0)})},
-    {id:'3m',  l:'3 Mo',    fn:()=>({s:sodOf(addDx(today,-89)),  e:today})},
-    {id:'6m',  l:'6 Mo',    fn:()=>({s:sodOf(addDx(today,-179)), e:today})},
-    {id:'ytd', l:'YTD',     fn:()=>({s:new Date(today.getFullYear(),0,1),e:today})},
+    {id:'3m',  l:'3 Mo',    fn:()=>({s:sodOf(addDx(lastClosed,-89)),  e:lastClosed})},
+    {id:'6m',  l:'6 Mo',    fn:()=>({s:sodOf(addDx(lastClosed,-179)), e:lastClosed})},
+    {id:'ytd', l:'YTD',     fn:()=>({s:new Date(today.getFullYear(),0,1),e:lastClosed})},
     {id:'custom',l:'Custom',fn:()=>({s:cStart?new Date(cStart+'T00:00:00'):null,e:cEnd?new Date(cEnd+'T00:00:00'):null})},
   ];
   const curP  = PERIODS.find(p=>p.id===selPeriod)||PERIODS[1];
@@ -1664,20 +1669,23 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
 
   const today = new Date();
   const addDx = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+  // Trailing windows end on the last CLOSED business day, not literal "today" — see the
+  // matching comment in the sibling PERIODS array above.
+  const lastClosed = addDx(new Date(businessDate()+'T00:00:00'), -1);
 
   const PERIODS = [
     // sodOf() normalizes start to midnight local time so the start day's rows
     // (stored at noon UTC) are never excluded by a time-of-day mismatch.
     // Offset is (n-1) so that n calendar days are always returned:
-    //   sodOf(addDx(today,-13)) = midnight 13 days ago → today = 14 days ✓
-    {id:'2wk',  l:'2 Wk',   fn:()=>({s:sodOf(addDx(today,-13)),  e:today})},
-    {id:'4wk',  l:'4 Wk',   fn:()=>({s:sodOf(addDx(today,-27)),  e:today})},
-    {id:'6wk',  l:'6 Wk',   fn:()=>({s:sodOf(addDx(today,-41)),  e:today})},
-    {id:'mtd',  l:'MTD',    fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1), e:today})},
+    //   sodOf(addDx(lastClosed,-13)) = midnight 13 days before lastClosed → lastClosed = 14 days ✓
+    {id:'2wk',  l:'2 Wk',   fn:()=>({s:sodOf(addDx(lastClosed,-13)),  e:lastClosed})},
+    {id:'4wk',  l:'4 Wk',   fn:()=>({s:sodOf(addDx(lastClosed,-27)),  e:lastClosed})},
+    {id:'6wk',  l:'6 Wk',   fn:()=>({s:sodOf(addDx(lastClosed,-41)),  e:lastClosed})},
+    {id:'mtd',  l:'MTD',    fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1), e:lastClosed})},
     {id:'lm',   l:'Last Mo',fn:()=>({s:new Date(today.getFullYear(),today.getMonth()-1,1), e:new Date(today.getFullYear(),today.getMonth(),0)})},
-    {id:'3m',   l:'3 Mo',   fn:()=>({s:sodOf(addDx(today,-89)),  e:today})},
-    {id:'6m',   l:'6 Mo',   fn:()=>({s:sodOf(addDx(today,-179)), e:today})},
-    {id:'ytd',  l:'YTD',    fn:()=>({s:new Date(today.getFullYear(),0,1), e:today})},
+    {id:'3m',   l:'3 Mo',   fn:()=>({s:sodOf(addDx(lastClosed,-89)),  e:lastClosed})},
+    {id:'6m',   l:'6 Mo',   fn:()=>({s:sodOf(addDx(lastClosed,-179)), e:lastClosed})},
+    {id:'ytd',  l:'YTD',    fn:()=>({s:new Date(today.getFullYear(),0,1), e:lastClosed})},
     {id:'ly',   l:'Last Yr',fn:()=>({s:new Date(today.getFullYear()-1,0,1), e:new Date(today.getFullYear()-1,11,31)})},
     {id:'custom',l:'Custom',fn:()=>({s:cStart?new Date(cStart+'T00:00:00'):null, e:cEnd?new Date(cEnd+'T00:00:00'):null})},
   ];
