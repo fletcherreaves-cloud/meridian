@@ -87,21 +87,28 @@ function printBuckets(title, unit, rows, denomKey, valueKey, edges) {
 // of by denominator magnitude — answers "by what hour does this normalize" directly, rather than
 // "how many dollars/guests does it take" (printBuckets above). hour_slot is the END hour of a
 // 1-hour block (e.g. slot '6' = 5am-6am), same convention as HourlyDetail/dt-speedofservice.js.
-function printHourBuckets(title, unit, rows, hourKey, valueKey) {
+// `baseline`, when given (e.g. 100 for a ratio-to-plan metric), adds a "bias" column =
+// median - baseline — the signal for a SYSTEMATIC over/under-projection pattern at that hour,
+// as distinct from IQR (noise/spread). A consistently negative bias at the same hour across many
+// days points at the projection source itself (QSRSoft/LifeLenz's hourly curve), not at Meridian's
+// math — exactly the kind of pattern worth logging for its own sake, per the owner's ask.
+function printHourBuckets(title, unit, rows, hourKey, valueKey, baseline = null) {
   console.log(`\n── ${title} (by hour-of-day, value in ${unit}) ──`);
   const byHour = {};
   for (const r of rows) { const h = String(r[hourKey]); (byHour[h] = byHour[h] || []).push(r[valueKey]); }
   const hours = Object.keys(byHour).sort((a, b) => (+a) - (+b));
   const fmt = x => x === 0 ? '12a' : x <= 11 ? `${x}a` : x === 12 ? '12p' : `${x - 12}p`;
-  console.log('hour block'.padEnd(12) + 'n'.padEnd(8) + 'p10'.padEnd(10) + 'p25'.padEnd(10) + 'median'.padEnd(10) + 'p75'.padEnd(10) + 'p90'.padEnd(10) + 'IQR');
+  const biasHdr = baseline != null ? 'bias(med-' + baseline + ')' : '';
+  console.log('hour block'.padEnd(12) + 'n'.padEnd(8) + 'p10'.padEnd(10) + 'p25'.padEnd(10) + 'median'.padEnd(10) + 'p75'.padEnd(10) + 'p90'.padEnd(10) + 'IQR'.padEnd(8) + biasHdr);
   for (const h of hours) {
     const end = parseInt(h, 10);
     const label = isNaN(end) ? h : `${fmt((end - 1 + 24) % 24)}-${fmt(end)}`;
     const st = bucketStats(byHour[h]);
     if (!st) { console.log(label.padEnd(12) + '0'); continue; }
+    const bias = baseline != null ? (st.median - baseline >= 0 ? '+' : '') + (st.median - baseline).toFixed(1) : '';
     console.log(label.padEnd(12) + String(st.n).padEnd(8) +
       st.p10.toFixed(1).padEnd(10) + st.p25.toFixed(1).padEnd(10) + st.median.toFixed(1).padEnd(10) +
-      st.p75.toFixed(1).padEnd(10) + st.p90.toFixed(1).padEnd(10) + st.iqr.toFixed(1));
+      st.p75.toFixed(1).padEnd(10) + st.p90.toFixed(1).padEnd(10) + st.iqr.toFixed(1).padEnd(8) + bias);
   }
 }
 
@@ -231,8 +238,8 @@ if (!SKIP_HOURLY) {
   // the first business hour plausibly clears what a single store would take all morning to reach.
   printBuckets('Sales Pace % (cumulative $ so far, district)', '%', paceSamples.filter(r => r.doneProj > 0), 'doneProj', 'pacePct', [1, 500, 1000, 2500, 5000, 10000, 20000, 40000]);
   printBuckets('GC Pace % (cumulative guests so far, district)', '%', paceSamples.filter(r => r.doneProjGC > 0), 'doneProjGC', 'gcPacePct', [1, 25, 50, 100, 250, 500, 1000, 2000]);
-  printHourBuckets('Sales Pace % (district)', '%', paceSamples.filter(r => r.doneProj > 0), 'hourSlot', 'pacePct');
-  printHourBuckets('GC Pace % (district)', '%', paceSamples.filter(r => r.doneProjGC > 0), 'hourSlot', 'gcPacePct');
+  printHourBuckets('Sales Pace % (district)', '%', paceSamples.filter(r => r.doneProj > 0), 'hourSlot', 'pacePct', 100);
+  printHourBuckets('GC Pace % (district)', '%', paceSamples.filter(r => r.doneProjGC > 0), 'hourSlot', 'gcPacePct', 100);
 
   // ════════════════════════════════════════════════════════════════════════════════════════════
   // D) Per-store cumulative pace vs historical mean — aggregateByStore's salesPct (StoreRow's
@@ -260,11 +267,44 @@ if (!SKIP_HOURLY) {
   console.log(`${storePaceSamples.length} cumulative per-store same-day snapshots (one per completed `
     + `hour, ${Object.keys(byStoreDate).length} store-days).\n`);
   printBuckets('Store Sales Pace % (cumulative $ vs own mean)', '%', storePaceSamples.filter(r => r.meanSales > 0), 'meanSales', 'salesPct', [1, 25, 50, 100, 250, 500, 1000, 2500]);
-  printHourBuckets('Store Sales Pace % (per-store)', '%', storePaceSamples.filter(r => r.meanSales > 0), 'hourSlot', 'salesPct');
+  printHourBuckets('Store Sales Pace % (per-store)', '%', storePaceSamples.filter(r => r.meanSales > 0), 'hourSlot', 'salesPct', 100);
 
   console.log('\nNote: signals.js\'s separate per-hour "Baseline Anomalies" detector (not measured here) already');
   console.log('has its own MIN_MEAN=300 floor on this same mean_sales field — lower priority, already guarded,');
   console.log('though whether 300 was itself measured or just chosen is unconfirmed. See the sweep memory doc.');
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // E) STANDALONE (non-cumulative) per-hour actual vs projected. Answers two distinct owner
+  // questions: (1) does comparing hour-by-hour instead of cumulative look different — expectation
+  // was worse, since cumulative gets a "free" smoothing benefit from summing multiple hours'
+  // dollars together as the day progresses, which a standalone single hour never gets; and (2) is
+  // there a SYSTEMATIC (not just noisy) over/under-projection pattern by hour-of-day, worth
+  // logging in its own right — a persistent bias at the same hour across many days would point at
+  // the projection source itself (QSRSoft/LifeLenz's hourly curve), not at Meridian's math, and
+  // would be a real, actionable "manually override this hour's projection" candidate. Reuses
+  // paceRows already fetched for C/D — no new query.
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  console.log(`\n\n═══ E) STANDALONE (non-cumulative) per-hour actual vs projected ═══`);
+  const byDateHourAll = {};
+  for (const r of paceRows) {
+    const k = r.dt + '|' + r.hour_slot;
+    const b = byDateHourAll[k] || (byDateHourAll[k] = { hourSlot: r.hour_slot, actual: 0, proj: 0 });
+    b.actual += r.product_sales || 0; b.proj += r.proj_sales_dollars || 0;
+  }
+  const standaloneDistrict = Object.values(byDateHourAll)
+    .filter(b => b.proj > 0).map(b => ({ hourSlot: b.hourSlot, ratio: b.actual / b.proj * 100 }));
+  printHourBuckets('Standalone hourly Sales % (district, non-cumulative)', '%', standaloneDistrict, 'hourSlot', 'ratio', 100);
+
+  const standaloneStore = paceRows
+    .filter(r => (r.proj_sales_dollars || 0) > 0)
+    .map(r => ({ hourSlot: r.hour_slot, ratio: (r.product_sales || 0) / r.proj_sales_dollars * 100 }));
+  printHourBuckets('Standalone hourly Sales % (per-store, non-cumulative)', '%', standaloneStore, 'hourSlot', 'ratio', 100);
+
+  console.log('\nCompare these IQR/bias columns directly against Part C\'s "Sales Pace % (district)" and');
+  console.log('Part D\'s "Store Sales Pace % (per-store)" tables above — same hour labels, same baseline');
+  console.log('(100), non-cumulative here vs cumulative-so-far there. A persistent BIAS at the same hour');
+  console.log('across many days (not just a wide IQR) is the pattern worth investigating in the projection');
+  console.log('source itself, separate from whatever Meridian decides to do about display/suppression.');
 } else {
   console.log('\n(--skip-hourly: parts B, C, and D not run)');
 }
