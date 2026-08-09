@@ -1268,7 +1268,7 @@ async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
   // ── Auto-tag holidays before building the pack ─────────────────────────────
   // Ensures holidays are persisted to localStorage AND excluded from review.
   // Uses HOLIDAY_MAP which covers 2019-2028 (yr-7 to yr+2).
-  let autoHolTagged=0;
+  let autoHolTagged=0; const _newlyTagged=[];
   for(const row of allAnoms[loc]) {
     const dk=normRow(row);
     if(!dk||(uev[loc]&&uev[loc][dk])) continue;
@@ -1278,10 +1278,17 @@ async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
       uev[loc][dk]={label:hol.label||String(hol),tagLabel:hol.label||String(hol),
         type:'holiday',source:'Auto-Holiday Scan',aiMatched:false,
         note:'Auto-tagged during Review Pack generation'};
-      autoHolTagged++;
+      autoHolTagged++; _newlyTagged.push({loc,dk,label:hol.label||String(hol)});
     }
   }
-  if(autoHolTagged>0){try{localStorage.setItem('mf_events',JSON.stringify(uev));}catch{}}
+  if(autoHolTagged>0){
+    try{localStorage.setItem('mf_events',JSON.stringify(uev));}catch{}
+    // This is a standalone function (no onUpdate callback reaches it), so push straight to
+    // org_events instead — same table every other write path in this file already uses.
+    try{ saveOrgEvents(_newlyTagged.map(t=>({loc:t.loc,dateStart:t.dk,dateEnd:t.dk,span:false,
+      type:'holiday',label:t.label,note:'Auto-tagged during Review Pack generation'})),
+      {method:'manual'}); }catch(e){console.warn('[Meridian] review-pack holiday sync failed:',e);}
+  }
 
   // ── Build review rows: exclude all tagged (includes just-tagged holidays) ──
   const rows=(allAnoms[loc]||[]).filter(r=>{

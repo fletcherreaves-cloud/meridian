@@ -3221,6 +3221,15 @@ export async function deleteOrgEvent(id) {
   const { error } = await supabase.from('org_events').delete().eq('id', id);
   return { error: error?.message || null };
 }
+// Delete every org_events row for one (loc, date) — org_events allows more than one event per
+// day (multiple sports games, a festival plus a school closure); the hand-tag registry
+// (EventCalendar/EventRegistryModal, the localStorage `mf_events` map) allows exactly one. Used
+// before a manual single-day upsert so a changed tag/label doesn't leave a stale duplicate row.
+export async function deleteOrgEventsByLocDate(loc, dateStr) {
+  if (!supabase || !loc || !dateStr) return { error: null };
+  const { error } = await supabase.from('org_events').delete().eq('loc', String(loc)).eq('date_start', dateStr);
+  return { error: error?.message || null };
+}
 // Update a single org_events row by id (in-app editing: time/opponent/impact/status/note changes).
 // patch keys are camelCase; mapped to columns here. Only provided keys are written.
 export async function updateOrgEvent(id, patch = {}) {
