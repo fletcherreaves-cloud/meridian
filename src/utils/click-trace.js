@@ -123,12 +123,24 @@ function buildReportLines() {
       .forEach(([k, s2]) =>
         lines.push(`${k}  ${s2.n}x · worst ${Math.round(s2.worst)}ms · total ${Math.round(s2.total)}ms`));
 
-    // Aggregates answer "is this slow" but not "what were you doing" — list the individual
-    // worst renders with their attributed click so a specific repeat offender is visible
-    // instead of hiding inside an average.
-    lines.push('', '── slowest individual renders (what click preceded each) ──');
-    [..._renders].sort((a, b) => b.actual - a.actual).slice(0, 10)
-      .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})  ←  ${r.label}`));
+    // Background/startup churn (ds re-resolving as each loader finishes — a separate, real,
+    // already-documented issue, see v4.212's own comments on ~32 setDs call sites) and actual
+    // click-triggered jank are two different problems. Mixing them into one "top 10 slowest"
+    // list lets startup noise bury the click data entirely — exactly what happened on the
+    // 2026-08-09 capture, where all 10 slowest entries were startup and zero were clicks, even
+    // though the reported complaint is specifically about clicks. Split them.
+    const withClick = _renders.filter(r => r.label !== '(no click — startup/background)');
+    const noClick = _renders.filter(r => r.label === '(no click — startup/background)');
+    lines.push('', `── slowest CLICK-attributed renders (${withClick.length} of ${_renders.length} total) ──`);
+    if (!withClick.length) {
+      lines.push('(none — every recorded render happened with no click in the preceding second; the slowness above is background/startup work, not a click)');
+    } else {
+      [...withClick].sort((a, b) => b.actual - a.actual).slice(0, 10)
+        .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})  ←  ${r.label}`));
+    }
+    lines.push('', `── slowest background/startup renders (${noClick.length} of ${_renders.length} total) ──`);
+    [...noClick].sort((a, b) => b.actual - a.actual).slice(0, 5)
+      .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})`));
   }
   return lines;
 }
