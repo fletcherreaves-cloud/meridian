@@ -84,24 +84,29 @@ function joinMonthly(aRows, aFn, bRows, bFn) {
   return pairs;
 }
 
-// Aggregate daily laborRows into monthly summaries (sales-weighted averages)
+// Aggregate daily laborRows into monthly summaries (sales-weighted averages).
+// Data-integrity sweep signature #5 (2026-08-09): laborW/tpphW used to divide by the SAME
+// shared `sales` denominator that includes every day with real sales, even days whose
+// laborPct/tpph was missing — a missing metric silently contributed a 0 numerator while its
+// full sales still counted in the denominator, skewing the average toward zero. Each metric now
+// tracks its own sales-weighted denominator, built only from days that actually had that metric.
 function monthlyLaborSummary(laborRows) {
   const byKey = {};
   for (const r of laborRows) {
     if (!r.date || !(r.sales > 0)) continue;
     const k = r.loc + '_' + _mKey(r.date);
-    if (!byKey[k]) byKey[k] = { loc: r.loc, date: r.date, sales: 0, laborW: 0, tpphW: 0, otHrs: 0, n: 0 };
+    if (!byKey[k]) byKey[k] = { loc: r.loc, date: r.date, sales: 0, laborW: 0, laborWSales: 0, tpphW: 0, tpphWSales: 0, otHrs: 0, n: 0 };
     const b = byKey[k];
     b.sales += r.sales;
-    b.laborW += (r.laborPct || 0) * r.sales;
-    b.tpphW  += (r.tpph     || 0) * r.sales;
+    if (r.laborPct != null) { b.laborW += r.laborPct * r.sales; b.laborWSales += r.sales; }
+    if (r.tpph != null)     { b.tpphW  += r.tpph     * r.sales; b.tpphWSales  += r.sales; }
     b.otHrs  += (r.otHrs    || 0);
     b.n++;
   }
   return Object.values(byKey).map(b => ({
     ...b,
-    laborPct: b.sales > 0 ? b.laborW / b.sales : null,
-    tpph:     b.sales > 0 ? b.tpphW  / b.sales : null,
+    laborPct: b.laborWSales > 0 ? b.laborW / b.laborWSales : null,
+    tpph:     b.tpphWSales  > 0 ? b.tpphW  / b.tpphWSales  : null,
   }));
 }
 
@@ -143,18 +148,21 @@ function monthlyFieldTotal(rows, field) {
   return Object.values(byKey).map(b => ({ loc: b.loc, date: b.date, [field]: b.total }));
 }
 
-// Extended monthly labor summary including avgCheck, gc, avgRate
+// Extended monthly labor summary including avgCheck, gc, avgRate. Same signature-#5 fix as
+// monthlyLaborSummary above — laborW/tpphW get their own coverage-weighted denominators instead
+// of sharing `sales` (which already correctly happens for avgCheck/avgRate here via checkN/rateN;
+// laborPct/tpph were the two fields that were missed).
 function monthlyLaborExtended(laborRows) {
   const byKey = {};
   for (const r of laborRows) {
     if (!r.date || !(r.sales > 0)) continue;
     const k = normLoc(r.loc || '') + '_' + _mKey(r.date);
-    if (!byKey[k]) byKey[k] = { loc: r.loc, date: r.date, sales: 0, laborW: 0, tpphW: 0, otHrs: 0,
+    if (!byKey[k]) byKey[k] = { loc: r.loc, date: r.date, sales: 0, laborW: 0, laborWSales: 0, tpphW: 0, tpphWSales: 0, otHrs: 0,
       gcSum: 0, checkSum: 0, checkN: 0, rateSum: 0, rateN: 0, n: 0 };
     const b = byKey[k];
     b.sales   += r.sales;
-    b.laborW  += (r.laborPct || 0) * r.sales;
-    b.tpphW   += (r.tpph || 0) * r.sales;
+    if (r.laborPct != null) { b.laborW += r.laborPct * r.sales; b.laborWSales += r.sales; }
+    if (r.tpph != null)     { b.tpphW  += r.tpph     * r.sales; b.tpphWSales  += r.sales; }
     b.otHrs   += (r.otHrs || 0);
     if (r.gc > 0) b.gcSum += r.gc;
     if (r.avgCheck > 0) { b.checkSum += r.avgCheck; b.checkN++; }
@@ -163,8 +171,8 @@ function monthlyLaborExtended(laborRows) {
   }
   return Object.values(byKey).map(b => ({
     ...b,
-    laborPct: b.sales > 0 ? b.laborW / b.sales : null,
-    tpph:     b.sales > 0 ? b.tpphW / b.sales : null,
+    laborPct: b.laborWSales > 0 ? b.laborW / b.laborWSales : null,
+    tpph:     b.tpphWSales  > 0 ? b.tpphW  / b.tpphWSales  : null,
     avgCheck: b.checkN > 0 ? b.checkSum / b.checkN : null,
     avgRate:  b.rateN > 0 ? b.rateSum / b.rateN : null,
   }));
@@ -955,4 +963,4 @@ export function computeInsights(ds) {
   return results;
 }
 
-export { signalStrength };
+export { signalStrength, monthlyLaborSummary, monthlyLaborExtended };
