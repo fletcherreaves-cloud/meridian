@@ -114,7 +114,7 @@ const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').th
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact } from '../lib/supabase.js';
-import { orgEventsToDayMap } from '../engine/events-import.js';
+import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -192,35 +192,15 @@ function supplementLaborWithSched(laborRows, qsrActSummaryRows) {
 // Auto-Tag-Holidays, the scanner quick-tag DOM events, upload-triggered auto-tagging) only ever
 // wrote to this browser's localStorage, so they were invisible on any other device. This diffs
 // the day-map before/after a write and pushes the delta to org_events with the SAME table the
-// hydration effect already reads back down — no new table, no new RLS.
-// Entries already `orgSourced` are skipped: they came FROM org_events, so re-uploading them is a
-// no-op that would just waste API calls every time this fires.
+// hydration effect already reads back down — no new table, no new RLS. The actual diff (what to
+// upsert/delete) is `diffUserEventsForCloudSync` in events-import.js — pure and unit-tested, so
+// the round-trip logic itself is verified without needing a live authenticated Supabase session.
 async function syncUserEventsToCloud(prev, next) {
   try {
-    const upserts = []; const deleteKeys = []; const staleKeys = [];
-    const locs = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
-    for (const loc of locs) {
-      const p = (prev && prev[loc]) || {}; const n = (next && next[loc]) || {};
-      const dks = new Set([...Object.keys(p), ...Object.keys(n)]);
-      for (const dk of dks) {
-        const pe = p[dk], ne = n[dk];
-        if (pe && !ne) { deleteKeys.push({ loc, dk }); continue; }
-        if (ne && !ne.orgSourced && JSON.stringify(ne) !== JSON.stringify(pe)) {
-          upserts.push({ loc, dateStart: dk, dateEnd: dk, span: false,
-            type: ne.type || 'other', label: ne.label || (EVENT_TYPES[ne.type] || {}).label || 'Event',
-            note: ne.note || null,
-            method: ne.autoTagged ? 'holiday-auto-tag' : (ne.source === 'ai_search' ? 'ai search' : 'manual') });
-          // Only a genuine EDIT (a prior local entry already existed here) risks leaving a
-          // stale duplicate under the old label — org_events allows >1 event/day, this
-          // registry allows exactly 1. A brand-new day has nothing to clear, so Auto-Tag
-          // Holidays (hundreds of new entries, zero prior local entries) skips this entirely
-          // instead of paying a serial delete round-trip per row before the bulk upsert.
-          if (pe) staleKeys.push({ loc, dk });
-        }
-      }
-    }
-    for (const { loc, dk } of deleteKeys) await deleteOrgEventsByLocDate(loc, dk);
-    for (const { loc, dk } of staleKeys) await deleteOrgEventsByLocDate(loc, dk);
+    const { upserts, deleteKeys, staleKeys } = diffUserEventsForCloudSync(
+      prev, next, t => (EVENT_TYPES[t] || {}).label || null);
+    for (const { loc, dk, label } of deleteKeys) await deleteOrgEventsByLocDate(loc, dk, label);
+    for (const { loc, dk, label } of staleKeys) await deleteOrgEventsByLocDate(loc, dk, label);
     if (upserts.length) await saveOrgEvents(upserts, { method: 'manual' });
   } catch (e) { console.warn('[Meridian] event cloud sync failed:', e); }
 }

@@ -3235,13 +3235,19 @@ export async function deleteOrgEvent(id) {
   const { error } = await supabase.from('org_events').delete().eq('id', id);
   return { error: error?.message || null };
 }
-// Delete every org_events row for one (loc, date) — org_events allows more than one event per
-// day (multiple sports games, a festival plus a school closure); the hand-tag registry
-// (EventCalendar/EventRegistryModal, the localStorage `mf_events` map) allows exactly one. Used
-// before a manual single-day upsert so a changed tag/label doesn't leave a stale duplicate row.
-export async function deleteOrgEventsByLocDate(loc, dateStr) {
+// Delete org_events row(s) for one (loc, date), optionally scoped to a single label — org_events
+// allows more than one event per day (multiple sports games, a festival plus a school closure);
+// the hand-tag registry (EventCalendar/EventRegistryModal, the localStorage `mf_events` map)
+// allows exactly one. Used before a manual single-day upsert so a changed tag/label doesn't leave
+// a stale duplicate row. ALWAYS pass `label` when the caller knows it (matches the table's own
+// `unique (loc, date_start, label)` key) — omitting it deletes every row for that date, which
+// silently destroys unrelated same-day events. v4.927: found live where a plain delete-by-date
+// call from the diff-based sync path could wipe a same-day event it never touched.
+export async function deleteOrgEventsByLocDate(loc, dateStr, label = null) {
   if (!supabase || !loc || !dateStr) return { error: null };
-  const { error } = await supabase.from('org_events').delete().eq('loc', String(loc)).eq('date_start', dateStr);
+  let q = supabase.from('org_events').delete().eq('loc', String(loc)).eq('date_start', dateStr);
+  if (label) q = q.eq('label', label);
+  const { error } = await q;
   return { error: error?.message || null };
 }
 // Update a single org_events row by id (in-app editing: time/opponent/impact/status/note changes).
