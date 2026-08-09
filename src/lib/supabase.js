@@ -1793,10 +1793,24 @@ export async function loadEbosDaily(daysBack = 400) {
 // and ONLY here: each carries the store/date it was reconciled against the QSRSoft
 // report, and duplicating that math into SQL would create a second definition free to
 // drift from this one.
+// Measured YoY sanity band (data-integrity sweep signature #1) — reused verbatim from
+// forecast.js's getDOWTrend fix (v4.912): ±300%/-75%, derived from 40,000 store-days of real
+// data. A closure/severe-weather day as the LY denominator produces an implausible ratio without
+// this (the original bug: 1,200,000% on a chart axis) — same day-level sales-ratio shape, same
+// failure mode, just reached through this DAR/QSRSoft cloud path instead of laborRows. Drops the
+// point rather than clamping it: an unmeasurable comparison is different from a small one, and
+// clamping would fabricate a wrong-but-plausible-looking number. Reimplemented here rather than
+// imported — lib/ has no existing dependency on engine/, and this is two constants, not a module.
+const _YOY_MAX = 3.0, _YOY_MIN = -0.75;
+function _yoyPct(cur, ly) {
+  if (!(cur > 0) || !(ly > 0)) return null;
+  const g = (cur - ly) / ly;
+  return (g > _YOY_MAX || g < _YOY_MIN) ? null : g * 100;
+}
 function _finalizeQsrAct(rows) {
   return rows.map(r => ({
     ...r,
-    salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+    salesVsLYPct: _yoyPct(r.sales, r.lySales),
     // Derived cloud TPPH = TRANSACTIONS ÷ actual punched labor hours. Uses the DAR's
     // real `transactions` count — NOT healthy+unhealthy (a KVS order-health count that
     // massively understated TPPH, e.g. 0.1 vs a ~5 target). Matches the Shift Manager

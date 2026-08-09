@@ -66,8 +66,63 @@ row with a resolvable LY must not move mape6w/4w/2w/1w; `smart-targets.test.js` 
 excludes a row dated exactly at the exclusive `asOf` boundary, the contract every live caller
 above depends on.
 
-Signatures 1 (ratio >0 guard), 2 (ds.\*Rows direct reads), 3 (unit mismatches), 5 (missing vs
-zero), 6 (exclusion-eliminates-everything) are still open.
+Signatures 1 (ratio >0 guard, partially swept below), 2 (ds.\*Rows direct reads), 3 (unit
+mismatches), 5 (missing vs zero) are still open.
+
+## Signature 6 — RESOLVED as a byproduct (v4.924, 2026-08-09)
+
+The named instance (`fetchLY` skipping all 7 LY offsets because every candidate was tagged,
+e.g. Tishomingo's 450 tagged days) can no longer happen: v4.924 removed tag presence from
+`fetchLY`/`fetchLYDate`/`fetchGC`'s exclusion logic entirely, per an owner directive that tagging
+must never itself exclude a day — only a measured anomaly (median ± k·MAD against the day's own
+peer candidates) does. See the v4.924 commit and `memory/vision-and-roadmap.md` if a dedicated
+write-up gets added. Not re-verified against every OTHER "multi-candidate fallback chain" the
+signature's method calls for — only the LY-lookup chain that produced the real bug.
+
+## Signature 1 — PARTIALLY SWEPT (2026-08-09)
+
+An Explore pass ranked the ~132 candidates by whether the denominator is plausibly small in real
+data (a single day/hour's count or dollar figure) versus structurally large (weekly/monthly/
+district aggregates — most of the 132, correctly fine). Fixed the highest-confidence, most
+measurable findings:
+
+1. `src/lib/supabase.js` `_finalizeQsrAct`'s `salesVsLYPct` — same day-level YoY sales-ratio
+   shape as the original `getDOWTrend` bug, just reached through the DAR/QSRSoft cloud path.
+   Drives sort order + color coding + a printed executive report in `one-pager.js` — a single
+   closure-day LY value could have put a mediocre store at the top. Fixed by reusing the exact
+   measured ±300%/-75% band from v4.912 (`_yoyPoint` in forecast.js), reimplemented locally in
+   supabase.js as `_yoyPct` (lib/ has no existing dependency on engine/, so two constants were
+   copied rather than importing across that layer boundary).
+2. `src/engine/forecast.js` `varPct` (the per-day forecast-error %) — denominator is that day's
+   own actual, so a closure-day actual against a normal forecast rendered nonsense like
+   "-111,000%" in the Forecast Table (`store-dash.js`). Different fix shape than #1: this
+   percentage's grading (`pass`/`Math.abs(varPct)<=tolerance`) is already correct even at extreme
+   magnitudes — a huge miss should fail — so nothing about `varPct` or `pass` changed. Only the
+   store-dash.js table CELL is capped at a display-only ±300% (with a trailing '+' marking a
+   true value beyond it); sorting/grading elsewhere still sees the real number.
+3. `src/views/store-dash.js` `lyVar` in the weekly-scenario projection — turned out to be dead
+   code (computed, never read; `scenarios.bull/base/cons` use fixed ±4% multipliers, not it).
+   Deleted rather than fixed.
+
+**Deferred, not fixed — would need real data to measure a threshold, not a decision to skip:**
+- `src/views/graded-visits.js` hourly LY comparison % — an hour-slot's LY transaction count of 1
+  is normal (e.g. overnight), not an edge case, so the day-level ±300% band does NOT transfer;
+  needs its own measured floor from real hourly data.
+- `src/lib/supabase.js` `tpph`/`r2p`/`oepe`/`park`/`kvst` (rate-per-day metrics, `_finalizeQsrAct`)
+  and the matching `tpph`/`avgChk` cloud fallback in `store-dash.js` — same shape, needs a
+  measured minimum-count floor on the denominator (actHrs/cars/orders that day), not a percentage
+  band.
+- `src/views/signals.js` `pacePct`/`gcPacePct` — partial-day-so-far denominator; overlaps
+  signature #4's territory but the missing piece here is a magnitude guard, not a date cutoff.
+- `src/engine/backtest.js` `detectCleanDataStart`'s `cv=mean>0?...:Infinity` — low visibility
+  (internal calibration-window decision, not user-facing), lower priority.
+- `src/views/dt-speedofservice.js` several `us/cnt` sites — lower confidence, would want one
+  shared measured floor rather than per-site fixes.
+- `src/features/lifelenz.js` `lfzErr`/`mErr` — already pre-filtered to `sales>100`, likely fine
+  as-is; the `>0` guard flagged in the sweep is on the wrong variable but low real-world risk.
+
+None of these were given an invented threshold — per the standing caution below, a made-up
+number is not a fix. Pick this back up once Supabase access lets real distributions get pulled.
 
 ## Method
 

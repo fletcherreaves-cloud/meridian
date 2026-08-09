@@ -539,7 +539,12 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
       r.opsFactor>0?((r.opsFactor>=1?'+':'')+((r.opsFactor-1)*100).toFixed(2)+'%'):'—'),
     td({style:{textAlign:'center',fontFamily:'var(--mono)',fontSize:'10px',
       color:r.varPct!=null?(r.varPct>=0?'#4ade80':'#f87171'):'inherit'}},
-      r.varPct!=null?((r.varPct>=0?'+':'')+fP(r.varPct,2)):'—'),
+      // Display-only magnitude cap (data-integrity sweep signature #1) — varPct's denominator is
+      // that day's own actual, so a near-zero actual (closure, storm) against a normal forecast
+      // can render a nonsensical number like "-111,000%". This does NOT touch r.varPct/r.pass —
+      // grading and sorting elsewhere still see the real value; only this cell's TEXT is capped
+      // at a familiar ±300%, with a trailing '+' signaling the true value ran past the cap.
+      r.varPct!=null?((r.varPct>=0?'+':'')+fP(Math.max(-3,Math.min(3,r.varPct)),2)+(Math.abs(r.varPct)>3?'+':'')):'—'),
     td(null, r.pass===true?span({className:'pass'},'PASS'):r.pass===false?span({className:'fail'},'MISS'):r.isFuture?span({className:'proj'},'PROJ'):null),
     td({style:{textAlign:'center',verticalAlign:'top',padding:'4px 2px'}}, (()=>{
       if(!hasWxData) return span({style:{fontSize:'13px',color:'var(--text3)'},title:wxR?'No data':''},wxR?'—':'');
@@ -624,7 +629,6 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
   let scenarios = null;
   if(futureDays.length>0) {
     const base = pastTotal + futureTotal;
-    const lyVar = futureDays.reduce((a,r)=>a+(r.lyAdj>0?(r.forecast-r.lyAdj)/r.lyAdj:0),0)/futureDays.length;
     const t2avg = futureDays.reduce((a,r)=>a+r.t2,0)/futureDays.length;
     const t6avg = futureDays.reduce((a,r)=>a+r.t6,0)/futureDays.length;
     const allBull = t2avg>0&&t6avg>0, allBear = t2avg<0&&t6avg<0;
