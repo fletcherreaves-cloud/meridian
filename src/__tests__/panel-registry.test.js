@@ -121,6 +121,25 @@ describe('every showX has exactly one owner', () => {
     expect(missing, `not in anyModalOpen: ${missing.join(', ')}`).toEqual([]);
   });
 
+  it('AtAGlance/StoreDash/OrgView actually check anyModalOpen, not just define it', () => {
+    // v4.212 added anyModalOpen specifically to stop AtAGlance (and StoreDash/OrgView) from
+    // fully re-rendering while hidden behind a modal — confirmed via profiler as the dominant
+    // cost in a 177-second interaction. The OR-chain itself is guarded by the test above, but
+    // that only proves the variable is comprehensive, not that anything reads it. It silently
+    // regressed to unused (2026-08-09, found via a real ?clicktrace=1 capture showing the App
+    // tree render again dominating interaction time) while the chain-completeness test kept
+    // passing the whole time. Anchor on the actual render call sites so "defined but unused"
+    // fails loudly instead of quietly reintroducing the original bug.
+    const mustGate = [
+      /view===['"]command['"]\s*&&\s*!anyModalOpen\s*&&\s*h\(AtAGlance/,
+      /view===['"]store['"]&&selStore&&!anyModalOpen&&h\(StoreDash/,
+      /view===['"]patch['"]&&!anyModalOpen&&h\(OrgView/,
+      /view===['"]org['"]&&!anyModalOpen&&h\(OrgView/,
+    ];
+    const missing = mustGate.filter(re => !re.test(APP)).map(re => re.source);
+    expect(missing, `render call sites not gated on !anyModalOpen: ${missing.join(', ')}`).toEqual([]);
+  });
+
   it('every openable panel is closed by the Escape hatch', () => {
     // v4.215 added Escape as a universal way out of a stuck modal. That only holds if
     // every panel is listed; sixteen were not by v4.855.

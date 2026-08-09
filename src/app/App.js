@@ -3411,7 +3411,7 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
+      view==='command'&&!anyModalOpen&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
         onOpenStore:s=>{goStore(s);},
         onOpenProjections:()=>setShowProj(true),
         onOpenPVSA:()=>setShowPVSA(true),
@@ -3429,9 +3429,9 @@ function App() {
           else if(modal==='fcst-accuracy')setShowFcstAccuracy&&setShowFcstAccuracy(true);
         }}),
       view==='district'&&!selStore&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
-      view==='patch'&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
-      view==='org'&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'})
+      view==='store'&&selStore&&!anyModalOpen&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
+      view==='patch'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
+      view==='org'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'})
     )  // close main content scroll area
     )  // close right panel flex-col
 
