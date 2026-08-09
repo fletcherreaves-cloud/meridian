@@ -2242,13 +2242,15 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     const mean=arr=>{const v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
     const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
     return Object.entries(map).map(([name,members])=>{
-      const locs=new Set(members.map(mm=>String(mm.loc)));
       // Aggregate from each member's ALREADY-computed p.* (auto-first via metricAvg above,
       // same as the ungrouped per-store view) — was re-deriving straight from raw ds.ctrlRows/
       // ds.laborRows/ds.opsRows here, silently reverting every column to manual-only data the
       // moment the location filter switched to Patch/Operator/State grouping (2026-08-04).
-      const curGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=DR.s&&r.date<=DR.e&&r.gc>0).reduce((x,r)=>x+r.gc,0);
-      const lyGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=lyS&&r.date<=lyE&&r.gc>0).reduce((x,r)=>x+r.gc,0);
+      // GC was missed in that fix — still read raw ds.laborRows (manual-only), unlike every
+      // other column here (data-integrity sweep signature #2). Now sums metricSeries' auto-first
+      // per-day values across the group's members, same pattern as `sales` in localStats above.
+      const curGc=members.reduce((tot,mm)=>tot+Object.values(_msSeries(ds,String(mm.loc),DR,'gc')).reduce((a,b)=>a+b,0),0);
+      const lyGc=members.reduce((tot,mm)=>tot+Object.values(_msSeries(ds,String(mm.loc),{s:lyS,e:lyE},'gc')).reduce((a,b)=>a+b,0),0);
       return {
         loc:'__grp__'+name, name, city:members.length+' store'+(members.length>1?'s':''), isGroup:true, n:members.length,
         opsScore:mean(members.map(mm=>mm.opsScore))||0, ctrlScore:mean(members.map(mm=>mm.ctrlScore))||0,
