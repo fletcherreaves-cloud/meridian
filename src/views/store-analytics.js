@@ -10,6 +10,7 @@ import { AIInsightsTab, ModelHealthBadge } from './analytics.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
+import { metricSeries, metricAvg } from '../engine/metric-source.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -572,20 +573,22 @@ function ModelComparisonPanel({loc, date, ds, settings, userEvents}) {
 
   // Build 6-week actual history
   const weekHistory = useMemo(()=>{
-    if(!ds||!ds.laborRows) return [];
+    if(!ds||!ds.loaded) return [];
     const now = new Date();
     const weeks = [];
     for(let w=0;w<wb;w++){
       const wEnd   = new Date(now); wEnd.setDate(now.getDate()-w*7);
       const wStart = new Date(wEnd); wStart.setDate(wEnd.getDate()-6);
-      const rows   = ds.laborRows.filter(r=>r.loc===loc&&r.date>=wStart&&r.date<=wEnd&&r.sales>0)
-                      .sort((a,b)=>a.date-b.date);
-      if(!rows.length) continue;
-      const totalAct = rows.reduce((a,r)=>a+r.sales,0);
+      // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only.
+      const salesSeries = metricSeries(ds, loc, {s:wStart, e:wEnd}, 'sales');
+      const dateKeys = Object.keys(salesSeries).sort();
+      if(!dateKeys.length) continue;
+      const totalAct = dateKeys.reduce((a,dk)=>a+salesSeries[dk],0);
       // Run forecast model for each day to get model predictions
-      const days = rows.map(r=>{
-        const m = forecastModels(loc, r.date, ds, {...settings,_userEvents:userEvents});
-        return {date:r.date, actual:r.sales,
+      const days = dateKeys.map(dk=>{
+        const d = new Date(dk+'T12:00:00');
+        const m = forecastModels(loc, d, ds, {...settings,_userEvents:userEvents});
+        return {date:d, actual:salesSeries[dk],
           m1:m.composite?.forecast||0, m2:m.trendOnly?.forecast||0,
           m3:m.momentum?.forecast||0,  m4:m.regression?.forecast||0,
           ens:m.ensemble?.forecast||0};
@@ -854,12 +857,18 @@ function computeRevenueOpportunity(store, ds, settings) {
       note:'Cash O/S at '+fP(Math.abs(p.cashOSPct),2)+'=~$'+exposure.toFixed(0)+'/week ($'+(exposure*52).toFixed(0)+' annualized). '+(Math.abs(p.cashOSPct)>0.01?'INVESTIGATE.':'Monitor.')};
   }
 
+  // Auto-first (data-integrity sweep signature #2) — items 9-12 below were ds.laborRows/
+  // ctrlRows only, manual-only, so they all went stale/blank on auto/emailed-only days.
+  const range42 = {s:new Date(Date.now()-42*864e5), e:new Date()};
+
   // 9. Avg Check Momentum
   if(p.avgCheck>0){
-    const r2 = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-14*864e5)&&r.avgCheck>0);
-    const r6 = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-42*864e5)&&r.date<new Date(Date.now()-14*864e5)&&r.avgCheck>0);
-    const ac2=r2.length?r2.reduce((a,r)=>a+r.avgCheck,0)/r2.length:0;
-    const ac6=r6.length?r6.reduce((a,r)=>a+r.avgCheck,0)/r6.length:0;
+    const range2 = {s:new Date(Date.now()-14*864e5), e:new Date()};
+    const range6 = {s:range42.s, e:addD(new Date(Date.now()-14*864e5),-1)};
+    const ac2Vals = Object.values(metricSeries(ds, loc, range2, 'avgCheck')).filter(v=>v>0);
+    const ac6Vals = Object.values(metricSeries(ds, loc, range6, 'avgCheck')).filter(v=>v>0);
+    const ac2=ac2Vals.length?ac2Vals.reduce((a,b)=>a+b,0)/ac2Vals.length:0;
+    const ac6=ac6Vals.length?ac6Vals.reduce((a,b)=>a+b,0)/ac6Vals.length:0;
     if(ac2>0&&ac6>0){
       const mom=(ac2-ac6)/ac6, wkGC=p.avgGC||500;
       result.avgCheckMomentum={current:+ac2.toFixed(2),prior:+ac6.toFixed(2),momentum:+mom.toFixed(4),
@@ -870,9 +879,9 @@ function computeRevenueOpportunity(store, ds, settings) {
   }
 
   // 10. DT Sales Mix
-  const dtR=(ds.laborRows||[]).filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-42*864e5)&&r.sales>0&&(r.dtSales||0)>0);
-  if(dtR.length>=5){
-    const dtMix=dtR.reduce((a,r)=>a+(r.dtSales/r.sales),0)/dtR.length;
+  const dtVals=Object.values(metricSeries(ds, loc, range42, 'dtMixPct')).filter(v=>v>0);
+  if(dtVals.length>=5){
+    const dtMix=dtVals.reduce((a,b)=>a+b,0)/dtVals.length;
     const tDT=t.tDtPct||0.70, gap=tDT-dtMix;
     if(Math.abs(gap)>0.03)
       result.dtSalesMix={actual:+dtMix.toFixed(4),target:+tDT.toFixed(4),gap:+gap.toFixed(4),
@@ -882,9 +891,9 @@ function computeRevenueOpportunity(store, ds, settings) {
   }
 
   // 11. Salaried Manager Compliance
-  const salR=(ds.laborRows||[]).filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-42*864e5)&&r.salMgrHrs!=null);
-  if(salR.length>=5){
-    const avgSal=salR.reduce((a,r)=>a+(r.salMgrHrs||0),0)/salR.length, tSal=t.tSalMgrHrs||8;
+  const salVals=Object.values(metricSeries(ds, loc, range42, 'salaryMgrHrs'));
+  if(salVals.length>=5){
+    const avgSal=salVals.reduce((a,b)=>a+b,0)/salVals.length, tSal=t.tSalMgrHrs||8;
     if(Math.abs(tSal-avgSal)>0.5)
       result.salMgrCompliance={actual:+avgSal.toFixed(1),target:tSal,gapHrs:+(tSal-avgSal).toFixed(1),
         weeklyImpact:+((tSal-avgSal)*(p.avgRate||13)*7).toFixed(0),
@@ -893,9 +902,9 @@ function computeRevenueOpportunity(store, ds, settings) {
   }
 
   // 12. Promo / Discount Drag
-  const proR=(ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date>=new Date(Date.now()-42*864e5)&&r.promoAmt>0);
-  if(proR.length>=5){
-    const avgD=proR.reduce((a,r)=>a+r.promoAmt,0)/proR.length;
+  const promoVals=Object.values(metricSeries(ds, loc, range42, 'promoAmt')).filter(v=>v>0);
+  if(promoVals.length>=5){
+    const avgD=promoVals.reduce((a,b)=>a+b,0)/promoVals.length;
     const pPct=(p.weeklySales||30000)/7>0?avgD/((p.weeklySales||30000)/7):0;
     if(pPct>0.02)
       result.promoDrag={avgDaily:+avgD.toFixed(2),promoPct:+pPct.toFixed(4),

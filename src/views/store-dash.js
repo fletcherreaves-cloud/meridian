@@ -3591,11 +3591,13 @@ function CompareLineChart({selStores, COLS, ds}) {
   useChart(ref, canvas => {
     if(!ds||!ds.loaded||!selStores.length) return null;
     const cut=new Date(Date.now()-42*86400000);
-    const locSet=new Set(selStores.map(s=>s.loc));
-    const allDates=[...new Set(ds.laborRows.filter(r=>r.date>=cut&&locSet.has(r.loc)).map(r=>dKey(r.date)))].sort();
+    const range={s:cut,e:new Date()};
+    // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only.
+    const seriesByLoc=Object.fromEntries(selStores.map(s=>[s.loc,_msSeries(ds,s.loc,range,'sales')]));
+    const allDates=[...new Set(Object.values(seriesByLoc).flatMap(s=>Object.keys(s)))].sort();
     const labels=allDates.map(dk=>{const d=new Date(dk+'T12:00:00');return DOW_BASE[d.getDay()].slice(0,2)+' '+d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});});
     return new Chart(canvas,{type:'line',data:{labels,datasets:selStores.map((s,i)=>{
-      const data=allDates.map(dk=>{const rows=ds.laborIdx[s.loc+'_'+dk];return rows&&rows[0]&&rows[0].sales>0?Math.round(rows[0].sales):null;});
+      const data=allDates.map(dk=>{const v=seriesByLoc[s.loc][dk];return v>0?Math.round(v):null;});
       return{label:s.name,data,borderColor:COLS[i],backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:.3,spanGaps:false};
     })},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:LEG,tooltip:{...TT,callbacks:{label:c=>`${c.dataset.label}: $${(c.raw||0).toLocaleString()}`}}},

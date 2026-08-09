@@ -17,7 +17,7 @@ import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
-import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, metricDaily } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 
 const h=React.createElement;
@@ -364,20 +364,25 @@ function computeAllCorrelations(ds) {
   return result;
 }
 
+// CORR_PREDICTOR id → metric-source.js key. All 9 predictors already have a chain
+// (data-integrity sweep signature #2 — this used to read ds.laborRows/opsRows/ctrlRows
+// directly, manual-only, so the correlation explorer went blank on auto-only recent days).
+const PREDICTOR_METRIC_KEY = {
+  oepe:'oepe', park:'park', r2p:'r2p', labor:'laborPct', tpph:'tpph', otHrs:'otHrs',
+  cashOS:'cashOSPct', tRedA:'tRedAPct', discPct:'discPct',
+};
+
 function computeMetricAverages(ds) {
   if(!ds||!ds.loaded) return {};
   const LOCS=Object.keys(STORE_NAMES);
   const cutDate=new Date(); cutDate.setDate(cutDate.getDate()-90);
-  const avg=(rows,fn)=>{const v=rows.map(fn).filter(v=>v!=null&&v>0&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
+  const range={s:cutDate, e:new Date()};
   const result={};
   LOCS.forEach(loc=>{
     result[loc]={};
-    const lR=(ds.laborRows||[]).filter(r=>String(r.loc)===loc&&r.date>=cutDate);
-    const oR=(ds.opsRows||[]).filter(r=>String(r.loc)===loc&&r.date>=cutDate);
-    const cR=(ds.ctrlRows||[]).filter(r=>String(r.loc)===loc&&r.date>=cutDate);
     CORR_PREDICTORS.forEach(p=>{
-      const rows=p.src==='ops'?oR:p.src==='labor'?lR:cR;
-      result[loc][p.id]=avg(rows,p.fn);
+      const key=PREDICTOR_METRIC_KEY[p.id];
+      result[loc][p.id]=key?metricAvg(ds,loc,range,key):null;
     });
   });
   return result;
@@ -991,13 +996,25 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     // Excludes the still-open business day — otherwise a partial today averages into the
     // printed one-pager's narrative sentences (labor%/OEPE/sales) as if it were a full day.
     const _openDay = new Date(businessDate()+'T00:00:00');
-    const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay&&r.sales>0);
-    const oR = (ds.opsRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay);
+    const range = {s:cutoff, e:addD(_openDay,-1)};
+    const lyRange = {s:addD(cutoff,-364), e:addD(new Date(),-364)};
+    // Auto-first (data-integrity sweep signature #2) — was ds.laborRows/opsRows/ctrlRows
+    // only, manual-only, so recent auto/emailed-only days dropped out of the printed one-pager.
+    const salesSeries  = metricSeries(ds, selLoc, range, 'sales');
+    const gcSeries      = metricSeries(ds, selLoc, range, 'gc');
+    const checkSeries   = metricSeries(ds, selLoc, range, 'avgCheck');
+    const oepeSeries    = metricSeries(ds, selLoc, range, 'oepe');
+    const parkSeries    = metricSeries(ds, selLoc, range, 'park');
+    const laborSeries   = metricSeries(ds, selLoc, range, 'laborPct');
+    const tpphSeries    = metricSeries(ds, selLoc, range, 'tpph');
+    const lySalesSeries = metricSeries(ds, selLoc, lyRange, 'sales');
+    // FOB has no auto/emailed chain in metric-source.js yet — stays manual (Controls upload).
     const cR = (ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay);
-    const lyR= (ds.laborRows||[]).filter(r=>{
-      const ly=new Date(r.date); ly.setFullYear(ly.getFullYear()-1);
-      return String(r.loc)===selLoc&&r.date>=addD(cutoff,-364)&&r.date<addD(new Date(),-364)&&r.sales>0;
-    });
+
+    const dateKeys = Object.keys(salesSeries).sort();
+    const lR = dateKeys.map(dk=>({date:new Date(dk+'T12:00:00'), sales:salesSeries[dk],
+      gc:gcSeries[dk]||0, avgCheck:checkSeries[dk]||0, laborPct:laborSeries[dk]||0, tpph:tpphSeries[dk]||0}));
+    const oR = dateKeys.map(dk=>({date:new Date(dk+'T12:00:00'), oepe:oepeSeries[dk]||0, park:parkSeries[dk]||0}));
 
     const avg=(arr,f)=>{const v=arr.map(r=>r[f]).filter(v=>v!=null&&v>0);return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
     const sum=(arr,f)=>arr.reduce((a,r)=>a+(r[f]||0),0);
@@ -1012,7 +1029,8 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     }).filter(d=>d.n>0);
 
     // LY comparison
-    const lyAvgSales = lyR.length ? sum(lyR,'sales')/lyR.length : null;
+    const lyVals = Object.values(lySalesSeries).filter(v=>v>0);
+    const lyAvgSales = lyVals.length ? lyVals.reduce((a,b)=>a+b,0)/lyVals.length : null;
     const curAvgSales = avg(lR,'sales');
     const vsLY = curAvgSales&&lyAvgSales ? (curAvgSales-lyAvgSales)/lyAvgSales : null;
 
@@ -1023,8 +1041,8 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 
     // Auto-observations
     const obs = [];
-    const laborPct=avg(cR,'laborPct')||avg(lR,'laborPct');
-    const tpph=avg(cR,'tpph')||avg(lR,'tpph');
+    const laborPct=avg(lR,'laborPct');
+    const tpph=avg(lR,'tpph');
     const oepe=avg(oR,'oepe');
     const fob=avg(cR,'fobPct');
     if(vsLY!=null){obs.push(vsLY>=0
@@ -3596,26 +3614,23 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
 // For each untagged anomaly, compare that day's operational metrics
 // against the store's DOW historical baseline to identify likely causes.
 // Returns signals (metric deviations) + a conclusion (ops vs external).
-// Data sources: ds.ctrlRows (labor/tpph/actVsNeed), ds.opsRows (oepe/kvsu/park)
-//               ds.laborRows (daily actuals for historical DOW baselines)
+// Auto-first (data-integrity sweep signature #2): both the day's own values and the DOW
+// baseline route through engine/metric-source.js instead of reading ds.ctrlRows/opsRows/
+// laborRows directly — was manual-only, so a recent auto/emailed-only day (or its whole
+// DOW baseline sample) would silently read as "no data" here.
 function computeOpsAnalysis(row, ds) {
   if(!ds||!row) return null;
   const loc = String(row.loc||'');
   const dt  = row.date instanceof Date ? row.date : new Date(row.date);
   const dow = dt.getDay();
 
-  // ── Fetch the specific day's records ─────────────────────────────────
-  const ctrlRow = fetchRow(ds.ctrlIdx,  loc, dt);
-  const opsRow  = fetchRow(ds.opsIdx,   loc, dt);
-  const labRow  = fetchRow(ds.laborIdx, loc, dt);
-  const get = (obj,f) => obj&&obj[f]!=null&&obj[f]!==0 ? obj[f] : null;
-
-  const dayLabor  = get(ctrlRow,'laborPct') || get(labRow,'laborPct');
-  const dayTpph   = get(ctrlRow,'tpph')     || get(labRow,'tpph');
-  const dayAvn    = ctrlRow?.actVsNeed != null ? ctrlRow.actVsNeed : (labRow?.actVsNeed != null ? labRow.actVsNeed : null);
-  const dayActHrs = get(ctrlRow,'actHrs')   || get(labRow,'actHrs');
-  const dayOepe   = get(opsRow,'oepe');
-  const dayKvsu   = get(opsRow,'kvsu');
+  // ── Fetch the specific day's values ───────────────────────────────────
+  const dayLabor  = metricDaily(ds, loc, dt, 'laborPct');
+  const dayTpph   = metricDaily(ds, loc, dt, 'tpph');
+  const dayAvn    = metricDaily(ds, loc, dt, 'actVsNeed');
+  const dayActHrs = metricDaily(ds, loc, dt, 'actHrs');
+  const dayOepe   = metricDaily(ds, loc, dt, 'oepe');
+  const dayKvsu   = metricDaily(ds, loc, dt, 'kvsHealthy');
 
   const hasAnyData = dayLabor || dayTpph || dayOepe || dayActHrs || dayAvn != null;
   if(!hasAnyData) return {
@@ -3625,14 +3640,18 @@ function computeOpsAnalysis(row, ds) {
   };
 
   // ── DOW baselines (trimmed mean, data before this date) ──────────────
-  const peerCtrl = (ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date.getDay()===dow&&r.sales>0&&r.date<dt);
-  const peerLab  = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.date.getDay()===dow&&r.sales>0&&r.date<dt);
-  const peerOps  = (ds.opsRows||[]).filter( r=>r.loc===loc&&r.date.getDay()===dow&&r.date<dt);
-  const allCtrl  = [...peerCtrl,...peerLab];
-  const peerCount= Math.max(peerCtrl.length, peerLab.length);
+  const peerRange = {s:new Date('2000-01-01'), e:addD(dt,-1)};
+  const laborSeries  = metricSeries(ds, loc, peerRange, 'laborPct');
+  const tpphSeries    = metricSeries(ds, loc, peerRange, 'tpph');
+  const actHrsSeries  = metricSeries(ds, loc, peerRange, 'actHrs');
+  const oepeSeries     = metricSeries(ds, loc, peerRange, 'oepe');
+  const kvsSeries      = metricSeries(ds, loc, peerRange, 'kvsHealthy');
+  const dowKeys = series => Object.keys(series).filter(dk=>new Date(dk+'T12:00:00').getDay()===dow);
+  const laborDow = dowKeys(laborSeries), tpphDow = dowKeys(tpphSeries);
+  const peerCount = Math.max(laborDow.length, tpphDow.length);
 
-  const trim = (arr,f) => {
-    const v = arr.map(r=>r[f]).filter(v=>v!=null&&v>0).sort((a,b)=>a-b);
+  const trim = (keys,series) => {
+    const v = keys.map(k=>series[k]).filter(v=>v!=null&&v>0).sort((a,b)=>a-b);
     if(!v.length) return null;
     if(v.length < 4) return v.reduce((a,b)=>a+b)/v.length;
     const cut = Math.max(1,Math.floor(v.length*.10));
@@ -3640,11 +3659,11 @@ function computeOpsAnalysis(row, ds) {
     return t.reduce((a,b)=>a+b)/t.length;
   };
 
-  const bl_labor  = trim(allCtrl, 'laborPct');
-  const bl_tpph   = trim(allCtrl, 'tpph');
-  const bl_actHrs = trim(allCtrl, 'actHrs');
-  const bl_oepe   = trim(peerOps,  'oepe');
-  const bl_kvsu   = trim(peerOps,  'kvsu');
+  const bl_labor  = trim(laborDow, laborSeries);
+  const bl_tpph   = trim(tpphDow, tpphSeries);
+  const bl_actHrs = trim(dowKeys(actHrsSeries), actHrsSeries);
+  const bl_oepe   = trim(dowKeys(oepeSeries), oepeSeries);
+  const bl_kvsu   = trim(dowKeys(kvsSeries), kvsSeries);
 
   const dev = (d,b) => b>0 ? (d-b)/b : null;
 
@@ -5563,11 +5582,28 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
   const buildReport = async () => {
     setRunning(true);
     const s = new Date(startDate+'T00:00:00'), e = new Date(endDate+'T23:59:59');
+    const range = {s,e};
     const targetLocs = selLocs.includes('all') ? (ds.storeIds||[]) : selLocs;
     const results = [];
     for(const loc of targetLocs){
-      const rows = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e&&r.sales>0);
-      if(!rows.length) continue;
+      // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only,
+      // so any day covered only by the auto DAR/emailed streams dropped out of this report.
+      const salesSeries = metricSeries(ds, loc, range, 'sales');
+      const dateKeys = Object.keys(salesSeries).sort();
+      if(!dateKeys.length) continue;
+      const gcSeries = metricSeries(ds, loc, range, 'gc');
+      const oepeSeries = metricSeries(ds, loc, range, 'oepe');
+      const tpphSeries = metricSeries(ds, loc, range, 'tpph');
+      const laborSeries = metricSeries(ds, loc, range, 'laborPct');
+      const checkSeries = metricSeries(ds, loc, range, 'avgCheck');
+      const rows = dateKeys.map(dk=>({
+        date: new Date(dk+'T12:00:00'),
+        sales: salesSeries[dk],
+        gc: gcSeries[dk]||0,
+        tpph: tpphSeries[dk]||0,
+        laborPct: laborSeries[dk]||0,
+        avgCheck: checkSeries[dk]||0,
+      }));
       const store = stores.find(st=>st.loc===loc);
       if(!store) continue;
       const {p,t} = store;
@@ -5582,13 +5618,11 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
         const fc=fcRows[i].forecast;
         return fc>0&&Math.abs(r.sales-fc)/r.sales<=(settings.tolerance||5)/100;
       }).length/rows.length*100 : null;
-      const opsRows = (ds.opsRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e);
-      const ctrlRows = (ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e);
-      // OEPE stays a plain mean: opsRows carry only oepe/park/kvst/kvsu/r2p — no car or
+      // OEPE stays a plain mean: the source carries only oepe/park/kvst/kvsu/r2p — no car or
       // GC count — so there is no weighting basis in this source. Weighting by anything
       // else would be a guess. See memory/weighted-rollup-audit.md.
-      const avgOepe = opsRows.length?opsRows.reduce((a,r)=>a+(r.oepe||0),0)/opsRows.length:p.oepe||0;
-      // TPPH is in laborRows (not opsRows) — fix source.
+      const oepeVals = Object.values(oepeSeries);
+      const avgOepe = oepeVals.length?oepeVals.reduce((a,b)=>a+b,0)/oepeVals.length:p.oepe||0;
       // Transactions per person-hour aggregates as Σgc/Σhours; hours come from each row's
       // own ratio so the rollup matches the basis the source system divided by.
       const avgTpph = ratioOfSumsDerived(rows, r=>r.gc, r=>r.tpph) || p.tpph||0;
@@ -5990,10 +6024,15 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
     for(const store of storeList){
       const {p, t, loc, name} = store;
       if(!p) continue;
-      const lyData = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.sales>0);
-      const recentRows = lyData.filter(r=>r.date>=addD(new Date(),-42)).sort((a,b)=>b.date-a.date);
-      const totalSales = recentRows.reduce((a,r)=>a+(r.sales||0),0);
-      const avgCheck = recentRows.filter(r=>r.gc>0).reduce((a,r)=>a+(r.sales/r.gc),0)/(recentRows.filter(r=>r.gc>0).length||1);
+      // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only,
+      // so this fed the AI prompt a stale/short 42-day window whenever only auto/emailed
+      // data existed for recent days.
+      const range = {s:addD(new Date(),-42), e:new Date()};
+      const salesSeries = metricSeries(ds, loc, range, 'sales');
+      const gcSeries = metricSeries(ds, loc, range, 'gc');
+      const totalSales = Object.values(salesSeries).reduce((a,b)=>a+b,0);
+      const checkKeys = Object.keys(gcSeries).filter(k=>gcSeries[k]>0&&salesSeries[k]>0);
+      const avgCheck = checkKeys.length ? checkKeys.reduce((a,k)=>a+(salesSeries[k]/gcSeries[k]),0)/checkKeys.length : 0;
       const mape = settings.dialedIn&&settings.dialedIn[loc]&&settings.dialedIn[loc].mape;
       const cal = settings.dialedIn&&settings.dialedIn[loc];
 
