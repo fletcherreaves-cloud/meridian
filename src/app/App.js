@@ -1493,6 +1493,27 @@ function UploadSummaryModal({ report, onClose }) {
   );
 }
 
+// ── useDebouncedValue (v4.936 — performance) ─────────────────────────────
+// Startup fires ~32 independent setDs() calls, one per data source (labor, ops, controls,
+// weather, DAR, FOB, ...), each resolving on its own schedule. `dsDeferred` (useDeferredValue)
+// already stops one of those updates from blocking a simultaneous click, but it does nothing
+// about the AGGREGATE cost: a real ?clicktrace=1 capture showed rawStores(buildStore x27)
+// recomputing 39 times in one session — every single loader resolution triggers its own full
+// 27-store rebuild, worst case 878ms — because `ds` gets a brand-new object identity each time.
+// Restructuring all 32 call sites into one batched setDs would remove the progressive-loading
+// UX (data appearing as each source arrives) and is real surgery on the app's core data flow —
+// too much change for what's needed here. Debouncing rawStores's OWN input instead: skip every
+// intermediate `ds` identity during a burst of updates and only recompute once things go quiet
+// for `delay`ms, so a rapid-fire startup sequence pays for ONE final rebuild instead of ~32.
+function useDebouncedValue(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 function App() {
   // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
   // from production React, so the v4.917 attempt recorded nothing at all in the deployed app.
@@ -2697,7 +2718,14 @@ function App() {
   // work is unchanged and the result is identical — it simply stops owning the main thread at
   // the moment of a click. The store list may lag one frame behind a fresh `ds`, which is
   // invisible here and vastly preferable to a half-second freeze per loader.
-  const dsDeferred = React.useDeferredValue(ds);
+  // 250ms: short enough that a human loading indicator doesn't register the delay, long enough
+  // to coalesce a burst of loaders resolving within the same or adjacent macrotasks (the actual
+  // shape of the 39-recompute capture) without meaningfully changing "time to usable" for
+  // loaders that are genuinely spaced out (each of those settles on its own well before the
+  // next arrives, same as today). Debounce BEFORE deferring: coalesce first, then keep the
+  // eventual real update non-blocking for whatever the user is doing when it lands.
+  const dsDebounced = useDebouncedValue(ds, 250);
+  const dsDeferred = React.useDeferredValue(dsDebounced);
   const rawStores = useMemo(()=>{
     if(!dsDeferred) return [];
     return _traceMark('rawStores(buildStore x27)', () => dsDeferred.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,dsDeferred,{...settings,targets:mergedTargets})));
