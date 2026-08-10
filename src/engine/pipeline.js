@@ -4,6 +4,7 @@ import { attachFindingMeta } from './finding-rules.js';
 import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS } from '../constants.js';
 import { dKey, addD } from '../utils/date.js';
 import { bLocIdx, compute6wk, locRows } from '../engine/forecast.js';
+import { matchedVsLY } from './vs-ly.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
@@ -246,6 +247,30 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
     }
     const salesRec=rec.total_sales;
     if(salesRec&&salesRec.value>0) f.push({rule:'salesRecord',t:'ok',m:'RECORD — SALES: All-time best single day: '+f$(salesRec.value)+' ('+(salesRec.date instanceof Date?salesRec.date:new Date(salesRec.date)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+').'});
+  }
+
+  // ── SALES DECLINE ────────────────────────────
+  // Trailing 28-day matched-day sales vs last year, sourced through the shared resolver
+  // (engine/vs-ly.js) — never a hand-rolled raw-row filter. Distinct from pSales/pLY above
+  // (a display-only total the caller computes separately) and from the FORECAST LINE below
+  // (a model projection): this is a dedicated DETECTOR, because AttentionPanel only reads
+  // f.t==='crit'/'warn'/'watch' and buildBrief previously had no sales-related finding type
+  // at all besides the forecast line (t:'fc', which matches none of AttentionPanel's
+  // filters) — so a pure sales decline, however severe, could never surface there.
+  // Thresholds measured against the real district 28-day distribution (2026-08-10, all 27
+  // stores): p10 was -9.9%, median -1.6%. Atoka (loc 10422) was the sole outlier at -15.4%,
+  // next-worst -11.1%. -12%/-8% cleanly separates a genuine outlier (would have caught only
+  // Atoka as critical) from the district's ordinary week-to-week spread.
+  if(ds&&ds.loaded){
+    const slRange={s:new Date(Date.now()-28*86400000),e:new Date()};
+    const sl=matchedVsLY(ds,loc,slRange,'sales');
+    // Require at least half the window to have matched LY data — an aggregate built from a
+    // handful of days is noise, not a sustained trend.
+    if(sl.ly>0&&sl.days>=14){
+      const gap=sl.cur-sl.ly;
+      if(sl.pct<=-0.12&&gap<=-3000) f.push({rule:'salesCrit',t:'crit',m:'CRITICAL — SALES DECLINE: '+f$(sl.cur)+' vs '+f$(sl.ly)+' LY over the trailing 28 days ('+fPct(sl.pct,1)+', '+f$(Math.abs(gap))+' behind, '+sl.days+' matched days). This is a sustained decline, not a single bad week. Needs GM-level review: traffic/guest count, local competition, road or construction disruption, or a store-specific pricing/menu issue.'});
+      else if(sl.pct<=-0.08&&gap<=-3000) f.push({rule:'salesWatch',t:'watch',m:'WATCH — SALES: '+f$(sl.cur)+' vs '+f$(sl.ly)+' LY over the trailing 28 days ('+fPct(sl.pct,1)+', '+f$(Math.abs(gap))+' behind, '+sl.days+' matched days). Running behind the district\'s typical spread — worth a closer look before it becomes sustained.'});
+    }
   }
 
   // ── FORECAST LINE ────────────────────────────

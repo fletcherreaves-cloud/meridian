@@ -332,6 +332,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.940', date:'2026-08-10', changes:[
+    'FIXED — Needs Attention could never catch a pure sales decline, no matter how severe. It only checked cash/controls/labor/speed signals, so a store on a real, sustained sales slide (found: Atoka, down 15.4% vs last year over the trailing 4 weeks, worsening every week) never showed up there even though other panels track sales separately. Added a dedicated sales-decline check using the same trailing-month comparison the rest of the app already uses, tuned against the real district numbers so it flags a genuine outlier without flooding the list on an ordinary soft week.',
+  ]},
   {version:'4.939', date:'2026-08-09', changes:[
     'SAGE moved from a full-screen overlay to a drawer that opens from any screen without losing your place — a persistent button lives in the top bar now instead of being buried in the nav list. The minimize-to-a-pill option is still there for anyone who wants it fully out of the way, and reopening a minimized session now actually reopens it (it could get stuck invisible before).',
     'Signals is no longer forced full-screen either — it opens as the same centered panel as everything else, just wider to give the Scanner and Live Ops tables room.',

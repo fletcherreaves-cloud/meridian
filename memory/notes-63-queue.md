@@ -72,7 +72,26 @@ concrete P4 sub-task rather than a vague "harden RLS" line — see [[vision-and-
 
 ---
 
-## Needs Attention — structural gap, not a threshold problem (Atoka / 10422)
+## ~~Needs Attention — structural gap, not a threshold problem (Atoka / 10422)~~ — ✅ Part 1 DONE v4.940 (PR #109)
+
+**Part 1 (the `buildBrief`/`AttentionPanel` detector) shipped in v4.940, PR #109 — worker session,
+2026-08-10.** Added a trailing-28-day matched-day sales-vs-LY detector to `buildBrief`
+(`engine/pipeline.js`), sourced through `matchedVsLY` per the data-sourcing standard, pushing
+`t:'crit'`/`t:'watch'` findings `AttentionPanel` already reads with zero changes to the panel
+itself. Thresholds (-12%/-8%, both with a $3,000 gap floor and a ≥14-of-28-matched-days
+data-quality gate) measured against Atoka's real pulled `qsr_daily_activity_rollup` data (-15.4%,
+$58,478 behind, worsening for 8+ weeks) and the full district's real 28-day distribution (p10
+-9.9%, median -1.6%, Atoka the sole outlier) — not copied blindly from `salesBehindLY`'s 5%/$1,000
+floor. Verified end-to-end against real data both before and after implementing: fires `crit` for
+Atoka using the actual pulled numbers, fires nothing for 24 of the other 26 real district stores
+(the two next-worst fire `watch`). 7 new tests in `pipeline-sales-decline.test.js`.
+
+**Part 2 is still open** — the panel-rename/merge question (this section's own "OR retire the
+split entirely" line, doubling as [[notes-60-queue]]'s naming ask) and `WhatNeedsAttentionPanel`'s
+rolling multi-week window were explicitly out of scope for PR #109 (the owner's task prompt scoped
+it narrowly to `buildBrief`/`AttentionPanel` only, and named `attention-now.js` do-not-touch).
+
+Original finding, for reference:
 
 Owner: *"Atoka (10422) is on a horrible sales decline, yet it does not show up as needing
 attention in this panel."*
@@ -316,7 +335,8 @@ this session.** Revisit during the Workstream D "score & polish" pass in [[visio
 
 ## Priority order (this session's proposal, non-UI/UX first per the owner's instruction)
 
-1. Needs Attention sales-decline detector (Atoka) — real, high-visibility bug; fully scoped.
+1. ~~**Needs Attention sales-decline detector (Atoka)**~~ — ✅ DONE v4.940 (PR #109). Part 2
+   (panel rename/merge question, `attention-now.js` rolling window) still open — see above.
 2. EOM Change Monitor qty + case-conversion — fully scoped, engine already supports it, no new data
    model needed.
 3. Swing Watch "Acknowledged" home at the top of Needs Attention — fully scoped, reuses existing

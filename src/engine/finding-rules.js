@@ -75,6 +75,15 @@ export const FINDING_RULES = {
   allClear:    { category: 'Strength',   icon: '✅', dollars: () => 0 },
   salesRecord: { category: 'Sales',      icon: '🏆', dollars: () => 0 },
   forecast:    { category: 'Forecast',   icon: '🔮', dollars: () => 0 },
+
+  // ── Sales decline (Needs Attention fix) ──
+  // dollars() takes only (p,t), and the trailing-28-day gap buildBrief computes for these two
+  // is local to its own closure (via matchedVsLY, not derivable from p/t alone) — so it can't
+  // be priced here the way cashOS/labor/etc. are. The real $ figure IS in the finding's own
+  // prose (f.m). AttentionPanel (this fix's target) never reads f.dollars at all, only f.t/f.m,
+  // so 0 has no visible effect there — same precedent as r2p/posOver/parking above.
+  salesCrit:   { category: 'Sales',      icon: '📉', dollars: () => 0 },
+  salesWatch:  { category: 'Sales',      icon: '📉', dollars: () => 0 },
 };
 
 // buildBrief writes the prose as "PREFIX — body". Splitting there gives a usable title
