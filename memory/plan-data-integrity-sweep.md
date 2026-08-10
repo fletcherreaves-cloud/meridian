@@ -501,5 +501,113 @@ Three hypotheses were wrong for every one that was right this session. The sweep
 that was already correct is a regression, and v4.904 already broke calibration for all 27
 stores exactly that way.
 
+## Signature #4 — RECURRED in new code, twice, one day after being marked SWEPT (2026-08-10)
+
+The "SWEPT (2026-08-09)" claim above was about the 7 sites that existed *then*. It was never a
+durable guarantee — new code written the very next day reintroduced the identical defect twice,
+independently, because nothing enforces the pattern:
+
+1. `src/engine/pipeline.js`'s new sales-decline detector (PR #109, v4.940, merged 2026-08-10)
+   built its 28-day window as `{s:new Date(Date.now()-28*86400000), e:new Date()}`.
+2. `src/views/attention-now.js`'s rolling-window follow-up (v4.941, same day) copied the exact
+   same literal `Date.now()` window-end into a second site.
+
+Both shipped, both merged, before a PM review 2 minutes after PR #109's merge caught it. Real
+production impact, reproduced (not asserted) via `buildBrief` with a synthetic 27-completed-days
++ 1-partial-today dataset: a healthy -7% store (below the -8% watch line) fired WATCH at every
+degree of partial fill; a genuine -10% store (which should only ever fire WATCH) falsely
+escalated to CRIT. Math: contaminating one day of a 28-day window with a (partial-cur,
+full-ly) pair shifts the aggregate pct by roughly `(dailyLY - dailyLY×todayFrac) / (28×dailyLY)`
+— for todayFrac near 0 (early morning), close to a full extra 1/28th of a day's LY value
+subtracted from an otherwise-accurate 28-day gap.
+
+**Fixed 2026-08-10** (this session, hotfix branch): both sites now end the window on the last
+CLOSED business day via `businessDate()` (swing-feed.js's 4am ABC-cutover helper) + `addD`,
+reusing the `labor-tools.js`/`above-store-onepager.js` pattern instead of re-deriving the
+boundary. Regression test added with a `todayFrac` parameter (`pipeline-sales-decline.test.js`)
+— unlike the suite's existing `dsWithDailyRatio` fixture, which applies one constant ratio to
+ALL 28 days (today included) and therefore models today as already-complete, structurally
+unable to catch this class. Verified the new test actually fails against the pre-fix code
+(reverted pipeline.js, re-ran, confirmed 4 of 6 new assertions failed with the exact false-CRIT/
+false-WATCH shape described above, restored the fix) before trusting it as a regression guard.
+
+**Thresholds re-verified against the corrected window**, not assumed still valid: pulled
+`qsr_daily_activity_rollup` via service-role key, re-computed the 28-day matched-day
+sales-vs-LY distribution ending on the corrected last-closed-business-day boundary (26 of 27
+stores with matched-day coverage, same as the original PR #109 measurement). Every number
+shifted down (contamination inflates every decline uniformly, not just Atoka's) but the
+CONCLUSION did not: p10 -7.28% (was -9.9% through the contaminated window), median -1.63% (was
+-1.6%), Atoka still the sole outlier at -14.91% (was -15.4%), 32525 still 2nd-worst at -10.91%
+(was -11.1%), 35242 still 3rd at -9.77% (was -9.9%). The existing -12%/-8%/$3,000-gap floors
+still cleanly separate Atoka-alone-crit / 32525+35242-watch / 23 others clean — no threshold
+values changed, only the code comments citing them (now cite the re-verified numbers).
+
+**A grep for the pattern class (`Date.now() - N*86400000` / `e: new Date()`) turned up more
+candidates the 2026-08-09 sweep's 7-site list never covered** — that sweep was scoped to
+sites found via an Explore pass at the time, not an exhaustive grep. Triaged by whether the
+window feeds a hard grade/severity (high risk) vs. an average/narrative context (lower risk,
+one partial day is diluted across a longer denominator) vs. genuinely benign (no comparison at
+all):
+
+*High risk — averaging window short enough, or the site is specifically an anomaly/deviation
+detector, that one partial day materially moves the output:*
+- `src/views/store-analytics.js` `detectAnomalies` — range is `{s:'2000-01-01', e:new Date()}`,
+  i.e. no upper bound at all. This is an anomaly detector: a still-filling today will almost
+  always read as a deviation from the historical baseline purely because it isn't finished yet
+  — the exact "alarming at 10am, fine by close" shape Notes 61 named, just in the anomaly
+  scanner instead of the swing alarm.
+- `src/views/analytics.js` `runScan` (the AI Backtest Scanner / DOW-baseline anomaly panel,
+  `fullRange = {s:'2000-01-01', e:new Date()}`) — same shape as above, same risk.
+- `src/views/store-analytics.js` computeRevenueOpportunity's Avg Check Momentum — `range2`
+  (14-day, includes today) compared against `range6` (prior 4 weeks, does not include today).
+  A 14-day denominator gives one partial day real weight (~7%); this produces a displayed
+  momentum reading, not just an internal average.
+- `src/engine/forecast.js` T2W trend (`t2wCut`/`t4wCut`) — `recentRows`/`priorRows` filters
+  have no upper bound at all (`row.date>=t2wCut`, no `<=` ceiling), so a logged-today row rides
+  along uncapped into `r.t2w`, which feeds forecast model comparison/selection.
+
+*Lower risk — same pattern, but the averaging window is long enough (42–90 days) that one
+partial day's dilution is small, or the output feeds a narrative/starting-point rather than a
+hard grade:*
+- `src/features/morning-brief.js` `computeStoreNorms` (8-week/56-day window) — sets baseline
+  "norms" other correlation rules compare live values against.
+- `src/views/analytics.js` `computeMetricAverages` (90-day window) — feeds the Metric
+  Correlation Explorer's predictor averages.
+- `src/views/analytics.js` AI Pre-Forecast/District Brief context (42-day window, already
+  auto-first per the earlier sweep's signature #2 pass) — feeds a raw series into an LLM
+  prompt for narrative reasoning, not a computed percentage/grade.
+- `src/views/store-dash.js` `PerformanceCalculator` baseline (42-day) — already flagged
+  low-stakes by a prior session ("just slider STARTING POINTS the user freely adjusts from").
+
+*Checked and NOT a recurrence:*
+- `src/engine/backtest.js` `_periodSeries` (6-week window ending `new Date()`) — LOOKS like a
+  hit, but the very next lines already filter the derived `_periodRowsAll` to `dk<_openDay`
+  (`_openDay=businessDate()`) before it's used for grading — a comment there even names this
+  same defect and v4.917's fix for it. `_periodSeries.length` itself is used once more, only
+  as a diagnostic row count, not a grade. Already correctly guarded, just via a downstream
+  filter instead of adjusting the range end — verified by reading the surrounding code, not
+  assumed safe from the grep hit alone.
+- `src/views/store-dash.js` `CompareLineChart` (42-day window) — plots raw daily $ values on a
+  line chart, no ratio/grade computed. A partial today just renders as a lower point on the
+  chart, visually obvious as in-progress, not a hidden distortion.
+- `src/views/scheduling.js` week-bounds default (`weekBounds(new Date(Date.now()-7*86400000))`)
+  — seeds a date-picker's default Sun–Sat range, not a comparison.
+- `src/app/App.js` two `pending_reports` sync-freshness cutoffs (30-day/180-day) — filter which
+  already-processed reports to re-check, not a vs-LY or grade computation.
+
+**Not fixed in this hotfix** — the PM's plan batches these into a separate "wrong-number
+batch" pass (Track 1, item 2) once this hotfix lands cleanly, rather than expanding the hotfix's
+blast radius. Flagging here so the list survives past this session regardless of what happens to
+the PR conversation.
+
+**Open question this recurrence raises, for whoever picks up the batch**: sweeping instances one
+at a time has now visibly failed to hold — the fix landed 2026-08-09, and new code broke it again
+2026-08-10, twice, same day. Worth deciding whether the batch pass should also produce a single
+shared helper (e.g. an `endOfLastClosedBusinessDay()` export next to `businessDate()` in
+swing-feed.js) that every trailing-window site calls, so the convention is one import away
+instead of five lines of `addD`/`businessDate()` boilerplate repeated at each site — the more
+copy-pasted the correct pattern is, the more likely a sixth recurrence looks "consistent with
+everything else nearby" to whoever writes it next.
+
 Related: [[feedback-measure-dont-reason]], [[data-sourcing-standard]],
 [[feedback-performance-budget]], [[notes-62-queue]].

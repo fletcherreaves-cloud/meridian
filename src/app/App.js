@@ -332,6 +332,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.942', date:'2026-08-10', changes:[
+    'HOTFIX — the sales-decline check added yesterday (Needs Attention + Attention Now) compared a still-in-progress today against a full day from last year, which could make an ordinary day look like a decline and a real decline look worse than it was, depending purely on what time of day someone happened to look. Both now stop counting today until it’s actually closed out, the same way the rest of the app already handles trailing-week comparisons. Re-checked the real store numbers with the fix in place — same store still stands out as the one with a real problem, nothing else changes.',
+  ]},
   {version:'4.941', date:'2026-08-10', changes:[
     'FIXED — "Attention Now"\'s sales-behind-LY check only looked at whichever single week you had selected, so a real multi-week decline could slip through if that one week happened to look okay (and vice versa, a genuinely bad single week could get buried under a longer-term average). It now also checks the trailing 4 weeks and surfaces whichever view — this week or the last month — shows the worse decline, so a real trend can\'t hide behind a decent week.',
   ]},

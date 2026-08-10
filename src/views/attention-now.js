@@ -11,6 +11,8 @@ import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
+import { businessDate } from '../engine/swing-feed.js';
+import { addD } from '../utils/date.js';
 import { buildAttentionFeed, mergeWorstSalesLY, SEV_META } from '../engine/attention-feed.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
 
@@ -88,8 +90,14 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
     // specific week to surface here (Notes 63 part 2). >=14-of-28 matched-days floor mirrors
     // the same guard buildBrief's trailing-28-day detector uses (engine/pipeline.js), so an
     // aggregate built from a handful of days doesn't get treated as a trend.
+    // Ends on the last CLOSED business day, not literal "now" — otherwise today's
+    // still-filling partial day matches against a FULL last-year day and inflates every
+    // decline (signature #4 — same defect the swing alarm hit 2026-08-07, see
+    // swing-feed.js's businessDate() doc; pattern reused from labor-tools.js).
+    const lastClosedRolling = addD(new Date(businessDate() + 'T00:00:00'), -1);
+    const rollingRange = { s: addD(lastClosedRolling, -27), e: lastClosedRolling };
     const salesLYRolling = allLocs.map(loc => {
-      const m = matchedVsLY(ds, [loc], { s: new Date(Date.now() - 28 * 86400000), e: new Date() });
+      const m = matchedVsLY(ds, [loc], rollingRange);
       return { loc, cur: m.cur, ly: m.ly, days: m.days };
     }).filter(r => r.ly > 0 && r.days >= 14);
     // Worse of the two windows per store — never averaged, never both shown (that would be
