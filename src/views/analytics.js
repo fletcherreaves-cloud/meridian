@@ -4220,27 +4220,49 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       if(laborRows.filter(r=>r.sales>0).length < 21) continue;
 
       // Build DOW buckets — use only positive-sales days for baseline (exclude $0 and holidays).
-      // Also excludes event-tagged closure/remodel/weather days (harvested from the orphaned
-      // AnomalyPanel's detectAnomalies, issue #127) — the trimmed mean below blunts outliers but
-      // doesn't know WHY a day was odd, so a multi-week remodel can still drag the baseline if
-      // it doesn't happen to land in the trimmed 10%. Ported as-is from the source; NOTE 'closure'
-      // and 'remodel' are not real EVENT_TYPES keys anywhere in this codebase (grep confirms —
-      // only 'weather' is), so as-written this exclusion has only ever functioned for
-      // weather-tagged days, in both the orphan and here. Not silently "fixed" by guessing which
-      // real type the author meant by closure/remodel — flagged in the PR instead.
+      // Also excludes weather-tagged days (harvested from the orphaned AnomalyPanel's
+      // detectAnomalies, issue #127) — the trimmed mean below blunts outliers but doesn't know
+      // WHY a day was odd, so a multi-week disruption can still drag the baseline if it doesn't
+      // happen to land in the trimmed 10%.
+      //
+      // This is a DELIBERATE EXCEPTION to the v4.924 "measured, not tagged" principle
+      // (forecast.js:445, `_isMeasuredSalesAnomaly` — median ± k·MAD replaced tag-driven
+      // exclusion everywhere else after a store with 450 tagged days silently zeroed
+      // calibration district-wide on 2026-08-08). Tag-driven exclusion is acceptable HERE,
+      // specifically, because it's bounded: the `vals.length<4` guard below means an emptied
+      // DOW bucket produces no baseline at all rather than a wrong one — it fails safe, unlike
+      // the unguarded calibration case that motivated v4.924. It stops being acceptable the
+      // moment a store accumulates enough tags to blind a whole DOW; the console.warn below is
+      // the tripwire for that, matching the no-silent-caps pattern rankAttention already uses
+      // (attention-feed.js). If a future v4.924 enforcement sweep finds this line, this comment
+      // — not deletion — is the intended resolution, unless the tripwire has actually fired.
+      //
+      // 'closure' and 'remodel' were in the orphan's original condition but are not real
+      // EVENT_TYPES keys anywhere in this codebase (grep confirms — nearest real keys are
+      // road_closure/construction/maintenance/outage/power, and there is no remodel type), so
+      // they never matched in the orphan or in an earlier version of this port. Removed rather
+      // than left as dead strings that read as handling cases they don't.
       const dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+      const dowPreExclusion = {0:0,1:0,2:0,3:0,4:0,5:0,6:0}; // candidate count before tag exclusion, for the warn below
       for(const r of laborRows){
         if(r.sales<=0) continue; // exclude $0 from baseline — they ARE anomalies
         if(isHoliday(r.date)) continue; // don't include holidays in baseline
+        const dow=r.date.getDay();
+        dowPreExclusion[dow]++;
         const ev=_uev[loc]&&_uev[loc][r.dk];
-        if(ev&&(ev.type==='closure'||ev.type==='remodel'||ev.type==='weather')) continue; // exclude from baseline
-        dowBuckets[r.date.getDay()].push(r.sales);
+        if(ev&&ev.type==='weather') continue; // exclude from baseline
+        dowBuckets[dow].push(r.sales);
       }
 
       // Compute trimmed mean per DOW (remove top/bottom 10% to reduce outlier influence)
       const dowBaseline = {};
       for(const [dow, vals] of Object.entries(dowBuckets)){
-        if(vals.length < 4) continue;
+        if(vals.length < 4){
+          if(dowPreExclusion[dow]>=4){
+            console.warn(`[Meridian] runScan: store ${loc} DOW ${dow} baseline dropped below the 4-row minimum after event-tag exclusion (${dowPreExclusion[dow]} candidate day(s) -> ${vals.length} after exclusion) — this DOW will not be scanned for anomalies.`);
+          }
+          continue;
+        }
         const sorted = [...vals].sort((a,b)=>a-b);
         const trim = Math.max(1, Math.floor(sorted.length*0.10));
         const trimmed = sorted.slice(trim, sorted.length-trim);
