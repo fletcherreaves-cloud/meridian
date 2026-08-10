@@ -1,6 +1,6 @@
 ---
 name: rls-table-audit-119
-description: Issue #119 — full 82-table RLS audit (authenticated vs service-role row counts). qsr_fob measured healthy (does not currently reproduce the reported bug). Two real, currently-reproducing gaps found and fixed forward — qsr_daily_activity_daily view missing its GRANT, and tenants/tenant_stores had zero RLS policy at all — plus a PM-caught near-miss on the first fix: granting a view's SELECT without security_invoker=true is itself an RLS bypass (views apply the OWNER's row-security by default, not the caller's). Repeatable check: scripts/rls-table-audit.mjs.
+description: Issue #119 — full 82-table RLS audit (authenticated vs service-role row counts). NET RESULT after correction: ONE real gap (tenants/tenant_stores had zero RLS policy), one non-reproduction (qsr_fob measured healthy), and one RETRACTED finding (qsr_daily_activity_daily is superseded, unused infrastructure — its missing GRANT was never a gap; a stale comment in loadQsrActSummary made it look like one). Two reusable lessons: a view over an RLS-protected table is an RLS bypass unless security_invoker=true, and BEFORE fixing a thing, confirm the thing is still used. Repeatable check: scripts/rls-table-audit.mjs.
 metadata:
   node_type: memory
   type: project
@@ -59,7 +59,43 @@ not a third guess.
 
 ## Root cause + fix, per finding
 
-### 1. `qsr_daily_activity_daily` — ERROR, not RLS. AND a second bug the first one was hiding.
+### 1. `qsr_daily_activity_daily` — ⛔ NOT A REAL GAP. The whole finding was wrong.
+
+**⚠️ Retracted 2026-08-10 (PM, same day). Read this before the rest of the section.**
+This view is **superseded and unused**. `loadQsrActSummary` abandoned it on 2026-08-07 for
+the rollup **TABLE** `qsr_daily_activity_rollup`, and the block comment inside that function
+records exactly why: a view over an RLS-protected base table is an RLS bypass without
+`security_invoker`, and *with* `security_invoker` it evaluates RLS per row over 367k rows and
+hits the **statement timeout** on the real 60-day workload. So the "fix" this audit demanded —
+add `security_invoker` and re-run the grant — recreated abandoned infrastructure in the exact
+configuration already measured as too slow to use. The owner ran it for nothing.
+
+**Harmless, verified rather than assumed:** the grant is `authenticated`/`service_role` only,
+and the anon key gets `42501 permission denied` on the view (checked live 2026-08-10). Nothing
+in `src/` reads it. Cost was wasted owner time, not a regression.
+
+**Why it fooled two reviewers.** `loadQsrActSummary`'s *header* comment still claimed it
+"prefers the server-side rollup view (supabase/schema-qsr-daily-summary.sql)" while the code
+twenty lines below already used the table. The audit found a granted-looking view named in a
+stale comment and treated the missing GRANT as an open gap. The PM review then checked whether
+the SQL was **safe** and never asked whether the view was still **wanted** — and the answer was
+in the same function the stale comment lived in.
+
+> **The transferable rule: before fixing a thing, confirm the thing is still used.**
+> "Is this correct?" and "is this wanted?" are different questions, and the second one is
+> cheaper. A single `grep -rn "<object_name>" src/ scripts/` would have ended this in seconds.
+> A verify query passing is not evidence a thing is needed — the view's single-day verify
+> returned correct numbers while being unusable at the window it exists to serve.
+
+Header comment fixed, `scripts/measure-denominator-floors.mjs` repointed at the table, and the
+SQL file banner-marked SUPERSEDED with the drop statement, all 2026-08-10.
+
+*Original (incorrect) analysis preserved below, because the security lesson inside it is real
+and reusable even though the finding that produced it was not.*
+
+---
+
+**Original finding — ERROR, not RLS. AND a second bug the first one was hiding.**
 Postgres error text was literally `permission denied for view
 qsr_daily_activity_daily` — a missing table-level `GRANT`, not an RLS filter (RLS
 denial reads as an empty 200, not a 403/permission error). `schema-qsr-daily-summary.sql`
