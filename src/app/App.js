@@ -100,7 +100,6 @@ const AnomalyPanel        = lazyPanel(() => _storeAnalytics().then(m => ({ defau
 const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.RevenueIntelligence })));
 const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
 const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
-const AIInsightsLog       = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AIInsightsLog })));
 
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
@@ -352,6 +351,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.956', date:'2026-08-10', changes:[
+    'Harvested and retired AI Insights Log (issue #128) — a panel with full render code and its own localStorage journal (mf_insights) that had no way to open it from anywhere in the app; confirmed via grep before touching anything that its toggle was only ever set to false. Checked with the owner whether that local journal held anything worth carrying forward before deleting it — it was empty. What was genuinely worth keeping from its design: a category taxonomy (Operations / Controls / Labor / Sales / Weather / Anomaly / Other) for grouping findings, which Task Queue didn\'t have any equivalent of. Task Queue tasks can now optionally carry a category (colored badge, picker on create and on an existing task, filter pills that only appear once something is actually categorized) and an optional store scope. The AI Backtest Scanner now auto-files a Task Queue entry, category Anomaly, for the single worst finding per store on each run — deduped by title against anything already open so re-running the scanner doesn\'t pile up duplicates. AIInsightsLog, its localStorage read/write helpers, the dead lazy import, and the orphaned show/hide state are all removed.',
+  ]},
   {version:'4.956', date:'2026-08-10', changes:[
     'Harvested the orphaned Developer Dashboard\'s Data Audit tab (issue #123) — a per-store × per-source coverage grid (row counts, first/last date, coverage %, Full/Partial pill) that nothing live had an equivalent for. This is exactly the diagnostic that would have caught the labor_rows staleness incident at a glance instead of two weeks late. Now lives in Data Manager as a new Coverage tab, same math, same 90/70 grading. The Settings Dump (a curated forecast-config readout) moved into the real, reachable Developer Dashboard in Settings; the Engine Trace tab was dropped outright — the standalone Forecast Audit panel (v4.947) already does that job better, including fixing a rendering bug the orphan\'s version had. The orphan itself is deleted, along with its dead import and unreachable state — there were two different components both named "DevDashboard" in this codebase; now there\'s one.',
   ]},
@@ -1747,7 +1749,6 @@ function App() {
   const [showChannelIntel, setShowChannelIntel] = useState(false);
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
   const [showCompare, setShowCompare]  = useState(false);
-  const [showInsights,setShowInsights] = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showAnoms, setShowAnoms]      = useState(false);
   const [showCountCycle, setShowCountCycle] = useState(false);
@@ -3389,7 +3390,7 @@ function App() {
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDICompare||showDataManager||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
-    showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
+    showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
@@ -3683,7 +3684,6 @@ function App() {
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
-    showInsights &&h(AIInsightsLog,{stores,settings,onClose:()=>setShowInsights(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),

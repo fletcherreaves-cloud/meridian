@@ -32,6 +32,18 @@ const STATUS_META = {
 
 const STATUSES = ['backlog','ready','in_progress','done','blocked'];
 
+// Domain facet, harvested from the orphaned AIInsightsLog panel's taxonomy (issue #128) —
+// a well-chosen set of buckets for this domain that TaskQueuePanel never had of its own.
+const CATEGORY_META = {
+  ops:     { label:'Operations', color:'#60a5fa' },
+  ctrl:    { label:'Controls',   color:'#f87171' },
+  labor:   { label:'Labor',      color:'#f59e0b' },
+  sales:   { label:'Sales',      color:'#34d399' },
+  weather: { label:'Weather',    color:'#93c5fd' },
+  anomaly: { label:'Anomaly',    color:'#f97316' },
+  other:   { label:'Other',      color:'#94a3b8' },
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function timeAgo(ts) {
   const diff = Date.now() - new Date(ts).getTime();
@@ -56,6 +68,14 @@ function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.backlog;
   return span({ style:{ fontSize:'9px', fontWeight:700, padding:'2px 8px', borderRadius:99,
     background:m.bg, color:m.color, border:`.5px solid ${m.color}44`, whiteSpace:'nowrap' }}, m.label);
+}
+
+// ── CategoryBadge ─────────────────────────────────────────────────────────────
+function CategoryBadge({ category }) {
+  if (!category) return null;
+  const m = CATEGORY_META[category] || CATEGORY_META.other;
+  return span({ style:{ fontSize:'9px', fontWeight:700, padding:'1px 6px', borderRadius:3,
+    background:m.color+'22', color:m.color, border:`.5px solid ${m.color}44`, whiteSpace:'nowrap' }}, m.label);
 }
 
 // ── TaskCard ──────────────────────────────────────────────────────────────────
@@ -84,11 +104,12 @@ function TaskCard({ task, onUpdate, onDelete }) {
       div({ style:{ flex:1, minWidth:0 }},
         div({ style:{ fontSize:13, fontWeight:600, color:'var(--text)',
           whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}, task.title),
-        task.description && !open && div({ style:{ fontSize:10, color:'var(--text3)',
+        (task.description || task.loc) && !open && div({ style:{ fontSize:10, color:'var(--text3)',
           whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginTop:2 }},
-          task.description),
+          (task.loc ? '#'+task.loc+' · ' : '')+(task.description||'')),
       ),
       div({ style:{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }},
+        h(CategoryBadge, { category:task.category }),
         h(TierBadge, { tier:task.tier }),
         h(StatusBadge, { status:task.status }),
         span({ style:{ fontSize:12, color:'var(--text3)', marginLeft:2 }}, open?'▲':'▼'),
@@ -100,6 +121,26 @@ function TaskCard({ task, onUpdate, onDelete }) {
 
       task.description && div({ style:{ fontSize:12, color:'var(--text2)', lineHeight:1.5,
         padding:'10px 0 12px' }}, task.description),
+
+      task.loc && div({ style:{ fontSize:11, color:'var(--text3)', marginBottom:8 }},
+        '📍 Store #'+task.loc),
+
+      // Category buttons
+      div({ style:{ marginBottom:12 }},
+        div({ style:{ fontSize:'9px', fontWeight:700, color:'var(--text3)',
+          textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Category'),
+        div({ style:{ display:'flex', gap:6, flexWrap:'wrap' }},
+          ...Object.entries(CATEGORY_META).map(([c, m]) =>
+            btn({ key:c, onClick:()=>onUpdate(task.id,{category:task.category===c?null:c}),
+              style:{ padding:'5px 10px', borderRadius:99, border:`.5px solid ${task.category===c?m.color:m.color+'44'}`,
+                background:task.category===c?m.color+'22':'transparent',
+                color:task.category===c?m.color:'var(--text3)',
+                fontSize:11, fontWeight:task.category===c?700:400, cursor:'pointer' }},
+              m.label
+            )
+          )
+        )
+      ),
 
       // Priority buttons
       div({ style:{ marginBottom:12 }},
@@ -199,6 +240,7 @@ function AddTaskSheet({ onSave, onClose }) {
   const [desc,  setDesc]    = useState('');
   const [tier,  setTier]    = useState(1);
   const [pri,   setPri]     = useState(2);
+  const [cat,   setCat]     = useState(null);
   const [notes, setNotes]   = useState('');
   const [saving, setSaving] = useState(false);
   const titleRef = useRef(null);
@@ -209,7 +251,7 @@ function AddTaskSheet({ onSave, onClose }) {
     if (!title.trim()) return;
     setSaving(true);
     await onSave({ title:title.trim(), description:desc.trim()||null,
-      tier, priority:pri, notes:notes.trim()||null, status:'backlog', source:'manual' });
+      tier, priority:pri, category:cat, notes:notes.trim()||null, status:'backlog', source:'manual' });
     onClose();
   };
 
@@ -277,6 +319,23 @@ function AddTaskSheet({ onSave, onClose }) {
               selBtn(+p, pri, setPri,
                 div(null, span({style:{fontSize:16}},m.dot), div({style:{fontSize:10,marginTop:2}},m.label)),
                 m.color))
+          )
+        ),
+
+        // Category (optional)
+        div({ style:{ marginBottom:14 }},
+          div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text3)',
+            textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Category (optional)'),
+          div({ style:{ display:'flex', gap:6, flexWrap:'wrap' }},
+            ...Object.entries(CATEGORY_META).map(([c,m]) =>
+              btn({ key:c, onClick:()=>setCat(cat===c?null:c),
+                style:{ padding:'6px 12px', borderRadius:99, border:`.5px solid ${cat===c?m.color:m.color+'44'}`,
+                  background:cat===c?m.color+'22':'transparent',
+                  color:cat===c?m.color:'var(--text3)',
+                  fontSize:11, fontWeight:cat===c?700:400, cursor:'pointer' }},
+                m.label
+              )
+            )
           )
         ),
 
@@ -421,6 +480,7 @@ export function TaskQueuePanel({ onClose }) {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [filter,  setFilter]  = useState('active'); // 'active' | 'done' | 'all' | 1 | 2 | 3
+  const [catFilter, setCatFilter] = useState('all'); // 'all' | one of CATEGORY_META's keys
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -447,6 +507,7 @@ export function TaskQueuePanel({ onClose }) {
   },[]);
 
   const filtered = tasks.filter(t => {
+    if (catFilter!=='all' && (t.category||null)!==catFilter) return false;
     if (filter==='active') return t.status!=='done';
     if (filter==='done')   return t.status==='done';
     if (filter==='all')    return true;
@@ -495,6 +556,31 @@ export function TaskQueuePanel({ onClose }) {
     ))
   );
 
+  // ── Category filter pills — only shown once at least one task is categorized, so an
+  // all-uncategorized queue (every panel before this ships a category on anything) doesn't
+  // show a facet that can never do anything.
+  const presentCats = [...new Set(tasks.map(t=>t.category).filter(Boolean))];
+  const catFilterPills = () => presentCats.length===0 ? null : div({ style:{ display:'flex', gap:6,
+    padding:'0 16px 10px', overflowX:'auto', flexWrap:'nowrap', borderBottom:'.5px solid var(--bdr)' }},
+    btn({ onClick:()=>setCatFilter('all'),
+      style:{ padding:'5px 12px', borderRadius:99, whiteSpace:'nowrap',
+        border:`.5px solid ${catFilter==='all'?'var(--text3)':'rgba(255,255,255,.12)'}`,
+        background:catFilter==='all'?'rgba(255,255,255,.06)':'transparent',
+        color:catFilter==='all'?'var(--text)':'var(--text3)',
+        fontSize:11, fontWeight:catFilter==='all'?700:400, cursor:'pointer' }},
+      'All categories'),
+    ...presentCats.map(c => {
+      const m = CATEGORY_META[c] || CATEGORY_META.other;
+      return btn({ key:c, onClick:()=>setCatFilter(c),
+        style:{ padding:'5px 12px', borderRadius:99, whiteSpace:'nowrap',
+          border:`.5px solid ${catFilter===c?m.color:m.color+'44'}`,
+          background:catFilter===c?m.color+'22':'transparent',
+          color:catFilter===c?m.color:'var(--text3)',
+          fontSize:11, fontWeight:catFilter===c?700:400, cursor:'pointer' }},
+        m.label);
+    })
+  );
+
   return div({ style:{ position:'fixed', inset:0, zIndex:400, display:'flex',
     flexDirection:'column', background:'var(--bg)' }},
 
@@ -535,6 +621,7 @@ export function TaskQueuePanel({ onClose }) {
       tab==='queue' ? div(null,
         statBar(),
         filterPills(),
+        catFilterPills(),
         loading
           ? div({ style:{ textAlign:'center', padding:40, color:'var(--text3)' }}, 'Loading…')
           : filtered.length===0

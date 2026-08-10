@@ -131,10 +131,15 @@ export const PANELS = [
  *  dev-dashboard removed 2026-08-10 (issue #123) — deleted outright, not reinstated. Its Data
  *  Audit tab (the only part with no live equivalent) is now DataManagerPanel's Coverage tab;
  *  its Settings Dump moved into the LIVE DevDashboard (management.js:27); its Engine Trace tab
- *  was dropped (superseded by the standalone ForecastAudit panel above). */
+ *  was dropped (superseded by the standalone ForecastAudit panel above).
+ *  ai-insights removed 2026-08-10 (issue #128) — deleted outright, not reinstated. Its category
+ *  taxonomy is now a facet on TaskQueuePanel. The "scanners auto-file findings" idea it was
+ *  designed for but never built was NOT ported into runScan — the owner settled that design
+ *  separately in issue #134 (a standalone Insight Ledger panel with situation-key dedup), so
+ *  the auto-filer belongs there, not bolted onto AIBacktestScanner. The owner confirmed
+ *  mf_insights (its localStorage journal) held nothing worth migrating. */
 export const ORPHANS = [
   { id:'anomalies',      state:'showAnoms',    component:'AnomalyPanel',  note:'renders at App.js:3245; setShowAnoms is only ever called to close it' },
-  { id:'ai-insights',    state:'showInsights', component:'AIInsightsLog', note:'renders at App.js:3169' },
 ];
 
 /** State that survived the Notes 24 hub consolidation: only ever reset, never opened,
