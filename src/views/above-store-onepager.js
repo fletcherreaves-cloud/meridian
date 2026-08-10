@@ -8,7 +8,7 @@ import { buildCurrentState, buildReviewActuals, fobByRange, buildPerLocationRows
 import { metricAvg } from '../engine/metric-source.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { shiftDays } from '../engine/trading-days.js';
-import { businessDate } from '../engine/swing-feed.js';
+import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
 import { supabase, loadEomCountStatus } from '../lib/supabase.js';
 
@@ -96,7 +96,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     // MTD excludes the still-open business day (businessDate() accounts for the 4am ABC
     // cutover) — otherwise labor%/OEPE averages a day that's only partially rung against a
     // full-day target, the same distortion documented in schedule-summary.js's normLaborPct.
-    if (period === 'mtd') { const lastClosed = new Date(businessDate() + 'T00:00:00'); lastClosed.setDate(lastClosed.getDate() - 1); return { s: iso(new Date(y, m, 1)), e: iso(lastClosed), label: 'Month-to-date' }; }
+    if (period === 'mtd') { const lastClosed = lastClosedBusinessDay(); return { s: iso(new Date(y, m, 1)), e: iso(lastClosed), label: 'Month-to-date' }; }
     if (period === 'lastweek') { const e = new Date(now); e.setDate(e.getDate() - 1); const s = new Date(e); s.setDate(s.getDate() - 6); return { s: iso(s), e: iso(e), label: 'Last 7 days' }; }
     const ls = new Date(y, m - 1, 1), le = new Date(y, m, 0); return { s: iso(ls), e: iso(le), label: 'Last month' };
   }, [period]);

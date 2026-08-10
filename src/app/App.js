@@ -332,6 +332,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.949', date:'2026-08-10', changes:[
+    'Small cleanup, no behavior change: 3 more places that hand-built "the last full business day" from scratch now share the one helper that already existed for it — the Above-Store One-Pager\'s month-to-date range and two of Labor Tools\' trailing-window pickers. This is the exact kind of copy-pasted date math that has caused a real bug five separate times when someone accidentally left off the "exclude today" part; fewer places holding a hand-copy means fewer places that can quietly drift.',
+  ]},
   {version:'4.948', date:'2026-08-10', changes:[
     'Dialed-In calibration now follows you across devices. It used to live only in this browser\'s local storage — calibrating on the desktop did nothing for the phone or iPad, and calibrating on a preview link before it went live never reached production at all, silently. It now syncs the same way Model Assignments and Smart Targets already do: instant on this device, cloud copy follows within moments, newer always wins if you calibrate on two devices close together.',
     'Resetting calibration now clears the cloud copy too, not just this device\'s. Without that, a reset would have appeared to work and then had the old numbers quietly reappear the next time the app loaded — the specific failure mode this change was built to prevent, not one that shipped.',
