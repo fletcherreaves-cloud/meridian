@@ -350,6 +350,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.959', date:'2026-08-10', changes:[
+    'Spine 1, step 2 (issue #126) — the first change in this redesign that actually looks different on screen: Inventory Control (the app\'s most button-dense panel, ~3,300 lines) migrated onto the shared PanelChrome + ActionMenus built in step 1. The 16-button toolbar (grown from "14" since the issue was scoped) collapses into 4 grouped dropdowns — Reports / Scans / Monitor / Pulls — each still 2 clicks away, nothing hidden, tooltips preserved via a small new title-passthrough on ActionMenu. The mode toggle (Scoreboard / EOM Count / Count Cycle) moved into PanelChrome\'s dedicated view-tabs slot. Two things this panel deliberately does NOT adopt from the shared kit, and why: DateRangeControl doesn\'t fit a monthly-period select (kept the native picker); LocationSelector\'s patch tier reads a different, static supervisor-assignment source than this panel\'s own live one — confirmed these can diverge, couldn\'t confirm from this environment whether they currently have, so the patch/location picker stayed bespoke rather than risk silently mis-grouping a store on a financially-scoped filter on an unverified assumption. Full reasoning in memory/spine1-panel-controls-126.md. Entry chunk 2724.59 KB → 2726.22 KB gzip 818.16 KB → 818.80 KB (+0.64 KB gzip, almost entirely this changelog text — Inventory Control itself is lazy-loaded and the shared components already landed in step 1). Verified: full build + test suite pass and every prop/handler was checked by hand against the original markup — browser verification was attempted but blocked by a Chromium/proxy incompatibility specific to this sandbox, said plainly rather than glossed over.',
+  ]},
   {version:'4.958', date:'2026-08-10', changes:[
     'Harvested and retired AI Insights Log (issue #128) — a panel with full render code and its own localStorage journal (mf_insights) that had no way to open it from anywhere in the app; confirmed via grep before touching anything that its toggle was only ever set to false. Checked with the owner whether that local journal held anything worth carrying forward before deleting it — it was empty. What was genuinely worth keeping from its design: a category taxonomy (Operations / Controls / Labor / Sales / Weather / Anomaly / Other) for grouping findings, which Task Queue didn\'t have any equivalent of. Task Queue tasks can now optionally carry a category (colored badge, picker on create and on an existing task, filter pills that only appear once something is actually categorized) and an optional store scope (tasks.category / tasks.loc, both now live in Supabase). AIInsightsLog, its localStorage read/write helpers, the dead lazy import, and the orphaned show/hide state are all removed. The AI Backtest Scanner does NOT auto-file findings as Task Queue entries — an earlier pass here built exactly that, on an earlier version of the same issue\'s ask, but the owner settled the actual design in issue #134 in the meantime: a standalone Insight Ledger panel with situation-key dedup behind a measure-first gate, not a title-deduped auto-filer bolted onto the scanner. That belongs to the Ledger\'s build, not this one, so it was cut back out rather than shipped as a second, competing implementation. Also fixed while addressing PM review, unrelated to the scope change: Task Queue\'s "Add Task" sheet used to silently close and discard your entry if the Supabase save failed — it now stays open and tells you, instead of losing the task with no indication anything went wrong.',
   ]},
@@ -3955,12 +3958,7 @@ function App() {
     },
           h(EOMSupervisorPanel,{ds,settings,supabase})
     ),
-        showEOMDash&&h(ModalShell,{
-      title:'📦 Inventory Control',
-      onClose:()=>setShowEOMDash(false),maxWidth:1240,zIndex:Z.nested,bodyStyle:{padding:'20px'}
-    },
-      h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)})
-    ),
+        showEOMDash&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}),
         showAudit&&selStore&&h(ModalShell,{
       title:'🔬 Forecast Audit — '+(STORE_NAMES[(selStore&&selStore.loc?selStore.loc:selStore)]||(selStore&&selStore.loc?selStore.loc:selStore)),
       subtitle:'Full transparency: every input, weight, and multiplier used to compute each day forecast.',

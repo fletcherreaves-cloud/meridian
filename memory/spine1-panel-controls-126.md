@@ -1,6 +1,6 @@
 ---
 name: spine1-panel-controls-126
-description: Issue #126 (Spine 1 step 1) — the four shared panel controls (DateRangeControl, LocationSelector, ActionMenu/ActionMenus, PanelChrome) plus two additive ModalShell options. Pure addition, no call sites migrated yet. How to wire a panel to it in step 2.
+description: Issue #126 (Spine 1). Step 1 built the four shared panel controls (DateRangeControl, LocationSelector, ActionMenu/ActionMenus, PanelChrome) plus two additive ModalShell options — pure addition, no call sites. Step 2 (2026-08-10) migrated the Inventory Control pilot onto them and found two real reasons the shared components don't fit every panel as-is: no date-RANGE concept for a monthly-period panel, and a live-vs-static patch-source mismatch that blocked adopting LocationSelector's patch tier.
 metadata:
   node_type: memory
   type: project
@@ -40,34 +40,77 @@ panel to them.
   static import from a shared, potentially-eagerly-used component would risk dragging it into
   wherever `PanelChrome` ends up, the same class of mistake PR #122 made with `labor-tools.js`).
 
-## Wiring a panel in step 2 (not done yet — the Inventory Control pilot is the plan)
+## Step 2 shipped (2026-08-10) — Inventory Control, the named pilot
 
-```js
-import { PanelChrome } from '../components/PanelChrome.js';
-import { DateRangeControl, LocationSelector, ActionMenus, resolveDatePreset } from '../components/PanelControls.js';
-import { ExportDropdown } from '../views/store-dash.js';
+`src/views/eom-dashboard.js`'s `EOMDashboardPanel` (`📦 Inventory Control`, ~3300 lines, the
+app's most button-dense panel) now self-wraps `ModalShell` with `subHeader: h(PanelChrome, ...)`
+instead of being wrapped externally by `App.js` — `App.js`'s call site simplified from a
+6-line `h(ModalShell, {...}, h(EOMDashboardPanel, {...}))` to one line, since PanelChrome's
+slot content depends on state that lives inside the panel, not in `App.js`. This is the actual
+pattern step 2 established, not the sketch below (kept for what it got right — `ActionMenus`
+grouping, `LocationSelector`'s worked shape for panels where it fits cleanly).
 
-// inside the panel:
-const [range, setRange] = useState(() => resolveDatePreset('7d', MY_PRESETS)); // per-panel default
-h(ModalShell, {
-  title: '…', onClose, scroll: true, tintHeader: true,   // only if this panel matches that shape
-  subHeader: h(PanelChrome, {
-    location: h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value, onChange: setValue }),
-    dateControl: h(DateRangeControl, { presets: MY_PRESETS, value: range, onChange: setRange }),
-    exportSlot: h(ExportDropdown, { rows, columns, title }),
-    actions: h(ActionMenus, { groups: [{ label: 'Reports ▾', items: [...] }, { label: 'Scans ▾', items: [...] }] }),
-  }),
-}, ...);
-```
+The 16-button wall (grown from "14" since the issue was scoped) collapsed into 4 `ActionMenus`
+groups — Reports / Scans / Monitor / Pulls (3 in the issue's worked example; this panel earned
+a 4th, Monitor, rather than force-fitting Snapshot/Change Monitor/Flow into Reports or Scans).
+The mode toggle (Scoreboard/EOM Count/Count Cycle) moved into PanelChrome's `tabs` slot — it's
+a view-tab selector, not an action. `ActionMenu` gained `title` passthrough (a small, generic,
+backward-compatible addition) so the long descriptive tooltips on those 16 buttons weren't lost
+when they became dropdown items.
 
-`LocationSelector` takes `mode:'store'` for genuinely single-store panels (a simple picker,
-no All→State→Patch chain — "a control that never does anything trains people to ignore
-controls," per the issue).
+### Two things this panel does NOT use, and why — read before assuming every panel fits
 
-## Left for step 2 / not addressed here
+1. **No `DateRangeControl`.** This panel's "when" control is a single accounting-month
+   `<select>` (`recentPeriods(4)`), not a trailing-N-days range. `DateRangeControl`'s preset
+   catalog (7d/14d/28d/…) has no period-select equivalent. Kept the native `<select>` and put
+   it in `PanelChrome`'s `dateControl` slot as raw content — `dateControl` just renders
+   whatever's passed, it doesn't require literally being `DateRangeControl`. Don't assume every
+   panel's "when" axis is a day-range; some are calendar periods.
 
-- No panel actually renders `PanelChrome` yet.
-- The raw `zIndex` 456/460 used by the two reference panels (above `Z.modal`=300 and
-  `Z.nested`=400) still needs reconciling — issue #126 flagged this as a step-2+ concern,
-  not step 1's.
-- `ExportDropdown` itself wasn't touched — "adopt the existing" per the issue, not rebuild.
+2. **`LocationSelector` NOT used for the patch/state/store picker — the real finding of this
+   step.** `LocationSelector`'s patch tier (`buildLocationHierarchy`, `PanelControls.js`)
+   derives from the STATIC `INV_ORG_COORDS[loc].sup` seed in `constants.js`. This panel's own
+   patch filter correctly reads the LIVE supervisor assignment
+   (`supervisorGroups()` → `orgAssignments()` → the settable `_liveAssignments` override — a
+   real reassignment mechanism this app supports, confirmed in `constants.js`, not
+   hypothetical). These are two genuinely different data sources for "who supervises this
+   store" that can diverge the moment a reassignment is saved. Could not confirm from the
+   sandbox whether they're currently in sync — an anon-key `org_config` read came back `[]`,
+   which is ambiguous under RLS (could mean "no live overrides" or "RLS is filtering the
+   read"), not proof either way. Swapping the patch source on that unverified assumption would
+   risk silently mis-grouping a store on a financially-scoped filter (patch-scoped FOB
+   reporting) the next time a supervisor changes. Kept the panel's own bespoke state-pills +
+   patch-`<select>` + store-`<select>` markup, unchanged, just relocated into `PanelChrome`'s
+   `location` slot as raw content — same reasoning as `dateControl` above.
+   **Before any future panel adopts `LocationSelector`'s patch tier for real, either (a)
+   confirm `INV_ORG_COORDS[loc].sup` and `supervisorGroups()` are kept in sync by construction
+   (e.g. one is generated from the other), or (b) give `buildLocationHierarchy` a way to accept
+   a live patch source instead of always reading the static seed.** Neither was done here —
+   flagged, not fixed, consistent with this session's "surface it, don't guess" standard.
+
+Not swapped either, and correctly so: `exportSlot` = the panel's own CSV button (this panel
+never had `ExportDropdown` — CSV-only was already correct for it, nothing to adopt).
+
+### Verification limits — said plainly, not glossed over
+
+Build (`npx vite build`) and the full test suite (95 files / 1165 tests) pass, and the
+entry-chunk delta measured flat (`eom-dashboard.js` is lazy-loaded; the shared components were
+already in the entry bundle from step 1). Interactive browser verification (minted an
+authenticated session via the Supabase admin API, same approach as prior sessions) was
+attempted but blocked by a Chromium↔proxy incompatibility in this sandbox specifically — `curl`
+reaches the same Supabase host fine through the identical proxy, Chromium does not
+(`net::ERR_CONNECTION_RESET`), and further debugging that gap wasn't a good use of time against
+this task. Every prop/handler/disabled-state mapping was checked by hand against the original
+markup line-by-line rather than skipped, but this has NOT been visually confirmed in a running
+browser. Flagging this explicitly rather than claiming a verification that didn't happen.
+
+## Left for a future step
+
+- The raw `zIndex` 456/460 used by the two reference panels (`MetricCorrelationExplorer`,
+  `DistrictLensPanel`, both above `Z.modal`=300 and `Z.nested`=400) still needs reconciling —
+  issue #126 flagged this as a step-2+ concern; Inventory Control didn't touch it (its own
+  original `zIndex:Z.nested` was already a proper Z-map value, not a magic number, so there was
+  nothing to reconcile on this pilot specifically).
+- The live-vs-static patch-source question above, if a future panel wants `LocationSelector`'s
+  patch tier for real.
+- `ExportDropdown` itself still wasn't touched.

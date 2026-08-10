@@ -7,7 +7,10 @@
 // FOB comes from the qsr_fob stream (dollar-weighted, MTD). Diagnosis + comms state
 // persist to eom_count_status so the owner can track who was told what.
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, supervisorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
+import { PanelChrome } from '../components/PanelChrome.js';
+import { LocationSelector, ActionMenus } from '../components/PanelControls.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
@@ -2080,149 +2083,137 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return d >= countWindowStart(period);
   }, [period]);
 
-  return h(React.Fragment, null,
-    // toolbar
-    div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' } },
-      div(null,
-        span({ style: { fontSize: '12px', color: 'var(--text3)' } },
-          mode === 'eom'
-            ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
-            : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)',
-          dataAsOf && span({ style: { marginLeft: '8px', color: 'var(--text2)' }, title: 'Freshest business date across the loaded EOM streams (on-hand, FOB, waste, transfers)' },
-            `· data as of ${dataAsOf.toLocaleDateString()}`))),
-      div({ style: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' } },
-        // mode toggle — EOM count-completion vs year-round progress
-        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
-          [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Count Cycle']].map(([k, label]) =>
-            h('button', {
-              key: k, onClick: () => setMode(k),
-              title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared' : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
-              style: {
-                background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
-                border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-              },
-            }, label))),
-        h('select', {
-          value: period, onChange: e => setPeriod(e.target.value),
-          style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
-        }, periods.map(p => h('option', { key: p, value: p }, p))),
-        h('button', {
-          onClick: () => setFobOpen(true), title: 'Side-by-side FOB component breakdown across stores — spot where overruns originate',
-          disabled: rows.length === 0,
-          style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '📊 FOB breakdown'),
-        h('button', {
-          onClick: exportCSV, title: 'Download the all-stores table as CSV',
-          disabled: rows.length === 0,
-          style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '⬇ CSV'),
-        h('button', {
-          onClick: openFlow, title: 'Edit the diagnosis flow — reorder/toggle checks and tune thresholds',
-          style: { background: 'var(--surf3)', color: 'var(--text2)', border: `1px solid ${diagCfg ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' },
-        }, diagCfg ? '⚙ Flow *' : '⚙ Flow'),
-        h('button', {
-          onClick: () => runChronicScan(), disabled: rows.length === 0 || chronicBusy,
-          title: 'Scan the current location scope across a past window — which items are chronically High-Variance / Loss-Forming across stores (on our own pattern principles). Reads on demand.',
-          style: { background: 'var(--surf3)', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, chronicBusy ? '…' : '🔁 Chronic offenders'),
-        h('button', {
-          onClick: () => runReliabilityScan(), disabled: rows.length === 0 || relBusy,
-          title: 'Count Reliability — grades each store on how CONSISTENTLY it counts (big count-error reversals hurt; real losses do not). Accuracy + consistency is king. Reads on demand.',
-          style: { background: 'var(--surf3)', color: '#4ade80', border: '1px solid #4ade80', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, relBusy ? '…' : '📊 Count reliability'),
-        h('button', {
-          onClick: () => runRubberBandScan(), disabled: rows.length === 0 || rbBusy,
-          title: 'Rubber-band — the padding→collapse integrity pattern: items that ran OVER (inventory padded) for months then snapped to a big short. Catches the "variance collapse" before it explodes. Reads on demand across the scope.',
-          style: { background: 'var(--surf3)', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, rbBusy ? '…' : '🪃 Rubber-band'),
-        h('button', {
-          onClick: runWasteScan, disabled: rows.length === 0,
-          title: 'Waste analysis — run the Second-Look waste rules across the scope: uniform/static values (a guessed/copy-paste entry, not a real toss), high-$ manager sessions, manager concentration, and count-window spikes.',
-          style: { background: 'var(--surf3)', color: '#a3e635', border: '1px solid #a3e635', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '🗑 Waste'),
-        h('button', {
-          onClick: () => setXcOpen(true), disabled: rows.length === 0,
-          title: 'AI Cross-Check — paste an external AI\'s FOB analysis (e.g. CoachQ) and reconcile it against Meridian\'s real numbers. Catches fabricated rows (components that don\'t sum to their own FOB$) + divergences.',
-          style: { background: 'var(--surf3)', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '🔍 AI Cross-Check'),
-        h('button', {
-          onClick: openBulk, disabled: rows.length === 0,
-          title: 'Generate the EOM follow-up message for every location in scope at once — copy each and send (recount lists / action plans, freshest-wins).',
-          style: { background: 'var(--surf3)', color: '#f5bc00', border: '1px solid #f5bc00', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '📣 Message all'),
-        h('button', {
-          onClick: () => setSumOpen(true), disabled: rows.length === 0,
-          title: 'District EOM Summary — FOB + all components ($/%/vs target), count completion, and the $ opportunity across the current scope. CSV + Print.',
-          style: { background: 'var(--surf3)', color: '#c084fc', border: '1px solid #c084fc', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '📊 Summary report'),
-        // Optional manual snapshot. The Change Monitor no longer needs it — the baseline is auto-derived
-        // from the count ledger (variance at count-completion). Keep this only to freeze an extra checkpoint
-        // for watching the authoritative number drift over days. Muted so it's clearly secondary.
-        h('button', {
-          onClick: lockBaseline, disabled: allRows.length === 0 || locking,
-          title: 'Optional: freeze an extra snapshot of the current state to watch the authoritative FOB drift over days. NOT required — the Change Monitor auto-derives each store\'s baseline from the count ledger (variance at count-completion).',
-          style: { background: 'var(--surf3)', color: 'var(--text3)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: allRows.length ? 'pointer' : 'not-allowed' },
-        }, locking ? '… Locking' : '📌 Snapshot (optional)'),
-        h('button', {
-          onClick: openMonitor, disabled: rows.length === 0,
-          title: 'Change Monitor — diff the current live state against the locked baseline. Shows per store the FOB Δ and, per item, whether a recount HELPED (variance moved toward $0) or HURT (moved away). This is the day-2 secondary review.',
-          style: { background: 'var(--surf3)', color: '#f472b6', border: '1px solid #f472b6', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '📸 Change Monitor'),
-        h('button', {
-          onClick: () => { setRiddleStore(null); setRiddleOpen(true); }, disabled: rows.length === 0,
-          title: 'FOB Root-Cause Analysis — for the current scope: which stores\' RECOUNTS add loss (net-harmful = the coaching opportunities) and which stores hold the most CONSISTENT FOB month-to-month. Same math as the batch analysis; every number is decomposable.',
-          style: { background: 'var(--surf3)', color: '#a78bfa', border: '1px solid #a78bfa', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '🔬 FOB Analysis'),
-        h('button', {
-          onClick: () => { setFobRepStore(null); setFobRepOpen(true); }, disabled: rows.length === 0,
-          title: 'FOB Report — all-location EOM-lean read for the current scope: OK/FL summary, biggest opportunities, then patch → store with each store\'s FOB vs target, month-over-month trend (improving/regressing), worst component, top item losers, a masking check, and a plain-language action plan. Reusable for one / all / patch.',
-          style: { background: 'var(--surf3)', color: '#34d399', border: '1px solid #34d399', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed' },
-        }, '📊 FOB Report'),
-        lockMsg ? span({ style: { fontSize: '11px', color: lockMsg.startsWith('✓') ? '#4ade80' : '#fb923c', alignSelf: 'center' } }, lockMsg) : null,
-        // On-demand pulls (Notes 35): fetch fresh On-Hand count progress / Variance now.
-        h('button', {
-          onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand',
-          title: 'Pull fresh On-Hand count progress now (forces a run regardless of the count-window / 8a–6p CT gate)',
-          style: { background: 'rgba(245,188,0,.14)', color: '#f5bc00', border: '1px solid rgba(245,188,0,.4)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: pulling === 'onhand' ? 'default' : 'pointer' },
-        }, pulling === 'onhand' ? '…' : '↻ On-Hand'),
-        h('button', {
-          onClick: () => doPull('variance', 'Variance'), disabled: pulling === 'variance',
-          title: 'Pull fresh Variance / Raw-Item detail now',
-          style: { background: 'rgba(245,188,0,.14)', color: '#f5bc00', border: '1px solid rgba(245,188,0,.4)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: pulling === 'variance' ? 'default' : 'pointer' },
-        }, pulling === 'variance' ? '…' : '↻ Variance'),
-        pullMsg && span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : '#f87171', maxWidth: '260px' } }, pullMsg.text))),
+  // ── Spine 1 step 2 (issue #126) — this panel migrates onto PanelChrome + the shared
+  // ActionMenus (the pilot named in the issue). The location/patch picker below is
+  // DELIBERATELY kept as bespoke markup rather than swapped to the shared LocationSelector:
+  // LocationSelector's patch tier sources from the static INV_ORG_COORDS[loc].sup seed
+  // (constants.js), while this panel's own patch filter correctly reads the LIVE supervisor
+  // assignment (supervisorGroups() -> orgAssignments() -> the settable _liveAssignments
+  // override — a real reassignment mechanism this app supports, not a hypothetical one).
+  // Confirmed these are two genuinely different data sources, not two names for the same
+  // thing; could not confirm from this sandbox whether they're currently in sync (an
+  // anon-key org_config read came back empty, which is ambiguous under RLS — not proof no
+  // live overrides exist). Swapping the patch source on that unverified assumption would risk
+  // silently mis-grouping a store on a financially-scoped filter (patch-scoped FOB reporting)
+  // the next time a supervisor reassignment happens. Left as-is; the state pills + collapsing
+  // the action wall into grouped menus below is the actual ask this step delivers.
+  const dateControlSlot = h('select', {
+    value: period, onChange: e => setPeriod(e.target.value),
+    style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
+  }, periods.map(p => h('option', { key: p, value: p }, p)));
 
-    // location picker — state pills (All / OK / FL) + single-store dropdown
-    div({ style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' } },
-      [['all', 'All'], ['OK', 'Oklahoma'], ['FL', 'Florida']].map(([k, label]) => {
-        const active = scope === k;
-        return h('button', {
-          key: k, onClick: () => { setScope(k); setOneStore(''); setPatch(''); },
-          style: {
-            background: active ? '#f5bc00' : 'var(--surf3)', color: active ? '#0f1117' : 'var(--text2)',
-            border: `1px solid ${active ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '999px',
-            padding: '5px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-          },
-        }, label);
-      }),
-      // Patch / operator (supervisor) filter — pin opportunity by patch. Cross-checks with scope.
-      Object.keys(patchGroups).length ? h('select', {
-        value: patch, onChange: e => { setPatch(e.target.value); setScope('all'); setOneStore(''); },
-        title: 'Filter to one supervisor / operator patch',
-        style: { background: patch ? '#f5bc00' : 'var(--surf3)', color: patch ? '#0f1117' : 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '999px', padding: '5px 12px', fontSize: '12px', fontWeight: 700, maxWidth: '200px' },
-      }, [
-        h('option', { key: '', value: '' }, 'All patches'),
-        ...Object.keys(patchGroups).sort().map(sup => h('option', { key: sup, value: sup }, `${sup} (${(patchGroups[sup] || []).length})`)),
-      ]) : null,
-      h('span', { style: { color: 'var(--text3)', fontSize: '12px', margin: '0 2px' } }, '·'),
-      h('select', {
-        value: oneStore, onChange: e => setOneStore(e.target.value),
-        style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', maxWidth: '220px' },
-      }, [
-        h('option', { key: '', value: '' }, `All stores in scope (${pickerStores.length})`),
-        ...pickerStores.map(r => h('option', { key: r.loc, value: r.loc }, r.name)),
-      ]),
-      span({ style: { color: 'var(--text3)', fontSize: '12px', marginLeft: 'auto' } }, `${rows.length} shown`)),
+  const exportSlotContent = h('button', {
+    onClick: exportCSV, title: 'Download the all-stores table as CSV',
+    disabled: rows.length === 0,
+    style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
+  }, '⬇ CSV');
+
+  const locationSlot = div({ style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+    [['all', 'All'], ['OK', 'Oklahoma'], ['FL', 'Florida']].map(([k, label]) => {
+      const active = scope === k;
+      return h('button', {
+        key: k, onClick: () => { setScope(k); setOneStore(''); setPatch(''); },
+        style: {
+          background: active ? '#f5bc00' : 'var(--surf3)', color: active ? '#0f1117' : 'var(--text2)',
+          border: `1px solid ${active ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '999px',
+          padding: '5px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+        },
+      }, label);
+    }),
+    // Patch / operator (supervisor) filter — pin opportunity by patch. Cross-checks with scope.
+    Object.keys(patchGroups).length ? h('select', {
+      value: patch, onChange: e => { setPatch(e.target.value); setScope('all'); setOneStore(''); },
+      title: 'Filter to one supervisor / operator patch',
+      style: { background: patch ? '#f5bc00' : 'var(--surf3)', color: patch ? '#0f1117' : 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '999px', padding: '5px 12px', fontSize: '12px', fontWeight: 700, maxWidth: '200px' },
+    }, [
+      h('option', { key: '', value: '' }, 'All patches'),
+      ...Object.keys(patchGroups).sort().map(sup => h('option', { key: sup, value: sup }, `${sup} (${(patchGroups[sup] || []).length})`)),
+    ]) : null,
+    h('span', { style: { color: 'var(--text3)', fontSize: '12px', margin: '0 2px' } }, '·'),
+    h('select', {
+      value: oneStore, onChange: e => setOneStore(e.target.value),
+      style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', maxWidth: '220px' },
+    }, [
+      h('option', { key: '', value: '' }, `All stores in scope (${pickerStores.length})`),
+      ...pickerStores.map(r => h('option', { key: r.loc, value: r.loc }, r.name)),
+    ]),
+    span({ style: { color: 'var(--text3)', fontSize: '12px' } }, `${rows.length} shown`));
+
+  // mode toggle — EOM count-completion vs year-round progress — is a view-tab selector,
+  // so it moves into PanelChrome's tabs slot (band 3, right side) rather than staying an
+  // action button.
+  const tabsSlot = div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
+    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Count Cycle']].map(([k, label]) =>
+      h('button', {
+        key: k, onClick: () => setMode(k),
+        title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared' : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
+        style: {
+          background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
+          border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+        },
+      }, label)));
+
+  // 16 buttons -> 4 grouped dropdowns (issue #126's worked example was 3 — Reports/Scans/
+  // Pulls — this panel has grown a 4th distinct category, Monitor, since the issue was
+  // scoped; grouping it in with Reports or Scans would have been the wrong fit for either).
+  // ActionMenu items don't carry per-item color the way the old buttons did — that's the
+  // point of collapsing a 16-color wall into labeled groups, not a fidelity loss to fix.
+  // title text is preserved per-item via ActionMenu's title passthrough so the long
+  // descriptions aren't lost, just no longer visible until the menu is open.
+  const actionGroups = [
+    {
+      label: 'Reports',
+      items: [
+        { label: '📊 FOB breakdown', onClick: () => setFobOpen(true), disabled: rows.length === 0, title: 'Side-by-side FOB component breakdown across stores — spot where overruns originate' },
+        { label: '📊 Summary report', onClick: () => setSumOpen(true), disabled: rows.length === 0, title: 'District EOM Summary — FOB + all components ($/%/vs target), count completion, and the $ opportunity across the current scope. CSV + Print.' },
+        { label: '🔬 FOB Analysis', onClick: () => { setRiddleStore(null); setRiddleOpen(true); }, disabled: rows.length === 0, title: 'FOB Root-Cause Analysis — for the current scope: which stores\' RECOUNTS add loss (net-harmful = the coaching opportunities) and which stores hold the most CONSISTENT FOB month-to-month. Same math as the batch analysis; every number is decomposable.' },
+        { label: '📊 FOB Report', onClick: () => { setFobRepStore(null); setFobRepOpen(true); }, disabled: rows.length === 0, title: 'FOB Report — all-location EOM-lean read for the current scope: OK/FL summary, biggest opportunities, then patch → store with each store\'s FOB vs target, month-over-month trend (improving/regressing), worst component, top item losers, a masking check, and a plain-language action plan. Reusable for one / all / patch.' },
+        { label: '📣 Message all', onClick: openBulk, disabled: rows.length === 0, title: 'Generate the EOM follow-up message for every location in scope at once — copy each and send (recount lists / action plans, freshest-wins).' },
+      ],
+    },
+    {
+      label: 'Scans',
+      items: [
+        { label: chronicBusy ? '🔁 Chronic offenders…' : '🔁 Chronic offenders', onClick: () => runChronicScan(), disabled: rows.length === 0 || chronicBusy, title: 'Scan the current location scope across a past window — which items are chronically High-Variance / Loss-Forming across stores (on our own pattern principles). Reads on demand.' },
+        { label: relBusy ? '📊 Count reliability…' : '📊 Count reliability', onClick: () => runReliabilityScan(), disabled: rows.length === 0 || relBusy, title: 'Count Reliability — grades each store on how CONSISTENTLY it counts (big count-error reversals hurt; real losses do not). Accuracy + consistency is king. Reads on demand.' },
+        { label: rbBusy ? '🪃 Rubber-band…' : '🪃 Rubber-band', onClick: () => runRubberBandScan(), disabled: rows.length === 0 || rbBusy, title: 'Rubber-band — the padding→collapse integrity pattern: items that ran OVER (inventory padded) for months then snapped to a big short. Catches the "variance collapse" before it explodes. Reads on demand across the scope.' },
+        { label: '🗑 Waste', onClick: runWasteScan, disabled: rows.length === 0, title: 'Waste analysis — run the Second-Look waste rules across the scope: uniform/static values (a guessed/copy-paste entry, not a real toss), high-$ manager sessions, manager concentration, and count-window spikes.' },
+        { label: '🔍 AI Cross-Check', onClick: () => setXcOpen(true), disabled: rows.length === 0, title: 'AI Cross-Check — paste an external AI\'s FOB analysis (e.g. CoachQ) and reconcile it against Meridian\'s real numbers. Catches fabricated rows (components that don\'t sum to their own FOB$) + divergences.' },
+      ],
+    },
+    {
+      label: 'Monitor',
+      items: [
+        { label: locking ? '📌 Snapshot… Locking' : '📌 Snapshot (optional)', onClick: lockBaseline, disabled: allRows.length === 0 || locking, title: 'Optional: freeze an extra snapshot of the current state to watch the authoritative FOB drift over days. NOT required — the Change Monitor auto-derives each store\'s baseline from the count ledger (variance at count-completion).' },
+        { label: '📸 Change Monitor', onClick: openMonitor, disabled: rows.length === 0, title: 'Change Monitor — diff the current live state against the locked baseline. Shows per store the FOB Δ and, per item, whether a recount HELPED (variance moved toward $0) or HURT (moved away). This is the day-2 secondary review.' },
+        { label: diagCfg ? '⚙ Flow *' : '⚙ Flow', onClick: openFlow, title: 'Edit the diagnosis flow — reorder/toggle checks and tune thresholds' },
+      ],
+    },
+    {
+      label: 'Pulls',
+      items: [
+        { label: pulling === 'onhand' ? '↻ On-Hand…' : '↻ On-Hand', onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand', title: 'Pull fresh On-Hand count progress now (forces a run regardless of the count-window / 8a–6p CT gate)' },
+        { label: pulling === 'variance' ? '↻ Variance…' : '↻ Variance', onClick: () => doPull('variance', 'Variance'), disabled: pulling === 'variance', title: 'Pull fresh Variance / Raw-Item detail now' },
+      ],
+    },
+  ];
+
+  const actionsSlot = h(React.Fragment, null,
+    h(ActionMenus, { groups: actionGroups }),
+    lockMsg ? span({ style: { fontSize: '11px', color: lockMsg.startsWith('✓') ? '#4ade80' : '#fb923c' } }, lockMsg) : null,
+    pullMsg ? span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : '#f87171', maxWidth: '260px' } }, pullMsg.text) : null,
+  );
+
+  const subtitleText = (mode === 'eom'
+    ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
+    : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
+    + (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : '');
+
+  return h(ModalShell, {
+    title: '📦 Inventory Control', subtitle: subtitleText, onClose,
+    maxWidth: 1240, zIndex: Z.nested, bodyStyle: { padding: '20px' },
+    subHeader: h(PanelChrome, { location: locationSlot, dateControl: dateControlSlot, exportSlot: exportSlotContent, actions: actionsSlot, tabs: tabsSlot }),
+  },
 
     // summary tiles
     div({ style: { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' } },

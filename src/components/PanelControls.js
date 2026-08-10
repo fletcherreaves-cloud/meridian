@@ -241,7 +241,7 @@ export function ActionMenu({ label, items }) {
       ...shown.map((it, i) => btn({
         key: it.label + i,
         style: { ..._itemStyle, ...(i === shown.length - 1 ? { borderBottom: 'none' } : null) },
-        disabled: it.disabled, onClick: () => { setOpen(false); it.onClick?.(); },
+        disabled: it.disabled, title: it.title, onClick: () => { setOpen(false); it.onClick?.(); },
       }, it.label)),
     ),
   );
