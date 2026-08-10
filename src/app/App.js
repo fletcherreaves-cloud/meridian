@@ -99,7 +99,6 @@ const _storeAnalytics = () => import('../views/store-analytics.js');
 const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.RevenueIntelligence })));
 const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
 const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
-const AIInsightsLog       = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AIInsightsLog })));
 
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
@@ -351,6 +350,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.958', date:'2026-08-10', changes:[
+    'Harvested and retired AI Insights Log (issue #128) — a panel with full render code and its own localStorage journal (mf_insights) that had no way to open it from anywhere in the app; confirmed via grep before touching anything that its toggle was only ever set to false. Checked with the owner whether that local journal held anything worth carrying forward before deleting it — it was empty. What was genuinely worth keeping from its design: a category taxonomy (Operations / Controls / Labor / Sales / Weather / Anomaly / Other) for grouping findings, which Task Queue didn\'t have any equivalent of. Task Queue tasks can now optionally carry a category (colored badge, picker on create and on an existing task, filter pills that only appear once something is actually categorized) and an optional store scope (tasks.category / tasks.loc, both now live in Supabase). AIInsightsLog, its localStorage read/write helpers, the dead lazy import, and the orphaned show/hide state are all removed. The AI Backtest Scanner does NOT auto-file findings as Task Queue entries — an earlier pass here built exactly that, on an earlier version of the same issue\'s ask, but the owner settled the actual design in issue #134 in the meantime: a standalone Insight Ledger panel with situation-key dedup behind a measure-first gate, not a title-deduped auto-filer bolted onto the scanner. That belongs to the Ledger\'s build, not this one, so it was cut back out rather than shipped as a second, competing implementation. Also fixed while addressing PM review, unrelated to the scope change: Task Queue\'s "Add Task" sheet used to silently close and discard your entry if the Supabase save failed — it now stays open and tells you, instead of losing the task with no indication anything went wrong.',
+  ]},
   {version:'4.957', date:'2026-08-10', changes:[
     'Harvested the orphaned Anomaly Detection panel\'s one real capability — excluding weather-tagged days from its day-by-day sales baseline, so a multi-week disruption can\'t quietly drag down what counts as "normal" for a store — into the live AI Backtest Scanner (issue #127). The scanner already trims outliers, but trimming only catches a disruption if it happens to be extreme enough to land in the trimmed 10%; a 2-week synthetic test case confirms a real disruption can still slip through trimming alone and moves the baseline ~6% once it\'s excluded outright instead. This is a deliberate, bounded exception to the "measured, not tagged" rule adopted district-wide in v4.924 after tag-driven exclusion silently zeroed calibration for a heavily-tagged store — it\'s safe here specifically because an emptied day-of-week bucket produces no baseline rather than a wrong one, and now warns by name (store + day) if event tags ever empty one, instead of quietly going blind on that day the way the original orphan would have. The ported check also referenced two event-type strings, "closure" and "remodel", that don\'t actually exist anywhere in this app\'s real event-type list — only "weather" does — so they were removed rather than left in as dead code pretending to check for cases that can\'t occur. Production currently has zero events tagged with the qualifying type, so this doesn\'t change anything visible today — it\'s ready for the next time one gets tagged. The orphaned panel itself — whose render had drifted so far from its own engine\'s field names that every row would have shown blank anyway — is deleted outright, along with its dead state and its ORPHANS registry entry.',
   ]},
@@ -1748,7 +1750,6 @@ function App() {
   const [showChannelIntel, setShowChannelIntel] = useState(false);
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
   const [showCompare, setShowCompare]  = useState(false);
-  const [showInsights,setShowInsights] = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showCountCycle, setShowCountCycle] = useState(false);
   const [showNews, setShowNews] = useState(false);
@@ -3388,7 +3389,7 @@ function App() {
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDICompare||showDataManager||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
-    showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
+    showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
@@ -3682,7 +3683,6 @@ function App() {
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
-    showInsights &&h(AIInsightsLog,{stores,settings,onClose:()=>setShowInsights(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),

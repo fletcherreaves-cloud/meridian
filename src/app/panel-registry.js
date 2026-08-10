@@ -132,12 +132,24 @@ export const PANELS = [
  *  Audit tab (the only part with no live equivalent) is now DataManagerPanel's Coverage tab;
  *  its Settings Dump moved into the LIVE DevDashboard (management.js:27); its Engine Trace tab
  *  was dropped (superseded by the standalone ForecastAudit panel above).
+ *  ai-insights removed 2026-08-10 (issue #128) — deleted outright, not reinstated. Its category
+ *  taxonomy is now a facet on TaskQueuePanel. The "scanners auto-file findings" idea it was
+ *  designed for but never built was NOT ported into runScan — the owner settled that design
+ *  separately in issue #134 (a standalone Insight Ledger panel with situation-key dedup), so
+ *  the auto-filer belongs there, not bolted onto AIBacktestScanner. The owner confirmed
+ *  mf_insights (its localStorage journal) held nothing worth migrating.
  *  anomalies removed 2026-08-10 (issue #127) — deleted outright, not reinstated. Its one real
  *  capability (event-tagged DOW-baseline exclusion) is now ported into runScan (the live AI
  *  Backtest Scanner) in analytics.js; everything else about the panel had drifted from its own
- *  engine's actual field names and would have rendered blank even if it were reachable. */
+ *  engine's actual field names and would have rendered blank even if it were reachable.
+ *
+ *  ⭐ THIS LIST IS NOW EMPTY, as of 2026-08-10 — every panel that had a render line in App.js
+ *  with nothing able to set it true has been harvested and deleted (issues #114/#123/#127/#128).
+ *  Empty is the resting state, not an achievement: an entry appearing here means a panel was
+ *  built and then orphaned, and the fix is to harvest what's worth keeping and delete the rest,
+ *  not to let it accumulate. panel-registry.test.js enforces that anything openable is listed
+ *  in the reachable tables above. */
 export const ORPHANS = [
-  { id:'ai-insights',    state:'showInsights', component:'AIInsightsLog', note:'renders at App.js:3169' },
 ];
 
 /** State that survived the Notes 24 hub consolidation: only ever reset, never opened,
