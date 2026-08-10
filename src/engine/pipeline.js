@@ -294,7 +294,13 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
 }
 
 function buildStore(loc,ds,settings){
-  const t=(ds&&ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+  // #153 defect 1: the caller (App.js) builds mergedTargets — DEFAULT_TARGETS < ds.targets <
+  // ds.monthlyTargets < Targets-panel overrides < v2 monthly overrides — and passes it in as
+  // settings.targets. This used to read ds.targets directly instead, silently discarding every
+  // layer above it; mergedTargets was computed on every render and thrown away. settings.targets
+  // now wins, with the old ds.targets/DEFAULT_TARGETS chain kept as a fallback for the (currently
+  // theoretical) case of a caller that doesn't pass settings.targets.
+  const t=(settings&&settings.targets&&settings.targets[loc])||(ds&&ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
   const name=STORE_NAMES[loc]||('Store '+loc);
   const sc=settings.scoring||DEF_SETTINGS.scoring;
   let p;
