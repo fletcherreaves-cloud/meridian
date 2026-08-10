@@ -131,9 +131,12 @@ export const PANELS = [
  *  dev-dashboard removed 2026-08-10 (issue #123) — deleted outright, not reinstated. Its Data
  *  Audit tab (the only part with no live equivalent) is now DataManagerPanel's Coverage tab;
  *  its Settings Dump moved into the LIVE DevDashboard (management.js:27); its Engine Trace tab
- *  was dropped (superseded by the standalone ForecastAudit panel above). */
+ *  was dropped (superseded by the standalone ForecastAudit panel above).
+ *  anomalies removed 2026-08-10 (issue #127) — deleted outright, not reinstated. Its one real
+ *  capability (event-tagged DOW-baseline exclusion) is now ported into runScan (the live AI
+ *  Backtest Scanner) in analytics.js; everything else about the panel had drifted from its own
+ *  engine's actual field names and would have rendered blank even if it were reachable. */
 export const ORPHANS = [
-  { id:'anomalies',      state:'showAnoms',    component:'AnomalyPanel',  note:'renders at App.js:3245; setShowAnoms is only ever called to close it' },
   { id:'ai-insights',    state:'showInsights', component:'AIInsightsLog', note:'renders at App.js:3169' },
 ];
 

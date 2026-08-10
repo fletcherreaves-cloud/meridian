@@ -95,7 +95,7 @@ SELECT * FROM (VALUES
   -- API / Settings sync
   ('Settings sync: audit which settings are not yet in Supabase',
    1, 3, 'backlog',
-   'User noted that some settings do not persist from desktop to phone. Most are already in org_config; audit what is still localStorage-only. Candidates: EOM manual overrides (op_supply_actuals), DT Speed filter preference, date range preference, anomFilter. Each needs its own user_settings key or org_config column.',
+   'User noted that some settings do not persist from desktop to phone. Most are already in org_config; audit what is still localStorage-only. Candidates: EOM manual overrides (op_supply_actuals), DT Speed filter preference, date range preference. (anomFilter dropped from this list 2026-08-10, issue #127 — the flag it referred to was deleted along with the orphaned AnomalyPanel it belonged to, so there is nothing left to persist.) Each needs its own user_settings key or org_config column.',
    'Notes 19 item #9. user_settings table now exists (v4.391).'),
 
   -- Projections yearly view
