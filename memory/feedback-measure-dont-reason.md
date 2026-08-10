@@ -184,3 +184,43 @@ tests are not evidence that the app compiles.
 
 Related: [[data-sourcing-standard]] and the v4.870 lesson that a failed read must never be
 indistinguishable from an empty one — the same family of error, at the system level.
+
+---
+
+## 2026-08-10 — a scope estimate from a single-file grep (PR #163)
+
+Reviewing the labor-target PR, the PM found three remaining `t.tLabor` reads, told the
+engineer to fold them in, and told the owner **"three one-line changes, ten minutes."**
+
+The grep was `grep -n "tLabor" src/engine/pipeline.js`. The correct command costs the same
+five seconds:
+
+```
+$ grep -rn "\.tLabor\b" src/ --include=*.js | grep -v __tests__ | wc -l
+69          # across 13 files — labor-tools.js alone has 24
+```
+
+One of the 69 was `engine/finding-rules.js:50`, computing the **dollar impact** on every
+labor finding — so the divergence wasn't only in warning text, it was in the money.
+
+**The rule this adds:** a count from a grep scoped to one file is not a measurement of the
+codebase, and an estimate built on it is a guess wearing a number. *Before quoting a scope
+or a duration, run the search at the scope you are quoting for.* `-rn` over `src/` costs
+nothing and is the difference between "ten minutes" and "a migration."
+
+Two things went right and are worth keeping:
+
+- **The estimate was corrected before any code was written**, because the standing "read
+  the code at the exact LOCATION before writing there" rule forced a look at each site —
+  and looking is what surfaced the other 66. The rule paid for itself in a context it
+  wasn't written for.
+- **The two commits were separable, and measuring which way each one cut settled it.**
+  Commit 1 (`buildStore` reads `settings.targets`) changes no field names, so scores and
+  findings still agree — it *reduces* divergence and shipped. Commit 2 moves 1 of 69
+  readers — it *creates* divergence and was deferred to #164 with its work preserved on a
+  branch. **"Is this change consistent with the other N callers?" is a question with a
+  measurable answer**; ask it before splitting on instinct.
+
+Also: the engineer flagged those sites and proposed deferring them. The PM overrode that
+and was wrong to. **A worker's "I found something adjacent, I don't think it belongs here"
+deserves a `grep -rn` before it is overruled**, not a confident instruction.
