@@ -20,7 +20,13 @@ function analyzeRegisterAudit(auditRows) {
     e.tRedBDollar=Math.round((e.tRedBDollar+(r.tRedBDollar||0))*100)/100;
     e.manualRef=Math.round((e.manualRef+(r.manualRefAmt||0))*100)/100;
     e.posOver+=r.posOverCnt;e.posOverAmt=Math.round((e.posOverAmt+(r.posOverAmt||0))*100)/100;
-    e.refundCnt+=(r.refundCnt||0)+(r.refundCashless||0);
+    // refundCnt is a COUNT. It previously added r.refundCashless, which is a DOLLAR amount —
+    // its source column is literally 'Refund Cashless $' (parsers/index.js:981) and it renders
+    // as '$'+toFixed(2) below. That made "Refunds (total)" show cents, and pushed employees past
+    // the >3 / >5 amber thresholds on dollars rather than on refund count. There is no cashless
+    // refund COUNT in the source, so the count is cash refunds only; the cashless DOLLARS are
+    // carried separately in e.refundCashless and totalled as their own KPI.
+    e.refundCnt+=(r.refundCnt||0);
     e.refundCash=Math.round((e.refundCash+(r.refundCash||0))*100)/100;e.refundCashless=Math.round((e.refundCashless+(r.refundCashless||0))*100)/100;
     e.promoAmt=Math.round((e.promoAmt+(r.promoAmt||0))*100)/100;
   }

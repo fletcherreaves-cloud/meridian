@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, FOB_TRACE_COMPONENTS } from '../engine/variance-trace.js';
+import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, FOB_TRACE_COMPONENTS, lastCountAnchor } from '../engine/variance-trace.js';
 
 // qsr_fob rows are MTD-CUMULATIVE snapshots — build a synthetic month where day 15
 // has a sudden jump in statVarianceAmt (the "something happened here" signal).
@@ -126,5 +126,65 @@ describe('variance-trace — biggestJumpDay (the look-back window)', () => {
 
   it('returns null for an empty trace', () => {
     expect(biggestJumpDay([])).toBeNull();
+  });
+});
+
+// ── Notes 58 #2: loopback anchored on the last real count ────────────────────
+describe('lastCountAnchor', () => {
+  const S = [{ day: '2026-07-30', kind: 'eom' }, { day: '2026-08-05', kind: 'weekly' },
+             { day: '2026-08-12', kind: 'weekly' }];
+
+  it('walks back past a count too recent to make a usable chart', () => {
+    // Anchoring on 08-12 two days later would leave a two-point chart.
+    expect(lastCountAnchor(S, { asOf: '2026-08-14' })).toBe('2026-08-05');
+  });
+
+  it('uses the most recent count once the window is wide enough', () => {
+    expect(lastCountAnchor(S, { asOf: '2026-08-20' })).toBe('2026-08-12');
+  });
+
+  it('falls back to the earliest count rather than returning nothing', () => {
+    expect(lastCountAnchor(S, { asOf: '2026-07-31' })).toBe('2026-07-30');
+  });
+
+  it('includes an explicit EOM day alongside the sessions', () => {
+    expect(lastCountAnchor([], { eomDay: '2026-08-01', asOf: '2026-08-20' })).toBe('2026-08-01');
+  });
+
+  it('returns null when there is no count history at all', () => {
+    expect(lastCountAnchor([], { asOf: '2026-08-20' })).toBeNull();
+    expect(lastCountAnchor()).toBeNull();
+  });
+});
+
+describe('fobDailyTrace since', () => {
+  const rows = ['2026-08-01', '2026-08-05', '2026-08-10', '2026-08-15'].map((d, i) => ({
+    loc: '3708', date: d, prodSalesAmt: 10000 * (i + 1),
+    compWasteAmt: 100 * (i + 1), rawWasteAmt: 0, condimentsAmt: 0,
+    empMgrMealsAmt: 0, statVarianceAmt: 0, unexplainedAmt: 0,
+  }));
+
+  it('starts the trace at the anchor instead of the month boundary', () => {
+    const t = fobDailyTrace(rows, { loc: '3708', period: '2026-08', since: '2026-08-05' });
+    expect(t.map(p => p.date)).toEqual(['2026-08-05', '2026-08-10', '2026-08-15']);
+  });
+
+  it('still seeds the first delta from the row before the anchor', () => {
+    // 08-01 is excluded from the output but must still prime prevCum, or 08-05's delta
+    // would wrongly read as its full cumulative value.
+    const t = fobDailyTrace(rows, { loc: '3708', period: '2026-08', since: '2026-08-05' });
+    expect(t[0].delta.compWaste).toBe(100);      // 200 - 100, not 200
+  });
+
+  it('is unchanged when no anchor is given', () => {
+    const t = fobDailyTrace(rows, { loc: '3708', period: '2026-08' });
+    expect(t).toHaveLength(4);
+  });
+
+  it('cannot be dragged across a month boundary — MTD resets there', () => {
+    const spanning = [{ loc: '3708', date: '2026-07-28', prodSalesAmt: 5000, compWasteAmt: 900,
+                        rawWasteAmt: 0, condimentsAmt: 0, empMgrMealsAmt: 0, statVarianceAmt: 0, unexplainedAmt: 0 }, ...rows];
+    const t = fobDailyTrace(spanning, { loc: '3708', period: '2026-08', since: '2026-07-28' });
+    expect(t[0].date).toBe('2026-08-01');        // clamped to the period
   });
 });

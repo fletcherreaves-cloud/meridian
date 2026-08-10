@@ -97,7 +97,11 @@ export function slowDT(rows = [], storeName = String, { minOver = 15 } = {}) {
 // elevated food-safety flag. `stores` = computeVisitReadiness() output rows.
 export function visitRisk(stores = [], storeName = String) {
   const out = [];
-  for (const s of (stores || [])) {
+  // Accept either the array of store rows or computeVisitReadiness()'s full result object.
+  // Passing the object crashed the Attention Now panel with "(e||[]) is not iterable";
+  // a detector should degrade, never take a panel down.
+  const list = Array.isArray(stores) ? stores : (stores && Array.isArray(stores.stores) ? stores.stores : []);
+  for (const s of list) {
     if (!s || !s.loc) continue;
     if (s.fsFlag === 'elevated') out.push({
       id: 'fs-' + s.loc, severity: 'crit', category: 'Food Safety', icon: '🧊',

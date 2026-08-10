@@ -4,6 +4,7 @@ import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MO
 import { dKey, addD, mwStart, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
+import { businessDate } from '../engine/swing-feed.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -14,9 +15,9 @@ import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
-import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, metricDaily } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 
 const h=React.createElement;
@@ -363,20 +364,25 @@ function computeAllCorrelations(ds) {
   return result;
 }
 
+// CORR_PREDICTOR id → metric-source.js key. All 9 predictors already have a chain
+// (data-integrity sweep signature #2 — this used to read ds.laborRows/opsRows/ctrlRows
+// directly, manual-only, so the correlation explorer went blank on auto-only recent days).
+const PREDICTOR_METRIC_KEY = {
+  oepe:'oepe', park:'park', r2p:'r2p', labor:'laborPct', tpph:'tpph', otHrs:'otHrs',
+  cashOS:'cashOSPct', tRedA:'tRedAPct', discPct:'discPct',
+};
+
 function computeMetricAverages(ds) {
   if(!ds||!ds.loaded) return {};
   const LOCS=Object.keys(STORE_NAMES);
   const cutDate=new Date(); cutDate.setDate(cutDate.getDate()-90);
-  const avg=(rows,fn)=>{const v=rows.map(fn).filter(v=>v!=null&&v>0&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
+  const range={s:cutDate, e:new Date()};
   const result={};
   LOCS.forEach(loc=>{
     result[loc]={};
-    const lR=(ds.laborRows||[]).filter(r=>String(r.loc)===loc&&r.date>=cutDate);
-    const oR=(ds.opsRows||[]).filter(r=>String(r.loc)===loc&&r.date>=cutDate);
-    const cR=(ds.ctrlRows||[]).filter(r=>String(r.loc)===loc&&r.date>=cutDate);
     CORR_PREDICTORS.forEach(p=>{
-      const rows=p.src==='ops'?oR:p.src==='labor'?lR:cR;
-      result[loc][p.id]=avg(rows,p.fn);
+      const key=PREDICTOR_METRIC_KEY[p.id];
+      result[loc][p.id]=key?metricAvg(ds,loc,range,key):null;
     });
   });
   return result;
@@ -987,13 +993,28 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     const cutoff = period==='mtd'
       ? new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       : addD(new Date(), -(periodDays[period]||28));
-    const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.sales>0);
-    const oR = (ds.opsRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff);
-    const cR = (ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff);
-    const lyR= (ds.laborRows||[]).filter(r=>{
-      const ly=new Date(r.date); ly.setFullYear(ly.getFullYear()-1);
-      return String(r.loc)===selLoc&&r.date>=addD(cutoff,-364)&&r.date<addD(new Date(),-364)&&r.sales>0;
-    });
+    // Excludes the still-open business day — otherwise a partial today averages into the
+    // printed one-pager's narrative sentences (labor%/OEPE/sales) as if it were a full day.
+    const _openDay = new Date(businessDate()+'T00:00:00');
+    const range = {s:cutoff, e:addD(_openDay,-1)};
+    const lyRange = {s:addD(cutoff,-364), e:addD(new Date(),-364)};
+    // Auto-first (data-integrity sweep signature #2) — was ds.laborRows/opsRows/ctrlRows
+    // only, manual-only, so recent auto/emailed-only days dropped out of the printed one-pager.
+    const salesSeries  = metricSeries(ds, selLoc, range, 'sales');
+    const gcSeries      = metricSeries(ds, selLoc, range, 'gc');
+    const checkSeries   = metricSeries(ds, selLoc, range, 'avgCheck');
+    const oepeSeries    = metricSeries(ds, selLoc, range, 'oepe');
+    const parkSeries    = metricSeries(ds, selLoc, range, 'park');
+    const laborSeries   = metricSeries(ds, selLoc, range, 'laborPct');
+    const tpphSeries    = metricSeries(ds, selLoc, range, 'tpph');
+    const lySalesSeries = metricSeries(ds, selLoc, lyRange, 'sales');
+    // FOB has no auto/emailed chain in metric-source.js yet — stays manual (Controls upload).
+    const cR = (ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.date<_openDay);
+
+    const dateKeys = Object.keys(salesSeries).sort();
+    const lR = dateKeys.map(dk=>({date:new Date(dk+'T12:00:00'), sales:salesSeries[dk],
+      gc:gcSeries[dk]||0, avgCheck:checkSeries[dk]||0, laborPct:laborSeries[dk]||0, tpph:tpphSeries[dk]||0}));
+    const oR = dateKeys.map(dk=>({date:new Date(dk+'T12:00:00'), oepe:oepeSeries[dk]||0, park:parkSeries[dk]||0}));
 
     const avg=(arr,f)=>{const v=arr.map(r=>r[f]).filter(v=>v!=null&&v>0);return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
     const sum=(arr,f)=>arr.reduce((a,r)=>a+(r[f]||0),0);
@@ -1008,7 +1029,8 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     }).filter(d=>d.n>0);
 
     // LY comparison
-    const lyAvgSales = lyR.length ? sum(lyR,'sales')/lyR.length : null;
+    const lyVals = Object.values(lySalesSeries).filter(v=>v>0);
+    const lyAvgSales = lyVals.length ? lyVals.reduce((a,b)=>a+b,0)/lyVals.length : null;
     const curAvgSales = avg(lR,'sales');
     const vsLY = curAvgSales&&lyAvgSales ? (curAvgSales-lyAvgSales)/lyAvgSales : null;
 
@@ -1019,8 +1041,8 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 
     // Auto-observations
     const obs = [];
-    const laborPct=avg(cR,'laborPct')||avg(lR,'laborPct');
-    const tpph=avg(cR,'tpph')||avg(lR,'tpph');
+    const laborPct=avg(lR,'laborPct');
+    const tpph=avg(lR,'tpph');
     const oepe=avg(oR,'oepe');
     const fob=avg(cR,'fobPct');
     if(vsLY!=null){obs.push(vsLY>=0
@@ -2304,7 +2326,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
         div({style:{fontSize:40,marginBottom:12}},'🎯'),
         div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
         div({style:{fontSize:'11px',lineHeight:1.6,marginBottom:16}},'Load an Operations Report or Labor Analysis to generate the Priority Brief.'),
-        btn({className:'btn btn-sm',onClick:onClose},'Close')));
+        btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:451,display:'flex',flexDirection:'column',paddingTop:20}},
     div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
@@ -2540,7 +2562,7 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
       div({style:{fontSize:40,marginBottom:12}},'🔬'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load a Labor Analysis or Operations Report to run the Why Engine.'),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:464,
     display:'flex',alignItems:'flex-start',justifyContent:'center',padding:20,paddingTop:24}},
@@ -2976,7 +2998,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
       div({style:{fontSize:40,marginBottom:12}},'🥗'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},qsrFobRows===null?'Loading FOB data…':'No FOB Data Yet'),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},qsrFobRows===null?'Checking the cloud FOB stream…':'The cloud FOB stream (qsr_fob) is empty for now — or load an Operations Report file (its FOB sheet parses automatically) for Total Food Cost detail.'),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
     div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
@@ -2989,8 +3011,16 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
         div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🥗 FOB Analysis'),
         fobHasCloud&&span({title:'FOB components fed by the auto qsr_fob cloud stream (no upload needed). Total Food Cost % still comes from an Operations Report upload.',
           style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'☁ Cloud auto'),
-        (qsrFobRows!==null&&!fobHasCloud)&&span({title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr}) — showing manual uploads only. Try reloading.`:'Cloud FOB stream returned no rows — showing manual uploads only.',
-          style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(248,113,113,.12)',color:'#f87171',border:'.5px solid rgba(248,113,113,.3)',cursor:'help'}},'⚠ manual only'),
+        // Notes 60 bug #1. This indicator already existed but was an 8px pill whose
+        // explanation lived in a TOOLTIP, so the owner read the truncated month list as
+        // missing data rather than a failed cloud read — the months stop at the last
+        // manual upload carrying sales (May 2026), which looks exactly like "no data
+        // after May". Say it in words, at a readable size, next to the Period selector
+        // that is showing the truncated list.
+        (qsrFobRows!==null&&!fobHasCloud)&&span({
+          title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr})`:'Cloud FOB stream returned no rows',
+          style:{fontSize:'10px',fontWeight:700,padding:'4px 9px',borderRadius:5,background:'rgba(248,113,113,.14)',color:'#f87171',border:'.5px solid rgba(248,113,113,.45)',cursor:'help',maxWidth:360,lineHeight:1.35}},
+          '⚠ Manual uploads only — the cloud FOB stream returned nothing, so Period stops at your last upload.'),
         // Month selector
         div({style:{display:'flex',flexDirection:'column',gap:1}},
           div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Period'),
@@ -3144,7 +3174,15 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // by the DI live-backtest fix below. Same class of bug as the documented
     // ds?.laborRows fix elsewhere in the app (v5.37a).
     const rows=(ds?.laborRows||[]).filter(r=>
+      // `!r.isFuture` is INERT here — nothing ever sets isFuture on labor rows (grep:
+      // only store-dash.js sets it, on its own view models). Meanwhile every period
+      // preset ends at `e: today`, and supplementLaborWithSched backfills today's PARTIAL
+      // sales from the DAR, so a part-finished day was being scored against a full-day
+      // projection. Same class as the swing-alarm partial-day bug (v4.869). Exclude any
+      // day on or after the current business date — accuracy is only meaningful on
+      // CLOSED days.
       r.date>=range.s&&r.date<=range.e&&r.sales>100&&!r.isFuture&&
+      dateKey(r.date)<businessDate()&&
       locs.includes(String(r.loc))
     ).sort((a,b)=>a.date-b.date);
     if(!rows.length){alert('No completed sales records in this period.');setRunning(false);return;}
@@ -3167,19 +3205,15 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // Sum proj_sales_dollars across all hour slots per loc+dt to get a daily total,
     // then compare against ds.laborRows actuals to compute QSRSoft's own MAPE.
     const dateKey=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd;};
-    const qsrProjLookup={};
-    if(supabase){
-      const dtFrom=dateKey(range.s),dtTo=dateKey(range.e);
-      const nsnLocs=locs.map(l=>String(l).padStart(7,'0'));
-      const {data:qsrData}=await supabase.from('qsr_daily_activity')
-        .select('loc,dt,proj_sales_dollars')
-        .in('loc',nsnLocs).gte('dt',dtFrom).lte('dt',dtTo);
-      (qsrData||[]).forEach(r=>{
-        const lk=String(parseInt(r.loc,10));
-        if(!qsrProjLookup[lk]) qsrProjLookup[lk]={};
-        qsrProjLookup[lk][r.dt]=(qsrProjLookup[lk][r.dt]||0)+(r.proj_sales_dollars||0);
-      });
-    }
+    // Was a BARE select with no pagination — capped at 1000 rows while a 6-week ×
+    // 27-store window needs ~28,350, so the Sched Proj MAPE was averaged over roughly a
+    // day and a half of data and read far too high. The error was discarded too, so the
+    // truncation was invisible. loadQsrProjections paginates, reads the rollup (already
+    // summed per day), and reports failures to the DATA INCOMPLETE banner.
+    let qsrProjLookup={};
+    try{
+      qsrProjLookup=await loadQsrProjections({locs,from:dateKey(range.s),to:dateKey(range.e)});
+    }catch(e){ console.warn('[forecast-accuracy] scheduled projections failed:',e?.message||e); }
 
     const CHUNK=40;
     for(let i=0;i<rows.length;i+=CHUNK){
@@ -3580,26 +3614,23 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
 // For each untagged anomaly, compare that day's operational metrics
 // against the store's DOW historical baseline to identify likely causes.
 // Returns signals (metric deviations) + a conclusion (ops vs external).
-// Data sources: ds.ctrlRows (labor/tpph/actVsNeed), ds.opsRows (oepe/kvsu/park)
-//               ds.laborRows (daily actuals for historical DOW baselines)
+// Auto-first (data-integrity sweep signature #2): both the day's own values and the DOW
+// baseline route through engine/metric-source.js instead of reading ds.ctrlRows/opsRows/
+// laborRows directly — was manual-only, so a recent auto/emailed-only day (or its whole
+// DOW baseline sample) would silently read as "no data" here.
 function computeOpsAnalysis(row, ds) {
   if(!ds||!row) return null;
   const loc = String(row.loc||'');
   const dt  = row.date instanceof Date ? row.date : new Date(row.date);
   const dow = dt.getDay();
 
-  // ── Fetch the specific day's records ─────────────────────────────────
-  const ctrlRow = fetchRow(ds.ctrlIdx,  loc, dt);
-  const opsRow  = fetchRow(ds.opsIdx,   loc, dt);
-  const labRow  = fetchRow(ds.laborIdx, loc, dt);
-  const get = (obj,f) => obj&&obj[f]!=null&&obj[f]!==0 ? obj[f] : null;
-
-  const dayLabor  = get(ctrlRow,'laborPct') || get(labRow,'laborPct');
-  const dayTpph   = get(ctrlRow,'tpph')     || get(labRow,'tpph');
-  const dayAvn    = ctrlRow?.actVsNeed != null ? ctrlRow.actVsNeed : (labRow?.actVsNeed != null ? labRow.actVsNeed : null);
-  const dayActHrs = get(ctrlRow,'actHrs')   || get(labRow,'actHrs');
-  const dayOepe   = get(opsRow,'oepe');
-  const dayKvsu   = get(opsRow,'kvsu');
+  // ── Fetch the specific day's values ───────────────────────────────────
+  const dayLabor  = metricDaily(ds, loc, dt, 'laborPct');
+  const dayTpph   = metricDaily(ds, loc, dt, 'tpph');
+  const dayAvn    = metricDaily(ds, loc, dt, 'actVsNeed');
+  const dayActHrs = metricDaily(ds, loc, dt, 'actHrs');
+  const dayOepe   = metricDaily(ds, loc, dt, 'oepe');
+  const dayKvsu   = metricDaily(ds, loc, dt, 'kvsHealthy');
 
   const hasAnyData = dayLabor || dayTpph || dayOepe || dayActHrs || dayAvn != null;
   if(!hasAnyData) return {
@@ -3609,14 +3640,18 @@ function computeOpsAnalysis(row, ds) {
   };
 
   // ── DOW baselines (trimmed mean, data before this date) ──────────────
-  const peerCtrl = (ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date.getDay()===dow&&r.sales>0&&r.date<dt);
-  const peerLab  = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.date.getDay()===dow&&r.sales>0&&r.date<dt);
-  const peerOps  = (ds.opsRows||[]).filter( r=>r.loc===loc&&r.date.getDay()===dow&&r.date<dt);
-  const allCtrl  = [...peerCtrl,...peerLab];
-  const peerCount= Math.max(peerCtrl.length, peerLab.length);
+  const peerRange = {s:new Date('2000-01-01'), e:addD(dt,-1)};
+  const laborSeries  = metricSeries(ds, loc, peerRange, 'laborPct');
+  const tpphSeries    = metricSeries(ds, loc, peerRange, 'tpph');
+  const actHrsSeries  = metricSeries(ds, loc, peerRange, 'actHrs');
+  const oepeSeries     = metricSeries(ds, loc, peerRange, 'oepe');
+  const kvsSeries      = metricSeries(ds, loc, peerRange, 'kvsHealthy');
+  const dowKeys = series => Object.keys(series).filter(dk=>new Date(dk+'T12:00:00').getDay()===dow);
+  const laborDow = dowKeys(laborSeries), tpphDow = dowKeys(tpphSeries);
+  const peerCount = Math.max(laborDow.length, tpphDow.length);
 
-  const trim = (arr,f) => {
-    const v = arr.map(r=>r[f]).filter(v=>v!=null&&v>0).sort((a,b)=>a-b);
+  const trim = (keys,series) => {
+    const v = keys.map(k=>series[k]).filter(v=>v!=null&&v>0).sort((a,b)=>a-b);
     if(!v.length) return null;
     if(v.length < 4) return v.reduce((a,b)=>a+b)/v.length;
     const cut = Math.max(1,Math.floor(v.length*.10));
@@ -3624,11 +3659,11 @@ function computeOpsAnalysis(row, ds) {
     return t.reduce((a,b)=>a+b)/t.length;
   };
 
-  const bl_labor  = trim(allCtrl, 'laborPct');
-  const bl_tpph   = trim(allCtrl, 'tpph');
-  const bl_actHrs = trim(allCtrl, 'actHrs');
-  const bl_oepe   = trim(peerOps,  'oepe');
-  const bl_kvsu   = trim(peerOps,  'kvsu');
+  const bl_labor  = trim(laborDow, laborSeries);
+  const bl_tpph   = trim(tpphDow, tpphSeries);
+  const bl_actHrs = trim(dowKeys(actHrsSeries), actHrsSeries);
+  const bl_oepe   = trim(dowKeys(oepeSeries), oepeSeries);
+  const bl_kvsu   = trim(dowKeys(kvsSeries), kvsSeries);
 
   const dev = (d,b) => b>0 ? (d-b)/b : null;
 
@@ -4092,6 +4127,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     const allResults = {};
     const locs = ds.storeIds;
 
+    const fullRange = {s:new Date('2000-01-01'), e:new Date()};
     for(let li=0;li<locs.length;li++){
       const loc = locs[li];
       setProgress(Math.round(li/locs.length*100));
@@ -4100,14 +4136,17 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       // Build per-DOW rolling median from ALL available actuals for this store.
       // Flag days where actual deviates from that DOW's median by > threshold.
       // This is model-independent: no forecast needed, purely historical baseline.
-
-      // Deduplicate by date (include $0 days — they're valid anomalies)
-      const allForLoc = ds.laborRows.filter(r=>r.loc===loc&&r.sales!=null&&r.sales>=0);
-      const seenDates = new Set();
-      const laborRows = allForLoc.filter(r=>{
-        const dk = dKey(r.date); if(seenDates.has(dk)) return false;
-        seenDates.add(dk); return true;
-      });
+      // Auto-first (data-integrity sweep signature #2, MEDIUM item — confirmed real, not
+      // theoretical): labor_rows stopped receiving new rows around 2026-07-23 (documented in
+      // engine/metric-source.js's header) while the auto DAR covers every store through today,
+      // so this scanner has been silently blind to the most recent weeks of real anomalies.
+      // Date keys are re-derived via dKey() from a noon-anchored Date (matches the pattern
+      // used everywhere else this session) so the event-calendar/holiday lookups stay
+      // consistent with dKey's local-calendar convention rather than metricSeries' UTC keys.
+      const salesSeries = metricSeries(ds, loc, fullRange, 'sales');
+      const laborRows = Object.keys(salesSeries).map(k=>{
+        const date=new Date(k+'T12:00:00'); return {date, dk:dKey(date), sales:salesSeries[k]};
+      }).sort((a,b)=>a.date-b.date);
       // Need 21 rows with actual sales for a meaningful baseline
       if(laborRows.filter(r=>r.sales>0).length < 21) continue;
 
@@ -4143,7 +4182,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
         const isHol = isHoliday(r.date);
         // vs LY: same calendar date 52 weeks ago — secondary signal for trend context
         const lyDate364 = addD(r.date,-364);
-        const lyActual  = fetchRow(ds.laborIdx,loc,lyDate364,'sales')||0;
+        const lyActual  = metricDaily(ds,loc,lyDate364,'sales')||0;
         const lyVarPct  = lyActual>0 ? (r.sales-lyActual)/lyActual*100 : null;
         anomalies.push({
           date: r.date,
@@ -4154,7 +4193,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
           flag: varPct > 0 ? 'over' : 'under',
           dow: r.date.toLocaleDateString('en-US',{weekday:'short',timeZone:'UTC'}),
           dateStr: r.date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}),
-          dKeyStr: dKey(r.date), // ISO key for event calendar storage
+          dKeyStr: r.dk, // ISO key for event calendar storage
           loc,
           isHoliday: !!isHol,
           holidayName: isHol ? isHol.label : null,
@@ -4723,7 +4762,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
             div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},
               'AI detected broad events affecting multiple stores. Review and approve tagging.')),
           btn({onClick:()=>setShowRegional(false),style:{marginLeft:'auto',background:'none',
-            border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')),
+            border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')),
         div({style:{overflowY:'auto',padding:'12px 18px',flex:1}},
           pendingRegional.map((event,ei)=>{
             const coords=STORE_COORDS[event.primaryRow.loc];
@@ -4993,9 +5032,11 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
     return (stores||[])
       .map(s=>({
         store:s,
-        crits:s.findings.filter(f=>f.t==='crit'),
-        warns:s.findings.filter(f=>f.t==='warn'),
-        total:s.findings.filter(f=>f.t==='crit'||f.t==='warn').length
+        crits:(s.findings||[]).filter(f=>f.t==='crit'),
+        // buildBrief emits 'watch', never 'warn'. Until v4.858 this matched nothing, so the
+        // "🟡 Watch" tab was permanently empty and the header always read "0 stores on watch".
+        warns:(s.findings||[]).filter(f=>f.t==='warn'||f.t==='watch'),
+        total:(s.findings||[]).filter(f=>f.t==='crit'||f.t==='warn'||f.t==='watch').length
       }))
       .filter(x=>x.total>0)
       .sort((a,b)=>b.crits.length-a.crits.length||b.warns.length-a.warns.length);
@@ -5026,7 +5067,7 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
             critStores.length+' stores with critical issues · '+warnStores.length+' stores on watch · '+
             storeFindings.reduce((a,x)=>a+x.crits.length,0)+' total critical flags')
         ),
-        btn({className:'btn btn-sm',onClick:onClose},'✕ Close')
+        btn({className:'btn btn-sm',onClick:onClose},'✕')
       ),
 
       // Tab bar
@@ -5208,10 +5249,17 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
       }
       if(cal&&!cal._why){
         updated[loc]=cal;
-        log.push({loc,status:'ok',mape:cal.mape,rows:rowCount});
+        // Surface the trend diagnostic for the FIRST successful store only — enough to explain
+        // why 6W/4W/2W/1W render "—" without turning the log into a wall of text.
+        log.push({loc,status:'ok',mape:cal.mape,rows:rowCount,
+                  trendDiag:(cal.mape6w==null&&!log.some(l=>l.trendDiag))?cal._trendDiag:null});
       } else {
         const _reason=cal&&cal._why?cal._why:'returned bare null';
-        log.push({loc,status:'null',detail:_reason,rows:rowCount});
+        // A store that has not been open a full year cannot be DI-calibrated at all — the
+        // model resolves LY ~364 days back and there is nothing there. That is a STATUS, not
+        // a failure, so it is tracked separately and rendered as information below.
+        log.push({loc,status:cal&&cal._notYetEligible?'ineligible':'null',detail:_reason,rows:rowCount,
+                  eligibleFrom:cal&&cal._eligibleFrom,openedOn:cal&&cal._openedOn,diag:cal&&cal._diag});
       }
       setStoreLog([...log]);
       await new Promise(r=>setTimeout(r,0));
@@ -5276,20 +5324,7 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
   })();
   const mapeColor = m => m<4?'#10b981':m<6?'#f59e0b':m<9?'#fb923c':'#ef4444';
 
-  return div({style:{display:'flex',flexDirection:'column',height:'80vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:700}},'🎯 Dialed-In — Per-Store Calibration Engine'),
-        div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},
-          'Grid-searches '+lyWs_label+' parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.')
-      ),
-      div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
-
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
-      )
-    ),
-
+  return h(React.Fragment,null,
     // Stats bar
     div({style:{display:'flex',gap:8,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',flexWrap:'wrap'}},
       [{l:'Calibrated Stores',v:calibCount+'/'+stores.length,c:'var(--amber)'},
@@ -5361,17 +5396,40 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
         div({style:{display:'flex',justifyContent:'space-between',padding:'4px 10px',
           background:'var(--surf3)',fontWeight:700,fontSize:'9px',color:'var(--text2)'}},
           span(null,'Last Calibration Run — '+storeLog.length+' stores processed'),
-          span({style:{color:'#10b981'}},storeLog.filter(s=>s.status==='ok').length+' succeeded')
+          span(null,
+            span({style:{color:'#10b981'}},storeLog.filter(s=>s.status==='ok').length+' succeeded'),
+            storeLog.filter(s=>s.status==='ineligible').length
+              ? span({style:{color:'var(--text3)'}},' · '+storeLog.filter(s=>s.status==='ineligible').length+' not yet eligible')
+              : null,
+            storeLog.filter(s=>s.status==='null'||s.status==='error').length
+              ? span({style:{color:'#f87171'}},' · '+storeLog.filter(s=>s.status==='null'||s.status==='error').length+' failed')
+              : null)
         ),
-        storeLog.filter(s=>s.status!=='ok').map((s,i)=>
-          div({key:i,style:{display:'flex',gap:8,padding:'3px 10px',
-            borderTop:'.5px solid var(--bdr)',background:'rgba(239,68,68,.04)'}},
-            span({style:{color:'#f87171',fontWeight:700,minWidth:14}},'✗'),
-            span({style:{fontWeight:600,minWidth:120}},sNameC(s.loc)),
+        (storeLog.find(s=>s.trendDiag)||{}).trendDiag
+          ? div({style:{padding:'3px 10px',borderTop:'.5px solid var(--bdr)',fontFamily:'var(--mono)',
+              fontSize:'8px',color:'var(--text3)'}},
+              'trend "—" diagnostic ('+(storeLog.find(s=>s.trendDiag).loc)+'): '
+              +JSON.stringify(storeLog.find(s=>s.trendDiag).trendDiag))
+          : null,
+        storeLog.filter(s=>s.status!=='ok').map((s,i)=>{
+          // Not-yet-eligible is neutral: nothing is broken and there is nothing to fix until
+          // the store has a year of history. Showing it in red alongside real failures made a
+          // five-month-old store look like a bug (Notes 61 — Ponce de Leon).
+          const _inel=s.status==='ineligible';
+          return div({key:i,style:{display:'flex',gap:8,padding:'3px 10px',
+            borderTop:'.5px solid var(--bdr)',background:_inel?'transparent':'rgba(239,68,68,.04)'}},
+            span({style:{color:_inel?'var(--text3)':'#f87171',fontWeight:700,minWidth:14}},_inel?'ⓘ':'✗'),
+            span({style:{fontWeight:600,minWidth:120,color:_inel?'var(--text2)':undefined}},sNameC(s.loc)),
             span({style:{color:'var(--text3)'}},'Rows: '+s.rows),
-            span({style:{color:'#f87171',flex:1}},'→ '+s.detail)
-          )
-        )
+            span({style:{color:_inel?'var(--text3)':'#f87171',flex:1}},'→ '+s.detail),
+            s.diag?span({style:{fontFamily:'var(--mono)',fontSize:'8px',color:'var(--text3)',flexBasis:'100%'}},
+              'idx '+s.diag.locIdxKeys+' keys '+s.diag.idxSpan
+              +' · eval '+s.diag.evalSpan
+              +' · rowDateTypes '+JSON.stringify(s.diag.laborRowDateTypes)
+              +' · uevTaggedDays '+s.diag.uevTaggedDays
+              +(s.diag.lySamples||[]).map(x=>'  ||  LY for '+x.row+': '+x.chain.join(' | ')).join('')):null
+          );
+        })
       ),
       calibCount===0&&!running&&div({style:{textAlign:'center',padding:32,color:'var(--text3)',fontSize:'11px'}},
         'No calibrations yet. Hit "Calibrate All" to run.\nEach store needs ~60+ days of history to calibrate.\nTakes about 10-15 seconds for the full district.'),
@@ -5515,11 +5573,28 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
   const buildReport = async () => {
     setRunning(true);
     const s = new Date(startDate+'T00:00:00'), e = new Date(endDate+'T23:59:59');
+    const range = {s,e};
     const targetLocs = selLocs.includes('all') ? (ds.storeIds||[]) : selLocs;
     const results = [];
     for(const loc of targetLocs){
-      const rows = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e&&r.sales>0);
-      if(!rows.length) continue;
+      // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only,
+      // so any day covered only by the auto DAR/emailed streams dropped out of this report.
+      const salesSeries = metricSeries(ds, loc, range, 'sales');
+      const dateKeys = Object.keys(salesSeries).sort();
+      if(!dateKeys.length) continue;
+      const gcSeries = metricSeries(ds, loc, range, 'gc');
+      const oepeSeries = metricSeries(ds, loc, range, 'oepe');
+      const tpphSeries = metricSeries(ds, loc, range, 'tpph');
+      const laborSeries = metricSeries(ds, loc, range, 'laborPct');
+      const checkSeries = metricSeries(ds, loc, range, 'avgCheck');
+      const rows = dateKeys.map(dk=>({
+        date: new Date(dk+'T12:00:00'),
+        sales: salesSeries[dk],
+        gc: gcSeries[dk]||0,
+        tpph: tpphSeries[dk]||0,
+        laborPct: laborSeries[dk]||0,
+        avgCheck: checkSeries[dk]||0,
+      }));
       const store = stores.find(st=>st.loc===loc);
       if(!store) continue;
       const {p,t} = store;
@@ -5534,13 +5609,11 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
         const fc=fcRows[i].forecast;
         return fc>0&&Math.abs(r.sales-fc)/r.sales<=(settings.tolerance||5)/100;
       }).length/rows.length*100 : null;
-      const opsRows = (ds.opsRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e);
-      const ctrlRows = (ds.ctrlRows||[]).filter(r=>r.loc===loc&&r.date>=s&&r.date<=e);
-      // OEPE stays a plain mean: opsRows carry only oepe/park/kvst/kvsu/r2p — no car or
+      // OEPE stays a plain mean: the source carries only oepe/park/kvst/kvsu/r2p — no car or
       // GC count — so there is no weighting basis in this source. Weighting by anything
       // else would be a guess. See memory/weighted-rollup-audit.md.
-      const avgOepe = opsRows.length?opsRows.reduce((a,r)=>a+(r.oepe||0),0)/opsRows.length:p.oepe||0;
-      // TPPH is in laborRows (not opsRows) — fix source.
+      const oepeVals = Object.values(oepeSeries);
+      const avgOepe = oepeVals.length?oepeVals.reduce((a,b)=>a+b,0)/oepeVals.length:p.oepe||0;
       // Transactions per person-hour aggregates as Σgc/Σhours; hours come from each row's
       // own ratio so the rollup matches the basis the source system divided by.
       const avgTpph = ratioOfSumsDerived(rows, r=>r.gc, r=>r.tpph) || p.tpph||0;
@@ -5594,20 +5667,7 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
   const td2 = (v,c='var(--text)',align='right') => td({style:{padding:'5px 8px',
     fontFamily:'var(--mono)',fontSize:'10px',color:c,textAlign:align}},v);
 
-  return div({style:{display:'flex',flexDirection:'column',height:'90vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:700}},'📊 Date-Range Comprehensive Report'),
-        div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},
-          'Compares all metrics for any date range across selected locations.')
-      ),
-      div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
-
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
-      )
-    ),
-
+  return h(React.Fragment,null,
     // Controls
     div({style:{padding:'12px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}},
       div(null,
@@ -5762,19 +5822,7 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
       note&&div({style:{fontSize:'9px',color:'var(--text3)',marginLeft:'auto'}},note)
     );
 
-  return div({style:{display:'flex',flexDirection:'column',height:'90vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:700}},'🔬 Forecast Audit — '+(STORE_NAMES[loc]||loc)),
-        div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},'Full transparency: every input, weight, and multiplier used to compute each day forecast.')
-      ),
-      div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
-
-        btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
-      )
-    ),
-
+  return h(React.Fragment,null,
     div({style:{display:'flex',flex:1,overflow:'hidden'}},
       // Date selector sidebar
       div({style:{width:140,borderRight:'.5px solid var(--bdr)',overflowY:'auto',padding:'8px 0'}},
@@ -5942,10 +5990,15 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
     for(const store of storeList){
       const {p, t, loc, name} = store;
       if(!p) continue;
-      const lyData = (ds.laborRows||[]).filter(r=>r.loc===loc&&r.sales>0);
-      const recentRows = lyData.filter(r=>r.date>=addD(new Date(),-42)).sort((a,b)=>b.date-a.date);
-      const totalSales = recentRows.reduce((a,r)=>a+(r.sales||0),0);
-      const avgCheck = recentRows.filter(r=>r.gc>0).reduce((a,r)=>a+(r.sales/r.gc),0)/(recentRows.filter(r=>r.gc>0).length||1);
+      // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only,
+      // so this fed the AI prompt a stale/short 42-day window whenever only auto/emailed
+      // data existed for recent days.
+      const range = {s:addD(new Date(),-42), e:new Date()};
+      const salesSeries = metricSeries(ds, loc, range, 'sales');
+      const gcSeries = metricSeries(ds, loc, range, 'gc');
+      const totalSales = Object.values(salesSeries).reduce((a,b)=>a+b,0);
+      const checkKeys = Object.keys(gcSeries).filter(k=>gcSeries[k]>0&&salesSeries[k]>0);
+      const avgCheck = checkKeys.length ? checkKeys.reduce((a,k)=>a+(salesSeries[k]/gcSeries[k]),0)/checkKeys.length : 0;
       const mape = settings.dialedIn&&settings.dialedIn[loc]&&settings.dialedIn[loc].mape;
       const cal = settings.dialedIn&&settings.dialedIn[loc];
 
@@ -6041,24 +6094,7 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
   const activeLocs = getLocs();
   const activeLabel = scope==='store'?(STORE_NAMES[selStore]||selStore||''):scopeLabel;
 
-  return div({style:{display:'flex',flexDirection:'column',height:'90vh',maxHeight:'90vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
-      display:'flex',alignItems:'center',gap:10,flexShrink:0}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:800,display:'flex',alignItems:'center',gap:6}},
-          span({style:{fontSize:'16px'}},'🧠'),
-          'Intelligence Brief',
-          div({style:{fontSize:'10px',background:'var(--adim)',color:'var(--amber)',
-            padding:'1px 8px',borderRadius:10,fontWeight:600}},activeLabel)
-        ),
-        div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-          'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap')
-      ),
-      btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',
-        color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
-    ),
-
+  return h(React.Fragment,null,
     // Store selector (for multi-store scopes)
     scope!=='store'&&div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',flexShrink:0}},
@@ -6339,16 +6375,11 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
     );
   };
 
-  return div({style:{display:'flex',flexDirection:'column',height:'92vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
+  return h(React.Fragment,null,
+    // Controls toolbar
+    div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',flexShrink:0}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:800}},['📊 Projection vs Actuals Report']),
-        div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-          ['AI forecast accuracy vs actual results — click any cell to expand daily detail'])
-      ),
-      div({style:{display:'flex',gap:6,marginLeft:8,alignItems:'center',flexWrap:'wrap'}},
+      div({style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
         div({style:{fontSize:'9px',color:'var(--text3)'}},'Look back:'),
         [2,4,6].map(n=>btn({key:n,className:'btn btn-sm'+(weeksBack===n?' btn-a':''),
           style:{fontSize:'9px',padding:'2px 8px'},onClick:()=>setWeeksBack(n)},n+'W')),
@@ -6381,8 +6412,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
           a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
           a.download='ProjVsActuals_L'+weeksBack+'W_'+dKey(new Date())+'.csv';
           a.click();
-        }},'⬇ CSV'),
-        btn({className:'btn btn-sm',onClick:onClose},['✕ Close'])
+        }},'⬇ CSV')
       )
     ),
     // Body
@@ -6575,17 +6605,29 @@ function ItemsRecountedTile({ onOpenModal }) {
   // In the first week the just-closed PRIOR month is the interesting period; otherwise this month.
   const target = (day <= 7) ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : now;
   const period = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
-  const [diff, setDiff] = React.useState(undefined);   // undefined=loading, null=error, {}=result
+  // undefined = still loading · null = genuinely no rows · {} = result
+  const [diff, setDiff] = React.useState(undefined);
+  // Separate from `diff`. Until v4.864 a failed read and an empty period both set
+  // diff=null, so a transient 500 rendered "No ledger detail" — indistinguishable from
+  // "nothing was recounted". Verified 2026-08-07: period 2026-07 held 695 rows across 27
+  // stores (54 items recounted, $3,680 net recovered) while the tile showed no data.
+  const [loadErr, setLoadErr] = React.useState(null);
+  const [tryN, setTryN] = React.useState(0);
   React.useEffect(() => {
     if (!inWindow) return;
     let live = true;
     (async () => {
+      let failed = false;
       try {
         const [rawDetail, variance] = await Promise.all([
-          loadQsrRawItemDetail({ period }).catch(() => []),
+          loadQsrRawItemDetail({ period }).catch(() => { failed = true; return []; }),
           loadQsrVarianceStat({ period }).catch(() => []),
         ]);
         if (!live) return;
+        // fetchAll marks a truncated read non-enumerably rather than throwing.
+        if (rawDetail && rawDetail._partial) failed = true;
+        if (failed) { setLoadErr('read failed'); setDiff(undefined); return; }
+        setLoadErr(null);
         if (!rawDetail || !rawDetail.length) { setDiff(null); return; }
         const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
         const rawByLoc = {}, perLoc = {};
@@ -6600,10 +6642,13 @@ function ItemsRecountedTile({ onOpenModal }) {
         }
         for (const k of Object.keys(rawByLoc)) if (!perLoc[k]) perLoc[k] = { closeWindowStart: closeWindowStartFor(period, 3), statVar: {} };
         setDiff(ledgerScopeDiff(rawByLoc, perLoc));
-      } catch { if (live) setDiff(null); }
+      } catch { if (live) { setLoadErr('read failed'); setDiff(undefined); } }
     })();
     return () => { live = false; };
-  }, [inWindow, period]);
+    // tryN is in the deps so a retry actually re-runs. Without it the effect's deps
+    // (inWindow, period) never change during a session, so ONE transient failure at
+    // cold start pinned the tile to its empty state until a full reload.
+  }, [inWindow, period, tryN]);
   if (!inWindow) return null;
 
   const totalRecounted = diff && diff.stores ? diff.stores.reduce((s, x) => s + (x.nRecounted || 0), 0) : 0;
@@ -6624,6 +6669,16 @@ function ItemsRecountedTile({ onOpenModal }) {
       h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Items Recounted'),
       h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, perLbl + ' close window · did recounts help or hurt')),
     totalRecounted > 0 ? h('span', { style: { fontSize: 10, fontWeight: 800, color: DIR[dir][1], background: 'rgba(255,255,255,.05)', borderRadius: 10, padding: '2px 8px', border: '.5px solid ' + DIR[dir][1] } }, DIR[dir][0]) : null);
+  // A failed read is NOT "no data" — say so, and offer a way out. The tile fires an
+  // uncoordinated district-wide read at dashboard mount, competing with the cold-start
+  // burst, so a transient 500 here is expected rather than exceptional.
+  if (loadErr) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } },
+    h('div', { style: { color: '#f59e0b', fontWeight: 700, marginBottom: 4 } }, 'Could not load ledger detail'),
+    h('div', null, 'The read failed — this is not the same as "no recounts". '),
+    h('button', {
+      onClick: (e) => { e.stopPropagation(); setLoadErr(null); setDiff(undefined); setTryN(n => n + 1); },
+      style: { marginTop: 8, background: 'none', border: '1px solid var(--bdr2,#3a4050)', borderRadius: 6, color: 'var(--text2,#9aa4b2)', padding: '4px 10px', cursor: 'pointer', fontSize: 11 },
+    }, '↻ Retry')));
   if (diff === undefined) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
   if (diff === null) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No ledger detail for ' + perLbl + ' yet — recounts appear here once stores count in the close window.'));
   if (totalRecounted === 0) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No recounts detected yet across ' + (diff.nStores || 0) + ' stores. A recount = an item re-verified on a later day of the close window.'));
@@ -7764,23 +7819,25 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[ds&&ds.laborRows&&ds.laborRows.length,stores&&stores.length]);
 
-  const weeklyTrend=React.useMemo(()=>{    if(!ds?.laborRows?.length)return[];
+  // Auto-first (data-integrity sweep signature #2, MEDIUM item) — was ds.laborRows only,
+  // manual-only; sits next to code elsewhere in this view that already migrated OEPE/Labor/
+  // T-Reds for the same reason.
+  const weeklyTrend=React.useMemo(()=>{    if(!ds?.loaded||!allLocs?.length)return[];
     const wsd=settings?.weekStartDay??3;
     const getWS=d=>{const w=new Date(d);while(w.getDay()!==wsd)w.setDate(w.getDate()-1);w.setHours(0,0,0,0);return w;};
+    const sumSales=range=>allLocs.reduce((tot,loc)=>tot+Object.values(metricSeries(ds,loc,range,'sales')).reduce((a,b)=>a+b,0),0);
     const result=[];
     for(let w=6;w>=1;w--){
       const ws=getWS(addD(today,-(w*7))),we=addD(new Date(ws),6);we.setHours(23,59,59,999);
-      const wRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=ws&&r.date<=we&&allLocs.includes(String(r.loc)));
-      const sales=wRows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
+      const sales=sumSales({s:ws,e:we});
       if(!sales){result.push({label:'—',sales:0,vsLY:null});continue;}
       const lyWs=addD(new Date(ws),-364),lyWe=addD(new Date(we),-364);
-      const lyRows=(ds.laborRows||[]).filter(r=>r.date&&r.date>=lyWs&&r.date<=lyWe&&allLocs.includes(String(r.loc)));
-      const lySales=lyRows.reduce((a,r)=>a+(r.allNetSales||r.sales||0),0);
+      const lySales=sumSales({s:lyWs,e:lyWe});
       result.push({label:ws.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
         sales,lySales,vsLY:lySales>0?(sales-lySales)/lySales:null});
     }
     return result;
-  },[ds?.laborRows?.length,allLocs]);
+  },[ds,allLocs,settings?.weekStartDay]);
 
   // ── Leaderboard store rankings ────────────────────────────────────────
   const lbData=React.useMemo(()=>{
@@ -9160,15 +9217,10 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
 
   // TH (table header style) now comes from the module-scope constant above.
 
-  return div({style:{display:'flex',flexDirection:'column',height:'92vh'}},
-    // Header
-    div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
+  return h(React.Fragment,null,
+    // Controls toolbar
+    div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',flexShrink:0}},
-      div(null,
-        div({style:{fontSize:'14px',fontWeight:800}},'⚡ Dialed-In vs Default Comparison'),
-        div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-          'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement')
-      ),
       // Week picker
       div({style:{display:'flex',alignItems:'center',gap:6,marginLeft:8}},
         btn({className:'btn btn-sm',onClick:()=>navWeek(-1)},'← Prev'),
@@ -9205,8 +9257,7 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
             const fn='DIComparison_'+weekStart+'_'+groupBy+'.csv';
             const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
             a.download=fn;a.click();
-          }},'⬇ CSV'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕ Close')
+          }},'⬇ CSV')
       )
     ),
 

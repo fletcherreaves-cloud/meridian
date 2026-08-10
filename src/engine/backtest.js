@@ -5,6 +5,31 @@ import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, DEF_SETTINGS, MODEL_ASSIGNM
 import { forecastDay, getModelAssignment, saveModelOverride, compute6wk, calcOpsF, getDOWTrend,
   effectivePlusUp, fetchLY, getStoreOrg, getDOWSpecificTrend, getWxAdj, _masgnInvalidate } from '../engine/forecast.js';
 import { TH } from '../utils/fmt.js';
+import { metricSeries } from './metric-source.js';
+import { businessDate } from './swing-feed.js';
+import { median, mad } from './smart-targets.js';
+
+// Measured anomaly test (v4.924) — replaces "is this day tagged?" with "does this day's actual
+// sales look like an outlier for its own day-of-week," per owner directive: tagging an event is
+// informational, never itself a reason to drop a day from calibration/grading — only a genuinely
+// anomalous sales day should be excluded. Same median ± k·MAD test used throughout this codebase
+// (robustBaseline, fetchLY) for the identical purpose, computed once per store from its own
+// history so every consumer below (grid search, model-assignment eligibility, displayed period
+// MAPE) shares one measured test instead of three separate tag lookups.
+function _buildDowAnomalyBands(rows, k = 3) {
+  const groups = {};
+  for (const r of (rows || [])) { if (!(r.sales > 0)) continue; const d = dowOf(r.date); (groups[d] = groups[d] || []).push(r.sales); }
+  const bands = {};
+  for (const d of Object.keys(groups)) {
+    const vals = groups[d]; const med = median(vals), md = mad(vals, med);
+    bands[d] = md > 0 ? { med, thr: 1.4826 * md * k } : null;
+  }
+  return bands;
+}
+function _isMeasuredSalesAnomaly(bands, r) {
+  const band = bands[dowOf(r.date)];
+  return !!band && r.sales > 0 && Math.abs(r.sales - band.med) > band.thr;
+}
 
 // CALIBRATE STORE — Per-store grid search for optimal forecast params
 // v4.195 rewrite: previously the grid search's evaluation formula was a
@@ -166,9 +191,9 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
     storeRows.sort((a,b) => a.date - b.date);
 
     const tgt            = (ds.targets && ds.targets[loc]) || DEFAULT_TARGETS[loc] || {};
-    const uev            = (userEvents||{})[loc] || {};
     const settingsUev    = {...settings, _userEvents: userEvents||{}};
     const hasDI          = !!(settings.dialedInEnabled && settings.dialedIn && settings.dialedIn[loc]);
+    const _dowBands      = _buildDowAnomalyBands(storeRows);
 
     // ── recentOnly window guard (mirrors calibrateStore exactly) ──────────
     const _mAssign    = DEFAULT_MODEL_ASSIGNMENTS[loc];
@@ -191,7 +216,7 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
         if (r.date < windowFloor)            return false;
         if (r.date >= cutoff14)              return false; // too recent for clean LY
         if (isHoliday(r.date))              return false;
-        if (uev[dKey(r.date)])              return false; // tagged anomaly / closure
+        if (_isMeasuredSalesAnomaly(_dowBands, r)) return false; // measured, not tagged
         if (_windowStart && r.date < _windowStart) return false;
         return true;
       });
@@ -362,6 +387,21 @@ async function runModelAssignmentBacktest(ds, settings, userEvents, onProgress) 
 async function calibrateStore(loc, ds, settings, onProgress) {
   try{
   // Phase 1: Gather deduplicated rows
+  //
+  // DELIBERATELY ds.laborRows, NOT the metric-source resolver. v4.904 changed this to
+  // metricSeries('sales') to fix the Dialed-In 1W/2W trend columns and BROKE CALIBRATION FOR
+  // ALL 27 STORES ("precomputed<35 (21/195 rows had valid LY)"). Reverted in v4.906.
+  //
+  // The reason is structural, not a tuning problem: this row set feeds THREE things that all
+  // assume a single coherent history — the grid search, detectCleanDataStart (which derives a
+  // store's clean-data boundary from row shape, and produced absurd late boundaries when the
+  // row set changed: Mossy Head's window started 2026-07-25, leaving 0 eval rows), and the
+  // fetchLY precompute, which resolves LY against ds.laborIdx. Feeding rows from one universe
+  // while LY resolves against another silently invalidates the pairing.
+  //
+  // The staleness problem this was trying to solve is REAL — labor_rows had nothing newer than
+  // 2026-07-23 on 2026-08-08 — but it belongs in _computePeriodMape, which is the only part
+  // that actually needs recent days. See the auto-first note there.
   const seen=new Set();
   const rows=ds.laborRows.filter(r=>{
     if(r.loc!==loc||r.sales<=0)return false;
@@ -383,8 +423,9 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   rows.sort((a,b)=>a.date-b.date);
   if(rows.length<60)return{_why:'rows<60 ('+rows.length+' deduped rows for loc '+loc+' — store needs more history)'};
   const cutoff=new Date(Date.now()-14*864e5);
-  // Hoist _uev to outer scope so all inner functions can access it
-  const _uev=(settings._userEvents||{})[loc]||{};
+  // Hoist to outer scope so all inner functions can access it. Measured, not tagged (v4.924) —
+  // see _buildDowAnomalyBands above.
+  const _dowBands=_buildDowAnomalyBands(rows);
 
   // recentOnly handling (v4.195) — for stores flagged recentOnly:true in
   // DEFAULT_MODEL_ASSIGNMENTS (currently Elgin, Mossy Head, Tishomingo, Ponce
@@ -407,6 +448,34 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   // still returned a bad-period value). Auto-detection works for any
   // current or future recentOnly-flagged store with no per-store hardcoded
   // date; falls back to no restriction if it isn't confident, by design.
+  // ── Not-yet-eligible check: a store younger than its own LY lookback ──────────
+  // Dialed-In is an LY-based model — fetchLY resolves ~364 days back and every eval row
+  // without a real LY value is dropped. A store that has not been open a full year therefore
+  // has ZERO eligible rows, no matter how much recent data it has. This is arithmetic, not a
+  // data problem, and it cannot be fixed by widening a window.
+  //
+  // It used to surface as a red failure row identical to a genuine error — Ponce de Leon
+  // (43701, opened 2026-03-13) reported "recentOnly window starts 2027-04-16", which reads
+  // like a corrupted date rather than "this store is five months old". Verified 2026-08-08:
+  // 43701 has 133 rows spanning 2026-03-13 -> 2026-07-23 and ZERO rows before 2026, so its
+  // earliest possible LY lookup (2025-03-14) lands in a period when the store did not exist.
+  //
+  // Detected here, before the expensive work, so the panel can say so plainly.
+  const _firstRowDate = rows.length ? rows[0].date : null;   // rows are sorted ascending above
+  if(_firstRowDate){
+    const _lyReadyFrom = addD(_firstRowDate, 364);           // first day that can have a real LY
+    if(_lyReadyFrom > cutoff){
+      return {
+        _why:'not yet eligible — store opened '+dKey(_firstRowDate)+', needs a full year of '
+            +'history for LY-based calibration (eligible from '+dKey(_lyReadyFrom)+')',
+        _notYetEligible:true,
+        _openedOn:dKey(_firstRowDate),
+        _eligibleFrom:dKey(_lyReadyFrom),
+        _historyDays:Math.round((rows[rows.length-1].date-_firstRowDate)/864e5),
+      };
+    }
+  }
+
   const _modelAssign = DEFAULT_MODEL_ASSIGNMENTS[loc];
   const _isRecentOnly = !!(_modelAssign&&_modelAssign.recentOnly);
   let _windowStart = null;
@@ -430,8 +499,7 @@ async function calibrateStore(loc, ds, settings, onProgress) {
     if(r.date>=cutoff||!r.sales||r.sales<=0) return false;
     if(isHoliday(r.date)) return false;
     if(_windowStart&&r.date<_windowStart) return false;
-    const dk=dKey(r.date);
-    if(_uev[dk]) return false;
+    if(_isMeasuredSalesAnomaly(_dowBands,r)) return false; // measured, not tagged
     return true;
   });
   const evalRows=allEvalRows.slice(-400);
@@ -450,7 +518,7 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   // it once and reusing it preserves the original "precompute once, evaluate
   // cheaply many times" performance strategy.
   const precomputed=evalRows.map(row=>{
-    const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date,settings._userEvents)||0;
+    const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date)||0;
     if(lyRaw<=0)return null;
     const _dow=row.date.getDay();
     const _calOrg=getStoreOrg(loc);
@@ -490,7 +558,53 @@ async function calibrateStore(loc, ds, settings, onProgress) {
       opsF:baseOpsF,
     };
   }).filter(Boolean);
-  if(precomputed.length<35)return{_why:'precomputed<35 ('+precomputed.length+'/'+evalRows.length+' rows had valid LY — check laborIdx or date parsing)'};
+  if(precomputed.length<35){
+    // DIAGNOSTIC, not a guess. "0/146 rows had valid LY" says the lookups failed but not why,
+    // and three separate hypotheses for it have now been wrong. Report what is actually in the
+    // index at the exact keys fetchLY asks for, so one re-run settles it.
+    const _lIdx=ds.laborIdx||{};
+    const _locKeys=Object.keys(_lIdx).filter(k=>k.startsWith(loc+'_')).map(k=>k.slice(loc.length+1)).sort();
+    const _dateTypes={};
+    for(const r of (ds.laborRows||[])){
+      if(String(r.loc)!==String(loc)) continue;
+      const t=r.date instanceof Date?'Date':typeof r.date;
+      _dateTypes[t]=(_dateTypes[t]||0)+1;
+    }
+    // Walk fetchLY's OWN candidate chain and record why each candidate was rejected.
+    // The previous version only reported whether the index key existed — it did (HIT), and the
+    // rows demonstrably carry real sales in Supabase, so "HIT" was true and useless. fetchLY
+    // rejects a candidate for exactly three reasons; this reports which one fires.
+    const _cands=[-364,-357,-371,-378,-350,-385,-343];
+    const _samples=evalRows.slice(-2).map(row=>{
+      const tDow=dowOf(row.date);
+      const trail=_cands.map(off=>{
+        const dt=addD(row.date,off);
+        const dk=dKey(dt);
+        const rows=_lIdx[loc+'_'+dk];
+        const sales=rows&&rows.length?(rows.find(r=>!r.isPeriodSummary)||rows[0]).sales:null;
+        return off+':'+dk
+          +(dowOf(dt)!==tDow?' DOW':'')
+          +(isHoliday(dt)?' HOL':'')
+          +(sales>0&&_isMeasuredSalesAnomaly(_dowBands,{date:dt,sales})?' ANOM':'')
+          +(!rows||!rows.length?' NOROW':' sales='+sales);
+      });
+      return {row:dKey(row.date), chain:trail};
+    });
+    // How many rows measure as a DOW anomaly (v4.924: measured, not tagged) — if fetchLY is
+    // being starved by exclusions rather than by missing data, this is where it shows.
+    const _anomCount=evalRows.filter(r=>_isMeasuredSalesAnomaly(_dowBands,r)).length;
+    return {
+      _why:'precomputed<35 ('+precomputed.length+'/'+evalRows.length+' rows had valid LY)',
+      _diag:{
+        locIdxKeys:_locKeys.length,
+        idxSpan:_locKeys.length?(_locKeys[0]+'..'+_locKeys[_locKeys.length-1]):'(none)',
+        laborRowDateTypes:_dateTypes,
+        measuredAnomalyDays:_anomCount,
+        evalSpan:evalRows.length?(dKey(evalRows[0].date)+'..'+dKey(evalRows[evalRows.length-1].date)):'(none)',
+        lySamples:_samples,
+      },
+    };
+  }
 
   // Shared evaluation formula (v4.195) — used by BOTH the grid search below
   // and _computePeriodMape further down, so there is exactly one place that
@@ -585,17 +699,42 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   // existed here previously (old code did ly*lyW + ly*(1-lyW), using `ly`
   // on both sides instead of `ly` and `distDOWAvg` — lyW had zero effect on
   // these displayed numbers regardless of what the grid search found).
+  // AUTO-FIRST, but scoped to the trend windows only (v4.906).
+  //
+  // These 6W/4W/2W/1W numbers are the ONLY part of calibration that needs recent days, and
+  // they were rendering "—" because `rows` comes from ds.laborRows, whose table had nothing
+  // newer than 2026-07-23 on 2026-08-08 — so the 1W filter matched zero rows and returned null.
+  //
+  // v4.904 tried to fix that by re-sourcing `rows` itself and broke calibration for all 27
+  // stores, because `rows` also feeds the grid search, detectCleanDataStart and the fetchLY
+  // precompute. Scoping the auto-first read to HERE fixes the reported symptom without touching
+  // any of that: the chosen parameters, the eval window and the Full MAPE are bit-identical.
+  //
+  // LY still resolves against ds.laborIdx below, which is correct — laborRows holds multi-year
+  // history (back to 2022-01-01), so a recent day's -364 lookup lands in real data even though
+  // the recent END of that table is stale.
+  // Excludes the still-open business day (see businessDate() in swing-feed.js) — otherwise a
+  // day that has only rung its sales SO FAR gets compared against a whole-day forecast, the
+  // same defect v4.917 fixed for the Biggest Miss table, just reached here through a separate
+  // function that read straight off Date.now() instead.
+  const _openDay=businessDate();
+  const _periodSeries=metricSeries(ds,loc,{s:new Date(Date.now()-6*7*864e5),e:new Date()},'sales');
+  const _periodRowsAll=Object.entries(_periodSeries)
+    .filter(([dk])=>dk<_openDay)
+    .map(([dk,v])=>({loc,date:new Date(dk+'T00:00:00'),sales:v}))
+    .sort((a,b)=>a.date-b.date);
+
   const _computePeriodMape=(weeks)=>{
     const cut=new Date(Date.now()-weeks*7*864e5);
     // Same recentOnly window restriction as the main eval window above —
     // for consistency, and to correctly handle brand-new stores where even
     // a 6-week-back cut could still overlap the LY-lookback-contamination
     // zone near the very start of available history.
-    const periodRows=rows.filter(r=>r.date>=cut&&r.sales>0&&!_uev[dKey(r.date)]&&(!_windowStart||r.date>=_windowStart));
+    const periodRows=_periodRowsAll.filter(r=>r.date>=cut&&r.sales>0&&!_isMeasuredSalesAnomaly(_dowBands,r)&&(!_windowStart||r.date>=_windowStart));
     if(!periodRows.length||!bestParams) return null;
     const apes=[];
     for(const row of periodRows){
-      const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date,settings._userEvents)||0;
+      const lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,row.date)||0;
       if(lyRaw<=0) continue;
       const _dow=row.date.getDay();
       const _calOrg=getStoreOrg(loc);
@@ -643,9 +782,27 @@ async function calibrateStore(loc, ds, settings, onProgress) {
   const mape4w=_computePeriodMape(4);
   const mape2w=_computePeriodMape(2);
   const mape1w=_computePeriodMape(1);
+
+  // DIAGNOSTIC for the blank 6W/4W/2W/1W columns. These are null for EVERY store in the app
+  // while computing fine in an offline harness, so the difference is in the data the app holds,
+  // not the arithmetic. _computePeriodMape can return null two ways — no rows in the window, or
+  // rows present but every LY lookup failing — and the displayed "—" cannot tell them apart.
+  const _trendDiag=(()=>{
+    const cut6=new Date(Date.now()-6*7*864e5);
+    const inWin=_periodRowsAll.filter(r=>r.date>=cut6);
+    let lyOk=0;
+    for(const row of inWin) if((fetchLY(ds.laborIdx,ds.laborRows,loc,row.date)||0)>0) lyOk++;
+    return {
+      seriesDays:Object.keys(_periodSeries).length,   // what metricSeries returned for 6 weeks
+      inWindow:inWin.length,                          // after the window + event filters
+      lyResolved:lyOk,                                // how many of those had a real LY
+      span:inWin.length?(dKey(inWin[0].date)+'..'+dKey(inWin[inWin.length-1].date)):'(none)',
+      windowStart:_windowStart?dKey(_windowStart):null,
+    };
+  })();
   const _settingsFp=JSON.stringify({lyOutlierThreshold:settings.lyOutlierThreshold,opsNorm:settings.opsNorm});
 
-  return{...bestParams,mape:+bestMape.toFixed(2),trimmedN:_trimmedN,mape6w,mape4w,mape2w,mape1w,
+  return{...bestParams,mape:+bestMape.toFixed(2),trimmedN:_trimmedN,mape6w,mape4w,mape2w,mape1w,_trendDiag,
     samples:precomputed.length,runDate:new Date().toISOString().slice(0,10),
     settingsFp:_settingsFp,
     // recentOnly detection transparency (v4.195) — visible in results so

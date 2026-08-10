@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
+import { businessDate } from '../engine/swing-feed.js';
 import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
@@ -538,7 +539,12 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
       r.opsFactor>0?((r.opsFactor>=1?'+':'')+((r.opsFactor-1)*100).toFixed(2)+'%'):'—'),
     td({style:{textAlign:'center',fontFamily:'var(--mono)',fontSize:'10px',
       color:r.varPct!=null?(r.varPct>=0?'#4ade80':'#f87171'):'inherit'}},
-      r.varPct!=null?((r.varPct>=0?'+':'')+fP(r.varPct,2)):'—'),
+      // Display-only magnitude cap (data-integrity sweep signature #1) — varPct's denominator is
+      // that day's own actual, so a near-zero actual (closure, storm) against a normal forecast
+      // can render a nonsensical number like "-111,000%". This does NOT touch r.varPct/r.pass —
+      // grading and sorting elsewhere still see the real value; only this cell's TEXT is capped
+      // at a familiar ±300%, with a trailing '+' signaling the true value ran past the cap.
+      r.varPct!=null?((r.varPct>=0?'+':'')+fP(Math.max(-3,Math.min(3,r.varPct)),2)+(Math.abs(r.varPct)>3?'+':'')):'—'),
     td(null, r.pass===true?span({className:'pass'},'PASS'):r.pass===false?span({className:'fail'},'MISS'):r.isFuture?span({className:'proj'},'PROJ'):null),
     td({style:{textAlign:'center',verticalAlign:'top',padding:'4px 2px'}}, (()=>{
       if(!hasWxData) return span({style:{fontSize:'13px',color:'var(--text3)'},title:wxR?'No data':''},wxR?'—':'');
@@ -623,7 +629,6 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
   let scenarios = null;
   if(futureDays.length>0) {
     const base = pastTotal + futureTotal;
-    const lyVar = futureDays.reduce((a,r)=>a+(r.lyAdj>0?(r.forecast-r.lyAdj)/r.lyAdj:0),0)/futureDays.length;
     const t2avg = futureDays.reduce((a,r)=>a+r.t2,0)/futureDays.length;
     const t6avg = futureDays.reduce((a,r)=>a+r.t6,0)/futureDays.length;
     const allBull = t2avg>0&&t6avg>0, allBear = t2avg<0&&t6avg<0;
@@ -638,7 +643,18 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
 
   // Backtest accuracy — compute when we have both forecast and actual
   // actualDays: days with both real actuals and model forecast in selected range
-  const actualDays = weekDays.filter(r=>r.actual>0&&r.forecast>0);
+  // EXCLUDE THE CURRENT BUSINESS DAY. A day still filling has only its sales-so-far recorded,
+  // and comparing that against a WHOLE-day forecast makes it look like a catastrophic miss —
+  // so it wins "Biggest Miss" almost every time and drags MAPE, bias and pass rate with it.
+  // Worse, the number moves through the day: alarming at 10am, fine by close (Notes 61).
+  //
+  // This is the same defect the swing alarm hit on 2026-08-07, and businessDate() is the helper
+  // written for it — it carries McDonald's 4am ABC cutover, so "today" ends at 4am, not
+  // midnight. Reused rather than re-deriving the boundary here; hand-rolled date arithmetic is
+  // how 23 different week-start implementations happened.
+  const _todayBiz = businessDate();
+  const _todayRow = weekDays.find(r=>r.actual>0&&dKey(r.date)===_todayBiz);
+  const actualDays = weekDays.filter(r=>r.actual>0&&r.forecast>0&&dKey(r.date)!==_todayBiz);
   const backtest = actualDays.length >= 2 ? (()=>{
     const errs = actualDays.map(r=>Math.abs(r.actual-r.forecast)/r.actual);
     const mape = errs.reduce((a,v)=>a+v,0)/errs.length*100;
@@ -681,6 +697,15 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},k.s)
         ))
       ),
+      // Today is excluded from the grades above, so say so and show it separately — a number
+      // that vanishes without explanation reads as a bug. It is labelled in-progress rather
+      // than scored, because a part-day variance is not a miss.
+      _todayRow&&div({style:{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap',
+        background:'var(--surf2)',border:'.5px dashed var(--bdr2)',borderRadius:'var(--r)',
+        padding:'6px 10px',marginBottom:8,fontSize:'10px'}},
+        span({style:{fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px'}},'Today — in progress'),
+        span({style:{color:'var(--text2)'}},f$(_todayRow.actual)+' so far vs '+f$(_todayRow.forecast)+' full-day forecast'),
+        span({style:{color:'var(--text3)',marginLeft:'auto',fontStyle:'italic'}},'not graded — the day is still filling')),
       h(BacktestChart,{actualDays}),
       div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
         backtest.best&&div({style:{flex:1,minWidth:200,background:'rgba(16,185,129,.06)',border:'.5px solid rgba(16,185,129,.2)',borderRadius:'var(--r)',padding:'9px 12px'}},
@@ -976,9 +1001,13 @@ function Brief({store, rangeTotal, rangeLY}) {
   const tcls={crit:'bitext bt-crit',watch:'bitext bt-watch',ok:'bitext bt-ok',fc:'bitext bt-fc'};
   // If we have live range totals, re-compute the forecast finding with correct numbers
   const findings = rangeTotal&&rangeLY
-    ? store.findings.filter(f=>f.t!=='fc').concat([{t:'fc',
+    // rule:'forecast' must stay on this rebuilt finding — attachFindingMeta tags the one
+    // buildBrief emits, and replacing it here without the rule would silently strip the
+    // structured fields (severity/category/title/detail) on the store dashboard only.
+    ? store.findings.filter(f=>f.t!=='fc').concat([{rule:'forecast',t:'fc',
         m:'AI FORECAST: '+f$(rangeTotal)+' projected this period ('+fPct((rangeTotal-rangeLY)/rangeLY,2)+' vs LY '+f$(rangeLY)+'). '
-          +(rangeTotal>=rangeLY?'Bullish — sustained momentum across T2/T4/T6 trend windows.':'Model reflects current operational headwinds and trend pressure.')
+          +(rangeTotal>=rangeLY?'Bullish — sustained momentum across T2/T4/T6 trend windows.':'Model reflects current operational headwinds and trend pressure.'),
+        severity:'info',category:'Forecast',icon:'🔮',dollars:0
       }])
     : store.findings;
   return div(null,
@@ -1168,6 +1197,26 @@ function CtrlScorecard({store}) {
     ]},
   ];
 
+  // A metric with ZERO observations must render '—', not 0.00%. avg6 returns 0 for both
+  // "no data" and a genuine zero, so compute6wk now ships a `_cov` observation-count map.
+  // Without this a store with no Controls upload showed a full column of 0.00% AND the
+  // pass functions graded every one of them GREEN — missing data presented as compliance,
+  // which is worse than showing nothing.
+  //
+  // The row tuples carry values rather than field names, so this maps label → field once
+  // instead of restructuring twenty tuples.
+  const COV_FIELD = {
+    'Cash Over/Short %':'cashOSPct', 'Drawer Opens/Day':'drawerOpens',
+    'T-Red After %':'tRedAPct', 'T-Red Before %':'tRedBPct',
+    'POS Overrings/Day':'posOverCnt', 'Manual Refund/Day':'manualRefAmt',
+    'Cash Refund/Day':'cashRefCnt', 'Discount % Sales':'discPct',
+    'Emp Meal/Day':'empMealAmt', 'Mgr Meal/Day':'mgrMealAmt', 'OT Hours/Day':'otHrs',
+  };
+  const _cov = (store.p && store.p._cov) || null;
+  const _noData = (label) => {
+    const f = COV_FIELD[label];
+    return !!(f && _cov && _cov[f] === 0);
+  };
   const fmtV = (v, fmt) => {
     if(v==null) return '—';
     if(fmt==='pct3') return fP(v,2);
@@ -1191,15 +1240,18 @@ function CtrlScorecard({store}) {
         tbl({className:'sc-tbl', style:{borderTop:'none',borderRadius:'0 0 6px 6px'}},
           h('thead',null, h(THead)),
           h('tbody',null, g.rows.map(([l,v6,v2,v4,tgt,passFn,fmt,note],ri) => {
-            const pass = passFn&&v2!=null ? passFn(v2) : null;
+            // Do not grade a metric we have no observations for — an absent value must
+            // not score as a pass.
+            const noData = _noData(l);
+            const pass = (!noData && passFn && v2!=null) ? passFn(v2) : null;
             const tgtStr = tgt!=null?(fmt.startsWith('pct')?fP(tgt,2):fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—';
-            const varV = v2!=null&&tgt!=null ? v2-tgt : null;
+            const varV = (!noData && v2!=null && tgt!=null) ? v2-tgt : null;
             const varS = varV!=null ? ((varV>=0?'+':'')+fmtV(Math.abs(varV),fmt).replace('$','')).replace('--','-') : '—';
             return tr({key:ri},
               td({style:{padding:'5px 8px',fontSize:'10px',color:'var(--text2)'}}, l),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,color:'var(--text)'}}, fmtV(v2,fmt)),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, fmtV(v4,fmt)),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'rgba(255,255,255,.3)'}}, fmtV(v6,fmt)),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,color:'var(--text)'}}, (noData?'—':fmtV(v2,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, (noData?'—':fmtV(v4,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'rgba(255,255,255,.3)'}}, (noData?'—':fmtV(v6,fmt))),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, tgtStr),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,
                 color:pass===null?'var(--text3)':pass?'#10b981':'#ef4444'}}, varV!=null?varS:'—'),
@@ -1819,12 +1871,19 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
     let s=[...stores];
     if(search) s=s.filter(st=>st.name.toLowerCase().includes(search.toLowerCase())||String(st.loc).includes(search));
     if(filter==='crit') s=s.filter(st=>st.findings.some(f=>f.t==='crit'));
-    if(filter==='watch') s=s.filter(st=>st.findings.some(f=>f.t==='warn'));
+    // buildBrief emits 'watch', never 'warn' — this filter matched nothing at all until
+    // v4.858. Accept both, as line 1714 already does.
+    if(filter==='watch') s=s.filter(st=>st.findings.some(f=>f.t==='warn'||f.t==='watch'));
     s.sort((a,b)=>{
       if(sort==='score') return (b.opsScore*0.6+b.ctrlScore*0.4)-(a.opsScore*0.6+a.ctrlScore*0.4);
       if(sort==='oepe') return (a.p.oepe||999)-(b.p.oepe||999);
       if(sort==='tpph') return (b.p.tpph||0)-(a.p.tpph||0);
-      if(sort==='labor') return (a.p.laborPct||0)-(b.p.laborPct||0);
+      // labor is "lower is better," so — unlike tpph just above, where a missing-data 0 already
+      // sorts to the bottom by construction — a bare ||0 here sorted a store with NO labor/
+      // controls data to rank #1 (best in the district). Data-integrity sweep signature #5
+      // (2026-08-09): use the same 999 "missing → worst" sentinel oepe already uses, gated on
+      // p._cov (forecast.js compute6wk's observation-count map) actually having a laborPct read.
+      if(sort==='labor') { const lv=x=>(x.p._cov&&x.p._cov.laborPct>0)?x.p.laborPct:999; return lv(a)-lv(b); }
       if(sort==='t2w') return (b.p.t2w||0)-(a.p.t2w||0);
       if(sort==='vel') return ((b.vel&&b.vel.opsScore)||0)-((a.vel&&a.vel.opsScore)||0);
       return 0;
@@ -1865,7 +1924,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
       [{l:'District Score',v:distScore+'/100',c:distScore>=80?'#10b981':distScore>=65?'#f59e0b':'#ef4444'},
        {l:'Stores Loaded',v:(ds&&ds.storeIds?ds.storeIds.length:0)+'/'+Object.keys(STORE_NAMES).length,c:ds&&ds.loaded?'#10b981':'#94a3b8'},
        {l:'Critical Findings',v:critCount,c:critCount>0?'#ef4444':'#10b981'},
-       {l:'Watch Flags',v:stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='warn').length,0),c:'#f59e0b'},
+       {l:'Watch Flags',v:stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='warn'||f.t==='watch').length,0),c:'#f59e0b'},
        {l:'Data Status',v:ds&&ds.loaded?'Live':'Mock',c:ds&&ds.loaded?'#10b981':'#94a3b8',/* click removed — showDataStatus not implemented */},
       ].map((k,i)=>div({key:i,className:'kpi-card',
         style:{flex:1,minWidth:100,cursor:k.click?'pointer':'default',
@@ -2107,7 +2166,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     {l:'Yest',    id:'yest',  fn:()=>{const d=addDR(new Date(),-1);return{s:d,e:d,label:'Yesterday'}}},
     {l:'LW',      id:'lw',    fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-6);return{s,e,label:'Last Week'}}},
     {l:'L2W',     id:'l2w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-13);return{s,e,label:'Last 2 Weeks'}}},
-    {l:'MTD',     id:'mtd',   fn:()=>{const t=new Date();return{s:new Date(t.getFullYear(),t.getMonth(),1),e:t,label:'Month to Date'}}},
+    {l:'MTD',     id:'mtd',   fn:()=>{const t=new Date();const e=addDR(t,-1);return{s:new Date(t.getFullYear(),t.getMonth(),1),e,label:'Month to Date'}}},
     {l:'L4W',     id:'l4w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-27);return{s,e,label:'Last 4 Weeks'}}},
     {l:'L6W',     id:'l6w',   fn:()=>{const e=addDR(new Date(),-1);const s=addDR(e,-41);return{s,e,label:'Last 6 Weeks'}}},
   ];
@@ -2183,13 +2242,15 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
     const mean=arr=>{const v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((x,y)=>x+y)/v.length:null;};
     const lyS=addDR(DR.s,-364),lyE=addDR(DR.e,-364);
     return Object.entries(map).map(([name,members])=>{
-      const locs=new Set(members.map(mm=>String(mm.loc)));
       // Aggregate from each member's ALREADY-computed p.* (auto-first via metricAvg above,
       // same as the ungrouped per-store view) — was re-deriving straight from raw ds.ctrlRows/
       // ds.laborRows/ds.opsRows here, silently reverting every column to manual-only data the
       // moment the location filter switched to Patch/Operator/State grouping (2026-08-04).
-      const curGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=DR.s&&r.date<=DR.e&&r.gc>0).reduce((x,r)=>x+r.gc,0);
-      const lyGc=(ds.laborRows||[]).filter(r=>locs.has(String(r.loc))&&r.date>=lyS&&r.date<=lyE&&r.gc>0).reduce((x,r)=>x+r.gc,0);
+      // GC was missed in that fix — still read raw ds.laborRows (manual-only), unlike every
+      // other column here (data-integrity sweep signature #2). Now sums metricSeries' auto-first
+      // per-day values across the group's members, same pattern as `sales` in localStats above.
+      const curGc=members.reduce((tot,mm)=>tot+Object.values(_msSeries(ds,String(mm.loc),DR,'gc')).reduce((a,b)=>a+b,0),0);
+      const lyGc=members.reduce((tot,mm)=>tot+Object.values(_msSeries(ds,String(mm.loc),{s:lyS,e:lyE},'gc')).reduce((a,b)=>a+b,0),0);
       return {
         loc:'__grp__'+name, name, city:members.length+' store'+(members.length>1?'s':''), isGroup:true, n:members.length,
         opsScore:mean(members.map(mm=>mm.opsScore))||0, ctrlScore:mean(members.map(mm=>mm.ctrlScore))||0,
@@ -2232,7 +2293,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
               'Sales': s.p.sales>0?f$(s.p.sales):'—',
             })),
           }),
-          btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×'))
+          btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕'))
       ),
       onDateChange&&div({style:{padding:'5px 14px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:3,flexWrap:'wrap',background:'var(--surf2)'}},
         span({style:{fontSize:'8px',color:'var(--text3)',alignSelf:'center',marginRight:4}},'Filter period:'),
@@ -2302,25 +2363,22 @@ function PerformanceCalculator({stores, ds, settings, onClose}) {
   const [laborP, setLaborP] = uSt(22);
   const [avgChk, setAvgChk] = uSt(10.50);
 
-  // Compute baseline actuals from last 6W data. oepe/laborPct/tpph/sales/gc route through
-  // metric-source.js's auto-first resolver (2026-08-06) — these are just slider STARTING
+  // Compute baseline actuals from last 6W data. oepe/laborPct/tpph/sales/gc/avgCheck/avgRate
+  // all route through metric-source.js's auto-first resolver — these are just slider STARTING
   // POINTS the user freely adjusts from, so staleness here was always low-stakes (unlike a
-  // live monitoring number), but the fix is the same one-line swap used everywhere else this
-  // session, and closes out the last item on cleanup-backlog.md's Class 2 sweep. avgCheck/
-  // avgRate have no registered auto source yet (not worth adding just for this calculator),
-  // so those two stay on the manual-laborRows-only average.
+  // live monitoring number). avgCheck and avgRate (derived: laborPct×sales÷actHrs) are both
+  // in METRIC_SOURCES now (data-integrity sweep, MEDIUM-confidence item — the old comment here
+  // claiming "no registered auto source yet" for them was stale).
   const baseline = uM(()=>{
     const cutoff = addDR(new Date(),-42);
     const range = {s: cutoff, e: new Date()};
-    const lR = (ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.date>=cutoff&&r.sales>0);
-    const avg = (rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v>0);return v.length?v.reduce((a,b)=>a+b)/v.length:null;};
     const baseOepe  = metricAvg(ds,selLoc,range,'oepe') || 140;
     const baseLab   = (metricAvg(ds,selLoc,range,'laborPct')||.22) * 100;
-    const baseChk   = avg(lR,'avgCheck') || 10.50;
+    const baseChk   = metricAvg(ds,selLoc,range,'avgCheck') || 10.50;
     const baseDailySales = metricAvg(ds,selLoc,range,'sales') || 12000;
     const baseGC    = metricAvg(ds,selLoc,range,'gc') || Math.round(baseDailySales/baseChk);
     const baseTpph  = metricAvg(ds,selLoc,range,'tpph') || 5.5;
-    const baseHours = baseDailySales * (baseLab/100) / (avg(lR,'avgRate')||15);
+    const baseHours = baseDailySales * (baseLab/100) / (metricAvg(ds,selLoc,range,'avgRate')||15);
     return {baseOepe,baseLab,baseChk,baseDailySales,baseGC,baseTpph,baseHours};
   },[ds,selLoc]);
 
@@ -2575,7 +2633,14 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
     avgChk: {man:{src:'laborRows',f:'avgCheck'},  cloud:{src:'qsrActSummaryRows',fn:r=>r.gc>0?r.sales/r.gc:null}},
     sales:  {man:{src:'laborRows',f:'sales'},     cloud:{src:'qsrActSummaryRows',f:'sales'}},
   };
-  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); return d && !isNaN(d) && d.getTime() >= ms; };
+  // Excludes the still-open business day (businessDate(), 4am ABC cutover) — every caller uses
+  // this to build a trailing baseline/current-value window (robustBaseline over histMs/l4wMs
+  // below), so a partial today would otherwise dilute the baseline every time this panel is
+  // opened mid-day, the same distortion already fixed for the Biggest Miss table (v4.917) and
+  // the swing alarm. Unlike those two, this has no explicit test coverage yet — add one if this
+  // scorecard proves to need re-touching.
+  const _openDayMs = new Date(businessDate() + 'T00:00:00').getTime();
+  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); const t = d && !isNaN(d) ? d.getTime() : NaN; return !isNaN(t) && t >= ms && t < _openDayMs; };
   const _keep = (v, spec) => typeof v === 'number' && !isNaN(v) && (spec.keepZero || v !== 0);
   // qsr_fob is MTD-cumulative → collapse to one value per (loc,month): the final
   // (max-date) row = that month's actual. Returns [{val, num, den, date}].
@@ -3302,6 +3367,10 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   const [editNote, setEditNote] = useState('');
   const [editLoc, setEditLoc] = useState('');
   const [editDate, setEditDate] = useState(fmtDI(new Date()));
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [locFilter, setLocFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('date-desc');
 
   const allEvents = useMemo(()=>{
     const ev=[];
@@ -3312,6 +3381,39 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
     }
     return ev.sort((a,b)=>b.date-a.date);
   },[userEvents]);
+
+  const typeOptions = useMemo(()=>[...new Set(allEvents.map(e=>e.type||'other'))].sort(),[allEvents]);
+
+  // Locations ordered by tag count, highest first, each showing its count — a store with an
+  // implausible number of tagged days (450 on one store broke Dialed-In calibration district-wide,
+  // v4.910) should be the first thing visible here, not buried in an alphabetical list.
+  const locCounts = useMemo(()=>{
+    const c={};
+    for(const e of allEvents) c[e.loc]=(c[e.loc]||0)+1;
+    return Object.entries(c).sort((a,b)=>b[1]-a[1]);
+  },[allEvents]);
+  const HEAVY_TAGS = 300;
+
+  const filtered = useMemo(()=>{
+    let evs=allEvents;
+    if(typeFilter!=='all') evs=evs.filter(e=>(e.type||'other')===typeFilter);
+    if(locFilter!=='all') evs=evs.filter(e=>String(e.loc)===String(locFilter));
+    if(search.trim()){
+      const s=search.toLowerCase();
+      evs=evs.filter(e=>
+        (e.note||'').toLowerCase().includes(s)||
+        (e.label||'').toLowerCase().includes(s)||
+        (STORE_NAMES[e.loc]||e.loc).toLowerCase().includes(s)||
+        e.dk.includes(s)
+      );
+    }
+    evs=[...evs];
+    if(sortBy==='date-asc') evs.sort((a,b)=>a.date-b.date);
+    else if(sortBy==='loc') evs.sort((a,b)=>(STORE_NAMES[a.loc]||a.loc).localeCompare(STORE_NAMES[b.loc]||b.loc));
+    else if(sortBy==='type') evs.sort((a,b)=>(a.type||'other').localeCompare(b.type||'other'));
+    else evs.sort((a,b)=>b.date-a.date);
+    return evs;
+  },[allEvents,typeFilter,locFilter,search,sortBy]);
 
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
@@ -3329,7 +3431,8 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',padding:20,overflowY:'auto'}},
     div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:900,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'auto',overflow:'hidden'}},
       div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
-        div(null,div({style:{fontSize:'15px',fontWeight:700}},'📅 Event Calendar'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},allEvents.length+' events tagged')),
+        div(null,div({style:{fontSize:'15px',fontWeight:700}},'📅 Event Calendar'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},
+          allEvents.length+' events tagged'+(filtered.length!==allEvents.length?' · '+filtered.length+' shown':''))),
         btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');}},'+Add Event'),
         btn({className:'btn btn-sm',style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
           onClick:()=>{
@@ -3353,7 +3456,43 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
             onUpdate(next);
             alert('Auto-tagged '+count+' holiday events across all stores (current year ±1). Pre-existing tags were preserved.');
           }},'🗓 Auto-Tag Holidays'),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
+        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')
+      ),
+      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 18px',
+        borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
+        color:'#f59e0b',lineHeight:1.5}},
+        '⚠ ',
+        locCounts.filter(([,n])=>n>=HEAVY_TAGS).map(([l,n])=>(STORE_NAMES[l]||l)+' ('+n+')').join(', '),
+        ' — over a year of tagged days. Tagged days are skipped when the forecast looks for the ',
+        'same day last year, so heavy tagging can leave a store with no comparison at all.'),
+      div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:8,
+        alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
+        inp({type:'text',value:search,onChange:e=>setSearch(e.target.value),
+          placeholder:'Search location, type, note…',
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 8px',minWidth:180,outline:'none'}}),
+        sel({value:typeFilter,onChange:e=>setTypeFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'all'},'All Types ('+allEvents.length+')'),
+          typeOptions.map(t=>opt({key:t,value:t},
+            (EVENT_TYPES[t]?.icon||'')+' '+(EVENT_TYPES[t]?.label||t)+' ('+allEvents.filter(e=>(e.type||'other')===t).length+')'))
+        ),
+        sel({value:locFilter,onChange:e=>setLocFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'all'},'All Locations ('+locCounts.length+')'),
+          locCounts.map(([l,n])=>opt({key:l,value:l},
+            (n>=HEAVY_TAGS?'⚠ ':'')+(STORE_NAMES[l]||l)+' — '+n+' tagged'))
+        ),
+        sel({value:sortBy,onChange:e=>setSortBy(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'date-desc'},'Newest first'),
+          opt({value:'date-asc'},'Oldest first'),
+          opt({value:'loc'},'By Location'),
+          opt({value:'type'},'By Event Type')
+        )
       ),
       (editKey!=null)&&div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)'}},
         div({style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}},
@@ -3370,8 +3509,9 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
         )
       ),
       div({style:{overflowY:'auto',flex:1}},
-        !allEvents.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.'),
-        allEvents.map((ev,i)=>{
+        !filtered.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},
+          allEvents.length===0?'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.':'No events match your search/filter.'),
+        filtered.map((ev,i)=>{
           const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
           return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)'}},
             span({style:{fontSize:'18px'}}),ev.icon||et.icon,
@@ -3448,11 +3588,13 @@ function CompareLineChart({selStores, COLS, ds}) {
   useChart(ref, canvas => {
     if(!ds||!ds.loaded||!selStores.length) return null;
     const cut=new Date(Date.now()-42*86400000);
-    const locSet=new Set(selStores.map(s=>s.loc));
-    const allDates=[...new Set(ds.laborRows.filter(r=>r.date>=cut&&locSet.has(r.loc)).map(r=>dKey(r.date)))].sort();
+    const range={s:cut,e:new Date()};
+    // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only.
+    const seriesByLoc=Object.fromEntries(selStores.map(s=>[s.loc,_msSeries(ds,s.loc,range,'sales')]));
+    const allDates=[...new Set(Object.values(seriesByLoc).flatMap(s=>Object.keys(s)))].sort();
     const labels=allDates.map(dk=>{const d=new Date(dk+'T12:00:00');return DOW_BASE[d.getDay()].slice(0,2)+' '+d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});});
     return new Chart(canvas,{type:'line',data:{labels,datasets:selStores.map((s,i)=>{
-      const data=allDates.map(dk=>{const rows=ds.laborIdx[s.loc+'_'+dk];return rows&&rows[0]&&rows[0].sales>0?Math.round(rows[0].sales):null;});
+      const data=allDates.map(dk=>{const v=seriesByLoc[s.loc][dk];return v>0?Math.round(v):null;});
       return{label:s.name,data,borderColor:COLS[i],backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:.3,spanGaps:false};
     })},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:LEG,tooltip:{...TT,callbacks:{label:c=>`${c.dataset.label}: $${(c.raw||0).toLocaleString()}`}}},

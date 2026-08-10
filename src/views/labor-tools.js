@@ -3,6 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB } from '../constants.js';
 import { avg6, forecastDay, getModelAssignment, saveModelOverride } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
+import { businessDate } from '../engine/swing-feed.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
@@ -55,6 +56,7 @@ function _hydrateBlob(lsKey, settingKey, apply) {
 }
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries } from '../engine/metric-source.js';
+import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { ExportDropdown } from './store-dash.js';
 
 const h=React.createElement;
@@ -1335,15 +1337,19 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
 
   const today = new Date();
   const addDx = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+  // Trailing windows end on the last CLOSED business day (businessDate() accounts for the 4am
+  // ABC cutover), not literal "today" — otherwise a still-filling day averages into labor%/TPPH/
+  // OEPE against the tight red-yellow-green grading bands below as if it were a complete day.
+  const lastClosed = addDx(new Date(businessDate()+'T00:00:00'), -1);
   const PERIODS=[
-    {id:'2wk', l:'2 Wk',    fn:()=>({s:sodOf(addDx(today,-13)),  e:today})},
-    {id:'4wk', l:'4 Wk',    fn:()=>({s:sodOf(addDx(today,-27)),  e:today})},
-    {id:'6wk', l:'6 Wk',    fn:()=>({s:sodOf(addDx(today,-41)),  e:today})},
-    {id:'mtd', l:'MTD',     fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1),e:today})},
+    {id:'2wk', l:'2 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-13)),  e:lastClosed})},
+    {id:'4wk', l:'4 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-27)),  e:lastClosed})},
+    {id:'6wk', l:'6 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-41)),  e:lastClosed})},
+    {id:'mtd', l:'MTD',     fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1),e:lastClosed})},
     {id:'lm',  l:'Last Mo', fn:()=>({s:new Date(today.getFullYear(),today.getMonth()-1,1),e:new Date(today.getFullYear(),today.getMonth(),0)})},
-    {id:'3m',  l:'3 Mo',    fn:()=>({s:sodOf(addDx(today,-89)),  e:today})},
-    {id:'6m',  l:'6 Mo',    fn:()=>({s:sodOf(addDx(today,-179)), e:today})},
-    {id:'ytd', l:'YTD',     fn:()=>({s:new Date(today.getFullYear(),0,1),e:today})},
+    {id:'3m',  l:'3 Mo',    fn:()=>({s:sodOf(addDx(lastClosed,-89)),  e:lastClosed})},
+    {id:'6m',  l:'6 Mo',    fn:()=>({s:sodOf(addDx(lastClosed,-179)), e:lastClosed})},
+    {id:'ytd', l:'YTD',     fn:()=>({s:new Date(today.getFullYear(),0,1),e:lastClosed})},
     {id:'custom',l:'Custom',fn:()=>({s:cStart?new Date(cStart+'T00:00:00'):null,e:cEnd?new Date(cEnd+'T00:00:00'):null})},
   ];
   const curP  = PERIODS.find(p=>p.id===selPeriod)||PERIODS[1];
@@ -1387,9 +1393,6 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
     return opGroups.map(g=>{
       const storeData=g.locs.map(loc=>{
         const tgt=(settings.targets&&settings.targets[loc])||DEFAULT_TARGETS[loc]||{};
-        const lRows=(ds.laborRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&r.sales>0&&String(r.loc)===loc);
-        const cRows=(ds.ctrlRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
-        const oRows=(ds.opsRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         const fRows=(ds.fobRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
         // Sales + vs-LY via the shared auto-first + matched-day helper (engine/vs-ly.js) —
         // ONE implementation for every current-vs-LY comparison (fixes the "everyone ~-32%").
@@ -1405,8 +1408,24 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         // lRows/cRows-only with no auto (opsLaborRows) backstop.
         const otHrs      = metricAvg(ds,loc,range,'otHrs');
         const cashOS     = metricAvg(ds,loc,range,'cashOSPct');
-        const baseFoodPct= _avg(fRows,'baseFoodPct');
-        const totFoodPct = _avg(fRows,'pLFoodPct');
+        // FOB — manual FOB Report (an intentional monthly submission) preferred; when missing
+        // for this store/period, fall back to the auto qsr_fob snapshot via the SAME
+        // fobSnapshotByStore helper eom-supervisor.js already uses (data-integrity sweep
+        // signature #2, MEDIUM item). qsr_fob rows are period-to-date SNAPSHOTS, never a daily
+        // increment — summing them inflates $ ~30x (see eom-inventory.js's own warning) — so
+        // filter to this range first, then let fobSnapshotByStore pick the latest-in-range row
+        // per store rather than summing or averaging.
+        let baseFoodPct = _avg(fRows,'baseFoodPct');
+        let totFoodPct  = _avg(fRows,'pLFoodPct');
+        if(baseFoodPct==null || totFoodPct==null){
+          const qFobRows=(ds.qsrFobRows||[]).filter(r=>{
+            const d=r.date instanceof Date?r.date:new Date(r.date);
+            return !isNaN(d)&&d>=range.s&&d<=range.e&&String(r.loc).padStart(7,'0')===String(loc).padStart(7,'0');
+          });
+          const snap=fobSnapshotByStore(qFobRows,null)[String(loc).padStart(7,'0')];
+          if(baseFoodPct==null) baseFoodPct=snap?.fobPct??null;
+          if(totFoodPct==null)  totFoodPct=snap?.pLFoodPct??null;
+        }
         return{loc,tgt,sales,lySales,matchedCur,vsLY,laborPct,tpph,oepe,otHrs,cashOS,baseFoodPct,totFoodPct,days:rangeDays,
           storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
       });
@@ -1455,7 +1474,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         div({style:{fontSize:40,marginBottom:12}},'📊'),
         div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
         div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load an Operations Report or Labor Analysis.'),
-        btn({className:'btn btn-sm',onClick:onClose},'Close')));
+        btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
     div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
@@ -1664,20 +1683,23 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
 
   const today = new Date();
   const addDx = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+  // Trailing windows end on the last CLOSED business day, not literal "today" — see the
+  // matching comment in the sibling PERIODS array above.
+  const lastClosed = addDx(new Date(businessDate()+'T00:00:00'), -1);
 
   const PERIODS = [
     // sodOf() normalizes start to midnight local time so the start day's rows
     // (stored at noon UTC) are never excluded by a time-of-day mismatch.
     // Offset is (n-1) so that n calendar days are always returned:
-    //   sodOf(addDx(today,-13)) = midnight 13 days ago → today = 14 days ✓
-    {id:'2wk',  l:'2 Wk',   fn:()=>({s:sodOf(addDx(today,-13)),  e:today})},
-    {id:'4wk',  l:'4 Wk',   fn:()=>({s:sodOf(addDx(today,-27)),  e:today})},
-    {id:'6wk',  l:'6 Wk',   fn:()=>({s:sodOf(addDx(today,-41)),  e:today})},
-    {id:'mtd',  l:'MTD',    fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1), e:today})},
+    //   sodOf(addDx(lastClosed,-13)) = midnight 13 days before lastClosed → lastClosed = 14 days ✓
+    {id:'2wk',  l:'2 Wk',   fn:()=>({s:sodOf(addDx(lastClosed,-13)),  e:lastClosed})},
+    {id:'4wk',  l:'4 Wk',   fn:()=>({s:sodOf(addDx(lastClosed,-27)),  e:lastClosed})},
+    {id:'6wk',  l:'6 Wk',   fn:()=>({s:sodOf(addDx(lastClosed,-41)),  e:lastClosed})},
+    {id:'mtd',  l:'MTD',    fn:()=>({s:new Date(today.getFullYear(),today.getMonth(),1), e:lastClosed})},
     {id:'lm',   l:'Last Mo',fn:()=>({s:new Date(today.getFullYear(),today.getMonth()-1,1), e:new Date(today.getFullYear(),today.getMonth(),0)})},
-    {id:'3m',   l:'3 Mo',   fn:()=>({s:sodOf(addDx(today,-89)),  e:today})},
-    {id:'6m',   l:'6 Mo',   fn:()=>({s:sodOf(addDx(today,-179)), e:today})},
-    {id:'ytd',  l:'YTD',    fn:()=>({s:new Date(today.getFullYear(),0,1), e:today})},
+    {id:'3m',   l:'3 Mo',   fn:()=>({s:sodOf(addDx(lastClosed,-89)),  e:lastClosed})},
+    {id:'6m',   l:'6 Mo',   fn:()=>({s:sodOf(addDx(lastClosed,-179)), e:lastClosed})},
+    {id:'ytd',  l:'YTD',    fn:()=>({s:new Date(today.getFullYear(),0,1), e:lastClosed})},
     {id:'ly',   l:'Last Yr',fn:()=>({s:new Date(today.getFullYear()-1,0,1), e:new Date(today.getFullYear()-1,11,31)})},
     {id:'custom',l:'Custom',fn:()=>({s:cStart?new Date(cStart+'T00:00:00'):null, e:cEnd?new Date(cEnd+'T00:00:00'):null})},
   ];
@@ -1861,7 +1883,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       div({style:{fontSize:40,marginBottom:12}},'👷'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Labor Data Loaded'),
       div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load a Labor Analysis or Operations Report to populate this dashboard.'),
-      !embedded&&btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      !embedded&&btn({className:'btn btn-sm',onClick:onClose},'✕')));
 
   // ── KPI cards ──
   const kpiCards=()=>{

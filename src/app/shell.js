@@ -1,9 +1,10 @@
 // @ts-nocheck
 import * as React from 'react';
 import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
-import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode } from '../utils/date.js';
+import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
 import { supabase } from '../lib/supabase.js';
+import { reportRender as _traceRender } from '../utils/click-trace.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -89,6 +90,15 @@ function DatePicker({value, onChange}) {
 }
 
 function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal, onLoadFiles, onSaveSession, onRestoreSession, loadMsg, perm, betaMode, panelVis}) {
+  // Diagnostic (2026-08-09, ?clicktrace=1): tapping the mobile hamburger (mf:toggleNav) shows
+  // up as a ~480ms "App tree" render on every single capture, but mobileOpen is AppSidebar's
+  // OWN local state — a child's local update should not force the App() parent to re-render at
+  // all. Two possibilities: this component's own render is genuinely that expensive (stores is
+  // a 27-item array with per-store nav badge computation), or the App-tree instrumentation is
+  // catching an unrelated, coincidentally-overlapping commit within the 1s attribution window.
+  // This mark answers which, directly, instead of guessing further.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('AppSidebar', 'render+commit', performance.now() - _rt0); });
   const [collapsed, setCollapsed] = React.useState(false);
   const [expandedGroup, setExpandedGroup] = React.useState('nav');
   const [isMobile, setIsMobile] = React.useState(()=>window.innerWidth<768);
@@ -223,6 +233,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('analytics.store',    'End of Month',       '📋', ()=>onOpenModal('fob-eom'),          false),
       pis('analytics.district', 'EOM Supervisor',     '📊', ()=>onOpenModal('eom-summary'),      false),
       pis('analytics.district', 'Inventory Control',   '📦', ()=>onOpenModal('eom-dashboard'),    false),
+      pis('analytics.store',    'Count Cycle',         '📋', ()=>onOpenModal('count-cycle'),      false),
       pis('analytics.store',    'Guest Voice',        '💬', ()=>onOpenModal('smg-voice'),        false, ds&&ds.smgRows&&ds.smgRows.length?ds.smgRows.length:null),
       pis('analytics.store',    '3PO Delivery',       '🛵', ()=>onOpenModal('delivery-mix'),     false),
       pis('analytics.store',    'Promo / Discount ROI','🎟️', ()=>onOpenModal('promo-roi'),        false),
@@ -230,6 +241,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       can('analytics.store') && navLabel('ANALYTICS'),
       pis('analytics.store',    'Signals',            '📡', ()=>onOpenModal('signals'),            false),
       pis('analytics.store',    'DT Speed of Service','🚗', ()=>onOpenModal('dt-sos'),             false),
+      pis('analytics.store',    'Local News',          '📰', ()=>onOpenModal('news'),             false),
       navItem('SAGE',                                  '🧠', ()=>onOpenModal('sage'),               false),
       navItem('Feature Requests',                      '💡', ()=>onOpenModal('feature-requests'),   false),
       navItem('Task Queue',                             '⚡', ()=>onOpenModal('task-queue'),         false),
@@ -270,7 +282,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       navLabel('ADMIN'),
       pis('settings.view', 'Settings',     '⚙', ()=>onOpenModal('settings'),               false),
       pis('settings.view', 'Panel Manager','🧩', ()=>onOpenModal('panel-manager'),          false),
-      navItem('Changelog',       'ℹ️', ()=>onOpenModal('about'),                false),
+      navItem('About',           'ℹ️', ()=>onOpenModal('about'),                false),
       navItem('Knowledge Base',  '📖', ()=>onOpenModal('kb'),                   false),
       navItem('Metric Lineage',  '🔍', ()=>onOpenModal('metric-lineage'),       false),
       pis('data.upload',   'Data Manager', '🗄', ()=>onOpenModal('data-manager'),           false),
@@ -290,6 +302,8 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       !collapsed&&div({style:{fontSize:'9px',color:'var(--text3)',overflow:'hidden'}},
         div({style:{color:'var(--text2)',fontWeight:600,fontSize:'10px',whiteSpace:'nowrap'}},
           ds&&ds.loaded?'Data loaded':'No data'),
+        div({style:{whiteSpace:'nowrap',opacity:.75}},
+          'v'+(typeof window!=='undefined'&&window.__MERIDIAN_VERSION__||'—')),
         ds&&ds.storeIds&&div({style:{whiteSpace:'nowrap'}},
           ds.storeIds.length+' stores · '+
           (ds.laborRows&&ds.laborRows.length>0?Math.floor(ds.laborRows.length/1000)+'K rows':'no data'))
@@ -392,7 +406,7 @@ function DataErrorBanner() {
       onClick: () => setDismissed(true),
       style: { marginLeft: 'auto', background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 13, lineHeight: 1 },
       title: 'Dismiss (the failures stay in mfDataErrors())',
-    }, '×')
+    }, '✕')
   );
 }
 
@@ -417,9 +431,11 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
 
   // Week label for projection context
   const wStart = React.useMemo(()=>{
-    const d=new Date(); const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
-    const diff=(wsd-d.getDay()+7)%7; const w=new Date(d); w.setDate(d.getDate()-diff);
-    return w;
+    // Was `(wsd - getDay() + 7) % 7`, which is the FORWARD distance — subtracting it
+    // landed on the wrong week on every day except the week-start day itself. Verified
+    // 2026-08-08: Friday 08/07 with a Wednesday start returned 08/02 instead of 08/05.
+    // weekStartOf() is now the single implementation; do not hand-roll this again.
+    return weekStartOf(new Date(), settings.weekStartDay != null ? settings.weekStartDay : 3);
   },[settings.weekStartDay]);
 
   return h(React.Fragment, null,
@@ -470,6 +486,12 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
 
     // Right: actions
     div({style:{display:'flex',alignItems:'center',gap:2,flexShrink:0}},
+      // SAGE quick-access — persistent so it's always one tap away, regardless of view
+      btn({className:'btn btn-sm',
+        style:{fontSize:'9px',color:'#a78bfa',borderColor:'rgba(167,139,250,.35)',
+          background:'rgba(167,139,250,.08)',marginRight:4,fontWeight:700},
+        title:'Open SAGE — AI analytics advisor',
+        onClick:()=>onOpenModal&&onOpenModal('sage')},isMb?'🧠':'🧠 SAGE'),
       // Pre-Forecast Brief quick-access
       !isMb&&ds&&ds.loaded&&btn({className:'btn btn-sm',
         style:{fontSize:'9px',color:'var(--gold)',borderColor:'rgba(245,188,0,.3)',

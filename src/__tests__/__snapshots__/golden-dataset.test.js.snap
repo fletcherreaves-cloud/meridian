@@ -11,7 +11,7 @@ exports[`computed metrics are stable (pin the numbers) > metricAvg over the wind
   "gc": 1407.9524,
   "laborPct": 0.2207,
   "sales": 15261.1295,
-  "tpph": 5.1717,
+  "tpph": 5.3141,
 }
 `;
 

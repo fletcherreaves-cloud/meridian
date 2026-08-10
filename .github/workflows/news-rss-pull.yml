@@ -1,0 +1,52 @@
+name: Local News RSS Pull
+
+# Pulls the nine local-news RSS feeds in src/engine/news-sources.js → news_mentions.
+# Notes 59 local-news backbone: free, no API key, no ToS grey area. Daily is plenty —
+# these are small-town outlets publishing a handful of stories a day — and the pull is
+# idempotent, so re-running never duplicates an article.
+#
+# No Playwright and no login: RSS is public, so this is the cheapest workflow in the repo.
+
+on:
+  schedule:
+    - cron: '40 11 * * *'    # 11:40 UTC daily (~6:40 AM CT) — off the 10:00 UTC pack so we
+                             # aren't competing with the QSRSoft/LifeLenz syncs
+  workflow_dispatch:
+    inputs:
+      feeds:
+        description: 'Restrict to these feed ids, comma-separated (default: all active)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Fetch + classify but do NOT write to Supabase (1 = on)'
+        required: false
+        default: '0'
+      debug:
+        description: 'Verbose per-item logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull local news RSS
+        run: node scripts/news-rss-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEWS_FEEDS:                ${{ github.event.inputs.feeds   || '' }}
+          NEWS_DRY_RUN:              ${{ github.event.inputs.dry_run || '0' }}
+          NEWS_DEBUG:                ${{ github.event.inputs.debug   || '0' }}

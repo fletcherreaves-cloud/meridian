@@ -12,8 +12,8 @@ function normSlice(s){return PEAK_SLICES[s.toLowerCase().trim()]||s.toLowerCase(
 import { isHoliday, getHolidayAdj } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, AE_DI_PARAMS, STORE_COORDS } from '../constants.js';
 import { TH, grade } from '../utils/fmt.js';
-import { metricDaily } from './metric-source.js';
-import { weightedRecencyProjection, robustBaseline, _isNum as _stIsNum } from './smart-targets.js';
+import { metricDaily, metricAvg } from './metric-source.js';
+import { weightedRecencyProjection, robustBaseline, median, mad, _isNum as _stIsNum } from './smart-targets.js';
 import { impactWeight } from './events-import.js';
 
 // ── Event Impact Registry cache (Notes 47) — { normLoc: { eventType: {home, away} } } ─────────────
@@ -420,70 +420,110 @@ function avg6(rows,loc,field,wb){
   return cnt?sum/cnt:0;
 }
 
+// How many observations avg6 actually found. avg6 returns 0 for "no data", which is
+// indistinguishable from a real zero — and the scorecards only dash on null, so a store
+// with no Controls upload rendered a wall of 0.00% that the pass functions then graded
+// as PASSING GREEN. Missing data was being presented as compliance.
+//
+// avg6's contract is deliberately unchanged (26 call sites, and most consumers do
+// arithmetic on the result). This adds the missing information instead of altering it.
+function obs6(rows,loc,field,wb){
+  const cut=new Date(Date.now()-wb*7*86400000);
+  let cnt=0;
+  for(const r of rows){if(r.loc!==loc||r.date<cut)continue;const v=r[field];if(typeof v==='number'&&v!==0)cnt++;}
+  return cnt;
+}
+
 // SECTION 5: ANALYTICS ENGINE
-function fetchLY(lIdx,lRows,loc,date,userEvents){
+//
+// Robust, tag-INDEPENDENT replacement for "is this candidate day excluded?" (v4.924). Owner
+// directive: "the only time a date should be excluded from forecasting is if it is a true
+// anomaly in sales or GC" — tagging an event is informational (a human explanation for a swing),
+// never itself a reason to drop a day. A prior version skipped any candidate with a user-event
+// tag, full stop, with no check on whether that day's actual value was unusual at all. That
+// silently became catastrophic once a store had many tagged days: on 2026-08-08 Tishomingo had
+// 450 tagged days, so every candidate came back excluded and calibration died district-wide
+// (the fix at the time was a tag-ignoring second pass — a patch, not a redesign). This replaces
+// tag presence with the SAME median ± k·MAD outlier test already proven elsewhere in this
+// codebase (robustBaseline, Smart Targets, the "Simple" model): a candidate is dropped only if
+// its own actual value doesn't look like it belongs with its peers — the other same-DOW
+// candidates in this same offset window. Holidays are still excluded before the statistical
+// test runs, because a closure genuinely has no comparable sales to test in the first place.
+function _robustCandidates(found, k = 3) {
+  if (found.length <= 1) return found; // nothing to compare against — nothing to judge
+  const vals = found.map(f => f.v);
+  const med = median(vals), md = mad(vals, med);
+  const thr = md != null && md > 0 ? 1.4826 * md * k : Infinity;
+  const clean = found.filter(f => Math.abs(f.v - med) <= thr);
+  return clean.length ? clean : found; // never end up with zero purely from the filter
+}
+function fetchLY(lIdx,lRows,loc,date){
   // Returns the ACTUAL historical sales for the same DOW, ~52 weeks back.
   // Priority chain: -364 (same DOW, exactly 52wk), then -357/-371/-378/-350 as fallbacks.
   // NO blending across multiple dates — LY must match real data the user can verify.
-  // NO outlier dampening — that was creating synthetic values that didn't correspond
-  //   to any real sales day, breaking user trust and distorting forecasts.
-  // If a candidate is a tagged event or holiday, skip it and try the next.
+  // NO outlier dampening on the RETURNED value — that was creating synthetic values that
+  //   didn't correspond to any real sales day, breaking user trust and distorting forecasts.
+  //   The outlier test below only decides which CANDIDATE to use, never alters the value.
   const tDow = dowOf(date);
   const candidates = [-364,-357,-371,-378,-350,-385,-343];
-  const isExcluded = dt => {
-    if(isHoliday(dt)) return true;
-    if(!userEvents) return false;
-    const dk = dKey(dt);
-    return !!(userEvents[loc]&&userEvents[loc][dk]);
-  };
+  const found = [];
   for(const off of candidates){
     const dt = addD(date, off);
     if(dowOf(dt)!==tDow) continue;          // must be same day of week
-    if(isExcluded(dt)) continue;             // skip holidays/events
+    if(isHoliday(dt)) continue;             // closures: no comparable sales, not testable
     const v = fetchRow(lIdx, loc, dt, 'sales');
-    if(v>0) return v;                        // first clean actual value wins
+    if(v>0) found.push({off,v});
+  }
+  if(!found.length) return 0;
+  const clean = _robustCandidates(found);
+  for(const off of candidates){             // priority order preserved among survivors
+    const hit = clean.find(f=>f.off===off);
+    if(hit) return hit.v;
   }
   return 0;
 }
 
 // Get how many days of history a store has
 // fetchLYDate — returns the actual calendar date used for the LY lookup (for UI display).
-// Mirrors fetchLY's priority chain exactly so the displayed date matches the value shown.
-function fetchLYDate(lIdx, loc, date, userEvents){
+// Mirrors fetchLY's priority chain + outlier test exactly so the displayed date always matches
+// the value fetchLY actually used — if these two drift, the UI attributes a number to the wrong day.
+function fetchLYDate(lIdx, loc, date){
   const tDow=dowOf(date);
   const candidates=[-364,-357,-371,-378,-350,-385,-343];
-  const isExcluded=dt=>{
-    if(isHoliday(dt))return true;
-    if(!userEvents)return false;
-    const dk=dKey(dt);
-    return !!(userEvents[loc]&&userEvents[loc][dk]);
-  };
+  const found=[];
   for(const off of candidates){
     const dt=addD(date,off);
     if(dowOf(dt)!==tDow)continue;
-    if(isExcluded(dt))continue;
+    if(isHoliday(dt))continue;
     const v=fetchRow(lIdx,loc,dt,'sales');
-    if(v>0)return dt;
+    if(v>0) found.push({off,dt,v});
   }
-  return addD(date,-364); // default to 52-week prior if no data
+  if(!found.length) return addD(date,-364); // default to 52-week prior if no data
+  const clean=_robustCandidates(found);
+  for(const off of candidates){
+    const hit=clean.find(f=>f.off===off);
+    if(hit) return hit.dt;
+  }
+  return addD(date,-364);
 }
 
-// fetchGC — actual historical guest count for same DOW, 52 weeks back (mirrors fetchLY fix)
-function fetchGC(lIdx,lRows,loc,date,userEvents){
+// fetchGC — actual historical guest count for same DOW, 52 weeks back (mirrors fetchLY)
+function fetchGC(lIdx,lRows,loc,date){
   const tDow=dowOf(date);
   const candidates=[-364,-357,-371,-378,-350,-385,-343];
-  const isExcluded=dt=>{
-    if(isHoliday(dt))return true;
-    if(!userEvents)return false;
-    const dk=dKey(dt);
-    return !!(userEvents[loc]&&userEvents[loc][dk]);
-  };
+  const found=[];
   for(const off of candidates){
     const dt=addD(date,off);
     if(dowOf(dt)!==tDow)continue;
-    if(isExcluded(dt))continue;
+    if(isHoliday(dt))continue;
     const v=fetchRow(lIdx,loc,dt,'gc')||fetchRow(lIdx,loc,dt,'guestCount')||0;
-    if(v>0) return v;
+    if(v>0) found.push({off,v});
+  }
+  if(!found.length) return 0;
+  const clean=_robustCandidates(found);
+  for(const off of candidates){
+    const hit=clean.find(f=>f.off===off);
+    if(hit) return hit.v;
   }
   return 0;
 }
@@ -492,8 +532,7 @@ function fetchGC(lIdx,lRows,loc,date,userEvents){
 // Returns {gcForecast, impliedCheck, normCheck, deviation, flag}
 // flag: null | 'watch' (>10%) | 'alert' (>20%)
 function gcCrossCheck(loc,date,ds,settings,salesForecast){
-  const userEvents=settings._userEvents||{};
-  const gcLY=fetchGC(ds.laborIdx,ds.laborRows,loc,date,userEvents);
+  const gcLY=fetchGC(ds.laborIdx,ds.laborRows,loc,date);
   if(!gcLY||gcLY<1)return null;
 
   // GC trend — use same trend signal as sales
@@ -566,6 +605,29 @@ function fetchRampSales(laborRows, laborIdx, loc, date, ds) {
   return 0;
 }
 
+// A same-DOW year-over-year growth point is only meaningful if BOTH days were normal trading
+// days. A closure day has sales just above zero, and `ly > 0` alone lets it through as a
+// DENOMINATOR — which is how the 6-Week Performance chart came to plot a 1,200,000% axis
+// (Notes 62). Real examples in labor_rows: $8.98 on 2026-01-25, $9.38 on Christmas 2024,
+// $30.07 on the 2025-01-22 ice storm. An $8.98 last-year denominator against a $10k day is
+// +111,300%, and averaging even one of those destroys the trend it is meant to measure.
+//
+// THE BOUND IS MEASURED, NOT CHOSEN. Across 40,000 store-days in 26 stores, 39,357 (98.4%)
+// fall at or above 70% of their own store's median day, and only 76 fall below 25%. Those 76
+// are the closures and severe-weather days. A day at 25% of median against a median day is
+// exactly +300% growth, so ±300% is where the real distribution ends and artifacts begin —
+// the cut is the measurement, not a round number that felt safe.
+//
+// Points are DROPPED, not clamped: clamping a +12,000 outlier to +3 still drags the mean up
+// and would keep reporting a fake surge. A closure is missing information, not a big number.
+const YOY_MAX_GROWTH = 3.0;    // +300% — LY day at 25% of median vs a normal current day
+const YOY_MIN_GROWTH = -0.75;  // -75%  — current day at 25% of median vs a normal LY day
+const _yoyPoint = (cur, ly) => {
+  if (!(cur > 0) || !(ly > 0)) return null;
+  const g = (cur - ly) / ly;
+  return (g > YOY_MAX_GROWTH || g < YOY_MIN_GROWTH) ? null : g;
+};
+
 function getDOWTrend(lIdx,loc,tDt,eDt,wkS,wkE){
   // Collect YOY growth for same DOW in the specific week range [wkS..wkE]
   const tDow=dowOf(tDt);const points=[];
@@ -577,7 +639,7 @@ function getDOWTrend(lIdx,loc,tDt,eDt,wkS,wkE){
     if(weekIdx>=wkS&&weekIdx<=wkE&&dowOf(chk)===tDow){
       const cur=fetchRow(lIdx,loc,chk,'sales');
       const ly=fetchRow(lIdx,loc,addD(chk,-364),'sales');
-      if(cur>0&&ly>0) points.push((cur-ly)/ly);
+      { const _g=_yoyPoint(cur,ly); if(_g!==null) points.push(_g); }
     }
     if(weekIdx>wkE+1) break;
   }
@@ -594,7 +656,7 @@ function getDOWSpecificTrend(lIdx, loc, targetDow, eDt, weeksBack) {
     if(weekIdx<=weeksBack&&dowOf(chk)===targetDow){
       const cur=fetchRow(lIdx,loc,chk,'sales');
       const ly=fetchRow(lIdx,loc,addD(chk,-364),'sales');
-      if(cur>0&&ly>0) points.push((cur-ly)/ly);
+      { const _g=_yoyPoint(cur,ly); if(_g!==null) points.push(_g); }
     }
     if(weekIdx>weeksBack+1) break;
   }
@@ -841,26 +903,54 @@ function compute6wk(loc,ds,wb){
   const opsL  = locRows(ds.opsByLoc, ds.opsRows, loc);
   const ctrlL = locRows(ds.ctrlByLoc, ds.ctrlRows, loc);
   const laborL= locRows(ds.laborByLoc, ds.laborRows, loc);
-  const r={oepe:avg6(opsL,loc,'oepe',wb),kvst:avg6(opsL,loc,'kvst',wb),
-    park:avg6(opsL,loc,'park',wb),r2p:avg6(opsL,loc,'r2p',wb),
-    tpph:avg6(ctrlL,loc,'tpph',wb)||avg6(laborL,loc,'tpph',wb),
-    spph:avg6(ctrlL,loc,'spph',wb),laborPct:avg6(ctrlL,loc,'laborPct',wb)||avg6(laborL,loc,'laborPct',wb),
-    actVsNeed:avg6(ctrlL,loc,'actVsNeed',wb),otHrs:avg6(ctrlL,loc,'otHrs',wb),
-    cashOSPct:avg6(ctrlL,loc,'cashOSPct',wb),tRedAPct:avg6(ctrlL,loc,'tRedAPct',wb),
-    tRedBPct:avg6(ctrlL,loc,'tRedBPct',wb),
-    discPct:avg6(ctrlL,loc,'discPct',wb),cashRefCnt:avg6(ctrlL,loc,'cashRefCnt',wb),
-    posOverCnt:avg6(ctrlL,loc,'posOverCnt',wb),drawerOpens:avg6(ctrlL,loc,'drawerOpens',wb),
-    avgRate:avg6(ctrlL,loc,'avgRate',wb)||avg6(laborL,loc,'avgRate',wb),
-    actHrs:avg6(ctrlL,loc,'actHrs',wb),
-    empMealAmt:avg6(ctrlL,loc,'empMealAmt',wb),mgrMealAmt:avg6(ctrlL,loc,'mgrMealAmt',wb),
-    manualRefAmt:avg6(ctrlL,loc,'manualRefAmt',wb),
-    depositAmt:avg6(ctrlL,loc,'depositAmt',wb),
-    floorMgmtNeeded:avg6(laborL,loc,'floorMgmtNeeded',wb),
-    floorHrsSched:avg6(laborL,loc,'floorHrsSched',wb),
-    fixedContractHrs:avg6(laborL,loc,'fixedContractHrs',wb),
-    variableNeeded:avg6(laborL,loc,'variableNeeded',wb),
-    oppCostPct:avg6(laborL,loc,'oppCostPct',wb),
-    oppCostDollar:avg6(laborL,loc,'oppCostDollar',wb)};
+  // ── Resolvable metrics go through metric-source.js (auto-first per day) ──────
+  // These 18 previously read raw ds.opsRows / ds.ctrlRows / ds.laborRows — the MANUAL
+  // uploads only — which is the standing-rule violation that made recent windows blank or
+  // stale everywhere compute6wk feeds: both scorecards, every KPI tile, StoreCard and
+  // RankingView's inputs. metricAvg resolves each DAY auto-first through that metric's
+  // chain, so a day covered by Glimpse or the DAR now counts.
+  //
+  // ⚠️ THIS CHANGES DISPLAYED NUMBERS, deliberately. laborPct in particular: the chain
+  // puts glimpseRows FIRST because pre-2026-08-03 ctrlRows.laborPct holds the wrong
+  // (Actual, not Punched) value — so some stores will move, and the new number is the
+  // correct one.
+  //
+  // `?? 0` preserves avg6's contract for the ~30 consumers that do arithmetic on these.
+  // The no-data signal lives in r._cov below, which is what the scorecards read.
+  const _range = { s: new Date(Date.now() - wb * 7 * 86400000), e: new Date() };
+  const M = (key) => metricAvg(ds, [loc], _range, key) ?? 0;
+
+  const r={oepe:M('oepe'),kvst:M('kvst'),park:M('park'),r2p:M('r2p'),
+    tpph:M('tpph'),spph:M('spph'),laborPct:M('laborPct'),
+    actVsNeed:M('actVsNeed'),otHrs:M('otHrs'),actHrs:M('actHrs'),avgRate:M('avgRate'),
+    cashOSPct:M('cashOSPct'),tRedAPct:M('tRedAPct'),tRedBPct:M('tRedBPct'),
+    discPct:M('discPct'),cashRefCnt:M('cashRefCnt'),
+    posOverCnt:M('posOverCnt'),drawerOpens:M('drawerOpens'),
+
+    // ── Manual-only: no auto stream carries these and no derivation exists ───────
+    // Verified 2026-08-08 against the live column lists of the auto/emailed tables; see
+    // MANUAL_ONLY_METRICS in metric-source.js. Routing them through the resolver would
+    // add nothing, so they keep the direct avg6 read.
+    empMealAmt:M('empMealAmt'),mgrMealAmt:M('mgrMealAmt'),
+    manualRefAmt:M('manualRefAmt'),
+    depositAmt:M('depositAmt'),
+    floorMgmtNeeded:M('floorMgmtNeeded'),
+    floorHrsSched:M('floorHrsSched'),
+    fixedContractHrs:M('fixedContractHrs'),
+    variableNeeded:M('variableNeeded'),
+    oppCostPct:M('oppCostPct'),
+    oppCostDollar:M('oppCostDollar')};
+  // Coverage map: how many real observations backed each metric. avg6 returns 0 for
+  // "no data", which the scorecards graded as a passing zero — see obs6's note. Consumers
+  // can now tell a genuine 0 from an absent metric and render '—' instead of green.
+  r._cov=(()=>{
+    const c={};
+    const add=(rows,fields)=>{for(const f of fields)c[f]=obs6(rows,loc,f,wb);};
+    add(ctrlL,['cashOSPct','tRedAPct','tRedBPct','drawerOpens','posOverCnt','cashRefCnt',
+               'discPct','manualRefAmt','empMealAmt','mgrMealAmt','otHrs','tpph','laborPct']);
+    add(opsL, ['oepe','r2p','kvst','park','kvsu']);
+    return c;
+  })();
   let kvsuS=0,kvsuC=0;const cut=new Date(Date.now()-wb*7*86400000);
   for(const row of opsL){if(row.date<cut||!row.kvsu)continue;kvsuS+=row.kvsu;kvsuC++;}
   r.kvsu=kvsuC?kvsuS/kvsuC:0;
@@ -1325,12 +1415,18 @@ function InfoIcon({articleKey, inline}) {
 function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
   if(!ds)return{date,loc,ly:0,lyAdj:0,t2:0,t4:0,t6:0,forecast:0,actual:0,goal:0,varPct:null,pass:null,isFuture:true,opsFactor:1,wAdj:0,m1:0,m2:0,oepe:0,tpph:0,labor:0,noLYData:true};
   const t=tgt||ds.targets[loc]||DEFAULT_TARGETS[loc]||{};
+  // Goal = last year grown by the store's target growth. The main pipeline computes this
+  // at the bottom of the function, but the AE / EWMA / simple short-circuits above it all
+  // returned `goal:0` — and since all 27 stores are assigned model 'ae', the Goal column
+  // was dead for every store, always. Same formula, hoisted so every return path can use
+  // it. Falls back to 0 when there is no LY, which is honest: no LY, no goal.
+  const _goalOf=(ly)=>(ly>0?Math.round(ly*(1+(t.tGrowth||.05))):0);
   const anchor=(ds.lastActual&&ds.lastActual[loc])||addD(new Date(),-1);
   // isFuture: date is after the last known actual OR after today (whichever is more conservative)
   const todayStart=sodOf(new Date());
   const isFuture=date>anchor&&date>=todayStart;
   const eDt=settings.mode==='Back Test'?date:anchor;
-  let lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,date,settings._userEvents);
+  let lyRaw=fetchLY(ds.laborIdx,ds.laborRows,loc,date);
   const noLYData=lyRaw===0;
   // For new stores (<365 days history), use the ramp model instead of LY lookup
   if(noLYData&&ds&&ds.laborRows) {
@@ -1361,10 +1457,19 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     const _aeFcst=forecastAdaptiveEnsemble(_locLaborRows,ds.laborIdx,loc,date,settings&&settings._aeStrictParams);
     if(_aeFcst&&_aeFcst>0){
       const _aeAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
-      const _aeORow=fetchRow(ds.opsIdx,loc,date);const _aeCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
+      // WAS: fetchRow(ds.opsIdx/ds.ctrlIdx) — raw ds.opsRows / ds.ctrlRows, i.e. the
+      // MANUAL uploads only. That violates the standing auto-first rule and is why the
+      // Forecast Table showed '—' for OEPE / TPPH / Labor% on recent days: those days are
+      // served by Glimpse and the DAR, which the raw read cannot see. Not an edge case —
+      // all 27 stores are assigned weekly:{model:'ae'}, so this branch IS the universal
+      // path for that table. metricDaily resolves auto-first per day, and for laborPct it
+      // matters twice over: the chain puts glimpseRows FIRST because pre-2026-08-03
+      // ctrlRows.laborPct holds the wrong (Actual, not Punched) value — so the raw read
+      // could also show a known-wrong number, not just a blank.
+      // The 'simple' branch below already did this correctly.
       const _aeIsFuture=date>sodOf(new Date());
-      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:0,varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
-        oepe:_aeORow?(_aeORow.oepe||0):0,tpph:_aeCtrlRow?(_aeCtrlRow.tpph||0):0,labor:_aeCtrlRow?(_aeCtrlRow.laborPct||0):0,
+      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
+        oepe:_aeIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_aeIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_aeIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_aeAct>0?(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].gc||0:0;})():0,forecastGC:0,lyGC:0,
         noLYData:!lyRaw,modelUsed:'ae'};
     }
@@ -1373,9 +1478,10 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     const _ewmaFcst=forecastEWMA(_locLaborRows,ds.laborIdx,loc,date);
     if(_ewmaFcst&&_ewmaFcst>0){
       const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
-      const _ewmaORow=fetchRow(ds.opsIdx,loc,date);const _ewmaCtrlRow=fetchRow(ds.ctrlIdx,loc,date);
-      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:0,varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
-        oepe:_ewmaORow?(_ewmaORow.oepe||0):0,tpph:_ewmaCtrlRow?(_ewmaCtrlRow.tpph||0):0,labor:_ewmaCtrlRow?(_ewmaCtrlRow.laborPct||0):0,
+      // Same raw-read bug as the AE branch above — resolved auto-first via metricDaily.
+      const _ewmaIsFuture=date>sodOf(new Date());
+      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
+        oepe:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:0,forecastGC:0,lyGC:0,noLYData:false,modelUsed:'ewma'};
     }
   }
@@ -1391,7 +1497,7 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       const _sAct=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales')):0;
       const _sActGC=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?(rr[0].gc||0):0;})()||fetchRow(_qsrActIdx(ds),loc,date,'gc')):0;
       return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_sVal,t4:_sVal,t6:_sVal,
-        actual:_sAct,goal:0,varPct:_sAct>0?(_sAct-_sVal)/_sAct:null,pass:null,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
+        actual:_sAct,goal:_goalOf(lyRaw),varPct:_sAct>0?(_sAct-_sVal)/_sAct:null,pass:null,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
         oepe:_sFut?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_sFut?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_sFut?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_sActGC,forecastGC:Math.round(_sf.gc||0),lyGC:0,noLYData:!lyRaw,modelUsed:'simple'};
     }
@@ -1806,7 +1912,7 @@ export {
   getWeatherNote, isWeatherExtreme, calibrateWeather,
   forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble,
   _wxCache, getForecastWeather,
-  fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales,
+  fetchRow, fetchWx, fetchLY, fetchLYDate, fetchGC, storeAgeDays, fetchRampSales,
   getDOWTrend, getDOWSpecificTrend,
   forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF,
   forecastDay, forecastRange, forecastRangeAsync,

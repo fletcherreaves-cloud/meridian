@@ -132,3 +132,35 @@ describe('buildAttentionFeed', () => {
     expect(feed.every(i => 'severity' in i)).toBe(true);
   });
 });
+
+describe('visitRisk shape tolerance (production crash, 2026-08-07)', () => {
+  // computeVisitReadiness returns { stores, district, weights, ... } — not an array.
+  // attention-now.js passed the whole object, and `for (const s of (stores || []))`
+  // threw "(e || []) is not iterable", white-screening the Attention Now panel.
+  //
+  // Latent since v4.552: the call site's try/catch returned [] whenever the readiness
+  // computation THREW for want of graded-visit data, which masked the mismatch. It only
+  // surfaced once the data was complete enough for the call to SUCCEED — a crash that
+  // appears when the data gets better, which is the hardest kind to anticipate.
+  const asObject = { stores: [{ loc: '5985', band: 'at-risk', readiness: 61 }], district: {}, weights: {} };
+
+  it('accepts the full readiness object without throwing', () => {
+    expect(() => visitRisk(asObject, String)).not.toThrow();
+    expect(visitRisk(asObject, String)).toHaveLength(1);
+  });
+
+  it('still accepts a plain array', () => {
+    expect(visitRisk(asObject.stores, String)).toHaveLength(1);
+  });
+
+  it('degrades to empty on junk rather than taking the panel down', () => {
+    for (const bad of [null, undefined, 42, 'nope', {}, { stores: 'not-an-array' }]) {
+      expect(() => visitRisk(bad, String), String(bad)).not.toThrow();
+      expect(visitRisk(bad, String)).toEqual([]);
+    }
+  });
+
+  it('buildAttentionFeed survives the object being passed through', () => {
+    expect(() => buildAttentionFeed({ visitStores: asObject })).not.toThrow();
+  });
+});

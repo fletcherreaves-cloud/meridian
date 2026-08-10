@@ -6,7 +6,7 @@ import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
 import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap } from '../engine/events-import.js';
-import { expandRetailEvents, defaultRetailYears } from '../engine/retail-events.js';
+import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES, findFloatingDateMismatches } from '../engine/retail-events.js';
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
@@ -477,12 +477,34 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
   };
 
   // ── Recurring rule form ─────────────────────────────────────────────────────
+  // durationDays defaults to 1, not a multi-day span — a rule saved unedited should tag exactly
+  // one day, not silently commit to a week. (Was 5: an unedited "Black Friday" rule saved with
+  // this default spanned Nov 25-29 every year, wrong every year since Black Friday's real date
+  // shifts with Thanksgiving — found 2026-08-09 from a live report of 5 Black-Friday-tagged days.)
   const newRuleDraft = () => ({id:'rule_'+Date.now(), label:'', type:'school_break',
-    locs:[], month:11, day:25, durationDays:5, active:true, source:'manual', createdAt:new Date().toISOString()});
+    locs:[], month:11, day:25, durationDays:1, active:true, source:'manual', createdAt:new Date().toISOString()});
 
+  // Fixed month/day rules can never correctly represent a floating-date event (Black Friday,
+  // Small Business Saturday, Cyber Monday, tax-free weekends) — those shift every year with
+  // Thanksgiving or statute. Those are already generated correctly, every year, by the
+  // retail/shopping calendar (RETAIL_EVENT_RULES → "Generate the retail/shopping calendar" above).
+  // A manual fixed-date rule sharing one of those types would tag the SAME calendar date forever,
+  // drifting further wrong each year and colliding with the correct auto-generated entry — the
+  // exact failure this comment documents. Reused live from RETAIL_EVENT_RULES so this warning
+  // can't drift out of sync if that list ever grows.
+  const _retailRuleTypes = new Set(RETAIL_EVENT_RULES.map(r=>r.type));
   const saveRule = () => {
     if(!ruleDraft.label.trim()){ alert('Enter a label.'); return; }
     if(!ruleDraft.locs.length){ alert('Select at least one store.'); return; }
+    if(_retailRuleTypes.has(ruleDraft.type)){
+      const proceed=window.confirm(
+        '"'+(RETAIL_EVENT_RULES.find(r=>r.type===ruleDraft.type)||{}).label+'" is already generated correctly, every year, '+
+        'by "Generate the retail/shopping calendar" above — its real date shifts with Thanksgiving/statute, which this '+
+        'fixed month/day/duration rule cannot follow. Saving this manual rule will tag the same calendar date every '+
+        'year regardless, drifting wrong and colliding with the correct entry.\n\nSave anyway?'
+      );
+      if(!proceed) return;
+    }
     const next = rules.some(r=>r.id===ruleDraft.id)
       ? rules.map(r=>r.id===ruleDraft.id?ruleDraft:r)
       : [...rules, ruleDraft];
@@ -499,6 +521,24 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
     setRules(next); saveRecurringRules(next);
   };
   const toggleRuleLoc = (loc) => setRuleDraft(d=>({...d, locs: d.locs.includes(loc)?d.locs.filter(l=>l!==loc):[...d.locs,loc]}));
+
+  // ── Mistagged floating-date cleanup (v4.928) — finds already-tagged instances of the exact bug
+  // v4.925 stopped from happening again (a fixed-date rule tagging Black Friday/Small Business
+  // Saturday/Cyber Monday/tax-free weekends on the wrong day for that year). See findFloatingDateMismatches.
+  const floatingMismatches = uM(()=>findFloatingDateMismatches(userEvents), [userEvents]);
+  const [mismatchBusy, setMismatchBusy] = uSt(false);
+  const cleanupFloatingMismatches = () => {
+    if(!floatingMismatches.length) return;
+    if(!window.confirm('Remove '+floatingMismatches.length+' mistagged event(s)? Each is tagged on a date that '+
+      'does not match the real (floating) date of that event for its year. This also removes them from the '+
+      'cloud if they were previously synced.')) return;
+    setMismatchBusy(true);
+    const next = JSON.parse(JSON.stringify(userEvents||{}));
+    for(const m of floatingMismatches){ if(next[m.loc]){ delete next[m.loc][m.dk]; if(!Object.keys(next[m.loc]).length) delete next[m.loc]; } }
+    try{ localStorage.setItem('mf_events', JSON.stringify(next)); }catch(e){}
+    onUpdate(next);
+    setMismatchBusy(false);
+  };
 
   const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DOW_LETTERS=['S','M','T','W','T','F','S'];
@@ -916,6 +956,19 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700,fontSize:'9px',flexShrink:0},
             onClick:()=>{setRuleDraft(newRuleDraft());setShowRuleForm(true);}},'➕ New Rule')
         ),
+        floatingMismatches.length>0&&div({style:{border:'.5px solid rgba(245,188,0,.4)',borderRadius:'var(--r)',
+            padding:'10px 12px',marginBottom:12,background:'rgba(245,188,0,.08)'}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--amber)',marginBottom:4}},
+            '⚠ '+floatingMismatches.length+' mistagged floating-date event(s) found'),
+          div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:8,lineHeight:1.5}},
+            'These are tagged on a FIXED date, but the real date shifts every year (Black Friday, Small '+
+            'Business Saturday, Cyber Monday, tax-free weekends). Likely from a recurring rule saved before '+
+            'v4.925 added the mismatch warning. ',
+            floatingMismatches.slice(0,6).map(m=>(sNameC(m.loc)||m.loc)+' · '+m.dk+' "'+m.label+'"').join('  ·  '),
+            floatingMismatches.length>6?'  …and '+(floatingMismatches.length-6)+' more':''),
+          btn({className:'btn btn-sm btn-red',style:{fontSize:'8px'},disabled:mismatchBusy,onClick:cleanupFloatingMismatches},
+            mismatchBusy?'Removing…':'🧹 Remove all mistagged')
+        ),
         !rules.length&&div({style:{color:'var(--text3)',textAlign:'center',padding:'40px 20px',fontSize:'11px'}},
           div({style:{fontSize:36,marginBottom:10}},'🔁'),
           div(null,'No recurring rules yet. Add one for an annual school break or local event.')),
@@ -1135,7 +1188,7 @@ function EventEntryModal({stores, settings, onTagEvent, onClose}) {
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
             'Tag any location and date — no scan required. Supports single days or multi-day ranges.')
         ),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
+        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:22,cursor:'pointer'}},'✕')
       ),
       div({style:{overflowY:'auto',padding:'14px 18px',flex:1,display:'flex',flexDirection:'column',gap:14}},
 
@@ -1268,7 +1321,7 @@ async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
   // ── Auto-tag holidays before building the pack ─────────────────────────────
   // Ensures holidays are persisted to localStorage AND excluded from review.
   // Uses HOLIDAY_MAP which covers 2019-2028 (yr-7 to yr+2).
-  let autoHolTagged=0;
+  let autoHolTagged=0; const _newlyTagged=[];
   for(const row of allAnoms[loc]) {
     const dk=normRow(row);
     if(!dk||(uev[loc]&&uev[loc][dk])) continue;
@@ -1278,10 +1331,17 @@ async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
       uev[loc][dk]={label:hol.label||String(hol),tagLabel:hol.label||String(hol),
         type:'holiday',source:'Auto-Holiday Scan',aiMatched:false,
         note:'Auto-tagged during Review Pack generation'};
-      autoHolTagged++;
+      autoHolTagged++; _newlyTagged.push({loc,dk,label:hol.label||String(hol)});
     }
   }
-  if(autoHolTagged>0){try{localStorage.setItem('mf_events',JSON.stringify(uev));}catch{}}
+  if(autoHolTagged>0){
+    try{localStorage.setItem('mf_events',JSON.stringify(uev));}catch{}
+    // This is a standalone function (no onUpdate callback reaches it), so push straight to
+    // org_events instead — same table every other write path in this file already uses.
+    try{ saveOrgEvents(_newlyTagged.map(t=>({loc:t.loc,dateStart:t.dk,dateEnd:t.dk,span:false,
+      type:'holiday',label:t.label,note:'Auto-tagged during Review Pack generation'})),
+      {method:'manual'}); }catch(e){console.warn('[Meridian] review-pack holiday sync failed:',e);}
+  }
 
   // ── Build review rows: exclude all tagged (includes just-tagged holidays) ──
   const rows=(allAnoms[loc]||[]).filter(r=>{
@@ -1413,6 +1473,7 @@ function submitReview(){
 function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
   const [search, setSearch] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState('all');
+  const [locFilter, setLocFilter] = React.useState('all');
   const [sortBy, setSortBy] = React.useState('date-desc');
 
   // Build flat array from userEvents: {loc, dk, date, ...eventData}
@@ -1442,10 +1503,25 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
     return[...types].sort();
   },[allEvents]);
 
+  // Per-location tag counts, HIGHEST FIRST. Ordered by count rather than name on purpose: on
+  // 2026-08-08 one store carried 450 tagged days, which starved every last-year lookup and
+  // silently broke Dialed-In calibration for the whole district (see v4.910). Nothing in the
+  // app showed that, because the list was sorted alphabetically and read as normal. A store
+  // with an implausible number of tags should be the first thing visible here.
+  const locCounts = React.useMemo(()=>{
+    const c={};
+    for(const e of allEvents) c[e.loc]=(c[e.loc]||0)+1;
+    return Object.entries(c).sort((a,b)=>b[1]-a[1]);
+  },[allEvents]);
+  // A day is only ever ONE tag per store, so "tagged days" and "events" are the same count.
+  // Flag anything past a year of coverage — that is a recurring rule expanding, not real events.
+  const HEAVY_TAGS = 300;
+
   // Filter + sort
   const filtered = React.useMemo(()=>{
     let evs=allEvents;
     if(typeFilter!=='all') evs=evs.filter(e=>e.type===typeFilter);
+    if(locFilter!=='all') evs=evs.filter(e=>String(e.loc)===String(locFilter));
     if(search.trim()){
       const s=search.toLowerCase();
       evs=evs.filter(e=>
@@ -1461,7 +1537,7 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
     else if(sortBy==='loc') evs.sort((a,b)=>(STORE_NAMES[a.loc]||a.loc).localeCompare(STORE_NAMES[b.loc]||b.loc));
     else if(sortBy==='type') evs.sort((a,b)=>a.type.localeCompare(b.type));
     return evs;
-  },[allEvents,typeFilter,search,sortBy]);
+  },[allEvents,typeFilter,locFilter,search,sortBy]);
 
   const exportCSV=()=>{
     const hdr=['Date','Day','Location','Loc #','Event Type','Label','Note','Source','AI?'];
@@ -1511,6 +1587,18 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
         )
       ),
       // ── Controls ───────────────────────────────────────────────────
+      // Heavy-tagging warning. Every tagged day is skipped when the forecast looks for the same
+      // day last year, so a store tagged on most of the calendar loses its comparison entirely —
+      // that is exactly what broke Dialed-In for all 27 stores on 2026-08-08 with 450 tagged
+      // days on one store, and nothing in the app said so.
+      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 16px',
+        borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
+        color:'#f59e0b',lineHeight:1.5,flexShrink:0}},
+        '⚠ ',
+        locCounts.filter(([,n])=>n>=HEAVY_TAGS).map(([l,n])=>(STORE_NAMES[l]||l)+' ('+n+')').join(', '),
+        ' — over a year of tagged days. Tagged days are skipped when the forecast looks for the ',
+        'same day last year, so heavy tagging can leave a store with no comparison at all. ',
+        'Worth checking these are real events and not a recurring rule filling the calendar.'),
       div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
         display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
         h('input',{type:'text',value:search,onChange:e=>setSearch(e.target.value),
@@ -1523,6 +1611,15 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
           h('option',{value:'all'},'All Types ('+allEvents.length+')'),
           typeOptions.map(t=>h('option',{key:t,value:t},
             (EVENT_TYPES[t]||{}).icon+' '+(EVENT_TYPES[t]||{}).label||t+' ('+allEvents.filter(e=>e.type===t).length+')'))
+        ),
+        // Locations ordered by TAG COUNT, not alphabetically, and each option shows its count —
+        // so a store with an implausible number of tagged days is visible without hunting.
+        h('select',{value:locFilter,onChange:e=>setLocFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          h('option',{value:'all'},'All Locations ('+locCounts.length+')'),
+          locCounts.map(([l,n])=>h('option',{key:l,value:l},
+            (n>=HEAVY_TAGS?'⚠ ':'')+(STORE_NAMES[l]||l)+' — '+n+' tagged'))
         ),
         h('select',{value:sortBy,onChange:e=>setSortBy(e.target.value),
           style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',

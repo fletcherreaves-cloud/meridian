@@ -259,6 +259,13 @@ function ScoreBadge({ label }) {
   }, SCORE_LABEL_SHORT[(label||'').toLowerCase()] || label || '—');
 }
 
+// null (no comments for this store) must not fall through to the red branch — a real 1-5 star
+// mean can never actually be 0, so this only ever needs to distinguish "no data" from "bad data."
+// Exported/pure for direct testing (v4.931, data-integrity sweep signature #5).
+export function storeScoreColor(avgScore) {
+  return avgScore == null ? 'var(--text3)' : avgScore >= 4.5 ? '#28a870' : avgScore >= 3.5 ? '#e8a040' : '#d94f4f';
+}
+
 function StarBar({ score, max = 5 }) {
   const filled = Math.round(score || 0);
   return h('span', { style: { fontSize: 13, letterSpacing: 1 } },
@@ -952,8 +959,14 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
     return m;
   }, [scopedRows]);
 
+  // Data-integrity sweep signature #5 (2026-08-09): avgScore is already correctly `null` (not 0)
+  // for a store with zero comments (line above, `s.scoreCount ? ... : null`) — real scores are
+  // never actually 0 (a 1-5 star mean bottoms out at 1), so a bare ||0 here only ever fires for
+  // the missing-data case, silently sorting a no-data store to the very bottom of "Best → Worst"
+  // (i.e. displaying it as the WORST store in the district). Missing sorts after every real score
+  // regardless of direction, matching the numeric label two rows down which already shows "—".
   const storeList = React.useMemo(() =>
-    Object.values(storeMap).sort((a, b) => (a.avgScore||0) - (b.avgScore||0)),
+    Object.values(storeMap).sort((a, b) => (a.avgScore ?? -Infinity) - (b.avgScore ?? -Infinity)),
     [storeMap]
   );
 
@@ -1095,7 +1108,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
           h('div', { style: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 16px 6px' } }, 'By Store — Best → Worst'),
           [...storeList].reverse().map(s => {
             const active = storeSel === s.loc;
-            const col = s.avgScore >= 4.5 ? '#28a870' : s.avgScore >= 3.5 ? '#e8a040' : '#d94f4f';
+            const col = storeScoreColor(s.avgScore);
             return h('div', {
               key: s.loc,
               onClick: () => { setStoreSel(active ? 'all' : s.loc); setFilterLabel('__all__'); },
@@ -1107,7 +1120,11 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
                 h('span', { style: { fontSize: 12, fontWeight: 700, color: col, flexShrink: 0, marginLeft: 4 } }, s.avgScore != null ? s.avgScore.toFixed(2) : '—'),
               ),
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 } },
-                h(StarBar, { score: s.avgScore || 0 }),
+                // s.avgScore||0 rendered a solid 0-filled star bar for a store with NO comments —
+                // visually identical to "we surveyed this store and it scored terribly," which
+                // never actually happens (a real 1-5 star mean can't be 0). Only render stars
+                // when there's a real score to show.
+                s.avgScore != null && h(StarBar, { score: s.avgScore }),
                 h('span', { style: { fontSize: 10, color: 'var(--text3)' } }, `${s.rows.length} comments`),
               ),
             );

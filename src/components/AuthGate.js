@@ -415,7 +415,7 @@ export function ChangePasswordBtn({ style = {} }) {
       },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 } },
           div({ style: { fontSize: 13, fontWeight: 700, color: TEXT } }, 'Change Password'),
-          btn({ onClick: close, style: { background: 'none', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', lineHeight: 1 } }, '×')
+          btn({ onClick: close, style: { background: 'none', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', lineHeight: 1 } }, '✕')
         ),
         success
           ? div({ style: { display: 'flex', flexDirection: 'column', gap: 14 } },

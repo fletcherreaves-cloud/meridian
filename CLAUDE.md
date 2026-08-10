@@ -191,9 +191,18 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 **✅ Period-Total Scoreboard shipped (v4.534)** — Model Assignment panel → **📊 Period-Total Scoreboard** (read-only, `runPeriodTotalBacktest` in `backtest.js`). Re-validates the Simple-wins finding on the metric it was *discovered* on: grades simple/dow/ae/ewma/di on rolling 28-day **period totals** (not daily MAPE), strictly leak-free (Back Test mode; Simple already asOf=start). Per-store winner + district tally + median-Simple-vs-best-engineered verdict banner. **Why it matters:** the daily Model-Assignment/Forecast-Accuracy backtests grade *daily* MAPE (day-level noise + exact DOW placement dominate — the engineered models' home turf), whereas the v4.483 discovery graded *totals* where day errors cancel. This closes that gap so "does Simple still sweep?" is answered like-for-like. Simple's daily-level branch is unchanged: same `weightedRecencyProjection` reused verbatim + a same-DOW shape multiplier (required to forecast a single day; sums back to the winning monthly total). Also **v4.534:** Simple filter chip + distribution count in the Model Assignment top bar.
 
+**✅ RESOLVED (already shipped, confirmed 2026-08-09 — do NOT re-implement):** Model Assignment
+backtest results/overrides ARE cloud-persisted — this line had gone stale. `_pushModelAssignments()`
+(`src/views/labor-tools.js`) pushes the whole `MODEL_ASSIGNMENT_KEY` blob to Supabase `user_settings`
+(key `model_assignments`) after every backtest run, apply-winners, manual override, or reset
+(v4.544); the two backtest RESULT artifacts (daily summary + Period-Total Scoreboard matrix) round-
+trip the same way under `mf_bt_summary`/`mf_period_scoreboard` (v4.835). App.js hydrates from cloud
+on startup (`loadUserSetting('model_assignments')`, ~line 2426). localStorage stays the instant
+read path; cloud wins when newer. Before assuming a "next up" item is undone, verify against the
+actual code — this note nearly caused a duplicate reimplementation.
+
 **Next candidate areas:**
 - FR: TPPH auto-target calc. "As of [date]" labels on tiles.
-- Model Assignment: persist backtest results/overrides to Supabase (currently localStorage — device-local). **← next up (1b).**
 - Product Mix pull → Pricing Engine + Filet-O-Fish-Fridays correlation (Notes 25 #1 / 28 #5).
 - SAGE conversation persistence; multi-tenant deployment.
 
@@ -201,6 +210,25 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 
 ## Dev Rules
 
+- **Regenerate the loader field map after touching a loader:** `node scripts/gen-loader-emits.mjs --write`.
+  `src/__tests__/metric-chains.test.js` asserts every metric chain names a field its loader
+  actually emits — it caught a real error on every round of the 2026-08-08 data-contract work
+  (four chains would otherwise have shipped as silent zeros). Its field list used to be typed by
+  hand and went stale four times in that one day.
+- **Measure it, don't reason about it (standing rule).** Reproduce a failure against the real
+  system *before* forming a theory, and read a command's OUTPUT before reporting what it did.
+  Be most suspicious when a cause feels obvious because it matches a past incident in this repo
+  — on 2026-08-07 that instinct produced two confidently wrong RLS diagnoses in a row, and an
+  owner-run `EXPLAIN ANALYZE` refuted the second one and prevented a pointless migration across
+  18 tables. `curl`-ing the actual failing request found the real cause in seconds. The same
+  rule sets thresholds: the swing alarm's -10% comes from 676 measured store-weeks, and the
+  count-completeness 75% from a measured bimodal distribution, not from numbers that felt right.
+  **No second guesses:** once a hypothesis is disproven, the next step is a MEASUREMENT, not
+  another hypothesis — and never tell the owner something is "probably fixed" without
+  verifying it. **Read the code at the exact LOCATION before writing there** (grep-and-inject
+  lands in the wrong function and still compiles), and **check whether an affordance already
+  exists** before adding one. A passing build is not verification.
+  Full evidence in `memory/feedback-measure-dont-reason.md`.
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.
 - No TypeScript — plain JS with `// @ts-nocheck`.
@@ -209,6 +237,8 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - **Auto/emailed-first, freshest-wins (standing rule).** Every tile/column must be fed by an auto-pulled or emailed cloud stream (DAR `qsr_daily_activity`, `qsr_fob`, `qsr_ebos_daily`, `lifelenz_schedules`; emailed `daily_glimpse_daily`/`sales_ledger_daily`/`cash_sheet_daily`). Manual uploads (`laborRows`/`ctrlRows`/`opsRows`/FOB Excel) are **last-resort fill only** — they may fill a loc/date the cloud doesn't cover yet but must **never override** auto/emailed data or be a tile's primary source. Manual data is device-local IDB (blank on other devices, stale past the last upload). See `memory/project-data-redundancy.md`.
 - **Source data through the shared helpers — never filter raw rows for a metric or a vs-LY in a panel (standing rule).** Reading `ds.laborRows`/`ctrlRows`/`opsRows` directly for a metric value re-introduces the manual-only bug (recent windows show blank/"-100%"/"-32%"). Use **`src/engine/metric-source.js`** (`metricDaily`/`metricSeries`/`metricAvg`, auto-first per-day metric sourcing — add a metric = one line in `METRIC_SOURCES`) and **`src/engine/vs-ly.js`** (`matchedVsLY`/`autoFirstDaily`/`autoFirstTotal`, matched-day current-vs-LY). Full rationale, migration status, and the metrics/panels intentionally left alone are in `memory/data-sourcing-standard.md`.
 - Version bump with each significant feature: `v4.xxx` in commit message.
+- **Speed check on every change (standing rule).** Performance is a feature and a regression is a bug — "perceived or otherwise" (owner, Notes 61). Entry chunk budget **≤ 2.8 MB / ≤ 850 KB gzipped** (baseline v4.901: 2722.5 KB / 801.3 KB); new panels are **lazy by default** via `lazyPanel()`; measure before/after and put BOTH numbers in the commit body. A static import added to `App.js` costs every user on every load — that is how the chunk reached 3518 KB. See `memory/feedback-performance-budget.md`.
+- **Manual sourcing is always temporary (standing rule).** `MANUAL_ONLY_METRICS` must stay **empty** — it hit 0 on 2026-08-07 and that is the resting state, not an achievement. Ship a metric manually to prove it is worth having, then automate it; name its intended auto source in the same commit. Prefer **deriving from already-pulled atoms** over adding a new manual upload. Same memory file.
 - **Commit every `memory/` file you create or edit, in the same commit as the work that cites it (standing rule).** Sessions get archived — phone sessions especially — and a session's workspace filesystem does not survive it. An uncommitted memory file is lost the moment the session ends, and a commit message that references one (`see memory/foo.md`) becomes a dangling pointer that no future session can follow. This has already cost real context: `cleanup-backlog.md`, `finding-live-intraday-operations-report-data.md`, and `project-aag-tiles-reimagine.md` are all cited by v4.817–v4.838 commit bodies and were **never committed** — the backlogs and phase-plans they held are gone. If a commit body says "full findings in memory/X.md", `git show --stat` for that commit must list `memory/X.md`. Never end a session with an uncommitted memory file.
 - **A commit body is the durable handoff.** Since field-note queues (Notes NN) are pasted into a session and die with it, spell out in the commit body what was deferred, skipped, or left as a "first slice" — and *why*. That text is the only thing a future session can recover open items from. (This already works: v4.839's "does NOT run the two scripts, needs the owner's go-ahead" survived its session; the Notes 56 list it came from did not.)
 - Performance reviews: do not hard-code org names (remove "Murphy Family Restaurants" refs).

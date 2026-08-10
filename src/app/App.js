@@ -8,6 +8,7 @@ import '../meridian.css'
 const ReactDOM = { createRoot }
 
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
+import { mark as _traceMark, reportRender as _traceRender } from '../utils/click-trace.js';
 import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon, setEventImpact, getEventImpact } from '../engine/forecast.js';
@@ -18,35 +19,78 @@ import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
 import { CalendarManagerPanel, EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { EventImpactPanel } from '../views/event-impact.js';
 import { ReportSubscriptions } from '../views/report-subscriptions.js';
-import { AboveStoreOnePager } from '../views/above-store-onepager.js';
 import { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { parseInventoryData, InventoryIntelligence } from '../views/inventory.js';
 import { computeSmartTargets, SmartTargetPanel } from '../features/smart-targets.js';
-import { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor } from '../views/labor-tools.js';
+// labor-tools.js / store-analytics.js are panel-only modules (155 KB + 161 KB of source) and
+// nothing in them is needed to paint the home screen, so they load on first open instead of being
+// parsed at startup. See the lazyPanel note below for why each gets its own Suspense boundary.
 import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief } from '../features/projections.js';
-import { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard } from '../views/store-analytics.js';
+// ShiftAnalysisTab / ModelComparisonPanel / RegisterAuditTab / StoreRecordsTab were imported here
+// and never rendered — dead imports that pulled all 161 KB of store-analytics.js into the entry
+// chunk for nothing. They are still exported and used inside store-analytics.js itself.
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
 import { Settings } from '../views/management.js';
 // Lazy panel with stale-chunk recovery: after a new deploy, an open tab's index.html references old
 // hashed chunk filenames that are gone from the server, so a dynamic import 404s ("Failed to fetch
 // dynamically imported module"). Reload ONCE (throttled) to pull the fresh index.html + chunk map.
-const lazyPanel = (importFn) => React.lazy(() => importFn().catch((err) => {
-  try {
-    const KEY = 'meridian_chunk_reload_at';
-    const last = Number(sessionStorage.getItem(KEY) || 0);
-    if (Date.now() - last > 15000) { sessionStorage.setItem(KEY, String(Date.now())); location.reload(); return new Promise(() => {}); }
-  } catch {}
-  throw err;
-}));
+//
+// Each lazy panel also gets its OWN Suspense boundary here. meridian.js wraps the whole app in a
+// single Suspense whose fallback is a 100vh "Loading…" screen — so without this, opening any lazy
+// panel unmounts the entire app (nav, shell, tiles) and replaces it with a full-page spinner until
+// the chunk lands. On a phone that reads as the app crashing. A local boundary means the chunk load
+// blanks only the panel's own overlay. This is what makes it safe to lazy-load heavy panels at all.
+const _panelFallback = () => React.createElement('div', {
+  style: {
+    position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', background: 'rgba(0,0,0,.75)',
+    color: '#f5bc00', font: "600 13px/1 ui-sans-serif,system-ui,sans-serif",
+  },
+}, 'Loading…');
+
+const lazyPanel = (importFn) => {
+  const Inner = React.lazy(() => importFn().catch((err) => {
+    try {
+      const KEY = 'meridian_chunk_reload_at';
+      const last = Number(sessionStorage.getItem(KEY) || 0);
+      if (Date.now() - last > 15000) { sessionStorage.setItem(KEY, String(Date.now())); location.reload(); return new Promise(() => {}); }
+    } catch {}
+    throw err;
+  }));
+  const Wrapped = (props) => React.createElement(
+    React.Suspense, { fallback: React.createElement(_panelFallback) },
+    React.createElement(Inner, props));
+  Wrapped.displayName = 'LazyPanel';
+  return Wrapped;
+};
+const _laborTools = () => import('../views/labor-tools.js');
+const DARDaypartPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.DARDaypartPanel })));
+const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.ProductMixPanel })));
+const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: m.LaborAnalyticsPanel })));
+const OperatorSummaryPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.OperatorSummaryPanel })));
+const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: m.ModelAssignmentPanel })));
+const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })));
+
+const _storeAnalytics = () => import('../views/store-analytics.js');
+const AnomalyPanel        = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AnomalyPanel })));
+const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.RevenueIntelligence })));
+const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
+const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
+const AIInsightsLog       = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AIInsightsLog })));
+const DevDashboard        = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.DevDashboard })));
+
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
+const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
+const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
-import { SchedulingPanel } from '../views/scheduling.js';
+const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
+const SchedulingPanel = lazyPanel(() => import('../views/scheduling.js').then(m => ({ default: m.SchedulingPanel })));
 import { AdminPanel } from '../views/admin.js';
 const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
 const FOBEOMPanel = lazyPanel(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
-import { EOMSupervisorPanel } from '../views/eom-supervisor.js';
+const EOMSupervisorPanel = lazyPanel(() => import('../views/eom-supervisor.js').then(m => ({ default: m.EOMSupervisorPanel })));
 const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
 import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
 import { FormsPrintPanel } from '../views/forms-print.js';
@@ -69,13 +113,17 @@ import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, loadOrgSchoolConfig, loadEventImpact } from '../lib/supabase.js';
-import { orgEventsToDayMap } from '../engine/events-import.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact } from '../lib/supabase.js';
+import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
+import { SwingAlarm } from '../components/SwingAlarm.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
+import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
+import { newsContextFor } from '../engine/swing-context.js';
 import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, gBg, gBdr } from '../utils/fmt.js';
 import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts } from '../features/morning-brief.js';
@@ -136,6 +184,26 @@ function supplementLaborWithSched(laborRows, qsrActSummaryRows) {
   const fillDays = [...autoByKey.entries()].filter(([k]) => !manualByKey.has(k)).map(([, r]) => r);
   if (fillDays.length) changed = true;
   return changed ? [...kept, ...fillDays] : laborRows;
+}
+
+// ── Event-tag cloud sync (Notes 46 gap, closed) ───────────────────────────────
+// org_events + its RLS + the cloud→local hydration in the effect below were built as "the
+// cloud-first replacement for localStorage mf_events" (supabase/schema-org-events.sql), but only
+// the download direction was ever wired up — hand-entered tags (EventCalendar add/edit/delete/
+// Auto-Tag-Holidays, the scanner quick-tag DOM events, upload-triggered auto-tagging) only ever
+// wrote to this browser's localStorage, so they were invisible on any other device. This diffs
+// the day-map before/after a write and pushes the delta to org_events with the SAME table the
+// hydration effect already reads back down — no new table, no new RLS. The actual diff (what to
+// upsert/delete) is `diffUserEventsForCloudSync` in events-import.js — pure and unit-tested, so
+// the round-trip logic itself is verified without needing a live authenticated Supabase session.
+async function syncUserEventsToCloud(prev, next) {
+  try {
+    const { upserts, deleteKeys, staleKeys } = diffUserEventsForCloudSync(
+      prev, next, t => (EVENT_TYPES[t] || {}).label || null);
+    for (const { loc, dk, label } of deleteKeys) await deleteOrgEventsByLocDate(loc, dk, label);
+    for (const { loc, dk, label } of staleKeys) await deleteOrgEventsByLocDate(loc, dk, label);
+    if (upserts.length) await saveOrgEvents(upserts, { method: 'manual' });
+  } catch (e) { console.warn('[Meridian] event cloud sync failed:', e); }
 }
 
 // ── Planning hub ─────────────────────────────────────────────────────────────
@@ -263,10 +331,207 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 }
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
-const MERIDIAN_VERSION    = '4.779';
-const MERIDIAN_BUILD_DATE = '2026-08-01';
-if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.940', date:'2026-08-10', changes:[
+    'FIXED — Needs Attention could never catch a pure sales decline, no matter how severe. It only checked cash/controls/labor/speed signals, so a store on a real, sustained sales slide (found: Atoka, down 15.4% vs last year over the trailing 4 weeks, worsening every week) never showed up there even though other panels track sales separately. Added a dedicated sales-decline check using the same trailing-month comparison the rest of the app already uses, tuned against the real district numbers so it flags a genuine outlier without flooding the list on an ordinary soft week.',
+  ]},
+  {version:'4.939', date:'2026-08-09', changes:[
+    'SAGE moved from a full-screen overlay to a drawer that opens from any screen without losing your place — a persistent button lives in the top bar now instead of being buried in the nav list. The minimize-to-a-pill option is still there for anyone who wants it fully out of the way, and reopening a minimized session now actually reopens it (it could get stuck invisible before).',
+    'Signals is no longer forced full-screen either — it opens as the same centered panel as everything else, just wider to give the Scanner and Live Ops tables room.',
+  ]},
+  {version:'4.938', date:'2026-08-09', changes:[
+    'Every panel in the app now closes the same way. Close buttons had drifted into five different shapes across the app — a wrong "×" character, the correct "✕", the word "Close", "✕ Close", and "Cancel" — sometimes two of them on the same panel depending on whether it had data yet. All 31 panels that open as an overlay now share one modal component with one header and one close button, so the fix cannot drift back panel by panel the way it did before.',
+  ]},
+  {version:'4.937', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #2 continued: 4 more reports fixed the same way, one of them a real live bug — the Anomaly Detection panel and the AI Backtest Scanner build their day-by-day baseline from the manually-uploaded Labor Report, which had quietly stopped receiving new rows about two weeks earlier while every other data source kept updating. Both had been silently blind to two weeks of real sales anomalies. Also fixed: a stale slider baseline in the Performance Calculator, the district 6-week sales trend, and FOB% in the Operator Summary panel, which now falls back to the automatic FOB pull when the monthly report hasn’t been uploaded yet.',
+  ]},
+  {version:'4.936', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #2: 12 more reports, panels, and one AI prompt were reading only from manually-uploaded files, so a store covered solely by an automatic or emailed data feed dropped out of them entirely. Fixed across the Date-Range Report, the printed Store One-Pager, the Metric Correlation Explorer, the Ops Anomaly Cross-Check, the district AI brief, four pieces of the Revenue Opportunity panel, the Model Comparison chart, the Scheduling Opportunity Report, and Morning Brief. The sharpest case was the Records feature: it only checked service-speed data on a day the Labor Report already covered, so a record set on an automatic-only day could never be recognized at all.',
+  ]},
+  {version:'4.935', date:'2026-08-09', changes:[
+    'New: Projection Accuracy report (Signals → 📐 Projection Accuracy). Tracks whether QSRSoft’s hourly sales and guest-count projections run consistently high or low by time of day, accumulating daily so the pattern gets more reliable the longer it runs — a first look already suggested projections run under in the afternoon/evening and over late at night, though it will take a few weeks of data to confirm.',
+  ]},
+  {version:'4.934', date:'2026-08-09', changes:[
+    'RankingView’s grouped guest-count vs-last-year figure now pulls from the same automatic-first data source as every other column in that table — it had been the one column still reading only the manually-uploaded file.',
+  ]},
+  {version:'4.933', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #5: 5 more places where a missing reading was silently graded as if it were a real zero. A store with no Controls upload at all was scoring a perfect Controls Elite rating; a store missing labor data ranked #1 (best) in the district instead of last; a store with no guest comments showed the worst possible color and star rating instead of "—"; and two rolling averages let a missing reading drag the average toward zero instead of being left out.',
+  ]},
+  {version:'4.932', date:'2026-08-09', changes:[
+    'Graded Visits: the hourly last-year comparison now requires a minimum sample size before showing a percentage. Measured against real data first — a last-year guest count of 1 produced comparisons like +2200%, and turned out to be rare (0.3% of hours), not the normal case it looked like.',
+  ]},
+  {version:'4.931', date:'2026-08-09', changes:[
+    'Fixed a destructive bug in the mistagged-event cleanup tool shipped one version earlier, caught in review before it reached anyone: for long date ranges (like a full back-to-school month) the one-click "Remove all mistagged" button could delete a correctly-tagged real event, not just the mistagged ones.',
+  ]},
+  {version:'4.930', date:'2026-08-09', changes:[
+    'Calendar Manager can now detect and clean up mistagged recurring-event dates in one click — the same class of bug as 5 Black Friday tags landing on the wrong day, generalized to Small Business Saturday, Cyber Monday, and tax-free weekends.',
+  ]},
+  {version:'4.929', date:'2026-08-09', changes:[
+    'Fixed a bug in the cloud sync for hand-tagged calendar events: editing or deleting the one event visible on a day with multiple tagged events (a sports game AND a school closure on the same date, for example) could silently delete the OTHER event sharing that date too, with no error and no local sign anything was wrong.',
+  ]},
+  {version:'4.928', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #1: fixed 3 more places a near-zero denominator could produce an impossible percentage, matching the 1,200,000%-chart-axis bug from 4.912 — a cloud-sourced year-over-year figure that fed sort order, color coding, and a printed report; a per-day forecast-error percentage that could read "-111,000%" in the Forecast Table; and a dead calculation that was computed but never actually used, which was deleted rather than fixed.',
+  ]},
+  {version:'4.927', date:'2026-08-09', changes:[
+    'Recurring calendar rules get a safer default duration and a guard against two rules landing on the same floating date.',
+  ]},
+  {version:'4.926', date:'2026-08-09', changes:[
+    'Forecasting: a last-year comparison is no longer skipped just because that day carries a tag. It’s now skipped only when the day is a measured statistical outlier against its own peer days — tagging a day must never by itself remove it from the comparison.',
+  ]},
+  {version:'4.925', date:'2026-08-09', changes:[
+    'Events & Tags: hand-entered tags now sync to the cloud, not just this device’s local storage.',
+  ]},
+  {version:'4.924', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #4: the still-open, still-filling business day is now excluded everywhere it could taint a grade or a trend — 7 more places found beyond the Biggest Miss fix in 4.917, including Dialed-In’s MAPE columns, every period preset in Labor Tools, and the live Smart Targets calculator.',
+  ]},
+  {version:'4.923', date:'2026-08-09', changes:[
+    'Events & Tags: restored search, filter, and sort, which had landed in the wrong modal.',
+  ]},
+  {version:'4.922', date:'2026-08-09', changes:[
+    'Interaction tracer (?clicktrace=1) improvements: an on-screen report with a copy button for testing on a phone with no attached debugger, each React render now attributed to the specific click that caused it, click-triggered renders separated from unrelated startup/background work, and AppSidebar’s own render time instrumented directly.',
+  ]},
+  {version:'4.921', date:'2026-08-09', changes:[
+    'Fixed the mobile app feeling slow to open menus and panels — a modal-tracking gate had regressed since 4.212, so opening the hamburger menu (or several other panels) forced the whole app to re-render instead of just the panel that opened. Found with a real capture from the interaction tracer, not guessed. Also debounced the startup data loaders so their 32-loader burst no longer coalesces into a visible stall.',
+  ]},
+  {version:'4.920', date:'2026-08-08', changes:[
+    'FIXED — washed-out text across the whole app. The muted colour used for almost every label and caption failed readability standards in six of the eight theme-and-mode combinations, worst at roughly half the required contrast. The gold accent failed in three light themes. All eight now meet the accessibility standard, and a test blocks any future change that drops below it.',
+  ]},
+  {version:'4.919', date:'2026-08-08', changes:[
+    'Events & Tags gains a location filter, with each store showing how many days it has tagged and the heaviest listed first. Any store tagged on more than a year of days now carries a warning, because tagged days are skipped when the forecast looks for the same day last year — one store had 450 tagged days and nothing in the app said so.',
+    'Local News now states when it updates in the footer, not only when there is nothing to show.',
+  ]},
+  {version:'4.918', date:'2026-08-08', changes:[
+    'Render timing in the tracer now actually works in the live app. The previous attempt used a React feature that is removed from production builds, so it silently recorded nothing.',
+  ]},
+  {version:'4.917', date:'2026-08-08', changes:[
+    'Forecast Table and Backtest Accuracy no longer grade the current day. A day still filling has only its sales so far, and comparing that against a whole-day forecast made it the Biggest Miss almost every time while dragging the accuracy, bias and pass-rate figures with it. Today is now shown separately as in-progress rather than scored.',
+    'The tracer now also records React render time, which is the one place the previous instrumentation could not see.',
+  ]},
+  {version:'4.916', date:'2026-08-08', changes:[
+    'The interaction tracer now names the heavy startup work — index building, the register-audit analysis and the insights pass — so a freeze on load can be attributed to something specific instead of appearing as anonymous script.',
+  ]},
+  {version:'4.915', date:'2026-08-08', changes:[
+    'Clicks no longer wait for the store rebuild. Every time a data loader finished, the app rebuilt all 27 stores immediately and the screen froze until it was done — measured at up to half a second each, and it ran sixteen times in one session. That work now happens at low priority, so a click, a menu or closing a panel goes through first. The numbers are unchanged; they just no longer block what you are doing.',
+  ]},
+  {version:'4.914', date:'2026-08-08', changes:[
+    'Added an interaction tracer for the sluggish-click report. Load the app with ?clicktrace=1, click around, then run mfClickTrace() in the console — it lists which clicks blocked the screen and for how long, and names the work that ran. Off unless switched on.',
+  ]},
+  {version:'4.912', date:'2026-08-08', changes:[
+    'FIXED — the 6-Week Performance chart could plot impossible numbers (a y-axis reaching 1,200,000%). Year-over-year growth was measured against last year\'s same weekday even when that day was a closure with almost no sales — Christmas, Thanksgiving, the January ice storm. Dividing by an $8.98 day turns a normal day into a six-figure percentage. Those days are now left out of the trend instead of being treated as a real comparison.',
+    'The cutoff is drawn from the data, not picked: of 40,000 store-days, 98.4% fall at or above 70% of their own store\'s typical day and only 76 fall below 25%. Genuine strong years and real declines are still reported in full.',
+  ]},
+  {version:'4.911', date:'2026-08-08', changes:[
+    'Local News now shows a chip for every location that has a story. It was capped at eight, so the header could say 17 locations while only 8 were selectable. The header now reads how many of the 27 stores have any coverage at all.',
+  ]},
+  {version:'4.910', date:'2026-08-08', changes:[
+    'FIXED — Dialed-In calibration and the 6W/4W/2W/1W trend columns. A last-year comparison was skipped whenever the day it pointed at carried an event tag, and one store had 450 tagged days, so every candidate was rejected and the comparison came back empty for 146 of 146 days. Real sales existed on every one of those days. Last-year lookups now fall back to using a tagged day rather than giving up; genuine closures are still excluded.',
+    'The version shown in the footer is now taken from the top of this changelog instead of being typed separately. The two had drifted 20 versions apart, so a hard refresh looked like it had failed.',
+  ]},
+  {version:'4.909', date:'2026-08-08', changes:[
+    'Dialed-In diagnostics now report WHY a last-year lookup was rejected, not just whether the day existed. The previous version only proved the index key was present — which it was — while the value still came back empty, so it answered the wrong question.',
+  ]},
+  {version:'4.908', date:'2026-08-08', changes:[
+    'Added instrumentation to the Dialed-In calibration log instead of shipping a fourth guess at why Tishomingo fails and the 6W/4W/2W/1W trend columns render blank.',
+  ]},
+  {version:'4.907', date:'2026-08-08', changes:[
+    'Fixed a date bug that shifted any text-form date back one day (a date string is read as UTC midnight but displayed in local time). It builds the index key for every store-and-day lookup in the app, so a cached row could sit one day off from where everything else looked for it.',
+    'New stores are now reported honestly. Ponce de Leon showed a window starting in April 2027, which read like corruption but was arithmetic — it opened in March 2026 and Dialed-In needs a full year of history. It now says so plainly and no longer counts as a failure.',
+  ]},
+  {version:'4.906', date:'2026-08-08', changes:[
+    'Fixed a regression that broke Dialed-In calibration for all 27 stores. The auto-first sourcing added in 4.904 was applied to a row set shared by the grid search, the clean-data detector and the last-year lookup; it is now scoped to the trend columns alone, which are the only part that needs recent days.',
+  ]},
+  {version:'4.905', date:'2026-08-08', changes:[
+    'Corrected the metric resolver: 30 of 35 source chains were consulting manual uploads BEFORE the automatic feeds, so a stale manual value could override cloud-fresh data. Being stored in the cloud does not make a stream automatic — what matters is what feeds it. Now enforced by a test, so it cannot drift back.',
+  ]},
+  {version:'4.904', date:'2026-08-08', changes:[
+    'Dialed-In trend columns re-sourced to auto-first data. Superseded by 4.906 — see above.',
+  ]},
+  {version:'4.903', date:'2026-08-08', changes:[
+    'Register Audit: refund COUNT had refund DOLLARS added into it. The visible symptom was stray cents in the total; the real damage was the amber warning thresholds firing on dollar amounts, so anyone with cashless refund activity looked like an outlier. Split into a count and a dollar total.',
+    'The afternoon daypart is now labelled Snack rather than PM.',
+  ]},
+  {version:'4.902', date:'2026-08-08', changes:[
+    'Two standing rules recorded: a measured performance budget for every change, and a commitment that manually-sourced metrics are always temporary and get automated.',
+  ]},
+  {version:'4.901', date:'2026-08-08', changes:[
+    'Mobile performance: 795 KB removed from the initial download (3518 KB to 2722 KB). Slow first load, an unresponsive menu and the long blank screen when returning from another app were all the same cause — too much code parsed before the app could respond.',
+    'Opening a panel that loads on demand no longer blanks the entire app while it downloads.',
+  ]},
+  {version:'4.900', date:'2026-08-08', changes:[
+    'The loader field map is fully generated — no hand-maintained supplement remains.',
+  ]},
+  {version:'4.899', date:'2026-08-08', changes:[
+    'The loader field map is now generated from the code rather than typed by hand, after going stale four times in one day. Employee and manager meal figures seeded from the real file.',
+  ]},
+  {version:'4.898', date:'2026-08-08', changes:[
+    'Meal counts wired alongside the amounts, with header names verified against a real Daily Glimpse file.',
+  ]},
+  {version:'4.897', date:'2026-08-08', changes:[
+    'Fixed the meals data path, which was broken one link from the end.',
+  ]},
+  {version:'4.896', date:'2026-08-08', changes:[
+    'All 28 six-week comparison fields now resolve from data, and the manual-only metric list is empty.',
+  ]},
+  {version:'4.895', date:'2026-08-08', changes:[
+    'Opportunity cost is now derived rather than uploaded, and a new Actual-vs-Scheduled opportunity metric was added.',
+  ]},
+  {version:'4.894', date:'2026-08-08', changes:[
+    'LifeLenz now resolves four more metrics. Floor hours turned out never to have been saved at all.',
+  ]},
+  {version:'4.893', date:'2026-08-08', changes:[
+    'The six-week comparison is routed through the metric resolver — the payoff for the sourcing work.',
+  ]},
+  {version:'4.892', date:'2026-08-08', changes:[
+    'Derivation became a gap-filling fallback rather than a replacement, so a directly-reported value still wins when one exists.',
+  ]},
+  {version:'4.891', date:'2026-08-08', changes:[
+    'Metric coverage now means “can we compute it”, not “does a feed carry it”.',
+  ]},
+  {version:'4.890', date:'2026-08-08', changes:[
+    'Actual-vs-needed hours are auto-available after all — an incorrect rejection caught by the owner.',
+  ]},
+  {version:'4.881', date:'2026-08-07', changes:[
+    'NEW — Local News. Stories from nine local outlets covering the towns our restaurants are in, attributed to the right store and filtered to what could plausibly affect a restaurant: road closures, crime, weather, business openings. Prep sports and obituaries are filtered out. A story in a two-store town (Ardmore, DeFuniak Springs) is shown as belonging to EITHER store rather than being guessed at. Also searches YouTube nightly, though these towns carry almost no video coverage.',
+  ]},
+  {version:'4.880', date:'2026-08-07', changes:[
+    'The swing alarm now shows what was happening locally around a store\'s decline. Crucially it looks BACK before the decline started, because a cause comes before its effect — for the Atoka alert it surfaces storm-damaged roads and restoration work from weeks earlier. Headed "worth checking", never presented as the explanation.',
+  ]},
+  {version:'4.875', date:'2026-08-07', changes:[
+    'Inventory variance trace now loops back to the last ACTUAL PHYSICAL COUNT instead of the calendar month, so the chart brackets the window a variance actually occurred in. The header names the window ("since the last count (Aug 5)"). It deliberately walks back past a count taken in the last few days — anchoring on yesterday would collapse the chart to two points. Note the trace still cannot cross a month boundary: qsr_fob snapshots are month-to-date cumulative and reset at month start.',
+  ]},
+  {version:'4.874', date:'2026-08-07', changes:[
+    'A manual report that is too large to sync (one 12.37 MB file) was being re-fetched and failing on EVERY load. It now stops retrying after two attempts and names the file so a report that never synced is visible instead of silently absent.',
+  ]},
+  {version:'4.871', date:'2026-08-07', changes:[
+    'Startup: removed ten full-table row-count scans that ran on every single login purely to write numbers to the browser console. Two of them exceeded the database statement timeout and failed outright, and all ten competed with the real data loads during startup. Time to a usable app dropped by about 7 seconds. The diagnostic is still available at ?tablecounts=1.',
+  ]},
+  {version:'4.870', date:'2026-08-07', changes:[
+    'Failed data loads are no longer silent. A read that errored was indistinguishable from a table that genuinely had no data — the failure marker was being destroyed before any panel could see it, across 37 loaders. That is how six tables returning server errors went unnoticed, each one rendering as a normal "no data yet" empty state. Failures now raise the DATA INCOMPLETE banner and name the source.',
+  ]},
+  {version:'4.869', date:'2026-08-07', changes:[
+    'Swing alarm now measures only CLOSED business days. It was counting today as a full day, so a store part-way through trading looked worse than it was and the headline number drifted through the day. Honours the 4am business-day cutover.',
+  ]},
+  {version:'4.868', date:'2026-08-07', changes:[
+    'NEW — Count Cycle panel (Operations → Count Cycle). Enforces the count rules per store: every weekly count needs a full Food AND Condiment count, and Paper is mandatory on the mid-month count. The mid-month count floats with each store\'s own count day, so it is identified by Paper being counted outside the close window rather than by a fixed date. Opens on the stores that need chasing, with the rest collapsed. Reads the full item universe (qsr_onhand) rather than the top-variance table, which carries no Condiment items at all.',
+  ]},
+  {version:'4.867', date:'2026-08-07', changes:[
+    'NEW — Swing alarm. A store whose sales or guest counts fall sharply for two weeks running now opens a blocking alert that cannot be dismissed by clicking away; acknowledging is the only exit, and it records who acknowledged and when. Thresholds were calibrated against 676 store-weeks of real data rather than picked: two consecutive weeks at or below -10% vs LY isolates exactly the genuinely struggling store. Acknowledging one week does NOT silence the next, and does not silence an escalation — so a store that keeps getting worse keeps surfacing.',
+  ]},
+  {version:'4.866', date:'2026-08-07', changes:[
+    'Count history is now recorded permanently. On-hand data only ever kept each item\'s LAST count date, so a recount erased the previous one — meaning "was the last weekly complete?" was answerable but "were all four weekly counts complete last month?" never could be. A daily snapshot now preserves each count session as it happens. History builds forward from today; counts already overwritten cannot be recovered.',
+  ]},
+  {version:'4.864', date:'2026-08-07', changes:[
+    'The Items Recounted tile was reporting "No ledger detail" for a period that held 695 rows across all 27 stores (54 items recounted, $3,680 net recovered). The read was timing out on a 16 MB request, not coming back empty. Fixed the request size, and the tile now distinguishes a failed load from a genuinely empty one, with a Retry.',
+  ]},
+  {version:'4.859', date:'2026-08-07', changes:[
+    'Drive-thru speed now contributes to the attention feed. The detector had been written and tested but was never given data, so it silently contributed nothing.',
+  ]},
+  {version:'4.858', date:'2026-08-07', changes:[
+    'Watch counts were always zero. The "Watch Flags" tile, the Watch filter on Store Dashboard, and the Watch tab in Needs Attention all filtered for a severity tag the system has never emitted, so all three had silently read zero since they were built. About 12 categories of watch findings were being detected and then dropped. Expect these counts to jump off zero.',
+  ]},
+  {version:'4.856', date:'2026-08-07', changes:[
+    'Panel plumbing rebuilt (no visible change) and 31 gaps closed as a result: 15 panels left the dashboard recomputing behind them, and 16 could not be closed with the Escape key. Adding a panel used to mean updating six separate lists by hand; the build now fails if any of them disagree.',
+  ]},
   {version:'4.779', date:'2026-08-03', changes:[
     'At-A-Glance polish: the Sales & Guest Counts, Labor, and Service tiles now show "Loading…" instead of "No … data for this period" during the brief post-reload window before the cloud streams finish loading. The empty-state was reading as "no data exists" when the data was simply still in flight (the blank-tile-on-hard-reload report) — now it only says "no data" once the streams have loaded and the selected period genuinely has none.',
   ]},
@@ -1224,6 +1489,15 @@ const MERIDIAN_CHANGELOG  = [
   ]},
 ];
 
+// Derived from the changelog's newest entry, NOT typed separately. Both were hand-maintained
+// until 2026-08-08 and drifted 20 versions apart — the app footer read 4.881 while 4.909 was
+// deployed, so the owner had no way to tell which build was loaded and a hard refresh looked
+// like it had failed. Adding a changelog entry IS the version bump now; the two cannot drift.
+// changelog-version.test.js fails the build if the list is out of order or misshapen.
+const MERIDIAN_VERSION    = MERIDIAN_CHANGELOG[0].version;
+const MERIDIAN_BUILD_DATE = MERIDIAN_CHANGELOG[0].date;
+if (typeof window !== 'undefined') window.__MERIDIAN_VERSION__ = MERIDIAN_VERSION;
+
 // ── Data Policy Banner — shown once per session, dismissed via localStorage ──
 const DATA_POLICY_KEY = 'mf_data_policy_v1';
 function DataPolicyBanner() {
@@ -1301,7 +1575,36 @@ function UploadSummaryModal({ report, onClose }) {
   );
 }
 
+// ── useDebouncedValue (v4.936 — performance) ─────────────────────────────
+// Startup fires ~32 independent setDs() calls, one per data source (labor, ops, controls,
+// weather, DAR, FOB, ...), each resolving on its own schedule. `dsDeferred` (useDeferredValue)
+// already stops one of those updates from blocking a simultaneous click, but it does nothing
+// about the AGGREGATE cost: a real ?clicktrace=1 capture showed rawStores(buildStore x27)
+// recomputing 39 times in one session — every single loader resolution triggers its own full
+// 27-store rebuild, worst case 878ms — because `ds` gets a brand-new object identity each time.
+// Restructuring all 32 call sites into one batched setDs would remove the progressive-loading
+// UX (data appearing as each source arrives) and is real surgery on the app's core data flow —
+// too much change for what's needed here. Debouncing rawStores's OWN input instead: skip every
+// intermediate `ds` identity during a burst of updates and only recompute once things go quiet
+// for `delay`ms, so a rapid-fire startup sequence pays for ONE final rebuild instead of ~32.
+function useDebouncedValue(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 function App() {
+  // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
+  // from production React, so the v4.917 attempt recorded nothing at all in the deployed app.
+  // Marking render start here and reading it in a layout effect (which runs after DOM mutation
+  // but before paint) measures render + commit for the whole tree, which is the ~159 seconds
+  // the named spans could not account for. Costs one performance.now() when tracing is off.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('App tree', 'render+commit', performance.now() - _rt0); });
+
   const [ds, setDs]               = useState(null);
   const [view, setView]           = useState('command'); // command | district | store | org
   const [selStore, setSelStore]   = useState(null);
@@ -1383,6 +1686,8 @@ function App() {
   const [showDev, setShowDev]          = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showAnoms, setShowAnoms]      = useState(false);
+  const [showCountCycle, setShowCountCycle] = useState(false);
+  const [showNews, setShowNews] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
   const [showDialedIn, setShowDialedIn]= useState(false);
   const [showReport,   setShowReport]  = useState(false);
@@ -1493,19 +1798,25 @@ function App() {
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
           targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
-          laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
-          laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
-          weatherIdx:bIdx(weather||[]), wxByDate:wxIdx,
+          ...(_traceMark('bIdx+bLocIdx (all streams)', () => ({
+            laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
+            laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
+            weatherIdx:bIdx(weather||[]),
+          }))),
+          wxByDate:wxIdx,
           storeIds:[...new Set(labor.map(r=>r.loc))].sort(),
           lastActual:lastAct,
         };
-        if(audit.length>0) try{restoredDs.empRisk=analyzeRegisterAudit(audit);}catch(e){}
+        if(audit.length>0) try{restoredDs.empRisk=_traceMark('analyzeRegisterAudit',()=>analyzeRegisterAudit(audit));}catch(e){}
         // Compute non-React side-effects synchronously before the transition
         let _taggedEvents=null,_autoTaggedCount=0;
         try{
           const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
           ({events:_taggedEvents,tagged:_autoTaggedCount}=autoTagHolidays(restoredDs.laborRows,_existingEvents));
-          if(_autoTaggedCount>0) localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
+          if(_autoTaggedCount>0){
+            localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
+            syncUserEventsToCloud(_existingEvents,_taggedEvents);
+          }
         }catch(e){console.warn('Auto-holiday-tag on IDB restore failed:',e);}
         // coverage and wx cache from data already in memory — no second IDB read
         const cov = coverageFromLoadedRows(labor, ops, ctrl, fob, audit, peaks, dar, weather);
@@ -1525,7 +1836,7 @@ function App() {
         React.startTransition(()=>{
           setDs(restoredDs);
           if(_autoTaggedCount>0) setUserEvents(_taggedEvents);
-          try { setSignals(computeInsights(restoredDs)); } catch(e) { console.warn('[insights] restore compute failed:', e); }
+          try { setSignals(_traceMark('computeInsights(restore)',()=>computeInsights(restoredDs))); } catch(e) { console.warn('[insights] restore compute failed:', e); }
         });
       } else {
         // No local IDB data (fresh install / PWA cold start / storage cleared).
@@ -1823,7 +2134,9 @@ function App() {
           .order('uploaded_at',{ascending:true})
           .limit(50);
         if(!manualFiles?.length) return;
-        const toProcess=manualFiles.filter(f=>!synced.has(f.id));
+        let failedIds={};
+        try{failedIds=JSON.parse(localStorage.getItem('mf_failed_report_ids')||'{}');}catch{}
+        const toProcess=manualFiles.filter(f=>!synced.has(f.id)&&(failedIds[f.id]||0)<2);
         if(!toProcess.length) return;
         console.log(`[Meridian] ${toProcess.length} manual report(s) to sync from cloud`);
         const filesToSync=[];
@@ -1835,7 +2148,22 @@ function App() {
               .select('file_data')
               .eq('id',rec.id)
               .single();
-            if(fetchErr||!row?.file_data){console.warn('[Meridian] No file_data for',rec.filename);continue;}
+            if(fetchErr||!row?.file_data){
+              // Don't retry the same file forever. One 12.37 MB base64 blob (a Labor
+              // report) exceeded the statement timeout on EVERY load, producing a
+              // recurring 500 and wasted round-trip that nothing surfaced. Count
+              // attempts, give up after two, and say so by name so a file that never
+              // syncs is visible rather than quietly absent.
+              try{
+                const fk='mf_failed_report_ids';
+                const f=JSON.parse(localStorage.getItem(fk)||'{}');
+                f[rec.id]=(f[rec.id]||0)+1;
+                localStorage.setItem(fk,JSON.stringify(f));
+                if(f[rec.id]>=2) console.warn(`[Meridian] "${rec.filename}" has failed to sync ${f[rec.id]}x and will no longer be retried — it is likely too large to fetch in one request. Re-upload it on this device if you need it.`);
+              }catch{}
+              console.warn('[Meridian] No file_data for',rec.filename,fetchErr?.message||'');
+              continue;
+            }
             const binary=atob(row.file_data);
             const bytes=new Uint8Array(binary.length);
             for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
@@ -1854,11 +2182,23 @@ function App() {
       }catch(e){console.warn('[Meridian] Cross-device sync failed:',e);}
     })();
     // ── Supabase table diagnostic — logs row counts for all key tables ────────
-    (async()=>{
+    // GATED behind ?tablecounts=1 since v4.872 — deliberately NOT ?trace=1. Putting it
+    // behind the trace flag was a mistake: the one person measuring startup is exactly
+    // the person who must not be handed ten extra table scans, and it silently
+    // invalidated the first trace run after the fix.
+    // This fired on EVERY login: ten unfiltered
+    // count(*) full-table scans in parallel, purely to console.log the numbers. Measured
+    // 2026-08-07 — qsr_fob 7.8s and ctrl_rows 8.3s BOTH exceeded the statement timeout
+    // and returned HTTP 500, peaks_rows took 5.5s, and the whole burst competed with the
+    // real startup loads. It contributed nothing a user could see, and its failures were
+    // invisible because fetchAll swallowed them (see v4.870).
+    // count:'estimated' uses planner stats instead of a scan — good enough for a
+    // diagnostic, and O(1).
+    if (new URLSearchParams(location.search).get('tablecounts') === '1') (async()=>{
       try{
         const tables=['labor_rows','fob_rows','ops_rows','ctrl_rows','dar_rows','peaks_rows','audit_rows','qsr_fob','lifelenz_schedule','smg_fullscale'];
-        const counts=await Promise.all(tables.map(t=>supabase.from(t).select('*',{count:'exact',head:true}).then(({count,error})=>({t,count:error?`ERR:${error.message}`:count}))));
-        console.log('[Meridian] Supabase table row counts:',Object.fromEntries(counts.map(({t,count})=>[t,count])));
+        const counts=await Promise.all(tables.map(t=>supabase.from(t).select('*',{count:'estimated',head:true}).then(({count,error})=>({t,count:error?`ERR:${error.message}`:count}))));
+        console.log('[Meridian] Supabase table row counts (estimated):',Object.fromEntries(counts.map(({t,count})=>[t,count])));
       }catch(e){console.warn('[Meridian] Diagnostic count failed:',e);}
     })();
     // ── Auto-load ALL monthly targets from Supabase ───────────────────────────
@@ -2308,7 +2648,10 @@ function App() {
     }
   },[]);
 
-  const saveUserEvents = useCallback((next)=>{setUserEvents(next);try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}}, []);
+  const saveUserEvents = useCallback((next)=>{
+    setUserEvents(prev=>{syncUserEventsToCloud(prev,next);return next;});
+    try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+  }, []);
   // ── One-time migration: normalize legacy Date.toString() tag keys → YYYY-MM-DD ──
   // Tags saved before v4_164 used Date.toString() keys like "Thu Jan 23 2026 06:00:00 GMT-0600"
   // which nDK() can't match against ISO "2026-01-23". This runs once on mount and fixes them.
@@ -2411,6 +2754,7 @@ function App() {
       setUserEvents(prev=>{
         const next=JSON.parse(JSON.stringify(prev));
         tagLocs.forEach(l=>{if(!next[l])next[l]={};next[l][dk]={type,note,icon:et.icon,label:et.label};});
+        syncUserEventsToCloud(prev,next);
         try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
         return next;
       });
@@ -2420,6 +2764,7 @@ function App() {
       setUserEvents(prev=>{
         const next=JSON.parse(JSON.stringify(prev));
         if(next[loc]){delete next[loc][dk];if(!Object.keys(next[loc]).length)delete next[loc];}
+        syncUserEventsToCloud(prev,next);
         try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
         return next;
       });
@@ -2447,14 +2792,80 @@ function App() {
     return merged;
   },[ds,userTargets]);
 
+  // ── rawStores: the single most expensive computation in the app ──────────────
+  // buildStore runs compute6wk + buildBrief for all 27 stores. MEASURED with ?clicktrace=1 on
+  // the owner's machine, 2026-08-08: 16 recomputes, worst 496ms, TOTAL 7,100ms of blocked main
+  // thread. That is the "[Violation] 'click' handler took 1382ms" report — closing a panel cost
+  // up to 6,492ms because the close triggered a render that landed on this.
+  //
+  // The memo's dependencies were already correct; the problem is how OFTEN they legitimately
+  // change. There are 32 setDs call sites, and startup fires many of them as each loader
+  // resolves — so `ds` gets a new identity a dozen-plus times and every one rebuilds all 27
+  // stores SYNCHRONOUSLY, blocking whatever the user is trying to do.
+  //
+  // useDeferredValue marks this recompute as low-priority: React 19 renders the urgent update
+  // (the click, the panel opening) first and rebuilds the stores afterwards, interruptibly. The
+  // work is unchanged and the result is identical — it simply stops owning the main thread at
+  // the moment of a click. The store list may lag one frame behind a fresh `ds`, which is
+  // invisible here and vastly preferable to a half-second freeze per loader.
+  // 250ms: short enough that a human loading indicator doesn't register the delay, long enough
+  // to coalesce a burst of loaders resolving within the same or adjacent macrotasks (the actual
+  // shape of the 39-recompute capture) without meaningfully changing "time to usable" for
+  // loaders that are genuinely spaced out (each of those settles on its own well before the
+  // next arrives, same as today). Debounce BEFORE deferring: coalesce first, then keep the
+  // eventual real update non-blocking for whatever the user is doing when it lands.
+  const dsDebounced = useDebouncedValue(ds, 250);
+  const dsDeferred = React.useDeferredValue(dsDebounced);
   const rawStores = useMemo(()=>{
-    if(!ds) return [];
-    return ds.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,ds,{...settings,targets:mergedTargets}));
-  },[ds,settings,mergedTargets]);
+    if(!dsDeferred) return [];
+    return _traceMark('rawStores(buildStore x27)', () => dsDeferred.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,dsDeferred,{...settings,targets:mergedTargets})));
+  },[dsDeferred,settings,mergedTargets]);
 
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
 
   const goStore=(s)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');};
+
+  // ── Swing alarm (Notes 58 #4) ────────────────────────────────────────────
+  // A large sustained one-directional move in sales or guest counts must be impossible
+  // to miss. Acks persist to user_settings so they follow the user across devices, and
+  // are keyed to the situation (store + week + severity) so acknowledging one week never
+  // silences the next — see src/engine/swing-feed.js.
+  const [swingAcks, setSwingAcks] = React.useState({});
+  React.useEffect(() => {
+    let live = true;
+    loadUserSetting(ACK_SETTING_KEY).then(v => { if (live && v && typeof v === 'object') setSwingAcks(v); }).catch(()=>{});
+    return () => { live = false; };
+  }, []);
+  const swingItems = React.useMemo(() => {
+    try { return buildSwingFeed(ds?.qsrActSummaryRows || [], { storeName: sName }); }
+    catch (e) { console.warn('[swing]', e); return []; }
+  }, [ds?.qsrActSummaryRows]);
+  // Local news for the alarm. Loaded ONLY when a critical swing actually exists — a
+  // store in trouble is rare, so this must not cost anything on a normal login.
+  const [swingNews, setSwingNews] = React.useState([]);
+  const hasCrit = swingItems.some(i => i.requiresAck && !swingAcks[`${i.loc}:${i.swing?.to || ''}:${i.severity}`]);
+  React.useEffect(() => {
+    if (!hasCrit) return;
+    let live = true;
+    loadNewsMentions({ days: 150 }).then(r => { if (live) setSwingNews(r || []); }).catch(()=>{});
+    return () => { live = false; };
+  }, [hasCrit]);
+  const swingContextFor = React.useCallback((item) =>
+    newsContextFor(swingNews, { loc: item.loc, from: item.swing?.from, to: item.swing?.to }), [swingNews]);
+
+  const ackSwing = React.useCallback((item) => {
+    // Who acknowledged matters — this is an audit trail, not just a dismissal. There is
+    // no userEmail binding in this component, so read it from the live session.
+    (async () => {
+      let who = null;
+      try { who = (await supabase?.auth?.getUser())?.data?.user?.email || null; } catch {}
+      setSwingAcks(prev => {
+        const next = pruneAcks(acknowledge(prev, item, who), swingItems);
+        saveUserSetting(ACK_SETTING_KEY, next).catch(()=>{});
+        return next;
+      });
+    })();
+  }, [swingItems]);
   const critCount = stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='crit').length,0);
 
   const dsRef = useRef(ds);
@@ -2686,13 +3097,15 @@ function App() {
     // Re-sync userEvents from localStorage before the transition — autoTagHolidays
     // runs inside mergeDS and writes directly to localStorage; read it back now
     // so the transition render gets the correct events on first pass.
+    const _prevEventsForSync=userEvents;
     let _uploadEvents=null;
     try{_uploadEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');}catch(e){console.warn('userEvents re-sync after load failed:',e);}
     React.startTransition(()=>{
       setDs(currentDS);
       if(_uploadEvents) setUserEvents(_uploadEvents);
     });
-    try { setSignals(computeInsights(currentDS)); } catch(e) { console.warn('[insights] error:', e); }
+    if(_uploadEvents) syncUserEventsToCloud(_prevEventsForSync,_uploadEvents);
+    try { setSignals(_traceMark('computeInsights(live)',()=>computeInsights(currentDS))); } catch(e) { console.warn('[insights] error:', e); }
     // Recompute custom signals and persist history
     if(customSignalDefs.length>0){
       try{
@@ -2882,8 +3295,14 @@ function App() {
   // safe to be over-inclusive here (pausing AtAGlance during a small popup
   // that doesn't fully cover it costs nothing, since it's instant to resume).
   // New panels: add their show-flag here, or they'll silently reintroduce
-  // this exact bug for themselves.
-  const anyModalOpen = showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
+  // this exact bug for themselves. That warning was not enough on its own —
+  // by v4.855 fifteen panels had drifted out of this list, so panel-registry.test.js
+  // now FAILS the build if any openable panel is missing from it or from the
+  // Escape handler below. Keep the list hand-written; the test keeps it honest.
+  const anyModalOpen = showNews||showCountCycle||showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
+    showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
+    showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
+    showPriorities||showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
@@ -2912,6 +3331,14 @@ function App() {
       setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);setShowPanelManager(false);
+      // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
+      // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
+      setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
+      setShowFOBEOM(false);setShowFeatureRequests(false);setShowFormsLibrary(false);
+      setShowFormsPrint(false);setShowLeaderOnePager(false);setShowMetricLineage(false);
+      setShowPriorities(false);setShowPromoRoi(false);setShowReportSubs(false);
+      setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
+      setShowVisitReady(false);setShowCountCycle(false);setShowNews(false);
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -3009,6 +3436,8 @@ function App() {
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
         if(modal==='inventory')      perm('analytics.store')&&setShowInventory(true);
+        if(modal==='count-cycle')    perm('analytics.store')&&setShowCountCycle(true);
+        if(modal==='news')           perm('analytics.store')&&setShowNews(true);
         if(modal==='fob-analysis')   perm('analytics.store')&&setShowFOB(true);
         if(modal==='fob-eom')        perm('analytics.store')&&setShowFOBEOM(true);
         if(modal==='smg-voice')      perm('analytics.store')&&setShowSMGVoice(true);
@@ -3030,7 +3459,7 @@ function App() {
         if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
         if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),setShowSchedHub(true));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),setShowSchedHub(true));
-        if(modal==='sage')              setShowSage(true);
+        if(modal==='sage')              {setShowSage(true);setSageMin(false);}
         if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
@@ -3044,6 +3473,10 @@ function App() {
 
     // ── RIGHT MAIN AREA ────────────────────────────────────────────
     div({style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}},
+
+      h(SwingAlarm, { items: swingItems, acks: swingAcks, onAck: ackSwing, contextFor: swingContextFor,
+        onOpenStore: (loc) => { const st=(stores||[]).find(x=>String(x.loc)===String(loc)); if(st) goStore(st); },
+        onOpenPanel: () => setShowSignals(true) }),
 
       // Slim topbar
       h(AppTopbar,{
@@ -3098,7 +3531,7 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
+      view==='command'&&!anyModalOpen&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
         onOpenStore:s=>{goStore(s);},
         onOpenProjections:()=>setShowProj(true),
         onOpenPVSA:()=>setShowPVSA(true),
@@ -3116,9 +3549,9 @@ function App() {
           else if(modal==='fcst-accuracy')setShowFcstAccuracy&&setShowFcstAccuracy(true);
         }}),
       view==='district'&&!selStore&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
-      view==='patch'&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
-      view==='org'&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'})
+      view==='store'&&selStore&&!anyModalOpen&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
+      view==='patch'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
+      view==='org'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'})
     )  // close main content scroll area
     )  // close right panel flex-col
 
@@ -3178,19 +3611,19 @@ function App() {
     showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
-    showSignals&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 16px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
-        span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em'}},'📡 Signals'),
-        h('button',{onClick:()=>setShowSignals(false),style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×'),
-      ),
-      div({style:{flex:1,overflowY:'auto',background:'var(--surf)'}},
-        h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar}),
-      ),
+    showSignals&&h(ModalShell,{
+      title:'📡 Signals',
+      onClose:()=>setShowSignals(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar})
     ),
     // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
     // running in the background and you can look at other Meridian data at the
     // same time. The floating pill (below) shows red while thinking, green when ready.
-    showSage&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
+    // Right-anchored drawer (not a full-screen backdrop) — the rest of the app
+    // stays visible and interactive while SAGE is open, same intent the minimize
+    // pill served before but without having to minimize to get it.
+    showSage&&div({style:{position:'fixed',top:0,right:0,bottom:0,width:'min(460px,100vw)',background:'var(--surf)',borderLeft:'.5px solid var(--bdr2)',boxShadow:'-12px 0 40px rgba(0,0,0,.45)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
       div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
         div({style:{display:'flex',alignItems:'center',gap:8}},
           span({style:{width:8,height:8,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 6px '+(sageBusy?'#ef4444':'#10b981')}}),
@@ -3198,7 +3631,7 @@ function App() {
           sageBusy&&span({style:{fontSize:'10px',color:'#ef4444',fontWeight:700}},'working…')),
         div({style:{display:'flex',alignItems:'center',gap:2}},
           h('button',{onClick:()=>setSageMin(true),title:'Minimize — keep SAGE running while you look at other data',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'22px',lineHeight:1,padding:'4px 8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'—'),
-          h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'×')),
+          h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'✕')),
       ),
       div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
         h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy}),
@@ -3215,21 +3648,20 @@ function App() {
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
-    showFcstRef&&h('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:400,display:'flex',flexDirection:'column',padding:'20px'},onClick:e=>{if(e.target===e.currentTarget)setShowFcstRef(false);}},
-      h('div',{style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',display:'flex',flexDirection:'column',flex:1,maxWidth:1100,margin:'0 auto',width:'100%',overflow:'hidden'}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:12,padding:'12px 18px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},
-          h('span',{style:{fontSize:'14px',fontWeight:700}},'📐 Forecasting Reference'),
-          h('span',{style:{fontSize:'10px',color:'var(--text3)',flex:1}},'All calculation formulas, model weights, and calibration parameters'),
-          h('button',{onClick:()=>{const f=document.getElementById('fcst-ref-frame');if(f)f.contentWindow.print();},
-            style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600,marginRight:6}},
-            '⬇ Download PDF'),
-          h('button',{onClick:()=>window.open('/forecast-reference.html','_blank'),
-            style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600,marginRight:6}},
-            '↗ Open Full Page'),
-          h('button',{onClick:()=>setShowFcstRef(false),style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer',lineHeight:1}},'×')
-        ),
-        h('iframe',{id:'fcst-ref-frame',src:'/forecast-reference.html',style:{flex:1,border:'none',background:'#fff'}})
-      )
+    showFcstRef&&h(ModalShell,{
+      title:'📐 Forecasting Reference',
+      subtitle:'All calculation formulas, model weights, and calibration parameters',
+      onClose:()=>setShowFcstRef(false),closeOnBackdrop:true,maxWidth:1100,zIndex:Z.nested,
+      bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
+      headerExtra:div({style:{display:'flex',gap:6}},
+        h('button',{onClick:()=>{const f=document.getElementById('fcst-ref-frame');if(f)f.contentWindow.print();},
+          style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600}},
+          '⬇ Download PDF'),
+        h('button',{onClick:()=>window.open('/forecast-reference.html','_blank'),
+          style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600}},
+          '↗ Open Full Page'))
+    },
+      h('iframe',{id:'fcst-ref-frame',src:'/forecast-reference.html',style:{flex:1,border:'none',background:'#fff',width:'100%'}})
     ),
     showFcstAccuracy&&h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>setShowFcstAccuracy(false)}),
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
@@ -3242,14 +3674,14 @@ function App() {
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
+    showCountCycle&&h(CountCyclePanel,{onClose:()=>setShowCountCycle(false)}),
+    showNews&&h(NewsPanel,{onClose:()=>setShowNews(false)}),
     showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
-    showAIScan&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:940,margin:'0 auto'}},
-        div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center'}},
-          div({style:{fontSize:'13px',fontWeight:700}},'🔍 Historical Sales Anomaly Scan'),
-          btn({onClick:()=>setShowAIScan(false),style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'×')
-        ),
-        div({style:{padding:'16px'}},h(AIBacktestScanner,{stores,ds,settings,userEvents,onTagEvent:(loc,dk,note,evType,opts)=>{
+    showAIScan&&h(ModalShell,{
+      title:'🔍 Historical Sales Anomaly Scan',
+      onClose:()=>setShowAIScan(false),maxWidth:940,zIndex:Z.modal,bodyStyle:{padding:'16px'}
+    },
+      h(AIBacktestScanner,{stores,ds,settings,userEvents,onTagEvent:(loc,dk,note,evType,opts)=>{
           // Handle _refresh_ signal from EventEntryModal — receives complete new state
           // already written to localStorage; just sync React state with it.
           if(loc==='_refresh_'&&opts&&opts._refreshState){
@@ -3272,15 +3704,18 @@ function App() {
               aiNote:opts&&opts.aiNote?opts.aiNote:'',
               ...(opts&&opts.aiMatched?{aiMatched:true,aiConfidence:opts.aiConfidence,source:'AI Batch Scan'}:{source:'Manual'})
             };
+            syncUserEventsToCloud(prev,next);
             try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
             return next;
-          });}}))
-      )
+          });}})
     ),
-    showProj&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'96vw',maxWidth:1700,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections,onClose:()=>setShowProj(false)})
-      )
+    showProj&&h(ModalShell,{
+      title:'📋 Projection Workspace',
+      subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
+      onClose:()=>setShowProj(false),maxWidth:1700,zIndex:Z.modal,
+      bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
+    },
+      h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections})
     ),
     // ── Standalone Pre-Forecast Brief (from topbar shortcut or nav) ──────
     showProjBriefSA&&h(PreForecastBrief,{
@@ -3290,41 +3725,37 @@ function App() {
       onRun:()=>{setShowProjBriefSA(false);setShowProj(true);},
       onClose:()=>setShowProjBriefSA(false)
     }),
-    showReport&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:1100,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>setShowReport(false)})
-      )
+    showReport&&h(ModalShell,{
+      title:'📊 Date-Range Comprehensive Report',
+      subtitle:'Compares all metrics for any date range across selected locations.',
+      onClose:()=>setShowReport(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
+    },
+      h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>setShowReport(false)})
     ),
-    showDICompare&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:370,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:1100,display:'flex',flexDirection:'column',maxHeight:'94vh'}},
-        h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>setShowDICompare(false)})
-      )
+    showDICompare&&h(ModalShell,{
+      title:'⚡ Dialed-In vs Default Comparison',
+      subtitle:'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement',
+      onClose:()=>setShowDICompare(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>setShowDICompare(false)})
     ),
-    showPVSA&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:360,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:1100,display:'flex',flexDirection:'column',maxHeight:'94vh'}},
-        h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
-      )
+    showPVSA&&h(ModalShell,{
+      title:'📊 Projection vs Actuals Report',
+      subtitle:'AI forecast accuracy vs actual results — click any cell to expand daily detail',
+      onClose:()=>setShowPVSA(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
-    showHelp&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:400,
-      display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:800,maxHeight:'94vh',display:'flex',flexDirection:'column'}},
-        // Help header
-        div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',
-          display:'flex',alignItems:'center',gap:10,flexShrink:0}},
-          div({style:{fontSize:'16px',fontWeight:800}},'📖 Meridian — Workflow Guide'),
-          btn({
-            onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
-            style:{marginLeft:'auto',padding:'5px 12px',fontSize:11,fontWeight:700,
-              background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
-          },'▶ Start Tour'),
-          btn({onClick:()=>setShowHelp(false),style:{background:'none',border:'none',
-            color:'var(--text2)',fontSize:22,cursor:'pointer'}},'×')
-        ),
-        // Help content
-        div({style:{overflowY:'auto',padding:'16px 20px',fontSize:'11px',lineHeight:1.7}},
+    showHelp&&h(ModalShell,{
+      title:'📖 Meridian — Workflow Guide',
+      onClose:()=>setShowHelp(false),maxWidth:800,zIndex:Z.nested,
+      bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
+      headerExtra:btn({
+        onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
+        style:{padding:'5px 12px',fontSize:11,fontWeight:700,
+          background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
+      },'▶ Start Tour')
+    },
           ...[
             {day:'DAILY (Every day you open the app)',color:'#10b981',items:[
               {t:'1. Load fresh data',d:'Upload the latest QSRSoft Operations Report (Sales + Service + Controls + FOB sheets) and Register Audit. Drag files onto the Data Manager or use the Load button. Target: data no older than 3 days. Also load Labor Analysis for Shift Analysis features.'},
@@ -3374,36 +3805,28 @@ function App() {
               ))
             )
           ))
-        )
-      )
     ),
-    showBrief&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:720,display:'flex',flexDirection:'column',maxHeight:'92vh'}},
-        h(LocationBrief,{
-          stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
-          ds,settings,
-          scope:briefScope.scope,
-          scopeLabel:briefScope.label,
-          onClose:()=>setShowBrief(false)
-        })
-      )
+    showBrief&&h(ModalShell,{
+      icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
+      subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',
+      onClose:()=>setShowBrief(false),maxWidth:720,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+      h(LocationBrief,{
+        stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
+        ds,settings,
+        scope:briefScope.scope,
+        scopeLabel:briefScope.label,
+        onClose:()=>setShowBrief(false)
+      })
     ),
-    showAbout&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:370,
-      display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',
-        width:'100%',maxWidth:720,position:'relative'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',
-          padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,
-          background:'var(--surf)',zIndex:10}},
-          h('div',null,
-            h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800}},
-              'Meridian. v'+MERIDIAN_VERSION),
-            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},
-              'QSR Forecasting & Intelligence · '+(settings.districtName||'District')+' · '+Object.keys(STORE_NAMES).length+' Locations · Build '+MERIDIAN_BUILD_DATE)),
-          h('button',{onClick:()=>setShowAbout(false),
-            style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer'}},'✕')),
-        div({style:{padding:'20px 24px',overflowY:'auto',maxHeight:'80vh'}},
+    showAbout&&h(ModalShell,{
+      title:h(React.Fragment,null,
+        h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800}},
+          'Meridian. v'+MERIDIAN_VERSION),
+        h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px',fontWeight:400}},
+          'QSR Forecasting & Intelligence · '+(settings.districtName||'District')+' · '+Object.keys(STORE_NAMES).length+' Locations · Build '+MERIDIAN_BUILD_DATE)),
+      onClose:()=>setShowAbout(false),maxWidth:720,zIndex:Z.nested,bodyStyle:{padding:'20px 24px'}
+    },
           // Stats row
           div({style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'10px',marginBottom:'24px'}},
             [['27','Stores'],['5','Forecast Models'],
@@ -3438,50 +3861,45 @@ function App() {
             div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:'1.8',marginTop:'4px'}},
               '🔒 Cloud-first: data saved to Supabase and loaded on any device, row-level-security scoped per role / accessible locations · magic-link sign-in')
           )
-        )
-      )
     ),
-        showMorningBrief&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:920,position:'relative'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
-          h('div',null,
-            h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800,letterSpacing:'-.02em'}},'☀️ Morning Intelligence Brief'),
-            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Correlation engine · 9 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority')),
-          h('button',{onClick:()=>setShowMorningBrief(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
-        div({style:{overflowY:'auto',maxHeight:'88vh'}},
-          h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar}))
-      )
+        showMorningBrief&&h(ModalShell,{
+      icon:'☀️',title:'Morning Intelligence Brief',
+      subtitle:'Correlation engine · 9 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',
+      onClose:()=>setShowMorningBrief(false),maxWidth:920,zIndex:Z.nested,bodyStyle:{padding:0}
+    },
+          h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar})
     ),
-        showEOMSummary&&div({className:'mf-eom-print-modal',style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({className:'mf-eom-print-card',style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1140,position:'relative'}},
-        h('div',{className:'mf-eom-modal-chrome',style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'.5px solid var(--bdr2)',position:'sticky',top:0,background:'var(--surf)',zIndex:10}},
-          h('div',null,
-            h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800,letterSpacing:'-.02em'}},'📊 EOM Supervisor Summary'),
-            h('div',{style:{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}},'Monthly P&L variance by store — filter by supervisor, operator, or all')),
-          h('button',{onClick:()=>setShowEOMSummary(false),style:{background:'none',border:'none',color:'var(--text3)',fontSize:'20px',cursor:'pointer',lineHeight:1,padding:'0 4px'}},'✕')),
-        div({style:{overflowY:'auto',maxHeight:'88vh'}},
-          h(EOMSupervisorPanel,{ds,settings,supabase}))
-      )
+        showEOMSummary&&h(ModalShell,{
+      icon:'📊',title:'EOM Supervisor Summary',
+      subtitle:'Monthly P&L variance by store — filter by supervisor, operator, or all',
+      onClose:()=>setShowEOMSummary(false),maxWidth:1140,zIndex:Z.nested,bodyStyle:{padding:0},
+      backdropClassName:'mf-eom-print-modal',cardClassName:'mf-eom-print-card',headerClassName:'mf-eom-modal-chrome'
+    },
+          h(EOMSupervisorPanel,{ds,settings,supabase})
     ),
-        showEOMDash&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',zIndex:360,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'16px',overflowY:'auto'}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:1240,position:'relative'}},
-        div({style:{overflowY:'auto',maxHeight:'92vh'}},
-          h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}))
-      )
+        showEOMDash&&h(ModalShell,{
+      title:'📦 Inventory Control',
+      onClose:()=>setShowEOMDash(false),maxWidth:1240,zIndex:Z.nested,bodyStyle:{padding:'20px'}
+    },
+      h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)})
     ),
-        showAudit&&selStore&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:980,margin:'0 auto',maxHeight:'92vh',display:'flex',flexDirection:'column'}},
-        h(ForecastAudit,{
-          store:stores.find(s=>s.loc===(selStore&&selStore.loc?selStore.loc:selStore))||null,
-          ds,settings,userEvents,dateRange,
-          onClose:()=>setShowAudit(false)
-        })
-      )
+        showAudit&&selStore&&h(ModalShell,{
+      title:'🔬 Forecast Audit — '+(STORE_NAMES[(selStore&&selStore.loc?selStore.loc:selStore)]||(selStore&&selStore.loc?selStore.loc:selStore)),
+      subtitle:'Full transparency: every input, weight, and multiplier used to compute each day forecast.',
+      onClose:()=>setShowAudit(false),maxWidth:980,zIndex:Z.modal,bodyStyle:{padding:0,display:'flex',overflow:'hidden'}
+    },
+      h(ForecastAudit,{
+        store:stores.find(s=>s.loc===(selStore&&selStore.loc?selStore.loc:selStore))||null,
+        ds,settings,userEvents,dateRange,
+        onClose:()=>setShowAudit(false)
+      })
     ),
-    showDialedIn&&div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:300,overflowY:'auto',padding:20}},
-      div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',maxWidth:1100,margin:'0 auto',maxHeight:'90vh',display:'flex',flexDirection:'column'}},
-        h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
-      )
+    showDialedIn&&h(ModalShell,{
+      title:'🎯 Dialed-In — Per-Store Calibration Engine',
+      subtitle:'Grid-searches parameter combos per store. Finds the model configuration that minimizes forecast error (MAPE) for each location individually.',
+      onClose:()=>setShowDialedIn(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
+    },
+      h(DialedInPanel,{stores,ds,settings,userEvents,onUpdateSettings:saveSettings,onClose:()=>setShowDialedIn(false)})
     ),
     // ── First-run tutorial overlay (zIndex 500 — above everything) ──────────
     showTutorial&&h(TutorialOverlay,{onClose:()=>setShowTutorial(false)}),

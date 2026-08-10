@@ -137,7 +137,7 @@ function computeSmartTargets(loc, ds, settings){
         // Cloud rows carry salesVsLYPct directly; manual rows need an LY lookup.
         let g=null;
         if(typeof r.salesVsLYPct==='number') g=r.salesVsLYPct;
-        else { const ly=fetchLY(ds.laborIdx,ds.laborRows,loc,r.date,settings._userEvents)||0; if(ly>0&&r.sales>0) g=(r.sales-ly)/ly*100; }
+        else { const ly=fetchLY(ds.laborIdx,ds.laborRows,loc,r.date)||0; if(ly>0&&r.sales>0) g=(r.sales-ly)/ly*100; }
         if(g!=null){
           if(r.date>cut6w) vals6w.push(g);
           if(r.date>cut12w) vals12w.push(g);
@@ -197,7 +197,13 @@ function computeSmartTargets(loc, ds, settings){
       if(metric.k==='salesGrowth'){
         // Realistic annual growth: trend-aware, capped at 15%, typical 2-8%
         const MAX_G=15,MIN_G=-5;
-        const base=avg6w!=null?avg6w:(avg12w||0);
+        // Data-integrity sweep signature #5 (2026-08-09): this used to fall back to a bare
+        // `avg12w||0` — if BOTH avg6w and avg12w were missing/null while a longer window
+        // (avg26w/avg52w) had real data (the only way to reach this block at all, since the
+        // caller gates on recent!==null which OR-chains through all four), base silently became a
+        // literal 0%-growth baseline instead of the real longer-window average. Full !=null
+        // fallback chain, matching `recent`'s own window-preference order (6w→12w→26w→52w).
+        const base=avg6w!=null?avg6w:avg12w!=null?avg12w:avg26w!=null?avg26w:avg52w!=null?avg52w:0;
         const baseCapped=Math.min(MAX_G,Math.max(MIN_G,base));
         const trendAdj=improving?2:declining?-1:0.5;
         proposedYearly=roundTarget(Math.min(MAX_G,Math.max(MIN_G,baseCapped+trendAdj)),metric.tgtKey);

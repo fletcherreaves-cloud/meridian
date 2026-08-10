@@ -109,6 +109,13 @@ async function fetchAll(builderFn, pageSize = 1000, label = '') {
     if (error) {
       console.warn(`[Meridian] fetchAll(${label || '?'}) truncated after ${all.length} rows — read error:`, error.message || error);
       try { Object.defineProperty(all, '_partial', { value: true, enumerable: false }); } catch {}
+      // The _partial marker alone is NOT enough and never was: 14 of the 37 fetchAll
+      // callers .map() the result, and a non-enumerable property does not survive map,
+      // so the marker silently vanishes before any caller can read it. That is why six
+      // tables returning HTTP 500 produced no warning anywhere in the UI — the failures
+      // rendered as ordinary empty states ("No ledger detail yet"). Record globally so
+      // the DataErrorBanner fires regardless of what the caller does with the array.
+      _recordDataError(label || 'a data table', 1, 0, error.message || 'read failed');
       break;
     }
     if (!data?.length) break;
@@ -542,6 +549,10 @@ export async function loadLifeLenzSchedule({ daysBack = 455, daysFwd = 30 } = {}
     schFixHrs:     r.sch_fix_hrs,
     projFloor:     r.proj_floor,
     schFloor:      r.sch_floor,
+    // Total scheduled hours = variable + fixed + floor. Emitted as one field so
+    // METRIC_SOURCES can chain to it directly rather than deriving from three separate
+    // chains that would each need their own registration.
+    schedTotHrs:   (r.sch_vlh || 0) + (r.sch_fix_hrs || 0) + (r.sch_floor || 0),
     needFloor:     r.need_floor,
     idealTotHrs:   r.ideal_tot_hrs,
     salMgrHrs:     r.sal_mgr_hrs,
@@ -923,7 +934,14 @@ export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
     if (dates?.length) q = q.in('date', dates);
     else if (daysBack) q = q.gte('date', cutoffStr);
     return q;
-  });
+    // Labelled + smaller pages (Notes 60 bug #1). A 500-day window is ~13,200 rows and a
+    // 1000-row page is ~1.45 MB, so a full read is ~19 MB across 14 sequential requests —
+    // the same size class that timed out on qsr_raw_item_detail (v4.873). fetchAll returns
+    // [] if the FIRST page fails, and the FOB Analysis panel treats an empty cloud result
+    // as "no cloud data" and silently falls back to the manual stream, whose last month
+    // with sales is May 2026 — exactly the symptom reported. The label makes a failure
+    // name itself in the DATA INCOMPLETE banner instead of looking like stale months.
+  }, 400, 'qsr_fob');
   if (!data.length) return [];
   return data.map(r => ({
     loc:                       r.loc,
@@ -1554,6 +1572,22 @@ export async function loadDailyActivityRange(startDate, endDate) {
     .range(lo, hi));
 }
 
+// ── Hourly Projection Accuracy (2026-08-09) ──────────────────────────────────
+// Reads the small daily-computed rollup (supabase/schema-hourly-projection-accuracy.sql,
+// scripts/compute-hourly-projection-accuracy.mjs) instead of the raw qsr_daily_activity table —
+// stays fast for a multi-week/month lookback where the raw table times out. loc=null reads every
+// store (the Projection Accuracy panel sums across stores itself for the district-wide view).
+export async function loadHourlyProjectionAccuracy(startDate, endDate, loc = null) {
+  if (!supabase) return [];
+  return fetchAll((lo, hi) => {
+    let q = supabase.from('hourly_projection_accuracy')
+      .select('dt,hour_slot,loc,actual_sales,proj_sales,actual_gc,proj_gc')
+      .gte('dt', startDate).lte('dt', endDate).order('dt').order('hour_slot').range(lo, hi);
+    if (loc) q = q.eq('loc', String(loc));
+    return q;
+  }, 1000, 'hourly_projection_accuracy');
+}
+
 // ── Speed-of-Service history (all stations) ──────────────────────────────────
 // Includes per-station until-serve + transaction counts so the panel can show
 // where the bottleneck is (DT window vs front counter vs kitchen make-line vs
@@ -1775,10 +1809,24 @@ export async function loadEbosDaily(daysBack = 400) {
 // and ONLY here: each carries the store/date it was reconciled against the QSRSoft
 // report, and duplicating that math into SQL would create a second definition free to
 // drift from this one.
+// Measured YoY sanity band (data-integrity sweep signature #1) — reused verbatim from
+// forecast.js's getDOWTrend fix (v4.912): ±300%/-75%, derived from 40,000 store-days of real
+// data. A closure/severe-weather day as the LY denominator produces an implausible ratio without
+// this (the original bug: 1,200,000% on a chart axis) — same day-level sales-ratio shape, same
+// failure mode, just reached through this DAR/QSRSoft cloud path instead of laborRows. Drops the
+// point rather than clamping it: an unmeasurable comparison is different from a small one, and
+// clamping would fabricate a wrong-but-plausible-looking number. Reimplemented here rather than
+// imported — lib/ has no existing dependency on engine/, and this is two constants, not a module.
+const _YOY_MAX = 3.0, _YOY_MIN = -0.75;
+function _yoyPct(cur, ly) {
+  if (!(cur > 0) || !(ly > 0)) return null;
+  const g = (cur - ly) / ly;
+  return (g > _YOY_MAX || g < _YOY_MIN) ? null : g * 100;
+}
 function _finalizeQsrAct(rows) {
   return rows.map(r => ({
     ...r,
-    salesVsLYPct: r.lySales > 0 ? (r.sales - r.lySales) / r.lySales * 100 : null,
+    salesVsLYPct: _yoyPct(r.sales, r.lySales),
     // Derived cloud TPPH = TRANSACTIONS ÷ actual punched labor hours. Uses the DAR's
     // real `transactions` count — NOT healthy+unhealthy (a KVS order-health count that
     // massively understated TPPH, e.g. 0.1 vs a ~5 target). Matches the Shift Manager
@@ -1830,6 +1878,12 @@ function _qsrActFromSummed(loc, dt, v) {
     projGC: v.proj_total_transactions || 0, projSales: v.proj_sales_dollars || 0,
     lySales: v.ly_product_sales || 0, lyGc: v.ly_transactions || 0,
     actHrs: v.actual_punched_hours || 0, needHrs: v.total_needed_hours || 0,
+    // Signed HOUR DIFFERENCE (actual − needed), matching ctrl_rows.act_vs_need's units —
+    // verified 2026-08-08 against live rows: ctrl_rows ranges -60.38..+80.18 hours, and
+    // the DAR's actual−needed gives the same shape (+27.8h, -1.9h). Negative = understaffed
+    // vs need, and that is the case you most want to see, so this metric is mode:'any'.
+    // Emitted here as a field so METRIC_SOURCES can chain to it directly.
+    actVsNeed: (v.actual_punched_hours || 0) - (v.total_needed_hours || 0),
     _kvsH: v.healthy_count || 0, _kvsU: v.unhealthy_count || 0,
     _mfyTime: v.mfy_untilserve || 0, _mfyCnt: v.mfy_trans_cnt || 0,
     _isQsrAct: true,
@@ -1983,38 +2037,98 @@ export async function loadQsrActSummary(daysBack = 35) {
   return _finalizeQsrAct(Object.values(map));
 }
 
-// Fast daily product-sales per (loc,date) for a window — minimal columns and
-// PARALLEL pagination (count → fire all page requests at once), so a long window
-// loads in seconds instead of ~60 sequential round-trips. Used by Smart Targets.
+// Daily product-sales per (loc,date) for a window. Used by Smart Targets.
+//
+// REWRITTEN 2026-08-08 — this hung the Smart Targets panel indefinitely ("Loading sales
+// history…" forever). Three compounding faults, all measured:
+//
+//   1. It read the HOURLY table. qsr_daily_activity is ~675 rows/day across 27 stores, so
+//      Smart Targets' 405-day window is ~273,000 rows ≈ 274 pages ≈ 16-19 MB — about 75%
+//      of the entire table, to produce ~11,000 daily values.
+//   2. It fired all ~274 page requests AT ONCE, bypassing the _limited() gate
+//      (_MAX_INFLIGHT = 6) that every other paginated loader here uses. This file already
+//      records that SIX concurrent queries on this exact table produced 18 of 22 HTTP 500s.
+//   3. Promise.all with no timeout. All-or-nothing: one stalled stream leaves the promise
+//      permanently pending, so the panel's .then/.catch never run and `loading` stays true
+//      forever. That is the reported symptom exactly — not slow, STUCK.
+//
+// Now reads the qsr_daily_activity_rollup TABLE (already used by loadQsrActSummary), which
+// is one row per (loc, dt) — ~11,000 rows for the same window instead of 273,000, roughly
+// 11 pages instead of 274. Goes through fetchAll, so it is sequential, capped, labelled,
+// and reports failures to the DATA INCOMPLETE banner instead of hanging.
+//
+// Falls back to the hourly table ONLY if the rollup is unavailable, and that fallback is
+// gated + allSettled so a single bad page degrades the result rather than hanging it.
 export async function loadDailySales(days = 120) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const PAGE = 1000;
-  const { count } = await supabase.from('qsr_daily_activity')
-    .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
-  const total = count || 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE));
-  // Deterministic order so parallel .range() slices partition without gaps/overlap.
-  const reqs = [];
-  for (let p = 0; p < pages; p++) {
-    reqs.push(supabase.from('qsr_daily_activity')
-      .select('loc,dt,product_sales')
-      .gte('dt', cutoffStr)
-      .order('dt').order('loc').order('hour_slot')
-      .range(p * PAGE, p * PAGE + PAGE - 1));
+
+  const rows = await fetchAll((from, to) => supabase
+    .from('qsr_daily_activity_rollup')
+    .select('loc,dt,product_sales')
+    .gte('dt', cutoffStr)
+    .order('dt').order('loc')
+    .range(from, to), 1000, 'daily sales (rollup)');
+
+  if (rows.length) {
+    return rows.map(r => ({
+      loc: String(parseInt(r.loc, 10)),
+      date: new Date(r.dt + 'T00:00:00'),
+      sales: r.product_sales || 0,
+    }));
   }
-  const results = await Promise.all(reqs);
+
+  // Fallback: sum the hourly table. Sequential + capped + labelled — never the old
+  // fire-274-at-once pattern.
+  console.warn('[Meridian] daily sales: rollup empty, falling back to hourly qsr_daily_activity');
+  const hourly = await fetchAll((from, to) => supabase
+    .from('qsr_daily_activity')
+    .select('loc,dt,product_sales')
+    .gte('dt', cutoffStr)
+    .order('dt').order('loc').order('hour_slot')
+    .range(from, to), 1000, 'daily sales (hourly fallback)');
+
   const map = {};
-  for (const res of results) {
-    for (const r of (res && res.data) || []) {
-      const loc = String(parseInt(r.loc, 10));
-      const k = loc + '|' + r.dt;
-      if (!map[k]) map[k] = { loc, date: new Date(r.dt + 'T00:00:00'), sales: 0 };
-      map[k].sales += r.product_sales || 0;
-    }
+  for (const r of hourly) {
+    const loc = String(parseInt(r.loc, 10));
+    const k = loc + '|' + r.dt;
+    if (!map[k]) map[k] = { loc, date: new Date(r.dt + 'T00:00:00'), sales: 0 };
+    map[k].sales += r.product_sales || 0;
   }
   return Object.values(map);
+}
+
+// Scheduled (LifeLenz-derived) sales projections per (loc, date) for a window.
+//
+// Added 2026-08-08 for the Forecast Accuracy "Sched Proj" column, which was running a
+// BARE select with no pagination — capped at Supabase's 1000-row server limit while a
+// 6-week × 27-store window needs ~28,350 hourly rows, i.e. it saw about 3.5% of the
+// window and silently averaged a MAPE over roughly a day and a half. It also discarded
+// the query `error`, so a truncation or 500 was invisible.
+//
+// Reads the ROLLUP, where proj_sales_dollars is already summed per day — so this is one
+// row per (loc,dt) rather than ~25, and no client-side re-summing (which was also where a
+// double-count could creep in). Paginated + labelled via fetchAll.
+export async function loadQsrProjections({ locs = null, from, to } = {}) {
+  if (!supabase || !from || !to) return {};
+  const padded = locs ? locs.map(l => String(l).padStart(7, '0')) : null;
+  const rows = await fetchAll((a, b) => {
+    let q = supabase.from('qsr_daily_activity_rollup')
+      .select('loc,dt,proj_sales_dollars')
+      .gte('dt', from).lte('dt', to)
+      .order('dt').order('loc')
+      .range(a, b);
+    if (padded) q = q.in('loc', padded);
+    return q;
+  }, 1000, 'scheduled projections');
+
+  const out = {};
+  for (const r of rows) {
+    const lk = String(parseInt(r.loc, 10));
+    (out[lk] || (out[lk] = {}))[r.dt] = r.proj_sales_dollars || 0;
+  }
+  return out;
 }
 
 // ── Cloud-first emailed-report loaders ────────────────────────────────────────
@@ -2128,6 +2242,10 @@ export async function loadGlimpse(daysBack = 45) {
     allNetSales: r.all_net_sales, salesVsPrior: r.sales_vs_prior, salesVsPriorPct: r.sales_vs_prior_pct,
     dtSales: r.dt_sales, dtGC: r.dt_gc, dtAvgCheck: r.dt_avg_check,
     gc: r.gc, avgCheck: r.avg_check, laborPct: r.labor_pct,
+    empMealAmt:  r.emp_meal_amt,
+    mgrMealAmt:  r.mgr_meal_amt,
+    empMealCnt:  r.emp_meal_cnt,
+    mgrMealCnt:  r.mgr_meal_cnt,
     promoAmt: r.promo_amt, promoPct: r.promo_pct,
     posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
     cashOS: r.cash_os, cashOSPct: r.cash_os_pct,
@@ -2708,13 +2826,38 @@ export async function saveQsrOnHand(rows) {
   return _chunkUpsert('qsr_onhand', up, 'loc,period,wrin');
 }
 
+// ── Local news mentions (Notes 59) ────────────────────────────────────────────
+// news_mentions holds ONE ROW PER (article, attributed store) — a story about a
+// two-store town writes two rows with ambiguous=true. Callers that want articles
+// rather than article-store pairs should dedupe on item_key.
+export async function loadNewsMentions({ days = 120, loc = null, tier = null } = {}) {
+  if (!supabase) return [];
+  const cut = new Date(Date.now() - days * 86400000).toISOString();
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('news_mentions').select('*').range(from, to)
+      .or(`published.gte.${cut},published.is.null`)
+      .order('published', { ascending: false, nullsFirst: false });
+    if (loc) q = q.eq('loc', String(loc).replace(/^0+/, ''));
+    if (tier) q = q.eq('tier', tier);
+    return q;
+  }, 500, 'news_mentions');
+  return (data || []).map(r => ({
+    itemKey: r.item_key, loc: r.loc, feedId: r.feed_id, outlet: r.outlet,
+    title: r.title, url: r.url, summary: r.summary,
+    published: r.published ? new Date(r.published) : null,
+    tier: r.tier, signals: r.signals || [], score: r.score,
+    locs: r.locs || [], ambiguous: !!r.ambiguous,
+    firstSeen: r.first_seen ? new Date(r.first_seen) : null,
+  }));
+}
+
 export async function loadQsrOnHand({ period } = {}) {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => {
     let q = supabase.from('qsr_onhand').select('*').range(from, to);
     if (period) q = q.eq('period', period);
     return q;
-  });
+  }, 1000, 'qsr_onhand');
   return (data || []).map(r => ({
     // Strip zero-padding — same fix as loadQsrRawItemDetail (v4.821): this loader never
     // normalized loc either, so byLoc/computeCountProgress lookups keyed by the app's
@@ -2916,7 +3059,12 @@ export async function loadQsrRawItemDetail({ period, loc } = {}) {
     if (period) q = q.eq('period', period);
     if (loc) q = q.eq('loc', String(loc).padStart(7, '0'));
     return q;
-  });
+  // PAGE SIZE 200, not the 1000 default. `history` is JSONB averaging ~22.5 KB per row,
+  // so a 1000-row page is a ~21 MB response — measured 2026-08-07: the period request
+  // returned 16.3 MB and hit "canceling statement due to statement timeout" under real
+  // startup concurrency, which is what left the Items Recounted tile blank. 200 rows is
+  // ~4.9 MB and completes in 0.6s.
+  }, 200, 'qsr_raw_item_detail');
   return (data || []).map(r => ({
     loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, descr: r.descr, itemClass: r.item_class,
     history: Array.isArray(r.history) ? r.history : [], updatedAt: r.updated_at,
@@ -3101,6 +3249,21 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
 export async function deleteOrgEvent(id) {
   if (!supabase || id == null) return { error: 'no-id' };
   const { error } = await supabase.from('org_events').delete().eq('id', id);
+  return { error: error?.message || null };
+}
+// Delete org_events row(s) for one (loc, date), optionally scoped to a single label — org_events
+// allows more than one event per day (multiple sports games, a festival plus a school closure);
+// the hand-tag registry (EventCalendar/EventRegistryModal, the localStorage `mf_events` map)
+// allows exactly one. Used before a manual single-day upsert so a changed tag/label doesn't leave
+// a stale duplicate row. ALWAYS pass `label` when the caller knows it (matches the table's own
+// `unique (loc, date_start, label)` key) — omitting it deletes every row for that date, which
+// silently destroys unrelated same-day events. v4.927: found live where a plain delete-by-date
+// call from the diff-based sync path could wipe a same-day event it never touched.
+export async function deleteOrgEventsByLocDate(loc, dateStr, label = null) {
+  if (!supabase || !loc || !dateStr) return { error: null };
+  let q = supabase.from('org_events').delete().eq('loc', String(loc)).eq('date_start', dateStr);
+  if (label) q = q.eq('label', label);
+  const { error } = await q;
   return { error: error?.message || null };
 }
 // Update a single org_events row by id (in-app editing: time/opponent/impact/status/note changes).

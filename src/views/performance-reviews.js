@@ -13,6 +13,7 @@ import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { hasPermission, getOrgRoles } from '../engine/permissions.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { KPI_REGISTRY, kpiByKey, explainThreshold, makeMetricFromKpi } from '../engine/kpi-registry.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -60,11 +61,6 @@ function RatingDot({r,size=8}) {
   if (!r) return span({style:{width:size,height:size,borderRadius:'50%',background:'var(--bdr2)',display:'inline-block'}});
   return span({style:{width:size,height:size,borderRadius:'50%',background:ratingColor(r),display:'inline-block',
     boxShadow:`0 0 4px ${ratingColor(r)}66`}});
-}
-function CloseBtn({onClick}) {
-  return btn({onClick,style:{background:'none',border:'none',color:TEXT3,fontSize:18,
-    cursor:'pointer',padding:'4px 8px',borderRadius:R,lineHeight:1},
-    onMouseEnter:e=>e.currentTarget.style.color=TEXT, onMouseLeave:e=>e.currentTarget.style.color=TEXT3},'×');
 }
 function GhostBtn({onClick,style={}}, children) {
   return btn({onClick,style:{background:'none',border:`1px solid ${BDR}`,color:TEXT2,
@@ -146,7 +142,7 @@ function FormattedNumInput({value, onChange, placeholder, style={}, disabled, do
 }
 
 // ── Help Guide Modal ──────────────────────────────────────────────────────────
-function HelpGuideModal({onClose}) {
+function HelpGuideModal({onClose, zIndex = Z.modal}) {
   const [section, setSection] = useState('overview');
   const sections = [
     {key:'overview',    label:'Overview'},
@@ -259,25 +255,17 @@ function HelpGuideModal({onClose}) {
     ),
   };
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,
-    display:'flex',alignItems:'center',justifyContent:'center'}},
-    div({style:{width:'min(820px,96vw)',height:'88vh',background:'var(--surf)',
-      borderRadius:R,display:'flex',flexDirection:'column',overflow:'hidden',
-      boxShadow:'0 20px 60px rgba(0,0,0,.5)',border:`1px solid ${BDR}`}},
-      div({style:{display:'flex',alignItems:'center',padding:'12px 20px',
-        borderBottom:`1px solid ${BDR}`,flexShrink:0}},
-        span({style:{fontSize:15,marginRight:8}},'📖'),
-        div({style:{flex:1,fontWeight:700,fontSize:14,color:TEXT}},'Performance Review — Methodology & User Guide'),
-        CloseBtn({onClick:onClose})
-      ),
-      div({style:{display:'flex',borderBottom:`1px solid ${BDR}`,flexShrink:0}},
-        ...sections.map(s => btn({onClick:()=>setSection(s.key),
-          style:{padding:'8px 16px',border:'none',borderBottom:`2px solid ${section===s.key?AMBER:'transparent'}`,
-            background:'none',color:section===s.key?AMBER:TEXT2,fontSize:12,
-            fontWeight:section===s.key?700:400,cursor:'pointer'}},s.label))
-      ),
-      div({style:{flex:1,overflowY:'auto',padding:'16px 20px'}}, content[section]||null)
-    )
+  return h(ModalShell,{
+    title:'Performance Review — Methodology & User Guide', icon:'📖', onClose, maxWidth:820, zIndex,
+    bodyStyle:{padding:'16px 20px'},
+    subHeader: div({style:{display:'flex',borderBottom:`1px solid ${BDR}`,flexShrink:0}},
+      ...sections.map(s => btn({onClick:()=>setSection(s.key),
+        style:{padding:'8px 16px',border:'none',borderBottom:`2px solid ${section===s.key?AMBER:'transparent'}`,
+          background:'none',color:section===s.key?AMBER:TEXT2,fontSize:12,
+          fontWeight:section===s.key?700:400,cursor:'pointer'}},s.label))
+    ),
+  },
+    content[section]||null,
   );
 }
 
@@ -2405,42 +2393,28 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
     ...(canCustomize ? [{key:'customize', label:'Customize'}] : []),
   ];
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:200,
-    display:'flex',alignItems:'center',justifyContent:'center'}},
-    showHelp && h(HelpGuideModal, {onClose:()=>setShowHelp(false)}),
-    div({style:{width:'min(1200px,97vw)',height:'92vh',background:'var(--surf)',
-      borderRadius:R,display:'flex',flexDirection:'column',overflow:'hidden',
-      boxShadow:'0 20px 60px rgba(0,0,0,.4)',border:`1px solid ${BDR}`}},
-      // Panel header
-      div({style:{display:'flex',alignItems:'center',padding:'14px 20px',
-        borderBottom:`1px solid ${BDR}`,flexShrink:0}},
-        span({style:{fontSize:16,marginRight:10}},'📋'),
-        div({style:{flex:1}},
-          div({style:{fontWeight:700,fontSize:15,color:TEXT}},'Performance Reviews'),
-          div({style:{fontSize:11,color:TEXT3}},'Salaried Management · GM · AM · AS · OM')),
-        GhostBtn({onClick:()=>setShowHelp(true),style:{fontSize:11,marginRight:8}},'? Help'),
-        CloseBtn({onClick:onClose})
-      ),
-      // Tab bar
-      TabBar({tabs, active:tab, onSelect:(k)=>{setTab(k);if(k!=='reviews')setEditing(null);}}),
-      // Body
-      div({style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
-        tab==='reviews' && (
-          editing
-            ? h(ReviewEditor,{review:editing, cfg, ds, stores,
-                onSave:handleSaveReview,
-                onBack:()=>{refresh();setEditing(null);},
-                userRole, orgRoles,
-                onTransition:handleTransition})
-            : h(ReviewList,{reviews, cfg, stores,
-                shiftManagerRows: ds?.shiftManagerRows || [],
-                onOpen:setEditing,
-                onNew:refresh,
-                onDelete:refresh})
-        ),
-        tab==='customize' && div({style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
-          h(CustomizePanel,{cfg, onSave:handleSaveCfg, onReset:handleResetCfg}))
-      )
-    )
+  return h(ModalShell,{
+    title:'Performance Reviews', icon:'📋', onClose, maxWidth:1200, zIndex:Z.modal,
+    subtitle:'Salaried Management · GM · AM · AS · OM',
+    headerExtra: GhostBtn({onClick:()=>setShowHelp(true),style:{fontSize:11}},'? Help'),
+    subHeader: TabBar({tabs, active:tab, onSelect:(k)=>{setTab(k);if(k!=='reviews')setEditing(null);}}),
+    bodyStyle:{padding:0,display:'flex',flexDirection:'column',overflow:'hidden'},
+  },
+    showHelp && h(HelpGuideModal, {onClose:()=>setShowHelp(false), zIndex:Z.nested}),
+    tab==='reviews' && (
+      editing
+        ? h(ReviewEditor,{review:editing, cfg, ds, stores,
+            onSave:handleSaveReview,
+            onBack:()=>{refresh();setEditing(null);},
+            userRole, orgRoles,
+            onTransition:handleTransition})
+        : h(ReviewList,{reviews, cfg, stores,
+            shiftManagerRows: ds?.shiftManagerRows || [],
+            onOpen:setEditing,
+            onNew:refresh,
+            onDelete:refresh})
+    ),
+    tab==='customize' && div({style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
+      h(CustomizePanel,{cfg, onSave:handleSaveCfg, onReset:handleResetCfg})),
   );
 }

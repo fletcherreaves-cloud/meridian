@@ -3,7 +3,8 @@ import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS } from '../engine/signal-registry.js';
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy } from '../lib/supabase.js';
+import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -719,12 +720,14 @@ function HourlyDetail({ slots }) {
                              ? (r.actual_punched_hours - r.total_scheduled_hours) : null;
           const gapClr   = g => g == null ? muted : g <= -1 ? red : g < -0.25 ? amber : g > 1.5 ? amber : grn;
           const gapColor = gapClr(gap);
-          // hour_slot "06:00" = ends at 6am → show as "5am"
+          // hour_slot "06:00" = ends at 6am → show as "5am". Can run past 24 for a store still
+          // open after midnight (confirmed live 2026-08-09) — fmt(end) must be modulo 24 or a
+          // late-night slot mislabels as an afternoon hour (e.g. slot 25 shown as "1pm" not "1am").
           const end = parseInt(r.hour_slot, 10);
           const start = (end - 1 + 24) % 24;
           const fmt = h => h === 0 ? '12am' : h <= 11 ? `${h}am` : h === 12 ? '12pm' : `${h-12}pm`;
           return h('tr', { key: r.hour_slot, style: { borderTop: `1px solid rgba(255,255,255,.04)` } },
-            h('td', { style: lbl }, `${fmt(start)}–${fmt(end)}`),
+            h('td', { style: lbl }, `${fmt(start)}–${fmt(end % 24)}`),
             h('td', { style: cellStyle }, r.product_sales != null ? `$${r.product_sales.toLocaleString('en-US', {maximumFractionDigits:0})}` : '—'),
             h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(2)}%` : '—'),
             h('td', { style: { ...cellStyle, color: speedColor(dt), fontWeight: dt != null && dt > DT_AMB ? 700 : 400 } }, dt != null ? fmtSecs(dt) : '—'),
@@ -857,10 +860,13 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
     out.sort((a, b) => Math.abs(b.pace - 100) - Math.abs(a.pace - 100));
     return out.slice(0, 6);
   }, [rows]);
+  // hour_slot can run past 24 for a store still open after midnight (confirmed live 2026-08-09 —
+  // see src/engine/projection-accuracy.js) — f(end) must be modulo 24 or a late-night slot
+  // mislabels as an afternoon hour (e.g. slot 25 rendered "1pm" instead of "1am").
   const slotLabel = (slot) => {
     const end = parseInt(slot, 10); const start = (end - 1 + 24) % 24;
     const f = hh => hh === 0 ? '12a' : hh <= 11 ? `${hh}a` : hh === 12 ? '12p' : `${hh - 12}p`;
-    return `${f(start)}–${f(end)}`;
+    return `${f(start)}–${f(end % 24)}`;
   };
 
   // Tracking to plan — district actual vs QSRSoft projected sales (proj_sales_dollars).
@@ -985,6 +991,107 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
       `DT speed = avg seconds from order to serve (🔴 > 4:00, 🟡 3:20–4:00, 🟢 < 3:20). `,
       `Labor vs Need = punched hours ÷ needed hours — a staffing level, NOT cost-based labor % (🔴 > 120%, 🟡 110–120%). `,
       `Accuracy = healthy orders ÷ total (🔴 < ${ACC_RED}%, 🟡 ${ACC_RED}–${ACC_AMB}%). Click a store for the hourly breakdown, incl. Gap vs Need / Gap vs Sched (punched − needed / − scheduled hours, − short · + over).`,
+    ),
+  );
+}
+
+// ── Projection Accuracy tab (2026-08-09) ────────────────────────────────────
+// Owner ask, after a live investigation into signals.js's pacePct noise: is there a SYSTEMATIC
+// (not just noisy) over/under-projection pattern by hour-of-day, worth tracking over weeks —
+// that would point at the QSRSoft/LifeLenz projection source itself, a real "manually override
+// this hour" candidate, distinct from anything Meridian's own display logic decides. Reads the
+// small hourly_projection_accuracy rollup (fast for any lookback window, unlike the raw
+// qsr_daily_activity table, which times out past ~30 days — see
+// supabase/schema-hourly-projection-accuracy.sql) and shows the STANDALONE (non-cumulative)
+// per-hour actual-vs-projected bias, both district-wide and per-store.
+const PA_WINDOWS = [{ label: '7d', days: 7 }, { label: '14d', days: 14 }, { label: '30d', days: 30 }, { label: '60d', days: 60 }, { label: '90d', days: 90 }];
+function ProjectionAccuracyTab({ stores }) {
+  const [windowDays, setWindowDays] = uSt(30);
+  const [metric, setMetric] = uSt('sales'); // 'sales' | 'gc'
+  const [scopeLoc, setScopeLoc] = uSt(''); // '' = district-wide, else a specific loc
+  const [rows, setRows] = uSt([]);
+  const [loading, setLoading] = uSt(false);
+  const [error, setError] = uSt(null);
+
+  uE(() => {
+    let cancelled = false;
+    setLoading(true); setError(null);
+    const end = new Date(); const start = new Date(end.getTime() - windowDays * 86400000);
+    const iso = d => d.toISOString().slice(0, 10);
+    loadHourlyProjectionAccuracy(iso(start), iso(end), scopeLoc || null)
+      .then(data => { if (!cancelled) { setRows(data || []); setLoading(false); } })
+      .catch(e => { if (!cancelled) { setError(String(e?.message || e)); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [windowDays, scopeLoc]);
+
+  const table = uM(() => {
+    const ratios = scopeLoc
+      ? perStoreHourlyRatios(rows, { metric })
+      : districtHourlyRatios(rows, { metric });
+    return hourlyBiasTable(ratios);
+  }, [rows, metric, scopeLoc]);
+
+  const totalN = table.reduce((a, r) => a + (r.n || 0), 0);
+  const biasColor = b => b == null ? muted : Math.abs(b) < 5 ? muted : b > 0 ? blue : red;
+
+  return h('div', null,
+    h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 14 } },
+      'Standalone (non-cumulative) actual vs QSRSoft-projected ratio, by hour-of-day — a persistent bias at the same hour across many days points at the projection source itself, not at anything Meridian computes. This is a DIFFERENT lens than the cumulative "Pace vs Plan" cards on Live Ops, which are the right choice for live monitoring; this view exists to find patterns worth manually correcting.'),
+
+    h('div', { style: { display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' } },
+      h('div', { style: { display: 'flex', gap: 4 } },
+        PA_WINDOWS.map(w => h('button', {
+          key: w.days, onClick: () => setWindowDays(w.days),
+          style: { padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            background: windowDays === w.days ? 'rgba(245,158,11,.12)' : 'transparent',
+            border: `1px solid ${windowDays === w.days ? 'rgba(245,158,11,.4)' : bdr}`,
+            color: windowDays === w.days ? amber : muted },
+        }, w.label))
+      ),
+      h('div', { style: { display: 'flex', gap: 4 } },
+        ['sales', 'gc'].map(m => h('button', {
+          key: m, onClick: () => setMetric(m),
+          style: { padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            background: metric === m ? 'rgba(96,165,250,.12)' : 'transparent',
+            border: `1px solid ${metric === m ? 'rgba(96,165,250,.4)' : bdr}`,
+            color: metric === m ? blue : muted },
+        }, m === 'sales' ? '$ Sales' : 'Guest Count'))
+      ),
+      h('select', {
+        value: scopeLoc, onChange: e => setScopeLoc(e.target.value),
+        style: { padding: '4px 8px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: scopeLoc ? amber : muted, fontSize: 11, cursor: 'pointer' },
+      },
+        h('option', { value: '' }, 'District-wide (all stores)'),
+        (stores || []).map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))
+      ),
+      loading && h('span', { style: { fontSize: 11, color: muted } }, 'Loading…'),
+      error && h('span', { style: { fontSize: 11, color: red } }, `Error: ${error}`),
+    ),
+
+    !loading && !error && !totalN && h('div', { style: { padding: '24px 16px', textAlign: 'center', color: muted, fontSize: 12 } },
+      'No data yet for this window. hourly_projection_accuracy is populated once daily by a scheduled job — it may not have run yet, or this window predates when it started.'),
+
+    !loading && totalN > 0 && h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+      h('thead', null,
+        h('tr', { style: { borderBottom: `1px solid ${bdr}` } },
+          ['Hour', 'n', 'Median %', 'IQR', 'Bias vs 100%'].map(c => h('th', { key: c, style: { textAlign: c === 'Hour' ? 'left' : 'right', padding: '5px 8px', color: muted, fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em' } }, c))
+        )
+      ),
+      h('tbody', null,
+        table.map(r => h('tr', { key: r.hourSlot, style: { borderTop: `1px solid ${surf2}` } },
+          h('td', { style: { padding: '5px 8px', fontFamily: 'monospace' } }, r.label),
+          h('td', { style: { padding: '5px 8px', textAlign: 'right', color: muted, fontFamily: 'monospace' } }, r.n || 0),
+          h('td', { style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' } }, r.median != null ? r.median.toFixed(1) + '%' : '—'),
+          h('td', { style: { padding: '5px 8px', textAlign: 'right', color: muted, fontFamily: 'monospace' } }, r.iqr != null ? r.iqr.toFixed(1) : '—'),
+          h('td', { style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: biasColor(r.bias) } },
+            r.bias != null ? `${r.bias >= 0 ? '+' : ''}${r.bias.toFixed(1)}` : '—'),
+        ))
+      )
+    ),
+
+    !loading && totalN > 0 && h('div', { style: { marginTop: 14, fontSize: 10, color: muted, lineHeight: 1.7 } },
+      `${totalN.toLocaleString('en-US')} hour-samples over the last ${windowDays} days. `,
+      'Bias = median ratio − 100%; a value repeatedly beyond ±10% at the same hour is worth investigating in the projection source. IQR = noise/spread — a wide IQR with a near-zero bias is just noisy, not systematically wrong.',
     ),
   );
 }
@@ -1491,6 +1598,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     // Tab bar
     h('div', { style: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' } },
       h('button', { onClick: () => setTab('liveops'), style: TAB_STYLE(tab === 'liveops') }, '⚡ Live Ops'),
+      h('button', { onClick: () => setTab('projacc'), style: TAB_STYLE(tab === 'projacc') }, '📐 Projection Accuracy'),
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
       h('button', { onClick: () => setTab('scanner'), style: TAB_STYLE(tab === 'scanner') }, '🔎 Scanner'),
@@ -1500,6 +1608,9 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
 
     // ── LIVE OPS TAB ─────────────────────────────────────────────────────────
     tab === 'liveops' && h(LiveOpsTab, { darRows, refreshDar }),
+
+    // ── PROJECTION ACCURACY TAB ──────────────────────────────────────────────
+    tab === 'projacc' && h(ProjectionAccuracyTab, { stores: availLocs }),
 
     // ── BUILT-IN TAB ──────────────────────────────────────────────────────────
     tab === 'builtin' && h('div', null,

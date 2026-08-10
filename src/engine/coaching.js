@@ -5,6 +5,7 @@ import { runWhyEngineScan } from '../engine/why.js';
 import { compute6wk } from '../engine/forecast.js';
 import { buildBrief, buildStore } from '../engine/pipeline.js';
 import { TH, escapeHtml as esc } from '../utils/fmt.js';
+import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h    = React.createElement;
 const div  = (props, ...c) => h('div',    props, ...c);
@@ -313,12 +314,9 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 
   // ── No-data guard ────────────────────────────────────────────────────────────
   const hasAnyData = ds&&ds.loaded;
-  if(!hasAnyData) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:461,display:'flex',alignItems:'center',justifyContent:'center'}},
+  if(!hasAnyData) return h(ModalShell,{title:'GM Coaching Letters',icon:'👨‍💼',onClose,maxWidth:480,zIndex:Z.nested},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-      div({style:{fontSize:40,marginBottom:12}},'👨‍💼'),
-      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
-      div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load an Operations Report or Labor Analysis to generate coaching letters.'),
-      btn({className:'btn btn-sm',onClick:onClose},'Close')));
+      div({style:{fontSize:'11px',lineHeight:1.6}},'Load an Operations Report or Labor Analysis to generate coaching letters.')));
 
   // ── Batch card (collapsed/expanded list item) ───────────────────────────────
   const BatchCard = ({loc, entry}) => {
@@ -387,30 +385,18 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
     );
   };
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:461,
-    display:'flex',alignItems:'flex-start',justifyContent:'center',padding:20,paddingTop:24}},
-    div({style:{background:'var(--surf)',border:'.5px solid var(--bdr2)',borderRadius:'var(--rl)',
-      width:'100%',maxWidth:760,maxHeight:'90vh',display:'flex',flexDirection:'column',
-      boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
-
-      // Header
-      div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',
-        display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
-        span({style:{fontSize:'18px'}},'👨‍💼'),
-        div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'GM Coaching Letters'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'AI-drafted, data-grounded coaching for your GMs — every letter is a draft for your review')
-        ),
-        div({style:{display:'flex',gap:3}},
-          ...[['single','Single Store'],['batch','All 27 (Batch)']].map(([id,l])=>
-            btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',
-              background:mode===id?'var(--adim)':'transparent',
-              color:mode===id?'var(--amber)':'var(--text3)',
-              border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
-              onClick:()=>setMode(id)},l))
-        ),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
-      ),
+  return h(ModalShell,{
+    title:'GM Coaching Letters',icon:'👨‍💼',onClose,maxWidth:760,zIndex:Z.nested,
+    subtitle:'AI-drafted, data-grounded coaching for your GMs — every letter is a draft for your review',
+    headerExtra: div({style:{display:'flex',gap:3}},
+      ...[['single','Single Store'],['batch','All 27 (Batch)']].map(([id,l])=>
+        btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',
+          background:mode===id?'var(--adim)':'transparent',
+          color:mode===id?'var(--amber)':'var(--text3)',
+          border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
+          onClick:()=>setMode(id)},l))
+    ),
+  },
 
       // ════════ SINGLE MODE ════════
       mode==='single'&&React.createElement(React.Fragment,null,
@@ -507,8 +493,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
           ...LOCS.filter(l=>letters[l]).map(l=>h(BatchCard,{key:l,loc:l,entry:letters[l]}))
         )
       )
-    )
-  );
+    );
 }
 
 
