@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -56,6 +56,38 @@ describe('salesBehindLY', () => {
     expect(items).toHaveLength(1);
     expect(items[0].loc).toBe('a');
     expect(items[0].dollars).toBe(-2000);
+  });
+});
+
+describe('mergeWorstSalesLY', () => {
+  it('keeps the row with the worse (more negative) relative gap per loc', () => {
+    // store a: window is a mild -5% dip, but the rolling 28-day trend is a real -20% decline
+    // that a single decent week would otherwise hide.
+    const windowRows = [{ loc: 'a', cur: 9500, ly: 10000 }, { loc: 'b', cur: 9000, ly: 10000 }];
+    const rollingRows = [{ loc: 'a', cur: 8000, ly: 10000 }, { loc: 'b', cur: 9800, ly: 10000 }];
+    const merged = mergeWorstSalesLY(windowRows, rollingRows);
+    expect(merged.find(r => r.loc === 'a')).toEqual(rollingRows[0]);   // rolling window worse for a
+    expect(merged.find(r => r.loc === 'b')).toEqual(windowRows[1]);    // single-week worse for b
+  });
+
+  it('a store present in only one window still surfaces', () => {
+    const merged = mergeWorstSalesLY([{ loc: 'a', cur: 9500, ly: 10000 }], [{ loc: 'b', cur: 8000, ly: 10000 }]);
+    expect(merged.map(r => r.loc).sort()).toEqual(['a', 'b']);
+  });
+
+  it('drops rows with no real LY baseline (ly <= 0) from either side', () => {
+    const merged = mergeWorstSalesLY([{ loc: 'a', cur: 500, ly: 0 }], [{ loc: 'a', cur: 8000, ly: 10000 }]);
+    expect(merged).toEqual([{ loc: 'a', cur: 8000, ly: 10000 }]);
+  });
+
+  it('feeds cleanly into salesBehindLY — the worse window decides severity', () => {
+    const merged = mergeWorstSalesLY(
+      [{ loc: 'a', cur: 9700, ly: 10000 }],              // -3%, below salesBehindLY's warn threshold alone
+      [{ loc: 'a', cur: 7500, ly: 10000 }],               // -25% rolling — should win and flag warn
+    );
+    const items = salesBehindLY(merged, nm);
+    expect(items).toHaveLength(1);
+    expect(items[0].severity).toBe('warn');
   });
 });
 

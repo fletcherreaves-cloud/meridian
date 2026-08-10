@@ -48,6 +48,24 @@ export function fobOutliers(fobByStore = {}, storeName = String, { mult = 1.3, m
   return out;
 }
 
+// Merge two loc-keyed sales-vs-LY row sets, keeping whichever shows the WORSE (more
+// negative) relative gap per loc. Lets a caller feed salesBehindLY both a single-period
+// view and a rolling multi-week window, so a real decline surfaces whichever window
+// catches it — a trend that never clears the threshold in one specific week (the panel's
+// currently-selected dateRange) still surfaces via the rolling window, and a genuine
+// single-week collapse still surfaces even if the rolling window hasn't caught up yet
+// (Notes 63 part 2 — attention-now.js previously only evaluated the current dateRange).
+export function mergeWorstSalesLY(a = [], b = []) {
+  const byLoc = new Map();
+  for (const r of (a || [])) if (r && r.ly > 0) byLoc.set(r.loc, r);
+  for (const r of (b || [])) {
+    if (!r || !(r.ly > 0)) continue;
+    const existing = byLoc.get(r.loc);
+    if (!existing || (r.cur - r.ly) / r.ly < (existing.cur - existing.ly) / existing.ly) byLoc.set(r.loc, r);
+  }
+  return [...byLoc.values()];
+}
+
 // Stores behind last year on sales (matched period). `rows` = [{loc, cur, ly}].
 export function salesBehindLY(rows = [], storeName = String, { minGap = 1000 } = {}) {
   const out = [];

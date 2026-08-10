@@ -11,7 +11,7 @@ import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
-import { buildAttentionFeed, SEV_META } from '../engine/attention-feed.js';
+import { buildAttentionFeed, mergeWorstSalesLY, SEV_META } from '../engine/attention-feed.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -81,8 +81,20 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
     const ageDays = fresh.length ? Math.floor((tMs - Math.max(...fresh)) / 864e5) : null;
 
     const fobByStore = fobByStoreLatest(ds?.qsrFobRows || []);
-    const salesLY = allLocs.map(loc => { const m = matchedVsLY(ds, [loc], dateRange); return { loc, cur: m.cur, ly: m.ly }; })
+    const salesLYWindow = allLocs.map(loc => { const m = matchedVsLY(ds, [loc], dateRange); return { loc, cur: m.cur, ly: m.ly }; })
       .filter(r => r.ly > 0);
+    // Rolling 28-day window, independent of whatever dateRange is currently selected — a
+    // real multi-week decline shouldn't need to clear salesBehindLY's threshold in one
+    // specific week to surface here (Notes 63 part 2). >=14-of-28 matched-days floor mirrors
+    // the same guard buildBrief's trailing-28-day detector uses (engine/pipeline.js), so an
+    // aggregate built from a handful of days doesn't get treated as a trend.
+    const salesLYRolling = allLocs.map(loc => {
+      const m = matchedVsLY(ds, [loc], { s: new Date(Date.now() - 28 * 86400000), e: new Date() });
+      return { loc, cur: m.cur, ly: m.ly, days: m.days };
+    }).filter(r => r.ly > 0 && r.days >= 14);
+    // Worse of the two windows per store — never averaged, never both shown (that would be
+    // a duplicate row for the same store at two severities).
+    const salesLY = mergeWorstSalesLY(salesLYWindow, salesLYRolling);
 
     // Drive-thru speed vs each store's own OEPE target. The slowDT detector has been
     // implemented and tested since the engine was written but was never fed inputs, so

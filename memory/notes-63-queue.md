@@ -86,10 +86,18 @@ floor. Verified end-to-end against real data both before and after implementing:
 Atoka using the actual pulled numbers, fires nothing for 24 of the other 26 real district stores
 (the two next-worst fire `watch`). 7 new tests in `pipeline-sales-decline.test.js`.
 
-**Part 2 is still open** — the panel-rename/merge question (this section's own "OR retire the
-split entirely" line, doubling as [[notes-60-queue]]'s naming ask) and `WhatNeedsAttentionPanel`'s
-rolling multi-week window were explicitly out of scope for PR #109 (the owner's task prompt scoped
-it narrowly to `buildBrief`/`AttentionPanel` only, and named `attention-now.js` do-not-touch).
+**Part 2, item 2 (the rolling window) shipped v4.941, 2026-08-10.**
+`WhatNeedsAttentionPanel` (`attention-now.js`) now computes sales-vs-LY over BOTH the currently
+selected `dateRange` and a trailing 28-day window (>=14-of-28 matched-days floor, same guard PR
+#109's detector uses), and feeds `salesBehindLY` whichever per-store row shows the worse relative
+gap via a new `mergeWorstSalesLY` helper (`engine/attention-feed.js`) — never both (that would be
+a duplicate row for the same store), never averaged. 4 new tests. `npm test` 1086/1086, build
+clean (2815.65 KB / 841.49 KB gzip, within budget).
+
+**Part 2, item 1 (the panel-rename/merge question) is still open** — this is a product-naming
+decision ("Needs Attention" vs "Attention Now" — merge, rename, or keep both), not an engineering
+task, and per the owner's own framing in [[notes-60-queue]] it needs a call, not a unilateral pick.
+Flagging back to the owner rather than deciding it here.
 
 Original finding, for reference:
 
@@ -127,9 +135,9 @@ them was actually checked:
    differently-powered "attention" panels side by side is itself confusing (this doubles as the
    rename/merge question already open in [[notes-60-queue]]: *"either broaden it to cover all
    current AND future data, or rename"*).
-2. In `WhatNeedsAttentionPanel`, evaluate sales decline over a rolling multi-week window in
+2. ~~In `WhatNeedsAttentionPanel`, evaluate sales decline over a rolling multi-week window in
    addition to the current single-week `dateRange`, so a real trend doesn't need to clear the
-   threshold in one specific week to surface.
+   threshold in one specific week to surface.~~ — ✅ DONE v4.941, see above.
 
 Related: [[notes-60-queue]] (naming ask), [[notes-58-queue]] (Atoka is also the swing-alarm test
 case), [[notes-59-online-reputation]] (Atoka social backfill deferred).
@@ -335,8 +343,9 @@ this session.** Revisit during the Workstream D "score & polish" pass in [[visio
 
 ## Priority order (this session's proposal, non-UI/UX first per the owner's instruction)
 
-1. ~~**Needs Attention sales-decline detector (Atoka)**~~ — ✅ DONE v4.940 (PR #109). Part 2
-   (panel rename/merge question, `attention-now.js` rolling window) still open — see above.
+1. ~~**Needs Attention sales-decline detector (Atoka)**~~ — ✅ DONE v4.940 (PR #109).
+   ~~`attention-now.js` rolling window~~ — ✅ DONE v4.941. Panel rename/merge question still
+   open — needs an owner call, see above.
 2. EOM Change Monitor qty + case-conversion — fully scoped, engine already supports it, no new data
    model needed.
 3. Swing Watch "Acknowledged" home at the top of Needs Attention — fully scoped, reuses existing
