@@ -152,8 +152,8 @@ See detailed design below. Delivers the visible win AND exercises Workstream A.
 - **DT/Speed-of-Service → weekly-trend chart by patch/store.**
 
 ## Workstream D — UX Coherence & Audit (best-in-class pass)
-- **Standardize modals:** one modal shell component, one close affordance (single ✕, top-right, 44px), consistent header/padding/safe-area, consistent surfaces/typography. Today there are several "looks" and mixed close controls (✕ / Close / Exit).
-- **Score & polish** every panel/modal/model on effectiveness (esp. ones rushed under time pressure): rate clarity, accuracy surfacing, mobile, flow. Produce a scorecard + fixes.
+- ~~**Standardize modals:** one modal shell component, one close affordance (single ✕, top-right, 44px), consistent header/padding/safe-area, consistent surfaces/typography.~~ — ✅ DONE v4.938–v4.939 (PRs #102, #106). `src/components/ModalShell.js` built; every real close-button bug (state-dependent style switchers) and every remaining App.js-hosted modal (EOMDashboardPanel, AIBacktestScanner, ProjectionWorkflow, Forecasting Reference, Workflow Guide, About, Morning Brief, EOM Supervisor Summary, Signals) now routes through it; SAGE additionally promoted to a persistent top-bar button + right-side drawer instead of a full-screen overlay. Full detail in [[notes-63-queue]].
+- **Score & polish** every panel/modal/model on effectiveness (esp. ones rushed under time pressure): rate clarity, accuracy surfacing, mobile, flow. Produce a scorecard + fixes. — still open; modal *chrome* is now consistent, but this bullet is about panel *content/flow* quality, which hasn't been scored yet.
 - **Find holes** — incomplete thoughts/flows, dead ends, half-wired features.
 - Lens: end-user making business decisions the moment they open the app — it should "scream progress and getting things done."
 
