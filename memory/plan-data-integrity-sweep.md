@@ -611,3 +611,85 @@ everything else nearby" to whoever writes it next.
 
 Related: [[feedback-measure-dont-reason]], [[data-sourcing-standard]],
 [[feedback-performance-budget]], [[notes-62-queue]].
+
+---
+
+## Signature #4 — GENUINELY CLOSED (2026-08-10, v4.944)
+
+The open question above was answered: added `lastClosedBusinessDay(now = new Date())` to
+`src/engine/swing-feed.js`, right after `businessDate()`. It returns midnight of the last CLOSED
+business day (`businessDate()` minus one), so every site now does `lastClosedBusinessDay()` once
+instead of re-deriving `addD(new Date(businessDate()+'T00:00:00'), -1)` inline. The two
+already-shipped v4.942/v4.943 call sites (`pipeline.js` sales-decline detector,
+`attention-now.js` rolling window) were refactored to call the shared helper too, so there is now
+exactly one place this boundary is computed, not three-and-counting.
+
+**All 5 high-risk sites fixed:**
+1. `store-analytics.js` `detectAnomalies` — `range.e` now `lastClosedBusinessDay()` (was
+   unbounded `new Date()`).
+2. `analytics.js` `runScan` (AI Backtest Scanner) — same fix, same shape.
+3. `store-analytics.js` Avg Check Momentum family (`range42`/`range2`/`range6`, feeds DT Sales
+   Mix, Salaried Manager Compliance, Promo/Discount Drag too) — all now anchored to
+   `lastClosedBusinessDay()`.
+4. `forecast.js` T2W trend — `recentRows`/`priorRows` now bounded on both ends
+   (`>=t2wCut && <=lastClosed`), where before there was no upper bound at all.
+5. `pipeline.js:337` `cut4`/`now4` (feeds `pSales`/`pLY`, the 5 consumer sites the PM named:
+   `analytics.js:2096`/`:2132`, `store-analytics.js:1714`/`:1985`, `store-dash.js:1559`) — fixed.
+
+**All 4 lower-risk sites also fixed** (`morning-brief.js` `computeStoreNorms`,
+`analytics.js` `computeMetricAverages`, the AI Pre-Forecast 42-day context,
+`store-dash.js` `PerformanceCalculator` baseline) — "low risk is not zero risk" per the task.
+
+**A 6th effective site found and fixed during the forecast.js work, not in the original list**:
+`compute6wk`'s core `_range` (feeds `oepe`/`kvst`/`park`/`r2p`/`tpph`/`spph`/`laborPct`/
+`actVsNeed`/`otHrs`/`actHrs`/`avgRate`/`cashOSPct`/`tRedAPct`/`tRedBPct`/`discPct`/`cashRefCnt`/
+`posOverCnt`/`drawerOpens` via `metricAvg`) was unbounded the same way T2W was — and this range,
+unlike `r.t2w` itself (display-only), directly feeds `calcOpsF`/`baseOpsF`, the forecast
+adjustment factor `calibrateStore` grid-searches around. The PM's instinct that "#4 feeds
+forecasting" was right even though `r.t2w` itself turned out not to be the feeding site — this
+sibling window in the same function was. Also tightened 4 unbounded sub-filters in the same
+function that shared the defect: `avgCheck`/`checkRows`, `kvsu`, `hasPettyCash`, `sRows`.
+
+**Measured, not assumed** (real Supabase data, service-role key, before/after through the actual
+production functions — `metricAvg`/`compute6wk`/`calibrateStore`, not a reimplementation):
+
+- `compute6wk`'s underlying metrics: `discPct` moved most, up to **-11.23%** (store 35242) and
+  several stores in the -9% to -11% range; `oepe`/`kvst`/`tpph` typically +1% to +2%.
+- `baseOpsF` (the forecast adjustment factor `compute6wk`'s window feeds): up to **-10%** for
+  stores 10915 and 32525, -8.76% for 10034, -2% for 13113, -1.02% for 18213, out of 13 stores
+  checked.
+- **Backtest MAPE: byte-identical before and after** for all 6 sampled stores (5.94, 5.56, 5.42,
+  7.32, 6.53, 5.29). Not a wash — `calibrateStore`'s grid search treats `baseOpsF` as a
+  parameter-independent constant and its other free parameters re-fit around whatever constant
+  it's handed, so historical backtest grading is invariant to this correction even though a live,
+  forward-looking forecast for a day not yet backtested benefits directly from starting from the
+  corrected constant. No accuracy degradation — nothing to stop and report.
+- `computeMetricAverages` (90-day): **70 store/metric combinations shifted >1%**, max **-21.56%**
+  (`tRedAPct`, store 3708). **This corrects the 2026-08-09 triage above, which classed this site
+  "lower risk"** on the assumption a 90-day denominator would dilute one partial day to
+  near-nothing — real measurement shows it did not hold for T-Red rates at some stores. Flagging
+  the correction explicitly rather than quietly updating the old classification.
+- `PerformanceCalculator` baseline (42-day): 66 shifts >1%, sales/gc consistently +2.3% to +2.4%
+  across nearly every store — systematic, not noise.
+- `computeStoreNorms` (8-week): 46 shifts >1%, sales/gc consistently +1.75% to +1.77%.
+- Avg Check Momentum family: only 1 shift >1% (-1.36%, `salaryMgrHrs`).
+- AI Pre-Forecast 42-day context: 0 shifts >1%.
+- `pSales`/`pLY` (site 5) and T2W trend (site 4): **0 shifts >1% measured today** — not because
+  the fix doesn't matter, but because `ds.laborRows` (the manual Labor Report both sites read)
+  has received no new rows since **2026-07-23**, 18 days stale as of this measurement. With no
+  data near "today," the old contaminated window had nothing recent to pick up in the first
+  place. Both are still correctly fixed for when manual uploads resume or full auto-first
+  coverage lands.
+
+**Deliberately NOT touched, and why**: `forecast.js`'s `allDep`/`allSales` (full-history
+median-baseline, no "now" cutoff of any kind — out of scope, not a trailing window) and
+`avg6()`/`obs6()` (`avg6` is dead code, never called with real args; `obs6` feeds only `_cov`
+coverage COUNTS, not a displayed value — lower materiality, at most an off-by-one in a coverage
+count, not a wrong grade). Also NOT re-touched: the 6-week-chart 1,200,000% bug — that was v4.912,
+a different signature (near-zero denominator), already fixed, unrelated to this one.
+
+**Verification**: 1108/1108 tests passing, build 2818.08 KB / 842.15 KB gzip (budget 2.8MB/850KB
+— ~7.85 KB headroom remaining, tighter than the ~8KB flagged going in but not exceeded).
+
+Related: [[feedback-measure-dont-reason]], [[data-sourcing-standard]],
+[[feedback-performance-budget]], [[notes-62-queue]].
