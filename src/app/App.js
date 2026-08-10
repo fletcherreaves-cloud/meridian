@@ -3955,12 +3955,7 @@ function App() {
     },
           h(EOMSupervisorPanel,{ds,settings,supabase})
     ),
-        showEOMDash&&h(ModalShell,{
-      title:'📦 Inventory Control',
-      onClose:()=>setShowEOMDash(false),maxWidth:1240,zIndex:Z.nested,bodyStyle:{padding:'20px'}
-    },
-      h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)})
-    ),
+        showEOMDash&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}),
         showAudit&&selStore&&h(ModalShell,{
       title:'🔬 Forecast Audit — '+(STORE_NAMES[(selStore&&selStore.loc?selStore.loc:selStore)]||(selStore&&selStore.loc?selStore.loc:selStore)),
       subtitle:'Full transparency: every input, weight, and multiplier used to compute each day forecast.',
