@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -265,5 +265,106 @@ describe('visitRisk shape tolerance (production crash, 2026-08-07)', () => {
 
   it('buildAttentionFeed survives the object being passed through', () => {
     expect(() => buildAttentionFeed({ visitStores: asObject })).not.toThrow();
+  });
+});
+
+// ── groupAttentionByStore (issue #115, Needs Attention merge Part 2) ──────────────────────
+describe('groupAttentionByStore', () => {
+  const storesByLoc = new Map([
+    ['10422', { loc: '10422', name: 'Atoka' }],
+    ['32525', { loc: '32525', name: 'Elgin' }],
+  ]);
+
+  it('groups by loc, splits crit/warn, drops info and loc-less items', () => {
+    const items = [
+      { id: 'a', loc: '10422', severity: 'crit', title: 'Sales down' },
+      { id: 'b', loc: '10422', severity: 'crit', title: 'Cash short' },   // 2nd crit, SAME store
+      { id: 'c', loc: '10422', severity: 'warn', title: 'OEPE slow' },
+      { id: 'd', loc: '32525', severity: 'warn', title: 'FOB hot' },
+      { id: 'e', loc: '10422', severity: 'info', title: 'ignored' },
+      { id: 'f', loc: null, severity: 'crit', title: 'sync stale' },     // district item, dropped here
+    ];
+    const out = groupAttentionByStore(items, storesByLoc, String);
+    expect(out).toHaveLength(2);
+    const atoka = out.find(x => x.store.loc === '10422');
+    expect(atoka.crits).toHaveLength(2);       // Trap 1's shape: two DIFFERENT crits, same store
+    expect(atoka.warns).toHaveLength(1);
+    expect(atoka.total).toBe(3);
+    expect(atoka.worst).toBe(atoka.crits[0]);
+    const elgin = out.find(x => x.store.loc === '32525');
+    expect(elgin.crits).toHaveLength(0);
+    expect(elgin.warns).toHaveLength(1);
+  });
+
+  it('ranks crit-tier stores before warn-only stores', () => {
+    const items = [
+      { id: 'a', loc: '32525', severity: 'warn', title: 'x' },
+      { id: 'b', loc: '10422', severity: 'crit', title: 'y' },
+    ];
+    const out = groupAttentionByStore(items, storesByLoc, String);
+    expect(out[0].store.loc).toBe('10422');
+    expect(out[1].store.loc).toBe('32525');
+  });
+
+  it('drops items whose loc has no matching store (feed references a store outside the loaded set)', () => {
+    const out = groupAttentionByStore([{ id: 'a', loc: '99999', severity: 'crit', title: 'x' }], storesByLoc, String);
+    expect(out).toHaveLength(0);
+  });
+
+  it('normLoc lets the caller match zero-padded item.loc against unpadded storesByLoc keys', () => {
+    const out = groupAttentionByStore([{ id: 'a', loc: '0010422', severity: 'crit', title: 'x' }],
+      storesByLoc, (l) => String(l).replace(/^0+/, ''));
+    expect(out).toHaveLength(1);
+    expect(out[0].store.loc).toBe('10422');
+  });
+
+  // Issue #115's explicit verification requirement: "every store visible in either panel
+  // before must still be visible after. A store that disappears is a regression." The old
+  // AttentionPanel (analytics.js, pre-#115) inlined this exact grouping loop; reproduced
+  // verbatim here as `oldGroup` so the comparison is against the real prior behavior, not a
+  // re-derived approximation that could itself drift.
+  function oldGroup(feed, storesByLoc) {
+    const byLoc = new Map();
+    for (const item of feed) {
+      if (item.loc == null) continue;
+      const loc = String(item.loc).replace(/^0+/, '') || String(item.loc);
+      const store = storesByLoc.get(loc);
+      if (!store) continue;
+      let bucket = byLoc.get(loc);
+      if (!bucket) { bucket = { store, crits: [], warns: [] }; byLoc.set(loc, bucket); }
+      if (item.severity === 'crit') bucket.crits.push(item);
+      else if (item.severity === 'warn') bucket.warns.push(item);
+    }
+    return [...byLoc.values()]
+      .map(x => ({ ...x, total: x.crits.length + x.warns.length }))
+      .sort((a, b) => b.crits.length - a.crits.length || b.warns.length - a.warns.length);
+  }
+
+  it('no store disappears in the merge — same store set, same crit/warn counts as the old algorithm', () => {
+    const bigStoresByLoc = new Map(
+      ['10422', '32525', '35242', '6178', '3708'].map(loc => [loc, { loc, name: 'Store' + loc }]));
+    const feed = [
+      { id: 'a', loc: '10422', severity: 'crit', title: 'sales' },
+      { id: 'b', loc: '10422', severity: 'crit', title: 'cash' },      // Trap 1 shape
+      { id: 'c', loc: '32525', severity: 'warn', title: 'fob' },
+      { id: 'd', loc: '35242', severity: 'warn', title: 'oepe' },
+      { id: 'e', loc: '35242', severity: 'info', title: 'strength' },  // never counted, either version
+      { id: 'f', loc: '6178', severity: 'crit', title: 'labor' },
+      { id: 'g', loc: null, severity: 'crit', title: 'sync stale' },   // loc-less — old panel dropped it entirely
+    ];
+    const oldOut = oldGroup(feed, bigStoresByLoc);
+    const newOut = groupAttentionByStore(feed, bigStoresByLoc, (l) => String(l).replace(/^0+/, '') || String(l));
+    const oldLocs = oldOut.map(x => x.store.loc).sort();
+    const newLocs = newOut.map(x => x.store.loc).sort();
+    expect(newLocs).toEqual(oldLocs);
+    for (const loc of oldLocs) {
+      const o = oldOut.find(x => x.store.loc === loc), n = newOut.find(x => x.store.loc === loc);
+      expect(n.crits.length, loc).toBe(o.crits.length);
+      expect(n.warns.length, loc).toBe(o.warns.length);
+    }
+    // The loc-less item is the one thing the OLD grouped algorithm structurally could
+    // never show — it's the reason the pinned district strip (AttentionPanel, issue #115)
+    // exists: without it, retiring Attention Now would have silently dropped this alert.
+    expect(feed.filter(i => i.loc == null)).toHaveLength(1);
   });
 });

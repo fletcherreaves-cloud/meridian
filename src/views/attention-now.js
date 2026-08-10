@@ -1,11 +1,12 @@
 // @ts-nocheck
-// ── What Needs My Attention Now ───────────────────────────────────────────────
-// One ranked cross-domain triage: food-cost outliers, stores behind LY, and
-// data-sync health, fused by src/engine/attention-feed.js and ordered by
-// severity then $ at stake. Additive + self-contained (no changes to the heavier,
-// freeze-prone Needs-Attention / Priority-Brief panels). Click a row to jump to
-// the panel that owns the issue. Visit-readiness + signal-decay are Phase 2 (the
-// engine already supports more detectors; the panel just feeds them inputs).
+// ── Attention feed hook ────────────────────────────────────────────────────────
+// useAttentionFeed fuses buildBrief's per-store findings with the cross-domain
+// detectors in src/engine/attention-feed.js (food-cost outliers, behind-LY,
+// drive-thru speed, sync health, visit-readiness, signal decay) into one ranked
+// feed. The standalone "Attention Now" modal that used to render this feed
+// directly (WhatNeedsAttentionPanel) was retired 2026-08-10 (issue #115) — its
+// content is fully absorbed into AttentionPanel (src/views/analytics.js), which
+// this hook now feeds exclusively.
 import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
@@ -13,13 +14,10 @@ import { metricAvg } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
-import { buildAttentionFeed, mergeWorstSalesLY, SEV_META } from '../engine/attention-feed.js';
+import { buildAttentionFeed, mergeWorstSalesLY } from '../engine/attention-feed.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
 
-const h = React.createElement;
 const { useMemo, useState, useEffect } = React;
-const div = (p, ...c) => h('div', p, ...c);
-const span = (p, ...c) => h('span', p, ...c);
 export const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
 const nm = (l) => STORE_NAMES[unpad(l)] || unpad(l);
 
@@ -41,8 +39,6 @@ function fobByStoreLatest(rows) {
   for (const loc in acc) { const a = acc[loc]; a.fob$ = a.fob; a.fobPct = a.sales ? a.fob / a.sales : null; }
   return acc;
 }
-
-const NAV_MODAL = { fob: 'fob-analysis', signals: 'signals', analytics: 'eom-dashboard' };
 
 // ── Shared engine hook (Needs Attention / Attention Now merge, Part 1) ──────────────────────
 // Both AttentionPanel (analytics.js) and WhatNeedsAttentionPanel below now go through this ONE
@@ -137,52 +133,7 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
   }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
 }
 
-export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, onClose }) {
-  const feed = useAttentionFeed({ ds, stores, dateRange, max: 20 });
-  const counts = feed.reduce((a, i) => { a[i.severity] = (a[i.severity] || 0) + 1; return a; }, {});
-  const go = (item) => {
-    const modal = NAV_MODAL[item.nav];
-    onClose && onClose();
-    if (modal && onOpenModal) onOpenModal(modal);
-  };
-
-  return div({
-    style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 320, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto' },
-    onClick: onClose,
-  },
-    div({
-      onClick: e => e.stopPropagation(),
-      style: { width: '100%', maxWidth: 720, background: 'var(--surf)', borderRadius: 'var(--rl, 12px)', border: '.5px solid var(--bdr)', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.6)' },
-    },
-      // header
-      div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
-        div(null,
-          div({ style: { fontSize: '15px', fontWeight: 800, color: 'var(--text)' } }, '🎯 What Needs My Attention Now'),
-          div({ style: { fontSize: '10px', color: 'var(--text3)', marginTop: 2 } },
-            `${counts.crit || 0} critical · ${counts.warn || 0} watch · ${counts.info || 0} FYI · ranked by severity then $ at stake`)),
-        h('button', { onClick: onClose, style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: 6, color: 'var(--text3)', padding: '5px 10px', cursor: 'pointer', fontSize: 12 } }, '✕ Close')),
-
-      // body
-      feed.length === 0
-        ? div({ style: { padding: '48px 20px', textAlign: 'center', color: 'var(--text3)' } },
-            div({ style: { fontSize: 30, marginBottom: 10 } }, '✅'),
-            div({ style: { fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 } }, 'Nothing needs your attention right now'),
-            div({ style: { fontSize: 11 } }, 'No food-cost outliers, no stores behind last year, sync is current.'))
-        : div({ style: { padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px' } },
-            feed.map((item) => {
-              const sev = SEV_META[item.severity] || SEV_META.info;
-              return h('button', {
-                key: item.id, onClick: () => go(item),
-                style: { display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', width: '100%', padding: '9px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--surf2)', border: `1px solid var(--bdr)`, borderLeft: `3px solid ${sev.color}` },
-              },
-                span({ style: { fontSize: 16, flexShrink: 0 } }, item.icon),
-                div({ style: { flex: 1, minWidth: 0 } },
-                  div({ style: { fontSize: '12.5px', fontWeight: 600, color: 'var(--text)' } }, item.title),
-                  div({ style: { fontSize: '11px', color: 'var(--text3)', marginTop: 1 } }, item.detail)),
-                span({ style: { fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: sev.color, padding: '2px 6px', borderRadius: 4, border: `1px solid ${sev.color}`, flexShrink: 0 } }, sev.word),
-                span({ style: { fontSize: '10px', color: 'var(--text3)', flexShrink: 0 } }, '→'));
-            })),
-
-      div({ style: { padding: '8px 20px', borderTop: '.5px solid var(--bdr)', fontSize: '9.5px', color: 'var(--text3)', fontStyle: 'italic' } },
-        'Fuses food-cost outliers · behind-LY · drive-thru speed · sync health · visit-readiness & food-safety risk · fading saved signals.')));
-}
+// WhatNeedsAttentionPanel (the standalone "Attention Now" modal) was retired 2026-08-10
+// (issue #115, Part 2 of the merge into Needs Attention — AttentionPanel in analytics.js).
+// Its content is fully absorbed there: the pinned district strip carries the loc-less
+// items (staleData, signalDecay) this panel used to be the only surface for.

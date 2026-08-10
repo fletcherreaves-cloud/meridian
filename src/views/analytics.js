@@ -4,7 +4,8 @@ import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MO
 import { dKey, addD, mwStart, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
-import { businessDate, lastClosedBusinessDay } from '../engine/swing-feed.js';
+import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } from '../engine/swing-feed.js';
+import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -5032,22 +5033,60 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
 }
 
 function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
-  const [selStore, setSelStore] = React.useState(null);
-  const [tab, setTab] = React.useState('critical');
+  // Part 2 of the Attention Now / Needs Attention merge (issue #115): severity-ranked,
+  // expandable store list replaces the old two-column (list + detail-pane) layout.
+  const [filter, setFilter] = React.useState('all'); // 'all' | 'critical' | 'watch'
+  const [ackOpen, setAckOpen] = React.useState(false);
+  const [greenOpen, setGreenOpen] = React.useState(false);
+  const [expanded, setExpanded] = React.useState({});
+  const [acks, setAcks] = React.useState({});
 
-  // Merge #1 (engine only): sourced from the SAME buildAttentionFeed engine
-  // WhatNeedsAttentionPanel uses (attention-now.js's useAttentionFeed hook), not from
-  // store.findings directly — so this panel now sees buildBrief's own findings (cash/labor/
-  // OEPE/sales-decline/etc, adapted via findingsToFeedItems) PLUS the other 9 cross-domain
+  // Acks persist to user_settings under ATTENTION_ACK_SETTING_KEY — a SEPARATE row
+  // from the swing alarm's ACK_SETTING_KEY. Sharing one blob would let pruneAcks drop
+  // the other domain's acks past its cutoff the moment its own live-item set didn't
+  // include them (issue #115, Trap 2).
+  React.useEffect(() => {
+    let live = true;
+    loadUserSetting(ATTENTION_ACK_SETTING_KEY).then(v => { if (live && v && typeof v === 'object') setAcks(v); }).catch(()=>{});
+    return () => { live = false; };
+  }, []);
+
+  // Sourced from the SAME buildAttentionFeed engine WhatNeedsAttentionPanel used
+  // (Part 1 of this merge, now retired — see App.js) — this panel sees buildBrief's
+  // own findings (cash/labor/OEPE/sales-decline/etc) PLUS the other 9 cross-domain
   // detectors (FOB outliers, behind-LY, slow DT, visit-readiness, signal decay, sync
-  // staleness, integrity flags) that only used to surface in "Attention Now". A store that
-  // used to show up in EITHER panel should still show up here.
+  // staleness, integrity flags). A store that used to show up in EITHER panel still
+  // shows up here.
   //
   // max is effectively unbounded: this view is store-GROUPED, not a flat top-N list, so
-  // capping it the way WhatNeedsAttentionPanel's max:20 does would silently drop whole
-  // stores from a store-grouped view (rankAttention's own no-silent-caps warning is what
-  // would catch that mistake, not a number picked here).
+  // capping it the way the old WhatNeedsAttentionPanel's max:20 did would silently drop
+  // whole stores from a store-grouped view (rankAttention's own no-silent-caps warning
+  // is what would catch that mistake, not a number picked here).
   const feed = useAttentionFeed({ ds, stores, dateRange, max: Infinity });
+
+  // Attention items already carry a unique `id` (finding-${loc}-${rule}, fob-${loc},
+  // etc.) — key acks on THAT, not the swing alarm's default `loc:to:severity` key,
+  // which collides for two different crit findings at the same store: both would key
+  // as e.g. `10422::crit`, so acknowledging one would silently acknowledge the other
+  // (issue #115, Trap 1).
+  const feedKeyFn = React.useCallback((item) => (item && item.id) || '', []);
+
+  const { pending, acked } = React.useMemo(() => partitionAcked(feed, acks, feedKeyFn), [feed, acks, feedKeyFn]);
+
+  const ackItem = React.useCallback((item) => {
+    // Who acknowledged matters — an audit trail, not just a dismissal. Mirrors the
+    // swing alarm's ackSwing (App.js) since there's no userEmail binding in this
+    // component either.
+    (async () => {
+      let who = null;
+      try { who = (await supabase?.auth?.getUser())?.data?.user?.email || null; } catch {}
+      setAcks(prev => {
+        const next = pruneAcks(acknowledge(prev, item, who, feedKeyFn), feed, { keyFn: feedKeyFn });
+        saveUserSetting(ATTENTION_ACK_SETTING_KEY, next).catch(()=>{});
+        return next;
+      });
+    })();
+  }, [feed, feedKeyFn]);
 
   const storesByLoc = React.useMemo(() => {
     const m = new Map();
@@ -5055,37 +5094,72 @@ function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
     return m;
   }, [stores]);
 
-  // Group feed items by store, sorted by severity. Items with no loc (e.g. staleData, a
-  // district-wide sync-health signal) have no store to attach to in this store-GROUPED
-  // layout and are left out here — they still surface in "Attention Now"'s flat feed.
-  const storeFindings = React.useMemo(()=>{
-    const byLoc = new Map();
-    for (const item of feed) {
-      if (item.loc == null) continue;
-      const loc = unpad(item.loc);
-      const store = storesByLoc.get(loc);
-      if (!store) continue;   // feed references a store outside the currently loaded set
-      let bucket = byLoc.get(loc);
-      if (!bucket) { bucket = { store, crits: [], warns: [] }; byLoc.set(loc, bucket); }
-      if (item.severity === 'crit') bucket.crits.push(item);
-      else if (item.severity === 'warn') bucket.warns.push(item);
-    }
-    return [...byLoc.values()]
-      .map(x => ({ ...x, total: x.crits.length + x.warns.length }))
-      .sort((a,b)=>b.crits.length-a.crits.length||b.warns.length-a.warns.length);
-  },[feed, storesByLoc]);
+  // Loc-less items (sync staleness, fading saved signals) have nowhere to live in a
+  // store-grouped list — pinned in a strip above it instead of dropped. Retiring
+  // Attention Now (this PR) makes this strip the ONLY surface where staleData's
+  // "auto-sync may be down" alert still shows — this repo has been bitten twice by
+  // exactly what it watches, so it must not be sorted among stores or silently lost.
+  const districtItems = React.useMemo(() => pending.filter(i => i.loc == null), [pending]);
+
+  const storeFindings = React.useMemo(()=>groupAttentionByStore(pending, storesByLoc, unpad),[pending, storesByLoc]);
 
   const critStores = storeFindings.filter(x=>x.crits.length>0);
   const warnStores = storeFindings.filter(x=>x.crits.length===0&&x.warns.length>0);
-  const displayList = tab==='critical'?critStores:tab==='watch'?warnStores:storeFindings;
+  const displayList = filter==='critical'?critStores:filter==='watch'?warnStores:storeFindings;
 
-  const selectedItem = selStore ? storeFindings.find(x=>x.store.loc===selStore) : null;
+  // Running Well: buildAttentionFeed's detectors are exception-only and structurally
+  // cannot name a healthy store, so a clean district would otherwise render as an
+  // empty screen. Membership (zero pending crit/warn attention items) is trustworthy;
+  // sorted by NAME, not score — DistrictPriorityBrief's green tier sorts by
+  // opsScore+ctrlScore, the exact composite the owner has flagged for review, so
+  // carrying that ranking here would just import the same unreliability (issue #115).
+  const flaggedLocs = React.useMemo(()=>new Set(storeFindings.map(x=>unpad(x.store.loc))), [storeFindings]);
+  const greenStores = React.useMemo(()=>
+    (stores||[]).filter(s=>/^\d+$/.test(s.loc) && !flaggedLocs.has(unpad(s.loc)))
+      .sort((a,b)=>(a.name||sNameC(a.loc)).localeCompare(b.name||sNameC(b.loc)))
+  ,[stores, flaggedLocs]);
+
+  const toggleStore = (loc) => setExpanded(p=>({...p,[loc]:!p[loc]}));
+  const toggleFilter = (f) => setFilter(p=>p===f?'all':f);
+
+  const sevChip = (label, count, color, active, onClick) =>
+    btn({onClick, style:{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',
+      borderRadius:20,border:'1px solid '+(active?color:'var(--bdr)'),
+      background:active?color+'1f':'transparent',color:active?color:'var(--text2)',
+      fontSize:'10.5px',fontWeight:700,cursor:'pointer'}},
+      span({style:{fontSize:'10px'}},'●'), span(null,count+' '+label));
+
+  const findingRow = (item, i) => {
+    const sev = SEV_META[item.severity] || SEV_META.info;
+    return div({key:item.id||i, style:{marginBottom:6,padding:'8px 12px',
+      background:sev.color+'0f',borderRadius:'var(--r)',borderLeft:'3px solid '+sev.color,
+      display:'flex',alignItems:'flex-start',gap:8}},
+      div({style:{flex:1,minWidth:0}},
+        div({style:{fontSize:'10px',fontWeight:700,color:sev.color,marginBottom:3}},item.title||''),
+        div({style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.5}},item.detail||'')),
+      btn({className:'btn btn-sm',style:{fontSize:'8px',padding:'3px 7px',flexShrink:0},
+        onClick:()=>ackItem(item),title:'Acknowledge — dismiss until this situation changes'},'✓ Ack')
+    );
+  };
+
+  const ackedRow = (item, i) => {
+    const sev = SEV_META[item.severity] || SEV_META.info;
+    const meta = acks[feedKeyFn(item)];
+    return div({key:item.id||i, style:{marginBottom:4,padding:'6px 12px',
+      background:'var(--surf2)',borderRadius:'var(--r)',display:'flex',alignItems:'center',gap:8}},
+      span({style:{fontSize:9,color:sev.color,flexShrink:0}},'●'),
+      div({style:{flex:1,minWidth:0,fontSize:'9.5px',color:'var(--text3)',
+        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+        (item.loc?sNameC(unpad(item.loc))+' — ':'')+(item.title||'')),
+      meta?.by&&span({style:{fontSize:'8px',color:'var(--text3)',flexShrink:0}},meta.by)
+    );
+  };
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,
     display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'40px 20px',
     overflowY:'auto'}},
 
-    div({style:{width:'100%',maxWidth:920,background:'var(--surf)',borderRadius:'var(--rl)',
+    div({style:{width:'100%',maxWidth:820,background:'var(--surf)',borderRadius:'var(--rl)',
       border:'.5px solid rgba(239,68,68,.3)',overflow:'hidden',
       boxShadow:'0 20px 60px rgba(0,0,0,.6)'}},
 
@@ -5095,147 +5169,93 @@ function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
         background:'rgba(239,68,68,.06)'}},
         div(null,
           div({style:{fontSize:'14px',fontWeight:800,color:'#f87171',
-            letterSpacing:'-.2px'}},'⚠ Needs Attention — District Analysis'),
+            letterSpacing:'-.2px'}},'⚠ Needs Attention'),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-            critStores.length+' stores with critical issues · '+warnStores.length+' stores on watch · '+
-            storeFindings.reduce((a,x)=>a+x.crits.length,0)+' total critical flags')
+            'Ranked by worst finding per store · click a chip to filter')
         ),
         btn({className:'btn btn-sm',onClick:onClose},'✕')
       ),
 
-      // Tab bar
-      div({style:{display:'flex',gap:0,borderBottom:'.5px solid var(--bdr)'}},
-        ...(['critical','watch','all']).map(t=>
-          btn({key:t,onClick:()=>{setTab(t);setSelStore(null);},
-            style:{padding:'8px 16px',fontSize:'10px',fontWeight:600,border:'none',
-              borderBottom:tab===t?'2px solid #ef4444':'2px solid transparent',
-              background:'transparent',color:tab===t?'#f87171':'var(--text3)',
-              cursor:'pointer',textTransform:'capitalize'}},
-            {critical:'🔴 Critical ('+critStores.length+')',
-             watch:'🟡 Watch ('+warnStores.length+')',
-             all:'All Flagged ('+storeFindings.length+')'}[t]
-          )
-        )
+      // Clickable severity chips (Notes 61 DV14)
+      div({style:{display:'flex',gap:8,padding:'10px 20px',borderBottom:'.5px solid var(--bdr)',flexWrap:'wrap'}},
+        sevChip('Critical',critStores.length,'#f87171',filter==='critical',()=>toggleFilter('critical')),
+        sevChip('Watch',warnStores.length,'#f5bc00',filter==='watch',()=>toggleFilter('watch')),
+        sevChip('Acknowledged',acked.length,'#10b981',ackOpen,()=>setAckOpen(p=>!p))
       ),
 
-      // Two-column layout: list + detail
-      div({style:{display:'flex',maxHeight:'65vh',overflow:'hidden'}},
+      div({style:{maxHeight:'65vh',overflowY:'auto',padding:'10px 20px 16px'}},
 
-        // Left: store list
-        div({style:{width:280,flexShrink:0,borderRight:'.5px solid var(--bdr)',
-          overflowY:'auto'}},
-          displayList.length===0&&div({style:{padding:20,fontSize:'10px',color:'var(--text3)',
-            textAlign:'center'}},'No issues in this category ✓'),
-          displayList.map((item,i)=>
-            div({key:item.store.loc,
-              onClick:()=>setSelStore(selStore===item.store.loc?null:item.store.loc),
-              style:{padding:'10px 14px',cursor:'pointer',borderBottom:'.5px solid var(--bdr)',
-                background:selStore===item.store.loc?'rgba(239,68,68,.08)':'transparent',
-                transition:'background .1s'},
-              onMouseEnter:e=>{if(selStore!==item.store.loc)e.currentTarget.style.background='rgba(255,255,255,.03)';},
-              onMouseLeave:e=>{if(selStore!==item.store.loc)e.currentTarget.style.background='transparent';}},
-              div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:3}},
-                span({style:{fontWeight:700,fontSize:'10px',color:'var(--text)'}},(item.store.name?item.store.name:sNameC(item.store.loc)).slice(0,22)),
-                div({style:{display:'flex',gap:3}},
-                  item.crits.length>0&&span({style:{fontSize:'8px',fontWeight:700,padding:'1px 4px',
-                    borderRadius:3,background:'rgba(239,68,68,.15)',color:'#f87171'}},item.crits.length+' crit'),
-                  item.warns.length>0&&span({style:{fontSize:'8px',fontWeight:700,padding:'1px 4px',
-                    borderRadius:3,background:'rgba(245,158,11,.15)',color:'#f59e0b'}},item.warns.length+' watch')
-                )
-              ),
-              // Top issue preview
-              div({style:{fontSize:'8px',color:'var(--text3)',overflow:'hidden',
-                textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:240}},
-                (item.crits[0]||item.warns[0])?.title?.slice(0,60)||'')
-            )
+        // Pinned district strip — loc-less items, never sorted among stores.
+        districtItems.length>0&&div({style:{marginBottom:12}},
+          div({style:{fontSize:'8.5px',fontWeight:700,letterSpacing:'.5px',textTransform:'uppercase',
+            color:'var(--text3)',marginBottom:5}},'District'),
+          ...districtItems.map(findingRow)
+        ),
+
+        // Acknowledged — collapsible, home near the top.
+        div({style:{marginBottom:12,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
+          div({onClick:()=>setAckOpen(p=>!p),style:{display:'flex',alignItems:'center',
+            justifyContent:'space-between',padding:'7px 12px',cursor:'pointer',
+            background:'var(--surf2)',fontSize:'10px',fontWeight:700,color:'var(--text2)'}},
+            span(null,'✓ Acknowledged ('+acked.length+')'),
+            span({style:{fontSize:'9px',color:'var(--text3)'}},ackOpen?'collapse':'expand')
+          ),
+          ackOpen&&div({style:{padding:'8px 12px'}},
+            acked.length===0
+              ?div({style:{fontSize:'9px',color:'var(--text3)',textAlign:'center',padding:8}},'Nothing acknowledged yet')
+              :acked.map(ackedRow)
           )
         ),
 
-        // Right: detail panel
-        div({style:{flex:1,overflowY:'auto',padding:selectedItem?0:20}},
-          selectedItem?
-            div(null,
-              // Store header in detail view
-              div({style:{padding:'12px 16px',background:'rgba(255,255,255,.02)',
-                borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',
-                justifyContent:'space-between'}},
-                div(null,
-                  div({style:{fontWeight:800,fontSize:'13px',color:'var(--amber)'}},(selectedItem.store.name||sNameC(selectedItem.store.loc))),
-                  div({style:{fontSize:'9px',color:'var(--text3)'}},
-                    (selectedItem.store.city||'')+', '+(selectedItem.store.state||'OK')+' · #'+selectedItem.store.loc+
-                    ' · GM: '+(selectedItem.store.gm||'Unknown'))
+        // Active store list — ranked by worst finding.
+        displayList.length===0
+          ?div({style:{padding:24,fontSize:'10px',color:'var(--text3)',textAlign:'center'}},
+              'No issues in this category ✓')
+          :displayList.map(item=>{
+              const loc = item.store.loc;
+              const isOpen = !!expanded[loc];
+              const sev = item.crits.length>0?SEV_META.crit:SEV_META.warn;
+              return div({key:loc,style:{marginBottom:6,border:'.5px solid var(--bdr)',
+                borderRadius:'var(--r)',overflow:'hidden'}},
+                div({onClick:()=>toggleStore(loc),style:{display:'flex',alignItems:'center',
+                  gap:8,padding:'9px 12px',cursor:'pointer',background:'var(--surf2)'}},
+                  span({style:{fontSize:10,color:sev.color,flexShrink:0}},'●'),
+                  span({style:{fontWeight:700,fontSize:'11px',color:'var(--text)',flexShrink:0}},
+                    (item.store.name||sNameC(item.store.loc))),
+                  span({style:{fontSize:'9px',color:'var(--text3)',flexShrink:0}},'· '+loc),
+                  div({style:{flex:1,minWidth:0,fontSize:'9px',color:'var(--text3)',
+                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+                    !isOpen&&(item.worst?.detail||item.worst?.title||'')),
+                  span({style:{fontSize:'9px',color:'var(--text3)',flexShrink:0}},item.total+' finding'+(item.total===1?'':'s')),
+                  span({style:{fontSize:'10px',color:'var(--text3)',flexShrink:0}},isOpen?'▾':'▸')
                 ),
-                btn({className:'btn btn-sm',style:{fontSize:'9px'},
-                  onClick:()=>{onSelectStore&&onSelectStore(selectedItem.store);}},
-                  'Open Full Dashboard →')
-              ),
-              // Findings list with rich context
-              div({style:{padding:'12px 16px'}},
-                // Critical findings
-                selectedItem.crits.length>0&&div({style:{marginBottom:12}},
-                  div({style:{fontSize:'9px',fontWeight:700,letterSpacing:'.5px',
-                    textTransform:'uppercase',color:'#f87171',marginBottom:6,
-                    display:'flex',alignItems:'center',gap:4}},
-                    span(null,'🔴'),span(null,'Critical Issues')
+                isOpen&&div({style:{padding:'10px 12px',background:'var(--surf)'}},
+                  div({style:{display:'flex',justifyContent:'flex-end',marginBottom:8}},
+                    btn({className:'btn btn-sm',style:{fontSize:'9px'},
+                      onClick:()=>{onSelectStore&&onSelectStore(item.store);}},
+                      'Open Full Dashboard →')
                   ),
-                  ...selectedItem.crits.map((f,i)=>
-                    div({key:i,style:{marginBottom:8,padding:'8px 12px',
-                      background:'rgba(239,68,68,.06)',borderRadius:'var(--r)',
-                      borderLeft:'3px solid #ef4444'}},
-                      div({style:{fontSize:'10px',fontWeight:700,color:'#f87171',marginBottom:4}},
-                        f.title||''),
-                      div({style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.6}},
-                        ...mdToNodes(f.detail||
-                          'This metric requires immediate attention. Review with your operations team and create an action plan.'))
-                    )
-                  )
-                ),
-                // Watch findings
-                selectedItem.warns.length>0&&div(null,
-                  div({style:{fontSize:'9px',fontWeight:700,letterSpacing:'.5px',
-                    textTransform:'uppercase',color:'#f59e0b',marginBottom:6,
-                    display:'flex',alignItems:'center',gap:4}},
-                    span(null,'🟡'),span(null,'Watch Items')
-                  ),
-                  ...selectedItem.warns.map((f,i)=>
-                    div({key:i,style:{marginBottom:6,padding:'8px 12px',
-                      background:'rgba(245,158,11,.06)',borderRadius:'var(--r)',
-                      borderLeft:'3px solid #f59e0b'}},
-                      div({style:{fontSize:'9px',fontWeight:700,color:'#f59e0b',marginBottom:2}},
-                        f.title||''),
-                      div({style:{fontSize:'9px',color:'var(--text3)',lineHeight:1.5}},
-                        (f.detail||'').slice(0,200))
-                    )
-                  )
-                ),
-                // Metrics snapshot for context
-                selectedItem.store.p&&div({style:{marginTop:12,padding:'8px 12px',
-                  background:'var(--surf2)',borderRadius:'var(--r)'}},
-                  div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',
-                    marginBottom:6,textTransform:'uppercase',letterSpacing:'.4px'}},'Metrics Snapshot'),
-                  div({style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'4px 12px'}},
-                    ...([
-                      ['Ops Score',selectedItem.store.opsScore+'/100'],
-                      ['Ctrl Score',selectedItem.store.ctrlScore+'/100'],
-                      ['OEPE',selectedItem.store.p.oepe>0?Math.round(selectedItem.store.p.oepe)+'s':'—'],
-                      ['TPPH',selectedItem.store.p.tpph>0?selectedItem.store.p.tpph.toFixed(2):'—'],
-                      ['Labor%',selectedItem.store.p.laborPct>0?(selectedItem.store.p.laborPct*100).toFixed(2)+'%':'—'],
-                      ['T2W Trend',selectedItem.store.p.t2w!=null?((selectedItem.store.p.t2w>=0?'+':'')+selectedItem.store.p.t2w.toFixed(2)+'%'):'—'],
-                    ].map(([l,v],i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',
-                      fontSize:'9px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:2}},
-                      span({style:{color:'var(--text3)'}},l),
-                      span({style:{fontFamily:'var(--mono)',color:'var(--text)',fontWeight:600}},v)
-                    )))
-                  )
+                  ...item.crits.map(findingRow),
+                  ...item.warns.map(findingRow)
                 )
-              )
-            )
-          :div({style:{display:'flex',flexDirection:'column',alignItems:'center',
-              justifyContent:'center',height:'100%',color:'var(--text3)',gap:8}},
-              div({style:{fontSize:'24px'}},'←'),
-              div({style:{fontSize:'10px'}},
-                displayList.length>0?'Select a store to see detailed analysis':'No issues found')
-            )
+              );
+            }),
+
+        // Running Well — carries the tier, drops the score-based ranking (issue #115).
+        div({style:{marginTop:12,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
+          div({onClick:()=>setGreenOpen(p=>!p),style:{display:'flex',alignItems:'center',
+            justifyContent:'space-between',padding:'7px 12px',cursor:'pointer',
+            background:'var(--surf2)',fontSize:'10px',fontWeight:700,color:'#10b981'}},
+            span(null,'✅ Running Well ('+greenStores.length+')'),
+            span({style:{fontSize:'9px',color:'var(--text3)'}},greenOpen?'collapse':'expand')
+          ),
+          greenOpen&&div({style:{padding:'8px 12px',display:'flex',flexWrap:'wrap',gap:6}},
+            greenStores.length===0
+              ?div({style:{fontSize:'9px',color:'var(--text3)'}},'No stores currently clean')
+              :greenStores.map(s=>span({key:s.loc,style:{fontSize:'9px',color:'var(--text2)',
+                  padding:'3px 8px',borderRadius:12,background:'rgba(16,185,129,.08)',
+                  border:'.5px solid rgba(16,185,129,.2)'}},s.name||sNameC(s.loc)))
+          )
         )
       )
     )

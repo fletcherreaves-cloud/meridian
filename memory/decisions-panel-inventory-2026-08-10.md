@@ -64,7 +64,7 @@ recall.
 
 | Panel | id | Merges into / how |
 |---|---|---|
-| Attention Now | `priorities` | Into **Needs Attention** (name kept). Two-part job — engine first, layout second. Layout chosen: severity-ranked store list, expandable, with clickable severity filter chips and an Acknowledged section at the top. |
+| Attention Now | `priorities` | Into **Needs Attention** (name kept). Two-part job — engine first, layout second. Layout chosen: severity-ranked store list, expandable, with clickable severity filter chips and an Acknowledged section at the top. **SHIPPED (v4.943 engine, v4.946 layout, 2026-08-10 — issues #113/#115).** `priorities` nav entry retired, `WhatNeedsAttentionPanel` deleted; the pinned district strip in the new `AttentionPanel` carries the loc-less alerts (sync staleness, signal decay) that panel used to be the only surface for. Full write-up in [[notes-63-queue]]. |
 | End of Month | `fob-eom` | Into **Food Cost** as an EOM mode. Closes the "merge vs update" question open since 2026-08-06. |
 | Count Cycle | `count-cycle` | Into **Inventory Control** as a tab — a view of the same data, not a separate job. |
 | Calendar | `calendar-manager` | Into **Events & Tags**. Long-standing overlap, already pruned from nav. |

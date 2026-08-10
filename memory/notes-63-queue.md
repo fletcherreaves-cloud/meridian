@@ -135,10 +135,58 @@ first step:
   run independently — not deduped, out of this PR's scope.
 - `npm test` 1106/1106, build clean (2817.63 KB / 841.97 KB gzip, within budget).
 
-**Explicitly NOT in this PR** (per its own scope, all Part 2): layout changes to either panel,
-the Swing-Watch-style "Acknowledged" home, retiring the `priorities` nav entry, any renaming.
+**Part 2 (layout, Acknowledged home, retire `priorities`) shipped v4.946, 2026-08-10 — issue #115.**
+Owner-approved layout: severity-ranked, expandable store list replaces the old two-column
+(list + separate detail-pane) `AttentionPanel`. Header carries clickable chips (Critical/Watch/
+Acknowledged counts — Notes 61 DV14's ask), a pinned strip above the store list for loc-less
+items, a collapsible Acknowledged section, and a collapsible "Running Well" tier.
+
+- **Pinned district strip.** `staleData`/`signalDecay` (the two loc-less detectors) have nowhere
+  to live in a store-grouped view. Retiring `WhatNeedsAttentionPanel` (the standalone "Attention
+  Now" modal, `attention-now.js`) removed the ONLY other surface that showed them — this repo has
+  been bitten twice by exactly what `staleData` watches (a 5-day silent zero-row pull failure, and
+  `labor_rows` going stale 2+ weeks while the anomaly scanners ran blind), so losing that alarm
+  silently would have been a real regression, not a cosmetic one. The strip is the fix.
+- **Acknowledgement generalized, not copy-pasted, from the swing alarm's machinery**
+  (`swing-feed.js`). Two traps named in the issue, both real:
+  - Trap 1: the swing alarm's default `ackKey` (`${loc}:${swing?.to||''}:${severity}`) collides
+    for attention items — two different crit findings at the same store both key as e.g.
+    `10422::crit`, so acknowledging one would silently acknowledge the other. `ackKey`/
+    `partitionAcked`/`acknowledge`/`pruneAcks` all gained an optional `keyFn` param (default =
+    original swing behavior, unchanged for the swing alarm); `AttentionPanel` passes
+    `item => item.id`, since attention items already carry a unique id
+    (`finding-${loc}-${rule}`, `fob-${loc}`, etc).
+  - Trap 2: a shared storage key would let `pruneAcks` drop one domain's acks past its
+    `maxAgeDays` cutoff using the OTHER domain's live-item set. New `ATTENTION_ACK_SETTING_KEY =
+    'attention_acks'`, a separate `user_settings` row from the swing alarm's `swing_acks`.
+- **Running Well tier carries the tier, drops the score-based ranking.** `DistrictPriorityBrief`'s
+  green tier sorts by `opsScore+ctrlScore` — the exact composite the owner has flagged for
+  review. Membership (zero pending crit/warn attention items) is trustworthy; sorted by store
+  NAME instead, so this panel doesn't quietly import that same unreliability.
+- **Grouping logic extracted to a testable pure function**, `groupAttentionByStore` (new export,
+  `engine/attention-feed.js`) — the exact per-store crit/warn bucketing loop `AttentionPanel` used
+  inline before, now shared and covered by real tests instead of only reachable via the rendered
+  component.
+- **Verified no store disappears** (the issue's explicit requirement) via a regression test that
+  hand-copies the OLD grouping algorithm verbatim (not a re-derived approximation) and asserts
+  `groupAttentionByStore` produces the identical store set + crit/warn counts on a fixture built
+  to include the Trap 1 collision shape (two different crits, one store) and a loc-less item —
+  6 new tests in `attention-feed.test.js`. This is algorithmic-equivalence verification rather
+  than a fresh live-data pull: the actual `useAttentionFeed` hook (the detector computation feeding
+  the panel) is untouched by this PR — confirmed by diff, not assumed — so a live pull would only
+  re-confirm numbers Part 1 already verified against real production data (see above), not test
+  what actually changed here (the grouping/display layer). A live pull is the right tool for a
+  numeric-threshold change; a proof of algorithmic equivalence is the right tool for a structural
+  one.
+- Two dangling references checked for the `priorities` retirement (the issue named `priority-brief`
+  — `tutorial.js:40`, `analytics.js:8331` — as the same CLASS of risk, but that's a *separate*
+  panel/retirement, explicitly out of scope here, and left untouched): grepped for `'priorities'`
+  itself and found none beyond the nav entry, dispatch branch, and render block removed in this PR.
+- `npm test` 1113/1113 (1108 baseline + 5 net new — 6 new `groupAttentionByStore` tests, no
+  removals). Build 2817.01 KB / 842.44 KB gzip (budget 2.8MB/850KB, ~7.56 KB headroom — tighter
+  than the ~7.85KB after the prior PR, not exceeded).
+
 Draft PR only — the owner reviews and merges.
-Flagging back to the owner rather than deciding it here.
 
 Original finding, for reference:
 
