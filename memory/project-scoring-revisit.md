@@ -612,7 +612,16 @@ and the owner's instinct to not use it for scoring.
 **The basis is effectively crew** (crew + trainee, hourly; managers excluded), which matches the
 owner's approved number. So writing the approved crew % into AOS is *probably* the right basis.
 
-## What it does NOT settle — check the toggle
+## ✅ RESOLVED — owner confirmed crew (hourly) only
+
+Owner, 2026-08-10: *"In this instance, it is clearly crew(hourly) only."*
+
+**Basis = crew hourly, which matches the approved monthly number.** So writing the owner's
+approved crew labor % into AOS is the correct value — no toggle check, no payroll reconciliation
+needed. The section below is kept as the record of what the check WOULD have been, and as the
+fallback if this is ever revisited for another org on the platform (where the answer may differ).
+
+## What the vendor answer alone did NOT settle — superseded by the owner's confirmation above
 
 "Usually not scheduled" and "best practice is to exclude them" are **conditional**. The basis is
 crew+trainee only if **"Skip Scheduling Managers" is enabled for these stores.** That is now the
