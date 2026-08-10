@@ -89,3 +89,73 @@ the PR body. The changelog collision was invisible in the PR description; it was
 
 Related: [[feedback-measure-dont-reason]], [[feedback-performance-budget]], [[feedback-deploy]],
 [[notes-63-queue]].
+
+---
+
+# Engineer performance — 2026-08-10, and what to keep doing
+
+Recorded by the PM at the owner's request, after a day that shipped **twelve PRs (v4.949 → v4.963)**
+and caught five defects before production. This is not a pat on the back; each item below is a
+**transferable behaviour**, and the reason it is written down is so it survives into sessions where
+neither of us remembers today.
+
+## The five things worth repeating
+
+**1. Measuring a suspected bug before writing the fix (#149).** The issue said the local
+`{loc:{date:entry}}` map "silently overwrites" and called it urgent *on suspicion*. The engineer
+went and counted: **261 same-day event pairs across all 27 stores** being dropped. That turned a
+plausible claim into a quantified one before a line of code existed. This is the standing rule
+working, and it is the single best habit on display.
+
+**2. Following the consequence past the obvious one (#149).** The overwrite wasn't just losing a
+list row — `forecast.js`'s event-impact factor reads `_evTag.tags.map(t => t.type)`, so a dropped
+event meant the registry averaged **one** type's impact where it should have averaged two. Neither
+the issue nor the PM spotted that. Finding it required asking "what else reads this?" rather than
+"does my fix work?"
+
+**3. Declining to adopt a shared component, and saying WHY it couldn't be verified (#138).** The
+Inventory Control pilot skipped `LocationSelector`'s patch tier because it sources from the static
+`INV_ORG_COORDS[loc].sup` seed while the panel reads the **live** supervisor assignment — and then
+said plainly that whether the two are *currently* in sync could not be confirmed from the sandbox
+(an anon `org_config` read came back empty, which is ambiguous under RLS). Adopting on an
+unverified assumption would have risked silently mis-grouping a store on a financially-scoped
+filter. **Refusing to ship on an assumption, and naming the assumption, is the highest-value
+judgment call of the day.**
+
+**4. Flagging instead of guessing (#133).** Found that `'closure'` and `'remodel'` are not real
+`EVENT_TYPES` keys anywhere in the codebase and said so, rather than inventing a mapping to the
+nearest plausible real type. The PM verified independently: neither exists, and there is no remodel
+type at all.
+
+**5. Reporting a non-reproduction and shipping no fix (#130).** `qsr_fob` was the reported bug;
+measured, it was healthy (auth read matched service-role exactly, data through today). The engineer
+reported that and bolted nothing on. **Shipping nothing is harder than shipping something**, and the
+audit still produced two real findings elsewhere.
+
+## Also consistently good
+
+- **Argued a "no behaviour change" claim instead of asserting it (#151)** — noted that
+  `Object.values` preserves insertion order, making the refactored flat list byte-identical in
+  content and order. That is what makes a refactor-under-constraint reviewable.
+- **Caught their own budget blowout (#122)** by re-running the build after a helper import pulled a
+  lazy module into the entry chunk, then extracted `src/lib/blob-sync.js` to fix it.
+- **Used the boot-and-render recipe the day it was written** (#145), first use of
+  `memory/feedback-verification-in-sandbox.md`, and correctly stated what it could *not* prove.
+- Version discipline, memory files committed alongside the work they support, and honest commit
+  bodies that say what was deferred and why.
+
+## What the PM got wrong, for symmetry
+
+Worth recording so the engineer knows which instructions to distrust:
+
+- **Bad version guidance** — told them to keep 4.953/4.954 when `main` was already at 4.955, so
+  their entries would have landed buried and never bumped `MERIDIAN_VERSION`. PM renumbered.
+- **A misattributed deferral** — the PM turned "the organization isn't set up for combined labor"
+  into "the owner deferred the config UI" and wrote it into #153 as a decision. The owner wanted it.
+  Had they not caught it, the engineer would have read a hard *don't build this* on something asked
+  for.
+- **An overstated perf claim** in #146 ("27 full scans") that was actually one. Corrected in the
+  issue.
+
+**If a PM instruction contains a justification that sounds too tidy, check it.** Four times today a
+five-minute look would have settled something the PM asserted from inference.
