@@ -84,16 +84,25 @@ I was applying a harmless, already-written grant.
 **Fixed properly**: added `with (security_invoker = true)` to the view definition
 (PostgreSQL 15+), which makes the view apply the CALLING role's RLS policies instead of
 the owner's — the grant is now safe exactly because the base table's own row security
-still does the real scoping per caller. Could not confirm the live Postgres major version
-with certainty (no direct psql connection from this environment) — the PostgREST OpenAPI
-root reports `info.version: "14.5"`, which PostgREST populates from the connected
-server's Postgres version, but this is the only view in `supabase/`, so there's no other
-in-repo precedent proving 15+. Left as a measured-but-unconfirmed signal rather than
-presented as fact. Safety property that makes this an acceptable amount of uncertainty
-to ship: if the project is actually on Postgres 14, `security_invoker` is invalid syntax
-there (added in 15) and the statement fails immediately and loudly when run — a safe,
-visible failure, not a silent bypass. Owner should confirm the actual version in the
-Supabase dashboard before running the file.
+still does the real scoping per caller.
+
+**Postgres version — RESOLVED 2026-08-10, do not re-raise.** The owner ran
+`show server_version` in the Supabase SQL editor: **17.6**. `security_invoker` (added in
+15) is fully supported, and the view has been applied to production.
+
+⚠️ **Correction, worth keeping because the mistake is repeatable.** This file originally
+recorded that the PostgREST OpenAPI root's `info.version: "14.5"` is "populated from the
+connected server's Postgres version," and treated it as a signal the project might be on
+Postgres 14. **That is wrong** — `info.version` carries PostgREST's OWN version string,
+not the database server's. The two numbers happened to look plausible as a Postgres
+version, which is exactly what made it convincing. `GET /rest/v1/` is not a way to learn
+the Postgres version, and it also requires the service_role key, so it can't be checked
+with the anon key in `.env.local`. **To get the Postgres version, run
+`show server_version;` (or `select version();`) in the SQL editor** — one statement, no
+inference. The safety property that made shipping under this uncertainty acceptable still
+holds and is still worth copying: on Postgres 14 the statement would have failed loudly
+and granted nothing, so the wrong reading could only ever have cost a failed run, never a
+silent bypass.
 
 ## ⭐ The reusable lesson (more important than either individual gap)
 
