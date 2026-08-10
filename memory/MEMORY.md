@@ -16,6 +16,14 @@
   lists exactly what is stale in the in-app changelog, CLAUDE.md and the panel catalog
 
 ## 🗂 Owner "Notes" working queues (most recent = most relevant)
+- [Notes 63 queue](notes-63-queue.md) — multi-user startup-load architecture answer, Needs Attention
+  structural gap (no sales-decline detector — Atoka), Food Cost Panel RLS root cause, EOM Change
+  Monitor qty-variance + case-conversion, scoring-system revisit (Ops/Controls/District/Model Health),
+  Swing Watch "acknowledged" home, Events & Tags duplicates
+- [Notes 62 queue](notes-62-queue.md) — SAGE capability audit, Event Tags panel, 1382ms click bug, 1.2M% chart bug
+- [Notes 61 queue](notes-61-queue.md) — mobile perf, District View pass, the Resolver engine concept, SMG definitions
+- [Notes 60 queue](notes-60-queue.md) — large triage: shared panel design system + cycle-agnostic engine spines,
+  concrete bugs, new capabilities, naming
 - [Notes 59](notes-59-online-reputation.md) — online reputation/social analytics: Google/FB/Yelp/Reddit/3PO
   ratings + reviews per location, local news, community-sentiment source tracing. Key constraint:
   **prominence beats recency** (what is displayed as current matters, even if old)
@@ -88,8 +96,8 @@
   · [Crew skills matrix](project-crew-skills-matrix.md) · [Feature Requests](feature-requests.md)
 - [Performance budget + manual-sourcing audit](feedback-performance-budget.md) — speed is a feature; MANUAL_ONLY stays 0
 - [Data-integrity sweep plan](plan-data-integrity-sweep.md) — greppable defect signatures + measured site counts
-- [Notes 62 queue](notes-62-queue.md) — SAGE capability audit, Event Tags panel, 1382ms click bug, 1.2M% chart bug
-- [Notes 61 queue](notes-61-queue.md) — mobile perf, District View pass, the Resolver engine concept, SMG definitions
+- `src/components/ModalShell.js` — shared modal shell (Workstream D, ✅ done v4.941): standardizes
+  the close-button/header pattern app-wide. See [[vision-and-roadmap]] Workstream D and [[notes-63-queue]].
 - [PWA Share bug](project-pwa-share-bug.md) · [Backlog](project-backlog.md) · [Meridian status](project-meridian.md)
 
 ---
