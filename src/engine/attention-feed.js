@@ -260,18 +260,29 @@ export function groupAttentionByStore(items = [], storesByLoc = new Map(), normL
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to
 // show separately.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, storeName = String, max = 15 } = {}) {
-  const items = [
-    ...staleData(ageDays),
-    ...fobOutliers(fobByStore || {}, storeName),
-    ...fobOverTarget(fobByStore || {}, targetsByLoc || {}, storeName),
-    ...salesBehindLY(salesLY || [], storeName),
-    ...slowDT(dtRows || [], storeName),
-    ...visitRisk(visitStores || [], storeName),
-    ...signalDecay(savedCorrelations || []),
-    ...countExceptions(countExceptionRows || [], storeName),
-    ...integrityFlags(integrityItems || [], storeName),
-    ...findingsToFeedItems(briefFindings || []),
-  ];
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, storeName = String, max = 15, onFireVolume } = {}) {
+  const bySource = {
+    staleData: staleData(ageDays),
+    fobOutliers: fobOutliers(fobByStore || {}, storeName),
+    fobOverTarget: fobOverTarget(fobByStore || {}, targetsByLoc || {}, storeName),
+    salesBehindLY: salesBehindLY(salesLY || [], storeName),
+    slowDT: slowDT(dtRows || [], storeName),
+    visitRisk: visitRisk(visitStores || [], storeName),
+    signalDecay: signalDecay(savedCorrelations || []),
+    countExceptions: countExceptions(countExceptionRows || [], storeName),
+    integrityFlags: integrityFlags(integrityItems || [], storeName),
+    findingsToFeedItems: findingsToFeedItems(briefFindings || []),
+  };
+  // Object.values on string keys preserves insertion order, so this is the exact same flat
+  // list (and order) the old literal array-spread produced — byte-identical to callers.
+  const items = Object.values(bySource).flat();
+  // issue #143 — Insight Ledger step 0: measure real fire volume before building anything.
+  // Optional, additive, off the critical path: every existing caller omits onFireVolume, so
+  // it's undefined and this is a no-op — nothing about ranking/ordering/rendering changes.
+  // Kept out of this engine file's own dependencies (no Supabase/blob-sync import here,
+  // keeping attention-feed.js pure); the one caller that wires it in
+  // (attention-now.js's useAttentionFeed) supplies engine/insight-ledger-measure.js's
+  // recordFireVolume as this callback.
+  if (onFireVolume) { try { onFireVolume(bySource, max); } catch { /* scaffolding, never breaks the feed */ } }
   return rankAttention(items, { max, label: 'buildAttentionFeed' });
 }
