@@ -505,8 +505,29 @@ So the fix is **not** a straight `tLabor` → `tCrewLabor` swap in `computeOpsSc
 should resolve through **one named place**, defaulting to `tCrewLabor`, so switching an org to
 combined later is a config change rather than a hunt through the scorer.
 
-**Do not build a config UI for this now** — the owner explicitly deferred it. The whole ask is:
-don't scatter `t.tCrewLabor` through the scoring code the way `t.tLabor` is scattered today. One
-resolution point, one default. That is a few lines now against a rewrite later, and it lines up
-with the multi-tenant work already scaffolded (`tenants`/`tenant_stores`, `org_config`
-`store_registry.defaultTargets`).
+**CORRECTION (owner, same session):** the PM originally wrote "do not build a config UI — the
+owner deferred it." **That was the PM extrapolating, not the owner's words.** What the owner said
+was that *the organization* is not set up for combined labor and that is not a bridge to cross
+right now. Owner's correction: *"Not sure I deferred this unless we were in the heat of it. I very
+much would like this to happen!"*
+
+Two separable things, and conflating them is what caused the error:
+
+| | Status |
+|---|---|
+| The **organization** being ready for combined-labor accounting | Not now. A business change, not ours. |
+| **Meridian offering the choice** of basis | ✅ **Wanted. Build it.** |
+
+These are compatible, and the ordering is the point: **the option should exist before the org is
+ready**, so switching is a setting rather than a project.
+
+**Scope:**
+- Labor basis resolves through **one named place**, default `tCrewLabor`.
+- A real setting to choose among `tCrewLabor` / `tLabor` / `tBonusLabor` / `tCombLabor` — which is
+  also what keeps the two reserved fields honest: they stop being dead code the moment they are
+  selectable.
+- **Per-ORG, not per-user** — this is an accounting basis, not a preference. `org_config` is the
+  right home and matches the multi-tenant scaffolding already present (`tenants`/`tenant_stores`,
+  `store_registry.defaultTargets`).
+- Admin-gated. Changing it moves every store's score.
+- Same before/after reporting as the rest of #153 — the owner sees which stores move and why.
