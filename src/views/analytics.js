@@ -1444,6 +1444,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   // staleness incident at a glance instead of two weeks late. Same math as the orphan, only
   // relocated: coverage% = rows for this store ÷ expected calendar days between its own
   // first/last labor row, graded Full (>=90%) / Partial at the same 90/70 thresholds.
+  // Deliberately reads laborRows/opsRows/ctrlRows directly (not metricDaily/metric-source.js)
+  // — this tab's whole job is auditing what's actually loaded on THIS device, so reading the
+  // raw manual/device-local rows is correct here, not a violation of the auto-first standard.
+  // Don't "fix" this into the shared metric-sourcing helpers; that would hide the exact gap
+  // this diagnostic exists to show.
   const auditGrid = React.useMemo(()=>{
     if(!ds||!ds.loaded) return null;
     return (ds.storeIds||[]).map(loc=>{
@@ -1451,6 +1456,10 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
       const oR=(ds.opsRows||[]).filter(r=>r.loc===loc);
       const cR=(ds.ctrlRows||[]).filter(r=>r.loc===loc);
       const wR=(ds.weatherRows||[]).filter(r=>r.loc===loc);
+      // Ported verbatim from the orphan. Checked parse3PeaksService (parsers/index.js):
+      // it already trims + digit-validates loc before storage, same as the other 5 sources —
+      // found no code path that would leave peaksSvcRows.loc as a non-string. Likely inherited
+      // defensiveness rather than a proven quirk; kept rather than simplified on that hunch.
       const pR=(ds.peaksSvcRows||[]).filter(r=>String(r.loc||'').trim()===loc);
       const aR=(ds.auditRows||[]).filter(r=>r.loc===loc);
       const dates=lR.map(r=>r.date).sort((a,b)=>a-b);
