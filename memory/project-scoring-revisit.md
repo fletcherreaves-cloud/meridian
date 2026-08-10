@@ -384,3 +384,94 @@ their correct distinct handling with no other change.
 **Once #150 lands this is the cleanest scoring input discussed all session:** binary at the
 quarter hour, defined volume gate, low-volume periods auto-excluded, fully controllable, and no
 threshold for us to invent.
+
+---
+
+# Labor target — SIX competing numbers, and the authoritative one may not be wired (2026-08-10)
+
+## Which is authoritative — ANSWERED
+
+**Meridian's own target.** Owner: *"meridian (my) target is what they are expected to make. It is
+sent to all operators mid month for following month for approval."* So the number is set by the
+owner, distributed monthly, and approved — a real business process, not config.
+
+## But there are six labor percentages per store, and they disagree
+
+`DEFAULT_TARGETS` alone carries **four** (`tLabor`, `tCrewLabor`, `tBonusLabor`, `tCombLabor`).
+Add the LifeLenz AOS ceiling and the owner's monthly projection. Measured:
+
+| Store | Meridian `tLabor` | LifeLenz AOS | Gap | `tCrewLabor` | `tBonusLabor` | `tCombLabor` |
+|---|---|---|---|---|---|---|
+| 3708 | 22.0% | 21.5% | +0.50pp | 21.0% | 21.75% | 24.92% |
+| 5183 | 21.25% | 21.5% | −0.25pp | 22.0% | 21.25% | 27.85% |
+| 18213 | 22.5% | 21.25% | +1.25pp | 22.5% | 20.25% | 24.56% |
+| 6178 | 23.0% | 21.25% | +1.75pp | 23.0% | 21.0% | 24.77% |
+| 43701 | 26.0% | 24.0% | **+2.00pp** | 26.0% | 21.25% | 24.55% |
+
+Ponce de Leon is a **full 2pp apart — the entire tolerance band.** A store scheduled exactly to
+Meridian's target sits at the +2% ceiling by LifeLenz's reckoning. Pass/fail depends purely on
+which number you grade against.
+
+## `laborTargetOrg` is a generator constraint, not a target — DO NOT USE (owner)
+
+The owner identified it from the LifeLenz **AOS configuration** screen: *"LABOR COST
+OPTIMISATIONS → Maximum labor cost percentage,"* a per-day ceiling the **auto-scheduler obeys when
+generating a schedule**. Grading a manager against it would be scoring them on a machine's input.
+The owner's store 0043380 reads a flat **22% across all seven days** — no weekday/weekend
+differentiation, the signature of a set-once value. Owner: *"I genuinely didn't know this was a
+setting. So, clearly, let's not use it as of now."*
+
+⚠️ **Live consequence, independent of scoring:** the Labor Analysis panel's *"Hours ± Sched vs.
+Target"* and *"vs. Target +2%"* columns (`engine/labor-analysis.js`, `views/labor-analysis.js`)
+are computed off `laborTargetOrg`. Those columns have been grading against an unowned value.
+
+## ⚠️ OPEN + likely defect — the approved number may not reach the score
+
+**Verified:** `loadMonthlyTargets` maps `crew_labor_pct → tCrewLabor` and
+`bonus_crew_pct → tBonusLabor`. **There is no `tLabor` in `monthly_targets`.** And
+`computeOpsScore` (`pipeline.js`) grades labor against `t.tLabor`.
+
+So the monthly approval cycle populates crew and bonus labor but **not the field the score uses**.
+`tLabor`'s only other sources are the static `constants.js` map and an `org_config.defaultTargets`
+override (`App.js:2051`) — RLS blocks an anon read of `org_config`, so whether that is maintained
+could not be verified from this environment.
+
+**Question for the owner:** on the sheet sent to operators, which line is *the* number — crew
+labor %, bonus crew %, or a total?
+- **Crew labor** → the authoritative number already flows monthly as `tCrewLabor`, and
+  `computeOpsScore` is reading a static field beside it. One-field bug, real consequence: the
+  score grades against a number nobody approved.
+- **A total** → it isn't flowing at all, and `tLabor` is stale config in exactly the way
+  `laborTargetOrg` proved to be.
+
+**Scheduling accuracy stays PARKED until this is settled** — the baseline is the whole standard.
+
+## Scheduling accuracy already exists — do not rebuild it
+
+Fourth time this session the PM proposed building something already present.
+`src/engine/labor-analysis.js` `computeLaborRow` already computes, from the LifeLenz MBI labor
+sheet, per store: `laborTargetPlus2 = L + 0.02`, `projHrsTarget = (C×L)/J`,
+`projHrsTargetPlus2 = (C×M)/J`, `hrsVsForecast = G−F`, `hrsVsTarget = G−O`,
+`hrsVsTargetPlus2 = G−P`, plus the dollar equivalents — where `G` is scheduled hours and `J` is
+the store's **own** rate of pay. The source spreadsheet carries "Labor Target + 2%" and "Hours
++/- Sched vs. Target +2%" as native columns. The owner's 21.5% → 23.5% example is literally store
+3708's fixture row (`laborTargetOrg: 0.215`, `laborTargetPlus2: 0.235`).
+
+Consequences for the earlier design notes:
+- **The PM's "score in percentage points, present in hours" recommendation is backwards** from how
+  the business already works. The sheet converts to hours using each store's own rate; follow it.
+- **The three-way forecast decomposition is less load-bearing than the PM claimed** for this axis.
+  The standard grades against a labor *target*, not against Meridian's forecast, so a manager was
+  never being charged for our forecast error here. `hrsVsForecast` exists separately if wanted.
+  #146 remains a prerequisite for **sales-vs-forecast**, not for scheduling.
+- The genuinely new work is the **low side** — nothing computes "scheduled below target," because
+  the source only ever asked the +2% question.
+
+## Standing rule, generalized (fourth strike)
+
+"Before fixing a thing, confirm it is still used" is too narrow. The rule is: **search for the
+thing before designing it — our own code, published vendor definitions, and the source
+spreadsheets alike.** Four proposals this session were retired by something that already existed:
+Places API (already researched and rejected), make-table utilization (QSRSoft's "2nd Side
+Formula"), scheduling accuracy (`labor-analysis.js`), and the hours-vs-percentage-points
+convention (the MBI sheet). Belongs in `feedback-verification-in-sandbox.md`.
