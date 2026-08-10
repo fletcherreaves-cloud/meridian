@@ -37,6 +37,18 @@ describe('resolveDatePreset', () => {
     expect(r.id).toBe('28d');
   });
 
+  // PM review, issue #131: a naive "yesterday" (simple setDate()-1) misses the 4am ABC
+  // cutover — between midnight and 4am, that still-open business day is what the naive
+  // logic would treat as "yesterday" once decremented, one calendar day too late. Pinned
+  // to the exact case measured in review: at 02:00 UTC, resolveDatePreset must agree with
+  // lastClosedBusinessDay() (2026-08-08), not the broken 2026-08-09 the old hand-derived
+  // logic returned.
+  it('at 02:00 (inside the 4am cutover window), ends on lastClosedBusinessDay(), not naive yesterday', () => {
+    const earlyMorning = new Date('2026-08-10T02:00:00Z');
+    const r = resolveDatePreset('7d', DATE_RANGE_PRESETS, earlyMorning);
+    expect(r.e).toBe('2026-08-08');
+  });
+
   it('a panel can subset the shared preset list (owner decision: shared list, per-panel default)', () => {
     const subset = [{ id: 'x', label: 'X', days: 3 }];
     const r = resolveDatePreset('x', subset, today);

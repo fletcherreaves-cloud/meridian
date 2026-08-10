@@ -9,6 +9,8 @@
 // (MetricCorrelationExplorer / DistrictLensPanel target-pills, store-dash.js's date input),
 // not reinvented — that's the entire point of a shared control.
 import * as React from 'react';
+import { lastClosedBusinessDay } from '../utils/date.js';
+import { Z } from './ModalShell.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -37,14 +39,17 @@ const _dstr = (d) => {
   return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
 };
 
-// Pure: preset id -> {s,e} ISO date strings, trailing N days ending yesterday (never today —
-// this codebase's standing rule is that "today" is a still-filling business day and gets
-// excluded from trailing windows; see CLAUDE.md's data-integrity signature #4 note).
+// Pure: preset id -> {s,e} ISO date strings, trailing N days ending on the last CLOSED
+// business day — never a naive "yesterday" (that misses the 4am ABC cutover: between
+// midnight and 4am, yesterday's calendar date is still today's still-filling business day)
+// and never literal "today" either (this codebase's standing rule, signature #4 — see
+// CLAUDE.md's data-integrity notes). Uses the one shared lastClosedBusinessDay() helper
+// (utils/date.js, re-exported from engine/swing-feed.js) rather than re-deriving the
+// arithmetic — this bug has already recurred five separate times from hand-copies.
 export function resolveDatePreset(presetId, presets = DATE_RANGE_PRESETS, today = new Date()) {
   const preset = presets.find((p) => p.id === presetId);
   if (!preset) return null;
-  const e = new Date(today);
-  e.setDate(e.getDate() - 1);
+  const e = lastClosedBusinessDay(today);
   const s = new Date(e);
   s.setDate(s.getDate() - (preset.days - 1));
   return { id: presetId, s: _dstr(s), e: _dstr(e) };
@@ -170,7 +175,7 @@ export function LocationSelector({ stores, invOrgCoords, storeNames, value, onCh
     }, p.label)),
     ...tree.locs.map((l) => btn({
       key: 'lc-' + l, style: _pillStyle(value?.level === 'store' && value?.id === l), onClick: () => pick('store', l),
-    }, l)),
+    }, tree.storeLabel(l))),
   );
 }
 
@@ -196,7 +201,12 @@ export function nonEmptyActionGroups(groups) {
 }
 
 const _menuStyle = {
-  position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 350,
+  position: 'absolute', top: 'calc(100% + 4px)', left: 0,
+  // Above the modal's own body content (Z.modal=300) so the dropdown isn't clipped/hidden
+  // behind sibling content in the same band, but below Z.nested=400 so a genuinely nested
+  // modal still stacks above an open action menu. Matches ExportDropdown's own menu
+  // (store-dash.js), which predates the Z map and hard-codes the same 350 value.
+  zIndex: Z.modal + 50,
   background: 'var(--surf)', border: '.5px solid var(--bdr2)', borderRadius: 'var(--rl)',
   boxShadow: '0 8px 28px rgba(0,0,0,.35)', overflow: 'hidden', minWidth: 180,
 };

@@ -82,4 +82,42 @@ function dFmtShort(d){return d?d.toLocaleDateString('en-US',{month:'short',day:'
 function dFmtDow(d){return d?d.toLocaleDateString('en-US',{weekday:'short'}):'—';}
 function thisWeek(){const s=mwStart();const e=new Date(s.getTime()+6*86400000);return{s:sodOf(s),e:eodOf(e),label:'This Week'};}
 
-export { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, weekStartOf, weekKeyOf, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek };
+// businessDate/lastClosedBusinessDay moved here from engine/swing-feed.js (issue #131 PR
+// review) so a UI-layer caller (src/components/) can import the ABC-cutover-aware "last
+// closed day" logic without reaching into engine/ code — swing-feed.js re-exports both so
+// its existing 13 importers are unaffected.
+const _pad=n=>String(n).padStart(2,'0');
+/**
+ * The current McDonald's business date, accounting for the 4:00am ABC cutover — at 2am
+ * the business day is still yesterday's.
+ *
+ * This exists because of a real miss: weeklyBuckets counted 7 ROWS as a complete week,
+ * but the 7th row was TODAY, still filling. Measured on 2026-08-07, store 10422 had rung
+ * $7,359 against a typical closed day of $11,003 — 67% — so the current week was being
+ * judged on ~$3,600 of sales that had not happened yet. Worse, the figure moved through
+ * the day: scarier in the morning, milder by close. An alarm whose number changes while
+ * you look at it is an alarm nobody trusts.
+ */
+function businessDate(now=new Date()){
+  const d=new Date(now.getTime()-4*3600e3);
+  return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`;
+}
+/**
+ * The last CLOSED business day, as a Date at local midnight — the correct upper bound for
+ * any trailing comparison window. A window that ends at literal `now`/`Date.now()` instead
+ * includes today's still-filling partial day, which (for a vs-LY ratio) gets matched against
+ * a FULL last-year day and inflates every decline, or (for a same-year average/anomaly
+ * baseline) drags the aggregate toward whatever fraction of a normal day has rung so far.
+ * This recurred across the codebase five separate times (signature #4 — see
+ * memory/plan-data-integrity-sweep.md) because the correct fix was 3-4 lines of
+ * `addD(new Date(businessDate()+'T00:00:00'),-1)` boilerplate re-derived at each site rather
+ * than one shared, importable answer. Uses calendar-safe `setDate()`, not ms arithmetic, so a
+ * DST transition can't shift the returned date by an hour into the wrong calendar day.
+ */
+function lastClosedBusinessDay(now=new Date()){
+  const d=new Date(businessDate(now)+'T00:00:00');
+  d.setDate(d.getDate()-1);
+  return d;
+}
+
+export { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, weekStartOf, weekKeyOf, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek, businessDate, lastClosedBusinessDay };
