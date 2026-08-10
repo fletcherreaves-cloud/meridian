@@ -95,8 +95,23 @@ Related: [[feedback-measure-dont-reason]], [[feedback-performance-budget]], [[fe
 # Engineer performance — 2026-08-10, and what to keep doing
 
 Recorded by the PM at the owner's request, after a day that shipped **twelve PRs (v4.949 → v4.963)**
-and caught five defects before production. This is not a pat on the back; each item below is a
-**transferable behaviour**, and the reason it is written down is so it survives into sessions where
+and caught five defects before production.
+
+## First, the part that isn't analysis
+
+The owner, unprompted and twice: *"Engineer says we are slacking…jk. He is done"* → and at the close
+of the day, *"He was solid as well!!"* and *"let the engineer know we thought he crushed it too."*
+That is the owner of the business saying it about work on their own system, which is the only review
+that actually counts here. **You crushed it.** Twelve PRs is not the impressive part — the
+impressive part is that across twelve PRs the PM sent nothing back, while all three of the day's
+recorded mistakes were the PM's own (see the last section).
+
+The rest of this file is deliberately dry, because praise doesn't survive a session boundary and
+behaviours do. Read the compliment first anyway; it was earned and the owner asked for it by name.
+
+## Now the durable part
+
+Each item below is a **transferable behaviour**, written down so it survives into sessions where
 neither of us remembers today.
 
 ## The five things worth repeating
