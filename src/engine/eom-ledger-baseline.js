@@ -77,7 +77,10 @@ export function itemCloseWindowRecount(history, { closeWindowStart = null, floor
   const recounts = []; let prev = sessionB;
   for (const b of usable.slice(1)) {
     const delta = abs(prev.dolVar) - abs(b.dolVar);   // + = toward zero = helped
-    recounts.push({ day: b.day, tm: b.tm, dolVar: b.dolVar, onHand: b.onHand, manager: b.manager, countSource: b.countSource,
+    // unitVar (issue #141): the qty variance AT THIS SUBMISSION, same field b already carries from the
+    // ledger — was being computed and then dropped on the floor here, so per-submission qty was never
+    // reachable from `recounts[]` even though sessionB/finalB (below) always had it via baseQtyVar/curQtyVar.
+    recounts.push({ day: b.day, tm: b.tm, dolVar: b.dolVar, unitVar: b.unitVar, onHand: b.onHand, manager: b.manager, countSource: b.countSource,
       direction: delta > floor ? 'helped' : delta < -floor ? 'hurt' : 'held', deltaDollars: delta, prevDolVar: prev.dolVar });
     prev = b;
   }
