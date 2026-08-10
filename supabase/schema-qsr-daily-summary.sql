@@ -1,5 +1,34 @@
 -- ============================================================================
--- Meridian — qsr_daily_activity DAILY ROLLUP VIEW
+-- Meridian — qsr_daily_activity DAILY ROLLUP VIEW  ⛔ SUPERSEDED, DO NOT USE
+-- ============================================================================
+-- ⛔ SUPERSEDED 2026-08-07 by the rollup TABLE `qsr_daily_activity_rollup`. Nothing
+-- in src/ reads this view. Kept only as the record of WHY a view lost, because the
+-- reasoning is easy to rediscover and get wrong — as happened on 2026-08-10.
+--
+-- A view over an RLS-protected base table is an RLS bypass unless it is declared
+-- `security_invoker = true`. Both variants were tried on production 2026-08-07:
+--   • WITHOUT security_invoker — bypassed RLS entirely; it served per-store sales
+--     to the public anon key. Unacceptable.
+--   • WITH security_invoker (as written below) — correct, but it evaluates RLS per
+--     row while aggregating 367k rows and hits the STATEMENT TIMEOUT on the real
+--     60-day workload. A single filtered day still returns fine, which is exactly
+--     what makes this trap convincing: it verifies green and then fails in use.
+-- The table wins because it carries its own tenant_id, has cheap policies over
+-- ~15,000 indexed rows, and pays the aggregation cost once at write time.
+--
+-- HOW THIS FILE WASTED TIME (worth reading before "fixing" something similar):
+-- loadQsrActSummary's header comment still claimed it "prefers the server-side
+-- rollup view (supabase/schema-qsr-daily-summary.sql)" long after the code moved to
+-- the table. The issue #119 RLS audit read this view's missing GRANT as a live gap,
+-- required a security_invoker fix for it, and had the owner run the file — recreating
+-- abandoned infrastructure. Harmless (the grant is authenticated/service_role only,
+-- and the anon key gets 42501 permission denied — verified 2026-08-10), but avoidable.
+-- The audit checked whether the SQL was SAFE and never asked whether the view was
+-- still WANTED. Ask that first.
+--
+-- TO REMOVE IT (safe — no consumer in src/, and scripts/measure-denominator-floors.mjs
+-- was repointed at the table on 2026-08-10):
+--   drop view if exists public.qsr_daily_activity_daily;
 -- ============================================================================
 -- ⚠️ RE-APPLY NOTE (2026-08-10, issue #119 audit): the live authenticated role
 -- currently gets "permission denied for view qsr_daily_activity_daily" — the

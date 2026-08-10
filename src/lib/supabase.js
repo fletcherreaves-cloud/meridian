@@ -1890,12 +1890,19 @@ function _qsrActFromSummed(loc, dt, v) {
   };
 }
 
-// Daily DAR summary. Prefers the server-side rollup view (supabase/schema-qsr-daily-summary.sql):
-// 27 stores x 60 days is ~1,620 rows = ONE page, versus ~40,000 hourly rows over ~40 pages.
+// Daily DAR summary. Prefers the server-side rollup TABLE `qsr_daily_activity_rollup`:
+// 27 stores x 60 days is ~1,650 rows = ONE page, versus ~40,000 hourly rows over ~40 pages.
 // Measured 2026-08-07: the hourly path was the largest remaining stream AND produced 18 of 22
 // HTTP 500s, failing in batches of exactly the client's concurrency cap.
 //
-// Falls back to the hourly path automatically when the view is absent, so the app works
+// ⚠️ NOT the view in supabase/schema-qsr-daily-summary.sql — that file is SUPERSEDED. This
+// comment used to say "prefers the server-side rollup view (supabase/schema-qsr-daily-summary
+// .sql)" while the code below already used the TABLE, and that contradiction cost real time:
+// the issue #119 RLS audit read the view's missing GRANT as an unfixed gap and had the owner
+// re-apply abandoned infrastructure (harmless — nothing reads it — but wasted). The reason the
+// table won is spelled out in the block comment below; don't re-litigate it from this header.
+//
+// Falls back to the hourly path automatically when the table is unreachable, so the app works
 // identically before and after the SQL is run — deploying first is safe.
 export async function loadQsrActSummary(daysBack = 35) {
   if (!supabase) return [];

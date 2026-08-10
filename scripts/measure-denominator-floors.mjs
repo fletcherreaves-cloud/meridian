@@ -116,15 +116,23 @@ function printHourBuckets(title, unit, rows, hourKey, valueKey, baseline = null)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// A) Daily rate metrics — tpph/r2p/oepe/park/kvst, via the qsr_daily_activity_daily rollup view.
+// A) Daily rate metrics — tpph/r2p/oepe/park/kvst, via the qsr_daily_activity_rollup TABLE.
+//
+// Was qsr_daily_activity_daily (the VIEW) until 2026-08-10. That view is superseded: the app's
+// own loadQsrActSummary abandoned it on 2026-08-07 for this table, because a view over an
+// RLS-protected base table is only safe with security_invoker, and WITH security_invoker it
+// evaluates RLS per row while aggregating 367k rows and hits the statement timeout. The table
+// carries its own tenant_id and cheap policies over ~15,000 indexed rows and pays the
+// aggregation cost once at write time. Identical column names, so this is a drop-in swap —
+// verified 2026-08-10 that all 14 columns this script reads exist on the table.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 console.log('═══ A) Daily rate-metric denominators (tpph/r2p/oepe/park/kvst) ═══');
 const sinceA = new Date(Date.now() - DAYS * 86400000).toISOString().slice(0, 10);
-console.log(`(bounded to the last ${DAYS} days, since ${sinceA} — the view/table has no cache and a full-table `
-  + `GROUP BY timed out unbounded; pass --days to widen once you know this window is fast enough)\n`);
-let daily = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity_daily').select('*').gte('dt', sinceA).range(from, to), 1000, { fatal: false });
+console.log(`(bounded to the last ${DAYS} days, since ${sinceA} — the rollup table has no cache and a full-table `
+  + `scan timed out unbounded; pass --days to widen once you know this window is fast enough)\n`);
+let daily = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity_rollup').select('*').gte('dt', sinceA).range(from, to), 1000, { fatal: false });
 if (!daily || !daily.length) {
-  console.log((daily ? 'qsr_daily_activity_daily view returned 0 rows' : 'qsr_daily_activity_daily view failed')
+  console.log((daily ? 'qsr_daily_activity_rollup returned 0 rows' : 'qsr_daily_activity_rollup failed')
     + ' — falling back to the raw hourly table, grouped here.');
   const hourly = await fetchAllPaged((from, to) => sb.from('qsr_daily_activity').select(
     'loc,dt,product_sales,transactions,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,' +
