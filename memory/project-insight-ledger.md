@@ -108,15 +108,25 @@ Two things are worth keeping and nothing else is:
    with a color. TaskQueuePanel has no equivalent.
 2. **The triage verbs** — star / done / dismiss, plus the pending/starred/done filter set.
 
-## Open decisions (owner call, not the worker's)
+## Decisions (owner, 2026-08-10) — both settled, both revisitable
 
-1. **Where does it live?** (a) standalone panel, (b) a second tab in TaskQueuePanel
-   ("Noticed" vs "To Do"), (c) a tab in Signals. Leaning **(b)** — an insight and a task are
-   different things, but we are mid-UX-coherence and panel proliferation is the problem we are
-   actively solving. A ledger that graduates a row into a task is a natural pairing.
-2. **Does SAGE write prose insights, or only structured findings?** Prose is harder to dedup
-   and harder to close the loop on. Suggest structured-only for v1; SAGE prose stays in
-   `sage_prompt_runs`.
+1. **Standalone panel.** Owner chose (a) over the Task-Queue-tab option I leaned toward.
+   Reasoning to respect when building: an insight and a task are genuinely different objects —
+   a task is work you decided to do, an insight is something the system noticed and may never
+   become work. Folding them into one panel would have forced one status vocabulary onto both.
+   **Cost accepted:** one more panel during a phase whose whole point is reducing panel count.
+   That is a deliberate trade, not an oversight. It should still *graduate* a row into a Task
+   Queue task via the existing `saveTask`, so the two stay connected without being merged.
+2. **Structured findings only for v1.** SAGE prose stays in `sage_prompt_runs` and does not
+   write ledger rows. Prose is hard to dedup and impossible to close the loop on — there is no
+   metric to snapshot. **Flagged for reassessment:** once the structured ledger has run long
+   enough to show whether the outcome loop actually works, revisit whether SAGE should emit
+   *structured* findings (a `{loc, metric, claim}` triple) alongside its prose answer. That is
+   the natural v2, and it is the version worth wanting — but it is worth nothing until the
+   dedup and outcome machinery is proven on detectors that already produce structured output.
+
+Both decisions are marked revisit-later at the owner's direction. Neither should be quietly
+re-opened by a future session without saying so.
 
 ## Sequencing — do not let this derail Spine 1
 
@@ -126,6 +136,7 @@ Two things are worth keeping and nothing else is:
    about it.*
 2. Table + writers + dedup. No UI.
 3. Outcome measurement.
-4. UI, per decision (1).
+4. UI — a standalone panel, per decision (1), lazy-loaded like every other secondary panel
+   (`lazyPanel()`), with a "graduate to task" action wired to `saveTask`.
 
 Step 1 is the gate. Nothing after it is worth starting until the volume numbers are in hand.
