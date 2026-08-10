@@ -8,6 +8,7 @@ import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
 import { saveUserSetting, loadUserSetting } from '../lib/supabase.js';
+import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
 
 // Cloud-persist model assignments (v4.544): after any local write (backtest,
@@ -33,27 +34,10 @@ function _pushModelAssignments() {
 const BT_SUMMARY_KEY = 'mf_bt_summary';
 const PT_SCORE_KEY   = 'mf_period_scoreboard';
 
-function _pushBlob(lsKey, settingKey, obj) {
-  const stamped = {...obj, savedAt: Date.now()};
-  try { localStorage.setItem(lsKey, JSON.stringify(stamped)); } catch {}
-  try { saveUserSetting(settingKey, stamped); } catch {}
-  return stamped;
-}
-function _readBlobLocal(lsKey) {
-  try { const s = localStorage.getItem(lsKey); return s ? JSON.parse(s) : null; } catch { return null; }
-}
-// Hydrate a persisted blob: local first (instant), then cloud if it's strictly
-// newer. `apply` is called at most twice — once per source that wins.
-function _hydrateBlob(lsKey, settingKey, apply) {
-  const local = _readBlobLocal(lsKey);
-  if (local) apply(local);
-  loadUserSetting(settingKey).then(remote => {
-    if (!remote || typeof remote !== 'object') return;
-    if (local && (local.savedAt||0) >= (remote.savedAt||0)) return;
-    try { localStorage.setItem(lsKey, JSON.stringify(remote)); } catch {}
-    apply(remote);
-  }).catch(()=>{});
-}
+// _pushBlob/_readBlobLocal/_hydrateBlob/_normalizeDialedIn moved to lib/blob-sync.js
+// (issue #118) so App.js/session.js/analytics.js can use them without statically
+// importing this whole (large, otherwise lazy-loaded) panel module — that mistake
+// cost ~25KB gzip on the main entry chunk the first time it was tried. Imported above.
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
@@ -2385,4 +2369,4 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   );
 }
 
-export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor };
+export { DARDaypartPanel, ProductMixPanel, LaborAnalyticsPanel, OperatorSummaryPanel, ModelAssignmentPanel, StoreKBEditor, _pushBlob, _readBlobLocal, _hydrateBlob, _normalizeDialedIn };

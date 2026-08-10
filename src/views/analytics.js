@@ -6,6 +6,7 @@ import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
 import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
+import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -5265,11 +5266,12 @@ function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
 
 
 
+const DIALED_IN_LS = 'mf_dialed_in';
+const DIALED_IN_SETTING = 'dialed_in';
+
 function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onClose}) {
   const [running,  setRunning]  = React.useState(false);
-  const [results,  setResults]  = React.useState(()=>{
-    try{const s=localStorage.getItem('mf_dialed_in');return s?JSON.parse(s):{};}catch{return {};}
-  });
+  const [results,  setResults]  = React.useState(()=>_normalizeDialedIn(_readBlobLocal(DIALED_IN_LS)).data);
   const [progress, setProgress] = React.useState(0);
   const [curStore, setCurStore] = React.useState('');
   // comboProgress (v4.195): intra-store progress, 0-100, driven by
@@ -5280,6 +5282,28 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
   const [comboProgress, setComboProgress] = React.useState(0);
   const [selLoc,   setSelLoc]   = React.useState('all');
   const [storeLog, setStoreLog] = React.useState([]); // per-store calibration results
+
+  // Cloud-persist Dialed-In calibration (issue #118): mf_dialed_in was localStorage-only,
+  // so a run on one device (or one Vercel preview origin) never reached any other. Follows
+  // the SAME savedAt-guarded pattern as model_backtest_summary/model_period_scoreboard
+  // (labor-tools.js's _pushBlob/_hydrateBlob) — NOT model_assignments' unconditional
+  // cloud-wins, because Calibrate All below writes incrementally every 5 stores, so an
+  // in-progress run must survive a cloud hydration landing mid-run, and a fresher local run
+  // must not be clobbered by a stale cloud copy either. App.js's own startup hydration
+  // (_stDialedIn) keeps settings.dialedIn/dialedInEnabled correct even on a device that
+  // never opens this panel; this mount-time hydrate additionally refreshes THIS PANEL'S OWN
+  // display if a newer cloud copy exists (e.g. calibrated on another device meanwhile).
+  React.useEffect(()=>{
+    _hydrateBlob(DIALED_IN_LS, DIALED_IN_SETTING, (blob)=>{
+      const {data} = _normalizeDialedIn(blob);
+      setResults(data);
+      if(onUpdateSettings && Object.keys(data).length>0){
+        onUpdateSettings({...settings,dialedIn:{...data},dialedInEnabled:true});
+      }
+    });
+    // Mount-only — mirrors the swing alarm's ack load and every other cloud-hydrate effect
+    // in this codebase (App.js). eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
   const runAll = async () => {
     if(!ds||!ds.loaded) return;
@@ -5316,11 +5340,14 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
       }
       setStoreLog([...log]);
       await new Promise(r=>setTimeout(r,0));
-      // Save to localStorage every 5 stores — protects against any mid-loop crash
-      if(i>0&&i%5===0){try{localStorage.setItem('mf_dialed_in',JSON.stringify(updated));}catch(e){}}
+      // Save every 5 stores — protects against any mid-loop crash. Cloud-persisted the
+      // same way (fire-and-forget; local remains the instant read/write path) so a crash
+      // partway through Calibrate All still leaves the partial progress reachable from
+      // another device, not just this one.
+      if(i>0&&i%5===0){ _pushBlob(DIALED_IN_LS,DIALED_IN_SETTING,{data:{...updated}}); }
     }
     setResults(updated);
-    try{localStorage.setItem('mf_dialed_in',JSON.stringify(updated));}catch(e){}
+    _pushBlob(DIALED_IN_LS,DIALED_IN_SETTING,{data:updated});
     // Push calibrations into settings.dialedIn — pass plain object, not function updater
     // (saveSettings does JSON.stringify which corrupts localStorage if given a function)
     if(onUpdateSettings){
@@ -5339,7 +5366,7 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
     if(cal){
       updated[loc]=cal;
       setResults(updated);
-      try{localStorage.setItem('mf_dialed_in',JSON.stringify(updated));}catch(e){}
+      _pushBlob(DIALED_IN_LS,DIALED_IN_SETTING,{data:updated});
       if(onUpdateSettings) onUpdateSettings({...settings,dialedIn:{...(settings.dialedIn||{}),[loc]:cal}});
     }
     setRunning(false); setCurStore(''); setProgress(100);
@@ -5347,7 +5374,13 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
 
   const clearAll = () => {
     setResults({});
-    try{localStorage.removeItem('mf_dialed_in');}catch(e){}
+    // Reset must clear the CLOUD copy too, with a fresh savedAt — otherwise a stale cloud
+    // copy (or another device's stale local copy) wins the next hydration and silently
+    // resurrects the "cleared" calibration. This is the failure mode issue #118 explicitly
+    // flagged as most likely to be missed: reset APPEARS to work, then the old params come
+    // back on next load. _pushBlob stamps savedAt fresh on every write, local and cloud
+    // alike, so nothing older can ever win a comparison against this reset.
+    _pushBlob(DIALED_IN_LS,DIALED_IN_SETTING,{data:{}});
     if(onUpdateSettings) onUpdateSettings({...settings,dialedIn:{},dialedInEnabled:false});
   };
 

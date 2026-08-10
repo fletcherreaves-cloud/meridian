@@ -32,6 +32,7 @@ import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProj
 // and never rendered — dead imports that pulled all 161 KB of store-analytics.js into the entry
 // chunk for nothing. They are still exported and used inside store-analytics.js itself.
 import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
+import { readBlobLocal as _readBlobLocal, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { Settings } from '../views/management.js';
 // Lazy panel with stale-chunk recovery: after a new deploy, an open tab's index.html references old
 // hashed chunk filenames that are gone from the server, so a dynamic import 404s ("Failed to fetch
@@ -331,6 +332,10 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.948', date:'2026-08-10', changes:[
+    'Dialed-In calibration now follows you across devices. It used to live only in this browser\'s local storage — calibrating on the desktop did nothing for the phone or iPad, and calibrating on a preview link before it went live never reached production at all, silently. It now syncs the same way Model Assignments and Smart Targets already do: instant on this device, cloud copy follows within moments, newer always wins if you calibrate on two devices close together.',
+    'Resetting calibration now clears the cloud copy too, not just this device\'s. Without that, a reset would have appeared to work and then had the old numbers quietly reappear the next time the app loaded — the specific failure mode this change was built to prevent, not one that shipped.',
+  ]},
   {version:'4.947', date:'2026-08-10', changes:[
     'Forecast Audit — the panel that shows every input behind a single day\'s forecast, one step at a time — is now reachable directly from the nav (Forecasting section), not just from inside Monthly Projections. It was already fully built and live there, just missing a front door; the registry had it mislabeled as dead code, which is now corrected. Opening it before selecting a store now dims the nav item instead of doing nothing when clicked.',
     'Fixed a bug in that same panel where the detail view could silently disagree with the date list next to it — the detail view was reading a tagged event\'s impact from the wrong place, so it usually saw none at all even when the sidebar\'s preview for the exact same day did. A test now pins the two views to always agree.',
@@ -1640,15 +1645,18 @@ function App() {
       // Merge operators — add any new ones from DEF_SETTINGS not in saved
       merged.operators={...DEF_SETTINGS.operators,...(saved.operators||{})};
       merged.supervisorGroups={...DEF_SETTINGS.supervisorGroups,...(saved.supervisorGroups||{})};
-      // Auto-apply stored calibrations silently on every startup — fixes 0/27 on open
+      // Auto-apply stored calibrations silently on every startup — fixes 0/27 on open.
+      // mf_dialed_in is cloud-persisted now (issue #118) under a {data,savedAt} wrapper —
+      // _normalizeDialedIn also reads the OLD bare-flat-map shape (pre-#118 localStorage,
+      // savedAt treated as 0/oldest) so a real production calibration already on disk
+      // doesn't silently vanish the first time this code runs. This stays the SYNCHRONOUS
+      // instant-startup read; _stDialedIn (async, below) hydrates from cloud afterward and
+      // wins only if strictly newer.
       try{
-        const di=localStorage.getItem('mf_dialed_in');
-        if(di){
-          const diObj=JSON.parse(di);
-          if(diObj&&Object.keys(diObj).length>0){
-            merged.dialedIn={...diObj,...(merged.dialedIn||{})};
-            merged.dialedInEnabled=true;
-          }
+        const {data:diObj}=_normalizeDialedIn(_readBlobLocal('mf_dialed_in'));
+        if(diObj&&Object.keys(diObj).length>0){
+          merged.dialedIn={...diObj,...(merged.dialedIn||{})};
+          merged.dialedInEnabled=true;
         }
       }catch{}
       return merged;
@@ -2513,6 +2521,27 @@ function App() {
           console.log('[Meridian] ✓ Loaded model assignments from Supabase');
         }
       }catch(e){console.warn('[Meridian] model assignments load failed:',e);} };
+      const _stDialedIn = async () => {
+      try{
+        // Cloud-persisted Dialed-In calibration (issue #118): mf_dialed_in was
+        // localStorage-only — per-device AND per-origin (a Vercel preview calibration
+        // never reaches production). Unlike _stModelAssignments above (unconditional
+        // cloud-wins), this is savedAt-GUARDED — Calibrate All (analytics.js
+        // DialedInPanel) writes incrementally every 5 stores, so an in-progress run on
+        // THIS device must survive a stale cloud hydration landing mid-run, and a
+        // fresher local run must not be clobbered by an older cloud copy either. Cloud
+        // wins ONLY when strictly newer than the local copy the synchronous init above
+        // already folded into `merged.dialedIn` — replaces it wholesale (not merged
+        // key-by-key) since a winning cloud blob is a complete snapshot, not a patch.
+        const {savedAt:localSavedAt}=_normalizeDialedIn(_readBlobLocal('mf_dialed_in'));
+        const remote=await loadUserSetting('dialed_in');
+        const {data:remoteData,savedAt:remoteSavedAt}=_normalizeDialedIn(remote);
+        if(remote&&(remoteSavedAt||0)>(localSavedAt||0)&&Object.keys(remoteData).length>0){
+          try{localStorage.setItem('mf_dialed_in',JSON.stringify({data:remoteData,savedAt:remoteSavedAt}));}catch{}
+          setSettings(cur=>({...cur,dialedIn:{...remoteData},dialedInEnabled:true}));
+          console.log('[Meridian] ✓ Loaded Dialed-In calibration from Supabase (newer than local)');
+        }
+      }catch(e){console.warn('[Meridian] Dialed-In calibration load failed:',e);} };
       const _stOrgEventsHydration = async () => {
       try{
         // Cloud org calendar events (Notes 46): Supabase `org_events` is the source of
@@ -2602,7 +2631,7 @@ function App() {
         _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
         _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
         _stLockedProjections(), _stAeParams(),
-        _stModelAssignments(), _stOrgEventsHydration(), _stEventImpact(),
+        _stModelAssignments(), _stDialedIn(), _stOrgEventsHydration(), _stEventImpact(),
       ]);
       _t2.then(() => console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`));
       const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stAuditRows(), _stOpsRows(), _stCtrlRows()]));
