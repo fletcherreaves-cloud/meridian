@@ -272,6 +272,20 @@ Related: [[mac-session-todo-2026-08-06]] (same "original vs merge" open question
 
 ## EOM Change Monitor — variance QTY + case-pack conversion
 
+**✅ DONE (2026-08-10, issue #141) — step 1+2 only, the Baseline-diff table. Steps 3-4 below were
+NOT done** — issue #141 scoped this to `eom-dashboard.js`'s Change Monitor table specifically
+(never mentioned the Progression view, ItemJourneyView timeline rows, FOB Root-Cause's Recount
+Impact section, or the FOB Report's "Top item losers" — those remain open, still worth doing, just
+not part of what was asked for this round). One real engine gap found and fixed along the way: the
+LIVE path (`ledgerBaselineDiff` in `eom-ledger-baseline.js` — not the `diffSnapshot` fallback this
+note originally cited) already put `baseQtyVar`/`curQtyVar` on each item, but the per-submission
+`recounts[]` array was computing `unitVar` and then dropping it before returning — so "the variance
+at each submission" specifically was unreachable even though session/final qty always worked. Fixed
+by keeping `unitVar` on each recount entry, one line, plus a regression test. The case-pack suffix
+(`= X.XX case(s)`) uses the exact `caseSzByWrin`/`caseSz > 0` lookup `diagOptsFor` already uses
+elsewhere in this file, not a new fourth pattern — matches the issue's explicit ask.
+
+
 Owner wants, per item: the variance at *each* submission when an item was counted more than once
 in a day, but most importantly the **final/binding** variance for the day — plus, everywhere a
 variance qty is shown, an explicit secondary "= X.XX case(s)" reference (never replacing the raw
@@ -437,8 +451,8 @@ this session.** Revisit during the Workstream D "score & polish" pass in [[visio
    owner (merge, keep "Needs Attention") — Part 1 (engine only) shipped v4.943, draft PR open
    for owner review/merge. Part 2 (layout, Acknowledged home, retire `priorities` nav) not
    started, see above.
-2. EOM Change Monitor qty + case-conversion — fully scoped, engine already supports it, no new data
-   model needed.
+2. ~~EOM Change Monitor qty + case-conversion~~ — ✅ DONE (2026-08-10, issue #141), scoped to the
+   Baseline-diff table only — see below for what shipped vs. what's still open from this section.
 3. Swing Watch "Acknowledged" home at the top of Needs Attention — fully scoped, reuses existing
    Supabase-backed ack data.
 4. Events & Tags duplicate finder (+ the silent-overwrite fix as an immediate small patch) — build
