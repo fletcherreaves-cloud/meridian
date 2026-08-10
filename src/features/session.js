@@ -4,6 +4,8 @@ import { dKey } from '../utils/date.js';
 import { bLocIdx } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { DEF_SETTINGS } from '../constants.js';
+import { loadUserSetting } from '../lib/supabase.js';
+import { normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 
 // ErrorBoundary React class component
 class ErrorBoundary extends React.Component {
@@ -117,6 +119,7 @@ function mfRestoreSession(file, setDs, saveSettings, onMsg) {
         setDs(rds);
       }
       // Restore settings — apply dialedIn from mf_dialed_in if present
+      var _restoredDiSavedAt=0, _restoredSettings=null;
       if(ls['mf_settings']){
         try{
           var sv=JSON.parse(ls['mf_settings']);
@@ -124,12 +127,35 @@ function mfRestoreSession(file, setDs, saveSettings, onMsg) {
           mg.operators=Object.assign({},DEF_SETTINGS.operators,sv.operators||{});
           mg.supervisorGroups=Object.assign({},DEF_SETTINGS.supervisorGroups,sv.supervisorGroups||{});
           if(ls['mf_dialed_in']){
-            var di=JSON.parse(ls['mf_dialed_in']);
-            if(di&&Object.keys(di).length>0){mg.dialedIn=Object.assign({},di,mg.dialedIn||{});mg.dialedInEnabled=true;}
+            // mf_dialed_in is cloud-persisted now (issue #118) under a {data,savedAt}
+            // wrapper — _normalizeDialedIn also reads the older bare-flat-map shape a
+            // session file exported before #118 would carry (savedAt treated as 0).
+            var _di=_normalizeDialedIn(JSON.parse(ls['mf_dialed_in']));
+            if(Object.keys(_di.data).length>0){mg.dialedIn=Object.assign({},_di.data,mg.dialedIn||{});mg.dialedInEnabled=true;}
+            _restoredDiSavedAt=_di.savedAt||0;
           }
           saveSettings(mg);
+          _restoredSettings=mg;
         }catch{}
       }
+      // A restored session file can carry Dialed-In calibration OLDER than what's already
+      // in the cloud (issue #118: "restoring a session shouldn't silently resurrect stale
+      // calibration over newer cloud params"). The synchronous restore above already
+      // applied whatever the file had — this re-checks against the cloud immediately
+      // afterward and corrects it in place if the file was stale, rather than waiting for
+      // the next full page load (App.js's own startup hydration only runs once, at mount,
+      // so a restore happening mid-session would otherwise show the stale data until reload).
+      // saveSettings accepts a PLAIN OBJECT only — it JSON.stringifies it straight to
+      // localStorage, so passing a functional updater here would corrupt mf_settings the
+      // same way DialedInPanel's own comment warns about. Build the corrected object from
+      // `_restoredSettings` (this function's own last-known settings snapshot) instead.
+      loadUserSetting('dialed_in').then(function(remote){
+        var _remote=_normalizeDialedIn(remote);
+        if(!remote||!_restoredSettings||!((_remote.savedAt||0)>_restoredDiSavedAt)||!Object.keys(_remote.data).length) return;
+        try{localStorage.setItem('mf_dialed_in',JSON.stringify({data:_remote.data,savedAt:_remote.savedAt}));}catch{}
+        saveSettings(Object.assign({},_restoredSettings,{dialedIn:Object.assign({},_remote.data),dialedInEnabled:true}));
+        if(onMsg)onMsg('✓ Session restored · newer Dialed-In calibration found in the cloud, applied');
+      }).catch(function(){});
       var stCnt=((data.ds&&data.ds.storeIds)||[]).length;
       var lrCnt=((data.ds&&data.ds.laborRows)||[]).length;
       if(onMsg)onMsg('✓ Session restored · '+stCnt+' stores · '+lrCnt+' labor rows');
