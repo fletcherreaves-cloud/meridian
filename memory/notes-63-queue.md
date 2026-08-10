@@ -381,6 +381,41 @@ Related: [[notes-58-queue]] (the original swing-alarm ask this fulfilled), [[fee
 
 ## Events & Tags — find and remove duplicates
 
+✅ **DONE (2026-08-10, issue #142).** Measured live org_events (2,651 rows) against the cloud's own
+duplicate definition (same loc+date+label — its unique constraint) before building anything, per
+this section's own "check this first" instruction: **zero real duplicates today.** The suspected
+`diffUserEventsForCloudSync` sync gap has not produced any. So the "Possible duplicates" filter
+shipped small — a cheap, answerable toggle inside the existing Event Calendar (Notes 62's panel,
+`store-dash.js`'s `EventCalendar`) using that same definition — rather than building merge-or-delete
+machinery nothing currently needs.
+
+The same measurement found a bigger, real, currently-live bug the owner's report was actually
+describing, just at a different site: **261 (loc, date) pairs across all 27 stores** — almost always
+a school closure + a sports game sharing a day — where org_events correctly holds two distinct rows
+(schema-legal, `unique(loc,date_start,label)` allows it), but `orgEventsToDayMap` (the cloud→local
+downprojection into `mf_events`) was silently keeping only the SECOND one processed, because the
+local map is structurally one entry per (loc,date). Real information loss on every login, not a
+cosmetic duplicate — the same defect this section names ("a second write to an occupied slot
+silently overwrites"), just automated rather than interactive. Fixed by combining same-day org
+events into one entry (`events-import.js`'s `combineOrgEntries`) instead of dropping the loser:
+joined label/note/icon so nothing vanishes from the list, plus a `tags` array reusing the exact
+shape `calendar.js`'s own multi-type hand-tag already writes, so `forecast.js`'s event-impact factor
+now averages both events' registry impact instead of only ever seeing one. The Event Calendar list
+expands combined days back into individually visible/searchable rows.
+
+Also shipped the originally-scoped small fix: `EventCalendar`'s Add/Edit form now confirms before
+silently replacing an existing tag when saving into an already-occupied (loc,date) slot with a
+different event; editing that same slot in place (the modal opened via its own Edit button) still
+saves without a prompt, since that's just editing.
+
+**Not done, deliberately:** no restructure of `mf_events` away from one-entry-per-day (the combine
+is a display/data-layer patch that fits inside the existing shape, not the "local map can't
+represent that at all" architecture change this section's own text flags as a bigger job than
+asked for); no merge-or-delete UI (zero real duplicates to merge today — build it when the answer
+changes, the filter is already there to notice); `diffUserEventsForCloudSync`'s known multi-day-span
+label-suffix gap (line ~173) is untouched, unaffected by this fix, still the pre-existing deferred
+item.
+
 Owner: *"We need a way to find duplicates and easily remove them."* Continues directly from
 [[notes-62-queue]]'s Event Tags panel ask (the 450-tagged-days finding) — build together, don't
 build two panels.
@@ -441,8 +476,9 @@ this session.** Revisit during the Workstream D "score & polish" pass in [[visio
    model needed.
 3. Swing Watch "Acknowledged" home at the top of Needs Attention — fully scoped, reuses existing
    Supabase-backed ack data.
-4. Events & Tags duplicate finder (+ the silent-overwrite fix as an immediate small patch) — build
-   inside the already-requested notes-62 Event Tags panel.
+4. ~~Events & Tags duplicate finder (+ the silent-overwrite fix as an immediate small patch)~~ — ✅
+   DONE v4.962 (issue #142, PR pending). Also found and fixed a bigger live bug while measuring it —
+   see above.
 5. Food Cost Panel RLS diagnostic — root cause is understood, but this touches a live production
    security policy. **Needs the owner's go-ahead (or the owner running the `pg_policies` diff
    directly) before any policy SQL changes.**
