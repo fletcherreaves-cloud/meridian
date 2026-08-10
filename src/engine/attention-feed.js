@@ -201,15 +201,44 @@ export function integrityFlags(flags = [], storeName = String) {
   }));
 }
 
-// Rank + cap. Severity desc, then |dollars| desc.
-export function rankAttention(items = [], { max = 15 } = {}) {
-  return (items || []).filter(Boolean)
-    .sort((a, b) => (SEV[b.severity] - SEV[a.severity]) || (Math.abs(b.dollars || 0) - Math.abs(a.dollars || 0)))
-    .slice(0, max);
+// Adapts buildBrief's per-store findings into feed items so buildBrief and this engine's
+// other detectors can share ONE ranked list (the Needs Attention / Attention Now merge).
+// buildBrief's findings already carry severity/category/icon/dollars/title/detail/loc —
+// engine/finding-rules.js's attachFindingMeta attaches them (called from buildStore right
+// after buildBrief returns), so this is reshaping, not re-deriving. `t:'ok'`/`t:'fc'` map to
+// severity:'info' via T_TO_SEVERITY and are dropped here — a strength note or a forecast
+// projection isn't something that needs attention.
+export function findingsToFeedItems(findings = [], nav = 'analytics') {
+  return (findings || [])
+    .filter(f => f && (f.severity === 'crit' || f.severity === 'warn'))
+    .map(f => ({
+      id: `finding-${f.loc}-${f.rule || f.title}`,
+      loc: f.loc, severity: f.severity, category: f.category || 'Other', icon: f.icon || '•',
+      title: f.title, detail: f.detail, dollars: f.dollars || 0, nav,
+    }));
 }
 
-// Convenience aggregator.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, storeName = String, max = 15 } = {}) {
+// Rank + cap. Severity desc, then |dollars| desc. No-silent-caps: a caller that hits the cap
+// gets a console warning naming what was dropped, instead of items quietly vanishing — a
+// flat top-N feels safe for a "top issues" list but would silently drop whole STORES from a
+// store-grouped consumer (e.g. AttentionPanel), which is why callers that need every item
+// pass an effectively unbounded max rather than relying on this to be forgiving.
+export function rankAttention(items = [], { max = 15, label = 'rankAttention' } = {}) {
+  const sorted = (items || []).filter(Boolean)
+    .sort((a, b) => (SEV[b.severity] - SEV[a.severity]) || (Math.abs(b.dollars || 0) - Math.abs(a.dollars || 0)));
+  if (sorted.length > max) {
+    const dropped = sorted.slice(max);
+    console.warn(`[Meridian] ${label} truncated ${dropped.length} item(s) at max=${max} — dropped: ` +
+      dropped.map(d => `${d.loc || '—'}:${d.title || d.id}`).join(', '));
+  }
+  return sorted.slice(0, max);
+}
+
+// Convenience aggregator. `briefFindings` is the flattened findings array across ALL stores
+// (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
+// alongside the other detectors, so one ranked list contains everything either panel used to
+// show separately.
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, storeName = String, max = 15 } = {}) {
   const items = [
     ...staleData(ageDays),
     ...fobOutliers(fobByStore || {}, storeName),
@@ -220,6 +249,7 @@ export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, 
     ...signalDecay(savedCorrelations || []),
     ...countExceptions(countExceptionRows || [], storeName),
     ...integrityFlags(integrityItems || [], storeName),
+    ...findingsToFeedItems(briefFindings || []),
   ];
-  return rankAttention(items, { max });
+  return rankAttention(items, { max, label: 'buildAttentionFeed' });
 }

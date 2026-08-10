@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY } from '../engine/attention-feed.js';
+import { describe, it, expect, vi } from 'vitest';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
 
@@ -147,6 +147,77 @@ describe('rankAttention', () => {
     ];
     const ranked = rankAttention(items, { max: 3 });
     expect(ranked.map(r => r.id)).toEqual([2, 3, 1]); // crit first; among warns, bigger $ first; info dropped by cap
+  });
+
+  it('warns (does not silently drop) when the cap truncates the list', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const items = [
+      { id: 1, loc: 'a', title: 'A issue', severity: 'crit', dollars: 100 },
+      { id: 2, loc: 'b', title: 'B issue', severity: 'crit', dollars: 90 },
+      { id: 3, loc: 'c', title: 'C issue', severity: 'crit', dollars: 80 },
+    ];
+    rankAttention(items, { max: 2, label: 'testCaller' });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const msg = warnSpy.mock.calls[0][0];
+    expect(msg).toMatch(/testCaller/);
+    expect(msg).toMatch(/truncated 1/);
+    expect(msg).toMatch(/c:C issue/); // the dropped item is named, not silently gone
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when nothing is dropped', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rankAttention([{ id: 1, severity: 'crit', dollars: 1 }], { max: 15 });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
+
+describe('findingsToFeedItems (buildBrief -> feed adapter)', () => {
+  const finding = (over = {}) => ({
+    rule: 'cashOS', t: 'crit', m: 'CRITICAL — CASH INTEGRITY: over.',
+    severity: 'crit', category: 'Controls', icon: '💵',
+    title: 'CRITICAL — Cash Over/Short', detail: 'over.', dollars: 42, loc: '10422',
+    ...over,
+  });
+
+  it('maps a crit/warn finding into the feed item shape', () => {
+    const [item] = findingsToFeedItems([finding()]);
+    expect(item).toMatchObject({
+      loc: '10422', severity: 'crit', category: 'Controls', icon: '💵',
+      title: 'CRITICAL — Cash Over/Short', detail: 'over.', dollars: 42, nav: 'analytics',
+    });
+    expect(item.id).toBeTruthy();
+  });
+
+  it('drops info-severity findings (buildBrief\'s t:\'ok\'/t:\'fc\')', () => {
+    const ok = finding({ rule: 'allClear', t: 'ok', severity: 'info' });
+    const fc = finding({ rule: 'forecast', t: 'fc', severity: 'info' });
+    expect(findingsToFeedItems([ok, fc])).toEqual([]);
+  });
+
+  it('keeps warn-severity findings (buildBrief\'s t:\'watch\')', () => {
+    const watch = finding({ rule: 'labor', t: 'watch', severity: 'warn' });
+    const items = findingsToFeedItems([watch]);
+    expect(items).toHaveLength(1);
+    expect(items[0].severity).toBe('warn');
+  });
+
+  it('ignores null/undefined entries without throwing', () => {
+    expect(() => findingsToFeedItems([finding(), null, undefined])).not.toThrow();
+    expect(findingsToFeedItems([finding(), null, undefined])).toHaveLength(1);
+  });
+
+  it('feeds cleanly into buildAttentionFeed alongside the other detectors', () => {
+    const feed = buildAttentionFeed({
+      briefFindings: [finding(), finding({ loc: '5985', rule: 'labor', t: 'watch', severity: 'warn', title: 'WATCH — Labor', dollars: 10 })],
+      salesLY: [{ loc: 'd', cur: 8000, ly: 10000 }],
+      storeName: nm,
+      max: 50,
+    });
+    expect(feed.some(i => i.loc === '10422' && i.severity === 'crit')).toBe(true);
+    expect(feed.some(i => i.loc === '5985' && i.severity === 'warn')).toBe(true);
+    expect(feed.some(i => i.category === 'Sales')).toBe(true); // salesBehindLY still fires alongside
   });
 });
 

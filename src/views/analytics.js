@@ -14,6 +14,7 @@ import { TH, f$, fPct, fP, grade, escapeHtml as esc } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, idbPutRows, opfsClear, opfsSave } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
+import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadSagePromptRuns, loadQsrFob, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
@@ -5023,24 +5024,49 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
   );
 }
 
-function AttentionPanel({stores, onSelectStore, onClose}) {
+function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
   const [selStore, setSelStore] = React.useState(null);
   const [tab, setTab] = React.useState('critical');
 
-  // Group findings by store, sorted by severity
+  // Merge #1 (engine only): sourced from the SAME buildAttentionFeed engine
+  // WhatNeedsAttentionPanel uses (attention-now.js's useAttentionFeed hook), not from
+  // store.findings directly — so this panel now sees buildBrief's own findings (cash/labor/
+  // OEPE/sales-decline/etc, adapted via findingsToFeedItems) PLUS the other 9 cross-domain
+  // detectors (FOB outliers, behind-LY, slow DT, visit-readiness, signal decay, sync
+  // staleness, integrity flags) that only used to surface in "Attention Now". A store that
+  // used to show up in EITHER panel should still show up here.
+  //
+  // max is effectively unbounded: this view is store-GROUPED, not a flat top-N list, so
+  // capping it the way WhatNeedsAttentionPanel's max:20 does would silently drop whole
+  // stores from a store-grouped view (rankAttention's own no-silent-caps warning is what
+  // would catch that mistake, not a number picked here).
+  const feed = useAttentionFeed({ ds, stores, dateRange, max: Infinity });
+
+  const storesByLoc = React.useMemo(() => {
+    const m = new Map();
+    for (const s of (stores || [])) m.set(unpad(s.loc), s);
+    return m;
+  }, [stores]);
+
+  // Group feed items by store, sorted by severity. Items with no loc (e.g. staleData, a
+  // district-wide sync-health signal) have no store to attach to in this store-GROUPED
+  // layout and are left out here — they still surface in "Attention Now"'s flat feed.
   const storeFindings = React.useMemo(()=>{
-    return (stores||[])
-      .map(s=>({
-        store:s,
-        crits:(s.findings||[]).filter(f=>f.t==='crit'),
-        // buildBrief emits 'watch', never 'warn'. Until v4.858 this matched nothing, so the
-        // "🟡 Watch" tab was permanently empty and the header always read "0 stores on watch".
-        warns:(s.findings||[]).filter(f=>f.t==='warn'||f.t==='watch'),
-        total:(s.findings||[]).filter(f=>f.t==='crit'||f.t==='warn'||f.t==='watch').length
-      }))
-      .filter(x=>x.total>0)
+    const byLoc = new Map();
+    for (const item of feed) {
+      if (item.loc == null) continue;
+      const loc = unpad(item.loc);
+      const store = storesByLoc.get(loc);
+      if (!store) continue;   // feed references a store outside the currently loaded set
+      let bucket = byLoc.get(loc);
+      if (!bucket) { bucket = { store, crits: [], warns: [] }; byLoc.set(loc, bucket); }
+      if (item.severity === 'crit') bucket.crits.push(item);
+      else if (item.severity === 'warn') bucket.warns.push(item);
+    }
+    return [...byLoc.values()]
+      .map(x => ({ ...x, total: x.crits.length + x.warns.length }))
       .sort((a,b)=>b.crits.length-a.crits.length||b.warns.length-a.warns.length);
-  },[stores]);
+  },[feed, storesByLoc]);
 
   const critStores = storeFindings.filter(x=>x.crits.length>0);
   const warnStores = storeFindings.filter(x=>x.crits.length===0&&x.warns.length>0);
@@ -5113,7 +5139,7 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
               // Top issue preview
               div({style:{fontSize:'8px',color:'var(--text3)',overflow:'hidden',
                 textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:240}},
-                (item.crits[0]||item.warns[0])?.m?.split('–')[0]?.trim()?.slice(0,60)||'')
+                (item.crits[0]||item.warns[0])?.title?.slice(0,60)||'')
             )
           )
         ),
@@ -5150,9 +5176,9 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
                       background:'rgba(239,68,68,.06)',borderRadius:'var(--r)',
                       borderLeft:'3px solid #ef4444'}},
                       div({style:{fontSize:'10px',fontWeight:700,color:'#f87171',marginBottom:4}},
-                        (f.m||'').split('–')[0].trim()),
+                        f.title||''),
                       div({style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.6}},
-                        ...mdToNodes((f.detail||f.m||'').replace(/^.*?–\s*/,'').trim()||
+                        ...mdToNodes(f.detail||
                           'This metric requires immediate attention. Review with your operations team and create an action plan.'))
                     )
                   )
@@ -5169,9 +5195,9 @@ function AttentionPanel({stores, onSelectStore, onClose}) {
                       background:'rgba(245,158,11,.06)',borderRadius:'var(--r)',
                       borderLeft:'3px solid #f59e0b'}},
                       div({style:{fontSize:'9px',fontWeight:700,color:'#f59e0b',marginBottom:2}},
-                        (f.m||'').split('–')[0].trim()),
+                        f.title||''),
                       div({style:{fontSize:'9px',color:'var(--text3)',lineHeight:1.5}},
-                        (f.m||'').replace(/^.*?–\s*/,'').trim().slice(0,200))
+                        (f.detail||'').slice(0,200))
                     )
                   )
                 ),

@@ -94,9 +94,50 @@ gap via a new `mergeWorstSalesLY` helper (`engine/attention-feed.js`) — never 
 a duplicate row for the same store), never averaged. 4 new tests. `npm test` 1086/1086, build
 clean (2815.65 KB / 841.49 KB gzip, within budget).
 
-**Part 2, item 1 (the panel-rename/merge question) is still open** — this is a product-naming
-decision ("Needs Attention" vs "Attention Now" — merge, rename, or keep both), not an engineering
-task, and per the owner's own framing in [[notes-60-queue]] it needs a call, not a unilateral pick.
+**Part 2, item 1 (the panel-rename/merge question) — resolved by the owner: merge the two panels,
+keep the name "Needs Attention."** Panel-merge PR 1 of 2 (engine only, v4.943, 2026-08-10) is the
+first step:
+
+- Added `findingsToFeedItems` (`engine/attention-feed.js`) — adapts `buildBrief`'s per-store
+  findings (already carrying severity/category/dollars/title/detail/loc via
+  `finding-rules.js`'s `attachFindingMeta`) into `buildAttentionFeed`'s item shape. `t:'ok'`/
+  `t:'fc'` map to `severity:'info'` and are dropped (a strength note or forecast line isn't
+  something that needs attention); `t:'crit'`/`t:'watch'` map to `'crit'`/`'warn'`.
+- `buildAttentionFeed` gained a `briefFindings` input, merged in alongside the existing 9
+  detectors — one ranked list now contains everything either panel used to show separately.
+- Extracted `useAttentionFeed({ds, stores, dateRange, max})` (`attention-now.js`) — the ONE
+  hook both panels now call, so they share the exact same computation instead of each
+  re-deriving it. `WhatNeedsAttentionPanel` is a thin wrapper around it (`max:20`, its existing
+  flat top-N behavior, unchanged layout). `AttentionPanel` (`analytics.js`) now also calls it
+  (`max:Infinity` — a store-GROUPED view can't safely use a flat top-N cap without silently
+  dropping whole stores) and groups the merged feed by `loc` instead of reading
+  `store.findings` directly. Its rendering swapped `f.m`-string-splitting for the feed items'
+  already-correct `f.title`/`f.detail` (an unavoidable, incidental fix for a real pre-existing
+  bug: the old code split on an EN-dash while `buildBrief` emits an EM-dash, so the "title" it
+  showed was actually the entire prose sentence).
+- `rankAttention` now warns (`console.warn`, naming what was dropped) whenever its cap actually
+  truncates the list — the no-silent-caps rule PR #109's task explicitly called out, now
+  enforced at the one shared choke point instead of per-caller discipline.
+- **Verified against real production data** (all 27 stores, pulled via service-role key —
+  `qsr_daily_activity_rollup`/`qsr_cash_sheet`/`qsr_labor_summary`/`qsr_service_stats`/
+  `daily_glimpse_daily`/`cash_sheet_daily`/`sales_ledger_daily`/`qsr_fob`/`lifelenz_schedule`,
+  fed through the real `buildDS`/`buildStore`/`buildBrief` and `buildAttentionFeed`, not a
+  synthetic fixture): **every store that had a crit/warn finding in the old `AttentionPanel`
+  still has one in the merged uncapped feed — zero regressions** (25 of 27 stores had real
+  findings; 82 buildBrief findings total, 60 crit/warn). One real, expected side-effect found
+  and reported rather than hidden: 3 stores (13113, 5985, 37566) that made
+  `WhatNeedsAttentionPanel`'s flat top-20 before no longer do, because 4 stores' buildBrief
+  findings (32525, 5183, 6838, 31357) that never competed for those 20 slots now do — the top-N
+  cap doing exactly what a top-N cap does when more real signal enters the pool. Not a bug; a
+  consequence of the merge the owner should know about. No overlapping-Sales-category double
+  counting observed (a store showing both a `buildBrief` sales finding and `salesBehindLY`'s
+  own) in this real pull, though it remains theoretically possible since both detectors still
+  run independently — not deduped, out of this PR's scope.
+- `npm test` 1106/1106, build clean (2817.63 KB / 841.97 KB gzip, within budget).
+
+**Explicitly NOT in this PR** (per its own scope, all Part 2): layout changes to either panel,
+the Swing-Watch-style "Acknowledged" home, retiring the `priorities` nav entry, any renaming.
+Draft PR only — the owner reviews and merges.
 Flagging back to the owner rather than deciding it here.
 
 Original finding, for reference:
@@ -344,8 +385,10 @@ this session.** Revisit during the Workstream D "score & polish" pass in [[visio
 ## Priority order (this session's proposal, non-UI/UX first per the owner's instruction)
 
 1. ~~**Needs Attention sales-decline detector (Atoka)**~~ — ✅ DONE v4.940 (PR #109).
-   ~~`attention-now.js` rolling window~~ — ✅ DONE v4.941. Panel rename/merge question still
-   open — needs an owner call, see above.
+   ~~`attention-now.js` rolling window~~ — ✅ DONE v4.941. Panel rename/merge decided by the
+   owner (merge, keep "Needs Attention") — Part 1 (engine only) shipped v4.943, draft PR open
+   for owner review/merge. Part 2 (layout, Acknowledged home, retire `priorities` nav) not
+   started, see above.
 2. EOM Change Monitor qty + case-conversion — fully scoped, engine already supports it, no new data
    model needed.
 3. Swing Watch "Acknowledged" home at the top of Needs Attention — fully scoped, reuses existing
