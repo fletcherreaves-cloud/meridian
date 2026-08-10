@@ -543,3 +543,44 @@ ready**, so switching is a setting rather than a project.
   `store_registry.defaultTargets`).
 - Admin-gated. Changing it moves every store's score.
 - Same before/after reporting as the rest of #153 — the owner sees which stores move and why.
+
+---
+
+# Roadmap fact: monthly targets move into MBI within 1–2 months (owner, 2026-08-10)
+
+Owner: *"Cloud first as I am still manually uploading these. Hopefully in the next month or two,
+it will be done completely in MBI. That should help."*
+
+## Two decisions this settles
+
+**Monthly-target precedence: CLOUD FIRST.** The device-cache-wins spread at `App.js:2279`
+(`{...cloudLatest, ...prev.monthlyTargets}`) is **not deliberate** — invert it. Filed as #156.
+Confirmed while tracing: the targets themselves DO persist both ways (write via
+`saveMonthlyTargets` at `pipeline.js:508`, read via `loadAllMonthlyTargets()` at `App.js:2279`),
+so this was only ever a precedence bug, never a persistence one.
+
+**Do not over-build around the manual path.** It has a known expiry. Fix the precedence, add a
+comment, stop. No target-management UI, no migration tooling, no reconciliation machinery for a
+pipeline that is being replaced.
+
+## Why the MBI move matters beyond convenience
+
+Once targets are set in MBI they stop being a manual Excel drop and arrive through the LifeLenz
+pull — moving them from **manual** to **auto-first**, which is the standing rule's resting state
+and removes the device-local-cache problem entirely rather than patching it.
+
+⚠️ **It may also collapse the six-competing-numbers problem at the source, but DO NOT assume so.**
+The MBI sheet already carries a "Labor Target (Organization)" column, which is what currently
+feeds `laborTargetOrg` — the value the owner identified as the LifeLenz **AOS** *"Maximum labor
+cost percentage"* and told us not to use. If setting targets in MBI writes that same field, then
+the owner's approved number becomes `laborTargetOrg` and much of #153/#154's tension dissolves.
+If MBI targets land somewhere else and AOS stays a separate generator constraint, nothing
+dissolves. **Nobody has checked which**, and today produced four separate cases of designing
+against an assumption that a five-minute look would have settled. Check before planning around it.
+
+## Sequencing consequence
+
+#153 (scorer discards merged targets) and #150 (zero-valued metrics discarded) are **unaffected by
+the MBI move** — they are consumption bugs, not source bugs, and stay worth fixing now. #154's AOS
+discovery becomes *more* interesting, not less: if MBI is about to become the target-entry surface,
+knowing whether AOS config is readable/writable tells us whether the two converge or stay split.
