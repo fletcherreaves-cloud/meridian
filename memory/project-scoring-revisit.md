@@ -432,9 +432,21 @@ are computed off `laborTargetOrg`. Those columns have been grading against an un
 `computeOpsScore` (`pipeline.js`) grades labor against `t.tLabor`.
 
 So the monthly approval cycle populates crew and bonus labor but **not the field the score uses**.
-`tLabor`'s only other sources are the static `constants.js` map and an `org_config.defaultTargets`
-override (`App.js:2051`) — RLS blocks an anon read of `org_config`, so whether that is maintained
-could not be verified from this environment.
+`tLabor`'s only other source is the static `constants.js` map — the `org_config` override path is
+**dormant, confirmed by owner query 2026-08-10**: `select ... from public.org_config where
+key = 'store_registry'` returns **0 rows**. (The key is `store_registry`, with `defaultTargets` as
+a property inside its `data` blob — `App.js:2046` — not a `default_targets` key; the PM guessed
+the wrong shape first.) The code comment there already said so: *"a future tenant's
+STORE_NAMES/DEFAULT_TARGETS override… No row for this owner yet → no-op."* It is onboarding
+scaffolding for a second tenant, not a live override. `setLiveStoreNames` is equally dormant, so
+STORE_NAMES is static too — expected, not a bug.
+
+**Therefore, on a normal login all three layers collapse to one:** `ds.targets` is `{}` (only an
+in-session OpsTargets.xlsx upload fills it), `org_config.store_registry` has no row, so
+`buildStore` always reads `DEFAULT_TARGETS` from `constants.js`. Ops and Controls scores grade
+every store against numbers hardcoded in a source file, changeable only by editing and deploying
+code — while `mergedTargets`, carrying the monthly approved crew labor % and every Targets-panel
+override, is rebuilt each render and discarded.
 
 **Question for the owner:** on the sheet sent to operators, which line is *the* number — crew
 labor %, bonus crew %, or a total?
