@@ -86,7 +86,6 @@ export const PANELS = [
   { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'people' },
   { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning' },
   { id:'pmix', label:'Product Mix', icon:'🍔', perm:'analytics.store', kind:'optional', section:'operations' },
-  { id:'priorities', label:'Attention Now', icon:'🎯', perm:null, kind:'nav', section:'notifications' },
   { id:'priority-brief', label:'Priority Actions', icon:'🎯', perm:'analytics.brief', kind:'optional', section:'notifications' },
   { id:'proj', label:'Proj Workflow', icon:'🔒', perm:'analytics.forecasting', kind:'test-kitchen', section:'planning' },
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },

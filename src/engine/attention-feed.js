@@ -234,6 +234,28 @@ export function rankAttention(items = [], { max = 15, label = 'rankAttention' } 
   return sorted.slice(0, max);
 }
 
+// Group a feed into store buckets (worst finding first), for a store-grouped consumer
+// (AttentionPanel — the Needs Attention merge, issue #115). Loc-less items (staleData,
+// signalDecay) have nowhere to live here and are skipped — the caller pins those in a
+// separate strip instead of dropping them. `normLoc` lets the caller normalize `item.loc`
+// to match however `storesByLoc` was keyed (e.g. unpad, stripping a leading zero-pad).
+export function groupAttentionByStore(items = [], storesByLoc = new Map(), normLoc = String) {
+  const byLoc = new Map();
+  for (const item of (items || [])) {
+    if (item.loc == null) continue;
+    const loc = normLoc(item.loc);
+    const store = storesByLoc.get(loc);
+    if (!store) continue;   // feed references a store outside the currently loaded set
+    let bucket = byLoc.get(loc);
+    if (!bucket) { bucket = { store, crits: [], warns: [] }; byLoc.set(loc, bucket); }
+    if (item.severity === 'crit') bucket.crits.push(item);
+    else if (item.severity === 'warn') bucket.warns.push(item);
+  }
+  return [...byLoc.values()]
+    .map(x => ({ ...x, total: x.crits.length + x.warns.length, worst: x.crits[0] || x.warns[0] }))
+    .sort((a, b) => b.crits.length - a.crits.length || b.warns.length - a.warns.length);
+}
+
 // Convenience aggregator. `briefFindings` is the flattened findings array across ALL stores
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to

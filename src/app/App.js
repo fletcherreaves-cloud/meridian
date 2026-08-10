@@ -92,7 +92,6 @@ const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => 
 const FOBEOMPanel = lazyPanel(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
 const EOMSupervisorPanel = lazyPanel(() => import('../views/eom-supervisor.js').then(m => ({ default: m.EOMSupervisorPanel })));
 const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
-import { WhatNeedsAttentionPanel } from '../views/attention-now.js';
 import { FormsPrintPanel } from '../views/forms-print.js';
 const OnePagerPanel = lazyPanel(() => import('../views/one-pager.js').then(m => ({ default: m.OnePagerPanel })));
 import { MetricLineagePanel } from '../views/metric-lineage.js';
@@ -332,6 +331,11 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.946', date:'2026-08-10', changes:[
+    'Needs Attention — Part 2 of the Attention Now merge: new layout. Instead of a list you click through one store at a time, it\'s now a single ranked list — worst store first, each one expands in place to show every finding. Clickable Critical / Watch / Acknowledged counts at the top act as filters. A clean, non-urgent store now shows up in a collapsed "Running Well" section instead of just not being there, and a district-wide alert that isn\'t tied to any one store (like "sales data is 9 days old, auto-sync may be down") now gets its own pinned strip at the top instead of having nowhere to go.',
+    'New: acknowledge any finding so it moves out of the active list until the situation actually changes — same idea as the sales-swing alarm\'s acknowledgement, extended here. Acknowledging one issue at a store never silently acknowledges a different issue at the same store, and acknowledgements sync across devices the same way the swing alarm\'s do.',
+    '"Attention Now" as a separate menu item is retired — everything it showed (including the sync-health alert) is now inside Needs Attention. Checked carefully that nothing it used to show got lost in the move, since that alert has caught two real multi-day data outages in the past.',
+  ]},
   {version:'4.944', date:'2026-08-10', changes:[
     'Data-integrity sweep, signature #4 — closed out for good: 9 more trailing-window comparisons found to still be counting today\'s still-filling business day as if it were a full day (the same bug behind 4.917/4.924, recurring because each fix had been done inline instead of from one shared rule). Fixed: the Anomaly Detection panel, the AI Backtest Scanner, Avg Check Momentum, the forecast engine\'s 2-week trend (which had no cutoff at all), the district-wide sales-vs-last-year figure used on 5 different screens, and 4 lower-priority spots (Morning Brief\'s store norms, the 90-day metric averages, the AI Pre-Forecast context, and the Performance Calculator baseline). All 9 now share one function instead of each re-deriving the cutoff date by hand. Checked against real store data: the forecast engine\'s underlying 6-week averages moved the most — one adjustment factor shifted by up to 10% for 2 stores — but a full before/after backtest came back byte-identical on accuracy (the backtest\'s own calibration re-fits around whatever baseline it\'s given, so historical grading doesn\'t change even though a live forward forecast now starts from a cleaner number). The 90-day metric averages moved more than first estimated when this was triaged as lower-risk — one store\'s T-Red-A rate shifted 21.6% — corrected here rather than left mis-labeled. Two of the nine sites (the sales-vs-LY figure and the 2-week trend) showed no measured change today only because the manually-uploaded Labor Report hasn\'t received a new row since 2026-07-23 — both are still fixed for when that resumes.',
   ]},
@@ -1733,7 +1737,6 @@ function App() {
   },[]);
   const [anomFilter, setAnomFilter]    = useState('all');
   const [showAttention, setShowAttention] = useState(false);
-  const [showPriorities, setShowPriorities] = useState(false);
   const [showFormsPrint, setShowFormsPrint] = useState(false);
   const [showLeaderOnePager, setShowLeaderOnePager] = useState(false);
   const [showMetricLineage, setShowMetricLineage] = useState(false);
@@ -3314,7 +3317,7 @@ function App() {
   const anyModalOpen = showNews||showCountCycle||showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
     showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
     showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
-    showPriorities||showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
+    showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
@@ -3348,7 +3351,7 @@ function App() {
       setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
       setShowFOBEOM(false);setShowFeatureRequests(false);setShowFormsLibrary(false);
       setShowFormsPrint(false);setShowLeaderOnePager(false);setShowMetricLineage(false);
-      setShowPriorities(false);setShowPromoRoi(false);setShowReportSubs(false);
+      setShowPromoRoi(false);setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
       setShowVisitReady(false);setShowCountCycle(false);setShowNews(false);
     };
@@ -3475,7 +3478,6 @@ function App() {
         if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
-        if(modal==='priorities')     setShowPriorities(true);
         if(modal==='forms-print')    setShowFormsPrint(true);
         if(modal==='leader-one-pager') setShowLeaderOnePager(true);
         if(modal==='metric-lineage')   setShowMetricLineage(true);
@@ -3679,9 +3681,6 @@ function App() {
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
     showAttention&&h(AttentionPanel,{stores,ds,dateRange,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false)}),
-    showPriorities&&h(WhatNeedsAttentionPanel,{ds,stores,dateRange,
-      onOpenModal:(m)=>{ if(m==='fob-analysis')setShowFOB(true); else if(m==='signals')setShowSignals(true); else if(m==='eom-dashboard')setShowEOMDash(true); },
-      onClose:()=>setShowPriorities(false)}),
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),

@@ -14,10 +14,27 @@
 //
 // Acks persist to user_settings under `swing_acks` so they follow the user across
 // devices, using the same load/save pattern as every other setting.
+//
+// ── A SECOND ACK DOMAIN (issue #115) ─────────────────────────────────────────
+// The Needs Attention merge reuses this same ack machinery for attention-feed items
+// (src/engine/attention-feed.js), which are NOT swing items — they carry no `.swing`
+// field. Two real traps if you copy-paste instead of generalizing:
+//   Trap 1 — the default key `${loc}:${swing?.to||''}:${severity}` collides for
+//   attention items: two different crit findings at the SAME store both key as
+//   `10422::crit`, so acknowledging one silently acknowledges the other. Attention
+//   items already carry a unique `item.id` (`finding-${loc}-${rule}`, `fob-${loc}`,
+//   etc.) — every function below takes an optional `keyFn` so a caller can key on
+//   that instead. Swing callers pass nothing and get the original behavior.
+//   Trap 2 — do NOT share the storage key. `pruneAcks` keeps a key only if it's in
+//   `liveItems` or younger than `maxAgeDays`; if both domains shared one blob,
+//   pruning against one feed's live items would silently drop the other domain's
+//   acks past the cutoff. Use `ATTENTION_ACK_SETTING_KEY`, a separate user_settings
+//   row, for attention acks.
 
 import { detectSwing, swingItem } from './swing-detect.js';
 
 export const ACK_SETTING_KEY = 'swing_acks';
+export const ATTENTION_ACK_SETTING_KEY = 'attention_acks';
 
 const dKey = (d) => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
 const pad = (n) => String(n).padStart(2, '0');
@@ -113,17 +130,20 @@ export function buildSwingFeed(rows = [], { storeName = String, asOf = null, now
                             (Math.abs(b.dollars || 0) - Math.abs(a.dollars || 0)));
 }
 
-/** Stable key for one acknowledgement. Changes when the situation changes. */
-export function ackKey(item) {
-  if (!item) return '';
-  return `${item.loc}:${item.swing?.to || ''}:${item.severity}`;
+const defaultAckKey = (item) => item ? `${item.loc}:${item.swing?.to || ''}:${item.severity}` : '';
+
+/** Stable key for one acknowledgement. Changes when the situation changes.
+ *  `keyFn` lets a second ack domain key on something other than the swing shape —
+ *  see the module doc above. Swing callers pass nothing and get the original key. */
+export function ackKey(item, keyFn = defaultAckKey) {
+  return keyFn(item);
 }
 
 /** Split a feed into what still needs attention and what's been acknowledged. */
-export function partitionAcked(items = [], acks = {}) {
+export function partitionAcked(items = [], acks = {}, keyFn = defaultAckKey) {
   const pending = [], acked = [];
   for (const i of (items || [])) {
-    (acks && acks[ackKey(i)] ? acked : pending).push(i);
+    (acks && acks[keyFn(i)] ? acked : pending).push(i);
   }
   return { pending, acked };
 }
@@ -136,8 +156,8 @@ export const blocking = (items = [], acks = {}) =>
  * Record an acknowledgement. Returns the NEW acks object (never mutates), so callers
  * can persist and set state from one value.
  */
-export function acknowledge(acks = {}, item, who = null) {
-  const k = ackKey(item);
+export function acknowledge(acks = {}, item, who = null, keyFn = defaultAckKey) {
+  const k = keyFn(item);
   if (!k) return acks;
   return { ...(acks || {}), [k]: { at: new Date().toISOString(), by: who || null } };
 }
@@ -146,8 +166,8 @@ export function acknowledge(acks = {}, item, who = null) {
  * Drop acknowledgements for situations that no longer exist, so the store doesn't grow
  * without bound. Anything older than `maxAgeDays` goes regardless.
  */
-export function pruneAcks(acks = {}, liveItems = [], { maxAgeDays = 120 } = {}) {
-  const live = new Set((liveItems || []).map(ackKey));
+export function pruneAcks(acks = {}, liveItems = [], { maxAgeDays = 120, keyFn = defaultAckKey } = {}) {
+  const live = new Set((liveItems || []).map(keyFn));
   const cutoff = Date.now() - maxAgeDays * 864e5;
   const out = {};
   for (const [k, v] of Object.entries(acks || {})) {
