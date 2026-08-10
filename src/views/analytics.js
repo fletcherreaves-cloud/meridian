@@ -1312,6 +1312,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 // Allows selective clear or full reset.
 function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig}) {
   const {useState:uSt, useEffect:uE} = React;
+  const [tab,    setTab]   = uSt('overview');
   const [cov,    setCov]   = uSt(idbCoverage||{});
   const [status, setStatus]= uSt('');
   const [qsrFiles, setQsrFiles] = uSt([]);
@@ -1435,6 +1436,34 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
       background:stalenessColor(d),marginRight:4,flexShrink:0,verticalAlign:'middle',
       title:d+'d old'}});
   };
+
+  // Coverage tab (harvested from the orphaned DevDashboard's Data Audit tab, issue #123 —
+  // "nothing live has an equivalent." Everything above computes coverage per SOURCE across
+  // the whole district; this is per-STORE — which source(s) is THIS store missing, not just
+  // the district total. That distinction is exactly what would have caught the labor_rows
+  // staleness incident at a glance instead of two weeks late. Same math as the orphan, only
+  // relocated: coverage% = rows for this store ÷ expected calendar days between its own
+  // first/last labor row, graded Full (>=90%) / Partial at the same 90/70 thresholds.
+  const auditGrid = React.useMemo(()=>{
+    if(!ds||!ds.loaded) return null;
+    return (ds.storeIds||[]).map(loc=>{
+      const lR=(ds.laborRows||[]).filter(r=>r.loc===loc);
+      const oR=(ds.opsRows||[]).filter(r=>r.loc===loc);
+      const cR=(ds.ctrlRows||[]).filter(r=>r.loc===loc);
+      const wR=(ds.weatherRows||[]).filter(r=>r.loc===loc);
+      const pR=(ds.peaksSvcRows||[]).filter(r=>String(r.loc||'').trim()===loc);
+      const aR=(ds.auditRows||[]).filter(r=>r.loc===loc);
+      const dates=lR.map(r=>r.date).sort((a,b)=>a-b);
+      const first=dates[0], last=dates[dates.length-1];
+      const exp=first&&last?Math.round((last-first)/86400000)+1:0;
+      const cov=exp>0?+(lR.length/exp*100).toFixed(2):0;
+      return {
+        loc, name:STORE_NAMES[loc]||loc,
+        labor:lR.length, ops:oR.length, ctrl:cR.length, weather:wR.length, peaks:pR.length, audit:aR.length,
+        first, last, coverage:cov, ok:lR.length>0&&oR.length>0&&cR.length>0,
+      };
+    });
+  },[ds&&ds.storeIds, ds&&ds.laborRows, ds&&ds.opsRows, ds&&ds.ctrlRows, ds&&ds.weatherRows, ds&&ds.peaksSvcRows, ds&&ds.auditRows]);
 
   // Compute records stats from ds
   const recStats = React.useMemo(()=>{
@@ -1806,8 +1835,30 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
         ),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
+      div({className:'tabs',style:{padding:'0 16px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)'}},
+        ['overview','coverage'].map(t2=>div({key:t2,className:'tab'+(tab===t2?' on':''),
+          onClick:()=>setTab(t2),style:{fontSize:'11px'}},
+          t2==='overview'?'Overview':'Coverage'))
+      ),
       div({style:{padding:'16px',overflowY:'auto',flex:1,minHeight:0}},
-        div(null,
+        tab==='coverage'&&(auditGrid?div({style:{overflowX:'auto'}},
+          tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+            thead(null,tr(null,...['Store','Labor','Ops','Ctrl','Wx','Peaks','Audit','Coverage','Status'].map(l=>
+              th({key:l,style:{padding:'4px 8px',background:'var(--surf3)',fontSize:'8px',textTransform:'uppercase',
+                color:'var(--text2)',textAlign:'left',borderBottom:'.5px solid var(--bdr)'}},l)))),
+            tbody(null,auditGrid.map(a=>tr({key:a.loc,style:{borderBottom:'.5px solid var(--bdr)'}},
+              td({style:{padding:'4px 8px',fontWeight:500}},a.name),
+              ...[a.labor,a.ops,a.ctrl,a.weather,a.peaks,a.audit].map((v,j)=>td({key:j,
+                style:{padding:'4px 8px',fontFamily:'var(--mono)',color:v>0?'#10b981':'#ef4444'}},v)),
+              td({style:{padding:'4px 8px',color:a.coverage>=90?'#10b981':a.coverage>=70?'#f59e0b':'#ef4444',
+                fontFamily:'var(--mono)'}},a.coverage>0?a.coverage.toFixed(2)+'%':'—'),
+              td({style:{padding:'4px 8px'}},span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',
+                borderRadius:2,background:a.ok?'rgba(16,185,129,.1)':'rgba(245,158,11,.1)',
+                color:a.ok?'#10b981':'#f59e0b'}},a.ok?'Full':'Partial'))
+            )))
+          )
+        ):div({style:{padding:20,color:'var(--text3)',textAlign:'center'}},'Load real data to run the coverage audit')),
+        tab==='overview'&&div(null,
           // Coverage table
           h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px',marginBottom:14}},
             h('thead',null,h('tr',null,

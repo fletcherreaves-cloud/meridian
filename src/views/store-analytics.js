@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB } from '../constants.js';
 import { addD, dKey, sodOf, eodOf, fmtDI } from '../utils/date.js';
-import { forecastDay, forecastRange, effectivePlusUp, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
+import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
@@ -2420,76 +2420,4 @@ function AIInsightsLog({stores, settings, onClose}) {
   );
 }
 
-function DevDashboard({ds, settings, stores, userEvents, onClose}) {
-  const [tab, setTab] = useState('audit');
-  const [traceStore, setTraceStore] = useState('');
-  const [traceDate, setTraceDate] = useState(fmtDI(new Date()));
-  const [traceResult, setTraceResult] = useState(null);
-  const totals={labor:ds?ds.laborRows.length:0,ops:ds?ds.opsRows.length:0,ctrl:ds?ds.ctrlRows.length:0,weather:ds?ds.weatherRows.length:0,peaks:ds?(ds.peaksSvcRows||[]).length:0,audit:ds?(ds.auditRows||[]).length:0};
-  const audit = useMemo(()=>{
-    if(!ds||!ds.loaded)return null;
-    return ds.storeIds.map(loc=>{
-      const lR=ds.laborRows.filter(r=>r.loc===loc),oR=ds.opsRows.filter(r=>r.loc===loc),cR=ds.ctrlRows.filter(r=>r.loc===loc);
-      const wR=ds.weatherRows?ds.weatherRows.filter(r=>r.loc===loc):[];
-      const pR=(ds.peaksSvcRows||[]).filter(r=>String(r.loc||'').trim()===loc);
-      const dates=lR.map(r=>r.date).sort((a,b)=>a-b);
-      const first=dates[0],last=dates[dates.length-1];
-      const exp=first&&last?Math.round((last-first)/86400000)+1:0;
-      const cov=exp>0?+(lR.length/exp*100).toFixed(2):0;
-      return{loc,name:STORE_NAMES[loc]||loc,labor:lR.length,ops:oR.length,ctrl:cR.length,weather:wR.length,peaks:pR.length,audit:(ds.auditRows||[]).filter(r=>r.loc===loc).length,first,last,coverage:cov,ok:lR.length>0&&oR.length>0&&cR.length>0};
-    });
-  },[ds]);
-
-  return h(ModalShell,{
-    title:'🛠 Developer Dashboard', onClose, maxWidth:940, zIndex:Z.modal,
-    subtitle:ds&&ds.loaded?'Live data — '+( ds.storeIds||[]).length+' stores':'Mock data',
-    bodyStyle:{padding:'12px 18px'},
-    subHeader: div(null,
-      div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:14,flexWrap:'wrap',background:'var(--surf2)'}},
-        Object.entries({Labor:totals.labor,'Ops':totals.ops,'Ctrl':totals.ctrl,'Wx':totals.weather,'Peaks':totals.peaks,'Audit':totals.audit}).map(([k,v])=>div({key:k,style:{textAlign:'center',minWidth:60}},div({style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:700,color:v>0?'#10b981':'#ef4444'}},v.toLocaleString()),div({style:{fontSize:'9px',color:'var(--text3)',textTransform:'uppercase'}},k)))
-      ),
-      div({className:'tabs'},['audit','trace','settings_dump'].map(t2=>div({key:t2,className:'tab'+(tab===t2?' on':''),onClick:()=>setTab(t2),style:{fontSize:'11px'}},t2==='audit'?'Data Audit':t2==='trace'?'Engine Trace':'Settings Dump'))),
-    ),
-  },
-        tab==='audit'&&(audit?div({style:{overflowX:'auto'}},
-          tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
-            h('thead',null,tr(null,...['Store','Labor','Ops','Ctrl','Wx','Peaks','Audit','Coverage','Status'].map(l=>th({style:{padding:'4px 8px',background:'var(--surf3)',fontSize:'8px',textTransform:'uppercase',color:'var(--text2)',textAlign:'left',borderBottom:'.5px solid var(--bdr)'}},l)))),
-            h('tbody',null,audit.map((a,i)=>tr({key:a.loc,style:{borderBottom:'.5px solid var(--bdr)'}},
-              td({style:{padding:'4px 8px',fontWeight:500}},a.name),
-              ...[a.labor,a.ops,a.ctrl,a.weather,a.peaks,a.audit].map((v,j)=>td({key:j,style:{padding:'4px 8px',fontFamily:'var(--mono)',color:v>0?'#10b981':'#ef4444'}},v)),
-              td({style:{padding:'4px 8px',color:a.coverage>=90?'#10b981':a.coverage>=70?'#f59e0b':'#ef4444',fontFamily:'var(--mono)'}},a.coverage>0?a.coverage.toFixed(2)+'%':'—'),
-              td({style:{padding:'4px 8px'}},span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',borderRadius:2,background:a.ok?'rgba(16,185,129,.1)':'rgba(245,158,11,.1)',color:a.ok?'#10b981':'#f59e0b'}},a.ok?'Full':'Partial'))
-            )))
-          )
-        ):div({style:{padding:20,color:'var(--text3)',textAlign:'center'}},'Load real data to run audit')),
-        tab==='trace'&&div(null,
-          div({style:{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'flex-end'}},
-            div(null,div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:4}},'Store'),sel({value:traceStore,onChange:e=>setTraceStore(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'5px 8px'}},opt({value:''},'— Select —'),(ds&&ds.storeIds||Object.keys(DEFAULT_TARGETS)).map(loc=>opt({key:loc,value:loc},STORE_NAMES[loc]||loc)))),
-            div(null,div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:4}},'Date'),inp({type:'date',value:traceDate,onChange:e=>setTraceDate(e.target.value),style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'11px',padding:'5px 8px'}})),
-            btn({className:'btn btn-a',onClick:()=>{if(!traceStore||!traceDate)return;const r=forecastDay(traceStore,new Date(traceDate+'T12:00:00'),ds,{...settings,_userEvents:userEvents||{}});setTraceResult(r);}}, '▶ Run Trace')
-          ),
-          traceResult&&div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'12px 14px'}},
-            div({style:{fontSize:'12px',fontWeight:600,marginBottom:10,color:'var(--amber)'}},
-              'Trace — '+STORE_NAMES[traceResult.loc]+' · '+new Date(traceDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})),
-            [['LY Anchor',traceResult.lyAdj>0?f$(traceResult.lyAdj):'No LY data'],
-             ['T2W Trend',(traceResult.t2*100).toFixed(2)+'%'],
-             ['T6W Trend',(traceResult.t6*100).toFixed(2)+'%'],
-             ['Ops Factor',(traceResult.opsFactor||1).toFixed(4)+'×'],
-             ['Weather Adj',((traceResult.wAdj||0)*100).toFixed(2)+'%'],
-             ['Plus-Up',effectivePlusUp(traceResult.loc,settings).toFixed(2)+'%'],
-             ['══ FORECAST',f$(traceResult.forecast)],
-             ['Actual',traceResult.actual>0?f$(traceResult.actual):'(future)'],
-             ['Variance',traceResult.varPct!=null?fPct(traceResult.varPct,2):'—'],
-            ].map(([k,v],i)=>div({key:i,style:{display:'flex',gap:10,padding:'4px 0',borderBottom:'.5px solid var(--bdr)',fontSize:'11px',background:k.startsWith('══')?'rgba(245,158,11,.05)':'transparent'}},
-              span({style:{minWidth:180,color:'var(--text3)'}}),k,
-              span({style:{fontFamily:'var(--mono)',fontWeight:k.startsWith('══')?700:400,color:k.startsWith('══')?'var(--amber)':'var(--text)'}}),v
-            ))
-          )
-        ),
-        tab==='settings_dump'&&h('pre',{style:{fontSize:'10px',color:'var(--text2)',background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'12px',overflowX:'auto',lineHeight:1.6,maxHeight:400}},
-          JSON.stringify({mode:settings.mode,cascade:settings.cascade,plusUp:settings.plusUp,tolerance:settings.tolerance,weeksBack:settings.weeksBack,scoringMode:settings.scoringMode,ctrlWeight:settings.ctrlWeight,useEmpirical:settings.useEmpirical,metricActive:settings.metricActive,storesLoaded:ds?ds.storeIds.length:0},null,2)
-        ),
-  );
-}
-
-export { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog, DevDashboard };
+export { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, AIInsightsLog };
