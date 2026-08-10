@@ -5961,13 +5961,28 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
           ),
 
           // Trend
-          div({style:{marginBottom:16}},
-            div({style:{fontSize:'11px',fontWeight:700,color:'#84cc16',marginBottom:8,borderBottom:'.5px solid var(--bdr)',paddingBottom:4}},'📈 STEP 3: Trend Signal'),
-            fRow('T2W trend (2wk YOY)',audit.row.t2!=null?(audit.row.t2>=0?'+':'')+( audit.row.t2*100).toFixed(2)+'%':'—'),
-            fRow('T4W trend (4wk YOY)',audit.row.t4!=null?(audit.row.t4>=0?'+':'')+( audit.row.t4*100).toFixed(2)+'%':'—'),
-            fRow('T6W trend (6wk YOY)',audit.row.t6!=null?(audit.row.t6>=0?'+':'')+( audit.row.t6*100).toFixed(2)+'%':'—'),
-            fRow('Blended trend (wTrend)',audit.row.trend!=null?(audit.row.trend>=0?'+':'')+( audit.row.trend*100).toFixed(2)+'%':'computed','65% global + 35% DOW-specific','var(--amber)')
-          ),
+          // The AE/EWMA short-circuits in forecastDay() return BEFORE the trend/event/
+          // holiday math ever runs, and repurpose t2/t4/t6 to hold the raw dollar
+          // forecast instead of a YOY trend fraction — rendering those as `value*100+'%'`
+          // produces something like "+1,284,600.00%" for a normal forecast. Every real
+          // store's assigned weekly model is 'ae' (DEFAULT_MODEL_ASSIGNMENTS, constants.js),
+          // so this isn't an edge case — it's every store, every date. modelUsed is
+          // already on the row; show an honest "n/a" instead of a meaningless number
+          // (issue #114 PR review). Whether AE/EWMA SHOULD compute a display trend is a
+          // separate, larger design question, deliberately left open — see
+          // memory/decisions-panel-inventory-2026-08-10.md.
+          (()=>{
+            const _trendNA = audit.row.modelUsed==='ae' || audit.row.modelUsed==='ewma';
+            const _trendVal = (v) => _trendNA ? 'n/a' : (v!=null?(v>=0?'+':'')+(v*100).toFixed(2)+'%':'—');
+            const _trendNote = _trendNA ? "this model doesn't compute a trend" : null;
+            return div({style:{marginBottom:16}},
+              div({style:{fontSize:'11px',fontWeight:700,color:'#84cc16',marginBottom:8,borderBottom:'.5px solid var(--bdr)',paddingBottom:4}},'📈 STEP 3: Trend Signal'),
+              fRow('T2W trend (2wk YOY)',_trendVal(audit.row.t2),_trendNote),
+              fRow('T4W trend (4wk YOY)',_trendVal(audit.row.t4),_trendNote),
+              fRow('T6W trend (6wk YOY)',_trendVal(audit.row.t6),_trendNote),
+              fRow('Blended trend (wTrend)',_trendNA?'n/a':(audit.row.trend!=null?(audit.row.trend>=0?'+':'')+( audit.row.trend*100).toFixed(2)+'%':'computed'),_trendNA?_trendNote:'65% global + 35% DOW-specific','var(--amber)')
+            );
+          })(),
 
           // Ops Factor
           div({style:{marginBottom:16}},

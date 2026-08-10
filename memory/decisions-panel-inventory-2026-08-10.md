@@ -179,22 +179,32 @@ Regression test in `src/__tests__/forecast.test.js` reconstructs both call shape
 agree — and separately proves the pre-fix `{}` shape would have disagreed, so the test isn't
 vacuous.
 
-**Third finding, NOT fixed, flagged for follow-up**: `LOC 3708`'s (and, per `DEFAULT_MODEL_ASSIGNMENTS`
-in `constants.js`, every one of the 27 real stores') assigned *weekly* forecast model is `'ae'`
-(Adaptive Ensemble) or `'ewma'`. Both short-circuit-return from `forecastDay` before the
-`_evFactor`/trend/holiday/calibration computation ever runs — and their return shape repurposes
-`t2`/`t4`/`t6` to hold the raw dollar forecast, not a YOY trend fraction. `ForecastAudit`'s Trend
-Signal step renders those fields as `(t2*100).toFixed(2)+'%'` unconditionally, so for the AE/EWMA
-model — which is every real production store's default weekly assignment — that section can show
-something like "+1284600.00%" instead of a real trend percentage. Confirmed by a throwaway script
-against the real `DEFAULT_MODEL_ASSIGNMENTS['3708']` entry, not assumed. Deliberately not fixed in
-the #114 PR: the root cause (a return-shape mismatch across model branches vs. a rendering
-assumption) is unrelated to the userEvents-shadowing bug this issue named, and the correct fix is
-a design decision — should the AE/EWMA branches also run the trend/event/holiday math purely for
-audit-display purposes even though they don't use it for the final forecast, or should the panel
-special-case those models and show "N/A — AE model" instead? Needs an owner call, not a shadowing
-fix. The regression test added for this task forces `forceModel:'dow'` specifically to isolate the
-userEvents bug from this separate issue.
+**Third finding — display guard added on PR review, underlying design question still open.**
+`LOC 3708`'s (and, per `DEFAULT_MODEL_ASSIGNMENTS` in `constants.js`, every one of the 27 real
+stores') assigned *weekly* forecast model is `'ae'` (Adaptive Ensemble) or `'ewma'`. Both
+short-circuit-return from `forecastDay` before the `_evFactor`/trend/holiday/calibration
+computation ever runs — and their return shape repurposes `t2`/`t4`/`t6` to hold the raw dollar
+forecast, not a YOY trend fraction. `ForecastAudit`'s Trend Signal step rendered those fields as
+`(t2*100).toFixed(2)+'%'` unconditionally, so for the AE/EWMA model — which is every real
+production store's default weekly assignment, confirmed by parsing every `DEFAULT_MODEL_ASSIGNMENTS`
+entry, not assumed — that section showed something like "+1,284,600.00%" for a normal forecast, not
+an edge case.
+
+Initially left unfixed in the #114 PR (different root cause than the userEvents-shadowing bug the
+issue named, and the real fix is a design decision). **PM review on the PR asked for a narrow
+display guard before merge, not the full design fix**: "stop rendering a meaningless number as if
+it were meaningful" — since this PR's whole purpose is promoting the panel to a more-discoverable
+top-level nav item, shipping that alongside a 1.28-million-percent display would widen the door to
+a bug that predates this PR. Added `_trendNA = modelUsed==='ae'||modelUsed==='ewma'` in
+`ForecastAudit`; the 4 Trend Signal rows (T2W/T4W/T6W/Blended) now show `n/a — this model doesn't
+compute a trend` instead of the raw-dollars-as-percent value when true. ~15 lines, all inside the
+Trend Signal section — no other section of the panel touched.
+
+**Still open, still needs an owner call**: should the AE/EWMA branches in `forecastDay` also run
+the trend/event/holiday math purely for audit-display purposes even though they don't use it for
+the final forecast, or should the panel permanently special-case those models this way? The n/a
+guard is the honest interim state, not the resolution. The regression test added for this task
+forces `forceModel:'dow'` specifically to isolate the userEvents bug from this separate issue.
 
 ### Harvest list, ranked by what would actually be lost
 
