@@ -5,6 +5,7 @@ import { addD, dKey, sodOf, eodOf, fmtDI } from '../utils/date.js';
 import { forecastDay, forecastRange, effectivePlusUp, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
+import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable } from './store-dash.js';
 import { AIInsightsTab, ModelHealthBadge } from './analytics.js';
 import { LocationIntelligence } from '../features/location-intel.js';
@@ -88,7 +89,10 @@ function detectAnomalies(ds, userEvents){
   if(!ds||!ds.loaded)return[];
   const anoms=[];
   const storeIds=ds.storeIds||Object.keys(DEFAULT_TARGETS);
-  const range={s:new Date('2000-01-01'), e:new Date()};
+  // Ends on the last CLOSED business day, not literal "now" (signature #4) — an anomaly
+  // detector is the sharpest version of this bug: a still-filling today reads as a huge
+  // z-score deviation purely because it isn't finished yet, not because anything is wrong.
+  const range={s:new Date('2000-01-01'), e:lastClosedBusinessDay()};
   for(const loc of storeIds){
     const salesSeries=metricSeries(ds,loc,range,'sales');
     const days=Object.keys(salesSeries).map(k=>{const date=new Date(k+'T12:00:00');return{date,dk:dKey(date),sales:salesSeries[k]};}).sort((a,b)=>a.date-b.date);
@@ -862,12 +866,16 @@ function computeRevenueOpportunity(store, ds, settings) {
 
   // Auto-first (data-integrity sweep signature #2) — items 9-12 below were ds.laborRows/
   // ctrlRows only, manual-only, so they all went stale/blank on auto/emailed-only days.
-  const range42 = {s:new Date(Date.now()-42*864e5), e:new Date()};
+  // Ends on the last CLOSED business day, not literal "now" (signature #4) — otherwise
+  // today's still-filling partial day drags every one of these 42-day averages toward
+  // whatever fraction of a normal day has rung so far.
+  const _lastClosed42 = lastClosedBusinessDay();
+  const range42 = {s:addD(_lastClosed42,-41), e:_lastClosed42};
 
   // 9. Avg Check Momentum
   if(p.avgCheck>0){
-    const range2 = {s:new Date(Date.now()-14*864e5), e:new Date()};
-    const range6 = {s:range42.s, e:addD(new Date(Date.now()-14*864e5),-1)};
+    const range2 = {s:addD(_lastClosed42,-13), e:_lastClosed42};
+    const range6 = {s:range42.s, e:addD(_lastClosed42,-14)};
     const ac2Vals = Object.values(metricSeries(ds, loc, range2, 'avgCheck')).filter(v=>v>0);
     const ac6Vals = Object.values(metricSeries(ds, loc, range6, 'avgCheck')).filter(v=>v>0);
     const ac2=ac2Vals.length?ac2Vals.reduce((a,b)=>a+b,0)/ac2Vals.length:0;

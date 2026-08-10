@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { weeklyBuckets, buildSwingFeed, ackKey, partitionAcked, blocking,
-         acknowledge, pruneAcks, businessDate } from '../engine/swing-feed.js';
+         acknowledge, pruneAcks, businessDate, lastClosedBusinessDay } from '../engine/swing-feed.js';
 
 const day = (i) => new Date(2026, 5, 1 + i);          // 2026-06-01 + i
 /** n days of rows for one store at a given vs-LY ratio. */
@@ -172,6 +172,18 @@ describe('the still-open business day is excluded', () => {
   it('honours the 4am ABC cutover — at 2am the business day is still yesterday', () => {
     expect(businessDate(new Date(2026, 7, 8, 2, 0, 0))).toBe('2026-08-07');
     expect(businessDate(new Date(2026, 7, 8, 5, 0, 0))).toBe('2026-08-08');
+  });
+
+  it('lastClosedBusinessDay is the day before businessDate, honouring the same cutover', () => {
+    expect(lastClosedBusinessDay(new Date(2026, 7, 8, 5, 0, 0)).toISOString().slice(0, 10)).toBe('2026-08-07');
+    // 2am — business day is still 08-07, so the last CLOSED day is 08-06.
+    expect(lastClosedBusinessDay(new Date(2026, 7, 8, 2, 0, 0)).toISOString().slice(0, 10)).toBe('2026-08-06');
+  });
+
+  it('lastClosedBusinessDay lands on local midnight, so day-arithmetic on it stays exact', () => {
+    const d = lastClosedBusinessDay(new Date(2026, 7, 8, 12, 0, 0));
+    expect(d.getHours()).toBe(0);
+    expect(d.getMinutes()).toBe(0);
   });
 
   it('an explicit asOf is still taken at face value, for replay', () => {

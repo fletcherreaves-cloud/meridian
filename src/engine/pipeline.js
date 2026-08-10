@@ -5,7 +5,7 @@ import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS } from '../con
 import { dKey, addD } from '../utils/date.js';
 import { bLocIdx, compute6wk, locRows } from '../engine/forecast.js';
 import { matchedVsLY } from './vs-ly.js';
-import { businessDate } from './swing-feed.js';
+import { lastClosedBusinessDay } from './swing-feed.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
@@ -270,14 +270,13 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
   // — the contamination shifted every number down without changing which stores clear which
   // floor, so both thresholds stand as originally set.
   if(ds&&ds.loaded){
-    // End the window on the last CLOSED business day (businessDate() accounts for the 4am
-    // ABC cutover), not literal "now" — otherwise today's still-filling partial day gets
-    // matched against a FULL last-year day (matchedVsLY's own-row ly field is always a
-    // complete historical day), which understates cur relative to ly and inflates every
-    // decline. Same defect family the swing alarm hit 2026-08-07 (see swing-feed.js's
-    // businessDate() doc) and store-dash.js:651 names by name — signature #4. Pattern
-    // reused from labor-tools.js's trailing-window periods.
-    const lastClosed=addD(new Date(businessDate()+'T00:00:00'),-1);
+    // End the window on the last CLOSED business day, not literal "now" — otherwise today's
+    // still-filling partial day gets matched against a FULL last-year day (matchedVsLY's
+    // own-row ly field is always a complete historical day), which understates cur relative
+    // to ly and inflates every decline. Same defect family the swing alarm hit 2026-08-07
+    // (see swing-feed.js's businessDate() doc) and store-dash.js:651 names by name —
+    // signature #4.
+    const lastClosed=lastClosedBusinessDay();
     const slRange={s:addD(lastClosed,-27),e:lastClosed};
     const sl=matchedVsLY(ds,loc,slRange,'sales');
     // Require at least half the window to have matched LY data — an aggregate built from a
@@ -334,8 +333,14 @@ function buildStore(loc,ds,settings){
     opsScore:+(computeOpsScore(p2,t,sc)-computeOpsScore(p4,t,sc)).toFixed(0),
     ctrlScore:+(computeCtrlScore(p2,sc)-computeCtrlScore(p4,sc)).toFixed(0),
   } : null;
-  const cut4=new Date(Date.now()-28*86400000);
-  const now4=new Date(Date.now());
+  // Ends on the last CLOSED business day, not literal "now" (signature #4) — a still-filling
+  // today would sum into pSales as a partial day while its LY match is a full historical day,
+  // understating pSales relative to pLY and inflating every consumer of this pair: the
+  // displayed vs-LY figure, district totals, the ahead/behind-prior-year outlook, and the
+  // at-risk threshold all read one direction worse than the real number.
+  const lastClosed28=lastClosedBusinessDay();
+  const cut4=addD(lastClosed28,-27);
+  const now4=lastClosed28;
   let pSales=0,pLY=0;
   if(ds&&ds.loaded){
     // MATCHED-DAY vs-LY (fix: "everyone ~26-33% down"). The old code summed the FULL

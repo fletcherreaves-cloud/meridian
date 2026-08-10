@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
-import { businessDate } from '../engine/swing-feed.js';
+import { businessDate, lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
@@ -2370,8 +2370,12 @@ function PerformanceCalculator({stores, ds, settings, onClose}) {
   // in METRIC_SOURCES now (data-integrity sweep, MEDIUM-confidence item — the old comment here
   // claiming "no registered auto source yet" for them was stale).
   const baseline = uM(()=>{
-    const cutoff = addDR(new Date(),-42);
-    const range = {s: cutoff, e: new Date()};
+    // Ends on the last CLOSED business day, not literal "now" (signature #4) — low-risk here
+    // (slider starting points, not a live monitoring number), but a known-contaminated window
+    // left in place is how this recurs a sixth time.
+    const lastClosedPC = lastClosedBusinessDay();
+    const cutoff = addDR(lastClosedPC,-41);
+    const range = {s: cutoff, e: lastClosedPC};
     const baseOepe  = metricAvg(ds,selLoc,range,'oepe') || 140;
     const baseLab   = (metricAvg(ds,selLoc,range,'laborPct')||.22) * 100;
     const baseChk   = metricAvg(ds,selLoc,range,'avgCheck') || 10.50;

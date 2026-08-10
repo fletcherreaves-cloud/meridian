@@ -11,7 +11,7 @@ import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
-import { businessDate } from '../engine/swing-feed.js';
+import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
 import { buildAttentionFeed, mergeWorstSalesLY, SEV_META } from '../engine/attention-feed.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
@@ -107,8 +107,8 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     // Ends on the last CLOSED business day, not literal "now" — otherwise today's
     // still-filling partial day matches against a FULL last-year day and inflates every
     // decline (signature #4 — same defect the swing alarm hit 2026-08-07, see
-    // swing-feed.js's businessDate() doc; pattern reused from labor-tools.js).
-    const lastClosedRolling = addD(new Date(businessDate() + 'T00:00:00'), -1);
+    // swing-feed.js's businessDate() doc).
+    const lastClosedRolling = lastClosedBusinessDay();
     const rollingRange = { s: addD(lastClosedRolling, -27), e: lastClosedRolling };
     const salesLYRolling = allLocs.map(loc => {
       const m = matchedVsLY(ds, [loc], rollingRange);
