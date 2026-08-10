@@ -384,3 +384,203 @@ their correct distinct handling with no other change.
 **Once #150 lands this is the cleanest scoring input discussed all session:** binary at the
 quarter hour, defined volume gate, low-volume periods auto-excluded, fully controllable, and no
 threshold for us to invent.
+
+---
+
+# Labor target — SIX competing numbers, and the authoritative one may not be wired (2026-08-10)
+
+## Which is authoritative — ANSWERED
+
+**Meridian's own target.** Owner: *"meridian (my) target is what they are expected to make. It is
+sent to all operators mid month for following month for approval."* So the number is set by the
+owner, distributed monthly, and approved — a real business process, not config.
+
+## But there are six labor percentages per store, and they disagree
+
+`DEFAULT_TARGETS` alone carries **four** (`tLabor`, `tCrewLabor`, `tBonusLabor`, `tCombLabor`).
+Add the LifeLenz AOS ceiling and the owner's monthly projection. Measured:
+
+| Store | Meridian `tLabor` | LifeLenz AOS | Gap | `tCrewLabor` | `tBonusLabor` | `tCombLabor` |
+|---|---|---|---|---|---|---|
+| 3708 | 22.0% | 21.5% | +0.50pp | 21.0% | 21.75% | 24.92% |
+| 5183 | 21.25% | 21.5% | −0.25pp | 22.0% | 21.25% | 27.85% |
+| 18213 | 22.5% | 21.25% | +1.25pp | 22.5% | 20.25% | 24.56% |
+| 6178 | 23.0% | 21.25% | +1.75pp | 23.0% | 21.0% | 24.77% |
+| 43701 | 26.0% | 24.0% | **+2.00pp** | 26.0% | 21.25% | 24.55% |
+
+Ponce de Leon is a **full 2pp apart — the entire tolerance band.** A store scheduled exactly to
+Meridian's target sits at the +2% ceiling by LifeLenz's reckoning. Pass/fail depends purely on
+which number you grade against.
+
+## `laborTargetOrg` is a generator constraint, not a target — DO NOT USE (owner)
+
+The owner identified it from the LifeLenz **AOS configuration** screen: *"LABOR COST
+OPTIMISATIONS → Maximum labor cost percentage,"* a per-day ceiling the **auto-scheduler obeys when
+generating a schedule**. Grading a manager against it would be scoring them on a machine's input.
+The owner's store 0043380 reads a flat **22% across all seven days** — no weekday/weekend
+differentiation, the signature of a set-once value. Owner: *"I genuinely didn't know this was a
+setting. So, clearly, let's not use it as of now."*
+
+⚠️ **Live consequence, independent of scoring:** the Labor Analysis panel's *"Hours ± Sched vs.
+Target"* and *"vs. Target +2%"* columns (`engine/labor-analysis.js`, `views/labor-analysis.js`)
+are computed off `laborTargetOrg`. Those columns have been grading against an unowned value.
+
+## ⚠️ OPEN + likely defect — the approved number may not reach the score
+
+**Verified:** `loadMonthlyTargets` maps `crew_labor_pct → tCrewLabor` and
+`bonus_crew_pct → tBonusLabor`. **There is no `tLabor` in `monthly_targets`.** And
+`computeOpsScore` (`pipeline.js`) grades labor against `t.tLabor`.
+
+So the monthly approval cycle populates crew and bonus labor but **not the field the score uses**.
+`tLabor`'s only other source is the static `constants.js` map — the `org_config` override path is
+**dormant, confirmed by owner query 2026-08-10**: `select ... from public.org_config where
+key = 'store_registry'` returns **0 rows**. (The key is `store_registry`, with `defaultTargets` as
+a property inside its `data` blob — `App.js:2046` — not a `default_targets` key; the PM guessed
+the wrong shape first.) The code comment there already said so: *"a future tenant's
+STORE_NAMES/DEFAULT_TARGETS override… No row for this owner yet → no-op."* It is onboarding
+scaffolding for a second tenant, not a live override. `setLiveStoreNames` is equally dormant, so
+STORE_NAMES is static too — expected, not a bug.
+
+**Therefore, on a normal login all three layers collapse to one:** `ds.targets` is `{}` (only an
+in-session OpsTargets.xlsx upload fills it), `org_config.store_registry` has no row, so
+`buildStore` always reads `DEFAULT_TARGETS` from `constants.js`. Ops and Controls scores grade
+every store against numbers hardcoded in a source file, changeable only by editing and deploying
+code — while `mergedTargets`, carrying the monthly approved crew labor % and every Targets-panel
+override, is rebuilt each render and discarded.
+
+**Question for the owner:** on the sheet sent to operators, which line is *the* number — crew
+labor %, bonus crew %, or a total?
+- **Crew labor** → the authoritative number already flows monthly as `tCrewLabor`, and
+  `computeOpsScore` is reading a static field beside it. One-field bug, real consequence: the
+  score grades against a number nobody approved.
+- **A total** → it isn't flowing at all, and `tLabor` is stale config in exactly the way
+  `laborTargetOrg` proved to be.
+
+**Scheduling accuracy stays PARKED until this is settled** — the baseline is the whole standard.
+
+## Scheduling accuracy already exists — do not rebuild it
+
+Fourth time this session the PM proposed building something already present.
+`src/engine/labor-analysis.js` `computeLaborRow` already computes, from the LifeLenz MBI labor
+sheet, per store: `laborTargetPlus2 = L + 0.02`, `projHrsTarget = (C×L)/J`,
+`projHrsTargetPlus2 = (C×M)/J`, `hrsVsForecast = G−F`, `hrsVsTarget = G−O`,
+`hrsVsTargetPlus2 = G−P`, plus the dollar equivalents — where `G` is scheduled hours and `J` is
+the store's **own** rate of pay. The source spreadsheet carries "Labor Target + 2%" and "Hours
++/- Sched vs. Target +2%" as native columns. The owner's 21.5% → 23.5% example is literally store
+3708's fixture row (`laborTargetOrg: 0.215`, `laborTargetPlus2: 0.235`).
+
+Consequences for the earlier design notes:
+- **The PM's "score in percentage points, present in hours" recommendation is backwards** from how
+  the business already works. The sheet converts to hours using each store's own rate; follow it.
+- **The three-way forecast decomposition is less load-bearing than the PM claimed** for this axis.
+  The standard grades against a labor *target*, not against Meridian's forecast, so a manager was
+  never being charged for our forecast error here. `hrsVsForecast` exists separately if wanted.
+  #146 remains a prerequisite for **sales-vs-forecast**, not for scheduling.
+- The genuinely new work is the **low side** — nothing computes "scheduled below target," because
+  the source only ever asked the +2% question.
+
+## Standing rule, generalized (fourth strike)
+
+"Before fixing a thing, confirm it is still used" is too narrow. The rule is: **search for the
+thing before designing it — our own code, published vendor definitions, and the source
+spreadsheets alike.** Four proposals this session were retired by something that already existed:
+Places API (already researched and rejected), make-table utilization (QSRSoft's "2nd Side
+Formula"), scheduling accuracy (`labor-analysis.js`), and the hours-vs-percentage-points
+convention (the MBI sheet). Belongs in `feedback-verification-in-sandbox.md`.
+
+---
+
+# Labor-basis fields — which are live, which are reserved (owner, 2026-08-10)
+
+Four labor bases exist in `DEFAULT_TARGETS`. Only two are live:
+
+| Field | Status |
+|---|---|
+| `tCrewLabor` | ✅ **AUTHORITATIVE.** The number sent to operators mid-month for the following month's approval. Flows monthly via `monthly_targets.crew_labor_pct`. |
+| `tLabor` | ⚠️ What `computeOpsScore` currently grades on. Static only — no monthly path. 14 of 27 stores differ from `tCrewLabor`, up to 1.75pp. |
+| `tBonusLabor` | 🅿️ **Not used today. Reserved — may be used next year.** |
+| `tCombLabor` | 🅿️ **Not used today.** Owner: *"Combined should be used but this organization is not set up for it currently. Wouldn't be hard but not a bridge to cross at the moment."* |
+
+## ⚠️ DO NOT DELETE the two unused fields
+
+`tBonusLabor` and `tCombLabor` are **deliberately reserved**, not dead code. This session has been
+aggressively retiring orphans (ORPHANS emptied, four panels harvested and deleted) under a
+harvest-then-remove rule, and two target fields nothing reads are exactly what a future cleanup
+sweep would remove on sight. The owner has stated both are intended. Leave them.
+
+## Design consequence for #153 defect 2 — make the basis selectable, don't hardcode crew
+
+Owner: *"Down the road if this actually gets much bigger and the organizations and operators are
+on the platform, it will need to be an option."*
+
+So the fix is **not** a straight `tLabor` → `tCrewLabor` swap in `computeOpsScore`. The labor basis
+should resolve through **one named place**, defaulting to `tCrewLabor`, so switching an org to
+combined later is a config change rather than a hunt through the scorer.
+
+**CORRECTION (owner, same session):** the PM originally wrote "do not build a config UI — the
+owner deferred it." **That was the PM extrapolating, not the owner's words.** What the owner said
+was that *the organization* is not set up for combined labor and that is not a bridge to cross
+right now. Owner's correction: *"Not sure I deferred this unless we were in the heat of it. I very
+much would like this to happen!"*
+
+Two separable things, and conflating them is what caused the error:
+
+| | Status |
+|---|---|
+| The **organization** being ready for combined-labor accounting | Not now. A business change, not ours. |
+| **Meridian offering the choice** of basis | ✅ **Wanted. Build it.** |
+
+These are compatible, and the ordering is the point: **the option should exist before the org is
+ready**, so switching is a setting rather than a project.
+
+**Scope:**
+- Labor basis resolves through **one named place**, default `tCrewLabor`.
+- A real setting to choose among `tCrewLabor` / `tLabor` / `tBonusLabor` / `tCombLabor` — which is
+  also what keeps the two reserved fields honest: they stop being dead code the moment they are
+  selectable.
+- **Per-ORG, not per-user** — this is an accounting basis, not a preference. `org_config` is the
+  right home and matches the multi-tenant scaffolding already present (`tenants`/`tenant_stores`,
+  `store_registry.defaultTargets`).
+- Admin-gated. Changing it moves every store's score.
+- Same before/after reporting as the rest of #153 — the owner sees which stores move and why.
+
+---
+
+# Roadmap fact: monthly targets move into MBI within 1–2 months (owner, 2026-08-10)
+
+Owner: *"Cloud first as I am still manually uploading these. Hopefully in the next month or two,
+it will be done completely in MBI. That should help."*
+
+## Two decisions this settles
+
+**Monthly-target precedence: CLOUD FIRST.** The device-cache-wins spread at `App.js:2279`
+(`{...cloudLatest, ...prev.monthlyTargets}`) is **not deliberate** — invert it. Filed as #156.
+Confirmed while tracing: the targets themselves DO persist both ways (write via
+`saveMonthlyTargets` at `pipeline.js:508`, read via `loadAllMonthlyTargets()` at `App.js:2279`),
+so this was only ever a precedence bug, never a persistence one.
+
+**Do not over-build around the manual path.** It has a known expiry. Fix the precedence, add a
+comment, stop. No target-management UI, no migration tooling, no reconciliation machinery for a
+pipeline that is being replaced.
+
+## Why the MBI move matters beyond convenience
+
+Once targets are set in MBI they stop being a manual Excel drop and arrive through the LifeLenz
+pull — moving them from **manual** to **auto-first**, which is the standing rule's resting state
+and removes the device-local-cache problem entirely rather than patching it.
+
+⚠️ **It may also collapse the six-competing-numbers problem at the source, but DO NOT assume so.**
+The MBI sheet already carries a "Labor Target (Organization)" column, which is what currently
+feeds `laborTargetOrg` — the value the owner identified as the LifeLenz **AOS** *"Maximum labor
+cost percentage"* and told us not to use. If setting targets in MBI writes that same field, then
+the owner's approved number becomes `laborTargetOrg` and much of #153/#154's tension dissolves.
+If MBI targets land somewhere else and AOS stays a separate generator constraint, nothing
+dissolves. **Nobody has checked which**, and today produced four separate cases of designing
+against an assumption that a five-minute look would have settled. Check before planning around it.
+
+## Sequencing consequence
+
+#153 (scorer discards merged targets) and #150 (zero-valued metrics discarded) are **unaffected by
+the MBI move** — they are consumption bugs, not source bugs, and stay worth fixing now. #154's AOS
+discovery becomes *more* interesting, not less: if MBI is about to become the target-entry surface,
+knowing whether AOS config is readable/writable tells us whether the two converge or stay split.
