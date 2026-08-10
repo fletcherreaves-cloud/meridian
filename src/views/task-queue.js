@@ -250,9 +250,11 @@ function AddTaskSheet({ onSave, onClose }) {
   const submit = async () => {
     if (!title.trim()) return;
     setSaving(true);
-    await onSave({ title:title.trim(), description:desc.trim()||null,
+    const ok = await onSave({ title:title.trim(), description:desc.trim()||null,
       tier, priority:pri, category:cat, notes:notes.trim()||null, status:'backlog', source:'manual' });
-    onClose();
+    setSaving(false);
+    if (ok) onClose();
+    else alert('Could not save task — check your connection and try again. Your entry is still here.');
   };
 
   const selBtn = (val, cur, set, label, color) =>
@@ -503,7 +505,14 @@ export function TaskQueuePanel({ onClose }) {
 
   const handleSave = useCallback(async (task) => {
     const saved = await saveTask(task);
-    if (saved) setTasks(prev => [...prev, saved].sort((a,b)=>a.priority-b.priority||new Date(a.created_at)-new Date(b.created_at)));
+    if (saved) {
+      setTasks(prev => [...prev, saved].sort((a,b)=>a.priority-b.priority||new Date(a.created_at)-new Date(b.created_at)));
+      return true;
+    }
+    // saveTask already console.warn'd the Supabase error — surface it to the user too,
+    // rather than closing the sheet as if it saved (the task would then only exist in
+    // the sheet's now-discarded local state, silently lost).
+    return false;
   },[]);
 
   const filtered = tasks.filter(t => {

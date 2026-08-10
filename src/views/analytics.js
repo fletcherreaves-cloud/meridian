@@ -18,7 +18,7 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadTasks, saveTask } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
 import { metricSeries, metricAvg, metricDaily } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 
@@ -4303,30 +4303,6 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
         setAutoHolTagged(autoHolCount);
       }
     })();
-    // ── Auto-file the worst confirmed anomaly per store as a Task Queue entry (issue #128
-    // — finishing AIInsightsLog's original, never-built idea: scanners auto-filing their own
-    // findings, with manual notes as the fallback path rather than the only path). Kept
-    // deliberately narrow: ONE task per store per scan run — the single worst anomaly,
-    // already first after the sort above — never the whole list, so this can't turn into a
-    // notification system. Dedup by exact title match against existing non-scrapped tasks so
-    // re-running the scan (or reloading cached results) doesn't refile the same store+date.
-    try{
-      const existingTasks = await loadTasks();
-      const alreadyFiled = new Set(existingTasks.filter(t=>t.category==='anomaly').map(t=>t.title));
-      for(const [loc,anoms] of Object.entries(allResults)){
-        const worst = anoms[0];
-        if(!worst) continue;
-        const title = 'Anomaly: '+(STORE_NAMES[loc]||loc)+' — '+(worst.dateStr||dKey(worst.date));
-        if(alreadyFiled.has(title)) continue;
-        const sign = worst.varPct>=0?'+':'';
-        const detail = 'Sales '+sign+worst.varPct.toFixed(2)+'% vs the '+worst.dow+' baseline ('
-          +'actual '+f$(worst.actual)+', expected '+f$(worst.forecast)+')'
-          +(worst.isHoliday?' — '+(worst.holidayName||'holiday'):'');
-        await saveTask({ title, description:detail, tier:1, priority:2, category:'anomaly',
-          loc, status:'backlog', source:'ai-backtest-scanner' });
-        alreadyFiled.add(title); // guard two stores landing on the same title within this run
-      }
-    }catch(e){ console.warn('[AIBacktestScanner] auto-file task failed:', e.message); }
     // Merge with any previously saved results (append new anomalies)
     try{
       const existing = JSON.parse(localStorage.getItem('mf_backtest_results')||'{}');
