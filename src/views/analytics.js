@@ -4219,11 +4219,21 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       // Need 21 rows with actual sales for a meaningful baseline
       if(laborRows.filter(r=>r.sales>0).length < 21) continue;
 
-      // Build DOW buckets — use only positive-sales days for baseline (exclude $0 and holidays)
+      // Build DOW buckets — use only positive-sales days for baseline (exclude $0 and holidays).
+      // Also excludes event-tagged closure/remodel/weather days (harvested from the orphaned
+      // AnomalyPanel's detectAnomalies, issue #127) — the trimmed mean below blunts outliers but
+      // doesn't know WHY a day was odd, so a multi-week remodel can still drag the baseline if
+      // it doesn't happen to land in the trimmed 10%. Ported as-is from the source; NOTE 'closure'
+      // and 'remodel' are not real EVENT_TYPES keys anywhere in this codebase (grep confirms —
+      // only 'weather' is), so as-written this exclusion has only ever functioned for
+      // weather-tagged days, in both the orphan and here. Not silently "fixed" by guessing which
+      // real type the author meant by closure/remodel — flagged in the PR instead.
       const dowBuckets = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
       for(const r of laborRows){
         if(r.sales<=0) continue; // exclude $0 from baseline — they ARE anomalies
         if(isHoliday(r.date)) continue; // don't include holidays in baseline
+        const ev=_uev[loc]&&_uev[loc][r.dk];
+        if(ev&&(ev.type==='closure'||ev.type==='remodel'||ev.type==='weather')) continue; // exclude from baseline
         dowBuckets[r.date.getDay()].push(r.sales);
       }
 

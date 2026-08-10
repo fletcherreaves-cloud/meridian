@@ -96,7 +96,6 @@ const ModelAssignmentPanel= lazyPanel(() => _laborTools().then(m => ({ default: 
 const StoreKBEditor       = lazyPanel(() => _laborTools().then(m => ({ default: m.StoreKBEditor })));
 
 const _storeAnalytics = () => import('../views/store-analytics.js');
-const AnomalyPanel        = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AnomalyPanel })));
 const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.RevenueIntelligence })));
 const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
 const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
@@ -358,7 +357,9 @@ const MERIDIAN_CHANGELOG  = [
   {version:'4.955', date:'2026-08-10', changes:[
     'RLS table audit (issue #119): swept all 82 live Supabase tables comparing an authenticated-role read against a service-role read, the way a real reviewer would rather than guessing. The Food Cost panel bug this started from (period dropdown stuck at May) traced to qsr_fob supposedly returning nothing for a normal login — measured directly, qsr_fob is actually healthy right now (full data through today, correct tenant, unrestricted store list), so that specific symptom didn\'t reproduce and got no fix bolted onto it. The sweep did turn up two real, currently-live gaps: the tenants/tenant_stores tables had no RLS policy at all (same "empty for no visible reason" shape as the Food Cost symptom, just on tables nothing reads yet — confirmed dead code, so nothing user-facing was ever affected), and the qsr_daily_activity_daily rollup view was missing its permission grant. That second one caught something more serious on review: the obvious fix (just re-apply the grant) would have been a real security bug — a Postgres view runs with its OWNER\'s row-level security by default, not the querying user\'s, so granting it broadly would have handed every authenticated user every store\'s hourly data regardless of their own access restrictions. Fixed properly with security_invoker on the view instead, which makes it respect the same per-caller scoping the underlying table already enforces. Both fixed forward with new SQL files for the owner to run; nothing here changes app behavior on its own. The comparison script (scripts/rls-table-audit.mjs) is meant to be re-run any time a panel looks silently empty, not a one-off.',
   ]},
-  
+  {version:'4.954', date:'2026-08-10', changes:[
+    'Harvested the orphaned Anomaly Detection panel\'s one real capability — excluding event-tagged closure/remodel/weather days from its day-by-day sales baseline, so a multi-week remodel can\'t quietly drag down what counts as "normal" for a store — into the live AI Backtest Scanner (issue #127). The scanner already trims outliers, but trimming only catches a disruption if it happens to be extreme enough to land in the trimmed 10%; a 2-week synthetic test case confirms a real disruption can still slip through trimming alone and moves the baseline ~6% once it\'s excluded outright instead. Two things worth knowing: production currently has zero events tagged with the qualifying types, so this doesn\'t change anything visible today — it\'s ready for the next time one gets tagged. And the ported check (kept faithful to the original) references two event-type strings, "closure" and "remodel", that don\'t actually exist anywhere in this app\'s real event-type list — only "weather" does — so in practice this exclusion has only ever worked for weather-tagged days, in the orphan and now here too. Flagged rather than silently guessed at a fix. The orphaned panel itself — whose render had drifted so far from its own engine\'s field names that every row would have shown blank anyway — is deleted outright, along with its dead state and its ORPHANS registry entry.',
+  ]},
   {version:'4.952', date:'2026-08-10', changes:[
     'Spine 1, step 1 (issue #126) — the redesign\'s foundation, and nothing renders differently yet. Today there are 7 hand-rolled date-range controls in 3 different visual styles, and location/store selectors implemented separately in a dozen-plus panels. Built the shared replacements — DateRangeControl (preset pills + real custom-range picking), LocationSelector (the existing All → State → Patch → Store standard, extended, plus a single-store mode for panels that only ever show one store), ActionMenus (grouped dropdowns — the fix for Inventory Control\'s 14-button wall going to 3 menus), and PanelChrome (lays the shared bands out in a fixed order: location · date · export, then actions · view tabs) — plus two small opt-in ModalShell additions (a page-scrolling layout variant, a tinted header option) needed to host them. This PR only adds the components; no existing panel calls any of them yet, so nothing changes on screen. Migrating a real panel to it (Inventory Control is the pilot) is separate follow-up work. Measured: entry chunk 844.26 KB → 844.30 KB gzip (+0.04 KB, effectively nothing) — the new files aren\'t imported anywhere yet, so only the two tiny ModalShell option flags landed in the bundle at all.',
   ]},
@@ -1749,7 +1750,6 @@ function App() {
   const [showCompare, setShowCompare]  = useState(false);
   const [showInsights,setShowInsights] = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
-  const [showAnoms, setShowAnoms]      = useState(false);
   const [showCountCycle, setShowCountCycle] = useState(false);
   const [showNews, setShowNews] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
@@ -1783,7 +1783,6 @@ function App() {
     try{localStorage.setItem('mf_locked_projections',JSON.stringify(next));}catch{}
     saveUserSetting('locked_projections', next).catch(()=>{});
   },[]);
-  const [anomFilter, setAnomFilter]    = useState('all');
   const [showAttention, setShowAttention] = useState(false);
   const [showFormsPrint, setShowFormsPrint] = useState(false);
   const [showLeaderOnePager, setShowLeaderOnePager] = useState(false);
@@ -3383,7 +3382,7 @@ function App() {
   // by v4.855 fifteen panels had drifted out of this list, so panel-registry.test.js
   // now FAILS the build if any openable panel is missing from it or from the
   // Escape handler below. Keep the list hand-written; the test keeps it honest.
-  const anyModalOpen = showNews||showCountCycle||showAIScan||showAbout||showAnoms||showAttention||showAudit||showBrief||
+  const anyModalOpen = showNews||showCountCycle||showAIScan||showAbout||showAttention||showAudit||showBrief||
     showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
     showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
@@ -3403,7 +3402,7 @@ function App() {
   React.useEffect(()=>{
     const onKey = (e) => {
       if(e.key!=='Escape') return;
-      setShowAIScan(false);setShowAbout(false);setShowAnoms(false);setShowAttention(false);
+      setShowAIScan(false);setShowAbout(false);setShowAttention(false);
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);setShowDICompare(false);
       setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
@@ -3756,7 +3755,6 @@ function App() {
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
     showCountCycle&&h(CountCyclePanel,{onClose:()=>setShowCountCycle(false)}),
     showNews&&h(NewsPanel,{onClose:()=>setShowNews(false)}),
-    showAnoms    &&h(AnomalyPanel,{ds,stores,userEvents,initFilter:anomFilter,onSelectStore:s=>{goStore(s);setShowAnoms(false);setAnomFilter('all');},onClose:()=>{setShowAnoms(false);setAnomFilter('all');}}),
     showAIScan&&h(ModalShell,{
       title:'🔍 Historical Sales Anomaly Scan',
       onClose:()=>setShowAIScan(false),maxWidth:940,zIndex:Z.modal,bodyStyle:{padding:'16px'}
