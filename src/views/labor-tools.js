@@ -3,7 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB } from '../constants.js';
 import { avg6, forecastDay, getModelAssignment, saveModelOverride } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
-import { businessDate } from '../engine/swing-feed.js';
+import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
 import { parseCtrlData, parseOpsData } from '../parsers/index.js';
 import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWinners } from '../engine/backtest.js';
@@ -1324,7 +1324,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
   // Trailing windows end on the last CLOSED business day (businessDate() accounts for the 4am
   // ABC cutover), not literal "today" — otherwise a still-filling day averages into labor%/TPPH/
   // OEPE against the tight red-yellow-green grading bands below as if it were a complete day.
-  const lastClosed = addDx(new Date(businessDate()+'T00:00:00'), -1);
+  const lastClosed = lastClosedBusinessDay();
   const PERIODS=[
     {id:'2wk', l:'2 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-13)),  e:lastClosed})},
     {id:'4wk', l:'4 Wk',    fn:()=>({s:sodOf(addDx(lastClosed,-27)),  e:lastClosed})},
@@ -1669,7 +1669,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   const addDx = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
   // Trailing windows end on the last CLOSED business day, not literal "today" — see the
   // matching comment in the sibling PERIODS array above.
-  const lastClosed = addDx(new Date(businessDate()+'T00:00:00'), -1);
+  const lastClosed = lastClosedBusinessDay();
 
   const PERIODS = [
     // sodOf() normalizes start to midnight local time so the start day's rows

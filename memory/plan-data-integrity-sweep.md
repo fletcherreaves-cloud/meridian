@@ -691,5 +691,28 @@ a different signature (near-zero denominator), already fixed, unrelated to this 
 **Verification**: 1108/1108 tests passing, build 2818.08 KB / 842.15 KB gzip (budget 2.8MB/850KB
 — ~7.85 KB headroom remaining, tighter than the ~8KB flagged going in but not exceeded).
 
+**Follow-up (v4.949, issue #117, 2026-08-10) — the boilerplate itself, not another instance.**
+`lastClosedBusinessDay()` eliminated the specific recurring VALUE bug, but 3 sites still
+hand-rolled the same `addD(new Date(businessDate()+'T00:00:00'),-1)` arithmetic instead of
+calling the helper — not wrong (all 3 were already correct), but exactly the copy-paste source
+this whole class recurred from 5 times. Pointed `above-store-onepager.js`'s MTD range and
+`labor-tools.js`'s two PERIODS-array `lastClosed` derivations at the shared helper. **Explicitly
+left alone** (per the same reasoning as the sweep above): `store-dash.js:2646` (`_openDayMs`) and
+`analytics.js:1004-1005` (`_openDay`, whose `range.e` is `addD(_openDay,-1)` — the same VALUE as
+`lastClosedBusinessDay()`, but `_openDay` itself is reused elsewhere for exclusive open-boundary
+comparisons, so collapsing it would restructure code beyond this cleanup's scope, not just swap
+an expression). Considered adding a structural test/lint rule banning the boilerplate pattern
+outside `swing-feed.js` (per the issue's suggestion) — **not added**: a first attempt at the
+regex immediately false-positived on `analytics.js:1004-1005` (open-day-boundary code that
+legitimately does a `-1` day offset for an unrelated reason), which means a text-pattern test
+can't reliably distinguish "boilerplate re-derivation of last-closed" from "open-day boundary
+that also happens to derive an adjacent value" — the exact ambiguity that makes hand-rolling this
+easy to justify case-by-case in the first place. A wrong test would either miss real future
+violations or falsely flag legitimate code; neither is worth shipping. Judgment call, not a
+default; flagging the reasoning here in case someone revisits it with a design for the test that
+resolves the ambiguity (e.g. requiring the `-1`/`addD(...,-1)` to immediately follow the
+`businessDate()+'T00:00:00'` construction on the same or next line, which both false-positive
+sites do NOT do — they name an intermediate `_openDay` variable and consume it elsewhere too).
+
 Related: [[feedback-measure-dont-reason]], [[data-sourcing-standard]],
 [[feedback-performance-budget]], [[notes-62-queue]].
