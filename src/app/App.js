@@ -332,6 +332,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.943', date:'2026-08-10', changes:[
+    'Needs Attention now runs on the same engine as Attention Now (Part 1 of merging the two into one panel — same look, same tabs, nothing removed yet). It used to only check cash/labor/speed/scheduling; it now also picks up food-cost outliers, drive-thru speed, visit-readiness risk, sync health, and fading saved signals — the same things Attention Now already caught. Checked against real store data before shipping: nothing that used to show up in either panel dropped out of this one.',
+  ]},
   {version:'4.942', date:'2026-08-10', changes:[
     'HOTFIX — the sales-decline check added yesterday (Needs Attention + Attention Now) compared a still-in-progress today against a full day from last year, which could make an ordinary day look like a decline and a real decline look worse than it was, depending purely on what time of day someone happened to look. Both now stop counting today until it’s actually closed out, the same way the rest of the app already handles trailing-week comparisons. Re-checked the real store numbers with the fix in place — same store still stands out as the one with a real problem, nothing else changes.',
   ]},
@@ -3672,7 +3675,7 @@ function App() {
     showFcstAccuracy&&h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>setShowFcstAccuracy(false)}),
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
-    showAttention&&h(AttentionPanel,{stores,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false)}),
+    showAttention&&h(AttentionPanel,{stores,ds,dateRange,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false)}),
     showPriorities&&h(WhatNeedsAttentionPanel,{ds,stores,dateRange,
       onOpenModal:(m)=>{ if(m==='fob-analysis')setShowFOB(true); else if(m==='signals')setShowSignals(true); else if(m==='eom-dashboard')setShowEOMDash(true); },
       onClose:()=>setShowPriorities(false)}),

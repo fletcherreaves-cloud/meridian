@@ -20,7 +20,7 @@ const h = React.createElement;
 const { useMemo, useState, useEffect } = React;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
-const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
+export const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
 const nm = (l) => STORE_NAMES[unpad(l)] || unpad(l);
 
 // FOB-by-store for the latest month present in the auto qsr_fob stream (same
@@ -44,7 +44,21 @@ function fobByStoreLatest(rows) {
 
 const NAV_MODAL = { fob: 'fob-analysis', signals: 'signals', analytics: 'eom-dashboard' };
 
-export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, onClose }) {
+// ── Shared engine hook (Needs Attention / Attention Now merge, Part 1) ──────────────────────
+// Both AttentionPanel (analytics.js) and WhatNeedsAttentionPanel below now go through this ONE
+// hook, so buildAttentionFeed is the single engine for both instead of AttentionPanel grouping
+// store.findings itself. `briefFindings` (buildBrief's per-store findings, already carrying
+// severity/category/dollars/title/detail/loc via finding-rules.js's attachFindingMeta) is
+// merged in alongside the other 9 detectors via findingsToFeedItems, so a store showing up in
+// EITHER of the old panels shows up here too.
+//
+// `max` is a real parameter, not a fixed constant, because the two consumers need genuinely
+// different shapes: WhatNeedsAttentionPanel wants a flat top-N "what to look at first" list
+// (max:20, unchanged from before); AttentionPanel wants a store-GROUPED view where a flat
+// top-15/20 cap would silently drop whole stores, so it passes an effectively unbounded max —
+// rankAttention's own no-silent-caps warning is what protects against that mistake being made
+// silently at either call site, not a magic number picked here.
+export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
 
   // Phase-2 inputs load async (graded visits → readiness; saved correlations → decay; EOM exceptions).
@@ -73,7 +87,7 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
     try { return computeVisitReadiness({ ...ds, gradedVisits })?.stores || []; } catch { return []; }
   }, [ds, gradedVisits]);
 
-  const feed = useMemo(() => {
+  return useMemo(() => {
     // Freshest business date across the auto streams → data age in days.
     const tMs = Date.now();
     const pick = (arr) => (arr || []).map(r => r.date).filter(Boolean)
@@ -118,9 +132,13 @@ export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, on
 
     const countExceptionRows = Object.entries(exceptions || {}).map(([loc, e]) => ({ loc, acceptedDate: e.acceptedDate, approvedBy: e.approvedBy }));
     const integrityItems = (integrity || []).map(f => ({ id: `intg-${f.loc}-${f.kind}`, loc: f.loc, severity: f.severity, dollars: f.dollars, title: `${nm(f.loc)} — ${f.title || 'integrity flag'}`, detail: f.detail, nav: 'analytics' }));
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, storeName: nm, max: 20 });
-  }, [ds, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity]);
+    const briefFindings = (stores || []).flatMap(s => s.findings || []);
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, storeName: nm, max });
+  }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
+}
 
+export function WhatNeedsAttentionPanel({ ds, stores, dateRange, onOpenModal, onClose }) {
+  const feed = useAttentionFeed({ ds, stores, dateRange, max: 20 });
   const counts = feed.reduce((a, i) => { a[i.severity] = (a[i.severity] || 0) + 1; return a; }, {});
   const go = (item) => {
     const modal = NAV_MODAL[item.nav];
