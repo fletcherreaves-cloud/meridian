@@ -217,6 +217,31 @@ export function deriveBand1FromSchedule(rows = [], { weekStart = null, asOf = ne
   return { weekStart: wsIso, weekEnd: weIso, rows: out };
 }
 
+// Merge AUTO (schedule-derived, deriveBand1FromSchedule) and MANUAL (MBI upload /
+// lifelenz_labor_week gap-fill) weeks: AUTO wins per-store; MANUAL fills only the stores AUTO
+// lacks for the SAME week, never overrides. Every row's laborTargetOrg (column L) is repointed
+// through `orgTargetFor` regardless of which source the row came from (#153 defect 3) — the
+// manual upload's own hand-typed L is a snapshot frozen at upload time (measured up to 2.00pp
+// stale against constants.js) and must never be what's scored/planned against once a live
+// resolver exists for it.
+export function mergeAutoManualWeek(auto, manual, orgTargetFor) {
+  const withTarget = row => row ? { ...row, laborTargetOrg: orgTargetFor(row.loc) } : row;
+  const autoLocs = Object.keys((auto && auto.rows) || {});
+  if (!autoLocs.length) {
+    if (manual && Object.keys(manual.rows || {}).length) {
+      const rows = {};
+      for (const loc of Object.keys(manual.rows)) rows[loc] = withTarget(manual.rows[loc]);
+      return { weekStart: manual.weekStart, rows, source: 'manual', autoCount: 0, manualFill: Object.keys(manual.rows).length };
+    }
+    return { weekStart: auto && auto.weekStart, rows: {}, source: 'auto', autoCount: 0, manualFill: 0 };
+  }
+  const rows = { ...auto.rows }; let filled = 0;
+  if (manual && manual.weekStart === auto.weekStart) {
+    for (const loc of Object.keys(manual.rows || {})) if (!rows[loc]) { rows[loc] = withTarget(manual.rows[loc]); filled++; }
+  }
+  return { weekStart: auto.weekStart, rows, source: 'auto', autoCount: autoLocs.length, manualFill: filled };
+}
+
 // ── Hours of operation ───────────────────────────────────────────────────────
 // Store hours are Excel time fractions (0.208≈5:00, 0.916≈22:00). Hours open for
 // a day = (close-open)*24; a close of 0 or ≤ open means the store runs to/through

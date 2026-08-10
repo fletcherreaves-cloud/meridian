@@ -13,6 +13,7 @@ import { STORE_STAFF } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
 import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor } from '../parsers/index.js';
 import { saveMonthlyTargets } from '../lib/supabase.js';
+import { resolveLaborTarget } from './labor-basis.js';
 
 function buildDS(workbooks){
   const ds={laborRows:[],opsRows:[],ctrlRows:[],weatherRows:[],inventoryRows:[],
@@ -137,7 +138,12 @@ function computeOpsScore(p,t,sc){
   if(t.tKvsu>0&&p.kvsu>0){max+=sc.kvsuMaxPts;if(p.kvsu>=t.tKvsu)score+=sc.kvsuMaxPts;else if(p.kvsu>=t.tKvsu*sc.kvsuPartialPct)score+=sc.kvsuPartialPts;}
   if(t.tPark>0&&p.park>0){max+=sc.parkMaxPts;if(p.park<=t.tPark)score+=sc.parkMaxPts;else if(p.park<=t.tPark*sc.parkPartialPct)score+=sc.parkPartialPts;}
   if(t.tTpph>0&&p.tpph>0){max+=sc.tpphMaxPts;if(p.tpph>=t.tTpph)score+=sc.tpphMaxPts;else if(p.tpph>=t.tTpph*sc.tpphT2pct)score+=sc.tpphT2pts;else if(p.tpph>=t.tTpph*sc.tpphT3pct)score+=sc.tpphT3pts;}
-  if(t.tLabor>0&&p.laborPct>0){max+=sc.laborMaxPts;const g=Math.abs(p.laborPct-t.tLabor);if(g<=sc.laborT1gap)score+=sc.laborMaxPts;else if(g<=sc.laborT2gap)score+=sc.laborT1pts;else if(g<=sc.laborT3gap)score+=sc.laborT2pts;}
+  // #153 defect 2: this used to read t.tLabor directly — a field the monthly-approval cycle
+  // never populates (it writes tCrewLabor, via monthly_targets.crew_labor_pct). Routed through
+  // the named resolver (labor-basis.js) instead of a second inline field name, so the score and
+  // computeLaborRow (engine/labor-analysis.js) always grade the same number.
+  const laborTarget=resolveLaborTarget(t);
+  if(laborTarget>0&&p.laborPct>0){max+=sc.laborMaxPts;const g=Math.abs(p.laborPct-laborTarget);if(g<=sc.laborT1gap)score+=sc.laborMaxPts;else if(g<=sc.laborT2gap)score+=sc.laborT1pts;else if(g<=sc.laborT3gap)score+=sc.laborT2pts;}
   return max?+(score/max*100).toFixed(1):50;
 }
 
