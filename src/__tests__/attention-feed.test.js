@@ -234,6 +234,36 @@ describe('buildAttentionFeed', () => {
     expect(feed.some(i => i.category === 'Sales')).toBe(true);
     expect(feed.every(i => 'severity' in i)).toBe(true);
   });
+
+  // issue #143 — the fire-volume instrumentation must be observation-only. These two guard
+  // the "no behavior change" constraint from the issue: an omitted onFireVolume is a total
+  // no-op (every existing caller before this issue), and a supplied one gets called with the
+  // per-detector breakdown but the RETURNED feed itself is untouched by its presence.
+  const inputs = {
+    fobByStore: { a: { fobPct: 0.03, fob$: 300, sales: 10000 }, b: { fobPct: 0.03, fob$: 300, sales: 10000 }, c: { fobPct: 0.12, fob$: 1200, sales: 10000 } },
+    salesLY: [{ loc: 'd', cur: 8000, ly: 10000 }],
+    ageDays: 20,
+    storeName: nm,
+  };
+  it('an omitted onFireVolume changes nothing (pre-#143 callers keep working identically)', () => {
+    expect(() => buildAttentionFeed(inputs)).not.toThrow();
+  });
+  it('a supplied onFireVolume observes without altering the returned feed', () => {
+    const calls = [];
+    const withCb = buildAttentionFeed({ ...inputs, onFireVolume: (bySource, max) => calls.push({ bySource, max }) });
+    const without = buildAttentionFeed(inputs);
+    expect(withCb).toEqual(without);   // byte-identical return value
+    expect(calls).toHaveLength(1);
+    expect(calls[0].max).toBe(15);     // buildAttentionFeed's default
+    expect(calls[0].bySource.fobOutliers).toHaveLength(1);   // store c
+    expect(calls[0].bySource.staleData).toHaveLength(1);     // ageDays:20 -> crit
+    expect(calls[0].bySource.salesBehindLY).toHaveLength(1); // store d
+    expect(calls[0].bySource.slowDT).toHaveLength(0);
+  });
+  it('a throwing onFireVolume still returns the feed (scaffolding can never break the panel)', () => {
+    const feed = buildAttentionFeed({ ...inputs, onFireVolume: () => { throw new Error('boom'); } });
+    expect(feed.length).toBeGreaterThan(0);
+  });
 });
 
 describe('visitRisk shape tolerance (production crash, 2026-08-07)', () => {

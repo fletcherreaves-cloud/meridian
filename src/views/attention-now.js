@@ -16,6 +16,7 @@ import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
 import { buildAttentionFeed, mergeWorstSalesLY } from '../engine/attention-feed.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
+import { recordFireVolume } from '../engine/insight-ledger-measure.js';
 
 const { useMemo, useState, useEffect } = React;
 export const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
@@ -129,7 +130,10 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     const countExceptionRows = Object.entries(exceptions || {}).map(([loc, e]) => ({ loc, acceptedDate: e.acceptedDate, approvedBy: e.approvedBy }));
     const integrityItems = (integrity || []).map(f => ({ id: `intg-${f.loc}-${f.kind}`, loc: f.loc, severity: f.severity, dollars: f.dollars, title: `${nm(f.loc)} — ${f.title || 'integrity flag'}`, detail: f.detail, nav: 'analytics' }));
     const briefFindings = (stores || []).flatMap(s => s.findings || []);
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, storeName: nm, max });
+    // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
+    // never touches what buildAttentionFeed returns, it just writes a day-bucketed count of
+    // what fired to a throwaway Supabase blob. See engine/insight-ledger-measure.js.
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, storeName: nm, max, onFireVolume: recordFireVolume });
   }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
 }
 

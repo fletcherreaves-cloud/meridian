@@ -140,3 +140,40 @@ re-opened by a future session without saying so.
    (`lazyPanel()`), with a "graduate to task" action wired to `saveTask`.
 
 Step 1 is the gate. Nothing after it is worth starting until the volume numbers are in hand.
+
+### Step 1 shipped (2026-08-10, issue #143, v4.963) — instrumentation only, no numbers yet
+
+`src/engine/insight-ledger-measure.js` + one call site (`attention-now.js`'s `useAttentionFeed`,
+wiring `buildAttentionFeed`'s new optional `onFireVolume` callback). Observation only, verified
+byte-identical to the pre-instrumentation return value by a dedicated test — the ledger question
+gets answered without risking anything about what the panel currently renders.
+
+**What it records**, day-bucketed (one snapshot per calendar day, not one row per page load —
+opening the app 20 times today overwrites the same bucket, doesn't append 20 rows): total items,
+per-detector counts, and the set of situation keys that fired, each keyed on the item's own `.id`
+— the exact key `analytics.js`'s `feedKeyFn` already acks attention items on, not a new scheme.
+Persisted to Supabase `user_settings` under `insight_ledger_fire_volume` via `blob-sync.js`'s
+existing `pushBlob`/`hydrateBlob` pattern; local mirror in `localStorage['mf_ledger_fire_volume']`.
+
+**How to read it back once a week of usage has accumulated** — this is the step that was
+deliberately NOT done as part of #143 (there's no data yet):
+```js
+import { hydrateFireVolume, summarizeFireVolume } from './src/engine/insight-ledger-measure.js';
+hydrateFireVolume(blob => console.log(summarizeFireVolume(blob)));
+```
+`summarizeFireVolume` returns `{ daysMeasured, totalFires, distinctKeys, collapseRatio,
+byDetectorTotal, anyCapped, keyInfo }` — `collapseRatio` (`totalFires / distinctKeys`) is the
+headline number this whole exercise exists to produce. `anyCapped` flags whether any day's real
+fire volume exceeded `rankAttention`'s cap, so a capped day is never silently under-counted (the
+snapshot is built from the pre-rank/pre-cap per-detector arrays, so the count itself can't be
+capped — this flag is just honesty about what the RENDERED panel would have shown that day).
+
+**Removable in one commit**, per the issue's own instruction: delete
+`engine/insight-ledger-measure.js`, the `onFireVolume` param + its one call in
+`attention-feed.js`'s `buildAttentionFeed`, and the one import + wired call in
+`attention-now.js`. Nothing else references it.
+
+**Still gating everything after step 1**: the actual numbers. This needs roughly a week of real
+multi-device usage (the owner opening Needs Attention across desktop/mobile) before
+`summarizeFireVolume` has anything meaningful to say. Do not start step 2 (table + writers) until
+someone has actually run the read-side snippet above and reported real numbers.
