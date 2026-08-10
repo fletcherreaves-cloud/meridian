@@ -1,6 +1,6 @@
 ---
 name: rls-table-audit-119
-description: Issue #119 — full 82-table RLS audit (authenticated vs service-role row counts). qsr_fob measured healthy (does not currently reproduce the reported bug). Two real, currently-reproducing gaps found and fixed forward: qsr_daily_activity_daily view missing its GRANT, and tenants/tenant_stores had zero RLS policy at all. Repeatable check: scripts/rls-table-audit.mjs.
+description: Issue #119 — full 82-table RLS audit (authenticated vs service-role row counts). qsr_fob measured healthy (does not currently reproduce the reported bug). Two real, currently-reproducing gaps found and fixed forward — qsr_daily_activity_daily view missing its GRANT, and tenants/tenant_stores had zero RLS policy at all — plus a PM-caught near-miss on the first fix: granting a view's SELECT without security_invoker=true is itself an RLS bypass (views apply the OWNER's row-security by default, not the caller's). Repeatable check: scripts/rls-table-audit.mjs.
 metadata:
   node_type: memory
   type: project
@@ -59,17 +59,52 @@ not a third guess.
 
 ## Root cause + fix, per finding
 
-### 1. `qsr_daily_activity_daily` — ERROR, not RLS
+### 1. `qsr_daily_activity_daily` — ERROR, not RLS. AND a second bug the first one was hiding.
 Postgres error text was literally `permission denied for view
 qsr_daily_activity_daily` — a missing table-level `GRANT`, not an RLS filter (RLS
 denial reads as an empty 200, not a 403/permission error). `schema-qsr-daily-summary.sql`
-already contains the correct `grant select on public.qsr_daily_activity_daily to
-authenticated, service_role;` — it was written correctly but, per the same
-hand-applied-migration gap noted above, apparently never (fully) executed against
-production, or was run before the view's most recent `create or replace`. **No SQL
-change was needed** — added a re-apply breadcrumb comment to the top of that file
-instead of editing its DDL. The owner needs to re-run that file in the SQL editor
-(it's idempotent).
+already contains a `grant select on public.qsr_daily_activity_daily to authenticated,
+service_role;` that was apparently never (fully) executed against production, or was run
+before the view's most recent `create or replace`.
+
+**⚠️ Correction (PM review, same day): my original fix here was wrong, and it was wrong
+in the dangerous direction.** I initially concluded "no SQL change needed, just re-run
+the existing grant" and said the blast radius was "none." That analysis missed something
+the file's OWN pre-existing comment already named but didn't draw out: *"a view runs
+with the privileges of its owner and does NOT inherit the base table's policies."* By
+default, Postgres applies a view's ROW SECURITY policies using the VIEW OWNER's rights,
+not the querying role's. Re-applying that grant AS ORIGINALLY WRITTEN would have handed
+**every authenticated user, any tenant, any accessible_locs restriction, every row of
+`qsr_daily_activity`** through this view — even though the base table itself is
+correctly scoped by both tenant (`schema-multitenant-phase2-rls.sql`) and
+`accessible_locs` (`schema-rls-phase2-loc.sql` — this table is literally the one
+`my_locs()` was proven against). I would have shipped a real RLS bypass while believing
+I was applying a harmless, already-written grant.
+
+**Fixed properly**: added `with (security_invoker = true)` to the view definition
+(PostgreSQL 15+), which makes the view apply the CALLING role's RLS policies instead of
+the owner's — the grant is now safe exactly because the base table's own row security
+still does the real scoping per caller. Could not confirm the live Postgres major version
+with certainty (no direct psql connection from this environment) — the PostgREST OpenAPI
+root reports `info.version: "14.5"`, which PostgREST populates from the connected
+server's Postgres version, but this is the only view in `supabase/`, so there's no other
+in-repo precedent proving 15+. Left as a measured-but-unconfirmed signal rather than
+presented as fact. Safety property that makes this an acceptable amount of uncertainty
+to ship: if the project is actually on Postgres 14, `security_invoker` is invalid syntax
+there (added in 15) and the statement fails immediately and loudly when run — a safe,
+visible failure, not a silent bypass. Owner should confirm the actual version in the
+Supabase dashboard before running the file.
+
+## ⭐ The reusable lesson (more important than either individual gap)
+
+**A view defined over an RLS-protected table is itself an RLS bypass, by default, unless
+explicitly declared otherwise.** This isn't specific to `qsr_daily_activity_daily` — it's
+a property of how Postgres views work: a view's row-security policies apply using the
+VIEW OWNER's privileges unless the view is created with `security_invoker = true`
+(PostgreSQL 15+). Granting `SELECT` on such a view to a broad role looks exactly as safe
+as granting `SELECT` on a table, and is not. Before granting broad access to ANY new view
+over an RLS-protected table in this codebase, either add `security_invoker = true`
+(15+) or explicitly confirm the exposure is intended.
 
 ### 2. `tenants` / `tenant_stores` — real RLS gap, currently harmless
 Both created in `schema-multitenant-phase1.sql` with **no RLS policy at all**. RLS
@@ -88,10 +123,14 @@ to run this file in the SQL editor.
 
 ## Blast radius of both fixes
 
-- **`qsr_daily_activity_daily` grant**: none. It's a `SUM(...) GROUP BY loc, dt` rollup
-  over `qsr_daily_activity`, which the authenticated role can already read row-by-row in
-  full (370,130 = 370,130, confirmed by this same audit). The view exposes strictly less
-  granular data than what's already visible; granting it doesn't widen access at all.
+- **`qsr_daily_activity_daily` grant, WITH `security_invoker = true`**: none — the view
+  now applies the caller's own RLS, so it exposes exactly what querying
+  `qsr_daily_activity` directly already exposes to that caller (currently everyone, since
+  both live profiles have unrestricted `accessible_locs` — see `tenants`/`tenant_stores`
+  note below on why "harmless today" isn't the same as "harmless forever"). **Without**
+  `security_invoker` (my first-pass fix), the blast radius would have been every row,
+  every tenant, every restricted store, to any authenticated user — corrected before
+  shipping, see the finding above.
 - **`tenants` / `tenant_stores` policies**: none today (dead code paths, confirmed by
   grep). Forward-looking: once a second tenant exists, this is the isolation boundary
   doing its actual job — a regression here would mean one operator seeing another's

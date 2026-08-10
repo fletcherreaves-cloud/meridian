@@ -8,6 +8,29 @@
 -- run before the view's most recent `create or replace`. This file is idempotent;
 -- re-running it as-is (SQL editor) fixes it. Verify after with:
 --   node scripts/rls-table-audit.mjs   -- qsr_daily_activity_daily should flip to OK
+--
+-- ⚠️ SECURITY FIX (2026-08-10, PM review on issue #119's PR): the comment two
+-- sections down ("a view runs with the privileges of its owner") is more serious
+-- than it was originally treated as. By DEFAULT, Postgres applies a view's ROW
+-- SECURITY policies using the VIEW OWNER's rights, not the querying role's —
+-- meaning re-applying the grant above, as originally written, would have handed
+-- EVERY authenticated user (any tenant, any accessible_locs restriction) every
+-- row of qsr_daily_activity through this view, even though the base table itself
+-- is correctly scoped by both tenant_id (schema-multitenant-phase2-rls.sql) and
+-- accessible_locs (schema-rls-phase2-loc.sql — qsr_daily_activity is literally the
+-- table my_locs() was proven against). A view is an RLS bypass unless declared
+-- otherwise. Fixed below with `security_invoker = true` (PostgreSQL 15+), which
+-- makes the view apply the CALLING role's own RLS policies instead of the
+-- owner's. Measured, not assumed: this project's PostgREST OpenAPI root
+-- (`GET /rest/v1/`) reports `info.version: "14.5"` — PostgREST populates that
+-- field from the connected server's Postgres version, but this is the only view
+-- in supabase/, so there's no other precedent in this repo proving 15+, and this
+-- environment has no direct psql connection to double-check with `SHOW
+-- server_version`. If this project is actually on Postgres 14, `security_invoker`
+-- is invalid syntax there (added in 15) and this statement will fail loudly and
+-- immediately when run — a safe failure, not a silent bypass — rather than
+-- appearing to work. Owner: confirm the actual version in the Supabase dashboard
+-- (Project Settings → Infrastructure) before running this file.
 -- WHY: qsr_daily_activity is HOURLY — PK (loc, dt, hour_slot), ~675 rows/day across
 -- 27 stores. A 60-day window is ~40,000 rows, which the client paginated in ~40
 -- requests of 1000 and then summed by (loc, dt) in JavaScript.
@@ -32,7 +55,8 @@
 -- app before running this is fine.
 -- ============================================================================
 
-create or replace view public.qsr_daily_activity_daily as
+create or replace view public.qsr_daily_activity_daily
+with (security_invoker = true) as
 select
   loc,
   dt,
@@ -62,8 +86,11 @@ group by loc, dt;
 comment on view public.qsr_daily_activity_daily is
   'Per (loc, dt) rollup of the hourly qsr_daily_activity. Sums only — all derived metrics (OEPE, R2P, KVS, TPPH) remain in loadQsrActSummary so the reconciled definitions live in exactly one place.';
 
--- RLS: a view runs with the privileges of its owner and does NOT inherit the base
--- table's policies, so grant read to the same roles that can read the base table.
+-- RLS: `security_invoker = true` above makes this view apply the CALLING role's
+-- RLS policies (tenant + accessible_locs, same as the base table) instead of the
+-- view owner's — so it's now safe to grant broad SELECT: the base table's row
+-- security still does the actual scoping per caller, exactly as if they'd queried
+-- qsr_daily_activity directly.
 grant select on public.qsr_daily_activity_daily to authenticated, service_role;
 
 -- ── VERIFY (expect identical numbers) ───────────────────────────────────────
@@ -75,6 +102,10 @@ grant select on public.qsr_daily_activity_daily to authenticated, service_role;
 --   select loc, dt, sum(product_sales), sum(transactions)
 --     from public.qsr_daily_activity where dt = current_date - 2
 --    group by loc, dt order by loc limit 5;
+--
+--   -- Also confirm the invoker-rights fix actually restricts a restricted caller:
+--   -- log in as (or impersonate) a profile with a non-null accessible_locs, and
+--   -- confirm this view returns ONLY that profile's locs — not the full district.
 
 -- ── ROLLBACK ────────────────────────────────────────────────────────────────
 -- drop view if exists public.qsr_daily_activity_daily;
