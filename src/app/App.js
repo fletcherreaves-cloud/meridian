@@ -101,7 +101,6 @@ const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ defau
 const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
 const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
 const AIInsightsLog       = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.AIInsightsLog })));
-const DevDashboard        = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.DevDashboard })));
 
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
@@ -353,9 +352,13 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.956', date:'2026-08-10', changes:[
+    'Harvested the orphaned Developer Dashboard\'s Data Audit tab (issue #123) — a per-store × per-source coverage grid (row counts, first/last date, coverage %, Full/Partial pill) that nothing live had an equivalent for. This is exactly the diagnostic that would have caught the labor_rows staleness incident at a glance instead of two weeks late. Now lives in Data Manager as a new Coverage tab, same math, same 90/70 grading. The Settings Dump (a curated forecast-config readout) moved into the real, reachable Developer Dashboard in Settings; the Engine Trace tab was dropped outright — the standalone Forecast Audit panel (v4.947) already does that job better, including fixing a rendering bug the orphan\'s version had. The orphan itself is deleted, along with its dead import and unreachable state — there were two different components both named "DevDashboard" in this codebase; now there\'s one.',
+  ]},
   {version:'4.955', date:'2026-08-10', changes:[
     'RLS table audit (issue #119): swept all 82 live Supabase tables comparing an authenticated-role read against a service-role read, the way a real reviewer would rather than guessing. The Food Cost panel bug this started from (period dropdown stuck at May) traced to qsr_fob supposedly returning nothing for a normal login — measured directly, qsr_fob is actually healthy right now (full data through today, correct tenant, unrestricted store list), so that specific symptom didn\'t reproduce and got no fix bolted onto it. The sweep did turn up two real, currently-live gaps: the tenants/tenant_stores tables had no RLS policy at all (same "empty for no visible reason" shape as the Food Cost symptom, just on tables nothing reads yet — confirmed dead code, so nothing user-facing was ever affected), and the qsr_daily_activity_daily rollup view was missing its permission grant. That second one caught something more serious on review: the obvious fix (just re-apply the grant) would have been a real security bug — a Postgres view runs with its OWNER\'s row-level security by default, not the querying user\'s, so granting it broadly would have handed every authenticated user every store\'s hourly data regardless of their own access restrictions. Fixed properly with security_invoker on the view instead, which makes it respect the same per-caller scoping the underlying table already enforces. Both fixed forward with new SQL files for the owner to run; nothing here changes app behavior on its own. The comparison script (scripts/rls-table-audit.mjs) is meant to be re-run any time a panel looks silently empty, not a one-off.',
   ]},
+  
   {version:'4.952', date:'2026-08-10', changes:[
     'Spine 1, step 1 (issue #126) — the redesign\'s foundation, and nothing renders differently yet. Today there are 7 hand-rolled date-range controls in 3 different visual styles, and location/store selectors implemented separately in a dozen-plus panels. Built the shared replacements — DateRangeControl (preset pills + real custom-range picking), LocationSelector (the existing All → State → Patch → Store standard, extended, plus a single-store mode for panels that only ever show one store), ActionMenus (grouped dropdowns — the fix for Inventory Control\'s 14-button wall going to 3 menus), and PanelChrome (lays the shared bands out in a fixed order: location · date · export, then actions · view tabs) — plus two small opt-in ModalShell additions (a page-scrolling layout variant, a tinted header option) needed to host them. This PR only adds the components; no existing panel calls any of them yet, so nothing changes on screen. Migrating a real panel to it (Inventory Control is the pilot) is separate follow-up work. Measured: entry chunk 844.26 KB → 844.30 KB gzip (+0.04 KB, effectively nothing) — the new files aren\'t imported anywhere yet, so only the two tiny ModalShell option flags landed in the bundle at all.',
   ]},
@@ -1745,7 +1748,6 @@ function App() {
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
   const [showCompare, setShowCompare]  = useState(false);
   const [showInsights,setShowInsights] = useState(false);
-  const [showDev, setShowDev]          = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showAnoms, setShowAnoms]      = useState(false);
   const [showCountCycle, setShowCountCycle] = useState(false);
@@ -3386,7 +3388,7 @@ function App() {
     showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
-    showDICompare||showDataManager||showDev||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
+    showDICompare||showDataManager||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
     showGMBrief||showHelp||showInsights||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
@@ -3683,7 +3685,6 @@ function App() {
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showInsights &&h(AIInsightsLog,{stores,settings,onClose:()=>setShowInsights(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
-    showDev      &&h(DevDashboard,{ds,settings,stores,userEvents,onClose:()=>setShowDev(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),

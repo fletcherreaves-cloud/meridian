@@ -189,6 +189,22 @@ function DevDashboard({settings, onUpdate}) {
       )
     ),
 
+    // ── Forecast config quick-glance (harvested from the orphaned DevDashboard's Settings
+    // Dump, issue #123 — a curated forecast-relevant subset, distinct from the full-settings
+    // Export JSON button above which dumps every field including ones unrelated to forecasting).
+    card(
+      div(null,
+        sectionHead('Forecast Config (Quick Glance)'),
+        h('pre',{style:{fontSize:10,color:'var(--text2)',background:'var(--surf)',
+          border:'.5px solid var(--bdr)',borderRadius:3,padding:10,overflowX:'auto',
+          lineHeight:1.6,maxHeight:220,margin:0}},
+          JSON.stringify({mode:settings.mode,cascade:settings.cascade,plusUp:settings.plusUp,
+            tolerance:settings.tolerance,weeksBack:settings.weeksBack,scoringMode:settings.scoringMode,
+            ctrlWeight:settings.ctrlWeight,useEmpirical:settings.useEmpirical,
+            metricActive:settings.metricActive},null,2))
+      )
+    ),
+
     // ── Version / build info
     div({style:{fontSize:9,color:'var(--text3)',textAlign:'center',paddingTop:4}},
       'Meridian · Built on Vite + React · Supabase · Netlify')
