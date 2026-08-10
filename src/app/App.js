@@ -332,10 +332,63 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
-  {version:'4.941', date:'2026-08-09', changes:[
-    'Every popup and panel in the app now closes the same way. Different screens used different close controls for the same action — sometimes three different ones on the same panel depending on what was loaded (a "Close" word, a plain X, an arrow) — and a few used the X for two different things on the same screen (closing the panel and deleting an item). Every popup now closes with the same X, in the same place, sized properly for touch.',
-    'SAGE now has its own button in the bar at the top of every screen, so it is one tap away no matter what you are looking at, instead of buried in a menu. It also now opens as a panel on the right side of the screen rather than covering everything, so you can keep looking at your data while talking to it. Reopening it after minimizing now actually reopens it (it could get stuck invisible before).',
-    'Signals no longer takes over the whole screen when opened.',
+  {version:'4.939', date:'2026-08-09', changes:[
+    'SAGE moved from a full-screen overlay to a drawer that opens from any screen without losing your place — a persistent button lives in the top bar now instead of being buried in the nav list. The minimize-to-a-pill option is still there for anyone who wants it fully out of the way, and reopening a minimized session now actually reopens it (it could get stuck invisible before).',
+    'Signals is no longer forced full-screen either — it opens as the same centered panel as everything else, just wider to give the Scanner and Live Ops tables room.',
+  ]},
+  {version:'4.938', date:'2026-08-09', changes:[
+    'Every panel in the app now closes the same way. Close buttons had drifted into five different shapes across the app — a wrong "×" character, the correct "✕", the word "Close", "✕ Close", and "Cancel" — sometimes two of them on the same panel depending on whether it had data yet. All 31 panels that open as an overlay now share one modal component with one header and one close button, so the fix cannot drift back panel by panel the way it did before.',
+  ]},
+  {version:'4.937', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #2 continued: 4 more reports fixed the same way, one of them a real live bug — the Anomaly Detection panel and the AI Backtest Scanner build their day-by-day baseline from the manually-uploaded Labor Report, which had quietly stopped receiving new rows about two weeks earlier while every other data source kept updating. Both had been silently blind to two weeks of real sales anomalies. Also fixed: a stale slider baseline in the Performance Calculator, the district 6-week sales trend, and FOB% in the Operator Summary panel, which now falls back to the automatic FOB pull when the monthly report hasn’t been uploaded yet.',
+  ]},
+  {version:'4.936', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #2: 12 more reports, panels, and one AI prompt were reading only from manually-uploaded files, so a store covered solely by an automatic or emailed data feed dropped out of them entirely. Fixed across the Date-Range Report, the printed Store One-Pager, the Metric Correlation Explorer, the Ops Anomaly Cross-Check, the district AI brief, four pieces of the Revenue Opportunity panel, the Model Comparison chart, the Scheduling Opportunity Report, and Morning Brief. The sharpest case was the Records feature: it only checked service-speed data on a day the Labor Report already covered, so a record set on an automatic-only day could never be recognized at all.',
+  ]},
+  {version:'4.935', date:'2026-08-09', changes:[
+    'New: Projection Accuracy report (Signals → 📐 Projection Accuracy). Tracks whether QSRSoft’s hourly sales and guest-count projections run consistently high or low by time of day, accumulating daily so the pattern gets more reliable the longer it runs — a first look already suggested projections run under in the afternoon/evening and over late at night, though it will take a few weeks of data to confirm.',
+  ]},
+  {version:'4.934', date:'2026-08-09', changes:[
+    'RankingView’s grouped guest-count vs-last-year figure now pulls from the same automatic-first data source as every other column in that table — it had been the one column still reading only the manually-uploaded file.',
+  ]},
+  {version:'4.933', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #5: 5 more places where a missing reading was silently graded as if it were a real zero. A store with no Controls upload at all was scoring a perfect Controls Elite rating; a store missing labor data ranked #1 (best) in the district instead of last; a store with no guest comments showed the worst possible color and star rating instead of "—"; and two rolling averages let a missing reading drag the average toward zero instead of being left out.',
+  ]},
+  {version:'4.932', date:'2026-08-09', changes:[
+    'Graded Visits: the hourly last-year comparison now requires a minimum sample size before showing a percentage. Measured against real data first — a last-year guest count of 1 produced comparisons like +2200%, and turned out to be rare (0.3% of hours), not the normal case it looked like.',
+  ]},
+  {version:'4.931', date:'2026-08-09', changes:[
+    'Fixed a destructive bug in the mistagged-event cleanup tool shipped one version earlier, caught in review before it reached anyone: for long date ranges (like a full back-to-school month) the one-click "Remove all mistagged" button could delete a correctly-tagged real event, not just the mistagged ones.',
+  ]},
+  {version:'4.930', date:'2026-08-09', changes:[
+    'Calendar Manager can now detect and clean up mistagged recurring-event dates in one click — the same class of bug as 5 Black Friday tags landing on the wrong day, generalized to Small Business Saturday, Cyber Monday, and tax-free weekends.',
+  ]},
+  {version:'4.929', date:'2026-08-09', changes:[
+    'Fixed a bug in the cloud sync for hand-tagged calendar events: editing or deleting the one event visible on a day with multiple tagged events (a sports game AND a school closure on the same date, for example) could silently delete the OTHER event sharing that date too, with no error and no local sign anything was wrong.',
+  ]},
+  {version:'4.928', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #1: fixed 3 more places a near-zero denominator could produce an impossible percentage, matching the 1,200,000%-chart-axis bug from 4.912 — a cloud-sourced year-over-year figure that fed sort order, color coding, and a printed report; a per-day forecast-error percentage that could read "-111,000%" in the Forecast Table; and a dead calculation that was computed but never actually used, which was deleted rather than fixed.',
+  ]},
+  {version:'4.927', date:'2026-08-09', changes:[
+    'Recurring calendar rules get a safer default duration and a guard against two rules landing on the same floating date.',
+  ]},
+  {version:'4.926', date:'2026-08-09', changes:[
+    'Forecasting: a last-year comparison is no longer skipped just because that day carries a tag. It’s now skipped only when the day is a measured statistical outlier against its own peer days — tagging a day must never by itself remove it from the comparison.',
+  ]},
+  {version:'4.925', date:'2026-08-09', changes:[
+    'Events & Tags: hand-entered tags now sync to the cloud, not just this device’s local storage.',
+  ]},
+  {version:'4.924', date:'2026-08-09', changes:[
+    'Data-integrity sweep, signature #4: the still-open, still-filling business day is now excluded everywhere it could taint a grade or a trend — 7 more places found beyond the Biggest Miss fix in 4.917, including Dialed-In’s MAPE columns, every period preset in Labor Tools, and the live Smart Targets calculator.',
+  ]},
+  {version:'4.923', date:'2026-08-09', changes:[
+    'Events & Tags: restored search, filter, and sort, which had landed in the wrong modal.',
+  ]},
+  {version:'4.922', date:'2026-08-09', changes:[
+    'Interaction tracer (?clicktrace=1) improvements: an on-screen report with a copy button for testing on a phone with no attached debugger, each React render now attributed to the specific click that caused it, click-triggered renders separated from unrelated startup/background work, and AppSidebar’s own render time instrumented directly.',
+  ]},
+  {version:'4.921', date:'2026-08-09', changes:[
+    'Fixed the mobile app feeling slow to open menus and panels — a modal-tracking gate had regressed since 4.212, so opening the hamburger menu (or several other panels) forced the whole app to re-render instead of just the panel that opened. Found with a real capture from the interaction tracer, not guessed. Also debounced the startup data loaders so their 32-loader burst no longer coalesces into a visible stall.',
   ]},
   {version:'4.920', date:'2026-08-08', changes:[
     'FIXED — washed-out text across the whole app. The muted colour used for almost every label and caption failed readability standards in six of the eight theme-and-mode combinations, worst at roughly half the required contrast. The gold accent failed in three light themes. All eight now meet the accessibility standard, and a test blocks any future change that drops below it.',

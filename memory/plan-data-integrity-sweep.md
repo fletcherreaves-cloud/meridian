@@ -324,19 +324,25 @@ both pass clean after the sweep. Detail per site:
      current-side (`curSales`/`curGC`) matching logic (±2-day tolerance) was deliberately left
      untouched to avoid narrowing its existing slop.
 
-**Deferred, not part of this pass:**
+**Deferred, not part of this (HIGH-confidence) pass:**
 - The "4 independently-maintained reimplementations" architectural finding (analytics.js's
   `labInRange`/`ctrlEffective`/`svcEffective`, store-dash.js's `UnifiedTargetsPanel` `SPEC`,
   smart-targets.js's `cloudLabor`/etc., promo-roi.js's `buildDailyRecords`) — a consolidation
-  pass on its own, not attempted here.
-- The MEDIUM-confidence judgment calls from the original triage (`PerformanceCalculator`,
-  `weeklyTrend`, `OperatorSummaryPanel`'s FOB%, `ForecastAccuracyPanel`/`computeStoreSigma`
-  backtest-shaped consumers — flagged as possibly-deliberately-conservative, `weekly store-
-  projections cloud-actuals supplement`, `detectAnomalies`/DOW baseline scanner, `eom-supervisor.js`
-  `computeStoreEOM`) — still open, still owner-judgment calls, not touched.
+  pass on its own, not attempted, still open.
 - `MetricCorrelationExplorer`'s own raw `ds.laborRows`/`opsRows`/`ctrlRows` reads (separate from
   `computeMetricAverages`, same file) — noticed while fixing `computeMetricAverages` next to it,
   not in the original HIGH-confidence list, left alone.
+
+**MEDIUM-confidence judgment calls — picked up later the same evening, 4 of 7 fixed, PR #105:**
+`PerformanceCalculator`, `weeklyTrend`, `OperatorSummaryPanel`'s FOB%, and the `detectAnomalies`/
+`runScan` DOW baseline anomaly scanners (this last one confirmed as a REAL live bug, not
+theoretical — `labor_rows` had gone stale ~2026-07-23, so both scanners had been silently blind
+to weeks of real anomalies) are now fixed and merged. `ForecastAccuracyPanel`/`computeStoreSigma`,
+the weekly store-projections supplement, and `eom-supervisor.js`'s `computeStoreEOM` are still
+open, still owner-judgment calls, deliberately not touched. Full detail in the "MEDIUM confidence"
+sub-section inside the collapsed triage below — despite that block's `[STALE]` label, THIS
+specific sub-section was updated live and is current; only the rest of that collapsed block is
+the frozen original triage.
 
 <details><summary>Original triage (2026-08-09, before the sweep above)</summary>
 
@@ -371,7 +377,10 @@ already-decided exceptions: `LaborAnalyticsPanel`, `store-analytics.js` `dowData
 - `morning-brief.js:284-295`/`:220-282` — hand-rolled vs-LY + oepe/kvst/park/kvsu, duplicates the
   resolver. Matches this doc's own earlier "remaining candidate: morning-brief peaks metrics."
 
-**MEDIUM confidence / owner judgment calls — 4 of 7 fixed (2026-08-09 evening), 3 left alone:**
+**MEDIUM confidence / owner judgment calls — 4 of 7 fixed (2026-08-09 evening), 3 left alone.**
+*(This specific sub-section is CURRENT, unlike the `[STALE]` label on the rest of this collapsed
+block — it was updated after the HIGH-confidence pass shipped. See also the summary in the live
+Signature #2 section above.)*
 
 Fixed:
 - `store-dash.js` `PerformanceCalculator` — avgCheck/avgRate baselines now route through
