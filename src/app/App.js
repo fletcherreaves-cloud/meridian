@@ -331,6 +331,11 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.947', date:'2026-08-10', changes:[
+    'Forecast Audit — the panel that shows every input behind a single day\'s forecast, one step at a time — is now reachable directly from the nav (Forecasting section), not just from inside Monthly Projections. It was already fully built and live there, just missing a front door; the registry had it mislabeled as dead code, which is now corrected. Opening it before selecting a store now dims the nav item instead of doing nothing when clicked.',
+    'Fixed a bug in that same panel where the detail view could silently disagree with the date list next to it — the detail view was reading a tagged event\'s impact from the wrong place, so it usually saw none at all even when the sidebar\'s preview for the exact same day did. A test now pins the two views to always agree.',
+    'A second bug in the same panel: for a store/day using the district\'s standard forecast model, the Trend Signal step could display a wildly wrong percentage — a $12,846 forecast reading as "+1,284,600.00%" — instead of a real trend like "up 5%." That model doesn\'t compute a trend percentage at all, it computes the forecast dollar figure directly, so the panel was showing the wrong number in the wrong place. It now shows "n/a — this model doesn\'t compute a trend" instead. Deciding whether that model SHOULD compute a display trend is a separate, larger question, deliberately left open.',
+  ]},
   {version:'4.946', date:'2026-08-10', changes:[
     'Needs Attention — Part 2 of the Attention Now merge: new layout. Instead of a list you click through one store at a time, it\'s now a single ranked list — worst store first, each one expands in place to show every finding. Clickable Critical / Watch / Acknowledged counts at the top act as filters. A clean, non-urgent store now shows up in a collapsed "Running Well" section instead of just not being there, and a district-wide alert that isn\'t tied to any one store (like "sales data is 9 days old, auto-sync may be down") now gets its own pinned strip at the top instead of having nowhere to go.',
     'New: acknowledge any finding so it moves out of the active list until the situation actually changes — same idea as the sales-swing alarm\'s acknowledgement, extended here. Acknowledging one issue at a store never silently acknowledges a different issue at the same store, and acknowledgements sync across devices the same way the swing alarm\'s do.',
@@ -3439,6 +3444,7 @@ function App() {
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
+        if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
         if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&setShowLifeLenzBridge(true);
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
         if(modal==='compare')        perm('analytics.store')&&setShowCompare(true);

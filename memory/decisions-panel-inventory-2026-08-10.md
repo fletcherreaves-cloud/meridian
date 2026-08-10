@@ -154,6 +154,58 @@ shadowing the `userEvents` prop. The sidebar (`:5834`) reads the prop; the detai
 shadowed value. If they diverge, the two disagree about the same date — in a panel whose entire
 purpose is trustworthy explainability.
 
+**SHIPPED (v4.945, 2026-08-10, issue #114).** Standalone nav entry added (Forecasting section,
+`test-kitchen`, joins the protected forecast/diagnostic cluster) — clicking it with no store
+selected dims the item rather than silently opening nothing (no existing "disabled nav item"
+affordance existed, so `navItem`'s signature grew an optional 6th `disabled` param rather than
+adding a new UI pattern for one panel). `ORPHANS` and its stale comment corrected; `App.js:3892`'s
+render block needed no changes, as predicted above.
+
+The shadowing bug was two bugs, not one: `settings._userEvents` is never actually kept live on
+the raw `settings` object anywhere in the app — every real caller injects it via
+`{...settings, _userEvents: userEvents}` right before a `forecastDay` call, confirmed by grepping
+every other panel in `analytics.js` (`ForecastAccuracyPanel`, `DialedInPanel`, `DateRangeReport`,
+`ProjectionVsActualsReport`, `DialedInComparisonReport` — all follow this pattern; `ForecastAudit`
+was the sole outlier). So the shadowed line always evaluated to `{}`, meaning tagged-event
+exclusions in the audit's own LY-lookup trace and the audit's `forecastDay` call for `audit.row`
+silently never applied — always, not just on divergence. Fixed by deleting the shadow line.
+**Second, related bug found while verifying the fix**: even with `_userEvents` corrected, the
+sidebar's `forecastDay` call also passes `_eventFactors` (via `computeEventFactors`) that
+`runAudit`'s call for `audit.row` did not — so a store/date with a *learned* (not manually-typed)
+event-registry impact would still show 0.00% "no matching event tag" in the Final Calculation
+section while the sidebar preview for the same date reflected it. Fixed the same way: `runAudit`'s
+`forecastDay` call now mirrors the sidebar's shape exactly (`_userEvents` + `_eventFactors`).
+Regression test in `src/__tests__/forecast.test.js` reconstructs both call shapes and asserts they
+agree — and separately proves the pre-fix `{}` shape would have disagreed, so the test isn't
+vacuous.
+
+**Third finding — display guard added on PR review, underlying design question still open.**
+`LOC 3708`'s (and, per `DEFAULT_MODEL_ASSIGNMENTS` in `constants.js`, every one of the 27 real
+stores') assigned *weekly* forecast model is `'ae'` (Adaptive Ensemble) or `'ewma'`. Both
+short-circuit-return from `forecastDay` before the `_evFactor`/trend/holiday/calibration
+computation ever runs — and their return shape repurposes `t2`/`t4`/`t6` to hold the raw dollar
+forecast, not a YOY trend fraction. `ForecastAudit`'s Trend Signal step rendered those fields as
+`(t2*100).toFixed(2)+'%'` unconditionally, so for the AE/EWMA model — which is every real
+production store's default weekly assignment, confirmed by parsing every `DEFAULT_MODEL_ASSIGNMENTS`
+entry, not assumed — that section showed something like "+1,284,600.00%" for a normal forecast, not
+an edge case.
+
+Initially left unfixed in the #114 PR (different root cause than the userEvents-shadowing bug the
+issue named, and the real fix is a design decision). **PM review on the PR asked for a narrow
+display guard before merge, not the full design fix**: "stop rendering a meaningless number as if
+it were meaningful" — since this PR's whole purpose is promoting the panel to a more-discoverable
+top-level nav item, shipping that alongside a 1.28-million-percent display would widen the door to
+a bug that predates this PR. Added `_trendNA = modelUsed==='ae'||modelUsed==='ewma'` in
+`ForecastAudit`; the 4 Trend Signal rows (T2W/T4W/T6W/Blended) now show `n/a — this model doesn't
+compute a trend` instead of the raw-dollars-as-percent value when true. ~15 lines, all inside the
+Trend Signal section — no other section of the panel touched.
+
+**Still open, still needs an owner call**: should the AE/EWMA branches in `forecastDay` also run
+the trend/event/holiday math purely for audit-display purposes even though they don't use it for
+the final forecast, or should the panel permanently special-case those models this way? The n/a
+guard is the honest interim state, not the resolution. The regression test added for this task
+forces `forceModel:'dow'` specifically to isolate the userEvents bug from this separate issue.
+
 ### Harvest list, ranked by what would actually be lost
 
 | # | Source | Lift this | Into |

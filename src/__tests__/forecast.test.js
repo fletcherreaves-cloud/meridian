@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { describe, it, expect, beforeEach } from 'vitest';
 import { forecastDay, fetchLY, fetchLYDate, fetchGC } from '../engine/forecast.js';
+import { computeEventFactors } from '../utils/events.js';
 
 const LOC = '3708';
 
@@ -269,5 +270,71 @@ describe('forecastDay — result shape', () => {
     for (const key of required) {
       expect(result).toHaveProperty(key);
     }
+  });
+});
+
+// ── ForecastAudit prop-shadowing regression (issue #114) ──────────────────────
+// analytics.js's ForecastAudit panel has two forecastDay call sites for the SAME date: a date
+// sidebar and a detail pane. Both must be built from the exact same `_userEvents`/`_eventFactors`
+// settings or the two can silently disagree on what "the forecast for this date" is — in a panel
+// whose entire purpose is explaining that number. The bug was the detail pane building its own
+// local `userEvents` from `settings._userEvents` (always `{}` in practice — nothing keeps that
+// field live on the raw settings object; every real caller injects it via `{...settings,
+// _userEvents: userEvents}` right before the call), silently dropping tagged-event impact that
+// the sidebar's forecastDay call — which read the real `userEvents` prop — still applied.
+//
+// forceModel:'dow' is used throughout so these tests exercise the engineered pipeline that
+// actually computes _evFactor. The 'ae'/'ewma' short-circuits (LOC 3708's real assigned weekly
+// model per DEFAULT_MODEL_ASSIGNMENTS) return before _evFactor is ever computed — a separate,
+// out-of-scope issue (their t2/t4/t6 fields hold a raw dollar forecast, not a trend fraction,
+// which ForecastAudit's Trend Signal section renders as if it were one) flagged in issue #114's
+// write-up, not fixed here.
+describe('forecastDay — _userEvents must be threaded through, not silently dropped (issue #114)', () => {
+  let ds;
+  beforeEach(() => { ds = buildDs(); });
+
+  it('a tagged event with an expected sales delta shifts the forecast when _userEvents is passed', () => {
+    const target = makeDate(10);
+    const dk = dKey(target);
+    const userEvents = { [LOC]: { [dk]: { type: 'promo', expectedSalesDelta: 0.20 } } };
+
+    const withTag = forecastDay(LOC, target, ds,
+      { ...BASE_SETTINGS, useEventRegistry: true, _userEvents: userEvents }, null, null, 'weekly', 'dow');
+    const withoutTag = forecastDay(LOC, target, ds,
+      { ...BASE_SETTINGS, useEventRegistry: true, _userEvents: {} }, null, null, 'weekly', 'dow');
+
+    // If _userEvents is silently dropped (the pre-fix bug — settings._userEvents is never live on
+    // the raw settings object), this collapses to `withoutTag` and the assertion below catches it.
+    expect(withTag._evFactor).toBeCloseTo(0.20, 10);
+    expect(withoutTag._evFactor).toBe(0);
+    expect(withTag.forecast).not.toBe(withoutTag.forecast);
+  });
+
+  it('ForecastAudit sidebar and detail-pane forecastDay calls agree for the same date when both use the real userEvents prop', () => {
+    const target = makeDate(10);
+    const dk = dKey(target);
+    const userEvents = { [LOC]: { [dk]: { type: 'promo', expectedSalesDelta: 0.20 } } };
+    const settings = { ...BASE_SETTINGS, useEventRegistry: true };
+
+    // Sidebar call shape (analytics.js ForecastAudit, ~line 5859): includes _eventFactors.
+    const sidebar = forecastDay(LOC, target, ds, {
+      ...settings, _userEvents: userEvents,
+      _eventFactors: settings.useEventRegistry !== false ? computeEventFactors(ds, userEvents) : {},
+    }, null, null, 'weekly', 'dow');
+
+    // Detail-pane call shape (analytics.js ForecastAudit runAudit, post-fix): must mirror it.
+    const detail = forecastDay(LOC, target, ds, {
+      ...settings, _userEvents: userEvents,
+      _eventFactors: settings.useEventRegistry !== false ? computeEventFactors(ds, userEvents) : {},
+    }, null, null, 'weekly', 'dow');
+
+    expect(detail.forecast).toBe(sidebar.forecast);
+
+    // And prove this isn't vacuous: swap in the pre-fix bug's `{}` for the detail pane only, and
+    // the two panes diverge — this is the exact failure mode issue #114 reported.
+    const detailPreFixBug = forecastDay(LOC, target, ds, {
+      ...settings, _userEvents: {}, _eventFactors: {},
+    }, null, null, 'weekly', 'dow');
+    expect(detailPreFixBug.forecast).not.toBe(sidebar.forecast);
   });
 });

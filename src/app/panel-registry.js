@@ -9,10 +9,13 @@
 //   4. anyModalOpen           src/app/App.js  (a hand-written OR of ~60 booleans)
 // …plus a permission check duplicated between (1) and (2).
 //
-// The drift that causes is already in the codebase: DevDashboard, AIInsightsLog,
-// AnomalyPanel and ForecastAudit all have state and render lines but NOTHING can open
-// them; showMonthlyProj / showSmartTargetsV2 / showLaborAnalysis / showSkillsMatrix are
-// declared and counted in anyModalOpen but never rendered.
+// The drift that causes is already in the codebase: DevDashboard, AIInsightsLog and
+// AnomalyPanel have state and render lines but NOTHING can open them (ForecastAudit was
+// briefly in this list too — corrected 2026-08-10, issue #114: it was never actually
+// orphaned, it's live at src/features/projections.js:1808 with three real entry points;
+// only a standalone App.js nav entry was missing, now added); showMonthlyProj /
+// showSmartTargetsV2 / showLaborAnalysis / showSkillsMatrix are declared and counted in
+// anyModalOpen but never rendered.
 //
 // This file is generated-then-curated from the live code, not transcribed — every id,
 // permission and nav label below was extracted from shell.js and App.js so it matches
@@ -57,6 +60,7 @@ export const PANELS = [
   { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'planning' },
   { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'forecast-audit', label:'Forecast Audit', icon:'🔬', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'help' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations' },
@@ -119,12 +123,15 @@ export const PANELS = [
 // Neither is fixed here: wiring an orphan up or deleting vestigial state is a behaviour
 // change, and Phase 1 ships as a pure refactor. Recorded so the decision is visible.
 
-/** Panels with a render line in App.js that NOTHING sets true. Real, complete, unreachable. */
+/** Panels with a render line in App.js that NOTHING sets true. Real, complete, unreachable.
+ *  ForecastAudit was removed from this list 2026-08-10 (issue #114) — it was never actually
+ *  orphaned (live at src/features/projections.js:1808, three real entry points); it now also
+ *  has a standalone nav entry (id 'forecast-audit' in PANELS above) wired to the same
+ *  showAudit state this list used to describe as unreachable. */
 export const ORPHANS = [
   { id:'anomalies',      state:'showAnoms',    component:'AnomalyPanel',  note:'renders at App.js:3245; setShowAnoms is only ever called to close it' },
   { id:'ai-insights',    state:'showInsights', component:'AIInsightsLog', note:'renders at App.js:3169' },
   { id:'dev-dashboard',  state:'showDev',      component:'DevDashboard',  note:'renders at App.js:3171; would need a developer perm if reinstated' },
-  { id:'forecast-audit', state:'showAudit',    component:'(inline)',      note:'renders at App.js:3472; also gated on selStore' },
 ];
 
 /** State that survived the Notes 24 hub consolidation: only ever reset, never opened,
