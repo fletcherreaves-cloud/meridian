@@ -205,3 +205,182 @@ Sales vs forecast is the right outcome axis (owner: *"I actually don't hate the 
 forecast though, maybe that is the way"*). Same caveat as scheduling: it is meaningless when the
 forecast isn't trustworthy, so it is also gated on Model Health = Trusted. Second reason #146
 comes first.
+
+---
+
+# Session part 2 — scheduling standard settled, two findings (2026-08-10)
+
+## Scheduling accuracy — DECIDED, and the standard is theirs, not ours
+
+The "+2%" is **2 percentage points of labor %**, not 2% of hours and not 2% of forecast sales.
+Owner: *"if a store's projected labor% is, say, 21.5%, what we are saying is schedule no more
+than 23.5%."* The hours conversion is for actionability, not for scoring.
+
+**Stores are already told "no more than 1.5–2%."** That range IS the softening band the owner
+asked for — we don't invent a curve, we grade against the standard people were trained on. A
+GM can recite it; a score built on our own invented threshold is one they'd argue with.
+
+The buffer exists to absorb callouts, no-shows, and unexpected sales, and it is **intended,
+not tolerated** (owner, confirmed). So the shape is a BAND, asymmetric — tight low, generous
+high — because under-scheduling deliberately removes the cushion:
+
+| Scheduled vs projected labor % | Credit |
+|---|---|
+| Below projection | **Penalized from the first tick, scaling with shortfall. NO tolerance band.** |
+| Projection → +1.5pp | Full |
+| +1.5 → +2.0pp | Partial (the standard's own band) |
+| > +2.0pp | Penalized, scaling with overage |
+
+Without the low-side penalty a chronically lean store grades perfectly on scheduling while its
+Speed metrics suffer — the cause scored as a symptom, in a different component.
+
+**No acceptable under-range — owner, confirmed:** *"we do not give an under range that is
+acceptable we want store to be able to adequately serve all guests efficiently."* No grace zone
+below projection, but no cliff either: 0.1pp under must not grade like 2pp under, so the penalty
+starts at zero deviation and scales.
+
+**PM WITHDREW a proposed "waive the low side if service held" exception.** Wrong twice over.
+(1) It solved a problem the three-way decomposition already handles — forecast error is scored
+separately and gated on Model Health = Trusted, so on a Trusted store under-scheduling really is
+under-scheduling. (2) It would have rewarded getting away with it: a lean store with no callout
+and no rush was lucky, not right, and daily service averages are coarse enough to hide a bad 45
+minutes. "No harm measured" is not "no harm."
+
+Consequence: **the Model Health gate is load-bearing, not nice-to-have.** With no low-side
+tolerance, grading a store against an unreliable forecast is actively unfair. **#146 must land
+before any of this ships.**
+
+⚠️ **OPEN — which number is "projected"?** `lifelenz_labor_week` offers two different baselines:
+`hoursFcst` (LifeLenz forecast hours, derived from forecast sales) and `laborTargetOrg` (the org
+labor target). A store can be at plan against one and under against the other, so the whole
+standard hinges on it. PM's read is `hoursFcst` — it moves with the forecast day, which is what a
+scheduler builds against — but that is an inference and needs the owner's confirmation.
+
+**Score in percentage points; present in hours.** Rate of pay varies by store and state, so
+keeping the conversion in the presentation layer stops rate imprecision from moving anyone's
+grade.
+
+### The data already exists — this is not a data project
+
+`lifelenz_labor_week` carries, per store per week: `hoursFcst`, **`hoursSched`** (the manager's
+plan), `actualHours`, **`rate`** (per store, so no district-average fudge), `salesFcst`,
+`laborTargetOrg`, `laborPctActual`, `tpph`. Both fair axes compute directly:
+
+- **Schedule vs forecast** = `hoursSched` vs `hoursFcst` — already in hours, no conversion
+- **Actual vs schedule** = `actualHours` vs `hoursSched`
+- 2pp ceiling → hours allowance = `2% × salesFcst ÷ rate`, per store
+
+⚠️ **Loader caveat:** `loadLifeLenzLaborWeek` with no explicit `weekStart` returns only each
+store's MOST RECENT row. Scoring *improvement* needs a series, so that needs a small change to
+fetch a window. Weekly granularity is correct and deliberate — schedules are built weekly.
+
+## FINDING — make-table utilization is real, coachable, and currently invisible
+
+Owner: *"All stores have mfy results. Some stores suck at using both sides of the table, hence
+the null or 0 results. But they are correct."*
+
+**A zero is a FINDING, not a coverage gap.** The PM initially framed nulls as missing data and
+worried about renormalization; that was backwards. Renormalizing these away would erase a real
+operational failure and hand the weight back to service — flattering the store that earned the
+hit. Whatever is built must score them, not skip them.
+
+**But KVS Time cannot see this.** `kvst = _mfyTime / _mfyCnt` where `_mfyCnt` is mfy1 + mfy2
+**combined**. With one side idle, everything routes through the other and average time *per
+transaction* looks normal while throughput is halved. The damage surfaces as cars waiting —
+OEPE and park% — which is the same service/production misattribution, one level deeper.
+Weighting KVS Time up does NOT catch what the owner described.
+
+**The measurable signal is mfy2 volume relative to mfy1 — and it never reaches the app.**
+Verified against live columns:
+
+```
+qsr_daily_activity_rollup   mfy1_trans_cnt → 400 (no such column)
+                            mfy2_trans_cnt → 400 (no such column)
+                            mfy_trans_cnt  → 200
+qsr_daily_activity (hourly) mfy2_trans_cnt → 200  ✅ exists
+```
+
+Both the rollup table and `schema-qsr-daily-summary.sql` do `sum(mfy1_* + mfy2_*)`. Reasonable
+when KVS Time was the only consumer; it means this metric is uncomputable today.
+
+**Fix:** carry the two sums into the rollup as separate columns; derive the ratio client-side.
+NOT a combined "utilization %" in SQL — the rollup moves aggregation, not definitions.
+
+**Measure before thresholding:** a small store at low volume may legitimately run one side, so
+the metric needs a volume gate and the threshold must come from the measured distribution across
+the 27 — not a guessed number. Same rule as the swing alarm's −10%.
+
+Status: PENDING owner go-ahead to file as its own issue. Worth having independent of scoring.
+
+## Speed splits into Service and Production — DECIDED
+
+Owner: KVS Time is *"the other half of the variable hour employees… may even point to an area
+(service vs production) when it comes to diagnosing issues."* Confirmed in the data:
+
+| Metric | Formula | Side |
+|---|---|---|
+| OEPE | `(_dtTotal − _dtStore) / _dtCars` | Drive-thru → service |
+| Park % | `_dtHeld / _dtCars` | Drive-thru → service |
+| R2P | `(_fcServe − _fcDrawer) / _fcCnt` | Front counter → service |
+| KVS Time | `_mfyTime / _mfyCnt` | MFY → **production** |
+| KVS Healthy | `_kvsH / (_kvsH + _kvsU)` | Kitchen display → **production** |
+
+Three of four are service, so Speed today is almost entirely a service measurement — and it
+**misattributes** kitchen failures to service, because a slow MFY makes the car wait at the
+window. The drive-thru crew takes a hit it didn't earn.
+
+Two balanced sub-scores, not one flat list — a flat list gets the coverage but loses the
+diagnostic, which is the whole value:
+
+| | KVS Time fine | KVS Time high |
+|---|---|---|
+| **OEPE fine** | Both healthy | Kitchen slow, service absorbing — fragile at peak |
+| **OEPE high** | Service/window problem | **Kitchen is the constraint** — coaching the window is wasted |
+
+
+---
+
+# CORRECTION — KVS Healthy Usage, and the live bug it exposed (2026-08-10)
+
+## The PM proposed rebuilding a metric QSRSoft already computes
+
+Earlier this session the PM proposed surfacing raw `mfy1_trans_cnt`/`mfy2_trans_cnt` from the
+rollup to build a "make-table utilization" metric, and said its threshold "must come from the
+measured distribution across the 27." **Both wrong.** The owner pointed back at the QSRSoft KB;
+the article **"2nd Side Formula"** (`qsrsoft_kb`) already defines exactly that metric:
+
+> Healthy Usage is a check to see if both sides are being used once a certain number of items
+> come through. It starts with checking if there have been **36/38 (breakfast/regular menu) items
+> in a quarter hour period**. Once that threshold is met, then **at least 20% of the items need
+> to be on each side**… The :15 result will be either **0% or 100%**… If a quarter hour does not
+> meet 36/38 total items sold, it will display as **N/A**… For the full day average, **it only
+> counts the 0% and 100% quarter hours**.
+
+Volume gate and share rule are both defined upstream. **Scrap the schema change and the
+measurement step.** Third time in one session the PM proposed building something that already
+existed — the standing rule ("before fixing a thing, confirm it is still used") needs its general
+form: **check what exists before designing, published vendor definitions included, not just our
+own code.**
+
+## The three states, and the bug
+
+| Value | Meaning |
+|---|---|
+| N/A / blank | Volume never required the 2nd side. **Fine.** |
+| **0%** | Threshold met, both sides not staffed. **Worst result, fully coachable.** |
+| 100% | Ideal. In-between = partial compliance across quarter hours. |
+
+`METRIC_SOURCES.kvsHealthy` is `mode:'pos'` and `_ok` requires `v > 0`, so **a real 0% is
+discarded as missing data — the worst result is the one Meridian cannot currently see.** Worse in
+aggregate: `metricAvg` drops every 0% day, so a store at 0% half the time and 100% the rest
+reports **100%, not 50%** — a compliance metric inflating itself on the One-Pager and morning
+brief. Filed as **issue #150**, with `park` flagged as a likely second instance (`park = 0` means
+cars came and none were parked — the *good* outcome — discarded the same way).
+
+The null path is already correct: `(_kvsH + _kvsU) > 0 ? … : null` returns null exactly when no
+quarter hour met the threshold, which IS the KB's N/A. So `mode:'any'` gives all three states
+their correct distinct handling with no other change.
+
+**Once #150 lands this is the cleanest scoring input discussed all session:** binary at the
+quarter hour, defined volume gate, low-volume periods auto-excluded, fully controllable, and no
+threshold for us to invent.
