@@ -584,3 +584,69 @@ against an assumption that a five-minute look would have settled. Check before p
 the MBI move** — they are consumption bugs, not source bugs, and stay worth fixing now. #154's AOS
 discovery becomes *more* interesting, not less: if MBI is about to become the target-entry surface,
 knowing whether AOS config is readable/writable tells us whether the two converge or stay split.
+
+---
+
+# LifeLenz support on the AOS labor target (2026-08-10) — vendor answer, with a caveat
+
+Owner asked LifeLenz's support agent directly. Verbatim substance:
+
+> *"Short answer: no, it's not treated as an official reporting target. The labor % you set in AOS
+> is mainly a guideline for schedule generation… For reporting, the system tracks actual Labor %
+> of Sales instead… **AOS labor % → planning target used when building schedules; DAR / reporting
+> → actual labor % of sales for performance tracking.** Many teams use the AOS setting as a
+> starting benchmark (often around 28%)."*
+
+And on basis:
+
+> *"It's not just crew. Crew – yes… Trainee – also included… Manager – usually not scheduled by AOS
+> (best practice is to exclude them). There's even a setting called **'Skip Scheduling Managers'**…
+> The labor target is primarily driven by **crew + trainee (hourly)** roles… effectively a
+> crew-focused planning target."*
+
+## What this settles
+
+**The AOS field is a generator constraint, not a performance target** — confirming the PM's read
+and the owner's instinct to not use it for scoring.
+
+**The basis is effectively crew** (crew + trainee, hourly; managers excluded), which matches the
+owner's approved number. So writing the approved crew % into AOS is *probably* the right basis.
+
+## What it does NOT settle — check the toggle
+
+"Usually not scheduled" and "best practice is to exclude them" are **conditional**. The basis is
+crew+trainee only if **"Skip Scheduling Managers" is enabled for these stores.** That is now the
+check, and it is far cheaper than the payroll reconciliation originally proposed: look at the
+toggle in Schedule Settings rather than computing three numbers off a payroll report.
+
+Two residual unknowns the agent did not address:
+- Whether the *labor-cost percentage calculation* includes manager cost even when AOS doesn't
+  *schedule* managers (AOS could treat fixed manager hours as a baseline and optimize the variable
+  portion around it).
+- Whether the toggle is actually on for these 27 stores.
+
+⚠️ **Treat the agent's answer as a strong prior, not proof.** It is an AI support agent — the same
+class of confident-and-plausible source as a stale code comment, and this session already had two
+of those turn out wrong (the PostgREST "14.5" version reading, and `loadQsrActSummary`'s header
+pointing at an abandoned view). **The payroll comparison remains the ground truth** if the toggle
+check is ambiguous: one store, one completed week, LifeLenz's reported labor % vs crew-only vs
+total. On Tishomingo (43380) crew is 21.50% and combined 24.55% — 3.05pp apart, so the answer
+would not be ambiguous.
+
+## ⭐ The finding the agent did not make — Meridian is the one treating it as a target
+
+LifeLenz says the AOS value is a planning guideline and that reporting uses actual labor % of
+sales. **Meridian disagrees with that in code.** The MBI sheet's "Labor Target (Organization)"
+column feeds `laborTargetOrg`, and `engine/labor-analysis.js` builds `hrsVsTarget` and
+`hrsVsTargetPlus2` — surfaced in the Labor Analysis panel as *"Hours ± Sched vs. Target"* and
+*"vs. Target +2%"* — on top of it.
+
+**We took a scheduling guideline and turned it into a scorecard.** That is our doing, not
+LifeLenz's, and it is a stronger argument than anything previously recorded for repointing those
+columns at the owner's approved crew target (or relabelling them so they stop reading as
+performance measures). Folds into #153's scope discussion.
+
+Also noted: the agent's "often around 28%" benchmark sits **6 points above** this org's 22%.
+Not necessarily wrong — tighter operations are plausible — but worth knowing the 22% is well
+below what the vendor describes as typical, especially given the owner did not know the setting
+existed.
