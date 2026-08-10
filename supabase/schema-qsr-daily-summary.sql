@@ -1,6 +1,13 @@
 -- ============================================================================
 -- Meridian — qsr_daily_activity DAILY ROLLUP VIEW
 -- ============================================================================
+-- ⚠️ RE-APPLY NOTE (2026-08-10, issue #119 audit): the live authenticated role
+-- currently gets "permission denied for view qsr_daily_activity_daily" — the
+-- `grant select ... to authenticated` at the bottom of this file (unchanged,
+-- still correct) was apparently never actually run against production, or was
+-- run before the view's most recent `create or replace`. This file is idempotent;
+-- re-running it as-is (SQL editor) fixes it. Verify after with:
+--   node scripts/rls-table-audit.mjs   -- qsr_daily_activity_daily should flip to OK
 -- WHY: qsr_daily_activity is HOURLY — PK (loc, dt, hour_slot), ~675 rows/day across
 -- 27 stores. A 60-day window is ~40,000 rows, which the client paginated in ~40
 -- requests of 1000 and then summed by (loc, dt) in JavaScript.
