@@ -137,9 +137,19 @@ export const PANELS = [
  *  designed for but never built was NOT ported into runScan — the owner settled that design
  *  separately in issue #134 (a standalone Insight Ledger panel with situation-key dedup), so
  *  the auto-filer belongs there, not bolted onto AIBacktestScanner. The owner confirmed
- *  mf_insights (its localStorage journal) held nothing worth migrating. */
+ *  mf_insights (its localStorage journal) held nothing worth migrating.
+ *  anomalies removed 2026-08-10 (issue #127) — deleted outright, not reinstated. Its one real
+ *  capability (event-tagged DOW-baseline exclusion) is now ported into runScan (the live AI
+ *  Backtest Scanner) in analytics.js; everything else about the panel had drifted from its own
+ *  engine's actual field names and would have rendered blank even if it were reachable.
+ *
+ *  ⭐ THIS LIST IS NOW EMPTY, as of 2026-08-10 — every panel that had a render line in App.js
+ *  with nothing able to set it true has been harvested and deleted (issues #114/#123/#127/#128).
+ *  Empty is the resting state, not an achievement: an entry appearing here means a panel was
+ *  built and then orphaned, and the fix is to harvest what's worth keeping and delete the rest,
+ *  not to let it accumulate. panel-registry.test.js enforces that anything openable is listed
+ *  in the reachable tables above. */
 export const ORPHANS = [
-  { id:'anomalies',      state:'showAnoms',    component:'AnomalyPanel',  note:'renders at App.js:3245; setShowAnoms is only ever called to close it' },
 ];
 
 /** State that survived the Notes 24 hub consolidation: only ever reset, never opened,

@@ -78,110 +78,6 @@ async function fetchHistoricalWeather(locs, startDate, endDate) {
 }
 
 
-// Auto-first (data-integrity sweep signature #2, MEDIUM item — confirmed real, not
-// theoretical): labor_rows stopped receiving new rows around 2026-07-23 (documented in
-// engine/metric-source.js's header) while the auto DAR covers every store through today, so
-// this scanner has been silently blind to the most recent weeks of real sales anomalies.
-// Date keys are re-derived via dKey() from a noon-anchored Date rather than used raw from
-// metricSeries (which keys off UTC, unlike dKey's local-calendar keys used everywhere else
-// for userEvents lookups) — noon-anchoring keeps both conventions on the same calendar day.
-function detectAnomalies(ds, userEvents){
-  if(!ds||!ds.loaded)return[];
-  const anoms=[];
-  const storeIds=ds.storeIds||Object.keys(DEFAULT_TARGETS);
-  // Ends on the last CLOSED business day, not literal "now" (signature #4) — an anomaly
-  // detector is the sharpest version of this bug: a still-filling today reads as a huge
-  // z-score deviation purely because it isn't finished yet, not because anything is wrong.
-  const range={s:new Date('2000-01-01'), e:lastClosedBusinessDay()};
-  for(const loc of storeIds){
-    const salesSeries=metricSeries(ds,loc,range,'sales');
-    const days=Object.keys(salesSeries).map(k=>{const date=new Date(k+'T12:00:00');return{date,dk:dKey(date),sales:salesSeries[k]};}).sort((a,b)=>a.date-b.date);
-    if(days.length<7)continue;
-    const byDow={};
-    // Build baseline excluding event-tagged dates (closures, remodels etc.)
-    for(const r of days){
-      const ev=userEvents&&userEvents[loc]&&userEvents[loc][r.dk];
-      if(ev&&(ev.type==='closure'||ev.type==='remodel'||ev.type==='weather')) continue; // exclude from baseline
-      const d=r.date.getDay();if(!byDow[d])byDow[d]=[];byDow[d].push(r.sales);
-    }
-    for(const r of days){
-      const ev=userEvents&&userEvents[loc]&&userEvents[loc][r.dk];
-      if(ev&&ev.type==='closure') continue; // closed days never anomalies
-      const d=r.date.getDay(),vals=byDow[d];if(!vals||vals.length<4)continue;
-      const mean=vals.reduce((a,v)=>a+v,0)/vals.length;
-      const std=Math.sqrt(vals.reduce((a,v)=>a+(v-mean)**2,0)/vals.length);
-      if(std<100)continue;
-      const z=(r.sales-mean)/std;
-      if(Math.abs(z)>=2.5){
-        const evNote = ev ? ' [Event: '+ev.label+(ev.note?' — '+ev.note:'')+']' : '';
-        anoms.push({loc,name:STORE_NAMES[loc]||('Store '+loc),date:r.date,dow:DOW_BASE[r.date.getDay()],
-          metric:'Sales',actual:r.sales,mean:Math.round(mean),std:Math.round(std),z:+z.toFixed(2),
-          direction:z>0?'above':'below',eventTag:ev||null,
-          severity:ev?'medium':Math.abs(z)>=3.5?'critical':Math.abs(z)>=3?'high':'medium',
-          note:(z>0?'Sales '+(((r.sales-mean)/mean)*100).toFixed(2)+'% above':
-                   'Sales '+(((mean-r.sales)/mean)*100).toFixed(2)+'% below')+
-               ' normal '+DOW_BASE[r.date.getDay()]+evNote});
-      }
-    }
-  }
-  return anoms.sort((a,b)=>{const sv={critical:3,high:2,medium:1};return(sv[b.severity]||0)-(sv[a.severity]||0)||(b.date-a.date);});
-}
-
-function AnomalyPanel({ds, stores, userEvents, initFilter, onSelectStore, onClose}) {
-  const [filter, setFilter] = useState(initFilter||'all');
-  const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState(null);
-
-  const anoms = useMemo(()=>{
-    if(!ds||!ds.loaded) return [];
-    const raw=detectAnomalies(ds,stores);
-    return raw.filter(a=>{
-      if(filter==='crit'&&a.severity!=='critical') return false;
-      if(filter==='warn'&&a.severity!=='warning') return false;
-      if(search&&!(a.name||'').toLowerCase().includes(search.toLowerCase())&&!(a.metric||'').toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
-  },[ds,stores,filter,search]);
-
-  return h(ModalShell,{
-    title:'⚠ Anomaly Detection', onClose, maxWidth:800, zIndex:Z.modal,
-    subtitle:anoms.length+' anomalies · '+filter,
-    subHeader: div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
-      ['all','crit','warn'].map(f=>btn({key:f,className:'sbtn'+(filter===f?' on':''),onClick:()=>setFilter(f)},
-        {all:'All',crit:'⚠ Critical',warn:'Warning'}[f])),
-      inp({className:'srch',placeholder:'Search…',value:search,onChange:e=>setSearch(e.target.value),style:{marginLeft:'auto',width:130}})
-    ),
-  },
-        !ds||!ds.loaded&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},'Load real data to run anomaly detection.'),
-        anoms.length===0&&ds&&ds.loaded&&div({style:{padding:30,textAlign:'center',color:'#10b981',fontSize:'13px'}},'✓ No anomalies detected for current filter.'),
-        anoms.map((a,i)=>{
-          const isCrit=a.severity==='critical';
-          const isExp=expanded===i;
-          return div({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:isCrit?'rgba(239,68,68,.04)':'transparent'}},
-            div({style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',cursor:'pointer'},onClick:()=>setExpanded(isExp?null:i)},
-              div({style:{width:6,height:6,borderRadius:'50%',background:isCrit?'#f87171':'#f59e0b',flexShrink:0}}),
-              div({style:{flex:1}},
-                div({style:{fontWeight:600,fontSize:'11px'}},(a.name||'')+(a.date?' · '+new Date(a.date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'')),
-                div({style:{fontSize:'10px',color:'var(--text3)',marginTop:2}},a.metric+' · '+(a.value||'')+(a.baseline?' vs avg '+(a.baseline):''))
-              ),
-              span({style:{fontSize:'10px',color:'var(--text2)'}},isExp?'▲':'▼')
-            ),
-            isExp&&div({style:{padding:'0 18px 12px 32px'}},
-              a.description&&div({style:{fontSize:'11px',color:'var(--text2)',lineHeight:1.6,marginBottom:8}},a.description),
-              a.causes&&a.causes.length>0&&div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:8}},
-                div({style:{fontWeight:600,marginBottom:3,color:'var(--text2)'}},'Possible causes:'),
-                a.causes.map((c,ci)=>div({key:ci},ci+1+'. '+c))
-              ),
-              div({style:{display:'flex',gap:6}},
-                a.loc&&btn({className:'btn btn-sm btn-a',onClick:()=>{const s=stores.find(st=>st.loc===a.loc);if(s){onSelectStore(s);onClose();}}},
-                  '→ Open Store Dashboard'),
-              )
-            )
-          );
-        }),
-  );
-}
-
 // SHIFT ANALYSIS TAB
 // Safe date helpers — r.date may be a Date object OR an ISO string after IDB round-trip
 const _toD = d => d instanceof Date ? d : new Date((d||'')+'T12:00:00Z');
@@ -2358,4 +2254,5 @@ function MultiStoreComparison({stores, ds, settings, onSelectStore, onClose}) {
   );
 }
 
-export { AnomalyPanel, ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison };
+export { ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison };
+
