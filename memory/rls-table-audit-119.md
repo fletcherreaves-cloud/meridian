@@ -1,0 +1,156 @@
+---
+name: rls-table-audit-119
+description: Issue #119 — full 82-table RLS audit (authenticated vs service-role row counts). qsr_fob measured healthy (does not currently reproduce the reported bug). Two real, currently-reproducing gaps found and fixed forward — qsr_daily_activity_daily view missing its GRANT, and tenants/tenant_stores had zero RLS policy at all — plus a PM-caught near-miss on the first fix: granting a view's SELECT without security_invoker=true is itself an RLS bypass (views apply the OWNER's row-security by default, not the caller's). Repeatable check: scripts/rls-table-audit.mjs.
+metadata:
+  node_type: memory
+  type: project
+---
+
+# RLS table-by-table audit (2026-08-10, issue #119)
+
+## Why this exists
+
+The Food Cost panel's period dropdown stopped at May 2026. Root cause was traced to
+`loadQsrFob()` (`src/lib/supabase.js:927`) allegedly returning `[]` for the authenticated
+role while service-role reads fine. Two prior sessions guessed at why (`61355aa` v4.545,
+`c552b33` v4.885) and both left it unconfirmed. The owner green-lit measuring it properly
+and widened the task: audit **every** table either RLS migration touches for the same
+exposure, using a service-role read as the ground-truth control, enumerated from the
+**live** PostgREST API (not `supabase/*.sql` DDL — `scripts/metric-inventory.mjs`'s static
+DDL scan already missed 11 loc-keyed tables this exact way).
+
+## Method
+
+`scripts/rls-table-audit.mjs`:
+1. Mints a short-lived authenticated session for the owner's real account via the Supabase
+   Admin API (`/auth/v1/admin/generate_link` + following the verify redirect for the token
+   fragment) — no interactive login, no owner-in-the-loop needed, safe to re-run any time.
+2. Enumerates every live table from `GET /rest/v1/` (PostgREST's own OpenAPI root) — 82
+   tables as of 2026-08-10, not whatever a grep of committed `.sql` files would suggest.
+3. For each table, reads `count=exact` as the authenticated role and as service-role
+   (bypasses RLS) with a 1-row `select=*&limit=1` request, and classifies:
+   `OK` (counts match, including both-zero) / `RLS-FILTERED` (service sees rows,
+   authenticated sees fewer or none) / `ERROR` (the read itself failed — a permission
+   bug, not a visibility gap).
+
+Run it: `node scripts/rls-table-audit.mjs` (needs `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` in the environment).
+
+## Results (2026-08-10, full run against production)
+
+82 tables checked. 79 `OK` (49 with real data, 30 legitimately empty). 3 flagged:
+
+| Table | Auth | Service | Verdict |
+|---|---|---|---|
+| `qsr_daily_activity_daily` | permission denied | 15,421 | ERROR |
+| `tenant_stores` | 0 | 27 | RLS-FILTERED |
+| `tenants` | 0 | 1 | RLS-FILTERED |
+
+**`qsr_fob` itself measured `OK`** — 24,156 rows both sides, dates run through today
+(2026-08-10), `tenant_id` matches the caller's `current_tenant_id()`, `my_locs()` returns
+`NULL` (unrestricted) for the owner's profile. The originally-reported symptom (dropdown
+stuck at May) **does not currently reproduce** via direct measurement. Whatever caused it
+either predates this check or was already resolved by an untracked manual change — the SQL
+files in `supabase/` are hand-run against the dashboard (no CI applies them; see
+`diagnose-schema-state.sql`'s own note about files silently going unapplied for weeks), so
+there is no commit history to confirm which. Per the "measure, don't reason" rule, a
+non-reproducing bug does not get a fix bolted onto it — it gets reported as non-reproducing,
+not a third guess.
+
+## Root cause + fix, per finding
+
+### 1. `qsr_daily_activity_daily` — ERROR, not RLS. AND a second bug the first one was hiding.
+Postgres error text was literally `permission denied for view
+qsr_daily_activity_daily` — a missing table-level `GRANT`, not an RLS filter (RLS
+denial reads as an empty 200, not a 403/permission error). `schema-qsr-daily-summary.sql`
+already contains a `grant select on public.qsr_daily_activity_daily to authenticated,
+service_role;` that was apparently never (fully) executed against production, or was run
+before the view's most recent `create or replace`.
+
+**⚠️ Correction (PM review, same day): my original fix here was wrong, and it was wrong
+in the dangerous direction.** I initially concluded "no SQL change needed, just re-run
+the existing grant" and said the blast radius was "none." That analysis missed something
+the file's OWN pre-existing comment already named but didn't draw out: *"a view runs
+with the privileges of its owner and does NOT inherit the base table's policies."* By
+default, Postgres applies a view's ROW SECURITY policies using the VIEW OWNER's rights,
+not the querying role's. Re-applying that grant AS ORIGINALLY WRITTEN would have handed
+**every authenticated user, any tenant, any accessible_locs restriction, every row of
+`qsr_daily_activity`** through this view — even though the base table itself is
+correctly scoped by both tenant (`schema-multitenant-phase2-rls.sql`) and
+`accessible_locs` (`schema-rls-phase2-loc.sql` — this table is literally the one
+`my_locs()` was proven against). I would have shipped a real RLS bypass while believing
+I was applying a harmless, already-written grant.
+
+**Fixed properly**: added `with (security_invoker = true)` to the view definition
+(PostgreSQL 15+), which makes the view apply the CALLING role's RLS policies instead of
+the owner's — the grant is now safe exactly because the base table's own row security
+still does the real scoping per caller. Could not confirm the live Postgres major version
+with certainty (no direct psql connection from this environment) — the PostgREST OpenAPI
+root reports `info.version: "14.5"`, which PostgREST populates from the connected
+server's Postgres version, but this is the only view in `supabase/`, so there's no other
+in-repo precedent proving 15+. Left as a measured-but-unconfirmed signal rather than
+presented as fact. Safety property that makes this an acceptable amount of uncertainty
+to ship: if the project is actually on Postgres 14, `security_invoker` is invalid syntax
+there (added in 15) and the statement fails immediately and loudly when run — a safe,
+visible failure, not a silent bypass. Owner should confirm the actual version in the
+Supabase dashboard before running the file.
+
+## ⭐ The reusable lesson (more important than either individual gap)
+
+**A view defined over an RLS-protected table is itself an RLS bypass, by default, unless
+explicitly declared otherwise.** This isn't specific to `qsr_daily_activity_daily` — it's
+a property of how Postgres views work: a view's row-security policies apply using the
+VIEW OWNER's privileges unless the view is created with `security_invoker = true`
+(PostgreSQL 15+). Granting `SELECT` on such a view to a broad role looks exactly as safe
+as granting `SELECT` on a table, and is not. Before granting broad access to ANY new view
+over an RLS-protected table in this codebase, either add `security_invoker = true`
+(15+) or explicitly confirm the exposure is intended.
+
+### 2. `tenants` / `tenant_stores` — real RLS gap, currently harmless
+Both created in `schema-multitenant-phase1.sql` with **no RLS policy at all**. RLS
+ended up enabled on both anyway (default-deny with zero policies), so authenticated
+reads return 0 rows cleanly while service-role sees all 1 / 27 — the identical *shape*
+of bug qsr_fob was blamed for, just for real this time, and on tables nothing calls yet:
+`loadTenants()` / `loadTenantStores()` (`src/lib/supabase.js:3343-3360`) are documented
+"NOT yet wired into the app," and `grep -rn "loadTenants\|loadTenantStores" src/` outside
+that one file returns nothing. **Fixed forward**: new file
+`supabase/schema-multitenant-phase3-registry-rls.sql` adds tenant-scoped `SELECT`
+policies (`id = current_tenant_id()` / `tenant_id = current_tenant_id()`), matching the
+Phase 2 pattern exactly — fail closed, not open. In the current single-tenant deployment
+this is a no-op (one tenant = "see everything" either way); it only starts doing real
+work once a second tenant exists, which is the entire point of the table. The owner needs
+to run this file in the SQL editor.
+
+## Blast radius of both fixes
+
+- **`qsr_daily_activity_daily` grant, WITH `security_invoker = true`**: none — the view
+  now applies the caller's own RLS, so it exposes exactly what querying
+  `qsr_daily_activity` directly already exposes to that caller (currently everyone, since
+  both live profiles have unrestricted `accessible_locs` — see `tenants`/`tenant_stores`
+  note below on why "harmless today" isn't the same as "harmless forever"). **Without**
+  `security_invoker` (my first-pass fix), the blast radius would have been every row,
+  every tenant, every restricted store, to any authenticated user — corrected before
+  shipping, see the finding above.
+- **`tenants` / `tenant_stores` policies**: none today (dead code paths, confirmed by
+  grep). Forward-looking: once a second tenant exists, this is the isolation boundary
+  doing its actual job — a regression here would mean one operator seeing another's
+  tenant registry, which is why the policies are scoped (`= current_tenant_id()`) rather
+  than opened wide, even though "wide" and "correct" are identical today.
+
+## What I could not do
+
+No direct Postgres connection (no `DATABASE_URL`/connection string in `.env.local`, no
+linked Supabase CLI project, no Management API token) — only the PostgREST data API,
+Auth Admin API, and service-role REST access are reachable from this environment. I
+cannot execute DDL directly. This matches how every other file in `supabase/` already
+works in this repo (hand-applied via the SQL editor, per `diagnose-schema-state.sql`'s
+own framing) — the deliverable here is the correct, idempotent, reviewable SQL file, not
+a live database mutation performed by the agent.
+
+## Repeatable check
+
+`scripts/rls-table-audit.mjs` is meant to be re-run, not a one-off. Good times to run it:
+after any new table ships, after any RLS migration, or any time a panel reports "silently
+empty" the way Food Cost did — it answers "is this actually an RLS gap, and is it just
+this table or a class of tables" in about 30 seconds instead of another two guessed
+sessions.
