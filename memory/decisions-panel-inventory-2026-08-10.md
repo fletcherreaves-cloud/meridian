@@ -126,6 +126,93 @@ is commented out. Flagged, not actioned — it is protected.
 
 ---
 
+---
+
+## Salvage scoping results (2026-08-10) — owner's hypothesis CONFIRMED
+
+Scoped all 9 retire candidates. **Zero outright deletes — every one holds something worth taking.**
+
+**Two were actively maintained AFTER becoming unreachable**, which is the strongest evidence for
+the owner's "forgotten, not abandoned" read: `detectAnomalies` was migrated to `metricSeries` in
+the August data-integrity sweep (PR #105), and `DevDashboard`'s Engine Trace was fixed in June
+(v4.197). Nobody maintains code they have decided to abandon.
+
+### ⚠️ CORRECTION — `ForecastAudit` is NOT an orphan. It is live in production.
+
+`panel-registry.js`'s `ORPHANS` list is **wrong** about this one, and the panel decision sheet
+inherited the error. `ForecastAudit` (`analytics.js:5753-5972`, ~220 lines) is rendered at
+`projections.js:1808` with **three live user paths** (`:1196` deep-dive, `:1753` tab click,
+`:1800` per-date 🔬 icon). Only the standalone `App.js` entry point is orphaned.
+
+Nothing else in the app answers "why is this specific day's forecast this number?" — it walks all
+seven `fetchLY` candidate offsets and reports why each was rejected. **Owner decision (2026-08-10):
+promote it to a standalone panel** (~5 lines: registry entry + dispatch branch; the `App.js:3892`
+render block already works).
+
+**Bug to fix while in there:** `analytics.js:5772` does `const userEvents = settings._userEvents || {}`,
+shadowing the `userEvents` prop. The sidebar (`:5834`) reads the prop; the detail pane reads the
+shadowed value. If they diverge, the two disagree about the same date — in a panel whose entire
+purpose is trustworthy explainability.
+
+### Harvest list, ranked by what would actually be lost
+
+| # | Source | Lift this | Into |
+|---|---|---|---|
+| 1 | `DevDashboard` (orphan) | **Data Audit coverage grid** — per-store × per-source row counts, first/last date, coverage %, Full/Partial pill. No live equivalent. **Would have surfaced the `labor_rows` staleness at a glance instead of two weeks late.** ~30 lines. | `DataManagerPanel` as a Coverage tab |
+| 2 | `inventory` | **`computeTransfers`** — cross-store redistribution matching overstock↔understock for the same WRIN, same state, **ranked by haversine distance** over `INV_ORG_COORDS`. Nothing else does cross-store matching or uses those coords. Plus `invDist`, `invSameState`, `formatXferQty`. | new `src/engine/inventory-transfers.js`; surface as an attention-feed detector (it yields a natural `dollars` for `rankAttention`) |
+| 3 | `inventory` | **`rollupByWRIN`** — duplicate-WRIN detection ("usage split across N WRINs, verify manager is using the correct one"). Real integrity finding, caught nowhere else. | `integrityFlags()` in `attention-feed.js` |
+| 4 | `revintel` | **OEPE dollarization** — seconds→revenue, including `valuePerSecond`. Fills a real hole: `slowDT` currently reports `dollars: 0`, so slow drive-thrus cannot rank against FOB or sales items. | `attention-feed.js` `slowDT`, or `opportunity.js` as a guardrailed 4th pillar |
+| 5 | `revintel` | **Daypart-asymmetry detector** — proportional decline across all dayparts = macro traffic; ONE daypart collapsing while others hold = competitor signature. Explanation copy already written. | new `daypartErosion` detector in `attention-feed.js` |
+| 6 | `priority-brief` | **Forecast-calibration-gap flag** — fires only when MAPE > 12% AND zero crits AND zero watches: "operationally green but the forecast is broken." Structurally impossible to surface via `buildBrief` (operational metrics only) or `buildAttentionFeed` (no model-accuracy detector). | `attention-feed.js` as `forecastCalibrationGap` |
+| 7 | `priority-brief` | **"This Week's Focus"** — ranks problem TYPES across stores, not stores. Everything else ranks stores. ⚠️ Rebuild against the structured `item.category` field, NOT the current substring-matching on finding prose (`f.m.includes('OT')` matches far too much). | merged attention panel header |
+| 8 | `AnomalyPanel` | **Event-tagged baseline exclusion** — drops closure/remodel/weather days from the DOW baseline so a remodel doesn't poison the mean. `runScan`'s trimmed mean blunts outliers but doesn't know *why* a day was odd. | `runScan` in `analytics.js` (already owns the event registry + tagging UI) |
+| 9 | `AIInsightsLog` | **Category taxonomy** (ops/ctrl/labor/sales/weather/anomaly/other + colors) — well-chosen buckets, exist nowhere else. Separately: **the unfinished idea is worth finishing** — every record carries `source:'manual'` and nothing ever writes a non-manual one, so scanners auto-filing findings was designed and never built. | taxonomy → `TaskQueuePanel` as a category facet; auto-file → `saveTask` from `AIBacktestScanner` |
+
+### Why each panel is broken (all field-drift, no missing dependencies)
+
+- **`AnomalyPanel`** — engine current and correct; the *panel* drifted. `store-analytics.js:133`
+  calls `detectAnomalies(ds, stores)` but the signature is `(ds, userEvents)`, so event exclusion
+  silently no-ops. Render reads `a.value`/`a.baseline`/`a.description`/`a.causes`; the engine emits
+  `actual`/`mean`/`std`/`z`/`note` and never emits `causes`. The "Warning" tab tests a severity the
+  engine never produces.
+- **`AIInsightsLog`** — would work as-is today. Superseded by `TaskQueuePanel`/`FeatureRequestsPanel`
+  (Supabase-backed vs its localStorage-only, single-device storage).
+- **`DevDashboard`** — one span-nesting bug in the Engine Trace output. ⚠️ **Two different
+  components share this name** — a live one in `management.js:27` (dev links, Supabase check) and
+  this orphan. Deleting the orphan resolves the collision.
+
+### ⚠️ Two hazards for whoever executes
+
+1. **`inventory.js` cannot be deleted.** It also exports `parseInventoryData`, imported by
+   `pipeline.js:11` (used at `:76` and `:510`) and `App.js:25`. It depends on `classifyInvArea` →
+   `INV_MASTER`, a hand-curated **298-WRIN master table** (case/inner-pack/each conversions) that
+   exists nowhere else. **Split the parser + `INV_MASTER` + helpers into their own module and
+   repoint the importers BEFORE removing the view.** Also note `ds.inventoryRows` is populated in
+   three places in `App.js` and read only by this panel — after retirement the stream is parsed and
+   stored with no consumer, which is the argument for lifting the transfers engine rather than
+   dropping it.
+2. **Retiring `revintel` orphans `ModelComparisonPanel`** (`store-analytics.js:566`), mounted in
+   exactly one place — line 1200, inside `RevenueIntelligence`. Decide deliberately: re-home or let
+   go. Separately, `computeRevenueOpportunity` **survives regardless** — `ShiftAnalysisTab`
+   (`store-analytics.js:249`) also calls it, so the OEPE math is already proven outside this panel.
+3. Soft references that will dead-end when `priority-brief`'s route is removed:
+   `tutorial.js:40` (`highlight:'priority-brief'`) and an in-app `onOpenModal('priority-brief')`
+   button at `analytics.js:8295`.
+
+### Green stores — owner asked whether this ties to the scoring review. It does, halfway.
+
+`green` **membership** is not score-based — it is `tier==='green'`, i.e. no crit/watch findings.
+That is trustworthy. But the **ordering within it** is `opsScore + ctrlScore` (`analytics.js:2125`)
+— exactly the composite the owner has flagged for review.
+
+**Decision (owner, 2026-08-10): carry the tier, drop the score-based ranking.** Green stores come
+through to the merged panel sorted by store name. Preserves the capability (both merging panels are
+exception-only and structurally cannot show a healthy store) without shipping a "best stores"
+ranking built on numbers that are under review. Revisit the ordering in the dedicated scoring
+session.
+
+---
+
 ## Sequence
 
 1. **Salvage scoping** on the 9 retire items (read-only; no deletions until this reports).
