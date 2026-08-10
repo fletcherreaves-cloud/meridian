@@ -475,3 +475,38 @@ spreadsheets alike.** Four proposals this session were retired by something that
 Places API (already researched and rejected), make-table utilization (QSRSoft's "2nd Side
 Formula"), scheduling accuracy (`labor-analysis.js`), and the hours-vs-percentage-points
 convention (the MBI sheet). Belongs in `feedback-verification-in-sandbox.md`.
+
+---
+
+# Labor-basis fields — which are live, which are reserved (owner, 2026-08-10)
+
+Four labor bases exist in `DEFAULT_TARGETS`. Only two are live:
+
+| Field | Status |
+|---|---|
+| `tCrewLabor` | ✅ **AUTHORITATIVE.** The number sent to operators mid-month for the following month's approval. Flows monthly via `monthly_targets.crew_labor_pct`. |
+| `tLabor` | ⚠️ What `computeOpsScore` currently grades on. Static only — no monthly path. 14 of 27 stores differ from `tCrewLabor`, up to 1.75pp. |
+| `tBonusLabor` | 🅿️ **Not used today. Reserved — may be used next year.** |
+| `tCombLabor` | 🅿️ **Not used today.** Owner: *"Combined should be used but this organization is not set up for it currently. Wouldn't be hard but not a bridge to cross at the moment."* |
+
+## ⚠️ DO NOT DELETE the two unused fields
+
+`tBonusLabor` and `tCombLabor` are **deliberately reserved**, not dead code. This session has been
+aggressively retiring orphans (ORPHANS emptied, four panels harvested and deleted) under a
+harvest-then-remove rule, and two target fields nothing reads are exactly what a future cleanup
+sweep would remove on sight. The owner has stated both are intended. Leave them.
+
+## Design consequence for #153 defect 2 — make the basis selectable, don't hardcode crew
+
+Owner: *"Down the road if this actually gets much bigger and the organizations and operators are
+on the platform, it will need to be an option."*
+
+So the fix is **not** a straight `tLabor` → `tCrewLabor` swap in `computeOpsScore`. The labor basis
+should resolve through **one named place**, defaulting to `tCrewLabor`, so switching an org to
+combined later is a config change rather than a hunt through the scorer.
+
+**Do not build a config UI for this now** — the owner explicitly deferred it. The whole ask is:
+don't scatter `t.tCrewLabor` through the scoring code the way `t.tLabor` is scattered today. One
+resolution point, one default. That is a few lines now against a rewrite later, and it lines up
+with the multi-tenant work already scaffolded (`tenants`/`tenant_stores`, `org_config`
+`store_registry.defaultTargets`).
