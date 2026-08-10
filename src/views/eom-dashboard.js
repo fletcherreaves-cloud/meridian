@@ -3021,6 +3021,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   if (open) {
                     const its = s.items.slice(0, 40);
                     const qv = v => v == null ? '—' : (Math.round(v * 10) / 10).toLocaleString();
+                    // Case-pack reference (issue #141) — same lookup diagOptsFor already uses for this
+                    // exact purpose elsewhere in this file (case_sz parsed from the item's UOM string,
+                    // threaded onto rawByLoc's items as .caseSz). A missing/zero case_sz renders the raw
+                    // qty alone below (caseSuffix returns '' rather than dividing by zero or guessing).
+                    const caseSzByWrin = {};
+                    for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
+                    const caseSuffix = (qty, wrin) => {
+                      const cs = caseSzByWrin[String(wrin)];
+                      return (cs > 0 && qty != null) ? ` = ${(Math.abs(qty) / cs).toFixed(2)} case(s)` : '';
+                    };
                     // Per-recount columns (Notes 45 #83): show the variance at the SESSION (original) count and
                     // at EACH recount in the close window — as many R-columns as the busiest item needs (capped).
                     const RDIR = { helped: '#4ade80', hurt: '#f87171', held: '#f5bc00' };
@@ -3038,22 +3048,28 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                           return h('tr', { key: j, style: { borderBottom: '1px solid var(--bdr)' } }, [
                             h('td', { key: 'nm', style: { padding: '3px 7px', color: 'var(--text2)' } }, it.descr || it.wrin, it.isNew ? span({ style: { color: '#38bdf8', fontSize: '9px', marginLeft: '4px' } }, 'NEW') : it.isGone ? span({ style: { color: 'var(--text3)', fontSize: '9px', marginLeft: '4px' } }, 'GONE') : null),
                             h('td', { key: 'cl', style: { padding: '3px 7px', color: 'var(--text3)', textTransform: 'capitalize' } }, it.cls || '—'),
-                            // Session (original) count variance + the day it was counted.
+                            // Session (original) count variance + the day it was counted + qty (issue #141:
+                            // qty was already computed (baseQtyVar) but never rendered — raw qty stays
+                            // primary, cases are a secondary reference in the same cell, never a replacement).
                             h('td', { key: 'se', title: it.baseCounted ? `Original session count ${it.baseCounted}` : '', style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)', fontWeight: 600, whiteSpace: 'nowrap' } },
-                              it.baseVar != null ? money(it.baseVar) : '—', it.baseCounted ? span({ style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 400 } }, it.baseCounted.slice(5)) : null),
-                            // One column per recount — its variance at that recount, colored toward/away zero.
+                              it.baseVar != null ? money(it.baseVar) : '—', it.baseCounted ? span({ style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 400 } }, it.baseCounted.slice(5)) : null,
+                              it.baseQtyVar != null ? span({ style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 400 } }, qv(it.baseQtyVar) + caseSuffix(it.baseQtyVar, it.wrin)) : null),
+                            // One column per recount — its variance AND qty at that recount, colored toward/away zero.
                             ...Array.from({ length: maxR }, (_, k) => { const r = recs[k];
                               return h('td', { key: 'r' + k, title: r ? `Recount ${k + 1} on ${r.day}${r.tm ? ' ' + r.tm : ''} — variance ${money(r.dolVar)}; moved ${r.direction === 'helped' ? 'toward zero (+' + money(r.deltaDollars) + ')' : r.direction === 'hurt' ? 'away from zero (−' + money(Math.abs(r.deltaDollars)) + ')' : 'about the same'} vs the prior count${r.manager ? ' · ' + r.manager : ''}` : '', style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: r ? (RDIR[r.direction] || 'var(--text2)') : 'var(--bdr2)', fontWeight: r ? 700 : 400 } },
-                                r ? [money(r.dolVar), r.day ? span({ key: 'd', style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 400 } }, r.day.slice(5)) : null] : '·'); }),
-                            // Final EOM-binding variance.
-                            h('td', { key: 'fi', title: it.curCounted ? `Final count ${it.curCounted}` : '', style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap' } },
-                              it.curVar != null ? money(it.curVar) : '—', it.curCounted ? span({ style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 400 } }, it.curCounted.slice(5)) : null),
+                                r ? [money(r.dolVar), r.day ? span({ key: 'd', style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 400 } }, r.day.slice(5)) : null,
+                                  r.unitVar != null ? span({ key: 'q', style: { display: 'block', fontSize: '8.5px', fontWeight: 400 } }, qv(r.unitVar) + caseSuffix(r.unitVar, it.wrin)) : null] : '·'); }),
+                            // Final EOM-binding variance + qty — this is the number the day is judged on,
+                            // visually distinct (bold, primary text color) from the session/recount steps above it.
+                            h('td', { key: 'fi', title: it.curCounted ? `Final (binding) count ${it.curCounted}` : '', style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap' } },
+                              it.curVar != null ? money(it.curVar) : '—', it.curCounted ? span({ style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 400 } }, it.curCounted.slice(5)) : null,
+                              it.curQtyVar != null ? span({ style: { display: 'block', fontSize: '8.5px', color: 'var(--text3)', fontWeight: 700 } }, qv(it.curQtyVar) + caseSuffix(it.curQtyVar, it.wrin)) : null),
                             (() => { const dMag = (it.baseVar != null && it.curVar != null) ? Math.abs(it.curVar) - Math.abs(it.baseVar) : null;
                               return h('td', { key: 'dm', title: 'Change in variance magnitude session→final: −$ = moved toward zero (helping), +$ = grew away (hurting).', style: { padding: '3px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[it.verdict] } }, dMag != null ? `${dMag > 0 ? '+' : ''}${money(dMag)}` : '—'); })(),
                             h('td', { key: 'mv', style: { padding: '3px 7px', textAlign: 'right', fontWeight: 700, color: V[it.verdict] } }, VLABEL[it.verdict]),
                             h('td', { key: 'rc', title: it.recounted ? `Re-counted ${recs.length} time${recs.length === 1 ? '' : 's'} in the close window.` : '', style: { padding: '3px 7px', textAlign: 'center', color: it.recounted ? '#f5bc00' : 'var(--text3)' } }, it.recounted ? (recs.length > 1 ? `↻${recs.length}` : '↻') : '')]);
                         }))]),
-                      maxR > 0 ? div({ style: { color: 'var(--text3)', fontSize: '9.5px', paddingTop: '4px' } }, 'Session = the original close-window count; each Recount column = a later-day re-verify (green = variance moved toward zero, red = away). Final = the EOM-binding count.') : null,
+                      maxR > 0 ? div({ style: { color: 'var(--text3)', fontSize: '9.5px', paddingTop: '4px' } }, 'Session = the original close-window count; each Recount column = a later-day re-verify (green = variance moved toward zero, red = away). Final = the EOM-binding count. The small qty line under each $ figure is the raw unit variance; where the item\'s case size is known, "= X.XX case(s)" is shown alongside it — never in place of it.') : null,
                       s.items.length > 40 ? div({ style: { color: 'var(--text3)', fontSize: '10px', paddingTop: '4px' } }, `+${s.items.length - 40} more changed items`) : null)));
                   }
                   return rowEls;

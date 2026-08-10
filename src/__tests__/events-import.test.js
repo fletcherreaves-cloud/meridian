@@ -105,6 +105,33 @@ describe('orgEventsToDayMap', () => {
     const rid = map['3708']['2026-09-08'].rangeId;
     expect(days.every(d => map['3708'][d].rangeId === rid)).toBe(true);
   });
+
+  it('issue #142: two org events on the same (loc,date) COMBINE instead of the second silently ' +
+     'dropping the first — measured 261 real same-day pairs across all 27 stores (school ' +
+     'closures + sports games sharing a date)', () => {
+    const map = orgEventsToDayMap([
+      { id: 1, loc: '3708', dateStart: '2026-10-15', dateEnd: '2026-10-15', type: 'school_no_school', label: 'Fall Break - Closed - Fall Break' },
+      { id: 2, loc: '3708', dateStart: '2026-10-15', dateEnd: '2026-10-15', type: 'sports', label: 'Ardmore High School Football (Away)' },
+    ]);
+    const e = map['3708']['2026-10-15'];
+    expect(e.label).toBe('Fall Break - Closed - Fall Break + Ardmore High School Football (Away)');
+    expect(e.orgSourced).toBe(true);
+    expect(e.orgEventId).toBe(1);          // first event stays the edit-UI target
+    expect(e.tags.map(t => t.type)).toEqual(['school_no_school', 'sports']);   // forecast averages both
+    expect(e.combinedEvents).toHaveLength(2);
+    expect(e.combinedEvents[1].label).toBe('Ardmore High School Football (Away)');
+  });
+
+  it('issue #142: a THIRD same-day event keeps combining, not just pairwise', () => {
+    const map = orgEventsToDayMap([
+      { id: 1, loc: '3708', dateStart: '2026-09-07', dateEnd: '2026-09-07', type: 'holiday', label: 'Labor Day' },
+      { id: 2, loc: '3708', dateStart: '2026-09-07', dateEnd: '2026-09-07', type: 'sports', label: 'FSU vs SMU' },
+      { id: 3, loc: '3708', dateStart: '2026-09-07', dateEnd: '2026-09-07', type: 'event', label: 'Street Fair' },
+    ]);
+    const e = map['3708']['2026-09-07'];
+    expect(e.combinedEvents).toHaveLength(3);
+    expect(e.label).toBe('Labor Day + FSU vs SMU + Street Fair');
+  });
 });
 
 // v4.923 built the org_events UPLOAD path (localStorage mf_events → cloud); v4.927 found and

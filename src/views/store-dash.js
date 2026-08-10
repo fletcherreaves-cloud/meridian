@@ -3375,16 +3375,44 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [locFilter, setLocFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
+  const [dupesOnly, setDupesOnly] = useState(false);
 
   const allEvents = useMemo(()=>{
     const ev=[];
     for(const [loc,dkMap] of Object.entries(userEvents)){
       for(const [dk,info] of Object.entries(dkMap)){
-        ev.push({loc,dk,date:new Date(dk+'T12:00:00'),...info});
+        // issue #142: org_events legitimately allows >1 event per (loc,date) — a school closure
+        // AND a sports game on the same day is real data (measured 261 such pairs, all 27 stores).
+        // orgEventsToDayMap now combines those into one entry (info.combinedEvents) instead of the
+        // old silent overwrite that just dropped whichever one lost the race. Expand back out here
+        // so each event is still its own visible, searchable row — combining at the data layer only
+        // to survive the map's one-slot-per-day shape, not to hide anything from this list.
+        if(info.combinedEvents&&info.combinedEvents.length>1){
+          info.combinedEvents.forEach((sub,i)=>ev.push({loc,dk,date:new Date(dk+'T12:00:00'),...info,...sub,combinedIdx:i,combinedOf:info.combinedEvents.length}));
+        } else {
+          ev.push({loc,dk,date:new Date(dk+'T12:00:00'),...info});
+        }
       }
     }
     return ev.sort((a,b)=>b.date-a.date);
   },[userEvents]);
+
+  // "Duplicate" = the cloud's own definition (same loc + same date + same label, matching
+  // org_events' unique(loc,date_start,label) constraint) — not the local map's old implicit
+  // same-loc+same-date rule (issue #142). Normalized so a multi-day range's " (Day N of M)"
+  // suffix (events-import.js) doesn't hide a genuine same-day repeat. Measured against live
+  // org_events on 2026-08-10: zero real duplicates today (the sync-gap this was suspected to
+  // cause has not actually produced any) — this stays cheap and answerable rather than growing
+  // merge machinery nothing currently needs.
+  const normLabel = s => String(s||'').replace(/\s*\(Day \d+ of \d+\)\s*$/i,'').trim().toLowerCase();
+  const dupeKeys = useMemo(()=>{
+    const counts = {};
+    for(const e of allEvents){
+      const k = e.loc+'|'+e.dk+'|'+normLabel(e.label);
+      counts[k]=(counts[k]||0)+1;
+    }
+    return new Set(Object.entries(counts).filter(([,n])=>n>1).map(([k])=>k));
+  },[allEvents]);
 
   const typeOptions = useMemo(()=>[...new Set(allEvents.map(e=>e.type||'other'))].sort(),[allEvents]);
 
@@ -3400,6 +3428,7 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
 
   const filtered = useMemo(()=>{
     let evs=allEvents;
+    if(dupesOnly) evs=evs.filter(e=>dupeKeys.has(e.loc+'|'+e.dk+'|'+normLabel(e.label)));
     if(typeFilter!=='all') evs=evs.filter(e=>(e.type||'other')===typeFilter);
     if(locFilter!=='all') evs=evs.filter(e=>String(e.loc)===String(locFilter));
     if(search.trim()){
@@ -3417,10 +3446,23 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
     else if(sortBy==='type') evs.sort((a,b)=>(a.type||'other').localeCompare(b.type||'other'));
     else evs.sort((a,b)=>b.date-a.date);
     return evs;
-  },[allEvents,typeFilter,locFilter,search,sortBy]);
+  },[allEvents,typeFilter,locFilter,search,sortBy,dupesOnly,dupeKeys]);
 
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
+    const existing = next[editLoc] && next[editLoc][editDate];
+    // issue #142: mf_events is structurally one entry per (loc,date) — a write to an occupied slot
+    // used to silently overwrite whatever was there, no warning. Warn before clobbering a DIFFERENT
+    // event than the one actually being edited; editing the same slot in place (this modal was
+    // opened via startEdit on it) still saves silently — that's just editing, not an overwrite.
+    const targetKey = editLoc+'_'+editDate;
+    if(existing && editKey!==targetKey){
+      const ok=window.confirm(
+        (STORE_NAMES[editLoc]||editLoc)+' already has "'+(existing.label||existing.note||'an event')+'" tagged on '+editDate+'.\n\n'+
+        'Saving will replace it with "'+(EVENT_TYPES[editType]?.label||'Other')+'". Continue?'
+      );
+      if(!ok) return;
+    }
     if(!next[editLoc])next[editLoc]={};
     next[editLoc][editDate]={type:editType,note:editNote,icon:EVENT_TYPES[editType]?.icon||'📌',label:EVENT_TYPES[editType]?.label||'Other'};
     onUpdate(next);setEditKey(null);
@@ -3471,6 +3513,12 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
         'same day last year, so heavy tagging can leave a store with no comparison at all.'),
       div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:8,
         alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
+        btn({className:'btn btn-sm',onClick:()=>setDupesOnly(v=>!v),
+          style:{fontSize:'10px',fontWeight:dupesOnly?700:400,
+            background:dupesOnly?'rgba(248,113,113,.15)':'transparent',
+            color:dupesOnly?'#f87171':'var(--text2)',
+            borderColor:dupesOnly?'rgba(248,113,113,.4)':'var(--bdr)'}},
+          '⧉ Possible duplicates ('+dupeKeys.size+')'),
         inp({type:'text',value:search,onChange:e=>setSearch(e.target.value),
           placeholder:'Search location, type, note…',
           style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
@@ -3517,13 +3565,18 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
           allEvents.length===0?'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.':'No events match your search/filter.'),
         filtered.map((ev,i)=>{
           const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
-          return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)'}},
+          const isDupe = dupesOnly && dupeKeys.has(ev.loc+'|'+ev.dk+'|'+normLabel(ev.label));
+          const isCombined = ev.combinedOf>1;
+          return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',
+            borderBottom:'.5px solid var(--bdr)',background:isDupe?'rgba(248,113,113,.06)':'transparent'}},
             span({style:{fontSize:'18px'}}),ev.icon||et.icon,
             div({style:{flex:1}},
               div({style:{fontWeight:600,fontSize:'11px'}},ev.label||et.label),
               div({style:{fontSize:'10px',color:'var(--text3)'}},
                 (STORE_NAMES[ev.loc]||ev.loc)+' · '+new Date(ev.dk+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-              ev.note&&div({style:{fontSize:'10px',color:'var(--text2)',marginTop:2}},ev.note)
+              ev.note&&div({style:{fontSize:'10px',color:'var(--text2)',marginTop:2}},ev.note),
+              isCombined&&div({style:{fontSize:'9px',color:'#a5b4fc',marginTop:2}},
+                'Shares this day with '+(ev.combinedOf-1)+' other tagged event'+(ev.combinedOf-1!==1?'s':'')+' — Edit/✕ act on the whole day')
             ),
             btn({className:'btn btn-sm',onClick:()=>startEdit(ev)},'✎ Edit'),
             btn({className:'btn btn-sm btn-red',onClick:()=>remove(ev.loc,ev.dk)},'✕')

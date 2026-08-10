@@ -115,6 +115,29 @@ export function parseStaffingEvents(rows, urlByRowIndex = {}) {
   return { events, estimated, skipped };
 }
 
+// Combine two org-sourced day-map entries that landed on the same (loc, dk) — org_events legitimately
+// allows multiple rows per (loc, date_start) with different labels (a school closure AND a sports game
+// on the same day is real, common data: measured 261 such same-day pairs across all 27 stores on
+// 2026-08-10, issue #142). A bare `map[loc][dk] = entry` overwrite here silently dropped whichever
+// event lost the race — real data loss, not a cosmetic duplicate. Keep BOTH: join the display fields so
+// nothing vanishes from what the owner sees, and carry a `tags` array (the same shape calendar.js's own
+// multi-type hand-tag already writes) so forecast.js's event-impact factor (`_evTag.tags.map(t=>t.type)`)
+// averages both types' registry impact instead of only ever seeing one. `orgEventId`/edit-relevant fields
+// stay pointed at the FIRST event so the existing single-event edit/delete UI (calendar.js, keyed off
+// orgEventId) keeps working unchanged; `combinedEvents` carries each full original event so nothing is
+// lost even for the fields the top-level entry doesn't have room to represent.
+function combineOrgEntries(a, b) {
+  const evs = [...(a.combinedEvents || [a]), b];
+  return {
+    ...a,
+    label: [a.label, b.label].filter(Boolean).join(' + '),
+    note: [a.note, b.note].filter(Boolean).join(' · '),
+    icon: [...new Set([a.icon, b.icon].filter(Boolean))].join(' '),
+    tags: evs.map(e => ({ type: e.type || 'other' })),
+    combinedEvents: evs,
+  };
+}
+
 // Down-project cloud org_events (one row per event, spans as a range) into the calendar's per-day
 // map shape `{ loc: { 'YYYY-MM-DD': entry } }` that every existing consumer (calendar/pipeline/
 // forecast) already reads from localStorage `mf_events`. Spans expand to one entry per day sharing a
@@ -138,7 +161,7 @@ export function orgEventsToDayMap(events, iconFor = () => '📌') {
     const rangeId = multi ? `org_${e.id ?? e.label}_${start}_${end}` : null;
     days.forEach((dk, i) => {
       if (!map[loc]) map[loc] = {};
-      map[loc][dk] = {
+      const entry = {
         type: e.type || 'event',
         label: multi ? `${e.label} (Day ${i + 1} of ${days.length})` : e.label,
         note: e.note || e.label,
@@ -155,6 +178,7 @@ export function orgEventsToDayMap(events, iconFor = () => '📌') {
         verification: e.verification || null,
         ...(multi ? { rangeId, rangeDayNum: i + 1, rangeTotalDays: days.length } : {}),
       };
+      map[loc][dk] = map[loc][dk] ? combineOrgEntries(map[loc][dk], entry) : entry;
     });
   }
   return map;

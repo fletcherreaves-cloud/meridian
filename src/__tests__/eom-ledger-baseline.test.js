@@ -92,6 +92,24 @@ describe('ledgerBaselineDiff', () => {
     expect(d.items[0].curVar).toBe(20);
   });
 
+  it('issue #141: each recount carries its own qty (unitVar), not just the dollar delta', () => {
+    // Session counted 40 units short; recount found 10 more units (30 short); final recount found
+    // the rest (0 short). The per-submission QTY must be readable off each recounts[] entry, matching
+    // baseQtyVar/curQtyVar's own field name (unitVar) rather than being dropped on the floor.
+    const rawItems = [item('a', [
+      cnt('2026-07-29', '10:00', 300, { variance: -40 }),
+      cnt('2026-07-30', '10:00', 120, { variance: -30 }),
+      cnt('2026-07-31', '10:00', 20, { variance: 0 }),
+    ])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-29' });
+    const [item0] = d.items;
+    expect(item0.baseQtyVar).toBe(-40);   // session — already worked before this fix
+    expect(item0.curQtyVar).toBe(0);      // final — already worked before this fix
+    expect(item0.recounts).toHaveLength(2);
+    expect(item0.recounts[0].unitVar).toBe(-30);   // the first recount's own qty
+    expect(item0.recounts[1].unitVar).toBe(0);     // the second recount's own qty
+  });
+
   it('ranks the biggest movers first', () => {
     const rawItems = [
       item('small', [cnt('2026-07-30', '10:00', -100), cnt('2026-08-01', '09:00', -160)]),   // +60
