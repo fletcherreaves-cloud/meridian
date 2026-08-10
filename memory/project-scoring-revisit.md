@@ -106,3 +106,102 @@ the scores disagree with your gut read of that store's real performance.** The n
 the two scorers disagree with *each other*; only you can say which one disagrees with *reality*.
 Calibrate against real cases, not formulas. Simple-but-trustworthy is the target — not more
 inputs, better-chosen ones.
+
+---
+
+# CONVERGED DESIGN (owner + PM working session, 2026-08-10)
+
+The owner brought their own plan; it was reviewed unedited against the PM's. ~80% aligned.
+Everything below is **decided** unless marked PROPOSED.
+
+## The governing principle — DECIDED
+
+**Score only what a manager or team can actually control.** Owner: *"let's make it things a
+manager or team can actually control."* This resolves most individual input questions without
+having to argue them one at a time.
+
+The case that forced it: **store 10422 lost ~24% of guest traffic over five weeks with no
+identified operational cause.** Every sales-denominated ratio (TPPH, Labor%) degrades
+mechanically in that window, so the Ops Score would have reported Atoka as executing badly at
+exactly the moment it most needed to tell the truth.
+
+## Inputs — DECIDED
+
+**Out:**
+- **Labor%** — sales in the denominator. Replaced by `actVsNeed` (actual − needed hours, DAR,
+  already flowing), which is honest when traffic moves because needed hours move too.
+- **Discount%** — substantially LTO/corporate-driven; measures the calendar as much as the manager.
+- **Sales vs target** — the purest uncontrollable metric. (Sales vs *forecast* survives as an
+  OUTCOME measure, not an execution input — see the two-axis structure below.)
+- **TPPH weighted up** — rejected. Same sales-denominator problem as Labor%; `actVsNeed` does
+  the job TPPH was standing in for, honestly. TPPH may stay at low weight, not as a heavyweight.
+- **Visit Readiness (the predictor)** — would double-count. Verified: `READINESS_WEIGHTS.speed`
+  is 35% of the composite and is built from *"CFV DT OEPE ≤120s · DT Line Time · IR R2P ≤90s."*
+  With OEPE and R2P already scored directly, including the predictor counts them twice at
+  different weights — averaging averages, against the standing rule.
+
+**In:**
+- **`actVsNeed`** replacing Labor%.
+- **Voice / SMG** — the guest was entirely absent from a score that claims to summarize store
+  performance. A store could be fast, cheap, and disliked and score well.
+- **ACTUAL graded-visit results** (real CFV / RGRV / EcoSure scores when a visit happened) —
+  independent evidence, not derived from other inputs. Owner: *"A pass is sign of a store doing
+  things right."* The predictor stays its own panel.
+- **KVS Usage** and **R2P** — clean, controllable, already flowing from DAR.
+- **FOB, split two ways** (owner's idea, and the strongest single addition):
+  - *Process health* — counts on time, recounts that move variance toward zero rather than away.
+    **Fully controllable, and already computed**: `eom-count-sessions.js` grades every recount
+    helped/hurt/held, `computeCountProgress` tracks on-time counting, the Count Reliability scan
+    grades consistency. Nothing new to build, only to score. Weight toward this half.
+  - *Outcome* — FOB vs target with trending. Partly controllable (price, waste, theft).
+- **Scheduling accuracy + improvement** (owner's idea) — see the decomposition below.
+
+## Scheduling accuracy — DECIDED to decompose, standard still OPEN
+
+Scoring "schedule vs forecast" naively punishes a manager for **Meridian's own forecast error**.
+A store whose model runs high looks like a chronic over-scheduler forever. Three numbers, not one:
+
+| Comparison | Measures | Whose fault |
+|---|---|---|
+| Schedule vs forecast | Did they schedule to plan? | Manager ✅ |
+| Actual vs schedule | Did they flex during the day? | Manager ✅ |
+| Forecast vs actual | Was our model right? | **Ours** ❌ — Model Health's job |
+
+Score the first two only. **This makes Model Health load-bearing**, so issue #146 (one
+implementation + a fingerprint check that actually fires) must land first, and a scheduling
+score should only apply to stores whose Model Health is Trusted.
+
+**OPEN — the owner flagged this themselves:** "+2% of forecast" is ambiguous. Two readings —
+2% of forecast *sales* converted to labor dollars via average rate of pay, or 2% of
+forecast-implied *hours*. PM recommends **hours**: it's the unit a scheduler works in and it
+doesn't drift when average rate of pay changes. Needs a clear written standard either way, plus
+a defined softening band for slightly-over.
+
+Scoring **improvement** as well as level is deliberate and unusual — it rewards a struggling
+store that is getting better. That is a coaching instrument, and it is consistent with the
+structure below.
+
+## Coaching vs ranking — owner: *"It could, theoretically, be or become both"*
+
+### PROPOSED structure: one controllable core, two axes — not one blended number
+
+- **Execution Score** — controllable components only, per the principle above. The coaching
+  number. The GM owns it, and it is fair to coach against.
+- **Outcome context** — sales vs forecast, traffic vs LY, FOB $ result. **Displayed alongside,
+  never blended in.** Blending destroys the coaching signal and muddies the ranking.
+
+Read together they give the thing an owner actually needs:
+
+| | Results good | Results bad |
+|---|---|---|
+| **Executing well** | Replicate — find what they're doing | **External problem — not the GM.** This is the Atoka cell |
+| **Executing poorly** | Coasting on a good location; fragile | Intervene now |
+
+The top-right cell is the one no current Meridian number can express, and it is exactly the
+case that started this. It routes to *"go find the cause"* — the swing detector, and eventually
+the reputation/mention work — rather than to coaching a manager who did nothing wrong.
+
+Sales vs forecast is the right outcome axis (owner: *"I actually don't hate the sales vs
+forecast though, maybe that is the way"*). Same caveat as scheduling: it is meaningless when the
+forecast isn't trustworthy, so it is also gated on Model Health = Trusted. Second reason #146
+comes first.
