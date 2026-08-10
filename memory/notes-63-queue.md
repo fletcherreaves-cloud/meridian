@@ -13,6 +13,13 @@ Workstream D, now partially done. Everything below is genuinely non-UI/UX: one a
 question, one structural detection gap, one live RLS bug, one "the data already exists, just
 surface it" feature, one collaborative design topic, and two smaller features.
 
+**Working arrangement changed this session:** the owner moved us to a **PM / worker two-session
+split** — this coordinating session plans, prioritizes, scopes task prompts, and reviews/merges;
+a second session with full Supabase access executes. Prompted by two cross-session collisions the
+same day (a changelog entry silently deleted by a concurrent backfill, and a doc with two sections
+disagreeing about the same status). The rules, file ownership table, and PM review checklist are a
+standing rule in **[[feedback-pm-worker-split]]** — read that before dispatching or merging anything.
+
 ---
 
 ## Multi-user startup-load architecture — the owner's question, answered
