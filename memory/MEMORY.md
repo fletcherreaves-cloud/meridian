@@ -16,6 +16,9 @@
   lists exactly what is stale in the in-app changelog, CLAUDE.md and the panel catalog
 
 ## 🗂 Owner "Notes" working queues (most recent = most relevant)
+- **⭐ [Panel decisions 2026-08-10](decisions-panel-inventory-2026-08-10.md)** — owner's keep/merge/retire
+  call on all 97 panels; **the input the UI/UX redesign scopes from.** Carries the standing rule that
+  RETIRE means harvest-then-remove, never delete-on-sight.
 - [Notes 63 queue](notes-63-queue.md) — multi-user startup-load architecture answer, Needs Attention
   structural gap (no sales-decline detector — Atoka), Food Cost Panel RLS root cause, EOM Change
   Monitor qty-variance + case-conversion, scoring-system revisit (Ops/Controls/District/Model Health),
