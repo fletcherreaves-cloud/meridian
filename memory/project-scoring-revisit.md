@@ -106,3 +106,112 @@ the scores disagree with your gut read of that store's real performance.** The n
 the two scorers disagree with *each other*; only you can say which one disagrees with *reality*.
 Calibrate against real cases, not formulas. Simple-but-trustworthy is the target — not more
 inputs, better-chosen ones.
+
+---
+
+# Session part 2 — scheduling standard settled, two findings (2026-08-10)
+
+## Scheduling accuracy — DECIDED, and the standard is theirs, not ours
+
+The "+2%" is **2 percentage points of labor %**, not 2% of hours and not 2% of forecast sales.
+Owner: *"if a store's projected labor% is, say, 21.5%, what we are saying is schedule no more
+than 23.5%."* The hours conversion is for actionability, not for scoring.
+
+**Stores are already told "no more than 1.5–2%."** That range IS the softening band the owner
+asked for — we don't invent a curve, we grade against the standard people were trained on. A
+GM can recite it; a score built on our own invented threshold is one they'd argue with.
+
+The buffer exists to absorb callouts, no-shows, and unexpected sales, and it is **intended,
+not tolerated** (owner, confirmed). So the shape is a BAND, asymmetric — tight low, generous
+high — because under-scheduling deliberately removes the cushion:
+
+| Scheduled vs projected labor % | Credit |
+|---|---|
+| Below projection | Penalized — cushion removed, a risk decision |
+| Projection → +1.5pp | Full |
+| +1.5 → +2.0pp | Partial (the standard's own band) |
+| > +2.0pp | Penalized, scaling with overage |
+
+Without the low-side penalty a chronically lean store grades perfectly on scheduling while its
+Speed metrics suffer — the cause scored as a symptom, in a different component.
+
+**Score in percentage points; present in hours.** Rate of pay varies by store and state, so
+keeping the conversion in the presentation layer stops rate imprecision from moving anyone's
+grade.
+
+### The data already exists — this is not a data project
+
+`lifelenz_labor_week` carries, per store per week: `hoursFcst`, **`hoursSched`** (the manager's
+plan), `actualHours`, **`rate`** (per store, so no district-average fudge), `salesFcst`,
+`laborTargetOrg`, `laborPctActual`, `tpph`. Both fair axes compute directly:
+
+- **Schedule vs forecast** = `hoursSched` vs `hoursFcst` — already in hours, no conversion
+- **Actual vs schedule** = `actualHours` vs `hoursSched`
+- 2pp ceiling → hours allowance = `2% × salesFcst ÷ rate`, per store
+
+⚠️ **Loader caveat:** `loadLifeLenzLaborWeek` with no explicit `weekStart` returns only each
+store's MOST RECENT row. Scoring *improvement* needs a series, so that needs a small change to
+fetch a window. Weekly granularity is correct and deliberate — schedules are built weekly.
+
+## FINDING — make-table utilization is real, coachable, and currently invisible
+
+Owner: *"All stores have mfy results. Some stores suck at using both sides of the table, hence
+the null or 0 results. But they are correct."*
+
+**A zero is a FINDING, not a coverage gap.** The PM initially framed nulls as missing data and
+worried about renormalization; that was backwards. Renormalizing these away would erase a real
+operational failure and hand the weight back to service — flattering the store that earned the
+hit. Whatever is built must score them, not skip them.
+
+**But KVS Time cannot see this.** `kvst = _mfyTime / _mfyCnt` where `_mfyCnt` is mfy1 + mfy2
+**combined**. With one side idle, everything routes through the other and average time *per
+transaction* looks normal while throughput is halved. The damage surfaces as cars waiting —
+OEPE and park% — which is the same service/production misattribution, one level deeper.
+Weighting KVS Time up does NOT catch what the owner described.
+
+**The measurable signal is mfy2 volume relative to mfy1 — and it never reaches the app.**
+Verified against live columns:
+
+```
+qsr_daily_activity_rollup   mfy1_trans_cnt → 400 (no such column)
+                            mfy2_trans_cnt → 400 (no such column)
+                            mfy_trans_cnt  → 200
+qsr_daily_activity (hourly) mfy2_trans_cnt → 200  ✅ exists
+```
+
+Both the rollup table and `schema-qsr-daily-summary.sql` do `sum(mfy1_* + mfy2_*)`. Reasonable
+when KVS Time was the only consumer; it means this metric is uncomputable today.
+
+**Fix:** carry the two sums into the rollup as separate columns; derive the ratio client-side.
+NOT a combined "utilization %" in SQL — the rollup moves aggregation, not definitions.
+
+**Measure before thresholding:** a small store at low volume may legitimately run one side, so
+the metric needs a volume gate and the threshold must come from the measured distribution across
+the 27 — not a guessed number. Same rule as the swing alarm's −10%.
+
+Status: PENDING owner go-ahead to file as its own issue. Worth having independent of scoring.
+
+## Speed splits into Service and Production — DECIDED
+
+Owner: KVS Time is *"the other half of the variable hour employees… may even point to an area
+(service vs production) when it comes to diagnosing issues."* Confirmed in the data:
+
+| Metric | Formula | Side |
+|---|---|---|
+| OEPE | `(_dtTotal − _dtStore) / _dtCars` | Drive-thru → service |
+| Park % | `_dtHeld / _dtCars` | Drive-thru → service |
+| R2P | `(_fcServe − _fcDrawer) / _fcCnt` | Front counter → service |
+| KVS Time | `_mfyTime / _mfyCnt` | MFY → **production** |
+| KVS Healthy | `_kvsH / (_kvsH + _kvsU)` | Kitchen display → **production** |
+
+Three of four are service, so Speed today is almost entirely a service measurement — and it
+**misattributes** kitchen failures to service, because a slow MFY makes the car wait at the
+window. The drive-thru crew takes a hit it didn't earn.
+
+Two balanced sub-scores, not one flat list — a flat list gets the coverage but loses the
+diagnostic, which is the whole value:
+
+| | KVS Time fine | KVS Time high |
+|---|---|---|
+| **OEPE fine** | Both healthy | Kitchen slow, service absorbing — fragile at peak |
+| **OEPE high** | Service/window problem | **Kitchen is the constraint** — coaching the window is wasted |
