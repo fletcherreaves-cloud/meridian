@@ -84,3 +84,55 @@ describe('buildBrief — sales decline detector (Needs Attention fix)', () => {
     expect(f.find(x => x.rule === 'salesCrit' || x.rule === 'salesWatch')).toBeFalsy();
   });
 });
+
+// ── Partial-day contamination hotfix (signature #4) ─────────────────────────
+// The window used to end at literal Date.now(), so today — a still-filling business day —
+// got matched against a FULL last-year day (matchedVsLY's own-row ly field is always a
+// complete historical day). That inflates every decline: a healthy -7% store could fire
+// WATCH, and a genuine -10% store could falsely escalate to CRIT, purely as a function of
+// what time of day the panel happened to load. Fixed by ending the window on the last
+// CLOSED business day (businessDate() accounts for the 4am ABC cutover) instead.
+//
+// `dsWithTodayPartial` models `days` fully-closed days at a steady ratio, PLUS a separate
+// "today" row that is only `todayFrac` of a normal day's sales but carries the FULL
+// last-year value — exactly the shape that contaminated the old window. The fixed detector
+// must never include that row (window ends at lastClosed = yesterday), so the result must
+// be identical no matter what todayFrac is — unlike dsWithDailyRatio above, which applies
+// one constant ratio to every day including day 0 and so models "today" as already
+// complete, and therefore cannot catch this class of bug.
+function dsWithTodayPartial(steadyPctVsLY, todayFrac, days = 28, dailyLY = 10000) {
+  const rows = [];
+  const today = new Date();
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    rows.push({ loc, date: d, sales: dailyLY * (1 + steadyPctVsLY), lySales: dailyLY });
+  }
+  rows.push({ loc, date: today, sales: dailyLY * todayFrac, lySales: dailyLY }); // still-filling today
+  return { loaded: true, qsrActSummaryRows: rows, laborRows: [] };
+}
+
+describe('buildBrief — sales decline detector: partial-day contamination hotfix', () => {
+  it.each([0, 0.05, 0.2, 0.5, 0.8, 1])('a healthy -7%% store stays silent regardless of how much of today has rung (todayFrac=%s)', (todayFrac) => {
+    const ds = dsWithTodayPartial(-0.07, todayFrac);
+    const f = buildBrief(p, t, 80, 80, 0, 0, ds, loc);
+    expect(f.find(x => x.rule === 'salesCrit' || x.rule === 'salesWatch')).toBeFalsy();
+  });
+
+  it.each([0, 0.05, 0.2, 0.5, 0.8, 1])('a genuine -10%% decline fires WATCH but never falsely escalates to CRIT (todayFrac=%s)', (todayFrac) => {
+    const ds = dsWithTodayPartial(-0.10, todayFrac);
+    const f = buildBrief(p, t, 80, 80, 0, 0, ds, loc);
+    expect(f.find(x => x.rule === 'salesCrit')).toBeFalsy();
+    expect(f.find(x => x.rule === 'salesWatch')).toBeTruthy();
+  });
+
+  it('a still-filling today is excluded from the matched-day count entirely', () => {
+    // Sanity check on the mechanism, not just the outcome: today's row must not count
+    // toward sl.days either, or a thin window could slip past the >=14 floor on the
+    // strength of a row that shouldn't be there.
+    const ds = dsWithTodayPartial(-0.07, 0.5, 13); // only 13 CLOSED days + 1 partial today
+    const f = buildBrief(p, t, 80, 80, 0, 0, ds, loc);
+    // 13 closed days alone is below the >=14 floor — if today's partial row were still
+    // being counted, this would reach 14 and could fire; it must not.
+    expect(f.find(x => x.rule === 'salesCrit' || x.rule === 'salesWatch')).toBeFalsy();
+  });
+});

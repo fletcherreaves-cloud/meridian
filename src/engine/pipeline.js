@@ -5,6 +5,7 @@ import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS } from '../con
 import { dKey, addD } from '../utils/date.js';
 import { bLocIdx, compute6wk, locRows } from '../engine/forecast.js';
 import { matchedVsLY } from './vs-ly.js';
+import { businessDate } from './swing-feed.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
@@ -257,12 +258,27 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
   // f.t==='crit'/'warn'/'watch' and buildBrief previously had no sales-related finding type
   // at all besides the forecast line (t:'fc', which matches none of AttentionPanel's
   // filters) — so a pure sales decline, however severe, could never surface there.
-  // Thresholds measured against the real district 28-day distribution (2026-08-10, all 27
-  // stores): p10 was -9.9%, median -1.6%. Atoka (loc 10422) was the sole outlier at -15.4%,
-  // next-worst -11.1%. -12%/-8% cleanly separates a genuine outlier (would have caught only
-  // Atoka as critical) from the district's ordinary week-to-week spread.
+  // Thresholds RE-VERIFIED 2026-08-10 through the corrected (partial-day-contamination
+  // hotfix) window — the original measurement's window ended at literal Date.now(), which
+  // inflated every store's apparent decline by matching today's still-filling partial day
+  // against a full last-year day (see the hotfix note below). Re-pulled against the real
+  // district 28-day distribution (26 of 27 stores with matched-day coverage): p10 is now
+  // -7.28% (was measured -9.9% through the contaminated window), median -1.63% (~same).
+  // Atoka (loc 10422) is still the sole outlier at -14.91% (was -15.4%), next-worst 32525 at
+  // -10.91% (was -11.1%), then 35242 at -9.77% (was -9.9%). Conclusion is UNCHANGED — -12%/-8%
+  // still cleanly separates Atoka alone as critical, 32525/35242 as watch, the other 23 clean
+  // — the contamination shifted every number down without changing which stores clear which
+  // floor, so both thresholds stand as originally set.
   if(ds&&ds.loaded){
-    const slRange={s:new Date(Date.now()-28*86400000),e:new Date()};
+    // End the window on the last CLOSED business day (businessDate() accounts for the 4am
+    // ABC cutover), not literal "now" — otherwise today's still-filling partial day gets
+    // matched against a FULL last-year day (matchedVsLY's own-row ly field is always a
+    // complete historical day), which understates cur relative to ly and inflates every
+    // decline. Same defect family the swing alarm hit 2026-08-07 (see swing-feed.js's
+    // businessDate() doc) and store-dash.js:651 names by name — signature #4. Pattern
+    // reused from labor-tools.js's trailing-window periods.
+    const lastClosed=addD(new Date(businessDate()+'T00:00:00'),-1);
+    const slRange={s:addD(lastClosed,-27),e:lastClosed};
     const sl=matchedVsLY(ds,loc,slRange,'sales');
     // Require at least half the window to have matched LY data — an aggregate built from a
     // handful of days is noise, not a sustained trend.
