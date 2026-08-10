@@ -31,7 +31,7 @@ import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProj
 // ShiftAnalysisTab / ModelComparisonPanel / RegisterAuditTab / StoreRecordsTab were imported here
 // and never rendered — dead imports that pulled all 161 KB of store-analytics.js into the entry
 // chunk for nothing. They are still exported and used inside store-analytics.js itself.
-import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, AtAGlance, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
+import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
 import { readBlobLocal as _readBlobLocal, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { Settings } from '../views/management.js';
 // Lazy panel with stale-chunk recovery: after a new deploy, an open tab's index.html references old
@@ -66,6 +66,27 @@ const lazyPanel = (importFn) => {
   Wrapped.displayName = 'LazyPanel';
   return Wrapped;
 };
+// AtAGlance (extracted from analytics.js, issue #124) is the app's default landing view
+// (view==='command'), not a modal — the generic lazyPanel() fallback above is a full-screen
+// dark scrim meant for deliberately-opened panels and would read as the app blanking out if
+// reused here. Two things keep this from being a visible regression: (1) the chunk is
+// prefetched below, at module-eval time, so it's normally already in flight (often already
+// resolved) well before ds/stores finish their own several-second startup load and this
+// component gets its first real paint; (2) the fallback renders nothing — no overlay, no
+// spinner — so on the rare slow-network case where Suspense actually triggers, the content
+// area is briefly blank rather than flashing something jarring over the nav/topbar.
+const _ataglance = () => import('../views/at-a-glance.js');
+_ataglance();
+const _AtAGlanceInner = React.lazy(() => _ataglance().then(m => ({ default: m.AtAGlance })).catch((err) => {
+  try {
+    const KEY = 'meridian_chunk_reload_at';
+    const last = Number(sessionStorage.getItem(KEY) || 0);
+    if (Date.now() - last > 15000) { sessionStorage.setItem(KEY, String(Date.now())); location.reload(); return new Promise(() => {}); }
+  } catch {}
+  throw err;
+}));
+const AtAGlance = (props) => React.createElement(React.Suspense, { fallback: null }, React.createElement(_AtAGlanceInner, props));
+
 const _laborTools = () => import('../views/labor-tools.js');
 const DARDaypartPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.DARDaypartPanel })));
 const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.ProductMixPanel })));
@@ -332,6 +353,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.950', date:'2026-08-10', changes:[
+    'Entry-chunk budget relief (issue #124): analytics.js was 692 KB and stayed in the entry bundle because it held AtAGlance — the home screen and the single biggest thing in that file. Five consecutive PRs had eaten the 850 KB gzip ceiling down to ~5.9 KB of headroom without any one of them being a bad call; the next feature-sized change was going to cross it. AtAGlance (plus its 3 exclusive tiles: SAGE Scheduled Runs, EOM Scoreboard, Items Recounted) now lives in its own module, src/views/at-a-glance.js, loaded the same on-demand way the other secondary panels already are — but with its own fallback (renders nothing, no dark overlay) since this is the always-visible landing view, not a modal, plus an eager prefetch of the chunk at app-mount so it is normally already in flight well before the several-second startup data load finishes and this component gets its first real paint. Along the way, extracting AtAGlance exposed and fixed a separate, unrelated regression: Rollup\'s automatic chunking had been silently relying on the exact set of existing lazy-panel boundaries to keep the 142 KB-gzip xlsx (SheetJS) library split out of the entry chunk — adding one more lazy boundary flipped that heuristic and would have inlined all of xlsx into the entry, undoing the whole point of this change. Pinned xlsx to its own chunk explicitly in vite.config.ts so the budget no longer depends on Rollup guessing right. Net: entry chunk 844.26 KB → 815.32 KB gzip (2822.70 KB → 2715.47 KB raw), ~29 KB of headroom recovered.',
+  ]},
   {version:'4.949', date:'2026-08-10', changes:[
     'Small cleanup, no behavior change: 3 more places that hand-built "the last full business day" from scratch now share the one helper that already existed for it — the Above-Store One-Pager\'s month-to-date range and two of Labor Tools\' trailing-window pickers. This is the exact kind of copy-pasted date math that has caused a real bug five separate times when someone accidentally left off the "exclude today" part; fewer places holding a hand-copy means fewer places that can quietly drift.',
   ]},
