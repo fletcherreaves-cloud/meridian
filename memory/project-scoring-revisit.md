@@ -617,8 +617,13 @@ owner's approved number. So writing the approved crew % into AOS is *probably* t
 Owner, 2026-08-10: *"In this instance, it is clearly crew(hourly) only."*
 
 **Basis = crew hourly, which matches the approved monthly number.** So writing the owner's
-approved crew labor % into AOS is the correct value — no toggle check, no payroll reconciliation
-needed. The section below is kept as the record of what the check WOULD have been, and as the
+approved crew labor % into AOS is the correct value — no payroll reconciliation needed.
+
+**Confirmed two independent ways:** the owner's own statement, AND a screenshot of Schedule
+Settings → AOS showing **"Skip scheduling Managers" is CHECKED** (*"If selected, AOS will not
+schedule managers and only assign managers templated shifts if present"*). The conditional in the
+vendor's answer — *"usually not scheduled… best practice is to exclude them"* — resolves to
+excluded here, verified rather than assumed. The section below is kept as the record of what the check WOULD have been, and as the
 fallback if this is ever revisited for another org on the platform (where the answer may differ).
 
 ## What the vendor answer alone did NOT settle — superseded by the owner's confirmation above
@@ -659,3 +664,16 @@ Also noted: the agent's "often around 28%" benchmark sits **6 points above** thi
 Not necessarily wrong — tighter operations are plausible — but worth knowing the 22% is well
 below what the vendor describes as typical, especially given the owner did not know the setting
 existed.
+
+
+## Small residual, flagged once and deliberately NOT blocking
+
+The same AOS screen shows **"Skip scheduling employees with templated shifts"** also checked, so
+AOS optimizes only the non-templated remainder of the crew. Whether the labor-cost ceiling is
+evaluated against *total* scheduled cost (templated shifts included) or only the portion AOS
+generates is not documented and the vendor did not address it.
+
+**Do not chase this now.** The crew-vs-total question — the one that could have produced schedules
+3+ points too tight — is settled. This refinement would only matter if a material share of crew
+carry templated shifts, and it would announce itself the first time an AOS write produces
+surprising schedules. Recorded so it is recognisable if that happens, not as an open task.
