@@ -1,10 +1,11 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES } from '../constants.js';
-import { dKey } from '../utils/date.js';
+import { dKey, addD } from '../utils/date.js';
 import { supabase } from '../lib/supabase.js';
 import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
 import { autoFirstDaily } from '../engine/vs-ly.js';
+import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -225,10 +226,14 @@ const MORNING_RULES = [
 // permanently null for such stores, silently disabling every correlation rule below that
 // depends on them (they all early-return on `!oepeNorm`).
 function computeStoreNorms(loc, ds){
-  const cutoff = new Date(Date.now()-56*24*3600*1000); // 8 weeks back
-  const range = {s:cutoff, e:new Date()};
-  const peaks = (ds.peaksSvcRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date>=cutoff&&r.oepe>0);
-  const labors = (ds.laborRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date>=cutoff&&r.sales>0);
+  // Ends on the last CLOSED business day, not literal "now" (signature #4) — low-risk on an
+  // 8-week average, but this feeds oepeNorm/kvstNorm that every correlation rule below
+  // depends on, and a known-contaminated window left in place is how this recurs again.
+  const lastClosedNorms = lastClosedBusinessDay();
+  const cutoff = addD(lastClosedNorms,-55); // 8 weeks (56 inclusive days) back
+  const range = {s:cutoff, e:lastClosedNorms};
+  const peaks = (ds.peaksSvcRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date>=cutoff&&r.date<=lastClosedNorms&&r.oepe>0);
+  const labors = (ds.laborRows||[]).filter(r=>String(r.loc)===String(loc)&&r.date>=cutoff&&r.date<=lastClosedNorms&&r.sales>0);
   const avg = (arr,f) => arr.length ? arr.reduce((s,r)=>s+(r[f]||0),0)/arr.length : null;
   const gcSalesRatios = labors.filter(r=>r.sales>0&&r.gc>0).map(r=>r.gc/r.sales);
   const salesSeries = metricSeries(ds, loc, range, 'sales');

@@ -4,7 +4,7 @@ import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MO
 import { dKey, addD, mwStart, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, modelHealthScore, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, computeMAPEDrift, computeStoreSigma, fetchRow, locRows } from '../engine/forecast.js';
-import { businessDate } from '../engine/swing-feed.js';
+import { businessDate, lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -376,8 +376,12 @@ const PREDICTOR_METRIC_KEY = {
 function computeMetricAverages(ds) {
   if(!ds||!ds.loaded) return {};
   const LOCS=Object.keys(STORE_NAMES);
-  const cutDate=new Date(); cutDate.setDate(cutDate.getDate()-90);
-  const range={s:cutDate, e:new Date()};
+  // Ends on the last CLOSED business day, not literal "now" (signature #4) — low-risk on a
+  // 90-day average (one partial day is diluted ~1%), but a known-contaminated window left in
+  // place is how this recurs a sixth time.
+  const lastClosed90=lastClosedBusinessDay();
+  const cutDate=addD(lastClosed90,-89);
+  const range={s:cutDate, e:lastClosed90};
   const result={};
   LOCS.forEach(loc=>{
     result[loc]={};
@@ -4128,7 +4132,10 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     const allResults = {};
     const locs = ds.storeIds;
 
-    const fullRange = {s:new Date('2000-01-01'), e:new Date()};
+    // Ends on the last CLOSED business day, not literal "now" (signature #4) — a still-filling
+    // today would read as a huge deviation from the DOW baseline purely for not being finished
+    // yet, the same shape detectAnomalies (store-analytics.js) had.
+    const fullRange = {s:new Date('2000-01-01'), e:lastClosedBusinessDay()};
     for(let li=0;li<locs.length;li++){
       const loc = locs[li];
       setProgress(Math.round(li/locs.length*100));
@@ -6019,7 +6026,10 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
       // Auto-first (data-integrity sweep signature #2) — was ds.laborRows only, manual-only,
       // so this fed the AI prompt a stale/short 42-day window whenever only auto/emailed
       // data existed for recent days.
-      const range = {s:addD(new Date(),-42), e:new Date()};
+      // Ends on the last CLOSED business day, not literal "now" (signature #4) — a still-
+      // filling today would feed the AI a misleadingly low final data point.
+      const _lastClosedBrief = lastClosedBusinessDay();
+      const range = {s:addD(_lastClosedBrief,-41), e:_lastClosedBrief};
       const salesSeries = metricSeries(ds, loc, range, 'sales');
       const gcSeries = metricSeries(ds, loc, range, 'gc');
       const totalSales = Object.values(salesSeries).reduce((a,b)=>a+b,0);

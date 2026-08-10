@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { addD, addDR, dKey, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart } from '../utils/date.js';
+import { lastClosedBusinessDay } from './swing-feed.js';
 
 const h    = React.createElement;
 const div  = (props, ...c) => h('div',    props, ...c);
@@ -917,7 +918,13 @@ function compute6wk(loc,ds,wb){
   //
   // `?? 0` preserves avg6's contract for the ~30 consumers that do arithmetic on these.
   // The no-data signal lives in r._cov below, which is what the scorecards read.
-  const _range = { s: new Date(Date.now() - wb * 7 * 86400000), e: new Date() };
+  // Ends on the last CLOSED business day, not literal "now" (signature #4) — this range
+  // feeds oepe/tpph/kvst/park/kvsu into calcOpsF's baseOpsF (backtest.js), so a still-filling
+  // today doesn't just distort a display number here, it distorts the forecast adjustment
+  // every store gets. Computed once and reused below for T2W and the avgCheck window too, so
+  // every trailing comparison compute6wk makes agrees on where "today" ends.
+  const _lastClosed6wk = lastClosedBusinessDay();
+  const _range = { s: addD(_lastClosed6wk, -(wb * 7 - 1)), e: _lastClosed6wk };
   const M = (key) => metricAvg(ds, [loc], _range, key) ?? 0;
 
   const r={oepe:M('oepe'),kvst:M('kvst'),park:M('park'),r2p:M('r2p'),
@@ -951,13 +958,15 @@ function compute6wk(loc,ds,wb){
     add(opsL, ['oepe','r2p','kvst','park','kvsu']);
     return c;
   })();
-  let kvsuS=0,kvsuC=0;const cut=new Date(Date.now()-wb*7*86400000);
-  for(const row of opsL){if(row.date<cut||!row.kvsu)continue;kvsuS+=row.kvsu;kvsuC++;}
+  // Ends on the last CLOSED business day, not literal "now" (signature #4) — also gained an
+  // explicit upper bound (row.date>_lastClosed6wk), which this filter never had before.
+  let kvsuS=0,kvsuC=0;const cut=_range.s;
+  for(const row of opsL){if(row.date<cut||row.date>_lastClosed6wk||!row.kvsu)continue;kvsuS+=row.kvsu;kvsuC++;}
   r.kvsu=kvsuC?kvsuS/kvsuC:0;
   r.floorCompliance=r.floorMgmtNeeded>0?r.floorHrsSched/r.floorMgmtNeeded:null;
   r.r2pSuspect=r.r2p>0&&r.r2p<60;
-  r.hasPettyCash=ctrlL.some(row=>row.date>=cut&&row.hasPettyCash);
-  const sRows=laborL.filter(row=>row.date>=cut&&row.sales>0);
+  r.hasPettyCash=ctrlL.some(row=>row.date>=cut&&row.date<=_lastClosed6wk&&row.hasPettyCash);
+  const sRows=laborL.filter(row=>row.date>=cut&&row.date<=_lastClosed6wk&&row.sales>0);
   const avgSales=sRows.length?sRows.reduce((a,row)=>a+row.sales,0)/sRows.length:0;
   r.depositVsSalesRatio=r.depositAmt>0&&avgSales>0?r.depositAmt/avgSales:null;
   // Dynamic deposit baseline: derive from this store own history (cashless ratio varies by location)
@@ -975,21 +984,25 @@ function compute6wk(loc,ds,wb){
   }
   r.depositBaseline=(depositBaseline*100).toFixed(2)+'%';
   r.depositSuspect=r.depositVsSalesRatio!==null&&r.depositVsSalesRatio<depositBaseline;
-  // T2W trend: last 2 weeks avg sales vs prior 2 weeks avg sales
-  const t2wCut = new Date(Date.now()-14*86400000);
-  const t4wCut = new Date(Date.now()-28*86400000);
-  const recentRows = laborL.filter(row=>row.date>=t2wCut&&row.sales>0);
+  // T2W trend: last 2 weeks avg sales vs prior 2 weeks avg sales. Ends on the last CLOSED
+  // business day (signature #4), not literal "now" — both cuts also gained an upper bound
+  // (row.date<=_lastClosed6wk), since neither had one before: a logged-today row would have
+  // ridden along into recentAvg uncapped even after fixing just the cutoff's start.
+  const t2wCut = addD(_lastClosed6wk,-13);
+  const t4wCut = addD(_lastClosed6wk,-27);
+  const recentRows = laborL.filter(row=>row.date>=t2wCut&&row.date<=_lastClosed6wk&&row.sales>0);
   const priorRows  = laborL.filter(row=>row.date>=t4wCut&&row.date<t2wCut&&row.sales>0);
   const recentAvg  = recentRows.length ? recentRows.reduce((a,row)=>a+row.sales,0)/recentRows.length : 0;
   const priorAvg   = priorRows.length  ? priorRows.reduce((a,row)=>a+row.sales,0)/priorRows.length   : 0;
   r.t2w = (recentRows.length>=3 && priorRows.length>=3 && priorAvg>100)
     ? +((recentAvg - priorAvg) / priorAvg).toFixed(4) : null;
-  // avgCheck and weeklySales for AI Insights
-  const _wbCut=new Date(Date.now()-wb*7*86400000);
-  const checkRows = laborL.filter(row=>row.date>=_wbCut&&row.avgCheck>0);
+  // avgCheck and weeklySales for AI Insights. Same _lastClosed6wk boundary + explicit upper
+  // bound (signature #4) — this filter had no ceiling at all before, so a logged-today row
+  // rode straight into the average.
+  const checkRows = laborL.filter(row=>row.date>=_range.s&&row.date<=_lastClosed6wk&&row.avgCheck>0);
   r.avgCheck = checkRows.length ? checkRows.reduce((a,row)=>a+row.avgCheck,0)/checkRows.length : 0;
   // Also try ops rows if labor doesn't have it
-  if(!r.avgCheck){const oChk=opsL.filter(row=>row.date>=_wbCut&&row.avgCheck>0);r.avgCheck=oChk.length?oChk.reduce((a,row)=>a+row.avgCheck,0)/oChk.length:0;}
+  if(!r.avgCheck){const oChk=opsL.filter(row=>row.date>=_range.s&&row.date<=_lastClosed6wk&&row.avgCheck>0);r.avgCheck=oChk.length?oChk.reduce((a,row)=>a+row.avgCheck,0)/oChk.length:0;}
   r.weeklySales = sRows.length ? sRows.reduce((a,row)=>a+row.sales,0)/Math.max(1,Math.ceil(sRows.length/7)) : 0;
   return r;
 }
