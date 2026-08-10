@@ -137,16 +137,18 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   const navLabel = (l) =>
     div({style:{padding:'4px 14px 2px',fontSize:'7px',fontWeight:700,
       textTransform:'uppercase',letterSpacing:'.7px',color:'var(--text3)',marginTop:8}},(l));
-  const navItem = (label, icon, onClick, active, badge) =>
+  const navItem = (label, icon, onClick, active, badge, disabled) =>
     div({style:{display:'flex',alignItems:'center',gap:collapsed?0:8,
-      padding:collapsed?'8px 0':'6px 10px',borderRadius:'var(--r)',cursor:'pointer',
+      padding:collapsed?'8px 0':'6px 10px',borderRadius:'var(--r)',cursor:disabled?'not-allowed':'pointer',
       background:active?'var(--adim)':'transparent',
-      color:active?'var(--amber)':'var(--text2)',
+      color:disabled?'var(--text3)':(active?'var(--amber)':'var(--text2)'),
+      opacity:disabled?0.45:1,
       transition:'all .15s',justifyContent:collapsed?'center':'flex-start',
       position:'relative',fontSize:'12px',fontWeight:active?600:400},
-      onClick:(...a)=>{onClick(...a);closeMobile();}, title:collapsed?label:undefined,
-      onMouseEnter:e=>{e.currentTarget.style.background=active?'var(--adim)':'var(--surf2)';},
-      onMouseLeave:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
+      onClick:disabled?undefined:(...a)=>{onClick(...a);closeMobile();},
+      title:disabled?'Select a store first':(collapsed?label:undefined),
+      onMouseEnter:disabled?undefined:e=>{e.currentTarget.style.background=active?'var(--adim)':'var(--surf2)';},
+      onMouseLeave:disabled?undefined:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
       span({style:{fontSize:14,flexShrink:0}},icon),
       !collapsed&&span(null,label),
       !collapsed&&badge>0&&span({style:{marginLeft:'auto',background:'rgba(239,68,68,.15)',
@@ -270,6 +272,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pi('analytics.forecasting', 'LifeLenz Gap',       '📊', ()=>onOpenModal('lfz-gap'),       false),
       pi('analytics.forecasting', 'DI Compare',         '⚡', ()=>onOpenModal('dicompare'),     false),
       pi('analytics.forecasting', 'Fcst Reference',     '📐', ()=>onOpenModal('fcst-ref'),      false),
+      pi('analytics.forecasting', 'Forecast Audit',     '🔬', ()=>onOpenModal('forecast-audit'),false, undefined, !selStore),
       pi('analytics.forecasting', 'LifeLenz Bridge',    '🌉', ()=>onOpenModal('lifelenz-bridge'),false),
       // Optional / experimental panels (registry-driven) — hidden by default, toggled back
       // on per-panel in Admin → Panel Manager. Nothing deleted; modal routing stays in App.js.

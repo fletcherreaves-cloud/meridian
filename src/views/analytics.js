@@ -5822,7 +5822,6 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
     // Build a rich audit by calling forecastDay with trace mode
     const tDow = dowOf(date);
     const DOW_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const userEvents = settings._userEvents||{};
 
     // LY lookup trace — mirrors fetchLY priority chain (first clean value wins, no blending)
     const candidates=[-364,-357,-371,-378,-350,-385,-343];
@@ -5849,8 +5848,12 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
       }
     }
 
-    // Call actual forecastDay for the real result
-    const row = forecastDay(loc,date,ds,{...settings,_userEvents:userEvents},null,t);
+    // Call actual forecastDay for the real result — must mirror the sidebar's forecastDay call
+    // below (same _userEvents, same _eventFactors) or the two can show different numbers for
+    // the same date, which is exactly what this panel exists to make trustworthy.
+    const row = forecastDay(loc,date,ds,{...settings,_userEvents:userEvents,
+      _eventFactors:settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{}
+    },null,t);
 
     // Dialed-In info
     const cal = settings.dialedInEnabled&&settings.dialedIn&&settings.dialedIn[loc];
