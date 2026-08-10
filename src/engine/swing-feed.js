@@ -30,6 +30,15 @@
 //   pruning against one feed's live items would silently drop the other domain's
 //   acks past the cutoff. Use `ATTENTION_ACK_SETTING_KEY`, a separate user_settings
 //   row, for attention acks.
+//
+// ── A PERSISTENT HOME FOR BOTH (issue #140) ──────────────────────────────────
+// Acknowledging used to be a one-way door: the item vanished with no record of what
+// was cleared, by whom, or when. `buildAckHistory` below reads both `swing_acks` and
+// `attention_acks` directly and returns one merged, sorted list — still two separate
+// stores (Trap 2 above still applies to how they're WRITTEN), just one shared VIEW for
+// reading. It does not fight `pruneAcks`' 120-day aging; it makes that aging answerable
+// instead of surprising, by showing every ack still in Supabase, including ones whose
+// underlying finding has since resolved.
 
 import { detectSwing, swingItem } from './swing-detect.js';
 // businessDate/lastClosedBusinessDay moved to utils/date.js (issue #131 PR review) so a
@@ -146,4 +155,58 @@ export function pruneAcks(acks = {}, liveItems = [], { maxAgeDays = 120, keyFn =
     if (live.has(k) || at > cutoff) out[k] = v;
   }
   return out;
+}
+
+/**
+ * One merged, sorted acknowledgement history across BOTH ack domains (issue #140 — "a
+ * persistent home for acknowledged items," Needs Attention). Built by reading the raw acks
+ * blobs directly, not by cross-referencing the live feeds first — an ack whose underlying
+ * finding has since resolved still shows up here (with a `resolved:true` flag) until
+ * pruneAcks ages it out at `maxAgeDays` (120 by default, unchanged — the request was to make
+ * that aging answerable, not to fight it).
+ *
+ * Swing keys are always parseable: `${loc}:${week}:${severity}`, one producer, one stable
+ * shape (see `defaultAckKey` above) — used directly as a fallback "what" description when the
+ * swing itself is no longer live. Attention keys are opaque per-detector ids
+ * (`finding-${loc}-${rule}`, `fob-${loc}`, `stale`, ...) with no single safely-parseable shape
+ * across every detector; a resolved attention ack falls back to showing the raw id rather than
+ * guessing a store from it, which would risk silently misattributing an old ack to the wrong
+ * store — the exact class of surprise this feature exists to remove, not reintroduce.
+ *
+ * `swingItems`/`attentionItems` (today's live feeds) are used ONLY to enrich a still-live
+ * entry's row with its real title/severity — a row never depends on a live match to appear.
+ */
+export function buildAckHistory({ swingAcks = {}, attentionAcks = {}, swingItems = [], attentionItems = [], storeName = String } = {}) {
+  const bySwingKey = new Map((swingItems || []).map(i => [ackKey(i), i]));
+  const byAttnKey = new Map((attentionItems || []).map(i => [i && i.id, i]));
+
+  const rows = [];
+
+  for (const [key, meta] of Object.entries(swingAcks || {})) {
+    const [loc, week, severity] = key.split(':');
+    const live = bySwingKey.get(key);
+    rows.push({
+      key: 'swing:' + key, source: 'swing', loc: loc || null,
+      storeName: loc ? storeName(loc) : null,
+      what: (live && (live.title || live.detail)) || `Sales swing — week ending ${week}`,
+      severity: (live && live.severity) || severity || null,
+      resolved: !live,
+      at: (meta && meta.at) || null, by: (meta && meta.by) || null,
+    });
+  }
+
+  for (const [key, meta] of Object.entries(attentionAcks || {})) {
+    const live = byAttnKey.get(key);
+    rows.push({
+      key: 'attention:' + key, source: 'attention', loc: (live && live.loc) || null,
+      storeName: (live && live.loc) ? storeName(live.loc) : null,
+      what: (live && (live.title || live.detail)) || key,
+      severity: (live && live.severity) || null,
+      resolved: !live,
+      at: (meta && meta.at) || null, by: (meta && meta.by) || null,
+    });
+  }
+
+  rows.sort((a, b) => (Date.parse(b.at || 0) || 0) - (Date.parse(a.at || 0) || 0));
+  return rows;
 }

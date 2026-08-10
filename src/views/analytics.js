@@ -4,7 +4,7 @@ import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MO
 import { dKey, addD, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, fetchRow } from '../engine/forecast.js';
-import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY } from '../engine/swing-feed.js';
+import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY, buildAckHistory } from '../engine/swing-feed.js';
 import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
@@ -5124,7 +5124,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
   );
 }
 
-function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
+function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectStore, onClose}) {
   // Part 2 of the Attention Now / Needs Attention merge (issue #115): severity-ranked,
   // expandable store list replaces the old two-column (list + detail-pane) layout.
   const [filter, setFilter] = React.useState('all'); // 'all' | 'critical' | 'watch'
@@ -5163,7 +5163,15 @@ function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
   // (issue #115, Trap 1).
   const feedKeyFn = React.useCallback((item) => (item && item.id) || '', []);
 
-  const { pending, acked } = React.useMemo(() => partitionAcked(feed, acks, feedKeyFn), [feed, acks, feedKeyFn]);
+  const { pending } = React.useMemo(() => partitionAcked(feed, acks, feedKeyFn), [feed, acks, feedKeyFn]);
+
+  // One persistent home for both ack domains (issue #140) — reads swing_acks and
+  // attention_acks directly rather than only what's still live in `feed`/`swingItems`, so an
+  // ack whose underlying finding has since resolved still shows here (store, what, who, when)
+  // until pruneAcks ages it out at 120 days, instead of vanishing the moment it's clicked.
+  const ackHistory = React.useMemo(() => buildAckHistory({
+    swingAcks: swingAcks || {}, attentionAcks: acks, swingItems: swingItems || [], attentionItems: feed, storeName: sNameC,
+  }), [swingAcks, acks, swingItems, feed]);
 
   const ackItem = React.useCallback((item) => {
     // Who acknowledged matters — an audit trail, not just a dismissal. Mirrors the
@@ -5234,16 +5242,21 @@ function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
     );
   };
 
-  const ackedRow = (item, i) => {
-    const sev = SEV_META[item.severity] || SEV_META.info;
-    const meta = acks[feedKeyFn(item)];
-    return div({key:item.id||i, style:{marginBottom:4,padding:'6px 12px',
+  // Renders one row of the merged ack history (issue #140) — store, what, who, when, and
+  // (for a finding that's since resolved) a plain note that it's no longer live rather than
+  // pretending nothing changed.
+  const ackedRow = (row) => {
+    const sev = SEV_META[row.severity] || SEV_META.info;
+    const when = row.at ? new Date(row.at).toLocaleString('en-US',
+      {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : null;
+    return div({key:row.key, style:{marginBottom:4,padding:'6px 12px',
       background:'var(--surf2)',borderRadius:'var(--r)',display:'flex',alignItems:'center',gap:8}},
       span({style:{fontSize:9,color:sev.color,flexShrink:0}},'●'),
       div({style:{flex:1,minWidth:0,fontSize:'9.5px',color:'var(--text3)',
         overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
-        (item.loc?sNameC(unpad(item.loc))+' — ':'')+(item.title||'')),
-      meta?.by&&span({style:{fontSize:'8px',color:'var(--text3)',flexShrink:0}},meta.by)
+        (row.storeName?row.storeName+' — ':'')+row.what+(row.resolved?' (resolved)':'')),
+      when&&span({style:{fontSize:'8px',color:'var(--text3)',flexShrink:0}},when),
+      row.by&&span({style:{fontSize:'8px',color:'var(--text3)',flexShrink:0}},row.by)
     );
   };
 
@@ -5272,7 +5285,7 @@ function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
       div({style:{display:'flex',gap:8,padding:'10px 20px',borderBottom:'.5px solid var(--bdr)',flexWrap:'wrap'}},
         sevChip('Critical',critStores.length,'#f87171',filter==='critical',()=>toggleFilter('critical')),
         sevChip('Watch',warnStores.length,'#f5bc00',filter==='watch',()=>toggleFilter('watch')),
-        sevChip('Acknowledged',acked.length,'#10b981',ackOpen,()=>setAckOpen(p=>!p))
+        sevChip('Acknowledged',ackHistory.length,'#10b981',ackOpen,()=>setAckOpen(p=>!p))
       ),
 
       div({style:{maxHeight:'65vh',overflowY:'auto',padding:'10px 20px 16px'}},
@@ -5289,13 +5302,13 @@ function AttentionPanel({stores, ds, dateRange, onSelectStore, onClose}) {
           div({onClick:()=>setAckOpen(p=>!p),style:{display:'flex',alignItems:'center',
             justifyContent:'space-between',padding:'7px 12px',cursor:'pointer',
             background:'var(--surf2)',fontSize:'10px',fontWeight:700,color:'var(--text2)'}},
-            span(null,'✓ Acknowledged ('+acked.length+')'),
+            span(null,'✓ Acknowledged ('+ackHistory.length+')'),
             span({style:{fontSize:'9px',color:'var(--text3)'}},ackOpen?'collapse':'expand')
           ),
           ackOpen&&div({style:{padding:'8px 12px'}},
-            acked.length===0
+            ackHistory.length===0
               ?div({style:{fontSize:'9px',color:'var(--text3)',textAlign:'center',padding:8}},'Nothing acknowledged yet')
-              :acked.map(ackedRow)
+              :ackHistory.map(ackedRow)
           )
         ),
 

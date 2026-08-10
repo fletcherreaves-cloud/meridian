@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { weeklyBuckets, buildSwingFeed, ackKey, partitionAcked, blocking,
-         acknowledge, pruneAcks, businessDate, lastClosedBusinessDay } from '../engine/swing-feed.js';
+         acknowledge, pruneAcks, businessDate, lastClosedBusinessDay, buildAckHistory } from '../engine/swing-feed.js';
 
 const day = (i) => new Date(2026, 5, 1 + i);          // 2026-06-01 + i
 /** n days of rows for one store at a given vs-LY ratio. */
@@ -148,6 +148,68 @@ describe('pruneAcks', () => {
   it('keeps recent acks even when not currently live, to avoid re-alarming on a blip', () => {
     const recent = { 'A:x:crit': { at: new Date().toISOString() } };
     expect(Object.keys(pruneAcks(recent, []))).toHaveLength(1);
+  });
+});
+
+describe('buildAckHistory', () => {
+  const storeName = (loc) => ({ A: 'Ardmore', B: 'Bonifay' }[loc] || loc);
+
+  it('returns nothing when both ack stores are empty', () => {
+    expect(buildAckHistory({})).toEqual([]);
+  });
+
+  it('merges both sources into one list', () => {
+    const swingAcks = { 'A:2026-06-07:crit': { at: '2026-06-08T00:00:00.000Z', by: 'a@x.com' } };
+    const attentionAcks = { 'fob-B': { at: '2026-06-09T00:00:00.000Z', by: 'b@x.com' } };
+    const rows = buildAckHistory({ swingAcks, attentionAcks, storeName });
+    expect(rows).toHaveLength(2);
+    expect(rows.map(r => r.source).sort()).toEqual(['attention', 'swing']);
+  });
+
+  it('sorts most-recent-first', () => {
+    const swingAcks = { 'A:2026-06-07:crit': { at: '2026-06-01T00:00:00.000Z' } };
+    const attentionAcks = { 'fob-B': { at: '2026-06-15T00:00:00.000Z' } };
+    const rows = buildAckHistory({ swingAcks, attentionAcks, storeName });
+    expect(rows[0].source).toBe('attention'); // 06-15, newer
+    expect(rows[1].source).toBe('swing');     // 06-01, older
+  });
+
+  it('enriches a still-live swing ack with its real title, not the parsed fallback', () => {
+    const item = { loc: 'A', swing: { to: '2026-06-07' }, severity: 'crit', title: 'Ardmore — 3-week decline' };
+    const swingAcks = { [ackKey(item)]: { at: '2026-06-08T00:00:00.000Z', by: 'a@x.com' } };
+    const [row] = buildAckHistory({ swingAcks, swingItems: [item], storeName });
+    expect(row.what).toBe('Ardmore — 3-week decline');
+    expect(row.resolved).toBe(false);
+    expect(row.storeName).toBe('Ardmore');
+    expect(row.by).toBe('a@x.com');
+  });
+
+  it('falls back to a parsed description for a swing ack whose situation is no longer live', () => {
+    const swingAcks = { 'A:2026-06-07:crit': { at: '2026-06-08T00:00:00.000Z', by: 'a@x.com' } };
+    const [row] = buildAckHistory({ swingAcks, swingItems: [], storeName });
+    expect(row.resolved).toBe(true);
+    expect(row.storeName).toBe('Ardmore');
+    expect(row.severity).toBe('crit');
+    expect(row.what).toContain('2026-06-07');
+  });
+
+  it('enriches a still-live attention ack with its real title and loc', () => {
+    const item = { id: 'fob-B', loc: 'B', severity: 'warn', title: 'Bonifay FOB over target' };
+    const attentionAcks = { 'fob-B': { at: '2026-06-09T00:00:00.000Z', by: 'b@x.com' } };
+    const [row] = buildAckHistory({ attentionAcks, attentionItems: [item], storeName });
+    expect(row.what).toBe('Bonifay FOB over target');
+    expect(row.storeName).toBe('Bonifay');
+    expect(row.resolved).toBe(false);
+  });
+
+  it('falls back to the raw id — never a guessed store — for a resolved attention ack', () => {
+    // No live attentionItems passed: the finding has resolved and dropped out of the feed.
+    const attentionAcks = { 'fob-B': { at: '2026-06-09T00:00:00.000Z', by: 'b@x.com' } };
+    const [row] = buildAckHistory({ attentionAcks, attentionItems: [], storeName });
+    expect(row.resolved).toBe(true);
+    expect(row.loc).toBeNull();
+    expect(row.storeName).toBeNull();
+    expect(row.what).toBe('fob-B');
   });
 });
 
