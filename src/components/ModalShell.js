@@ -36,6 +36,16 @@ export function ModalShell({
   subHeader,
   footer,
   bodyStyle,
+  // Page-scroll variant (issue #126): the default is centered + maxHeight:88vh, which is right
+  // for a compact dialog but wrong for the top-aligned, page-scrolling panels this codebase
+  // already hand-rolls outside ModalShell (MetricCorrelationExplorer, DistrictLensPanel —
+  // alignItems:'flex-start', no maxHeight cap on the card). Default false so all 42 existing
+  // call sites keep the centered/capped behavior unchanged.
+  scroll = false,
+  // Tinted header band (issue #126): the same reference panels tint their header
+  // background var(--surf2); ModalShell's header has always inherited the card's var(--surf).
+  // Default false, same reasoning as `scroll`.
+  tintHeader = false,
   // Print-targeted hooks (e.g. eom-supervisor.js's @media print rules key off
   // exact classNames on the backdrop/card/header) — undefined by default so
   // ordinary callers are unaffected.
@@ -49,7 +59,8 @@ export function ModalShell({
       className: backdropClassName,
       style: {
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex,
-        display: 'flex', alignItems: 'center', justifyContent: justify, padding: 20,
+        display: 'flex', alignItems: scroll ? 'flex-start' : 'center', justifyContent: justify,
+        padding: scroll ? '20px 16px' : 20, overflowY: scroll ? 'auto' : undefined,
       },
       onClick: closeOnBackdrop ? (e => { if (e.target === e.currentTarget) onClose?.(); }) : undefined,
     },
@@ -59,7 +70,7 @@ export function ModalShell({
         style: {
           background: 'var(--surf)', borderRadius: 'var(--rl)', border: '.5px solid var(--bdr2)',
           width: '100%', maxWidth, display: 'flex', flexDirection: 'column',
-          maxHeight: '88vh', overflow: 'hidden',
+          maxHeight: scroll ? undefined : '88vh', overflow: 'hidden',
         },
       },
       div(
@@ -67,6 +78,7 @@ export function ModalShell({
           className: headerClassName,
           style: {
             padding: '10px 18px', borderBottom: '.5px solid var(--bdr)',
+            background: tintHeader ? 'var(--surf2)' : undefined,
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
           },
         },
