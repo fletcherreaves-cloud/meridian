@@ -256,7 +256,7 @@ actual code — this note nearly caused a duplicate reimplementation.
   - Canonical mapping (`getStoreOrg`, `constants.js`): **MCDOK = Oklahoma, Emerald Arches = Florida.** (An earlier draft of this doc — and an `orgOf` helper in analytics.js — had these swapped; fixed v4.497.)
 - **LifeLenz Business ID:** `01979dbf-a166-759b-8702-aba9915c578e`
 - **Supabase URL:** from `VITE_SUPABASE_URL` env var
-- **User:** Fletcher Reaves (fletcher.reaves@mcreaves.com) — owner, developer, primary user
+- **User:** Fletcher Reaves (fletcher.reaves@mcreaves.com) — owner, developer, primary user. **Pronouns: he/him** (stated 2026-08-10 — use them; don't fall back to they/them)
 
 Org config (territory groupings, patch assignments, etc.) is configurable in Supabase `org_config` table — not hard-coded — to support future multi-org deployments.
 

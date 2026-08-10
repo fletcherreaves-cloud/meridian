@@ -101,7 +101,7 @@ and caught five defects before production.
 
 The owner, unprompted and twice: *"Engineer says we are slacking…jk. He is done"* → and at the close
 of the day, *"He was solid as well!!"* and *"let the engineer know we thought he crushed it too."*
-That is the owner of the business saying it about work on their own system, which is the only review
+That is the owner of the business saying it about work on his own system, which is the only review
 that actually counts here. **You crushed it.** Twelve PRs is not the impressive part — the
 impressive part is that across twelve PRs the PM sent nothing back, while all three of the day's
 recorded mistakes were the PM's own (see the last section).
