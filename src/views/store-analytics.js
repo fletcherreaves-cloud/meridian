@@ -1894,12 +1894,19 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
         const today=new Date();
         const next4wk=addD(today,28);
         const districtStores=allStores.filter(s=>/^\d+$/.test(s.loc));
-        const totalGap=districtStores.reduce((a,s)=>{
-          const weekSales=s.pSales||0;
-          const tgt=(s.t&&s.t.tSales)||weekSales;
-          return a+(tgt-weekSales)*4;
-        },0);
-        const atRisk=districtStores.filter(s=>{const ws=s.pSales||0;const tg=(s.t&&s.t.tSales)||ws;return ws<tg*0.97;});
+        // #178 item 4b: this always rendered "+$0" / "0 of N locations" — s.t.tSales doesn't
+        // exist anywhere in DEFAULT_TARGETS (grepped, zero hits), so `tgt` always fell through
+        // to `weekSales` itself, making the gap identically 0 for every store, always. A
+        // second bug rode along: s.pSales/s.pLY (pipeline.js's buildStore) are ALREADY the
+        // trailing 28-day (4-week) matched total, not a single week's — the old `weekSales`
+        // name was a misnomer, and multiplying an already-4-week gap by 4 would have inflated
+        // "Revenue at Risk" 4x once a real target ever got wired in. Target is now the same
+        // Goal-column convention already used elsewhere (forecastDay's _goalOf): the matched
+        // 28-day LY total grown by the store's tGrowth. No ×4 — pSales/pLY already span the
+        // 4-week window this widget is titled for.
+        const goal28=s=>(s.pLY>0)?s.pLY*(1+((s.t&&s.t.tGrowth)||0.05)):(s.pSales||0);
+        const totalGap=districtStores.reduce((a,s)=>a+(goal28(s)-(s.pSales||0)),0);
+        const atRisk=districtStores.filter(s=>(s.pSales||0)<goal28(s)*0.97);
         return div({style:{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}},
           div({style:{flex:'1 1 200px',background:'rgba(239,68,68,.06)',border:'.5px solid rgba(239,68,68,.25)',
             borderRadius:'var(--rl)',padding:'12px 16px'}},
