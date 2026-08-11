@@ -896,6 +896,38 @@ function sig_gcAvgCheck(ds) {
   };
 }
 
+// ── Debug: per-runner signal dump (#190) ────────────────────────────────────────
+// computeInsights used to log one line per runner UNCONDITIONALLY — 34 runners x 2 startup
+// calls (live + restore) = ~68 lines on every load, on top of everything else the app logs.
+// Measured: not the render-storm cause (0.6% of blocked time), but it buried real errors in a
+// 165-message startup console and, in the null branch, leaked minified fn.name garbage (tB, nB,
+// wz…) since production builds mangle identifiers. Same convention as ?clicktrace=1
+// (utils/click-trace.js): a URL param sets a persisted flag so it survives SPA navigation.
+const _SIGNALS_DEBUG_KEY = 'mf_signals_debug';
+function _signalsDebugOn() {
+  try {
+    const q = new URLSearchParams(location.search).get('signals');
+    if (q === '1') sessionStorage.setItem(_SIGNALS_DEBUG_KEY, '1');
+    if (q === '0') sessionStorage.removeItem(_SIGNALS_DEBUG_KEY);
+    return q === '1' || sessionStorage.getItem(_SIGNALS_DEBUG_KEY) === '1';
+  } catch { return false; }
+}
+
+// Stable per-runner id for the null-branch log, without relying on fn.name (mangled under
+// minification). Reads the id straight out of the function's OWN source text via
+// Function.prototype.toString() — minifiers rename identifiers, not string literal VALUES, so
+// the `id: 'gc_avg_check'` literal each runner already returns survives intact even in a
+// production build. Self-maintaining: a new runner needs no separate id registered anywhere,
+// unlike a hand-typed lookup table that would silently drift the moment someone adds a 35th.
+const _RUNNER_ID_CACHE = new WeakMap();
+function _runnerId(fn) {
+  if (_RUNNER_ID_CACHE.has(fn)) return _RUNNER_ID_CACHE.get(fn);
+  const m = fn.toString().match(/id:\s*['"]([a-z0-9_]+)['"]/);
+  const id = m ? m[1] : fn.name;
+  _RUNNER_ID_CACHE.set(fn, id);
+  return id;
+}
+
 // ── Main export ────────────────────────────────────────────────────────────────
 
 export function computeInsights(ds) {
@@ -943,14 +975,15 @@ export function computeInsights(ds) {
     sig_gcAvgCheck,
   ];
   const results = [];
+  const debugOn = _signalsDebugOn();
   for (const fn of runners) {
     try {
       const sig = fn(ds);
       if (sig) {
         results.push(sig);
-        console.log(`[signals] ${sig.id}: r=${sig.r?.toFixed(3)} n=${sig.n} strength=${sig.strength} domain=${sig.domain}`);
-      } else {
-        console.log(`[signals] ${fn.name}: null (insufficient data or no matching pairs)`);
+        if (debugOn) console.log(`[signals] ${sig.id}: r=${sig.r?.toFixed(3)} n=${sig.n} strength=${sig.strength} domain=${sig.domain}`);
+      } else if (debugOn) {
+        console.log(`[signals] ${_runnerId(fn)}: null (insufficient data or no matching pairs)`);
       }
     } catch (e) {
       console.warn('[insights]', fn.name, e);
