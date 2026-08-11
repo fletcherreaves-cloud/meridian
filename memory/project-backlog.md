@@ -90,6 +90,26 @@ need a one-time `QSRSOFT_DAR_FORCE_FULL=1` run to backfill, or age out naturally
 target) is deliberately unchanged per the #185 measurement (switching bases moves 1 store, not
 the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
 
+**#176 — DONE (2026-08-11, #184 dispatch item 6, final item).** `tJuneLaborPct` retired per
+the issue's own decision comment: it was redundant with the approved `tCrewLabor` (both trace
+to the same organizational target, arriving via two different workbooks) and it outranked the
+approved value in two fallback chains — `scheduling.js:445` and `morning-brief.js:352` both put
+it first, so Scheduling and Morning Brief graded against stale June-upload data whenever no
+fresher Projections file had been uploaded that session. Three changes, sequenced per the
+decision: (1) both readers now call `resolveLaborTarget()` (#164's resolver) instead of reading
+`tJuneLaborPct`/`tLabor` by name — removes the special-case precedence without touching the
+data path; (2) `applyProjectionsToTargets` (`parsers/index.js`) no longer writes a labor % into
+`DEFAULT_TARGETS` — the raw parsed value is still preserved unmutated in `ds.projRows` (already
+existed, no consumer today) if a future ranked layer is ever wanted; (3) the `tJuneLaborPct:X,`
+key removed from all 27 seed-constant lines (`constants.js:37-63`). **Left alone, per the
+issue's explicit "check siblings before touching" warning:** `tJuneProj`/`tOperatorProj`/
+`tQSRSoftProj`/`tJuneTpph` still ride the same `applyProjectionsToTargets` mutation and the same
+constants.js seed block — `tJuneProj`/`tOperatorProj`/`tJuneTpph` have live readers in
+`morning-brief.js` (lines 293/342/348) that were not audited this pass; `tQSRSoftProj` appears
+to have none but wasn't confirmed either. None of the four were touched. `DEFAULT_TARGETS` is
+still mutated at runtime for those three fields — the issue's point 2 (stop mutating the module
+constant) is only resolved for the one field this issue scoped.
+
 ### Two items the owner explicitly asked not to lose (2026-08-11)
 
 1. **#154 — LifeLenz AOS. Needs an owner decision: rescope or close.** Its premise was

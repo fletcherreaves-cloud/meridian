@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase.js';
 import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
 import { autoFirstDaily } from '../engine/vs-ly.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const h = React.createElement;
 const div    = (p, ...c) => h('div',    p, ...c);
@@ -349,7 +350,7 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
     laborPct:   labor?.laborPct>0 ? labor.laborPct :
                 (ctrl?.laborPct>0 ? ctrl.laborPct :
                 (glimpse?.laborPct>0 ? glimpse.laborPct :
-                (DEFAULT_TARGETS[locStr]?.tJuneLaborPct>0 ? DEFAULT_TARGETS[locStr].tJuneLaborPct : null))),
+                (resolveLaborTarget(DEFAULT_TARGETS[locStr]) || null))),
     actVsNeed:  labor?.actVsNeed != null ? labor.actVsNeed : (ctrl?.actVsNeed ?? darActVsNeed),
     salesVsExp, gcVsExp, vsLYSales, vsLYGC,
     // Controls fields — ctrl upload first, then email pipeline (glimpse > cash) as fallback.
