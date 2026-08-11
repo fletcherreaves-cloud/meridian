@@ -80,6 +80,12 @@
 ## 🧠 SAGE
 - [SAGE AI](project-sage.md) — edge fn, live tools, RBAC, auto-scheduling, self-instrumenting.
 
+## ⚡ Performance
+- [Startup render storm (#184 item 0)](project-startup-render-storm.md) — batched the 22
+  ds-touching tiered-startup-loader stages behind 3 per-tier flushes (22 commits → 3); the
+  ~19-commit remainder (IDB restore, org_config syncs, email/PDF auto-ingest) is enumerated but
+  not yet fixed.
+
 ## 🏗 Data-refresh sprint & standards (standing rules)
 - [Data-refresh sprint handoff](handoff-data-refresh-sprint.md) — the At-A-Glance freshest-wins rework.
 - [⭐ Measure it, don't reason about it](feedback-measure-dont-reason.md) — **standing rule.** Diagnose by

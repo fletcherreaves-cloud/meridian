@@ -350,6 +350,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.964', date:'2026-08-11', changes:[
+    'Startup render storm, item 0 of the #184 dispatch — batched the tiered startup loader\'s 22 ds-touching stages (of 28 total) behind 3 explicit per-tier commits instead of 22 independent ones. The v4.846 tiering already made the 22 stages\' underlying Supabase fetches run concurrently; each stage still called setDs the moment it individually resolved, so React still committed and re-rendered once per stage — 22 of the roughly 42 renders behind the measured 47-render/167s startup render storm. Fixed with a local queueing stand-in that shadows setDs for the scope of the tiered loader only (JS closures resolve it lexically, so all 22 _stXxx functions — including the ones with prev-dependent merge logic — needed zero internal changes), flushed once after each of T1/T2/T3\'s Promise.all resolves. Every one of the 22 stages already used a functional setDs(prev=>...) updater, so reduce-chaining the queued updaters reproduces byte-identical final state to today\'s sequential commits — only the commit COUNT changes, from 22 to 3. This is a genuinely partial fix, said plainly: roughly 19 more renders come from OTHER startup effects (IDB restore, the loadLaborRows Supabase merge, six org_config syncs, email/PDF auto-ingest, cross-device sync) that were not touched in this pass — full list and rationale in memory/project-startup-render-storm.md. Also corrected a comment near rawStores (App.js ~line 2914) that had gone stale describing "a dozen-plus" commits from this specific effect. Cannot verify the actual render-count/wall-clock improvement live — this sandbox has no authenticated Supabase session, so the loader never runs; the owner should re-run ?clicktrace=1 after this ships. Verified: full test suite (1218/1218, unaffected — no React test harness exists in this repo) + clean build. Entry chunk 2737.29 KB → 2739.42 KB gzip 822.51 KB → 823.38 KB (+0.87 KB gzip, almost entirely this changelog text).',
+  ]},
   {version:'4.963', date:'2026-08-10', changes:[
     'Insight Ledger step 0 — instrumentation only, no ledger table/writers/panel built (issue #143). The Ledger design (memory/project-insight-ledger.md) rests entirely on one unmeasured assumption: that a detector firing for the same store day after day collapses into ONE row with fire_count:N under its situation key, not N rows — 10 detectors × 27 stores × daily is a firehose otherwise. New engine/insight-ledger-measure.js observes buildAttentionFeed\'s per-detector output (the same shape the engine already builds, now exposed before the flatten instead of re-derived) and writes a day-bucketed snapshot to a throwaway Supabase user_settings blob — one bucket per calendar day, so opening the app 20 times today overwrites the same bucket 20 times, not 20 rows. Situation key = the item\'s own `.id`, the exact key analytics.js already acks attention items on — not a new scheme. Wired via an optional `onFireVolume` callback on buildAttentionFeed: every existing caller that omits it (there were none passing anything before this) gets a byte-identical return value, verified by a test that runs the same inputs with and without the callback and diffs the output. Read-side `summarizeFireVolume()` turns a week of buckets into the actual numbers asked for — collapse ratio (total fires ÷ distinct keys), per-detector loudness, first/last-seen per key — ready to run once real multi-device usage accumulates; not run yet, there\'s no data. Scaffolding, not a feature: this file + its one call site in attention-now.js\'s useAttentionFeed hook is the entire footprint, removable in one commit per the issue\'s own instruction. 16 new tests (byte-identical-output guard, snapshot/record/hydrate/summarize logic, the actual collapse-ratio math). Entry chunk 2728.15 KB → 2731.14 KB gzip 819.45 KB → 820.54 KB (+1.09 KB gzip — attention-feed.js and attention-now.js are both in the entry chunk via analytics.js\'s static import; this changelog text itself is part of that delta). Verified: full test suite + build pass, plus an unauthenticated boot-and-render pass — app boots clean, nav renders, zero pageerror.',
   ]},
@@ -2282,7 +2285,25 @@ function App() {
     // ── Auto-load ALL monthly targets from Supabase ───────────────────────────
     // Loads every available period so EOM can look up any month without
     // additional Supabase calls.
+    // #184 item 0: this block's ~22 stages below each resolve independently and used to call
+    // the REAL setDs directly, so the tiered Promise.all (already concurrent in EXECUTION
+    // since v4.846) still produced one React commit per stage — ~22 renders just from this
+    // effect, measured as part of the 47-render/167s startup render storm. Shadowing `setDs`
+    // with a queueing stand-in — for every stage BELOW this line only, via ordinary JS lexical
+    // scoping — lets each stage's own code stay untouched (they still "call setDs" exactly as
+    // before) while the actual commit is deferred to one explicit `_flushDs()` per tier. The
+    // queued functional updaters are applied via `reduce`, i.e. `fn3(fn2(fn1(prev)))` — the same
+    // result React's own sequential functional-setState semantics already produce today, so the
+    // final `ds` after all stages settle is unchanged; only the commit COUNT drops, from ~22 to 3.
+    const _dsSetterReal = setDs;
     (async()=>{
+      let _dsQueue = [];
+      const setDs = (updater) => { _dsQueue.push(updater); };
+      const _flushDs = () => {
+        if(!_dsQueue.length) return;
+        const fns = _dsQueue; _dsQueue = [];
+        _dsSetterReal(prev => fns.reduce((acc, fn) => (typeof fn === 'function' ? fn(acc) : acc), prev));
+      };
       const _stMonthlyTargets = async () => {
       try{
         const all = await loadAllMonthlyTargets();
@@ -2673,6 +2694,7 @@ function App() {
       // instead of ~40,000 in ~40 — it was pulled out of T1 in v4.848 purely because
       // of that cost.
       await Promise.all([_stMonthlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
+      _flushDs(); // T1: 4 stages → 1 commit
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
       const _t2 = Promise.all([
         _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
@@ -2683,9 +2705,10 @@ function App() {
         _stLockedProjections(), _stAeParams(),
         _stModelAssignments(), _stDialedIn(), _stOrgEventsHydration(), _stEventImpact(),
       ]);
-      _t2.then(() => console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`));
+      _t2.then(() => { _flushDs(); console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`); }); // T2: 14 ds-touching stages → 1 commit
       const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stAuditRows(), _stOpsRows(), _stCtrlRows()]));
       await Promise.allSettled([_t2, _t3]);
+      _flushDs(); // T3: 4 stages → 1 commit
       console.log(`[Meridian] T3 manual-fallback backfill complete — ${_ms()}ms (total)`);
 
     })();
@@ -2898,8 +2921,12 @@ function App() {
   // up to 6,492ms because the close triggered a render that landed on this.
   //
   // The memo's dependencies were already correct; the problem is how OFTEN they legitimately
-  // change. There are 32 setDs call sites, and startup fires many of them as each loader
-  // resolves — so `ds` gets a new identity a dozen-plus times and every one rebuilds all 27
+  // change. There are 32 setDs call sites. #184 item 0 (after this comment was written) batched
+  // the 22 call sites inside the tiered startup loader (further down this file) behind 3 explicit
+  // per-tier flushes, so that effect alone no longer commits a dozen-plus times — but several
+  // OTHER startup effects (IDB restore, the loadLaborRows Supabase merge, email/PDF auto-ingest,
+  // cross-device sync) still call the real setDs independently as each resolves, so `ds` still
+  // gets a new identity several times at startup and every one rebuilds all 27
   // stores SYNCHRONOUSLY, blocking whatever the user is trying to do.
   //
   // useDeferredValue marks this recompute as low-priority: React 19 renders the urgent update
