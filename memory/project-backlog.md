@@ -115,23 +115,34 @@ the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
 3. **#181 — SUPERSEDED, then DONE (2026-08-11, #184 dispatch item 4).** ⚠️ This entry
    previously said "DEFERRED — ship the over-target taper, revisit under-target later." That
    was the decision for about an hour, in the same conversation, before the owner explained
-   what parking is actually FOR ("keep the wheels moving... park cars with complex orders or
-   other operational barriers") and a measured park%-vs-OEPE quadrant followed. **The taper
-   was never the final call — it was superseded before this file was updated to say so, which
-   is exactly the gap this bullet exists to close.** Final decision: **park is removed from
-   `computeOpsScore` entirely**, not retuned — reverts #180's asymmetric band and the taper
-   design in the same issue. Replaced with a park% x OEPE-w/o-park quadrant diagnostic
-   (`engine/park-oepe-quadrant.js`, Signals panel → 🅿️ Park × OEPE tab), district medians
-   recomputed per period. Why: the district's heaviest parkers (Elgin 30.5%, Ponce de Leon
-   33.6%) also beat the median on flow — the tool working as intended — while several near-zero
-   parkers sat at/below median flow too, refuting "under-parking always stalls the line." A
-   single-axis band scores both groups as failures; both are fine. `mode:'any'` zero-handling
-   from #150 stays (needed for the diagnostic). `parkMaxPts`'s points are redistributed
-   automatically by `computeOpsScore`'s self-normalizing `score/max*100` — removing a component
-   from `max` proportionally increases the others' weight with no separate redistribution code
-   needed. **Standing rule this session wrote down because of this exact miss: when a decision
-   recorded in `memory/` changes, amend the file in the same turn it changes — not at the end
-   of the session.**
+   what parking is actually FOR (*"keep the wheels moving and increase capacity… by parking
+   cars with complex orders"* / other operational barriers) and a measured park%-vs-OEPE
+   quadrant followed. **The taper was never the final call — it was superseded before this
+   file was updated to say so, which is exactly the gap this bullet exists to close.** An
+   earlier correction (#188) fixed the stale text on `main` after it caused a real
+   contradiction the engineer had to stop and query; this entry folds that correction in and
+   carries it forward. Owner sign-off 2026-08-11: *"#181, you have my sign off."*
+
+   Final decision: **park is removed from `computeOpsScore` entirely**, not retuned — reverts
+   #180's asymmetric band and the taper design in the same issue. Replaced with a park% x
+   OEPE-w/o-park quadrant diagnostic (`engine/park-oepe-quadrant.js`, Signals panel → 🅿️ Park ×
+   OEPE tab), district medians recomputed per period. **Why no band, in one line:** both tails
+   of park% contain healthy stores — Elgin (30.5%) and Ponce de Leon (33.6%) park most *and*
+   beat median flow (the tool working as intended), while Cottondale (2.1%), Lindsay (1.2%),
+   Purcell (2.4%) park almost nothing and are at or better than median too — refuting
+   "under-parking always stalls the line." A single-axis band scores both groups as failures;
+   both are fine. `mode:'any'` zero-handling from #150 stays (needed for the diagnostic).
+   `parkMaxPts`'s points are redistributed automatically by `computeOpsScore`'s self-normalizing
+   `score/max*100` — removing a component from `max` proportionally increases the others'
+   weight with no separate redistribution code needed. The `tPark` re-baseline is no longer a
+   prerequisite for scoring (nothing scores `tPark` any more).
+
+   **PM error worth not repeating, and the standing rule it produced:** the deferral was
+   committed to a memory file, then superseded by a later decision in the same session, and the
+   file was never updated. A committed memory file that contradicts the live decision is worse
+   than no file — it is authoritative-looking and wrong. **When a decision recorded in
+   `memory/` changes, amend the file in the same turn the decision changes**, not at the end of
+   the session.
 4. **The "targets describe history, not a standard" finding — now only about OEPE.**
    `r(tOepe, actual) = 0.897` (#183); only 4 of 27 stores meet their OEPE target — worth a
    deliberate standards conversation. The matching `tPark` finding (`r=0.890`, #181) is now
