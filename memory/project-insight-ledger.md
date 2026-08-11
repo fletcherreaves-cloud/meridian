@@ -211,3 +211,45 @@ is just honesty about what the RENDERED panel would have shown that day).
 multi-device usage (the owner opening Needs Attention across desktop/mobile) before
 `summarizeFireVolume` has anything meaningful to say. Do not start step 2 (table + writers) until
 someone has actually run the read-side snippet above and reported real numbers.
+
+### First real reading — 2026-08-11, day 1 of measurement
+
+The owner ran the read-side snippet on production (Mac, Chrome console). Raw:
+
+```
+{ daysMeasured: 1, firstDay: '2026-08-11', lastDay: '2026-08-11',
+  totalFires: 142, distinctKeys: 142 }
+```
+
+Top of the per-key table: `fobOutliers` ×2, `fobOverTarget` ×14 (`fobtgt-3708`, `fobtgt-5985`,
+`fobtgt-10034`, … one per store), `salesBehindLY` ×4+ — all `fireDays: 1`.
+
+**Do NOT read `collapseRatio: 1.00` as a failure.** At `daysMeasured: 1` it is *structurally*
+1.0 — a key cannot have fired on more than one day when only one day exists, so `totalFires`
+is forced to equal `distinctKeys`. The ratio carries zero information until there are at
+least 2–3 days. This is a property of the metric, not a result.
+
+**What day 1 DOES establish — 142 distinct situations fire per day.** That is the real
+number, and it validates the "firehose" premise this instrumentation exists to test: 142/day
+unmanaged is ~1,000 rows a week if nothing collapses.
+
+**What to watch on the next reading** (the actual gate):
+
+| observation | meaning |
+|---|---|
+| `distinctKeys` stays ≈142 while `daysMeasured` climbs | keys are stable → **collapse works, build the ledger** |
+| `distinctKeys` grows ≈142 per day | every fire is a new situation → dedup fails, **redesign the key before building** |
+
+So the decisive test is whether `distinctKeys` **plateaus or grows linearly with days.**
+`collapseRatio` is just that relationship expressed as one number; read the trend, not the value.
+
+**A consequence worth acting on independently of the ledger:** `rankAttention` caps the
+rendered feed at ~15–20 items, so the owner is seeing roughly **10% of the 142 that fire**.
+That makes the Notes 64 request to prioritise Needs Attention (#178, Tier 3) materially more
+important than it appeared — ordering is not cosmetic when 90% of findings never reach the
+screen. It also means any "did we tell you about this?" claim the ledger makes must be
+careful to distinguish *fired* from *shown*.
+
+**Caveat on the source:** `hydrateFireVolume` was still unwired when this was captured (fixed
+in v4.968, #180), so this is one device's buckets, not the cross-device union. Fine for a
+volume reading; re-check the next one is drawing on the merged blob.
