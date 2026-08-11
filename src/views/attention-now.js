@@ -23,8 +23,9 @@ export const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || ''
 const nm = (l) => STORE_NAMES[unpad(l)] || unpad(l);
 
 // FOB-by-store for the latest month present in the auto qsr_fob stream (same
-// Σ$ ÷ Σsales math the dashboard uses).
-function fobByStoreLatest(rows) {
+// Σ$ ÷ Σsales math the dashboard uses). Exported for patch-heatmap.js (#201) — same
+// per-store FOB% calc, a different consumer.
+export function fobByStoreLatest(rows) {
   const monthOf = (r) => (typeof r.date === 'string' ? r.date : (r.date && r.date.toISOString ? r.date.toISOString() : '')).slice(0, 7);
   const months = [...new Set((rows || []).map(monthOf).filter(Boolean))].sort();
   const latest = months.pop();

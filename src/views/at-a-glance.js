@@ -23,6 +23,7 @@ import { reconcile as _recon } from '../lib/accuracy.js';
 import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { PatchHeatmap } from './patch-heatmap.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 
@@ -1538,6 +1539,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           salesRecon.r.ok?'✓ Sales reconciled':'⚠ Sales sources differ '+((salesRecon.r.relative||0)*100).toFixed(2)+'%')
       )
     ),
+
+    // #201 — Patch Heatmap: all 27 stores as a status grid, right at the top of the landing
+    // view. h(PatchHeatmap,...) here returns null internally if stores hasn't loaded yet
+    // (empty cells array), so no separate loading guard is needed at this call site.
+    h(PatchHeatmap, { ds, stores, dateRange, onOpenStore }),
 
     // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
     moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
