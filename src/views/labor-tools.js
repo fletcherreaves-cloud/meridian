@@ -10,6 +10,7 @@ import { runModelAssignmentBacktest, runPeriodTotalBacktest, applyPeriodTotalWin
 import { saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { computeInsights, normLoc } from '../engine/insights.js';
+import { computeLaborGapSplit, latestCompleteWeekByStore, laborGapSplitSummary } from '../engine/labor-gap-split.js';
 
 // Cloud-persist model assignments (v4.544): after any local write (backtest,
 // apply-winners, manual override, reset), push the whole blob to Supabase as a
@@ -1781,6 +1782,23 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       storeCount:locStats.length};
   },[locStats]);
 
+  // ── Planning vs Execution split (#210) ──────────────────────────────────
+  // Always the latest COMPLETE Wed-Tue pay week per store — independent of this panel's own
+  // flexible period selector, since the split is inherently a pay-week construct (mixing a
+  // trailing N-day window with paid hours produces a labor % that is wrong and does not look
+  // wrong — the issue's own caution). Reads ds.qsrActSummaryRows directly rather than through
+  // metric-source.js: this is a correlated TRIPLET decomposition (needed/scheduled/actual
+  // must all come from the same rows to stay internally consistent), not an independent
+  // per-metric scalar with a fallback chain.
+  const splitData = uM(()=>{
+    if(!ds) return {byLoc:{}, summary:null};
+    const rows=(ds.qsrActSummaryRows||[]).filter(r=>activeLocs.includes(String(r.loc)));
+    const weeks=computeLaborGapSplit(rows);
+    const byLoc=latestCompleteWeekByStore(weeks);
+    const summary=laborGapSplitSummary(Object.values(byLoc));
+    return {byLoc, summary};
+  },[ds,activeLocs]);
+
   // ── District avg targets ──
   const distTgt = uM(()=>{
     if(!activeLocs.length) return{tLabor:0,tTpph:0};
@@ -2084,6 +2102,53 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   //   WARNING   district labor trending up  → 2+ consecutive weeks rising
   //   POSITIVE  N stores within green band → acknowledge wins
   //   POSITIVE  district OT below 1 hr/day → exceptional efficiency
+  // ── PLANNING / EXECUTION SPLIT TAB (#210) ──
+  const splitTab=()=>{
+    const rows=Object.values(splitData.byLoc||{}).sort((a,b)=>Math.abs(b.combinedGapHrs)-Math.abs(a.combinedGapHrs));
+    const summary=splitData.summary;
+    const noSchedData = summary && summary.stores>0 && summary.storesWithSchedData===0;
+    return div({style:{padding:'0 16px'}},
+      div({style:{fontSize:'8.5px',color:'var(--text3)',marginBottom:10,lineHeight:1.6}},
+        'Needed → Scheduled = planning accuracy (coach the scheduler / the forecast). Scheduled → Actual = execution (coach the shift manager). Always the latest COMPLETE Wed–Tue pay week per store — never an in-progress week whose number is still moving.'),
+      noSchedData && div({style:{padding:'8px 12px',marginBottom:10,borderRadius:'var(--r)',border:'.5px solid rgba(245,158,11,.3)',background:'rgba(245,158,11,.06)',fontSize:'9px',color:'#f59e0b',lineHeight:1.5}},
+        '⚠ Scheduled-hours data needs a one-time database migration (supabase/schema-qsr-rollup-scheduled-hours.sql) that hasn\'t run yet. Combined Gap below is live today from the same DAR pull; Planning/Execution will populate automatically once the migration runs and the next pull backfills it.'),
+      !rows.length ? div({style:{color:'var(--text3)',textAlign:'center',padding:40,fontSize:'12px'}},'No complete pay week available yet for the selected locations.') :
+      div({style:{overflowX:'auto'}},
+        summary && div({style:{padding:'2px 0 8px',fontSize:'8.5px',color:'var(--text3)',display:'flex',gap:16,flexWrap:'wrap'}},
+          span(null, rows.length+' store'+(rows.length!==1?'s':'')),
+          summary.storesWithSchedData>0 && span(null, summary.storesOverPlanning+' over-scheduled vs plan'),
+          summary.storesWithSchedData>0 && span(null, summary.storesOverExecution+' ran over their own schedule'),
+        ),
+        h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9.5px',minWidth:820}},
+          h('thead',null,h('tr',null,
+            ...[{l:'Store',a:'left'},{l:'Week Of',a:'left'},{l:'Needed',a:'right'},{l:'Scheduled',a:'right'},{l:'Actual',a:'right'},{l:'Planning Gap',a:'right'},{l:'Execution Gap',a:'right'},{l:'Combined',a:'right'},{l:'Coach',a:'left'}]
+              .map((c,i)=>th({key:i,style:{...thSL,textAlign:c.a,paddingLeft:i===0?16:8}},c.l)))),
+          h('tbody',null,...rows.map((s,i)=>{
+            // "On plan" reuses avCol's already-established combined-gap banding (30/60 hrs,
+            // the same threshold this panel's own Overview/Trend tabs already grade Act vs
+            // Need against) as the "is this worth coaching at all" gate, rather than inventing
+            // a new unmeasured cutoff for the split specifically.
+            const coach = s.planningGapHrs==null ? '—' :
+              avCol(s.combinedGapHrs)==='#10b981' ? 'On plan' :
+              Math.abs(s.planningGapHrs)>=Math.abs(s.executionGapHrs) ? 'Scheduler' : 'Shift Manager';
+            const coachColor = coach==='Scheduler'?'#f59e0b':coach==='Shift Manager'?'#ef4444':'var(--text3)';
+            return tr({key:s.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+              td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}}, STORE_NAMES[s.loc]||s.loc),
+              td({style:{padding:'5px 8px',color:'var(--text3)',fontSize:'8.5px',whiteSpace:'nowrap'}}, s.weekStart),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}}, nFmtL(s.needHrs,0)),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}}, s.schedHrs!=null?nFmtL(s.schedHrs,0):'—'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}}, nFmtL(s.actHrs,0)),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:s.planningGapHrs!=null?avCol(s.planningGapHrs):'var(--text2)'}}, s.planningGapHrs!=null?avnFmt(s.planningGapHrs):'—'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:s.executionGapHrs!=null?avCol(s.executionGapHrs):'var(--text2)'}}, s.executionGapHrs!=null?avnFmt(s.executionGapHrs):'—'),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:avCol(s.combinedGapHrs)}}, avnFmt(s.combinedGapHrs)),
+              td({style:{padding:'5px 8px',fontSize:'8.5px',fontWeight:600,color:coachColor}}, coach)
+            );
+          }))
+        )
+      )
+    );
+  };
+
   const insightsTab = () => {
     if(!locStats.length) return div({style:{color:'var(--text3)',textAlign:'center',padding:40,fontSize:'12px'}},
       'No labor data for this period. Try widening the date range.');
@@ -2302,7 +2367,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   };
 
   // ── TABS config ──
-  const TABS=[{id:'overview',l:'📋 Overview'},{id:'rankings',l:'⇈ Rankings'},{id:'dow',l:'📅 Day of Week'},{id:'trend',l:'📈 6-Wk Trend'},{id:'insights',l:'⚡ Insights'}];
+  const TABS=[{id:'overview',l:'📋 Overview'},{id:'rankings',l:'⇈ Rankings'},{id:'dow',l:'📅 Day of Week'},{id:'trend',l:'📈 6-Wk Trend'},{id:'split',l:'🎯 Planning/Execution'},{id:'insights',l:'⚡ Insights'}];
 
   const OUTER=embedded?{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20};
   const CARD=embedded?{flex:1,minHeight:0,background:'var(--surf)',width:'100%',display:'flex',flexDirection:'column',overflow:'hidden'}:{flex:1,background:'var(--surf)',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'};
@@ -2364,6 +2429,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         tab==='rankings' && rankingsTab(),
         tab==='dow'      && dowTab(),
         tab==='trend'    && trendTab(),
+        tab==='split'    && splitTab(),
         tab==='insights' && insightsTab()
       )
     )

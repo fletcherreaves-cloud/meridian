@@ -216,6 +216,11 @@ async function refreshRollup(records, date) {
     add(a, 'ly_transactions',         r.ly_transactions);
     add(a, 'actual_punched_hours',    r.actual_punched_hours);
     add(a, 'total_needed_hours',      r.total_needed_hours);
+    // #210 — planning-vs-execution labor split. Non-fatal if the owner hasn't run
+    // supabase/schema-qsr-rollup-scheduled-hours.sql yet: the upsert below fails as a whole
+    // and is caught/logged, same as this file's dt_heldtime rollout (#183) — hourly rows are
+    // already saved regardless, so this can ship ahead of the migration.
+    add(a, 'total_scheduled_hours',   r.total_scheduled_hours);
   }
   const rows = [...byLoc.values()].map(r => ({ ...r, refreshed_at: new Date().toISOString() }));
   if (!rows.length) return 0;

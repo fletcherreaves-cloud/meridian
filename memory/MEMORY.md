@@ -107,6 +107,14 @@
   flags recent gaps, estimates $ impact landing in Unexplained. "Missing != zero" throughout —
   qsr_waste has no null-vs-zero column. New engine/waste-discipline.js, new
   metric-source.js isLazyFillError() export, surfaced in FOBAnalysisPanel.
+- [Labor gap split (#210)](project-labor-gap-split-210.md) — the diagnose leg. Splits the
+  combined actual-vs-needed labor gap into planning accuracy (scheduled-needed, coach the
+  scheduler) and execution (actual-scheduled, coach the shift manager). Found and fixed a real
+  gap: loadQsrActSummary never carried total_scheduled_hours through on either read path, so
+  the split was impossible from data Meridian actually read even though qsr_daily_activity
+  always had it. New rollup-table migration (owner needs to run it) + engine/labor-gap-split.js
+  (Wed-Tue pay week, signature #4 in-progress-day exclusion, null-vs-fabricated-zero when the
+  migration hasn't landed yet). New Labor Tools tab: 🎯 Planning/Execution.
 
 ## ⚡ Performance
 - [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
