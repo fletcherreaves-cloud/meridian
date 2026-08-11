@@ -67,6 +67,11 @@
   · [DAR columns](project-qsrsoft-dar-columns.md) · [CoachQ](project-qsrsoft-coachq.md) +
   [query patterns](coachq-query-patterns.md) · [Controls endpoint](project-qsrsoft-controls-endpoint.md)
 
+## 🎯 Scoring
+- [Ops Score attribution: #183/#181/#164](labor-park-oepe-score-attribution.md) — worked
+  four-stage before/after (baseline → OEPE fix → park removal → labor basis fix) showing which
+  fix moves a store's Ops Score by how much and why. Synthetic performance numbers, real targets.
+
 ## 📈 Signals / Smart Targets / Accuracy
 - [Signals scanner](project-signals-scanner.md) — auto-correlation across metric pairs, guardrails.
 - [Simple-models propagation](simple-models-propagation.md) — T3M/T6W/T3W family engine-wide.

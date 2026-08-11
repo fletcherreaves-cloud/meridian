@@ -11,6 +11,7 @@ import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weighted
 import { forecastModels } from '../engine/forecast.js';
 import { businessDate } from '../engine/swing-feed.js';
 import { loadDailySales, loadGlimpse, loadQsrFob, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 // The three simple trailing projectors. A 2026-07 backtest across all 27 stores
 // found these beat every engineered model (Composite/Momentum/Regression/Ensemble)
@@ -112,7 +113,12 @@ const METRICS = [
     mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales })),
     fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.laborPct, w: r.allNetSales }))),
     daily: r => r.v, weight: r => r.w,
-    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tLabor) ? t.tLabor : null; },
+    // #164: field basis fixed to resolveLaborTarget (tCrewLabor, matching officialCol above).
+    // Still reads DEFAULT_TARGETS directly rather than the merged settings.targets/monthly
+    // overrides — that's a separate sourcing bug (bypasses the merge chain entirely, same
+    // shape as #153's defect), deliberately NOT fixed here per the #164 triage's own note to
+    // keep it a separate commit.
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; const lt = resolveLaborTarget(t); return _isNum(lt) ? lt : null; },
     fmt: pct1 },
   // DT speed (OEPE w/o parked, seconds) — car-WEIGHTED, lower is better. From Daily
   // Glimpse; weight = DT guest count (fallback total GC). Official = per-store OEPE.
