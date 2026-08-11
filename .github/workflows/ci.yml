@@ -1,0 +1,57 @@
+# CI — run the test suite and the production build on every pull request.
+#
+# WHY THIS EXISTS: until 2026-08-11 nothing in this repo ran `npm test`. The only
+# automated check was `npm run build` inside deploy.yml, which triggers on push to main
+# — i.e. AFTER a merge. So 1197 tests existed and were executed only when a human
+# remembered to, and a PR could be merged red.
+#
+# That gap had already cost something concrete: on 2026-08-10 a merge resolution
+# resurrected a deleted component and 1165 tests passed while the build failed with 7
+# duplicate-export errors (memory/feedback-verification-in-sandbox.md). Both checks are
+# here for that reason — the suite and the build catch different classes of breakage and
+# neither substitutes for the other.
+#
+# Runs on pull_request (the gate that matters) and on push to main (so a direct push or
+# a bad merge commit is still caught). deploy.yml is left alone; it owns deployment, this
+# owns verification.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to a PR supersedes the previous run — don't burn minutes on stale commits.
+# Never cancel on main: those runs are the record of whether a merged commit was green.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # Suite first: it is ~11s and its failures are far more legible than a build error.
+      - name: Test
+        run: npm test
+
+      # Build second. It catches what the suite structurally cannot — duplicate exports,
+      # unresolved imports, anything that only surfaces when the module graph is linked.
+      # Env vars mirror deploy.yml so this build matches the one that actually ships.
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
