@@ -1591,18 +1591,21 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
         )
       ),
       // ── Controls ───────────────────────────────────────────────────
-      // Heavy-tagging warning. Every tagged day is skipped when the forecast looks for the same
-      // day last year, so a store tagged on most of the calendar loses its comparison entirely —
-      // that is exactly what broke Dialed-In for all 27 stores on 2026-08-08 with 450 tagged
-      // days on one store, and nothing in the app said so.
-      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 16px',
-        borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
-        color:'#f59e0b',lineHeight:1.5,flexShrink:0}},
-        '⚠ ',
+      // #192: this used to warn that heavy tagging drops a store's LY comparison entirely — true
+      // of the pre-v4.924 forecast (tag presence alone excluded a candidate day, which is what
+      // broke Tishomingo district-wide on 2026-08-08 with 450 tagged days). Since v4.924,
+      // _robustCandidates (forecast.js) is tag-independent: a candidate is excluded only when its
+      // own sales/GC is a statistical outlier against its same-DOW peers. Tagging no longer
+      // affects LY matching at all, so this is now an informational count, not a warning.
+      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'5px 16px',
+        borderBottom:'.5px solid var(--bdr)',background:'rgba(96,165,250,.06)',fontSize:'8.5px',
+        color:'#60a5fa',lineHeight:1.5,flexShrink:0}},
+        'ℹ️ ',
         locCounts.filter(([,n])=>n>=HEAVY_TAGS).map(([l,n])=>(STORE_NAMES[l]||l)+' ('+n+')').join(', '),
-        ' — over a year of tagged days. Tagged days are skipped when the forecast looks for the ',
-        'same day last year, so heavy tagging can leave a store with no comparison at all. ',
-        'Worth checking these are real events and not a recurring rule filling the calendar.'),
+        ' — over a year of tagged days. Tagging is informational and no longer affects last-year ',
+        'comparison (a day is excluded from LY matching only if its own sales/GC is a statistical ',
+        'outlier, regardless of tags). Worth checking these are real events and not a recurring ',
+        'rule filling the calendar.'),
       div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
         display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
         h('input',{type:'text',value:search,onChange:e=>setSearch(e.target.value),
