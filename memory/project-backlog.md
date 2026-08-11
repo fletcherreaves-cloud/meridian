@@ -79,6 +79,19 @@ truth**; this is the ordering and the reasoning, which the issues don't carry.
    while `App.js` calls `loadAllMonthlyTargets()` — two different paths, reason unknown.
    **Do not assume it's fine. #153 was found because someone assumed exactly that.**
 
+3. **#181 — park under-target penalty, DEFERRED pending a `tPark` re-baseline.** Owner agreed
+   2026-08-11 to ship the over-target taper only and *"remember to revisit this."* The
+   under-target side stays as shipped in #180 until targets stop being history-derived.
+   **Revisit trigger:** owner sets the intended park standard (his figure: 12–16%), `tPark` is
+   re-baselined from that standard rather than per-store history (a spreadsheet upload once
+   #174 lands, not a deploy), then RE-MEASURE how many stores fall below the new targets before
+   any penalty is applied. Do not skip the re-measure — the whole reason this was deferred is
+   that 24 of 27 sat below the old targets.
+4. **The two "targets describe history, not a standard" findings — same fingerprint, both open.**
+   `r(tPark, actual) = 0.890` (#181) and `r(tOepe, actual) = 0.897` (#183). Only 4 of 27 stores
+   meet their OEPE target. Two metrics whose targets record what stores already do. Worth a
+   deliberate standards conversation rather than two separate bug fixes.
+
 ### Measured facts from this session worth not re-deriving
 
 - `monthly_targets` is healthy: 27 populated stores/month back through May 2026 (April: 20).
@@ -91,3 +104,12 @@ truth**; this is the ordering and the reasoning, which the issues don't carry.
   `tKvst`/`tKvsu`/`tOepe`/`tPark` have no monthly path at all.
 - `buildStore` has exactly **one** caller (`App.js:2920`). `coaching.js` imports it and
   `buildBrief` and calls neither — dead import.
+- **Park is operational choice, not physical constraint** (measured 2026-08-11, 90d DAR +
+  `store_vlh_config`): DT configuration does NOT predict park rate — `single_1booth` stores park
+  LEAST (1.56% vs `single_2booth` 12.38%, `side_tandem` 10.88%), the opposite of the
+  single-lane-needs-more-parking theory. Volume doesn't predict it either (`r = -0.135`). So a
+  common park standard is defensible and no store has a structural excuse. Don't re-run this.
+- **OEPE w/o Park is reconciled and settled** (2026-08-11, QSRSoft Service report, 27 stores ×
+  10 days): subtract `dt_heldtime`, keep all cars in the denominator — `graded-visits.js:86`'s
+  formula. `r(our gap, QSRSoft gap) = 0.9958`. The alternative (drop held cars from the
+  denominator too) is ruled out. Don't re-derive this.
