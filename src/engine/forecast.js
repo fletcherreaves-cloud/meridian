@@ -1481,7 +1481,14 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       // could also show a known-wrong number, not just a blank.
       // The 'simple' branch below already did this correctly.
       const _aeIsFuture=date>sodOf(new Date());
-      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:Math.round(_aeFcst),t4:Math.round(_aeFcst),t6:Math.round(_aeFcst),actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
+      // #178 item 4: t2/t4/t6 used to be set to the raw dollar forecast (Math.round(_aeFcst))
+      // instead of a YOY trend RATIO, which is what every other model path puts there and what
+      // ForecastRow's "T2W/T6W — YOY Sales%" cells render as (r.t2*100).toFixed(2)+'%'. Since
+      // all 27 stores are assigned model 'ae', this made every store's T2W/T6W column show a
+      // ~$10k-40k daily forecast × 100 as a "percent" — a 6-7 digit garbage number the owner
+      // reported as "xxxxxxx.xx%". Now computed the same way the engineered/dow path does.
+      const _aeT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _aeT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _aeT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
+      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:_aeT2,t4:_aeT4,t6:_aeT6,actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
         oepe:_aeIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_aeIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_aeIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_aeAct>0?(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].gc||0:0;})():0,forecastGC:0,lyGC:0,
         noLYData:!lyRaw,modelUsed:'ae'};
@@ -1493,7 +1500,9 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       const _ewmaAct=(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales');
       // Same raw-read bug as the AE branch above — resolved auto-first via metricDaily.
       const _ewmaIsFuture=date>sodOf(new Date());
-      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:Math.round(_ewmaFcst),t4:Math.round(_ewmaFcst),t6:Math.round(_ewmaFcst),actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
+      // Same fix as the AE branch above — t2/t4/t6 are YOY trend ratios, not dollars.
+      const _ewT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _ewT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _ewT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
+      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:_ewT2,t4:_ewT4,t6:_ewT6,actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
         oepe:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:0,forecastGC:0,lyGC:0,noLYData:false,modelUsed:'ewma'};
     }
@@ -1509,7 +1518,9 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       const _sFut=date>sodOf(new Date());
       const _sAct=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?rr[0].sales:0;})()||fetchRow(_qsrActIdx(ds),loc,date,'sales')):0;
       const _sActGC=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?(rr[0].gc||0):0;})()||fetchRow(_qsrActIdx(ds),loc,date,'gc')):0;
-      return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_sVal,t4:_sVal,t6:_sVal,
+      // Same fix as the AE/EWMA branches above — t2/t4/t6 are YOY trend ratios, not dollars.
+      const _spT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _spT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _spT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
+      return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_spT2,t4:_spT4,t6:_spT6,
         actual:_sAct,goal:_goalOf(lyRaw),varPct:_sAct>0?(_sAct-_sVal)/_sAct:null,pass:null,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
         oepe:_sFut?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_sFut?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_sFut?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_sActGC,forecastGC:Math.round(_sf.gc||0),lyGC:0,noLYData:!lyRaw,modelUsed:'simple'};

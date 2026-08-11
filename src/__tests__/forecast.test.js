@@ -259,6 +259,25 @@ describe('forecastDay — forceModel', () => {
     const after = forecastDay(LOC, target, ds, BASE_SETTINGS, null, null, 'weekly', 'simple').forecast;
     expect(after).toBe(before);
   });
+
+  // #178 item 4: t2/t4/t6 on the ae/ewma/simple branches used to be the raw dollar forecast
+  // (Math.round(_aeFcst), ~$10,000+ for this fixture) reused verbatim instead of a YOY trend
+  // RATIO — the same field every other model path (and ForecastRow's "T2W/T6W — YOY Sales%"
+  // cells, via (r.t2*100).toFixed(2)+'%') treats as a fraction like 0.05. Since all 27 real
+  // stores are assigned model 'ae', this meant the T2W/T6W column showed a ~6-7 digit garbage
+  // "percent" for every store — the owner's reported "xxxxxxx.xx%".
+  it.each(['ae', 'ewma', 'simple'])('%s model: t2/t4/t6 are YOY trend ratios, not the dollar forecast', (model) => {
+    const r = forecastDay(LOC, makeDate(10), ds, BASE_SETTINGS, null, null, 'weekly', model);
+    expect(r.forecast).toBeGreaterThan(1000); // sanity: this fixture's forecasts are ~$10k+
+    for (const k of ['t2', 't4', 't6']) {
+      expect(typeof r[k]).toBe('number');
+      expect(Number.isNaN(r[k])).toBe(false);
+      // A real YOY trend ratio is bounded well within ±3 (±300%); the bug produced values in
+      // the thousands (the raw dollar forecast), so this bound cleanly separates the two.
+      expect(Math.abs(r[k])).toBeLessThan(3);
+      expect(r[k]).not.toBe(r.forecast);
+    }
+  });
 });
 
 describe('forecastDay — result shape', () => {
