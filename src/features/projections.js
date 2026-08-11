@@ -1363,7 +1363,14 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     onClose:()=>setShowPFBrief(false)
   });
 
-  return div({style:{display:'flex',flexDirection:'column',height:'100%',maxHeight:'95vh'}},
+  // #178: this used to also declare maxHeight:'95vh' — the ModalShell CARD that hosts this
+  // (App.js's showProj) already caps at 88vh with overflow:hidden. The inner scroller at the
+  // bottom of this component (`div({style:{flex:1,overflowY:'auto',...}})`) sized its scroll
+  // range against THIS 95vh root, so the range extended ~7vh past where the card actually
+  // clips — the last ~2-3 rows plus a group total were unreachable no matter how far you
+  // scrolled. Surfaced when a supervisor's group landed last (Mary Ratliff, 4 stores, only 1
+  // reachable). The card owns the cap; this just fills it.
+  return div({style:{display:'flex',flexDirection:'column',height:'100%'}},
     // ── Header ──
     div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',alignItems:'center',gap:10,flexShrink:0,flexWrap:'wrap'}},
