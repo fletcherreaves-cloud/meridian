@@ -98,8 +98,8 @@ downstream of wanting to open the thing.
 
 | Date | Tool | Deploy | What moved |
 |---|---|---|---|
-| 2026-08-10 | 76 | — | prior read, single score, pre-anchors |
-| 2026-08-11 | 74 | 55 | **−2, DISCOVERY not regression** — see below |
+| 2026-08-10 | 76 | 45 | prior read, pre-anchors |
+| 2026-08-11 | 74 | 55 | tool **−2 (discovery)**, deploy **+10** — guards, gate, CI, 3 bugs fixed |
 
 ### 2026-08-11 note on the −2
 
