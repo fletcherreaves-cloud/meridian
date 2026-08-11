@@ -19,9 +19,10 @@ import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
-import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -2914,6 +2915,26 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     console.warn('[FOBAnalysisPanel] loadQsrFob failed, falling back to manual fobRows only:',e?.message||e);
     if(live){setQsrFobRows([]);setQsrFobErr(String(e?.message||e));}
   });return()=>{live=false;};},[]);
+  // #209 — waste-entry data-discipline. wasteRows is lazy-fill only (never eager, see
+  // metric-source.js), so opening this panel IS the "load on demand" signal — the same
+  // pattern RegisterAuditTab established for auditRows. Pending/error tracked explicitly so
+  // a failed cloud read reads as failed, not as "every store submits waste on time."
+  const [wastePending,setWastePending]=React.useState(true);
+  const [wasteFailed,setWasteFailed]=React.useState(false);
+  React.useEffect(()=>{
+    const stillPending=ensureLazyFill('wasteRows');
+    setWastePending(stillPending);
+    if(!stillPending){setWasteFailed(isLazyFillError('wasteRows'));return;}
+    const id=setInterval(()=>{if(!isLazyFillPending('wasteRows')){setWastePending(false);setWasteFailed(isLazyFillError('wasteRows'));clearInterval(id);}},300);
+    return()=>clearInterval(id);
+  },[]);
+  const discipline=React.useMemo(()=>{
+    if(wastePending||wasteFailed) return null;
+    const allowed=new Set(allLocs);
+    const rows=(ds.wasteRows||[]).filter(r=>r&&allowed.has(unpad(r.loc)));
+    return computeStoreDataDiscipline(rows,{asOf:new Date().toISOString().slice(0,10)});
+  },[ds.wasteRows,wastePending,wasteFailed,allLocs]);
+  const disciplineSum=React.useMemo(()=>discipline?disciplineSummary(discipline):null,[discipline]);
   const cloudFobRows=React.useMemo(()=>(qsrFobRows||[]).map(r=>{
     const sales=+r.prodSalesAmt||0; if(sales<=0) return null;
     const dstr=typeof r.date==='string'?r.date:(r.date&&r.date.toISOString?r.date.toISOString().slice(0,10):null);
@@ -3174,6 +3195,31 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
               (item.diff*100).toFixed(2)+'% over'),
             div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:'#ef4444',width:70,textAlign:'right',flexShrink:0}},
               '$'+Math.round(item.dollar).toLocaleString())
+          ))
+        );
+      })(),
+
+      // ── Data Discipline (#209) — unrecorded waste inflates Unexplained ──────────────
+      selLoc==='all'&&(()=>{
+        if(wastePending) return div({style:{margin:'0 16px',padding:'6px 14px',fontSize:'8.5px',color:'var(--text3)'}},'Checking waste-entry discipline…');
+        if(wasteFailed) return div({style:{margin:'0 16px',borderRadius:'var(--r)',border:'.5px solid rgba(248,113,113,.3)',
+          background:'rgba(248,113,113,.06)',padding:'8px 14px',fontSize:'9px',color:'#f87171',flexShrink:0}},
+          '⚠ Waste-entry discipline check failed to load from the cloud stream — try reopening this panel.');
+        if(!disciplineSum||!disciplineSum.totalMissing) return null; // no derivable gaps — nothing to flag, not a claim every store is perfect
+        const worst=[...discipline].filter(d=>d.totalMissing>0).sort((a,b)=>b.estImpact-a.estImpact).slice(0,8);
+        return div({style:{margin:'0 16px 0',borderRadius:'var(--r)',border:'.5px solid rgba(245,158,11,.25)',background:'rgba(245,158,11,.04)',padding:'10px 14px',flexShrink:0}},
+          div({style:{fontSize:'10px',fontWeight:700,color:'#f59e0b',marginBottom:4,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+            '📋 Waste-Entry Discipline',
+            span({style:{fontSize:'8px',fontWeight:600,color:'var(--text3)'}},
+              disciplineSum.storesWithMissing+' store'+(disciplineSum.storesWithMissing!==1?'s':'')+' missing entries · est $'+Math.round(disciplineSum.totalEstImpact).toLocaleString()+' landing in Unexplained')),
+          div({style:{fontSize:'8.5px',color:'var(--text3)',marginBottom:8}},
+            "Missing Raw/Completed waste entries vs. each store's own submission pattern over the last 14 days (derived from 8 weeks of history, not a fixed schedule). Unrecorded waste doesn't vanish — it inflates Unexplained and makes FOB% not comparable across stores."),
+          worst.map((d,i)=>div({key:d.loc,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:i<worst.length-1?'.5px solid rgba(255,255,255,.05)':'none'}},
+            div({style:{fontSize:'9px',color:'var(--gold)',fontWeight:600,flex:1}},sName(d.loc)),
+            div({style:{fontSize:'8px',color:'var(--text3)',width:140,flexShrink:0}},
+              [d.raw&&d.raw.missingCount>0?d.raw.missingCount+' raw':null,d.completed&&d.completed.missingCount>0?d.completed.missingCount+' completed':null].filter(Boolean).join(' · ')||'—'),
+            div({style:{fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,color:'#f59e0b',width:70,textAlign:'right',flexShrink:0}},d.totalMissing+' missing'),
+            div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:'#f97316',width:75,textAlign:'right',flexShrink:0}},'~$'+Math.round(d.estImpact).toLocaleString())
           ))
         );
       })(),

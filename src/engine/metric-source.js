@@ -336,7 +336,12 @@ export const MANUAL_ONLY_METRICS = {
 // that need to distinguish "still loading" from "no data" (a "load on open" panel, e.g.) should
 // call isLazyFillPending(src) and show their own loading state — see store-analytics.js's
 // Register Audit tab for the reference implementation.
-export const LAZY_FILL_SOURCES = Object.freeze(['auditRows']);
+// #209: wasteRows added — same "load on demand, not eagerly" shape as auditRows, but reached
+// via explicit ensureLazyFill('wasteRows') calls (see engine/waste-discipline.js's consumers),
+// not through a metricDaily/metricSeries chain — the data-discipline score is a day-presence
+// PATTERN analysis over raw rows (mirrors engine/count-cycle.js's shape), not a per-day scalar
+// value with a fallback chain, so it doesn't fit METRIC_SOURCES' resolver model.
+export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows']);
 
 let _lazyFillHook = null;                 // { setDs, loaders: { [src]: () => Promise<rows> } }
 const _lazyState = {};                    // src -> 'pending' | 'loaded' | 'error'
@@ -368,6 +373,12 @@ function _triggerLazyFill(src) {
 // the latter. Also triggers the fill as a side effect, so calling this IS the "demand" signal.
 export function ensureLazyFill(src) { _triggerLazyFill(src); return isLazyFillPending(src); }
 export function isLazyFillPending(src) { return _lazyState[src] === 'pending'; }
+// So a "load on open" consumer can show a visible failed-badge instead of reading a failed
+// fetch the same as "loaded, zero rows" — the exact false-all-clear class the FOB Report fix
+// (v4.976) addressed for a different stream; #209's waste-discipline UI is the first
+// LAZY_FILL_SOURCES consumer that needs this distinction (auditRows' RegisterAuditTab tab
+// only ever reports counts, where 0 vs error both read as "nothing to show").
+export function isLazyFillError(src) { return _lazyState[src] === 'error'; }
 
 // Test-only: this module's lazy-fill state is intentionally module-level (one loader per
 // source per session, not per-caller), which means it persists across test cases unless reset.

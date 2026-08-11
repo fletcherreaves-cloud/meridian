@@ -69,7 +69,7 @@ export const PANELS = [
   { id:'gm-brief', label:'GM Letters', icon:'👨‍💼', perm:'analytics.store', kind:'optional', section:'reports' },
   { id:'graded-visits', label:'Graded Visits', icon:'📋', perm:'analytics.store', kind:'nav', section:'people' },
   { id:'help', label:'Help', icon:'?', perm:null, kind:'nav', section:'help' },
-  { id:'inventory', label:'Inventory', icon:'📦', perm:'analytics.store', kind:'optional', section:'operations' },
+  { id:'inventory', label:'Inventory', icon:'📦', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'kb', label:'Knowledge Base', icon:'📖', perm:null, kind:'nav', section:'help' },
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },

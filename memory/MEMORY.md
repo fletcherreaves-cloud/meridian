@@ -91,6 +91,23 @@
   4 real, separate mechanisms and the guard test that found the anti-pattern was 4x more
   widespread than reported.
 
+## 📦 Inventory
+- [Inventory auto-wiring (#214)](project-inventory-auto-wiring-214.md) — wired the Inventory
+  Intelligence panel (Service/Production/Overstock/Transfers) to qsr_inventory_summary,
+  auto-first with manual gap-fill. Key finding the issue's own body missed: the table has
+  NO producer script yet (confirmed via grep) — the wiring is correct and load-bearing the
+  moment a pull ships, but shows honest "no cloud data yet" today. Folded in #207 batch-2's
+  first item (inventory.js → lazyPanel, ~10.4KB gzip reclaimed) since it required splitting
+  parseInventoryData out to parsers/inventory-parse.js anyway.
+
+## 🎯 Coaching spine (Push 3: #209 → #210 → #208)
+- [Waste-entry data-discipline (#209)](project-waste-discipline-209.md) — the trust leg.
+  Derives each store's OWN expected waste-submission days-of-week from 8 weeks of observed
+  qsr_waste history (reuses count-cycle.js's measured COVER_FRAC=0.75, not a new guess),
+  flags recent gaps, estimates $ impact landing in Unexplained. "Missing != zero" throughout —
+  qsr_waste has no null-vs-zero column. New engine/waste-discipline.js, new
+  metric-source.js isLazyFillError() export, surfaced in FOBAnalysisPanel.
+
 ## ⚡ Performance
 - [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
   spans were nested (same-commit layout effects end at one flush), not additive — a misreading

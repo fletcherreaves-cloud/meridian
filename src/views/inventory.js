@@ -1,7 +1,13 @@
 // @ts-nocheck
 import * as React from 'react';
-import * as XLSX from 'xlsx';
 import { INV_ORG_COORDS, STORE_NAMES, sName, sNameC } from '../constants.js';
+import { INV_MASTER, classifyInvArea, parseInvUOM } from '../parsers/inventory-parse.js';
+import { loadQsrInventorySummary } from '../lib/supabase.js';
+
+// Local, not imported from attention-now.js (same one-liner as unpad there) — importing a
+// React-hook-heavy view module just for this would drag its whole dependency graph into
+// this panel's own lazy chunk for one trivial function.
+const unpad=(l)=>String(l||'').replace(/^0+/,'')||String(l||'');
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -25,9 +31,6 @@ function invSameState(locA,locB){
   const a=INV_ORG_COORDS[locA],b=INV_ORG_COORDS[locB];
   return!!(a&&b&&a.state&&a.state===b.state);
 }
-
-// INVENTORY INTELLIGENCE — parseInventoryData
-// Parses "Inventory Summary and Usage" QSRSoft export.
 
 // ── Inner Pack Framework (replace with user-provided list via upload) ─────
 // Format: {wrin: {unit:'Sleeve',count:100,display:'sleeve'}}
@@ -56,376 +59,6 @@ function formatXferQty(rawQty,wrin,uom,caseSize){
   return parts.join(' + ');
 }
 
-// ── Inventory Master — 298 items, sourced from Inventory_Master.xlsx ─────
-// area: Stock Location (Service/Production/Promotional/Stockroom)
-// ipu: Inner packs per case | ipc: Each per inner pack | upc: Each per case
-// N/A (Ops Supply) entries excluded — not used in this module currently.
-const INV_MASTER = {
-  '00001-705':{area:'Production',ipu:2,ipc:30,upc:60,uom:'EA'},
-  '00002-678':{area:'Production',ipu:2,ipc:30,upc:60,uom:'EA'},
-  '00003-623':{area:'Production',ipu:1,ipc:30,upc:30,uom:'EA'},
-  '00004-849':{area:'Production',ipu:6,ipc:6,upc:36,uom:'LB'},
-  '00005-086':{area:'Production',ipu:1,ipc:384,upc:384,uom:'EA'},
-  '00006-465':{area:'Production',ipu:4,ipc:15,upc:60,uom:'EA'},
-  '00008-044':{area:'Production',ipu:6,ipc:33,upc:198,uom:'EA'},
-  '00009-304':{area:'Production',ipu:30,ipc:20,upc:600,uom:'FL OZ'},
-  '00013-350':{area:'Production',ipu:8,ipc:176,upc:1408,uom:'EA'},
-  '00014-243':{area:'Production',ipu:6,ipc:12,upc:72,uom:'EA'},
-  '00015-100':{area:'Production',ipu:8,ipc:39,upc:312,uom:'EA'},
-  '00016-160':{area:'Production',ipu:6,ipc:30,upc:180,uom:'EA'},
-  '00018-022':{area:'Production',ipu:4,ipc:5,upc:20,uom:'LB'},
-  '00019-008':{area:'Stockroom',ipu:1,ipc:75,upc:75,uom:'GAL'},
-  '00021-086':{area:'Stockroom',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '00023-117':{area:'Service',ipu:36,ipc:20,upc:720,uom:'EA'},
-  '00026-041':{area:'Production',ipu:24,ipc:1,upc:24,uom:'LB'},
-  '00028-246':{area:'Production',ipu:10,ipc:1,upc:10,uom:'LB'},
-  '00029-009':{area:'Production',ipu:12,ipc:4,upc:48,uom:'LB'},
-  '00033-079':{area:'Service',ipu:6,ipc:20,upc:120,uom:'EA'},
-  '00035-100':{area:'Service',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '00037-021':{area:'Service',ipu:1,ipc:500,upc:500,uom:'EA'},
-  '00038-054':{area:'Service',ipu:1,ipc:500,upc:500,uom:'EA'},
-  '00042-002':{area:'Stockroom',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '00043-126':{area:'Service',ipu:6,ipc:1000,upc:6000,uom:'EA'},
-  '00044-026':{area:'Service',ipu:6,ipc:1000,upc:6000,uom:'EA'},
-  '00045-237':{area:'Service',ipu:1,ipc:1680,upc:1680,uom:'EA'},
-  '00046-048':{area:'Service',ipu:1,ipc:250,upc:250,uom:'EA'},
-  '00047-065':{area:'Service',ipu:1,ipc:2000,upc:2000,uom:'EA'},
-  '00049-000':{area:'Service',ipu:1,ipc:2000,upc:2000,uom:'EA'},
-  '00055-332':{area:'Production',ipu:30,ipc:20,upc:600,uom:'FL OZ'},
-  '00056-000':{area:'Production',ipu:32,ipc:12,upc:384,uom:'OZ'},
-  '00057-205':{area:'Service',ipu:1,ipc:250,upc:250,uom:'EA'},
-  '00060-134':{area:'Service',ipu:4,ipc:1,upc:4,uom:'GAL'},
-  '00061-170':{area:'Service',ipu:4,ipc:1,upc:4,uom:'GAL'},
-  '00062-190':{area:'Service',ipu:4,ipc:1,upc:4,uom:'GAL'},
-  '00063-053':{area:'Production',ipu:6,ipc:7.1,upc:42.6,uom:'LB'},
-  '00070-189':{area:'Production',ipu:6,ipc:25,upc:150,uom:'EA'},
-  '00071-126':{area:'Production',ipu:3,ipc:108,upc:324,uom:'EA'},
-  '00097-271':{area:'Production',ipu:2,ipc:500,upc:1000,uom:'EA'},
-  '00116-251':{area:'Service',ipu:15,ipc:140,upc:2100,uom:'EA'},
-  '00127-828':{area:'Production',ipu:8,ipc:1000,upc:8000,uom:'EA'},
-  '00141-671':{area:'Production',ipu:1,ipc:250,upc:250,uom:'EA'},
-  '00168-002':{area:'Stockroom',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '00193-522':{area:'Service',ipu:12,ipc:600,upc:7200,uom:'EA'},
-  '00223-567':{area:'Service',ipu:16,ipc:450,upc:7200,uom:'EA'},
-  '00255-012':{area:'Service',ipu:9,ipc:12,upc:108,uom:'FL OZ'},
-  '00258-118':{area:'Production',ipu:4,ipc:125,upc:500,uom:'EA'},
-  '00261-266':{area:'Service',ipu:18,ipc:65,upc:1170,uom:'EA'},
-  '00268-293':{area:'Production',ipu:4,ipc:205,upc:820,uom:'EA'},
-  '00269-005':{area:'Service',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '00284-166':{area:'Production',ipu:3,ipc:1000,upc:3000,uom:'EA'},
-  '00285-857':{area:'Production',ipu:5,ipc:1000,upc:5000,uom:'EA'},
-  '00289-624':{area:'Production',ipu:2,ipc:230,upc:460,uom:'EA'},
-  '00297-239':{area:'Production',ipu:6,ipc:117,upc:702,uom:'EA'},
-  '00311-298':{area:'Production',upc:720,uom:'EA'},
-  '00396-103':{area:'Production',uom:'EA'},
-  '00397-217':{area:'Service',ipu:6,ipc:50,upc:300,uom:'EA'},
-  '00406-031':{area:'Service',ipu:12,ipc:15,upc:180,uom:'OZ'},
-  '00407-958':{area:'Production',ipu:18,ipc:48,upc:864,uom:'EA'},
-  '00408-280':{area:'Service',ipu:1,ipc:350,upc:350,uom:'EA'},
-  '00409-239':{area:'Service',ipu:1,ipc:350,upc:350,uom:'EA'},
-  '00410-065':{area:'Service',ipu:1,ipc:250,upc:250,uom:'EA'},
-  '00411-012':{area:'Service',ipu:8,ipc:50,upc:400,uom:'EA'},
-  '00419-008':{area:'Service',ipu:1,ipc:204,upc:204,uom:'EA'},
-  '00486-002':{area:'Stockroom',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '00507-009':{area:'Production',ipu:8,ipc:80,upc:640,uom:'EA'},
-  '00510-189':{area:'Service',ipu:2,ipc:24,upc:48,uom:'EA'},
-  '00555-072':{area:'Service',ipu:8,ipc:4,upc:32,uom:'LB'},
-  '00634-128':{area:'Promotional'},
-  '00634-131':{area:'Promotional'},
-  '00634-134':{area:'Promotional'},
-  '00634-137':{area:'Promotional'},
-  '00634-140':{area:'Promotional'},
-  '00634-143':{area:'Promotional'},
-  '00659-311':{area:'Promotional'},
-  '00659-314':{area:'Promotional'},
-  '00659-317':{area:'Promotional'},
-  '00695-036':{area:'Production',ipu:6,ipc:2,upc:12,uom:'LB'},
-  '00723-036':{area:'Service',ipu:1,ipc:50,upc:50,uom:'EA'},
-  '00968-030':{area:'Production',ipu:10,ipc:6,upc:60,uom:'OZ'},
-  '01000-027':{area:'Production',ipu:1,ipc:128,upc:128,uom:'EA'},
-  '01004-066':{area:'Production',ipu:8,ipc:16,upc:128,uom:'FL OZ'},
-  '01116-366':{area:'Production',ipu:30,ipc:20,upc:600,uom:'FL OZ'},
-  '01637-095':{area:'Production',ipu:8,ipc:29,upc:232,uom:'EA'},
-  '01665-040':{area:'Service',ipu:12,ipc:117,upc:1404,uom:'EA'},
-  '01668-010':{area:'Production',ipu:8,ipc:29,upc:232,uom:'EA'},
-  '01835-026':{area:'Production',ipu:1,ipc:2000,upc:2000,uom:'EA'},
-  '01945-023':{area:'Service',ipu:2,ipc:1.25,upc:2.5,uom:'GAL'},
-  '02113-109':{area:'Service',ipu:30,ipc:71,upc:2130,uom:'EA'},
-  '02232-027':{area:'Production',ipu:12,ipc:3,upc:36,uom:'LB'},
-  '02335-025':{area:'Production',ipu:1,ipc:100,upc:100,uom:'EA'},
-  '02373-015':{area:'Service',ipu:1,ipc:40,upc:40,uom:'EA'},
-  '02380-000':{area:'Service',ipu:1,ipc:200,upc:200,uom:'EA'},
-  '02391-006':{area:'Production',ipu:2,ipc:1,upc:2,uom:'CONT'},
-  '02393-055':{area:'Service',upc:500,uom:'EA'},
-  '02400-012':{area:'Production',ipu:1,ipc:86,upc:86,uom:'EA'},
-  '02407-015':{area:'Service',upc:750,uom:'EA'},
-  '02448-048':{area:'Production',ipu:6,ipc:102,upc:612,uom:'FL OZ'},
-  '02545-000':{area:'Service'},
-  '02562-036':{area:'Production'},
-  '02563-022':{area:'Production'},
-  '02589-234':{area:'Production',ipu:1,ipc:35,upc:35,uom:'LB'},
-  '02589-240':{area:'Production',ipu:1,ipc:1500,upc:1500,uom:'LB'},
-  '02599-060':{area:'Production',ipu:6,ipc:12,upc:72,uom:'EA'},
-  '02601-112':{area:'Service',ipu:6,ipc:33,upc:198,uom:'FL OZ'},
-  '02601-126':{area:'Service',ipu:6,ipc:33,upc:198,uom:'FL OZ'},
-  '02649-016':{area:'Production',ipu:12,ipc:36,upc:432,uom:'EA'},
-  '02656-017':{area:'Production',ipu:2,ipc:250,upc:500,uom:'EA'},
-  '02679-243':{area:'Production',ipu:12,ipc:27,upc:324,uom:'FL OZ'},
-  '02813-084':{area:'Production',ipu:7,ipc:16,upc:112,uom:'EA'},
-  '02816-015':{area:'Service',ipu:1,ipc:408,upc:408,uom:'EA'},
-  '02861-064':{area:'Service',ipu:1,ipc:350,upc:350,uom:'EA'},
-  '02896-051':{area:'Service',ipu:2,ipc:2,upc:4,uom:'GAL'},
-  '02913-033':{area:'Production',ipu:4,ipc:48,upc:192,uom:'EA'},
-  '03096-000':{area:'Production',ipu:1,ipc:2000,upc:2000,uom:'EA'},
-  '03114-143':{area:'Production',ipu:12,ipc:24,upc:288,uom:'EA'},
-  '03168-048':{area:'Service',ipu:1,ipc:575,upc:575,uom:'EA'},
-  '03210-064':{area:'Production',ipu:2,ipc:120,upc:240,uom:'EA'},
-  '03222-000':{area:'Service',ipu:1,ipc:160,upc:160,uom:'EA'},
-  '03248-059':{area:'Service',ipu:1,ipc:250,upc:250,uom:'EA'},
-  '03268-000':{area:'Service',ipu:1,ipc:84,upc:84,uom:'EA'},
-  '03317-084':{area:'Production'},
-  '03317-091':{area:'Production'},
-  '03360-006':{area:'Production'},
-  '03399-015':{area:'Service',ipu:1,ipc:408,upc:408,uom:'EA'},
-  '03470-015':{area:'Service',ipu:6,ipc:3,upc:18,uom:'LB'},
-  '03471-028':{area:'Service',ipu:12,ipc:1,upc:12,uom:'LB'},
-  '03490-087':{area:'Production',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '03492-023':{area:'Service',ipu:10,ipc:100,upc:1000,uom:'EA'},
-  '03496-098':{area:'Production',ipu:15,ipc:2,upc:30,uom:'LB'},
-  '03561-036':{area:'Service',ipu:1,ipc:204,upc:204,uom:'EA'},
-  '03569-093':{area:'Service',ipu:4,ipc:62,upc:248,uom:'FL OZ'},
-  '03594-733':{area:'Production',ipu:5,ipc:220,upc:1100,uom:'EA'},
-  '03761-164':{area:'Production',ipu:4,ipc:275,upc:1100,uom:'EA'},
-  '03761-310':{area:'Production',ipu:4,ipc:275,upc:1100,uom:'EA'},
-  '03876-048':{area:'Service',ipu:1,ipc:2.5,upc:2.5,uom:'GAL'},
-  '03910-050':{area:'Production',ipu:6,ipc:275,upc:1650,uom:'EA'},
-  '03952-102':{area:'Production',ipu:18,ipc:2.2,upc:39.6,uom:'LB'},
-  '04170-070':{area:'Service',ipu:2,ipc:1.25,upc:2.5,uom:'GAL'},
-  '04331-012':{area:'Service',ipu:1,ipc:2.5,upc:2.5,uom:'GAL'},
-  '04334-006':{area:'Service',ipu:1,ipc:2.5,upc:2.5,uom:'GAL'},
-  '04393-012':{area:'Service',ipu:2,ipc:2,upc:4,uom:'GAL'},
-  '04498-076':{area:'Production',ipu:2,ipc:500,upc:1000,uom:'EA'},
-  '04607-143':{area:'Service',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '04645-006':{area:'Service',ipu:6,ipc:1,upc:6,uom:'CONT'},
-  '04843-021':{area:'Production',ipu:1,ipc:3,upc:3,uom:'GAL'},
-  '05116-063':{area:'Service',ipu:16,ipc:2,upc:32,uom:'LB'},
-  '05175-001':{area:'Production',ipu:2,ipc:120,upc:240,uom:'EA'},
-  '05255-060':{area:'Service',ipu:2,ipc:2.5,upc:5,uom:'GAL'},
-  '05358-013':{area:'Production',ipu:18,ipc:12,upc:216,uom:'EA'},
-  '05370-012':{area:'Service',ipu:2,ipc:5,upc:10,uom:'L'},
-  '05429-596':{area:'Production',ipu:4,ipc:750,upc:3000,uom:'EA'},
-  '05550-142':{area:'Service',ipu:1,ipc:200,upc:200,uom:'EA'},
-  '05565-404':{area:'Service',ipu:1,ipc:250,upc:250,uom:'EA'},
-  '05582-313':{area:'Production',ipu:6,ipc:165,upc:990,uom:'EA'},
-  '05582-315':{area:'Production',ipu:6,ipc:165,upc:990,uom:'EA'},
-  '05750-019':{area:'Service',ipu:1,ipc:125,upc:125,uom:'EA'},
-  '05776-003':{area:'Stockroom',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '05792-103':{area:'Service',ipu:6,ipc:33,upc:198,uom:'FL OZ'},
-  '05869-005':{area:'Production',ipu:2,ipc:1000,upc:2000,uom:'EA'},
-  '05906-009':{area:'Service',ipu:2,ipc:2,upc:4,uom:'GAL'},
-  '06008-009':{area:'Service',ipu:2,ipc:2,upc:4,uom:'GAL'},
-  '06043-009':{area:'Production',ipu:1,ipc:920,upc:920,uom:'EA'},
-  '06070-080':{area:'Production',ipu:2,ipc:30,upc:60,uom:'EA'},
-  '06294-045':{area:'Service',ipu:2,ipc:2.5,upc:5,uom:'GAL'},
-  '06373-484':{area:'Service',ipu:20,ipc:40,upc:800,uom:'EA'},
-  '06373-641':{area:'Service',ipu:20,ipc:40,upc:800,uom:'EA'},
-  '06452-008':{area:'Production',ipu:2,ipc:1000,upc:2000,uom:'EA'},
-  '06842-107':{area:'Service',ipu:1,ipc:40,upc:40,uom:'EA'},
-  '07312-064':{area:'Production',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '07353-069':{area:'Production',ipu:20,ipc:130,upc:2600,uom:'EA'},
-  '07421-079':{area:'Service',ipu:6,ipc:33,upc:198,uom:'FL OZ'},
-  '07500-113':{area:'Production',ipu:2,ipc:1000,upc:2000,uom:'EA'},
-  '07533-009':{area:'Stockroom',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '07554-073':{area:'Production',ipu:4,ipc:160,upc:640,uom:'EA'},
-  '07559-107':{area:'Service',ipu:9,ipc:12,upc:108,uom:'FL OZ'},
-  '07633-076':{area:'Production',ipu:5,ipc:1000,upc:5000,uom:'EA'},
-  '07634-375':{area:'Production',ipu:5,ipc:1000,upc:5000,uom:'EA'},
-  '07634-418':{area:'Production',ipu:5,ipc:1000,upc:5000,uom:'EA'},
-  '07812-076':{area:'Production',ipu:1,ipc:350,upc:350,uom:'EA'},
-  '08200-116':{area:'Production',ipu:6,ipc:117,upc:702,uom:'EA'},
-  '08235-106':{area:'Production',ipu:6,ipc:275,upc:1650,uom:'EA'},
-  '08235-126':{area:'Production',ipu:6,ipc:275,upc:1650,uom:'EA'},
-  '08257-018':{area:'Production',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '08498-022':{area:'Production',ipu:32,ipc:12,upc:384,uom:'EA'},
-  '08549-026':{area:'Service',ipu:1,ipc:100,upc:100,uom:'EA'},
-  '08551-000':{area:'Stockroom',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '08731-041':{area:'Service',ipu:1,ipc:350,upc:350,uom:'EA'},
-  '08759-009':{area:'Service',ipu:1,ipc:2,upc:2,uom:'GAL'},
-  '10195-005':{area:'Service'},
-  '10454-015':{area:'Production',ipu:2,ipc:1000,upc:2000,uom:'EA'},
-  '10537-004':{area:'Production',ipu:12,ipc:24,upc:288,uom:'EA'},
-  '10726-000':{area:'Production',ipu:1,ipc:5,upc:5,uom:'GAL'},
-  '10958-550':{area:'Service',ipu:2,ipc:500,upc:1000,uom:'EA'},
-  '10979-009':{area:'Production',ipu:4,ipc:1,upc:4,uom:'CONT'},
-  '10989-014':{area:'Production',ipu:5,ipc:1000,upc:5000,uom:'EA'},
-  '11671-049':{area:'Production',ipu:8,ipc:16,upc:128,uom:'EA'},
-  '11765-110':{area:'Service',ipu:20,ipc:42,upc:840,uom:'EA'},
-  '11766-121':{area:'Service',ipu:20,ipc:32,upc:640,uom:'EA'},
-  '11766-128':{area:'Service',ipu:20,ipc:32,upc:640,uom:'EA'},
-  '11767-108':{area:'Service',ipu:20,ipc:30,upc:600,uom:'EA'},
-  '11859-013':{area:'Production',upc:450,uom:'EA'},
-  '12197-000':{area:'Production',ipu:36,ipc:1,upc:36,uom:'LB'},
-  '12206-015':{area:'Production',ipu:6,ipc:75,upc:450,uom:'EA'},
-  '12793-001':{area:'Production',ipu:3,ipc:1000,upc:3000,uom:'EA'},
-  '12910-005':{area:'Production',ipu:8,ipc:64,upc:512,uom:'EA'},
-  '12911-003':{area:'Production',ipu:4,ipc:63,upc:252,uom:'EA'},
-  '12911-004':{area:'Production',ipu:8,ipc:64,upc:512,uom:'EA'},
-  '12944-006':{area:'Production',ipu:4,ipc:65,upc:260,uom:'EA'},
-  '13229-425':{area:'Service',ipu:2,ipc:500,upc:1000,uom:'EA'},
-  '13257-001':{area:'Service',ipu:1,ipc:32,upc:32,uom:'EA'},
-  '13334-033':{area:'Service',ipu:4,ipc:500,upc:2000,uom:'EA'},
-  '13334-035':{area:'Service',ipu:4,ipc:200,upc:800,uom:'EA'},
-  '13334-037':{area:'Service',ipu:4,ipc:200,upc:800,uom:'EA'},
-  '13480-000':{area:'Production'},
-  '13595-001':{area:'Promotional'},
-  '13825-006':{area:'Service',ipu:1,ipc:165,upc:165,uom:'EA'},
-  '13826-001':{area:'Service',upc:1590,uom:'EA'},
-  '13839-003':{area:'Promotional'},
-  '14633-000':{area:'Service',ipu:2,ipc:24,upc:48,uom:'EA'},
-  '14762-002':{area:'Service',ipu:15,ipc:117,upc:1755,uom:'EA'},
-  '15423-010':{area:'Production',ipu:6,ipc:75,upc:450,uom:'EA'},
-  '15610-000':{area:'Production',ipu:8,ipc:16,upc:128,uom:'FL OZ'},
-  '15635-004':{area:'Production',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '15737-073':{area:'Service',ipu:20,ipc:41,upc:820,uom:'EA'},
-  '15831-002':{area:'Service',ipu:20,ipc:80,upc:1600,uom:'EA'},
-  '15832-014':{area:'Service',ipu:20,ipc:59,upc:1180,uom:'EA'},
-  '15833-032':{area:'Service',ipu:20,ipc:42,upc:840,uom:'EA'},
-  '15849-065':{area:'Service',ipu:2,ipc:500,upc:1000,uom:'EA'},
-  '15886-003':{area:'Production',ipu:5,ipc:1000,upc:5000,uom:'EA'},
-  '15887-002':{area:'Production',ipu:5,ipc:1000,upc:5000,uom:'EA'},
-  '16045-014':{area:'Service',ipu:1,ipc:250,upc:250,uom:'EA'},
-  '16631-002':{area:'Promotional'},
-  '17161-001':{area:'Promotional'},
-  '17168-002':{area:'Promotional'},
-  '17451-000':{area:'Production',ipu:8,ipc:16,upc:128,uom:'FL OZ'},
-  '17863-000':{area:'Production',ipu:1,ipc:1000,upc:1000,uom:'EA'},
-  '17981-001':{area:'Promotional'},
-  '18000-001':{area:'Production',ipu:2,ipc:1000,upc:2000,uom:'EA'},
-  '18838-000':{area:'Service',ipu:20,ipc:40,upc:800,uom:'EA'},
-  '18895-000':{area:'Service',ipu:12,ipc:1,upc:12,uom:'Bag'},
-  '18896-000':{area:'Service',ipu:12,ipc:1,upc:12,uom:'Bag'},
-  '18985-008':{area:'Service',ipu:12,ipc:18,upc:216,uom:'OZ'},
-  '19100-001':{area:'Promotional'},
-  '19174-001':{area:'Promotional'},
-  '19174-002':{area:'Promotional'},
-  '19179-001':{area:'Production',ipu:8,ipc:110,upc:880,uom:'EA'},
-  '19199-000':{area:'Promotional'},
-  '19199-001':{area:'Promotional'},
-  '19199-002':{area:'Promotional'},
-  '19256-000':{area:'Promotional'},
-  '19256-001':{area:'Promotional'},
-  '19265-000':{area:'Promotional'},
-  '19265-001':{area:'Promotional'},
-  '19265-002':{area:'Promotional'},
-  '19265-003':{area:'Promotional'},
-  '19281-007':{area:'Production',ipu:2,ipc:20,upc:40,uom:'EA'},
-  '19285-008':{area:'Production',ipu:4,ipc:160,upc:640,uom:'EA'},
-  '19300-001':{area:'Production',ipu:16,ipc:283.5,upc:4536,uom:'G'},
-  '19303-006':{area:'Production',ipu:8,ipc:16,upc:128,uom:'FL OZ'},
-  '19308-000':{area:'Promotional'},
-  '19309-002':{area:'Promotional'},
-  '19315-005':{area:'Promotional'},
-  '19358-000':{area:'Promotional'},
-  '19471-000':{area:'Service',ipu:2,ipc:250,upc:500,uom:'EA'},
-  '19588-000':{area:'Promotional'},
-  '19588-002':{area:'Promotional'},
-  '19588-003':{area:'Promotional'},
-  '19647-000':{area:'Production',ipu:4,ipc:108,upc:432,uom:'EA'},
-  '19649-000':{area:'Production',ipu:4,ipc:108,upc:432,uom:'EA'},
-  '19651-000':{area:'Service',ipu:350,ipc:1,upc:350,uom:'EA'},
-  '19725-000':{area:'Promotional'},
-  '19774-001':{area:'Service',ipu:12,ipc:1,upc:12,uom:'Bag'},
-  '19804-006':{area:'Service',ipu:6,ipc:32,upc:192,uom:'FL OZ'},
-  '19809-002':{area:'Service',ipu:4,ipc:25.36,upc:101.44,uom:'FL OZ'},
-  '19811-000':{area:'Service',ipu:4,ipc:64,upc:256,uom:'FL OZ'},
-  '19812-000':{area:'Service',ipu:4,ipc:64,upc:256,uom:'FL OZ'},
-  '19813-000':{area:'Service',ipu:4,ipc:64,upc:256,uom:'FL OZ'},
-  '19844-000':{area:'Promotional'},
-  '19868-007':{area:'Promotional'},
-  '19872-280':{area:'Promotional',ipu:1,ipc:150,upc:150,uom:'EA'},
-  '19872-310':{area:'Promotional'},
-  '19872-311':{area:'Promotional'},
-  '19872-312':{area:'Promotional'},
-  '19872-313':{area:'Promotional'},
-  '19872-314':{area:'Promotional',ipu:1,ipc:150,upc:150,uom:'EA'},
-  '19872-315':{area:'Promotional',ipu:1,ipc:150,upc:150,uom:'EA'},
-  '19872-316':{area:'Promotional',ipu:1,ipc:150,upc:150,uom:'EA'},
-  '19966-000':{area:'Promotional'},
-  '20105-000':{area:'Service',ipu:5,ipc:2,upc:10,uom:'LB'},
-  '20121-000':{area:'Service',ipu:15,ipc:112,upc:1680,uom:'EA'},
-  '20122-000':{area:'Service',ipu:10,ipc:112,upc:1120,uom:'EA'},
-  '20159-000':{area:'Promotional',ipu:1,ipc:300,upc:300,uom:'EA'},
-  '20175-000':{area:'Promotional'},
-  '20175-001':{area:'Promotional'},
-  '20243-000':{area:'Service'},
-  '20286-000':{area:'Promotional'},
-};
-// Resolve area from INV_MASTER first, then fall back to keyword matching
-function classifyInvArea(wrin, desc){
-  const m=INV_MASTER[wrin];
-  if(m&&(m.area==='Service'||m.area==='Production'))return m.area;
-  // Fallback keywords for items not in master
-  const d=(desc||'').toLowerCase()+' ';
-  if(INV_PROD_KW.some(k=>d.includes(k)))return'Production';
-  if(INV_SVC_KW.some(k=>d.includes(k)))return'Service';
-  return'Other';
-}
-
-const INV_PROD_KW=['wrap','crtn','carton','fry box','label','lbl','bowl','ngt',
-  'nugget','platter','pouch','liner','base','4 n 1','generic','con ','strip',
-  'container','boat','gravy'];
-const INV_SVC_KW=['straw','lid','cup','carrier','drink','napkin','cutlery',
-  'spoon','tray','insert','sleeve','fntn','fountain','mccafe','mcfe','bag '];
-// classifyInvArea now uses INV_MASTER (see above)
-function parseInvUOM(uom){
-  const s=String(uom||'');
-  const m=s.match(/\/\s*(\d+)/);
-  return{caseSize:m?parseInt(m[1]):1,unitType:s.split('/')[0].trim()};
-}
-function parseInventoryData(wb, filename){
-  const fn=filename||'';
-  const locMatch=fn.match(/^(\d{4,6})\s*[-\u2013]/);
-  const loc=locMatch?locMatch[1]:null;
-  // Detect Display as Each vs Display as Case from filename
-  // Each-format files have usageDay in eaches/day — must divide by caseSize for cases
-  const isEachFmt=fn.toLowerCase().includes('each')||fn.toLowerCase().includes('_ea');
-  const sh=wb.SheetNames.find(s=>s.toLowerCase().includes('inventory'))||wb.SheetNames[0];
-  if(!sh)return[];
-  const raw=XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:''});
-  // Find header row (contains 'WRIN')
-  let hi=0;
-  for(let i=0;i<Math.min(raw.length,10);i++){if(String(raw[i][0]||'').toUpperCase().includes('WRIN')){hi=i;break;}}
-  const hdrs=raw[hi].map(h=>String(h||'').trim());
-  const ci=n=>{const i=hdrs.findIndex(h=>h.toLowerCase().includes(n.toLowerCase()));return i>=0?i:-1;};
-  const C={wrin:ci('WRIN'),desc:ci('Desc'),class_:ci('Class'),uom:ci('UOM'),cost:ci('Cost'),
-    startInv:ci('Starting'),purch:ci('Purch'),xfer:ci('Transf'),waste:ci('Waste'),endInv:ci('Ending'),
-    actualUsage:ci('Actual Usage'),usageDay:ci('Usage /Day'),usage1000:ci('Usage /$1000'),daysSupply:ci('Days')};
-  const rows=[];
-  for(let i=hi+1;i<raw.length;i++){
-    const r=raw[i];
-    const wrin=String(r[C.wrin]||'').trim();
-    if(!wrin||!wrin.match(/\d/))continue;
-    const desc=String(r[C.desc]||'').trim();
-    const class_=String(r[C.class_]||'').trim();
-    const uomRaw=String(r[C.uom]||'').trim();
-    const{caseSize,unitType}=parseInvUOM(uomRaw);
-    const usageDay=parseFloat(r[C.usageDay])||0;
-    const usage1000=parseFloat(r[C.usage1000])||0;
-    const daysSupply=parseFloat(r[C.daysSupply])||0;
-    const cost=parseFloat(r[C.cost])||0;
-    const area=classifyInvArea(wrin,desc);
-    const inactive=usageDay===0&&daysSupply>0;
-    rows.push({loc,wrin,description:desc,class_,uom:uomRaw,caseSize,unitType,cost,
-      usageDay,usage1000,daysSupply,area,inactive,
-      eachFmt:isEachFmt,   // true = usageDay is in eaches/day, false = cases/day
-      actualUsage:parseFloat(r[C.actualUsage])||0,
-      startingInv:parseFloat(r[C.startInv])||0,
-      endingInv:parseFloat(r[C.endInv])||0
-    });
-  }
-  return rows;
-}
-
 // INVENTORY INTELLIGENCE MODULE
 // Four-section report: Service items · Production items · Overstock · Transfers
 const INV_CLASSES_ALL=['Paper','Food','Condiment','Ops Supplies','Miscellaneous'];
@@ -437,6 +70,83 @@ const INV_CLASS_FILTERS=[
   {key:'Paper+Food+Condiment',label:'Paper + Food + Cond'},
   {key:'All',label:'All Classes'},
 ];
+
+// ── #214: qsr_inventory_summary → panel row shape ──────────────────────────────────────
+// Trap 1 (per the issue): the auto stream's `cls` vocabulary is not confirmed to match
+// INV_CLASSES_ALL exactly — no live Supabase session in this sandbox to check a real row.
+// Known QSRSoft synonyms are mapped explicitly; anything else passes through UNCHANGED
+// rather than being silently bucketed into 'Miscellaneous' (which would be the Paper-filter
+// under-report the issue specifically warns about, just moved from one wrong class to
+// another guessed one). An unrecognized value shows up under "All Classes" but not under
+// any specific filter — visible as a discrepancy instead of hidden as a false negative.
+const INV_CLS_SYNONYMS={'Non Product':'Miscellaneous','Ops Supply':'Ops Supplies'};
+export function mapInvClass(cls){
+  const c=String(cls||'').trim();
+  if(!c) return 'Miscellaneous';
+  if(INV_CLASSES_ALL.includes(c)) return c;
+  return INV_CLS_SYNONYMS[c]||c;
+}
+
+// Average daily transactions per (loc, YYYY-MM), from ds.qsrActSummaryRows (already a daily
+// per-store rollup — supabase.js's loadQsrActSummary sums hourly qsr_daily_activity into a
+// `txns` field per day). Used to derive usage1000 = usagePerDay ÷ (avgDailyTxns/1000), since
+// qsr_inventory_summary carries usagePerDay but not usage-per-1000-transactions directly.
+export function avgDailyTxnsByLocMonth(rows){
+  const acc={};
+  for(const r of (rows||[])){
+    if(!r||!r.loc||!r.date) continue;
+    const d=r.date instanceof Date?r.date:new Date(r.date);
+    if(isNaN(d)) continue;
+    const key=unpad(r.loc)+'|'+d.toISOString().slice(0,7);
+    if(!acc[key]) acc[key]={sum:0,days:new Set()};
+    acc[key].sum+=r.txns||0;
+    acc[key].days.add(d.toISOString().slice(0,10));
+  }
+  const out={};
+  for(const[key,v] of Object.entries(acc)) out[key]=v.days.size?v.sum/v.days.size:0;
+  return out;
+}
+
+// Latest period only, per (loc,wrin) — same "freshest wins" shape as attention-now.js's
+// fobByStoreLatest. Returns the mapped rows plus any `cls` values that didn't match
+// INV_CLASSES_ALL or a known synonym, so the caller can surface Trap 1 instead of guessing.
+export function cloudRowsToPanelShape(cloudRows, txnsByLocMonth){
+  const latestByKey=new Map();
+  for(const r of (cloudRows||[])){
+    const key=unpad(r.loc)+'|'+r.wrin;
+    const prev=latestByKey.get(key);
+    if(!prev||String(r.period)>String(prev.period)) latestByKey.set(key,r);
+  }
+  const unrecognizedClasses=new Set();
+  const rows=[];
+  for(const r of latestByKey.values()){
+    const loc=unpad(r.loc);
+    const rawCls=String(r.cls||'').trim();
+    if(rawCls&&!INV_CLASSES_ALL.includes(rawCls)&&!INV_CLS_SYNONYMS[rawCls]) unrecognizedClasses.add(rawCls);
+    const{caseSize:parsedCaseSize,unitType}=parseInvUOM(r.uom);
+    const usageDay=r.usagePerDay||0;
+    const monthKey=loc+'|'+String(r.period||'').slice(0,7);
+    const avgTxns=txnsByLocMonth[monthKey];
+    rows.push({
+      loc, wrin:r.wrin, description:r.descr||'', class_:mapInvClass(r.cls),
+      uom:r.uom||'', caseSize:r.caseSz||parsedCaseSize||1, unitType,
+      cost:r.cost||0, usageDay,
+      usage1000:avgTxns>0?+(usageDay/(avgTxns/1000)).toFixed(4):0,
+      // #214: prefer the source's own daysSupply over recomputing — it's exactly the
+      // overstock metric the panel used to derive itself from starting/ending inventory.
+      daysSupply:r.daysSupply||0,
+      area:classifyInvArea(r.wrin,r.descr),
+      inactive:usageDay===0&&(r.daysSupply||0)>0,
+      // ⚠️ UNVERIFIED (no live data to confirm): assumes usagePerDay is already in CASES,
+      // matching startInv/endInv/purchases. If a live pull shows it's actually in EACHES,
+      // flip this to true — it directly changes the Overstock excessCases/excessValue math.
+      eachFmt:false,
+      actualUsage:r.actualUsage||0, startingInv:r.startInv||0, endingInv:r.endInv||0,
+      source:'cloud',
+    });
+  }
+  return{rows,unrecognizedClasses:[...unrecognizedClasses]};
+}
 
 function filterByClass(rows, classKey){
   if(classKey==='All') return rows;
@@ -647,7 +357,39 @@ function generateBulkInventoryReport(allInvRows, threshold, excldWrap, classKey,
 }
 
 function InventoryIntelligence({stores,ds,settings,onClose}){
-  const locs=React.useMemo(()=>[...new Set((ds.inventoryRows||[]).map(r=>r.loc).filter(Boolean))],[ds.inventoryRows]);
+  // ── #214: auto-first, freshest-wins ──────────────────────────────────────────────────
+  // 3-state load (null=loading / []+err=failed / [...]=has rows), matching the FOB panel's
+  // fix (analytics.js) for the exact bug this issue calls out: a failed cloud read must not
+  // silently look like an empty one and fall back to a stale manual upload with no signal.
+  const [cloudRows,setCloudRows]=React.useState(null);
+  const [cloudErr,setCloudErr]=React.useState(null);
+  React.useEffect(()=>{
+    let live=true;
+    loadQsrInventorySummary().then(r=>{if(live){setCloudRows(r||[]);setCloudErr(null);}})
+      .catch(e=>{
+        console.warn('[Inventory] loadQsrInventorySummary failed, falling back to manual upload only:',e?.message||e);
+        if(live){setCloudRows([]);setCloudErr(String(e?.message||e));}
+      });
+    return()=>{live=false;};
+  },[]);
+
+  const txnsByLocMonth=React.useMemo(()=>avgDailyTxnsByLocMonth(ds.qsrActSummaryRows),[ds.qsrActSummaryRows]);
+  const{rows:cloudInvRows,unrecognizedClasses}=React.useMemo(
+    ()=>cloudRows?cloudRowsToPanelShape(cloudRows,txnsByLocMonth):{rows:[],unrecognizedClasses:[]},
+    [cloudRows,txnsByLocMonth]);
+
+  // Manual upload is gap-fill ONLY — never overrides a (loc,wrin) the cloud stream covers.
+  const effRows=React.useMemo(()=>{
+    const cloudKeys=new Set(cloudInvRows.map(r=>r.loc+'|'+r.wrin));
+    const manualGapFill=(ds.inventoryRows||[])
+      .map(r=>({...r,loc:unpad(r.loc)}))
+      .filter(r=>!cloudKeys.has(r.loc+'|'+r.wrin));
+    return[...cloudInvRows,...manualGapFill];
+  },[cloudInvRows,ds.inventoryRows]);
+  const hasCloud=cloudInvRows.length>0;
+  const manualFillCount=effRows.length-cloudInvRows.length;
+
+  const locs=React.useMemo(()=>[...new Set(effRows.map(r=>r.loc).filter(Boolean))],[effRows]);
   const [selLoc,setSelLoc]=React.useState(locs[0]||'');
   const [classFilter,setClassFilter]=React.useState('Paper');
   const [threshold,setThreshold]=React.useState(14);          // overstock sender threshold
@@ -660,12 +402,12 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
   const [activeSection,setActiveSection]=React.useState(1);
 
   const locRows=React.useMemo(()=>{
-    const base=(ds.inventoryRows||[]).filter(r=>selLoc?r.loc===selLoc:true);
+    const base=effRows.filter(r=>selLoc?r.loc===selLoc:true);
     return filterByClass(base,classFilter);
-  },[ds.inventoryRows,selLoc,classFilter]);
+  },[effRows,selLoc,classFilter]);
 
   const{svc,prod,overstk,actionItems}=React.useMemo(()=>computeInvSections(locRows,threshold,excldWrap,doRollup),[locRows,threshold,excldWrap,doRollup]);
-  const transfers=React.useMemo(()=>viewTransfers?computeTransfers(filterByClass(ds.inventoryRows||[],classFilter),threshold,recvThreshold,fullCaseOnly):[],[viewTransfers,ds.inventoryRows,classFilter,threshold,recvThreshold,fullCaseOnly]);
+  const transfers=React.useMemo(()=>viewTransfers?computeTransfers(filterByClass(effRows,classFilter),threshold,recvThreshold,fullCaseOnly):[],[viewTransfers,effRows,classFilter,threshold,recvThreshold,fullCaseOnly]);
 
   const storeName=selLoc?sName(selLoc):'All Locations';
   const totalExcessVal=overstk.reduce((a,r)=>a+(r.excessValue||0),0);
@@ -758,11 +500,18 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
-        div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-          div({style:{fontSize:40,marginBottom:12}},'📦'),
-          div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Inventory Data Loaded'),
-          div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:1.6}},
-            'Drop your inventory files (e.g. 3708 - Inventory Summary and Usage.xlsx) into the app.',div(null,'Each location needs its own file. Filename must start with the location number.'))))));
+        cloudRows===null
+          ?div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
+              div({style:{fontSize:'12px'}},'Loading…'))
+          :div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
+              div({style:{fontSize:40,marginBottom:12}},'📦'),
+              div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Inventory Data'),
+              div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:1.6}},
+                cloudErr
+                  ?('☁ Auto-sync failed: '+cloudErr+'. ')
+                  :('☁ No auto data yet for any location this period. '),
+                'You can still drop inventory files (e.g. 3708 - Inventory Summary and Usage.xlsx) as a manual fallback.',
+                div(null,'Each location needs its own file. Filename must start with the location number.'))))));
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
     div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
@@ -772,6 +521,26 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
       div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',
         gap:8,flexShrink:0,background:'var(--surf2)',flexWrap:'wrap'}},
         div({style:{fontSize:'13px',fontWeight:800,color:'var(--gold)',flexShrink:0}},'📦 Inventory Intelligence'),
+        // #214: visible (not tooltip-only) data-source state — a failed cloud read must not
+        // look like an empty one, same rule the FOB panel's fix established.
+        cloudRows===null
+          ?span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,color:'var(--text3)',
+              border:'.5px solid var(--bdr)'}},'☁ loading…')
+          :cloudErr
+          ?span({title:cloudErr,style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
+              color:'#f87171',background:'rgba(248,113,113,.12)',border:'.5px solid rgba(248,113,113,.4)'}},'⚠ auto-sync failed')
+          :hasCloud
+          ?span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
+              color:'#34d399',background:'rgba(52,211,153,.1)',border:'.5px solid rgba(52,211,153,.35)'}},
+              '☁ cloud auto'+(manualFillCount>0?' + '+manualFillCount+' manual gap-fill':''))
+          :span({title:'qsr_inventory_summary returned 0 rows — showing manual upload only',
+              style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
+              color:'#f59e0b',background:'rgba(245,158,11,.1)',border:'.5px solid rgba(245,158,11,.35)'}},'☁ no cloud data yet'),
+        unrecognizedClasses.length>0&&span({
+          title:'cls values not matching the expected vocabulary: '+unrecognizedClasses.join(', ')+' — these items only appear under "All Classes", not their specific filter',
+          style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,color:'#f59e0b',
+            background:'rgba(245,158,11,.1)',border:'.5px solid rgba(245,158,11,.35)',cursor:'help'}},
+          '⚠ '+unrecognizedClasses.length+' unrecognized class'+(unrecognizedClasses.length!==1?'es':'')),
         h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
           style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
             color:'var(--text)',fontSize:'10px',padding:'3px 6px',maxWidth:180}},
@@ -793,7 +562,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
             threshold,excldWrap,settings)},'📄 Export Location'),
         btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
           title:'Export all loaded locations in one combined report',
-          onClick:()=>generateBulkInventoryReport(ds.inventoryRows||[],threshold,excldWrap,classFilter,settings)},'📄 Export All Locations'),
+          onClick:()=>generateBulkInventoryReport(effRows,threshold,excldWrap,classFilter,settings)},'📄 Export All Locations'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       // ── Section tabs ─────────────────────────────────────────────────────
@@ -1035,4 +804,4 @@ ${transfers&&transfers.length?`<div class="section" style="page-break-before:alw
   setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},1000);
 }
 
-export { parseInventoryData, InventoryIntelligence };
+export { InventoryIntelligence };

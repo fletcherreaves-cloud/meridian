@@ -546,7 +546,6 @@ const QSR_DAR_FIELDS = {
 const OPTIONAL_PANELS = [
   { id:'record-day',    label:'Record Days',        icon:'🏆', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Best-ever sales / volume record days per store.' },
   { id:'revintel',      label:'Revenue',            icon:'◈',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Revenue intelligence deep-dive by store/segment.' },
-  { id:'inventory',     label:'Inventory',          icon:'📦', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Inventory analysis workbench.' },
   { id:'perf-calc',     label:'Performance Calc',   icon:'🧮', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Ad-hoc performance / score calculator.' },
   { id:'corr-explorer', label:'Metric Correlations',icon:'🔗', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Explore correlation between any two metrics (also in the Signals Scanner).' },
   { id:'compare',       label:'Store Compare',      icon:'⇄',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Side-by-side comparison of two or more stores.' },
