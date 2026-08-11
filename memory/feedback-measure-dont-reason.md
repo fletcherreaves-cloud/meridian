@@ -224,3 +224,44 @@ Two things went right and are worth keeping:
 Also: the engineer flagged those sites and proposed deferring them. The PM overrode that
 and was wrong to. **A worker's "I found something adjacent, I don't think it belongs here"
 deserves a `grep -rn` before it is overruled**, not a confident instruction.
+
+## Half 6 — "Non-reproducing" is not closed. Verify with the REPORTER.
+
+Added 2026-08-11, after the owner re-reported a bug that had been cleared a day earlier and
+had already cost three note cycles.
+
+**What happened:** the Food Cost panel's "period dropdown stuck at May 2026" was reported in
+**Notes 60**, again in **Notes 63**, and again in **Notes 65**. The 2026-08-10 RLS audit
+measured it properly and concluded correctly:
+
+> *"`qsr_fob` itself measured OK — 24,156 rows both sides, dates run through today. The
+> originally-reported symptom does not currently reproduce… a non-reproducing bug does not get
+> a fix bolted onto it — it gets reported as non-reproducing, not a third guess."*
+
+That was the right technical call and it followed Half 1 exactly. **The failure was what
+happened next: nothing.** The finding went into a memory file. The owner was never asked to
+re-check. So it stayed live on his list, he re-reported it in the next note dump, and on
+2026-08-11 he opened the panel and it had been working the whole time — August 2026 selectable,
+FOB 4.17% matching At-A-Glance, "Cloud auto" badge showing, no console warning.
+
+Three note cycles of his attention spent on a bug that no longer existed.
+
+**The rule:** a bug is not closed when the code is fixed, when the sandbox stops reproducing
+it, or when a memory file records the finding. **It is closed when the person who reported it
+confirms it.** Anything short of that leaves it live on their list — and the reporter has no
+way to distinguish "we fixed it" from "nobody looked."
+
+**"Non-reproducing" is the highest-risk verdict of all**, precisely because it produces no
+artifact the reporter can see. A fix ships in a PR they can read; a non-reproduction ships
+nothing. Those findings need an explicit, named ask: *"open X, tell me what you see."* One
+sentence, and it ends the cycle.
+
+**Generalisable:** the same shape as the product-level insight from the same session
+(`memory/project-coaching-feedback-loop.md`) — identify → intervene → **verify** — where the
+verify step is the one everybody skips and the only one that makes the rest compound. It
+applies to bugs and to coaching for the same reason: **the person who owns the problem is the
+only one who can confirm it is gone.**
+
+Related: Half 2 (verify the output, not the intent) and Half 5 (verify with the exit code, not
+a grep for a success marker). Same family — what counts as verification. This one extends it
+past the machine to the human who raised it.
