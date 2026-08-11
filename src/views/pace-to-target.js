@@ -34,7 +34,9 @@ export function PaceToTargetPanel({ ds, stores, settings, onClose, embedded }) {
         h('span', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)' } }, 'Group'),
         seg('flat', 'Store'), seg('supervisor', 'Patch'), seg('operator', 'Operator'),
         !embedded && h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
-      // Body — the existing, tested pace section
-      h('div', { style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
-        h(CurrentMonthPaceSection, { ds, stores, settings, mt: ds && ds.monthlyTargets, locs: ALL_LOCS, groupView }))));
+      // Body — the existing, tested pace section. fillHeight:true (#192 P1) so the section grows
+      // to the panel's full height instead of sitting in its embedded-elsewhere 240px cap with a
+      // large empty gap below it — this panel IS the section, not a page it's one part of.
+      h('div', { style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '12px 16px' } },
+        h(CurrentMonthPaceSection, { ds, stores, settings, mt: ds && ds.monthlyTargets, locs: ALL_LOCS, groupView, fillHeight: true }))));
 }

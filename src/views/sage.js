@@ -538,7 +538,7 @@ function renderMarkdown(text) {
     });
     elements.push(
       h('div', { key: k(), style: { overflowX: 'auto', margin: '8px 0' } },
-        h('table', { style: { borderCollapse: 'collapse', fontSize: 11, width: '100%' } },
+        h('table', { style: { borderCollapse: 'collapse', fontSize: 11, width: 'max-content', minWidth: '100%' } },
           h('thead', null, h('tr', null,
             header.map((cell, i) => h('th', { key: i, style: {
               padding: '5px 10px', background: 'rgba(245,158,11,.1)', color: amber,

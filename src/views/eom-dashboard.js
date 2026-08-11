@@ -2498,7 +2498,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { fontWeight: 700, color: 'var(--text)', margin: '4px 0 6px', fontSize: '13px' } }, '① Recount Impact — the opportunities',
             harmful.length ? span({ style: { marginLeft: '8px', fontSize: '11px', color: '#f87171', fontWeight: 700 } }, `${harmful.length} store${harmful.length === 1 ? '' : 's'} net-harmful`) : span({ style: { marginLeft: '8px', fontSize: '11px', color: '#4ade80' } }, 'all net-helpful ✓')),
           !R.impact.length ? div({ style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 0 12px' } }, 'No recounted items in the current-period ledger for this scope yet.')
-          : div({ style: { overflowX: 'auto', marginBottom: '16px' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+          : div({ style: { overflowX: 'auto', marginBottom: '16px' } }, h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
               h('thead', null, h('tr', null, th('Store'), th('Toward $0', 1), th('Away', 1), th('Net', 1), th('# recounted', 1))),
               h('tbody', null, R.impact.flatMap(s => {
                 const isOpen = riddleStore === s.loc;
@@ -2521,7 +2521,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           // T3 — Consistency
           div({ style: { fontWeight: 700, color: 'var(--text)', margin: '4px 0 6px', fontSize: '13px' } }, '② FOB Consistency — steadiest first (lowest sd = most dialed in)'),
           !R.consistency.length ? div({ style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 0' } }, 'Need ≥2 months of FOB history in scope to measure consistency.')
-          : div({ style: { overflowX: 'auto' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+          : div({ style: { overflowX: 'auto' } }, h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
               h('thead', null, h('tr', null, th('Store'), th('Mean FOB%', 1), th('Std dev (pp)', 1), th('# months', 1))),
               h('tbody', null, R.consistency.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)' } },
                 h('td', { style: { padding: '5px 9px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, i < 3 ? '🟢 ' : '', nm(s.loc), span({ style: { color: 'var(--text3)', fontWeight: 400, marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '10px' } }, `#${unpad(s.loc)}`)),
@@ -2931,9 +2931,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             d.analysis.anyOverTarget
               ? span({ style: { color: 'var(--text2)' } }, `Biggest opportunity vs target: ${d.analysis.biggestComp.label} (${d.analysis.biggestComp.deltaPp != null ? `+${d.analysis.biggestComp.deltaPp.toFixed(2)}pp · ` : ''}${$(d.analysis.biggestComp.over$)} over)`)
               : span({ style: { color: '#4ade80' } }, 'All components at/under target ✓')),
-          // Per-store table
+          // Per-store table. width:'100%' alone caps the table at the wrapper's width, so a
+          // browser's table auto-layout compresses/cuts off columns instead of overflowing —
+          // width:max-content + minWidth:100% lets it grow to its natural content width (never
+          // squeezed) while still filling the container when there's room (#192, 2026-08-11).
           div({ style: { overflowX: 'auto' } },
-            h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
+            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
               h('thead', { key: 'h' }, h('tr', null,
                 h('th', { style: { textAlign: 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase' } }, 'Store'),
                 th('FOB % (±tgt)'), th('FOB $'), ...COMP_META.map(m => th(m.label)), th('Count'), ...CLASS_META.map(m => th(m.short)), th('Ready'), th('$ over'))),
@@ -3005,7 +3008,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
             // Per-store table
             div({ key: 'tbl', style: { overflowX: 'auto' } },
-              h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
+              h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
                 h('thead', { key: 'h' }, h('tr', null,
                   th('Store', { left: true }), th('FOB base→now'), th('Δ'), th('Verdict'),
                   th('Count'), th('Helped'), th('Hurt'), th('Recounted'), th('2nd review'))),

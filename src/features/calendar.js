@@ -920,9 +920,13 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
                 div({style:{fontSize:'9px',fontWeight:isToday?800:600,color:isToday?'var(--amber)':'var(--text2)',marginBottom:2}},day),
                 div({style:{display:'flex',flexDirection:'column',gap:1.5,overflow:'hidden'}},
                   ...uniq.slice(0,3).map((e,i)=>{ const et=EVENT_TYPES[e.type]||EVENT_TYPES.other; const cx=e.status==='canceled';
+                    // Wrap to up to 2 lines instead of single-line-truncating (#192 P1) — a
+                    // longer event label was unreadable in the cell and relied entirely on the
+                    // title tooltip. -webkit-line-clamp is the standard multi-line-ellipsis
+                    // idiom; the cell's minHeight (not a max-height) lets the grid row grow.
                     return div({key:i,title:(e.label||et.label),
                       style:{fontSize:'7.5px',lineHeight:1.25,color:cx?'var(--text3)':'var(--text2)',background:et.col+'22',borderLeft:'2px solid '+et.col,
-                        borderRadius:2,padding:'0 3px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',textDecoration:cx?'line-through':'none'}},
+                        borderRadius:2,padding:'0 3px',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',textDecoration:cx?'line-through':'none'}},
                       (e.icon||et.icon)+' '+(e.label||et.label)); }),
                   uniq.length>3&&span({style:{fontSize:'7px',color:'var(--text3)',paddingLeft:2}},'+'+(uniq.length-3)+' more'))
               );

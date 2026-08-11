@@ -3655,7 +3655,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             span({style:{fontSize:'9px',fontWeight:700,color:'var(--text)'}},(expandDow?'▲':'▶')+' Day-of-Week Accuracy Breakdown'),
             span({style:{fontSize:'8px',color:'var(--text3)'}},'Which model performs best for each day of the week — district-wide')),
           expandDow&&div({style:{overflowX:'auto'}},
-            h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+            h('table',{style:{width:'max-content',minWidth:'100%',borderCollapse:'collapse',fontSize:'9px'}},
               h('thead',null,h('tr',null,
                 th({style:{...thS,textAlign:'left',paddingLeft:16}},'Day'),
                 ...MODELS.slice(0,3).map(m=>th({key:m.key,style:{...thS,color:m.col}},m.label)),
@@ -5902,7 +5902,7 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
           +report.results.length+' location'+(report.results.length!==1?'s':'')+' · '
           +'Generated '+new Date(report.generatedAt).toLocaleTimeString()),
         div({style:{overflowX:'auto'}},
-          h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+          h('table',{style:{width:'max-content',minWidth:'100%',borderCollapse:'collapse',fontSize:'10px'}},
             h('thead',null,
               tr(null,
                 th2('Store','left'),th2('Days'),th2('Sales'),th2('vs LY'),th2('vs Fcst'),
@@ -7755,7 +7755,7 @@ function buildGroupSheetHTML(groupName, groupLocs, mt_next, mt_curr, actuals, ne
 // computeMonthActuals() so the numbers match the printed patch sheet. Renders
 // null when the target month has no actuals yet. `period` overrides the month
 // otherwise derived from the targets' own _year/_month.
-export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupView='flat', period: periodProp }) {
+export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupView='flat', period: periodProp, fillHeight=false }) {
   const { useMemo, useState, useEffect } = React;
   // Base month = explicit prop → else the month of the most recent actual data →
   // else the current calendar month. So it self-detects the right month to show
@@ -7833,7 +7833,15 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
     !mtIsThisMonth&&loadedMt!==null&&tgtSum<=0&&span({style:{fontSize:9,color:'#f59e0b'}},'no targets loaded for this month'),
     hasActuals&&totVs!=null&&span({style:{marginLeft:'auto',fontSize:11,fontWeight:800,color:pctCol(totVs)}},'District pace '+(totVs>=0?'+':'')+totVs.toFixed(2)+'% vs target'));
 
-  if(!hasActuals) return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)'}},
+  // Default (fillHeight=false): a fixed-height section embedded above a bigger page (Planning →
+  // Monthly's own table below it) — flexShrink:0 + a maxHeight cap is correct there. fillHeight
+  // (#192 P1, Planning → PACE): when this section IS the whole panel body (pace-to-target.js),
+  // the cap left most of the modal's height empty below a small 240px table — grow to fill instead.
+  const sectionStyle = fillHeight
+    ? {flex:1,minHeight:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)',overflowY:'auto'}
+    : {flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)',maxHeight:240,overflowY:'auto'};
+
+  if(!hasActuals) return div({style:fillHeight?{flex:1,minHeight:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)'}:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)'}},
     header, div({style:{padding:'4px 20px 10px',fontSize:10,color:'var(--text3)'}}, 'No actuals loaded for '+monthLbl+' yet — step ‹ › to a month with data.'));
 
   const th2={padding:'4px 10px',fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',textAlign:'right',whiteSpace:'nowrap',position:'sticky',top:0,background:'var(--surf2)'};
@@ -7844,7 +7852,7 @@ export function CurrentMonthPaceSection({ ds, stores, settings, mt, locs, groupV
     h('td',{style:td2},money(r.act)),
     h('td',{style:td2},money(r.pace)),
     h('td',{style:{...td2,color:pctCol(r.vs),fontWeight:700}},r.vs==null?'—':(r.vs>=0?'+':'')+r.vs.toFixed(2)+'%'));
-  return div({style:{flexShrink:0,borderBottom:'1px solid var(--bdr)',background:'var(--surf2)',maxHeight:240,overflowY:'auto'}},
+  return div({style:sectionStyle},
     header,
     h('table',{style:{width:'100%',borderCollapse:'collapse'}},
       h('thead',null,h('tr',null,
@@ -7936,13 +7944,22 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   const thS = {padding:'5px 8px',fontSize:10,fontWeight:600,color:'var(--text3)',
     background:'var(--surf)',borderBottom:'1px solid var(--bdr)',whiteSpace:'nowrap',textAlign:'center'};
   const tdS = {padding:'4px 8px',fontSize:11,borderBottom:'1px solid var(--bdr)',whiteSpace:'nowrap'};
+  // Row-freeze (#192 P1): this table already froze the Store column (left:0 below) but never the
+  // header row, unlike every other frozen-column table in the codebase (store-dash.js, smart-
+  // targets.js) which freezes both. Two-row thead (group row + field row), so each row needs its
+  // own `top` — the group row sticks to 0, the field row sticks to the group row's rendered
+  // height. THEAD_ROW_H is thS's own box height (padding 5+5 + ~11.5 line-height + 1 border) —
+  // an estimate, not measured; a few px of mismatch is a cosmetic seam, not a functional bug.
+  const THEAD_ROW_H = 23;
 
-  // Build group header cells
+  // Build group header cells. zIndex:3, ABOVE the body's sticky-left column (tdS below, zIndex:2)
+  // — thead precedes tbody in DOM order, so an equal z-index would let scrolling body cells paint
+  // over the sticky header on tie-break instead of the header staying on top.
   const groupCells = groups.map(g=>h('th',{key:g.g,colSpan:g.count,
-    style:{...thS,color:'var(--accent)',borderRight:'1px solid var(--bdr)'}}, g.g));
+    style:{...thS,color:'var(--accent)',borderRight:'1px solid var(--bdr)',position:'sticky',top:0,zIndex:3}}, g.g));
 
   // Build field header cells
-  const fieldCells = PROJ_FIELDS.map(f=>h('th',{key:f.key,style:{...thS,minWidth:64}},f.l));
+  const fieldCells = PROJ_FIELDS.map(f=>h('th',{key:f.key,style:{...thS,minWidth:64,position:'sticky',top:THEAD_ROW_H,zIndex:3}},f.l));
 
   // Build store row elements
   const storeRowEls = locs.map(loc=>{
@@ -8219,7 +8236,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
           tbl({style:{borderCollapse:'collapse',width:'max-content',minWidth:'100%'}},
             thead(null,
               h('tr',null,
-                h('th',{rowSpan:2,style:{...thS,position:'sticky',left:0,zIndex:3,
+                h('th',{rowSpan:2,style:{...thS,position:'sticky',left:0,top:0,zIndex:4,
                   background:'var(--surf)',textAlign:'left',minWidth:170,
                   borderRight:'1px solid var(--bdr)'}}, 'Store'),
                 ...groupCells
