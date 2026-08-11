@@ -16,7 +16,7 @@ import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
 import { buildAttentionFeed, mergeWorstSalesLY } from '../engine/attention-feed.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
-import { recordFireVolume } from '../engine/insight-ledger-measure.js';
+import { recordFireVolume, hydrateFireVolume } from '../engine/insight-ledger-measure.js';
 
 const { useMemo, useState, useEffect } = React;
 export const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
@@ -63,6 +63,13 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
   const [savedCorr, setSavedCorr] = useState(null);
   const [exceptions, setExceptions] = useState(null);   // eom_count_exceptions for the current period → Integrity
   const [integrity, setIntegrity] = useState(null);     // eom_integrity_flags (recount-padding batches) → Integrity
+
+  // #178 item 3: hydrateFireVolume was exported/tested but never called — each device
+  // accumulated its own day buckets and they were never unioned, contradicting the Insight
+  // Ledger design's stated premise of measuring "a week of real multi-device usage." One-shot
+  // on mount, same as this hook's other startup reads below. See insight-ledger-measure.js.
+  useEffect(() => { hydrateFireVolume(() => {}); }, []);
+
   useEffect(() => {
     let live = true;
     if (!ds?.gradedVisits) loadGradedVisits().then(v => { if (live) setGradedVisits(v || []); }).catch(() => { if (live) setGradedVisits([]); });
