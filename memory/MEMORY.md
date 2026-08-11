@@ -115,6 +115,13 @@
   always had it. New rollup-table migration (owner needs to run it) + engine/labor-gap-split.js
   (Wed-Tue pay week, signature #4 in-progress-day exclusion, null-vs-fabricated-zero when the
   migration hasn't landed yet). New Labor Tools tab: 🎯 Planning/Execution.
+- **⏳ [Patch Heatmap band calibration (#219)](project-patch-heatmap-calibration-219.md)** —
+  measurement tooling only, `badAt` constants NOT yet changed. Production showed 26/27 flagged
+  vs the dashboard's own 25/27-trusted read — worst-of-N compounding tight, chosen-not-derived
+  cuts. `scripts/measure-patch-heatmap-bands.mjs` covers Sales/FOB/Labor/Speed (Controls is a
+  composite, out of scope, needs in-app instrumentation instead); imports verified to resolve,
+  never run — no live Supabase access in this sandbox. #220 (patch rollup tiles) blocked
+  behind this landing.
 
 ## ⚡ Performance
 - [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
