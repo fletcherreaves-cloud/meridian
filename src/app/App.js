@@ -18,7 +18,6 @@ import { GMCoachingBrief } from '../engine/coaching.js';
 import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
 import { CalendarManagerPanel, EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { EventImpactPanel } from '../views/event-impact.js';
-import { ReportSubscriptions } from '../views/report-subscriptions.js';
 import { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
@@ -107,6 +106,9 @@ const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then
 const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
 const SchedulingPanel = lazyPanel(() => import('../views/scheduling.js').then(m => ({ default: m.SchedulingPanel })));
 import { AdminPanel } from '../views/admin.js';
+// #207: see the FormsLibraryPanel comment below — same fix, same reason. report-subscriptions.js
+// was the other static importer defeating a lazy import (above-store-onepager.js, 55KB).
+const ReportSubscriptions = lazyPanel(() => import('../views/report-subscriptions.js').then(m => ({ default: m.ReportSubscriptions })));
 const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
 const FOBEOMPanel = lazyPanel(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
 const EOMSupervisorPanel = lazyPanel(() => import('../views/eom-supervisor.js').then(m => ({ default: m.EOMSupervisorPanel })));
@@ -114,7 +116,14 @@ const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').th
 import { FormsPrintPanel } from '../views/forms-print.js';
 const OnePagerPanel = lazyPanel(() => import('../views/one-pager.js').then(m => ({ default: m.OnePagerPanel })));
 import { MetricLineagePanel } from '../views/metric-lineage.js';
-import { FormsLibraryPanel } from '../views/forms-library.js';
+// #207: forms-library.js/report-subscriptions.js were the only static importers left of
+// one-pager.js (64KB) and above-store-onepager.js (55KB) respectively — App.js already
+// lazy-loads both one-pagers (lines above/below), but a lazy import is defeated the moment
+// ANY static import chain also reaches the same module, which is exactly what these two did.
+// The build's own [INEFFECTIVE_DYNAMIC_IMPORT] warning named both; making these two panels
+// (occasional-use, neither on the startup path) lazy like the other 26 lets all four chunk
+// out of the entry bundle together instead of one static edge pinning 134KB raw in place.
+const FormsLibraryPanel = lazyPanel(() => import('../views/forms-library.js').then(m => ({ default: m.FormsLibraryPanel })));
 const SignalsPanel = lazyPanel(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })));
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
@@ -359,6 +368,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.984', date:'2026-08-11', changes:[
+    'Issue #207 — reclaim entry-chunk gzip budget, and make the 850KB ceiling load-bearing instead of a number a human has to remember to look at. The build itself had been printing two [INEFFECTIVE_DYNAMIC_IMPORT] warnings unread: one-pager.js (64KB) and above-store-onepager.js (55KB) were already behind lazyPanel() in App.js, but forms-library.js (6KB) and report-subscriptions.js (13KB) — the panels that each statically import one of them — were themselves still static imports in App.js, which pins the whole dependency chain into the entry chunk regardless of the lazy wrapper further down. Converted both to lazyPanel(), matching the other 26 lazy panels already in App.js. Measured, not assumed: entry chunk 2786.50 KB -> 2750.40 KB raw, gzip 841.72 KB -> 831.60 KB — 10.12 KB reclaimed (smaller than a naive raw-bytes-times-ratio estimate; real bundler chunking split some formerly-shared code differently than a flat ratio predicts). Both warnings gone from the build output; the remaining INEFFECTIVE_DYNAMIC_IMPORT (supabase.js) is a different, expected case — that module is legitimately both a static and dynamic import target app-wide and is not part of this fix. Second half: added scripts/check-bundle-budget.mjs, now the actual `build` npm script (`tsc -b && node scripts/check-bundle-budget.mjs`, replacing the bare `vite build` call) — it runs vite build, prints the same output as always, and FAILS (exit 1) if the entry chunk\'s gzip figure exceeds 850KB. No CI workflow changes needed: ci.yml and deploy.yml already invoke `npm run build`, so both are gated automatically, and it fails identically for a local `npm run build`. Deliberately parses vite\'s OWN printed gzip line rather than re-gzipping the output file independently — measured a real ~10KB gap between a plain `gzip -9` recompression and what vite/rolldown\'s build reporter prints for the same file, so an independent re-measurement would have silently enforced a different (more lenient) number than every gzip figure already cited in this repo\'s commit history. Not done: a redundant Vitest test that re-runs the build (would roughly double `npm test`\'s ~11s runtime for no additional safety `npm run build`\'s own gate doesn\'t already provide — CI already runs Test and Build as separate steps). Wider bundle-reduction candidates identified but explicitly deferred to a separate pass, not bundled here: record-day.js (40KB), feature-requests.js (40KB), management.js (38KB), location-intel.js (50KB), lifelenz.js (43KB), smart-targets.js (51KB) — all still static; and whether analytics.js (528KB, currently static since At-A-Glance is the landing view) could split its landing tiles from its deeper panels is an open question for that pass, not this one.',
+  ]},
   {version:'4.983', date:'2026-08-11', changes:[
     'Issue #197 Slice 1 (first cut) — de-materialize Type A calendar events. The design doc traced 25,783 org_events rows to "a rule generated them and wrote 27 rows per date" (US federal holidays x 27 stores). Traced the actual write path before touching it: there are FOUR separate holiday-tagging mechanisms in this codebase, not one — autoTagHolidays() (utils/holidays.js, ran automatically on EVERY data load: pipeline.js buildDS/mergeDS ds.loaded blocks + App.js IDB-restore path), Review Pack generation\'s inline auto-tag (calendar.js), the "Tag All Holidays" button (analytics.js), and the "Auto-Tag Holidays" button (store-dash.js). Only the first is the silent-runaway one — zero owner action, compounding across months of uploads; the other three are explicit, owner-clicked, bounded actions and are untouched by this change (a separate decision the owner hasn\'t made). Removed only autoTagHolidays()\'s 3 automatic call sites. Verified safe by grep, not assumption, per the standing "measure don\'t reason" rule: every real forecast exclusion/adjustment site (forecast.js\'s candidate-day exclusion and holiday-LY adjustment) already calls isHoliday()/HOLIDAY_MAP directly and never read the materialized tag — a fullClosure-based "excluded from calibration upstream" code comment turned out to be stale/aspirational documentation, not a real dependency. So the automatic materialization was pure redundant computation; forecast accuracy is unaffected by removing it. Added scripts/cleanup-materialized-holiday-events.mjs (dry-run first) for the owner to optionally purge the rows that already accumulated, scoped precisely to event_type=\'holiday\' + a known HOLIDAY_MAP label — leaves real manual entries and all retail-events rows untouched. Also checked and can report: #192 P0 item 4 ("52 more" unreachable in Calendar Manager) does NOT actually need this fix — the day cell is already clickable and opens an unpaginated modal listing every event for that day; the design doc\'s prediction that volume was the cause is unconfirmed and should be re-checked against a live report before assuming. Full scope, what\'s deferred, and why: memory/project-events-redesign.md §3.',
   ]},
