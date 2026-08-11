@@ -18,7 +18,7 @@ const EMITS = {
   opsCashRows: ['cashOSAmt', 'cashOSPct', 'cashRefAmt', 'cashRefCnt', 'cashlessRefAmt', 'cashlessRefCnt', 'date', 'discPct', 'drawerOpens', 'loc', 'mealDiscAmt', 'tRedACnt', 'tRedAPct', 'tRedBCnt', 'tRedBPct', 'timeSlice'],
   opsLaborRows: ['date', 'loc', 'otDollar', 'otHrs', 'timeSlice'],
   opsServiceRows: ['date', 'kvsHealthy', 'kvst', 'loc', 'oepe', 'park', 'timeSlice'],
-  qsrActSummaryRows: ['_dtCars', '_dtHeld', '_dtStore', '_dtTotal', '_fcCnt', '_fcDrawer', '_fcServe', '_isQsrAct', '_kvsH', '_kvsU', '_mfyCnt', '_mfyTime', 'actHrs', 'actVsNeed', 'allNetSales', 'at', 'date', 'detail', 'gc', 'kvsHealthy', 'kvst', 'lyGc', 'lySales', 'needHrs', 'oepe', 'park', 'projGC', 'projSales', 'r2p', 'sales', 'salesVsLYPct', 'tpph', 'txns'],
+  qsrActSummaryRows: ['_dtCars', '_dtHeld', '_dtHeldTime', '_dtStore', '_dtTotal', '_fcCnt', '_fcDrawer', '_fcServe', '_isQsrAct', '_kvsH', '_kvsU', '_mfyCnt', '_mfyTime', 'actHrs', 'actVsNeed', 'allNetSales', 'at', 'date', 'detail', 'dt_heldtime', 'dt_trans_cnt', 'dt_untilserve', 'dt_untilstore', 'gc', 'kvsHealthy', 'kvst', 'lyGc', 'lySales', 'needHrs', 'oepe', 'oepeWithPark', 'park', 'projGC', 'projSales', 'r2p', 'sales', 'salesVsLYPct', 'tpph', 'txns'],
 };
 
 const NEW_IN_PHASE1 = [

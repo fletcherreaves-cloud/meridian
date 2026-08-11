@@ -202,6 +202,7 @@ async function refreshRollup(records, date) {
     add(a, 'dt_untilstore',           r.dt_untilstore);
     add(a, 'dt_trans_cnt',            r.dt_trans_cnt);
     add(a, 'dt_carsheld',             r.dt_carsheld);
+    add(a, 'dt_heldtime',             r.dt_heldtime);
     add(a, 'fc_untilserve',           r.fc_untilserve);
     add(a, 'fc_untilclosedrawer',     r.fc_untilclosedrawer);
     add(a, 'fc_trans_cnt',            r.fc_trans_cnt);

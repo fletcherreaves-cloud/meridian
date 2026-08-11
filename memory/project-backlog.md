@@ -81,6 +81,18 @@ behavior every other field here already has). Owner should confirm against the r
 tests across `monthly-targets-park-oepe.test.js` (parser) and
 `monthly-targets-park-oepe-roundtrip.test.js` (parse→save→load).
 
+**#183 — DONE (2026-08-11, #184 dispatch item 3).** OEPE switched app-wide to the w/o-park
+formula `graded-visits.js` already had — `loadQsrActSummary` (supabase.js) was still computing
+the WITH-parked-time variant, so the same metric name meant two different numbers depending on
+the panel. New `src/utils/oepe.js` is the one shared definition now (`oepeSeconds` w/o-park,
+`oepeWithParkSeconds` kept as a named diagnostic, never scored). Required a new
+`qsr_daily_activity_rollup.dt_heldtime` column
+(`supabase/schema-qsr-rollup-dt-heldtime.sql` — **owner needs to run this**) and
+`scripts/qsrsoft-dar-pull.mjs` now sums it; historical rows outside the pull's normal window
+need a one-time `QSRSOFT_DAR_FORCE_FULL=1` run to backfill, or age out naturally. `tOepe` (the
+target) is deliberately unchanged per the #185 measurement (switching bases moves 1 store, not
+the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
+
 ### Two items the owner explicitly asked not to lose (2026-08-11)
 
 1. **#154 — LifeLenz AOS. Needs an owner decision: rescope or close.** Its premise was
