@@ -24,6 +24,7 @@ import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail,
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { reportRender as _traceRender } from '../utils/click-trace.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -215,6 +216,11 @@ function ItemsRecountedTile({ onOpenModal }) {
 }
 
 function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
+  // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
+  // the default landing view, prime suspect for the block neither of those alone could name.
+  // Reasoning + how the numbers combine: memory/project-instrument-fix-189.md.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('AtAGlance', 'render+commit', performance.now() - _rt0); });
   const today = new Date();
   const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
   // Market split by store state (STORE_COORDS carries no org, so it defaulted

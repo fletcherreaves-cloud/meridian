@@ -1,0 +1,45 @@
+name: Event Impact — Retail Lift Measurement
+
+# #192 P0 item 3 / #197 critical path: the Event Impact Registry (event_impact table) only
+# populated the `sports` category (a one-time static seed) — the other declared categories
+# read as "no impact" rather than "not measured," the exact v4.870 failure mode. The retail
+# types (tax_free/black_friday/small_biz_sat/cyber_monday) already had a complete, working
+# measurement pipeline (src/engine/retail-events.js + scripts/measure-retail-impact.mjs) —
+# it was written, tested, and never scheduled or run. This is that missing schedule, not a
+# new pipeline. It re-measures from labor_rows sales history every run (idempotent upsert on
+# (loc,event_type)), so lift figures stay current as more seasons of real data accumulate.
+#
+# `event` (festival), `weather`, and `promo` (LTO) categories still have no measurement
+# pipeline at all — real follow-up work, not covered by this workflow. `holiday` impact is
+# already live via a separate mechanism (src/utils/holidays.js, applied directly in
+# forecast.js) and does not need Event Impact Registry wiring.
+
+on:
+  schedule:
+    # Monthly, 1st at 08:00 UTC — retail lift is a slow-moving seasonal figure, not daily data;
+    # after the daily QSRSoft/LifeLenz pulls (10:00 UTC on ordinary days) so it never races them.
+    - cron: '0 8 1 * *'
+  workflow_dispatch:
+    inputs:
+      minN:
+        description: 'Minimum observations required to write a store (default 2)'
+        required: false
+        default: '2'
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Measure retail event lift into event_impact
+        run: node scripts/measure-retail-impact.mjs --min-n "${{ github.event.inputs.minN || '2' }}"
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

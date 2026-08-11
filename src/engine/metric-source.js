@@ -309,6 +309,74 @@ export const MANUAL_ONLY_METRICS = {
   // or a derivation. Kept as the documented home for anything genuinely source-less.
 };
 
+// ── Lazy fill for manual-fed sources (#191, 2026-08-11) ─────────────────────
+// Manual-fed sources are last-resort fill (CLAUDE.md standing rule) — but until now they were
+// loaded EAGERLY at every startup regardless of whether the cloud streams already covered the
+// day, which measured at ~21s of a 63s startup (owner's waterfall capture, #191). This lets the
+// resolver kick off an on-demand load the first time a metric chain that includes a lazy-fill
+// source is actually resolved this session, instead of loading it unconditionally on login.
+//
+// Deliberately narrow scope, per #191's own suggested sequencing: only auditRows for now — the
+// highest-volume (21,929 of ~42,500 T3 rows) manual source, and its 4 chains (empMealAmt,
+// mgrMealAmt, manualRefAmt, mgrMealCnt) all place it last, behind glimpseRows/ctrlRows, so on any
+// day the cloud already covers it never reaches auditRows at all. laborRows/opsRows/ctrlRows/
+// fobRows stay on their existing eager-load path until this is proven out and extended.
+//
+// This does NOT gap-scope the request (load only the missing loc/date range) — it loads the
+// whole stream, once, same shape/cost as the eager load it replaces, just triggered on demand
+// instead of unconditionally. Gap-scoping is real future work (a demand queue keyed on
+// (stream,loc,range), draining on a debounce) but is not required to capture this win: on a
+// session where nothing ever resolves one of these 4 chains, auditRows now never loads at all;
+// when something does, it loads exactly once, deduped, same as before.
+//
+// "Pending must not look like zero" (v4.870 rule): metricDaily/metricSeries's contract is
+// unchanged — they return null while a lazy-fill source hasn't resolved yet, exactly like they
+// already do during the (now removed) eager-load's own brief loading window. This does not
+// introduce a new failure mode, only extends how long that pre-existing window can be. Consumers
+// that need to distinguish "still loading" from "no data" (a "load on open" panel, e.g.) should
+// call isLazyFillPending(src) and show their own loading state — see store-analytics.js's
+// Register Audit tab for the reference implementation.
+export const LAZY_FILL_SOURCES = Object.freeze(['auditRows']);
+
+let _lazyFillHook = null;                 // { setDs, loaders: { [src]: () => Promise<rows> } }
+const _lazyState = {};                    // src -> 'pending' | 'loaded' | 'error'
+
+// App.js calls this once at startup with the REAL setDs (not the tiered loader's queueing
+// shadow — a lazy fill can resolve long after the tiered loader's own queue has been flushed
+// and discarded) and the real loader functions it already imports. A no-op before that wiring
+// runs (e.g. in tests), which just means lazy sources stay unloaded — the existing behavior for
+// any manual source today, before its eager stage completes.
+export function configureLazyFill(hook) { _lazyFillHook = hook; }
+
+function _triggerLazyFill(src) {
+  if (!_lazyFillHook || !LAZY_FILL_SOURCES.includes(src)) return;
+  if (_lazyState[src] === 'pending' || _lazyState[src] === 'loaded') return;
+  const loader = _lazyFillHook.loaders[src];
+  if (!loader) return;
+  _lazyState[src] = 'pending';
+  loader().then(rows => {
+    _lazyState[src] = 'loaded';
+    _lazyFillHook.setDs(prev => (prev ? { ...prev, [src]: rows || [] } : prev));
+  }).catch(e => {
+    _lazyState[src] = 'error';   // no auto-retry — matches the eager loaders' own error handling
+    console.warn(`[Meridian] lazy-fill ${src} failed:`, e);
+  });
+}
+
+// For a "load on open" consumer that reads a lazy-fill source directly (bypassing the resolver)
+// to distinguish "still loading" from "genuinely no data" instead of reading an empty array as
+// the latter. Also triggers the fill as a side effect, so calling this IS the "demand" signal.
+export function ensureLazyFill(src) { _triggerLazyFill(src); return isLazyFillPending(src); }
+export function isLazyFillPending(src) { return _lazyState[src] === 'pending'; }
+
+// Test-only: this module's lazy-fill state is intentionally module-level (one loader per
+// source per session, not per-caller), which means it persists across test cases unless reset.
+// Not called by application code.
+export function _resetLazyFillForTests() {
+  _lazyFillHook = null;
+  for (const k of Object.keys(_lazyState)) delete _lazyState[k];
+}
+
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);
 
 // Newest per-day date present across the CORE daily operating streams — powers a
@@ -368,6 +436,7 @@ function _srcIdx(ds, src) {
 export function metricDaily(ds, loc, date, key) {
   const spec = METRIC_SOURCES[key];
   if (!ds || !spec) return null;
+  if (spec.srcs) for (const [src] of spec.srcs) if (LAZY_FILL_SOURCES.includes(src)) _triggerLazyFill(src);
   const dkey = String(loc) + '_' + _dk(date);
   for (const [src, field] of spec.srcs) {
     const rows = _srcIdx(ds, src)[dkey];
@@ -412,6 +481,7 @@ export function metricSeries(ds, loc, range, key, _depth = 0) {
     return into;
   };
   if (spec.derive && !spec.srcs) return _derive(out);  // derivation-only metric
+  for (const [src] of spec.srcs) if (LAZY_FILL_SOURCES.includes(src)) _triggerLazyFill(src);
   const L = String(loc);
   const rs = _dk(range.s), re = _dk(range.e);
   // Collect every date in range that any source has for this loc, then resolve auto-first.

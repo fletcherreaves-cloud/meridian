@@ -92,6 +92,14 @@
   widespread than reported.
 
 ## ⚡ Performance
+- [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
+  spans were nested (same-commit layout effects end at one flush), not additive — a misreading
+  already caught once by hand. Extended the same pattern to the 4 active-panel views and added
+  automatic same-commit subtraction to the report. Not measured live; owner needs to re-capture.
+- [Lazy fill + qsr_fob parallel pagination (#191)](project-lazy-fill-191.md) — auditRows now
+  loads on demand instead of eagerly at startup (scoped to auditRows only, not gap-scoped —
+  records why); qsr_fob switched from serial to parallel pagination. Records the 3 non-resolver
+  consumer decisions and what's deliberately NOT verified live (no Supabase session here).
 - [Startup render storm (#184 item 0)](project-startup-render-storm.md) — batched the 22
   ds-touching tiered-startup-loader stages behind 3 per-tier flushes (22 commits → 3); the
   ~19-commit remainder (IDB restore, org_config syncs, email/PDF auto-ingest) is enumerated but

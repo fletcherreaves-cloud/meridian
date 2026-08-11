@@ -84,6 +84,32 @@ Roll-up-with-expand is still the right display for the **impact** view, because 
 genuinely per-store (Elgin's Black Friday is not Ardmore's) — owner confirmed an expanding row
 is what he wants there.
 
+**Slice 1, first cut shipped (v4.983).** Traced the actual write path before touching it (grep,
+not assumption): there are FOUR separate holiday-tagging mechanisms, not one — `autoTagHolidays()`
+(`utils/holidays.js`, ran automatically on every data load — pipeline.js's `buildDS`/`mergeDS`
+`ds.loaded` blocks, plus App.js's IDB-restore path), Review Pack generation's inline auto-tag
+(`calendar.js:1325-1344`), the "Tag All Holidays" button (`analytics.js:4573`), and the
+"🗓 Auto-Tag Holidays" button (`store-dash.js:3507-3528`). Only the first is the actual
+silent-runaway one (zero owner action, on every single load); the other three are explicit,
+owner-clicked, bounded actions — legitimate features, not the bug. Removed only
+`autoTagHolidays()`'s 3 automatic call sites. Verified safe by grep, not assumption: every real
+forecast exclusion/adjustment site (`forecast.js:474/498/519` candidate exclusion,
+`:1588-1603` holiday-LY adjustment) already calls `isHoliday()`/`HOLIDAY_MAP` directly and never
+read the materialized tag — the `fullClosure`-based "excluded from calibration entirely
+upstream" comment on `getHolidayAdj` turned out to be stale/aspirational documentation, not a
+real dependency (`fullClosure` is read nowhere as a filter). So the automatic materialization
+was pure redundant computation this whole time; forecast behavior is unaffected by removing it.
+Also shipped `scripts/cleanup-materialized-holiday-events.mjs` (dry-run first, like the retail
+lift script) to purge the already-accumulated rows, scoped to `event_type='holiday'` AND a
+label matching a known `HOLIDAY_MAP` entry — leaves real manual holiday-type entries and all
+retail-events rows (different `event_type` values) untouched. **NOT done in this cut, real
+follow-up:** the 3 other retail-events/Black-Friday-adjacent write paths are untouched (they're
+legitimate opt-in actions, a separate decision); the confirm/dismiss queue (§4); the panel
+reshape (§7); Calendar Manager/Event Impact Registry folding into one home (§7). "52 more"
+(#192 P0 item 4) turned out NOT to need this fix at all — the day cell is already clickable and
+opens an unpaginated modal showing every event for that day; re-check the live report before
+assuming volume was ever the cause.
+
 ## 4. The loop
 
 Four panels are really one cycle:
@@ -176,9 +202,22 @@ panels — the owner's *"should get their own home and dashboard."*
 
 ## 9. Still open
 
-- **Event Impact Registry only populates Sports.** Other categories declared but never wired
-  (#192 P0). This loop depends on impact being learned, so that gap is now on the critical
-  path rather than a nice-to-have.
+- **Event Impact Registry — partially closed (v4.982).** `sports` was already seeded;
+  `tax_free`/`black_friday`/`small_biz_sat`/`cyber_monday` had a complete measurement
+  pipeline (`retail-events.js` + `scripts/measure-retail-impact.mjs`) that existed but was
+  never scheduled — now runs monthly via `.github/workflows/measure-retail-impact.yml`
+  (watched in `sync-failure-watch.yml`). 5 of 9 declared categories now populate or will on
+  the next scheduled run. **Still genuinely open:** `event` (festival/fair) and `weather` have
+  no measurement pipeline at all (would need one built from `weatherRows`/manual `org_events`
+  tags, following the retail script's shape); `promo` (LTO) has no structured date source
+  anywhere in the codebase to measure from — only sparse manual tags. `holiday` is **not**
+  actually a gap: it already has a working, independent mechanism
+  (`src/utils/holidays.js`'s `isHoliday()`/`getHolidayAdj()`, applied directly in
+  `forecast.js:1598-1600`) that doesn't route through this registry at all — wiring it in
+  would be redundant, not a fix. The panel itself (`event-impact.js:119-120`) already
+  distinguishes "not measured yet" from "measured, zero impact" with explicit copy, so the
+  v4.870 silent-failure concern the P0 raised doesn't actually apply to the UI — only to the
+  missing pipelines themselves.
 - **School-calendar LY alignment** — needs the school calendar as structured data with
   per-year dates. `loadOrgSchoolConfig` exists; not yet checked whether it carries enough.
 - **Retail/Shopping Events import** confusion from Notes 65 (*"keep: Black Friday
@@ -188,11 +227,11 @@ panels — the owner's *"should get their own home and dashboard."*
 
 ## 10. Related
 
-- #192 — Notes 65 triage (P0s: false all-clear, FOB loc keying, stale tagged-days banner)
+- #192 — Notes 65 triage. P0s shipped this pass: false all-clear + FOB loc keying (v4.976),
+  stale tagged-days banner (v4.981), Event Impact Registry retail-lift scheduling (v4.982).
+  Still open from the P0 list: Change Monitor/Snapshot fear, Calendar "52 more" unreachable,
+  yearly-target root cause — none of these block #197, so they're deferred, not forgotten.
 - `memory/feedback-measure-dont-reason.md` — the standing rule that produced the corrections
   in this session
 - `forecast.js:440-460` — `_robustCandidates`, the measured-anomaly exclusion this design
   builds on
-- The **stale tagged-days banner** (`store-dash.js:3530`, `calendar.js:1600`) still tells the
-  owner heavy tagging can leave a store with no LY comparison. That is **false** since v4.924
-  and is a P0 in #192 — fix it before anyone reads this design and re-derives the old model.

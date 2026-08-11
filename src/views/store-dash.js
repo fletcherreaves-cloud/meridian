@@ -13,6 +13,7 @@ import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ModelHealthBadge } from './analytics.js';
+import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
@@ -1878,6 +1879,9 @@ function StoreCard({store, onSelect}) {
 }
 
 function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStore}) {
+  // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('DistrictGrid', 'render+commit', performance.now() - _rt0); });
   const [sort, setSort] = useState('score');
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -2029,6 +2033,9 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
 
 // ORG VIEW
 function OrgView({stores, settings, onSelectStore}) {
+  // #189: same pattern as AtAGlance — one of 4 possible active-panel views.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('OrgView', 'render+commit', performance.now() - _rt0); });
   const operators = settings.operators||{};
   const supervisors = settings.supervisorGroups||{};
   const byOp = Object.entries(operators).map(([name,locs])=>({name,stores:stores.filter(s=>locs.includes(s.loc))})).filter(g=>g.stores.length>0);
@@ -3521,13 +3528,20 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
           }},'🗓 Auto-Tag Holidays'),
         btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')
       ),
-      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'7px 18px',
-        borderBottom:'.5px solid var(--bdr)',background:'rgba(245,158,11,.10)',fontSize:'10px',
-        color:'#f59e0b',lineHeight:1.5}},
-        '⚠ ',
+      // #192: was a warning claiming heavy tagging drops LY comparison entirely — true before
+      // v4.924, when tag presence alone excluded a candidate day (what broke Tishomingo
+      // district-wide on 2026-08-08 with 450 tagged days). Since v4.924 the tag-independent
+      // _robustCandidates (forecast.js) excludes a candidate only when its own sales/GC is a
+      // statistical outlier vs. its same-DOW peers — tagging no longer affects LY matching, so
+      // this is now an informational count, not a warning.
+      locCounts.some(([,n])=>n>=HEAVY_TAGS) && div({style:{padding:'5px 18px',
+        borderBottom:'.5px solid var(--bdr)',background:'rgba(96,165,250,.06)',fontSize:'8.5px',
+        color:'#60a5fa',lineHeight:1.5}},
+        'ℹ️ ',
         locCounts.filter(([,n])=>n>=HEAVY_TAGS).map(([l,n])=>(STORE_NAMES[l]||l)+' ('+n+')').join(', '),
-        ' — over a year of tagged days. Tagged days are skipped when the forecast looks for the ',
-        'same day last year, so heavy tagging can leave a store with no comparison at all.'),
+        ' — over a year of tagged days. Tagging is informational and no longer affects last-year ',
+        'comparison (a day is excluded from LY matching only if its own sales/GC is a statistical ',
+        'outlier, regardless of tags).'),
       div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:8,
         alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
         btn({className:'btn btn-sm',onClick:()=>setDupesOnly(v=>!v),

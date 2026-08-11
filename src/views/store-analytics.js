@@ -12,7 +12,8 @@ import { LocationIntelligence } from '../features/location-intel.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
-import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
+import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const h=React.createElement;
@@ -1253,8 +1254,29 @@ function RegisterAuditNarrative({auditData, store, ds}) {
 }
 
 function RegisterAuditTab({ds, loc}) {
+  // #191: auditRows is no longer eagerly loaded at startup — it's the reference "load on open"
+  // consumer for metric-source.js's lazy-fill mechanism. Trigger it on mount (this tab reading
+  // ds.auditRows directly, not through the resolver, would never fire the demand on its own) and
+  // track pending state so a genuinely-empty result isn't shown while the load is still in flight
+  // (v4.870 rule — an in-flight read must never look identical to a confirmed-empty one).
+  const [pending, setPending] = React.useState(true);
+  React.useEffect(() => {
+    const stillPending = ensureLazyFill('auditRows');
+    setPending(stillPending);
+    if (!stillPending) return;
+    const id = setInterval(() => { if (!isLazyFillPending('auditRows')) { setPending(false); clearInterval(id); } }, 300);
+    return () => clearInterval(id);
+  }, []);
+
   const auditRows = ds&&ds.auditRows ? ds.auditRows.filter(r=>r.loc===loc) : [];
   const auditData = auditRows.length>0 ? analyzeRegisterAudit(auditRows) : null;
+
+  if(pending && !auditRows.length) return div({style:{padding:20}},
+    div({className:'empty-st'},
+      div({className:'empty-st-t'},'Loading Register Audit data…'),
+      div({className:'empty-st-s'},'Fetching from Supabase — this stream loads on demand rather than at startup.')
+    )
+  );
 
   if(!auditRows.length) return div({style:{padding:20}},
     div({className:'empty-st'},
@@ -1564,6 +1586,9 @@ function DaypartPaceCard({loc}) {
 
 // STORE DASHBOARD (SECTION 13)
 function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections}) {
+  // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('StoreDash', 'render+commit', performance.now() - _rt0); });
   const [tab, setTab]             = useState('overview');
   const [wk, setWk]               = useState([]);
   const [wkLoading, setWkLoading] = useState(false);

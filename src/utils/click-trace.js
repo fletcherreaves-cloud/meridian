@@ -75,6 +75,51 @@ export function reportRender(id, phase, actualDuration, baseDuration) {
     console.log(`%c[click-trace] React ${phase} ${Math.round(actualDuration)}ms  (${id})`, 'color:#fb923c');
 }
 
+// ── Self-time decomposition (#189) ──────────────────────────────────────────
+// The commits above are NESTED (same-commit layout effects all end at one flush), not additive
+// — reading them as additive is a misreading #189 recorded happening once already. This
+// auto-subtracts same-commit App tree / AppSidebar / active-panel spans instead of leaving it to
+// be worked out by hand. Still can't split DOM-commit from JS render within the panel residual
+// (needs React Profiler, already established unavailable here — see App.js's v4.917 note).
+// Full reasoning: memory/project-instrument-fix-189.md.
+const _PANEL_IDS = ['AtAGlance', 'DistrictGrid', 'StoreDash', 'OrgView'];
+const _CORR_MS = 8;
+function selfTimeLines() {
+  if (!_renders.length) return [];
+  const byId = id => _renders.filter(r => r.id === id);
+  const appEvents = byId('App tree');
+  if (!appEvents.length) return [];
+  const nearestOf = (list, at) => {
+    let best = null, bestDelta = Infinity;
+    for (const r of list) { const d = Math.abs(r.at - at); if (d < bestDelta) { bestDelta = d; best = r; } }
+    return (best && bestDelta <= _CORR_MS) ? best : null;
+  };
+  const agg = {}; // label -> {n, total, worst}
+  const add = (label, ms) => {
+    (agg[label] ||= { n: 0, total: 0, worst: 0 });
+    agg[label].n++; agg[label].total += ms;
+    if (ms > agg[label].worst) agg[label].worst = ms;
+  };
+  for (const app of appEvents) {
+    const sidebar = nearestOf(byId('AppSidebar'), app.at);
+    let panel = null;
+    for (const pid of _PANEL_IDS) { const p = nearestOf(byId(pid), app.at); if (p) { panel = p; break; } }
+    if (sidebar) {
+      add('App (self, excl. AppSidebar)', Math.max(0, app.actual - sidebar.actual));
+      if (panel) add('AppSidebar (self, excl. active panel)', Math.max(0, sidebar.actual - panel.actual));
+      else add('AppSidebar (self, incl. active panel — no panel span matched this commit)', sidebar.actual);
+    } else {
+      add('App (self — no AppSidebar span matched this commit)', app.actual);
+    }
+    if (panel) add(`${panel.id} (residual: its own render + DOM commit + any deeper children)`, panel.actual);
+  }
+  if (!Object.keys(agg).length) return [];
+  const lines = ['', '── self-time (nested spans subtracted, #189) ──'];
+  Object.entries(agg).sort((a, b) => b[1].total - a[1].total).forEach(([label, s]) =>
+    lines.push(`${label}  ${s.n}x · worst ${Math.round(s.worst)}ms · total ${Math.round(s.total)}ms`));
+  return lines;
+}
+
 // Builds the same report both printClickTrace() (console) and the on-screen overlay (phones
 // with no attached debugger) render — one source of truth for the numbers, two presentations.
 function buildReportLines() {
@@ -142,6 +187,7 @@ function buildReportLines() {
     [...noClick].sort((a, b) => b.actual - a.actual).slice(0, 5)
       .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})`));
   }
+  lines.push(...selfTimeLines());
   return lines;
 }
 
