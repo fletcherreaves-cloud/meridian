@@ -1212,10 +1212,21 @@ function CtrlScorecard({store}) {
     'Cash Refund/Day':'cashRefCnt', 'Discount % Sales':'discPct',
     'Emp Meal/Day':'empMealAmt', 'Mgr Meal/Day':'mgrMealAmt', 'OT Hours/Day':'otHrs',
   };
-  const _cov = (store.p && store.p._cov) || null;
-  const _noData = (label) => {
+  // #178 item 4: this used to read ONLY store.p._cov (the 6-Wk window's own observation
+  // count) and apply that single flag to all three displayed columns. compute6wk computes
+  // a SEPARATE _cov scoped to whatever window it was called with (store.p2 for 2-Wk, store.p4
+  // for 4-Wk, store.p for 6-Wk) — so a store with zero real observations in the trailing 2
+  // weeks specifically, but at least one somewhere in the wider 6-week window, had its 2-Wk
+  // "no data" guard silently pass (6-Wk coverage was nonzero) and fell through to the raw
+  // `metricAvg(...) ?? 0` value — displaying "$0.00" instead of "—". Reported as "Employee
+  // meals $0.00 at 2-wk"; every metric in this scorecard had the identical latent bug, Emp
+  // Meal/Day was just the one someone noticed.
+  const _cov2 = (store.p2 && store.p2._cov) || null;
+  const _cov4 = (store.p4 && store.p4._cov) || null;
+  const _cov6 = (store.p  && store.p._cov)  || null;
+  const _noDataIn = (cov, label) => {
     const f = COV_FIELD[label];
-    return !!(f && _cov && _cov[f] === 0);
+    return !!(f && cov && cov[f] === 0);
   };
   const fmtV = (v, fmt) => {
     if(v==null) return '—';
@@ -1241,17 +1252,20 @@ function CtrlScorecard({store}) {
           h('thead',null, h(THead)),
           h('tbody',null, g.rows.map(([l,v6,v2,v4,tgt,passFn,fmt,note],ri) => {
             // Do not grade a metric we have no observations for — an absent value must
-            // not score as a pass.
-            const noData = _noData(l);
-            const pass = (!noData && passFn && v2!=null) ? passFn(v2) : null;
+            // not score as a pass. Each column checks its OWN window's coverage now, not a
+            // shared 6-Wk flag (#178 item 4).
+            const noData2 = _noDataIn(_cov2, l);
+            const noData4 = _noDataIn(_cov4, l);
+            const noData6 = _noDataIn(_cov6, l);
+            const pass = (!noData2 && passFn && v2!=null) ? passFn(v2) : null;
             const tgtStr = tgt!=null?(fmt.startsWith('pct')?fP(tgt,2):fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—';
-            const varV = (!noData && v2!=null && tgt!=null) ? v2-tgt : null;
+            const varV = (!noData2 && v2!=null && tgt!=null) ? v2-tgt : null;
             const varS = varV!=null ? ((varV>=0?'+':'')+fmtV(Math.abs(varV),fmt).replace('$','')).replace('--','-') : '—';
             return tr({key:ri},
               td({style:{padding:'5px 8px',fontSize:'10px',color:'var(--text2)'}}, l),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,color:'var(--text)'}}, (noData?'—':fmtV(v2,fmt))),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, (noData?'—':fmtV(v4,fmt))),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'rgba(255,255,255,.3)'}}, (noData?'—':fmtV(v6,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,color:'var(--text)'}}, (noData2?'—':fmtV(v2,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, (noData4?'—':fmtV(v4,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'rgba(255,255,255,.3)'}}, (noData6?'—':fmtV(v6,fmt))),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, tgtStr),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,
                 color:pass===null?'var(--text3)':pass?'#10b981':'#ef4444'}}, varV!=null?varS:'—'),
