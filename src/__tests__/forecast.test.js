@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect, beforeEach } from 'vitest';
-import { forecastDay, fetchLY, fetchLYDate, fetchGC } from '../engine/forecast.js';
+import { forecastDay, fetchLY, fetchLYDate, fetchGC, compute6wk } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 
 const LOC = '3708';
@@ -258,6 +258,58 @@ describe('forecastDay — forceModel', () => {
     if (row) row.sales = 999999; // poison the same-day actual
     const after = forecastDay(LOC, target, ds, BASE_SETTINGS, null, null, 'weekly', 'simple').forecast;
     expect(after).toBe(before);
+  });
+
+  // #178 item 4: t2/t4/t6 on the ae/ewma/simple branches used to be the raw dollar forecast
+  // (Math.round(_aeFcst), ~$10,000+ for this fixture) reused verbatim instead of a YOY trend
+  // RATIO — the same field every other model path (and ForecastRow's "T2W/T6W — YOY Sales%"
+  // cells, via (r.t2*100).toFixed(2)+'%') treats as a fraction like 0.05. Since all 27 real
+  // stores are assigned model 'ae', this meant the T2W/T6W column showed a ~6-7 digit garbage
+  // "percent" for every store — the owner's reported "xxxxxxx.xx%".
+  it.each(['ae', 'ewma', 'simple'])('%s model: t2/t4/t6 are YOY trend ratios, not the dollar forecast', (model) => {
+    const r = forecastDay(LOC, makeDate(10), ds, BASE_SETTINGS, null, null, 'weekly', model);
+    expect(r.forecast).toBeGreaterThan(1000); // sanity: this fixture's forecasts are ~$10k+
+    for (const k of ['t2', 't4', 't6']) {
+      expect(typeof r[k]).toBe('number');
+      expect(Number.isNaN(r[k])).toBe(false);
+      // A real YOY trend ratio is bounded well within ±3 (±300%); the bug produced values in
+      // the thousands (the raw dollar forecast), so this bound cleanly separates the two.
+      expect(Math.abs(r[k])).toBeLessThan(3);
+      expect(r[k]).not.toBe(r.forecast);
+    }
+  });
+
+  // #178 item 4 (Pass Rate 0%): `pass` was hardcoded null in these three branches, so
+  // actualDays.filter(r=>r.pass===true) was always empty and the Forecast Table's Pass Rate
+  // was UNCONDITIONALLY 0% for every store — not a legitimate low-accuracy reading, since
+  // `pass===true` could structurally never match. Now derived from the same already-computed
+  // varPct using the identical tolerance formula the engineered/dow path uses.
+  it.each(['ae', 'ewma', 'simple'])('%s model: pass is a real boolean, not hardcoded null', (model) => {
+    const r = forecastDay(LOC, makeDate(10), ds, BASE_SETTINGS, null, null, 'weekly', model);
+    expect(r.actual).toBeGreaterThan(0); // a past date with a real actual — varPct is computable
+    expect(typeof r.pass).toBe('boolean');
+    expect(r.pass).toBe(Math.abs(r.varPct) <= (BASE_SETTINGS.tolerance || 5) / 100);
+  });
+});
+
+// #150/#178 item 6: compute6wk's own kvsu aggregation excluded a real 0 (`!row.kvsu`, the same
+// class of bug METRIC_SOURCES' mode:'pos' had) and defaulted "no coverage at all" to 0 instead
+// of null — indistinguishable from a confirmed zero. Without this fix, computeOpsScore's
+// p.kvsu!=null presence check (pipeline.js) would be a complete no-op: kvsu was never null
+// before, always a number.
+describe('compute6wk — kvsu presence vs a genuine zero (#150/#178 item 6)', () => {
+  const loc = '3708';
+  it('a real 0 kvsu observation is counted, not excluded', () => {
+    const opsRows = [{ loc, date: makeDate(2), kvsu: 0 }, { loc, date: makeDate(3), kvsu: 0.5 }];
+    const ds = { opsRows, opsByLoc: {}, ctrlRows: [], ctrlByLoc: {}, laborRows: [], laborByLoc: {} };
+    const r = compute6wk(loc, ds, 6);
+    expect(r.kvsu).toBeCloseTo(0.25, 5); // (0 + 0.5) / 2 — the 0 must be averaged IN, not skipped
+  });
+
+  it('zero real observations in-window returns null, not 0', () => {
+    const ds = { opsRows: [], opsByLoc: {}, ctrlRows: [], ctrlByLoc: {}, laborRows: [], laborByLoc: {} };
+    const r = compute6wk(loc, ds, 6);
+    expect(r.kvsu).toBeNull();
   });
 });
 

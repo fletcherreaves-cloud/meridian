@@ -90,8 +90,21 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
   const locStr = String(loc||'').trim();
   const opsRows   = ds&&ds.opsRows   ? ds.opsRows.filter(r=>r.loc===loc&&r.date>=cut)   : [];
   const laborRows = ds&&ds.laborRows ? ds.laborRows.filter(r=>r.loc===loc&&r.date>=cut) : [];
-  const ctrlRows  = ds&&ds.ctrlRows  ? ds.ctrlRows.filter(r=>r.loc===loc&&r.date>=cut)  : [];
-  const cAvg=(f)=>ctrlRows.length?ctrlRows.reduce((a,r)=>a+(r[f]||0),0)/ctrlRows.filter(r=>r[f]>0).length||0:0;
+  // #178 item 2: tpph/labor/ot used to read `cAvg`, an average over ALL of ctrlRows with no
+  // day-of-week filter — so whenever ctrlRows had data, these three showed the SAME number on
+  // every one of the 7 rows below. Also a raw-row read, violating the standing rule against
+  // filtering ctrlRows/laborRows/opsRows directly for a metric in a panel. Routed through
+  // metricSeries (auto-first across every stream, ctrlRows/laborRows included as fallbacks)
+  // and bucketed by weekday, same shape as labor-tools.js's DOW breakdown.
+  const range = {s:cut, e:lastClosedBusinessDay()};
+  const dowMetric = {tpph:{},labor:{},ot:{}};
+  {
+    const tp=metricSeries(ds,loc,range,'tpph'), lp=metricSeries(ds,loc,range,'laborPct'), ot=metricSeries(ds,loc,range,'otHrs');
+    for(const dk in tp) (dowMetric.tpph[new Date(dk+'T00:00:00').getDay()] ??= []).push(tp[dk]);
+    for(const dk in lp) (dowMetric.labor[new Date(dk+'T00:00:00').getDay()] ??= []).push(lp[dk]);
+    for(const dk in ot) (dowMetric.ot[new Date(dk+'T00:00:00').getDay()] ??= []).push(ot[dk]);
+  }
+  const dowMean=(bucket,d)=>{const v=bucket[d];return v&&v.length?v.reduce((a,b)=>a+b,0)/v.length:0;};
   const hasPeaks  = ds&&ds.peaksSvcRows&&ds.peaksSvcRows.some(r=>String(r.loc||'').trim()===locStr);
   const peaksData = hasPeaks ? analyzePeaks(ds.peaksSvcRows,ds.peaksSalesRows,loc,wb) : null;
   const dayDates  = laborRows.filter(r=>{const d=_toD(r.date).getDay();return d>=1&&d<=5;});
@@ -108,7 +121,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
     const totSales=lSum('sales');
     return{dow:DOW_BASE[d],n:lR.length,sales:lR.length?lR.reduce((a,r)=>a+r.sales,0)/lR.length:0,
       oepe:oAvg('oepe'),kvst:oAvg('kvst'),park:oAvg('park'),r2p:oAvg('r2p'),
-      tpph:cAvg('tpph')||lAvg('tpph')||oAvg('tpph'),kvsu:oAvg('kvsu'),labor:cAvg('laborPct')||lAvg('laborPct'),ot:cAvg('otHrs')||lAvg('otHrs'),
+      tpph:dowMean(dowMetric.tpph,d),kvsu:oAvg('kvsu'),labor:dowMean(dowMetric.labor,d),ot:dowMean(dowMetric.ot,d),
       dtPct:   totSales>0&&lSum('dtSales')>0   ? lSum('dtSales')/totSales   : (lR.length?lR.reduce((a,r)=>a+(r.dtPctTotal||0),0)/lR.length:0),
       bfPct:   totSales>0&&lSum('bfSales')>0   ? lSum('bfSales')/totSales   : (lR.length?lR.reduce((a,r)=>a+(r.bfPctTotal||0),0)/lR.length:0),
       mopPct:  totSales>0&&lSum('mopSales')>0  ? lSum('mopSales')/totSales  : (lR.length?lR.reduce((a,r)=>a+(r.mopPctTotal||0),0)/lR.length:0),
@@ -1881,12 +1894,19 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
         const today=new Date();
         const next4wk=addD(today,28);
         const districtStores=allStores.filter(s=>/^\d+$/.test(s.loc));
-        const totalGap=districtStores.reduce((a,s)=>{
-          const weekSales=s.pSales||0;
-          const tgt=(s.t&&s.t.tSales)||weekSales;
-          return a+(tgt-weekSales)*4;
-        },0);
-        const atRisk=districtStores.filter(s=>{const ws=s.pSales||0;const tg=(s.t&&s.t.tSales)||ws;return ws<tg*0.97;});
+        // #178 item 4b: this always rendered "+$0" / "0 of N locations" — s.t.tSales doesn't
+        // exist anywhere in DEFAULT_TARGETS (grepped, zero hits), so `tgt` always fell through
+        // to `weekSales` itself, making the gap identically 0 for every store, always. A
+        // second bug rode along: s.pSales/s.pLY (pipeline.js's buildStore) are ALREADY the
+        // trailing 28-day (4-week) matched total, not a single week's — the old `weekSales`
+        // name was a misnomer, and multiplying an already-4-week gap by 4 would have inflated
+        // "Revenue at Risk" 4x once a real target ever got wired in. Target is now the same
+        // Goal-column convention already used elsewhere (forecastDay's _goalOf): the matched
+        // 28-day LY total grown by the store's tGrowth. No ×4 — pSales/pLY already span the
+        // 4-week window this widget is titled for.
+        const goal28=s=>(s.pLY>0)?s.pLY*(1+((s.t&&s.t.tGrowth)||0.05)):(s.pSales||0);
+        const totalGap=districtStores.reduce((a,s)=>a+(goal28(s)-(s.pSales||0)),0);
+        const atRisk=districtStores.filter(s=>(s.pSales||0)<goal28(s)*0.97);
         return div({style:{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}},
           div({style:{flex:'1 1 200px',background:'rgba(239,68,68,.06)',border:'.5px solid rgba(239,68,68,.25)',
             borderRadius:'var(--rl)',padding:'12px 16px'}},

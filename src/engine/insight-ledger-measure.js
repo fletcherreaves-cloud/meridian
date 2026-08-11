@@ -8,8 +8,9 @@
 // unmeasured — this file measures it, nothing more.
 //
 // THROWAWAY SCAFFOLDING, REMOVABLE IN ONE COMMIT: this file + the one call site that wires
-// `onFireVolume` into buildAttentionFeed (attention-now.js's useAttentionFeed) + the read-side
-// summary. Delete all three and the instrumentation is gone with no trace elsewhere.
+// `onFireVolume` into buildAttentionFeed AND calls hydrateFireVolume on mount (both in
+// attention-now.js's useAttentionFeed) + the read-side summary. Delete all three and the
+// instrumentation is gone with no trace elsewhere.
 //
 // NO BEHAVIOR CHANGE: attention-feed.js's buildAttentionFeed return value is byte-identical
 // whether or not a caller passes onFireVolume — this module only OBSERVES the per-detector

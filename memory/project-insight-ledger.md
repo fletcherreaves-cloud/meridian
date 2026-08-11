@@ -156,22 +156,56 @@ Persisted to Supabase `user_settings` under `insight_ledger_fire_volume` via `bl
 existing `pushBlob`/`hydrateBlob` pattern; local mirror in `localStorage['mf_ledger_fire_volume']`.
 
 **How to read it back once a week of usage has accumulated** — this is the step that was
-deliberately NOT done as part of #143 (there's no data yet):
+deliberately NOT done as part of #143 (there's no data yet).
+
+**#178 correction (2026-08-11):** the snippet below used to be an ESM `import` against a
+source path. The deployed app is bundled and minified — that path doesn't exist at runtime
+and nothing is attached to `window`, so the snippet as originally written **could not be run**
+against the live app. Also fixed the same day: `hydrateFireVolume` was exported and tested but
+never actually called anywhere, so each device only ever saw its own local buckets — the
+cross-device union this whole design depends on ("a week of real multi-device usage") wasn't
+happening. It's now wired into `attention-now.js`'s `useAttentionFeed` on mount, so by the time
+you open DevTools during a normal session `localStorage['mf_ledger_fire_volume']` already
+reflects the merged desktop+mobile picture, not just this device's.
+
+Paste this into the browser DevTools console on the live app (self-contained — no imports,
+reimplements `summarizeFireVolume`'s math inline since the source module isn't reachable from
+a bundled build):
+
 ```js
-import { hydrateFireVolume, summarizeFireVolume } from './src/engine/insight-ledger-measure.js';
-hydrateFireVolume(blob => console.log(summarizeFireVolume(blob)));
+(() => {
+  const blob = JSON.parse(localStorage.getItem('mf_ledger_fire_volume') || '{"days":{}}');
+  const days = blob.days || {};
+  const dayKeys = Object.keys(days).sort();
+  const byDetectorTotal = {}; const keyInfo = {};
+  let totalFires = 0, anyCapped = false;
+  for (const dk of dayKeys) {
+    const snap = days[dk]; if (!snap) continue;
+    if (snap.capped) anyCapped = true;
+    for (const [d, c] of Object.entries(snap.byDetector || {})) byDetectorTotal[d] = (byDetectorTotal[d] || 0) + c;
+    for (const [k, meta] of Object.entries(snap.keys || {})) {
+      totalFires++;
+      const info = keyInfo[k] || (keyInfo[k] = { detector: meta.detector, title: meta.title, firstSeen: dk, lastSeen: dk, fireDays: 0 });
+      info.lastSeen = dk; info.fireDays++;
+    }
+  }
+  const distinctKeys = Object.keys(keyInfo).length;
+  console.log({ daysMeasured: dayKeys.length, firstDay: dayKeys[0] || null, lastDay: dayKeys[dayKeys.length - 1] || null,
+    totalFires, distinctKeys, collapseRatio: distinctKeys ? totalFires / distinctKeys : 0, byDetectorTotal, anyCapped, keyInfo });
+})();
 ```
-`summarizeFireVolume` returns `{ daysMeasured, totalFires, distinctKeys, collapseRatio,
-byDetectorTotal, anyCapped, keyInfo }` — `collapseRatio` (`totalFires / distinctKeys`) is the
-headline number this whole exercise exists to produce. `anyCapped` flags whether any day's real
-fire volume exceeded `rankAttention`'s cap, so a capped day is never silently under-counted (the
-snapshot is built from the pre-rank/pre-cap per-detector arrays, so the count itself can't be
-capped — this flag is just honesty about what the RENDERED panel would have shown that day).
+
+Returns `{ daysMeasured, totalFires, distinctKeys, collapseRatio, byDetectorTotal, anyCapped,
+keyInfo }` — `collapseRatio` (`totalFires / distinctKeys`) is the headline number this whole
+exercise exists to produce. `anyCapped` flags whether any day's real fire volume exceeded
+`rankAttention`'s cap, so a capped day is never silently under-counted (the snapshot is built
+from the pre-rank/pre-cap per-detector arrays, so the count itself can't be capped — this flag
+is just honesty about what the RENDERED panel would have shown that day).
 
 **Removable in one commit**, per the issue's own instruction: delete
 `engine/insight-ledger-measure.js`, the `onFireVolume` param + its one call in
-`attention-feed.js`'s `buildAttentionFeed`, and the one import + wired call in
-`attention-now.js`. Nothing else references it.
+`attention-feed.js`'s `buildAttentionFeed`, and the import + `recordFireVolume`/
+`hydrateFireVolume` calls in `attention-now.js`. Nothing else references it.
 
 **Still gating everything after step 1**: the actual numbers. This needs roughly a week of real
 multi-device usage (the owner opening Needs Attention across desktop/mobile) before

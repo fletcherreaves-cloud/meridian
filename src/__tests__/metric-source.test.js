@@ -61,6 +61,19 @@ describe('metric-source resolver (auto-first)', () => {
     expect(metricDaily(ds, '1', d('2026-06-01'), 'oepe')).toBe(170);
   });
 
+  // #150/#178 item 6: kvsHealthy and park used to be mode:'pos', so a genuine 0% (never used
+  // the 2nd-side KVS window / never parked a car) was discarded as "no data" and fell through
+  // to a worse/stale source — a real bad value silently dropped rather than graded.
+  it("kvsHealthy is mode:'any' — a genuine 0% is kept, not treated as missing", () => {
+    const ds = { glimpseRows: [{ loc: '1', date: d('2026-06-01'), kvsHealthy: 0 }] };
+    expect(metricDaily(ds, '1', d('2026-06-01'), 'kvsHealthy')).toBe(0);
+  });
+
+  it("park is mode:'any' — a genuine 0% is kept, not treated as missing", () => {
+    const ds = { glimpseRows: [{ loc: '1', date: d('2026-06-01'), parkedPct: 0 }] };
+    expect(metricDaily(ds, '1', d('2026-06-01'), 'park')).toBe(0);
+  });
+
   it('metricSeries + metricAvg mean the freshest daily value per day', () => {
     const ds = {
       opsRows: [{ loc: '1', date: d('2026-06-01'), oepe: 150 }],
