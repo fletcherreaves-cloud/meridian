@@ -55,7 +55,13 @@ truth**; this is the ordering and the reasoning, which the issues don't carry.
 | 1 | **#164** — labor-basis rollout, 69 `t.tLabor` readers | Live correctness. 20 of 27 stores are graded on a labor % the owner never approved; Ponce de Leon 43701 is graded 26.00% against an approved 24.00% — 2.00pp on a metric whose whole tolerance band is 2pp. #163 already delivers `tCrewLabor` into `mergedTargets` and **nothing reads it**. Resolver half-built and preserved on branch `labor-basis-resolver-deferred` (`a14a1b8`) — do not rebuild it. |
 | 2 | **#150** — `kvsHealthy`/`park` zeros discarded, park graded lower-is-better | Live, user-visible wrong. Body was corrected 2026-08-10 (the original text had park's polarity backwards) |
 | 3 | **#157** — Spine 1 step 3 | Resumes the UX-coherence spine |
-| — | #146, #155, #156, #166, #167 | Behind the above |
+| — | #146, #155, #156, #167 | Behind the above |
+
+**#166 — DONE (2026-08-11, #184 dispatch item 1).** `loadMonthlyTargets`/`loadAllMonthlyTargets`
+(src/lib/supabase.js) now strip null/undefined columns before returning, so a NULL column falls
+through to `DEFAULT_TARGETS` on merge instead of a present-but-null key erasing it. Also dropped
+the argless branch's untiebreaked `.limit(27)` (confirmed dead — all 3 real callers pass an
+explicit year/month). 6 new tests in `src/__tests__/monthly-targets-null-strip.test.js`.
 
 ### Two items the owner explicitly asked not to lose (2026-08-11)
 

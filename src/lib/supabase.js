@@ -209,22 +209,26 @@ export async function saveMonthlyTargets(targets, year, month) {
   return { saved: rows.length, errors: [] };
 }
 
+// Strips null/undefined target keys so a NULL column falls through to DEFAULT_TARGETS on
+// merge (App.js: {...DEFAULT_TARGETS[loc], ...(monthlyTargets[loc]||{})}) instead of a
+// present-but-null key winning the spread and erasing a good default (#166). computeOpsScore
+// then silently skips the metric for a `null` target — no error, just a store graded on fewer
+// components than its peers, with nothing surfacing the gap.
+const _stripNullTargets = (obj) => {
+  const out = {};
+  for (const k in obj) { if (obj[k] !== null && obj[k] !== undefined) out[k] = obj[k]; }
+  return out;
+};
+
 // Load monthly targets for a given year/month. Returns { loc: {tCrewLabor, ...} }
-// Pass year=null/month=null to load the most recent available month.
 export async function loadMonthlyTargets(year, month) {
-  if (!supabase) return {};
-  let q = supabase.from('monthly_targets').select('*');
-  if (year && month) {
-    q = q.eq('year', year).eq('month', month);
-  } else {
-    // Most recent month available
-    q = q.order('year', { ascending: false }).order('month', { ascending: false }).limit(27);
-  }
-  const { data, error } = await q;
+  if (!supabase || !year || !month) return {};
+  const { data, error } = await supabase.from('monthly_targets').select('*')
+    .eq('year', year).eq('month', month);
   if (error || !data) { console.warn('[monthly_targets] load error:', error); return {}; }
   const result = {};
   for (const r of data) {
-    result[r.loc] = {
+    result[r.loc] = _stripNullTargets({
       tProdSales:   r.sales_proj,
       tCrewLabor:   r.crew_labor_pct,
       tBonusLabor:  r.bonus_crew_pct,
@@ -243,7 +247,7 @@ export async function loadMonthlyTargets(year, month) {
       tOpSupply:    r.op_supply_target,
       _year: r.year,
       _month: r.month,
-    };
+    });
   }
   return result;
 }
@@ -262,7 +266,7 @@ export async function loadAllMonthlyTargets() {
   for (const r of data) {
     const key = `${r.year}-${r.month}`;
     if (!result[key]) result[key] = {};
-    result[key][r.loc] = {
+    result[key][r.loc] = _stripNullTargets({
       tProdSales:   r.sales_proj,
       tCrewLabor:   r.crew_labor_pct,
       tBonusLabor:  r.bonus_crew_pct,
@@ -281,7 +285,7 @@ export async function loadAllMonthlyTargets() {
       tOpSupply:    r.op_supply_target,
       _year: r.year,
       _month: r.month,
-    };
+    });
   }
   return result;
 }
