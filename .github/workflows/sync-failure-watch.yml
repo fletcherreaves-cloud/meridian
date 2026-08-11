@@ -33,6 +33,7 @@ on:
   workflow_run:
     workflows:
       - EOM Baseline Snapshot
+      - Event Impact — Retail Lift Measurement
       - Hourly Projection Accuracy
       - LifeLenz Daily Sync
       - LifeLenz People Skills Sync
