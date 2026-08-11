@@ -1488,7 +1488,15 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       // ~$10k-40k daily forecast × 100 as a "percent" — a 6-7 digit garbage number the owner
       // reported as "xxxxxxx.xx%". Now computed the same way the engineered/dow path does.
       const _aeT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _aeT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _aeT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
-      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:_aeT2,t4:_aeT4,t6:_aeT6,actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null,pass:null,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
+      // #178 item 4: `pass` was hardcoded null in this branch, and since all 27 real stores
+      // are assigned model 'ae', the Forecast Table's Pass Rate was UNCONDITIONALLY 0% for
+      // every store, every range — not a legitimate "this store is missing its forecast"
+      // reading, a value that could structurally never be anything else. varPct was already
+      // computed correctly here; pass just never got derived from it. Same tolerance formula
+      // the engineered/dow path already uses below.
+      const _aeVarPct=_aeAct>0?(_aeAct-Math.round(_aeFcst))/_aeAct:null;
+      const _aePass=_aeVarPct!==null?Math.abs(_aeVarPct)<=(settings.tolerance||5)/100:null;
+      return{date,loc,forecast:Math.round(_aeFcst),ly:lyRaw,lyAdj:Math.round(_aeFcst),t2:_aeT2,t4:_aeT4,t6:_aeT6,actual:_aeAct,goal:_goalOf(lyRaw),varPct:_aeVarPct,pass:_aePass,isFuture:_aeIsFuture,opsFactor:1,wAdj:0,m1:Math.round(_aeFcst),m2:Math.round(_aeFcst),
         oepe:_aeIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_aeIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_aeIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_aeAct>0?(()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000);return rr.length?rr[0].gc||0:0;})():0,forecastGC:0,lyGC:0,
         noLYData:!lyRaw,modelUsed:'ae'};
@@ -1502,7 +1510,10 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       const _ewmaIsFuture=date>sodOf(new Date());
       // Same fix as the AE branch above — t2/t4/t6 are YOY trend ratios, not dollars.
       const _ewT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _ewT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _ewT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
-      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:_ewT2,t4:_ewT4,t6:_ewT6,actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null,pass:null,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
+      // Same Pass Rate fix as the AE branch above — pass derived from the already-correct varPct.
+      const _ewVarPct=_ewmaAct>0?(_ewmaAct-Math.round(_ewmaFcst))/_ewmaAct:null;
+      const _ewPass=_ewVarPct!==null?Math.abs(_ewVarPct)<=(settings.tolerance||5)/100:null;
+      return{date,loc,forecast:Math.round(_ewmaFcst),ly:lyRaw,lyAdj:Math.round(_ewmaFcst),t2:_ewT2,t4:_ewT4,t6:_ewT6,actual:_ewmaAct,goal:_goalOf(lyRaw),varPct:_ewVarPct,pass:_ewPass,isFuture:date>sodOf(new Date()),opsFactor:1,wAdj:0,m1:Math.round(_ewmaFcst),m2:Math.round(_ewmaFcst),
         oepe:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_ewmaIsFuture?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:0,forecastGC:0,lyGC:0,noLYData:false,modelUsed:'ewma'};
     }
@@ -1520,8 +1531,11 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
       const _sActGC=!_sFut?((()=>{const rr=_locLaborRows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);return rr.length?(rr[0].gc||0):0;})()||fetchRow(_qsrActIdx(ds),loc,date,'gc')):0;
       // Same fix as the AE/EWMA branches above — t2/t4/t6 are YOY trend ratios, not dollars.
       const _spT2=getDOWTrend(ds.laborIdx,loc,date,eDt,1,2), _spT4=getDOWTrend(ds.laborIdx,loc,date,eDt,3,4), _spT6=getDOWTrend(ds.laborIdx,loc,date,eDt,5,6);
+      // Same Pass Rate fix as the AE/EWMA branches above — pass derived from the already-correct varPct.
+      const _spVarPct=_sAct>0?(_sAct-_sVal)/_sAct:null;
+      const _spPass=_spVarPct!==null?Math.abs(_spVarPct)<=(settings.tolerance||5)/100:null;
       return{date,loc,forecast:_sVal,ly:lyRaw,lyAdj:_sVal,t2:_spT2,t4:_spT4,t6:_spT6,
-        actual:_sAct,goal:_goalOf(lyRaw),varPct:_sAct>0?(_sAct-_sVal)/_sAct:null,pass:null,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
+        actual:_sAct,goal:_goalOf(lyRaw),varPct:_spVarPct,pass:_spPass,isFuture:_sFut,opsFactor:1,wAdj:0,m1:_sVal,m2:_sVal,
         oepe:_sFut?0:(metricDaily(ds,loc,date,'oepe')||0),tpph:_sFut?0:(metricDaily(ds,loc,date,'tpph')||0),labor:_sFut?0:(metricDaily(ds,loc,date,'laborPct')||0),
         actualGC:_sActGC,forecastGC:Math.round(_sf.gc||0),lyGC:0,noLYData:!lyRaw,modelUsed:'simple'};
     }

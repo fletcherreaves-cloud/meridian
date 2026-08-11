@@ -278,6 +278,18 @@ describe('forecastDay — forceModel', () => {
       expect(r[k]).not.toBe(r.forecast);
     }
   });
+
+  // #178 item 4 (Pass Rate 0%): `pass` was hardcoded null in these three branches, so
+  // actualDays.filter(r=>r.pass===true) was always empty and the Forecast Table's Pass Rate
+  // was UNCONDITIONALLY 0% for every store — not a legitimate low-accuracy reading, since
+  // `pass===true` could structurally never match. Now derived from the same already-computed
+  // varPct using the identical tolerance formula the engineered/dow path uses.
+  it.each(['ae', 'ewma', 'simple'])('%s model: pass is a real boolean, not hardcoded null', (model) => {
+    const r = forecastDay(LOC, makeDate(10), ds, BASE_SETTINGS, null, null, 'weekly', model);
+    expect(r.actual).toBeGreaterThan(0); // a past date with a real actual — varPct is computable
+    expect(typeof r.pass).toBe('boolean');
+    expect(r.pass).toBe(Math.abs(r.varPct) <= (BASE_SETTINGS.tolerance || 5) / 100);
+  });
 });
 
 describe('forecastDay — result shape', () => {
