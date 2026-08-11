@@ -79,14 +79,34 @@ truth**; this is the ordering and the reasoning, which the issues don't carry.
    while `App.js` calls `loadAllMonthlyTargets()` — two different paths, reason unknown.
    **Do not assume it's fine. #153 was found because someone assumed exactly that.**
 
-3. **#181 — park under-target penalty, DEFERRED pending a `tPark` re-baseline.** Owner agreed
-   2026-08-11 to ship the over-target taper only and *"remember to revisit this."* The
-   under-target side stays as shipped in #180 until targets stop being history-derived.
-   **Revisit trigger:** owner sets the intended park standard (his figure: 12–16%), `tPark` is
-   re-baselined from that standard rather than per-store history (a spreadsheet upload once
-   #174 lands, not a deploy), then RE-MEASURE how many stores fall below the new targets before
-   any penalty is applied. Do not skip the re-measure — the whole reason this was deferred is
-   that 24 of 27 sat below the old targets.
+3. **#181 — park is REMOVED from `computeOpsScore`, replaced by a park × OEPE quadrant
+   diagnostic.** Owner sign-off 2026-08-11: *"#181, you have my sign off."* Dispatched as item 4
+   of #184; **#183 must land first** (the quadrant's y-axis is OEPE w/o Park, which does not
+   exist app-wide until then).
+
+   ⚠️ **SUPERSEDES the deferral this entry used to record.** An earlier version of this bullet —
+   merged to main in #185 — said *"ship the over-target taper, defer the under-target penalty
+   pending a `tPark` re-baseline."* **That was the decision for about an hour**, and it is no
+   longer current. The owner then explained what parking is *for* (*"keep the wheels moving and
+   increase capacity… by parking cars with complex orders"*), a quadrant analysis followed, and
+   the recommendation changed from "fix the band" to "there should be no band." The stale text
+   sat on main and **caused a real contradiction the engineer had to stop and query** — see the
+   PM-error note below.
+
+   **Why no band, in one line:** both tails of park% contain healthy stores. Elgin (30.5%) and
+   Ponce de Leon (33.6%) park most *and* beat median flow — the tool working. Cottondale (2.1%),
+   Lindsay (1.2%), Purcell (2.4%) park almost nothing and are at or better than median — they
+   don't need it. A single-axis band scores both groups as failures.
+
+   **The `tPark` re-baseline is no longer a prerequisite for scoring** (nothing scores `tPark`
+   any more), but quadrant thresholds should be **district medians recomputed per period**, not
+   frozen constants. Keep #150's `mode:'any'` zero-handling — the diagnostic needs it.
+
+   **PM error worth not repeating:** the deferral was committed to a memory file, then
+   superseded by a later decision in the same session, and the file was never updated. A
+   committed memory file that contradicts the live decision is worse than no file — it is
+   authoritative-looking and wrong. **When a decision recorded in `memory/` changes, amend the
+   file in the same turn the decision changes**, not at the end of the session.
 4. **The two "targets describe history, not a standard" findings — same fingerprint, both open.**
    `r(tPark, actual) = 0.890` (#181) and `r(tOepe, actual) = 0.897` (#183). Only 4 of 27 stores
    meet their OEPE target. Two metrics whose targets record what stores already do. Worth a
