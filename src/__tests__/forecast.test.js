@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect, beforeEach } from 'vitest';
-import { forecastDay, fetchLY, fetchLYDate, fetchGC } from '../engine/forecast.js';
+import { forecastDay, fetchLY, fetchLYDate, fetchGC, compute6wk } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 
 const LOC = '3708';
@@ -289,6 +289,27 @@ describe('forecastDay — forceModel', () => {
     expect(r.actual).toBeGreaterThan(0); // a past date with a real actual — varPct is computable
     expect(typeof r.pass).toBe('boolean');
     expect(r.pass).toBe(Math.abs(r.varPct) <= (BASE_SETTINGS.tolerance || 5) / 100);
+  });
+});
+
+// #150/#178 item 6: compute6wk's own kvsu aggregation excluded a real 0 (`!row.kvsu`, the same
+// class of bug METRIC_SOURCES' mode:'pos' had) and defaulted "no coverage at all" to 0 instead
+// of null — indistinguishable from a confirmed zero. Without this fix, computeOpsScore's
+// p.kvsu!=null presence check (pipeline.js) would be a complete no-op: kvsu was never null
+// before, always a number.
+describe('compute6wk — kvsu presence vs a genuine zero (#150/#178 item 6)', () => {
+  const loc = '3708';
+  it('a real 0 kvsu observation is counted, not excluded', () => {
+    const opsRows = [{ loc, date: makeDate(2), kvsu: 0 }, { loc, date: makeDate(3), kvsu: 0.5 }];
+    const ds = { opsRows, opsByLoc: {}, ctrlRows: [], ctrlByLoc: {}, laborRows: [], laborByLoc: {} };
+    const r = compute6wk(loc, ds, 6);
+    expect(r.kvsu).toBeCloseTo(0.25, 5); // (0 + 0.5) / 2 — the 0 must be averaged IN, not skipped
+  });
+
+  it('zero real observations in-window returns null, not 0', () => {
+    const ds = { opsRows: [], opsByLoc: {}, ctrlRows: [], ctrlByLoc: {}, laborRows: [], laborByLoc: {} };
+    const r = compute6wk(loc, ds, 6);
+    expect(r.kvsu).toBeNull();
   });
 });
 

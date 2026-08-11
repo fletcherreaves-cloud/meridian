@@ -134,8 +134,24 @@ function computeOpsScore(p,t,sc){
   let score=0,max=0;
   if(t.tOepe>0&&p.oepe>0){max+=15;if(p.oepe<=t.tOepe)score+=sc.oepeT1pts;else if(p.oepe<=t.tOepe+sc.oepeT2gap)score+=sc.oepeT2pts;else if(p.oepe<=t.tOepe+sc.oepeT3gap)score+=sc.oepeT3pts;}
   if(t.tKvst>0&&p.kvst>0){max+=sc.kvstMaxPts;if(p.kvst<=t.tKvst)score+=sc.kvstMaxPts;else if(p.kvst<=t.tKvst*sc.kvstPartialPct)score+=sc.kvstPartialPts;}
-  if(t.tKvsu>0&&p.kvsu>0){max+=sc.kvsuMaxPts;if(p.kvsu>=t.tKvsu)score+=sc.kvsuMaxPts;else if(p.kvsu>=t.tKvsu*sc.kvsuPartialPct)score+=sc.kvsuPartialPts;}
-  if(t.tPark>0&&p.park>0){max+=sc.parkMaxPts;if(p.park<=t.tPark)score+=sc.parkMaxPts;else if(p.park<=t.tPark*sc.parkPartialPct)score+=sc.parkPartialPts;}
+  // #150/#178 item 6: p.kvsu>0 rejected a genuine 0% (a store never using the 2nd-side KVS
+  // window at all) as "no data," so it never scored — discarded, not graded as poor. A
+  // presence check (!=null) lets a real zero be scored on its own (bad) merits.
+  if(t.tKvsu>0&&p.kvsu!=null){max+=sc.kvsuMaxPts;if(p.kvsu>=t.tKvsu)score+=sc.kvsuMaxPts;else if(p.kvsu>=t.tKvsu*sc.kvsuPartialPct)score+=sc.kvsuPartialPts;}
+  // #150/#178 item 6: park used to be graded strictly lower-is-better (<=target always full
+  // credit, no matter how far below), which is wrong — DT Park is a BAND, not a slope. Parking
+  // too FEW cars backs up the physical drive-thru line instead of moving it, so under-target is
+  // graded on a TIGHTER tolerance than over-target (over is tolerated further, using the same
+  // parkPartialPct the old formula already applied on that side). p.park>0 also rejected a
+  // genuine 0% as "no data" — now a presence check.
+  if(t.tPark>0&&p.park!=null){
+    max+=sc.parkMaxPts;
+    const dev=p.park-t.tPark;             // + = over target, - = under target
+    const overTol=t.tPark*(sc.parkPartialPct-1);
+    const underTol=overTol/2;             // tighter band below target — under-parking is the worse direction
+    if(dev>=0){ if(dev<=overTol)score+=sc.parkMaxPts; else if(dev<=overTol*2)score+=sc.parkPartialPts; }
+    else{ const under=-dev; if(under<=underTol)score+=sc.parkMaxPts; else if(under<=underTol*2)score+=sc.parkPartialPts; }
+  }
   if(t.tTpph>0&&p.tpph>0){max+=sc.tpphMaxPts;if(p.tpph>=t.tTpph)score+=sc.tpphMaxPts;else if(p.tpph>=t.tTpph*sc.tpphT2pct)score+=sc.tpphT2pts;else if(p.tpph>=t.tTpph*sc.tpphT3pct)score+=sc.tpphT3pts;}
   if(t.tLabor>0&&p.laborPct>0){max+=sc.laborMaxPts;const g=Math.abs(p.laborPct-t.tLabor);if(g<=sc.laborT1gap)score+=sc.laborMaxPts;else if(g<=sc.laborT2gap)score+=sc.laborT1pts;else if(g<=sc.laborT3gap)score+=sc.laborT2pts;}
   return max?+(score/max*100).toFixed(1):50;

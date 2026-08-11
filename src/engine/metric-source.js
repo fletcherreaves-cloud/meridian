@@ -64,8 +64,13 @@ export const METRIC_SOURCES = {
   // Daily Glimpse calls it `kvsHealthy`, and the auto-pulled DAR derives it from healthy/unhealthy
   // order-health counts (cloud-fresh, so recent windows fill even when the Glimpse email lags/omits
   // KVS). Ordered Ops → Glimpse → DAR so a manual value still wins but auto always backstops.
-  kvsHealthy: { mode: 'pos', srcs: [['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy'], ['opsRows', 'kvsu']] },
-  park:      { mode: 'pos', srcs: [['glimpseRows', 'parkedPct'], ['opsServiceRows', 'park'], ['opsRows', 'park']] },
+  // #150/#178 item 6: mode:'pos' rejected a real 0% (a store legitimately never using the
+  // 2nd-side KVS window) as "not found," so it fell through to the next source or resolved
+  // to nothing — a genuine zero discarded as missing data. mode:'any' accepts it.
+  kvsHealthy: { mode: 'any', srcs: [['glimpseRows', 'kvsHealthy'], ['opsServiceRows', 'kvsHealthy'], ['qsrActSummaryRows', 'kvsHealthy'], ['opsRows', 'kvsu']] },
+  // Same fix — a genuine 0% DT park rate (no cars ever pulled forward) was being discarded as
+  // missing under mode:'pos'.
+  park:      { mode: 'any', srcs: [['glimpseRows', 'parkedPct'], ['opsServiceRows', 'park'], ['opsRows', 'park']] },
   // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.

@@ -960,9 +960,14 @@ function compute6wk(loc,ds,wb){
   })();
   // Ends on the last CLOSED business day, not literal "now" (signature #4) — also gained an
   // explicit upper bound (row.date>_lastClosed6wk), which this filter never had before.
+  // #150/#178 item 6: `!row.kvsu` excluded a genuine 0 (never used the 2nd-side KVS window)
+  // the same way METRIC_SOURCES' old mode:'pos' did — fixed to a real presence check. The
+  // no-coverage default was also `0`, indistinguishable from a confirmed zero; now `null`, so
+  // computeOpsScore's presence check (p.kvsu!=null) can actually tell the two apart — without
+  // this, that check would be a no-op (kvsu was never null before, always a number).
   let kvsuS=0,kvsuC=0;const cut=_range.s;
-  for(const row of opsL){if(row.date<cut||row.date>_lastClosed6wk||!row.kvsu)continue;kvsuS+=row.kvsu;kvsuC++;}
-  r.kvsu=kvsuC?kvsuS/kvsuC:0;
+  for(const row of opsL){if(row.date<cut||row.date>_lastClosed6wk||row.kvsu==null)continue;kvsuS+=row.kvsu;kvsuC++;}
+  r.kvsu=kvsuC?kvsuS/kvsuC:null;
   r.floorCompliance=r.floorMgmtNeeded>0?r.floorHrsSched/r.floorMgmtNeeded:null;
   r.r2pSuspect=r.r2p>0&&r.r2p<60;
   r.hasPettyCash=ctrlL.some(row=>row.date>=cut&&row.date<=_lastClosed6wk&&row.hasPettyCash);
