@@ -22,7 +22,7 @@ in a restaurant, between other apps. That is the environment to optimise for.
 | Surface | Budget | How to measure |
 |---|---|---|
 | Entry chunk (uncompressed) | **≤ 2.8 MB**, trending down | `ls -la dist/assets/index-*.js` |
-| Entry chunk (gzipped) | ≤ 850 KB | `gzip -c dist/assets/index-*.js \| wc -c` |
+| Entry chunk (gzipped) | ≤ 850 KB | `npm run build` — enforced, see below |
 | Time to populated tiles | ≤ 15 s cold | `?trace=1` |
 | Any new panel | **lazy by default** | must emit its own chunk |
 | Test suite | ≤ 5 s | `npm test` duration line |
@@ -30,6 +30,22 @@ in a restaurant, between other apps. That is the environment to optimise for.
 Baseline set 2026-08-08 at v4.901: entry 2722.5 KB / 801.3 KB gzipped, 974 tests in 1.97 s.
 Numbers move down over time, never up. If a change pushes a number up, that is stated in
 the commit body with the reason — never left for the owner to discover on their phone.
+
+**⚠️ Correction (v4.984, #207): the `gzip -c ... | wc -c` measurement line above is WRONG —
+do not use it.** Measured, not assumed: a plain `gzip -9` recompression of the built
+`index-*.js` comes in **~10 KB lower** than what vite/rolldown's own build reporter prints
+for the identical file (831.60 KB reported vs 823.94 KB from `gzip -9`, vs 825.94 KB at
+gzip's default level 6 — not just a compression-level gap, a different measurement method
+entirely). Every gzip figure cited in this repo's commit history back to v4.901 is vite's
+own printed number, not a recomputed one — so a script or habit that re-gzips the file
+independently silently enforces a DIFFERENT, more lenient budget than the one actually being
+tracked. **Budget enforcement is now code, not a convention to remember** —
+`scripts/check-bundle-budget.mjs` (wired into the `build` npm script itself, so `npm run
+build` runs it automatically in CI, deploy, and locally) runs `vite build` and parses ITS
+own printed "index-*.js ... gzip: NNN.NN kB" line, then fails (exit 1) over 850 KB. This is
+the fix for the very next bullet below ("read the build output") — headroom had fallen to
+8.28 KB by v4.983 with build output printing a clean number the whole time; nobody needed to
+have missed anything for it to reach that.
 
 ## How to apply
 
@@ -45,7 +61,15 @@ the commit body with the reason — never left for the owner to discover on thei
 - **Check whether a dynamic import will actually split** before claiming a win. If any
   module in the static graph also imports the target, the chunk does not move — rolldown
   prints `INEFFECTIVE_DYNAMIC_IMPORT`. Read the build output. (`parsers/index.js` looks
-  like a free 124 KB and is not, because `pipeline.js` holds it in.)
+  like a free 124 KB and is not, because `pipeline.js` holds it in.) **Real instance, not
+  hypothetical (#207, v4.984):** `App.js` already had `one-pager.js` (64KB) and
+  `above-store-onepager.js` (55KB) behind `lazyPanel()` — correctly written, and still
+  defeated, because `forms-library.js` and `report-subscriptions.js` (the panels that each
+  statically import one of them) were THEMSELVES still static imports in `App.js`. The lazy
+  wrapper was real; the module graph still had a static path to the same code one hop away.
+  The warning printed on every build for an unknown length of time before anyone read it —
+  exactly why this budget is now a code gate (`scripts/check-bundle-budget.mjs`), not a
+  convention.
 - **Measure before and after, and put both numbers in the commit body.** "Improved
   performance" is not a claim, it is a feeling. `3518.0 KB -> 2722.5 KB` is a claim.
 - **A passing build is not a passing load.** A lazy declaration placed above its
