@@ -9,8 +9,16 @@ let _mockRows = [];
 
 // Mock only the supabase-js client factory — src/lib/supabase.js's real mapping/stripping
 // code still runs, exactly like production, just against fake rows instead of a live network
-// call. `.env.local` in this repo carries real Supabase credentials, so without this mock
-// `createClient` would build a client pointed at the live project.
+// call. src/lib/supabase.js does `export const supabase = (URL && KEY) ? createClient(...) :
+// null` at MODULE TOP LEVEL, and every loader short-circuits to {} when `supabase` is null — so
+// this test must stub VITE_SUPABASE_URL/ANON_KEY BEFORE the dynamic import below regardless of
+// whatever the ambient environment happens to provide. Whether real credentials are present
+// (some sandboxes export them) or absent (CI does not — confirmed: this file initially passed
+// locally and failed in CI with exactly this null-supabase short-circuit, mt['10422'] being
+// undefined) must not change which code path this test exercises.
+vi.stubEnv('VITE_SUPABASE_URL', 'http://fake.test');
+vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'fake-key');
+
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from: () => ({
