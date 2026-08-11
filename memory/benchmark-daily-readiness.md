@@ -29,6 +29,10 @@ drifts upward, because every session feels productive.
 4. **Shipped beats designed.** Design docs and filed issues do **not** raise the score. They
    raise it when they merge and work.
 5. **Append, never overwrite.** The trend is the point.
+6. **Separate REGRESSION from DISCOVERY.** A score can fall because something broke
+   (regression) or because we found a flaw that was always there (discovery). Only the first
+   is bad news — the second usually means a good day's investigating. **Say which.** Without
+   this the benchmark punishes looking, which is exactly backwards.
 
 ---
 
@@ -94,4 +98,20 @@ downstream of wanting to open the thing.
 
 | Date | Tool | Deploy | What moved |
 |---|---|---|---|
-| 2026-08-11 | 74 | 55 | baseline |
+| 2026-08-10 | 76 | — | prior read, single score, pre-anchors |
+| 2026-08-11 | 74 | 55 | **−2, DISCOVERY not regression** — see below |
+
+### 2026-08-11 note on the −2
+
+Six PRs merged and three real bugs root-caused, which pushed **up**. It still landed 2 lower
+than the 2026-08-10 read of 76, and the reason matters:
+
+- **Four built-but-switched-off capabilities found** — all four were equally true on 08-10,
+  nobody had looked.
+- **Startup confirmed still ~63.5s** — the render work (167s → 51s) had implied more wall-clock
+  improvement than actually materialised. Measured, not assumed, for the first time.
+
+So the product improved and the *estimate* got more honest at the same time, and the second
+outweighed the first. **The 76 was partly optimism about unchecked things.** Expect more of
+this while discovery outpaces shipping; it is not a bad sign, but it does mean early
+movements in this log say more about how hard we are looking than about the product.
