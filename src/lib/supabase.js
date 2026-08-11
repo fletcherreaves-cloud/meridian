@@ -74,16 +74,18 @@ async function _limited(fn) {
   try { return await fn(); } finally { _release(); }
 }
 
-async function _pagedParallel({ table, select, gteCol, gteVal, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
+async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
   if (!supabase) return [];
   let head = supabase.from(table).select(orderCol || 'loc', { count: 'exact', head: true });
   if (gteCol) head = head.gte(gteCol, gteVal);
+  if (inCol) head = head.in(inCol, inVals);
   const { count } = await head;
   const pages = Math.max(1, Math.ceil((count || 0) / pageSize));
   const reqs = [];
   for (let p = 0; p < pages; p++) {
     let q = supabase.from(table).select(select);
     if (gteCol) q = q.gte(gteCol, gteVal);
+    if (inCol) q = q.in(inCol, inVals);
     q = q.order(orderCol, { ascending });
     for (const oc of extraOrder) q = q.order(oc);
     reqs.push(() => q.range(p * pageSize, p * pageSize + pageSize - 1));
@@ -934,19 +936,21 @@ export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
   // Egress guard: default to a ~16-month window instead of the full history (qsr_fob is a
   // wide, daily × 27-store table). YoY still works — qsr_fob carries its own ly_* columns.
   const cutoffStr = (() => { const c = new Date(); c.setDate(c.getDate() - daysBack); return c.toISOString().slice(0, 10); })();
-  const data = await fetchAll((from, to) => {
-    let q = supabase.from('qsr_fob').select('*').order('date', { ascending: false }).range(from, to);
-    if (dates?.length) q = q.in('date', dates);
-    else if (daysBack) q = q.gte('date', cutoffStr);
-    return q;
-    // Labelled + smaller pages (Notes 60 bug #1). A 500-day window is ~13,200 rows and a
-    // 1000-row page is ~1.45 MB, so a full read is ~19 MB across 14 sequential requests —
-    // the same size class that timed out on qsr_raw_item_detail (v4.873). fetchAll returns
-    // [] if the FIRST page fails, and the FOB Analysis panel treats an empty cloud result
-    // as "no cloud data" and silently falls back to the manual stream, whose last month
-    // with sales is May 2026 — exactly the symptom reported. The label makes a failure
-    // name itself in the DATA INCOMPLETE banner instead of looking like stale months.
-  }, 400, 'qsr_fob');
+  // PARALLEL pagination (#191, 2026-08-11) — this was the last qsr_* loader still on fetchAll's
+  // strictly-sequential one-page-then-wait loop. Measured on the owner's production waterfall:
+  // ~30 back-to-back requests, 28,332ms→42,507ms, ~14s of pure round-trip time (22% of a 63s
+  // startup) for a 500-day/~13,200-row read. _pagedParallel already exists and is used by
+  // labor_rows/peaks_rows/audit_rows — same 400-row page size preserved (a deliberate choice,
+  // Notes 60 bug #1: 1000-row pages are ~1.45MB and timed out), only the SCHEDULING changes from
+  // sequential to a capped-concurrency parallel fan-out (_MAX_INFLIGHT). Per supabase.js's own
+  // standing note (search "Volume is the binding constraint, not ordering"), two PRIOR scheduling
+  // changes made total wall time worse while fetching the same bytes — so this is exactly the
+  // shape that note warns could backfire; if a live before/after measurement shows a regression,
+  // revert this, don't tune it further.
+  const data = await _pagedParallel({
+    table: 'qsr_fob', select: '*', orderCol: 'date', ascending: false, pageSize: 400, label: 'qsr_fob',
+    ...(dates?.length ? { inCol: 'date', inVals: dates } : daysBack ? { gteCol: 'date', gteVal: cutoffStr } : {}),
+  });
   if (!data.length) return [];
   // loc is intentionally left in its raw, zero-padded form here — do NOT strip it. Unlike most
   // qsr_* loaders, at least four call sites explicitly pad to match this loader's output

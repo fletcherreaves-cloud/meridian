@@ -126,6 +126,12 @@ function buildDS(workbooks){
   ds.wxByDate=bWxIdx(ds.weatherRows); // date-only lookup — station ID irrelevant for regional OK
   ds.storeIds=[...new Set(ds.laborRows.map(r=>r.loc))].sort();
   for(const r of ds.laborRows){if(r.sales>0){if(!ds.lastActual[r.loc]||r.date>ds.lastActual[r.loc])ds.lastActual[r.loc]=r.date;}}
+  // #191: deliberately does NOT trigger metric-source.js's auditRows lazy-fill here — measured,
+  // not assumed: ds.empRisk is written in 5 places across this file/session.js/App.js and read
+  // in NONE (grepped 2026-08-11). Wiring a trigger to keep computing an unread field would
+  // re-introduce the exact eager-load cost #191 removes, for zero consumer benefit. If empRisk
+  // ever gets a real reader, that reader should trigger the fill itself (same pattern as
+  // store-analytics.js's RegisterAuditTab), not this always-runs pipeline stage.
   if(ds.auditRows.length>0)ds.empRisk=analyzeRegisterAudit(ds.auditRows);
   return ds;
 }
@@ -689,6 +695,12 @@ function mergeDS(existing, wb, type, filename) {
   }
   ds.lastActual={};
   for(const r of ds.laborRows){if(r.sales>0){if(!ds.lastActual[r.loc]||r.date>ds.lastActual[r.loc])ds.lastActual[r.loc]=r.date;}}
+  // #191: deliberately does NOT trigger metric-source.js's auditRows lazy-fill here — measured,
+  // not assumed: ds.empRisk is written in 5 places across this file/session.js/App.js and read
+  // in NONE (grepped 2026-08-11). Wiring a trigger to keep computing an unread field would
+  // re-introduce the exact eager-load cost #191 removes, for zero consumer benefit. If empRisk
+  // ever gets a real reader, that reader should trigger the fill itself (same pattern as
+  // store-analytics.js's RegisterAuditTab), not this always-runs pipeline stage.
   if(ds.auditRows.length>0)ds.empRisk=analyzeRegisterAudit(ds.auditRows);
   return ds;
 }

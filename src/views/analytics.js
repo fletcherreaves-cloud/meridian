@@ -19,7 +19,7 @@ import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
-import { metricSeries, metricAvg, metricDaily } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 
@@ -1320,6 +1320,19 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   const [ebosCov,  setEbosCov]  = uSt({count:0});
   const [darCov,   setDarCov]   = uSt({count:0});
   const [syncTimes, setSyncTimes] = uSt({life:null, ebos:null, dar:null});
+  // #191: auditRows is lazy-loaded on demand, not eager at startup — this panel's own job is
+  // reporting row COUNTS per stream (the "coverage tiles" the fix's own design doc calls out as
+  // the trap: naively demanding the full stream here would just move the eager load from startup
+  // to modal-open, on every open, undoing the point). Opening this panel IS a genuine, deliberate
+  // "load on open" — trigger it here rather than pretend a 0 count means no data exists.
+  const [auditPending, setAuditPending] = uSt(true);
+  uE(() => {
+    const stillPending = ensureLazyFill('auditRows');
+    setAuditPending(stillPending);
+    if (!stillPending) return;
+    const id = setInterval(() => { if (!isLazyFillPending('auditRows')) { setAuditPending(false); clearInterval(id); } }, 300);
+    return () => clearInterval(id);
+  }, []);
   // On-demand pull triggers (dispatch GitHub Actions via trigger-dar-sync fn)
   const [syncBusy, setSyncBusy] = uSt(null);   // workflow key currently dispatching
   const [syncNote, setSyncNote] = uSt(null);   // { wf, msg, err }
@@ -1634,7 +1647,11 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   const idbRows = Object.entries(IDB_LABELS).map(([k,label],i)=>{
     const c=(k==='weatherRows'?liveWxCov:k==='peaksRows'?peaksCov.peaksRows:k==='peaksSalesRows'?peaksCov.peaksSalesRows:cov[k])||{count:0};
     const badges = k==='laborRows' ? periodBadges('labor') : null;
-    return dataRow(k, label, c, 'var(--amber)', i%2, badges);
+    // auditRows loads on demand (#191) — a 0 here while auditPending is "not loaded yet," not
+    // "confirmed empty," so the row label says so instead of reading like every other stream's
+    // real zero.
+    const rowLabel = (k==='auditRows'&&auditPending&&!c.count) ? label+' (loading…)' : label;
+    return dataRow(k, rowLabel, c, 'var(--amber)', i%2, badges);
   });
 
   // QSRSoft: derive coverage from pending_reports (survives reload; same approach for all report types)
@@ -1853,13 +1870,18 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
       div({style:{padding:'16px',overflowY:'auto',flex:1,minHeight:0}},
         tab==='coverage'&&(auditGrid?div({style:{overflowX:'auto'}},
           tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
-            thead(null,tr(null,...['Store','Labor','Ops','Ctrl','Wx','Peaks','Audit','Coverage','Status'].map(l=>
+            thead(null,tr(null,...['Store','Labor','Ops','Ctrl','Wx','Peaks',auditPending?'Audit ⏳':'Audit','Coverage','Status'].map(l=>
               th({key:l,style:{padding:'4px 8px',background:'var(--surf3)',fontSize:'8px',textTransform:'uppercase',
                 color:'var(--text2)',textAlign:'left',borderBottom:'.5px solid var(--bdr)'}},l)))),
             tbody(null,auditGrid.map(a=>tr({key:a.loc,style:{borderBottom:'.5px solid var(--bdr)'}},
               td({style:{padding:'4px 8px',fontWeight:500}},a.name),
+              // Audit (last of the 6) reads while its lazy-fill may still be in flight (#191) — a
+              // 0 there isn't yet a confirmed "no data" the way the other 5 (always eager-loaded)
+              // are, so it gets its own neutral "…" instead of the red-zero everyone else uses.
               ...[a.labor,a.ops,a.ctrl,a.weather,a.peaks,a.audit].map((v,j)=>td({key:j,
-                style:{padding:'4px 8px',fontFamily:'var(--mono)',color:v>0?'#10b981':'#ef4444'}},v)),
+                style:{padding:'4px 8px',fontFamily:'var(--mono)',
+                  color:(j===5&&auditPending&&v===0)?'var(--text3)':v>0?'#10b981':'#ef4444'}},
+                (j===5&&auditPending&&v===0)?'…':v)),
               td({style:{padding:'4px 8px',color:a.coverage>=90?'#10b981':a.coverage>=70?'#f59e0b':'#ef4444',
                 fontFamily:'var(--mono)'}},a.coverage>0?a.coverage.toFixed(2)+'%':'—'),
               td({style:{padding:'4px 8px'}},span({style:{fontSize:'8px',fontWeight:700,padding:'1px 5px',

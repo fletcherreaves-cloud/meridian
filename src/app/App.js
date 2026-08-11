@@ -130,6 +130,7 @@ import { TaskQueuePanel } from '../views/task-queue.js';
 import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
 const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
 import { computeInsights } from '../engine/insights.js';
+import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
 import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact } from '../lib/supabase.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
@@ -358,6 +359,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.978', date:'2026-08-11', changes:[
+    'Issue #191 — startup waterfall: manual-fallback lazy fill + qsr_fob parallel pagination. Part 1: auditRows (the highest-volume manual-fallback stream, 21,929 of ~42,500 rows in the eager T3 startup batch) no longer loads unconditionally on every login — metric-source.js now triggers an on-demand load the first time a metric chain that includes it is actually resolved, instead of App.js\'s _stAuditRows eager stage (removed). Deliberately scoped to auditRows only, per the issue\'s own sequencing (laborRows/opsRows/ctrlRows/fobRows unchanged); deliberately NOT gap-scoped (loads the whole stream once, on demand, rather than just the missing loc/date range — the owner\'s fuller demand-queue design is real follow-up work, not required to capture this win). The 3 non-resolver auditRows consumers each got a different, deliberate treatment: RegisterAuditTab (store-analytics.js) now triggers the fill on mount and shows a distinct "Loading…" state instead of a possibly-wrong "No data" (v4.870 rule); pipeline.js\'s empRisk deliberately does NOT trigger it — measured (not assumed) that ds.empRisk is written in 5 places and read in zero, so wiring a trigger would just reintroduce the eager cost for a field nothing consumes; DataManagerPanel\'s coverage tiles (analytics.js) trigger the fill on modal-open (a genuine "load on open," not the "coverage tile in always-mounted UI" trap the issue warned about, since this panel is a rarely-opened modal) and show a neutral "…"/"(loading…)" annotation instead of a misleading red zero while pending. Part 2: loadQsrFob (supabase.js) was the last qsr_* loader on fetchAll\'s strictly-serial pagination — measured ~30 back-to-back requests, ~14s (22% of a 63s startup) for a 500-day read. Switched to _pagedParallel (already used by labor_rows/peaks_rows/audit_rows), which gained an inCol/inVals option so loadQsrFob\'s dates-array mode keeps working identically. Same 400-row page size preserved (Notes 60 bug #1). ⚠️ Neither change\'s wall-clock effect is verified live — this sandbox has no authenticated Supabase session. supabase.js\'s own standing note records two PRIOR scheduling changes that made wall time WORSE fetching the same bytes; per the issue\'s explicit instruction, a measured regression means revert, not tune. Full reasoning + what was cut in memory/project-lazy-fill-191.md.',
+  ]},
   {version:'4.977', date:'2026-08-11', changes:[
     'Issue #192 P1 — the modal/scroll sizing defect reported five times, fixed as one class plus a guard test rather than five patches. Item 4 (Projections → supervisor expand) turned out to already be fixed (v4.966/#178) — no code change, confirmed via git log. The other four map to genuinely separate root causes, not one shared ModalShell bug (none of the five actually go through ModalShell): (1) District EOM Summary\'s per-store table — and 3 more tables in the same file — used `overflowX:\'auto\'` + `table{width:\'100%\'}` with no minWidth, which caps the table at its wrapper\'s width so there is nothing to scroll and the browser compresses/cuts off columns instead; fixed to `width:\'max-content\',minWidth:\'100%\'`, the pattern already correct elsewhere (analytics.js\'s MonthlyProjectionsPanel). A repo-wide guard test (scroll-table-width.test.js) found the SAME anti-pattern in 12 more tables across 6 other files (above-store-onepager.js, analytics.js, at-a-glance.js, sage.js, scheduling.js, smg-voice.js) — all fixed identically; one true exception (scheduling.js\'s StoreScheduleTable, which already forces the same overflow via per-column minWidths) is documented in the test\'s EXEMPT list. (2) Planning → Monthly had column-freeze (sticky left) but not row-freeze (sticky top) on its table header — the one table in the codebase with only half the freeze; added, plus the Planning/Scheduling hub shells\' missing paddingBottom, which let a horizontal scrollbar sit flush against the browser\'s physical bottom edge. (3) Planning → PACE embeds CurrentMonthPaceSection, which hardcodes maxHeight:240 — correct when it\'s one section on a bigger page, wrong when it IS the whole panel body; added a fillHeight prop so pace-to-target.js can let it grow to fill instead of leaving most of the modal empty below a small table. (5) Calendar grid event chips were single-line-truncated; switched to a 2-line clamp so a longer label is actually readable instead of relying entirely on the hover tooltip.',
   ]},
@@ -1730,6 +1734,12 @@ function App() {
   React.useLayoutEffect(() => { _traceRender('App tree', 'render+commit', performance.now() - _rt0); });
 
   const [ds, setDs]               = useState(null);
+  // #191: wire metric-source.js's lazy-fill hook to the REAL setDs (not the tiered startup
+  // loader's queueing shadow, further down — that shadow's queue only flushes at points tied to
+  // the tiered loader's own lifetime, and a lazy-fill can resolve long after that effect has
+  // finished). loadAuditRows is already imported below; auditRows is the only source wired to
+  // LAZY_FILL_SOURCES for now — see metric-source.js for the full rationale and scope.
+  React.useEffect(() => { configureLazyFill({ setDs, loaders: { auditRows: loadAuditRows } }); }, []);
   const [view, setView]           = useState('command'); // command | district | store | org
   const [selStore, setSelStore]   = useState(null);
   const [locScope,   setLocScope]   = useState('all');
@@ -2467,14 +2477,12 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${sbPeaks.length} peaks rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] Peaks rows load failed:',e);} };
-      const _stAuditRows = async () => {
-      try{
-        const sbAudit=await loadAuditRows();
-        if(sbAudit.length>0){
-          setDs(prev=>{if(!prev)return prev;return {...prev,auditRows:sbAudit};});
-          console.log(`[Meridian] ✓ Loaded ${sbAudit.length} audit rows from Supabase`);
-        }
-      }catch(e){console.warn('[Meridian] Audit rows load failed:',e);} };
+      // _stAuditRows removed (#191, 2026-08-11) — audit_rows was the highest-volume manual-
+      // fallback stream (21,929 of ~42,500 T3 rows) and this eager stage loaded it unconditionally
+      // on every login even on days the cloud streams already covered everything. It's no longer
+      // in the T3 batch below; metric-source.js's lazy-fill hook (configured near the ds/setDs
+      // declaration, top of this component) now loads it on demand the first time a metric chain
+      // that includes auditRows actually needs it. See metric-source.js for the full design.
       const _stOpsRows = async () => {
       try{
         const opsRows=await loadOpsRows();
@@ -2747,7 +2755,7 @@ function App() {
         _stModelAssignments(), _stDialedIn(), _stOrgEventsHydration(), _stEventImpact(),
       ]);
       _t2.then(() => { _flushDs(); console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`); }); // T2: 14 ds-touching stages → 1 commit
-      const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stAuditRows(), _stOpsRows(), _stCtrlRows()]));
+      const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stOpsRows(), _stCtrlRows()]));
       await Promise.allSettled([_t2, _t3]);
       _flushDs(); // T3: 4 stages → 1 commit
       console.log(`[Meridian] T3 manual-fallback backfill complete — ${_ms()}ms (total)`);

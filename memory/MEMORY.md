@@ -92,6 +92,10 @@
   widespread than reported.
 
 ## ⚡ Performance
+- [Lazy fill + qsr_fob parallel pagination (#191)](project-lazy-fill-191.md) — auditRows now
+  loads on demand instead of eagerly at startup (scoped to auditRows only, not gap-scoped —
+  records why); qsr_fob switched from serial to parallel pagination. Records the 3 non-resolver
+  consumer decisions and what's deliberately NOT verified live (no Supabase session here).
 - [Startup render storm (#184 item 0)](project-startup-render-storm.md) — batched the 22
   ds-touching tiered-startup-loader stages behind 3 per-tier flushes (22 commits → 3); the
   ~19-commit remainder (IDB restore, org_config syncs, email/PDF auto-ingest) is enumerated but
