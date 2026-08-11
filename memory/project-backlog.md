@@ -63,6 +63,24 @@ through to `DEFAULT_TARGETS` on merge instead of a present-but-null key erasing 
 the argless branch's untiebreaked `.limit(27)` (confirmed dead — all 3 real callers pass an
 explicit year/month). 6 new tests in `src/__tests__/monthly-targets-null-strip.test.js`.
 
+**#174 — PARTIALLY DONE (2026-08-11, #184 dispatch item 2): tPark/tOepe persist, priority pair
+only.** `monthly_targets` gained `park_pct`/`oepe_target` columns
+(`supabase/schema-monthly-targets-park-oepe.sql` — **owner needs to run this against the live
+project**, no DDL access from this sandbox), `parseMonthlyTargets` gained column-detection for
+them, and `saveMonthlyTargets`/both loaders round-trip them. `tKvst`/`tKvsu`/`tR2p`/`tOsat`/
+`tOsatB2B` are NOT done — still a follow-up. `tLabor` deliberately NOT persisted (held for #164).
+**Correction to the issue's premise, found while implementing:** its quoted code excerpt
+(`src/parsers/index.js:783-800`) is `parseYearlyTargets`, not `parseMonthlyTargets` —
+`parseMonthlyTargets` had no column-detection for Park/OEPE/KVS/R2P/OSAT at all before this
+change (verified by reading its column map, not assumed). The structural gap the issue flagged
+(no cloud path for 4 of 6 scored targets) was real independent of that mislabel. **Still
+unverified**: whether the real monthly workbook actually has Park/OEPE columns — the new
+detection reuses `parseYearlyTargets`'s proven header strings as the only available evidence;
+if the monthly sheet's headers differ, extraction silently finds nothing (same no-op-if-absent
+behavior every other field here already has). Owner should confirm against the real file. 8 new
+tests across `monthly-targets-park-oepe.test.js` (parser) and
+`monthly-targets-park-oepe-roundtrip.test.js` (parse→save→load).
+
 ### Two items the owner explicitly asked not to lose (2026-08-11)
 
 1. **#154 — LifeLenz AOS. Needs an owner decision: rescope or close.** Its premise was
