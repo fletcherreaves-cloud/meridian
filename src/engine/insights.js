@@ -2,6 +2,7 @@
 // Meridian Signals Engine — cross-metric correlation analysis
 // Runs after every data upload to surface statistical patterns across
 // scheduling, labor, service, food cost, and customer satisfaction.
+import { resolveLaborTarget } from './labor-basis.js';
 
 // ── Math helpers ──────────────────────────────────────────────────────────────
 function pearson(pairs) {
@@ -343,7 +344,7 @@ function sig_otLaborOverage(ds) {
   for (const r of monthly) {
     if (!r.laborPct || !r.otHrs) continue;
     const t = monthlyTargets[r.loc] || {};
-    const proj = t.tCrewLabor || t.tLabor;
+    const proj = resolveLaborTarget(t) ?? t.tLabor; // #164: routed through the named resolver, same fallback kept
     if (!proj) continue;
     const projNorm = proj > 1 ? proj / 100 : proj;
     pairs.push({ x: r.otHrs, y: r.laborPct - projNorm, loc: r.loc, date: r.date });

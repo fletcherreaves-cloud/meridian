@@ -33,7 +33,10 @@ describe('dollars at stake', () => {
               laborPct: 0.26, discPct: 0.085, actHrs: 200, tpph: 4.5, avgCheck: 10,
               oepe: 200, floorMgmtNeeded: 40, floorHrsSched: 30,
               depositBaseline: '20.00%', depositVsSalesRatio: 0.17 };
-  const t = { tRedAPct: 0.003, tLabor: 0.22, tTpph: 6, tOepe: 140 };
+  // #164: tCrewLabor is the resolver's default basis — tLabor is also set here, deliberately
+  // DIFFERENT, so a test that accidentally read tLabor instead would fail loudly rather than
+  // silently pass on values that happen to match.
+  const t = { tRedAPct: 0.003, tLabor: 0.30, tCrewLabor: 0.22, tTpph: 6, tOepe: 140 };
 
   it('cash over/short prices the variance against daily sales', () => {
     expect(FINDING_RULES.cashOS.dollars(p, t)).toBeCloseTo(0.01 * 10000, 6);  // $100/day

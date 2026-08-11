@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeLaborRow, analyzeStore, aggregateGroup, analyzeSheet,
   hoursOpen, fracToTime, FLH_THRESHOLDS,
-  isoWeekMonday, deriveBand1FromSchedule,
+  isoWeekMonday, deriveBand1FromSchedule, mergeAutoManualWeek,
 } from '../engine/labor-analysis.js';
 import { setWeekStartDay } from '../utils/date.js';
 
@@ -193,5 +193,47 @@ describe('labor-analysis — weekly Band-1 from daily LifeLenz schedule', () => 
     // denominator matches C — no longer re-inflated by multiplying a partial % by full sales.
     const row = analyzeStore(r);
     expect(row.scheduledLaborD).toBeCloseTo(0.21 * 10000 * 2, 1);   // = the 2 covered days' real $
+  });
+});
+
+// #153 defect 3: laborTargetOrg (column L) on a MANUAL/gap-filled row used to come straight
+// from the MBI upload's own hand-typed cell — a snapshot frozen at upload time, measured up to
+// 2.00pp stale against constants.js. mergeAutoManualWeek now repoints L through the SAME
+// resolver on every row regardless of source, so a manual-only week is no longer scored/planned
+// against a stale spreadsheet snapshot.
+describe('mergeAutoManualWeek — target repoint (#153 defect 3)', () => {
+  const orgTargetFor = loc => ({ '3708': 0.21, '5183': 0.22 }[loc] ?? null);
+
+  it('AUTO-only rows are repointed even though deriveBand1FromSchedule already set L via orgTargetFor', () => {
+    const auto = { weekStart: '2026-07-20', rows: { '3708': { loc: '3708', laborTargetOrg: 0.21, salesFcst: 100 } } };
+    const out = mergeAutoManualWeek(auto, { weekStart: null, rows: {} }, orgTargetFor);
+    expect(out.rows['3708'].laborTargetOrg).toBe(0.21);
+    expect(out.source).toBe('auto');
+  });
+
+  it('a gap-filled MANUAL row is repointed away from its own stale laborTargetOrg', () => {
+    const auto = { weekStart: '2026-07-20', rows: { '3708': { loc: '3708', laborTargetOrg: 0.21, salesFcst: 100 } } };
+    // Manual row for a DIFFERENT store, carrying a stale hand-typed target the resolver disagrees with.
+    const manual = { weekStart: '2026-07-20', rows: { '5183': { loc: '5183', laborTargetOrg: 0.999, salesFcst: 50 } } };
+    const out = mergeAutoManualWeek(auto, manual, orgTargetFor);
+    expect(out.manualFill).toBe(1);
+    expect(out.rows['5183'].laborTargetOrg).toBe(0.22);   // resolver's value, NOT the stale 0.999
+    expect(out.rows['5183'].salesFcst).toBe(50);           // everything else from the manual row survives
+  });
+
+  it('a MANUAL-only week (no schedule data at all) is also repointed, not left on the stale upload value', () => {
+    const auto = { weekStart: null, rows: {} };
+    const manual = { weekStart: '2026-07-13', rows: { '5183': { loc: '5183', laborTargetOrg: 0.999, salesFcst: 50 } } };
+    const out = mergeAutoManualWeek(auto, manual, orgTargetFor);
+    expect(out.source).toBe('manual');
+    expect(out.rows['5183'].laborTargetOrg).toBe(0.22);
+  });
+
+  it('AUTO never gets overridden by a same-store MANUAL row (AUTO still wins)', () => {
+    const auto = { weekStart: '2026-07-20', rows: { '3708': { loc: '3708', laborTargetOrg: 0.21, salesFcst: 100, source: 'auto-marker' } } };
+    const manual = { weekStart: '2026-07-20', rows: { '3708': { loc: '3708', laborTargetOrg: 0.21, salesFcst: 999, source: 'manual-marker' } } };
+    const out = mergeAutoManualWeek(auto, manual, orgTargetFor);
+    expect(out.manualFill).toBe(0);
+    expect(out.rows['3708'].salesFcst).toBe(100); // AUTO's number, not manual's 999
   });
 });

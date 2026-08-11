@@ -13,6 +13,7 @@ import { STORE_STAFF } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
 import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor } from '../parsers/index.js';
 import { saveMonthlyTargets } from '../lib/supabase.js';
+import { resolveLaborTarget } from './labor-basis.js';
 
 function buildDS(workbooks){
   const ds={laborRows:[],opsRows:[],ctrlRows:[],weatherRows:[],inventoryRows:[],
@@ -151,7 +152,12 @@ function computeOpsScore(p,t,sc){
   // deliberately left in constants.js — #174 may still want tPark as a target the diagnostic's
   // quadrant split can reference, and removing unused config isn't this issue's job.
   if(t.tTpph>0&&p.tpph>0){max+=sc.tpphMaxPts;if(p.tpph>=t.tTpph)score+=sc.tpphMaxPts;else if(p.tpph>=t.tTpph*sc.tpphT2pct)score+=sc.tpphT2pts;else if(p.tpph>=t.tTpph*sc.tpphT3pct)score+=sc.tpphT3pts;}
-  if(t.tLabor>0&&p.laborPct>0){max+=sc.laborMaxPts;const g=Math.abs(p.laborPct-t.tLabor);if(g<=sc.laborT1gap)score+=sc.laborMaxPts;else if(g<=sc.laborT2gap)score+=sc.laborT1pts;else if(g<=sc.laborT3gap)score+=sc.laborT2pts;}
+  // #153 defect 2: this used to read t.tLabor directly — a field the monthly-approval cycle
+  // never populates (it writes tCrewLabor, via monthly_targets.crew_labor_pct). Routed through
+  // the named resolver (labor-basis.js) instead of a second inline field name, so the score and
+  // computeLaborRow (engine/labor-analysis.js) always grade the same number.
+  const laborTarget=resolveLaborTarget(t);
+  if(laborTarget>0&&p.laborPct>0){max+=sc.laborMaxPts;const g=Math.abs(p.laborPct-laborTarget);if(g<=sc.laborT1gap)score+=sc.laborMaxPts;else if(g<=sc.laborT2gap)score+=sc.laborT1pts;else if(g<=sc.laborT3gap)score+=sc.laborT2pts;}
   return max?+(score/max*100).toFixed(1):50;
 }
 
@@ -203,6 +209,10 @@ function normalizeScores(stores,mode){
 
 function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
   const f=[];const tR2p=t.tR2p||90;
+  // #164: resolved once for this store's findings — same basis buildStore's computeOpsScore
+  // call and TREND ALERT already use, so the score and the WATCH-LABOR text below always cite
+  // the same number.
+  const laborTarget=resolveLaborTarget(t);
 
   // ── CRITICAL FLAGS ────────────────────────────
   if(Math.abs(p.cashOSPct||0)>.005) f.push({rule:'cashOS',t:'crit',m:'CRITICAL — CASH INTEGRITY: Cash Over/Short averaging '+(((p.cashOSPct||0)*100).toFixed(2))+'% of sales. Exceeds 0.5% threshold. Immediate video audit and deposit cross-reference required. This is the highest-priority integrity signal in the system.'});
@@ -231,7 +241,7 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
     f.push({rule:'oepeOk',t:'ok',m:'STRENGTH — OEPE: '+Math.round(p.oepe||0)+'s vs '+t.tOepe+'s target. Drive-thru speed is meeting store-specific standard. Window execution and pull-time management are working.'});
   }
 
-  if((t.tLabor||0)>0&&(p.laborPct||0)>t.tLabor+.02) f.push({rule:'labor',t:'watch',m:'WATCH — LABOR: '+((p.laborPct||0)*100).toFixed(2)+'% vs '+(t.tLabor*100).toFixed(2)+'% target (+'+(Math.round(((p.laborPct||0)-t.tLabor)*100*100)/100)+'%). '+((p.otHrs||0)>2?'Overtime is the primary driver ($'+Math.round((p.otHrs||0)*1.5*(p.avgRate||12))+'/day premium). Restructure scheduling before cutting crew.':'Likely a volume-vs-schedule alignment issue. Review schedule build process and floor hour compliance.')});
+  if((laborTarget||0)>0&&(p.laborPct||0)>laborTarget+.02) f.push({rule:'labor',t:'watch',m:'WATCH — LABOR: '+((p.laborPct||0)*100).toFixed(2)+'% vs '+(laborTarget*100).toFixed(2)+'% target (+'+(Math.round(((p.laborPct||0)-laborTarget)*100*100)/100)+'%). '+((p.otHrs||0)>2?'Overtime is the primary driver ($'+Math.round((p.otHrs||0)*1.5*(p.avgRate||12))+'/day premium). Restructure scheduling before cutting crew.':'Likely a volume-vs-schedule alignment issue. Review schedule build process and floor hour compliance.')});
 
   if((p.discPct||0)>.065) f.push({rule:'discounts',t:'watch',m:'WATCH — DISCOUNTS: '+((p.discPct||0)*100).toFixed(2)+'% of sales. P90 across district is 6.5%. Verify against active LTO calendar. Unauthorized discounting erodes net sales without corresponding traffic benefit.'});
 
@@ -315,6 +325,11 @@ function buildStore(loc,ds,settings){
   // now wins, with the old ds.targets/DEFAULT_TARGETS chain kept as a fallback for the (currently
   // theoretical) case of a caller that doesn't pass settings.targets.
   const t=(settings&&settings.targets&&settings.targets[loc])||(ds&&ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+  // #164: the resolved labor target, routed through the one named place (labor-basis.js)
+  // instead of every reader picking a field name. Used by the TREND ALERT and `concern` below —
+  // NOT by the seeded-demo-data block a few lines down, which deliberately reads t.tLabor raw
+  // (see its own comment).
+  const laborTarget=resolveLaborTarget(t);
   const name=STORE_NAMES[loc]||('Store '+loc);
   const sc=settings.scoring||DEF_SETTINGS.scoring;
   let p;
@@ -330,6 +345,9 @@ function buildStore(loc,ds,settings){
     function sr(n){const s=loc.split('').reduce((a,c)=>a*31+c.charCodeAt(0),0);const x=Math.sin(s*(n+1))*10000;return x-Math.floor(x);}
     p={oepe:Math.round((t.tOepe||130)*(0.88+sr(1)*.28)),kvst:Math.round((t.tKvst||50)*(0.88+sr(2)*.28)),
       kvsu:Math.min(1,Math.max(.2,(t.tKvsu||.7)*(0.75+sr(3)*.4))),park:Math.min(.5,Math.max(.02,(t.tPark||.15)*(0.65+sr(4)*.65))),
+      // #164 triage category D: seeded synthetic demo data (sr = deterministic PRNG), not a
+      // grading path — reads t.tLabor directly on purpose, left alone. Do not "fix" this to
+      // laborTarget; it only needs a plausible-looking number to shape fake data around.
       tpph:+((t.tTpph||5.5)*(0.82+sr(5)*.35)).toFixed(2),laborPct:+((t.tLabor||.21)*(0.9+sr(6)*.22)).toFixed(4),
       actVsNeed:(sr(6)-.5)*40,otHrs:+(sr(7)*6.5).toFixed(1),cashOSPct:+((sr(8)-.45)*.014).toFixed(5),
       tRedAPct:+((t.tRedAPct||.002)*(0.4+sr(9)*2.2)).toFixed(5),discPct:+(0.03+sr(10)*.055).toFixed(3),
@@ -402,13 +420,14 @@ function buildStore(loc,ds,settings){
       findings.push({rule:'oepeTrend',t:'watch',m:'TREND ALERT — OEPE TRAJECTORY: Currently '+Math.round(p.oepe)+'s ('+Math.round(gap)+'s under target) but worsening at '+vel.oepe.toFixed(1)+'s per 2-week period. At this rate, store is on track to breach the '+Math.round(t.tOepe)+'s target in ~'+Math.round(weeksToBreachEst)+' week'+(weeksToBreachEst>=2?'s':'')+'. Address window crew alignment and pull-time execution before this becomes a flag.'});
     }
   }
-  // Predictive labor drift alert
-  if(vel&&vel.laborPct!=null&&vel.laborPct>0.005&&t.tLabor>0&&p.laborPct>0&&p.laborPct<=t.tLabor){
-    const gap = t.tLabor - p.laborPct;
+  // Predictive labor drift alert. #164: gated + gap arithmetic on laborTarget (resolved above),
+  // not t.tLabor directly — the number this warns against must match the number that scored.
+  if(vel&&vel.laborPct!=null&&vel.laborPct>0.005&&laborTarget>0&&p.laborPct>0&&p.laborPct<=laborTarget){
+    const gap = laborTarget - p.laborPct;
     const ratePerWeek = vel.laborPct / 2;
     const weeksToBreachEst = gap / ratePerWeek;
     if(weeksToBreachEst < 8 && weeksToBreachEst > 0) {
-      findings.push({rule:'laborTrend',t:'watch',m:'TREND ALERT — LABOR TRAJECTORY: Currently '+(p.laborPct*100).toFixed(2)+'% (under the '+(t.tLabor*100).toFixed(2)+'% target) but trending higher at '+((vel.laborPct||0)*100).toFixed(1)+'pp per 2 weeks. Projected to exceed target in ~'+Math.round(weeksToBreachEst)+' week'+(weeksToBreachEst>=2?'s':'')+'. Review scheduling trends before it becomes a finding.'});
+      findings.push({rule:'laborTrend',t:'watch',m:'TREND ALERT — LABOR TRAJECTORY: Currently '+(p.laborPct*100).toFixed(2)+'% (under the '+(laborTarget*100).toFixed(2)+'% target) but trending higher at '+((vel.laborPct||0)*100).toFixed(1)+'pp per 2 weeks. Projected to exceed target in ~'+Math.round(weeksToBreachEst)+' week'+(weeksToBreachEst>=2?'s':'')+'. Review scheduling trends before it becomes a finding.'});
     }
   }
 
@@ -417,7 +436,7 @@ function buildStore(loc,ds,settings){
   attachFindingMeta(findings,p,t,loc);
 
   const hasCrit=findings.some(f=>f.t==='crit');
-  const concern=hasCrit?(Math.abs(p.cashOSPct||0)>.005?'Cash O/S >0.5%':(p.tRedAPct||(t.tRedAPct||0)*1.5)>0&&(p.tRedAPct||0)>(t.tRedAPct||0)*1.5?'T-Red After elevated':(p.otHrs||0)>5?'OT >5 hrs/day':'Multiple flags'):((p.oepe||0)>t.tOepe+15&&t.tOepe>0)?'OEPE over target':((p.laborPct||0)>t.tLabor+.02&&t.tLabor>0)?'Labor% over target':null;
+  const concern=hasCrit?(Math.abs(p.cashOSPct||0)>.005?'Cash O/S >0.5%':(p.tRedAPct||(t.tRedAPct||0)*1.5)>0&&(p.tRedAPct||0)>(t.tRedAPct||0)*1.5?'T-Red After elevated':(p.otHrs||0)>5?'OT >5 hrs/day':'Multiple flags'):((p.oepe||0)>t.tOepe+15&&t.tOepe>0)?'OEPE over target':((p.laborPct||0)>laborTarget+.02&&laborTarget>0)?'Labor% over target':null;
   const strength=!hasCrit?(cs>=90?'Controls: Elite':os>=90?'Ops: Elite':cs>=80?'Controls: Strong':os>=80?'Ops: Strong':null):null;
   const sc2=STORE_COORDS[loc]||{};
   const staff=STORE_STAFF[loc]||{};

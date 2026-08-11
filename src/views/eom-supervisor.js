@@ -4,6 +4,7 @@ import { STORE_NAMES, sNameC, DEF_SETTINGS } from '../constants.js';
 import { loadEbosMonthlyByStore } from '../lib/supabase.js';
 import { metricAvg, metricSeries } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const h = React.createElement;
 const { useState: uSt, useEffect: uE, useMemo: uM, useCallback: uCB, useRef: uR } = React;
@@ -90,7 +91,7 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   const projSales    = (mtOK && mt.tProdSales)               || null;
   const projFCPct    = (mtOK && mt.tFOBTotal)                || null;
   const projFOBPct   = (mtOK && mt.tFOBTarget)               || null;
-  const projLaborPct = (mtOK && (mt.tCrewLabor || mt.tLabor)) || null;
+  const projLaborPct = (mtOK && (resolveLaborTarget(mt) ?? mt.tLabor)) || null; // #164: routed through the named resolver, same fallback kept
   const projOpSup    = (mtOK && mt.tOpSupply)                || null;
 
   // Actuals from FOB rows (monthly report, one row per store per period)
