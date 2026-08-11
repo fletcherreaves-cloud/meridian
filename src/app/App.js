@@ -145,7 +145,7 @@ const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles } from '../lib/supabase.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
@@ -372,6 +372,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.990', date:'2026-08-11', changes:[
+    'Issue #208 — coaching feedback loop v1, the fifth leg of Push 3 (identify -> assign -> intervene -> measure -> VERIFY) and per the owner\'s own framing the only genuine differentiator on the table (QSRSoft\'s CoachQ is an AI chat assistant, not measure-and-verify coaching — SAGE already matches it). Today Meridian tells the owner what is wrong; this is the piece that tells him whether what he did about it worked. New Supabase-persisted coaching_cycles table (tenant_id + RLS, owner needs to run supabase/schema-coaching-cycles.sql) — one row per coaching intervention: store, a SPECIFIC metric (food cost and labor only, per the issue\'s own scope discipline: labor_pct + 4 FOB components), an auto-captured baseline, a note, an auto-set +30-day review date, and a result/verdict recorded once the follow-up window closes. Five design-doc rules (memory/project-coaching-feedback-loop.md), each enforced structurally rather than by convention: (1) baseline is ALWAYS auto-captured by engine/coaching-loop.js\'s snapshotMetricValue — there is no code path anywhere that accepts a typed number; (2) the follow-up comes to him — a due cycle surfaces as a new "coaching-review" item type inside the EXISTING Needs Attention feed (attention-feed.js gains a coachingReviewFeedItems passthrough + buildAttentionFeed a coachingItems input), not a new panel; (3) starts from an existing finding — loc+metric are always caller-supplied (Patch Heatmap\'s FOB/Labor dimension rows get a new "🎯 Coach" button, scoped to only those two dimensions); (4) verdict is measured, never self-reported — computeVerdict() reads a NOISE_THRESHOLDS map that starts EMPTY, per the issue\'s own explicit v1 fallback ("if this measurement isn\'t ready, ship the loop recording cycles WITHOUT verdicts rather than with wrong ones") — no live Supabase session in this sandbox to run scripts/measure-coaching-noise-threshold.mjs, so every verdict is null today, a real cycle log with an honest gap rather than a confident wrong one; (5) single-user first — no ack/notification/GM-login machinery anywhere in this feature. New shared src/views/coaching-modal.js (ModalShell-based) handles both "start coaching" (note only — everything else auto) and "record follow-up" (shows a live baseline/result preview before saving, so the number shown is never a guess at what will be recorded) — genuinely two taps, not a form. A real correctness fix found while building this: FOB baselines/results are DOLLAR-WEIGHTED (Σamt/Σsales over the trailing window) from ds.qsrFobRows, matching computeFOBMetrics\' (analytics.js) own established convention — NOT a mean of daily ratios, which the already-shipped scripts/measure-coaching-noise-threshold.mjs (written in an earlier segment) was doing; fixed that script\'s FOB rolling-movement math too, so the eventual measured threshold applies to the same quantity the verdict will use. labor_pct baselines instead reuse metricAvg(...,\'laborPct\') as-is (a simple mean) — deliberately, so a coaching baseline reads the same number every other Labor Tools panel already shows, not a more "correct" but different one nobody else displays. 16 new tests (src/__tests__/coaching-loop.test.js): the dollar-weighting distinction (with a fixture deliberately shaped so a naive mean-of-ratios would diverge from the correct answer), the in-progress-day exclusion (signature #4), auto-capture (never a typed baseline), due-for-review filtering, the null-verdict v1 fallback proven against the ACTUAL empty NOISE_THRESHOLDS state (not just asserted in a comment), and the future-state verdict classification once a threshold IS registered. Not chased: coaching-modal.js/coaching-loop.js land in the entry chunk (analytics.js, which needs the review modal, is itself still fully static — the same open "could analytics.js split its landing tiles from its deeper panels" question #207 flagged and deferred, not resolved here). Entry chunk gzip 813.82 KB -> 815.30 KB (+1.48 KB — almost entirely this changelog text; the feature\'s own code landed close to net-neutral, see memory doc for the exact before/after breakdown). Still comfortably within budget, 34.70 KB headroom. Full findings: memory/project-coaching-loop-208.md.',
+  ]},
   {version:'4.989', date:'2026-08-11', changes:[
     'Issue #210 — split the labor gap two ways, from data already pulled. qsr_daily_activity has always carried total_needed_hours, total_scheduled_hours and actual_punched_hours hourly, but loadQsrActSummary never selected total_scheduled_hours on either of its two read paths, and the preferred rollup table (qsr_daily_activity_rollup) never summed it either — so Meridian only ever showed the combined actual-vs-needed gap. New engine/labor-gap-split.js splits it: Needed→Scheduled = planning accuracy (coach the scheduler/forecast), Scheduled→Actual = execution (coach the shift manager) — the owner\'s "2 defined areas to coach and teach and push," aimed at two different people instead of one blended number. Buckets by the Wed–Tue PAY week explicitly (never Mon–Sun — mixing conventions "produces a labor % that is wrong and does not look wrong," per the issue\'s own caution), excludes any day after the last closed business day before bucketing (signature #4 — an in-progress day, even the literal last day of its own pay week, must not leak into a week total), and always surfaces the latest COMPLETE week per store so the coaching number never moves while you look at it. Scheduled hours can be genuinely UNKNOWN, not zero: src/lib/supabase.js now threads total_scheduled_hours through both loadQsrActSummary paths — the hourly fallback (column always present, ordinary || 0) and the rollup path (?? null, since the column doesn\'t exist in qsr_daily_activity_rollup until the owner runs the new supabase/schema-qsr-rollup-scheduled-hours.sql, mirroring the dt_heldtime rollout from #183) — and a pay week containing any such row reports planningGapHrs/executionGapHrs as null rather than a fabricated number built on a partial sum; combinedGapHrs (the old single figure) is unaffected since actual/needed have always been carried. scripts/qsrsoft-dar-pull.mjs\'s refreshRollup() now sums total_scheduled_hours too — non-fatal ahead of the migration, same non-fatal-upsert-failure pattern dt_heldtime already established, so this ships safely before the owner runs the SQL. Surfaced as a new "🎯 Planning/Execution" tab in Labor Tools\' Labor Analytics panel (labor-tools.js, lazy-loaded — zero entry-chunk cost), independent of the panel\'s own flexible period selector since the split is inherently a pay-week construct: per-store Needed/Scheduled/Actual/Planning-Gap/Execution-Gap/Combined plus a "Coach: Scheduler / Shift Manager / On plan" column — the on-plan gate reuses the panel\'s own already-shipped Act-vs-Need color banding (30/60 hrs) rather than inventing a new unmeasured threshold, and shows a visible amber banner (not a silent blank column) while the migration hasn\'t run. Deliberately deferred, not built in this commit: §4.2\'s rate/hours/sales decomposition (needs actual_punched_dollars threaded through the same two loader paths and its own rollup migration — a comparable-sized follow-up, not "mostly wiring") and §4.3\'s optional intraday heat map (the issue\'s own instruction: drop rather than squeeze in if bundle headroom is tight — and Signals\' existing HourlyDetail already prototypes the identical per-hour gap-vs-need/gap-vs-sched math for today\'s single day, worth generalizing rather than rebuilding when this is picked up). 8 new tests (src/__tests__/labor-gap-split.test.js): pay-week bucketing, the split arithmetic, the in-progress-day exclusion using Aug 11 2026 (a Tuesday — the deliberately awkward case of today being the LAST day of its own pay week), complete-vs-current-week detection, the null-vs-fabricated-zero distinction, multi-store bucketing, and the district summary rollup. Cannot verify against live data or confirm the migration\'s real-world effect — no authenticated Supabase session in this sandbox; the owner needs to run the new SQL file for the split to populate beyond "—". Entry chunk essentially unchanged (812.21 KB -> 813.78 KB gzip — this changelog text itself, plus the new supabase.js/dar-pull.mjs code, both in the entry chunk; labor-tools.js is lazy, so the new tab\'s own markup landed entirely in its own chunk, 26.42 KB -> 27.85 KB gzip).',
   ]},
@@ -2545,6 +2548,18 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${darRows.length} DAR rows from Supabase`);
         }
       }catch(e){console.warn('[Meridian] DAR rows load failed:',e);} };
+      // #208 — coaching feedback loop. Small, slow-growing table (a handful of coaching
+      // actions, not thousands of rows) so this loads eagerly like the other small per-user
+      // streams, not via metric-source.js's lazy-fill (that mechanism exists for large
+      // manual-fallback streams specifically — see its own header comment).
+      const _stCoachingCycles = async () => {
+      try{
+        const coachingCycles=await loadCoachingCycles();
+        if(coachingCycles.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,coachingCycles};});
+          console.log(`[Meridian] ✓ Loaded ${coachingCycles.length} coaching cycles from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Coaching cycles load failed:',e);} };
       const _stCustomSignals = async () => {
       try{
         const customDefs=await loadCustomSignals();
@@ -2791,6 +2806,7 @@ function App() {
         _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
         _stLockedProjections(), _stAeParams(),
         _stModelAssignments(), _stDialedIn(), _stOrgEventsHydration(), _stEventImpact(),
+        _stCoachingCycles(),
       ]);
       _t2.then(() => { _flushDs(); console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`); }); // T2: 14 ds-touching stages → 1 commit
       const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stOpsRows(), _stCtrlRows()]));
@@ -3037,6 +3053,16 @@ function App() {
   const stores = useMemo(()=>normalizeScores(rawStores,settings.scoringMode||'absolute'),[rawStores,settings.scoringMode]);
 
   const goStore=(s)=>{setSelStore(s&&s.loc?s.loc:s);setView('store');};
+
+  // #208 — re-fetch coaching_cycles after a coaching modal saves (start OR record-follow-up),
+  // so a just-recorded verdict clears its Needs Attention item immediately instead of waiting
+  // for the next full reload. Threaded down the same way onOpenStore already is.
+  const refreshCoachingCycles = React.useCallback(async () => {
+    try {
+      const rows = await loadCoachingCycles();
+      setDs(prev => prev ? { ...prev, coachingCycles: rows } : prev);
+    } catch (e) { console.warn('[Meridian] Coaching cycles refresh failed:', e); }
+  }, []);
 
   // ── Swing alarm (Notes 58 #4) ────────────────────────────────────────────
   // A large sustained one-directional move in sales or guest counts must be impossible
@@ -3748,6 +3774,7 @@ function App() {
       }),
       view==='command'&&!anyModalOpen&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
         onOpenStore:s=>{goStore(s);},
+        onCoachingSaved:refreshCoachingCycles,
         onOpenProjections:()=>setShowProj(true),
         onOpenPVSA:()=>setShowPVSA(true),
         onOpenBrief:()=>setShowBrief(true),
@@ -3879,7 +3906,7 @@ function App() {
     showFcstAccuracy&&h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>setShowFcstAccuracy(false)}),
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
-    showAttention&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false)}),
+    showAttention&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false),onCoachingSaved:refreshCoachingCycles}),
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),

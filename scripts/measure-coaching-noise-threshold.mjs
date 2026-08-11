@@ -53,17 +53,31 @@ async function fetchAllPaged(table, select) {
   return out;
 }
 
-// Daily {loc,date,value} series -> trailing-30 average at each day N with >=20 real obs in its
-// window (avoids a mostly-empty window reading as a real level), then the distribution of
-// |trailing30(N) - trailing30(N-30)| across all valid N, per store, pooled district-wide at the end
-// (labeled by store too, so a store-specific outlier is visible rather than averaged away).
-function rollingMovements(rows, valueKey, dateKey = 'date', locKey = 'loc') {
+// Daily {loc,date,value[,weight]} series -> trailing-30 average at each day N with >=20 real
+// obs in its window (avoids a mostly-empty window reading as a real level), then the
+// distribution of |trailing30(N) - trailing30(N-30)| across all valid N, per store, pooled
+// district-wide at the end (labeled by store too, so a store-specific outlier is visible
+// rather than averaged away).
+//
+// weightKey enables a DOLLAR-WEIGHTED trailing average (Σvalue*weight/Σweight) instead of a
+// simple mean of daily ratios — CLAUDE.md's standing rule ("never average averages,
+// dollar-weight aggregates"). A daily FOB% is itself a ratio (amt/sales); a simple mean of 30
+// such ratios is NOT the same number as Σamt/Σsales for the month, and computeFOBMetrics
+// (analytics.js) already establishes dollar-weighting as this app's real convention for FOB%
+// — the coaching-loop engine (engine/coaching-loop.js) reads FOB baselines/results the same
+// way, so this script must measure movements of the SAME quantity the verdict will apply to,
+// or the threshold would not mean what it claims to. labor_pct has no weightKey — it stays a
+// simple mean, matching metric-source.js's metricAvg(), which is what every other Labor Tools
+// panel already shows for a period's labor%; a coaching baseline should read the same number
+// the owner sees everywhere else, not a more "correct" but different one nobody else displays.
+function rollingMovements(rows, valueKey, dateKey = 'date', locKey = 'loc', weightKey = null) {
   const byLoc = {};
   for (const r of rows) {
     const v = r[valueKey];
     if (v == null || !Number.isFinite(+v)) continue;
+    const w = weightKey ? +r[weightKey] || 0 : 1;
     const loc = String(r[locKey]);
-    (byLoc[loc] = byLoc[loc] || []).push({ date: r[dateKey], value: +v });
+    (byLoc[loc] = byLoc[loc] || []).push({ date: r[dateKey], value: +v, weight: w });
   }
   const moves = []; // {loc, date, delta} — delta in PERCENTAGE POINTS if value is a fraction
   for (const [loc, series] of Object.entries(byLoc)) {
@@ -73,7 +87,9 @@ function rollingMovements(rows, valueKey, dateKey = 'date', locKey = 'loc') {
       const start = Math.max(0, endIdx - WINDOW + 1);
       const slice = series.slice(start, endIdx + 1);
       if (slice.length < 20) return null;
-      return slice.reduce((a, r) => a + r.value, 0) / slice.length;
+      if (!weightKey) return slice.reduce((a, r) => a + r.value, 0) / slice.length;
+      const wSum = slice.reduce((a, r) => a + r.weight, 0);
+      return wSum > 0 ? slice.reduce((a, r) => a + r.value * r.weight, 0) / wSum : null;
     };
     for (let i = WINDOW * 2; i < series.length; i++) {
       const now = trailing30(i);
@@ -110,9 +126,11 @@ function report(label, unit, moves) {
 const laborRows = await fetchAllPaged('labor_rows', 'loc,report_date,labor_pct');
 const fobRows = await fetchAllPaged('qsr_fob', 'loc,date,prod_sales_amt,comp_waste_amt,raw_waste_amt,condiments_amt,emp_mgr_meals_amt,stat_variance_amt,unexplained_amt');
 
+// Each FOB row carries its own prod_sales_amt as `weight` — dollar-weighting needs the
+// per-day denominator alongside the per-day ratio, not just the ratio.
 const fobWithPct = (field) => fobRows
   .filter(r => r.prod_sales_amt > 0)
-  .map(r => ({ loc: r.loc, date: r.date, pct: (r[field] || 0) / r.prod_sales_amt }));
+  .map(r => ({ loc: r.loc, date: r.date, pct: (r[field] || 0) / r.prod_sales_amt, weight: r.prod_sales_amt }));
 
 const fobTotalPct = fobRows
   .filter(r => r.prod_sales_amt > 0)
@@ -120,19 +138,20 @@ const fobTotalPct = fobRows
     loc: r.loc, date: r.date,
     pct: ((r.comp_waste_amt || 0) + (r.raw_waste_amt || 0) + (r.condiments_amt || 0) +
       (r.emp_mgr_meals_amt || 0) + (r.stat_variance_amt || 0) + (r.unexplained_amt || 0)) / r.prod_sales_amt,
+    weight: r.prod_sales_amt,
   }));
 
 const COMPONENTS = {
-  labor_pct: { rows: laborRows, key: 'labor_pct', dateKey: 'report_date', unit: 'pp' },
-  fob_total_pct: { rows: fobTotalPct, key: 'pct', dateKey: 'date', unit: 'pp' },
-  condiment_pct: { rows: fobWithPct('condiments_amt'), key: 'pct', dateKey: 'date', unit: 'pp' },
-  raw_waste_pct: { rows: fobWithPct('raw_waste_amt'), key: 'pct', dateKey: 'date', unit: 'pp' },
-  comp_waste_pct: { rows: fobWithPct('comp_waste_amt'), key: 'pct', dateKey: 'date', unit: 'pp' },
+  labor_pct: { rows: laborRows, key: 'labor_pct', dateKey: 'report_date', unit: 'pp', weightKey: null },
+  fob_total_pct: { rows: fobTotalPct, key: 'pct', dateKey: 'date', unit: 'pp', weightKey: 'weight' },
+  condiment_pct: { rows: fobWithPct('condiments_amt'), key: 'pct', dateKey: 'date', unit: 'pp', weightKey: 'weight' },
+  raw_waste_pct: { rows: fobWithPct('raw_waste_amt'), key: 'pct', dateKey: 'date', unit: 'pp', weightKey: 'weight' },
+  comp_waste_pct: { rows: fobWithPct('comp_waste_amt'), key: 'pct', dateKey: 'date', unit: 'pp', weightKey: 'weight' },
 };
 
 for (const [name, cfg] of Object.entries(COMPONENTS)) {
   if (ONLY && ONLY !== name) continue;
-  const moves = rollingMovements(cfg.rows, cfg.key, cfg.dateKey);
+  const moves = rollingMovements(cfg.rows, cfg.key, cfg.dateKey, 'loc', cfg.weightKey);
   report(name, cfg.unit, moves);
 }
 

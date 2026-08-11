@@ -42,6 +42,12 @@ import * as React from 'react';
 import { STORE_NAMES, sNameC, INV_ORG_COORDS } from '../constants.js';
 import { unpad, fobByStoreLatest } from './attention-now.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { CoachingModal } from './coaching-modal.js';
+
+// #208 — which of this grid's dimensions have a coaching-loop metric behind them. Food cost
+// and labor only, per the issue's own scope discipline — Sales/Speed/Controls have no
+// COACHING_METRICS entry and get no "Coach this" button.
+const COACH_METRIC_BY_DIM = { FOB: 'fob_total_pct', Labor: 'labor_pct' };
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -106,9 +112,10 @@ function cellStatus(store, fobRow) {
   return { key, glyph, color, label: key === 'clean' ? null : worst.label, dims, worst };
 }
 
-export function PatchHeatmap({ ds, stores, dateRange, onOpenStore }) {
+export function PatchHeatmap({ ds, stores, dateRange, onOpenStore, onCoachingSaved }) {
   const { useMemo, useState } = React;
   const [selected, setSelected] = useState(null); // loc of the expanded detail cell
+  const [coachTarget, setCoachTarget] = useState(null); // {loc, metricKey} or null
 
   const fobByLoc = useMemo(() => fobByStoreLatest(ds?.qsrFobRows || []), [ds]);
 
@@ -178,8 +185,18 @@ export function PatchHeatmap({ ds, stores, dateRange, onOpenStore }) {
             .sort((a, b) => a.band - b.band)
             .map((d, i) => div({ key: d.label, style: { display: 'flex', gap: 6, alignItems: 'baseline' } },
               span({ style: { color: bandColor(d.band), fontWeight: 700, fontSize: '9px', minWidth: 44 } }, d.label),
-              span({ style: { color: 'var(--text2)' } }, d.detail))))
+              span({ style: { color: 'var(--text2)', flex: 1 } }, d.detail),
+              COACH_METRIC_BY_DIM[d.label] && h('button', {
+                onClick: () => setCoachTarget({ loc: selectedCell.loc, metricKey: COACH_METRIC_BY_DIM[d.label] }),
+                title: 'Start a coaching cycle for this store + metric (#208)',
+                style: { fontSize: '8px', padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text3)', border: '.5px solid var(--bdr)', cursor: 'pointer', flexShrink: 0 },
+              }, '🎯 Coach'))))
         : div({ style: { color: 'var(--text3)' } }, 'No auto/emailed data landed for this store in the selected period.')
-    )
+    ),
+    coachTarget && h(CoachingModal, {
+      mode: 'start', loc: coachTarget.loc, metricKey: coachTarget.metricKey, ds,
+      onClose: () => setCoachTarget(null),
+      onSaved: onCoachingSaved,
+    })
   );
 }

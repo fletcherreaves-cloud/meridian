@@ -107,6 +107,17 @@
   flags recent gaps, estimates $ impact landing in Unexplained. "Missing != zero" throughout —
   qsr_waste has no null-vs-zero column. New engine/waste-discipline.js, new
   metric-source.js isLazyFillError() export, surfaced in FOBAnalysisPanel.
+- **⭐ [Coaching feedback loop v1 (#208)](project-coaching-loop-208.md)** — the verify leg,
+  the only genuine differentiator on the table per the owner. New coaching_cycles table
+  (owner needs to run the migration), engine/coaching-loop.js (5 rules enforced
+  structurally: auto-captured baseline, follow-up lands in Needs Attention as a new
+  coaching-review item type, starts from an existing finding, verdict measured via a
+  NOISE_THRESHOLDS map that ships EMPTY per the issue's own v1 fallback — every verdict is
+  null until a future session runs measure-coaching-noise-threshold.mjs). Real correctness
+  fix found while building: that noise-threshold script's FOB math was a mean of daily
+  ratios, not dollar-weighted — fixed to match computeFOBMetrics' own convention. New
+  src/views/coaching-modal.js (start/review), Patch Heatmap FOB/Labor "🎯 Coach" buttons,
+  Needs Attention "🎯 Log Verdict →" action.
 - [Labor gap split (#210)](project-labor-gap-split-210.md) — the diagnose leg. Splits the
   combined actual-vs-needed labor gap into planning accuracy (scheduled-needed, coach the
   scheduler) and execution (actual-scheduled, coach the shift manager). Found and fixed a real

@@ -208,6 +208,14 @@ export function integrityFlags(flags = [], storeName = String) {
 // after buildBrief returns), so this is reshaping, not re-deriving. `t:'ok'`/`t:'fc'` map to
 // severity:'info' via T_TO_SEVERITY and are dropped here — a strength note or a forecast
 // projection isn't something that needs attention.
+// Coaching reviews due (#208) — items arrive PRE-BUILT in this exact shape from
+// engine/coaching-loop.js's dueForReview()+toAttentionItem() (a separate, freely-importable
+// module), so this stays a passthrough validator rather than duplicating that item-building
+// logic here — keeps this file's zero-import convention intact.
+export function coachingReviewFeedItems(items = []) {
+  return (items || []).filter(Boolean);
+}
+
 export function findingsToFeedItems(findings = [], nav = 'analytics') {
   return (findings || [])
     .filter(f => f && (f.severity === 'crit' || f.severity === 'warn'))
@@ -260,7 +268,7 @@ export function groupAttentionByStore(items = [], storesByLoc = new Map(), normL
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to
 // show separately.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, storeName = String, max = 15, onFireVolume } = {}) {
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, storeName = String, max = 15, onFireVolume } = {}) {
   const bySource = {
     staleData: staleData(ageDays),
     fobOutliers: fobOutliers(fobByStore || {}, storeName),
@@ -272,6 +280,7 @@ export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, 
     countExceptions: countExceptions(countExceptionRows || [], storeName),
     integrityFlags: integrityFlags(integrityItems || [], storeName),
     findingsToFeedItems: findingsToFeedItems(briefFindings || []),
+    coachingReviews: coachingReviewFeedItems(coachingItems || []),
   };
   // Object.values on string keys preserves insertion order, so this is the exact same flat
   // list (and order) the old literal array-spread produced — byte-identical to callers.

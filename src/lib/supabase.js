@@ -3568,6 +3568,38 @@ export async function loadEomCountExceptions({ period } = {}) {
   return m;
 }
 
+// ── Coaching cycles (#208) ────────────────────────────────────────────────────
+// Cloud CRUD for the coaching feedback loop's cycle log. baseline/result are always
+// app-computed (engine/coaching-loop.js's snapshotMetricValue) before reaching this file —
+// there is no "typed baseline" path here, matching the design doc's rule 1.
+export async function saveCoachingCycle(cycle) {
+  if (!supabase || !cycle?.loc || !cycle?.metric) return { error: 'no-op' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const { data, error } = await supabase.from('coaching_cycles').insert({
+    loc: String(cycle.loc), metric: cycle.metric,
+    baseline: cycle.baseline ?? null, coached_at: cycle.coachedAt, note: cycle.note || '',
+    review_at: cycle.reviewAt, created_by: uid,
+  }).select('id').single();
+  return { id: data?.id || null, error: error?.message || null };
+}
+// Records the measured follow-up — id-scoped, never touches baseline/coached_at/review_at.
+export async function updateCoachingCycleResult(id, { result, verdict }) {
+  if (!supabase || !id) return { error: 'no-op' };
+  const { error } = await supabase.from('coaching_cycles')
+    .update({ result: result ?? null, verdict: verdict ?? null, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  return { error: error?.message || null };
+}
+export async function loadCoachingCycles() {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => supabase.from('coaching_cycles').select('*').order('coached_at', { ascending: false }).range(from, to));
+  return (data || []).map(r => ({
+    id: r.id, loc: String(r.loc), metric: r.metric, baseline: r.baseline,
+    coachedAt: r.coached_at, note: r.note || '', reviewAt: r.review_at,
+    result: r.result, verdict: r.verdict,
+  }));
+}
+
 // ── QSRSoft Knowledge Base (#41) — grounds SAGE + diagnostics in QSRSoft's own methodology ──
 export async function loadQsrKb() {
   if (!supabase) return [];
