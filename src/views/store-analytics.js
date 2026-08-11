@@ -13,6 +13,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { metricSeries, metricAvg, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
+import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const h=React.createElement;
@@ -1585,6 +1586,9 @@ function DaypartPaceCard({loc}) {
 
 // STORE DASHBOARD (SECTION 13)
 function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections}) {
+  // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('StoreDash', 'render+commit', performance.now() - _rt0); });
   const [tab, setTab]             = useState('overview');
   const [wk, setWk]               = useState([]);
   const [wkLoading, setWkLoading] = useState(false);

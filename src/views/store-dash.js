@@ -13,6 +13,7 @@ import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ModelHealthBadge } from './analytics.js';
+import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
@@ -1878,6 +1879,9 @@ function StoreCard({store, onSelect}) {
 }
 
 function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStore}) {
+  // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('DistrictGrid', 'render+commit', performance.now() - _rt0); });
   const [sort, setSort] = useState('score');
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -2029,6 +2033,9 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
 
 // ORG VIEW
 function OrgView({stores, settings, onSelectStore}) {
+  // #189: same pattern as AtAGlance — one of 4 possible active-panel views.
+  const _rt0 = performance.now();
+  React.useLayoutEffect(() => { _traceRender('OrgView', 'render+commit', performance.now() - _rt0); });
   const operators = settings.operators||{};
   const supervisors = settings.supervisorGroups||{};
   const byOp = Object.entries(operators).map(([name,locs])=>({name,stores:stores.filter(s=>locs.includes(s.loc))})).filter(g=>g.stores.length>0);

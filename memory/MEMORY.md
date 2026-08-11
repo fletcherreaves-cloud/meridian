@@ -92,6 +92,10 @@
   widespread than reported.
 
 ## ⚡ Performance
+- [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
+  spans were nested (same-commit layout effects end at one flush), not additive — a misreading
+  already caught once by hand. Extended the same pattern to the 4 active-panel views and added
+  automatic same-commit subtraction to the report. Not measured live; owner needs to re-capture.
 - [Lazy fill + qsr_fob parallel pagination (#191)](project-lazy-fill-191.md) — auditRows now
   loads on demand instead of eagerly at startup (scoped to auditRows only, not gap-scoped —
   records why); qsr_fob switched from serial to parallel pagination. Records the 3 non-resolver
