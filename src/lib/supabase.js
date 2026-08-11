@@ -948,6 +948,13 @@ export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
     // name itself in the DATA INCOMPLETE banner instead of looking like stale months.
   }, 400, 'qsr_fob');
   if (!data.length) return [];
+  // loc is intentionally left in its raw, zero-padded form here — do NOT strip it. Unlike most
+  // qsr_* loaders, at least four call sites explicitly pad to match this loader's output
+  // (eom-supervisor.js:147, labor-tools.js:1410, sage.js, eom-share-view.js), so unpadding here
+  // would turn those into silent undefined lookups instead of fixing anything (#192, 2026-08-11 —
+  // reversed after a repo-wide grep showed the padded key is a relied-upon contract, not a bug).
+  // A coordinated migration to unpadded loc across all ~30 consumers is real future work but is
+  // its own issue, not part of the FOB Report fix.
   return data.map(r => ({
     loc:                       r.loc,
     date:                      r.date,
