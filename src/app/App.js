@@ -9,7 +9,7 @@ const ReactDOM = { createRoot }
 
 import { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek } from '../utils/date.js';
 import { mark as _traceMark, reportRender as _traceRender } from '../utils/click-trace.js';
-import { isHoliday, getHolidayAdj, autoTagHolidays, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
+import { isHoliday, getHolidayAdj, buildHolidays, HOLIDAY_MAP } from '../utils/holidays.js';
 import { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, OPTIONAL_PANELS, loadPanelVis, savePanelVis } from '../constants.js';
 import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDrift, computeStoreSigma, getStoreOrg, getWeatherNote, isWeatherExtreme, calibrateWeather, forecastEWMA, forecastAdaptiveDI, forecastAdaptiveEnsemble, _wxCache, getForecastWeather, fetchRow, fetchWx, fetchLY, fetchLYDate, storeAgeDays, fetchRampSales, getDOWTrend, getDOWSpecificTrend, forecastDayparts, getWxAdj, modelHealthScore, compute6wk, calcOpsF, forecastDay, forecastRange, forecastRangeAsync, effectivePlusUp, forecastModels, modelAccuracy, getDIRecommendation, computeModelHealth, bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon, setEventImpact, getEventImpact } from '../engine/forecast.js';
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
@@ -359,6 +359,9 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.983', date:'2026-08-11', changes:[
+    'Issue #197 Slice 1 (first cut) — de-materialize Type A calendar events. The design doc traced 25,783 org_events rows to "a rule generated them and wrote 27 rows per date" (US federal holidays x 27 stores). Traced the actual write path before touching it: there are FOUR separate holiday-tagging mechanisms in this codebase, not one — autoTagHolidays() (utils/holidays.js, ran automatically on EVERY data load: pipeline.js buildDS/mergeDS ds.loaded blocks + App.js IDB-restore path), Review Pack generation\'s inline auto-tag (calendar.js), the "Tag All Holidays" button (analytics.js), and the "Auto-Tag Holidays" button (store-dash.js). Only the first is the silent-runaway one — zero owner action, compounding across months of uploads; the other three are explicit, owner-clicked, bounded actions and are untouched by this change (a separate decision the owner hasn\'t made). Removed only autoTagHolidays()\'s 3 automatic call sites. Verified safe by grep, not assumption, per the standing "measure don\'t reason" rule: every real forecast exclusion/adjustment site (forecast.js\'s candidate-day exclusion and holiday-LY adjustment) already calls isHoliday()/HOLIDAY_MAP directly and never read the materialized tag — a fullClosure-based "excluded from calibration upstream" code comment turned out to be stale/aspirational documentation, not a real dependency. So the automatic materialization was pure redundant computation; forecast accuracy is unaffected by removing it. Added scripts/cleanup-materialized-holiday-events.mjs (dry-run first) for the owner to optionally purge the rows that already accumulated, scoped precisely to event_type=\'holiday\' + a known HOLIDAY_MAP label — leaves real manual entries and all retail-events rows untouched. Also checked and can report: #192 P0 item 4 ("52 more" unreachable in Calendar Manager) does NOT actually need this fix — the day cell is already clickable and opens an unpaginated modal listing every event for that day; the design doc\'s prediction that volume was the cause is unconfirmed and should be re-checked against a live report before assuming. Full scope, what\'s deferred, and why: memory/project-events-redesign.md §3.',
+  ]},
   {version:'4.982', date:'2026-08-11', changes:[
     'Issue #192 P0 (item 3) — Event Impact Registry only populated the sports category, reading as "no impact" rather than "not measured" for the other 8 declared categories. Scoped before building: sports was already seeded; the 4 retail categories (tax_free/black_friday/small_biz_sat/cyber_monday) already had a COMPLETE measurement pipeline (engine/retail-events.js + scripts/measure-retail-impact.mjs, reads labor_rows sales history, n-shrunk lift per store) that had simply never been scheduled or run — added .github/workflows/measure-retail-impact.yml (monthly cron + manual dispatch, idempotent upsert on (loc,event_type)) and added it to sync-failure-watch.yml per the standing automated-pull rule. 5 of 9 categories now populate. Also found two things that DON\'T need building: the panel (event-impact.js:119-120) already distinguishes "not measured yet" from "measured, zero impact" with explicit copy — the v4.870 concern the P0 raised doesn\'t actually apply to the UI, only to the missing pipelines; and `holiday` isn\'t a registry gap at all — it already has a separate, working, auto-applied mechanism (utils/holidays.js, wired directly into forecast.js) that doesn\'t route through this registry. Genuinely still open, not attempted here: `event` (festival/fair) and `weather` have no measurement pipeline (would need one built following the retail script\'s shape); `promo` (LTO) has no structured date source in the codebase at all to measure from. Full scope + per-category verdicts: memory/project-events-redesign.md §9.',
   ]},
@@ -1952,16 +1955,9 @@ function App() {
           lastActual:lastAct,
         };
         if(audit.length>0) try{restoredDs.empRisk=_traceMark('analyzeRegisterAudit',()=>analyzeRegisterAudit(audit));}catch(e){}
-        // Compute non-React side-effects synchronously before the transition
-        let _taggedEvents=null,_autoTaggedCount=0;
-        try{
-          const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
-          ({events:_taggedEvents,tagged:_autoTaggedCount}=autoTagHolidays(restoredDs.laborRows,_existingEvents));
-          if(_autoTaggedCount>0){
-            localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
-            syncUserEventsToCloud(_existingEvents,_taggedEvents);
-          }
-        }catch(e){console.warn('Auto-holiday-tag on IDB restore failed:',e);}
+        // #197 Slice 1 (v4.983): this used to run autoTagHolidays on every IDB restore too —
+        // removed along with pipeline.js's two copies. See the comment at pipeline.js's
+        // buildDS ds.loaded block for the full reasoning.
         // coverage and wx cache from data already in memory — no second IDB read
         const cov = coverageFromLoadedRows(labor, ops, ctrl, fob, audit, peaks, dar, weather);
         setIdbCoverage(cov);
@@ -1979,7 +1975,6 @@ function App() {
         // 5ms chunks so no single message handler exceeds the violation threshold.
         React.startTransition(()=>{
           setDs(restoredDs);
-          if(_autoTaggedCount>0) setUserEvents(_taggedEvents);
           try { setSignals(_traceMark('computeInsights(restore)',()=>computeInsights(restoredDs))); } catch(e) { console.warn('[insights] restore compute failed:', e); }
         });
       } else {
@@ -3281,9 +3276,11 @@ function App() {
         setLoadMsg('⚠ Error reading '+file.name);
       }
     }
-    // Re-sync userEvents from localStorage before the transition — autoTagHolidays
-    // runs inside mergeDS and writes directly to localStorage; read it back now
-    // so the transition render gets the correct events on first pass.
+    // Re-sync userEvents from localStorage before the transition — a defensive freshness
+    // read in case anything else (an events-import parser, another tab) touched mf_events
+    // during file parsing above. #197 Slice 1 (v4.983): this no longer needs to account for
+    // autoTagHolidays specifically — that automatic-on-load holiday materialization was
+    // removed from mergeDS/buildDS entirely, not just moved.
     const _prevEventsForSync=userEvents;
     let _uploadEvents=null;
     try{_uploadEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');}catch(e){console.warn('userEvents re-sync after load failed:',e);}

@@ -84,6 +84,32 @@ Roll-up-with-expand is still the right display for the **impact** view, because 
 genuinely per-store (Elgin's Black Friday is not Ardmore's) — owner confirmed an expanding row
 is what he wants there.
 
+**Slice 1, first cut shipped (v4.983).** Traced the actual write path before touching it (grep,
+not assumption): there are FOUR separate holiday-tagging mechanisms, not one — `autoTagHolidays()`
+(`utils/holidays.js`, ran automatically on every data load — pipeline.js's `buildDS`/`mergeDS`
+`ds.loaded` blocks, plus App.js's IDB-restore path), Review Pack generation's inline auto-tag
+(`calendar.js:1325-1344`), the "Tag All Holidays" button (`analytics.js:4573`), and the
+"🗓 Auto-Tag Holidays" button (`store-dash.js:3507-3528`). Only the first is the actual
+silent-runaway one (zero owner action, on every single load); the other three are explicit,
+owner-clicked, bounded actions — legitimate features, not the bug. Removed only
+`autoTagHolidays()`'s 3 automatic call sites. Verified safe by grep, not assumption: every real
+forecast exclusion/adjustment site (`forecast.js:474/498/519` candidate exclusion,
+`:1588-1603` holiday-LY adjustment) already calls `isHoliday()`/`HOLIDAY_MAP` directly and never
+read the materialized tag — the `fullClosure`-based "excluded from calibration entirely
+upstream" comment on `getHolidayAdj` turned out to be stale/aspirational documentation, not a
+real dependency (`fullClosure` is read nowhere as a filter). So the automatic materialization
+was pure redundant computation this whole time; forecast behavior is unaffected by removing it.
+Also shipped `scripts/cleanup-materialized-holiday-events.mjs` (dry-run first, like the retail
+lift script) to purge the already-accumulated rows, scoped to `event_type='holiday'` AND a
+label matching a known `HOLIDAY_MAP` entry — leaves real manual holiday-type entries and all
+retail-events rows (different `event_type` values) untouched. **NOT done in this cut, real
+follow-up:** the 3 other retail-events/Black-Friday-adjacent write paths are untouched (they're
+legitimate opt-in actions, a separate decision); the confirm/dismiss queue (§4); the panel
+reshape (§7); Calendar Manager/Event Impact Registry folding into one home (§7). "52 more"
+(#192 P0 item 4) turned out NOT to need this fix at all — the day cell is already clickable and
+opens an unpaginated modal showing every event for that day; re-check the live report before
+assuming volume was ever the cause.
+
 ## 4. The loop
 
 Four panels are really one cycle:

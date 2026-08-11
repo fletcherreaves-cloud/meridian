@@ -7,7 +7,6 @@ import { bLocIdx, compute6wk, locRows } from '../engine/forecast.js';
 import { matchedVsLY } from './vs-ly.js';
 import { lastClosedBusinessDay } from './swing-feed.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
-import { autoTagHolidays } from '../utils/holidays.js';
 import { parseInventoryData } from '../views/inventory.js';
 import { STORE_STAFF } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
@@ -94,17 +93,19 @@ function buildDS(workbooks){
     }catch(e){console.warn('Parse error:',type,e);}
   }
   ds.loaded=ds.laborRows.length>0;
-  // Auto-tag holidays on every data load (v4.195) — was previously only a
-  // side-effect of generating a Review Pack, an easy-to-miss manual trigger.
-  // Idempotent: skips anything already tagged, so this is safe to run on
-  // every load without overwriting manual corrections.
-  if(ds.loaded){
-    try{
-      const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
-      const {events:_taggedEvents,tagged:_autoTaggedCount}=autoTagHolidays(ds.laborRows,_existingEvents);
-      if(_autoTaggedCount>0) localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
-    }catch(e){console.warn('Auto-holiday-tag on load failed:',e);}
-  }
+  // #197 Slice 1 (v4.983): autoTagHolidays used to run here on every single data load —
+  // every upload, every session restore — and materialize a userEvents row per (loc,date)
+  // for every HOLIDAY_MAP entry in range. That is the exact mechanism the design doc traced
+  // 25,783 org_events rows to ("27 rows per date... US federal holiday calendar"): fully
+  // automatic, zero owner action, compounding across months of uploads. It was also pure
+  // redundant computation — HOLIDAY_MAP/isHoliday() (utils/holidays.js) is a global,
+  // loc-independent calendar already consulted directly by forecast.js's holiday adjustment
+  // (getHolidayAdj) and LY-exclusion (_ly364IsHoliday) logic, neither of which ever needed a
+  // materialized userEvents row to work. Removed here; the OTHER 3 holiday-tagging paths in
+  // this codebase (calendar.js's Review Pack auto-tag, analytics.js's "Tag All Holidays"
+  // button, store-dash.js's "Auto-Tag Holidays" button) are left untouched — those are
+  // explicit, bounded, owner-clicked actions, not the silent-runaway one, and are a separate
+  // decision the owner hasn't made yet. See memory/project-events-redesign.md §9.
   function bIdx(rows){const idx={};for(const r of rows){if(!r.loc||!r.date)continue;const k=r.loc+'_'+dKey(r.date);if(!idx[k])idx[k]=[];idx[k].push(r);}return idx;}
   // Weather-specific index: keyed by date only (station ID irrelevant for regional OK weather)
   function bWxIdx(rows){
@@ -682,17 +683,9 @@ function mergeDS(existing, wb, type, filename) {
   ds.wxByDate=bWxIdx(ds.weatherRows);
   ds.storeIds=[...new Set(ds.laborRows.map(r=>r.loc))].sort();
   ds.loaded=ds.laborRows.length>0;
-  // Auto-tag holidays on every data load (v4.195) — was previously only a
-  // side-effect of generating a Review Pack, an easy-to-miss manual trigger.
-  // Idempotent: skips anything already tagged, so this is safe to run on
-  // every load without overwriting manual corrections.
-  if(ds.loaded){
-    try{
-      const _existingEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');
-      const {events:_taggedEvents,tagged:_autoTaggedCount}=autoTagHolidays(ds.laborRows,_existingEvents);
-      if(_autoTaggedCount>0) localStorage.setItem('mf_events',JSON.stringify(_taggedEvents));
-    }catch(e){console.warn('Auto-holiday-tag on load failed:',e);}
-  }
+  // #197 Slice 1 (v4.983): see the matching comment ~590 lines above (buildDS's own
+  // ds.loaded block) — this was mergeDS's copy of the same automatic-on-every-load holiday
+  // materialization, removed for the same reason.
   ds.lastActual={};
   for(const r of ds.laborRows){if(r.sales>0){if(!ds.lastActual[r.loc]||r.date>ds.lastActual[r.loc])ds.lastActual[r.loc]=r.date;}}
   // #191: deliberately does NOT trigger metric-source.js's auditRows lazy-fill here — measured,

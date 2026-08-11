@@ -77,21 +77,21 @@ const HOLIDAY_MAP=(()=>{
 })();
 function isHoliday(d){ return d?HOLIDAY_MAP[dKey(d)]:null; }
 
-// autoTagHolidays (v4.195) — runs automatically whenever data loads (called
-// from both ds.loaded completion points in the file-parsing pipeline),
-// instead of only as a side-effect of generating a Review Pack. The old
-// version only tagged holidays that happened to already appear in a
-// specific store's cached anomaly-scan results — meaning a store that had
-// never had a Review Pack generated could go through calibration with its
-// holidays never tagged at all (confirmed: this was the root cause behind
-// Mossy Head's Dec 24 2025 forecast collapsing toward zero, since its LY
-// comparison — Dec 25 2024, Christmas — was never excluded). This version
-// scans every distinct loc in laborRows against every entry in HOLIDAY_MAP
-// covering that loc's actual date range, and tags any not already present
-// in userEvents. Idempotent and cheap to re-run on every load — already-
-// tagged dates are skipped, so this never overwrites a person's own
-// corrections to an auto-tag (e.g. if a holiday turns out to be a partial
-// closure for one specific store and that's been manually adjusted).
+// autoTagHolidays (v4.195, no longer auto-invoked as of #197 Slice 1 / v4.983) — used to run
+// automatically on every data load (buildDS/mergeDS's ds.loaded blocks, and App.js's IDB
+// restore path) and materialize a userEvents row per (loc, HOLIDAY_MAP date). That call was
+// removed: verified (grep, not assumed) that every actual forecast exclusion/adjustment site
+// — forecast.js:474/498/519's candidate-day exclusion, :1588-1603's holiday-LY adjustment —
+// calls isHoliday()/HOLIDAY_MAP directly and never reads a materialized tag for this. The
+// "excluded from calibration entirely upstream" comment on fullClosure below turned out to be
+// stale/aspirational documentation, not a description of a real dependency — fullClosure is
+// read nowhere as an exclusion filter; isHoliday() alone was already load-bearing everywhere.
+// So this function's output was pure redundant computation, and its accumulation over months
+// of uploads (27 stores x every HOLIDAY_MAP date, silently, on every single load) is what the
+// #197 design doc traced 25,783 org_events rows to. Function kept (unused) in case a future
+// manual "sync holidays now" trigger wants it — the 3 other holiday-tagging paths elsewhere in
+// the app (Review Pack generation, "Tag All Holidays", "Auto-Tag Holidays" buttons) are
+// separate, owner-clicked, and untouched by this change.
 function autoTagHolidays(laborRows, userEvents){
   if(!laborRows||!laborRows.length) return {events:userEvents||{}, tagged:0};
   const uev=userEvents||{};
