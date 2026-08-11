@@ -193,8 +193,6 @@ export async function saveMonthlyTargets(targets, year, month) {
     total_food_cost_pct:t.tFOBTotal         ?? null,
     paper_cost_pct:     t.tPaperCost        ?? null,
     op_supply_target:   t.tOpSupply         ?? null,
-    park_pct:           t.tPark             ?? null,
-    oepe_target:        t.tOepe             ?? null,
     updated_at: new Date().toISOString(),
   }));
   const { error } = await supabase
@@ -248,8 +246,6 @@ export async function loadMonthlyTargets(year, month) {
       tFOBTotal:    r.total_food_cost_pct,
       tPaperCost:   r.paper_cost_pct,
       tOpSupply:    r.op_supply_target,
-      tPark:        r.park_pct,
-      tOepe:        r.oepe_target,
       _year: r.year,
       _month: r.month,
     });
@@ -288,8 +284,6 @@ export async function loadAllMonthlyTargets() {
       tFOBTotal:    r.total_food_cost_pct,
       tPaperCost:   r.paper_cost_pct,
       tOpSupply:    r.op_supply_target,
-      tPark:        r.park_pct,
-      tOepe:        r.oepe_target,
       _year: r.year,
       _month: r.month,
     });

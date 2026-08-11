@@ -63,23 +63,20 @@ through to `DEFAULT_TARGETS` on merge instead of a present-but-null key erasing 
 the argless branch's untiebreaked `.limit(27)` (confirmed dead — all 3 real callers pass an
 explicit year/month). 6 new tests in `src/__tests__/monthly-targets-null-strip.test.js`.
 
-**#174 — PARTIALLY DONE (2026-08-11, #184 dispatch item 2): tPark/tOepe persist, priority pair
-only.** `monthly_targets` gained `park_pct`/`oepe_target` columns
-(`supabase/schema-monthly-targets-park-oepe.sql` — **owner needs to run this against the live
-project**, no DDL access from this sandbox), `parseMonthlyTargets` gained column-detection for
-them, and `saveMonthlyTargets`/both loaders round-trip them. `tKvst`/`tKvsu`/`tR2p`/`tOsat`/
-`tOsatB2B` are NOT done — still a follow-up. `tLabor` deliberately NOT persisted (held for #164).
-**Correction to the issue's premise, found while implementing:** its quoted code excerpt
-(`src/parsers/index.js:783-800`) is `parseYearlyTargets`, not `parseMonthlyTargets` —
-`parseMonthlyTargets` had no column-detection for Park/OEPE/KVS/R2P/OSAT at all before this
-change (verified by reading its column map, not assumed). The structural gap the issue flagged
-(no cloud path for 4 of 6 scored targets) was real independent of that mislabel. **Still
-unverified**: whether the real monthly workbook actually has Park/OEPE columns — the new
-detection reuses `parseYearlyTargets`'s proven header strings as the only available evidence;
-if the monthly sheet's headers differ, extraction silently finds nothing (same no-op-if-absent
-behavior every other field here already has). Owner should confirm against the real file. 8 new
-tests across `monthly-targets-park-oepe.test.js` (parser) and
-`monthly-targets-park-oepe-roundtrip.test.js` (parse→save→load).
+**#174 — SHIPPED THEN REVERTED (2026-08-11, #184 dispatch item 2).** `monthly_targets` briefly
+gained `park_pct`/`oepe_target` columns to give tPark/tOepe a cloud path. **Reverted the same
+day** on two independent grounds: (1) the owner confirmed the real monthly workbook has neither
+a Park% nor an OEPE column — the parser detection this shipped with was flagged UNVERIFIED at
+the time and the verification came back negative; (2) #181 (same day) removed `tPark` from
+`computeOpsScore` entirely, so even with the columns present there is no scoring consumer left
+to justify persisting it. Reverted: `parseMonthlyTargets`'s column-detection, `saveMonthlyTargets`/
+both loaders' park_pct/oepe_target read-write, the `monthly_targets` schema columns, the
+standalone migration file (deleted — never run against the live project, so no data migration
+was needed), and the two test files that covered it. `tKvst`/`tKvsu`/`tR2p`/`tOsat`/`tOsatB2B`
+were never started and remain a possible future follow-up if a concrete need arises — not
+queued. `tOepe` is unaffected by the revert (#183 already settled it stays unchanged, and it
+was never actually populated by this persistence work either way, since the workbook column
+doesn't exist).
 
 **#183 — DONE (2026-08-11, #184 dispatch item 3).** OEPE switched app-wide to the w/o-park
 formula `graded-visits.js` already had — `loadQsrActSummary` (supabase.js) was still computing
@@ -138,8 +135,9 @@ the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
 4. **The "targets describe history, not a standard" finding — now only about OEPE.**
    `r(tOepe, actual) = 0.897` (#183); only 4 of 27 stores meet their OEPE target — worth a
    deliberate standards conversation. The matching `tPark` finding (`r=0.890`, #181) is now
-   moot for scoring since `tPark` is no longer a scored target at all (see #3 above) — it may
-   still matter for #174's monthly-upload persistence, which is unaffected by this.
+   moot entirely — `tPark` is no longer a scored target (see #3 above) AND #174's monthly-upload
+   persistence for it was reverted the same day (workbook has no Park column, and no scoring
+   consumer remained to justify it).
 
 ### Measured facts from this session worth not re-deriving
 
@@ -149,11 +147,12 @@ the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
   the upload. Proven benign, not inferred. Don't re-investigate.
 - `computeCtrlScore` reads **no per-store target at all** — it grades entirely on the
   district-wide `settings.scoring` thresholds. Controls Score does not move when targets change.
-- ⚠️ STALE, corrected 2026-08-11: as of #174 item 2 + #181, `computeOpsScore` grades **five**
-  target fields (park removed). `tTpph`, `tPark`, `tOepe` now have a `monthly_targets` path
-  (`tPark` no longer feeds scoring, but still persists for the quadrant diagnostic and #174's
-  own purpose). `tKvst`/`tKvsu` still have no monthly path — that's the still-open follow-up
-  #174's decision comment scoped as lower priority.
+- ⚠️ STALE, corrected 2026-08-11 (twice — see #174 above): `computeOpsScore` grades **five**
+  target fields now that #181 removed park. Of those five, only `tTpph` and `tOepe` have a
+  `monthly_targets` cloud path — `tPark`'s brief #174 persistence was reverted the same day
+  (real workbook has no Park/OEPE column; `tPark` also has no scoring consumer left to justify
+  it). `tKvst`/`tKvsu` still have no monthly path and remain a possible future follow-up, not
+  queued.
 - `buildStore` has exactly **one** caller (`App.js:2920`). `coaching.js` imports it and
   `buildBrief` and calls neither — dead import.
 - **Park is operational choice, not physical constraint** (measured 2026-08-11, 90d DAR +

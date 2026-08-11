@@ -294,10 +294,6 @@ create table if not exists public.monthly_targets (
   total_food_cost_pct float,                 -- Total Food Cost %
   paper_cost_pct    float,                   -- P&L Paper Cost %
   op_supply_target  float,                   -- Op Supply Target ($)
-  -- Speed/service (#174 — added so tPark/tOepe have a cloud path; see
-  -- schema-monthly-targets-park-oepe.sql for the ALTER on an existing table)
-  park_pct          float,                   -- Park %
-  oepe_target       float,                   -- OEPE target (seconds)
   -- Audit
   updated_at        timestamptz default now(),
   updated_by        uuid references public.profiles(id),

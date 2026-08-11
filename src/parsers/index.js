@@ -694,12 +694,6 @@ function parseMonthlyTargets(wb){
     paperCost:  fc(h,'P &. L Paper Cost %','P & L Paper Cost %','Paper Cost %'),
     opSupply:   fc(h,'Op Supply Target'),
     salesProj:  fc(h,'Sales Projection'),
-    // #174: same header strings already proven correct in parseYearlyTargets for these two
-    // fields. Unverified against the real monthly workbook (no file access) — if this sheet
-    // uses different header text, fc() returns -1 and the guard below silently finds nothing,
-    // same as every other optional column here.
-    park:       fc(h,'Park %'),
-    oepe:       fc(h,'OEPE\nPACE','OEPE PACE','OEPE\r\nPACE'),
   };
   const targets={};
   for(let i=hi+1;i<raw.length;i++){
@@ -726,8 +720,6 @@ function parseMonthlyTargets(wb){
     if(C.paperCost>=0&&parsePct(r[C.paperCost]))    t.tPaperCost=parsePct(r[C.paperCost]);
     if(C.opSupply>=0&&parseFloat(r[C.opSupply]))    t.tOpSupply=parseFloat(r[C.opSupply]);
     if(C.salesProj>=0&&parseFloat(r[C.salesProj]))  t.tProdSales=parseFloat(r[C.salesProj]);
-    if(C.park>=0&&parsePct(r[C.park]))              t.tPark=parsePct(r[C.park]);
-    if(C.oepe>=0&&parseFloat(r[C.oepe]))            t.tOepe=parseFloat(r[C.oepe]);
     if(Object.keys(t).length>0) targets[loc]=t;
   }
   console.log(`[MonthlyTargets] sheet='${sheetName}' hdr=${hi} loc=${C.loc} fobBase=${C.fobBase} parsed=${Object.keys(targets).length} stores`,Object.keys(targets).slice(0,2).map(l=>({loc:l,tFOBBase:targets[l].tFOBBase,tFOBTarget:targets[l].tFOBTarget,tLabor:targets[l].tLabor})));
