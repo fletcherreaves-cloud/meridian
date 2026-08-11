@@ -91,6 +91,15 @@
   4 real, separate mechanisms and the guard test that found the anti-pattern was 4x more
   widespread than reported.
 
+## 📦 Inventory
+- [Inventory auto-wiring (#214)](project-inventory-auto-wiring-214.md) — wired the Inventory
+  Intelligence panel (Service/Production/Overstock/Transfers) to qsr_inventory_summary,
+  auto-first with manual gap-fill. Key finding the issue's own body missed: the table has
+  NO producer script yet (confirmed via grep) — the wiring is correct and load-bearing the
+  moment a pull ships, but shows honest "no cloud data yet" today. Folded in #207 batch-2's
+  first item (inventory.js → lazyPanel, ~10.4KB gzip reclaimed) since it required splitting
+  parseInventoryData out to parsers/inventory-parse.js anyway.
+
 ## ⚡ Performance
 - [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
   spans were nested (same-commit layout effects end at one flush), not additive — a misreading

@@ -7,7 +7,7 @@ import { bLocIdx, compute6wk, locRows } from '../engine/forecast.js';
 import { matchedVsLY } from './vs-ly.js';
 import { lastClosedBusinessDay } from './swing-feed.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
-import { parseInventoryData } from '../views/inventory.js';
+import { parseInventoryData } from '../parsers/inventory-parse.js';
 import { STORE_STAFF } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
 import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor } from '../parsers/index.js';
