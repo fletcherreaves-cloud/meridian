@@ -138,20 +138,18 @@ function computeOpsScore(p,t,sc){
   // window at all) as "no data," so it never scored — discarded, not graded as poor. A
   // presence check (!=null) lets a real zero be scored on its own (bad) merits.
   if(t.tKvsu>0&&p.kvsu!=null){max+=sc.kvsuMaxPts;if(p.kvsu>=t.tKvsu)score+=sc.kvsuMaxPts;else if(p.kvsu>=t.tKvsu*sc.kvsuPartialPct)score+=sc.kvsuPartialPts;}
-  // #150/#178 item 6: park used to be graded strictly lower-is-better (<=target always full
-  // credit, no matter how far below), which is wrong — DT Park is a BAND, not a slope. Parking
-  // too FEW cars backs up the physical drive-thru line instead of moving it, so under-target is
-  // graded on a TIGHTER tolerance than over-target (over is tolerated further, using the same
-  // parkPartialPct the old formula already applied on that side). p.park>0 also rejected a
-  // genuine 0% as "no data" — now a presence check.
-  if(t.tPark>0&&p.park!=null){
-    max+=sc.parkMaxPts;
-    const dev=p.park-t.tPark;             // + = over target, - = under target
-    const overTol=t.tPark*(sc.parkPartialPct-1);
-    const underTol=overTol/2;             // tighter band below target — under-parking is the worse direction
-    if(dev>=0){ if(dev<=overTol)score+=sc.parkMaxPts; else if(dev<=overTol*2)score+=sc.parkPartialPts; }
-    else{ const under=-dev; if(under<=underTol)score+=sc.parkMaxPts; else if(under<=underTol*2)score+=sc.parkPartialPts; }
-  }
+  // #181 (2026-08-11): park is REMOVED from scoring, not retuned — reverts the #150/#178 item 6
+  // asymmetric band (and a taper design that never shipped). The owner's own explanation of what
+  // parking is FOR settled it: "keep the wheels moving... park cars with complex orders or other
+  // operational barriers." A quadrant-diagnostic measurement (27 stores, park% x OEPE w/o Park)
+  // showed the district's heaviest parkers (Elgin 30.5%, Ponce de Leon 33.6%) also beat the
+  // median on flow — the tool working as intended — while several near-zero parkers sat at or
+  // below median flow, refuting "under-parking stalls the line" for them too. A single-axis band
+  // scores both of those as failures; both are fine. See engine/park-oepe-quadrant.js for the
+  // diagnostic that replaces it (park% x OEPE, not a score component). tPark and DEF_SETTINGS'
+  // parkMaxPts/parkPartialPct/parkPartialPct-derived constants are unused for scoring now but
+  // deliberately left in constants.js — #174 may still want tPark as a target the diagnostic's
+  // quadrant split can reference, and removing unused config isn't this issue's job.
   if(t.tTpph>0&&p.tpph>0){max+=sc.tpphMaxPts;if(p.tpph>=t.tTpph)score+=sc.tpphMaxPts;else if(p.tpph>=t.tTpph*sc.tpphT2pct)score+=sc.tpphT2pts;else if(p.tpph>=t.tTpph*sc.tpphT3pct)score+=sc.tpphT3pts;}
   if(t.tLabor>0&&p.laborPct>0){max+=sc.laborMaxPts;const g=Math.abs(p.laborPct-t.tLabor);if(g<=sc.laborT1gap)score+=sc.laborMaxPts;else if(g<=sc.laborT2gap)score+=sc.laborT1pts;else if(g<=sc.laborT3gap)score+=sc.laborT2pts;}
   return max?+(score/max*100).toFixed(1):50;

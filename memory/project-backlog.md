@@ -115,18 +115,31 @@ the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
    while `App.js` calls `loadAllMonthlyTargets()` — two different paths, reason unknown.
    **Do not assume it's fine. #153 was found because someone assumed exactly that.**
 
-3. **#181 — park under-target penalty, DEFERRED pending a `tPark` re-baseline.** Owner agreed
-   2026-08-11 to ship the over-target taper only and *"remember to revisit this."* The
-   under-target side stays as shipped in #180 until targets stop being history-derived.
-   **Revisit trigger:** owner sets the intended park standard (his figure: 12–16%), `tPark` is
-   re-baselined from that standard rather than per-store history (a spreadsheet upload once
-   #174 lands, not a deploy), then RE-MEASURE how many stores fall below the new targets before
-   any penalty is applied. Do not skip the re-measure — the whole reason this was deferred is
-   that 24 of 27 sat below the old targets.
-4. **The two "targets describe history, not a standard" findings — same fingerprint, both open.**
-   `r(tPark, actual) = 0.890` (#181) and `r(tOepe, actual) = 0.897` (#183). Only 4 of 27 stores
-   meet their OEPE target. Two metrics whose targets record what stores already do. Worth a
-   deliberate standards conversation rather than two separate bug fixes.
+3. **#181 — SUPERSEDED, then DONE (2026-08-11, #184 dispatch item 4).** ⚠️ This entry
+   previously said "DEFERRED — ship the over-target taper, revisit under-target later." That
+   was the decision for about an hour, in the same conversation, before the owner explained
+   what parking is actually FOR ("keep the wheels moving... park cars with complex orders or
+   other operational barriers") and a measured park%-vs-OEPE quadrant followed. **The taper
+   was never the final call — it was superseded before this file was updated to say so, which
+   is exactly the gap this bullet exists to close.** Final decision: **park is removed from
+   `computeOpsScore` entirely**, not retuned — reverts #180's asymmetric band and the taper
+   design in the same issue. Replaced with a park% x OEPE-w/o-park quadrant diagnostic
+   (`engine/park-oepe-quadrant.js`, Signals panel → 🅿️ Park × OEPE tab), district medians
+   recomputed per period. Why: the district's heaviest parkers (Elgin 30.5%, Ponce de Leon
+   33.6%) also beat the median on flow — the tool working as intended — while several near-zero
+   parkers sat at/below median flow too, refuting "under-parking always stalls the line." A
+   single-axis band scores both groups as failures; both are fine. `mode:'any'` zero-handling
+   from #150 stays (needed for the diagnostic). `parkMaxPts`'s points are redistributed
+   automatically by `computeOpsScore`'s self-normalizing `score/max*100` — removing a component
+   from `max` proportionally increases the others' weight with no separate redistribution code
+   needed. **Standing rule this session wrote down because of this exact miss: when a decision
+   recorded in `memory/` changes, amend the file in the same turn it changes — not at the end
+   of the session.**
+4. **The "targets describe history, not a standard" finding — now only about OEPE.**
+   `r(tOepe, actual) = 0.897` (#183); only 4 of 27 stores meet their OEPE target — worth a
+   deliberate standards conversation. The matching `tPark` finding (`r=0.890`, #181) is now
+   moot for scoring since `tPark` is no longer a scored target at all (see #3 above) — it may
+   still matter for #174's monthly-upload persistence, which is unaffected by this.
 
 ### Measured facts from this session worth not re-deriving
 
@@ -136,8 +149,11 @@ the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
   the upload. Proven benign, not inferred. Don't re-investigate.
 - `computeCtrlScore` reads **no per-store target at all** — it grades entirely on the
   district-wide `settings.scoring` thresholds. Controls Score does not move when targets change.
-- Of `computeOpsScore`'s six target fields, only `tTpph` has a `monthly_targets` path today.
-  `tKvst`/`tKvsu`/`tOepe`/`tPark` have no monthly path at all.
+- ⚠️ STALE, corrected 2026-08-11: as of #174 item 2 + #181, `computeOpsScore` grades **five**
+  target fields (park removed). `tTpph`, `tPark`, `tOepe` now have a `monthly_targets` path
+  (`tPark` no longer feeds scoring, but still persists for the quadrant diagnostic and #174's
+  own purpose). `tKvst`/`tKvsu` still have no monthly path — that's the still-open follow-up
+  #174's decision comment scoped as lower priority.
 - `buildStore` has exactly **one** caller (`App.js:2920`). `coaching.js` imports it and
   `buildBrief` and calls neither — dead import.
 - **Park is operational choice, not physical constraint** (measured 2026-08-11, 90d DAR +
