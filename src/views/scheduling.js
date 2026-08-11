@@ -3,6 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { generateSlideDeckHTML } from './scheduling-deck.js';
 import { metricDaily } from '../engine/metric-source.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const { useState, useMemo, useCallback } = React;
 
@@ -442,7 +443,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
     return Object.entries(byLoc).map(([loc, rows]) => {
       const t    = DEFAULT_TARGETS[loc] || {};
       const rate = AVG_RATES[loc] || DIST_AVG_RATE;
-      const tgt  = t.tJuneLaborPct || t.tLabor || 0.22;
+      const tgt  = resolveLaborTarget(t) ?? t.tLabor ?? 0.22;
       const buf  = tgt + LABOR_BUFFER;
       const ta   = TA_DATA[loc] || {};
 

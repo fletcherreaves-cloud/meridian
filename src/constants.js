@@ -34,33 +34,33 @@ const DEFAULT_TARGETS={
 // Model: 'di'=Dialed-In  'ly'=LY Adjusted  'dow'=DOW Trend
 // ── June 2026 projection targets ─────────────────────────────────────
 (function(){
-  if(DEFAULT_TARGETS['10034']) Object.assign(DEFAULT_TARGETS['10034'],{tJuneProj:390070.57,tQSRSoftProj:0,tJuneLaborPct:0.23,tJuneTpph:5.75});
-  if(DEFAULT_TARGETS['10422']) Object.assign(DEFAULT_TARGETS['10422'],{tJuneProj:406772.65,tQSRSoftProj:358513.02,tJuneLaborPct:0.215,tJuneTpph:5.3});
-  if(DEFAULT_TARGETS['10915']) Object.assign(DEFAULT_TARGETS['10915'],{tJuneProj:364602.36,tQSRSoftProj:360237.01,tJuneLaborPct:0.215,tJuneTpph:5.4});
-  if(DEFAULT_TARGETS['11657']) Object.assign(DEFAULT_TARGETS['11657'],{tJuneProj:349014.0,tQSRSoftProj:314876.92,tJuneLaborPct:0.215,tJuneTpph:5.9});
-  if(DEFAULT_TARGETS['13113']) Object.assign(DEFAULT_TARGETS['13113'],{tJuneProj:294588.25,tQSRSoftProj:273041.62,tJuneLaborPct:0.2225,tJuneTpph:5.5});
-  if(DEFAULT_TARGETS['18213']) Object.assign(DEFAULT_TARGETS['18213'],{tJuneProj:180548.0,tQSRSoftProj:171881.96,tJuneLaborPct:0.225,tJuneTpph:5.3});
-  if(DEFAULT_TARGETS['20475']) Object.assign(DEFAULT_TARGETS['20475'],{tJuneProj:311896.72,tQSRSoftProj:292525.48,tJuneLaborPct:0.2125,tJuneTpph:5.7});
-  if(DEFAULT_TARGETS['24471']) Object.assign(DEFAULT_TARGETS['24471'],{tJuneProj:323386.75,tQSRSoftProj:293050.52,tJuneLaborPct:0.215,tJuneTpph:5.4});
-  if(DEFAULT_TARGETS['29760']) Object.assign(DEFAULT_TARGETS['29760'],{tJuneProj:517873.65,tQSRSoftProj:470868.02,tJuneLaborPct:0.21,tJuneTpph:5.0});
-  if(DEFAULT_TARGETS['31357']) Object.assign(DEFAULT_TARGETS['31357'],{tJuneProj:326730.1,tQSRSoftProj:300406.91,tJuneLaborPct:0.2225,tJuneTpph:6.2});
-  if(DEFAULT_TARGETS['32525']) Object.assign(DEFAULT_TARGETS['32525'],{tJuneProj:267795.67,tQSRSoftProj:224481.76,tJuneLaborPct:0.215,tJuneTpph:5.8});
-  if(DEFAULT_TARGETS['33109']) Object.assign(DEFAULT_TARGETS['33109'],{tJuneProj:276397.89,tQSRSoftProj:264559.52,tJuneLaborPct:0.21,tJuneTpph:6.35});
-  if(DEFAULT_TARGETS['33222']) Object.assign(DEFAULT_TARGETS['33222'],{tJuneProj:242172.88,tQSRSoftProj:231821.43,tJuneLaborPct:0.22,tJuneTpph:5.25});
-  if(DEFAULT_TARGETS['33704']) Object.assign(DEFAULT_TARGETS['33704'],{tJuneProj:278186.12,tQSRSoftProj:278958.5,tJuneLaborPct:0.215,tJuneTpph:5.35});
-  if(DEFAULT_TARGETS['34222']) Object.assign(DEFAULT_TARGETS['34222'],{tJuneProj:281817.67,tQSRSoftProj:268143.84,tJuneLaborPct:0.21,tJuneTpph:5.3});
-  if(DEFAULT_TARGETS['35064']) Object.assign(DEFAULT_TARGETS['35064'],{tJuneProj:200943.78,tQSRSoftProj:194420.27,tJuneLaborPct:0.23,tJuneTpph:4.5});
-  if(DEFAULT_TARGETS['35242']) Object.assign(DEFAULT_TARGETS['35242'],{tJuneProj:298328.28,tQSRSoftProj:0,tJuneLaborPct:0.235,tJuneTpph:5.6});
-  if(DEFAULT_TARGETS['3708']) Object.assign(DEFAULT_TARGETS['3708'],{tJuneProj:315527.29,tQSRSoftProj:317670.91,tJuneLaborPct:0.215,tJuneTpph:5.5});
-  if(DEFAULT_TARGETS['37566']) Object.assign(DEFAULT_TARGETS['37566'],{tJuneProj:363776.25,tQSRSoftProj:0,tJuneLaborPct:0.235,tJuneTpph:5.7});
-  if(DEFAULT_TARGETS['38609']) Object.assign(DEFAULT_TARGETS['38609'],{tJuneProj:412655.74,tQSRSoftProj:0,tJuneLaborPct:0.23,tJuneTpph:5.7});
-  if(DEFAULT_TARGETS['43380']) Object.assign(DEFAULT_TARGETS['43380'],{tJuneProj:174712.84,tQSRSoftProj:178783.79,tJuneLaborPct:0.215,tJuneTpph:5.25});
-  if(DEFAULT_TARGETS['43701']) Object.assign(DEFAULT_TARGETS['43701'],{tJuneProj:202809.0,tQSRSoftProj:0,tJuneLaborPct:0.26,tJuneTpph:4.8});
-  if(DEFAULT_TARGETS['5183']) Object.assign(DEFAULT_TARGETS['5183'],{tJuneProj:461920.0,tQSRSoftProj:459256.04,tJuneLaborPct:0.215,tJuneTpph:5.35});
-  if(DEFAULT_TARGETS['5985']) Object.assign(DEFAULT_TARGETS['5985'],{tJuneProj:635841.49,tQSRSoftProj:611699.16,tJuneLaborPct:0.2,tJuneTpph:5.9});
-  if(DEFAULT_TARGETS['6178']) Object.assign(DEFAULT_TARGETS['6178'],{tJuneProj:368896.07,tQSRSoftProj:0,tJuneLaborPct:0.23,tJuneTpph:6.1});
-  if(DEFAULT_TARGETS['6838']) Object.assign(DEFAULT_TARGETS['6838'],{tJuneProj:384958.89,tQSRSoftProj:0,tJuneLaborPct:0.235,tJuneTpph:5.5});
-  if(DEFAULT_TARGETS['6972']) Object.assign(DEFAULT_TARGETS['6972'],{tJuneProj:530189.06,tQSRSoftProj:532447.36,tJuneLaborPct:0.21,tJuneTpph:5.35});
+  if(DEFAULT_TARGETS['10034']) Object.assign(DEFAULT_TARGETS['10034'],{tJuneProj:390070.57,tQSRSoftProj:0,tJuneTpph:5.75});
+  if(DEFAULT_TARGETS['10422']) Object.assign(DEFAULT_TARGETS['10422'],{tJuneProj:406772.65,tQSRSoftProj:358513.02,tJuneTpph:5.3});
+  if(DEFAULT_TARGETS['10915']) Object.assign(DEFAULT_TARGETS['10915'],{tJuneProj:364602.36,tQSRSoftProj:360237.01,tJuneTpph:5.4});
+  if(DEFAULT_TARGETS['11657']) Object.assign(DEFAULT_TARGETS['11657'],{tJuneProj:349014.0,tQSRSoftProj:314876.92,tJuneTpph:5.9});
+  if(DEFAULT_TARGETS['13113']) Object.assign(DEFAULT_TARGETS['13113'],{tJuneProj:294588.25,tQSRSoftProj:273041.62,tJuneTpph:5.5});
+  if(DEFAULT_TARGETS['18213']) Object.assign(DEFAULT_TARGETS['18213'],{tJuneProj:180548.0,tQSRSoftProj:171881.96,tJuneTpph:5.3});
+  if(DEFAULT_TARGETS['20475']) Object.assign(DEFAULT_TARGETS['20475'],{tJuneProj:311896.72,tQSRSoftProj:292525.48,tJuneTpph:5.7});
+  if(DEFAULT_TARGETS['24471']) Object.assign(DEFAULT_TARGETS['24471'],{tJuneProj:323386.75,tQSRSoftProj:293050.52,tJuneTpph:5.4});
+  if(DEFAULT_TARGETS['29760']) Object.assign(DEFAULT_TARGETS['29760'],{tJuneProj:517873.65,tQSRSoftProj:470868.02,tJuneTpph:5.0});
+  if(DEFAULT_TARGETS['31357']) Object.assign(DEFAULT_TARGETS['31357'],{tJuneProj:326730.1,tQSRSoftProj:300406.91,tJuneTpph:6.2});
+  if(DEFAULT_TARGETS['32525']) Object.assign(DEFAULT_TARGETS['32525'],{tJuneProj:267795.67,tQSRSoftProj:224481.76,tJuneTpph:5.8});
+  if(DEFAULT_TARGETS['33109']) Object.assign(DEFAULT_TARGETS['33109'],{tJuneProj:276397.89,tQSRSoftProj:264559.52,tJuneTpph:6.35});
+  if(DEFAULT_TARGETS['33222']) Object.assign(DEFAULT_TARGETS['33222'],{tJuneProj:242172.88,tQSRSoftProj:231821.43,tJuneTpph:5.25});
+  if(DEFAULT_TARGETS['33704']) Object.assign(DEFAULT_TARGETS['33704'],{tJuneProj:278186.12,tQSRSoftProj:278958.5,tJuneTpph:5.35});
+  if(DEFAULT_TARGETS['34222']) Object.assign(DEFAULT_TARGETS['34222'],{tJuneProj:281817.67,tQSRSoftProj:268143.84,tJuneTpph:5.3});
+  if(DEFAULT_TARGETS['35064']) Object.assign(DEFAULT_TARGETS['35064'],{tJuneProj:200943.78,tQSRSoftProj:194420.27,tJuneTpph:4.5});
+  if(DEFAULT_TARGETS['35242']) Object.assign(DEFAULT_TARGETS['35242'],{tJuneProj:298328.28,tQSRSoftProj:0,tJuneTpph:5.6});
+  if(DEFAULT_TARGETS['3708']) Object.assign(DEFAULT_TARGETS['3708'],{tJuneProj:315527.29,tQSRSoftProj:317670.91,tJuneTpph:5.5});
+  if(DEFAULT_TARGETS['37566']) Object.assign(DEFAULT_TARGETS['37566'],{tJuneProj:363776.25,tQSRSoftProj:0,tJuneTpph:5.7});
+  if(DEFAULT_TARGETS['38609']) Object.assign(DEFAULT_TARGETS['38609'],{tJuneProj:412655.74,tQSRSoftProj:0,tJuneTpph:5.7});
+  if(DEFAULT_TARGETS['43380']) Object.assign(DEFAULT_TARGETS['43380'],{tJuneProj:174712.84,tQSRSoftProj:178783.79,tJuneTpph:5.25});
+  if(DEFAULT_TARGETS['43701']) Object.assign(DEFAULT_TARGETS['43701'],{tJuneProj:202809.0,tQSRSoftProj:0,tJuneTpph:4.8});
+  if(DEFAULT_TARGETS['5183']) Object.assign(DEFAULT_TARGETS['5183'],{tJuneProj:461920.0,tQSRSoftProj:459256.04,tJuneTpph:5.35});
+  if(DEFAULT_TARGETS['5985']) Object.assign(DEFAULT_TARGETS['5985'],{tJuneProj:635841.49,tQSRSoftProj:611699.16,tJuneTpph:5.9});
+  if(DEFAULT_TARGETS['6178']) Object.assign(DEFAULT_TARGETS['6178'],{tJuneProj:368896.07,tQSRSoftProj:0,tJuneTpph:6.1});
+  if(DEFAULT_TARGETS['6838']) Object.assign(DEFAULT_TARGETS['6838'],{tJuneProj:384958.89,tQSRSoftProj:0,tJuneTpph:5.5});
+  if(DEFAULT_TARGETS['6972']) Object.assign(DEFAULT_TARGETS['6972'],{tJuneProj:530189.06,tQSRSoftProj:532447.36,tJuneTpph:5.35});
 })();
 
 const DEFAULT_MODEL_ASSIGNMENTS = {

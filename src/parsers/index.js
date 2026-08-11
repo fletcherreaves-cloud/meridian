@@ -105,6 +105,13 @@ function parseProjectionsFile(wb, filename) {
 }
 
 // ── Apply parsed projections to DEFAULT_TARGETS ───────────────────────────
+// #176: no longer writes a labor % here. tJuneLaborPct used to jump ahead of the
+// approved monthly target (t.tCrewLabor) in scheduling.js/morning-brief.js's fallback
+// chains; the two are redundant (same organizational target, two workbooks), and
+// #164's resolver already routes readers to the approved value. The raw parsed labor
+// % is still preserved unmutated in ds.projRows for any future consumer.
+// tJuneProj/tOperatorProj/tQSRSoftProj/tJuneTpph are left as-is — untouched siblings,
+// not yet checked (see issue #176).
 function applyProjectionsToTargets(rows, label){
   let applied = 0;
   rows.forEach(r=>{
@@ -112,7 +119,6 @@ function applyProjectionsToTargets(rows, label){
     const upd = {};
     if(r.proj>0)  { upd.tJuneProj=r.proj; upd.tOperatorProj=r.proj; }
     if(r.qsr>0)   upd.tQSRSoftProj=r.qsr;
-    if(r.labor>0) upd.tJuneLaborPct=r.labor;
     if(r.tpph>0)  upd.tJuneTpph=r.tpph;
     Object.assign(DEFAULT_TARGETS[r.loc], upd);
     applied++;
