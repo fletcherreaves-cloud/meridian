@@ -77,6 +77,35 @@ Count views:     + week-start  (local only — see §5)
   Non Product, Op Supplies."* A grouping axis over items, playing the same role for items
   that `scope` plays for stores.
 
+### ⚠ Build the shell GENERIC — it must host Labor too (owner-approved 2026-08-11)
+
+**Decide this before writing the shell, not after.** Retrofitting a Food-Cost-specific shell
+into a generic one is a rewrite.
+
+The owner's economics make this non-optional:
+
+> *"Food Cost and Labor are the 2 single largest line items in our P&L representing ~50% of
+> all sales dollars… if I can improve labor by 0.25% - 0.50% or food cost by that or more,
+> then I have 2 defined areas to coach and teach and push rather than nickeling and diming
+> multiple other small fish."*
+
+**Labor has the identical fragmentation problem this document diagnoses for inventory** —
+`labor-tools`, `scheduling`, `labor-analysis`, LifeLenz surfaces, and Store VLH Config each
+carry their own period logic, exactly like the six inventory panels in §3.
+
+So build the shell as a **reusable environment** — `scope × period × class` + composable views
++ the three output modes of §7 — and **instantiate it twice: Food Cost and Labor.** Same
+architecture, same report renderers, same heatmap, same dollarization.
+
+That covers the full ~50% of P&L instead of half of it, for materially less than twice the
+work. Owner: *"also extremely valid and it needs to be included in all of this so I agree with
+your assessment."*
+
+Implication for `class`: it is **domain-specific**, not universal. For Food Cost it is the
+product classes above; for Labor it will be something else (position / daypart / crew vs
+management — to be defined). Model the third axis as **a domain-supplied dimension**, not as a
+hardcoded product-class list.
+
 ## 5. Week-start: Mon–Sun is LOCAL to count views. Do not globalise it.
 
 The owner reviews on Mon–Sun and has for 30 years. Wed–Tue exists for one reason:
