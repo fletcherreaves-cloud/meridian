@@ -247,7 +247,11 @@ function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, 
     tab === 'pace'    ? h(PaceToTargetPanel, common) :
     tab === 'yearly'  ? h(YearlyProjectionsPanel, common) :
                         h(SmartTargetsPanel, common);
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16 } },
+  // paddingBottom mirrors paddingTop (#192 P1) — without it the sheet's flex:1 fills all the way
+  // to the viewport's physical bottom edge, so a horizontally-scrolling table inside gets a
+  // native scrollbar glued to the screen edge with zero room to grab it (reported against
+  // Planning → Monthly; this hub shell is shared verbatim with the Scheduling hub below).
+  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16, paddingBottom: 16 } },
     div({ style: { flex: '0 0 16px', cursor: 'pointer' }, onClick: onClose }),
     div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1200, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
       // Hub header: title + tab strip + single close
@@ -288,7 +292,11 @@ function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose })
     tab === 'summary'   ? h(ScheduleSummaryPanel, common) :
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
                           h(SkillsMatrixPanel, common);
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16 } },
+  // paddingBottom mirrors paddingTop (#192 P1) — without it the sheet's flex:1 fills all the way
+  // to the viewport's physical bottom edge, so a horizontally-scrolling table inside gets a
+  // native scrollbar glued to the screen edge with zero room to grab it (reported against
+  // Planning → Monthly; this hub shell is shared verbatim with the Scheduling hub below).
+  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16, paddingBottom: 16 } },
     div({ style: { flex: '0 0 16px', cursor: 'pointer' }, onClick: onClose }),
     div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1600, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
       div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
@@ -350,6 +358,12 @@ function PanelManagerPanel({ vis, onToggle, onShowAll, onHideAll, perm, onClose 
 
 // ── Meridian version + changelog ─────────────────────────────────────────────
 const MERIDIAN_CHANGELOG  = [
+  {version:'4.977', date:'2026-08-11', changes:[
+    'Issue #192 P1 — the modal/scroll sizing defect reported five times, fixed as one class plus a guard test rather than five patches. Item 4 (Projections → supervisor expand) turned out to already be fixed (v4.966/#178) — no code change, confirmed via git log. The other four map to genuinely separate root causes, not one shared ModalShell bug (none of the five actually go through ModalShell): (1) District EOM Summary\'s per-store table — and 3 more tables in the same file — used `overflowX:\'auto\'` + `table{width:\'100%\'}` with no minWidth, which caps the table at its wrapper\'s width so there is nothing to scroll and the browser compresses/cuts off columns instead; fixed to `width:\'max-content\',minWidth:\'100%\'`, the pattern already correct elsewhere (analytics.js\'s MonthlyProjectionsPanel). A repo-wide guard test (scroll-table-width.test.js) found the SAME anti-pattern in 12 more tables across 6 other files (above-store-onepager.js, analytics.js, at-a-glance.js, sage.js, scheduling.js, smg-voice.js) — all fixed identically; one true exception (scheduling.js\'s StoreScheduleTable, which already forces the same overflow via per-column minWidths) is documented in the test\'s EXEMPT list. (2) Planning → Monthly had column-freeze (sticky left) but not row-freeze (sticky top) on its table header — the one table in the codebase with only half the freeze; added, plus the Planning/Scheduling hub shells\' missing paddingBottom, which let a horizontal scrollbar sit flush against the browser\'s physical bottom edge. (3) Planning → PACE embeds CurrentMonthPaceSection, which hardcodes maxHeight:240 — correct when it\'s one section on a bigger page, wrong when it IS the whole panel body; added a fillHeight prop so pace-to-target.js can let it grow to fill instead of leaving most of the modal empty below a small table. (5) Calendar grid event chips were single-line-truncated; switched to a 2-line clamp so a longer label is actually readable instead of relying entirely on the hover tooltip.',
+  ]},
+  {version:'4.976', date:'2026-08-11', changes:[
+    'Issue #192 P0 (part 1) — EOM FOB Report was resolving 0 stores and rendering a green "clean ✓" checkmark: a food-cost panel silently reporting an affirmative pass on zero data instead of surfacing that nothing was checked. Root cause: fobReport\'s fobByMonth never remapped fobByStore\'s padded qsr_fob loc keys through unpad(), unlike allRows 80-odd lines below in the same file, which already carries that exact remap. Fixed narrowly at that one call site — NOT at the loadQsrFob() loader or inside fobSnapshotByStore(), both considered and reverted mid-session after a repo-wide grep found 4 call sites (eom-supervisor.js, labor-tools.js, sage.js, eom-share-view.js) that explicitly pad to match the loader\'s current output; normalizing there would have silently broken all four. Independently: buildFobReport\'s summary now reports nInputStores alongside nStores, so the panel (and its printable/PDF export) can tell "checked N stores, none over target" (genuine clean) from "0 of N stores returned data" (unresolved — now a yellow warning, never the green checkmark). A coordinated loc-padding migration across all ~30 qsr_fob consumers, plus a class-level guard test, is real follow-up work that belongs in its own issue.',
+  ]},
   {version:'4.975', date:'2026-08-11', changes:[
     'Issue #176 closed — the last item of the #184 dispatch. `tJuneLaborPct` retired: it duplicated the approved `tCrewLabor` target (same organizational number, two workbooks) but outranked it in scheduling.js:445 and morning-brief.js:352\'s fallback chains, so Scheduling and Morning Brief graded against a stale June Projections upload whenever no fresher one had been uploaded that session. Both readers now call resolveLaborTarget() (#164\'s resolver) instead; applyProjectionsToTargets (parsers/index.js) no longer writes a labor % into the DEFAULT_TARGETS module constant (the raw parsed value stays available, unmutated, in ds.projRows — already existed, still unread — for a future ranked layer if ever wanted); the tJuneLaborPct key is gone from all 27 constants.js seed lines. Left alone per the issue\'s own "check siblings before touching" instruction: tJuneProj/tOperatorProj/tQSRSoftProj/tJuneTpph still ride the same mutation and the same seed block — three have live readers in morning-brief.js not audited this pass, one appears to have none but wasn\'t confirmed. DEFAULT_TARGETS is still mutated at runtime for those three.',
   ]},

@@ -262,7 +262,7 @@ function DistrictSummary({ schedRows }) {
       h(MetricCard, { label: 'Total Crew Over Ideal',value: '+'+fmtN(totalHrsOver,0)+' hrs',       sub: 'across all store-days',          color: RED }),
     ),
     div({ style: { overflowX: 'auto', borderRadius: R, border: `1px solid ${BDR}` } },
-      h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
+      h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' } },
         h('thead', null,
           h('tr', null,
             ...['Store','Days','Avg Labor%','Avg TPMH','VLH Over (total)','Crew/Ideal (avg/day)'].map(l =>
@@ -592,7 +592,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
 
     // ── Store-by-store table ────────────────────────────────────────────────
     !noData && div({ style: { overflowX:'auto', borderRadius:R, border:`1px solid ${BDR}` } },
-      h('table', { style: { width:'100%', borderCollapse:'collapse' } },
+      h('table', { style: { width:'max-content', minWidth:'100%', borderCollapse:'collapse' } },
         h('thead', null,
           h('tr', null,
             h('th', { style: { ...thS(true), paddingLeft:8 } }, 'Store'),

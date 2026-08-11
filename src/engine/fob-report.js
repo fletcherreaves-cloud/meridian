@@ -140,7 +140,11 @@ export function buildFobReport({ stores, get }) {
 
   const opportunities = reports.filter(r => r.oppScore > 0).sort((a, b) => b.oppScore - a.oppScore);
   const summary = {
-    nStores: reports.length, ...orgSummary(reports),
+    // nStores counts stores that actually RETURNED FOB data (fobPct != null); nInputStores is how many
+    // were in scope before that filter. When nStores is 0 but nInputStores isn't, the report has nothing
+    // to say about any store — that must never render as "checked, clean" (see eom-dashboard.js's FOB
+    // Report panel, which uses this pair to distinguish the two).
+    nStores: reports.length, nInputStores: stores.length, ...orgSummary(reports),
     byOrg: Object.fromEntries(orgs.map(o => [o.org, o.summary])),
   };
   return { orgs, stores: Object.fromEntries(reports.map(r => [r.loc, r])), opportunities, summary, leadership: leadershipMath(reports) };

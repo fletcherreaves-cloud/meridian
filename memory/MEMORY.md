@@ -85,6 +85,12 @@
 ## 🧠 SAGE
 - [SAGE AI](project-sage.md) — edge fn, live tools, RBAC, auto-scheduling, self-instrumenting.
 
+## 🖱 UI / UX defects
+- [Modal/scroll sizing defect (#192 P1)](project-modal-scroll-defect-192.md) — the "one shared
+  ModalShell bug" framing was wrong (none of the 5 reports actually use ModalShell); records the
+  4 real, separate mechanisms and the guard test that found the anti-pattern was 4x more
+  widespread than reported.
+
 ## ⚡ Performance
 - [Startup render storm (#184 item 0)](project-startup-render-storm.md) — batched the 22
   ds-touching tiered-startup-loader stages behind 3 per-tier flushes (22 commits → 3); the

@@ -2528,7 +2528,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           ),
           // Store list
           div({style:{overflowX:'auto'}},
-            h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+            h('table',{style:{width:'max-content',minWidth:'100%',borderCollapse:'collapse',fontSize:'10px'}},
               h('thead',null,
                 h('tr',null,
                   h('th',{style:{textAlign:'left',padding:'4px 6px',color:'var(--text3)',fontWeight:600,fontSize:'9px',

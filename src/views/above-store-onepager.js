@@ -411,7 +411,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     if (!rows.length) return null;
     const colLabels = rows[0].cols.map(c => c[0]);
     return div({ key: 'dd', style: { marginTop: 6, borderTop: '1px solid var(--bdr)', paddingTop: 4, overflowX: 'auto' } },
-      h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '10px' } },
+      h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '10px' } },
         h('thead', null, h('tr', null,
           h('th', { style: { textAlign: 'left', padding: '2px 6px', color: 'var(--text3)', fontSize: '8.5px', textTransform: 'uppercase' } }, 'Store'),
           ...colLabels.map((l, i) => h('th', { key: i, style: { textAlign: 'right', padding: '2px 6px', color: 'var(--text3)', fontSize: '8.5px', textTransform: 'uppercase' } }, l)))),
@@ -567,7 +567,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
                 span({ title: lbl, style: { color: 'var(--text2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'break-word', lineHeight: 1.35 } }, lbl)); }))),
         (d.perStore && d.perStore.length) ? h('div', { key: 'ps', style: { gridColumn: '1/-1', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', overflowX: 'auto' } }, [
           h('div', { key: 't', style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, '🏬 Per-store · worst sales vs LY first'),
-          h('table', { key: 'tbl', style: { width: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
+          h('table', { key: 'tbl', style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11px' } }, [
             h('thead', { key: 'h' }, h('tr', null, ['Store', 'Sales', 'vs LY (TD)', 'FOB %', 'Labor %', 'OEPE'].map((t, i) => h('th', { key: i, title: t === 'vs LY (TD)' ? 'Trading Day — same day-of-week, 364 days back' : undefined, style: { textAlign: i === 0 ? 'left' : 'right', fontSize: '8.5px', textTransform: 'uppercase', color: 'var(--text3)', padding: '3px 6px', borderBottom: '1px solid var(--bdr2)' } }, t)))),
             h('tbody', { key: 'b' }, d.perStore.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
               h('td', { key: 'a', style: { padding: '3px 6px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sNameC(r.loc) || r.loc),

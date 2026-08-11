@@ -1422,7 +1422,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const fobReport = useMemo(() => {
     const prevP = lastPeriods(period, 2)[0];
     const months = lastPeriods(period, 5);   // ascending
-    const fobByMonth = {}; for (const mo of months) fobByMonth[mo] = fobByStore(fobRows, mo);
+    // fobByStore's keys inherit qsr_fob.loc's zero-padded NSN convention (loadQsrFob is
+    // intentionally left padded — several other call sites, e.g. eom-supervisor.js:147 and
+    // labor-tools.js:1410, pad TO match it). `get()` below and every other reader in this file
+    // (nm(), DEFAULT_TARGETS, patchOfLoc) expect unpadded. Remap here, same pattern `allRows`
+    // already uses 80-odd lines below for the same stream — this call site was the one that
+    // never got it, which is why the FOB Report rendered 0 stores while At-A-Glance (which reads
+    // the same qsr_fob data through a path that does remap) showed real numbers (#192, 2026-08-11).
+    const fobByMonth = {};
+    for (const mo of months) {
+      const raw = fobByStore(fobRows, mo);
+      const m = {}; for (const k in raw) m[unpad(k)] = raw[k];
+      fobByMonth[mo] = m;
+    }
     // Report the latest month with REAL FOB (non-zero) — early in a month the MTD row is all zeros, so
     // at the start of a period we fall back to last completed EOM (matches how the owner reviews it).
     let reportPeriod = period;
@@ -1456,7 +1468,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const R = fobReport, esc = s => String(s || '').replace(/</g, '&lt;');
     const gap = r => r.gapPP == null ? '' : `${r.gapPP > 0 ? '+' : ''}${r.gapPP}pp`;
     const head = `<h1>FOB Report — ${scopeLabel()}</h1><p class="sub">Reporting ${R.reportPeriod}${R.reportPeriod !== period ? ` (latest month with real FOB; ${period} MTD not populated)` : ''} · ${R.summary.nStores} store(s) · dollar-weighted FOB vs target · avg ${R.summary.avgFobPP ?? '—'}% · ${R.summary.overTarget} over target · ${$(R.summary.oppDollars)}/mo opportunity</p>`;
-    const opps = R.opportunities.length ? `<h1 style="font-size:14px">Biggest opportunities</h1><table><thead><tr><th>Store</th><th>Mkt</th><th>FOB</th><th>Tgt</th><th>Gap</th><th>Trend</th><th>Action</th></tr></thead><tbody>${R.opportunities.map(r => `<tr><td class="g">${esc(r.name || nm(r.loc))}</td><td>${r.org}</td><td class="g${r.overTarget ? ' r' : ''}">${pct2(r.fobPct)}</td><td>${pct2(r.target)}</td><td class="${r.gapPP > 0 ? 'r' : ''}">${gap(r)}</td><td>${r.trend.dir}</td><td>${esc(r.actions[0] || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="sub">No over-target or regressing stores in scope — clean.</p>';
+    const opps = R.opportunities.length ? `<h1 style="font-size:14px">Biggest opportunities</h1><table><thead><tr><th>Store</th><th>Mkt</th><th>FOB</th><th>Tgt</th><th>Gap</th><th>Trend</th><th>Action</th></tr></thead><tbody>${R.opportunities.map(r => `<tr><td class="g">${esc(r.name || nm(r.loc))}</td><td>${r.org}</td><td class="g${r.overTarget ? ' r' : ''}">${pct2(r.fobPct)}</td><td>${pct2(r.target)}</td><td class="${r.gapPP > 0 ? 'r' : ''}">${gap(r)}</td><td>${r.trend.dir}</td><td>${esc(r.actions[0] || '')}</td></tr>`).join('')}</tbody></table>`
+      : (R.summary.nStores === 0 && R.summary.nInputStores > 0)
+      ? `<p class="sub" style="color:#b45309">⚠ No FOB data resolved for any of the ${R.summary.nInputStores} store(s) in scope — NOT confirmed clean; the report couldn't match FOB data to a store. Do not read this as an all-clear.</p>`
+      : '<p class="sub">No over-target or regressing stores in scope — clean.</p>';
     const byOrg = R.orgs.map(o => `<h1 style="font-size:14px">${o.label} — avg ${o.summary.avgFobPP ?? '—'}%, ${o.summary.overTarget}/${o.summary.nStores} over target, ${o.summary.regressing} regressing</h1><table><thead><tr><th>Store</th><th>Patch</th><th>FOB</th><th>Tgt</th><th>Gap</th><th>Trend</th><th>Top item losers</th></tr></thead><tbody>${o.stores.map(r => `<tr><td class="g">${esc(r.name || nm(r.loc))}</td><td>${esc(r.patch || '')}</td><td class="g${r.overTarget ? ' r' : ''}">${pct2(r.fobPct)}</td><td>${pct2(r.target)}</td><td class="${r.gapPP > 0 ? 'r' : ''}">${gap(r)}</td><td>${r.trend.dir}${r.masking ? ' · masking' : ''}</td><td>${esc(r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}`).join('; '))}</td></tr>`).join('')}</tbody></table>`).join('');
     return head + opps + byOrg;
   };
@@ -2444,7 +2459,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             sumTile('Regressing', String(R.summary.regressing), '#f87171', `${R.summary.improving} improving`),
             sumTile('Opportunity', $(R.summary.oppDollars) + '/mo', '#f5bc00', 'over-target $ vs target'),
             ...Object.keys(R.summary.byOrg).sort().map(k => sumTile(k, (R.summary.byOrg[k].avgFobPP ?? '—') + '%', k === 'FL' ? '#38bdf8' : '#f5bc00', `${R.summary.byOrg[k].overTarget}/${R.summary.byOrg[k].nStores} over tgt`))),
-          // Biggest opportunities
+          // Biggest opportunities — distinguish "checked N stores, none over target" (genuinely clean) from
+          // "0 stores returned FOB data at all" (nothing was checked; a data/keying bug, not an all-clear —
+          // rendering a green checkmark on zero data is the exact false-all-clear the v4.870 rule exists for).
           R.opportunities.length ? div({ style: { marginBottom: '16px' } },
             div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', marginBottom: '6px' } }, `Biggest opportunities (${R.opportunities.length})`),
             R.opportunities.slice(0, 8).map(r => div({ key: r.loc, onClick: () => { setFobRepStore(r.loc); }, style: { display: 'flex', gap: '8px', alignItems: 'baseline', padding: '3px 0', fontSize: '12px', cursor: 'pointer', flexWrap: 'wrap' } },
@@ -2453,6 +2470,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               span({ style: { fontSize: '10px', color: 'var(--text3)' } }, `+${r.gapPP}pp vs tgt`),
               trendChip(r.trend),
               span({ style: { fontSize: '11px', color: 'var(--text2)' } }, r.actions[0] || ''))))
+            : R.summary.nStores === 0 && R.summary.nInputStores > 0
+            ? div({ style: { color: '#f5bc00', fontSize: '12px', marginBottom: '14px' } }, `⚠ No FOB data resolved for any of the ${R.summary.nInputStores} store(s) in scope — this is NOT confirmed clean, it means the report couldn't match FOB data to a store. Check the data pull / loc keying before trusting this scope.`)
             : div({ style: { color: '#4ade80', fontSize: '12px', marginBottom: '14px' } }, 'No over-target or regressing stores in scope — clean. ✓'),
           // Hierarchy
           div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', marginBottom: '6px', borderTop: '1px solid var(--bdr2)', paddingTop: '10px' } }, 'By market → patch → store'),
@@ -2479,7 +2498,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { fontWeight: 700, color: 'var(--text)', margin: '4px 0 6px', fontSize: '13px' } }, '① Recount Impact — the opportunities',
             harmful.length ? span({ style: { marginLeft: '8px', fontSize: '11px', color: '#f87171', fontWeight: 700 } }, `${harmful.length} store${harmful.length === 1 ? '' : 's'} net-harmful`) : span({ style: { marginLeft: '8px', fontSize: '11px', color: '#4ade80' } }, 'all net-helpful ✓')),
           !R.impact.length ? div({ style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 0 12px' } }, 'No recounted items in the current-period ledger for this scope yet.')
-          : div({ style: { overflowX: 'auto', marginBottom: '16px' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+          : div({ style: { overflowX: 'auto', marginBottom: '16px' } }, h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
               h('thead', null, h('tr', null, th('Store'), th('Toward $0', 1), th('Away', 1), th('Net', 1), th('# recounted', 1))),
               h('tbody', null, R.impact.flatMap(s => {
                 const isOpen = riddleStore === s.loc;
@@ -2502,7 +2521,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           // T3 — Consistency
           div({ style: { fontWeight: 700, color: 'var(--text)', margin: '4px 0 6px', fontSize: '13px' } }, '② FOB Consistency — steadiest first (lowest sd = most dialed in)'),
           !R.consistency.length ? div({ style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 0' } }, 'Need ≥2 months of FOB history in scope to measure consistency.')
-          : div({ style: { overflowX: 'auto' } }, h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+          : div({ style: { overflowX: 'auto' } }, h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
               h('thead', null, h('tr', null, th('Store'), th('Mean FOB%', 1), th('Std dev (pp)', 1), th('# months', 1))),
               h('tbody', null, R.consistency.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)' } },
                 h('td', { style: { padding: '5px 9px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, i < 3 ? '🟢 ' : '', nm(s.loc), span({ style: { color: 'var(--text3)', fontWeight: 400, marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '10px' } }, `#${unpad(s.loc)}`)),
@@ -2912,9 +2931,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             d.analysis.anyOverTarget
               ? span({ style: { color: 'var(--text2)' } }, `Biggest opportunity vs target: ${d.analysis.biggestComp.label} (${d.analysis.biggestComp.deltaPp != null ? `+${d.analysis.biggestComp.deltaPp.toFixed(2)}pp · ` : ''}${$(d.analysis.biggestComp.over$)} over)`)
               : span({ style: { color: '#4ade80' } }, 'All components at/under target ✓')),
-          // Per-store table
+          // Per-store table. width:'100%' alone caps the table at the wrapper's width, so a
+          // browser's table auto-layout compresses/cuts off columns instead of overflowing —
+          // width:max-content + minWidth:100% lets it grow to its natural content width (never
+          // squeezed) while still filling the container when there's room (#192, 2026-08-11).
           div({ style: { overflowX: 'auto' } },
-            h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
+            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
               h('thead', { key: 'h' }, h('tr', null,
                 h('th', { style: { textAlign: 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase' } }, 'Store'),
                 th('FOB % (±tgt)'), th('FOB $'), ...COMP_META.map(m => th(m.label)), th('Count'), ...CLASS_META.map(m => th(m.short)), th('Ready'), th('$ over'))),
@@ -2986,7 +3008,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
             // Per-store table
             div({ key: 'tbl', style: { overflowX: 'auto' } },
-              h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
+              h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } }, [
                 h('thead', { key: 'h' }, h('tr', null,
                   th('Store', { left: true }), th('FOB base→now'), th('Δ'), th('Verdict'),
                   th('Count'), th('Helped'), th('Hurt'), th('Recounted'), th('2nd review'))),

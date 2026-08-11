@@ -521,7 +521,7 @@ function FullScalePanel({ fsRows, stores, inScope, storeSel }) {
 
       // Table
       h('div',{style:{overflowX:'auto'}},
-        h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
+        h('table',{style:{width:'max-content',minWidth:'100%',borderCollapse:'collapse',fontSize:11}},
           h('thead',null,
             h('tr',{style:{background:'var(--surf2)',fontSize:9,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px'}},
               h('th',{style:{padding:'8px 10px',textAlign:'left',borderRight:'1px solid var(--bdr)',borderBottom:'2px solid var(--bdr)',minWidth:160}},'Store'),
@@ -708,7 +708,7 @@ function VoicePerfPanel({ rows, stores, inScope, storeSel }) {
       !filtered.length
         ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)' } }, `No data for ${periodFmt(activePeriod)} — ${TYPE_LABELS[selType]}`)
         : h('div', { style: { overflowX: 'auto', marginTop: 12 } },
-          h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+          h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 11 } },
             h('thead', null,
               h('tr', { style: { background: 'var(--surf2)' } },
                 h('th', { style: { ...thStyle, textAlign: 'left', minWidth: 160, cursor: 'default' } }, 'Store'),
@@ -770,7 +770,7 @@ function OpportunitiesPanel({ result, scopeText }) {
     ),
     // Ranking table
     h('div', { style: { overflowX: 'auto' } },
-      h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 11 } },
+      h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 11 } },
         h('thead', null, h('tr', { style: { background: 'var(--surf2)' } },
           h('th', { style: { ...th, textAlign: 'left', minWidth: 150 } }, 'Store'),
           h('th', { style: th }, 'Comments'),
