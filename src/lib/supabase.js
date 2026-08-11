@@ -1904,6 +1904,14 @@ function _qsrActFromSummed(loc, dt, v) {
     // vs need, and that is the case you most want to see, so this metric is mode:'any'.
     // Emitted here as a field so METRIC_SOURCES can chain to it directly.
     actVsNeed: (v.actual_punched_hours || 0) - (v.total_needed_hours || 0),
+    // Scheduled hours (#210 — planning-vs-execution split). ?? not || : this row comes from
+    // qsr_daily_activity_rollup, which does not carry total_scheduled_hours until the owner
+    // runs supabase/schema-qsr-rollup-scheduled-hours.sql (refreshRollup() sums it starting
+    // the next pull after that). Until then the column is absent from '*' entirely, so
+    // v.total_scheduled_hours is undefined — propagate that as null (unknown), never a
+    // fabricated 0 that would show every store wildly under-scheduled. Same pattern as
+    // dt_heldtime's rollout (#183).
+    darSchedHrs: v.total_scheduled_hours ?? null,
     _kvsH: v.healthy_count || 0, _kvsU: v.unhealthy_count || 0,
     _mfyTime: v.mfy_untilserve || 0, _mfyCnt: v.mfy_trans_cnt || 0,
     _isQsrAct: true,
@@ -1987,7 +1995,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // + Promise.allSettled so a partial failure (free-tier egress throttle) still keeps the
   // RECENT days every current-window tile/form needs, and one bad page can't reject the whole
   // load. Aggregation is by (loc,dt) so page order doesn't affect the result.
-  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,dt_heldtime,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
+  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,dt_heldtime,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours,total_scheduled_hours';
   const PAGE = 1000;
   const { count } = await supabase.from('qsr_daily_activity')
     .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
@@ -2016,7 +2024,7 @@ export async function loadQsrActSummary(daysBack = 35) {
       _fcServe: 0, _fcDrawer: 0, _fcCnt: 0,
       projGC: 0, projSales: 0,
       lySales: 0, lyGc: 0,
-      actHrs: 0, needHrs: 0,
+      actHrs: 0, needHrs: 0, darSchedHrs: 0,
       _kvsH: 0, _kvsU: 0,
       _mfyTime: 0, _mfyCnt: 0,
       _isQsrAct: true,
@@ -2049,6 +2057,10 @@ export async function loadQsrActSummary(daysBack = 35) {
     // the auto-pulled DAR labor totals (cloud-fresh on every device).
     map[key].actHrs       += r.actual_punched_hours || 0;
     map[key].needHrs      += r.total_needed_hours   || 0;
+    // Scheduled hours (#210 — planning-vs-execution split). The raw hourly table always has
+    // this column (used elsewhere, e.g. loadVisitDAR), so || 0 here is ordinary per-row
+    // noise, not the "column doesn't exist yet" case the rollup path below has to guard.
+    map[key].darSchedHrs  += r.total_scheduled_hours || 0;
     // KVS Healthy Usage components: did the store open BOTH prep-table sides (MFY2) when the
     // item volume called for it. healthy_count = time side 2 was correctly on; unhealthy_count =
     // time it was called for but off. Healthy Usage % = healthy ÷ (healthy+unhealthy) — 100% if on
