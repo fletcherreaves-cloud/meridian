@@ -8,6 +8,7 @@
 import { metricSeries, metricAvg } from './metric-source.js';
 import { matchedVsLY } from './vs-ly.js';
 import { computeScheduleRollup, FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX } from './schedule-summary.js';
+import { resolveLaborTarget } from './labor-basis.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 const unpad = l => String(l || '').replace(/^0+/, '') || String(l || '');
@@ -136,7 +137,7 @@ export function buildOnePagerInputs(ds, fobRows, locs, range) {
       days,
       avgCheck,
       laborPctActual: metricAvg(ds, loc, range, 'laborPct'),
-      laborPctTarget: t.tLabor ?? null,
+      laborPctTarget: resolveLaborTarget(t), // #164: same basis as computeOpsScore (tCrewLabor)
       fobPctActual: f.fobPct ?? null,
       fobPctTarget: t.tFOBTarget ?? null,
       gcPerDayActual: days ? gc.sum / days : null,
@@ -194,7 +195,7 @@ export function buildPerLocationRows(ds, fobRows, locs, range, opp) {
       netSales: sales.sum || 0,
       salesVsLYPct: vsLY.pct != null ? vsLY.pct * 100 : null,
       fobPct: f.fobPct ?? null,       fobTarget: t.tFOBTarget ?? null,
-      laborPct: metricAvg(ds, loc, range, 'laborPct'), laborTarget: t.tLabor ?? null,
+      laborPct: metricAvg(ds, loc, range, 'laborPct'), laborTarget: resolveLaborTarget(t), // #164
       oepe: metricAvg(ds, loc, range, 'oepe'),         oepeTarget: t.tOepe ?? null,
       r2p: metricAvg(ds, loc, range, 'r2p'),           r2pTarget: t.tR2p ?? null,
       oppWk: oppWk,

@@ -52,10 +52,43 @@ truth**; this is the ordering and the reasoning, which the issues don't carry.
 
 | # | Issue | Why here |
 |---|---|---|
-| 1 | **#164** — labor-basis rollout, 69 `t.tLabor` readers | Live correctness. 20 of 27 stores are graded on a labor % the owner never approved; Ponce de Leon 43701 is graded 26.00% against an approved 24.00% — 2.00pp on a metric whose whole tolerance band is 2pp. #163 already delivers `tCrewLabor` into `mergedTargets` and **nothing reads it**. Resolver half-built and preserved on branch `labor-basis-resolver-deferred` (`a14a1b8`) — do not rebuild it. |
+| 1 | **#164 — DONE (2026-08-11, #184 dispatch item 5).** | Resumed from `labor-basis-resolver-deferred` (`a14a1b8`) rather than rebuilt. Migrated in 4 commits: engine (pipeline.js WATCH-LABOR/TREND-ALERT/concern, finding-rules.js dollar impact, one-pager-data.js, insights.js/eom-supervisor.js alignment), view batch 1 (store-dash.js, store-analytics.js), view batch 2 (labor-tools.js, analytics.js, at-a-glance.js, smart-targets.js), each with `npm test`+`npx vite build` clean. Invariant test (Ponce de Leon fixture) proves the score, the WATCH-LABOR text, and the finding's dollar figure now all cite the same number. Score-movement worked example in `memory/labor-park-oepe-score-attribution.md`. Deliberately NOT folded in, per the original triage: scheduling.js:445's `tJuneLaborPct` precedence (#176, item 6), labor-tools.js's unweighted-average district target (separate issue, not filed against #164), smart-targets.js's DEFAULT_TARGETS-direct-read bypass (field basis fixed; the sourcing bypass itself is a separate bug, same shape as #153's). |
 | 2 | **#150** — `kvsHealthy`/`park` zeros discarded, park graded lower-is-better | Live, user-visible wrong. Body was corrected 2026-08-10 (the original text had park's polarity backwards) |
 | 3 | **#157** — Spine 1 step 3 | Resumes the UX-coherence spine |
-| — | #146, #155, #156, #166, #167 | Behind the above |
+| — | #146, #155, #156, #167 | Behind the above |
+
+**#166 — DONE (2026-08-11, #184 dispatch item 1).** `loadMonthlyTargets`/`loadAllMonthlyTargets`
+(src/lib/supabase.js) now strip null/undefined columns before returning, so a NULL column falls
+through to `DEFAULT_TARGETS` on merge instead of a present-but-null key erasing it. Also dropped
+the argless branch's untiebreaked `.limit(27)` (confirmed dead — all 3 real callers pass an
+explicit year/month). 6 new tests in `src/__tests__/monthly-targets-null-strip.test.js`.
+
+**#174 — SHIPPED THEN REVERTED (2026-08-11, #184 dispatch item 2).** `monthly_targets` briefly
+gained `park_pct`/`oepe_target` columns to give tPark/tOepe a cloud path. **Reverted the same
+day** on two independent grounds: (1) the owner confirmed the real monthly workbook has neither
+a Park% nor an OEPE column — the parser detection this shipped with was flagged UNVERIFIED at
+the time and the verification came back negative; (2) #181 (same day) removed `tPark` from
+`computeOpsScore` entirely, so even with the columns present there is no scoring consumer left
+to justify persisting it. Reverted: `parseMonthlyTargets`'s column-detection, `saveMonthlyTargets`/
+both loaders' park_pct/oepe_target read-write, the `monthly_targets` schema columns, the
+standalone migration file (deleted — never run against the live project, so no data migration
+was needed), and the two test files that covered it. `tKvst`/`tKvsu`/`tR2p`/`tOsat`/`tOsatB2B`
+were never started and remain a possible future follow-up if a concrete need arises — not
+queued. `tOepe` is unaffected by the revert (#183 already settled it stays unchanged, and it
+was never actually populated by this persistence work either way, since the workbook column
+doesn't exist).
+
+**#183 — DONE (2026-08-11, #184 dispatch item 3).** OEPE switched app-wide to the w/o-park
+formula `graded-visits.js` already had — `loadQsrActSummary` (supabase.js) was still computing
+the WITH-parked-time variant, so the same metric name meant two different numbers depending on
+the panel. New `src/utils/oepe.js` is the one shared definition now (`oepeSeconds` w/o-park,
+`oepeWithParkSeconds` kept as a named diagnostic, never scored). Required a new
+`qsr_daily_activity_rollup.dt_heldtime` column
+(`supabase/schema-qsr-rollup-dt-heldtime.sql` — **owner needs to run this**) and
+`scripts/qsrsoft-dar-pull.mjs` now sums it; historical rows outside the pull's normal window
+need a one-time `QSRSOFT_DAR_FORCE_FULL=1` run to backfill, or age out naturally. `tOepe` (the
+target) is deliberately unchanged per the #185 measurement (switching bases moves 1 store, not
+the district). 6 new tests in `src/__tests__/oepe-shared.test.js`.
 
 ### Two items the owner explicitly asked not to lose (2026-08-11)
 
@@ -79,38 +112,43 @@ truth**; this is the ordering and the reasoning, which the issues don't carry.
    while `App.js` calls `loadAllMonthlyTargets()` — two different paths, reason unknown.
    **Do not assume it's fine. #153 was found because someone assumed exactly that.**
 
-3. **#181 — park is REMOVED from `computeOpsScore`, replaced by a park × OEPE quadrant
-   diagnostic.** Owner sign-off 2026-08-11: *"#181, you have my sign off."* Dispatched as item 4
-   of #184; **#183 must land first** (the quadrant's y-axis is OEPE w/o Park, which does not
-   exist app-wide until then).
+3. **#181 — SUPERSEDED, then DONE (2026-08-11, #184 dispatch item 4).** ⚠️ This entry
+   previously said "DEFERRED — ship the over-target taper, revisit under-target later." That
+   was the decision for about an hour, in the same conversation, before the owner explained
+   what parking is actually FOR (*"keep the wheels moving and increase capacity… by parking
+   cars with complex orders"* / other operational barriers) and a measured park%-vs-OEPE
+   quadrant followed. **The taper was never the final call — it was superseded before this
+   file was updated to say so, which is exactly the gap this bullet exists to close.** An
+   earlier correction (#188) fixed the stale text on `main` after it caused a real
+   contradiction the engineer had to stop and query; this entry folds that correction in and
+   carries it forward. Owner sign-off 2026-08-11: *"#181, you have my sign off."*
 
-   ⚠️ **SUPERSEDES the deferral this entry used to record.** An earlier version of this bullet —
-   merged to main in #185 — said *"ship the over-target taper, defer the under-target penalty
-   pending a `tPark` re-baseline."* **That was the decision for about an hour**, and it is no
-   longer current. The owner then explained what parking is *for* (*"keep the wheels moving and
-   increase capacity… by parking cars with complex orders"*), a quadrant analysis followed, and
-   the recommendation changed from "fix the band" to "there should be no band." The stale text
-   sat on main and **caused a real contradiction the engineer had to stop and query** — see the
-   PM-error note below.
+   Final decision: **park is removed from `computeOpsScore` entirely**, not retuned — reverts
+   #180's asymmetric band and the taper design in the same issue. Replaced with a park% x
+   OEPE-w/o-park quadrant diagnostic (`engine/park-oepe-quadrant.js`, Signals panel → 🅿️ Park ×
+   OEPE tab), district medians recomputed per period. **Why no band, in one line:** both tails
+   of park% contain healthy stores — Elgin (30.5%) and Ponce de Leon (33.6%) park most *and*
+   beat median flow (the tool working as intended), while Cottondale (2.1%), Lindsay (1.2%),
+   Purcell (2.4%) park almost nothing and are at or better than median too — refuting
+   "under-parking always stalls the line." A single-axis band scores both groups as failures;
+   both are fine. `mode:'any'` zero-handling from #150 stays (needed for the diagnostic).
+   `parkMaxPts`'s points are redistributed automatically by `computeOpsScore`'s self-normalizing
+   `score/max*100` — removing a component from `max` proportionally increases the others'
+   weight with no separate redistribution code needed. The `tPark` re-baseline is no longer a
+   prerequisite for scoring (nothing scores `tPark` any more).
 
-   **Why no band, in one line:** both tails of park% contain healthy stores. Elgin (30.5%) and
-   Ponce de Leon (33.6%) park most *and* beat median flow — the tool working. Cottondale (2.1%),
-   Lindsay (1.2%), Purcell (2.4%) park almost nothing and are at or better than median — they
-   don't need it. A single-axis band scores both groups as failures.
-
-   **The `tPark` re-baseline is no longer a prerequisite for scoring** (nothing scores `tPark`
-   any more), but quadrant thresholds should be **district medians recomputed per period**, not
-   frozen constants. Keep #150's `mode:'any'` zero-handling — the diagnostic needs it.
-
-   **PM error worth not repeating:** the deferral was committed to a memory file, then
-   superseded by a later decision in the same session, and the file was never updated. A
-   committed memory file that contradicts the live decision is worse than no file — it is
-   authoritative-looking and wrong. **When a decision recorded in `memory/` changes, amend the
-   file in the same turn the decision changes**, not at the end of the session.
-4. **The two "targets describe history, not a standard" findings — same fingerprint, both open.**
-   `r(tPark, actual) = 0.890` (#181) and `r(tOepe, actual) = 0.897` (#183). Only 4 of 27 stores
-   meet their OEPE target. Two metrics whose targets record what stores already do. Worth a
-   deliberate standards conversation rather than two separate bug fixes.
+   **PM error worth not repeating, and the standing rule it produced:** the deferral was
+   committed to a memory file, then superseded by a later decision in the same session, and the
+   file was never updated. A committed memory file that contradicts the live decision is worse
+   than no file — it is authoritative-looking and wrong. **When a decision recorded in
+   `memory/` changes, amend the file in the same turn the decision changes**, not at the end of
+   the session.
+4. **The "targets describe history, not a standard" finding — now only about OEPE.**
+   `r(tOepe, actual) = 0.897` (#183); only 4 of 27 stores meet their OEPE target — worth a
+   deliberate standards conversation. The matching `tPark` finding (`r=0.890`, #181) is now
+   moot entirely — `tPark` is no longer a scored target (see #3 above) AND #174's monthly-upload
+   persistence for it was reverted the same day (workbook has no Park column, and no scoring
+   consumer remained to justify it).
 
 ### Measured facts from this session worth not re-deriving
 
@@ -120,8 +158,12 @@ truth**; this is the ordering and the reasoning, which the issues don't carry.
   the upload. Proven benign, not inferred. Don't re-investigate.
 - `computeCtrlScore` reads **no per-store target at all** — it grades entirely on the
   district-wide `settings.scoring` thresholds. Controls Score does not move when targets change.
-- Of `computeOpsScore`'s six target fields, only `tTpph` has a `monthly_targets` path today.
-  `tKvst`/`tKvsu`/`tOepe`/`tPark` have no monthly path at all.
+- ⚠️ STALE, corrected 2026-08-11 (twice — see #174 above): `computeOpsScore` grades **five**
+  target fields now that #181 removed park. Of those five, only `tTpph` and `tOepe` have a
+  `monthly_targets` cloud path — `tPark`'s brief #174 persistence was reverted the same day
+  (real workbook has no Park/OEPE column; `tPark` also has no scoring consumer left to justify
+  it). `tKvst`/`tKvsu` still have no monthly path and remain a possible future follow-up, not
+  queued.
 - `buildStore` has exactly **one** caller (`App.js:2920`). `coaching.js` imports it and
   `buildBrief` and calls neither — dead import.
 - **Park is operational choice, not physical constraint** (measured 2026-08-11, 90d DAR +

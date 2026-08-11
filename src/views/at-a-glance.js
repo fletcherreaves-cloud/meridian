@@ -23,6 +23,7 @@ import { reconcile as _recon } from '../lib/accuracy.js';
 import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1190,7 +1191,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const vals=allLocs.map(l=>{const t=(settings.targets&&settings.targets[l])||DEFAULT_TARGETS[l]||{};return t[tKey]??dflt;});
       return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:dflt;
     };
-    const laborTgt=getTgt('tLabor',0.22);
+    // #164: laborTgt routes through resolveLaborTarget (tCrewLabor), not the generic
+    // getTgt('tLabor', ...) — same field the score/findings/other panels now all cite.
+    const laborTgt=(()=>{const vals=allLocs.map(l=>{const t=(settings.targets&&settings.targets[l])||DEFAULT_TARGETS[l]||{};return resolveLaborTarget(t)??0.22;});return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0.22;})();
     const fobTgt=getTgt('tFOBTotal',0.279);
     const oepeTgt=getTgt('tOepe',140);
     const tpphTgt=getTgt('tTpph',5.5);
@@ -1205,7 +1208,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       const p=s?.p||{};
       const issues=[];
       if(p.t4w!=null&&p.t4w<-0.05) issues.push('sales↓');
-      if(locLabor!=null&&locLabor>(t.tLabor||laborTgt)+0.02) issues.push('labor↑');
+      if(locLabor!=null&&locLabor>(resolveLaborTarget(t)||laborTgt)+0.02) issues.push('labor↑');
       if(locMape!=null&&locMape>10) issues.push('mape↑');
       return{loc,issues};
     }).filter(x=>x.issues.length>0);

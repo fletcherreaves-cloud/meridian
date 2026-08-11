@@ -67,6 +67,11 @@
   · [DAR columns](project-qsrsoft-dar-columns.md) · [CoachQ](project-qsrsoft-coachq.md) +
   [query patterns](coachq-query-patterns.md) · [Controls endpoint](project-qsrsoft-controls-endpoint.md)
 
+## 🎯 Scoring
+- [Ops Score attribution: #183/#181/#164](labor-park-oepe-score-attribution.md) — worked
+  four-stage before/after (baseline → OEPE fix → park removal → labor basis fix) showing which
+  fix moves a store's Ops Score by how much and why. Synthetic performance numbers, real targets.
+
 ## 📈 Signals / Smart Targets / Accuracy
 - [Signals scanner](project-signals-scanner.md) — auto-correlation across metric pairs, guardrails.
 - [Simple-models propagation](simple-models-propagation.md) — T3M/T6W/T3W family engine-wide.
@@ -79,6 +84,12 @@
 
 ## 🧠 SAGE
 - [SAGE AI](project-sage.md) — edge fn, live tools, RBAC, auto-scheduling, self-instrumenting.
+
+## ⚡ Performance
+- [Startup render storm (#184 item 0)](project-startup-render-storm.md) — batched the 22
+  ds-touching tiered-startup-loader stages behind 3 per-tier flushes (22 commits → 3); the
+  ~19-commit remainder (IDB restore, org_config syncs, email/PDF auto-ingest) is enumerated but
+  not yet fixed.
 
 ## 🏗 Data-refresh sprint & standards (standing rules)
 - [Data-refresh sprint handoff](handoff-data-refresh-sprint.md) — the At-A-Glance freshest-wins rework.

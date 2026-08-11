@@ -9,53 +9,34 @@ import { DEF_SETTINGS } from '../constants.js';
 globalThis.window = globalThis.window || {};
 const { computeOpsScore } = await import('../engine/pipeline.js');
 
-// #150/#178 item 6: park and kvsu were both gated on `p.X>0`, which rejects a genuine 0 (never
-// parked a car / never used the 2nd-side KVS window) the same way METRIC_SOURCES' old
-// mode:'pos' did — a real, bad value discarded as "no data" instead of graded on its merits.
-// park was ALSO graded strictly lower-is-better (<=target always full credit, however far
-// below) when it should be a BAND: under-parking backs up the physical drive-thru line, so it's
-// now penalized on a tighter tolerance than over-parking.
+// #150/#178 item 6 gave kvsu a presence check instead of a truthy check (a genuine 0% — never
+// used the 2nd-side KVS window — is a real failing value, not "no data"). #181 (2026-08-11) then
+// REMOVED park from scoring entirely, reverting #150/#178 item 6's asymmetric park band (and a
+// taper design that never shipped) — the owner's own explanation of what parking is FOR ("keep
+// the wheels moving... park cars with complex orders") means park% can't be judged on one axis:
+// a measured park%-vs-OEPE quadrant (engine/park-oepe-quadrant.js) showed the district's
+// heaviest parkers also beat the median on flow (the tool working as intended), while several
+// near-zero parkers sat at or below median flow — a band would have scored both as failures.
 const sc = DEF_SETTINGS.scoring;
 const t = { tPark: 0.15, tKvsu: 0.7 };
 
-describe('computeOpsScore — park is a band, not a slope (#150/#178 item 6)', () => {
-  it('at target scores full credit', () => {
+describe('computeOpsScore — park is NOT a scored component (#181)', () => {
+  it('park data present, target present — score is identical to park being entirely absent', () => {
+    const withPark = computeOpsScore({ park: 0.15 }, t, sc);
+    const withoutPark = computeOpsScore({}, t, sc);
+    expect(withPark).toBe(withoutPark);
+  });
+
+  it('any park value — 0%, at target, wildly over target — never changes the score', () => {
+    const base = computeOpsScore({ tpph: 5 }, { ...t, tTpph: 5 }, sc);
+    for (const park of [0, 0.05, 0.15, 0.3, 0.9]) {
+      expect(computeOpsScore({ tpph: 5, park }, { ...t, tTpph: 5 }, sc)).toBe(base);
+    }
+  });
+
+  it('a store with ONLY park data (no other scored metric) gets the neutral no-data fallback', () => {
     const s = computeOpsScore({ park: 0.15 }, t, sc);
-    expect(s).toBe(100);
-  });
-
-  it('a genuine 0% park (never parks a car) is the WORST case, not a perfect score', () => {
-    // Under the old lower-is-better formula, park<=tPark (0<=0.15) scored FULL credit — the
-    // exact inversion of what #150 flags. Backing up the whole DT line every time is bad.
-    const s = computeOpsScore({ park: 0 }, t, sc);
-    expect(s).toBe(0);
-  });
-
-  it('slightly under target (within the tighter under-tolerance) still scores full credit', () => {
-    const s = computeOpsScore({ park: 0.13 }, t, sc); // 2pp under, underTol = 0.15*0.3/2 = 2.25pp
-    expect(s).toBe(100);
-  });
-
-  it('moderately under target (beyond under-tolerance) scores partial, not zero', () => {
-    const s = computeOpsScore({ park: 0.12 }, t, sc); // 3pp under, beyond 2.25pp underTol
-    expect(s).toBeGreaterThan(0);
-    expect(s).toBeLessThan(100);
-  });
-
-  it('over target within the wider over-tolerance still scores full credit', () => {
-    const s = computeOpsScore({ park: 0.19 }, t, sc); // 4pp over, overTol = 0.15*0.3 = 4.5pp
-    expect(s).toBe(100);
-  });
-
-  it('under-tolerance is tighter than over-tolerance — same distance from target scores worse below', () => {
-    const under3pp = computeOpsScore({ park: 0.12 }, t, sc); // 3pp under
-    const over3pp = computeOpsScore({ park: 0.18 }, t, sc);  // 3pp over
-    expect(under3pp).toBeLessThanOrEqual(over3pp);
-  });
-
-  it('no park points scored when the target is missing — max stays 0', () => {
-    const s = computeOpsScore({ park: 0.15 }, {}, sc);
-    expect(s).toBe(50); // neutral fallback, matching computeCtrlScore's own no-data convention
+    expect(s).toBe(50); // max stays 0 — same neutral convention as every other absent component
   });
 });
 

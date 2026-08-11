@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { resolveLaborTarget } from './labor-basis.js';
 // ── Structured metadata for buildBrief's findings ────────────────────────────
 // buildBrief emits findings as `{t, m}` — a severity tag plus one long prose sentence.
 // That shape carries no rule id, no category, no dollar amount and no store, so every
@@ -47,7 +48,10 @@ export const FINDING_RULES = {
 
   // ── Labor ──
   overtime:    { category: 'Labor',      icon: '⏱',  dollars: (p) => (p.otHrs || 0) * 1.5 * (p.avgRate || 12) },
-  labor:       { category: 'Labor',      icon: '👥', dollars: (p, t) => pos((p.laborPct || 0) - (t.tLabor || 0)) * daily(p) },
+  // #164: the dollar figure on the labor finding now cites the same target that graded it
+  // (resolveLaborTarget), not t.tLabor directly — previously the money attached to a labor
+  // finding could be computed off a different number than the score/message that raised it.
+  labor:       { category: 'Labor',      icon: '👥', dollars: (p, t) => pos((p.laborPct || 0) - (resolveLaborTarget(t) || 0)) * daily(p) },
   tpph:        { category: 'Labor',      icon: '👥', dollars: (p, t) =>
                    (t.tTpph > 0 && p.tpph > 0) ? pos((p.actHrs || 0) * (1 - p.tpph / t.tTpph)) * (p.avgRate || 12) : 0 },
   laborTrend:  { category: 'Labor',      icon: '📈', dollars: () => 0 },   // projection, not a current loss

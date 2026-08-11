@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from '@supabase/supabase-js';
+import { oepeSeconds, oepeWithParkSeconds } from '../utils/oepe.js';
 
 const URL  = import.meta.env.VITE_SUPABASE_URL;
 const KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -209,22 +210,26 @@ export async function saveMonthlyTargets(targets, year, month) {
   return { saved: rows.length, errors: [] };
 }
 
+// Strips null/undefined target keys so a NULL column falls through to DEFAULT_TARGETS on
+// merge (App.js: {...DEFAULT_TARGETS[loc], ...(monthlyTargets[loc]||{})}) instead of a
+// present-but-null key winning the spread and erasing a good default (#166). computeOpsScore
+// then silently skips the metric for a `null` target — no error, just a store graded on fewer
+// components than its peers, with nothing surfacing the gap.
+const _stripNullTargets = (obj) => {
+  const out = {};
+  for (const k in obj) { if (obj[k] !== null && obj[k] !== undefined) out[k] = obj[k]; }
+  return out;
+};
+
 // Load monthly targets for a given year/month. Returns { loc: {tCrewLabor, ...} }
-// Pass year=null/month=null to load the most recent available month.
 export async function loadMonthlyTargets(year, month) {
-  if (!supabase) return {};
-  let q = supabase.from('monthly_targets').select('*');
-  if (year && month) {
-    q = q.eq('year', year).eq('month', month);
-  } else {
-    // Most recent month available
-    q = q.order('year', { ascending: false }).order('month', { ascending: false }).limit(27);
-  }
-  const { data, error } = await q;
+  if (!supabase || !year || !month) return {};
+  const { data, error } = await supabase.from('monthly_targets').select('*')
+    .eq('year', year).eq('month', month);
   if (error || !data) { console.warn('[monthly_targets] load error:', error); return {}; }
   const result = {};
   for (const r of data) {
-    result[r.loc] = {
+    result[r.loc] = _stripNullTargets({
       tProdSales:   r.sales_proj,
       tCrewLabor:   r.crew_labor_pct,
       tBonusLabor:  r.bonus_crew_pct,
@@ -243,7 +248,7 @@ export async function loadMonthlyTargets(year, month) {
       tOpSupply:    r.op_supply_target,
       _year: r.year,
       _month: r.month,
-    };
+    });
   }
   return result;
 }
@@ -262,7 +267,7 @@ export async function loadAllMonthlyTargets() {
   for (const r of data) {
     const key = `${r.year}-${r.month}`;
     if (!result[key]) result[key] = {};
-    result[key][r.loc] = {
+    result[key][r.loc] = _stripNullTargets({
       tProdSales:   r.sales_proj,
       tCrewLabor:   r.crew_labor_pct,
       tBonusLabor:  r.bonus_crew_pct,
@@ -281,7 +286,7 @@ export async function loadAllMonthlyTargets() {
       tOpSupply:    r.op_supply_target,
       _year: r.year,
       _month: r.month,
-    };
+    });
   }
   return result;
 }
@@ -1839,11 +1844,15 @@ function _finalizeQsrAct(rows) {
     // total) — NOT R2P; subtracting drawer-close time yields the receipt-to-print interval.
     // Cloud-fresh (DAR pulls run ~8a/10a/2p CT), so current-day One-Pager R2P populates.
     r2p: r._fcCnt > 0 ? (r._fcServe - r._fcDrawer) / r._fcCnt / 1000 : null,
-    // OEPE (Order-to-Exit Peak Efficiency, sec) = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt ÷ 1000,
-    // count-weighted across the day. Reconciled EXACTLY to the DAR report's OEPE column (store 3708,
-    // 2026-07-28): subtracting the order-point→window travel (dt_untilstore) from the total drive-thru
-    // time yields order-to-exit. Cloud-fresh → fills current-day OEPE when the emailed Glimpse lags.
-    oepe: r._dtCars > 0 ? (r._dtTotal - r._dtStore) / r._dtCars / 1000 : null,
+    // OEPE (Order-to-Exit Peak Efficiency, sec) — QSRSoft's headline drive-thru speed metric,
+    // excluding parked/held time. Shared definition in utils/oepe.js (#183/#185, 2026-08-11):
+    // reconciled EXACTLY against a real QSRSoft Service report (r=0.9958) — subtract dt_heldtime,
+    // keep every car in the denominator. Same helper as graded-visits.js's hourMetrics; fed the
+    // day-summed pseudo-row here instead of a single hourly row. Cloud-fresh → fills current-day
+    // OEPE when the emailed Glimpse lags. oepeWithPark keeps the pre-#183 with-park value as a
+    // named diagnostic only — never scored, never tOepe's basis (#184 item 3's instruction).
+    oepe: oepeSeconds({ dt_untilserve: r._dtTotal, dt_untilstore: r._dtStore, dt_heldtime: r._dtHeldTime, dt_trans_cnt: r._dtCars }),
+    oepeWithPark: oepeWithParkSeconds({ dt_untilserve: r._dtTotal, dt_untilstore: r._dtStore, dt_trans_cnt: r._dtCars }),
     // DT Parked % (0–1 fraction) = cars held ÷ DT transactions served, count-weighted across
     // the day. Reconciled EXACT to the Operations Report's own dt_cars_held/dt_serve_trans
     // (store 3708, 2026-08-03: DAR 105/773=13.58% vs Ops Report 105/773=13.59%, rounding-only
@@ -1872,7 +1881,7 @@ function _qsrActFromSummed(loc, dt, v) {
     sales: v.product_sales || 0, allNetSales: v.product_sales || 0,
     gc: v.transactions || 0, txns: v.transactions || 0,
     _dtTotal: v.dt_untilserve || 0, _dtStore: v.dt_untilstore || 0,
-    _dtCars: v.dt_trans_cnt || 0, _dtHeld: v.dt_carsheld || 0,
+    _dtCars: v.dt_trans_cnt || 0, _dtHeld: v.dt_carsheld || 0, _dtHeldTime: v.dt_heldtime || 0,
     _fcServe: v.fc_untilserve || 0, _fcDrawer: v.fc_untilclosedrawer || 0,
     _fcCnt: v.fc_trans_cnt || 0,
     projGC: v.proj_total_transactions || 0, projSales: v.proj_sales_dollars || 0,
@@ -1967,7 +1976,7 @@ export async function loadQsrActSummary(daysBack = 35) {
   // + Promise.allSettled so a partial failure (free-tier egress throttle) still keeps the
   // RECENT days every current-window tile/form needs, and one bad page can't reject the whole
   // load. Aggregation is by (loc,dt) so page order doesn't affect the result.
-  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
+  const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,dt_heldtime,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours';
   const PAGE = 1000;
   const { count } = await supabase.from('qsr_daily_activity')
     .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
@@ -1992,7 +2001,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     if (!map[key]) map[key] = {
       loc, date: new Date(r.dt + 'T00:00:00'),
       sales: 0, allNetSales: 0, gc: 0, txns: 0,
-      _dtTotal: 0, _dtStore: 0, _dtCars: 0, _dtHeld: 0,
+      _dtTotal: 0, _dtStore: 0, _dtCars: 0, _dtHeld: 0, _dtHeldTime: 0,
       _fcServe: 0, _fcDrawer: 0, _fcCnt: 0,
       projGC: 0, projSales: 0,
       lySales: 0, lyGc: 0,
@@ -2012,6 +2021,7 @@ export async function loadQsrActSummary(daysBack = 35) {
     map[key]._dtStore     += r.dt_untilstore   || 0;
     map[key]._dtCars      += r.dt_trans_cnt    || 0;
     map[key]._dtHeld      += r.dt_carsheld     || 0;
+    map[key]._dtHeldTime  += r.dt_heldtime     || 0;
     // Front-counter timings for R2P (Receipt to Print). Sum the raw ms + counts
     // across hour slots, then count-weight below.
     map[key]._fcServe     += r.fc_untilserve      || 0;

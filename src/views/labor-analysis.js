@@ -7,7 +7,8 @@
 // Config tab edits the "gathered" fixed-hours inputs (maintenance/prep/lobby/24hr).
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
-import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime, deriveBand1FromSchedule } from '../engine/labor-analysis.js';
+import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime, deriveBand1FromSchedule, mergeAutoManualWeek } from '../engine/labor-analysis.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { loadLifeLenzLaborWeek, loadStoreLaborConfig, saveStoreLaborConfig, loadLifeLenzSchedule } from '../lib/supabase.js';
 
 const h = React.createElement;
@@ -126,19 +127,14 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
   // The displayed week: AUTO (schedule-derived) wins; MANUAL fills only the stores
   // AUTO lacks for the SAME week (never overrides). If the schedule has nothing for
   // the selected week, fall back to the manual (MBI) week entirely.
-  const orgTargetFor = loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && typeof t.tCrewLabor === 'number' ? t.tCrewLabor : null; };
+  // #153 defect 2/3: named resolver instead of an inline tCrewLabor field read — same
+  // resolver computeOpsScore uses (engine/pipeline.js), default tCrewLabor. Applied to every
+  // row regardless of source by mergeAutoManualWeek (engine/labor-analysis.js), which repoints
+  // manual/gap-filled rows away from the MBI upload's own stale hand-typed column L.
+  const orgTargetFor = loc => resolveLaborTarget(DEFAULT_TARGETS[locNum(loc)]);
   const week = useMemo(() => {
     const auto = deriveBand1FromSchedule(sched, { weekStart, orgTargetFor });
-    const autoLocs = Object.keys(auto.rows);
-    if (!autoLocs.length) {
-      if (manual && Object.keys(manual.rows || {}).length) return { weekStart: manual.weekStart, rows: manual.rows, source: 'manual', autoCount: 0, manualFill: Object.keys(manual.rows).length };
-      return { weekStart: auto.weekStart, rows: {}, source: 'auto', autoCount: 0, manualFill: 0 };
-    }
-    const rows = { ...auto.rows }; let filled = 0;
-    if (manual && manual.weekStart === auto.weekStart) {
-      for (const loc of Object.keys(manual.rows || {})) if (!rows[loc]) { rows[loc] = manual.rows[loc]; filled++; }
-    }
-    return { weekStart: auto.weekStart, rows, source: 'auto', autoCount: autoLocs.length, manualFill: filled };
+    return mergeAutoManualWeek(auto, manual, orgTargetFor);
   }, [sched, manual, weekStart]);
 
   const shiftWeek = delta => { const base = (week && week.weekStart) ? new Date(week.weekStart + 'T00:00:00') : new Date(); base.setDate(base.getDate() + delta * 7); setWeekStart(base.toISOString().slice(0, 10)); };
@@ -331,7 +327,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
             weekStart ? btn({ onClick: () => setWeekStart(null), title: 'Back to current week', style: { padding: '1px 7px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', fontSize: 9, fontWeight: 700, cursor: 'pointer' } }, 'This week') : null,
             // Source chip: auto (schedule-derived) vs manual (MBI upload)
             span({ title: week.source === 'auto' ? 'Auto — derived from the daily LifeLenz schedule (cloud-fresh)' + (week.manualFill ? ' · ' + week.manualFill + ' store(s) gap-filled from manual upload' : '') : 'Manual — from the uploaded MBI Labor Analysis workbook (no schedule data for this week)', style: { fontSize: 8.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: week.source === 'auto' ? 'rgba(16,185,129,.15)' : 'rgba(148,163,184,.18)', color: week.source === 'auto' ? '#10b981' : 'var(--text3)' } }, week.source === 'auto' ? ('⟳ Auto' + (week.manualFill ? ' +' + week.manualFill : '')) : 'Manual')),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Weekly Fixed-Labor-Hours from the daily LifeLenz schedule (auto, cloud-fresh) → scheduled vs target → recommended fixed/floor hours. Hours Forecast = Proj VLH + Fixed + Floor (hourly only). Dollar-weighted subtotals; manual MBI upload gap-fills only.')),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Weekly Fixed-Labor-Hours from the daily LifeLenz schedule (auto, cloud-fresh) → scheduled vs target → recommended fixed/floor hours. Hours Forecast = Proj VLH + Fixed + Floor (hourly only). Dollar-weighted subtotals; manual MBI upload gap-fills only. Target % (col L) resolves via the labor-basis resolver (tCrewLabor) — may diverge from the source MBI workbook’s own hand-typed L / printed "Target +2%" (col M).')),
         tabBtn('report', 'Report'), tabBtn('config', 'Config'),
         scopeSelect,
         tab === 'report' ? btn({ onClick: exportCSV, disabled: !shown.length, style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: shown.length ? 'pointer' : 'default' } }, '⬇ CSV') : null,

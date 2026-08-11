@@ -13,6 +13,7 @@ import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -252,7 +253,8 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
             const parkOk=d.park>0?(d.park>=.12&&d.park<=.16):null;
             const r2pOk=d.r2p>0?d.r2p<=90:null;
             const tpphOk=d.tpph>0&&t.tTpph>0?d.tpph>=t.tTpph:null;
-            const lDiff=d.labor>0&&t.tLabor>0?Math.abs(d.labor-t.tLabor):null;
+            const _lt=resolveLaborTarget(t);
+            const lDiff=d.labor>0&&_lt>0?Math.abs(d.labor-_lt):null;
             const laborOk=lDiff!=null?lDiff<=(settings.laborGreenPct||0.5)/100:null;
             const otOk=d.ot>0?d.ot<=2:null;
             return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2===0?'transparent':'rgba(255,255,255,.01)'}},
@@ -460,7 +462,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
       buildPrompt:()=>{
         const storeName = STORE_NAMES[loc]||loc;
         const laborPct = p.laborPct>0?(p.laborPct*100).toFixed(2)+'%':'N/A';
-        const targetLab = t.tLabor?(t.tLabor*100).toFixed(2)+'%':'N/A';
+        const targetLab = resolveLaborTarget(t)?(resolveLaborTarget(t)*100).toFixed(2)+'%':'N/A';
         const tpph = p.tpph>0?p.tpph.toFixed(2):'N/A';
         return 'You are a McDonald\'s labor management expert. Analyze shift data for '+storeName+' (store #'+loc+').\n\n'+
           'Labor %: '+laborPct+' (target: '+targetLab+')\n'+
@@ -750,9 +752,10 @@ function computeRevenueOpportunity(store, ds, settings) {
       note:'Check avg $'+p.avgCheck.toFixed(2)+' vs $'+t.tAvgCheck.toFixed(2)+' target. $'+gap.toFixed(2)+' gap × ~'+Math.round(dailyGC)+' daily transactions.'};
   }
 
-  // 6. Labor % Overage
-  if(p.laborPct>0 && t.tLabor>0 && p.laborPct>t.tLabor) {
-    const gap=p.laborPct-t.tLabor, weekly=p.weeklySales||5000;
+  // 6. Labor % Overage. #164: resolveLaborTarget (tCrewLabor), not t.tLabor directly.
+  const _laborTgt6=resolveLaborTarget(t);
+  if(p.laborPct>0 && _laborTgt6>0 && p.laborPct>_laborTgt6) {
+    const gap=p.laborPct-_laborTgt6, weekly=p.weeklySales||5000;
     result.labor={gapPct:+(gap*100).toFixed(2),weeklyDollarImpact:+(gap*weekly).toFixed(0),
       monthlyDollarImpact:+(gap*weekly*4.3).toFixed(0),
       note:'Labor '+( gap*100).toFixed(2)+'% over target. ~$'+(gap*weekly).toFixed(0)+'/week in excess labor at current sales pace.'};
@@ -1635,7 +1638,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     {l:'Controls',      v:store.ctrlScore+'/100', s:'Controls health',      c:store.ctrlScore>=80?'#10b981':store.ctrlScore>=65?'#f59e0b':'#ef4444'},
     {l:'OEPE',          v:p.oepe>0?Math.round(p.oepe)+'s':'—',   s:'Target '+( t.tOepe||'—')+'s · 6-wk avg',  c:p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8'},
     {l:'TPPH',          v:p.tpph>0?p.tpph.toFixed(2):'—',         s:'Target '+(t.tTpph||'—')+' · 6-wk avg',       c:p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8'},
-    {l:'Labor %',       v:p.laborPct>0?fP(p.laborPct,2):'—',      s:'Target '+(t.tLabor?(t.tLabor*100).toFixed(2)+'%':'—')+' · 6-wk avg', c:laborColor(p.laborPct,t.tLabor,settings).color},
+    {l:'Labor %',       v:p.laborPct>0?fP(p.laborPct,2):'—',      s:'Target '+(resolveLaborTarget(t)?(resolveLaborTarget(t)*100).toFixed(2)+'%':'—')+' · 6-wk avg', c:laborColor(p.laborPct,resolveLaborTarget(t),settings).color},
     {l:'T2W Trend',     v:p.t2w!=null?fPct(p.t2w,2):'—',            s:p.t2w!=null?'2-wk vs prior 2-wk avg (rolling)':'Insufficient data (need 3+ days each period)',              c:p.t2w!=null?(p.t2w>=0?'#10b981':'#ef4444'):'#94a3b8'},
     {l:'Cash O/S',      v:(ds?.ctrlRows||[]).some(r=>r.loc===store.loc)?((p.cashOSPct||0)>=0?'+':'')+((p.cashOSPct||0)*100).toFixed(3)+'%':'—', s:'Target <0.10% · 6-wk avg · +over −short', c:Math.abs(p.cashOSPct||0)<.001?'#10b981':Math.abs(p.cashOSPct||0)<.003?'#f59e0b':'#ef4444'},
   ];
@@ -1775,12 +1778,12 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
            warn:p.oepe>0&&t.tOepe>0&&p.oepe<=t.tOepe*1.05,
            bad:p.oepe>0&&t.tOepe>0&&p.oepe>t.tOepe*1.05,
            detail:'target '+(t.tOepe||'—')+'s · 6-wk avg'},
-          {icon:'👷',l:'Labor %',
+          {icon:'👷',l:'Labor %', // #164: resolveLaborTarget (tCrewLabor), not t.tLabor directly
            v:p.laborPct>0?fP(p.laborPct,2):'—',
-           ok:p.laborPct>0&&t.tLabor>0&&p.laborPct<=t.tLabor*1.01,
-           warn:p.laborPct>0&&t.tLabor>0&&p.laborPct<=t.tLabor*1.03,
-           bad:p.laborPct>0&&t.tLabor>0&&p.laborPct>t.tLabor*1.03,
-           detail:'target '+(t.tLabor?(t.tLabor*100).toFixed(2)+'%':'—')+' · 6-wk avg'},
+           ok:p.laborPct>0&&resolveLaborTarget(t)>0&&p.laborPct<=resolveLaborTarget(t)*1.01,
+           warn:p.laborPct>0&&resolveLaborTarget(t)>0&&p.laborPct<=resolveLaborTarget(t)*1.03,
+           bad:p.laborPct>0&&resolveLaborTarget(t)>0&&p.laborPct>resolveLaborTarget(t)*1.03,
+           detail:'target '+(resolveLaborTarget(t)?(resolveLaborTarget(t)*100).toFixed(2)+'%':'—')+' · 6-wk avg'},
           {icon:'🧾',l:'TPPH',
            v:p.tpph>0?p.tpph.toFixed(2):'—',
            ok:p.tpph>0&&t.tTpph>0&&p.tpph>=t.tTpph,
@@ -2118,7 +2121,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             const issues=[];
             if(p.oepe>0&&t.tOepe>0&&p.oepe>t.tOepe) issues.push('OEPE '+Math.round(p.oepe)+'s vs '+t.tOepe+'s target');
             if(p.tpph>0&&t.tTpph>0&&p.tpph<t.tTpph) issues.push('TPPH '+p.tpph.toFixed(2)+' vs '+t.tTpph+' target');
-            if(p.laborPct>0&&t.tLabor>0&&p.laborPct>t.tLabor) issues.push('Labor '+(p.laborPct*100).toFixed(2)+'% vs '+(t.tLabor*100).toFixed(2)+'% target');
+            if(p.laborPct>0&&resolveLaborTarget(t)>0&&p.laborPct>resolveLaborTarget(t)) issues.push('Labor '+(p.laborPct*100).toFixed(2)+'% vs '+(resolveLaborTarget(t)*100).toFixed(2)+'% target');
             const vsLY=rangeLY>0?(rangeTotal-rangeLY)/rangeLY*100:null;
             if(vsLY!==null) issues.push('Sales '+(vsLY>=0?'+':'')+vsLY.toFixed(2)+'% vs LY');
             return 'McDonald\'s operations consultant reviewing '+storeName+'. Key metrics: '+issues.join(', ')+'. Give a prioritized 3-action plan for THIS WEEK. Each action must be specific, measurable, and tied directly to these metrics. Lead with the highest-impact item.';

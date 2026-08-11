@@ -4,6 +4,7 @@ import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../con
 import { parseGradedVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 import { analyzeGradedVisits } from '../engine/visit-readiness.js';
+import { oepeSeconds } from '../utils/oepe.js';
 
 const h = React.createElement;
 const ALL_LOCS = Object.keys(STORE_NAMES);
@@ -83,7 +84,7 @@ export const MIN_LY_SALES_FOR_COMP = 800;
 // closure) so it's directly unit-testable — see graded-visits-hour-metrics.test.js.
 export const hourMetrics = (x, cutoff) => {
   const dt   = secOf(x.dt_untilserve, x.dt_trans_cnt);                                    // Avg DT TTL
-  const oepe = (x.dt_untilstore || 0) > 0 ? secOf((x.dt_untilserve - x.dt_untilstore) - (x.dt_heldtime || 0), x.dt_trans_cnt) : null; // OEPE w/o parked
+  const oepe = oepeSeconds(x); // OEPE w/o parked — shared with loadQsrActSummary via utils/oepe.js (#183/#184 item 3)
   const ctp  = (x.dt_untilrecall || 0) > 0 ? secOf(x.dt_untilserve - x.dt_untilrecall, x.dt_trans_cnt) : null; // Avg CTP
   const r2p  = (x.fc_untilclosedrawer || 0) > 0 ? secOf(x.fc_untilserve - x.fc_untilclosedrawer, x.fc_trans_cnt) : null; // R2P (front counter)
   const kit  = secOf((x.mfy1_untilserve || 0) + (x.mfy2_untilserve || 0), (x.mfy1_trans_cnt || 0) + (x.mfy2_trans_cnt || 0)); // KVS Time Per GC

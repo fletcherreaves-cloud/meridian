@@ -21,6 +21,7 @@ import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
 import { metricSeries, metricAvg, metricDaily } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -64,7 +65,7 @@ function AIInsightsTab({store, ds, settings}) {
       tpph:        p.tpph?.toFixed(2),     tTpph: t.tTpph,
       kvst:        p.kvst?.toFixed(1),     tKvst: t.tKvst,
       kvsu:        p.kvsu?(p.kvsu*100).toFixed(1):null, tKvsu: t.tKvsu?(t.tKvsu*100).toFixed(1):null,
-      labor:       p.laborPct?(p.laborPct*100).toFixed(2):null, tLabor: t.tLabor?(t.tLabor*100).toFixed(2):null,
+      labor:       p.laborPct?(p.laborPct*100).toFixed(2):null, tLabor: resolveLaborTarget(t)?(resolveLaborTarget(t)*100).toFixed(2):null,
       opsScore:    store.opsScore, ctrlScore: store.ctrlScore,
       cashOS:      p.cashOSPct?(p.cashOSPct*100).toFixed(3):null,
       tRedAPct:    p.tRedAPct?(p.tRedAPct*100).toFixed(2):null,
@@ -1057,7 +1058,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     if(tgt.tOepe&&oepe){const gap=oepe-tgt.tOepe;obs.push(gap>15
       ?`OEPE averaging ${Math.round(oepe)}s — ${Math.round(gap)}s above ${tgt.tOepe}s target; throughput opportunity`
       :`OEPE at ${Math.round(oepe)}s — within ${Math.abs(Math.round(gap))}s of ${tgt.tOepe}s target`);}
-    if(tgt.tLabor&&laborPct){const gap=(laborPct-tgt.tLabor)*100;obs.push(Math.abs(gap)<1
+    if(resolveLaborTarget(tgt)&&laborPct){const gap=(laborPct-resolveLaborTarget(tgt))*100;obs.push(Math.abs(gap)<1
       ?`Labor % on target at ${(laborPct*100).toFixed(2)}%`
       :gap>0?`Labor ${gap.toFixed(1)}pp above target — scheduling review recommended`:`Labor ${Math.abs(gap).toFixed(1)}pp below target`);}
     if(byDOW.length>0){const best=byDOW.reduce((a,b)=>((b.sales||0)>(a.sales||0)?b:a));
@@ -1191,7 +1192,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
           ${kpiRow('Daily Sales ($)',d.sales,null,fmt$,false)}
           ${kpiRow('Guest Count',d.gc,null,v=>''+Math.round(v),false)}
           ${kpiRow('Avg Check',d.check,null,v=>'$'+v.toFixed(2),false)}
-          ${kpiRow('Labor %',d.laborPct,tgt.tLabor,fmtP,true)}
+          ${kpiRow('Labor %',d.laborPct,resolveLaborTarget(tgt),fmtP,true)}
           ${kpiRow('TPPH',d.tpph,tgt.tTpph,fmtN,false)}
           ${kpiRow('OEPE (seconds)',d.oepe,tgt.tOepe,v=>Math.round(v)+'s',true)}
           ${kpiRow('Park %',d.park,tgt.tPark,fmtP,true)}
@@ -2265,7 +2266,8 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
 
     const oepeStatus  = oepe  && s.t?.tOepe  ? (oepe>s.t.tOepe+8    ?'over':oepe>s.t.tOepe          ?'warn':'ok') : null;
     const tpphStatus  = tpph  && s.t?.tTpph  ? (tpph<s.t.tTpph-0.2  ?'over':tpph<s.t.tTpph          ?'warn':'ok') : null;
-    const laborStatus = labor && s.t?.tLabor  ? (labor>s.t.tLabor+0.02?'over':labor>s.t.tLabor        ?'warn':'ok') : null;
+    const sLaborTgt = resolveLaborTarget(s.t); // #164
+    const laborStatus = labor && sLaborTgt  ? (labor>sLaborTgt+0.02?'over':labor>sLaborTgt        ?'warn':'ok') : null;
 
     const metCol = st => st==='over'?'#ef4444':st==='warn'?'#f59e0b':st==='ok'?'#10b981':'var(--text)';
     const metLbl = (st, lowerBetter) => !st ? null
@@ -6219,7 +6221,7 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
         '  T2W vs LY: '+((p.t2w||0)*100).toFixed(1)+'% | T6W vs LY: '+((p.t6w||0)*100).toFixed(1)+'%',
         '  OEPE: '+(p.oepe>0?Math.round(p.oepe)+'s':'—')+' (target '+(t.tOepe||'—')+'s)',
         '  TPPH: '+(p.tpph>0?p.tpph.toFixed(2):'—')+' (target '+(t.tTpph||'—')+')',
-        '  Labor%: '+(p.laborPct>0?(p.laborPct*100).toFixed(1)+'%':'—')+' (target '+(t.tLabor?(t.tLabor*100).toFixed(1)+'%':'—')+')',
+        '  Labor%: '+(p.laborPct>0?(p.laborPct*100).toFixed(1)+'%':'—')+' (target '+(resolveLaborTarget(t)?(resolveLaborTarget(t)*100).toFixed(1)+'%':'—')+')',
         '  Ops Score: '+(store.opsScore||'—')+'/100',
         '  Forecast MAPE: '+(mape!=null?mape.toFixed(1)+'%':'not calibrated'),
         '  T2W Trend: '+(cal&&cal.mape2w!=null?cal.mape2w.toFixed(1)+'% (recent)':'—'),

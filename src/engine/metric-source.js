@@ -53,8 +53,9 @@ export const METRIC_SOURCES = {
   projSales: { mode: 'pos', srcs: [['qsrActSummaryRows', 'projSales']] },
   // Speed of service — manual Ops Report, else emailed Daily Glimpse.
   // OEPE — manual Ops Report, then emailed Daily Glimpse, then the cloud-fresh DAR-derived
-  // OEPE = (dt_untilserve − dt_untilstore) ÷ dt_trans_cnt (reconciled exactly to the DAR
-  // OEPE column) so current-day / recent windows populate before the Glimpse email lands.
+  // OEPE = (dt_untilserve − dt_untilstore − dt_heldtime) ÷ dt_trans_cnt, excluding parked/held
+  // time (#183, reconciled r=0.9958 against a real QSRSoft Service report, 2026-08-11) so
+  // current-day / recent windows populate before the Glimpse email lands.
   oepe:      { mode: 'pos', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']] },
   // KVS Time per GC (seconds) — manual Ops, then emailed Glimpse, then the cloud-fresh DAR
   // (= total MFY serve time ÷ total MFY trans, reconciled to the DAR report's KVS Time Per GC

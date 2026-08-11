@@ -5,6 +5,8 @@ import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getCo
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
+import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
+import { metricAvg } from '../engine/metric-source.js';
 import { STORE_NAMES } from '../constants.js';
 
 const h = React.createElement;
@@ -1096,6 +1098,68 @@ function ProjectionAccuracyTab({ stores }) {
   );
 }
 
+// ── Park × OEPE quadrant diagnostic (#181, replaces park as a scored computeOpsScore
+// component) ─────────────────────────────────────────────────────────────────────────────────
+const QUADRANT_COLOR = { A: blue, B: red, C: grn, D: amber };
+const QUADRANT_WINDOW_DAYS = 90; // matches the 90d DAR window issue #181 was measured against
+
+function ParkOepeTab({ ds }) {
+  const result = uM(() => {
+    if (!ds || !ds.storeIds?.length) return null;
+    const e = new Date(); const s = new Date(e.getTime() - QUADRANT_WINDOW_DAYS * 86400000);
+    const range = { s, e };
+    const rows = ds.storeIds.filter(loc => /^\d+$/.test(loc)).map(loc => ({
+      loc,
+      park: metricAvg(ds, loc, range, 'park'),
+      oepe: metricAvg(ds, loc, range, 'oepe'),
+    }));
+    return computeParkOepeQuadrants(rows);
+  }, [ds]);
+
+  if (!result) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: muted, fontSize: 12 } }, 'No store data loaded yet.');
+
+  const { medians, quadrants, excluded } = result;
+  const order = ['A', 'B', 'C', 'D'];
+
+  return h('div', null,
+    h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 14 } },
+      'Park% (avg over the trailing ' + QUADRANT_WINDOW_DAYS + ' days) paired with OEPE excluding parked time (#183) — parking is an intentional tool, not a failure on its own, so it can only be read against flow. A store that parks heavily AND keeps OEPE low is using the tool as designed; a store that parks little but still runs slow OEPE is the real under-parking case. District medians below are recomputed from this data every time, never frozen constants.'),
+
+    medians.park != null && h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, fontSize: 11, color: muted } },
+      h('span', null, 'District median park: ', h('b', { style: { color: '#fff' } }, (medians.park * 100).toFixed(1) + '%')),
+      h('span', null, 'District median OEPE: ', h('b', { style: { color: '#fff' } }, Math.round(medians.oepe) + 's')),
+    ),
+
+    h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+      order.map(q => {
+        const stores = [...(quadrants[q] || [])].sort((a, b) => a.loc.localeCompare(b.loc));
+        const meta = QUADRANT_READ[q];
+        return h('div', { key: q, style: { border: `1px solid ${bdr}`, borderRadius: 8, padding: 12, background: surf2 } },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
+            h('span', { style: { fontSize: 16, fontWeight: 800, color: QUADRANT_COLOR[q] } }, q),
+            h('span', { style: { fontSize: 11, fontWeight: 700 } }, meta.label),
+            h('span', { style: { fontSize: 10, color: muted, marginLeft: 'auto' } }, `${stores.length} store${stores.length === 1 ? '' : 's'}`),
+          ),
+          h('div', { style: { fontSize: 10, color: muted, marginBottom: 8, lineHeight: 1.5 } }, meta.read + ' ' + meta.action),
+          stores.length > 0 && h('table', { style: { width: '100%', fontSize: 11, borderCollapse: 'collapse' } },
+            h('tbody', null,
+              stores.map(r => h('tr', { key: r.loc, style: { borderTop: `1px solid ${bdr}` } },
+                h('td', { style: { padding: '3px 4px' } }, STORE_NAMES?.[r.loc] || `Store ${r.loc}`),
+                h('td', { style: { padding: '3px 4px', textAlign: 'right', fontFamily: 'monospace', color: muted } }, (r.park * 100).toFixed(1) + '%'),
+                h('td', { style: { padding: '3px 4px', textAlign: 'right', fontFamily: 'monospace', color: muted } }, Math.round(r.oepe) + 's'),
+              ))
+            )
+          ),
+        );
+      })
+    ),
+
+    excluded.length > 0 && h('div', { style: { marginTop: 14, fontSize: 10, color: muted } },
+      `${excluded.length} store${excluded.length === 1 ? '' : 's'} excluded — missing park or OEPE data in this window: `,
+      excluded.map(r => STORE_NAMES?.[r.loc] || r.loc).join(', ')),
+  );
+}
+
 // ── Auto-Correlation Scanner tab ────────────────────────────────────────────
 function ScannerTab({ ds, onTrack }) {
   const [gran, setGran] = uSt('daily');
@@ -1599,6 +1663,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     h('div', { style: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' } },
       h('button', { onClick: () => setTab('liveops'), style: TAB_STYLE(tab === 'liveops') }, '⚡ Live Ops'),
       h('button', { onClick: () => setTab('projacc'), style: TAB_STYLE(tab === 'projacc') }, '📐 Projection Accuracy'),
+      h('button', { onClick: () => setTab('parkoepe'), style: TAB_STYLE(tab === 'parkoepe') }, '🅿️ Park × OEPE'),
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
       h('button', { onClick: () => setTab('scanner'), style: TAB_STYLE(tab === 'scanner') }, '🔎 Scanner'),
@@ -1611,6 +1676,9 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
 
     // ── PROJECTION ACCURACY TAB ──────────────────────────────────────────────
     tab === 'projacc' && h(ProjectionAccuracyTab, { stores: availLocs }),
+
+    // ── PARK × OEPE QUADRANT TAB (#181) ──────────────────────────────────────
+    tab === 'parkoepe' && h(ParkOepeTab, { ds }),
 
     // ── BUILT-IN TAB ──────────────────────────────────────────────────────────
     tab === 'builtin' && h('div', null,

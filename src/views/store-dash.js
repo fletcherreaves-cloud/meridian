@@ -11,6 +11,7 @@ import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils
 import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
+import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ModelHealthBadge } from './analytics.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
 
@@ -301,7 +302,7 @@ function OpsRadar({perf, tgt}) {
     const data = [
       toS(perf.oepe,tgt.tOepe), toS(perf.tpph,tgt.tTpph,false),
       toS(perf.kvst,tgt.tKvst), toS(perf.kvsu,tgt.tKvsu,false),
-      toS(perf.park,tgt.tPark), toS(Math.abs((perf.laborPct||0)-(tgt.tLabor||0)),.03)
+      toS(perf.park,tgt.tPark), toS(Math.abs((perf.laborPct||0)-(resolveLaborTarget(tgt)||0)),.03)
     ];
     return new Chart(canvas, {type:'radar', data:{labels, datasets:[
       {label:'Target', data:[100,100,100,100,100,100], borderColor:'rgba(245,158,11,.3)', backgroundColor:'rgba(245,158,11,.04)', borderWidth:1, pointRadius:0},
@@ -412,7 +413,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
     ? gcCrossCheck(loc,r.date,ds,settings,r.forecast) : null;
   const hasWxData = wxR&&(wxR.tmax>0||wxR.rain>0||wxR.wmax>0);
   const gc  = v => v>=0?'#4ade80':'#f87171';
-  const laborCol = (()=>{if(!r.labor||!tgt.tLabor)return{color:'#94a3b8',arrow:'',label:'—'};const d=r.labor-tgt.tLabor;const a=Math.abs(d);const grn=(settings?.laborGreenPct??0.5)/100;const yel=(settings?.laborYellowPct??1.5)/100;const arrow=d>0.001?' ▲':d<-0.001?' ▼':'';if(a<=grn)return{color:'#10b981',arrow,label:'On Target'};if(a<=yel)return{color:'#f59e0b',arrow,label:d>0?'Slightly High':'Slightly Low'};return{color:'#ef4444',arrow,label:d>0?'Over Target':'Under Target'};})();
+  const laborCol = (()=>{const _lt=resolveLaborTarget(tgt);if(!r.labor||!_lt)return{color:'#94a3b8',arrow:'',label:'—'};const d=r.labor-_lt;const a=Math.abs(d);const grn=(settings?.laborGreenPct??0.5)/100;const yel=(settings?.laborYellowPct??1.5)/100;const arrow=d>0.001?' ▲':d<-0.001?' ▼':'';if(a<=grn)return{color:'#10b981',arrow,label:'On Target'};if(a<=yel)return{color:'#f59e0b',arrow,label:d>0?'Slightly High':'Slightly Low'};return{color:'#ef4444',arrow,label:d>0?'Over Target':'Under Target'};})();
 
   return tr({className:r.isFuture?'fut':''},
     // ── Date cell with tagger ──
@@ -1042,7 +1043,7 @@ function OpsScorecard({store, settings}) {
                         90, true, 'Mgr floor notations', 'pct'],
   ];
   const laborRows = [
-    ['Labor %',         p.laborPct*100, q2.laborPct*100, q4.laborPct*100, t.tLabor*100, null, '≤target = green', 'pct'],
+    ['Labor %',         p.laborPct*100, q2.laborPct*100, q4.laborPct*100, resolveLaborTarget(t)*100, null, '≤target = green', 'pct'],
     ['Act vs Need',     p.actVsNeed,    q2.actVsNeed,    q4.actVsNeed,    0,            null, 'Scheduling gap',  'num'],
     ['OT Hrs/Day',      p.otHrs,        q2.otHrs,        q4.otHrs,        2,            false,'OT discipline',   'num'],
     ['Avg Rate',        p.avgRate,      q2.avgRate,      q4.avgRate,      null,         null, '6-wk avg wage',   'dollar'],
@@ -1524,13 +1525,15 @@ function generatePlan(store, settings) {
     });
   }
 
-  // Labor % if off
-  const laborDiff = (p.laborPct||0)-(t.tLabor||0);
-  if(t.tLabor>0&&Math.abs(laborDiff)>yellow) {
+  // Labor % if off. #164: laborTgt is the resolved target (tCrewLabor) — same basis
+  // computeOpsScore and the WATCH-LABOR finding use, not t.tLabor directly.
+  const laborTgt = resolveLaborTarget(t);
+  const laborDiff = (p.laborPct||0)-(laborTgt||0);
+  if(laborTgt>0&&Math.abs(laborDiff)>yellow) {
     actions.push({
       priority:Math.abs(laborDiff)>.03?'HIGH':'MEDIUM', category:'Labor Management', icon:'👥',
-      issue:`Labor % at ${((p.laborPct||0)*100).toFixed(2)}% vs ${((t.tLabor||0)*100).toFixed(2)}% target`,
-      target:`${((t.tLabor||0)*100).toFixed(2)}% ± ${(yellow*100).toFixed(2)}%`,
+      issue:`Labor % at ${((p.laborPct||0)*100).toFixed(2)}% vs ${((laborTgt||0)*100).toFixed(2)}% target`,
+      target:`${((laborTgt||0)*100).toFixed(2)}% ± ${(yellow*100).toFixed(2)}%`,
       gap:`${(Math.abs(laborDiff)*100).toFixed(2)}% ${laborDiff>0?'over':'under'} target`,
       cost:laborDiff>0?`~$${Math.round(laborDiff*80000*12/52)}/week above labor budget`:'Under-labor may be impacting service',
       steps:[
@@ -1543,7 +1546,7 @@ function generatePlan(store, settings) {
       week1:'Complete schedule vs punch audit for last 2 weeks. Document gaps.',
       week2:'Revised scheduling process live. First full week of new approach.',
       week3:'Measure improvement. Is labor % moving toward target?',
-      week4:`Target: ${((t.tLabor||0)*100).toFixed(2)}% ± ${(yellow*100).toFixed(2)}%. Adjust and continue.`
+      week4:`Target: ${((laborTgt||0)*100).toFixed(2)}% ± ${(yellow*100).toFixed(2)}%. Adjust and continue.`
     });
   }
 
@@ -1825,7 +1828,7 @@ function StoreCard({store, onSelect}) {
           fontSize:'9.5px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:3}},
           span({style:{color:'var(--text3)'}},'Labor'),
           span({style:{fontFamily:'var(--mono)',fontWeight:700,
-            color:metCol(p.laborPct,t.tLabor,true)}},
+            color:metCol(p.laborPct,resolveLaborTarget(t),true)}},
             p.laborPct>0?(p.laborPct*100).toFixed(2)+'%':'—')
         ),
         // OEPE row
@@ -3609,7 +3612,7 @@ function OpsBarChart({perf, tgt}) {
       {l:'TPPH', actual:perf.tpph>0?perf.tpph:null, target:tgt.tTpph, inv:false,unit:''},
       {l:'KVS t',actual:perf.kvst>0?perf.kvst:null, target:tgt.tKvst, inv:true, unit:'s'},
       {l:'Park%',actual:perf.park>0?perf.park*100:null,target:tgt.tPark?tgt.tPark*100:null,inv:true,unit:'%'},
-      {l:'Labor%',actual:perf.laborPct>0?perf.laborPct*100:null,target:tgt.tLabor?tgt.tLabor*100:null,inv:null,unit:'%'},
+      {l:'Labor%',actual:perf.laborPct>0?perf.laborPct*100:null,target:resolveLaborTarget(tgt)?resolveLaborTarget(tgt)*100:null,inv:null,unit:'%'},
     ].filter(m=>m.actual!==null&&m.target);
     const labels=metrics.map(m=>m.l);
     const actuals=metrics.map(m=>+m.actual.toFixed(2));
