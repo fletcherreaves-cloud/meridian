@@ -41,3 +41,53 @@ metadata:
 - DT Speed-of-Service panel: 90-day cross-store trend from dt_untilserve
 - SAGE tool use: answer "how is today tracking?" with live Supabase data
 - Labor-adjusted forecasting: LifeLenz scheduled hours + DAR needed hours → throughput model
+
+---
+
+## Live PM queue as of 2026-08-11 (end of the targets/scoring session)
+
+Written down because a session's task list dies with the session and this queue was
+reordered twice in one evening on measured evidence. **GitHub issues are the source of
+truth**; this is the ordering and the reasoning, which the issues don't carry.
+
+| # | Issue | Why here |
+|---|---|---|
+| 1 | **#164** — labor-basis rollout, 69 `t.tLabor` readers | Live correctness. 20 of 27 stores are graded on a labor % the owner never approved; Ponce de Leon 43701 is graded 26.00% against an approved 24.00% — 2.00pp on a metric whose whole tolerance band is 2pp. #163 already delivers `tCrewLabor` into `mergedTargets` and **nothing reads it**. Resolver half-built and preserved on branch `labor-basis-resolver-deferred` (`a14a1b8`) — do not rebuild it. |
+| 2 | **#150** — `kvsHealthy`/`park` zeros discarded, park graded lower-is-better | Live, user-visible wrong. Body was corrected 2026-08-10 (the original text had park's polarity backwards) |
+| 3 | **#157** — Spine 1 step 3 | Resumes the UX-coherence spine |
+| — | #146, #155, #156, #166, #167 | Behind the above |
+
+### Two items the owner explicitly asked not to lose (2026-08-11)
+
+1. **#154 — LifeLenz AOS. Needs an owner decision: rescope or close.** Its premise was
+   retracted — `laborTargetOrg` is column L of `MBI_Labor_Analysis.xlsx` (owner-built,
+   hand-typed at upload), **not** the AOS "Maximum labor cost percentage" as the PM
+   claimed. Two of its three stated benefits evaporated with that. What survives is real
+   but much smaller: AOS currently builds schedules against a flat 22% across all seven
+   days that the owner didn't know was set. The basis question is closed (crew hourly,
+   confirmed by the owner and by a "Skip scheduling Managers" screenshot), and LifeLenz
+   support confirmed the AOS value *"is not treated as an official reporting target…
+   mainly a guideline for schedule generation."* **It should not be picked up as filed.**
+   Standing constraint if it is ever rescoped to a write: any AOS write would be the first
+   write Meridian makes to a production scheduling system — stage it read shape → one store
+   by hand → one store via API → rest. Never a 27-store script first.
+2. **#167 — did the discarded-targets bug also hit Projections?** `sales_proj` is populated
+   for all 27 stores (Durant $668,158) and maps to `tProdSales`, which `computeOpsScore`
+   never reads. #153 proved one consumer of these targets was silently reading the wrong
+   object for months; nobody has checked whether Projections resolves them correctly or has
+   its own path. Note `analytics.js:7777/7900/8051` call `loadMonthlyTargets(year, month)`
+   while `App.js` calls `loadAllMonthlyTargets()` — two different paths, reason unknown.
+   **Do not assume it's fine. #153 was found because someone assumed exactly that.**
+
+### Measured facts from this session worth not re-deriving
+
+- `monthly_targets` is healthy: 27 populated stores/month back through May 2026 (April: 20).
+  The 7 extra rows per month (`1291, 16392, 17750, 2010, 2370, 2510, 2920`) are all-null and
+  **none appear in `DEFAULT_TARGETS`** — closed/sold locations and/or org-structure rows from
+  the upload. Proven benign, not inferred. Don't re-investigate.
+- `computeCtrlScore` reads **no per-store target at all** — it grades entirely on the
+  district-wide `settings.scoring` thresholds. Controls Score does not move when targets change.
+- Of `computeOpsScore`'s six target fields, only `tTpph` has a `monthly_targets` path today.
+  `tKvst`/`tKvsu`/`tOepe`/`tPark` have no monthly path at all.
+- `buildStore` has exactly **one** caller (`App.js:2920`). `coaching.js` imports it and
+  `buildBrief` and calls neither — dead import.
