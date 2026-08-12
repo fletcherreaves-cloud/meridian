@@ -72,6 +72,21 @@ have missed anything for it to reach that.
   convention.
 - **Measure before and after, and put both numbers in the commit body.** "Improved
   performance" is not a claim, it is a feeling. `3518.0 KB -> 2722.5 KB` is a claim.
+- **`check-bundle-budget.mjs`'s own number can point the wrong way.** It parses only the
+  entry FILE's printed gzip line — it has no idea how many other files `index.html`
+  `<link rel=modulepreload>`s, which are fetched just as eagerly. Confirmed twice now, not
+  hypothesized: #232's analytics.js slice (PR #238) split several shared modules
+  (supabase.js/blob-sync.js/etc.) into separate-but-modulepreloaded files, making the entry
+  file's own number look better than the real eager payload was. The very next #232 PR
+  (store-dash.js split) showed the mirror-image failure — Rollup re-inlined those SAME
+  modules back into the entry file once store-dash.js stopped forcing the split, and the
+  entry-file number went UP 21.47 KB gzip for a change that was a genuine 119.82 KB gzip
+  win once modulepreload is summed in. A commit or CI gate that trusts the entry-file
+  number alone would have called that second PR a regression. The honest number is always
+  entry file + every file `index.html` modulepreloads — compute it from the build's own
+  `dist/index.html` and chunk-size output, not from `check-bundle-budget.mjs`'s single
+  line, until that script itself sums the modulepreload set (unfixed as of 2026-08-12 —
+  flagged in #238, not yet built).
 - **A passing build is not a passing load.** A lazy declaration placed above its
   `lazyPanel` definition is a temporal-dead-zone `ReferenceError` at runtime and builds
   perfectly clean. Verify declaration order, not just compilation.
