@@ -1,5 +1,4 @@
 // @ts-nocheck
-import * as XLSX from 'xlsx';
 import { attachFindingMeta } from './finding-rules.js';
 import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS } from '../constants.js';
 import { dKey, addD } from '../utils/date.js';

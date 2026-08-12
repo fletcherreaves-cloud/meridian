@@ -1,7 +1,12 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseSMGFullScale } from '../parsers/index.js';
+import { parseSMGFullScale, ensureParsersXLSXReady } from '../parsers/index.js';
+
+// #248 — parsers/index.js's own XLSX reference is lazy-loaded (see lib/xlsx-lazy.js) and stays
+// null until a caller awaits ensureParsersXLSXReady() — normally App.js's handleFiles. This
+// test calls parseSMGFullScale directly, bypassing that flow, so it awaits readiness itself.
+await ensureParsersXLSXReady();
 
 // Mirrors the real SMG "Data Only" export layout (one row per store, fixed cols),
 // including the "**" suppressed-cell case (Cottondale DT) and the "Combined"

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react'
 import { createRoot } from 'react-dom/client'
-import * as XLSX from 'xlsx'
+import { loadXLSX } from '../lib/xlsx-lazy.js'
 // #232 Finding 2: `Chart` from chart.js/auto was imported here and never referenced anywhere in
 // this file — a dead import, but chart.js/auto's side effects (registering every controller/scale)
 // still ran on every page load regardless of whether the binding was used. The other two paths
@@ -235,7 +235,8 @@ import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance,
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
-import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
+import { ensureInventoryXLSXReady } from '../parsers/inventory-parse.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 // #232 Finding 3: store-dash.js (145 KB raw, plus the chart.js/auto runtime it imports at module
 // scope) used to be statically imported here for 47 exports. Investigation found only 3 were ever
@@ -2039,6 +2040,11 @@ function App() {
         } else {
           const ab=await file.arrayBuffer();
           const _isCSV=file.name.toLowerCase().endsWith('.csv');
+          // #248 — xlsx (141 KB gzip) lazy-loaded here, the one place a non-PDF upload actually
+          // needs it. All three awaits below race the SAME cached promise after the first file
+          // in a batch (loadXLSX/ensureParsersXLSXReady/ensureInventoryXLSXReady are each
+          // memoized), so this only costs a real fetch once per session, not once per file.
+          const [XLSX]=await Promise.all([loadXLSX(),ensureParsersXLSXReady(),ensureInventoryXLSXReady()]);
           const wb=_isCSV
             ?XLSX.read(new TextDecoder().decode(new Uint8Array(ab)),{type:'string',raw:true})
             :XLSX.read(new Uint8Array(ab),{type:'array'});
