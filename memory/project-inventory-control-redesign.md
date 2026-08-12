@@ -366,6 +366,29 @@ the six-inventory-panels problem — real drift, not speculative risk.
 Full agent transcript / methodology available in this session; not re-copied here since every
 claim above already carries its own file:line citation.
 
+## 12c. `class` does not bind uniformly across views — from the schema, not the design doc (owner, 2026-08-12)
+
+**`qsr_fob` has no class dimension.** It is one row per `(loc, date)` with fixed named columns —
+`comp_waste_amt`, `raw_waste_amt`, `condiments_amt`, `emp_mgr_meals_amt`, `stat_variance_amt`,
+`unexplained_amt`, `total_base_food`, plus `pnl_food_cost_*` / `pnl_paper_cost_*`. No `cls`
+column, no per-item rows. A Food/Condiment/Paper/Non Product/Op Supplies selector **cannot
+filter the FOB view** — there is nothing in the row to filter on. For FOB, "class" is really a
+**column selection over a different taxonomy** (food P&L vs paper P&L; condiments already its
+own named component), not a row filter at all.
+
+`class` DOES bind where item-level rows genuinely carry a `cls` field — on-hand, raw item
+detail, count cycle (`normClass()`, `eom-inventory.js:77-89`, and the `FOB_CLASSES =
+['food','condiment']` constant it feeds).
+
+**Requirement for the shell**: `class` needs a **per-view binding**, not one global selector
+wired blindly to every view. Each view must declare whether it honours `class`; the selector
+must visibly disable or mark itself N/A on a view that doesn't — **never silently accept and
+drop it.** A class dropdown that looks live but does nothing on the FOB surface is a control
+that looks like it works, the exact failure family #231 (Patch Heatmap silently ignoring
+`dateRange`) just demonstrated the cost of: invisible until someone compares two screens side by
+side. Do not ship the shell's `class` axis as a single global filter prop threaded to every view
+unconditionally — design the binding explicitly per view from the start.
+
 ## 13. Related
 
 - `memory/project-events-redesign.md` — companion; same many-panels-to-one-context move
