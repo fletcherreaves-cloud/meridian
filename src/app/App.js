@@ -2,7 +2,13 @@
 import * as React from 'react'
 import { createRoot } from 'react-dom/client'
 import * as XLSX from 'xlsx'
-import { Chart } from 'chart.js/auto'
+// #232 Finding 2: `Chart` from chart.js/auto was imported here and never referenced anywhere in
+// this file — a dead import, but chart.js/auto's side effects (registering every controller/scale)
+// still ran on every page load regardless of whether the binding was used. The other two paths
+// pulling chart.js/auto into the entry chunk were store-dash.js (now lazy, Finding 3 above) and
+// dt-speedofservice.js (now lazy, below) — all three had to leave together or none of them would,
+// since a module reached by any static path stays eager no matter how many dynamic paths also
+// reach it.
 import '../meridian.css'
 // #230: only the latest entry's {version,date} — deliberately its OWN module, not shared with
 // changelog-data.js (the full history, read only by the lazy changelog-panel.js). A module
@@ -145,6 +151,17 @@ const _projections = () => import('../features/projections.js');
 const ProjectionWorkflow = lazyPanel(() => _projections().then(m => ({ default: m.ProjectionWorkflow })));
 const PreForecastBrief   = lazyPanel(() => _projections().then(m => ({ default: m.PreForecastBrief })));
 
+// #232 Finding 3: the 7 store-dash.js panels App.js actually renders, all gated behind view/show
+// state already — see the comment on monthly-targets-v2.js's import above for what stayed static.
+const _storeDash = () => import('../views/store-dash.js');
+const DistrictGrid         = lazyPanel(() => _storeDash().then(m => ({ default: m.DistrictGrid })));
+const OrgView               = lazyPanel(() => _storeDash().then(m => ({ default: m.OrgView })));
+const RankingView           = lazyPanel(() => _storeDash().then(m => ({ default: m.RankingView })));
+const PerformanceCalculator = lazyPanel(() => _storeDash().then(m => ({ default: m.PerformanceCalculator })));
+const UnifiedTargetsPanel   = lazyPanel(() => _storeDash().then(m => ({ default: m.UnifiedTargetsPanel })));
+const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default: m.MonthlyTargetManager })));
+const EventCalendar         = lazyPanel(() => _storeDash().then(m => ({ default: m.EventCalendar })));
+
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
@@ -193,7 +210,10 @@ import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
 import { FeatureRequestsPanel } from '../views/feature-requests.js';
 import { TaskQueuePanel } from '../views/task-queue.js';
-import { DTSpeedOfServicePanel } from '../views/dt-speedofservice.js';
+// #232 Finding 2: gated behind showDtSoS, statically imported. Its own chart.js/auto import was
+// the third of the three paths pulling Chart.js into the entry chunk — see the comment on the
+// dead top-of-file Chart import above.
+const DTSpeedOfServicePanel = lazyPanel(() => import('../views/dt-speedofservice.js').then(m => ({ default: m.DTSpeedOfServicePanel })));
 const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
@@ -217,20 +237,16 @@ import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave,
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
 import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily } from '../parsers/index.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
-import {
-  fetchForecastWeather,
-  ymKey, loadTargetsV2, saveTargetsV2, getMonthTargets, getTargetsForDate, setMonthTargets,
-  getYearlyStorageKey, loadYearlyTargets, saveYearlyTargets, setYearlyTarget, getYearlyTarget, exportYearlyTargets,
-  copyMonthTargets, toggleMonthLock, exportTargetsV2, getTargetMonths, migrateTargetsToV2,
-  PEAK_SLICES, normSlice, analyzePeaks,
-  mdToNodes,
-  useChart, TT, AX, LEG, SalesChart, OpsRadar, TrendChart,
-  wxIcon, ForecastRow, ForecastTable,
-  Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, generatePlan, ActionPlanTab,
-  StoreCard, DistrictGrid, OrgView, ExportDropdown, RankingView, PerformanceCalculator,
-  UnifiedTargetsPanel, MonthlyTargetManager, EventCalendar,
-  OpsBarChart, CompareRadarChart, CompareLineChart,
-} from '../views/store-dash.js';
+// #232 Finding 3: store-dash.js (145 KB raw, plus the chart.js/auto runtime it imports at module
+// scope) used to be statically imported here for 47 exports. Investigation found only 3 were ever
+// used unconditionally (the migrate-on-mount effect + mergedTargets memo below) — moved to their
+// own tiny engine/monthly-targets-v2.js module. Every panel App.js actually renders from
+// store-dash.js (DistrictGrid/OrgView/RankingView/PerformanceCalculator/UnifiedTargetsPanel/
+// MonthlyTargetManager/EventCalendar) was already gated behind view/show state; the other ~38
+// imported symbols (the Chart.js wrapper library, ForecastTable, Brief, etc.) were dead code here
+// — never referenced, only used by analytics.js/labor-tools.js/store-analytics.js, which are
+// already lazy themselves. See the _storeDash() lazyPanel group below for the real panels.
+import { ymKey, loadTargetsV2, migrateTargetsToV2 } from '../engine/monthly-targets-v2.js';
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 const h = React.createElement;
