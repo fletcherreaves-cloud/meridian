@@ -111,6 +111,37 @@ of statically-imported panels + 195 KB of Chart.js) will NOT produce another ~96
 #230's ratio — expect roughly 28–37 KB at the code-realistic ratio. Still worth doing; just
 don't sell it as "another #230."
 
+## Eager-payload blind spot, confirmed and fixed (#244, 2026-08-12)
+
+`check-bundle-budget.mjs` gated only on the entry chunk's own printed gzip line — blind to
+every file `dist/index.html` `<link rel="modulepreload">`s, which the browser fetches just as
+eagerly as the entry file, as separate HTTP requests, before the app can render anything.
+#232 Finding 1 (#238) and Findings 2+3 (store-dash split) each flipped the entry-only number
+in opposite, misleading directions — see the two entries above. #244 re-measured the #238
+bracket independently (`gzip -9` on `1c6e4c7` pre and `3980e71` post) to settle it:
+
+| | entry only | eager total (entry + modulepreload) |
+|---|---|---|
+| pre-#238 (`1c6e4c7`) | 698.99 KB | **854.81 KB — over the 850 KB budget** |
+| post-#238 (`3980e71`) | 469.36 KB | **744.09 KB** |
+| delta | −229.63 KB | **−110.72 KB** |
+
+**The finding that matters isn't the smaller delta — it's that pre-#238 was already over
+budget.** The old entry-only gate reported 127.66 KB of headroom on a build that was
+actually 4.81 KB over the real 850 KB limit. It was passing an over-budget bundle. That
+makes #238 the fix that took the app from over budget to under budget, not the cosmetic
+−237 KB win its own commit described.
+
+**Fixed, not recalibrated.** `check-bundle-budget.mjs` now parses vite's gzip line for every
+chunk (not just the entry one), reads `dist/index.html` for the entry `<script type="module">`
+and every `<link rel="modulepreload">` (explicitly excluding `rel="prefetch"` — idle-time, not
+eager), sums their gzip sizes, and gates that sum. The 850 KB budget itself is unchanged — it
+was always a proxy for bytes-parsed-before-interactive, which eager-total measures correctly
+and entry-only did not. Reported headroom on the current tree dropping from ~365 KB
+(entry-only, stale) to ~81 KB (eager-total, corrected) is **the number becoming true, not a
+regression** — 365 KB of headroom against the entry file alone was never real headroom
+against what the budget is meant to bound.
+
 ---
 
 # Companion rule: manual sourcing is always temporary
