@@ -1554,7 +1554,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       // #201 — Patch Heatmap: all 27 stores as a status grid, right at the top of the landing
       // view. h(PatchHeatmap,...) here returns null internally if stores hasn't loaded yet
       // (empty cells array), so no separate loading guard is needed at this call site.
-      h(PatchHeatmap, { ds, stores, dateRange, onOpenStore, onCoachingSaved }),
+      // #231 — does NOT take dateRange: every dimension is a fixed rolling window (see the
+      // component's own header comment), never the page's date-range selector. Used to be
+      // passed here and silently dropped inside the component — removed at both ends rather
+      // than left as a dead prop that looks live.
+      h(PatchHeatmap, { ds, stores, onOpenStore, onCoachingSaved }),
 
       // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
       moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
