@@ -126,6 +126,13 @@
   always had it. New rollup-table migration (owner needs to run it) + engine/labor-gap-split.js
   (Wed-Tue pay week, signature #4 in-progress-day exclusion, null-vs-fabricated-zero when the
   migration hasn't landed yet). New Labor Tools tab: 🎯 Planning/Execution.
+- **⭐ [Overscheduling is chaos, not cost](finding-overscheduling-is-chaos-not-cost.md)** —
+  field finding once #210 ran live: 21/27 stores grossly over-schedule, but the district nets
+  to only +9 hrs vs need because over-scheduling and mid-week cutting cancel out — invisible
+  on the P&L, real operational chaos. Validates ranking by combined-magnitude (already
+  shipped), and is the first case where "dollarize and sort by $" would be the WRONG
+  instinct — it costs ~nothing but damages the operation. Coach column gate confirmed correct
+  as-is, no code changes from this finding.
 - **✅ [Patch Heatmap bands + rollup tiles (#219/#220)](project-patch-heatmap-calibration-219.md)**
   — DONE. #219: owner ran the measurement script against production, found a structural bug
   (badAt is not the flag line — watch fires at 0.2*badAt, critical at 0.5*badAt), shipped
