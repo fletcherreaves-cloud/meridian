@@ -126,13 +126,14 @@
   always had it. New rollup-table migration (owner needs to run it) + engine/labor-gap-split.js
   (Wed-Tue pay week, signature #4 in-progress-day exclusion, null-vs-fabricated-zero when the
   migration hasn't landed yet). New Labor Tools tab: 🎯 Planning/Execution.
-- **⏳ [Patch Heatmap band calibration (#219)](project-patch-heatmap-calibration-219.md)** —
-  measurement tooling only, `badAt` constants NOT yet changed. Production showed 26/27 flagged
-  vs the dashboard's own 25/27-trusted read — worst-of-N compounding tight, chosen-not-derived
-  cuts. `scripts/measure-patch-heatmap-bands.mjs` covers Sales/FOB/Labor/Speed (Controls is a
-  composite, out of scope, needs in-app instrumentation instead); imports verified to resolve,
-  never run — no live Supabase access in this sandbox. #220 (patch rollup tiles) blocked
-  behind this landing.
+- **✅ [Patch Heatmap bands + rollup tiles (#219/#220)](project-patch-heatmap-calibration-219.md)**
+  — DONE. #219: owner ran the measurement script against production, found a structural bug
+  (badAt is not the flag line — watch fires at 0.2*badAt, critical at 0.5*badAt), shipped
+  Sales 27 / FOB 1.9 / Labor 8.8 / Speed 73 (was 15/3/3/20). #220: new patch-level rollup row,
+  patchDimensions() aggregates raw dollars/sales FIRST then derives dimensions — never colours
+  by worst store. Grouping via the LIVE supervisorGroups() (constants.js), not the frozen
+  INV_ORG_COORDS.sup snapshot. Controls excluded from both (composite score, correctly out of
+  scope). 18 new tests across both issues.
 
 ## ⚡ Performance
 - [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
