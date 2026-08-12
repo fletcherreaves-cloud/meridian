@@ -12,7 +12,7 @@ import { matchedVsLY } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
-import { ModelHealthBadge } from './analytics.js';
+import { ModelHealthBadge } from './model-health-badge.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
 

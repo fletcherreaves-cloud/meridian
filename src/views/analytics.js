@@ -3,7 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE } from '../constants.js';
 import { dKey, addD, dowOf, dFmt, nDK } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
-import { forecastDay, getWeatherNote, getDIRecommendation, computeModelHealth, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, fetchRow } from '../engine/forecast.js';
+import { forecastDay, getWeatherNote, getDIRecommendation, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, fetchRow } from '../engine/forecast.js';
 import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY, buildAckHistory } from '../engine/swing-feed.js';
 import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
@@ -6774,51 +6774,8 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
 }
 
 
-// Health score badge — compact, for use anywhere
-function ModelHealthBadge({loc, settings, ds, showDetail}) {
-  const health = computeModelHealth(loc, settings, ds);
-  const [open, setOpen] = React.useState(false);
-
-  return div({style:{display:'inline-flex',flexDirection:'column',alignItems:'flex-start',gap:2}},
-    div({style:{display:'flex',alignItems:'center',gap:5,cursor:'pointer'},
-      onClick:()=>setOpen(o=>!o),
-      title:'Model Health Score — '+health.statement},
-      // Score pill
-      div({style:{display:'flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:10,
-        background:health.gradeColor+'22',border:'.5px solid '+health.gradeColor+'66'}},
-        div({style:{width:6,height:6,borderRadius:'50%',background:health.gradeColor,flexShrink:0}}),
-        health.total!=null&&span({style:{fontWeight:700,fontSize:'9px',color:health.gradeColor}},health.total),
-        span({style:{fontSize:'8px',color:health.gradeColor}},' '+health.gradeLabel)
-      ),
-      showDetail&&span({style:{fontSize:'8px',color:'var(--text3)',marginLeft:2}},open?'▲':'▼')
-    ),
-    // Detail panel — only shows when open
-    open&&showDetail&&div({style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
-      borderRadius:'var(--r)',padding:'8px 10px',minWidth:220,fontSize:'9px',zIndex:10,
-      boxShadow:'0 4px 12px rgba(0,0,0,.3)'}},
-      div({style:{fontWeight:700,marginBottom:6,color:'var(--text)'}},
-        'Model Health: '+health.total+'/100 — '+health.gradeLabel),
-      div({style:{marginBottom:8,color:'var(--text2)',lineHeight:1.5}},health.statement),
-      [
-        {l:'Calibration', s:health.components.cal, max:30, n:health.notes.cal},
-        {l:'Data Freshness', s:health.components.fresh, max:25, n:health.notes.fresh},
-        {l:'MAPE Stability', s:health.components.mape, max:25, n:health.notes.mape},
-        {l:'Sample Size', s:health.components.sample, max:20, n:health.notes.sample},
-      ].map((c,i)=>div({key:i,style:{marginBottom:5}},
-        div({style:{display:'flex',justifyContent:'space-between',marginBottom:2}},
-          span({style:{color:'var(--text2)'}},[c.l]),
-          span({style:{fontWeight:600,color:c.s/c.max>=.8?'#10b981':c.s/c.max>=.5?'#f59e0b':'#f87171'}},
-            [c.s+'/'+c.max])
-        ),
-        div({style:{height:3,background:'var(--bdr)',borderRadius:2}},
-          div({style:{height:'100%',borderRadius:2,width:(c.s/c.max*100)+'%',
-            background:c.s/c.max>=.8?'#10b981':c.s/c.max>=.5?'#f59e0b':'#f87171',
-            transition:'width .3s'}})),
-        div({style:{fontSize:'8px',color:'var(--text3)',marginTop:1}},[c.n])
-      ))
-    )
-  );
-}
+// ModelHealthBadge moved to model-health-badge.js (#232) — it was the one export pinning this
+// whole 316 KB module into the entry chunk via store-dash.js's static import.
 
 function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
   const [weekStart, setWeekStart] = React.useState(()=>{
@@ -8346,4 +8303,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, ModelHealthBadge, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel };
+export { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel };
