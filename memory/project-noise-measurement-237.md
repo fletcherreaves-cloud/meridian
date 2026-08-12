@@ -2,11 +2,11 @@
 
 Read-only measurement. No product change. Answers the question `project-coaching-loop-208.md`
 left open (`NOISE_THRESHOLDS` ships `{}`, `computeVerdict()` always returns `null`): is district-
-wide differencing tight enough to detect the owner's real coaching target (0.25–0.50pp) against
-ordinary drift? **Both runs' full numbers are recorded here** — the first run's output previously
-existed only in a chat thread; that is exactly how `cleanup-backlog.md`,
-`finding-live-intraday-operations-report-data.md`, and `project-aag-tiles-reimagine.md` were lost
-(CLAUDE.md's "Commit every memory file" standing rule).
+wide differencing, or a wider measurement window, tight enough to detect the owner's real coaching
+target (0.25–0.50pp) against ordinary drift? **All three runs' full numbers are recorded here** —
+the first run's output previously existed only in a chat thread; that is exactly how
+`cleanup-backlog.md`, `finding-live-intraday-operations-report-data.md`, and
+`project-aag-tiles-reimagine.md` were lost (CLAUDE.md's "Commit every memory file" standing rule).
 
 ## Run 1 — `scripts/measure-coaching-noise-threshold.mjs` (2026-08-12, service-role)
 
@@ -122,6 +122,77 @@ node scripts/measure-district-relative-noise.mjs --min-days 180
 
 Requires `VITE_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (RLS-scoped tables, anon key sees 0
 rows — same constraint as every other `measure-*.mjs` script in this repo).
+
+## Run 3 — window-scaling, FOB components only, 30/60/90/120 days (2026-08-12, service-role)
+
+Different question from Run 2: not "does district-differencing shrink noise" (answered, mostly no)
+but "does idiosyncratic (per-store) noise average down as ordinary independent-noise theory
+predicts, ~1/√n, if the measurement window is simply widened." Scope explicitly FOB-only — labor's
+distribution is provisional until #236's cleanup runs; the 4 FOB components are untouched by that
+bug. `measure-coaching-noise-threshold.mjs` gained a `--window` flag (default 30, unchanged
+behavior) plus a density floor that scales with window (`MIN_OBS = max(20, round(window·20/30))`,
+so a 120-day window isn't allowed to accept a sparser fraction of real observations than the 30-day
+baseline it's compared against — an unscaled floor would let a widening window look tighter partly
+because it tolerates thinner data, a confound this measurement can't afford). `--window 30` was
+re-run first and reproduces Run 1's `fob_total_pct` table exactly, to 3 decimals, confirming the
+flag change didn't alter the un-widened case.
+
+| Component | window=30 p50 | 60 | 90 | 120 | window=30 p95 | 60 | 90 | 120 |
+|---|---|---|---|---|---|---|---|---|
+| fob_total_pct | 0.210 | 0.210 | 0.212 | 0.216 | 1.059 | 1.094 | 1.006 | 0.959 |
+| condiment_pct | 0.071 | 0.069 | 0.059 | 0.055 | 0.344 | 0.293 | 0.224 | 0.198 |
+| raw_waste_pct | 0.052 | 0.060 | 0.070 | 0.078 | 0.241 | 0.256 | 0.255 | 0.272 |
+| comp_waste_pct | 0.017 | 0.021 | 0.024 | 0.026 | 0.084 | 0.105 | 0.107 | 0.116 |
+
+All percentage points. n per window: 22,590/20,970/19,365/17,805 movements (27/27/26/26 stores —
+one store drops below the `--min-days` floor at 90+ days).
+
+**Scaling exponent actually observed** (log-log regression slope of the percentile vs. window size
+across all 4 points; 1/√n theory predicts **−0.500**):
+
+| Component | p50 slope | p95 slope |
+|---|---|---|
+| fob_total_pct | **+0.018** (flat) | −0.072 |
+| condiment_pct | **−0.189** | −0.407 |
+| raw_waste_pct | **+0.291** (rising) | +0.076 |
+| comp_waste_pct | **+0.309** (rising) | +0.223 |
+
+**The hypothesis fails outright, in the specific way the issue asked to have reported plainly.** Not
+one of the four components' p50 comes close to the theoretical −0.5. `fob_total_pct` is flat —
+widening the window from 30 to 120 days buys essentially nothing (0.210pp → 0.216pp, the *wrong*
+direction by a hair). `condiment_pct` is the only component that moves the predicted direction, and
+even it recovers only about a third of the theoretical reduction (−0.189 vs −0.500; 90-day p50 is
+0.059pp, not the ~0.12pp the issue's own stated prediction was testing against). **`raw_waste_pct`
+and `comp_waste_pct` get NOISIER as the window widens** — p50 rises 50%+ from 30 to 120 days. That
+is the opposite of averaging-down, and it is not a fluke of one percentile: p95 rises for both too.
+
+**Why waste and total rise while condiment falls:** independent day-to-day noise averages toward
+zero as a window widens (that's the 1/√n mechanism); a slow-moving trend or level shift does not —
+a wider window just captures more of the shift as "movement." Condiment is tied to a fixed
+recipe/portion standard with comparatively little room to drift, so it behaves closer to the
+independent-noise model. Raw waste and comp waste are closer to inventory-count and shrink/spoilage
+habits, which plausibly drift over a quarter (seasonal product mix, a manager's counting habits
+settling in or slipping, a supplier change) — exactly the kind of signal a wider window makes
+*more* visible, not less. `fob_total_pct` is the sum of both effects and lands roughly where the
+two cancel out: flat.
+
+**This closes the window-scaling path from #237's own contingency ("longer measurement windows, or
+reporting coaching verdicts as a confidence level").** Longer windows do not buy FOB coaching
+verdicts a materially tighter noise floor, and for two of the four components a longer window is
+actively worse. Combined with Run 2 (district-differencing also doesn't help for FOB), FOB
+verdicts stay off (`NOISE_THRESHOLDS` stays `{}`) on this path too — the remaining untested
+contingency is reporting a confidence level rather than a binary real/not-real call.
+
+Labor-side window-scaling remains deferred to after the owner runs #240's cleanup, per the original
+scope split.
+
+### Running it again
+
+```
+set -a; source .env.local; set +a
+node scripts/measure-coaching-noise-threshold.mjs --component fob_total_pct --window 90
+node scripts/measure-coaching-noise-threshold.mjs --component raw_waste_pct --window 120
+```
 
 ## Related
 
