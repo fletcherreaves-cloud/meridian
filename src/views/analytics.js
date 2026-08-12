@@ -23,6 +23,7 @@ import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
+import { CoachingModal } from './coaching-modal.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -5194,7 +5195,9 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
   );
 }
 
-function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectStore, onClose}) {
+function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectStore, onClose, onCoachingSaved}) {
+  // #208 — which coaching cycle a "Log Verdict →" item is following up on.
+  const [reviewCycle, setReviewCycle] = React.useState(null);
   // Part 2 of the Attention Now / Needs Attention merge (issue #115): severity-ranked,
   // expandable store list replaces the old two-column (list + detail-pane) layout.
   const [filter, setFilter] = React.useState('all'); // 'all' | 'critical' | 'watch'
@@ -5301,14 +5304,22 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
 
   const findingRow = (item, i) => {
     const sev = SEV_META[item.severity] || SEV_META.info;
+    // #208 — a coaching-review item's action is "Log Verdict", never "Ack": acknowledging
+    // it would just hide the follow-up without ever measuring whether the coaching worked,
+    // defeating the entire point of the loop.
+    const isCoachingReview = item.kind === 'coaching-review';
     return div({key:item.id||i, style:{marginBottom:6,padding:'8px 12px',
       background:sev.color+'0f',borderRadius:'var(--r)',borderLeft:'3px solid '+sev.color,
       display:'flex',alignItems:'flex-start',gap:8}},
       div({style:{flex:1,minWidth:0}},
         div({style:{fontSize:'10px',fontWeight:700,color:sev.color,marginBottom:3}},item.title||''),
         div({style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.5}},item.detail||'')),
-      btn({className:'btn btn-sm',style:{fontSize:'8px',padding:'3px 7px',flexShrink:0},
-        onClick:()=>ackItem(item),title:'Acknowledge — dismiss until this situation changes'},'✓ Ack')
+      isCoachingReview
+        ? btn({className:'btn btn-sm',style:{fontSize:'8px',padding:'3px 7px',flexShrink:0,color:'var(--amber)'},
+            onClick:()=>setReviewCycle((ds.coachingCycles||[]).find(c=>c.id===item.cycleId)||null),
+            title:'Record the measured follow-up for this coaching cycle'},'🎯 Log Verdict →')
+        : btn({className:'btn btn-sm',style:{fontSize:'8px',padding:'3px 7px',flexShrink:0},
+            onClick:()=>ackItem(item),title:'Acknowledge — dismiss until this situation changes'},'✓ Ack')
     );
   };
 
@@ -5433,7 +5444,13 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
           )
         )
       )
-    )
+    ),
+    // #208 — record the measured follow-up for a coaching cycle whose review came due.
+    reviewCycle && h(CoachingModal, {
+      mode: 'review', cycle: reviewCycle, ds,
+      onClose: () => setReviewCycle(null),
+      onSaved: onCoachingSaved,
+    })
   );
 }
 

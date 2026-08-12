@@ -216,7 +216,7 @@ function ItemsRecountedTile({ onOpenModal }) {
         h('span', null, h('span', { style: { color: '#9aa0aa', fontWeight: 700 } }, diff.noAction || 0), ' no action')))));
 }
 
-function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
+function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRange, onOpenStore, onCoachingSaved, onOpenProjections, onOpenPVSA, onOpenBrief, onNav, onOpenModal}) {
   // #189: extends App.js/shell.js's App-tree/AppSidebar span pattern one level deeper — this is
   // the default landing view, prime suspect for the block neither of those alone could name.
   // Reasoning + how the numbers combine: memory/project-instrument-fix-189.md.
@@ -1543,7 +1543,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // #201 — Patch Heatmap: all 27 stores as a status grid, right at the top of the landing
     // view. h(PatchHeatmap,...) here returns null internally if stores hasn't loaded yet
     // (empty cells array), so no separate loading guard is needed at this call site.
-    h(PatchHeatmap, { ds, stores, dateRange, onOpenStore }),
+    h(PatchHeatmap, { ds, stores, dateRange, onOpenStore, onCoachingSaved }),
 
     // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
     moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({

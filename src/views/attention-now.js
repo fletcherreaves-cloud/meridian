@@ -15,6 +15,7 @@ import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
 import { buildAttentionFeed, mergeWorstSalesLY } from '../engine/attention-feed.js';
+import { dueForReview, toAttentionItem } from '../engine/coaching-loop.js';
 import { loadGradedVisits, loadSavedCorrelations, loadEomCountExceptions, loadEomIntegrityFlags } from '../lib/supabase.js';
 import { recordFireVolume, hydrateFireVolume } from '../engine/insight-ledger-measure.js';
 
@@ -138,10 +139,14 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
     const countExceptionRows = Object.entries(exceptions || {}).map(([loc, e]) => ({ loc, acceptedDate: e.acceptedDate, approvedBy: e.approvedBy }));
     const integrityItems = (integrity || []).map(f => ({ id: `intg-${f.loc}-${f.kind}`, loc: f.loc, severity: f.severity, dollars: f.dollars, title: `${nm(f.loc)} — ${f.title || 'integrity flag'}`, detail: f.detail, nav: 'analytics' }));
     const briefFindings = (stores || []).flatMap(s => s.findings || []);
+    // #208 — coaching-cycle reviews due. dueForReview()+toAttentionItem() (engine/
+    // coaching-loop.js) do all the real work; this hook just supplies ds.coachingCycles and
+    // the store-name lookup, matching every other detector input on this line.
+    const coachingItems = dueForReview(ds?.coachingCycles || []).map(c => toAttentionItem(c, nm));
     // issue #143 — Insight Ledger step 0 instrumentation. Observation only: recordFireVolume
     // never touches what buildAttentionFeed returns, it just writes a day-bucketed count of
     // what fired to a throwaway Supabase blob. See engine/insight-ledger-measure.js.
-    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, storeName: nm, max, onFireVolume: recordFireVolume });
+    return buildAttentionFeed({ fobByStore, targetsByLoc: DEFAULT_TARGETS, salesLY, dtRows, ageDays, visitStores, savedCorrelations: savedCorr || [], countExceptionRows, integrityItems, briefFindings, coachingItems, storeName: nm, max, onFireVolume: recordFireVolume });
   }, [ds, stores, allLocs, dateRange, visitStores, savedCorr, exceptions, integrity, max]);
 }
 

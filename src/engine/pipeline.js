@@ -18,6 +18,7 @@ function buildDS(workbooks){
   const ds={laborRows:[],opsRows:[],ctrlRows:[],weatherRows:[],inventoryRows:[],
     peaksSvcRows:[],peaksSalesRows:[],auditRows:[],fobRows:[],trendsRows:[],
     wasteRows:[],    // qsr_waste — #209 lazy-fill only, never eager (see metric-source.js)
+    coachingCycles:[], // coaching_cycles — #208, eager (small table, see App.js _stCoachingCycles)
     darRows:[],   // Daily Activity Report — hourly OEPE/GC/Sales per store
     pmixData:{},  // Product Mix — item-level sales aggregated by family group
     glimpseRows:[],  // QSRSoft Daily Glimpse — daily per-store snapshot

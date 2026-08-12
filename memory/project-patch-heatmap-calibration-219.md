@@ -1,11 +1,23 @@
-# Patch Heatmap band calibration (#219) — measurement tooling, bands NOT yet changed
+# Patch Heatmap band calibration (#219) — measured, decided, shipped
 
-**Status:** blocked on live data. `scripts/measure-patch-heatmap-bands.mjs` is written and its
-imports verified to resolve in Node, but has never been run — no `SUPABASE_SERVICE_ROLE_KEY` in
-this sandbox (same constraint as `measure-coaching-noise-threshold.mjs` for #208). **The
-`badAt` constants in `src/views/patch-heatmap.js` are unchanged.** Per the issue's own
-instruction — "don't loosen until it looks nice, that's picking by feel twice" — changing them
-without the real distribution would be exactly the mistake the issue is trying to prevent.
+**Status: DONE.** The owner ran `scripts/measure-patch-heatmap-bands.mjs` against live
+production (2026-08-11) and supplied final `badAt` values, corrected for a structural bug the
+script itself didn't flag (see below). `src/views/patch-heatmap.js`'s `storeDimensions()` now
+uses: **Sales 27** (was 15) · **FOB 1.9** (was 3, tighter) · **Labor 8.8** (was 3) · **Speed 73**
+(was 20). Controls stays uncalibrated by design (composite score, out of scope). 9 new tests
+(`src/__tests__/patch-heatmap-bands.test.js`) lock in both the constants and the corrected
+formula together.
+
+## The structural bug the script didn't catch on its own
+
+`bandFromGap(gap, badAt) = 100 * (1 - gap/badAt)`, and `cellStatus()` grades clean at band>=80,
+watch at band>=50. Solving those: **watch fires once gap exceeds `0.2 * badAt`, and critical
+fires once gap exceeds `0.5 * badAt` — not at `badAt` itself.** The original v4.985/986
+constants were picked as if `badAt` WAS the critical line, which is why they were roughly
+2-3.7x too tight across three of the four dimensions. A raw p90-of-over-target reading from the
+measurement script is therefore not directly usable as `badAt` — it has to be DOUBLED first, so
+that the p90 value lands at the `0.5 * badAt` critical boundary where it was actually intended.
+The four shipped constants above are already 2x each dimension's measured over-target p90.
 
 ## The finding that started this
 
@@ -79,18 +91,116 @@ the live-computed score over time. Flagged rather than guessed at or silently sk
 - **Not verified**: never run against real data, so its numeric OUTPUT (the actual percentiles)
   is unknown. This doc does not claim a result — only that the tool is ready to produce one.
 
-## Next step
+## What actually shipped
 
-Someone with `SUPABASE_SERVICE_ROLE_KEY` (the owner, or a future session with real access) runs:
+Owner-supplied final values (already 2x the measured over-target p90, correcting for the
+structural bug above):
 
-```
-node scripts/measure-patch-heatmap-bands.mjs
-```
+| Dimension | Old `badAt` | New `badAt` | Direction |
+|---|---|---|---|
+| Sales | 15 | **27** | loosened ~1.8x |
+| FOB | 3 | **1.9** | tightened — was genuinely loose |
+| Labor | 3 | **8.8** | loosened ~2.9x |
+| Speed | 20 | **73** | loosened ~3.7x — did most of the original damage |
 
-...reads the printed p90/p95 candidates per dimension, updates the 4 `badAt` constants in
-`src/views/patch-heatmap.js`'s `storeDimensions()` to match, and cites the measurement in the
-code comment (matching how `COVER_FRAC` and the swing alarm cite theirs). #220 (patch rollup
-tiles) is blocked behind this landing — the owner explicitly sequenced it that way.
+Expected result on the measured distribution: **~6 critical / 14 watch / 7 clean**, vs the
+original 18/8/1. Not independently re-verified live in this sandbox (no browser/Supabase
+session here) — if the live grid doesn't land near that split, that's a real finding to raise,
+not something to nudge quietly.
 
-If the measured bands still flag close to 26 of 27 once real percentiles are used, that is
-itself a real finding (per the issue's own words) — not a sign the measurement is wrong.
+Code change: `src/views/patch-heatmap.js`'s `storeDimensions()`, with the structural
+band/badAt relationship and the measurement cited directly in the function's own comment
+(matching how `COVER_FRAC` and the swing alarm cite theirs). #220 (patch rollup tiles), which
+was blocked behind this landing, is unblocked.
+
+---
+
+# Patch Heatmap rollup tiles (#220) — shipped v4.993
+
+Sequenced immediately after #219 on the owner's own instruction, in the same file since it's
+the same feature. Owner, on first use of #213: *"It's labeled Patch Heatmap, yet shows all
+locations individually (I like) — but why not include a tile for each patch rolled up as
+well?"*
+
+## The trap, avoided
+
+**Never colour a patch tile by its worst store.** That tile is then just that store again
+wearing a bigger badge — zero new information, and it goes red the moment any single store
+struggles (on the pre-#219 bands, every patch would have been red). The payoff row from the
+issue's own table:
+
+| Pattern | Reading | Who to coach |
+|---|---|---|
+| Store red | one restaurant struggling | the GM |
+| Patch red as a unit | systemic across the patch | the supervisor |
+| Patch green, one store red | isolated | the GM — leave the supervisor alone |
+| Patch red, no single store dominant | process/staffing/coaching style | the supervisor |
+
+That last row is unobtainable from "worst store" — it's only visible once the underlying data
+is genuinely aggregated first.
+
+## How `patchDimensions()` aggregates each dimension
+
+New function in `src/views/patch-heatmap.js`, reusing `bandFromGap()`/`bandColor()` and a
+newly-factored `statusFromDims()` (the same worst-of-N logic `storeDimensions()`'s
+`cellStatus()` already used, now shared by both store and patch tiles):
+
+- **Sales** — sums raw `pSales`/`pLY` dollars across member stores directly. A true
+  dollar-weighted aggregate (no separate weight variable needed — summing $ across stores IS
+  the weighted average).
+- **FOB** — sums `fobRow.sales`/`fobRow.fob` $ directly, same reasoning. The comparison
+  TARGET is also sales-weighted across the same member stores (mirrors `computeFOBMetrics`'
+  own `wTgt` pattern in `analytics.js` — not a new invention).
+- **Labor** — sales-weighted average of each store's `laborPct` and its `resolveLaborTarget`.
+  No raw labor-$ figure survives this far upstream (only the sales-weighted convention
+  `labor-tools.js`'s own district rollup already uses), so this is the best available
+  dollar-adjacent weight, not a literal $-of-labor sum.
+- **Speed (OEPE)** — sales-weighted average of seconds. Honestly a size-proxy, not literal
+  car-weighting — OEPE has no car-count weight anywhere else in this app either
+  (`attention-now.js`'s `dtRows` detector notes the same limitation for its own OEPE
+  aggregation).
+- **Controls** — deliberately EXCLUDED, same reasoning as #219: `ctrlScore` is a composite
+  `computeOpsScore` builds from several inputs, not a raw gap-to-target this function can
+  aggregate honestly without re-deriving that scoring logic per patch. A real follow-up, not
+  solved here.
+
+## Grouping source
+
+`supervisorGroups()` (`src/constants.js`), NOT the frozen `INV_ORG_COORDS[loc].sup` snapshot
+the issue also named as an option. Researched before choosing: `App.js` calls
+`setLiveSupervisorGroups()`/`setLiveAssignments()` on every settings load
+(`memory/project-org-structure.md`), so `supervisorGroups()` is the live, Management-editable
+org chart the rest of the app (EOM Dashboard, Management UI) already treats as canonical.
+`INV_ORG_COORDS.sup` is a frozen hardcoded seed — it matches `supervisorGroups()`'s partition
+today but isn't guaranteed to stay in sync after a reassignment. The inverse loc→patch lookup
+is first-writer-wins, guarding the issue's "don't double-count a store in two patches"
+requirement even though a clean org-chart partition shouldn't produce that in practice.
+
+## UI
+
+A patch row above the store grid — the issue's own suggested layout, since patch and store
+tiles answer genuinely different questions and mixing them in one grid would blur that. Same
+interaction model as store tiles: click to expand, worst dimension named on the tile itself
+(never color alone), gray `?` unknown state when a patch has no dimension with real data.
+Store-membership count shown per patch tile and per dimension detail line (e.g. "(3 stores)")
+so it's visible how many stores actually contributed to a given aggregate. No coaching hook
+added — a supervisor-level "Coach this" is a natural future extension of #208's coaching loop,
+but out of scope for this issue.
+
+## Verification
+
+9 new tests (`src/__tests__/patch-heatmap-rollup.test.js`): every dimension's aggregation
+checked against a hand-computed dollar/sales-weighted answer, using fixtures deliberately
+shaped so a naive per-store average would produce a DIFFERENT (wrong) number — e.g. Sales:
+naive mean of (-10%, 0%) = -5%, correct dollar-weighted answer = -1%. Also covers: Controls
+exclusion, partial-member-set handling (only members with real data contribute, dims stay
+absent when nobody has data), and the core anti-pattern guard directly — a store bad enough to
+be critical on its own bands clean once genuinely aggregated into a much larger healthy patch.
+
+Full suite (1318 tests) + build both pass clean. Entry chunk unchanged — `patch-heatmap.js` is
+lazy via `at-a-glance.js`, so all new code landed in that chunk (108.52→112.54 KB raw,
+29.43→30.11 KB gzip), not the entry chunk.
+
+**Not verified live** — no browser/Supabase session in this sandbox. The owner should confirm
+the patch row groups stores as expected (no supervisor showing an empty or duplicate patch)
+against the real live org chart.

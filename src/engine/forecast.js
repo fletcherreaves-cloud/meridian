@@ -965,8 +965,16 @@ function compute6wk(loc,ds,wb){
   // no-coverage default was also `0`, indistinguishable from a confirmed zero; now `null`, so
   // computeOpsScore's presence check (p.kvsu!=null) can actually tell the two apart — without
   // this, that check would be a no-op (kvsu was never null before, always a number).
+  // eodOf(), not the raw _lastClosed6wk (midnight): rows are stored at NOON (same convention
+  // documented in labor-tools.js's PERIODS sodOf() comment), so a raw midnight upper bound
+  // excludes every row on the last closed business day itself whenever "now" falls in
+  // businessDate()'s own 4-hour offset window (roughly 00:00-04:00 local) — the offset that
+  // decides what "the last closed day" even is can, on that narrow window, compute a boundary
+  // EARLIER in the day than a real noon-stamped row for that same calendar day. Found live via
+  // a test that pins its fixture dates to real wall-clock "now" (forecast.test.js) failing only
+  // during that window — reproduced with node -e against the actual clock, not assumed.
   let kvsuS=0,kvsuC=0;const cut=_range.s;
-  for(const row of opsL){if(row.date<cut||row.date>_lastClosed6wk||row.kvsu==null)continue;kvsuS+=row.kvsu;kvsuC++;}
+  for(const row of opsL){if(row.date<cut||row.date>eodOf(_lastClosed6wk)||row.kvsu==null)continue;kvsuS+=row.kvsu;kvsuC++;}
   r.kvsu=kvsuC?kvsuS/kvsuC:null;
   r.floorCompliance=r.floorMgmtNeeded>0?r.floorHrsSched/r.floorMgmtNeeded:null;
   r.r2pSuspect=r.r2p>0&&r.r2p<60;

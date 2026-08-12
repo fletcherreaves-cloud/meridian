@@ -107,6 +107,17 @@
   flags recent gaps, estimates $ impact landing in Unexplained. "Missing != zero" throughout —
   qsr_waste has no null-vs-zero column. New engine/waste-discipline.js, new
   metric-source.js isLazyFillError() export, surfaced in FOBAnalysisPanel.
+- **⭐ [Coaching feedback loop v1 (#208)](project-coaching-loop-208.md)** — the verify leg,
+  the only genuine differentiator on the table per the owner. New coaching_cycles table
+  (owner needs to run the migration), engine/coaching-loop.js (5 rules enforced
+  structurally: auto-captured baseline, follow-up lands in Needs Attention as a new
+  coaching-review item type, starts from an existing finding, verdict measured via a
+  NOISE_THRESHOLDS map that ships EMPTY per the issue's own v1 fallback — every verdict is
+  null until a future session runs measure-coaching-noise-threshold.mjs). Real correctness
+  fix found while building: that noise-threshold script's FOB math was a mean of daily
+  ratios, not dollar-weighted — fixed to match computeFOBMetrics' own convention. New
+  src/views/coaching-modal.js (start/review), Patch Heatmap FOB/Labor "🎯 Coach" buttons,
+  Needs Attention "🎯 Log Verdict →" action.
 - [Labor gap split (#210)](project-labor-gap-split-210.md) — the diagnose leg. Splits the
   combined actual-vs-needed labor gap into planning accuracy (scheduled-needed, coach the
   scheduler) and execution (actual-scheduled, coach the shift manager). Found and fixed a real
@@ -115,13 +126,23 @@
   always had it. New rollup-table migration (owner needs to run it) + engine/labor-gap-split.js
   (Wed-Tue pay week, signature #4 in-progress-day exclusion, null-vs-fabricated-zero when the
   migration hasn't landed yet). New Labor Tools tab: 🎯 Planning/Execution.
-- **⏳ [Patch Heatmap band calibration (#219)](project-patch-heatmap-calibration-219.md)** —
-  measurement tooling only, `badAt` constants NOT yet changed. Production showed 26/27 flagged
-  vs the dashboard's own 25/27-trusted read — worst-of-N compounding tight, chosen-not-derived
-  cuts. `scripts/measure-patch-heatmap-bands.mjs` covers Sales/FOB/Labor/Speed (Controls is a
-  composite, out of scope, needs in-app instrumentation instead); imports verified to resolve,
-  never run — no live Supabase access in this sandbox. #220 (patch rollup tiles) blocked
-  behind this landing.
+- **⭐ [Over-scheduling is a chaos problem, not a labor-cost problem](finding-overscheduling-is-chaos-not-cost.md)**
+  — first finding Push 3 produced, measured within minutes of #210 going live: 21/27 stores
+  grossly over-schedule (Ada 66% above need), but the district nets to only +9 hrs vs need
+  (matches the Overview tile independently) because over-scheduling and mid-week cutting
+  cancel — invisible on the P&L, real operational chaos the owner had suspected for years.
+  Validates ranking by combined-magnitude (already shipped) and is the first case where
+  "dollarize and sort by $" would be the WRONG instinct — it costs ~nothing but damages the
+  operation. Coach column gate confirmed correct as-is. Open: why schedules run so high is
+  still unknown; turnover_monthly correlation is the next measurable test.
+- **✅ [Patch Heatmap bands + rollup tiles (#219/#220)](project-patch-heatmap-calibration-219.md)**
+  — DONE. #219: owner ran the measurement script against production, found a structural bug
+  (badAt is not the flag line — watch fires at 0.2*badAt, critical at 0.5*badAt), shipped
+  Sales 27 / FOB 1.9 / Labor 8.8 / Speed 73 (was 15/3/3/20). #220: new patch-level rollup row,
+  patchDimensions() aggregates raw dollars/sales FIRST then derives dimensions — never colours
+  by worst store. Grouping via the LIVE supervisorGroups() (constants.js), not the frozen
+  INV_ORG_COORDS.sup snapshot. Controls excluded from both (composite score, correctly out of
+  scope). 18 new tests across both issues.
 
 ## ⚡ Performance
 - [Instrument fix (#189)](project-instrument-fix-189.md) — click-trace's App-tree/AppSidebar
