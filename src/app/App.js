@@ -30,11 +30,17 @@ import { computeSmartTargets, SmartTargetPanel } from '../features/smart-targets
 // labor-tools.js / store-analytics.js are panel-only modules (155 KB + 161 KB of source) and
 // nothing in them is needed to paint the home screen, so they load on first open instead of being
 // parsed at startup. See the lazyPanel note below for why each gets its own Suspense boundary.
-import { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief } from '../features/projections.js';
+// loadLockedProjections/saveLockedProjections/getLockedAmount/lockProjectionWeek were imported
+// here and never called — lockedProjections state (below) has its own useState initializer and
+// its own local saveLockedProjections callback that shadowed this one. ProjectionWorkflow and
+// PreForecastBrief are lazy-loaded below (#232) since both were the only real reason projections.js
+// (and, through it, analytics.js's ForecastAudit/CurrentMonthPaceSection) was statically bundled.
 // ShiftAnalysisTab / ModelComparisonPanel / RegisterAuditTab / StoreRecordsTab were imported here
 // and never rendered — dead imports that pulled all 161 KB of store-analytics.js into the entry
 // chunk for nothing. They are still exported and used inside store-analytics.js itself.
-import { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel } from '../views/analytics.js';
+// #232: analytics.js (316 KB, the single biggest static import left in App.js) is now lazy-loaded
+// below — see the _analytics() group. AIInsightsTab is dropped entirely: it was imported here and
+// never rendered (store-analytics.js is its only real consumer, and it already imports it directly).
 import { readBlobLocal as _readBlobLocal, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { Settings } from '../views/management.js';
 // Lazy panel with stale-chunk recovery: after a new deploy, an open tab's index.html references old
@@ -103,6 +109,42 @@ const RevenueIntelligence = lazyPanel(() => _storeAnalytics().then(m => ({ defau
 const StoreDash           = lazyPanel(() => _storeAnalytics().then(m => ({ default: m.StoreDash })));
 const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ default: m.MultiStoreComparison })));
 
+// #232: analytics.js was the single biggest static import in App.js (316 KB raw) — every one of
+// these is a modal/report panel gated behind its own showX flag, so none of them are needed to
+// paint the home screen. store-dash.js (still static — Finding 3, a future split) used to reach
+// back into analytics.js for ModelHealthBadge, which alone would have re-pinned the whole module
+// here regardless of this group; that one export moved to model-health-badge.js so this split
+// actually holds. AIInsightsTab isn't here — it was imported in App.js and never rendered.
+const _analytics = () => import('../views/analytics.js');
+const MetricCorrelationExplorer = lazyPanel(() => _analytics().then(m => ({ default: m.MetricCorrelationExplorer })));
+const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
+const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
+const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
+const ForecastAccuracyPanel     = lazyPanel(() => _analytics().then(m => ({ default: m.ForecastAccuracyPanel })));
+const AIBacktestScanner         = lazyPanel(() => _analytics().then(m => ({ default: m.AIBacktestScanner })));
+const DialedInPanel             = lazyPanel(() => _analytics().then(m => ({ default: m.DialedInPanel })));
+const DateRangeReport           = lazyPanel(() => _analytics().then(m => ({ default: m.DateRangeReport })));
+const ForecastAudit             = lazyPanel(() => _analytics().then(m => ({ default: m.ForecastAudit })));
+const LocationBrief             = lazyPanel(() => _analytics().then(m => ({ default: m.LocationBrief })));
+const ProjectionVsActualsReport = lazyPanel(() => _analytics().then(m => ({ default: m.ProjectionVsActualsReport })));
+const DialedInComparisonReport  = lazyPanel(() => _analytics().then(m => ({ default: m.DialedInComparisonReport })));
+const DistrictPriorityBrief     = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictPriorityBrief })));
+const AttentionPanel            = lazyPanel(() => _analytics().then(m => ({ default: m.AttentionPanel })));
+const DataManagerPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.DataManagerPanel })));
+const StoreOnePager             = lazyPanel(() => _analytics().then(m => ({ default: m.StoreOnePager })));
+const ChannelIntelligencePanel  = lazyPanel(() => _analytics().then(m => ({ default: m.ChannelIntelligencePanel })));
+const MonthlyProjectionsPanel   = lazyPanel(() => _analytics().then(m => ({ default: m.MonthlyProjectionsPanel })));
+const StoreVlhConfigPanel       = lazyPanel(() => _analytics().then(m => ({ default: m.StoreVlhConfigPanel })));
+
+// #232: projections.js's only two live exports in App.js (ProjectionWorkflow/PreForecastBrief,
+// both gated behind showProj/showProjBriefSA) — its loadLockedProjections/saveLockedProjections/
+// getLockedAmount/lockProjectionWeek exports were dead imports here. Lazy-loading this closes the
+// other static path into analytics.js (ForecastAudit/CurrentMonthPaceSection), which a static
+// projections.js import would otherwise have kept pinning in place no matter what App.js itself did.
+const _projections = () => import('../features/projections.js');
+const ProjectionWorkflow = lazyPanel(() => _projections().then(m => ({ default: m.ProjectionWorkflow })));
+const PreForecastBrief   = lazyPanel(() => _projections().then(m => ({ default: m.PreForecastBrief })));
+
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
@@ -140,7 +182,9 @@ const FormsLibraryPanel = lazyPanel(() => import('../views/forms-library.js').th
 const SignalsPanel = lazyPanel(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })));
 import { SmartTargetsPanel } from '../views/smart-targets.js';
 import { LaborAnalysisPanel } from '../views/labor-analysis.js';
-import { PaceToTargetPanel } from '../views/pace-to-target.js';
+// #232: PaceToTargetPanel's only real weight is CurrentMonthPaceSection (analytics.js) — a
+// static import here was the second path pinning analytics.js in the entry chunk.
+const PaceToTargetPanel = lazyPanel(() => import('../views/pace-to-target.js').then(m => ({ default: m.PaceToTargetPanel })));
 const YearlyProjectionsPanel = lazyPanel(() => import('../views/yearly-projections.js').then(m => ({ default: m.YearlyProjectionsPanel })));
 import { PromoRoiPanel } from '../views/promo-roi.js';
 const VisitReadinessPanel = lazyPanel(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })));
