@@ -2080,7 +2080,19 @@ function App() {
             }
             const _bL=currentDS.laborRows.length,_bF=(currentDS.fobRows||[]).length,_bO=currentDS.opsRows.length,_bC=currentDS.ctrlRows.length,_bPS=(currentDS.peaksSvcRows||[]).length,_bPA=(currentDS.peaksSalesRows||[]).length,_bA=(currentDS.auditRows||[]).length;
             currentDS=mergeDS(currentDS,wb,type,file.name);
-            _freshLaborRows.push(...currentDS.laborRows.slice(_bL));
+            // #236: exclude Sales Ledger's sales-only supplement rows (parseSalesLedger tags them
+            // _salesLedgerSupplement) from what gets pushed to the labor_rows table. They stay in
+            // the in-memory ds.laborRows above (still usable there for DI-calibration sales
+            // continuity), but labor_rows is the Labor Analysis Report's table specifically —
+            // saveLaborRows's upsert (onConflict: loc,report_date) replaces the WHOLE row on
+            // conflict, so a null-labor supplement row saved for a date that already has a real
+            // Labor Analysis row would silently blank out that real percentage, not just avoid a
+            // false zero. supplementLaborWithSched (DAR-based) already covers the "sales when
+            // Labor Report lags" need without ever touching this table, so this filter costs
+            // nothing. Root-cause incident: 994 (store,day) rows across all 27 stores had
+            // labor_pct=0 with sales>0 (2025-01-22..2026-07-23) before this + the parser fix
+            // (labor fields defaulted 0 instead of null) — see memory/project-labor-pct-tail-236.md.
+            _freshLaborRows.push(...currentDS.laborRows.slice(_bL).filter(r=>!r._salesLedgerSupplement));
             _freshFobRows.push(...(currentDS.fobRows||[]).slice(_bF));
             _freshOpsRows.push(...currentDS.opsRows.slice(_bO));
             _freshCtrlRows.push(...currentDS.ctrlRows.slice(_bC));
