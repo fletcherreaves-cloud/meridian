@@ -35,6 +35,28 @@
 // "unknown" (gray ?), never green — the exact failure class the FOB Report false-all-clear
 // fix (v4.976, earlier this session) addressed.
 //
+// ⚠️ #231 — NONE of these 5 dimensions are scoped to At A Glance's page-level date-range
+// selector. This grid does NOT accept a dateRange prop (removed, was accepted-and-dropped —
+// see below). Each dimension is a FIXED rolling-window "how healthy is this store RIGHT NOW"
+// read, on its own window, always relative to "now"/lastClosedBusinessDay():
+//   Sales             — matched-day, trailing 28 days (pipeline.js buildStore's cut4/now4)
+//   FOB               — latest snapshot only (fobByStoreLatest below), not a window at all
+//   Labor/Speed/Ctrl  — pipeline.js buildStore's compute6wk(), trailing settings.weeksBack
+//                       weeks (default 6) — the same rolling window StoreCard/RankingView use
+// This is deliberate, not an oversight: per the design above, this grid answers "how is this
+// store doing overall," an absolute rolling-health question — not "how did this store do in
+// the period I picked," a different question the page's date-range selector answers for
+// OTHER panels. Measured 2026-08-12 (owner-reported, #231): a component here previously
+// destructured a `dateRange` prop and never referenced it again in the file — at-a-glance.js
+// passed it faithfully, the grid silently dropped it, and an 8-day window vs a 32-day window
+// produced byte-identical output on every store, because `stores` (built once per data-load
+// via pipeline.js's buildStore/compute6wk) was never a function of the page's selector to
+// begin with. The fix is not to wire it through — that would mean re-parameterizing
+// buildStore/compute6wk's core pipeline (dozens of other consumers) for a widget whose own
+// design intent was never period-comparison — the fix is to stop implying it responds to a
+// control it never could. See the subtitle text below and the 4 empty-state strings, all of
+// which used to falsely claim period-scoping in their copy.
+//
 // No charting library (CSS grid + colored cells), no animation (owner declined it —
 // draws the eye to what is live rather than what is important), colorblind-safe (color
 // is always paired with a glyph and the dimension's name, never color alone).
@@ -195,7 +217,7 @@ export function patchDimensions(members) { // members: [{store, fobRow}]
   return dims;
 }
 
-export function PatchHeatmap({ ds, stores, dateRange, onOpenStore, onCoachingSaved }) {
+export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved }) {
   const { useMemo, useState } = React;
   const [selected, setSelected] = useState(null); // loc of the expanded detail cell
   const [selectedPatch, setSelectedPatch] = useState(null); // #220 — expanded patch tile
@@ -254,7 +276,7 @@ export function PatchHeatmap({ ds, stores, dateRange, onOpenStore, onCoachingSav
   return div({ style: { background: 'var(--surf)', borderBottom: '.5px solid var(--bdr)', padding: '10px 24px 12px', flexShrink: 0 } },
     div({ style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' } },
       span({ style: { fontSize: '11px', fontWeight: 800, color: 'var(--text)' } }, '🗺 Patch Heatmap'),
-      span({ style: { fontSize: '8.5px', color: 'var(--text3)' } }, 'worst dimension vs each store\'s own targets · click a store or patch for why'),
+      span({ style: { fontSize: '8.5px', color: 'var(--text3)' } }, 'worst dimension vs each store\'s own targets, rolling ~4-6wk window (not the date range above) · click a store or patch for why'),
       div({ style: { display: 'flex', gap: 8, marginLeft: 'auto', fontSize: '8.5px', color: 'var(--text3)' } },
         countsByStatus.crit ? span({ style: { color: CRIT_COLOR } }, '! ' + countsByStatus.crit + ' critical') : null,
         countsByStatus.warn ? span({ style: { color: WATCH_COLOR } }, '• ' + countsByStatus.warn + ' watch') : null,
@@ -269,7 +291,7 @@ export function PatchHeatmap({ ds, stores, dateRange, onOpenStore, onCoachingSav
       ...patches.map(p => div({
         key: p.patch,
         onClick: () => setSelectedPatch(sel => sel === p.patch ? null : p.patch),
-        title: p.status.key === 'unknown' ? 'No data this period' : p.status.label ? `Worst: ${p.status.label}` : 'All dimensions healthy',
+        title: p.status.key === 'unknown' ? 'No data available' : p.status.label ? `Worst: ${p.status.label}` : 'All dimensions healthy',
         style: {
           cursor: 'pointer', borderRadius: 6, padding: '7px 10px', fontSize: '9.5px', minWidth: 130,
           background: p.status.key === 'clean' ? 'rgba(52,211,153,.08)' : p.status.key === 'unknown' ? 'rgba(148,163,184,.06)' : p.status.color + '18',
@@ -302,13 +324,13 @@ export function PatchHeatmap({ ds, stores, dateRange, onOpenStore, onCoachingSav
             .map(d => div({ key: d.label, style: { display: 'flex', gap: 6, alignItems: 'baseline' } },
               span({ style: { color: bandColor(d.band), fontWeight: 700, fontSize: '9px', minWidth: 44 } }, d.label),
               span({ style: { color: 'var(--text2)' } }, d.detail))))
-        : div({ style: { color: 'var(--text3)' } }, 'No auto/emailed data landed for this patch in the selected period.')
+        : div({ style: { color: 'var(--text3)' } }, 'No auto/emailed data landed for this patch yet.')
     ),
     div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 5 } },
       ...cells.map(c => div({
         key: c.loc,
         onClick: () => setSelected(sel => sel === c.loc ? null : c.loc),
-        title: c.status.key === 'unknown' ? 'No data this period' : c.status.label ? `Worst: ${c.status.label}` : 'All dimensions healthy',
+        title: c.status.key === 'unknown' ? 'No data available' : c.status.label ? `Worst: ${c.status.label}` : 'All dimensions healthy',
         style: {
           cursor: 'pointer', borderRadius: 5, padding: '6px 7px', fontSize: '9.5px',
           background: c.status.key === 'clean' ? 'rgba(52,211,153,.08)' : c.status.key === 'unknown' ? 'rgba(148,163,184,.06)' : c.status.color + '18',
@@ -350,7 +372,7 @@ export function PatchHeatmap({ ds, stores, dateRange, onOpenStore, onCoachingSav
                 title: 'Start a coaching cycle for this store + metric (#208)',
                 style: { fontSize: '8px', padding: '1px 6px', borderRadius: 3, background: 'transparent', color: 'var(--text3)', border: '.5px solid var(--bdr)', cursor: 'pointer', flexShrink: 0 },
               }, '🎯 Coach'))))
-        : div({ style: { color: 'var(--text3)' } }, 'No auto/emailed data landed for this store in the selected period.')
+        : div({ style: { color: 'var(--text3)' } }, 'No auto/emailed data landed for this store yet.')
     ),
     coachTarget && h(CoachingModal, {
       mode: 'start', loc: coachTarget.loc, metricKey: coachTarget.metricKey, ds,
