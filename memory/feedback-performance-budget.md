@@ -78,6 +78,38 @@ have missed anything for it to reach that.
 - **Suspect the bundle before suspecting the handler.** On Notes 61 the obvious suspect
   was the `visibilitychange` refresh; reading it showed it was already well guarded, and
   the real cause of all three reported symptoms was one number — parse cost.
+- **Measure both sides of a before/after in the same session, on the same tree — never mix
+  measurement sessions.** #230's own commit measured its "before" number by stashing the
+  change and rebuilding on what was believed to be a clean `origin/main` checkout, but that
+  checkout wasn't re-verified against a fresh, controlled back-to-back run — the number that
+  shipped (820.18 KB → 721.82 KB, −98.36 KB) was off by ~2 KB on both ends from the owner's
+  own back-to-back measurement on the real tree (818.02 KB → 721.87 KB, **−96.15 KB**,
+  headroom 31.98 KB → 128.13 KB). Neither side's arithmetic was wrong — the baseline
+  itself was measured in a different session than the after-number, which is exactly
+  the failure mode this whole rule exists to prevent. Notably, the wrong delta (−98.36)
+  landed suspiciously close to the isolated-98 KB figure the commit's own text explicitly
+  warned not to quote — a coincidence worth treating as a red flag, not a confirmation,
+  next time a "measured" delta lands suspiciously close to a number you already had in
+  your head before measuring.
+
+## Realization-ratio calibration (measured, 2026-08-12) — prose vs. code
+
+**Prose and code compress very differently — size future wins by which one you're removing.**
+
+| Change | Raw removed | Gzip realized | Ratio (gzip/raw) |
+|---|---|---|---|
+| #230 (MERIDIAN_CHANGELOG, prose) | ~257 KB | 96.15 KB | **0.373** |
+| #207 batch 1 (code) | — | — | 0.0755 |
+| #207 batch 2 (code) | — | — | 0.0566 |
+
+Repetitive natural-language prose (the changelog array) realizes gzip savings at roughly
+**5–6× the rate of removing code** from the entry chunk, because a large uniform prose blob
+dominates the chunk's shared gzip dictionary far more than an equivalent amount of denser,
+more-varied JS. **Do not budget a future code-only lazy-load win using #230's ratio** — size
+it at the low end (0.057–0.076) instead. Concretely: #232's remaining candidates (~488 KB raw
+of statically-imported panels + 195 KB of Chart.js) will NOT produce another ~96 KB win at
+#230's ratio — expect roughly 28–37 KB at the code-realistic ratio. Still worth doing; just
+don't sell it as "another #230."
 
 ---
 
