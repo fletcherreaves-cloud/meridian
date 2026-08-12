@@ -20,7 +20,7 @@ import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
 import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
 import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
-import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
 import { CoachingModal } from './coaching-modal.js';
@@ -2904,9 +2904,11 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   const [showAllLocs,setShowAllLocs]=React.useState(false);
 
   // ── Cloud-first FOB source (Note 9) — qsr_fob auto stream. Provides the 6
-  // controllable components + FOB% + Base Food% + Discounts% exactly (same math as
-  // the At-A-Glance / EOM dashboard: Σ$ ÷ Σsales). Total Food Cost % is NOT in this
-  // feed, so cloud rows carry pLFoodPct=null and fall back to the Ops Report upload.
+  // controllable components + FOB% + Base Food% + Discounts% + Total Food Cost %
+  // exactly (same math as the At-A-Glance / EOM dashboard: Σ$ ÷ Σsales). #222: Total
+  // Food Cost % used to be hardcoded null here with a comment claiming the feed didn't
+  // carry it — it does (the six pnl_food_cost_* columns), computed below via the SAME
+  // pLFoodCostFromRow() helper fobSnapshotByStore uses, so the two can't drift.
   const [qsrFobRows,setQsrFobRows]=React.useState(null); // null=loading
   const [qsrFobErr,setQsrFobErr]=React.useState(null);
   React.useEffect(()=>{let live=true;loadQsrFob().then(r=>{if(live){setQsrFobRows(r||[]);setQsrFobErr(null);}}).catch(e=>{
@@ -2944,7 +2946,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     return {loc:String(r.loc).replace(/^0+/,'')||String(r.loc),date:new Date(dstr+'T00:00:00'),sales,
       compWaste:comp/sales,rawWaste:raw/sales,condiment:cond/sales,empMeal:emp/sales,statVar:statv/sales,unexplained:unex/sales,
       fobPct:(comp+raw+cond+emp+statv+unex)/sales,baseFoodPct:(+r.totalBaseFood||0)/sales,discCoupon:(+r.discountCouponsAmt||0)/sales,
-      pLFoodPct:null,_cloud:true};
+      pLFoodPct:pLFoodCostFromRow(r,sales).pLFoodPct,_cloud:true};
   }).filter(Boolean),[qsrFobRows]);
   // Effective rows: cloud-first, with Total Food Cost % backfilled from a matching
   // Ops-Report upload (same loc+month), and manual rows kept as fallback fill where
@@ -7337,6 +7339,16 @@ function computeMonthActuals(ds, year, month) {
     const s = r.sales || 0;
     manualFob[k].sales += s;
     manualFob[k].baseFoodDol += (r.baseFoodPct || 0) * s;
+    // #222 "check while in there": `|| 0` looks like it could silently zero-fill a
+    // missing P&L figure into the denominator. Measured, not assumed: it can't — the
+    // Ops Report parser (parsers/index.js) already coerces a missing "P & L Food Cost %"
+    // column to 0 at ingestion (parseFloat(...)||0, not ||null like salesVsLY gets), so
+    // r.pLFoodPct on a manual row is never actually null by the time it reaches here;
+    // this `|| 0` is dead code against today's data path, not a live bug. The real gap —
+    // "missing" and "genuinely reported 0%" are indistinguishable once parsed — lives
+    // upstream in that parser default and would need its own decision (it affects every
+    // other manual pLFoodPct reader too, e.g. store-dash.js/labor-tools.js), not a
+    // one-line fix bundled into this issue.
     manualFob[k].totalFoodDol += (r.pLFoodPct || 0) * s;
   });
   // Auto qsr_fob fallback — the same dollar-weighted MTD-snapshot read used everywhere

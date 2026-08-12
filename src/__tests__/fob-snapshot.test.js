@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 
 // The FOB 30× guard: qsr_fob has ~30 daily rows per store, each a period-to-date snapshot. The
 // period figure MUST be the latest row, never the sum (summing = 30× while FOB% survives).
@@ -45,5 +45,40 @@ describe('fobSnapshotByStore — latest snapshot, never a 30× sum', () => {
     const r = fobSnapshotByStore(rows, '2026-07')['3708'];
     expect(r.pLFoodCost).toBe(84252);
     expect(r.pLFoodPct).toBeCloseTo(84252 / 307503, 6);
+  });
+});
+
+// #222 — FOB Analysis's Total Food Cost tile read "needs Ops Report" on cloud-only data
+// because analytics.js's FOBAnalysisPanel hardcoded pLFoodPct:null for every qsr_fob row
+// instead of deriving it, even though the six pnl_food_cost_* fields were already loaded.
+// pLFoodCostFromRow is the extracted, single-source formula both fobSnapshotByStore (above)
+// and that panel's per-date cloud mapping now call — this guards the formula itself so a
+// future edit to one caller can't silently diverge from the other.
+describe('pLFoodCostFromRow — the #222 shared formula', () => {
+  it('computes pLFoodCost/pLFoodPct from the six pnl_food_cost_* fields on a single row', () => {
+    const row = { pnlFoodCostBegin: 10000, pnlFoodCostPurchases: 84252, pnlFoodCostAdjustments: 0,
+      pnlFoodCostTransfers: 0, pnlFoodCostPromotions: 0, pnlFoodCostEnd: 10000 };
+    const r = pLFoodCostFromRow(row, 307503);
+    expect(r.pLFoodCost).toBe(84252);
+    expect(r.pLFoodPct).toBeCloseTo(84252 / 307503, 6);
+  });
+  it('missing pnl fields default to 0, same as the FOB $ build-up above — not a fabricated result', () => {
+    const r = pLFoodCostFromRow({}, 100000);
+    expect(r.pLFoodCost).toBe(0);
+    expect(r.pLFoodPct).toBe(0);
+  });
+  it('sales:0 returns pLFoodPct:null (never a divide-by-zero or a false 0%) — same sales?x/sales:null guard fobPct already uses', () => {
+    const row = { pnlFoodCostBegin: 10000, pnlFoodCostPurchases: 5000 };
+    expect(pLFoodCostFromRow(row, 0).pLFoodPct).toBeNull();
+  });
+  it('a qsr_fob row with real P&L fields no longer produces the #222 null — this is the regression guard', () => {
+    // Shaped exactly like loadQsrFob()'s mapped row (src/lib/supabase.js) — the same
+    // object FOBAnalysisPanel's cloudFobRows .map() receives as `r`.
+    const cloudRow = { loc: '0003708', date: '2026-08-01', prodSalesAmt: 12000,
+      pnlFoodCostBegin: 1000, pnlFoodCostPurchases: 3200, pnlFoodCostAdjustments: 0,
+      pnlFoodCostTransfers: 0, pnlFoodCostPromotions: 0, pnlFoodCostEnd: 900 };
+    const { pLFoodPct } = pLFoodCostFromRow(cloudRow, +cloudRow.prodSalesAmt);
+    expect(pLFoodPct).not.toBeNull();
+    expect(pLFoodPct).toBeCloseTo((1000 + 3200 - 900) / 12000, 6);
   });
 });
