@@ -25,6 +25,7 @@
 //   node scripts/measure-coaching-noise-threshold.mjs                 # all 5 components, all 27 stores
 //   node scripts/measure-coaching-noise-threshold.mjs --component labor_pct
 //   node scripts/measure-coaching-noise-threshold.mjs --min-days 180  # require this much history per store (default 120)
+//   node scripts/measure-coaching-noise-threshold.mjs --window 90     # movement window in days (default 30, #208's own framing)
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (labor_rows/qsr_fob are RLS-scoped;
 // the anon key this environment has does not see rows — confirmed live, same constraint documented
@@ -38,8 +39,8 @@ if (!URL || !KEY) { console.error('Missing VITE_SUPABASE_URL or SUPABASE_SERVICE
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
 
 const ONLY = (() => { const i = process.argv.indexOf('--component'); return i >= 0 ? process.argv[i + 1] : null; })();
-const MIN_DAYS = (() => { const i = process.argv.indexOf('--min-days'); return i >= 0 && process.argv[i + 1] ? +process.argv[i + 1] : 120; })();
-const WINDOW = 30; // #208's own "30-day movements" framing
+const WINDOW = (() => { const i = process.argv.indexOf('--window'); return i >= 0 && process.argv[i + 1] ? +process.argv[i + 1] : 30; })(); // #208's own "30-day movements" framing; #237 item 2 re-runs this at 60/90/120 to test whether noise averages down as ~1/sqrt(n)
+const MIN_DAYS = (() => { const i = process.argv.indexOf('--min-days'); return i >= 0 && process.argv[i + 1] ? +process.argv[i + 1] : Math.max(120, WINDOW * 2); })();
 
 async function fetchAllPaged(table, select) {
   const out = [];
@@ -83,10 +84,15 @@ function rollingMovements(rows, valueKey, dateKey = 'date', locKey = 'loc', weig
   for (const [loc, series] of Object.entries(byLoc)) {
     series.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
     if (series.length < MIN_DAYS) continue;
+    // Density floor scales with WINDOW (originally a fixed 20/30 = 67% for the 30-day case) so a
+    // 90 or 120-day window doesn't accept a sparser fraction of real observations than the 30-day
+    // baseline it's being compared against — otherwise a widening window would look tighter partly
+    // because it tolerates thinner data, not because idiosyncratic noise actually averages down.
+    const MIN_OBS = Math.max(20, Math.round(WINDOW * 20 / 30));
     const trailing30 = (endIdx) => {
       const start = Math.max(0, endIdx - WINDOW + 1);
       const slice = series.slice(start, endIdx + 1);
-      if (slice.length < 20) return null;
+      if (slice.length < MIN_OBS) return null;
       if (!weightKey) return slice.reduce((a, r) => a + r.value, 0) / slice.length;
       const wSum = slice.reduce((a, r) => a + r.weight, 0);
       return wSum > 0 ? slice.reduce((a, r) => a + r.value * r.weight, 0) / wSum : null;
@@ -115,7 +121,7 @@ function report(label, unit, moves) {
   const stores = new Set(moves.map(m => m.loc)).size;
   const scale = unit === 'pp' ? 100 : 1;
   console.log(`\n── ${label} (${unit === 'pp' ? 'percentage points' : unit}) ──────────────────────────`);
-  console.log(`  ${moves.length} 30-day movements across ${stores} stores`);
+  console.log(`  ${moves.length} ${WINDOW}-day movements across ${stores} stores`);
   for (const p of [0.50, 0.75, 0.90, 0.95, 0.99]) {
     console.log(`  p${Math.round(p * 100)}: ${(percentile(abs, p) * scale).toFixed(3)}${unit === 'pp' ? 'pp' : ''}`);
   }
