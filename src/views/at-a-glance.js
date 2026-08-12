@@ -1475,8 +1475,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,stores,settings,userEvents]);
 
   // ── RENDER ────────────────────────────────────────────────────
-  return div({style:{display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'},
-    onScroll:handleAAGScroll},
+  // #225: was overflowY:'auto' with onScroll here AND flex:1/overflowY:'auto' on the
+  // scroll region below — nested scrollers, and this outer one had no actual content
+  // of its own to scroll (everything but the header was pinned flexShrink:0 above the
+  // real scroller). Outer is now hidden; the scroll listener lives on the one real
+  // scroller below, and the six pinned blocks (heatmap/movers/checklist/section-config/
+  // Loaded Data) moved inside it as normal flow so a phone viewport has somewhere to go.
+  return div({style:{display:'flex',flexDirection:'column',height:'100%',overflowY:'hidden'}},
 
     // ── WELCOME HEADER ─────────────────────────────────────────
     div({style:{background:'linear-gradient(135deg,#090e18 0%,rgba(10,18,40,.98) 100%)',
@@ -1540,148 +1545,155 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       )
     ),
 
-    // #201 — Patch Heatmap: all 27 stores as a status grid, right at the top of the landing
-    // view. h(PatchHeatmap,...) here returns null internally if stores hasn't loaded yet
-    // (empty cells array), so no separate loading guard is needed at this call site.
-    h(PatchHeatmap, { ds, stores, dateRange, onOpenStore, onCoachingSaved }),
+    // #225: the single scroll region. Everything below the pinned greeting header —
+    // heatmap, movers, action checklist, section config, Loaded Data — is normal
+    // flow content inside here now, not pinned flexShrink:0 siblings above it. The
+    // scroll listener lives here too, since this is the only element that scrolls.
+    div({style:{flex:1,overflowY:'auto',padding:'12px 24px'},onScroll:handleAAGScroll},
 
-    // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
-    moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
-      style:{background:'linear-gradient(90deg,rgba(245,188,0,.06),transparent)',
-        borderBottom:'.5px solid var(--bdr)',padding:'7px 24px',flexShrink:0,
-        display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',fontSize:'11px'}},
-      span({style:{fontWeight:700,color:'var(--amber)',whiteSpace:'nowrap'}},'📊 Today’s Movers'),
-      span({style:{fontSize:'8px',color:'var(--text3)',whiteSpace:'nowrap'}},
-        'sales & DT speed · as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
-      (moversStrip.up.length||moversStrip.down.length)&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Sales vs LY'),
-      ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
-        '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(2)+'%')),
-      ...moversStrip.down.map((r,i)=>span({key:'d'+i,style:{color:'#f87171',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
-        '▼ '+(STORE_NAMES[r.loc]||r.loc)+' '+r.salesVsLYPct.toFixed(2)+'%')),
-      moversStrip.slowDT.length&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Slowest DT'),
-      ...moversStrip.slowDT.map((r,i)=>span({key:'dt'+i,style:{color:'var(--text2)',whiteSpace:'nowrap'},title:'Average drive-thru until-serve time today'},
-        '🚗 '+(STORE_NAMES[r.loc]||r.loc)+' '+Math.round(r.dt)+'s')),
-      moversStrip.total>0&&span({style:{color:'var(--text3)',whiteSpace:'nowrap',marginLeft:'auto'},title:'Stores with net sales below last year today'},
-        moversStrip.behind+' of '+moversStrip.total+' stores behind LY')
-    ),
+      // #201 — Patch Heatmap: all 27 stores as a status grid, right at the top of the landing
+      // view. h(PatchHeatmap,...) here returns null internally if stores hasn't loaded yet
+      // (empty cells array), so no separate loading guard is needed at this call site.
+      h(PatchHeatmap, { ds, stores, dateRange, onOpenStore, onCoachingSaved }),
 
-    // ── ACTION CHECKLIST ───────────────────────────────────────
-    div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
-      padding:'6px 24px',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'flex-end',gap:6}},
-      archivedCl.length>0&&btn({style:{fontSize:'9px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'},
-        onClick:()=>setShowArchive(!showArchive)},
-        (showArchive?'Hide':'Show')+' archive ('+archivedCl.length+')'),
-      btn({style:{fontSize:'10px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer',
-        padding:'2px 6px',borderRadius:3,border:'.5px solid var(--bdr)'},
-        onClick:()=>setShowSecCfg(!showSecCfg)},'Sections ☰')
-    ),
+      // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
+      moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
+        style:{background:'linear-gradient(90deg,rgba(245,188,0,.06),transparent)',
+          borderBottom:'.5px solid var(--bdr)',padding:'7px 24px',
+          display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',fontSize:'11px'}},
+        span({style:{fontWeight:700,color:'var(--amber)',whiteSpace:'nowrap'}},'📊 Today’s Movers'),
+        span({style:{fontSize:'8px',color:'var(--text3)',whiteSpace:'nowrap'}},
+          'sales & DT speed · as of '+moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+        (moversStrip.up.length||moversStrip.down.length)&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Sales vs LY'),
+        ...moversStrip.up.map((r,i)=>span({key:'u'+i,style:{color:'#10b981',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
+          '▲ '+(STORE_NAMES[r.loc]||r.loc)+' '+(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(2)+'%')),
+        ...moversStrip.down.map((r,i)=>span({key:'d'+i,style:{color:'#f87171',whiteSpace:'nowrap',fontWeight:600},title:'Net sales vs last year'},
+          '▼ '+(STORE_NAMES[r.loc]||r.loc)+' '+r.salesVsLYPct.toFixed(2)+'%')),
+        moversStrip.slowDT.length&&span({style:{fontSize:'8px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.3px',whiteSpace:'nowrap'}},'Slowest DT'),
+        ...moversStrip.slowDT.map((r,i)=>span({key:'dt'+i,style:{color:'var(--text2)',whiteSpace:'nowrap'},title:'Average drive-thru until-serve time today'},
+          '🚗 '+(STORE_NAMES[r.loc]||r.loc)+' '+Math.round(r.dt)+'s')),
+        moversStrip.total>0&&span({style:{color:'var(--text3)',whiteSpace:'nowrap',marginLeft:'auto'},title:'Stores with net sales below last year today'},
+          moversStrip.behind+' of '+moversStrip.total+' stores behind LY')
+      ),
 
-    allActiveItems.length>0&&div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
-      padding:'10px 24px',flexShrink:0}},
-      div({style:{fontSize:'11px',fontWeight:700,color:'var(--amber)',marginBottom:6}},
-        '📋 Action Checklist ('+allActiveItems.length+' active)'),
-      div({style:{display:'flex',flexDirection:'column',gap:4}},
-        allActiveItems.map(item=>
-          div({key:item.id,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 8px',
-            borderRadius:5,background:item.priority==='high'?'rgba(248,113,113,.08)':
-              item.priority==='medium'?'rgba(245,158,11,.08)':'rgba(255,255,255,.04)',
-            border:'.5px solid '+(item.priority==='high'?'rgba(248,113,113,.2)':
-              item.priority==='medium'?'rgba(245,158,11,.2)':'rgba(255,255,255,.08)')}},
-            btn({style:{flexShrink:0,width:16,height:16,borderRadius:3,
-              border:'.5px solid var(--bdr)',background:'transparent',cursor:'pointer',
-              display:'flex',alignItems:'center',justifyContent:'center',marginTop:1},
-              onClick:()=>archiveItem(item.id)},''),
-            div({style:{flex:1,minWidth:0}},
-              div({style:{fontSize:'10px',fontWeight:500,color:'var(--text)'}},item.text),
-              item.detail&&div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2,wordBreak:'break-all'}},item.detail)
-            ),
-            span({style:{fontSize:'8px',color:item.priority==='high'?'#f87171':'#f59e0b',flexShrink:0,marginTop:2}},
-              item.priority==='high'?'●':item.priority==='medium'?'◑':'')
+      // ── ACTION CHECKLIST ───────────────────────────────────────
+      div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
+        padding:'6px 24px',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:6}},
+        archivedCl.length>0&&btn({style:{fontSize:'9px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'},
+          onClick:()=>setShowArchive(!showArchive)},
+          (showArchive?'Hide':'Show')+' archive ('+archivedCl.length+')'),
+        btn({style:{fontSize:'10px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer',
+          padding:'2px 6px',borderRadius:3,border:'.5px solid var(--bdr)'},
+          onClick:()=>setShowSecCfg(!showSecCfg)},'Sections ☰')
+      ),
+
+      allActiveItems.length>0&&div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
+        padding:'10px 24px'}},
+        div({style:{fontSize:'11px',fontWeight:700,color:'var(--amber)',marginBottom:6}},
+          '📋 Action Checklist ('+allActiveItems.length+' active)'),
+        div({style:{display:'flex',flexDirection:'column',gap:4}},
+          allActiveItems.map(item=>
+            div({key:item.id,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 8px',
+              borderRadius:5,background:item.priority==='high'?'rgba(248,113,113,.08)':
+                item.priority==='medium'?'rgba(245,158,11,.08)':'rgba(255,255,255,.04)',
+              border:'.5px solid '+(item.priority==='high'?'rgba(248,113,113,.2)':
+                item.priority==='medium'?'rgba(245,158,11,.2)':'rgba(255,255,255,.08)')}},
+              btn({style:{flexShrink:0,width:16,height:16,borderRadius:3,
+                border:'.5px solid var(--bdr)',background:'transparent',cursor:'pointer',
+                display:'flex',alignItems:'center',justifyContent:'center',marginTop:1},
+                onClick:()=>archiveItem(item.id)},''),
+              div({style:{flex:1,minWidth:0}},
+                div({style:{fontSize:'10px',fontWeight:500,color:'var(--text)'}},item.text),
+                item.detail&&div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2,wordBreak:'break-all'}},item.detail)
+              ),
+              span({style:{fontSize:'8px',color:item.priority==='high'?'#f87171':'#f59e0b',flexShrink:0,marginTop:2}},
+                item.priority==='high'?'●':item.priority==='medium'?'◑':'')
+            )
+          )
+        ),
+        showArchive&&archivedCl.length>0&&div({style:{marginTop:8,borderTop:'.5px solid var(--bdr)',paddingTop:8}},
+          div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',marginBottom:4}},'ARCHIVED'),
+          archivedCl.map(item=>
+            div({key:item.id,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 6px',opacity:.6}},
+              div({style:{flex:1,fontSize:'9px',color:'var(--text3)',textDecoration:'line-through'}},item.text),
+              btn({style:{fontSize:'9px',color:'var(--amber)',background:'none',border:'none',cursor:'pointer'},
+                onClick:()=>restoreItem(item.id)},'Restore'),
+              btn({style:{fontSize:'9px',color:'#f87171',background:'none',border:'none',cursor:'pointer'},
+                onClick:()=>deleteItem(item.id)},'✕')
+            )
           )
         )
       ),
-      showArchive&&archivedCl.length>0&&div({style:{marginTop:8,borderTop:'.5px solid var(--bdr)',paddingTop:8}},
-        div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',marginBottom:4}},'ARCHIVED'),
-        archivedCl.map(item=>
-          div({key:item.id,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 6px',opacity:.6}},
-            div({style:{flex:1,fontSize:'9px',color:'var(--text3)',textDecoration:'line-through'}},item.text),
-            btn({style:{fontSize:'9px',color:'var(--amber)',background:'none',border:'none',cursor:'pointer'},
-              onClick:()=>restoreItem(item.id)},'Restore'),
-            btn({style:{fontSize:'9px',color:'#f87171',background:'none',border:'none',cursor:'pointer'},
-              onClick:()=>deleteItem(item.id)},'✕')
+
+      // ── SECTION CONFIG PANEL ──────────────────────────────────
+      showSecCfg&&div({style:{background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',
+        padding:'10px 24px'}},
+        div({style:{fontSize:'11px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'⚙ Configure KPI Sections'),
+        div({style:{display:'flex',flexWrap:'wrap',gap:6}},
+          secs.map((s,i)=>
+            div({key:s.id,style:{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',
+              borderRadius:5,background:s.on?'rgba(245,158,11,.12)':'rgba(255,255,255,.04)',
+              border:'.5px solid '+(s.on?'rgba(245,158,11,.3)':'var(--bdr)')}},
+              btn({style:{fontSize:'9px',background:'none',border:'none',cursor:'pointer',color:'var(--text3)'},
+                onClick:()=>moveSec(s.id,-1),disabled:i===0},'↑'),
+              btn({style:{fontSize:'9px',background:'none',border:'none',cursor:'pointer',color:'var(--text3)'},
+                onClick:()=>moveSec(s.id,1),disabled:i===secs.length-1},'↓'),
+              span({style:{fontSize:'12px'}},s.icon),
+              span({style:{fontSize:'10px',color:s.on?'var(--amber)':'var(--text3)'}},s.label),
+              btn({style:{fontSize:'9px',padding:'1px 6px',borderRadius:3,cursor:'pointer',
+                background:s.on?'var(--amber)':'rgba(255,255,255,.08)',
+                color:s.on?'var(--navy)':'var(--text3)',border:'none'},
+                onClick:()=>toggleSec(s.id)},s.on?'On':'Off')
+            )
           )
         )
-      )
-    ),
+      ),
 
-    // ── SECTION CONFIG PANEL ──────────────────────────────────
-    showSecCfg&&div({style:{background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',
-      padding:'10px 24px',flexShrink:0}},
-      div({style:{fontSize:'11px',fontWeight:700,color:'var(--amber)',marginBottom:8}},'⚙ Configure KPI Sections'),
-      div({style:{display:'flex',flexWrap:'wrap',gap:6}},
-        secs.map((s,i)=>
-          div({key:s.id,style:{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',
-            borderRadius:5,background:s.on?'rgba(245,158,11,.12)':'rgba(255,255,255,.04)',
-            border:'.5px solid '+(s.on?'rgba(245,158,11,.3)':'var(--bdr)')}},
-            btn({style:{fontSize:'9px',background:'none',border:'none',cursor:'pointer',color:'var(--text3)'},
-              onClick:()=>moveSec(s.id,-1),disabled:i===0},'↑'),
-            btn({style:{fontSize:'9px',background:'none',border:'none',cursor:'pointer',color:'var(--text3)'},
-              onClick:()=>moveSec(s.id,1),disabled:i===secs.length-1},'↓'),
-            span({style:{fontSize:'12px'}},s.icon),
-            span({style:{fontSize:'10px',color:s.on?'var(--amber)':'var(--text3)'}},s.label),
-            btn({style:{fontSize:'9px',padding:'1px 6px',borderRadius:3,cursor:'pointer',
-              background:s.on?'var(--amber)':'rgba(255,255,255,.08)',
-              color:s.on?'var(--navy)':'var(--text3)',border:'none'},
-              onClick:()=>toggleSec(s.id)},s.on?'On':'Off')
-          )
-        )
-      )
-    ),
-
-    // ── LOADED DATA SUMMARY ────────────────────────────────────
-    div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
-      padding:headerScrolled?'0 24px':'8px 24px',flexShrink:0,display:'flex',alignItems:'center',
-      gap:16,flexWrap:'wrap',overflow:'hidden',
-      maxHeight:headerScrolled?0:'120px',transition:'max-height .2s ease, padding .2s ease'}},
-      div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',
-        letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0}},'Loaded Data'),
-      ...(()=>{
-        // Each category shows the FRESHEST across its manual AND auto/emailed streams
-        // (Notes: Jul-2026). Manual uploads legitimately stop when the owner stops
-        // uploading; anchoring the strip to manual alone made it read weeks-stale even
-        // though the auto DAR/Glimpse/Ledger/qsr_fob streams were current. Union the
-        // relevant streams so the date range reflects reality (auto/emailed-first rule).
-        const _u=(...arrs)=>arrs.flatMap(a=>a||[]);
-        const sources=[
-          {name:'Sales',      rows:_u(ds?.qsrActSummaryRows,ds?.salesLedgerRows,ds?.laborRows),icon:'💰'},
-          {name:'Scheduling', rows:ds?.schedRows,icon:'📅'},
-          {name:'Service',    rows:_u(ds?.glimpseRows,ds?.qsrActSummaryRows,ds?.opsRows),icon:'⚡'},
-          {name:'Controls',   rows:_u(ds?.glimpseRows,ds?.cashRows,ds?.ctrlRows),icon:'🔒'},
-          {name:'FOB',        rows:_u(ds?.qsrFobRows,ds?.fobRows),icon:'🍟'},
-        ];
-        return sources.map(src=>{
-          const rows=src.rows||[];
-          if(!rows.length)return div({key:src.name,style:{fontSize:'9px',
-            color:'rgba(255,255,255,.25)',padding:'2px 8px',borderRadius:3,
-            background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)'}},
-            src.icon+' '+src.name+': Not loaded');
-          // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
-          // Parse dates to ms (skip unparseable → no "Invalid Date"); normalize loc so a
-          // padded "0003708" and "3708" don't double-count the store list.
-          const ms=rows.map(r=>{const d=r?.date instanceof Date?r.date:(r?.date?new Date(r.date):null);return d&&!isNaN(d.getTime())?d.getTime():null;}).filter(v=>v!=null);
-          const minD=ms.length?new Date(Math.min(...ms)):null;
-          const maxD=ms.length?new Date(Math.max(...ms)):null;
-          const fmt=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'?';
-          const uniqueLocs=new Set(rows.map(r=>{const n=parseInt(r.loc,10);return isNaN(n)?String(r.loc):String(n);})).size;
-          return div({key:src.name,style:{fontSize:'9px',
-            color:'var(--text)',padding:'2px 8px',borderRadius:3,
-            background:'rgba(16,185,129,.08)',border:'.5px solid rgba(16,185,129,.2)'}},
-            src.icon+' '+src.name+': '+fmt(minD)+' – '+fmt(maxD)+
-            ' ('+rows.length.toLocaleString()+' rows, '+uniqueLocs+' stores)');
-        });
-      })()
-    ),
-    div({style:{flex:1,overflowY:'auto',padding:'12px 24px'}},
+      // ── LOADED DATA SUMMARY ────────────────────────────────────
+      // #225: was collapsed via headerScrolled+maxHeight to reclaim pinned screen
+      // space while scrolled. Now that this is normal flow content that scrolls away
+      // on its own, that JS-driven collapse no longer serves a purpose — always
+      // render at full height.
+      div({style:{background:'var(--surf)',borderBottom:'.5px solid var(--bdr)',
+        padding:'8px 24px',display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}},
+        div({style:{fontSize:'10px',fontWeight:700,color:'var(--text3)',
+          letterSpacing:'.5px',textTransform:'uppercase',flexShrink:0}},'Loaded Data'),
+        ...(()=>{
+          // Each category shows the FRESHEST across its manual AND auto/emailed streams
+          // (Notes: Jul-2026). Manual uploads legitimately stop when the owner stops
+          // uploading; anchoring the strip to manual alone made it read weeks-stale even
+          // though the auto DAR/Glimpse/Ledger/qsr_fob streams were current. Union the
+          // relevant streams so the date range reflects reality (auto/emailed-first rule).
+          const _u=(...arrs)=>arrs.flatMap(a=>a||[]);
+          const sources=[
+            {name:'Sales',      rows:_u(ds?.qsrActSummaryRows,ds?.salesLedgerRows,ds?.laborRows),icon:'💰'},
+            {name:'Scheduling', rows:ds?.schedRows,icon:'📅'},
+            {name:'Service',    rows:_u(ds?.glimpseRows,ds?.qsrActSummaryRows,ds?.opsRows),icon:'⚡'},
+            {name:'Controls',   rows:_u(ds?.glimpseRows,ds?.cashRows,ds?.ctrlRows),icon:'🔒'},
+            {name:'FOB',        rows:_u(ds?.qsrFobRows,ds?.fobRows),icon:'🍟'},
+          ];
+          return sources.map(src=>{
+            const rows=src.rows||[];
+            if(!rows.length)return div({key:src.name,style:{fontSize:'9px',
+              color:'rgba(255,255,255,.25)',padding:'2px 8px',borderRadius:3,
+              background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)'}},
+              src.icon+' '+src.name+': Not loaded');
+            // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
+            // Parse dates to ms (skip unparseable → no "Invalid Date"); normalize loc so a
+            // padded "0003708" and "3708" don't double-count the store list.
+            const ms=rows.map(r=>{const d=r?.date instanceof Date?r.date:(r?.date?new Date(r.date):null);return d&&!isNaN(d.getTime())?d.getTime():null;}).filter(v=>v!=null);
+            const minD=ms.length?new Date(Math.min(...ms)):null;
+            const maxD=ms.length?new Date(Math.max(...ms)):null;
+            const fmt=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'?';
+            const uniqueLocs=new Set(rows.map(r=>{const n=parseInt(r.loc,10);return isNaN(n)?String(r.loc):String(n);})).size;
+            return div({key:src.name,style:{fontSize:'9px',
+              color:'var(--text)',padding:'2px 8px',borderRadius:3,
+              background:'rgba(16,185,129,.08)',border:'.5px solid rgba(16,185,129,.2)'}},
+              src.icon+' '+src.name+': '+fmt(minD)+' – '+fmt(maxD)+
+              ' ('+rows.length.toLocaleString()+' rows, '+uniqueLocs+' stores)');
+          });
+        })()
+      ),
 
       noData&&div({style:{padding:'24px',textAlign:'center',color:'var(--text3)',fontSize:'12px'}},
         div({style:{fontSize:'24px',marginBottom:8}},'📂'),
