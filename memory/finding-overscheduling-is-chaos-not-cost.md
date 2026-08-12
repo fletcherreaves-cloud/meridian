@@ -1,76 +1,119 @@
 ---
 name: finding-overscheduling-is-chaos-not-cost
-description: Field finding from #210's labor gap split, live against real production data — the district over-schedules on 21 of 27 stores, but nets to only +9 hrs vs need district-wide because over-scheduling and mid-week cutting cancel out. Changes what #210's follow-up work should look like. Read before building anything that ranks or dollarizes the planning/execution split.
+description: Measured 2026-08-11 — stores grossly over-schedule against need, shift managers absorb it in-week, and labor % nets out so the P&L never surfaces it. The owner's long-standing claim, now with numbers. Read before building anything that ranks labor findings by dollars.
 metadata:
   type: finding
-  status: confirmed by owner against live data
+  status: measured, owner-confirmed
 ---
 
-# Overscheduling is chaos, not cost
+# Over-scheduling is a chaos problem, not a labor-cost problem
 
-## The finding
+**First finding produced by Push 3.** Surfaced within minutes of the Planning/Execution split
+(#210) going live, 2026-08-11.
 
-Once #210's planning/execution split ran against real production data, the owner confirmed:
-**21 of 27 stores are grossly over-scheduling** — real, not an artifact of the split's math.
+The owner, on seeing it: *"The stores are grossly and I mean grossly overscheduling by a lot,
+with a few exceptions."* And: *"I have been screaming this at the top of my lungs since I
+started here."*
 
-But the district-wide combined labor gap nets to only **+9 hours vs need** across the whole
-district, every week. That's not a coincidence and it's not the system working: it's
-over-scheduling (a large positive planning gap) and mid-week cutting (a large negative
-execution gap) **cancelling each other out**, store by store, week after week. Labor % looks
-fine on the P&L because the two errors mostly offset in the total — which is exactly why this
-never surfaced before #210 split the number in two. A district that is +9 hrs on net looks
-calm. A district where 21 stores swing wildly in both directions to land there is not calm at
-all — it's chaotic, and every one of those swings is a real scheduling decision someone made
-and then had to walk back.
+**This is the point of the file.** He has believed this for years. Nothing in Meridian — or in
+QSRSoft, or in the P&L — could show it, because the number that would have shown it nets to
+zero. The split is what made an invisible problem measurable.
 
-## A correction to an earlier assumption
+---
 
-An earlier read of this data treated "0 stores ran over their own schedule" (i.e., every
-store's `executionGapHrs` came in at or under the schedule it was actually given) as a possible
-concern or artifact worth double-checking. It was wrong to treat that as suspicious. **It's the
-arithmetic consequence of over-scheduling, not a definitional artifact of the split.** If a
-store schedules well above need and then gets cut back toward need mid-week, the actual hours
-worked will naturally land AT OR BELOW the (inflated) schedule almost every time — there's
-nowhere else for the number to go once the schedule itself was set too high. Don't chase this
-as if it were a bug; it's the shape you'd expect once you know the schedules are inflated.
+## The measurement
 
-## Why this matters for what gets built next
+Labor Analytics → Planning/Execution, week of **2026-07-29**, all 27 stores. Header:
 
-**Rank by combined gap, not by planning gap alone — but do NOT dollarize and sort by dollars.**
-The Labor Analytics "Planning/Execution" tab (`labor-tools.js`) already sorts by
-`Math.abs(combinedGapHrs)` descending, which is validated as the right call by this finding.
-A purely dollar-ranked view (converting hours to $ and sorting by $ impact, the pattern used
-successfully elsewhere in this repo — e.g. the Root-Cause Priority Matrix in `analytics.js`'s
-FOB panel) would be the **wrong instinct here**, because a store whose over-scheduling and
-cutting cancel out costs the P&L almost nothing in dollars, while still damaging the
-operation — inconsistent staffing, GM/scheduler whiplash, unpredictable labor cost week to
-week for the people living it. This is the first case in this project where "dollarize and
-sort by dollars" would actively hide the finding it's supposed to surface. Combined-magnitude
-ranking (not signed, not dollarized) is what catches a store that's +40/-38 (chaotic, nets to
-+2, would rank near the bottom of a dollar-sorted list) as urgently as a store that's flatly
-+40 (genuinely under-executing, costs real money).
+```
+27 stores · 21 over-scheduled vs plan · 0 ran over their own schedule
+```
 
-**The Coach column logic in the same tab is validated — do not change that gate.** It already
-reuses the panel's own `avCol` combined-gap banding (30/60 hrs) to decide "On plan" vs
-attributing to Scheduler or Shift Manager, and attributes to whichever HALF (planning or
-execution) has the larger magnitude when the combined gap says coaching is warranted. That
-gate is correct as built: it will surface a chaotic +40/-38 store as needing the Scheduler
-coached (planning is the larger of the two magnitudes) even though the combined number alone
-looks fine — which is exactly the behavior this finding says is needed.
+Representative rows (hours):
 
-## What this does NOT change
+| Store | Needed | Scheduled | Actual | Planning | Execution | **Combined** |
+|---|---|---|---|---|---|---|
+| Ada-Country Club | 1741 | 2883 | 2157 | **+1142** | −726 | **+417** |
+| Madill-Hwy 70 | 1043 | 1527 | 1294 | +484 | −233 | +251 |
+| Atoka-Mississippi | 1362 | 1831 | 1477 | +469 | −353 | +116 |
+| Durant-US Hwy 70/22 | 2139 | 2573 | 2257 | +434 | −316 | +118 |
+| Cottondale | 985 | 1335 | 1060 | +349 | −275 | +74 |
+| Seminole-Milt Phillips | 2007 | 2131 | 1576 | +124 | −555 | −431 |
+| Sulphur | 1344 | 1061 | 1000 | −283 | −61 | −343 |
 
-- #210's engine (`engine/labor-gap-split.js`) and its computation of `planningGapHrs`/
-  `executionGapHrs`/`combinedGapHrs` are unaffected — the math was already correct; this
-  finding is about how to READ and RANK the output, not a bug in producing it.
-- No code changes required by this finding alone. It's recorded here so a future session
-  doesn't "fix" the `0 ran over schedule` observation, and doesn't quietly switch the sort to
-  dollars thinking that's an improvement.
+Ada scheduled **66% above need**.
+
+## The three numbers, and which one costs money
+
+```
+planning  = scheduled − needed     the plan is wrong
+execution = actual − scheduled     the manager corrected it mid-week
+combined  = actual − needed        what you actually paid
+```
+
+**Ada's +1142 costs nothing directly.** The shift manager cut 726 of it during the week. The
+spend is the combined **+417**.
+
+Summing combined across the 19 visible stores: **≈ +1,980 hrs over need** at some,
+**≈ −1,920 under** at others. Net **≈ +64 hrs**.
+
+Which matches the Labor Analytics Overview tile independently: **ACT VS NEED +9 hrs**
+district-wide.
+
+## Why nothing ever surfaced it
+
+**The district lands on plan by accident, every week, at 27 stores.**
+
+Labor % looks fine. Act-vs-Need looks fine. Every aggregate that has ever been looked at
+reports "on plan," because the over-scheduling and the mid-week cutting cancel. The P&L
+structurally cannot show this — the only place it appears is in the *gap between* two numbers
+nobody was computing separately until #210.
+
+**`0 of 27 ran over their own schedule` is not an anomaly.** It is the arithmetic consequence
+of over-scheduling: schedule 66% above need and finishing under schedule is guaranteed. Both
+columns describe one phenomenon. *(The PM initially flagged this as a possible definitional
+artifact and was wrong — the owner's domain knowledge resolved it.)*
+
+## What it actually costs — none of it in dollars
+
+- **Crew get scheduled, then sent home.** Unpredictable hours, unpredictable paychecks.
+- **Every manager spends their shift doing arithmetic** instead of running the restaurant.
+- **The schedule stops being something anyone trusts** — for crew or for managers.
+- **Labor % looks fine, so nothing in the P&L ever surfaces it.**
+
+Those four lines are the owner's, verbatim-adjacent, and they are the finding. Turnover,
+morale and execution quality all plausibly hang off them, and none of it is legible in a cost
+report.
+
+## ⚠ Product implications — read before ranking labor findings
+
+1. **Rank by COMBINED, not planning.** Planning is the diagnosis; combined is the dollars. A
+   store at +1142 planning / −726 execution costs less than one at +500 / 0.
+2. **But a purely dollar-ranked view HIDES this finding entirely** — the whole point is that it
+   costs ~nothing and damages the operation anyway. **This is the one case so far where the
+   otherwise-correct "dollarize everything and sort by dollars" instinct is wrong.** The
+   planning gap needs to surface on its own terms, not as an opportunity-dollar figure.
+3. **The Coach column's logic is validated.** It tags Ada as *Scheduler*, not Shift Manager.
+   Correct — coaching the manager who cut 726 hours off a bad schedule would punish the person
+   fixing the problem. Do not change that gate.
+4. **The scheduler/forecast is the intervention point**, not the store. Twenty-one of 27 over
+   plan is a systemic input problem, not 21 independent behaviours.
+
+## Open questions
+
+- **Why is the schedule so far above need?** Guard-railing against call-outs? A stale labor
+  guide? LifeLenz defaults? Unknown, and it is the actual root cause.
+- Does the pattern hold across weeks, or is 2026-07-29 unusual? One week measured so far.
+- Is `total_scheduled_hours` the posted schedule or a plan-of-record? Worth one validation
+  against LifeLenz for a single store-week before coaching on the absolute magnitude — the
+  *direction* is confirmed by the owner regardless.
+- Does chaos correlate with turnover? `turnover_monthly` is already pulled. If stores with the
+  largest planning gaps also churn hardest, that converts this from a qualitative argument into
+  a measured one — and it is the strongest available test of the claim.
 
 ## Related
 
-- `memory/project-labor-gap-split-210.md` — the engine and UI this finding is about.
-- `memory/project-coaching-feedback-loop.md` §5 — "an item coached and not improved should
-  escalate or re-diagnose" — a chaotic over-schedule/cut pattern that recurs week after week
-  at the same store is exactly the kind of structural (not behavioral) signal that section
-  anticipates the coaching loop eventually needing to recognize.
+- #210 — the split that produced this
+- `memory/project-coaching-feedback-loop.md` — this is exactly the shape of thing the loop
+  should verify: change the schedule, measure whether the gap closes
+- `memory/project-food-cost-labor-enhancements.md` §4 — where the split was specified
