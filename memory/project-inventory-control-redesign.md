@@ -213,12 +213,37 @@ delete-on-sight.**
 - **The shared context vocabulary** — `scope`/`period` selectors, `metric-source`, `vs-ly`,
   `one-pager-data` are all in place and used by the one-pager.
 
-## 10. Free perf win
+## 10. Free perf win — CORRECTED 2026-08-12, worse than first documented, and now fixed
 
-One shell = one data load. Today `eom-dashboard.js:1222` independently re-fetches all 13,190
-`qsr_fob` rows on panel open — ~30 sequential 400-row pages, **~14 seconds** (#191), on top of
-the copy startup already loaded into `ds.qsrFobRows`. Six panels each doing their own loads is
-a large part of why this area feels slow.
+**It's worse than "on panel open."** `eom-dashboard.js`'s `load` is a `useCallback(..., [])`
+driven by `useEffect(() => { load(period); }, [period, load])` — so the re-fetch fires on
+**every period change**, not once per panel open. `loadQsrFob()` was the only call in that
+`Promise.all` not scoped by the period argument `p`, unlike every sibling load in the same
+array. Confirmed by reading the actual effect wiring, not assumed from the original draft of
+this section.
+
+**The ~14 seconds figure is stale and was never re-verified after #191.** It was measured
+against the OLD strictly-sequential `loadQsrFob()` (28,332ms→42,507ms on the owner's production
+waterfall). #191 (2026-08-11) already switched `loadQsrFob()` to `_pagedParallel` — and per
+#191's own changelog entry, that switch's wall-clock effect was never verified live either (no
+authenticated Supabase session in this sandbox). So the win from removing this duplicate fetch
+entirely is real — an entire duplicate ~13,190-row read, gone — but its size in seconds is
+**unknown**, not ~14s. Do not quote the old number as current.
+
+**Safety check, confirmed before fixing**: `App.js`'s own startup load (`_stQsrsoftFob`) calls
+`loadQsrFob()` with the exact same (absent) arguments eom-dashboard.js used, so `ds.qsrFobRows`
+covers the identical default 500-day window — no truncation risk from reading the copy instead
+of eom-dashboard.js's own independent fetch.
+
+**Fixed, 2026-08-12 (v4.996)**: read-the-copy-**then**-fall-back, not read-the-copy
+unconditionally. `ds.qsrFobRows` can still be empty if app startup hasn't finished, or the user
+deep-links straight into this panel — so eom-dashboard.js now uses `ds.qsrFobRows` when it's
+populated and falls back to its own `loadQsrFob()` call only when the copy genuinely isn't
+there yet (the owner's own stated pattern: don't load unless the cloud copy is unavailable in
+session, and let the item that needs it pull what it needs to render). This removes a fetch
+rather than rescheduling one — not the same shape as the two prior scheduling changes
+(`supabase.js`'s "Volume is the binding constraint, not ordering" standing note) that made wall
+time WORSE while fetching the same bytes.
 
 ## 11. Decisions log (owner, 2026-08-11)
 
@@ -306,20 +331,27 @@ since #191 doesn't own eom-dashboard.js specifically, the shell absorbs this fix
 Slice 1 should read `ds.qsrFobRows` instead of calling `loadQsrFob()` a second time, rather than
 waiting on a separate #191 slice that may never target this exact call site.
 
-**One NEW open question surfaced by this pass, not in the original §12** — the Labor "class"
-axis (§4's "position/daypart/crew-vs-management, TBD"): the crew-vs-management split IS real and
-already in the data (`labor-basis.js:16-32`'s `tCrewLabor`/`tLabor`/`tBonusLabor`/`tCombLabor`
-target-basis resolver; `eom-supervisor.js:148-159` computes an exact dollar-weighted Crew Labor %
-from `qsr_labor_summary.crew_labor_dollars`, a field genuinely separate from
-`salariedManagerDollars`) — "position" in the literal job-title sense does not exist anywhere in
-the codebase (no grep hit), and daypart exists only inside `DARDaypartPanel`
-(`labor-tools.js:60-278`), gated on `ds.darRows`, not a universal field. So crew-vs-management is
-the answer, not a guess — but WHETHER it should be a first-class filter axis the user toggles
-(same interaction as Food Cost's `class` dropdown) or a per-metric COLUMN split within one view
-(the way `eom-supervisor.js` already shows Crew Labor split from OT/Cash side-by-side in one
-grid, never as a toggle) is a genuine design choice, not something the code answers by itself —
-flagged to the owner before Labor instantiation (Food Cost's own `class` is fully decided already
-per §11 and doesn't block on this).
+**CORRECTED, 2026-08-12 — the Labor "class" axis was already decided, not an open question.**
+This pass's original framing (below, struck through in spirit not literally, kept for the
+record) guessed crew-vs-management as the third axis and treated filter-vs-column-split as a
+live design choice for this session to make. Both parts were wrong. The owner: *"Neither — the
+premise is out of date. This was decided in Notes 35 and is already shipped."* The real axis is
+**labor basis** — three named fields already on every labor row (`parsers/index.js:313-320`):
+`punchLaborPct` (punched, all-hourly, comparable at all 27 stores, the default),
+`crewLaborPct` (QSRSoft's "Crew Labor %," which adds salaried-manager $ where a store is
+configured that way — FL is, OK isn't — NOT comparable across markets), `totalLaborPct` (full
+accounting, only meaningful where configured). So it's `mode: 'filter'` over three named bases
+defaulting to Punched, not a two-way crew-vs-management split. Full design — five hard
+requirements (default Punched; render "not configured" never 0/blank; suppress/hard-flag any
+scope mixing configured and unconfigured stores; derive coverage per-store-per-period from
+`salariedManagerHours`, never a hardcoded FL/OK list; never rename `crewLaborPct`/`tCrewLabor`),
+the multi-tenant implication, and an open contradiction now on hold pending an owner-run
+measurement (Crew's exact contents — does it already include salaried $, or is Crew+Manager=
+Total with Punched as hourly-only? — the two framings contradict, and only a real
+`qsr_labor_summary` read the sandbox can't run resolves it) — reconstructed in
+`memory/project-labor-pct-punched-vs-crew.md` (cited at `parsers/index.js:315`/`:441` since
+v4.583, never previously committed). **Labor instantiation is on hold pending that measurement;
+Food Cost is unaffected and unblocked — its `class` axis was already fully decided per §11.**
 
 **Concrete evidence "identical fragmentation" (§4) is real, not asserted**: `labor-tools.js`'s
 `OperatorSummaryPanel` (`:1330-1339`) and `LaborAnalyticsPanel` (`:1676-1691`) carry two

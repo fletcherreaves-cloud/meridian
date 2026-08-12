@@ -12,7 +12,7 @@ import { ModalShell, Z } from '../components/ModalShell.js';
 import { PanelChrome } from '../components/PanelChrome.js';
 import { LocationSelector, ActionMenus } from '../components/PanelControls.js';
 import {
-  loadQsrOnHand, loadEomCountStatus, saveEomCountStatus,
+  loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
@@ -1091,11 +1091,36 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [loading, setLoading] = useState(true);
   const [onHand, setOnHand] = useState([]);
   // #211 free perf win: was its own loadQsrFob() re-fetch of the full unscoped ~13k-row table
-  // on every period change, duplicating what App.js already loaded once at startup into
-  // ds.qsrFobRows (same pattern above-store-onepager.js already uses, :82). Both are the same
-  // full table — loadQsrFob() takes no period argument either — so this is a pure duplicate
-  // fetch, not a narrower one; reading ds directly removes it.
-  const fobRows = (ds && ds.qsrFobRows) || [];
+  // on EVERY period change (not just on panel open), duplicating what App.js already loads
+  // once at startup into ds.qsrFobRows (same pattern above-store-onepager.js already uses,
+  // :82) — both are the same full table, loadQsrFob() takes no period argument either, and
+  // App.js's own call uses the same default 500-day window, so reading the copy carries no
+  // truncation risk. Read-the-copy-THEN-fall-back, not read-the-copy unconditionally: ds.
+  // qsrFobRows can still be empty if startup hasn't finished yet or the user deep-links
+  // straight into this panel, so only fetch our own when the copy genuinely isn't there —
+  // the owner's own stated pattern ("probably fine not to load unless data is unavailable
+  // from cloud in session and then the item needing it pulls what it needs to render").
+  //
+  // PM review on the first version of this fix (2026-08-12): a plain "read the copy, default
+  // to []" is a live regression if the copy never arrives — App.js's startup loader only calls
+  // setDs when qsrFobRows.length>0 and swallows failures with a console.warn, so a failed or
+  // still-in-flight startup load left this panel with fobRows:[] FOREVER, no retry, and
+  // `loading` (driven by the other 7 loads) would flip false while FOB was still genuinely
+  // unresolved — a food-cost panel presenting an affirmative "no FOB data" on an unresolved
+  // load, the exact #192 P0 failure shape (FOB Report's false "clean ✓" on 0 stores). Fixed by
+  // holding a distinct fobPending state (v4.870 rule — RegisterAuditTab's same "Loading…" vs
+  // wrong "No data" distinction) so pending and genuinely-empty can never look the same.
+  const dsFob = (ds && ds.qsrFobRows) || null;
+  const [fobFallback, setFobFallback] = useState(null); // null = pending/not attempted
+  useEffect(() => {
+    if (dsFob && dsFob.length) return;   // copy is good — no fetch, this is the win
+    let live = true;
+    loadQsrFob().then(r => { if (live) setFobFallback(r || []); })
+                .catch(() => { if (live) setFobFallback([]); });
+    return () => { live = false; };
+  }, [dsFob]);
+  const fobRows    = (dsFob && dsFob.length) ? dsFob : (fobFallback || []);
+  const fobPending = !(dsFob && dsFob.length) && fobFallback === null;
   const [statusMap, setStatusMap] = useState({}); // loc -> saved eom_count_status
   const [saving, setSaving] = useState('');
   const [draft, setDraft] = useState(null); // { loc, name, subject, body, rows, uncounted } for the comms modal
@@ -2273,9 +2298,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
     // Count Cycle view → weekly-cadence monitor above the store table (Notes 40 #1). Renders only when
     // it has cadence data; hidden in Scoreboard/EOM modes.
-    (mode === 'progress' && !loading && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) : null,
+    // fobPending folded in (PM review, 2026-08-12): loading is driven by the other 7 loads and
+    // doesn't know about FOB's own copy-then-fallback path, so without this the panel could
+    // flip to its "no data" branch while FOB was still genuinely unresolved.
+    (mode === 'progress' && !(loading || fobPending) && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) : null,
 
-    loading ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+    (loading || fobPending) ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
           allRows.length === 0
             ? `No EOM data for ${period} yet. Variance / waste / transfers pull daily; On-Hand count progress fills in the last 3 days of the month.`
