@@ -47,11 +47,21 @@ this sandbox to run `scripts/measure-coaching-noise-threshold.mjs` (written in a
 segment of this session, prep for exactly this). `NOISE_THRESHOLDS` in
 `engine/coaching-loop.js` is `{}` — `computeVerdict()` always returns `null` today. Every
 cycle recorded in v1 is a real before/after measurement with an honest "not enough data to
-verdict yet" label, not a confident wrong one. A future session runs the script, picks
-thresholds per-component from the printed percentiles (same discipline as `COVER_FRAC` in
-#209 and the swing alarm's `-10%`/676-store-weeks), and fills in `NOISE_THRESHOLDS` — the
-object's shape already matches the 5 components that script measures, so there's no rework
-needed to wire a real threshold in later.
+verdict yet" label, not a confident wrong one.
+
+**UPDATE (#237, 2026-08-12) — this is no longer "waiting on a run," it's a measured negative
+result.** Both the raw-drift script and the district-differencing follow-on it gated
+(`scripts/measure-district-relative-noise.mjs`) have now run against live data — full numbers
+in `memory/project-noise-measurement-237.md`. The owner's target improvement (0.25–0.50pp)
+sits inside ordinary 30-day drift for both labor (median 0.841pp) and FOB total (p75 0.416pp).
+District-wide differencing, tested as the fix, mostly doesn't help: FOB-family reduction factors
+are ~0.98x–1.07x (no real noise removed — FOB drift is store-idiosyncratic, not a shared district
+signal), and labor's apparent 2.30x reduction is almost entirely a tail effect sitting in the same
+region #236 already flagged as contaminated (labor's real reduction, at the percentiles that
+aren't known-broken, is closer to 1.13x). `NOISE_THRESHOLDS` stays `{}` — not because the
+measurement hasn't run, but because it ran and district-differencing isn't the fix. The next
+candidate per #237's own contingency is longer measurement windows or confidence-based (not
+binary) verdicts, not a threshold picked to paper over a ~1.0x reduction.
 
 ## A real correctness fix found while building this
 
