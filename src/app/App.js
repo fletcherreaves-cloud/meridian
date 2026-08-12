@@ -1547,7 +1547,7 @@ function App() {
       // requests. Pagination WITHIN each stream was already parallel (v4.594); the
       // serialisation left was BETWEEN streams. The Sales chip's own source
       // (qsr_daily_activity) did not finish paginating until t=150s, because it sat at
-      // stage 22 of 28.
+      // stage 22 of 28. SUPERSEDED — see #246 note below; kept for history, not current.
       //
       // Each stage above is an independent thunk — its own try/catch, its own setDs
       // patch — so ordering them is a scheduling decision, not a data-flow one. Nothing
@@ -1555,12 +1555,48 @@ function App() {
       //
       // T1  what the app is unusable without — Sales chip + targets. Awaited.
       // T2  every other auto/emailed stream. Fired in parallel, not awaited before paint.
-      // T3  the four MANUAL uploads. By the standing auto/emailed-first rule these are
-      //     "last-resort fill only, never a tile's primary source" — yet they accounted
-      //     for ~90 of the 183 seconds. They load last so they can still backfill a
-      //     loc/date the cloud doesn't cover, without ever blocking first paint.
+      // T3  the manual-upload fallback streams. By the standing auto/emailed-first rule
+      //     these are "last-resort fill only, never a tile's primary source." They load
+      //     last so they can still backfill a loc/date the cloud doesn't cover, without
+      //     ever blocking first paint.
+      //
+      // #246 — real capture with this file's own per-tier/per-stage instrumentation,
+      // 2026-08-12, this sandbox's dev server against its live Supabase project (NOT the
+      // owner's production browser/network — that distinction matters, so treat this as a
+      // same-order-of-magnitude confirmation, not a production-equal figure). The old
+      // 182.9s/~90s claim above predates #191 (manual-fallback lazy fill), the DAR rollup
+      // table, and #248's xlsx lazy-load — all now live, and it shows: total elapsed T1+T2+T3
+      // was ~49.5s, not ~183s. T1 21.3s (own = cumulative, it's first). T2 own-duration
+      // 14.1s — 16 of its 22 stages land in a ~7.05-7.08s cluster, 4 (lockedProjections,
+      // aeParams, modelAssignments, dialedIn) return in ~10-11ms (cache/localStorage-backed,
+      // no real fetch), and qsrsoftFob + peaksRows are the two that actually set T2's tier
+      // length, both landing at ~14.09s. T3 own-duration 14.1s — ctrlRows and opsRows both
+      // land at ~14.05s (T3's tier-setting pair), fobRows finishes faster at ~7.04s. So T3
+      // is no longer "~90 of 183 seconds" of the total; it's under a third of a ~50s load,
+      // in line with what #191's lazy-fill was expected to do. A same-session sandbox
+      // capture is a real measurement, not a guess, but the owner should treat it as
+      // directional until confirmed against an actual production run with this
+      // instrumentation live.
       const _t0 = performance.now();
       const _ms = () => Math.round(performance.now() - _t0);
+      // #246 — _ms() above is cumulative-since-start, kept exactly as-is so every log line
+      // already cited in commit history/memory stays comparable. It was the ONLY number, and
+      // it silently meant "T2 complete" and "T3 complete" printed the whole T1+T2+T3 elapsed
+      // time, not their own duration — a slow T3 could hide behind a fast T1+T2 and vice versa,
+      // and nothing said which of T2's 22 parallel stages (or T3's 3) was the one actually
+      // setting the tier's length, since Promise.all resolves on its slowest member. _tierMs()
+      // adds the OWN-duration number alongside the existing cumulative one at each tier's log
+      // line; _timedStage() wraps a stage's own promise to log its individual elapsed time
+      // against its tier's start, so the 850ms in "we lose 900ms to stage overhead" (never
+      // measured, and no smaller than 22 stages actually finishing round-robin) shows up on
+      // a specific line, not folded into the tier total. Wrapping is at the call site only —
+      // no _stXxx stage definition changes shape or behavior, per this block's own preceding
+      // "nothing below changes what any stage does" comment.
+      const _tierMs = (start) => Math.round(performance.now() - start);
+      const _timedStage = (label, fn, tierStart) => fn().then(r => {
+        console.log(`[Meridian]   · ${label} — ${_tierMs(tierStart)}ms`);
+        return r;
+      });
       // T1 loads a NARROW DAR window. qsr_daily_activity is hourly (~675 rows/day), so 60
       // days is ~40k rows over ~41 pages — measured at 46s, and it was the entire reason
       // T1 came in at 53.6s rather than the single-digit seconds the tiering was meant to
@@ -1579,24 +1615,51 @@ function App() {
       // DAR joins T1 too now that the rollup table makes it ~1,650 rows in 2 requests
       // instead of ~40,000 in ~40 — it was pulled out of T1 in v4.848 purely because
       // of that cost.
+      const _t1Start = _t0;
       await Promise.all([_stMonthlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
       _flushDs(); // T1: 4 stages → 1 commit
-      console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
+      console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms (tier: ${_tierMs(_t1Start)}ms)`, 'color:#f5bc00;font-weight:700');
+      const _t2Start = performance.now();
       const _t2 = Promise.all([
-        _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
-        _stSmgComments(), _stLifelenz(), _stLifelenzJobHours(),
-        _stGradedVisits(), _stQsrsoftFob(), _stPeaksRows(),
-        _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
-        _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
-        _stLockedProjections(), _stAeParams(),
-        _stModelAssignments(), _stDialedIn(), _stOrgEventsHydration(), _stEventImpact(),
-        _stCoachingCycles(),
+        _timedStage('T2 smgFullscale', _stSmgFullscale, _t2Start),
+        _timedStage('T2 voicePerformance', _stVoicePerformance, _t2Start),
+        _timedStage('T2 voiceDaypart', _stVoiceDaypart, _t2Start),
+        _timedStage('T2 smgComments', _stSmgComments, _t2Start),
+        _timedStage('T2 lifelenz', _stLifelenz, _t2Start),
+        _timedStage('T2 lifelenzJobHours', _stLifelenzJobHours, _t2Start),
+        _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
+        _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),
+        _timedStage('T2 peaksRows', _stPeaksRows, _t2Start),
+        _timedStage('T2 darRows', _stDarRows, _t2Start),
+        _timedStage('T2 customSignals', _stCustomSignals, _t2Start),
+        _timedStage('T2 qsrFieldDefs', _stQsrFieldDefs, _t2Start),
+        _timedStage('T2 ebosOpSupplies', _stEbosOpSupplies, _t2Start),
+        _timedStage('T2 peopleReports', _stPeopleReports, _t2Start),
+        _timedStage('T2 digitalDeliveryShiftmgr', _stDigitalDeliveryShiftmgr, _t2Start),
+        _timedStage('T2 lockedProjections', _stLockedProjections, _t2Start),
+        _timedStage('T2 aeParams', _stAeParams, _t2Start),
+        _timedStage('T2 modelAssignments', _stModelAssignments, _t2Start),
+        _timedStage('T2 dialedIn', _stDialedIn, _t2Start),
+        _timedStage('T2 orgEventsHydration', _stOrgEventsHydration, _t2Start),
+        _timedStage('T2 eventImpact', _stEventImpact, _t2Start),
+        _timedStage('T2 coachingCycles', _stCoachingCycles, _t2Start),
       ]);
-      _t2.then(() => { _flushDs(); console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`); }); // T2: 14 ds-touching stages → 1 commit
-      const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stOpsRows(), _stCtrlRows()]));
+      let _t2Done = null;
+      _t2.then(() => {
+        _t2Done = performance.now();
+        _flushDs();
+        console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms (tier: ${_tierMs(_t2Start)}ms)`);
+      }); // T2: 22 ds-touching stages → 1 commit
+      const _t3 = _t2.then(() => Promise.all([
+        _timedStage('T3 fobRows', _stFobRows, _t2Done ?? performance.now()),
+        _timedStage('T3 opsRows', _stOpsRows, _t2Done ?? performance.now()),
+        _timedStage('T3 ctrlRows', _stCtrlRows, _t2Done ?? performance.now()),
+      ]));
       await Promise.allSettled([_t2, _t3]);
-      _flushDs(); // T3: 4 stages → 1 commit
-      console.log(`[Meridian] T3 manual-fallback backfill complete — ${_ms()}ms (total)`);
+      _flushDs(); // T3: 3 stages → 1 commit
+      // _t2Done is guaranteed set here — T3 is chained off _t2 resolving, and the T2-completion
+      // .then() above is registered before T3's, so it runs first once _t2 settles.
+      console.log(`[Meridian] T3 manual-fallback backfill complete — ${_ms()}ms (total) (tier: ${_tierMs(_t2Done)}ms)`);
 
     })();
   },[]);
