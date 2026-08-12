@@ -94,6 +94,20 @@ export const FOB_CLASSES = ['food', 'condiment'];
 const EARLY_CLASSES = ['food', 'condiment', 'paper'];
 const LATE_CLASSES = ['nonproduct'];
 
+// Total P&L Food Cost $/% from a single qsr_fob row — the Begin+Purchases+Adjustments+
+// Transfers-Promotions-End build-up QSRSoft's own "P & L Food Cost %" column reports
+// (EOM Supervisor's "Total Food Cost", 2026-08-03). A different, broader metric than FOB
+// (Food Over Base) below. Exported so every consumer of a qsr_fob row (fobSnapshotByStore
+// here, and FOBAnalysisPanel's per-date cloud mapping — #222) computes it from this ONE
+// place — a second hand-rolled copy of this formula is how #222 happened: analytics.js
+// hardcoded pLFoodPct:null for cloud rows instead of deriving it, even though every field
+// this needs was already loaded.
+export function pLFoodCostFromRow(r, sales) {
+  const pLFoodCost = (r.pnlFoodCostBegin || 0) + (r.pnlFoodCostPurchases || 0) + (r.pnlFoodCostAdjustments || 0)
+                    + (r.pnlFoodCostTransfers || 0) - (r.pnlFoodCostPromotions || 0) - (r.pnlFoodCostEnd || 0);
+  return { pLFoodCost, pLFoodPct: sales ? pLFoodCost / sales : null };
+}
+
 // A store is treated as "believes they're done" at this overall completion.
 // FOB $/% per store for a period. qsr_fob is a DAILY table, but each daily row is a period-to-date
 // SNAPSHOT (the FOB report is month-keyed — the pull queries one date but the API returns the running
@@ -119,14 +133,9 @@ export function fobSnapshotByStore(fobRows, period) {
     const emp = r.empMgrMealsAmt || 0, statv = r.statVarianceAmt || 0, unex = r.unexplainedAmt || 0;
     const sales = r.prodSalesAmt || 0;
     const fob = comp + raw + cond + emp + statv + unex;
-    // Total P&L Food Cost $ — the SAME Begin+Purchases+Adjustments+Transfers-Promotions-End
-    // build-up already used in analytics.js's fobAuto/fobAgg. A different, broader metric
-    // than FOB (Food Over Base) above — this is what QSRSoft's own "P & L Food Cost %" column
-    // reports (EOM Supervisor's "Total Food Cost", 2026-08-03).
-    const pLFoodCost = (r.pnlFoodCostBegin || 0) + (r.pnlFoodCostPurchases || 0) + (r.pnlFoodCostAdjustments || 0)
-                      + (r.pnlFoodCostTransfers || 0) - (r.pnlFoodCostPromotions || 0) - (r.pnlFoodCostEnd || 0);
+    const { pLFoodCost, pLFoodPct } = pLFoodCostFromRow(r, sales);
     acc[loc] = { sales, comp, raw, cond, emp, statv, unex, fob, fobPct: sales ? fob / sales : null,
-      pLFoodCost, pLFoodPct: sales ? pLFoodCost / sales : null, asOf: latest[loc].key };
+      pLFoodCost, pLFoodPct, asOf: latest[loc].key };
   }
   return acc;
 }
