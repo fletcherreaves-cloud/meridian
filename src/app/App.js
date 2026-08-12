@@ -1547,7 +1547,7 @@ function App() {
       // requests. Pagination WITHIN each stream was already parallel (v4.594); the
       // serialisation left was BETWEEN streams. The Sales chip's own source
       // (qsr_daily_activity) did not finish paginating until t=150s, because it sat at
-      // stage 22 of 28.
+      // stage 22 of 28. SUPERSEDED — see #246 note below; kept for history, not current.
       //
       // Each stage above is an independent thunk — its own try/catch, its own setDs
       // patch — so ordering them is a scheduling decision, not a data-flow one. Nothing
@@ -1555,10 +1555,28 @@ function App() {
       //
       // T1  what the app is unusable without — Sales chip + targets. Awaited.
       // T2  every other auto/emailed stream. Fired in parallel, not awaited before paint.
-      // T3  the four MANUAL uploads. By the standing auto/emailed-first rule these are
-      //     "last-resort fill only, never a tile's primary source" — yet they accounted
-      //     for ~90 of the 183 seconds. They load last so they can still backfill a
-      //     loc/date the cloud doesn't cover, without ever blocking first paint.
+      // T3  the manual-upload fallback streams. By the standing auto/emailed-first rule
+      //     these are "last-resort fill only, never a tile's primary source." They load
+      //     last so they can still backfill a loc/date the cloud doesn't cover, without
+      //     ever blocking first paint.
+      //
+      // #246 — real capture with this file's own per-tier/per-stage instrumentation,
+      // 2026-08-12, this sandbox's dev server against its live Supabase project (NOT the
+      // owner's production browser/network — that distinction matters, so treat this as a
+      // same-order-of-magnitude confirmation, not a production-equal figure). The old
+      // 182.9s/~90s claim above predates #191 (manual-fallback lazy fill), the DAR rollup
+      // table, and #248's xlsx lazy-load — all now live, and it shows: total elapsed T1+T2+T3
+      // was ~49.5s, not ~183s. T1 21.3s (own = cumulative, it's first). T2 own-duration
+      // 14.1s — 16 of its 22 stages land in a ~7.05-7.08s cluster, 4 (lockedProjections,
+      // aeParams, modelAssignments, dialedIn) return in ~10-11ms (cache/localStorage-backed,
+      // no real fetch), and qsrsoftFob + peaksRows are the two that actually set T2's tier
+      // length, both landing at ~14.09s. T3 own-duration 14.1s — ctrlRows and opsRows both
+      // land at ~14.05s (T3's tier-setting pair), fobRows finishes faster at ~7.04s. So T3
+      // is no longer "~90 of 183 seconds" of the total; it's under a third of a ~50s load,
+      // in line with what #191's lazy-fill was expected to do. A same-session sandbox
+      // capture is a real measurement, not a guess, but the owner should treat it as
+      // directional until confirmed against an actual production run with this
+      // instrumentation live.
       const _t0 = performance.now();
       const _ms = () => Math.round(performance.now() - _t0);
       // #246 — _ms() above is cumulative-since-start, kept exactly as-is so every log line
