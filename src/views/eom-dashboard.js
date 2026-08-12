@@ -12,7 +12,7 @@ import { ModalShell, Z } from '../components/ModalShell.js';
 import { PanelChrome } from '../components/PanelChrome.js';
 import { LocationSelector, ActionMenus } from '../components/PanelControls.js';
 import {
-  loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
+  loadQsrOnHand, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
@@ -1090,7 +1090,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [period, setPeriod] = useState(defaultPeriod());   // early-month → prior month's EOM (still closing)
   const [loading, setLoading] = useState(true);
   const [onHand, setOnHand] = useState([]);
-  const [fobRows, setFobRows] = useState([]);
+  // #211 free perf win: was its own loadQsrFob() re-fetch of the full unscoped ~13k-row table
+  // on every period change, duplicating what App.js already loaded once at startup into
+  // ds.qsrFobRows (same pattern above-store-onepager.js already uses, :82). Both are the same
+  // full table — loadQsrFob() takes no period argument either — so this is a pure duplicate
+  // fetch, not a narrower one; reading ds directly removes it.
+  const fobRows = (ds && ds.qsrFobRows) || [];
   const [statusMap, setStatusMap] = useState({}); // loc -> saved eom_count_status
   const [saving, setSaving] = useState('');
   const [draft, setDraft] = useState(null); // { loc, name, subject, body, rows, uncounted } for the comms modal
@@ -1217,9 +1222,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     setLoading(true);
     try {
       const prevP = lastPeriods(p, 2)[0];   // previous month → "vs Last EOM" baseline
-      const [oh, fob, st, vr, wa, tr, rd, pvr] = await Promise.all([
+      const [oh, st, vr, wa, tr, rd, pvr] = await Promise.all([
         loadQsrOnHand({ period: p }),
-        loadQsrFob().catch(() => []),
         loadEomCountStatus({ period: p }).catch(() => []),
         loadQsrVarianceStat({ period: p }).catch(() => []),
         loadQsrWaste({ period: p }).catch(() => []),
@@ -1228,7 +1232,6 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         loadQsrVarianceStat({ period: prevP }).catch(() => []),
       ]);
       setOnHand(oh || []);
-      setFobRows(fob || []);
       setVariance(vr || []);
       setPrevVariance(pvr || []);
       setWaste(wa || []);

@@ -233,7 +233,7 @@ a large part of why this area feels slow.
 | Change Monitor Snapshot | **Dissolved** — irrelevant once date range + cycle parameterise the view |
 | Six reports | **Verify and check; harvest and merge where possible** |
 
-## 12. Still open
+## 12. Still open (as of 2026-08-11) — RESOLVED below, 2026-08-12
 
 - **Do the three templates hold under implementation?** §8 is from reading the builders, not
   from building them. Confirm before committing to three.
@@ -242,6 +242,97 @@ a large part of why this area feels slow.
 - **Sequencing vs #191.** The shell's single-load property overlaps the `qsr_fob` pagination
   work. Decide whether #191's `qsr_fob` slice waits for the shell or ships first — doing both
   independently risks one reverting the other.
+
+## 12b. §12 answered — measured against the actual code, 2026-08-12 (before starting #211)
+
+Every §12 item read against the live source, not re-reasoned. File:line citations below are as of
+this date; they drift over time the way the doc's own §8 line numbers already had (~10-60 lines).
+
+**Three templates → actually four, and B has an exception.**
+- **A (ranked store report)** confirmed clean: FOB Report / FOB Leadership Summary
+  (`eom-dashboard.js:1467,1494`) are one shared shape off one `fobReport` useMemo, just different
+  row-filters/columns.
+- **B (per-store item detail)** confirmed for its first two only: Count Reliability / Rubber-band
+  (`:1752,1777`) are a genuine matched pair — same per-store `<h1>` loop, same table columns.
+  **Chronic Offenders (`:1764`) does NOT fit B.** It has no per-store loop at all — one flat table
+  keyed by ITEM, not store (`items.map(...)`, not `stores.map(...)`). Structurally it's closer to
+  C's single-table shape than to B's per-store nesting. The doc's own three-template grouping was
+  wrong about this one; don't build a shared B renderer that assumes a per-store `<h1>` loop and
+  then discover Chronic Offenders doesn't fit it.
+- **C (district KPI block)** confirmed: District EOM Summary (`:1724`).
+- **A 4th template is required: EOM Supervisor is not a preset of C.** Four concrete reasons it
+  can't be forced into C's shape (all measured against `eom-supervisor.js`, 970 lines): (1) its
+  own period unit is Year/Month + a groupType×group axis (supervisor/operator/all), not a
+  `period` string bucket; (2) it has LIVE EDITABLE CELLS with real persistence — `EditCell`
+  inputs for OT hours/op-supplies/cash/labor-transfers write to localStorage AND upsert to
+  Supabase `org_config` on every change (`:781-791`) — templates A/B/C are all pure read/render,
+  none of them mutate anything; (3) its print mechanism is DOM class-toggling + `@media print`
+  (`doPrint`, `:666-670`), not eom-dashboard's shared `openPrintWindow()` popup-window pattern
+  (`:82-98`) — reusing C's print path would mean losing in-place edit-state printing; (4) its
+  rollup formula ("Total of Shaded Boxes" = fobVar$ + laborNewTotal + opSup$, explicitly
+  EXCLUDING Total Food Cost and OT $ per a 2026-08-04 owner directive baked into the code,
+  `:329`) is unrelated to C's dollar-weighted FOB rollup. Call the 4th template "editable
+  projection-vs-actual grid" — it needs the shell's SCREEN mode (for the live editing) more than
+  its PRINT mode, unlike A/B/C which are pure print artifacts.
+- **One more asymmetry worth carrying into implementation**: all 6 reports share only the
+  OUTER print chrome (`openPrintWindow()`, the `<html><head><style>` wrapper) — the body-HTML
+  generation itself is 6 separate hand-written template-literal functions
+  (`fobRepPrintHtml`/`leadershipPrintHtml`/`relPrintHtml`/`chronicPrintHtml`/`rbPrintHtml`/
+  `sumPrintHtml`), unlike `above-store-onepager.js`'s `printOnePager()`, which walks the SAME
+  section-gate list + calls the SAME `drilldownRows()` the screen uses. So "harvest into shared
+  renderers" (§8's ask) is real, unstarted work — the current sharing is skin-deep (CSS/wrapper
+  only), not structural.
+
+**EOM Supervisor → own template**, per the 4 reasons above. Not a preset of C.
+
+**`eom-share-view` → confirmed: fixed single-store + fixed period only, never the full context.**
+`EomShareView({token})` (`eom-share-view.js:60`) takes ONLY an opaque share token — no scope,
+period, or class prop, no selector UI anywhere in the file. `fetchSharedEom(token)` returns a
+snapshot with `loc`/`period` baked in server-side; the one "live" action (`doRefresh`) re-pulls
+the SAME store+period, never a different one. **Implication for the shell's LINK mode**: it
+should expose scope pinned to exactly 1 store and period pinned to whatever the share record
+says — not the shell's live scope/period selectors. Building LINK as "the shell with scope/period
+locked" rather than "a new component" is the right shape once this is understood.
+
+**Sequencing vs #191 → the qsr_fob re-fetch is CONFIRMED STILL PRESENT, unfixed by #214/#218.**
+`eom-dashboard.js:1216-1243`'s `load(p)` calls `loadQsrFob()` with NO period argument — the full,
+unscoped table — on every `period` state change, into a component-local `fobRows`, duplicating
+`ds.qsrFobRows` which `App.js:2518-2525` already loaded once at startup. `git log --oneline --
+src/views/eom-dashboard.js` shows the file's last touch (`27ed01e`, "#192 P0a") predates and is
+unrelated to #214/#218 (those touched Inventory Intelligence / `qsr_inventory_summary`, a
+different table, different file). **Decision, not further research**: since the free perf win
+(§10) requires exactly the shell's "one context, one load" property this re-fetch violates, and
+since #191 doesn't own eom-dashboard.js specifically, the shell absorbs this fix directly —
+Slice 1 should read `ds.qsrFobRows` instead of calling `loadQsrFob()` a second time, rather than
+waiting on a separate #191 slice that may never target this exact call site.
+
+**One NEW open question surfaced by this pass, not in the original §12** — the Labor "class"
+axis (§4's "position/daypart/crew-vs-management, TBD"): the crew-vs-management split IS real and
+already in the data (`labor-basis.js:16-32`'s `tCrewLabor`/`tLabor`/`tBonusLabor`/`tCombLabor`
+target-basis resolver; `eom-supervisor.js:148-159` computes an exact dollar-weighted Crew Labor %
+from `qsr_labor_summary.crew_labor_dollars`, a field genuinely separate from
+`salariedManagerDollars`) — "position" in the literal job-title sense does not exist anywhere in
+the codebase (no grep hit), and daypart exists only inside `DARDaypartPanel`
+(`labor-tools.js:60-278`), gated on `ds.darRows`, not a universal field. So crew-vs-management is
+the answer, not a guess — but WHETHER it should be a first-class filter axis the user toggles
+(same interaction as Food Cost's `class` dropdown) or a per-metric COLUMN split within one view
+(the way `eom-supervisor.js` already shows Crew Labor split from OT/Cash side-by-side in one
+grid, never as a toggle) is a genuine design choice, not something the code answers by itself —
+flagged to the owner before Labor instantiation (Food Cost's own `class` is fully decided already
+per §11 and doesn't block on this).
+
+**Concrete evidence "identical fragmentation" (§4) is real, not asserted**: `labor-tools.js`'s
+`OperatorSummaryPanel` (`:1330-1339`) and `LaborAnalyticsPanel` (`:1676-1691`) carry two
+INDEPENDENTLY RE-TYPED copies of the same `PERIODS` array (2wk/4wk/6wk/mtd/lm/3m/6m/ytd, same
+comment about `lastClosedBusinessDay()`) that have already silently drifted by one entry (`'ly'`
+present in one, absent in the other). `scheduling.js` carries a THIRD, independent
+Wednesday-anchored week vocabulary, with two only-partially-shared implementations in the same
+file (`OpportunityReport:393-434` vs `SchedulingPanel:1029-1083`, connected by an incomplete
+`panelManaged`/`extWeeks` prop-passing escape hatch). This is the labor side's version of exactly
+the six-inventory-panels problem — real drift, not speculative risk.
+
+Full agent transcript / methodology available in this session; not re-copied here since every
+claim above already carries its own file:line citation.
 
 ## 13. Related
 
