@@ -19,8 +19,16 @@
 // These tests parse all three as text (App.js is a huge React module that can't be imported in
 // a bare node environment) and enforce every property that split depends on: the two changelog
 // files exist and are well-formed, App.js derives from the small one only, and the small one's
-// entry is byte-for-byte the same as the full array's first entry (the "keep them in sync"
-// contract changelog-data.js's own header comment documents).
+// entry is byte-for-byte the same as whichever entry in the full array carries the highest
+// version number (the "keep them in sync" contract changelog-data.js's own header comment
+// documents).
+//
+// Changelog-restructure fix (2026-08-12): changelog-data.js is now append-only — a new entry
+// lands at the END of the array, not interleaved into version order, so four PRs open at once
+// stop colliding on the same top-of-array insertion line. That means the array is no longer
+// guaranteed sorted, so "matches the newest entry" is found by MAX version, not by position
+// (first or last), and changelog-panel.js is responsible for sorting newest-first at render —
+// guarded below by a source-parse check that it actually does.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -68,33 +76,39 @@ describe('changelog / version', () => {
     expect(LATEST_SRC).not.toMatch(/from\s*'\.\/changelog-data\.js'/);
   });
 
-  it('LATEST_CHANGELOG_ENTRY (changelog-latest.js) matches MERIDIAN_CHANGELOG[0] (changelog-data.js) exactly', () => {
+  it('LATEST_CHANGELOG_ENTRY (changelog-latest.js) matches the MAX-version entry in MERIDIAN_CHANGELOG (changelog-data.js) exactly', () => {
     // The two are maintained as separate literals on purpose (see changelog-data.js's header) —
     // this is the guard that catches drift between them, the same class of bug this whole file
-    // exists to prevent for MERIDIAN_VERSION vs the footer.
+    // exists to prevent for MERIDIAN_VERSION vs the footer. Found by MAX version, not by array
+    // position (first or last) — the array is append-only now (see changelog-data.js's header),
+    // so the newest entry's physical position isn't guaranteed.
     const latestBlock = (() => {
       const marker = 'export const LATEST_CHANGELOG_ENTRY = ';
       const i = LATEST_SRC.indexOf(marker);
       expect(i, 'LATEST_CHANGELOG_ENTRY not found in changelog-latest.js').toBeGreaterThan(-1);
       return LATEST_SRC.slice(i + marker.length).replace(/;\s*$/, '');
     })();
-    const dataFirstEntryBlock = (() => {
-      const marker = 'export const MERIDIAN_CHANGELOG = [';
-      const i = DATA_SRC.indexOf(marker) + marker.length;
-      const entryStart = DATA_SRC.indexOf('{version:', i);
+    const maxVersion = versions.reduce((best, v) => {
+      const [bMaj, bMin] = asNum(best);
+      const [vMaj, vMin] = asNum(v);
+      return (vMaj > bMaj || (vMaj === bMaj && vMin > bMin)) ? v : best;
+    });
+    const dataMaxEntryBlock = (() => {
+      const marker = `{version:'${maxVersion}',`;
+      const entryStart = DATA_SRC.indexOf(marker);
+      expect(entryStart, `entry for max version ${maxVersion} not found`).toBeGreaterThan(-1);
       const entryEnd = DATA_SRC.indexOf('\n  ]},', entryStart) + '\n  ]}'.length;
       return DATA_SRC.slice(entryStart, entryEnd);
     })();
-    expect(latestBlock.trim()).toBe(dataFirstEntryBlock.trim());
+    expect(latestBlock.trim()).toBe(dataMaxEntryBlock.trim());
   });
 
-  it('is sorted strictly newest-first', () => {
-    for (let i = 1; i < versions.length; i++) {
-      const [aMaj, aMin] = asNum(versions[i - 1]);
-      const [bMaj, bMin] = asNum(versions[i]);
-      const ok = aMaj > bMaj || (aMaj === bMaj && aMin > bMin);
-      expect(ok, `out of order: ${versions[i - 1]} appears before ${versions[i]}`).toBe(true);
-    }
+  it('changelog-panel.js sorts MERIDIAN_CHANGELOG newest-first before rendering', () => {
+    // The array itself is append-only (no longer guaranteed sorted) — this is the guard that
+    // display order still comes out newest-first, since the raw array can't be trusted to.
+    const PANEL_SRC = readFileSync('src/app/changelog-panel.js', 'utf8');
+    expect(PANEL_SRC, 'changelog-panel.js must sort MERIDIAN_CHANGELOG before rendering it')
+      .toMatch(/MERIDIAN_CHANGELOG\.slice\(\)\.sort\(/);
   });
 
   it('has no duplicate versions', () => {
