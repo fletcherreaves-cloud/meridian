@@ -1561,6 +1561,24 @@ function App() {
       //     loc/date the cloud doesn't cover, without ever blocking first paint.
       const _t0 = performance.now();
       const _ms = () => Math.round(performance.now() - _t0);
+      // #246 — _ms() above is cumulative-since-start, kept exactly as-is so every log line
+      // already cited in commit history/memory stays comparable. It was the ONLY number, and
+      // it silently meant "T2 complete" and "T3 complete" printed the whole T1+T2+T3 elapsed
+      // time, not their own duration — a slow T3 could hide behind a fast T1+T2 and vice versa,
+      // and nothing said which of T2's 22 parallel stages (or T3's 3) was the one actually
+      // setting the tier's length, since Promise.all resolves on its slowest member. _tierMs()
+      // adds the OWN-duration number alongside the existing cumulative one at each tier's log
+      // line; _timedStage() wraps a stage's own promise to log its individual elapsed time
+      // against its tier's start, so the 850ms in "we lose 900ms to stage overhead" (never
+      // measured, and no smaller than 22 stages actually finishing round-robin) shows up on
+      // a specific line, not folded into the tier total. Wrapping is at the call site only —
+      // no _stXxx stage definition changes shape or behavior, per this block's own preceding
+      // "nothing below changes what any stage does" comment.
+      const _tierMs = (start) => Math.round(performance.now() - start);
+      const _timedStage = (label, fn, tierStart) => fn().then(r => {
+        console.log(`[Meridian]   · ${label} — ${_tierMs(tierStart)}ms`);
+        return r;
+      });
       // T1 loads a NARROW DAR window. qsr_daily_activity is hourly (~675 rows/day), so 60
       // days is ~40k rows over ~41 pages — measured at 46s, and it was the entire reason
       // T1 came in at 53.6s rather than the single-digit seconds the tiering was meant to
@@ -1579,24 +1597,51 @@ function App() {
       // DAR joins T1 too now that the rollup table makes it ~1,650 rows in 2 requests
       // instead of ~40,000 in ~40 — it was pulled out of T1 in v4.848 purely because
       // of that cost.
+      const _t1Start = _t0;
       await Promise.all([_stMonthlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
       _flushDs(); // T1: 4 stages → 1 commit
-      console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms`, 'color:#f5bc00;font-weight:700');
+      console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms (tier: ${_tierMs(_t1Start)}ms)`, 'color:#f5bc00;font-weight:700');
+      const _t2Start = performance.now();
       const _t2 = Promise.all([
-        _stSmgFullscale(), _stVoicePerformance(), _stVoiceDaypart(),
-        _stSmgComments(), _stLifelenz(), _stLifelenzJobHours(),
-        _stGradedVisits(), _stQsrsoftFob(), _stPeaksRows(),
-        _stDarRows(), _stCustomSignals(), _stQsrFieldDefs(),
-        _stEbosOpSupplies(), _stPeopleReports(), _stDigitalDeliveryShiftmgr(),
-        _stLockedProjections(), _stAeParams(),
-        _stModelAssignments(), _stDialedIn(), _stOrgEventsHydration(), _stEventImpact(),
-        _stCoachingCycles(),
+        _timedStage('T2 smgFullscale', _stSmgFullscale, _t2Start),
+        _timedStage('T2 voicePerformance', _stVoicePerformance, _t2Start),
+        _timedStage('T2 voiceDaypart', _stVoiceDaypart, _t2Start),
+        _timedStage('T2 smgComments', _stSmgComments, _t2Start),
+        _timedStage('T2 lifelenz', _stLifelenz, _t2Start),
+        _timedStage('T2 lifelenzJobHours', _stLifelenzJobHours, _t2Start),
+        _timedStage('T2 gradedVisits', _stGradedVisits, _t2Start),
+        _timedStage('T2 qsrsoftFob', _stQsrsoftFob, _t2Start),
+        _timedStage('T2 peaksRows', _stPeaksRows, _t2Start),
+        _timedStage('T2 darRows', _stDarRows, _t2Start),
+        _timedStage('T2 customSignals', _stCustomSignals, _t2Start),
+        _timedStage('T2 qsrFieldDefs', _stQsrFieldDefs, _t2Start),
+        _timedStage('T2 ebosOpSupplies', _stEbosOpSupplies, _t2Start),
+        _timedStage('T2 peopleReports', _stPeopleReports, _t2Start),
+        _timedStage('T2 digitalDeliveryShiftmgr', _stDigitalDeliveryShiftmgr, _t2Start),
+        _timedStage('T2 lockedProjections', _stLockedProjections, _t2Start),
+        _timedStage('T2 aeParams', _stAeParams, _t2Start),
+        _timedStage('T2 modelAssignments', _stModelAssignments, _t2Start),
+        _timedStage('T2 dialedIn', _stDialedIn, _t2Start),
+        _timedStage('T2 orgEventsHydration', _stOrgEventsHydration, _t2Start),
+        _timedStage('T2 eventImpact', _stEventImpact, _t2Start),
+        _timedStage('T2 coachingCycles', _stCoachingCycles, _t2Start),
       ]);
-      _t2.then(() => { _flushDs(); console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms`); }); // T2: 14 ds-touching stages → 1 commit
-      const _t3 = _t2.then(() => Promise.all([_stFobRows(), _stOpsRows(), _stCtrlRows()]));
+      let _t2Done = null;
+      _t2.then(() => {
+        _t2Done = performance.now();
+        _flushDs();
+        console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms (tier: ${_tierMs(_t2Start)}ms)`);
+      }); // T2: 22 ds-touching stages → 1 commit
+      const _t3 = _t2.then(() => Promise.all([
+        _timedStage('T3 fobRows', _stFobRows, _t2Done ?? performance.now()),
+        _timedStage('T3 opsRows', _stOpsRows, _t2Done ?? performance.now()),
+        _timedStage('T3 ctrlRows', _stCtrlRows, _t2Done ?? performance.now()),
+      ]));
       await Promise.allSettled([_t2, _t3]);
-      _flushDs(); // T3: 4 stages → 1 commit
-      console.log(`[Meridian] T3 manual-fallback backfill complete — ${_ms()}ms (total)`);
+      _flushDs(); // T3: 3 stages → 1 commit
+      // _t2Done is guaranteed set here — T3 is chained off _t2 resolving, and the T2-completion
+      // .then() above is registered before T3's, so it runs first once _t2 settles.
+      console.log(`[Meridian] T3 manual-fallback backfill complete — ${_ms()}ms (total) (tier: ${_tierMs(_t2Done)}ms)`);
 
     })();
   },[]);
