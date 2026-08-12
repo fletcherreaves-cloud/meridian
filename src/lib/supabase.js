@@ -2338,7 +2338,12 @@ export async function loadSalesLedger(daysBack = 45) {
     fcSales: r.fc_sales, fcGC: r.fc_gc, fcPctTotal: r.fc_pct_total,
     inStoreSales: r.in_store_sales, inStoreGC: r.in_store_gc, inStorePctTotal: r.in_store_pct_total,
     eatInSales: r.eat_in_sales, eatInGC: r.eat_in_gc,
-    laborPct: 0, actHrs: 0, otHrs: 0, tpph: 0, spph: 0,
+    // #236: null, not 0 — sales_ledger_daily has no labor columns at all. See
+    // parsers/index.js's parseSalesLedger for the full incident this same stub caused when it
+    // was 0 and merged into ds.laborRows/the labor_rows table (994 corrupted store-days).
+    // Nothing currently reads ds.salesLedgerRows.laborPct as a metric-source input, but keep the
+    // two loaders (this one, the manual parser) consistent so that stays true by construction.
+    laborPct: null, actHrs: null, otHrs: null, tpph: null, spph: null,
     _isCloudLedger: true,
   }));
 }

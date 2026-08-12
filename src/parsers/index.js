@@ -1332,8 +1332,19 @@ function parseSalesLedger(wb, filename){
       inStoreSales:parseNum(r[C.inStoreSales]),inStoreGC:parseNum(r[C.inStoreGC]),
       inStorePctTotal:parsePct(r[C.inStorePctTotal]),
       eatInSales:parseNum(r[C.eatInSales]),eatInGC:parseNum(r[C.eatInGC]),
-      // Labor fields stub — Sales Ledger has no labor data
-      laborPct:0,actHrs:0,otHrs:0,tpph:0,spph:0,
+      // #236: Sales Ledger has no labor data — these MUST be null, not 0. This row merges into
+      // ds.laborRows (pipeline.js) so its `sales` figure can supplement Labor Analysis history
+      // when that report lags; a literal 0 here reads as "this store ran 0% labor today," which
+      // metric-source.js's mode:'pos' resolver already treats as invalid (a %'s never legitimately
+      // 0) and skips — but App.js's manual-upload save path pushed these rows straight to the
+      // labor_rows table with saveLaborRows's `r.laborPct ?? null` mapping, and `0 ?? null` is 0,
+      // not null. That upsert (onConflict: loc,report_date) then silently overwrote or filled in
+      // real Labor Analysis percentages with a false zero — measured: 994 (store,day) rows with
+      // labor_pct=0 AND sales>0 across all 27 stores, 2025-01-22 through 2026-07-23. null here
+      // fixes future writes; _salesLedgerSupplement below lets App.js exclude these rows from ever
+      // reaching labor_rows at all (see App.js's _freshLaborRows filter).
+      laborPct:null,actHrs:null,otHrs:null,tpph:null,spph:null,
+      _salesLedgerSupplement:true,
     });
   }
   return rows;
