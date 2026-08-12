@@ -61,34 +61,42 @@ const UNKNOWN_COLOR = 'var(--text3)';
 // Converts a "gap past target" into a 0-100 health band: 100 at/better than target,
 // linearly down to 0 once the gap reaches badAt (in the SAME unit as gap — pp or %).
 // A negative gap (better than target) always bands to 100, never above.
-function bandFromGap(gap, badAt) {
+export function bandFromGap(gap, badAt) {
   if (gap == null || !(badAt > 0)) return null;
   return Math.max(0, Math.min(100, 100 * (1 - Math.max(0, gap) / badAt)));
 }
 
-// Builds this store's N dimensions, each {label, band, detail}. `band` is null (and the
-// dimension excluded from worst-of-N) when the store lacks the inputs for it — never
-// defaulted to a fabricated "good" or "bad" value.
-function storeDimensions(store, fobRow) {
+// #219 — badAt calibration. band = 100*(1-gap/badAt) with clean>=80 / watch>=50 means WATCH
+// fires at 0.2*badAt and CRITICAL fires at 0.5*badAt, not at badAt itself — a structural fact
+// the original v4.985/986 constants (chosen, not derived) missed entirely, which is why the
+// first production look flagged 26 of 27 stores the same day the rest of the dashboard read
+// 25 of 27 as trusted-healthy. Measured 2026-08-11 (owner, scripts/measure-patch-heatmap-bands.mjs
+// against live production): badAt below = 2 x each dimension's over-target p90, so CRITICAL
+// anchors to "worse than 90% of over-target days" as intended, not p90 itself. Sales and Labor
+// were far too tight (Labor 3->8.8, ~2.9x; Speed 20->73, ~3.7x — Speed did most of the damage);
+// FOB was the opposite, genuinely loose at 2% critical (3->1.9, tighter). Expected result on the
+// measured distribution: ~6 critical / 14 watch / 7 clean, vs the original 18/8/1. Controls is a
+// composite score (computeOpsScore), not a raw gap-to-target — correctly left uncalibrated here.
+export function storeDimensions(store, fobRow) {
   const dims = [];
   const t = store.t || {};
 
   if (store.pSales > 0 && store.pLY > 0) {
     const pct = (store.pSales - store.pLY) / store.pLY * 100; // negative = behind LY
-    dims.push({ label: 'Sales', band: bandFromGap(-pct, 15), detail: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% vs LY` });
+    dims.push({ label: 'Sales', band: bandFromGap(-pct, 27), detail: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% vs LY` });
   }
   if (fobRow && fobRow.fobPct != null && t.tFOBTarget != null) {
     const overPp = (fobRow.fobPct - t.tFOBTarget) * 100;
-    dims.push({ label: 'FOB', band: bandFromGap(overPp, 3), detail: `${(fobRow.fobPct * 100).toFixed(2)}% vs ${(t.tFOBTarget * 100).toFixed(2)}% target` });
+    dims.push({ label: 'FOB', band: bandFromGap(overPp, 1.9), detail: `${(fobRow.fobPct * 100).toFixed(2)}% vs ${(t.tFOBTarget * 100).toFixed(2)}% target` });
   }
   const laborTarget = resolveLaborTarget(t);
   if (store.p && store.p.laborPct > 0 && laborTarget > 0) {
     const overPp = (store.p.laborPct - laborTarget) * 100;
-    dims.push({ label: 'Labor', band: bandFromGap(overPp, 3), detail: `${(store.p.laborPct * 100).toFixed(2)}% vs ${(laborTarget * 100).toFixed(2)}% target` });
+    dims.push({ label: 'Labor', band: bandFromGap(overPp, 8.8), detail: `${(store.p.laborPct * 100).toFixed(2)}% vs ${(laborTarget * 100).toFixed(2)}% target` });
   }
   if (store.p && store.p.oepe > 0 && t.tOepe > 0) {
     const overPct = (store.p.oepe - t.tOepe) / t.tOepe * 100;
-    dims.push({ label: 'Speed', band: bandFromGap(overPct, 20), detail: `${Math.round(store.p.oepe)}s vs ${Math.round(t.tOepe)}s target` });
+    dims.push({ label: 'Speed', band: bandFromGap(overPct, 73), detail: `${Math.round(store.p.oepe)}s vs ${Math.round(t.tOepe)}s target` });
   }
   if (typeof store.ctrlScore === 'number') {
     dims.push({ label: 'Controls', band: Math.max(0, Math.min(100, store.ctrlScore)), detail: `${store.ctrlScore.toFixed(0)} score` });

@@ -1,11 +1,23 @@
-# Patch Heatmap band calibration (#219) — measurement tooling, bands NOT yet changed
+# Patch Heatmap band calibration (#219) — measured, decided, shipped
 
-**Status:** blocked on live data. `scripts/measure-patch-heatmap-bands.mjs` is written and its
-imports verified to resolve in Node, but has never been run — no `SUPABASE_SERVICE_ROLE_KEY` in
-this sandbox (same constraint as `measure-coaching-noise-threshold.mjs` for #208). **The
-`badAt` constants in `src/views/patch-heatmap.js` are unchanged.** Per the issue's own
-instruction — "don't loosen until it looks nice, that's picking by feel twice" — changing them
-without the real distribution would be exactly the mistake the issue is trying to prevent.
+**Status: DONE.** The owner ran `scripts/measure-patch-heatmap-bands.mjs` against live
+production (2026-08-11) and supplied final `badAt` values, corrected for a structural bug the
+script itself didn't flag (see below). `src/views/patch-heatmap.js`'s `storeDimensions()` now
+uses: **Sales 27** (was 15) · **FOB 1.9** (was 3, tighter) · **Labor 8.8** (was 3) · **Speed 73**
+(was 20). Controls stays uncalibrated by design (composite score, out of scope). 9 new tests
+(`src/__tests__/patch-heatmap-bands.test.js`) lock in both the constants and the corrected
+formula together.
+
+## The structural bug the script didn't catch on its own
+
+`bandFromGap(gap, badAt) = 100 * (1 - gap/badAt)`, and `cellStatus()` grades clean at band>=80,
+watch at band>=50. Solving those: **watch fires once gap exceeds `0.2 * badAt`, and critical
+fires once gap exceeds `0.5 * badAt` — not at `badAt` itself.** The original v4.985/986
+constants were picked as if `badAt` WAS the critical line, which is why they were roughly
+2-3.7x too tight across three of the four dimensions. A raw p90-of-over-target reading from the
+measurement script is therefore not directly usable as `badAt` — it has to be DOUBLED first, so
+that the p90 value lands at the `0.5 * badAt` critical boundary where it was actually intended.
+The four shipped constants above are already 2x each dimension's measured over-target p90.
 
 ## The finding that started this
 
@@ -79,18 +91,24 @@ the live-computed score over time. Flagged rather than guessed at or silently sk
 - **Not verified**: never run against real data, so its numeric OUTPUT (the actual percentiles)
   is unknown. This doc does not claim a result — only that the tool is ready to produce one.
 
-## Next step
+## What actually shipped
 
-Someone with `SUPABASE_SERVICE_ROLE_KEY` (the owner, or a future session with real access) runs:
+Owner-supplied final values (already 2x the measured over-target p90, correcting for the
+structural bug above):
 
-```
-node scripts/measure-patch-heatmap-bands.mjs
-```
+| Dimension | Old `badAt` | New `badAt` | Direction |
+|---|---|---|---|
+| Sales | 15 | **27** | loosened ~1.8x |
+| FOB | 3 | **1.9** | tightened — was genuinely loose |
+| Labor | 3 | **8.8** | loosened ~2.9x |
+| Speed | 20 | **73** | loosened ~3.7x — did most of the original damage |
 
-...reads the printed p90/p95 candidates per dimension, updates the 4 `badAt` constants in
-`src/views/patch-heatmap.js`'s `storeDimensions()` to match, and cites the measurement in the
-code comment (matching how `COVER_FRAC` and the swing alarm cite theirs). #220 (patch rollup
-tiles) is blocked behind this landing — the owner explicitly sequenced it that way.
+Expected result on the measured distribution: **~6 critical / 14 watch / 7 clean**, vs the
+original 18/8/1. Not independently re-verified live in this sandbox (no browser/Supabase
+session here) — if the live grid doesn't land near that split, that's a real finding to raise,
+not something to nudge quietly.
 
-If the measured bands still flag close to 26 of 27 once real percentiles are used, that is
-itself a real finding (per the issue's own words) — not a sign the measurement is wrong.
+Code change: `src/views/patch-heatmap.js`'s `storeDimensions()`, with the structural
+band/badAt relationship and the measurement cited directly in the function's own comment
+(matching how `COVER_FRAC` and the swing alarm cite theirs). #220 (patch rollup tiles), which
+was blocked behind this landing, is unblocked.
