@@ -18,12 +18,18 @@
 // if it ever existed, was already overwritten and is not recoverable from this table) while
 // leaving sales, loc, and report_date untouched.
 //
+// A production write with no undo doesn't ship without a backup. Before touching a single row,
+// the apply path dumps every matched row's CURRENT full state (id/loc/report_date/labor_pct/
+// sales/tpph/ot_hrs/ot_dollar) to a timestamped JSON file under backups/ — that's the only way
+// to recover if this script (or a future one) needs to be reverted; the UPDATE itself has no undo.
+//
 //   node scripts/cleanup-labor-pct-stub-zeros.mjs --dry     # report only (start here)
-//   node scripts/cleanup-labor-pct-stub-zeros.mjs           # apply
+//   node scripts/cleanup-labor-pct-stub-zeros.mjs           # writes the backup, then applies
 //
 // Required env (apply only): VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient } from '@supabase/supabase-js';
+import { writeFileSync, mkdirSync } from 'node:fs';
 
 const DRY = process.argv.includes('--dry');
 
@@ -61,6 +67,13 @@ console.log(`Date range: ${dates[0]} .. ${dates[dates.length - 1]}`);
 
 if (!rows.length) { console.log('\nNothing to clean up.'); process.exit(0); }
 if (DRY) { console.log(`\n[--dry] would null labor_pct/tpph/ot_hrs/ot_dollar on ${rows.length} rows (sales left untouched). Re-run without --dry to apply.`); process.exit(0); }
+
+// Backup BEFORE any write — the update has no undo, so this is not optional.
+const ts = new Date().toISOString().replace(/[:.]/g, '-');
+const backupPath = `backups/labor-rows-cleanup-${ts}.json`;
+mkdirSync('backups', { recursive: true });
+writeFileSync(backupPath, JSON.stringify({ takenAt: new Date().toISOString(), signature: 'labor_pct=0 AND sales>0', rowCount: rows.length, rows }, null, 2));
+console.log(`\n✓ Backed up ${rows.length} rows' current state to ${backupPath} before writing anything.`);
 
 let updated = 0;
 for (const r of rows) {

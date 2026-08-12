@@ -33,3 +33,6 @@ supabase/.temp/
 .netlify
 .vercel
 .env*
+
+# Pre-write backups from one-time cleanup scripts (real production row data — never commit)
+/backups/
