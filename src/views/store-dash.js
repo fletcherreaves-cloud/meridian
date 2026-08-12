@@ -15,6 +15,7 @@ import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ModelHealthBadge } from './model-health-badge.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
+import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engine/monthly-targets-v2.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -82,18 +83,10 @@ function exportYearlyTargets(year) { return JSON.stringify(loadYearlyTargets(yea
 
 // MONTHLY TARGETS v2 — Per-month versioned target system (Option C)
 // Storage: localStorage 'mf_targets_v2': { 'YYYY-MM': { loc: {targets} } }
-
-function ymKey(date) {
-  const d = date instanceof Date ? date : new Date(date||Date.now());
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-}
-
-function loadTargetsV2() {
-  try { return JSON.parse(localStorage.getItem('mf_targets_v2')||'{}'); } catch { return {}; }
-}
-function saveTargetsV2(data) {
-  try { localStorage.setItem('mf_targets_v2', JSON.stringify(data)); return true; } catch { return false; }
-}
+// ymKey/loadTargetsV2/saveTargetsV2/migrateTargetsToV2 moved to engine/monthly-targets-v2.js
+// (#232 Finding 3) — App.js needs them unconditionally at startup, and they were the only thing
+// keeping this whole file pinned into the entry chunk. Imported back above so the rest of this
+// file's targets functions keep working unchanged.
 
 // Get targets for a specific year-month string (e.g. '2026-05')
 // Falls back to the most recent prior month that has targets, then DEFAULT_TARGETS
@@ -151,18 +144,6 @@ function exportTargetsV2() {
 function getTargetMonths() {
   const v2 = loadTargetsV2();
   return Object.keys(v2).filter(k=>!k.startsWith('_')).sort().reverse();
-}
-
-// Bootstrap: migrate existing flat targets to v2 format for current month
-function migrateTargetsToV2(userTargets, ym) {
-  if (!userTargets || !Object.keys(userTargets).length) return;
-  const v2 = loadTargetsV2();
-  if (v2[ym]) return; // already have this month
-  v2[ym] = {};
-  Object.entries(userTargets).forEach(([loc, tgts]) => {
-    if (loc && tgts && typeof tgts === 'object') v2[ym][loc] = {...tgts};
-  });
-  saveTargetsV2(v2);
 }
 
 const PEAK_SLICES = {
@@ -3694,8 +3675,8 @@ function CompareLineChart({selStores, COLS, ds}) {
 export {
   fetchForecastWeather,
   getYearlyStorageKey, loadYearlyTargets, saveYearlyTargets, setYearlyTarget, getYearlyTarget, exportYearlyTargets,
-  ymKey, loadTargetsV2, saveTargetsV2, getMonthTargets, getTargetsForDate, setMonthTargets,
-  copyMonthTargets, toggleMonthLock, exportTargetsV2, getTargetMonths, migrateTargetsToV2,
+  getMonthTargets, getTargetsForDate, setMonthTargets,
+  copyMonthTargets, toggleMonthLock, exportTargetsV2, getTargetMonths,
   PEAK_SLICES, normSlice, analyzePeaks,
   mdToNodes,
   useChart, TT, AX, LEG, SalesChart, OpsRadar, TrendChart,

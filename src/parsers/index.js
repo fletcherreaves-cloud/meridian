@@ -1,6 +1,18 @@
 // @ts-nocheck
-import * as XLSX from 'xlsx';
+import { loadXLSX } from '../lib/xlsx-lazy.js';
 import { DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
+
+// #248 — xlsx lazy-loaded (see lib/xlsx-lazy.js's header for the full rationale). The only
+// direct XLSX.* readers in this file — parseRaw, parseProjectionsFile, sniffSheetType,
+// parseSMGFullScale — all take an already-parsed `wb`, produced by App.js's handleFiles via
+// XLSX.read() after it awaited ensureParsersXLSXReady() below, so XLSX is always populated by
+// the time any of them run. Every other exported parser in this file reads through parseRaw, so
+// none of them need to change either. Stays synchronous throughout — no ripple to callers.
+let XLSX = null;
+export async function ensureParsersXLSXReady() {
+  if (!XLSX) XLSX = await loadXLSX();
+  return XLSX;
+}
 
 // ── Enhancement 3: MAPE Drift Detection ──────────────────────────────────────
 // Returns {mape2w, mape6w, drift, status:'ok'|'warn'|'recalibrate'}
@@ -240,19 +252,6 @@ function detectType(filename, wb){
   return{type:'unknown',label:'Unknown — select type below',dr,confidence:'low'};
 }
 
-async function readFile(file){
-  return new Promise((res,rej)=>{
-    const r=new FileReader();
-    const isCSV=file.name.toLowerCase().endsWith('.csv')||file.name.toLowerCase().endsWith('.txt');
-    if(isCSV){
-      r.onload=e=>{try{res(XLSX.read(e.target.result,{type:'string',raw:true}));}catch(err){rej(err);}};
-      r.readAsText(file);
-    }else{
-      r.onload=e=>{try{res(XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:false,raw:true}));}catch(err){rej(err);}};
-      r.readAsArrayBuffer(file);
-    }
-  });
-}
 
 
 // SECTION 4: PARSERS

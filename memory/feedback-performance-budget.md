@@ -72,6 +72,21 @@ have missed anything for it to reach that.
   convention.
 - **Measure before and after, and put both numbers in the commit body.** "Improved
   performance" is not a claim, it is a feeling. `3518.0 KB -> 2722.5 KB` is a claim.
+- **`check-bundle-budget.mjs`'s own number can point the wrong way.** It parses only the
+  entry FILE's printed gzip line — it has no idea how many other files `index.html`
+  `<link rel=modulepreload>`s, which are fetched just as eagerly. Confirmed twice now, not
+  hypothesized: #232's analytics.js slice (PR #238) split several shared modules
+  (supabase.js/blob-sync.js/etc.) into separate-but-modulepreloaded files, making the entry
+  file's own number look better than the real eager payload was. The very next #232 PR
+  (store-dash.js split) showed the mirror-image failure — Rollup re-inlined those SAME
+  modules back into the entry file once store-dash.js stopped forcing the split, and the
+  entry-file number went UP 21.47 KB gzip for a change that was a genuine 119.82 KB gzip
+  win once modulepreload is summed in. A commit or CI gate that trusts the entry-file
+  number alone would have called that second PR a regression. The honest number is always
+  entry file + every file `index.html` modulepreloads — compute it from the build's own
+  `dist/index.html` and chunk-size output, not from `check-bundle-budget.mjs`'s single
+  line, until that script itself sums the modulepreload set (unfixed as of 2026-08-12 —
+  flagged in #238, not yet built).
 - **A passing build is not a passing load.** A lazy declaration placed above its
   `lazyPanel` definition is a temporal-dead-zone `ReferenceError` at runtime and builds
   perfectly clean. Verify declaration order, not just compilation.
@@ -110,6 +125,37 @@ it at the low end (0.057–0.076) instead. Concretely: #232's remaining candidat
 of statically-imported panels + 195 KB of Chart.js) will NOT produce another ~96 KB win at
 #230's ratio — expect roughly 28–37 KB at the code-realistic ratio. Still worth doing; just
 don't sell it as "another #230."
+
+## Eager-payload blind spot, confirmed and fixed (#244, 2026-08-12)
+
+`check-bundle-budget.mjs` gated only on the entry chunk's own printed gzip line — blind to
+every file `dist/index.html` `<link rel="modulepreload">`s, which the browser fetches just as
+eagerly as the entry file, as separate HTTP requests, before the app can render anything.
+#232 Finding 1 (#238) and Findings 2+3 (store-dash split) each flipped the entry-only number
+in opposite, misleading directions — see the two entries above. #244 re-measured the #238
+bracket independently (`gzip -9` on `1c6e4c7` pre and `3980e71` post) to settle it:
+
+| | entry only | eager total (entry + modulepreload) |
+|---|---|---|
+| pre-#238 (`1c6e4c7`) | 698.99 KB | **854.81 KB — over the 850 KB budget** |
+| post-#238 (`3980e71`) | 469.36 KB | **744.09 KB** |
+| delta | −229.63 KB | **−110.72 KB** |
+
+**The finding that matters isn't the smaller delta — it's that pre-#238 was already over
+budget.** The old entry-only gate reported 127.66 KB of headroom on a build that was
+actually 4.81 KB over the real 850 KB limit. It was passing an over-budget bundle. That
+makes #238 the fix that took the app from over budget to under budget, not the cosmetic
+−237 KB win its own commit described.
+
+**Fixed, not recalibrated.** `check-bundle-budget.mjs` now parses vite's gzip line for every
+chunk (not just the entry one), reads `dist/index.html` for the entry `<script type="module">`
+and every `<link rel="modulepreload">` (explicitly excluding `rel="prefetch"` — idle-time, not
+eager), sums their gzip sizes, and gates that sum. The 850 KB budget itself is unchanged — it
+was always a proxy for bytes-parsed-before-interactive, which eager-total measures correctly
+and entry-only did not. Reported headroom on the current tree dropping from ~365 KB
+(entry-only, stale) to ~81 KB (eager-total, corrected) is **the number becoming true, not a
+regression** — 365 KB of headroom against the entry file alone was never real headroom
+against what the budget is meant to bound.
 
 ---
 

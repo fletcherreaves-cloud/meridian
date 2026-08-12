@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseYearlyTargets } from '../parsers/index.js';
+import { parseYearlyTargets, ensureParsersXLSXReady } from '../parsers/index.js';
+
+// #248 — parsers/index.js's own XLSX reference is lazy-loaded (see lib/xlsx-lazy.js) and stays
+// null until a caller awaits ensureParsersXLSXReady() — normally App.js's handleFiles. This
+// test calls parseYearlyTargets directly, bypassing that flow, so it awaits readiness itself.
+await ensureParsersXLSXReady();
 
 // Mirrors the real "2026 Restaurant Targets - Table 1" layout: a category/title row that
 // carries the word OEPE/Park (but no store column), then the real header row with an "Index"

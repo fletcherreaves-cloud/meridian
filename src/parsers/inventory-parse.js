@@ -11,7 +11,19 @@
 // and to classify the new auto-pulled qsr_inventory_summary rows the same way
 // manual-upload rows always were — area was never actually upload-derived, it's
 // always this WRIN lookup, so the cloud rows get identical treatment).
-import * as XLSX from 'xlsx';
+import { loadXLSX } from '../lib/xlsx-lazy.js';
+
+// #248 — xlsx lazy-loaded (see lib/xlsx-lazy.js's header for the full rationale). This module's
+// only XLSX use, sheet_to_json inside parseInventoryData below, always runs after the caller
+// (App.js's handleFiles) has already produced `wb` via XLSX.read() — which itself only happens
+// after handleFiles awaited ensureInventoryXLSXReady() below — so XLSX is always populated by
+// the time parseInventoryData runs. parseInventoryData itself stays synchronous; no ripple to
+// pipeline.js's buildDS/mergeDS callers.
+let XLSX = null;
+export async function ensureInventoryXLSXReady() {
+  if (!XLSX) XLSX = await loadXLSX();
+  return XLSX;
+}
 
 // ── Inventory Master — 298 items, sourced from Inventory_Master.xlsx ─────
 // area: Stock Location (Service/Production/Promotional/Stockroom)

@@ -18,7 +18,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
-import { parseSalesLedger } from '../parsers/index.js';
+import { parseSalesLedger, ensureParsersXLSXReady } from '../parsers/index.js';
+
+// #248 — parsers/index.js's own XLSX reference is lazy-loaded now (see lib/xlsx-lazy.js) and
+// stays null until a caller awaits ensureParsersXLSXReady() — normally App.js's handleFiles,
+// before it ever produces a `wb`. This test calls parseSalesLedger directly, bypassing that
+// flow, so it has to await readiness itself.
+await ensureParsersXLSXReady();
 
 const PARSER_SRC = readFileSync('src/parsers/index.js', 'utf8');
 
