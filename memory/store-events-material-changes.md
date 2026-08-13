@@ -15,7 +15,12 @@ structurally unlike its peers.
 
 ---
 
-## Holdenville (35064) — relocation from in-Walmart to standalone
+## Lindsay (18213) — relocation from in-Walmart to standalone
+
+> **Corrected 2026-08-13.** This was first logged against Holdenville (35064) because the owner
+> wrote "Lindsey" and I read it as Lynsey Yahola, Holdenville's GM. He meant **Lindsay, the
+> store** — `STORE_NAMES['18213'] = 'Lindsay-Wal-Mart'`. Owner confirmed. Holdenville is a normal
+> freestanding store and is not involved.
 
 **Reported 2026-08-13 by the owner.** Store currently operates **inside a Walmart**. A new
 **standalone restaurant** is being built **on the same property**. Construction runs
@@ -25,15 +30,12 @@ building **on the same date**.
 Owner's own assessment: *"That likely will not be a reality as it's extremely optimistic, but
 that is the plan."* Treat the handover date as unreliable until it happens.
 
-GM: Lynsey Yahola (acting GM since 2025-11-26, no prior management experience).
-
 ### What this breaks
 
 1. **A concurrent-construction period is a performance confound.** Build activity on the property
    degrades trading — access, parking, noise, staffing disruption — for reasons that have nothing
-   to do with management. Any dip during this window must not be read as a management failure,
-   and this is the store whose GM is already under scrutiny. **This is the single most important
-   consequence.**
+   to do with management. Any dip during this window must not be read as a management failure.
+   **This is the single most important consequence.**
 2. **Handover is a hard break in every series.** In-Walmart and standalone are different
    businesses. Sales level, transaction mix, dayparts, labor model and cost structure all shift
    at once. **vs-LY is invalid across the boundary** and will stay invalid for twelve months
@@ -48,28 +50,32 @@ GM: Lynsey Yahola (acting GM since 2025-11-26, no prior management experience).
    `_openedOn`), and this store has years of history under the same loc. A relocation looks like
    continuity to the code while being a discontinuity in reality.
 
-### Open caveat this raises about an existing finding
+### Lindsay is currently the estate's only known in-store/small-format unit
 
-**#255's peer test assumed Holdenville is structurally comparable to the other 26 stores.** If it
-is an in-Walmart small-format unit, that assumption is weaker than stated. Holdenville having the
-highest pre-window `stat_pct` SD in the district (2.32 vs 1.25 second) gains an alternative
-explanation: in-store units may simply carry noisier inventory than freestanding ones — smaller
-storage, shared receiving, different count practice.
+Independently corroborated by the data: on Thanksgiving 2025-11-27, Lindsay recorded **one
+daypart slice out of three** in `qsr_peaks_sales` — the most restricted trading in the estate
+that day — which is what an in-Walmart unit tied to Walmart's holiday hours looks like. The three
+other partial-daypart stores that day (Chipley, Bonifay, Cottondale) each recorded two.
 
-This does **not** touch the within-store finding, which is the stronger half: the Jun→Sep 2025
-suppression to 0.42%, the October spike to 6.32%, and the 8.3x volatility collapse at the GM
-transition are all comparisons of Holdenville against itself over time, unaffected by format.
+Treat Lindsay as **not peer-comparable on format** for anything sensitive to store format:
+inventory variance, service times, daypart mix, labor model.
 
-But the sentence "most volatile store in the district" needs the qualifier "and the only one in
-this format," and the peer comparison should be re-run against any other in-store units before it
-is quoted again. **Unresolved — needs the owner to confirm the format and say whether any peer
-shares it.**
+### Withdrawn: the caveat this briefly raised against #255
+
+While this was mis-attributed to Holdenville, it appeared to weaken #255's peer test — an
+in-Walmart small-format unit might simply carry noisier inventory, giving "highest `stat_pct` SD
+in the district" an innocent explanation.
+
+**That caveat is withdrawn.** Holdenville is a normal freestanding store, structurally comparable
+to its peers, so the peer test stands as originally reported and needs no qualifier. The finding
+is stronger than the mis-attribution left it.
 
 ### Wanted
 
 - Confirmed construction start date, and the handover date once it is real rather than planned.
 - Whether the new building has a drive-thru.
-- Whether any other store in the estate is an in-store/small-format unit.
+- Confirmation that no *other* store is an in-store/small-format unit (Lindsay is the only one
+  identified so far, by name and by the Thanksgiving daypart evidence).
 - All of it into `org_events` once #259's tagging work lands, so the confound is applied
   automatically rather than remembered.
 
@@ -126,6 +132,41 @@ hand against `dates x active stores`.
 Beware a UI artifact while checking these: QSRSoft's Service panel does not always refresh when
 the date changes. A closed store showed a fully populated Service Total carried over from the
 previously viewed date.
+
+---
+
+## Holiday trading pattern — established 2026-08-13 from row-count reconciliation
+
+Found by reconciling the #259 backfill row counts against `dates x active stores`. None of it
+was visible before; nothing in the app surfaces a missing store-day.
+
+**Christmas 2025-12-25 — 23 of 26 stores have no `qsr_service_stats` row.** Consistent with a
+full-day closure: nothing traded, nothing to summarize. **Three stores do have rows**, meaning
+either they traded on Christmas or they reported service stats while closed. Worth identifying —
+that is an operational fact, not a data question.
+
+**Thanksgiving 2025-11-27 — stores traded, but four traded reduced hours.** Every store has a
+service row (so all were open), but four are short daypart slices in `qsr_peaks_sales`:
+Lindsay-Wal-Mart 1 of 3, Chipley / Bonifay / Cottondale 2 of 3 each. Accounts for exactly the 5
+missing peaks rows in that chunk.
+
+**The contrast is the useful part:** Christmas shows up as *absent* service rows (closed),
+Thanksgiving as *partial* daypart rows (reduced hours). Two different signatures for two
+different operational realities, and both are invisible to anything that does not count rows.
+
+**A prediction that failed, recorded so it is not repeated:** before looking, I expected the
+missing service days to cluster on Christmas *and Thanksgiving*. Christmas was right (23 of 37).
+Thanksgiving was **wrong** — zero missing service rows, because the stores were open. Holiday
+closure and holiday reduced-hours are not the same event and do not leave the same trace.
+
+### Still unexplained in that window
+
+- **2025-09-06, then 09-09 through 09-16 — one store, nine dates.** Not a closure pattern; a
+  store dark for nine days would be obvious in sales. Looks like a single store's service-stats
+  reporting was down for ~10 days with a two-day recovery on 09-07/09-08. KVS or timer hardware
+  would produce exactly this. **Needs the per-store breakdown to confirm it is one loc.**
+- **2026-01-20 (Tue, 1 store), 2026-01-25 (Sun, 3 stores), 2026-01-26 (Mon, 1 store).** Three
+  stores on one Sunday in late January in Oklahoma suggests a winter-weather closure. Unconfirmed.
 
 ---
 
