@@ -104,6 +104,51 @@ That file exists in the corpus today. It must never be ingestible at anything be
 
 An access audit trail on restricted entries is worth having for the same reason.
 
+### Mandatory handling notice (owner request, 2026-08-13)
+
+Every restricted disclosure carries an automatic notice. Its job is not politeness — it is to
+state, in the artifact itself, that **a pattern in data is not a finding about a person**, so
+that distinction is not left to whoever happens to read it.
+
+**Short form — attached to every restricted disclosure:**
+
+> **Restricted · statistical signal, not a finding of fact.** This identifies a pattern in data.
+> It does not establish cause, intent, or wrongdoing by any individual. Handle per the
+> organization's confidentiality and human-resources procedures, and involve HR before any
+> action concerning an employee.
+
+**Long form — on full reports and exports:**
+
+> **Handling notice — restricted**
+>
+> This material identifies a statistical pattern. It is **not** a determination that any person
+> acted improperly. Patterns like this arise from inexperience, process gaps, system and data
+> errors, and legitimate operational change at least as often as from misconduct, and this
+> analysis cannot distinguish between those causes.
+>
+> Treat it as a reason to look further. Never as a conclusion.
+>
+> - Do not share it with, or discuss it in front of, anyone it names or implicates.
+> - Do not pass it below the level at which you received it without approval.
+> - Involve Human Resources before any conversation, investigation, or action concerning an
+>   employee, and follow the organization's established procedures.
+> - Keep a record of who you disclose it to.
+
+**Three implementation constraints:**
+
+1. **Generated with the finding, not bolted on at render.** If it is a separate UI element, a
+   paraphrase, a copy-paste or an export drops it. Prepend at the tool-output layer so it is
+   part of the text SAGE receives — then it travels with the content wherever the content goes.
+2. **Not SAGE-only.** Any restricted finding surfaced anywhere in Meridian — panel, printed
+   report, PDF export — carries the same notice.
+3. **No "suspected wrongdoing" language anywhere.** That framing is itself prejudicial; it
+   plants the conclusion the notice exists to prevent. "Statistical signal" and "reason to look
+   further" do the work without loading the reader.
+
+**Open for owner:** the draft says "involve Human Resources." If the real escalation path is the
+DO or Director of Operations rather than an HR function, it must name the real role. A notice
+pointing at a process that does not exist gets ignored, and then the whole thing is decoration.
+
 ---
 
 ## Standing permission
