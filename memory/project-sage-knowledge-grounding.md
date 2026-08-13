@@ -145,9 +145,10 @@ that distinction is not left to whoever happens to read it.
    plants the conclusion the notice exists to prevent. "Statistical signal" and "reason to look
    further" do the work without loading the reader.
 
-**Open for owner:** the draft says "involve Human Resources." If the real escalation path is the
-DO or Director of Operations rather than an HR function, it must name the real role. A notice
-pointing at a process that does not exist gets ignored, and then the whole thing is decoration.
+**Resolved 2026-08-13 — the wording stays "Human Resources".** Owner's reasoning: it encompasses
+every scenario, including an organization where the HR responsibility sits with someone whose job
+title is something else entirely. It names the *function*, not a post, so it stays correct as the
+org changes. Do not narrow it to a specific role.
 
 ---
 
