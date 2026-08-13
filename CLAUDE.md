@@ -134,7 +134,7 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
 | Calendar Manager | ✅ | Recurring rules |
 | Smart Targets | ✅ | |
 | Data Manager | ✅ | |
-| SAGE AI | ✅ | Claude Opus 4.8, live tool use (sales/DT/labor/forecast accuracy), streaming |
+| SAGE AI | ✅ | Claude Opus 5, live tool use (sales/DT/labor/forecast accuracy), streaming |
 | Signals | ✅ | LiveOps tab (qsr_daily_activity): Tracking-to-Plan **$ AND guest-count** (proj_sales_dollars + proj_total_transactions, with a traffic-vs-sales divergence flag), Baseline Anomalies (mean_sales), intraday labor-gap column; Speed of Service panel (all stations: DT/front-counter/kitchen-MFY/beverage); custom signal engine (Signal Lab); **🔎 Scanner** (v4.495): auto-correlation across all metric pairs — Pearson r + Spearman, effect-size floor + Benjamini–Hochberg FDR guardrails, "move together" framing, one-click promote to Signal Lab + predefined seed signals. **Metric registry** (`src/engine/signal-registry.js`) covers Controls loss-prevention (T-Reds Before/After %+count, cash/cashless refunds, promo, disc, POS-over $, cash O/S $) and reads **cloud streams** (glimpse/cash/salesLedger/qsrActSummary) as `(Cloud)` metric groups, not just manual uploads. **v4.533:** added **Weather** (auto `weatherRows` — high/low/avg temp, rain [allowZero], wind; temps concept-grouped) and **Calendar** (synthetic 0/1 day-of-week flags — Weekend/Friday/Monday, generated over the real-data day universe, daily-only, calendar×calendar suppressed) metric groups → weather↔sales & day-of-week correlations surface in Scanner + Signal Lab. See `memory/notes-28-queue.md` #3/#4 |
 | FOB / Food Cost | ✅ | FOBAnalysisPanel + FOBEOMPanel (per-store inventory troubleshooter) |
 | Feature Requests | ✅ | Supabase-backed, pre-seeded with roadmap history |
@@ -147,7 +147,7 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
 AI advisor built into Meridian. Fully deployed at v4.284.
 
 - **Architecture:** `supabase/functions/sage-chat/index.ts` (Deno Edge Function, proxies Claude API, verifies Supabase JWT) + `src/views/sage.js` (React panel, SSE streaming)
-- **Model:** `claude-opus-4-8` with `thinking: {type: "adaptive"}`, `max_tokens: 8000`
+- **Model:** `claude-opus-5` with `thinking: {type: "adaptive"}`, `max_tokens: 8000` (upgraded from the 4.8 generation 2026-08-13)
 - **Deploy command:** `supabase functions deploy sage-chat --no-verify-jwt` (`--no-verify-jwt` required for CORS)
 
 **Live tools (v4.373–v4.379, +v4.500):** `query_daily_activity` (sales + DT), `query_lifelenz_labor` (VLH gap), `query_forecast_snapshots` (MAPE by model), `query_promo_roi` (matched-day promo/discount ROI — mirrors the Promo/Discount ROI panel, RBAC-scoped; **needs a sage-chat redeploy** to activate). System prompt documents tools explicitly so SAGE calls them proactively.
