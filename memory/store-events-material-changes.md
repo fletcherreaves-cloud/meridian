@@ -209,10 +209,23 @@ missing, with no indication the figure was partial. This is the concrete harm be
 | 2026-01-25 | Sun | Sulphur · Lindsay-Wal-Mart · Tishomingo-Main & Refuge |
 | 2026-01-26 | Mon | Tishomingo-Main & Refuge |
 
-Sulphur, Lindsay, Tishomingo and Duncan are all within roughly sixty miles of each other. Three
-on one Sunday with one spilling into Monday is the shape of a winter storm. **Unconfirmed with
-the owner**, but the geographic clustering is strong enough that it should not be read as a data
-fault without checking.
+Sulphur, Lindsay, Tishomingo and Duncan are all within roughly sixty miles of each other.
+
+**CONFIRMED by the owner 2026-08-13: there was an Oklahoma winter storm 20–26 January 2026.**
+These are real closures, not a data fault.
+
+Two consequences that outlast the event:
+
+- **January 2026 metrics for those four stores are computed over fewer trading days**, and
+  nothing marks them as short. Any month-level average or ranking covering Jan 2026 understates
+  their denominator.
+- **vs-LY in January 2027 will compare against storm-affected days.** Same trap as the Sulphur
+  Easter closure, but across four stores and up to a week. These belong in `org_events` before
+  next January, not after someone queries an inexplicable swing.
+
+The stores named here are only those that lost a *service* row. Others may have closed or run
+reduced hours without leaving that particular trace — the storm's real footprint is probably
+wider than these four.
 
 **Madill-Hwy 70, 2025-09-06 (Sat)** — isolated single day, same region, no pattern.
 
