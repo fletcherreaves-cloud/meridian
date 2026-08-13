@@ -88,6 +88,47 @@ Exclude from any pre-2026-04 comparison, any vs-LY, and any peer ranking that sp
 
 ---
 
+## Sulphur (32525) — closed Easter Sunday, 2025-04-20
+
+Confirmed in QSRSoft 2026-08-13: **$0.00 net sales against $8,699.51 LY, 0 guest counts against
+775.** A genuine full-day closure, not a data gap. `qsr_service_stats` correctly has no row for
+that store-day — nothing traded, so there was nothing to summarize.
+
+**Why it is recorded here:** a $0 day poisons any vs-LY that lands on it. Easter moves — it was
+2025-04-20, and 2026-04-05 — so the LY-matched comparison for dates around 2026-04-20 can land on
+this closed day and produce a meaningless swing.
+
+The measured-anomaly exclusion redesign (see the `fetchLY`/`fetchLYDate`/`fetchGC` work, which
+switched from tag-presence to measured anomaly) should catch a zero-sales day automatically.
+**Worth confirming it actually fires on this date rather than assuming** — this is a clean,
+real-world test case for that code, and it is the first one we have identified.
+
+Check whether other stores also closed 2025-04-20; the pull only surfaced Sulphur because it was
+the store that happened to be missing a service row.
+
+---
+
+## Data-quality note — Marietta (33109), 2025-08-03: upstream service-stats hole
+
+Not a store event. Recorded next to them because it was found the same way and looks identical
+in our data.
+
+Marietta traded normally that Sunday — $10,715.51, 976 guest counts — but QSRSoft itself has
+**no per-location Service row** for the day, while showing Sales normally. Our pull requests
+service stats by location, gets nothing, writes nothing. **The hole is upstream; the pull is
+faithful.**
+
+Consequence: `qsr_service_stats` carries holes wherever QSRSoft's per-location service row is
+missing, nothing currently surfaces that, and any service average over a date range silently
+averages over fewer days than it believes. Found only because the row counts were reconciled by
+hand against `dates x active stores`.
+
+Beware a UI artifact while checking these: QSRSoft's Service panel does not always refresh when
+the date changes. A closed store showed a fully populated Service Total carried over from the
+previously viewed date.
+
+---
+
 ## Tishomingo (43380) and Ponce de Leon (43701) — a data hazard, not a store event
 
 Recorded here because it bites the same analyses. Both store numbers fall inside Excel's
