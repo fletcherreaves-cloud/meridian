@@ -86,10 +86,22 @@ is stronger than the mis-attribution left it.
 **Established 2026-08-13 by direct query, not inference.** Use this date for every exclusion.
 
 ```
-first_row          2026-03-05    one row, net_sales_amt = 0   (configured, not trading)
-                   2026-03-12    one row, net_sales_amt NULL  (neither >0 nor =0)
-first_trading_day  2026-03-13    110 trading days to 2026-06-30
+2026-03-05        cash row, net_sales_amt = 0      system configured, not trading
+2026-03-06 → 11   LABOR rows, no cash rows         pre-opening staffing / training week
+2026-03-12        cash row, net_sales_amt NULL     neither >0 nor =0
+2026-03-13        FIRST TRADING DAY                2 of 3 dayparts; 110 days to 2026-06-30
 ```
+
+The six labor-only days were found separately: `qsr_labor_summary` returned 4018 store-days for
+2026-02-01..2026-06-30 against `qsr_cash_sheet`'s 4012, and all six of the surplus are Ponce on
+consecutive dates 03-06 to 03-11. Labor hours with no sales is a crew training and setup week
+before opening.
+
+**Hazard.** Anything computing labor as a percentage of sales for Ponce in March 2026 meets six
+days of real labor hours against zero or absent sales — divide-by-zero, infinity, or a silently
+dropped day depending on the guard. Same family as the `labor_pct` contamination cleaned up under
+#236. A pre-opening staffing period is a normal thing for a new store to have, so this will recur
+with the next opening and with the Lindsay rebuild.
 
 Corroborated by the backfill row counts: chunk 3 covered 150 dates and returned 4012 cash rows
 against `150 x 26 = 3900`, a surplus of exactly 112 = 110 trading days + the 2 stray rows.
