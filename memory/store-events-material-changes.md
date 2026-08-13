@@ -154,6 +154,34 @@ the store that happened to be missing a service row.
 
 ---
 
+## Multi-day service-stats outages are a RECURRING failure mode, not incidents
+
+Established 2026-08-13 once the whole 15-month backfill was reconciled. **Two stores, eight days
+each, seven months apart. Neither was noticed at the time.**
+
+| store | window | days | shape |
+|---|---|---|---|
+| Sulphur (32525) | 2025-09-09 → 09-16 | 8 | consecutive |
+| Marietta (33109) | 2026-03-10, 03-12 → 03-18 | 8 | one-day recovery on 03-11 |
+
+Both stores traded normally throughout. Both lost DT times, OEPE and KVS for roughly a quarter of
+the month. Both months' service figures were computed on a short denominator with nothing marking
+them short.
+
+**Marietta's isolated 2025-08-03 gap now reads differently.** It was first recorded below as a
+one-off upstream hole. With the March 2026 run in view it looks like the first sign of a store
+with a recurring reporting problem, not an isolated event. Treat single missing service days as
+possible early warnings rather than noise.
+
+**Why this matters more than either incident.** One outage is bad luck; two at different stores,
+in different months, both undetected, is a **failure mode**. Anything that reports a monthly
+service average — a review, a ranking, a coaching conversation, a Signals correlation — can be
+running on 22 days of 30 with no indication. The completeness check argued for in #263 is the
+only thing that would surface it, and on this evidence it should be a standing scheduled check,
+not a one-off reconciliation.
+
+---
+
 ## Data-quality note — Marietta (33109), 2025-08-03: upstream service-stats hole
 
 Not a store event. Recorded next to them because it was found the same way and looks identical
