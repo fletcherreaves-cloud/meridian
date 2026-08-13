@@ -159,14 +159,34 @@ missing service days to cluster on Christmas *and Thanksgiving*. Christmas was r
 Thanksgiving was **wrong** — zero missing service rows, because the stores were open. Holiday
 closure and holiday reduced-hours are not the same event and do not leave the same trace.
 
-### Still unexplained in that window
+### Resolved by the per-store breakdown
 
-- **2025-09-06, then 09-09 through 09-16 — one store, nine dates.** Not a closure pattern; a
-  store dark for nine days would be obvious in sales. Looks like a single store's service-stats
-  reporting was down for ~10 days with a two-day recovery on 09-07/09-08. KVS or timer hardware
-  would produce exactly this. **Needs the per-store breakdown to confirm it is one loc.**
-- **2026-01-20 (Tue, 1 store), 2026-01-25 (Sun, 3 stores), 2026-01-26 (Mon, 1 store).** Three
-  stores on one Sunday in late January in Oklahoma suggests a winter-weather closure. Unconfirmed.
+**Sulphur (32525) — an eight-day service-stats outage, 2025-09-09 → 09-16.** Not a closure; the
+store traded normally throughout. This is the KVS/timer reporting being down for over a week.
+Sulphur accounts for **10 of the 14 non-Christmas gaps** in the window (the eight-day run, plus
+2026-01-25), and separately owns the legitimate Easter closure from chunk 1. Treat Sulphur as the
+estate's least reliable store for service-stats completeness until shown otherwise.
+
+**The consequence, which is the reason this matters:** Sulphur's September 2025 service metrics —
+DT times, OEPE, KVS — were computed over roughly 22 days rather than 30, and nothing anywhere
+flagged it. Any review or coaching on Sulphur service that month ran on a quarter of the month
+missing, with no indication the figure was partial. This is the concrete harm behind the abstract
+"averages over fewer days than it believes."
+
+**Late-January 2026 — a weather cluster in south-central Oklahoma.**
+
+| date | day | stores |
+|---|---|---|
+| 2026-01-20 | Tue | Duncan-Hwy 81 |
+| 2026-01-25 | Sun | Sulphur · Lindsay-Wal-Mart · Tishomingo-Main & Refuge |
+| 2026-01-26 | Mon | Tishomingo-Main & Refuge |
+
+Sulphur, Lindsay, Tishomingo and Duncan are all within roughly sixty miles of each other. Three
+on one Sunday with one spilling into Monday is the shape of a winter storm. **Unconfirmed with
+the owner**, but the geographic clustering is strong enough that it should not be read as a data
+fault without checking.
+
+**Madill-Hwy 70, 2025-09-06 (Sat)** — isolated single day, same region, no pattern.
 
 ---
 
