@@ -8,16 +8,22 @@
   {
     "program": "Core: QPC + line extension",
     "retail_start": "2025-02-04",
-    "retail_end": "2024-03-09",
+    "retail_end": "2025-03-09",
     "source_row": 10,
-    "suspect": "end_before_start_in_source;year_mismatch_in_source"
+    "source_as_written": {
+      "retail_end": "2024-03-09"
+    },
+    "correction": "year typo in source workbook; corrected to 2025 (owner-confirmed 2026-08-13)"
   },
   {
     "program": "Retail: Shamrock Shake & Trust",
     "retail_start": "2025-02-04",
-    "retail_end": "2024-03-23",
+    "retail_end": "2025-03-23",
     "source_row": 14,
-    "suspect": "end_before_start_in_source;year_mismatch_in_source"
+    "source_as_written": {
+      "retail_end": "2024-03-23"
+    },
+    "correction": "year typo in source workbook; corrected to 2025 (owner-confirmed 2026-08-13)"
   },
   {
     "program": "Brand Relevance",
@@ -51,10 +57,13 @@
   },
   {
     "program": "Core: Snack Wraps",
-    "retail_start": "2024-07-08",
+    "retail_start": "2025-07-08",
     "retail_end": "2025-08-03",
     "source_row": 28,
-    "suspect": "year_mismatch_in_source"
+    "source_as_written": {
+      "retail_start": "2024-07-08"
+    },
+    "correction": "year typo in source workbook; corrected to 2025 (owner-confirmed 2026-08-13)"
   },
   {
     "program": "Brand Relevance",

@@ -1,8 +1,8 @@
 # Marketing calendars — source of truth for promo windows
 
-Owner-supplied McDonald's national calendars, committed because they arrived as chat
-uploads and would otherwise have died with the session. These are the input for
-`org_events` promo tagging.
+McDonald's **national** marketing calendars — corporate documents the owner downloaded, not
+documents he authored. Committed because they arrived as chat uploads and would otherwise
+have died with the session. These are the input for `org_events` promo tagging.
 
 **Why this matters:** national promo windows are a confound in the training-cohort analysis
 (a ~4pp pricing shift attributable to McValue 2.0, not to training) and in any vs-LY or
@@ -23,18 +23,24 @@ Signals correlation that spans a promo boundary. Untagged promos read as store p
 16 windows from the `2025 OPNAD Mtkg StartStop` sheet, columns A / C / D
 (Program / Retail Start Date / Retail End Date).
 
-**Three rows carry year errors in the source workbook** and are flagged with a `suspect`
-key rather than silently corrected — the source is the owner's document and we do not
-edit his data:
+**Three rows carried year errors in the source workbook. Corrected 2026-08-13, owner-confirmed.**
 
-| program | as written | almost certainly |
+| program | as written in source | corrected to |
 |---|---|---|
 | Core: QPC + line extension | 2025-02-04 → **2024**-03-09 | → 2025-03-09 |
 | Retail: Shamrock Shake & Trust | 2025-02-04 → **2024**-03-23 | → 2025-03-23 |
 | Core: Snack Wraps | **2024**-07-08 → 2025-08-03 | 2025-07-08 → |
 
-Shamrock Shake running Feb–Mar 2025 and Snack Wraps in summer 2025 both fit the corrected
-reading. Confirm with the owner before loading; do not auto-correct.
+Corrected rows keep the original value under `source_as_written` and carry a `correction`
+note, so nothing is lost and the edit is auditable against the workbook.
+
+**These are not plausibility guesses — the sheet's own chronological ordering confirms each
+one.** The workbook lists programs in date order. QPC and Shamrock sit between the McValue
+window ending 2025-02-09 and Brand Relevance starting 2025-04-01, so both must end inside
+Feb–Mar 2025. Snack Wraps sits between the S'mores McFlurry window ending 2025-07-13 and
+Brand Relevance starting 2025-08-12, and a 2025-07-08 → 2025-08-03 window is the only
+reading that fits that slot. As written, all three rows would have sorted a year out of
+place in their own sheet.
 
 ## Not yet done
 
