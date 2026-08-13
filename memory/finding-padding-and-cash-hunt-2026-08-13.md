@@ -177,10 +177,84 @@ Recorded so nobody re-runs them.
 
 ---
 
+## 7b. Confirmed — Holdenville result, and it survives the peer test
+
+**Holdenville (`0035064`) monthly `stat_pct`, 2025-04 → 2026-07** (2026-08 excluded, partial month):
+
+```
+2.45  6.59  3.19  1.89  1.09  0.42 | 6.32  1.60 || 2.25  2.60  1.96  2.70  2.63  2.29  2.01  2.21
+                     suppression -> spike        ||  GM transition (title 11-26, end 12-08)
+```
+
+| window | mean | SD |
+|---|---|---|
+| 2025-04 → 2025-11 | 2.94 | **2.32** |
+| 2025-12 → 2026-07 | 2.33 | **0.28** |
+
+Jun→Sep 2025 declines monotonically to **0.42%** — one fifth the store's own stable-era mean —
+then October immediately posts 6.32%. Aug+Sep+Oct averages 2.61, close to the stable-era 2.33:
+**the three-month total is normal; only its allocation between months is wrong.** That is the
+fingerprint of cost being deferred, not cost being lost.
+
+Three of Ada's four signature parts present. Part 2 (identical consecutive months) **absent** —
+different mechanism, same shape. Holdenville shows the *concealment* phase directly, which is
+cleaner than Ada, where the visible climb was a pad already unwinding.
+
+### Peer test — 27 stores, same split point
+
+Split at 2025-12 for all stores. The split was fixed by Holdenville's roster dates, not fitted.
+
+| rank | store | pre_sd | post_sd | ratio |
+|---|---|---|---|---|
+| 1 | **Holdenville** | **2.32** | **0.28** | **8.3x** |
+| 2 | Ada-Country Club | 1.25 | 1.08 | 1.2x |
+| 3 | Pauls Valley-Ballard Rd | 1.20 | 0.32 | 3.8x |
+| 4 | Atoka-Mississippi | 0.63 | 0.46 | 1.4x |
+| 5 | Bonifay | 0.56 | 0.48 | 1.2x |
+| — | district median | 0.30 | 0.31 | — |
+
+- Holdenville is the **most volatile store in the district pre-transition**, 1.9x the
+  second-highest and **7.7x the district median**. Excluding it, peer pre_sd mean is 0.38 with
+  SD 0.29.
+- It has the **largest volatility collapse** in the district, 8.3x versus 3.8x for the next.
+- Its September low is the most disproportionate in the district relative to its own mean
+  (0.42 / 2.94 = 0.14; nearest comparable is 0.30).
+- **Control: the district median SD did not move** (0.30 -> 0.31). If a systemic change had
+  landed in Dec 2025 — reporting, process, a code change — every store would have shifted.
+  None did. The collapse is store-specific.
+
+### Three traps in that table
+
+1. **Ada's post_sd of 1.08 does not mean Ada failed to correct.** The split is Holdenville's
+   transition (Dec 2025), not Ada's (Mar 2026), so Ada's post-window still contains its Feb 2026
+   blowout. Do not read this table as a statement about Ada.
+2. **Ponce de Leon (`0043701`) has `pre_sd = null`** — opened March 2026, no pre-window. Its
+   post_sd 2.81 / max 8.10 is not comparable and is not a second outlier. This is the same store
+   that broke the FL/OK trajectory claim in §7.
+3. **Mild metric-selection concern:** `stat_pct` SD was chosen after seeing Holdenville's series.
+   Mitigated by Holdenville being the maximum on the raw metric and by the district-median
+   control, but worth stating.
+
+### Second candidate
+
+**Pauls Valley-Ballard Rd (`0031357`)** — third-highest pre_sd (1.20), second-largest collapse
+(3.8x), max month 4.61. Same shape at smaller magnitude. Worth examining; no person attached and
+none should be until the same bar is cleared.
+
+### What this still does not establish
+
+Concealment versus incompetence remains unseparated, and the confound is total: GM, oversight,
+owner attention and retraining all changed within weeks. A successor who counts consistently
+produces this table whether or not anyone did anything wrong. #257's per-count `eID`, session and
+item-level variance is the instrument that separates them — concealment concentrates (one person,
+predictable timing, variance clustering on high-value items), incompetence scatters.
+
+---
+
 ## 8. Open
 
-- **Holdenville FOB series not yet run** — query in §1 with `loc='0035064'`,
-  `2025-04-01`..`2026-08-31`. This is the live test of the pre-registered prediction on #255.
+- ~~**Holdenville FOB series not yet run**~~ — done, see §7b. Result: signature present,
+  survives the peer test.
 - **`inventory_history` retention depth unprobed.** Probe via `workflow_dispatch` (the Action
   already holds `QSRSOFT_EBOS_TOKEN`); do not wait on a laptop. See #257 step 0.
 - **Does `qsr_daily_activity` carry register-level controls back to 2025-01?** If refunds /
