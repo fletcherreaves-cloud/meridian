@@ -1,6 +1,6 @@
 ---
 name: project-sage
-description: SAGE AI assistant built into Meridian — Claude Opus 4.8-powered chat, deployed and working as of v4.284
+description: SAGE AI assistant built into Meridian — Claude Opus 5-powered chat, deployed and working as of v4.284
 metadata: 
   node_type: memory
   type: project
@@ -15,7 +15,7 @@ SAGE (Strategic Analytics & Guidance Engine) is the Claude API-backed AI advisor
 - Wired into App.js (`showSage` state, `onOpenModal('sage')`, full-screen overlay like Signals).
 - Nav item: 🧠 SAGE in the sidebar.
 
-**Model:** `claude-opus-4-8` with `thinking: {type: "adaptive"}`, `max_tokens: 8000`, streaming.
+**Model:** `claude-opus-5` with `thinking: {type: "adaptive"}`, `max_tokens: 8000`, streaming. Upgraded from the 4.8 generation 2026-08-13; single call site, `sage-chat/index.ts:534`.
 
 **Auth:** User's Supabase session token is sent in Authorization header. Edge Function verifies with service role.
 
