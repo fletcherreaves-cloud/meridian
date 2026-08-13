@@ -81,7 +81,35 @@ is stronger than the mis-attribution left it.
 
 ---
 
-## Ponce de Leon (43701) — opened March 2026
+## Ponce de Leon (43701) — first trading day 2026-03-13 (exact)
+
+**Established 2026-08-13 by direct query, not inference.** Use this date for every exclusion.
+
+```
+first_row          2026-03-05    one row, net_sales_amt = 0   (configured, not trading)
+                   2026-03-12    one row, net_sales_amt NULL  (neither >0 nor =0)
+first_trading_day  2026-03-13    110 trading days to 2026-06-30
+```
+
+Corroborated by the backfill row counts: chunk 3 covered 150 dates and returned 4012 cash rows
+against `150 x 26 = 3900`, a surplus of exactly 112 = 110 trading days + the 2 stray rows.
+
+**I first derived 2026-03-11 from that surplus and was wrong**, because the arithmetic was
+correct but the assumption behind it was not — I assumed Ponce's rows were contiguous from its
+opening day. Two pre-opening rows broke that. Recorded because the same reasoning will look
+equally sound the next time: **a row count constrains a date, it does not determine one.**
+
+Also from this: opening day 2026-03-13 shows only 2 of 3 daypart slices in `qsr_peaks_sales`,
+consistent with trading starting partway through the day. Together the three days account for
+exactly the 7 missing peaks rows in chunk 3 — nothing is wrong with the pull.
+
+**Watch the NULL.** `qsr_cash_sheet` carries three states for sales — a real value, `0`, and
+`NULL`. Anything filtering `> 0` and anything filtering `= 0` will disagree about 2026-03-12.
+Same family as the `labor_pct` false-zero contamination cleaned up under #236.
+
+### Prior damage from not having this date
+
+
 
 Newest store in the estate. **Has already distorted two analyses:**
 
