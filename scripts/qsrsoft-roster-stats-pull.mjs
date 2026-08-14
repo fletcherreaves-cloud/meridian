@@ -29,6 +29,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { parseRosterStatisticsApi } from '../src/engine/people-reports.js';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 
 const API_BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID     = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -240,10 +241,19 @@ async function main() {
   const byLoc = parseRosterStatisticsApi(rawRows);
   const rows = toRows(byLoc, period);
   const found = Object.keys(byLoc).length;
-  if (found < STORE_NSNS.length) console.warn(`[roster-stats] ⚠ only ${found}/${STORE_NSNS.length} stores in response (Grand Total excluded)`);
+  console.log(`[roster-stats] ${found}/${STORE_NSNS.length} stores in response (Grand Total excluded)`);
   const saved = await upsert(rows);
   console.log(`[roster-stats] ✓ ${saved} store rows upserted to roster_statistics for ${period}`);
-  if (!saved) process.exit(1);
+
+  // #263: see qsrsoft-employee-roster-pull.mjs's identical comment -- a missing store
+  // could be legitimate, a third of the district missing at once is not.
+  const tracker = makeOutcomeTracker('roster-stats');
+  for (const loc of STORE_NSNS) if (!byLoc[loc]) tracker.fail(loc, 'missing from API response');
+  const code = tracker.finalize({
+    requestedUnits: STORE_NSNS, totalSaved: saved,
+    formatRerun: missing => `ROSTER_STORES=${missing.join(',')}`,
+  });
+  if (code) process.exit(code);
 }
 
 main().catch(err => { console.error('[roster-stats] FATAL:', err); process.exit(1); });

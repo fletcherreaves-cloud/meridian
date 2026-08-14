@@ -19,6 +19,7 @@
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 // Zero-drift: the SAME per-station rollup the client uses (src/engine). The pull
 // pre-aggregates ShiftsForSchedulePeriod → per-role hours/cost so the client just
 // reads the rollup (raw shifts are never stored).
@@ -450,28 +451,29 @@ async function fetchReportChunk(token, scheduleId, startDate, endDate) {
   // Parameters: start_date, end_date, type=csv
   const confirmedUrl = `${BASE}/api/admin/report/businesses/${BUSINESS_ID}/schedules/${scheduleId}/labor_analysis_actuals_report?start_date=${toISO(startDate)}&end_date=${toISO(endDate)}&type=csv`;
 
-  let csvText = null;
-  try {
-    const resp = await fetch(confirmedUrl, {
-      headers: {
-        ...apiHeaders(token, scheduleId),
-        'X-Page-Module': 'reports-pdf',
-        'Accept': 'text/csv, */*',
-      },
-    });
-    console.log('[report] confirmed endpoint →', resp.status, scheduleId);
-    if (resp.ok) {
-      const ct = resp.headers.get('content-type') || '';
-      if (ct.includes('json')) {
-        const job = await resp.json();
-        if (DEBUG) console.log('[report] async job response:', JSON.stringify(job).slice(0, 300));
-        csvText = await pollForReport(token, job, scheduleId, startDate, endDate);
-      } else {
-        csvText = await resp.text();
-      }
-    }
-  } catch (e) {
-    console.warn('[report] confirmed endpoint error:', e.message);
+  // #263: a network exception and a non-2xx status used to both collapse into
+  // csvText=null → [] here, indistinguishable from a genuinely empty report. That is
+  // exactly the "reports success while writing nothing" gap -- throw instead, so the
+  // caller's per-chunk tracker can tell "this chunk actually failed" from "this store
+  // legitimately had zero shifts in this window" (still a real [], just not an error).
+  const resp = await fetch(confirmedUrl, {
+    headers: {
+      ...apiHeaders(token, scheduleId),
+      'X-Page-Module': 'reports-pdf',
+      'Accept': 'text/csv, */*',
+    },
+  });
+  console.log('[report] confirmed endpoint →', resp.status, scheduleId);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+  let csvText;
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.includes('json')) {
+    const job = await resp.json();
+    if (DEBUG) console.log('[report] async job response:', JSON.stringify(job).slice(0, 300));
+    csvText = await pollForReport(token, job, scheduleId, startDate, endDate);
+  } else {
+    csvText = await resp.text();
   }
 
   return csvText && csvText.length > 50 ? parseCSV(csvText) : [];
@@ -886,6 +888,11 @@ async function main() {
   // 3. Fetch reports for each store in date chunks
   let totalRows = 0, totalSaved = 0;
   const chunks  = chunkDateRange(start, end, 21); // 21-day batches (well under 28-day async limit)
+  // #263: one unit per (schedule, chunk) -- fetchReportChunk now throws on a real
+  // fetch/HTTP failure instead of silently returning [], so this can tell that apart
+  // from a schedule that legitimately has zero shifts in a window.
+  const tracker = makeOutcomeTracker('lifelenz-pull');
+  const requestedUnits = [];
 
   for (const schedule of schedules) {
     const scheduleId = schedule.id || schedule.scheduleId;
@@ -893,9 +900,16 @@ async function main() {
     let storeRows = [];
 
     for (const chunk of chunks) {
-      const rows = await fetchReportChunk(token, scheduleId, chunk.start, chunk.end);
-      storeRows.push(...rows);
-      if (rows.length && DEBUG) console.log(`  ${name} ${toISO(chunk.start)}–${toISO(chunk.end)}: ${rows.length} rows`);
+      const unit = `${name} ${toISO(chunk.start)}–${toISO(chunk.end)}`;
+      requestedUnits.push(unit);
+      try {
+        const rows = await fetchReportChunk(token, scheduleId, chunk.start, chunk.end);
+        storeRows.push(...rows);
+        if (rows.length && DEBUG) console.log(`  ${unit}: ${rows.length} rows`);
+      } catch (e) {
+        console.warn(`  ${unit}: ${e.message}`);
+        tracker.fail(unit, e.message);
+      }
     }
 
     if (!storeRows.length) {
@@ -910,6 +924,11 @@ async function main() {
   }
 
   console.log(`[lifelenz-pull] ✓ done — ${totalSaved}/${totalRows} rows saved to Supabase`);
+  const code = tracker.finalize({
+    requestedUnits, totalSaved,
+    formatRerun: () => `LIFELENZ_START_DATE=${toISO(start)} (no per-chunk rerun flag exists yet — reruns the full range)`,
+  });
+  if (code) process.exit(code);
 
   // 4. Per-job (station) hours+cost — additive, best-effort, never fatal. Runs
   // AFTER the CSV upsert so a failure here can't cost us the schedule data.

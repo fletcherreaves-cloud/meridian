@@ -34,6 +34,7 @@ import { COVER_FRAC, sessionKind } from '../src/engine/count-cycle.js';
 import { createClient } from '@supabase/supabase-js';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
 import { computeCountProgress, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -328,9 +329,15 @@ async function main() {
   const statusRows = [];
   const progressLog = [];   // timestamped per-store completion snapshots (one row / store / hour)
   const sessionRows = [];   // append-only count-session history (one row / store / count date / class)
+  // #263: a store with zero on-hand items could be legitimately between count
+  // cycles (nothing to report) or could be a fetch that errored on every type and
+  // silently produced nothing. Only the second case is a failed unit -- track a
+  // store as failed ONLY if at least one of its type requests actually threw.
+  const tracker = makeOutcomeTracker('onhand-pull');
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
     const rows = [];
+    const storeErrors = [];
     for (const type of TYPES) {
       try {
         const items = await fetchOnHand(token, nsn, dateStr, type);
@@ -338,12 +345,14 @@ async function main() {
       } catch (e) {
         if (e.message.startsWith('AUTH_FAILED')) { authFailed = true; console.error('[onhand-pull] auth failed — refresh QSRSOFT_EBOS_TOKEN'); break; }
         console.warn(`  ${nsn} type ${type}: ${e.message}`);
+        storeErrors.push(`${type}: ${e.message}`);
       }
     }
     // de-dup by wrin within the store (a wrin should map to one class)
     const byWrin = new Map();
     for (const r of rows) byWrin.set(r.wrin, r);
     const deduped = [...byWrin.values()];
+    if (!deduped.length && storeErrors.length) tracker.fail(nsn, storeErrors.join('; '));
     if (deduped.length) {
       totalSaved += await upsertRows(deduped);
       storesWithData++;
@@ -402,6 +411,14 @@ async function main() {
 
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);
   if (authFailed) process.exit(1);
+
+  // No store-subset override exists for this script today (unlike ROSTER_STORES on the
+  // people-report pulls) -- a re-run reruns every store for the same date until one is added.
+  const code = tracker.finalize({
+    requestedUnits: STORE_NSNS, totalSaved,
+    formatRerun: () => `ONHAND_DATE=${dateStr} node scripts/qsrsoft-onhand-pull.mjs (no store-subset flag exists yet — reruns all stores)`,
+  });
+  if (code) process.exit(code);
 }
 
 main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });

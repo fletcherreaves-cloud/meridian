@@ -27,6 +27,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { parseEmployeeRosterApi, rosterCounts } from '../src/engine/people-reports.js';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 
 const API_BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID     = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -241,10 +242,20 @@ async function main() {
   const rows = toRows(byLoc, period);
   const found = Object.keys(byLoc).length;
   console.log(`[employee-roster] ${records.length} active employees → ${found} stores`);
-  if (found < STORE_NSNS.length) console.warn(`[employee-roster] ⚠ only ${found}/${STORE_NSNS.length} stores in response`);
   const saved = await upsert(rows);
   console.log(`[employee-roster] ✓ ${saved} store rows upserted to roster_role_counts for ${period}`);
-  if (!saved) process.exit(1);
+
+  // #263: a store missing from the response could be a genuine zero-active-employee
+  // store, but a THIRD of the district missing at once is far more likely an API/org
+  // filter problem than 9 real zero-employee stores in the same run -- track it as a
+  // failed unit so the threshold below can tell "one odd store" from "the pull broke".
+  const tracker = makeOutcomeTracker('employee-roster');
+  for (const loc of STORE_NSNS) if (!byLoc[loc]) tracker.fail(loc, 'missing from API response');
+  const code = tracker.finalize({
+    requestedUnits: STORE_NSNS, totalSaved: saved,
+    formatRerun: missing => `ROSTER_STORES=${missing.join(',')}`,
+  });
+  if (code) process.exit(code);
 }
 
 main().catch(err => { console.error('[employee-roster] FATAL:', err); process.exit(1); });

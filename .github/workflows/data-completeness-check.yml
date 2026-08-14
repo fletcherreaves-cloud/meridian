@@ -1,0 +1,40 @@
+name: Data Completeness Check
+
+# #265 — scheduled expected-vs-actual comparison, catching the gaps a pull's own exit code
+# can never see (Sulphur's 8-day service-stats outage, Marietta's single-day upstream hole
+# — both pulls ran clean, QSRSoft simply had no row). See scripts/check-data-completeness.mjs.
+
+on:
+  schedule:
+    # 13:00 UTC = ~8 AM CDT — after the morning DAR/Ops pulls have had time to land.
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Lookback window in days. Default: 60.'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check data completeness
+        run: node scripts/check-data-completeness.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          COMPLETENESS_DAYS_BACK:    ${{ github.event.inputs.days_back || '' }}
+          COMPLETENESS_DEBUG:        ${{ github.event.inputs.debug     || '0' }}
