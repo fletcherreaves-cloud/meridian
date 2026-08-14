@@ -4,11 +4,21 @@ on:
   schedule:
     # 12:15 UTC = ~7:15 AM CDT — refreshes the current month's per-manager attributed
     # performance. Upsert on (loc, period_month, geid), so re-running keeps MTD current.
+    # (start_date/end_date below are workflow_dispatch-only — the scheduled run never sets
+    # them, so it always targets the monthly table, never shift_manager_range.)
     - cron: '15 12 * * *'
   workflow_dispatch:
     inputs:
       period:
-        description: 'Month to pull (YYYY-MM). Default: current month (UTC).'
+        description: 'Month to pull (YYYY-MM). Default: current month (UTC). Ignored if start_date is set.'
+        required: false
+        default: ''
+      start_date:
+        description: 'Explicit range start (YYYY-MM-DD). Writes to shift_manager_range, not the monthly table. Set alone for a single day.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Explicit range end (YYYY-MM-DD). Defaults to start_date (single day) if start_date is set and this is blank.'
         required: false
         default: ''
       stores:
@@ -43,7 +53,9 @@ jobs:
           QSRSOFT_COGNITO_TOKEN:      ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
           QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
-          SHIFTMGR_PERIOD:            ${{ github.event.inputs.period || '' }}
+          SHIFTMGR_PERIOD:            ${{ github.event.inputs.period     || '' }}
+          SHIFTMGR_START:             ${{ github.event.inputs.start_date || '' }}
+          SHIFTMGR_END:               ${{ github.event.inputs.end_date   || '' }}
           ROSTER_STORES:              ${{ github.event.inputs.stores || '' }}
           QSRSOFT_DEBUG:              ${{ github.event.inputs.debug  || '0' }}
       - name: Upload debug screenshots
