@@ -89,6 +89,22 @@ describe('#270 phase 1 — SAGE summaries resolve on a device with zero manual u
     expect(out).toContain('not open exceptions');
   });
 
+  it('buildControlsSummary resolves on a device with glimpseRows only (no opsCashRows, no manual ctrlRows) — PR #271 review finding', () => {
+    // discPct chains opsCashRows->ctrlRows; cashOSAmt chains glimpseRows->cashRows->
+    // opsCashRows->ctrlRows. A device with the emailed Glimpse stream but no ops-pull cash
+    // rows and no manual Controls upload has every cash-O/S day resolved and zero discPct
+    // days -- gating the section's totalDays on discPct alone would return null here, the
+    // same silent-empty failure this fix exists to remove, just relocated one metric over.
+    const glimpseRows = [];
+    for (let i = 1; i <= 10; i++) glimpseRows.push({ loc: LOC, date: d(i), cashOS: -4.2 });
+    const ds = { storeIds: [], glimpseRows };
+    expect(ds.opsCashRows).toBeUndefined();
+    expect(ds.ctrlRows).toBeUndefined();
+    const out = buildControlsSummary(ds);
+    expect(out).not.toBeNull();
+    expect(out).toContain('CONTROLS (10 store-days');
+  });
+
   it('buildFobSummary (the working precedent) still resolves via qsrFobRows', () => {
     const ds = cloudOnlyDs();
     expect(ds.fobRows).toBeUndefined();

@@ -281,24 +281,40 @@ export function buildControlsSummary(ds) {
   if (!locs.length) return null;
   const range = _lastNDaysRange(60);
 
+  // Flat (not average-of-averages) accumulators for the district-wide cash O/S figure --
+  // matches distDisc's own metricAvg(), which sums every resolved store-day once.
+  let cashSum = 0, cashN = 0;
   const perStore = locs.map(loc => {
-    const discPcts = Object.values(metricSeries(ds, loc, range, 'discPct'));
-    const cashOS   = Object.values(metricSeries(ds, loc, range, 'cashOSAmt')).map(v => Math.abs(v));
-    return { loc, name: _storeName(loc), discPct: _avg(discPcts), cashOS: _avg(cashOS), dayCount: discPcts.length };
+    const discSeries = metricSeries(ds, loc, range, 'discPct');
+    const cashSeries = metricSeries(ds, loc, range, 'cashOSAmt');
+    const discPcts = Object.values(discSeries);
+    const cashOS   = Object.values(cashSeries).map(v => Math.abs(v));
+    cashOS.forEach(v => { cashSum += v; cashN++; });
+    // discPct and cashOSAmt resolve through different chains (discPct: opsCashRows->ctrlRows;
+    // cashOSAmt: glimpseRows->cashRows->opsCashRows->ctrlRows) -- a device can have one without
+    // the other (e.g. emailed Glimpse only, no ops-pull cash rows, no manual Controls upload).
+    // Gating totalDays on discPct alone would return null for that device even with every
+    // cash-O/S day resolved -- the same silent-empty failure this rewrite exists to remove.
+    const dayCount = new Set([...Object.keys(discSeries), ...Object.keys(cashSeries)]).size;
+    return { loc, name: _storeName(loc), discPct: _avg(discPcts), cashOS: _avg(cashOS), dayCount };
   });
   const totalDays = perStore.reduce((n, s) => n + s.dayCount, 0);
   if (totalDays < 3) return null;
 
   const distDisc = metricAvg(ds, locs, range, 'discPct');
+  const distCashOS = cashN ? cashSum / cashN : null;
 
   const elevated = perStore
     .filter(s => (s.discPct != null && s.discPct > 0.03) || (s.cashOS != null && s.cashOS > 75))
     .sort((a,b) => (b.discPct||0) - (a.discPct||0));
 
-  if (!elevated.length && distDisc == null) return null;
+  // PR #271 review — this used to gate on distDisc alone, so a device resolving cashOSAmt via
+  // glimpseRows but never discPct (no opsCashRows, no manual Controls) returned null here even
+  // with every cash-O/S day resolved. Both district figures now keep the section alive.
+  if (!elevated.length && distDisc == null && distCashOS == null) return null;
 
   let out = `CONTROLS (${totalDays} store-days, auto-first sourced, last 60 days):
-  District avg discount: ${_fmtPct(distDisc)}
+  District avg discount: ${_fmtPct(distDisc)} | District avg |Cash O/S|: ${distCashOS != null ? _dollar(distCashOS) : '—'}
 `;
   if (elevated.length) {
     out += '\n  STORES WITH AN ELEVATED 60-DAY AVERAGE (not open exceptions — a mean, worth a look, not a flagged incident):\n';
@@ -379,7 +395,10 @@ function buildFieldDefsSection(qsrFieldDefs) {
 // ── System prompt builder ─────────────────────────────────────────────────────
 export function buildSystemPrompt(ds, signals, customSignalDefs) {
   const today = new Date().toISOString().slice(0, 10);
-  const storeCount = ds?.storeIds?.length || 0;
+  // #270 phase 1 review — ds.storeIds is manual-labor-derived (App.js sets it from laborRows),
+  // so it was 0 on the exact cloud-only device this fix targets. Static roster, same as every
+  // builder above.
+  const storeCount = Object.keys(STORE_NAMES).length;
 
   const confirmedSigs = (signals || [])
     .filter(s => s.confirmed)
@@ -472,7 +491,7 @@ DATA COVERAGE (last 60 days — reflects what the summaries above actually read,
   SMG FullScale:   ${ds?.smgFullscale?.length || 0} store-period records
   Controls:        ${_resolvedDayCount(ds, _covLocs, _covRange, 'discPct')} store-days resolved (cloud Ops → manual Controls upload)
 
-${dataSections ? `CURRENT OPERATIONAL DATA (from uploaded files):\n${'─'.repeat(60)}\n${dataSections}${'─'.repeat(60)}` : ''}
+${dataSections ? `CURRENT OPERATIONAL DATA (auto-first sourced — cloud/emailed streams preferred, manual upload as last-resort fill only):\n${'─'.repeat(60)}\n${dataSections}${'─'.repeat(60)}` : ''}
 ${confirmedSigs ? `\nCONFIRMED SIGNALS (statistically meaningful correlations, |r|≥0.50):\n${confirmedSigs}` : ''}
 ${plausibleSigs ? `\nPLAUSIBLE SIGNALS (emerging patterns, |r| 0.30–0.49):\n${plausibleSigs}` : ''}
 ${promotedCustom ? `\nCUSTOM SIGNALS (user-promoted to SAGE):\n${promotedCustom}` : ''}

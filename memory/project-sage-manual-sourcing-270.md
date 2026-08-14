@@ -89,3 +89,36 @@ streams populated (`glimpseRows`, `qsrActSummaryRows`, `opsLaborRows`,
 summary + `sageHasData` + the DATA COVERAGE block still resolve real data and
 format correctly — the exact "device that never had a manual upload" scenario the
 issue is about.
+
+## PR #271 review round (2026-08-14, same day)
+
+Three real findings surfaced by review, all fixed in the same PR before merge:
+
+1. **`buildControlsSummary`'s gate was keyed to one metric while the section reports
+   two.** `totalDays` counted `discPct`-resolved days only, but `discPct` and
+   `cashOSAmt` resolve through different chains (`discPct` → `opsCashRows` →
+   `ctrlRows`; `cashOSAmt` → `glimpseRows` → `cashRows` → `opsCashRows` →
+   `ctrlRows`). A device carrying the emailed Glimpse stream but no ops-pull cash
+   rows and no manual Controls upload had every cash-O/S day resolved and the
+   section still returned `null` — the same silent-empty failure this fix exists to
+   remove, just relocated one level up. Fixed: `dayCount` now unions resolved days
+   across both metrics, and the final "nothing to show" gate checks both district
+   figures (`distDisc` and a new `distCashOS`, a flat — not average-of-averages —
+   mean of `|cashOSAmt|` across all resolved store-days), not `distDisc` alone. The
+   original test fixture couldn't catch this because it always populated
+   `opsCashRows`; a new glimpse-only fixture proves the fix.
+2. **`storeCount` at the top of `buildSystemPrompt` was still `ds?.storeIds?.length`**
+   — three lines above the section this PR rewrote, reading the exact
+   manual-labor-derived field documented above as broken on a cloud-only device.
+   SAGE's opening line would have read "managing 0 locations" on precisely the
+   device this fix targets. Fixed: `Object.keys(STORE_NAMES).length`, same
+   substitution used everywhere else in this file.
+3. **The `CURRENT OPERATIONAL DATA` header still said "(from uploaded files)"**
+   after the TOOL USAGE RULES sentence nearby had already been corrected — same
+   defect shape as #4 above (telling SAGE something about the data that isn't
+   true), just a second string that didn't get updated. Fixed to describe
+   auto-first sourcing.
+
+`buildOpsSummary` has the same single-metric-gate shape (gated on `oepe` alone,
+also reports `park`) but `oepe` is the section's ranking key, so the reviewer
+recommended leaving it as-is — not changed here.
