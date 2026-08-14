@@ -623,3 +623,84 @@ it.
 $1.50/$2 Cheeseburger) — a **third** McValue action, after the data cutoff. Note that two calendar
 issues describe 9/8 differently (one as a McValue rehit, one as a Dual Daypart EVM at $5/$8);
 worth resolving if 9/8 ever enters an analysis window.
+
+---
+
+# PRE-PERIOD CALENDAR (Jan–Apr 2026) — two findings that change the claim
+
+Obtained 2026-08-14. The pre-period was **not** a quiet baseline.
+
+## Finding 1 — the free-item offer is MONTHLY and covers the ENTIRE pre-period, then stops
+
+| month | GMA Download Incentive |
+|---|---|
+| Jan 2026 | **Free Big Mac** w/ $1 min purchase |
+| Feb 2026 | **Free Large Fry** w/ $1 min purchase |
+| Mar 2026 | **Free 10 pc McNuggets** w/ $1 min purchase |
+| **Apr–Jul 2026** | **no equivalent line appears in any issue** |
+| Aug 2026 | *Weekly* Mass Digital Offers — free medium fry, $1 min, **1×/customer per week** |
+
+**This supersedes the earlier note that treated March's free-McNuggets as the confound.** It is not
+a March event — it is a **standing monthly programme running through the whole pre-window**
+(pre = 2025-12-31 → 2026-04-21, i.e. Jan, Feb and Mar entirely).
+
+And it appears to **stop after March**, with no standing free-item offer visible Apr–Jul, returning
+in a *weekly* (4× more frequent) form by the 2026-08-10 issue.
+
+**If that pattern is real, it is the strongest confound found and it inflates both headline
+findings:**
+
+- pre-period carries a monthly free item → **traffic up, check down** in the baseline
+- post-period (Apr 22 → ~Jul) carries none → traffic down, check up **relative to it**
+- DiD therefore reports **traffic falling and check rising** — *exactly the observed result* — with
+  no McValue effect required at all
+
+⚠️ **Caveat, and it matters: absence from a calendar listing is not proof the offer stopped.** The
+Apr–Jul issues may simply not repeat standing items. **Verify before relying on this** — it is the
+same "absent document ≠ absent event" error already made twice in this file.
+
+**The decisive question is unchanged and now sharper: did Jan–Apr 2025 carry the same monthly GMA
+Download Incentive?** If yes, the `ly_` twin absorbs it and the confound cancels. This is now the
+single highest-value item in the whole calendar exercise.
+
+## Finding 2 — McValue was ALREADY RUNNING in the pre-period
+
+> **2/2 — McValue Marketing re-hit**
+
+McValue 1.0 was live and being re-marketed during the baseline. **The pre/post comparison is
+therefore McValue 2.0 versus McValue 1.0 — not McValue versus no-McValue.**
+
+**This changes what the document can claim.** *"McValue hurt us"* and *"McValue 2.0 underperformed
+McValue 1.0"* are different statements, and only the second is supported. The second is also more
+credible and harder to dismiss — it is a like-for-like comparison of two versions of the same
+platform, which is a fairer test than comparing a value platform against its absence.
+
+State it explicitly. A reader who knows McValue 1.0 was running will otherwise conclude the
+document's authors did not.
+
+## The pre-period was promotionally dense
+
+`1/6` $5 Sausage McMuffin EVM + $8 2-Snack-Wrap EVM advertising · `1/27` Happy Meal #1 + Core Hot
+Honey AM/ROD LTOs · `2/2` **McValue re-hit** · `2/2–2/16` **EVM Accelerators** (audience-segmented
+digital wallet offers, targeted by recent EVM behaviour) · `2/10` Double Filet-O-Fish local LTO ·
+`2/17` Shamrock Shake + Oreo McFlurry · `3/2` National Egg McMuffin Day flash offer · `3/2–3/8`
+**GMA Delivery Accelerator** (segmented by GMAD order behaviour) · `3/3` Core Beef Campaign ·
+`3/31` Dual-Daypart Brand Relevance advertising begins.
+
+**The baseline is not a control period.** Any framing that treats "pre" as normal trading and
+"post" as the intervention is wrong on the facts. The honest framing is two differently-promoted
+periods compared against their own LY twins — which is what a DiD is for, but it has to be said.
+
+The **segmented accelerators** deserve a note of their own: they target individual customers by
+recent purchase behaviour, so their effect is **not uniform across stores or customers**. That is a
+source of variance no store-level analysis can see or control for.
+
+## Price Round 1 — the dates CONFLICT across issues
+
+- `2/5` — "Deadline for price changes before Price Round 1"
+- `3/20` — "2026 Price Round 1 Deadline to submit price recommendations on the portal"
+- `5/14` — "Deadline for Price Changes Ahead of Price Round 1"
+
+Three different issues, three different Price-Round-1 dates. Either these are sequential gates in
+one process or the date moved. **Do not cite a Price Round 1 date from the calendar** — the owner
+knows what his stores actually did and when it went effective. That remains the question to answer.
