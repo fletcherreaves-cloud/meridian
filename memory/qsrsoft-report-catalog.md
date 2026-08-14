@@ -581,3 +581,90 @@ If it is not: setting it up is a few minutes and starts accumulating immediately
 **Sensitivity:** individual customer complaints naming restaurants, and potentially staff. Facts
 follow parity; any derived judgment (a "complaint-prone store" ranking) is supervisor-and-above
 per #272.
+
+---
+
+# The district OSAT decline — first exploration (2026-08-14)
+
+Survey-weighted, Oklahoma (the only stores with a LY figure in the targets workbook):
+**LY 84.0% → YTD 2026 79.1%, −4.8pp. 18 of 20 stores declined**; only 43380 (+2.0) and 24471
+(+0.8) improved. District YTD across all 27 is **76.9%** on 26,974 surveys.
+
+## Q1 — is it still falling? UNANSWERABLE with what we have. Do not claim otherwise.
+
+The Aug 1–13 window reads +1.9pp above the YTD average, which is tempting to call a recovery. It
+is not one:
+
+- Aug n=723 → SE ≈ **1.52pp**, so +1.9pp is **1.25 SE**. Would need ~3.0pp to be significant.
+- **YTD already contains the Aug window**, so it is partly a self-comparison.
+
+This is exactly the trap that made the 13-day Florida number look on-target when 7.5 months of data
+put it 3.9pp below. Flagged here because I nearly repeated it one message after warning about it.
+
+**What answers it:** VOICE exported by month, or by 14-day Wednesday block, for 2025–2026. The API
+takes a date range, so this is N cheap requests. Until then the *shape* of the decline — gradual,
+step-change, or already recovering — is unknown.
+
+## Q2 — where the weakness sits
+
+| dimension | YTD district |
+|---|---|
+| Accuracy | 80.3% |
+| Friendly | 77.7% |
+| **Overall** | **76.9%** |
+| Fast | 75.8% |
+| Quality | 75.2% |
+| **Clean** | **71.9%** |
+
+**Clean is the floor** — 5.0pp below Overall, 8.4pp below Accuracy.
+
+**Drive-thru 76.8% vs front counter 76.7% — identical.** Whatever is happening is *channel-neutral*,
+which argues against drive-thru-specific causes (window staffing, DT speed, park behaviour) and
+toward something store-wide.
+
+**Direct application:** CLAUDE.md records cleanliness as an acknowledged data gap for Visit
+Readiness (`memory/project-graded-visits-pace.md`). **VOICE Clean Sat % is a measured cleanliness
+signal we already have access to** and are not using. It is customer-perceived rather than
+inspector-graded, so it is a proxy, not a substitute — but Visit Readiness currently has *nothing*
+in that slot.
+
+## Q3 — systemic, not concentrated
+
+| DO | stores | LY | YTD | change |
+|---|---|---|---|---|
+| Amanda | 3 | 82.0% | 74.9% | −7.1pp |
+| Krystiana | 4 | 84.0% | 77.4% | −6.6pp |
+| Robert | 4 | 77.9% | 73.3% | −4.6pp |
+| Ashley | 5 | 86.6% | 82.7% | −3.9pp |
+| Steven | 4 | 87.4% | 84.5% | −2.8pp |
+
+| operator | stores | LY | YTD | change |
+|---|---|---|---|---|
+| Ryan Thorley | 9 | 83.5% | 80.3% | −3.2pp |
+| Rick/Kathy Thorley | 5 | 85.8% | 80.1% | −5.7pp |
+| Gary Mornhinweg | 6 | 83.1% | 76.3% | −6.8pp |
+
+**Every DO and every operator declined.** With 3–5 stores per DO the between-DO spread is not
+strong evidence of differential performance; the finding is the uniformity. That rules out a
+single bad patch, a departed DO, or one operator's practices — and points to a **common cause
+acting on all 27 restaurants**.
+
+## The hypothesis to PRE-REGISTER before pulling monthly data
+
+**McValue.** It is the one district-wide change already dated and measured here
+(`memory/project-mcvalue-2-fbp-document.md`): traffic down, average check up — customers buying
+differently. A value-platform change that shifts mix and raises check is a plausible satisfaction
+driver, and it hit every store at once, which matches the uniformity above.
+
+Record the prediction **before** looking: if McValue drives it, the break is at the McValue date and
+is a step, not a drift. Recorded after the fact it is a story; recorded first it is a test. Same
+discipline as `store_assessments`.
+
+**The confound that must be ruled out first:** a change in **survey composition**. If SMG changed
+how invitations are issued — more app/digital-originated, different receipt placement, different
+incentive — the respondent mix shifts and scores move with no operational change at all. A
+uniform, district-wide, channel-neutral drop is *exactly* what a solicitation change looks like.
+
+**Test:** survey volume per store per period. If response counts jump or shift channel mix at the
+same date the scores break, suspect composition before operations. We have `# of Surveys` per store
+already; the monthly pull gives it per period at no extra cost.
