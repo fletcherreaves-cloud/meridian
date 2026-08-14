@@ -21,6 +21,74 @@ The owner's observation: McValue changed direction in **May 2026**, producing ro
 well" it will find exactly that. The reference-class design below exists specifically to give the
 data a chance to say otherwise.
 
+## How McDonald's views the organization — owner correction, 2026-08-14
+
+This determines which comparison carries the argument, so it is recorded before the method.
+
+> *"as far as McDonald's views all of these operators, they are all run as one organization…
+> Oklahoma is run separately with its own DO, Florida is run separately with his own DO as well.
+> But the trump card is that for all business planning purposes and potential growth and rewrite
+> of lease terms with McDonald's on restaurants, all 27 are viewed as one organization."*
+
+Three levels, and they are not the same unit:
+
+| level | reality |
+|---|---|
+| **Owner/operator** (Ryan Thorley, Rick/Kathy Thorley, Gary Mornhinweg, Jacob Thorley) | genuinely separate ownership; comparisons across them stand on their merits |
+| **Market / DO** (Oklahoma; Florida) | **operationally separate** — each has its own Director of Operations |
+| **McDonald's view** | **all 27 are one organization** for business planning, growth, and lease-term rewrites |
+
+**Consequence for the argument.** An early draft leaned on "three independently-run organizations
+all landed within 0.38 pp — not an execution story." **That framing fails in the room**, because
+McDonald's does not recognise operator as the unit: one organization, one set of practices, of
+course they move together.
+
+**The comparison that survives is Oklahoma versus Florida** — two separately-run operations under
+different DOs, ~900 miles apart, different competitive sets, weather, and demographics, both
+showing the same signature in the same fortnight:
+
+| market | n | traffic DiD |
+|---|---|---|
+| Oklahoma | 19 | **−4.55 pp** |
+| Florida | 6 | **−5.49 pp** |
+
+The three-operator consistency inside Oklahoma becomes a **secondary corroboration**, not the
+load-bearing claim.
+
+**Honesty caveat to state in the document rather than let the FBP raise it:** OK and FL are not
+fully independent — same ownership umbrella, same BI tooling, same person above both. A strong
+control, not a clean one.
+
+**Stakes, for the argue-a-position version only.** Because McDonald's evaluates all 27 as one
+organization for growth and lease rewrites, a sustained district-wide traffic decline feeds the
+numbers used to assess the organization for expansion — not merely a quarterly performance note.
+**Keep this out of the findings-only version**, which stays strictly descriptive.
+
+## Two stores excluded, with reasons
+
+Both are opening artifacts. Documented exclusions, never silent drops.
+
+**43701 Ponce de Leon** — opened 2026-03-13, `ly = 0` throughout. No comparison possible. It also
+distorts any district aggregate that includes it: it adds current-year volume against no
+last-year counterpart, inflating district vs-LY by roughly **+1.2 pp in the pre window and
++2.4 pp in the post window**. Because it inflates more in post, an uncorrected district series
+*understates* the traffic decline.
+
+**43380 Tishomingo** — opened early 2025 (`memory/dar-vs-ops-reconciliation.md:78`;
+`constants.js:92` flags "Limited history (503 days)" and `recentOnly: true`). Its LY is an opening
+ramp, not steady-state trading — measured, the LY baseline falls **−17.6% in sales and −16.2% in
+traffic within 2025** ($7,078/day → $5,830/day). So its pre-window compares against a hot opening
+period and its post-window against a cooler one, making the store appear to *improve*. It was one
+of only two stores with positive traffic DiD, and the effect is spurious.
+
+**Excluding it strengthens the finding:** All-OK sales DiD −3.36 → **−3.69 pp**, traffic DiD
+−4.37 → **−4.55 pp**. It also explains why Ryan Thorley looked better than the other operators
+(−3.10 vs −3.48/−3.62) — Tishomingo is his. Excluded, he is at −3.86 and the three-operator
+spread tightens from 0.52 pp to **0.38 pp**.
+
+Checked and **kept**: 37566 Mossy Head (+0.63 pp traffic DiD) — established Florida store, no
+opening artifact, a genuine outlier.
+
 ## Method
 
 **Difference-in-differences against `ly_` twins.** McValue is national — there is no untreated
