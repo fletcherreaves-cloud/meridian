@@ -231,6 +231,112 @@ That is what `/admin/missingGeids` and `/admin/geidLookup` are for. Populating i
 **POS badge → empID → geid** chain that #275 flagged as fragile — currently joinable only through
 a first name with no surname and doubled internal whitespace.
 
-**Still outstanding:** the actual Suspicious Activity *events* query, carrying a real
-`event_token`. `store_filter_options` is the page's preload, not the search. That request decides
-whether #275 is a couple of dozen requests a day or the 650-request funnel design.
+---
+
+# `suspicious_activity` — the events query (owner-captured 2026-08-14)
+
+**This is the purpose-built exception endpoint #275 hoped existed.** It restores Tier A properly
+and retires the 650-request funnel design for exception work.
+
+```
+POST https://api.security.myqsrsoft.com/security/suspicious_activity/v1/
+     {startDate}/{endDate}/{nsn,nsn,…}?event_token={token}&orgId={orgId}
+body: null      (literally the string 'null')
+```
+
+Note the path uses **underscores** (`suspicious_activity`) while the UI route in `menu.json` uses
+hyphens (`suspicious-activity`). And the parameter order is **dates first, then stores** — the
+opposite of `store_filter_options`'s `{orgId}/{nsn}/{startDate}/{endDate}`. Two easy ways to
+write a 404.
+
+## Why this changes the design
+
+| | `any_transaction` (#275's original plan) | `suspicious_activity` |
+|---|---|---|
+| stores per request | **one** (path param) | **all 27, comma-separated** |
+| dates per request | **one** (path param) | **a range** |
+| mandatory filters | `final_register` **and** `time_slice` | none beyond `event_token` |
+| district cost | ~650 requests/day | **~27 requests** (one per event type) for a whole range |
+| backfill | *"no range pull, no cheap backfill"* | a date range is a parameter |
+
+The backfill line matters most. `any_transaction`'s single-date path parameter is exactly the
+constraint the **data-depth standing rule** says never to accept as a limit — and here it simply
+doesn't apply. History is a wider date range, not more requests.
+
+**Untested, worth one capture:** whether `event_token=all_events` is accepted here. If it is, the
+whole district's exception feed for a range is **one request**, not 27.
+
+## Response — attribution reaches the individual, both sides
+
+```json
+[{ "event_token":"cash_refund", "event_name":"Cash Refunds", "location":11657,
+   "cashier_display":"Rachel R", "cashier_leid":36,
+   "manager_display":"Juan D",   "manager_leid":14,
+   "event_amount":151.14, "event_quantity":1,
+   "login_timestamp":"2026-08-04 15:03:37", "logout_timestamp":"2026-08-05 00:59:05",
+   "score_id":463160317, "user_reaction":null, "busn_dt":"2026-08-04",
+   "loyalty_id":null, "reg_id":"13" }]
+```
+
+This is the "one step deeper — the person attached to a metric" the owner asked for, and it
+carries **cashier and manager separately**, which is precisely the distinction #277 flagged as
+needing to be modelled so manager-authorised exceptions don't pool onto a manager's ID and read
+as personal misconduct. Available here without inference.
+
+`location` is an **unpadded** integer (11657), not `nsn7()`. Same padding trap as everywhere else.
+
+## Four things to settle before building a pull
+
+### 1. Is this raw events or QSRSoft's own scoring? — MEASURE FIRST
+
+**One** row came back for `cash_refund` across **27 stores × 13 days**. Two readings, and they
+mean very different things:
+
+- **(a) pre-filtered to scored/flagged events.** Supported by the presence of `score_id`, by the
+  endpoint's name, and by $151.14 being a very large single cash refund for a McDonald's.
+- **(b) cash refunds really are near-zero district-wide.**
+
+If (a), we would be ingesting **QSRSoft's derived judgments, not raw facts** — which lands it on
+the far side of #272's facts-vs-judgments line and changes both what it may be used for and who
+may see it.
+
+**The measurement, not a guess:** Meridian already tracks cash refunds in its Controls metrics
+from the Glimpse/Cash streams. Compare the count for **11657 over 2026-08-01…08-13** against this
+endpoint's one row. Many vs one settles it as (a) immediately.
+
+### 2. `leid` is store-local — never join on it alone
+
+`cashier_leid: 36` and `manager_leid: 14` are small integers, and `store_filter_options` returns
+cashiers/managers as `{badge, geid, display}` — so `leid` is almost certainly the **badge**, which
+is issued per store. Employee 36 at 11657 is a different person from employee 36 at 3708.
+
+**Join key is `(location, leid)`.** This repo has four documented `loc`-padding incidents
+(v4.809/823/827/831) from exactly this class of mistake; this one is worse because a wrong join
+attributes an exception to the wrong human being.
+
+### 3. There is no event timestamp
+
+`login_timestamp` → `logout_timestamp` spans **9h55m** here. That is the *session*, not the event.
+The only event-time information is `busn_dt` — a date.
+
+So an exception can be placed within a shift, **not within an hour**, which rules out correlating
+these against `qsr_daily_activity`'s hourly rows. Anyone reading `login_timestamp` as "when the
+refund happened" will be wrong by up to a full shift.
+
+### 4. `user_reaction` is an existing human review workflow
+
+The field exists and is `null` here, meaning someone can respond to a flagged event inside
+QSRSoft. Any pull must **carry it through and never overwrite it** — the same rule #269's ledger
+needed for its human-applied classifications. If reviews are happening in QSRSoft's UI, a pull
+that drops the field silently discards work.
+
+## Sensitivity — the sharpest personnel data we have touched
+
+A **suspicion score attached to a named cashier and a named manager**. Unambiguously a derived
+judgment about identifiable individuals under #272, so **supervisor-and-above**, gated on subject
+as well as role, failing closed when unmarked.
+
+And `memory/attribution-validity-register-login.md` applies at full force: the name on the metric
+is the name on the **login**, not necessarily the actor. That caveat is a footnote on a sales
+metric; here it is the difference between an inquiry and an accusation. It must travel with the
+data, not live in a doc.
