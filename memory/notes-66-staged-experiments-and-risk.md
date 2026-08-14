@@ -251,3 +251,50 @@ once `store_assessments` holds two programs, the question "whose read predicts b
 answerable, and that is a more valuable output than any single program's result. The design
 requirement is unchanged whenever it happens — ratings captured independently, locked before
 outcomes are visible, never after a group conversation.
+
+## 9. Rating schema — FINAL (2026-08-14, after one revision round)
+
+The first eight ratings showed **Execution Confidence compressed to 6 Med / 2 High / 0 Low** — not
+enough spread to test against anything if it held across 20. The owner re-rated (legitimately: no
+scheduling data had been looked at, so pre-registration w.r.t. outcome was intact) and trialled two
+added columns. Final shape:
+
+| field | keep? | why |
+|---|---|---|
+| GM engagement | ✅ | 1 Low / 2 Med / 5 High — skews high, some discrimination |
+| Scheduling-manager engagement | ✅ | **2 / 4 / 2 — the best-spread dimension**, most likely to carry the test |
+| Execution confidence | ✅ **primary** | now **2 / 4 / 2** after the re-rate; **absolute**, so it pools across programs |
+| "compared to average" | ❌ drop | perfect 1:1 with Execution (Below↔Low, At↔Med, Above↔High) — and relative scales re-centre per cohort, so they cannot be pooled across programs, which is the whole point of the record |
+| "if only 5 of 20" binary | ⏸ **defer to 2026-09-03** | see below |
+
+### Why the binary was deferred rather than dropped
+
+It was my design error. **A top-5-of-20 judgment cannot be made store-by-store as you go** — placing
+any one store requires knowing the other 19. Filled incrementally it drifted to 6 Yes of 8 (≈15 of
+20), which breaks the scarcity premise that was supposed to create the discrimination, and collapsed
+to "Execution ≠ Low" — collinear with the field it was meant to supplement.
+
+**Fix: fill it in ONE pass across all 20 once the cohort completes (2026-09-03), before looking at
+any scheduling data.** Done that way it is a genuine forced ranking and cuts *within* the Med band,
+which the three-valued scale cannot. Still fully pre-registered.
+
+Also corrected in that round: the binary was initially answered inverted, because I wrote "improve"
+where I meant "execute well". Owner re-oriented it. Wording of a forced-choice question is part of
+the instrument — record the exact question text with the ratings.
+
+### Limitation to keep visible
+
+The re-rate happened **after** being told the distribution was compressed, and moved exactly two
+stores Med→Low to produce a tidy 2/4/2. It is not outcome contamination — no scheduling data had
+been seen — and the notes support it (OKC *"not fully engaged… appeared asleep"*, Lindsay *"not the
+numbers person"* are plainly the weakest reads). Recorded so it is visible in the file rather than
+discovered later.
+
+### Cohort
+
+20 stores; 8 rated as of 2026-08-14; remaining 12 scheduled through **2026-09-03**. Five supervisors
+(Amanda Estrada, Steven Vaughn, Ashley Podroza, Krystiana Langford, Robert Spencer).
+
+**Cohort representativeness — TESTED and clean.** Prior-year OSAT change, taught vs untaught OK
+stores: −5.86pp (n=8) vs −6.14pp (n=12), t=0.11. Not distinguishable, so the taught eight were not
+selected for being weak or strong and a before/after comparison is not confounded by selection.
