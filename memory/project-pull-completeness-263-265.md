@@ -7,6 +7,34 @@ one substitutes for the other; the critical caveat in the originating issue is t
 Sulphur nor the Marietta outage would have been caught by #263's checks alone, because neither
 pull actually failed.
 
+## Review fix (2026-08-14) — `qsrsoft-ops-pull.mjs` was missing, and it's the one that mattered
+
+The PR review on #269 caught a real gap the dispatch itself introduced: the audit list named
+"every script sharing that auth ladder" and then enumerated seven — `dar-pull`, `ebos-pull`,
+`onhand-pull`, `variance-pull`, `employee-roster-pull`, `roster-stats-pull`, `lifelenz-pull` —
+omitting `qsrsoft-ops-pull.mjs`. That is the script that produced the **actual incident this
+issue exists for**: a backfill chunk logged `[ops] done — 0 rows upserted across 6 endpoints`
+after both auth paths failed, and exited green anyway. It's also the widest-blast-radius script
+in the set (six endpoints, arbitrary date ranges, used for every backfill).
+
+Fixed the same way as the other seven: `makeOutcomeTracker` wired into `runAll()`'s existing
+per-(endpoint, date) `try/catch` (was already there, just never fed into a tracker) and all
+three of the script's exit paths (the default full pull, the cash-anomaly targeted re-pull, and
+the Live Pulse hourly capture). The pulse path's zero-rows check is on the TOTAL across its 4
+keys, not per-key, so `service`'s documented same-day emptiness doesn't false-positive — only
+all four keys landing at zero does, which is the real failure. `formatRerun` reuses the script's
+own existing `QSRSOFT_OPS_START_DATE`/`END_DATE` override, since that's real and the review
+specifically noted it (unlike the three scripts correctly flagged as having no rerun mechanism).
+
+Also fixed the schema comment the review flagged as non-blocking but worth doing now:
+`data_completeness_incidents.loc` is written **padded** (`nsn7()`, matching
+`qsr_service_stats`/`qsr_daily_activity`) but the original comment said "unpadded, matches
+STORE_NAMES keys" — backwards. Functionally harmless today (everything written is internally
+consistent), but a wrong comment is how the next person joins `STORE_NAMES` unpadded and quietly
+breaks the `unique (tenant_id, loc, stream, date_start)` constraint's deduplication — this repo
+has four documented loc-padding incidents (v4.809/823/827/831), all silent failures. Corrected to
+say padded and to point at `ltrim(loc,'0')` for a `STORE_NAMES` join.
+
 ## #263 — shared failure tracker (`scripts/lib/pull-outcome.mjs`)
 
 Audited all 7 scripts sharing the auth ladder before touching anything (see the audit table this

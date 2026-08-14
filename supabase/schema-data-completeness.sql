@@ -37,7 +37,15 @@
 --   rather than half-built here.
 create table if not exists public.data_completeness_incidents (
   id                 uuid             not null default gen_random_uuid() primary key,
-  loc                text             not null,       -- unpadded, matches STORE_NAMES keys
+  loc                text             not null,       -- 7-char zero-padded NSN (nsn7()), matching
+                                                        -- qsr_service_stats/qsr_daily_activity's own
+                                                        -- loc column -- NOT the unpadded STORE_NAMES
+                                                        -- key shape. A STORE_NAMES join needs
+                                                        -- ltrim(loc,'0') (same as this table's own
+                                                        -- RLS policy below), or the unique constraint
+                                                        -- silently stops deduplicating once both forms
+                                                        -- exist -- this repo has four documented
+                                                        -- loc-padding incidents (v4.809/823/827/831).
   stream             text             not null,        -- e.g. 'qsr_service_stats', 'qsr_daily_activity'
   date_start         date             not null,
   date_end           date             not null,
