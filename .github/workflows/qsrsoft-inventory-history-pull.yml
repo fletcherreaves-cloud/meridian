@@ -1,0 +1,64 @@
+name: QSRSoft Inventory History Pull (retention probe)
+
+# #257 step 0 ONLY: probes prod.ebos.qsrsoft.com's physical-inventory count-history
+# endpoint with widening date windows to find out whether the owner's UI back-limit is
+# cosmetic, a real retention cutoff, or a server range cap — before any real pull is
+# built (the issue is explicit: do not guess the back-pull shape). workflow_dispatch
+# only — no schedule. Runs from the Action so no owner laptop is needed; the real pull
+# (once the probe's verdict is known) gets its own script mode, table, and schedule in a
+# follow-up, at which point this workflow's `name:` goes into sync-failure-watch.yml per
+# CLAUDE.md's standing rule for new automated pulls.
+
+on:
+  workflow_dispatch:
+    inputs:
+      store:
+        description: 'NSN to probe (default: 35064, the store from the issue''s own sample)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Probe inventory_history retention
+        run: node scripts/qsrsoft-inventory-history-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:     ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          INVHIST_PROBE:             '1'
+          INVHIST_PROBE_STORE:       ${{ github.event.inputs.store || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invhist-probe-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
