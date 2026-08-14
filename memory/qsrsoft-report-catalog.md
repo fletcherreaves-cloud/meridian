@@ -436,3 +436,101 @@ Two implications for design, both cheap:
    a floor (n < 15 is a reasonable starting cut — measure it, don't fix it by taste).
 2. **Longer windows for per-store judgments.** Rolling 28-day or the 14-day block ×2 gets most
    stores past n=40. District-level is fine at 13 days; per-store is not.
+
+---
+
+# CORRECTION — VOICE OSAT targets are PER STORE, not a flat 90%
+
+Owner, 2026-08-14: *"each location's actual targets for that are in the yearly target excel
+upload."* He is right, and my first VOICE read graded every store against the flat ≥90% in
+CLAUDE.md. That was the wrong bar for 26 of 27 stores.
+
+Source: `2026 Restaurant Targets (Updated) OK & FL.xlsx`, sheet `Table 1`, block **"2026 Customer
+Satisfaction Targets"** — `VOICE OSAT PACE` per restaurant, alongside `VOICE Execute As Designed`,
+`Overall Satisfaction B2B` and `1-800 Contacts`.
+
+## The reversal
+
+**Oklahoma targets are individualised (0.82 – 0.92). Every Florida store's target is exactly
+0.70**, and FL has **no Last Year Results** in any customer-satisfaction column.
+
+Re-grading the same 2026-08-01…08-13 window against each store's own target:
+
+| scope | actual | own target (response-weighted) | gap |
+|---|---|---|---|
+| District | 78.8% | 82.3% | **−3.5pp** |
+| Oklahoma | 81.0% | 85.2% | **−4.2pp** |
+| Florida | 69.8% | 70.0% | **−0.2pp** |
+
+**This inverts the conclusion I gave the owner.** I reported the raw 11.2pp OK-vs-FL gap as
+Florida underperforming, and as corroborating the McValue traffic finding. Measured against the
+bars each market is actually held to, **Florida is at target and Oklahoma is 4.2pp short**. The
+raw gap is a real difference in *level*; it is not a difference in *performance*.
+
+**But do not over-correct.** FL's 0.70 is a flat placeholder across all seven stores with no LY
+basis to individualise from — and its `Overall Satisfaction B2B` allowance is 0.085 versus ~0.04
+for Oklahoma, roughly double the permitted dissatisfaction. "Florida is at target" therefore means
+"Florida clears a placeholder set low because there was no history," which is a weaker statement
+than it sounds. The right follow-up is whether 0.70 is still the right bar, not whether Florida
+passed it.
+
+## What survives unchanged — and is strengthened
+
+Against each store's **own** target, over 13 days:
+
+- **0 stores provably above target**
+- **4 provably below** — 5985, 5183, 35064, 32525
+- **23 statistically indistinguishable from their own target**
+
+So 85% of stores cannot be told apart from their target in a two-week window. The sample-size
+constraint was never about which threshold was used; it survives the correction intact and is the
+durable finding. The four provably-below stores are the actionable list.
+
+## ⚠️ These targets are NOT in Meridian
+
+`DEFAULT_TARGETS` (`src/constants.js`) carries **zero** OSAT/VOICE fields — `grep tOsat|tVoice|
+tSatisf` returns 0. The workbook's operational blocks are present (`tOepe`, `tPark`, `tKvst`,
+`tKvsu`, `tR2p`, `tTpph`, `tLabor`, `tFOB*`), but **three whole blocks are missing**:
+
+- **Customer Satisfaction** — VOICE OSAT PACE, Execute As Designed, Overall Satisfaction B2B, 1-800
+- **Digital Execution** — Digital App % of sales, App GC/R/D, McDelivery GC/R/D, wait time, stars
+- **People** — crew staffing, shift leader, GM/DM/swing, total headcount, and three turnover targets
+
+#288's VOICE pull would land data with **no target to grade it against**. Filed separately.
+
+---
+
+# `suspicious_activity` — is it filtered? KB checked, evidence is strong but not conclusive
+
+Owner suggested checking the KB, on the theory the "suspicious" label implies default filtering.
+Searched all 208 `qsrsoft_kb` rows. **No article documents the report itself**; the only coverage
+is the *Insights dashboard tile*, in `Insights - Did You Know? - Dashboard Details` (23502591807127):
+
+> *"The Security Suspicious Activity insight (for Premium Core subscribers) indicates suspicious
+> activity during the time frame chosen using the settings gear. The transactions we are showing
+> now are cash refunds, cashless refunds, overrings, and loyalty rewards. More will be added soon."*
+
+That sentence reads as an enumeration of **which event types are covered**, not a threshold on
+which instances qualify — so the KB leans *against* filtering, and it certainly documents no score
+cutoff. It also confirms per-transaction receipt drill-down and camera integration.
+
+**A local measurement points the other way, harder.** Meridian's own `DEFAULT_TARGETS` for the
+store in the captured row:
+
+```
+'11657': tRefundCash: 68.88   (monthly $ target for cash refunds)
+         tRefundCnt:  20.0    (monthly count, all refund types)
+```
+
+The single returned event is **$151.14 — more than twice that store's entire monthly cash-refund
+budget, in one transaction.** A feed returning raw cash refunds would not surface exactly one row
+across 27 stores × 13 days and have it be a 2× - monthly - budget outlier. Combined with `score_id`
+being present, the balance of evidence favours **pre-scored events**.
+
+**Not proven, so do not build on it.** The KB and the magnitude point opposite ways. The
+definitive test is unchanged and cheap: compare our Controls cash-refund **count** for 11657 over
+2026-08-01…08-13 against this one row. Many vs one settles it immediately.
+
+If it is scored, we are ingesting **QSRSoft's derived judgments about named individuals**, which
+is the far side of #272's line — and the `score_id` should be stored so the judgment stays
+attributable to its author rather than reading as Meridian's own finding.
