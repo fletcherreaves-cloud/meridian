@@ -756,3 +756,35 @@ measured. If 2025 was materially different, the DiD is measuring calendar asymme
 document's claim has to be rebuilt around B1 and the like-for-like McValue-2.0-vs-1.0 framing.
 
 **This is the single highest-value item remaining before 25 August.**
+
+## Pricing confound — largely defused, and the check finding gets STRONGER
+
+Owner, 2026-08-14: *"I will need to confirm, but any changes we took were minimal. We did not
+participate in the whole price change strategy."*
+
+**Two reasons this holds, one structural and one interpretive.**
+
+**Structural.** The DiD computes `(post vs LY) − (pre vs LY)`. A price increase taken *before* the
+pre-window sits in **both** halves and cancels. Only price taken **between** the pre and post
+windows survives into the result. So the exposure is narrow: price actions between roughly January
+and 2026-08-13. The owner reports minimal action there.
+
+**Interpretive — and this is the payoff.** If check rose **+10.4¢ with essentially no price taken,
+the entire gain is MIX**: fewer transactions, larger ones.
+
+That is the signature of **losing the low-ticket, price-sensitive, occasional customer while
+retaining the heavier one** — precisely the customer a value platform exists to attract.
+
+**This is a materially harder finding than "check went up."** It says McValue 2.0 coincided with
+the loss of exactly the segment it was designed to serve, and because no price was taken there is
+no competing explanation for the mix shift. Traffic −4.55pp and check +10.4¢ stop being two
+separate observations and become **one coherent mechanism**.
+
+**Still to confirm** (owner's own caveat): the actual price actions and effective dates for
+2026 Rounds 1 and 2. Until confirmed this is stated as the owner's account, not as verified fact —
+but the structural argument above means even moderate price action would have to fall inside the
+Jan–Aug 2026 window to matter at all.
+
+**Worth noting for context, not for the finding:** if most of the system took price and this
+organisation did not, then any comparison against a national or co-op benchmark is not like-for-like
+on price. That cuts against using system averages as a yardstick anywhere in the document.
