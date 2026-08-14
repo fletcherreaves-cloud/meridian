@@ -86,10 +86,22 @@ is stronger than the mis-attribution left it.
 **Established 2026-08-13 by direct query, not inference.** Use this date for every exclusion.
 
 ```
-first_row          2026-03-05    one row, net_sales_amt = 0   (configured, not trading)
-                   2026-03-12    one row, net_sales_amt NULL  (neither >0 nor =0)
-first_trading_day  2026-03-13    110 trading days to 2026-06-30
+2026-03-05        cash row, net_sales_amt = 0      system configured, not trading
+2026-03-06 → 11   LABOR rows, no cash rows         pre-opening staffing / training week
+2026-03-12        cash row, net_sales_amt NULL     neither >0 nor =0
+2026-03-13        FIRST TRADING DAY                2 of 3 dayparts; 110 days to 2026-06-30
 ```
+
+The six labor-only days were found separately: `qsr_labor_summary` returned 4018 store-days for
+2026-02-01..2026-06-30 against `qsr_cash_sheet`'s 4012, and all six of the surplus are Ponce on
+consecutive dates 03-06 to 03-11. Labor hours with no sales is a crew training and setup week
+before opening.
+
+**Hazard.** Anything computing labor as a percentage of sales for Ponce in March 2026 meets six
+days of real labor hours against zero or absent sales — divide-by-zero, infinity, or a silently
+dropped day depending on the guard. Same family as the `labor_pct` contamination cleaned up under
+#236. A pre-opening staffing period is a normal thing for a new store to have, so this will recur
+with the next opening and with the Lindsay rebuild.
 
 Corroborated by the backfill row counts: chunk 3 covered 150 dates and returned 4012 cash rows
 against `150 x 26 = 3900`, a surplus of exactly 112 = 110 trading days + the 2 stray rows.
@@ -139,6 +151,34 @@ real-world test case for that code, and it is the first one we have identified.
 
 Check whether other stores also closed 2025-04-20; the pull only surfaced Sulphur because it was
 the store that happened to be missing a service row.
+
+---
+
+## Multi-day service-stats outages are a RECURRING failure mode, not incidents
+
+Established 2026-08-13 once the whole 15-month backfill was reconciled. **Two stores, eight days
+each, seven months apart. Neither was noticed at the time.**
+
+| store | window | days | shape |
+|---|---|---|---|
+| Sulphur (32525) | 2025-09-09 → 09-16 | 8 | consecutive |
+| Marietta (33109) | 2026-03-10, 03-12 → 03-18 | 8 | one-day recovery on 03-11 |
+
+Both stores traded normally throughout. Both lost DT times, OEPE and KVS for roughly a quarter of
+the month. Both months' service figures were computed on a short denominator with nothing marking
+them short.
+
+**Marietta's isolated 2025-08-03 gap now reads differently.** It was first recorded below as a
+one-off upstream hole. With the March 2026 run in view it looks like the first sign of a store
+with a recurring reporting problem, not an isolated event. Treat single missing service days as
+possible early warnings rather than noise.
+
+**Why this matters more than either incident.** One outage is bad luck; two at different stores,
+in different months, both undetected, is a **failure mode**. Anything that reports a monthly
+service average — a review, a ranking, a coaching conversation, a Signals correlation — can be
+running on 22 days of 30 with no indication. The completeness check argued for in #263 is the
+only thing that would surface it, and on this evidence it should be a standing scheduled check,
+not a one-off reconciliation.
 
 ---
 
