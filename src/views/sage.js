@@ -1389,7 +1389,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
 
     // Footer note
     h('div', { style: { padding: '6px 16px 10px', fontSize: '9px', color: muted, flexShrink: 0 } },
-      'Powered by Claude Opus 4.8 with adaptive thinking · Messages are sent to Anthropic via Supabase Edge Function',
+      'Powered by Claude Opus 5 with adaptive thinking · Messages are sent to Anthropic via Supabase Edge Function',
     ),
 
     // Modals — portaled to document.body so they escape the SAGE overlay's

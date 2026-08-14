@@ -531,7 +531,7 @@ async function streamAnthropicCall(
   withTools = true,
 ): Promise<{ stopReason: string; assistantContent: unknown[]; toolUses: Array<{ id: string; name: string; input: unknown }> }> {
   const body: Record<string, unknown> = {
-    model: 'claude-opus-4-8',
+    model: 'claude-opus-5',
     max_tokens: 8000,
     thinking: { type: 'adaptive' },
     system: systemPrompt,
