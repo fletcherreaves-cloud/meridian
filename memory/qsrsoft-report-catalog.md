@@ -340,3 +340,99 @@ And `memory/attribution-validity-register-login.md` applies at full force: the n
 is the name on the **login**, not necessarily the actor. That caveat is a footnote on a sales
 metric; here it is the difference between an inquiry and an accusation. It must travel with the
 data, not live in a doc.
+
+---
+
+# `data_layer/v1/service/voice` — SMG VOICE by API (owner-captured 2026-08-14)
+
+**This retires the manual SMG PDF + FullScale Excel drop** (`memory/data-acquisition-shopping-
+list.md` §C). All 27 stores and a full date range in one request.
+
+```
+GET https://api.reports.myqsrsoft.com/data_layer/v1/service/voice
+    ?nsd=d&nsn={csv of unpadded NSNs}&orgId={orgId}&enterpriseName=McDonalds
+    &startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&dsd=s&weekStart=3
+    &selectCols={csv of metric fields}
+```
+
+Same host as DAR/ops (`api.reports.myqsrsoft.com`), so **the documented DAR auth constraint
+applies**: token-only server-side fetch returns 401; use the Playwright in-browser
+`page.evaluate()` pattern with an explicit `X-Auth-Token` header. Known and already solved.
+
+**`weekStart=3` = Wednesday**, independently confirming `orgStartOfWeek: "Wednesday"` from the
+org config — and it is a *parameter*, so the 14-day Wednesday-anchored block work can ask the API
+for its own alignment rather than re-bucketing client-side.
+
+`/data_layer/v1/` looks like a **family**; `service/voice` is one member. Worth enumerating.
+
+## The response shape is better than the Excel drop, for one specific reason
+
+Metrics come as **satisfied-count / total-count pairs**, not pre-computed percentages:
+
+```json
+{"storeNum":3708,"overallSatCnt":27,"overallCnt":31,"accuracySatCnt":27,"accuracyCnt":31, …}
+```
+
+That means district and patch rollups are **Σnumerator / Σdenominator** — correct weighting by
+construction. The FullScale Excel gives percentages already computed, which cannot be
+re-aggregated without averaging averages, the exact error the standing rule forbids.
+
+Six dimensions — Overall, Accuracy, Clean, Fast, Friendly, Quality — each in three channel
+variants: unprefixed (total), `dt*` (drive-thru), `fc*` (front counter). DT + FC reconciles to
+total, checked on five stores.
+
+**Each metric carries its own denominator, and they differ** — store 5183 has `accuracyCnt` 19 but
+`fastCnt` 20, because respondents skip individual questions. There is **no single store-level n**.
+Any panel showing "responses: N" for a store is wrong for at least one metric.
+
+`storeNum` is an **unpadded** integer. Same padding trap as `suspicious_activity`.
+
+## Granularity — one row per store for the WHOLE range
+
+`dsd=s` and `nsd=d` appear to be date-summarisation and store-detail switches. The capture returns
+**a single aggregate row per store**, not daily rows.
+
+**Untested and worth one capture: `dsd=d`.** If it returns per-day rows, daily VOICE trending is
+free. If not, the pull needs one request per period, which is still trivially cheap.
+
+## Measured on the captured window (2026-08-01…08-13, n=723 overall)
+
+| | OSAT |
+|---|---|
+| District | **78.8%** |
+| Oklahoma (n=584) | 81.0% |
+| Florida (n=139) | **69.8%** |
+| Drive-thru (n=305) | 77.7% |
+| Front counter (n=418) | 79.7% |
+
+Other dimensions district-wide: Accuracy 81.2%, Friendly 79.3%, Fast 77.6%, Quality 76.9%,
+**Clean 75.3%** (lowest).
+
+The **11.2pp OK-vs-FL gap is real** (≈2.7σ) and lands on the same side as the McValue traffic
+finding (FL −5.49pp) — two independent measures pointing at Florida. Worth pursuing as a question,
+not yet a conclusion; both could share a cause, or neither.
+
+DT-vs-FC at 2.0pp on those n's is **not** a difference.
+
+## The finding that constrains every VOICE panel we build
+
+Per-store samples over 13 days run **n = 10 to 66**. Wilson 95% intervals against the ≥90% OSAT
+threshold in CLAUDE.md:
+
+- **0 stores** are provably at or above 90%
+- 14 are provably below
+- **13 are statistically indistinguishable from 90%**
+
+Concretely: 18213 reads 90.0% — CI [60, 98]. 37566 reads 70.0% — CI [40, 89]. Those two look 20
+points apart and are not distinguishable. Only 43380 (93.8%, n=48, CI [83, 98]) is anywhere near
+defensible as a top performer.
+
+**So a per-store VOICE leaderboard over a two-week window is mostly ranking noise**, and a
+red/amber/green chip against 90% would be asserting precision the sample cannot carry. This is
+exactly the accuracy-integrity concern (P0 in `vision-and-roadmap.md`) arriving in a new stream.
+
+Two implications for design, both cheap:
+1. **Carry `n` everywhere** a VOICE percentage is displayed, and suppress or grey any store below
+   a floor (n < 15 is a reasonable starting cut — measure it, don't fix it by taste).
+2. **Longer windows for per-store judgments.** Rolling 28-day or the 14-day block ×2 gets most
+   stores past n=40. District-level is fine at 13 days; per-store is not.
