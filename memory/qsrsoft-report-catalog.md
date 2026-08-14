@@ -854,6 +854,53 @@ Note the asymmetry: the **category** rollups `all_discount` / `all_promo` ARE of
 within-category aggregation but not across-category — possibly because `all_events` backs the
 Insights tile rather than this report.
 
+### ✅ TESTED AND ACCEPTED (owner, 2026-08-14) — 26 requests collapse to 1
+
+`{"event_token":"all_events","start_date":"2026-08-14","end_date":"2026-08-14"}` against
+`top_contributors` for 3708 returns real aggregated data, not an error:
+
+```
+managers: Dallas L - 51 (2)   James T - 9 (2)   Liz R - 14 (1)          -> 5
+cashiers: Shauntell S - 10 (2) Anthony S - 84 (2) Dallas L - 51 (2)
+          Mariah M - 27 (1)                                            -> 7
+```
+
+**`all_events` is a valid `event_token` even though the UI never offers it.** A district pull does
+not need one request per event type.
+
+#### Two findings inside that response, both of which would have caused bugs
+
+**1. Manager and cashier totals DO NOT match — 5 vs 7.** For `pos_overring` they matched exactly
+(3 and 3). Across all event types they do not, so **manager attribution is optional per event**:
+two of the seven events have a cashier and no manager. Entirely sensible — a loyalty reward or an
+employee meal needs no manager authorisation — but it means:
+
+- The event count for a store/day is the **cashier** total, not the manager total.
+- Any schema requiring both, or any join assuming a manager exists, drops rows or silently
+  produces nulls. `manager_leid` must be nullable and *expected* to be null.
+- Manager-side and cashier-side rates have **different denominators** and cannot be compared
+  directly.
+
+**2. The same person has different display strings on different endpoints.**
+`store_filter_options` returns `"Liz  - 14"` (double space, no surname initial); `top_contributors`
+returns `"Liz R - 14"`. Same badge, same human, two spellings.
+
+That is the fragile-name-join hazard #275 flagged, now demonstrated *within the same API family
+on the same day*. **Join on `(location, badge)` only. Never on the display string** — and never
+assume a name seen on one endpoint will match the other.
+
+#### Volume calibration — and what it does to the filtered-vs-raw question
+
+Seven events across **all** types for one store on one day. Extrapolated naively that is roughly
+**2,500 events district-wide per fortnight** — a very manageable pull.
+
+It also sharpens the `suspicious_activity` question rather than settling it. If ~2,500 events span
+the window and `cash_refund` is one of ~23 categories, a single returned cash refund is still low
+but less absurd than it looked against an unknown denominator. **The same-store/same-date/same-token
+comparison remains the test** — it is now cheap to run with `all_events` on both endpoints.
+
+---
+
 The UI therefore cannot test it. Test it directly by editing the `top_contributors` body:
 `{"event_token":"all_events","start_date":"…","end_date":"…"}` — cheapest possible probe, since
 that endpoint is a small aggregation and we already have a known-good baseline (3 events for
