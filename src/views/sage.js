@@ -6,6 +6,7 @@ import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt
 import { STORE_NAMES } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 
 const h = React.createElement;
@@ -27,6 +28,12 @@ function _avg(arr) {
 
 function _fmt(n, d=1) { return n != null ? n.toFixed(d) : '—'; }
 
+// metric-source.js resolves percentage-shaped metrics (laborPct, park, discPct, …) as
+// fractions (0-1), matching parsePct's normalization and analytics.js's own ×100 display
+// convention for the same fields — this guards the null case a bare `n*100` would corrupt
+// into "0.00%" instead of "—".
+function _fmtPct(frac, d=2) { return frac != null ? (frac * 100).toFixed(d) + '%' : '—'; }
+
 function _dollar(n) {
   if (n == null) return '—';
   const abs = Math.abs(Math.round(n));
@@ -35,6 +42,43 @@ function _dollar(n) {
 
 function _storeName(loc) {
   return STORE_NAMES?.[String(loc)] || `Store ${loc}`;
+}
+
+// #270 phase 1 — the last-N-days window every metric-source.js-backed summary below uses.
+function _lastNDaysRange(days) {
+  const e = new Date();
+  const s = new Date(e); s.setDate(s.getDate() - days);
+  return { s, e };
+}
+
+// #270 phase 1, defect #1 (most severe): this used to gate on ds.laborRows.length > 0 — the
+// same manual-upload dependency the rest of this fix removes elsewhere, so a device with only
+// cloud data (no manual upload, ever) concluded SAGE had "no data at all" and hid the
+// data-driven empty-state copy + quick prompts entirely.
+//
+// NOT using ds.loaded here even though it looks like the obvious fix: ds.loaded is ALSO
+// laborRows-derived (src/engine/pipeline.js buildDS/mergeDS: `ds.loaded =
+// ds.laborRows.length > 0`) — swapping to it would trade one manual-only check for an
+// identically-broken one under a different name, not actually fix anything. That is a real,
+// separate, and much wider bug — every `if (!ds.loaded)` gate across the app (analytics.js
+// alone has 10+) is potentially blocked on a device with cloud data and no manual upload —
+// out of this issue's stated phase-1 scope (SAGE's own summaries). Flagged here and in
+// memory/project-sage-manual-sourcing-270.md rather than silently left for someone to
+// rediscover the hard way.
+export function sageHasData(ds) {
+  return !!(ds && (
+    ds.qsrActSummaryRows?.length || ds.glimpseRows?.length || ds.cashRows?.length ||
+    ds.qsrFobRows?.length || ds.salesLedgerRows?.length ||
+    ds.opsCashRows?.length || ds.opsLaborRows?.length || ds.opsServiceRows?.length ||
+    ds.ctrlRows?.length || ds.laborRows?.length || ds.schedRows?.length
+  ));
+}
+
+// Total resolved (store, day) coverage for one auto-first metric, across every store in
+// `locs` over `range` — used for the data-inventory block so it reports what the summaries
+// actually read, not a manual upload's raw row count (#270 phase 1, defect #3).
+function _resolvedDayCount(ds, locs, range, key) {
+  return locs.reduce((n, loc) => n + Object.keys(metricSeries(ds, loc, range, key)).length, 0);
 }
 
 function _recentRows(rows, days) {
@@ -57,44 +101,50 @@ function _byLoc(rows, initFn, rowFn) {
   return map;
 }
 
-function buildLaborSummary(ds) {
-  const rows = ds?.laborRows || [];
-  if (rows.length < 5) return null;
-  const working = _recentRows(rows, 60);
+// #270 phase 1 — was reading ds.laborRows (manual Labor Excel upload) directly: blank on any
+// device without that upload, stale past the last one. Routed through metric-source.js's
+// auto-first resolver (laborPct/tpph/otHrs/otDollar all already chain Glimpse/Controls-cloud/
+// Ops-pull ahead of the manual upload), same precedent as buildFobSummary below.
+export function buildLaborSummary(ds) {
+  const locs = Object.keys(STORE_NAMES);
+  if (!locs.length) return null;
+  const range = _lastNDaysRange(60);
 
-  const distAvgLabor = _avg(working.map(r => r.laborPct));
-  const distAvgTpph  = _avg(working.map(r => r.tpph));
-  const totalOtDollar = working.reduce((s,r) => s + (r.otDollar || 0), 0);
-  const totalOtHrs    = working.reduce((s,r) => s + (r.otHrs || 0), 0);
-
-  const locMap = _byLoc(working,
-    () => ({ laborPcts: [], tpphs: [], otDollar: 0, otHrs: 0 }),
-    (d, r) => {
-      if (r.laborPct != null) d.laborPcts.push(r.laborPct);
-      if (r.tpph != null) d.tpphs.push(r.tpph);
-      d.otDollar += r.otDollar || 0;
-      d.otHrs += r.otHrs || 0;
-    }
-  );
-
-  const stores = Object.entries(locMap)
-    .map(([loc, d]) => ({
+  const perStore = locs.map(loc => {
+    const laborPcts = Object.values(metricSeries(ds, loc, range, 'laborPct'));
+    const tpphs     = Object.values(metricSeries(ds, loc, range, 'tpph'));
+    const otHrsVals = Object.values(metricSeries(ds, loc, range, 'otHrs'));
+    const otDolVals = Object.values(metricSeries(ds, loc, range, 'otDollar'));
+    return {
       loc, name: _storeName(loc),
-      laborPct: _avg(d.laborPcts),
-      tpph: _avg(d.tpphs),
-      otDollar: d.otDollar, otHrs: d.otHrs,
-    }))
-    .filter(s => s.laborPct != null)
-    .sort((a,b) => b.laborPct - a.laborPct);
+      laborPct: _avg(laborPcts), tpph: _avg(tpphs),
+      otHrs: otHrsVals.reduce((a,b) => a+b, 0),
+      otDollar: otDolVals.reduce((a,b) => a+b, 0),
+      dayCount: laborPcts.length,
+    };
+  });
+  const totalDays = perStore.reduce((n, s) => n + s.dayCount, 0);
+  if (totalDays < 5) return null;
 
-  let out = `LABOR & STAFFING (${working.length} daily records):
-  District avg: Labor ${_fmt(distAvgLabor, 2)}% | TPPH ${_fmt(distAvgTpph)} | Total OT: ${_dollar(totalOtDollar)} (${Math.round(totalOtHrs)}h)
+  const distAvgLabor = metricAvg(ds, locs, range, 'laborPct');
+  const distAvgTpph  = metricAvg(ds, locs, range, 'tpph');
+  const totalOtDollar = perStore.reduce((s, r) => s + r.otDollar, 0);
+  const totalOtHrs    = perStore.reduce((s, r) => s + r.otHrs, 0);
+
+  // laborPct is a fraction (parsePct normalizes every loader to 0-1, per analytics.js's own
+  // ×100 display convention for this same field) — the pre-existing code here concatenated it
+  // raw (e.g. "0.28%" instead of "28.00%"), a real display bug independent of the sourcing fix,
+  // corrected alongside it since it directly affects what SAGE tells the owner.
+  const stores = perStore.filter(s => s.laborPct != null).sort((a,b) => b.laborPct - a.laborPct);
+
+  let out = `LABOR & STAFFING (${totalDays} store-days, auto-first sourced, last 60 days):
+  District avg: Labor ${_fmtPct(distAvgLabor)} | TPPH ${_fmt(distAvgTpph)} | Total OT: ${_dollar(totalOtDollar)} (${Math.round(totalOtHrs)}h)
 `;
   if (stores.length) {
     out += '\n  STORE LABOR% RANKING (worst to best):\n';
     out += `  | # | Store | Labor% | TPPH | OT $ |\n  | - | ----- | ------ | ---- | ---- |\n`;
     stores.forEach((s, i) => {
-      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.laborPct, 2)}% | ${_fmt(s.tpph)} | ${s.otDollar > 50 ? _dollar(s.otDollar) : '—'} |\n`;
+      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmtPct(s.laborPct)} | ${_fmt(s.tpph)} | ${s.otDollar > 50 ? _dollar(s.otDollar) : '—'} |\n`;
     });
   }
   return out;
@@ -103,7 +153,7 @@ function buildLaborSummary(ds) {
 // FOB from the AUTHORITATIVE auto stream (qsr_fob), dollar-weighted (Σ$ ÷ Σsales) — the SAME engine
 // the Inventory Control dashboard uses. Fixes the old build, which read the stale MANUAL food-cost
 // upload (ds.fobRows, near-zero/unscaled) AND averaged percentages (violating the dollar-weight rule).
-function buildFobSummary(ds) {
+export function buildFobSummary(ds) {
   const rows = ds?.qsrFobRows || [];
   if (rows.length < 3) return null;
   const monthOf = r => (typeof r.date === 'string' ? r.date : (r.date?.toISOString?.() || '')).slice(0, 7);
@@ -145,38 +195,34 @@ function buildFobSummary(ds) {
   return out;
 }
 
-function buildOpsSummary(ds) {
-  const rows = ds?.opsRows || [];
-  if (rows.length < 3) return null;
-  const working = _recentRows(rows, 60);
+// #270 phase 1 — was reading ds.opsRows (manual Operations Report upload) directly. oepe/park
+// both already chain Glimpse-cloud/opsServiceRows/opsRows in metric-source.js.
+export function buildOpsSummary(ds) {
+  const locs = Object.keys(STORE_NAMES);
+  if (!locs.length) return null;
+  const range = _lastNDaysRange(60);
 
-  const distOepe = _avg(working.map(r => r.oepe));
-  const distPark = _avg(working.map(r => r.park));
+  const perStore = locs.map(loc => {
+    const oepes = Object.values(metricSeries(ds, loc, range, 'oepe'));
+    const parks = Object.values(metricSeries(ds, loc, range, 'park'));
+    return { loc, name: _storeName(loc), oepe: _avg(oepes), park: _avg(parks), dayCount: oepes.length };
+  });
+  const totalDays = perStore.reduce((n, s) => n + s.dayCount, 0);
+  if (totalDays < 3) return null;
 
-  const locMap = _byLoc(working,
-    () => ({ oepes: [], parks: [] }),
-    (d, r) => {
-      if (r.oepe != null) d.oepes.push(r.oepe);
-      if (r.park != null) d.parks.push(r.park);
-    }
-  );
+  const distOepe = metricAvg(ds, locs, range, 'oepe');
+  const distPark = metricAvg(ds, locs, range, 'park');
 
-  const stores = Object.entries(locMap)
-    .map(([loc, d]) => ({
-      loc, name: _storeName(loc),
-      oepe: _avg(d.oepes), park: _avg(d.parks),
-    }))
-    .filter(s => s.oepe != null)
-    .sort((a,b) => b.oepe - a.oepe);
+  const stores = perStore.filter(s => s.oepe != null).sort((a,b) => b.oepe - a.oepe);
 
-  let out = `SERVICE TIMES / OEPE (${working.length} records):
-  District avg OEPE: ${_fmt(distOepe, 0)}s | Park rate: ${_fmt(distPark, 2)}%
+  let out = `SERVICE TIMES / OEPE (${totalDays} store-days, auto-first sourced, last 60 days):
+  District avg OEPE: ${_fmt(distOepe, 0)}s | Park rate: ${_fmtPct(distPark)}
 `;
   if (stores.length) {
     out += '\n  STORE OEPE RANKING (slowest first):\n';
     out += `  | # | Store | OEPE | Park% |\n  | - | ----- | ---- | ----- |\n`;
     stores.forEach((s, i) => {
-      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.oepe, 0)}s | ${s.park != null ? _fmt(s.park,2)+'%' : '—'} |\n`;
+      out += `  | ${i+1} | ${s.name} (${s.loc}) | ${_fmt(s.oepe, 0)}s | ${_fmtPct(s.park)} |\n`;
     });
   }
   return out;
@@ -222,41 +268,44 @@ function buildSmgSummary(ds) {
   return out;
 }
 
-function buildControlsSummary(ds) {
-  const rows = ds?.ctrlRows || [];
-  if (rows.length < 3) return null;
-  const working = _recentRows(rows, 60);
+// #270 phase 1 — was reading ds.ctrlRows (manual Controls upload) directly. discPct/cashOSAmt
+// both already chain Ops-pull-cloud/emailed-Glimpse/Cash-Sheet ahead of the manual upload.
+//
+// Also fixes defect #4 from the issue: this used to compute a 60-day MEAN |cash O/S| per
+// store and label it "NOTABLE EXCEPTIONS" — SAGE then reported that mean as "two open Cash
+// O/S exceptions." A 60-day average magnitude is not an exception in any sense a reader
+// would expect; it's a store's typical drift. Relabeled below so an average reads as an
+// average, and the framing no longer invites that misreading.
+export function buildControlsSummary(ds) {
+  const locs = Object.keys(STORE_NAMES);
+  if (!locs.length) return null;
+  const range = _lastNDaysRange(60);
 
-  const distDisc = _avg(working.map(r => r.discPct));
+  const perStore = locs.map(loc => {
+    const discPcts = Object.values(metricSeries(ds, loc, range, 'discPct'));
+    const cashOS   = Object.values(metricSeries(ds, loc, range, 'cashOSAmt')).map(v => Math.abs(v));
+    return { loc, name: _storeName(loc), discPct: _avg(discPcts), cashOS: _avg(cashOS), dayCount: discPcts.length };
+  });
+  const totalDays = perStore.reduce((n, s) => n + s.dayCount, 0);
+  if (totalDays < 3) return null;
 
-  const locMap = _byLoc(working,
-    () => ({ discPcts: [], cashOS: [] }),
-    (d, r) => {
-      if (r.discPct != null) d.discPcts.push(r.discPct);
-      if (r.cashOSAmt != null) d.cashOS.push(Math.abs(r.cashOSAmt));
-    }
-  );
+  const distDisc = metricAvg(ds, locs, range, 'discPct');
 
-  const notable = Object.entries(locMap)
-    .map(([loc, d]) => ({
-      loc, name: _storeName(loc),
-      discPct: _avg(d.discPcts),
-      cashOS: _avg(d.cashOS),
-    }))
-    .filter(s => (s.discPct != null && s.discPct > 3) || (s.cashOS != null && s.cashOS > 75))
+  const elevated = perStore
+    .filter(s => (s.discPct != null && s.discPct > 0.03) || (s.cashOS != null && s.cashOS > 75))
     .sort((a,b) => (b.discPct||0) - (a.discPct||0));
 
-  if (!notable.length && distDisc == null) return null;
+  if (!elevated.length && distDisc == null) return null;
 
-  let out = `CONTROLS (${working.length} records):
-  District avg discount: ${_fmt(distDisc, 2)}%
+  let out = `CONTROLS (${totalDays} store-days, auto-first sourced, last 60 days):
+  District avg discount: ${_fmtPct(distDisc)}
 `;
-  if (notable.length) {
-    out += '\n  NOTABLE EXCEPTIONS:\n';
-    for (const s of notable) {
+  if (elevated.length) {
+    out += '\n  STORES WITH AN ELEVATED 60-DAY AVERAGE (not open exceptions — a mean, worth a look, not a flagged incident):\n';
+    for (const s of elevated) {
       const parts = [];
-      if (s.discPct != null && s.discPct > 3) parts.push(`Disc ${_fmt(s.discPct,2)}%`);
-      if (s.cashOS != null && s.cashOS > 75) parts.push(`Cash O/S ${_dollar(s.cashOS)}`);
+      if (s.discPct != null && s.discPct > 0.03) parts.push(`Disc avg ${_fmtPct(s.discPct)}`);
+      if (s.cashOS != null && s.cashOS > 75) parts.push(`Cash O/S avg ${_dollar(s.cashOS)}`);
       out += `    ${s.name} (${s.loc}): ${parts.join(' | ')}\n`;
     }
   }
@@ -328,7 +377,7 @@ function buildFieldDefsSection(qsrFieldDefs) {
 }
 
 // ── System prompt builder ─────────────────────────────────────────────────────
-function buildSystemPrompt(ds, signals, customSignalDefs) {
+export function buildSystemPrompt(ds, signals, customSignalDefs) {
   const today = new Date().toISOString().slice(0, 10);
   const storeCount = ds?.storeIds?.length || 0;
 
@@ -366,6 +415,10 @@ function buildSystemPrompt(ds, signals, customSignalDefs) {
 
   const dataSections = [laborSummary, fobSummary, opsSummary, schedSummary, smgSummary, ctrlSummary]
     .filter(Boolean).join('\n\n');
+
+  // For the DATA COVERAGE block below — same roster + window the builders above used.
+  const _covLocs = Object.keys(STORE_NAMES);
+  const _covRange = _lastNDaysRange(60);
 
   return `You are SAGE — Strategic Analytics & Guidance Engine for Meridian BI.
 You advise Fletcher Reaves, a McDonald's operator managing ${storeCount} locations:
@@ -408,16 +461,16 @@ TOOL USAGE RULES:
 - ALWAYS call query_lifelenz_labor for any scheduling, staffing, or VLH question about the current/recent period
 - For "today" use ${today}; for "yesterday" use the previous calendar day
 - You can call both tools simultaneously if a question spans both domains
-- The static OPERATIONAL DATA below comes from manually uploaded files (potentially weeks old). For live/current questions, tool data is more authoritative than the static summaries.
+- The static OPERATIONAL DATA below is auto-first sourced (cloud/emailed streams preferred, manual upload as last-resort fill only — see DATA COVERAGE below for what actually resolved). For live/current questions, tool data is more authoritative than the static summaries.
 ─────────────────────────────────────────────────────────────────────────────────────────
 
-UPLOADED FILE DATA (row counts — may be weeks behind):
-  Labor/Ops:       ${ds?.laborRows?.length || 0} daily rows
-  Operations/OEPE: ${ds?.opsRows?.length || 0} rows
-  FOB/Food Cost:   ${ds?.fobRows?.length || 0} records
+DATA COVERAGE (last 60 days — reflects what the summaries above actually read, auto-first):
+  Labor/Ops:       ${_resolvedDayCount(ds, _covLocs, _covRange, 'laborPct')} store-days resolved (Glimpse → Controls → manual Labor upload)
+  Operations/OEPE: ${_resolvedDayCount(ds, _covLocs, _covRange, 'oepe')} store-days resolved (Glimpse → cloud Ops → manual Ops upload)
+  FOB/Food Cost:   ${ds?.qsrFobRows?.length || 0} records (auto qsr_fob stream)
   LifeLenz:        ${ds?.schedRows?.length || 0} schedule rows
   SMG FullScale:   ${ds?.smgFullscale?.length || 0} store-period records
-  Controls:        ${ds?.ctrlRows?.length || 0} rows
+  Controls:        ${_resolvedDayCount(ds, _covLocs, _covRange, 'discPct')} store-days resolved (cloud Ops → manual Controls upload)
 
 ${dataSections ? `CURRENT OPERATIONAL DATA (from uploaded files):\n${'─'.repeat(60)}\n${dataSections}${'─'.repeat(60)}` : ''}
 ${confirmedSigs ? `\nCONFIRMED SIGNALS (statistically meaningful correlations, |r|≥0.50):\n${confirmedSigs}` : ''}
@@ -1210,7 +1263,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const hasData = (ds?.laborRows?.length || 0) > 0;
+  const hasData = sageHasData(ds);
   const sbConfigured = !!import.meta.env.VITE_SUPABASE_URL;
 
   return h('div', { style: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' } },
