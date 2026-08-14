@@ -472,7 +472,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           ? Math.floor((Date.now()-new Date(sessionBanner.savedAt))/86400000)
           : ds?.loaded ? 0 : null;
         if(ageDays===null&&!ds?.loaded) return null;
-        const col = ageDays===0?'#34d399':ageDays<=3?'#f59e0b':'#f87171';
+        const col = ageDays===0?'#34d399':ageDays<=3?'var(--warn)':'var(--crit)';
         const label = ageDays===0?'Auto-saved today':ageDays===1?'Session: 1d old':'Session: '+ageDays+'d old';
         const tip = ageDays>3?'Consider loading a fresh Operations Report — session data may be stale':'Session data is current';
         return div({style:{display:'flex',alignItems:'center',gap:3,

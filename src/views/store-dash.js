@@ -1677,7 +1677,7 @@ aside::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px;}
     win.document.close();win.print();
   };
 
-  const priorityColors={CRITICAL:{bg:'rgba(239,68,68,.08)',bdr:'rgba(239,68,68,.3)',tc:'#f87171'},HIGH:{bg:'rgba(249,115,22,.07)',bdr:'rgba(249,115,22,.3)',tc:'#fb923c'},MEDIUM:{bg:'rgba(245,158,11,.07)',bdr:'rgba(245,158,11,.25)',tc:'#f59e0b'},MAINTAIN:{bg:'rgba(16,185,129,.06)',bdr:'rgba(16,185,129,.25)',tc:'#34d399'}};
+  const priorityColors={CRITICAL:{bg:'rgba(244,63,94,.08)',bdr:'rgba(244,63,94,.3)',tc:'var(--crit)'},HIGH:{bg:'rgba(249,115,22,.07)',bdr:'rgba(249,115,22,.3)',tc:'#fb923c'},MEDIUM:{bg:'rgba(245,158,11,.07)',bdr:'rgba(245,158,11,.25)',tc:'var(--warn)'},MAINTAIN:{bg:'rgba(16,185,129,.06)',bdr:'rgba(16,185,129,.25)',tc:'#34d399'}};
 
   return div(null,
     div({style:{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}},
@@ -1848,7 +1848,7 @@ function StoreCard({store, onSelect}) {
       // Critical/Watch flag (top issue, truncated)
       topIssue&&div({style:{
         fontSize:'7.5px',borderTop:'.5px solid rgba(255,255,255,.05)',paddingTop:4,marginTop:1,
-        color:crits.length?'#f87171':'#f59e0b',
+        color:crits.length?'var(--crit)':'var(--warn)',
         display:'flex',alignItems:'center',gap:3,overflow:'hidden'}},
         span(null,crits.length?'⚠':'●'),
         span({style:{fontWeight:600,flexShrink:0}},crits.length?'Critical':'Watch'),
@@ -2331,7 +2331,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
       div({style:{overflowY:'auto',flex:1}},
         sorted.map((s,i)=>{
           const val=m.fn(s);const fmt=m.fmt(val);
-          const color=i===0?'#f59e0b':i<3?'#34d399':i>=sorted.length-3?'#f87171':'var(--text)';
+          const color=i===0?'var(--warn)':i<3?'#34d399':i>=sorted.length-3?'var(--crit)':'var(--text)';
           return div({key:s.loc,style:{display:'flex',alignItems:'center',gap:12,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',cursor:s.isGroup?'default':'pointer',background:'transparent'},
             onClick:s.isGroup?undefined:()=>{onSelectStore(s);onClose();}},
             div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:700,color,minWidth:24,textAlign:'right'}},i+1),

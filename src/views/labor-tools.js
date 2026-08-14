@@ -313,7 +313,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
     return 0;
   }) : [];
 
-  const COLORS=['#f59e0b','#34d399','#60a5fa','#a78bfa','#f87171','#fb923c','#4ade80','#38bdf8'];
+  const COLORS=['var(--warn)','#34d399','#60a5fa','#a78bfa','var(--crit)','#fb923c','#4ade80','#38bdf8'];
   const maxUnits = data?Math.max(...data.map(f=>f.units)):1;
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:457,
@@ -1016,7 +1016,7 @@ function StoreKBEditor({onClose, ds}) {
             color:'var(--text)',fontSize:'10px',padding:'5px 8px',boxSizing:'border-box'}})
   );
 
-  const sigStrColor = r => Math.abs(r)>=.7?'#f87171':Math.abs(r)>=.5?'#f59e0b':'#10b981';
+  const sigStrColor = r => Math.abs(r)>=.7?'var(--crit)':Math.abs(r)>=.5?'var(--warn)':'#10b981';
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',
     alignItems:'flex-start',justifyContent:'center',padding:24}},

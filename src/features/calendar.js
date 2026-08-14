@@ -1063,7 +1063,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
         ...pendingItems.map(item=>{
           const et=EVENT_TYPES[item.type]||EVENT_TYPES.other;
           const c=getChecks(item);
-          const confCol=item.confidence==='high'?'#10b981':item.confidence==='low'?'#f87171':'#f59e0b';
+          const confCol=item.confidence==='high'?'#10b981':item.confidence==='low'?'var(--crit)':'var(--warn)';
           return div({key:item.key,style:{border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
             padding:'10px 12px',marginBottom:8,background:'var(--surf2)'}},
             div({style:{display:'flex',alignItems:'flex-start',gap:8,marginBottom:6}},

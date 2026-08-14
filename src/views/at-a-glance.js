@@ -708,7 +708,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return all.length?new Date(Math.max(...all)):null;
   }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length]);
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
-  const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
+  const ageClr=dataAge<=3?'#10b981':dataAge<=7?'var(--warn)':'var(--crit)';
 
   // Sales reconciliation (accuracy layer, Workstream A): cross-check period PRODUCT
   // sales across independent sources for the active scope. Only DAR-summary
@@ -1610,7 +1610,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{fontSize:'10px',fontWeight:500,color:'var(--text)'}},item.text),
                 item.detail&&div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2,wordBreak:'break-all'}},item.detail)
               ),
-              span({style:{fontSize:'8px',color:item.priority==='high'?'#f87171':'#f59e0b',flexShrink:0,marginTop:2}},
+              span({style:{fontSize:'8px',color:item.priority==='high'?'var(--crit)':'var(--warn)',flexShrink:0,marginTop:2}},
                 item.priority==='high'?'●':item.priority==='medium'?'◑':'')
             )
           )
@@ -1857,14 +1857,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           div({style:{padding:'10px 12px',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}},
             div({style:{textAlign:'center'}},
               div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
-                color:projSec.avgMape!=null?(projSec.avgMape<8?'#10b981':projSec.avgMape<12?'#f59e0b':'#f87171'):'var(--text3)'}},
+                color:projSec.avgMape!=null?(projSec.avgMape<8?'#10b981':projSec.avgMape<12?'var(--warn)':'var(--crit)'):'var(--text3)'}},
                 projSec.avgMape!=null?projSec.avgMape.toFixed(2)+'%':'—'),
               div({style:{fontSize:'8px',color:'var(--text3)',letterSpacing:'.5px',textTransform:'uppercase'}},'Avg MAPE (6W)'),
               MktBadge({ok:projSec.okMape,fl:projSec.flMape,fmt:v=>v.toFixed(2)+'%'})
             ),
             div({style:{textAlign:'center'}},
               div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
-                color:projSec.locked===projSec.total?'#10b981':projSec.locked>projSec.total*.5?'#f59e0b':'#f87171'}},
+                color:projSec.locked===projSec.total?'#10b981':projSec.locked>projSec.total*.5?'var(--warn)':'var(--crit)'}},
                 projSec.locked+'/'+projSec.total),
               div({style:{fontSize:'8px',color:'var(--text3)',letterSpacing:'.5px',textTransform:'uppercase'}},'Locks Complete')
             ),
@@ -1892,7 +1892,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               ),
               driftStores.length>0&&div({style:{display:'flex',gap:4,flexWrap:'wrap'}},
                 driftStores.slice(0,4).map(({s,d})=>{
-                  const col=d.status==='recalibrate'?'#f87171':'#f59e0b';
+                  const col=d.status==='recalibrate'?'var(--crit)':'var(--warn)';
                   return span({key:s.loc,title:(STORE_NAMES[s.loc]||s.loc)+' — MAPE drift: '+d.mape2w.toFixed(2)+'% (2wk) vs '+d.mape6w.toFixed(2)+'% (6wk)',
                     style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,background:col+'22',
                       color:col,border:'.5px solid '+col+'44',fontWeight:600,cursor:'default'}},
@@ -1913,7 +1913,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 weeklyTrend.map((wk,i)=>{
                   const barH=Math.max(3,Math.round((wk.sales/maxS)*44));
                   const x=i*(bw+gap)+2, y=48-barH;
-                  const clr=wk.vsLY==null?'rgba(255,255,255,.25)':wk.vsLY>=0?'#10b981':wk.vsLY>-.05?'#f59e0b':'#f87171';
+                  const clr=wk.vsLY==null?'rgba(255,255,255,.25)':wk.vsLY>=0?'#10b981':wk.vsLY>-.05?'var(--warn)':'var(--crit)';
                   return h('g',{key:i},
                     h('rect',{x,y,width:bw,height:barH,rx:2,fill:clr,fillOpacity:.8}),
                     wk.sales>0&&h('text',{x:x+bw/2,y:y-2,textAnchor:'middle',fontSize:'9',fontWeight:'700',fill:'rgba(255,255,255,.85)'},
@@ -1948,7 +1948,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             {l:'Monthly Lock',days:moLeft,note:'lock by '+moDeadline.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})},
             yrLeft>0&&yrLeft<60&&{l:'Yearly Lock',days:yrLeft,note:'lock by '+yrDeadline.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})},
           ].filter(Boolean);
-          const col=d=>d<=0?'#f87171':d<=3?'#f97316':d<=7?'#f59e0b':'#34d399';
+          const col=d=>d<=0?'var(--crit)':d<=3?'#f97316':d<=7?'var(--warn)':'#34d399';
           const label=d=>d<=0?'OVERDUE':d===1?'Tomorrow':d+'d';
           const urgent=deadlines.some(d=>d.days<=3);
           if(!urgent&&deadlines.every(d=>d.days>10)) return null; // hide when all comfortable
@@ -2039,7 +2039,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}},
               div({style:{textAlign:'center'}},
                 div({style:{fontSize:'18px',fontWeight:800,fontFamily:'var(--mono)',
-                  color:laborSec.laborPct!=null?(laborSec.laborPct<.28?'#10b981':laborSec.laborPct<.32?'#f59e0b':'#f87171'):'var(--text3)'}},
+                  color:laborSec.laborPct!=null?(laborSec.laborPct<.28?'#10b981':laborSec.laborPct<.32?'var(--warn)':'var(--crit)'):'var(--text3)'}},
                   laborSec.laborPct!=null?((laborSec.laborPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Labor %'),
                 MktBadge({ok:laborSec.okLaborAvg,fl:laborSec.flLaborAvg,fmt:v=>((v||0)*100).toFixed(2)+'%'})
@@ -2120,15 +2120,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}},
                 [
                   {lbl:'Labor %',v:laborSec.laborPct,ok:laborSec.okLaborAvg,fl:laborSec.flLaborAvg,
-                   fmt:v=>((v||0)*100).toFixed(2)+'%',clr:(laborSec.laborPct||0)<.22?'#10b981':(laborSec.laborPct||0)<.26?'#f59e0b':'#f87171'},
+                   fmt:v=>((v||0)*100).toFixed(2)+'%',clr:(laborSec.laborPct||0)<.22?'#10b981':(laborSec.laborPct||0)<.26?'var(--warn)':'var(--crit)'},
                   {lbl:'TPPH',v:laborSec.tpph,ok:laborSec.okTpphAvg,fl:laborSec.flTpphAvg,
-                   fmt:v=>(v||0).toFixed(1),clr:(laborSec.tpph||0)>=5?'#10b981':(laborSec.tpph||0)>=4?'#f59e0b':'#f87171'},
+                   fmt:v=>(v||0).toFixed(1),clr:(laborSec.tpph||0)>=5?'#10b981':(laborSec.tpph||0)>=4?'var(--warn)':'var(--crit)'},
                   {lbl:'Act vs Need',v:laborSec.avn,ok:null,fl:null,
                    fmt:v=>(v>=0?'+':'')+((v||0).toFixed(1)),
                    clr:(laborSec.avn||0)>=0?'rgba(255,255,255,.8)':'#f87171'},
                   {lbl:'OT Hours',v:laborSec.otHrs,ok:null,fl:null,
                    fmt:v=>(v||0).toFixed(1)+'h',
-                   clr:(laborSec.otHrs||0)<20?'#10b981':(laborSec.otHrs||0)<50?'#f59e0b':'#f87171'},
+                   clr:(laborSec.otHrs||0)<20?'#10b981':(laborSec.otHrs||0)<50?'var(--warn)':'var(--crit)'},
                 ].map((r,i)=>div({key:'lm'+i,style:{padding:'4px 5px',borderRadius:3,background:'rgba(255,255,255,.03)'}},
                   div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline'}},
                     span({style:{fontSize:'8px',color:'var(--text3)'}},r.lbl),
@@ -2178,7 +2178,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               div({style:{textAlign:'center',padding:'8px',borderRadius:5,
                 background:fobSec.fobPct!=null?(fobSec.fobPct<.035?'rgba(16,185,129,.08)':fobSec.fobPct<.055?'rgba(245,158,11,.08)':'rgba(248,113,113,.08)'):'rgba(255,255,255,.04)'}},
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',
-                  color:fobSec.fobPct!=null?(fobSec.fobPct<.035?'#10b981':fobSec.fobPct<.055?'#f59e0b':'#f87171'):'var(--text3)'}},
+                  color:fobSec.fobPct!=null?(fobSec.fobPct<.035?'#10b981':fobSec.fobPct<.055?'var(--warn)':'var(--crit)'):'var(--text3)'}},
                   fobSec.fobPct!=null?((fobSec.fobPct||0)*100).toFixed(2)+'%':'—'),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'FOB %'+(fobSec.primaryIsMTD?' · MTD':'')),
                 (fobSec.tgts&&fobSec.tgts.fobPct!=null&&fobSec.fobPct!=null)&&(()=>{const dp=(fobSec.fobPct-fobSec.tgts.fobPct)*100;return div({style:{fontSize:'8px',fontWeight:700,fontFamily:'var(--mono)',marginTop:1,color:dp>0.001?'#f87171':'#10b981'},title:'vs sales-weighted FOB target'},`${dp>=0?'+':''}${dp.toFixed(2)} vs tgt ${(fobSec.tgts.fobPct*100).toFixed(2)}%`);})(),
@@ -2359,7 +2359,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               hint:'Target: ≤4.0% FOB'},
           ];
           const overallScore=Math.round(METRICS.reduce((a,m)=>a+m.score,0)/METRICS.length*100);
-          const scoreClr=overallScore>=75?'#10b981':overallScore>=50?'#f59e0b':'#f87171';
+          const scoreClr=overallScore>=75?'#10b981':overallScore>=50?'var(--warn)':'var(--crit)';
           const scoreBg=overallScore>=75?'rgba(16,185,129,.12)':overallScore>=50?'rgba(245,158,11,.12)':'rgba(248,113,113,.12)';
           const cx=100,cy=100,maxR=68;
           const RAD=d=>d*Math.PI/180;
@@ -2429,7 +2429,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   textTransform:'uppercase',marginBottom:6}},'Metric Breakdown'),
                 ...METRICS.map((m,i)=>{
                   const pct=Math.round(m.score*100);
-                  const barClr=pct>=75?'#10b981':pct>=50?'#f59e0b':'#f87171';
+                  const barClr=pct>=75?'#10b981':pct>=50?'var(--warn)':'var(--crit)';
                   return div({key:'leg'+i,style:{marginBottom:5}},
                     div({style:{display:'flex',justifyContent:'space-between',marginBottom:2}},
                       span({style:{fontSize:'8px',color:'var(--text)',fontWeight:500}},m.icon+' '+m.label),
@@ -2485,7 +2485,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 const medal=['🥇','🥈','🥉'];
                 const vsAvg=avg&&avg>0?((s.value-avg)/avg*100):null;
                 const barPct=maxV>0?Math.min(100,s.value/maxV*100):0;
-                const clr=isTop?(rank===0?'#f59e0b':rank===1?'rgba(255,255,255,.6)':'rgba(180,120,60,.9)'):'#f87171';
+                const clr=isTop?(rank===0?'var(--warn)':rank===1?'rgba(255,255,255,.6)':'rgba(180,120,60,.9)'):'var(--crit)';
                 return div({style:{marginBottom:5,padding:'4px 6px',borderRadius:5,
                   background:isTop?'rgba(16,185,129,.06)':'rgba(248,113,113,.06)',
                   border:'.5px solid '+(isTop?'rgba(16,185,129,.15)':'rgba(248,113,113,.15)')}},
@@ -2589,7 +2589,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   const vsLYAct=lyForActualDays>0&&hasActuals?((actualTotal-lyForActualDays)/lyForActualDays*100).toFixed(2):null;
                   const projForActualDays=rowDays.reduce((a,r)=>a+(r.act>0?r.fc:0),0);
                   const accPct=hasActuals&&projForActualDays>0?(Math.abs(actualTotal-projForActualDays)/actualTotal*100).toFixed(2):null;
-                  const accClr=accPct==null?'var(--text3)':parseFloat(accPct)<5?'#10b981':parseFloat(accPct)<10?'#f59e0b':'#f87171';
+                  const accClr=accPct==null?'var(--text3)':parseFloat(accPct)<5?'#10b981':parseFloat(accPct)<10?'var(--warn)':'var(--crit)';
                   const vsLYNum=sp.vsLY!=null?parseFloat(sp.vsLY):null;
                   const vsClr=vsLYNum==null?'var(--text3)':vsLYNum>=0?'#10b981':'#f87171';
                   const vsLYActNum=vsLYAct!=null?parseFloat(vsLYAct):null;

@@ -4727,7 +4727,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
         if(!a) return null;
         const typeColors = {external:'#60a5fa', ops:'#f59e0b', mixed:'#94a3b8', positive:'#10b981', nodata:'#475569'};
         const typeLabels = {external:'📌 Likely External — tag for context', ops:'⚙️ Ops-Driven — review with team before tagging', mixed:'⚠️ Mixed signals — may be partially ops-driven', positive:'✅ Strong execution — overperformance may be internal', nodata:'No data'};
-        const impactCol  = imp => imp==='negative'?'#f87171':imp==='positive'?'#34d399':imp==='cost'?'#f59e0b':'#94a3b8';
+        const impactCol  = imp => imp==='negative'?'var(--crit)':imp==='positive'?'#34d399':imp==='cost'?'var(--warn)':'#94a3b8';
         const col = typeColors[a.conclusionType]||'#94a3b8';
         return tr({key:'ops_'+i,style:{background:'rgba(16,185,129,.02)',borderBottom:'.5px solid var(--bdr)'}},
           td({colSpan:9,style:{padding:'10px 14px'}},
@@ -6007,9 +6007,9 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
               td2(r.vsFc!=null?((r.vsFc>=0?'+':'')+(r.vsFc*100).toFixed(2)+'%'):'—',
                 r.vsFc!=null?(r.vsFc>=0?'#10b981':'#f87171'):'var(--text3)'),
               td2(r.mape!=null?r.mape.toFixed(2)+'%':'—',
-                r.mape!=null?(r.mape<5?'#10b981':r.mape<10?'#f59e0b':'#f87171'):'var(--text3)'),
+                r.mape!=null?(r.mape<5?'#10b981':r.mape<10?'var(--warn)':'var(--crit)'):'var(--text3)'),
               td2(r.passRate!=null?r.passRate.toFixed(2)+'%':'—',
-                r.passRate!=null?(r.passRate>=80?'#10b981':r.passRate>=60?'#f59e0b':'#f87171'):'var(--text3)'),
+                r.passRate!=null?(r.passRate>=80?'#10b981':r.passRate>=60?'var(--warn)':'var(--crit)'):'var(--text3)'),
               td2(r.avgCheck>0?'$'+r.avgCheck.toFixed(2):'—'),
               td2(r.avgOepe>0?Math.round(r.avgOepe)+'s':'—',
                 r.avgOepe>0?'var(--text)':'var(--text3)'),
@@ -6017,9 +6017,9 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
               td2(r.avgLabor>0?(r.avgLabor*100).toFixed(2)+'%':'—',
                 r.avgLabor>0?'var(--text)':'var(--text3)'),
               td2(r.opsScore!=null?r.opsScore+'/100':'—',
-                r.opsScore!=null?(r.opsScore>=80?'#10b981':r.opsScore>=65?'#f59e0b':'#f87171'):'var(--text3)'),
+                r.opsScore!=null?(r.opsScore>=80?'#10b981':r.opsScore>=65?'var(--warn)':'var(--crit)'):'var(--text3)'),
               td2(r.ctrlScore!=null?r.ctrlScore+'/100':'—',
-                r.ctrlScore!=null?(r.ctrlScore>=80?'#10b981':r.ctrlScore>=65?'#f59e0b':'#f87171'):'var(--text3)')
+                r.ctrlScore!=null?(r.ctrlScore>=80?'#10b981':r.ctrlScore>=65?'var(--warn)':'var(--crit)'):'var(--text3)')
             )))
           )
         )
@@ -6504,7 +6504,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
     setComputing(false);
   },[ds,settings,stores,weeksBack]);
 
-  const mapeColor=m=>!m?'var(--text3)':+m<6?'#10b981':+m<10?'#f59e0b':'#f87171';
+  const mapeColor=m=>!m?'var(--text3)':+m<6?'#10b981':+m<10?'var(--warn)':'var(--crit)';
   const fmtWk=d=>'Wk '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   const narrative=(mape,dir)=>mape===null?'No data':
     mape<6?'✓ Excellent accuracy'+(dir?'  '+dir:''):
@@ -6591,7 +6591,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                         const err=day.actual>0?+(Math.abs(day.forecast-day.actual)/day.actual*100).toFixed(1):null;
                         const vsLY=day.lyAdj>0?+((day.actual-day.lyAdj)/day.lyAdj*100).toFixed(1):null;
                         const status=err==null?'—':err<5?'✓ Accurate':err<10?'~ OK':'✗ Missed';
-                        const sc=err==null?'var(--text3)':err<5?'#10b981':err<10?'#f59e0b':'#f87171';
+                        const sc=err==null?'var(--text3)':err<5?'#10b981':err<10?'var(--warn)':'var(--crit)';
                         const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][day.date.getDay()];
                         return div({key:di,style:{display:'grid',gridTemplateColumns:'30px 1fr 60px 50px',
                           gap:4,padding:'2px 0',borderBottom:'.5px solid rgba(255,255,255,.04)',fontSize:'8px'}},
@@ -6637,7 +6637,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                         div({style:{fontSize:'11px',fontFamily:'var(--mono)',fontWeight:800}},f$(day.actual)),
                         div({style:{fontSize:'8px',color:'var(--text3)'}},['Fcst: '+f$(day.forecast)]),
                         err!=null&&div({style:{fontSize:'8px',fontWeight:600,
-                          color:err<5?'#10b981':err<10?'#f59e0b':'#f87171'}},
+                          color:err<5?'#10b981':err<10?'var(--warn)':'var(--crit)'}},
                           (err<5?'✓ ':err<10?'~ ':'✗ ')+err.toFixed(2)+'% err'),
                         vsLY&&div({style:{fontSize:'8px',fontWeight:600,
                           color:+vsLY>=0?'#10b981':'#f87171'}},
@@ -6788,7 +6788,7 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
   const [report,    setReport]   = React.useState(null);
 
   const fmtWk = dt => 'Week of '+new Date(dt+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  const mapeColor = m => !m?'var(--text3)':+m<6?'#10b981':+m<10?'#f59e0b':'#f87171';
+  const mapeColor = m => !m?'var(--text3)':+m<6?'#10b981':+m<10?'var(--warn)':'var(--crit)';
 
   const runComparison = React.useCallback(async()=>{
     if(!ds||!ds.loaded){return;}
