@@ -878,3 +878,71 @@ present in the list, owner's 6–11 range), and **payment funnels** (POS0013, wh
 receives orders originating on other terminals). #275's funnel-register discovery step should
 expect this mix rather than treating every register as equivalent — a kiosk is not a funnel and
 should not be probed as one.
+
+## `top_contributors` — the security family's URL/body pattern, and a denominator trap
+
+Owner-captured 2026-08-14.
+
+```
+POST https://api.security.myqsrsoft.com/security/top_contributors/v1/{orgId}/{nsn}?orgId={uuid}
+body: {"event_token":"pos_overring","start_date":"2026-08-14","end_date":"2026-08-14"}
+```
+
+**This settles the calling convention for the `security-events` family, and it differs from
+`suspicious_activity`:**
+
+| | `suspicious_activity` | `security-events` family |
+|---|---|---|
+| stores | comma-separated list **in the path** | **one** NSN in the path |
+| dates | **in the path** | **in the POST body** |
+| event token | query string | **in the POST body** |
+
+So a district pull of this family is **27 requests per event type per window**, not one — unless the
+path accepts a comma list the UI never sends. Untested; the Locations-picker question stands.
+
+`start_date`/`end_date` in the body confirms native **range** support, matching the LW/LM/WTD/MTD
+and calendar presets in the filter panel.
+
+## It reconciles exactly — so this family is RAW, not scored
+
+Manager rows sum 2+1 = **3**. Cashier rows sum 1+1+1 = **3**. The transaction table for the same
+store/date/token showed exactly **3** transactions.
+
+`top_contributors` is therefore a plain aggregation of the underlying events — no threshold, no
+scoring, nothing dropped. Two consequences:
+
+1. **It is fully derivable from the transaction feed.** If we pull transactions we do not need this
+   endpoint at all. One fewer thing to build and keep in sync.
+2. It is further evidence that **`security-events` is the raw stream** and `suspicious_activity` is
+   the filtered/scored one — though the definitive same-store/same-date/same-token comparison is
+   still outstanding.
+
+`key_filter` is the **badge** (`"Dallas L - 51"` → `"51"`), confirming the badge/`leid` identity a
+third time, with `key_filter_type` naming the role dimension.
+
+**A person appears in both lists.** Dallas L-51 is manager on 2 events and cashier on 1. Cross-
+checking the transaction rows: Dallas was Crew on row 1 (manager James T-9) and Manager on rows 2
+and 3. So manager-vs-cashier is a **per-event role, not a person attribute** — any employee model
+that assigns one role per person will mis-attribute.
+
+## ⚠️ The ranking has no denominator — do not surface it as-is
+
+`top_contributors` ranks people by **raw event count**. Dallas has 2 overrings; the report does not
+say how many transactions Dallas supervised. A manager working five shifts will out-rank one
+working a single shift with no difference in behaviour whatsoever, and the person who appears "top"
+is frequently just the person who was there most.
+
+This is exactly the normalisation #275 already specifies — *rate-normalise per $1,000 of that
+person's own sales, and guard the zero denominator*. Recording it here because the vendor presents
+the un-normalised version prominently at the top of the report, which is precisely how a raw count
+gets mistaken for a finding.
+
+Under #272 this is a derived judgment about named individuals: supervisor-and-above, with the
+attribution caveat attached. Presenting QSRSoft's un-normalised ranking inside Meridian would
+compound the vendor's framing error with our own authority.
+
+## Still outstanding
+
+The **transactions** call itself. Following this pattern it is most likely
+`POST /security/security_events/v1/{orgId}/{nsn}` with the same body plus optional filter keys
+(day part, register, cashier, manager, tender type, manager-code flag).
