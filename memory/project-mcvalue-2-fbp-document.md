@@ -300,3 +300,59 @@ launch **plus** refresh, not launch alone. Options, in order of preference:
 
 The owner's read — that a July refresh signals corporate awareness of softness — is plausible
 context but is **not evidence**; keep it as framing, not as a finding.
+
+## The post-launch window is NOT a clean treatment period — six national events sit inside it
+
+Owner supplied the 2026 marketing calendar (June–August). Mapping it onto the 14-day blocks from
+launch (2026-04-21), against data running to 2026-08-13:
+
+| block | window | national activity |
+|---|---|---|
+| **B1** | 04-21 → 05-04 | **— clean —** |
+| **B2** | 05-05 → 05-18 | **— clean —** |
+| **B3** | 05-19 → 06-01 | **— clean —** |
+| B4 | 06-02 → 06-15 | **U.S. FIFA World Cup Happy Meal begins (6/9)** |
+| B5 | 06-16 → 06-29 | Fried Apple Pie LTO, all-store sell (6/23) |
+| B6 | 06-30 → 07-13 | **McValue 2.0 REHIT (7/7)** — under-$3: $1.50/$2 Sausage Burrito, $1.50/$2 McChicken |
+| B7 | 07-14 → 07-27 | Happy Meal #6 (7/14); Breakfast Flavor News (7/21); Chicken Flavor News — Caesar Snack Wrap / McCrispy / Dip Cup (7/21) |
+| B8 | 07-28 → 08-10 | — clean — |
+
+*(Beverage Rehit 8/17 and Happy Meal #7 8/18 fall after the data cutoff.)*
+
+**The July push is precisely dated: 2026-07-07, "McValue 2.0 Rehit", landing in B6.**
+
+### What this means for the document
+
+**Blocks 1–3 are the only clean McValue read** — six weeks, launch effect alone, nothing else
+national running. That is the window in which "McValue did X" can be said without qualification.
+**Report it separately.** It is the strongest evidential unit in the whole analysis and it is
+currently buried in an eight-block average.
+
+**B4 onward is confounded by at least five distinct national events**, one of which — a **FIFA World
+Cup Happy Meal in a World Cup year hosted in North America** — is potentially a large traffic
+driver in its own right. Any statement of the form "in the post-McValue period, traffic did X"
+without that caveat is over-claiming, and a reader who works for McDonald's will know the calendar
+better than we do.
+
+### The framing this unlocks — and it is stronger, not weaker
+
+The trajectory finding is that traffic **deteriorated** across the post period (−2.91% → −4.72%,
+flattening only in the final block). Set against the calendar, the early blocks are the clean ones
+and the later blocks carry the World Cup Happy Meal, an LTO, the McValue 2.0 rehit, and two flavour
+launches.
+
+**Traffic got worse as national marketing support increased.** That is a materially harder result
+than the headline number alone, and it is the honest reading rather than a spin: the period with
+the most promotional support is the period with the worst traffic performance.
+
+It also reframes the July rehit. The owner reads it as corporate acknowledgment of weakness; the
+data says traffic continued deteriorating *through* B6 and B7, i.e. **the rehit did not arrest the
+decline** in the six weeks we can observe. That is a finding, where "corporate seems worried" is
+only an impression.
+
+### Required edits before 25 August
+
+1. **Split the post period**: report B1–B3 (clean) separately from B4–B8 (confounded), and say why.
+2. **Name every national event in the window**, with dates, in the methodology section.
+3. **State plainly that the post period is not a clean treatment window** and that the clean read is
+   six weeks long. Owning that limitation is what makes the B1–B3 result credible.
