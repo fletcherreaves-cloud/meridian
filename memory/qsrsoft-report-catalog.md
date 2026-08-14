@@ -668,3 +668,84 @@ uniform, district-wide, channel-neutral drop is *exactly* what a solicitation ch
 **Test:** survey volume per store per period. If response counts jump or shift channel mix at the
 same date the scores break, suspect composition before operations. We have `# of Surveys` per store
 already; the monthly pull gives it per period at no extra cost.
+
+---
+
+# OSAT decline — the monthly series, and the pre-registered hypothesis FAILS
+
+Owner supplied VOICE monthly, Jan 2024 – Aug 2026 (827 rows, 27 stores, one "Total" row dropped).
+Survey-weighted throughout.
+
+## Annual
+
+| year | surveys | OSAT | Clean | Accuracy | Fast | Quality |
+|---|---|---|---|---|---|---|
+| 2024 | 27,804 | 84.3% | 80.6% | 86.7% | 84.4% | 83.6% |
+| 2025 | 26,561 | 82.2% | 78.0% | 84.3% | 81.8% | 80.7% |
+| 2026 (to 8/13) | 13,487 | **76.9%** | **71.9%** | 80.3% | 75.8% | 75.2% |
+
+Peak **88.7% (Aug 2024)** → trough **74.7% (Apr 2026)**, −14.0pp.
+
+## The hypothesis I pre-registered is REFUTED
+
+Recorded before looking: *"if McValue drives it, the break is a step at the McValue date, not a
+gradual drift."*
+
+**There is no step anywhere in 32 months.** Standard deviation of month-over-month change is
+2.44pp; the largest single move is −5.4pp (2026-03), 2.2 sd — well inside what this series does
+routinely. The decline is a **sustained drift beginning around March 2025** and continuing through
+2026, not a discontinuity.
+
+This holds regardless of what date McValue is assigned, so it does not depend on the date the owner
+still owes. **A prediction recorded first and failed is worth more than one adjusted afterwards** —
+McValue is not ruled out as a *contributor*, but the single-cause step-change story is dead, and
+any future McValue-OSAT claim has to explain the absence of a break.
+
+Note also OSAT **peaked in Jan–Feb 2025 (87.5%, 87.8%)** — the highest months in the series after
+Aug 2024 — and only then began falling.
+
+## Every dimension fell together
+
+| dimension | peak | trough | drop |
+|---|---|---|---|
+| Clean | 85.8% (2024-08) | 68.0% (2025-12) | **−17.8pp** |
+| Quality | 87.9% (2024-08) | 71.0% (2026-04) | −16.8pp |
+| Fast | 88.6% (2024-08) | 72.8% (2026-03) | −15.8pp |
+| OSAT | 88.7% (2024-08) | 74.7% (2026-04) | −14.0pp |
+| Friendly | 88.7% (2025-02) | 74.8% (2026-04) | −13.9pp |
+| Accuracy | 90.2% (2024-08) | 76.5% (2025-12) | −13.7pp |
+
+**Five of six peak in the same month (Aug 2024) and all six fall 13.7–17.8pp.** Clean is worst and
+falls furthest, consistent with the YTD dimension ranking. A decline this uniform across unrelated
+attributes — cleanliness, speed, order accuracy, staff friendliness — is not what a single
+operational failure looks like; those would move one or two dimensions, not all six in lockstep.
+
+## The composition confound — WEAKENED, not eliminated
+
+Monthly survey volume fell **27%**: 2024 avg 2,317/month → 2026 avg 1,686.
+
+| test | r | verdict |
+|---|---|---|
+| raw levels (volume vs OSAT) | **0.589** | both series trend down — largely spurious |
+| **month-over-month change** | **0.137** | t=0.74 on 29 df — **NOT significant** |
+| year-over-year same-month | 0.413 | n=20, borderline, not significant |
+
+The raw 0.589 looked alarming and is an artifact of two declining series. **Month to month, swings
+in response volume do not predict swings in OSAT** — so the score decline is not explained by
+period-to-period variation in who happened to respond.
+
+**Why this is "weakened" and not "cleared":** a *slow structural* change in the response mechanism —
+a gradual shift toward app-originated invitations, a receipt-format change, a changed incentive —
+would move both series down together over years and would be **invisible** to a month-over-month
+test. The detrended test rules out volume as a short-run driver. It cannot rule out a slow
+composition drift, which is exactly the shape the data shows.
+
+**What would settle it:** response *channel mix* over time (DT vs FC survey counts, and invitation
+source if SMG exposes it), not response volume. The DT/FC split is already in the monthly export.
+
+## Next
+
+Owner supplied three McDonald's Business Building Roadmap PDFs (Q2 2024, Q4 2024, Q1 2025 + Yearly)
+— national promotional calendars. These cover the period where the decline begins and are the
+natural next test: a marketing-driven mix shift is a district-wide simultaneous change of exactly
+the kind the uniformity implies. Not yet read.
