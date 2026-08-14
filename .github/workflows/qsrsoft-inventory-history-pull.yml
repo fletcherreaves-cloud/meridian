@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       store:
-        description: 'NSN to probe (default: 35064, the store from the issue''s own sample)'
+        description: 'NSN(s) to probe, comma-separated (default: 35064,10422)'
         required: false
         default: ''
       debug:
