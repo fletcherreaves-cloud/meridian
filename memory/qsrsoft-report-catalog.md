@@ -121,3 +121,103 @@ removes the guesswork about *what to look for* — and it is how we found that t
 "needs a separate vendor portal" assumptions were wrong.
 
 Re-fetch when hunting for a new data source, before assuming something is unavailable.
+
+---
+
+# Org identity and entitlements
+
+Source: `GET https://api.sso.myqsrsoft.com/user/info?userId={uuid}&orgId={orgId}` (requires
+`x-auth-token`). Captured 2026-08-14.
+
+| field | value |
+|---|---|
+| `orgName` | **RKT Inc.** |
+| `orgId` | `org-a546d4ef-684a-4f25-8bc0-6580af068875` |
+| `clientId` | `2433` |
+| `enterpriseClient` / `countryCode` | `McDonalds` / `US` |
+| **`orgStartOfWeek`** | **`Wednesday`** |
+| owner `eID` / `geid` | `eu065119` / `200234453` |
+| SAML `role` | `Franchisee Office Staff` (per-store roles all `Operator`) |
+
+**`orgStartOfWeek: "Wednesday"` is the vendor's own configuration**, independently confirming the
+week-start convention that `constants.js:103` asserts as "McDonald's standard" and that the
+McValue 14-day block design (`memory/project-mcvalue-2-fbp-document.md`) rests on. It is no
+longer just our comment.
+
+## ⚠️ 29 locations in the QSRSoft org, 27 in Meridian
+
+```
+QSRSoft org `locations` : 29
+Meridian STORE_NAMES    : 27
+McDonald's SAML `nsns`  : 27
+
+In QSRSoft org but NOT in Meridian : 23021, 28819
+In QSRSoft org but NOT in SAML     : 23021, 28819
+In Meridian but NOT in QSRSoft org : (none)
+```
+
+**23021 and 28819** are provisioned in the QSRSoft org but carry **no McDonald's operator role** —
+absent from both `saml.nsns` and `saml.roles`, which list exactly the 27 we know. Closed or sold
+stores whose org membership was never cleaned up, pending acquisitions, or another party's stores
+inside RKT Inc. **Open question for the owner.**
+
+Matters because a pull that iterates the org's location list rather than `STORE_NAMES` would
+silently include them, and any district aggregate built that way would disagree with Meridian's.
+
+## QSRSoft's own RBAC groups
+
+`Office Manager` · `Maintenance` · `Operations Manager` · `Owner Operator` ·
+`Director of Operations` · `System Administrators`
+
+**`security_access` appears only in `Director of Operations`** (plus the owner's own permission
+set) — not in Owner Operator, Operations Manager, or Office Manager.
+
+Informative for #272 rather than contradictory. The owner set derived flags at
+**supervisor-and-above**; QSRSoft gates its *transaction-level investigation console* at DO.
+Different objects — a flag on a store dashboard is not the Suspicious Activity tool — so both
+can be right. But it is a useful external reference point: the vendor independently landed near
+the same line.
+
+PII is granular and separately permissioned: `pii_ssn`, `pii_payrate`, `pii_annual_salary`,
+`pii_terms`, `pii_emergency_info`, `pii_emp_info`, `pii_emp_phone_number`, `pii_name`,
+`pii_payrate_reports`. A finer-grained model than Meridian's, worth borrowing conceptually.
+
+---
+
+# `store_filter_options` — register discovery + the exception taxonomy
+
+```
+POST https://api.security.myqsrsoft.com/security/store_filter_options/v1/
+     {orgId}/{nsn}/{startDate}/{endDate}?event_token=undefined&orgId={orgId}
+body: null
+```
+
+Serves **both** Any Transaction and Suspicious Activity. Returns, per store per date range:
+
+- **`event_types`** — 27 server-side-filterable exception types: `cash_refund`,
+  `cashless_refund`, `pos_overring`, `t_red_before`, `t_red_after`, `all_promo`/`total_order_promo`/
+  `mobile_promo`/`other_promo`/`delivery_promo`, `all_discount`/`pos_auto_discount`/
+  `mobile_discount`/`other_discount`, `coupon`, `duplicate_card_swipe`, `drawer_open`
+  ("Unauthorized Drawer Open"), `high_lock_out`(`_tender`/`_amount`/`_item`), `employee_meal`,
+  `manager_meal`, `loyalty_reward_ids`, `billable_sales`, `electronic_benefit_transfer`,
+  `all_events`
+- **`registers`** — `{value: "POS0013", display: 13}`. **This is the register-discovery endpoint**,
+  and registers are genuinely per-store: 43380 has POS0001/0002/0006/0007/0008/0009/0013/0019
+  (8); 3708 has POS0002/0006/0007/0008/0009/0013/0014/0016/0019 (9). Each has one the other
+  lacks — never hard-code them.
+- **`managers`** and **`cashiers`** — separate lists of `{badge, geid, display}`, confirming the
+  manager/cashier distinction is first-class
+- `tender_types`, `lock_out_type`, `billable_orgs` — also per-store
+
+## The GEID gap is systemic
+
+`geid` is `null` for **every** cashier and manager at both stores sampled, while the owner's own
+record carries a real GEID. The field exists in the schema; the mapping is simply unpopulated.
+
+That is what `/admin/missingGeids` and `/admin/geidLookup` are for. Populating it would close the
+**POS badge → empID → geid** chain that #275 flagged as fragile — currently joinable only through
+a first name with no surname and doubled internal whitespace.
+
+**Still outstanding:** the actual Suspicious Activity *events* query, carrying a real
+`event_token`. `store_filter_options` is the page's preload, not the search. That request decides
+whether #275 is a couple of dozen requests a day or the 650-request funnel design.
