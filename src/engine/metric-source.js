@@ -102,6 +102,11 @@ export const METRIC_SOURCES = {
   // 2026-08-06): otHrs read raw ctrlRows/laborRows only, with no auto backstop, unlike
   // laborPct/tpph/oepe/cashOS in the same panel which already route through this resolver.
   otHrs:     { mode: 'any', srcs: [['opsLaborRows', 'otHrs'], ['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
+  // OT Dollars — otHrs's dollar sibling, same auto source and same gap: opsLaborRows
+  // already aliases over_time_total_dollars -> otDollar (supabase.js loadOpsLaborSummary),
+  // it just had no chain yet (#270 phase 1, closing it alongside otHrs for SAGE's labor
+  // summary rather than leaving one of the two OT columns manual-only).
+  otDollar:  { mode: 'any', srcs: [['opsLaborRows', 'otDollar'], ['ctrlRows', 'otDollar'], ['laborRows', 'otDollar']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
   cashOSPct: { mode: 'any', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']] },
   // Cash Over/Short $ (dollar, not %) — manual Controls, then emailed Glimpse/Cash Sheet, then
