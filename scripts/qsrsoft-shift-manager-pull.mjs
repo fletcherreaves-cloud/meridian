@@ -77,12 +77,29 @@ function periodRange(period) {
   return { first: `${period}-01`, last: `${end.getUTCFullYear()}-${pad2(end.getUTCMonth() + 1)}-${pad2(end.getUTCDate())}` };
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 // Resolves what window + table this run targets. Explicit SHIFTMGR_START always wins over
 // SHIFTMGR_PERIOD and routes to the range table — see the file header for why.
+//
+// This is a hand-invoked investigative path (SHIFTMGR_START set from the Actions UI or a
+// laptop) — a typo'd date or an inverted range is the EXPECTED failure mode, not an edge case.
+// Left unvalidated, a bad SHIFTMGR_START/SHIFTMGR_END silently reaches the endpoint, returns
+// zero rows, and main()'s only diagnostic is "no manager rows (check timeSlices / auth)" —
+// which points at auth when the actual cause was the input. Fail fast here instead, before any
+// network call, with a message that names the actual problem (PR #267 review, 2026-08-14).
 function resolveWindow() {
   const start = (process.env.SHIFTMGR_START || '').trim();
   if (start) {
     const end = (process.env.SHIFTMGR_END || '').trim() || start;
+    if (!DATE_RE.test(start) || !DATE_RE.test(end)) {
+      console.error(`[shift-mgr] ✗ SHIFTMGR_START/SHIFTMGR_END must be YYYY-MM-DD — got start="${start}" end="${end}"`);
+      process.exit(1);
+    }
+    if (end < start) {
+      console.error(`[shift-mgr] ✗ SHIFTMGR_END (${end}) is before SHIFTMGR_START (${start})`);
+      process.exit(1);
+    }
     return { first: start, last: end, isRange: true };
   }
   const period = currentPeriod();

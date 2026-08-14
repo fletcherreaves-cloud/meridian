@@ -44,4 +44,10 @@ startDate/endDate, this is a one-request change, not a per-day loop. An explicit
 the companion table **`shift_manager_range`** (loc, geid, period_start, period_end), never
 `shift_manager_monthly` — upserting a partial window against the monthly table's `(loc,
 period_month, geid)` key would silently overwrite the cron job's whole-month aggregate. See
-`supabase/schema-shift-manager-range.sql`.
+`supabase/schema-shift-manager-range.sql`. Carries `tenant_id` + tenant-scoped RLS from creation
+(PR #267 review — added before the table had any rows, matching CLAUDE.md's standing rule for
+new pulls even though its older sibling `shift_manager_monthly` predates that rule and still
+lacks it). `resolveWindow()` validates `SHIFTMGR_START`/`SHIFTMGR_END` are `YYYY-MM-DD` and
+non-inverted before any network call — a hand-invoked path where a typo'd date is the expected
+failure mode, not an edge case; previously a bad date silently reached the endpoint, returned
+zero rows, and printed a misleading "check timeSlices / auth" error.

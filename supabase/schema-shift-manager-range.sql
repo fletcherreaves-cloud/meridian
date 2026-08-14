@@ -13,11 +13,13 @@
 --
 -- Same aggregation, same source report, same columns as shift_manager_monthly
 -- (see that file's header) — only the identity/window columns differ.
--- PK = (loc, geid, period_start, period_end). RLS = require-auth, matching
--- shift_manager_monthly's own policy (no tenant_id — this app is single-tenant
--- today; shift_manager_monthly itself carries none either, so this companion
--- table follows its sibling's existing convention rather than inventing a
--- stricter one unilaterally).
+-- PK = (loc, geid, period_start, period_end).
+--
+-- tenant_id + tenant-scoped RLS (PR #267 review, 2026-08-14): shift_manager_monthly predates
+-- CLAUDE.md's standing rule that new pulls get a tenant_id column + RLS from day one, and
+-- matching that sibling's gap here would just replicate it rather than stop it. This table has
+-- zero rows at creation time — the cheapest a tenant_id column ever gets, versus a migration
+-- against live data later. Pattern matches schema-coaching-cycles.sql.
 -- Safe to run top-to-bottom; idempotent. Expected: "Success. No rows returned."
 -- ============================================================================
 create table if not exists public.shift_manager_range (
@@ -40,11 +42,15 @@ create table if not exists public.shift_manager_range (
   dt_ttl               numeric,                 -- sec
   kvs                  numeric,                 -- sec
   labor_pct            numeric,                 -- punched labor % (hour-weighted)
+  tenant_id            uuid not null default '00000000-0000-0000-0000-000000000001',
   updated_at           timestamptz default now(),
   primary key (loc, geid, period_start, period_end)
 );
 
 alter table public.shift_manager_range enable row level security;
 drop policy if exists "shift_manager_range: auth all" on public.shift_manager_range;
-create policy "shift_manager_range: auth all" on public.shift_manager_range
-  for all to authenticated using (auth.uid() is not null) with check (auth.uid() is not null);
+drop policy if exists shift_manager_range_tenant on public.shift_manager_range;
+create policy shift_manager_range_tenant on public.shift_manager_range
+  for all to authenticated
+  using (tenant_id = '00000000-0000-0000-0000-000000000001'::uuid)
+  with check (tenant_id = '00000000-0000-0000-0000-000000000001'::uuid);
