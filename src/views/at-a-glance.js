@@ -1722,11 +1722,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
         h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
         h(ItemsRecountedTile,{key:'eom-recount',onOpenModal}),
-        secs.find(s=>s.id==='sage'&&s.on)&&_mark('tile:sage',()=>(h(SageRunsTile,{key:'sage'}))),
+        secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
 
         // ── PROJECTIONS SECTION ──
         // ── INTELLIGENCE SUMMARY TILE ──────────────────────────
-        secs.find(s=>s.id==='intelligence'&&s.on)&&_mark('tile:intelligence',()=>((()=>{
+        secs.find(s=>s.id==='intelligence'&&s.on)&&_mark('build:intelligence',()=>((()=>{
           const sl=salesSec,lb=laborSec,fb=fobSec,sv=serviceSec,it=intelSec;
           const noData=!sl&&!lb&&!fb&&!sv;
           // Signal row helper
@@ -1845,7 +1845,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         })())),
 
         // ── PROJECTIONS SECTION ──
-        secs.find(s=>s.id==='projections'&&s.on)&&_mark('tile:projections',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='projections'&&s.on)&&_mark('build:projections',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:onOpenProjections},
             span(null,'📈'),
@@ -1972,7 +1972,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         })(),
 
         // ── SALES SECTION ──
-        secs.find(s=>s.id==='sales'&&s.on)&&_mark('tile:sales',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='sales'&&s.on)&&_mark('build:sales',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'💰'),
@@ -2026,7 +2026,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ))),
 
         // ── LABOR SECTION ──
-        secs.find(s=>s.id==='labor'&&s.on)&&_mark('tile:labor',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='labor'&&s.on)&&_mark('build:labor',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'👥'),
@@ -2071,7 +2071,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ))),
 
         // ── SERVICE SECTION ──
-        secs.find(s=>s.id==='service'&&s.on)&&_mark('tile:service',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='service'&&s.on)&&_mark('build:service',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'⚡'),
@@ -2102,7 +2102,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ))),
 
         // ── CONTROLS SECTION ──
-        secs.find(s=>s.id==='controls'&&s.on)&&_mark('tile:controls',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='controls'&&s.on)&&_mark('build:controls',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onNav&&onNav('district')},
             span(null,'🔒'),
@@ -2163,7 +2163,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ))),
 
         // ── FOB SECTION ──
-        secs.find(s=>s.id==='fob'&&s.on)&&_mark('tile:fob',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='fob'&&s.on)&&_mark('build:fob',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenBrief&&onOpenBrief()},
             span(null,'🍟'),
@@ -2253,7 +2253,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ))),
 
         // ── DIGITAL SALES SECTION ──────────────────────────────────
-        secs.find(s=>s.id==='digital'&&s.on)&&_mark('tile:digital',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='digital'&&s.on)&&_mark('build:digital',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'\uD83D\uDCF1'),
@@ -2333,7 +2333,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ))),
 
         // ── DISTRICT PULSE RADAR ──
-        secs.find(s=>s.id==='radar'&&s.on)&&_mark('tile:radar',()=>((()=>{
+        secs.find(s=>s.id==='radar'&&s.on)&&_mark('build:radar',()=>((()=>{
           // Scores: 0-1 where 1.0 = at or better than target, 0 = significantly below
           const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v||0));
           const METRICS=[
@@ -2452,7 +2452,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           );
         })())),
         // ── STORE LEADERBOARD ──
-        secs.find(s=>s.id==='leaderboard'&&s.on)&&_mark('tile:leaderboard',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='leaderboard'&&s.on)&&_mark('build:leaderboard',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'🏆'),
