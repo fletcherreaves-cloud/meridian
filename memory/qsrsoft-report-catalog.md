@@ -844,6 +844,25 @@ value is the string `"unavailable"`. The **POS badge → empID → geid** chain 
 rather than a real category — worth testing whether it is accepted as an `event_token` on the
 events queries, since that would collapse 26 requests into one.
 
+**CONFIRMED not user-facing (owner screenshots, 2026-08-14):** the Events dropdown runs
+alphabetically from *All Discounts* to *Unauthorized Drawer Open* with **no "All Events" entry**.
+It is single-select — no multi-select checkboxes. So `all_events` exists in the API enum and the UI
+never sends it, which is exactly why it carries no `display`.
+
+Note the asymmetry: the **category** rollups `all_discount` / `all_promo` ARE offered in the UI
+("All Discounts", "All Promos"), while the **global** rollup is not. The vendor exposes
+within-category aggregation but not across-category — possibly because `all_events` backs the
+Insights tile rather than this report.
+
+The UI therefore cannot test it. Test it directly by editing the `top_contributors` body:
+`{"event_token":"all_events","start_date":"…","end_date":"…"}` — cheapest possible probe, since
+that endpoint is a small aggregation and we already have a known-good baseline (3 events for
+`pos_overring`, store 3708, 2026-08-14) to compare against.
+
+Also note the UI collapses the three `high_lock_out_*` variants into a single **"High Lock Out"**
+entry; the sub-type is carried by the separate `lock_out_type` filter the options response returns.
+So 27 API tokens map to 23 dropdown entries.
+
 `tender_types` includes **`No Tender`**, which 2 of the 3 captured overrings used.
 `billable_orgs` is empty for 3708, consistent with the owner's account of billable sales as rare.
 
